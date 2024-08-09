@@ -1,0 +1,16 @@
+{application, supersu,
+ [{description, "An AO SU written in Erlang."},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {mod, {supersu_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    inets,
+    ssl
+   ]},
+  {env,[]},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, []}
+ ]}.
