@@ -1,4 +1,4 @@
-A (not so )super AO SU in Erlang.
+A (not so) super AO SU in Erlang.
 =====
 
 Build
