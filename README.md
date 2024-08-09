@@ -1,7 +1,5 @@
-supersu
+A (not so )super AO SU in Erlang.
 =====
-
-An OTP application
 
 Build
 -----
