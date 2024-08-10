@@ -1,7 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 
--export([new_item/4, sign_item/2, verify_item/1, create_bundle/1, verify_bundle/1]).
+-export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
 
 -include("include/ar.hrl").
@@ -37,41 +37,17 @@ verify_item(DataItem) ->
     ValidTags = verify_data_item_tags(DataItem),
     ValidID andalso ValidSignature andalso ValidTags.
 
-%% @doc Create a bundle of data items.
-create_bundle(DataItems) ->
-    NumItems = length(DataItems),
-    SizesAndIDs = lists:map(fun(Item) ->
-        {byte_size(Item#tx.data), Item#tx.id} % Byte size should be of the encoded binary
-    end, DataItems),
-    BinaryItems = lists:map(fun(Item) -> item_to_binary(Item) end, DataItems),
-    (ar_tx:new(<<>>, 0, 0, <<>>, <<>>))#tx {
-        tags = [{"Bundle-Format", "1"}, {"Bundle-Version", "2.0.0"}],
-        data = <<NumItems:32/binary, (list_to_binary(flatten_size_id_pairs(SizesAndIDs)))/binary, (list_to_binary(BinaryItems))/binary>>
-    }.
-
-%% @doc Verify the validity of a bundle.
-verify_bundle({NumItems, SizesAndIDs, BinaryItems}) ->
-    ValidSizesAndIDs = lists:all(fun({Size, _ID}) ->
-        Size == byte_size(binary_part(BinaryItems, {0, Size})),
-        verify_data_item_id(binary_to_item(binary_part(BinaryItems, {0, Size})))
-    end, SizesAndIDs),
-    NumItems == length(SizesAndIDs) andalso ValidSizesAndIDs.
-
 %%%===================================================================
 %%% Private functions.
 %%%===================================================================
 
-%% @doc Flatten size and ID pairs into binary format.
-flatten_size_id_pairs([]) -> [];
-flatten_size_id_pairs([{Size, ID} | Rest]) ->
-    <<Size:32/binary, ID:256/binary>> ++ flatten_size_id_pairs(Rest).
 
 %% @doc Generate the data segment to be signed for a data item.
 data_item_signature_data(DataItem) ->
     List = [
         utf8_encoded("dataitem"),
         utf8_encoded("1"),
-        utf8_encoded("1"),
+        utf8_encoded("1"), %% Only SignatureType 1 is supported for now (RSA 4096)
         <<(DataItem#tx.owner)/binary>>,
         <<(DataItem#tx.target)/binary>>,
         <<(DataItem#tx.last_tx)/binary>>,
@@ -100,13 +76,14 @@ verify_data_item_tags(DataItem) ->
 
 %% @doc Convert a #tx record to its binary representation.
 item_to_binary(TX) ->
+    EncodedTags = encode_tags(TX#tx.tags),
     <<(encode_signature_type(TX#tx.signature_type))/binary,
       (TX#tx.signature)/binary,
       (TX#tx.owner)/binary,
       (encode_optional_field(TX#tx.target))/binary,
       (encode_optional_field(TX#tx.last_tx))/binary,
-      (encode_tags_size(TX#tx.tags))/binary,
-      (encode_tags(TX#tx.tags))/binary,
+      (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
+      EncodedTags/binary,
       (TX#tx.data)/binary>>.
 
 %% @doc Only RSA 4096 is currently supported.
@@ -127,23 +104,31 @@ encode_optional_field(Field) ->
 utf8_encoded(String) ->
     unicode:characters_to_binary(String, utf8).
 
-encode_tags_size([]) ->
-    <<0:64, 0:64>>.
+encode_tags_size([], <<>>) ->
+    <<0:64/integer, 0:64/integer>>;
+encode_tags_size(Tags, EncodedTags) ->
+    <<(length(Tags)):64/integer, (byte_size(EncodedTags)):64/integer>>.
 
 %% @doc Encode tags into a binary format using Apache Avro.
 encode_tags([]) ->
     <<>>;
 encode_tags(Tags) ->
-    EncodedBlocks = lists:map(fun({Name, Value}) ->
+    EncodedBlocks = lists:flatmap(fun({Name, Value}) ->
         EncName = encode_avro_string(Name),
         EncValue = encode_avro_string(Value),
-        <<EncName/binary, EncValue/binary>>
+        [EncName, EncValue]
     end, Tags),
     TotalSize = lists:sum(lists:map(fun(B) -> byte_size(B) end, EncodedBlocks)),
     BlockCount = length(EncodedBlocks),
     ZigZagCount = encode_zigzag(BlockCount),
     ZigZagSize = encode_zigzag(TotalSize),
     <<ZigZagCount/binary, ZigZagSize/binary, (list_to_binary(EncodedBlocks))/binary, 0>>.
+
+%% @doc Encode a string for Avro using ZigZag and VInt encoding.
+encode_avro_string(String) ->
+    StringBytes = unicode:characters_to_binary(String, utf8),
+    Length = byte_size(StringBytes),
+    <<(encode_zigzag(Length))/binary, StringBytes/binary>>.
 
 %% @doc Encode an integer using ZigZag encoding.
 encode_zigzag(Int) when Int >= 0 ->
@@ -194,41 +179,48 @@ decode_signature(_) ->
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
-decode_tags(<<TagCount:64/integer, TagSize:64/integer, Rest/binary>>) ->
-    {[], Rest}.
-    % {Count, Rest} = decode_zigzag(Binary),
-    % {_Size, BlocksBinary} = decode_zigzag(Rest),
-    % decode_avro_blocks(BlocksBinary, Count).
-
+decode_tags(<<0:64/integer, 0:64/integer, Rest/binary>>) ->
+    {[], Rest};
+decode_tags(<<TagCount:64/integer, TagSize:64/integer, Binary/binary>>) ->
+    {Count, Rest} = decode_zigzag(Binary),
+    {Size, BlocksBinary} = decode_zigzag(Rest),
+    decode_avro_tags(BlocksBinary, Count).
 
 decode_optional_field(<<0, Rest/binary>>) ->
     {<<>>, Rest};
 decode_optional_field(<<1:8/integer, Field:32/binary, Rest/binary>>) ->
     {Field, Rest}.
 
-%% @doc Encode a string for Avro using ZigZag and VInt encoding.
-encode_avro_string(String) ->
-    StringBytes = unicode:characters_to_binary(String, utf8),
-    Length = byte_size(StringBytes),
-    <<(encode_zigzag(Length))/binary, StringBytes/binary>>.
-
 %% @doc Decode Avro blocks (for tags) from binary.
-decode_avro_blocks(<<>>, _) ->
-    [];
-decode_avro_blocks(Binary, Count) ->
-    case Count of
-        0 -> [];
-        _ ->
-            {NameSize, Rest1} = decode_zigzag(Binary),
-            <<Name:NameSize/binary, Rest2/binary>> = Rest1,
-            {ValueSize, Rest3} = decode_zigzag(Rest2),
-            <<Value:ValueSize/binary, Rest4/binary>> = Rest3,
-            [{Name, Value} | decode_avro_blocks(Rest4, Count - 1)]
-    end.
+decode_avro_tags(<<>>, _) ->
+    {[], <<>>};
+decode_avro_tags(Binary, Count) when Count =:= 0 ->
+    {[], Binary};
+decode_avro_tags(Binary, Count) ->
+    {NameSize, Rest} = decode_zigzag(Binary),
+    decode_avro_name(NameSize, Rest, Count).
+
+decode_avro_name(0, Rest, _) ->
+    {[], Rest};
+decode_avro_name(NameSize, Rest, Count) ->
+    <<Name:NameSize/binary, Rest2/binary>> = Rest,
+    {ValueSize, Rest3} = decode_zigzag(Rest2),
+    decode_avro_value(ValueSize, Name, Rest3, Count).
+
+decode_avro_value(0, _, Rest, _) ->
+    {[], Rest};
+decode_avro_value(ValueSize, Name, Rest, Count) ->
+    <<Value:ValueSize/binary, Rest2/binary>> = Rest,
+    {DecodedTags, NonAvroRest} = decode_avro_tags(Rest2, Count - 1),
+    {[{Name, Value} | DecodedTags], NonAvroRest}.
 
 %% @doc Decode a VInt encoded ZigZag integer from binary.
 decode_zigzag(Binary) ->
-    decode_vint(Binary, 0, 0).
+    {ZigZag, Rest} = decode_vint(Binary, 0, 0),
+    case ZigZag band 1 of
+        1 -> {-(ZigZag bsr 1) - 1, Rest};
+        0 -> {ZigZag bsr 1, Rest}
+    end.
 
 decode_vint(<<>>, Result, _Shift) ->
     {Result, <<>>};
@@ -249,7 +241,9 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
 ar_bundles_test_() ->
 	[
 		{timeout, 30, fun test_no_tags/0},
-        {timeout, 30, fun test_no_tags_from_disk/0}
+        {timeout, 30, fun test_no_tags_from_disk/0},
+        {timeout, 30, fun test_with_tags/0}
+        % {timeout, 30, fun test_with_tags_from_disk/0}
 	].
 
 test_no_tags() ->
@@ -276,6 +270,32 @@ test_no_tags_from_disk() ->
 
     ?assertEqual(true, verify_item(DataItem)),
     ?assertEqual(<<"notags">>, DataItem#tx.data).
+
+test_with_tags() ->
+    {Priv, Pub} = ar_wallet:new(),
+    {KeyType, Owner} = Pub,
+    Target = crypto:strong_rand_bytes(32),
+    Anchor = crypto:strong_rand_bytes(32),
+    Tags = [{<<"tag1">>, <<"value1">>}, {<<"tag2">>, <<"value2">>}],
+    DataItem = new_item(Target, Anchor, Tags, <<"taggeddata">>),
+    SignedDataItem = sign_item(DataItem, {Priv, Pub}),
+
+    ?assertEqual(true, verify_item(SignedDataItem)),
+    assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem),
+
+    SignedDataItem2 = binary_to_item(item_to_binary(SignedDataItem)),
+
+    ?assertEqual(SignedDataItem, SignedDataItem2),
+    ?assertEqual(true, verify_item(SignedDataItem2)),
+    assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
+
+test_with_tags_from_disk() ->
+    {ok, BinaryDataItem} = file:read_file("src/test/dataitem_withtags"),
+    
+    DataItem = binary_to_item(BinaryDataItem),
+
+    ?assertEqual(true, verify_item(DataItem)),
+    ?assertEqual(<<"withtags">>, DataItem#tx.data).
     
 assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(KeyType, DataItem#tx.signature_type),
