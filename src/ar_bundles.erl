@@ -105,9 +105,9 @@ utf8_encoded(String) ->
     unicode:characters_to_binary(String, utf8).
 
 encode_tags_size([], <<>>) ->
-    <<0:64/integer, 0:64/integer>>;
+    <<0:64/little-integer, 0:64/little-integer>>;
 encode_tags_size(Tags, EncodedTags) ->
-    <<(length(Tags)):64/integer, (byte_size(EncodedTags)):64/integer>>.
+    <<(length(Tags)):64/little-integer, (byte_size(EncodedTags)):64/little-integer>>.
 
 %% @doc Encode tags into a binary format using Apache Avro.
 encode_tags([]) ->
@@ -118,11 +118,9 @@ encode_tags(Tags) ->
         EncValue = encode_avro_string(Value),
         [EncName, EncValue]
     end, Tags),
-    TotalSize = lists:sum(lists:map(fun(B) -> byte_size(B) end, EncodedBlocks)),
-    BlockCount = length(EncodedBlocks),
-    ZigZagCount = encode_zigzag(BlockCount),
-    ZigZagSize = encode_zigzag(TotalSize),
-    <<ZigZagCount/binary, ZigZagSize/binary, (list_to_binary(EncodedBlocks))/binary, 0>>.
+    TagCount = length(Tags),
+    ZigZagCount = encode_zigzag(TagCount),
+    <<ZigZagCount/binary, (list_to_binary(EncodedBlocks))/binary, 0>>.
 
 %% @doc Encode a string for Avro using ZigZag and VInt encoding.
 encode_avro_string(String) ->
@@ -179,12 +177,15 @@ decode_signature(_) ->
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
-decode_tags(<<0:64/integer, 0:64/integer, Rest/binary>>) ->
+decode_tags(<<0:64/little-integer, 0:64/little-integer, Rest/binary>>) ->
     {[], Rest};
-decode_tags(<<TagCount:64/integer, TagSize:64/integer, Binary/binary>>) ->
-    {Count, Rest} = decode_zigzag(Binary),
-    {Size, BlocksBinary} = decode_zigzag(Rest),
-    decode_avro_tags(BlocksBinary, Count).
+decode_tags(<<_TagCount:64/little-integer, _TagSize:64/little-integer, Binary/binary>>) ->
+    {Count, BlocksBinary} = decode_zigzag(Binary),
+    {Tags, Rest} = decode_avro_tags(BlocksBinary, Count),
+    %% Pull out the terminating zero
+    {0, Rest2} = decode_zigzag(Rest),
+    {Tags, Rest2}.
+    
 
 decode_optional_field(<<0, Rest/binary>>) ->
     {<<>>, Rest};
@@ -242,8 +243,8 @@ ar_bundles_test_() ->
 	[
 		{timeout, 30, fun test_no_tags/0},
         {timeout, 30, fun test_no_tags_from_disk/0},
-        {timeout, 30, fun test_with_tags/0}
-        % {timeout, 30, fun test_with_tags_from_disk/0}
+        {timeout, 30, fun test_with_tags/0},
+        {timeout, 30, fun test_with_tags_from_disk/0}
 	].
 
 test_no_tags() ->
