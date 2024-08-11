@@ -11,7 +11,7 @@ start() ->
         [
             {'_', [
                 {"/:proc_id/slot", ?MODULE, handle},
-                {"/:proc_id", ?MODULE, handle},
+                {"/:id", ?MODULE, handle},
                 {"/", ?MODULE, handle}
             ]}
         ]
@@ -36,19 +36,29 @@ read_body(Req0, Acc) ->
 handle(<<"GET">>, [ProcID, <<"slot">>], Req, State) ->
     CurrentSlot = su_process:get_current_slot(su_registry:find(binary_to_list(ProcID))),
     cowboy_req:reply(200,
-        #{<<"content-type">> => <<"text/plain">>},
+        #{<<"Content-Type">> => <<"text/plain">>},
         integer_to_list(CurrentSlot),
+        Req),
+    {ok, Req, State};
+handle(<<"GET">>, [ID], Req, State) when byte_size(ID) =:= 43 ->
+    Message = su_data:read_message(ID),
+    cowboy_req:reply(200,
+        #{<<"Content-Type">> => <<"application/binary">>},
+        ar_bundles:serialize(Message),
         Req),
     {ok, Req, State};
 handle(<<"POST">>, [], Req, State) ->
     {ok, Body, Req2} = read_body(Req),
-    Message = su_data:decode(Body),
-    su:c(Message#tx.tags),
-    ProcID = su_registry:find(binary_to_list(Message#tx.target)),
+    Message = ar_bundles:deserialize(Body),
+    true = ar_bundles:verify_item(Message),
+    ProcID = su_registry:find(binary_to_list(ar_util:encode(Message#tx.target))),
     Assignment = su_process:schedule(ProcID, Message),
     cowboy_req:reply(200,
-        #{<<"content-type">> => <<"application/json">>},
-        su_data:encode(Assignment),
+        #{<<"Content-Type">> => <<"application/json">>},
+        jiffy:encode({[
+            {id, ar_util:encode(Assignment#tx.id)},
+            {timestamp, list_to_binary(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))}
+        ]}),
         Req2),
     {ok, Req2, State}.
 

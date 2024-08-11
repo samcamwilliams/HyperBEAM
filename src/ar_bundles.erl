@@ -3,6 +3,7 @@
 
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
+-export([serialize/1, deserialize/1]).
 
 -include("include/ar.hrl").
 
@@ -25,7 +26,7 @@ new_item(Target, Anchor, Tags, Data) ->
 
 %% @doc Sign a data item.
 sign_item(DataItem, {PrivKey, {KeyType, Owner}}) ->
-    SignedDataItem = DataItem#tx{ owner = Owner, signature_type = KeyType },
+    SignedDataItem = DataItem#tx{ format = ans104, owner = Owner, signature_type = KeyType },
     Sig = ar_wallet:sign(PrivKey, data_item_signature_data(SignedDataItem)),
     ID = crypto:hash(sha256, <<Sig/binary>>),
     SignedDataItem#tx{ id = ID, signature = Sig }.
@@ -75,7 +76,7 @@ verify_data_item_tags(DataItem) ->
     ValidCount andalso ValidTags.
 
 %% @doc Convert a #tx record to its binary representation.
-item_to_binary(TX) ->
+serialize(TX) ->
     EncodedTags = encode_tags(TX#tx.tags),
     <<(encode_signature_type(TX#tx.signature_type))/binary,
       (TX#tx.signature)/binary,
@@ -149,7 +150,7 @@ encode_vint(ZigZag, Acc) ->
     end.
 
 %% @doc Convert binary data back to a #tx record.
-binary_to_item(Binary) ->
+deserialize(Binary) ->
     {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
     {Target, Rest2} = decode_optional_field(Rest),
     {Anchor, Rest3} = decode_optional_field(Rest2),
@@ -173,7 +174,8 @@ binary_to_item(Binary) ->
 %% little-endian format which is why we match on <<1, 0>>.
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
-decode_signature(_) ->
+decode_signature(Other) ->
+    su:c(Other),
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
@@ -185,7 +187,6 @@ decode_tags(<<_TagCount:64/little-integer, _TagSize:64/little-integer, Binary/bi
     %% Pull out the terminating zero
     {0, Rest2} = decode_zigzag(Rest),
     {Tags, Rest2}.
-    
 
 decode_optional_field(<<0, Rest/binary>>) ->
     {<<>>, Rest};
@@ -258,7 +259,7 @@ test_no_tags() ->
     ?assertEqual(true, verify_item(SignedDataItem)),
     assert_data_item(KeyType, Owner, Target, Anchor, [], <<"data">>, SignedDataItem),
 
-    SignedDataItem2 = binary_to_item(item_to_binary(SignedDataItem)),
+    SignedDataItem2 = deserialize(serialize(SignedDataItem)),
 
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
@@ -267,7 +268,7 @@ test_no_tags() ->
 test_no_tags_from_disk() ->
     {ok, BinaryDataItem} = file:read_file("src/test/dataitem_notags"),
     
-    DataItem = binary_to_item(BinaryDataItem),
+    DataItem = deserialize(BinaryDataItem),
 
     ?assertEqual(true, verify_item(DataItem)),
     ?assertEqual(<<"notags">>, DataItem#tx.data).
@@ -284,7 +285,7 @@ test_with_tags() ->
     ?assertEqual(true, verify_item(SignedDataItem)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem),
 
-    SignedDataItem2 = binary_to_item(item_to_binary(SignedDataItem)),
+    SignedDataItem2 = deserialize(serialize(SignedDataItem)),
 
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
@@ -292,9 +293,7 @@ test_with_tags() ->
 
 test_with_tags_from_disk() ->
     {ok, BinaryDataItem} = file:read_file("src/test/dataitem_withtags"),
-    
-    DataItem = binary_to_item(BinaryDataItem),
-
+    DataItem = deserialize(BinaryDataItem),
     ?assertEqual(true, verify_item(DataItem)),
     ?assertEqual(<<"withtags">>, DataItem#tx.data).
     

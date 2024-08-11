@@ -2,6 +2,7 @@
 _build
 _checkouts
 _vendor
+data
 .eunit
 *.o
 *.beam

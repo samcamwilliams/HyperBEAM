@@ -33,6 +33,7 @@ refresher(TSServer) ->
 get_from_arweave() ->
     {ok, {{_, 200, _}, _, Body}} = httpc:request(?GATEWAY_URL ++ "/block/current"),
     {Fields} = jiffy:decode(Body),
-    Timestamp = lists:keyfind(<<"timestamp">>, 1, Fields),
-    Hash = lists:keyfind(<<"indep_hash">>, 1, Fields),
-    {Timestamp, Hash}.
+    {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
+    {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
+    {_, Height} = lists:keyfind(<<"height">>, 1, Fields),    
+    {Timestamp, Height, Hash}.
