@@ -4,6 +4,7 @@
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
 -export([serialize/1, deserialize/1]).
+-export([item_to_json_struct/1, json_struct_to_item/1]).
 
 -include("include/ar.hrl").
 
@@ -169,6 +170,61 @@ deserialize(Binary) ->
         id = crypto:hash(sha256, Signature)
     }.
 
+item_to_json_struct(
+	#tx{
+		id = ID,
+		last_tx = Last,
+		owner = Owner,
+		tags = Tags,
+		target = Target,
+		data = Data,
+		signature = Sig
+	}) ->
+	Fields = [
+		{id, ar_util:encode(ID)},
+		{anchor, ar_util:encode(Last)}, % NOTE: In Arweave TXs, these are called "last_tx"
+		{owner, ar_util:encode(Owner)},
+		{tags,
+			lists:map(
+				fun({Name, Value}) ->
+					{
+						[
+							{name, ar_util:encode(Name)},
+							{value, ar_util:encode(Value)}
+						]
+					}
+				end,
+				Tags
+			)
+		},
+		{target, ar_util:encode(Target)},
+		{data, ar_util:encode(Data)},
+		{signature, ar_util:encode(Sig)}
+	],
+	{Fields}.
+
+json_struct_to_item(TXStruct) ->
+	Tags =
+		case find_value(<<"tags">>, TXStruct) of
+			undefined ->
+				[];
+			Xs ->
+				Xs
+		end,
+	TXID = ar_util:decode(find_value(<<"id">>, TXStruct)),
+	32 = byte_size(TXID),
+	#tx{
+		format = ans104,
+		id = TXID,
+		last_tx = ar_util:decode(find_value(<<"anchor">>, TXStruct)),
+		owner = ar_util:decode(find_value(<<"owner">>, TXStruct)),
+		tags = [{ar_util:decode(Name), ar_util:decode(Value)}
+				|| {[{<<"name">>, Name}, {<<"value">>, Value}]} <- Tags],
+		target = ar_util:decode(find_value(<<"target">>, TXStruct)),
+		data = ar_util:decode(find_value(<<"data">>, TXStruct)),
+		signature = ar_util:decode(find_value(<<"signature">>, TXStruct))
+	}.
+
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
 %% little-endian format which is why we match on <<1, 0>>.
@@ -233,6 +289,13 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
         0 -> {NewResult, Rest};
         _ -> decode_vint(Rest, NewResult, Shift + 7)
     end.
+
+%% @doc Find the value associated with a key in parsed a JSON structure list.
+find_value(Key, List) ->
+	case lists:keyfind(Key, 1, List) of
+		{Key, Val} -> Val;
+		false -> undefined
+	end.
 
 %%%===================================================================
 %%% Unit tests.
