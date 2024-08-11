@@ -1,13 +1,15 @@
 -module(su_process).
--export([start/1, schedule/2, get_current_slot/1]).
+-export([start/2, schedule/2]).
+-export([get_current_slot/1, get_assignments/3]).
 -export([new_proc_test/0]).
--record(state, {id, current, wallet = ar_wallet:new(), hash_chain = <<>> }).
+-record(state, {id, current, wallet, hash_chain = <<>> }).
 
 -include("include/ar.hrl").
+-define(MAX_ASSIGNMENT_QUERY_LEN, 3).
 
-start(ProcID) ->
+start(ProcID, Wallet) ->
     {Current, HashChain} = su_data:get_current_slot(ProcID),
-    server(#state{id = ProcID, current = Current, hash_chain = HashChain}).
+    server(#state{id = ProcID, current = Current, hash_chain = HashChain, wallet = Wallet}).
 
 schedule(ProcID, Message) when is_list(ProcID) ->
     schedule(su_registry:find(ProcID), Message);
@@ -23,6 +25,26 @@ get_current_slot(ProcID) ->
     receive
         {current_slot, CurrentSlot} ->
             CurrentSlot
+    end.
+
+get_assignments(ProcID, From, inf) ->
+    get_assignments(ProcID, From, get_current_slot(ProcID));
+get_assignments(ProcID, From, RequestedTo) ->
+    su:c({get_assignments, ProcID, From, RequestedTo}),
+    ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
+        true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
+        false -> RequestedTo
+    end,
+    {do_get_assignments(ProcID, From, ComputedTo), ComputedTo =/= RequestedTo }.
+
+do_get_assignments(_ProcID, From, To) when From > To ->
+    [];
+do_get_assignments(ProcID, From, To) ->
+    case su_data:read_assignment(ProcID, From) of
+        not_found ->
+            [];
+        Assignment ->
+            [Assignment | do_get_assignments(ProcID, From + 1, To)]
     end.
 
 server(State) ->
@@ -51,7 +73,7 @@ do_assign(State, Message, ReplyPID) ->
         fun() ->
             ok = su_data:write_message(Message),
             {Timestamp, Height, Hash} = su_timestamp:get(),
-            Assignment = ar_tx:sign(#tx {
+            Assignment = ar_bundles:sign_item(#tx {
                 tags = [
                     {"Data-Protocol", "ao"},
                     {"Variant", "ao.TN.1"},
