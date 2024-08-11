@@ -17,7 +17,7 @@ init() ->
 get_current_slot("") -> error;
 get_current_slot(ProcID) ->
     case file:list_dir(?ROOT ++ "/assignments/" ++ ProcID) of
-        {ok, []} -> {0, <<>>};
+        {ok, []} -> {-1, <<>>};
         {ok, Files} ->
             AssignmentFile = lists:max([list_to_integer(filename:rootname(F)) || F <- Files]),
             Assignment = read_assignment(ProcID, AssignmentFile),
@@ -25,7 +25,7 @@ get_current_slot(ProcID) ->
                 list_to_integer(binary_to_list(element(2, lists:keyfind(<<"Nonce">>, 1, Assignment#tx.tags)))),
                 ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
             };
-        {error, _} -> {0, <<>>}
+        {error, _} -> {-1, <<>>}
     end.
 
 read_message(MessageID) when is_binary(MessageID) ->
