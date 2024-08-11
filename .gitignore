@@ -18,3 +18,5 @@ logs
 *.iml
 rebar3.crashdump
 *~
+
+*.json
