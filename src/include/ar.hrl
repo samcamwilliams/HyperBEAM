@@ -54,3 +54,18 @@
 	%% not used by the protocol yet.
 	signature_type = {rsa, 65537}
 }).
+
+%% The hashing algorithm used to calculate wallet addresses.
+-define(HASH_ALG, sha256).
+
+-define(RSA_SIGN_ALG, rsa).
+-define(RSA_PRIV_KEY_SZ, 4096).
+
+-define(ECDSA_SIGN_ALG, ecdsa).
+-define(ECDSA_TYPE_BYTE, <<2>>).
+
+-define(EDDSA_SIGN_ALG, eddsa).
+-define(EDDSA_TYPE_BYTE, <<3>>).
+
+%% The default key type used by transactions that do not specify a signature type.
+-define(DEFAULT_KEY_TYPE, {?RSA_SIGN_ALG, 65537}).
