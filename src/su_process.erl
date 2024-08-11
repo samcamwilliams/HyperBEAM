@@ -5,7 +5,7 @@
 -record(state, {id, current, wallet, hash_chain = <<>> }).
 
 -include("include/ar.hrl").
--define(MAX_ASSIGNMENT_QUERY_LEN, 3).
+-define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
 start(ProcID, Wallet) ->
     {Current, HashChain} = su_data:get_current_slot(ProcID),

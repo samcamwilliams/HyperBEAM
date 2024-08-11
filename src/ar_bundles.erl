@@ -79,14 +79,16 @@ verify_data_item_tags(DataItem) ->
 %% @doc Convert a #tx record to its binary representation.
 serialize(TX) ->
     EncodedTags = encode_tags(TX#tx.tags),
-    <<(encode_signature_type(TX#tx.signature_type))/binary,
-      (TX#tx.signature)/binary,
-      (TX#tx.owner)/binary,
-      (encode_optional_field(TX#tx.target))/binary,
-      (encode_optional_field(TX#tx.last_tx))/binary,
-      (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
-      EncodedTags/binary,
-      (TX#tx.data)/binary>>.
+    <<
+        (encode_signature_type(TX#tx.signature_type))/binary,
+        (TX#tx.signature)/binary,
+        (TX#tx.owner)/binary,
+        (encode_optional_field(TX#tx.target))/binary,
+        (encode_optional_field(TX#tx.last_tx))/binary,
+        (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
+        EncodedTags/binary,
+        (TX#tx.data)/binary
+    >>.
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
@@ -189,8 +191,8 @@ item_to_json_struct(
 				fun({Name, Value}) ->
 					{
 						[
-							{name, ar_util:encode(Name)},
-							{value, ar_util:encode(Value)}
+							{name, list_to_binary(Name)},
+							{value, list_to_binary(Value)}
 						]
 					}
 				end,
@@ -198,7 +200,7 @@ item_to_json_struct(
 			)
 		},
 		{target, ar_util:encode(Target)},
-		{data, ar_util:encode(Data)},
+		{data, Data},
 		{signature, ar_util:encode(Sig)}
 	],
 	{Fields}.

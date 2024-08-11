@@ -52,41 +52,54 @@ handle(<<"GET">>, [ProcID, <<"slot">>], Req, State) ->
         integer_to_list(CurrentSlot),
         Req),
     {ok, Req, State};
-handle(<<"GET">>, [BinProcID], Req, State) ->
-    ProcID = binary_to_list(BinProcID),
-    #{ to := To, from := From } =
-        cowboy_req:match_qs(
+handle(<<"GET">>, [BinID], Req, State) ->
+    ID = binary_to_list(BinID),
+    #{ to := To, from := From } = cowboy_req:match_qs(
             [
-                {from, [], "0"},
-                {to, [], binary_to_list(
-                    integer_to_binary(
-                        su_process:get_current_slot(
-                            su_registry:find(ProcID))))
-                }
+                {from, [], undefined},
+                {to, [], undefined}
             ], Req),
-    send_stream(tn1, ProcID, From, To, Req),
-    {ok, Req, State};
-handle(<<"GET">>, [ID], Req, State) when byte_size(ID) =:= 43 ->
-    Message = su_data:read_message(ID),
-    cowboy_req:reply(200,
-        #{<<"Content-Type">> => <<"application/binary">>},
-        ar_bundles:serialize(Message),
-        Req),
+    % If neither 'to' nor 'from' is specified, send the message for the given ID
+    % Else, send a stream of the assignments for the given range
+    case {To, From} of
+        {undefined, undefined} ->
+            send_data(ID, Req);
+        {_, _} ->
+            send_stream(tn1, ID, From, To, Req)
+    end,
     {ok, Req, State};
 handle(<<"POST">>, [], Req, State) ->
     {ok, Body, Req2} = read_body(Req),
     Message = ar_bundles:deserialize(Body),
     true = ar_bundles:verify_item(Message),
-    ProcID = su_registry:find(binary_to_list(ar_util:encode(Message#tx.target))),
-    Assignment = su_process:schedule(ProcID, Message),
-    cowboy_req:reply(201,
-        #{<<"Content-Type">> => <<"application/json">>},
-        jiffy:encode({[
-            {id, ar_util:encode(Assignment#tx.id)},
-            {timestamp, list_to_binary(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))}
-        ]}),
-        Req2),
-    {ok, Req2, State}.
+    case lists:keyfind(<<"Type">>, 1, Message#tx.tags) of
+        {<<"Type">>, <<"Process">>} ->
+            su_data:write_message(Message),
+            cowboy_req:reply(201,
+                #{<<"Content-Type">> => <<"application/json">>},
+                jiffy:encode({[
+                    {id, ar_util:encode(Message#tx.id)},
+                    {timestamp, integer_to_list(erlang:system_time(millisecond))}
+                ]}),
+                Req2),
+            {ok, Req2, State};
+        _ ->
+            % If the process-id is not specified, use the target of the message as the process-id
+            AOProcID =
+                case cowboy_req:match_qs([{'process-id', [], undefined}], Req2) of
+            #{process_id := ProcessID} -> ProcessID;
+                _ -> binary_to_list(ar_util:encode(Message#tx.target))
+            end,
+            Assignment = su_process:schedule(su_registry:find(AOProcID), Message),
+            {JSONStruct} = ar_bundles:item_to_json_struct(Assignment),
+            cowboy_req:reply(201,
+                #{<<"Content-Type">> => <<"application/json">>},
+                jiffy:encode({[
+                    {timestamp, list_to_binary(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))}
+                |JSONStruct]}),
+                Req2),
+            {ok, Req2, State}
+    end.
 
 allowed_methods(Req, State) ->
 	{[<<"GET">>, <<"POST">>], Req, State}.
@@ -94,6 +107,14 @@ allowed_methods(Req, State) ->
 %% Private methods
 
 % Send existing-SU GraphQL compatible results
+send_stream(Version, ProcID, undefined, To, Req) ->
+    send_stream(Version, ProcID, 0, To, Req);
+send_stream(Version, ProcID, From, undefined, Req) ->
+    send_stream(Version, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)), Req);
+send_stream(Version, ProcID, From, To, Req) when is_binary(From) ->
+    send_stream(Version, ProcID, list_to_integer(binary_to_list(From)), To, Req);
+send_stream(Version, ProcID, From, To, Req) when is_binary(To) ->
+    send_stream(Version, ProcID, From, list_to_integer(binary_to_list(To)), Req);
 send_stream(tn1, ProcID, From, To, Req) ->
     cowboy_req:reply(200,
         #{<<"Content-Type">> => <<"application/json">>},
@@ -101,9 +122,10 @@ send_stream(tn1, ProcID, From, To, Req) ->
             assignments_to_json(
                 su_process:get_assignments(
                     ProcID,
-                    list_to_integer(From),
-                    list_to_integer(To))
+                    From,
+                    To
                 )
+            )
             ),
         Req
     ).
@@ -131,3 +153,11 @@ assignment_to_json(Assignment) ->
         {<<"message">>, ar_bundles:item_to_json_struct(Message)},
         {<<"assignment">>, ar_bundles:item_to_json_struct(Assignment)}
     ]}.
+
+send_data(ID, Req) ->
+    Message = su_data:read_message(ID),
+    cowboy_req:reply(200,
+        #{<<"Content-Type">> => <<"application/binary">>},
+        ar_bundles:serialize(Message),
+        Req
+    ).
