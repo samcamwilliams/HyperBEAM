@@ -22,4 +22,4 @@ hash_list([Head | List], Acc) ->
 	hash_list(List, NewAcc).
 
 hash_bin(Bin) when is_binary(Bin) ->
-	crypto:hash(sha256, Bin).
+	crypto:hash(sha384, Bin).
