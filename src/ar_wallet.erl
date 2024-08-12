@@ -59,6 +59,8 @@ to_address(PubKey, {rsa, 65537}) ->
 
 %% @doc Generate a new wallet public and private key, with a corresponding keyfile.
 %% The provided key is used as part of the file name.
+new_keyfile(KeyType, WalletName) when is_list(WalletName) ->
+    new_keyfile(KeyType, list_to_binary(WalletName));
 new_keyfile(KeyType, WalletName) ->
 	{Pub, Priv, Key} =
 		case KeyType of
