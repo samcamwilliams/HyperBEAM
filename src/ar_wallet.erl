@@ -121,16 +121,14 @@ new_keyfile(KeyType, WalletName) ->
 		end,
 	Filename = wallet_filepath(WalletName, Pub, KeyType),
 	filelib:ensure_dir(Filename),
-	ar_storage:write_file_atomic(Filename, Key),
+	file:write_file(Filename, Key),
 	{{KeyType, Priv, Pub}, {KeyType, Pub}}.
 
 wallet_filepath(Wallet) ->
-	Filename = lists:flatten(["arweave_keyfile_", binary_to_list(Wallet), ".json"]),
-	filename:join([?WALLET_DIR, Filename]).
+	filename:join([?WALLET_DIR, binary_to_list(Wallet)]).
 
 wallet_filepath2(Wallet) ->
-	Filename = lists:flatten([binary_to_list(Wallet), ".json"]),
-	filename:join([?WALLET_DIR, Filename]).
+	filename:join([?WALLET_DIR, binary_to_list(Wallet)]).
 
 %% @doc Read the keyfile for the key with the given address from disk.
 %% Return not_found if arweave_keyfile_[addr].json or [addr].json is not found

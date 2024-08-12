@@ -191,8 +191,8 @@ item_to_json_struct(
 				fun({Name, Value}) ->
 					{
 						[
-							{name, list_to_binary(Name)},
-							{value, list_to_binary(Value)}
+							{name, maybe_list_to_binary(Name)},
+							{value, maybe_list_to_binary(Value)}
 						]
 					}
 				end,
@@ -204,6 +204,11 @@ item_to_json_struct(
 		{signature, ar_util:encode(Sig)}
 	],
 	{Fields}.
+
+maybe_list_to_binary(List) when is_list(List) ->
+    list_to_binary(List);
+maybe_list_to_binary(Bin) ->
+    Bin.
 
 json_struct_to_item(TXStruct) ->
 	Tags =

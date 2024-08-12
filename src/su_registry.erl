@@ -2,7 +2,7 @@
 -export([start/0, start/1, find/1, server/2, get_wallet/0, get_processes/0]).
 
 -include("include/ar.hrl").
--define(DEFAULT_WALLET, "key.json").
+-define(DEFAULT_WALLET, "hyperbeam-key.json").
 
 start() -> start(?DEFAULT_WALLET).
 start(WalletFile) ->
