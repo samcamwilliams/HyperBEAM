@@ -1,5 +1,4 @@
-# A (kind of) super (very experimental) AO SU in Erlang.
-=====
+<img src="https://arweave.net/98HJVdGhoEWZ-Sv0OcqJZuI1lZ8qp4mAu-9dy1lh6zo" />
 
 This repo contains an extremely simple implementation of an AO Scheduling Unit written in Erlang.
 
