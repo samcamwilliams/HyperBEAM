@@ -1,4 +1,4 @@
-<img src="https://arweave.net/98HJVdGhoEWZ-Sv0OcqJZuI1lZ8qp4mAu-9dy1lh6zo" />
+<img src="https://arweave.net/dOpRkKrNNQ4HHebxZlPCo0BWfrjwJ-CEBQs2EPgrwbg" />
 
 This repo contains an extremely simple implementation of an AO Scheduling Unit written in Erlang.
 
