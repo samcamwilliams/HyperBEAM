@@ -1,8 +1,8 @@
-{application, supersu,
- [{description, "An AO SU written in Erlang."},
+{application, ao,
+ [{description, "Hyperbeam: An Erlang suite of AO units."},
   {vsn, "0.0.1"},
   {registered, []},
-  {mod, {supersu_app, []}},
+  {mod, {ao_app, []}},
   {applications,
    [kernel,
     stdlib,
@@ -11,6 +11,6 @@
    ]},
   {env,[]},
   {modules, []},
-  {licenses, ["Apache-2.0"]},
+  {licenses, ["BSL-1.1"]},
   {links, []}
  ]}.
