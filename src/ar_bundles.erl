@@ -154,23 +154,28 @@ encode_vint(ZigZag, Acc) ->
 
 %% @doc Convert binary data back to a #tx record.
 deserialize(Binary) ->
-    {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
-    {Target, Rest2} = decode_optional_field(Rest),
-    {Anchor, Rest3} = decode_optional_field(Rest2),
-    {Tags, Data} = decode_tags(Rest3),
-    #tx{
-        format=ans104,
-        signature_type = SignatureType, 
-        signature = Signature,
-        owner = Owner,
-        target = Target,
-        last_tx = Anchor,
-        tags = Tags,
-        data = Data,
-        data_size = byte_size(Data),
-        %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
-        id = crypto:hash(sha256, Signature)
-    }.
+    try
+        {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
+        {Target, Rest2} = decode_optional_field(Rest),
+        {Anchor, Rest3} = decode_optional_field(Rest2),
+        {Tags, Data} = decode_tags(Rest3),
+        #tx{
+            format=ans104,
+            signature_type = SignatureType, 
+            signature = Signature,
+            owner = Owner,
+            target = Target,
+            last_tx = Anchor,
+            tags = Tags,
+            data = Data,
+            data_size = byte_size(Data),
+            %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
+            id = crypto:hash(sha256, Signature)
+        }
+    catch
+        _:_ ->
+            {error, invalid_item}
+    end.
 
 item_to_json_struct(
 	#tx{

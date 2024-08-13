@@ -1,8 +1,6 @@
--module(ao_http).
+-module(ao_http_router).
 -export([start/1, allowed_methods/2, read_body/1, init/2]).
 -define(WORKER_POOL, 100).
--define(PORT, 8081).
-
 -include("include/ar.hrl").
 
 start(Mods) ->
@@ -27,7 +25,11 @@ start(Mods) ->
             }
         ]
     ),
-    cowboy:start_clear(?MODULE, [{port, ?PORT}], #{env => #{dispatch => Dispatcher}}).
+    cowboy:start_clear(
+        ?MODULE,
+        [{port, ao:get(http_port)}],
+        #{env => #{dispatch => Dispatcher}}
+    ).
 
 init(Req, Mod) ->
     Method = cowboy_req:method(Req),
@@ -45,4 +47,4 @@ read_body(Req0, Acc) ->
     end.
 
 allowed_methods(Req, State) ->
-	{[<<"GET">>, <<"POST">>], Req, State}.
+	{[<<"GET">>, <<"POST">>, <<"DELETE">>], Req, State}.

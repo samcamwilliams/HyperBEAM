@@ -2,7 +2,7 @@
 -export([start/0, build/0, c/1]).
 
 start() ->
-    application:start(supersu_app).
+    application:start(ao_app).
 
 build() ->
     io:format("Building SuperSu...\n"),
