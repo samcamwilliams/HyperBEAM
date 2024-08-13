@@ -49,7 +49,7 @@ handle(<<"GET">>, [BinID], Req) ->
     end,
     {ok, Req};
 handle(<<"POST">>, [], Req) ->
-    {ok, Body, Req2} = ao_http:read_body(Req),
+    {ok, Body} = ao_http_router:read_body(Req),
     Message = ar_bundles:deserialize(Body),
     true = ar_bundles:verify_item(Message),
     case lists:keyfind(<<"Type">>, 1, Message#tx.tags) of
@@ -61,12 +61,12 @@ handle(<<"POST">>, [], Req) ->
                     {id, ar_util:encode(Message#tx.id)},
                     {timestamp, integer_to_list(erlang:system_time(millisecond))}
                 ]}),
-                Req2),
-            {ok, Req2};
+                Req),
+            {ok, Req};
         _ ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
-                case cowboy_req:match_qs([{'process-id', [], undefined}], Req2) of
+                case cowboy_req:match_qs([{'process-id', [], undefined}], Req) of
             #{process_id := ProcessID} -> ProcessID;
                 _ -> binary_to_list(ar_util:encode(Message#tx.target))
             end,
@@ -77,8 +77,8 @@ handle(<<"POST">>, [], Req) ->
                 jiffy:encode({[
                     {timestamp, list_to_binary(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))}
                 |JSONStruct]}),
-                Req2),
-            {ok, Req2}
+                Req),
+            {ok, Req}
     end.
 
 %% Private methods

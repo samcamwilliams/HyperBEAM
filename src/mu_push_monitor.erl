@@ -51,5 +51,5 @@ loop(State) ->
 console(#state { console = false }, _) ->
     not_printing;
 console(_S, {Status, Type, Details}) ->
-    io:format("### MU PUSH REPORT ~p ###~n~p.~p~n~p~n~n",
+    io:format("### MU PUSH REPORT ~p ###~n~p: ~p~n~p~n~n",
         [self(), Status, Type, Details]).

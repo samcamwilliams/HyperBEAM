@@ -34,7 +34,10 @@ start(Mods) ->
 init(Req, Mod) ->
     Method = cowboy_req:method(Req),
     [_Mod | SplitPath] = split_path(cowboy_req:path(Req)),
-    Mod:handle(Method, SplitPath, Req).
+    case Mod:handle(Method, SplitPath, Req) of
+        {ok, Req} -> {ok, Req, <<>>};
+        Other -> Other
+    end.
 
 split_path(Path) ->
     binary:split(Path, <<"/">>, [global, trim_all]).
@@ -42,7 +45,7 @@ split_path(Path) ->
 read_body(Req) -> read_body(Req, <<>>).
 read_body(Req0, Acc) ->
     case cowboy_req:read_body(Req0) of
-        {ok, Data, Req} -> {ok, << Acc/binary, Data/binary >>, Req};
+        {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
         {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
 
