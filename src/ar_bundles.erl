@@ -226,18 +226,18 @@ json_struct_to_item({TXStruct}) -> json_struct_to_item(TXStruct);
 json_struct_to_item(RawTXStruct) ->
     TXStruct = [ { string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct ],
 	Tags =
-		case find_value(<<"tags">>, TXStruct) of
+		case ar_util:find_value(<<"tags">>, TXStruct) of
 			undefined ->
                 [];
 			Xs ->
 				Xs
 		end,
-	TXID = ar_util:decode(find_value(<<"id">>, TXStruct, <<>>)),
+	TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, <<>>)),
 	#tx{
 		format = ans104,
 		id = TXID,
-		last_tx = ar_util:decode(find_value(<<"anchor">>, TXStruct, <<>>)),
-		owner = ar_util:decode(find_value(<<"owner">>, TXStruct, <<>>)),
+		last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
+		owner = ar_util:decode(ar_util:find_value(<<"owner">>, TXStruct, <<>>)),
 		tags = 
             lists:map(
                 fun({KeyVals}) ->
@@ -247,9 +247,9 @@ json_struct_to_item(RawTXStruct) ->
                 end,
                 Tags
             ),
-		target = ar_util:decode(find_value(<<"target">>, TXStruct, <<>>)),
-		data = find_value(<<"data">>, TXStruct, <<>>),
-		signature = ar_util:decode(find_value(<<"signature">>, TXStruct, <<>>))
+		target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
+		data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
+		signature = ar_util:decode(ar_util:find_value(<<"signature">>, TXStruct, <<>>))
 	}.
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
@@ -316,14 +316,7 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
         _ -> decode_vint(Rest, NewResult, Shift + 7)
     end.
 
-%% @doc Find the value associated with a key in parsed a JSON structure list.
-find_value(Key, List) ->
-    find_value(Key, List, undefined).
-find_value(Key, List, Default) ->
-	case lists:keyfind(Key, 1, List) of
-		{Key, Val} -> Val;
-		false -> Default
-	end.
+
 
 %%%===================================================================
 %%% Unit tests.

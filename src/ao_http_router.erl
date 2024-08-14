@@ -1,6 +1,5 @@
 -module(ao_http_router).
 -export([start/1, allowed_methods/2, read_body/1, init/2]).
--define(WORKER_POOL, 100).
 -include("include/ar.hrl").
 
 start(Mods) ->

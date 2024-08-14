@@ -103,15 +103,15 @@ collect_validation_results(_TXID, Checks) ->
 
 json_struct_to_tx(TXStruct) ->
 	Tags =
-		case find_value(<<"tags">>, TXStruct) of
+		case ar_util:find_value(<<"tags">>, TXStruct) of
 			undefined ->
 				[];
 			Xs ->
 				Xs
 		end,
-	Data = ar_util:decode(find_value(<<"data">>, TXStruct)),
+	Data = ar_util:decode(ar_util:find_value(<<"data">>, TXStruct)),
 	Format =
-		case find_value(<<"format">>, TXStruct) of
+		case ar_util:find_value(<<"format">>, TXStruct) of
 			undefined ->
 				1;
 			N when is_integer(N) ->
@@ -120,7 +120,7 @@ json_struct_to_tx(TXStruct) ->
 				binary_to_integer(N)
 		end,
 	Denomination =
-		case find_value(<<"denomination">>, TXStruct) of
+		case ar_util:find_value(<<"denomination">>, TXStruct) of
 			undefined ->
 				0;
 			EncodedDenomination ->
@@ -128,35 +128,29 @@ json_struct_to_tx(TXStruct) ->
 				true = MaybeDenomination > 0,
 				MaybeDenomination
 		end,
-	TXID = ar_util:decode(find_value(<<"id">>, TXStruct)),
+	TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct)),
 	32 = byte_size(TXID),
 	#tx{
 		format = Format,
 		id = TXID,
-		last_tx = ar_util:decode(find_value(<<"last_tx">>, TXStruct)),
-		owner = ar_util:decode(find_value(<<"owner">>, TXStruct)),
+		last_tx = ar_util:decode(ar_util:find_value(<<"last_tx">>, TXStruct)),
+		owner = ar_util:decode(ar_util:find_value(<<"owner">>, TXStruct)),
 		tags = [{ar_util:decode(Name), ar_util:decode(Value)}
 				%% Only the elements matching this pattern are included in the list.
 				|| {[{<<"name">>, Name}, {<<"value">>, Value}]} <- Tags],
-		target = find_value(<<"target">>, TXStruct),
-		quantity = binary_to_integer(find_value(<<"quantity">>, TXStruct)),
+		target = ar_util:find_value(<<"target">>, TXStruct),
+		quantity = binary_to_integer(ar_util:find_value(<<"quantity">>, TXStruct)),
 		data = Data,
-		reward = binary_to_integer(find_value(<<"reward">>, TXStruct)),
-		signature = ar_util:decode(find_value(<<"signature">>, TXStruct)),
-		data_size = binary_to_integer(find_value(<<"data_size">>, TXStruct)),
+		reward = binary_to_integer(ar_util:find_value(<<"reward">>, TXStruct)),
+		signature = ar_util:decode(ar_util:find_value(<<"signature">>, TXStruct)),
+		data_size = binary_to_integer(ar_util:find_value(<<"data_size">>, TXStruct)),
 		data_root =
-			case find_value(<<"data_root">>, TXStruct) of
+			case ar_util:find_value(<<"data_root">>, TXStruct) of
 				undefined -> <<>>;
 				DR -> ar_util:decode(DR)
 			end,
 		denomination = Denomination
 	}.
-
-find_value(Key, Struct) ->
-    case maps:find(Key, Struct) of
-        {ok, Value} -> Value;
-        error -> undefined
-    end.
 
 tx_to_json_struct(
 	#tx{
