@@ -1,10 +1,29 @@
 -module(mu_push).
 -export([start/1, start/2]).
 
--include("include/ar.hrl").
+-include("include/ao.hrl").
 
 start(Item) -> start(Item, ao_logger:start()).
 
+start(Res, Monitor) when is_record(Res, result) ->
+    lists:map(
+        fun(Spawn) ->
+            mu_push:start(maybe_sign(Spawn), Monitor)
+        end,
+        Res#result.spawns
+    ),
+    lists:map(
+        fun(Message) ->
+            mu_push:start(maybe_sign(Message), Monitor)
+        end,
+        Res#result.messages
+    ),
+    lists:map(
+        fun(Assignment) ->
+            ao_client:assign(Assignment)
+        end,
+        Res#result.assignments
+    );
 start(Item, Monitor) ->
     ao_logger:log(Monitor, {ok, start, Item}),
     case ar_bundles:verify_item(Item) of
@@ -23,12 +42,9 @@ push(Item, Monitor) ->
         {ok, Assignment} ->
             ao_logger:log(Monitor, {ok, scheduled, Assignment}),
             case ao_client:compute(Assignment) of
-                {ok, Items} ->
-                    ao_logger:log(Monitor, {ok, computed, Items}),
-                    lists:map(
-                        fun(NewItem) -> start(maybe_sign(NewItem), Monitor) end,
-                        Items
-                    );
+                {ok, Result} ->
+                    ao_logger:log(Monitor, {ok, computed, Result}),
+                    start(Result, Monitor);
                 Error -> ao_logger:log(Monitor, Error)
             end;
         Error -> ao_logger:log(Monitor, Error)

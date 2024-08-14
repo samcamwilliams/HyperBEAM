@@ -11,7 +11,7 @@ config() ->
         mu => "http://localhost:8734/mu",
         cu => "https://cu24.ao-testnet.xyz",
         key_location => "hyperbeam-key.json",
-        default_page_limit => 100
+        default_page_limit => 5
     }.
 
 get(Key) ->

@@ -1,6 +1,6 @@
 -module(ao_client).
--export([schedule/1]).
--export([compute/1, cron/2, cron/3, cron_cursor/1]).
+-export([schedule/1, assign/1]).
+-export([compute/1, cron/1, cron/2, cron/3, cron_cursor/1]).
 -export([push/1]).
 -export([arweave_timestamp/0]).
 
@@ -31,6 +31,9 @@ schedule(Item) ->
             {error, su_http_error, Response}
     end.
 
+assign(_ID) ->
+    ao:c({not_implemented, assignments}).
+
 compute(_Item) ->
     % TN.1: MU Should be reading real results, not mocked-out.
     case
@@ -42,9 +45,7 @@ compute(_Item) ->
                 %TODO: ++ binary_to_list(ar_util:encode(Item#tx.target))) of
                 ++ "YxpLc0rVpVUuT5KuaVnhA8X0ISCCeBShprozN6r8fKc") of
             {ok, {{_, 200, _}, _, Body}} ->
-                {ResElements} = jiffy:decode(Body),
-                {<<"Messages">>, Msgs} = lists:keyfind(<<"Messages">>, 1, ResElements),
-                {ok, lists:map(fun ar_bundles:json_struct_to_item/1, Msgs)};
+                {ok, parse_result(Body)};
             Response ->
                 {error, cu_http_error, Response}
     end.
@@ -72,10 +73,17 @@ cron(ProcID, undefined, RawLimit) ->
     cron(ProcID, cron_cursor(ProcID), RawLimit);
 cron(ProcID, Cursor, Limit) ->
     case
-        httpc:request(ao:get(cu) ++ "/cron/" ++ ProcID ++ "?cursor=" ++ binary_to_list(Cursor) ++ "&limit=" ++ integer_to_list(Limit))
+        httpc:request(
+            ao:get(cu)
+                ++ "/cron/"
+                ++ ProcID
+                ++ "?cursor="
+                ++ binary_to_list(Cursor)
+                ++ "&limit="
+                ++ integer_to_list(Limit))
     of
         {ok, {{_, 200, _}, _, Body}} ->
-            try parse_cron_response(Body) of
+            try parse_result_set(Body) of
                 {HasNextPage, Results} ->
                     {ok, HasNextPage, Results, (lists:last(Results))#result.cursor}
                 catch
@@ -85,17 +93,10 @@ cron(ProcID, Cursor, Limit) ->
         Response -> {error, cu_http_error, Response}
     end.
 
-parse_cron_response(Body) ->
-    {JSONStruct} = jiffy:decode(Body),
-    {_, {PageInfoStruct}} = lists:keyfind(<<"pageInfo">>, 1, JSONStruct),
-    {_, HasNextPage} = lists:keyfind(<<"hasNextPage">>, 1, PageInfoStruct),
-    {_, EdgesStruct} = lists:keyfind(<<"edges">>, 1, JSONStruct),
-    {HasNextPage, lists:map(fun json_struct_to_result/1, EdgesStruct)}.
-
 cron_cursor(ProcID) ->
-    case httpc:request(ao:c(ao:get(cu) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1")) of
+    case httpc:request(ao:get(cu) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
         {ok, {{_, 200, _}, _, Body}} ->
-            {_, Res} = parse_cron_response(Body),
+            {_, Res} = parse_result_set(Body),
             case Res of
                 [] -> undefined;
                 [Result] -> Result#result.cursor
@@ -104,16 +105,43 @@ cron_cursor(ProcID) ->
             {error, cu_http_error, Response}
     end.
 
-json_struct_to_result({NodeStruct}) ->
-    {_, {Struct}} = lists:keyfind(<<"node">>, 1, NodeStruct),
-    ao:c(Struct),
-	#result{
-		messages = lists:map(fun ar_bundles:json_struct_to_item/1, ar_util:find_value(<<"Messages">>, Struct, [])),
-		assignments = ar_util:find_value(<<"Assignments">>, Struct, []),
-		spawns = lists:map(fun ar_bundles:json_struct_to_item/1, ar_util:find_value(<<"Spawns">>, Struct, [])),
-		output = ar_util:find_value(<<"Output">>, Struct, []),
-		cursor = ar_util:find_value(<<"cursor">>, NodeStruct, undefined)
-	}.
+parse_result_set(Body) ->
+    {JSONStruct} = jiffy:decode(Body),
+    {_, {PageInfoStruct}} = lists:keyfind(<<"pageInfo">>, 1, JSONStruct),
+    {_, HasNextPage} = lists:keyfind(<<"hasNextPage">>, 1, PageInfoStruct),
+    {_, EdgesStruct} = lists:keyfind(<<"edges">>, 1, JSONStruct),
+    {HasNextPage, lists:map(fun json_struct_to_result/1, EdgesStruct)}.
+
+parse_result(Body) ->
+    json_struct_to_result(jiffy:decode(Body)).
+
+%% Parse a CU result into a #result record. If the result is in the form of a
+%% stream, then the cursor is returned in the #result record as well.
+json_struct_to_result(NodeStruct) ->
+    json_struct_to_result(NodeStruct, #result{}).
+json_struct_to_result({NodeStruct}, Res) ->
+    json_struct_to_result(NodeStruct, Res);
+json_struct_to_result(Struct, Res) ->
+    case lists:keyfind(<<"node">>, 1, Struct) of
+        false ->
+            Res#result{
+                messages = lists:map(
+                    fun ar_bundles:json_struct_to_item/1,
+                    ar_util:find_value(<<"Messages">>, Struct, [])),
+                assignments = ar_util:find_value(<<"Assignments">>, Struct, []),
+                spawns = lists:map(
+                    fun ar_bundles:json_struct_to_item/1,
+                    ar_util:find_value(<<"Spawns">>, Struct, [])),
+                output = ar_util:find_value(<<"Output">>, Struct, [])
+            };
+        {_, {NodeStruct}} ->
+            json_struct_to_result(
+                NodeStruct,
+                Res#result{
+                    cursor = ar_util:find_value(<<"cursor">>, Struct, undefined)
+                }
+            )
+    end.
 
 arweave_timestamp() ->
     {ok, {{_, 200, _}, _, Body}} = httpc:request(ao:get(arweave_gateway) ++ "/block/current"),
