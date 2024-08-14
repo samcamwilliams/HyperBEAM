@@ -177,8 +177,7 @@ deserialize(Binary, binary) ->
             id = crypto:hash(sha256, Signature)
         }
     catch
-        _:_:Stack ->
-            su:c(Stack),
+        _:_:_Stack ->
             {error, invalid_item}
     end;
 deserialize(Bin, json) ->

@@ -1,4 +1,4 @@
--module(mu_push_monitor).
+-module(ao_logger).
 -export([start/0, log/2, register/1, report/1]).
 
 -record(state, {
