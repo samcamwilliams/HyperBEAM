@@ -3,7 +3,7 @@
 
 config() ->
     #{
-        http_port => 10451,
+        http_port => 8734,
         http_host => "localhost",
         arweave_gateway => "https://arweave.net",
         arweave_bundler => "https://up.arweave.net",
