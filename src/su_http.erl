@@ -60,6 +60,7 @@ handle(<<"POST">>, [], Req) ->
             {ok, Req};
         {true, {<<"Type">>, <<"Process">>}} ->
             su_data:write_message(Message),
+            ao_client:upload(Message),
             cowboy_req:reply(201,
                 #{<<"Content-Type">> => <<"application/json">>},
                 jiffy:encode({[
