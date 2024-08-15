@@ -1,39 +1,19 @@
 -module(su_http).
--export([init/2, start/0, allowed_methods/2]).
--define(WORKER_POOL, 100).
--define(PORT, 8081).
+-export([handle/3, routes/0]).
 
 -include("include/ar.hrl").
 
-start() ->
-    application:ensure_all_started(cowboy),
-    Dispatcher = cowboy_router:compile(
+routes() ->
+    {
+        "/su", % Namespace
         [
-            {'_', [
-                {"/:proc_id/slot", ?MODULE, handle},
-                {"/:id", ?MODULE, handle},
-                {"/", ?MODULE, handle}
-            ]}
+            "/:proc_id/slot", % Routes to match
+            "/:id",
+            "/"
         ]
-    ),
-    cowboy:start_clear(?MODULE, [{port, ?PORT}], #{env => #{dispatch => Dispatcher}}).
+    }.
 
-init(Req, State) ->
-    Method = cowboy_req:method(Req),
-    SplitPath = split_path(cowboy_req:path(Req)),
-    handle(Method, SplitPath, Req, State).
-
-split_path(Path) ->
-    binary:split(Path, <<"/">>, [global, trim_all]).
-
-read_body(Req) -> read_body(Req, <<>>).
-read_body(Req0, Acc) ->
-    case cowboy_req:read_body(Req0) of
-        {ok, Data, Req} -> {ok, << Acc/binary, Data/binary >>, Req};
-        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
-    end.
-
-handle(<<"GET">>, [], Req, State) ->
+handle(<<"GET">>, [], Req) ->
     Wallet = su_registry:get_wallet(),
     cowboy_req:reply(200,
         #{<<"Content-Type">> => <<"application/json">>},
@@ -44,15 +24,15 @@ handle(<<"GET">>, [], Req, State) ->
             {<<"Processes">>, lists:map(fun ar_util:encode/1, su_registry:get_processes())}
         ]}),
         Req),
-    {ok, Req, State};
-handle(<<"GET">>, [ProcID, <<"slot">>], Req, State) ->
+    {ok, Req};
+handle(<<"GET">>, [ProcID, <<"slot">>], Req) ->
     CurrentSlot = su_process:get_current_slot(su_registry:find(binary_to_list(ProcID))),
     cowboy_req:reply(200,
         #{<<"Content-Type">> => <<"text/plain">>},
         integer_to_list(CurrentSlot),
         Req),
-    {ok, Req, State};
-handle(<<"GET">>, [BinID], Req, State) ->
+    {ok, Req};
+handle(<<"GET">>, [BinID], Req) ->
     ID = binary_to_list(BinID),
     #{ to := To, from := From } = cowboy_req:match_qs(
             [
@@ -67,9 +47,9 @@ handle(<<"GET">>, [BinID], Req, State) ->
         {_, _} ->
             send_stream(tn1, ID, From, To, Req)
     end,
-    {ok, Req, State};
-handle(<<"POST">>, [], Req, State) ->
-    {ok, Body, Req2} = read_body(Req),
+    {ok, Req};
+handle(<<"POST">>, [], Req) ->
+    {ok, Body} = ao_http_router:read_body(Req),
     Message = ar_bundles:deserialize(Body),
     true = ar_bundles:verify_item(Message),
     case lists:keyfind(<<"Type">>, 1, Message#tx.tags) of
@@ -81,12 +61,12 @@ handle(<<"POST">>, [], Req, State) ->
                     {id, ar_util:encode(Message#tx.id)},
                     {timestamp, integer_to_list(erlang:system_time(millisecond))}
                 ]}),
-                Req2),
-            {ok, Req2, State};
+                Req),
+            {ok, Req};
         _ ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
-                case cowboy_req:match_qs([{'process-id', [], undefined}], Req2) of
+                case cowboy_req:match_qs([{'process-id', [], undefined}], Req) of
             #{process_id := ProcessID} -> ProcessID;
                 _ -> binary_to_list(ar_util:encode(Message#tx.target))
             end,
@@ -97,12 +77,9 @@ handle(<<"POST">>, [], Req, State) ->
                 jiffy:encode({[
                     {timestamp, list_to_binary(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))}
                 |JSONStruct]}),
-                Req2),
-            {ok, Req2, State}
+                Req),
+            {ok, Req}
     end.
-
-allowed_methods(Req, State) ->
-	{[<<"GET">>, <<"POST">>], Req, State}.
 
 %% Private methods
 

@@ -2,14 +2,13 @@
 -export([start/0, start/1, find/1, server/2, get_wallet/0, get_processes/0]).
 
 -include("include/ar.hrl").
--define(DEFAULT_WALLET, "hyperbeam-key.json").
 
-start() -> start(?DEFAULT_WALLET).
+start() -> start(ao:get(key_location)).
 start(WalletFile) ->
     Wallet =
         case file:read_file_info(WalletFile) of
             {ok, _} -> ar_wallet:load_keyfile(WalletFile);
-            {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ?DEFAULT_WALLET)
+            {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
         end,
     register(?MODULE, spawn(fun() -> server(#{}, Wallet) end)).
 

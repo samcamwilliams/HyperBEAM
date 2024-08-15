@@ -1,5 +1,5 @@
 -module(ar_util).
--export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
+-export([encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2, find_value/3]).
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
@@ -24,4 +24,18 @@ safe_decode(E) ->
 	catch
 		_:_ ->
 			{error, invalid}
+	end.
+
+%% @doc Find the value associated with a key in parsed a JSON structure list.
+find_value(Key, List) ->
+    ar_util:find_value(Key, List, undefined).
+find_value(Key, Map, Default) when is_map(Map) ->
+    case maps:find(Key, Map) of
+        {ok, Value} -> Value;
+        error -> Default
+    end;
+find_value(Key, List, Default) ->
+	case lists:keyfind(Key, 1, List) of
+		{Key, Val} -> Val;
+		false -> Default
 	end.

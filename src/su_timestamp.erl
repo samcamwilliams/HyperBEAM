@@ -4,7 +4,7 @@
 -define(GATEWAY_URL, "https://arweave.net").
 
 start() ->
-    TSServer = spawn(fun() -> cache(get_from_arweave()) end),
+    TSServer = spawn(fun() -> cache(ao_client:arweave_timestamp()) end),
     spawn(fun() -> refresher(TSServer) end),
     register(?MODULE, TSServer),
     TSServer.
@@ -27,13 +27,5 @@ cache(Current) ->
 
 refresher(TSServer) ->
     timer:sleep(?TIMEOUT),
-    TSServer ! {refresh, get_from_arweave()},
+    TSServer ! {refresh, ao_client:arweave_timestamp()},
     refresher(TSServer).
-
-get_from_arweave() ->
-    {ok, {{_, 200, _}, _, Body}} = httpc:request(?GATEWAY_URL ++ "/block/current"),
-    {Fields} = jiffy:decode(Body),
-    {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
-    {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
-    {_, Height} = lists:keyfind(<<"height">>, 1, Fields),    
-    {Timestamp, Height, Hash}.

@@ -30,7 +30,6 @@ get_current_slot(ProcID) ->
 get_assignments(ProcID, From, inf) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
 get_assignments(ProcID, From, RequestedTo) ->
-    su:c({get_assignments, ProcID, From, RequestedTo}),
     ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
         true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
         false -> RequestedTo
@@ -61,7 +60,6 @@ assign(State, Message, ReplyPID) ->
         do_assign(State, Message, ReplyPID)
     catch
         Class:Reason:Stack ->
-            su:c({Class, Reason, Stack}),
             {error, State}
     end.
 

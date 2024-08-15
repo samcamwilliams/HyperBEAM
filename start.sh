@@ -8,6 +8,6 @@ make
 cd ../..
 
 # Start the server
-erl -sname supersu -pa ebin \
+erl -sname ao -pa ebin \
     -pa deps/jiffy/_build/default/lib/jiffy/ebin \
-    -s make all -s su start
+    -s make all -s ao_app start

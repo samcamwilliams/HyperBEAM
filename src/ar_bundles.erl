@@ -3,7 +3,7 @@
 
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
--export([serialize/1, deserialize/1]).
+-export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([item_to_json_struct/1, json_struct_to_item/1]).
 
 -include("include/ar.hrl").
@@ -77,7 +77,8 @@ verify_data_item_tags(DataItem) ->
     ValidCount andalso ValidTags.
 
 %% @doc Convert a #tx record to its binary representation.
-serialize(TX) ->
+serialize(TX) -> serialize(TX, binary).
+serialize(TX, binary) ->
     EncodedTags = encode_tags(TX#tx.tags),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
@@ -88,7 +89,9 @@ serialize(TX) ->
         (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
         EncodedTags/binary,
         (TX#tx.data)/binary
-    >>.
+    >>;
+serialize(TX, json) ->
+    jiffy:encode(item_to_json_struct(TX)).
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
@@ -153,24 +156,33 @@ encode_vint(ZigZag, Acc) ->
     end.
 
 %% @doc Convert binary data back to a #tx record.
-deserialize(Binary) ->
-    {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
-    {Target, Rest2} = decode_optional_field(Rest),
-    {Anchor, Rest3} = decode_optional_field(Rest2),
-    {Tags, Data} = decode_tags(Rest3),
-    #tx{
-        format=ans104,
-        signature_type = SignatureType, 
-        signature = Signature,
-        owner = Owner,
-        target = Target,
-        last_tx = Anchor,
-        tags = Tags,
-        data = Data,
-        data_size = byte_size(Data),
-        %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
-        id = crypto:hash(sha256, Signature)
-    }.
+deserialize(Binary) -> deserialize(Binary, binary).
+deserialize(Binary, binary) ->
+    try
+        {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
+        {Target, Rest2} = decode_optional_field(Rest),
+        {Anchor, Rest3} = decode_optional_field(Rest2),
+        {Tags, Data} = decode_tags(Rest3),
+        #tx{
+            format=ans104,
+            signature_type = SignatureType, 
+            signature = Signature,
+            owner = Owner,
+            target = Target,
+            last_tx = Anchor,
+            tags = Tags,
+            data = Data,
+            data_size = byte_size(Data),
+            %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
+            id = crypto:hash(sha256, Signature)
+        }
+    catch
+        _:_:_Stack ->
+            {error, invalid_item}
+    end;
+deserialize(Bin, json) ->
+    {JSONStruct} = jiffy:decode(Bin),
+    json_struct_to_item(JSONStruct).
 
 item_to_json_struct(
 	#tx{
@@ -210,26 +222,34 @@ maybe_list_to_binary(List) when is_list(List) ->
 maybe_list_to_binary(Bin) ->
     Bin.
 
-json_struct_to_item(TXStruct) ->
+json_struct_to_item({TXStruct}) -> json_struct_to_item(TXStruct);
+json_struct_to_item(RawTXStruct) ->
+    TXStruct = [ { string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct ],
 	Tags =
-		case find_value(<<"tags">>, TXStruct) of
+		case ar_util:find_value(<<"tags">>, TXStruct) of
 			undefined ->
-				[];
+                [];
 			Xs ->
 				Xs
 		end,
-	TXID = ar_util:decode(find_value(<<"id">>, TXStruct)),
-	32 = byte_size(TXID),
+	TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, <<>>)),
 	#tx{
 		format = ans104,
 		id = TXID,
-		last_tx = ar_util:decode(find_value(<<"anchor">>, TXStruct)),
-		owner = ar_util:decode(find_value(<<"owner">>, TXStruct)),
-		tags = [{ar_util:decode(Name), ar_util:decode(Value)}
-				|| {[{<<"name">>, Name}, {<<"value">>, Value}]} <- Tags],
-		target = ar_util:decode(find_value(<<"target">>, TXStruct)),
-		data = ar_util:decode(find_value(<<"data">>, TXStruct)),
-		signature = ar_util:decode(find_value(<<"signature">>, TXStruct))
+		last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
+		owner = ar_util:decode(ar_util:find_value(<<"owner">>, TXStruct, <<>>)),
+		tags = 
+            lists:map(
+                fun({KeyVals}) ->
+                    {_, Name} = lists:keyfind(<<"name">>, 1, KeyVals),
+                    {_, Value} = lists:keyfind(<<"value">>, 1, KeyVals),
+                    {Name, Value}
+                end,
+                Tags
+            ),
+		target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
+		data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
+		signature = ar_util:decode(ar_util:find_value(<<"signature">>, TXStruct, <<>>))
 	}.
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
@@ -237,8 +257,7 @@ json_struct_to_item(TXStruct) ->
 %% little-endian format which is why we match on <<1, 0>>.
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
-decode_signature(Other) ->
-    su:c(Other),
+decode_signature(_Other) ->
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
@@ -297,12 +316,7 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
         _ -> decode_vint(Rest, NewResult, Shift + 7)
     end.
 
-%% @doc Find the value associated with a key in parsed a JSON structure list.
-find_value(Key, List) ->
-	case lists:keyfind(Key, 1, List) of
-		{Key, Val} -> Val;
-		false -> undefined
-	end.
+
 
 %%%===================================================================
 %%% Unit tests.

@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(supersu_sup).
+-module(ao_sup).
 
 -behaviour(supervisor).
 
