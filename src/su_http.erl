@@ -51,9 +51,14 @@ handle(<<"GET">>, [BinID], Req) ->
 handle(<<"POST">>, [], Req) ->
     {ok, Body} = ao_http_router:read_body(Req),
     Message = ar_bundles:deserialize(Body),
-    true = ar_bundles:verify_item(Message),
-    case lists:keyfind(<<"Type">>, 1, Message#tx.tags) of
-        {<<"Type">>, <<"Process">>} ->
+    case {ar_bundles:verify_item(Message), lists:keyfind(<<"Type">>, 1, Message#tx.tags)} of
+        {false, _} ->
+            cowboy_req:reply(400,
+                #{<<"Content-Type">> => <<"application/json">>},
+                jiffy:encode({[{error, <<"Data item is not valid.">>}]}),
+                Req),
+            {ok, Req};
+        {true, {<<"Type">>, <<"Process">>}} ->
             su_data:write_message(Message),
             cowboy_req:reply(201,
                 #{<<"Content-Type">> => <<"application/json">>},
@@ -63,7 +68,7 @@ handle(<<"POST">>, [], Req) ->
                 ]}),
                 Req),
             {ok, Req};
-        _ ->
+        {true, _} ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
                 case cowboy_req:match_qs([{'process-id', [], undefined}], Req) of
