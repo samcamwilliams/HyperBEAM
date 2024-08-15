@@ -86,6 +86,8 @@ do_assign(State, Message, ReplyPID) ->
                 ]
             }, State#state.wallet),
             ok = su_data:write_assignment(State#state.id, Assignment),
+            ao_client:upload(Assignment),
+            ao_client:upload(Message),
             ReplyPID ! {scheduled, Message, Assignment}
         end
     ),

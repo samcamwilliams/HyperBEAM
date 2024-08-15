@@ -59,7 +59,7 @@ handle(<<"POST">>, [], Req) ->
                 #{<<"Content-Type">> => <<"application/json">>},
                 jiffy:encode({[
                     {id, ar_util:encode(Message#tx.id)},
-                    {timestamp, integer_to_list(erlang:system_time(millisecond))}
+                    {timestamp, erlang:system_time(millisecond)}
                 ]}),
                 Req),
             {ok, Req};
@@ -74,9 +74,12 @@ handle(<<"POST">>, [], Req) ->
             {JSONStruct} = ar_bundles:item_to_json_struct(Assignment),
             cowboy_req:reply(201,
                 #{<<"Content-Type">> => <<"application/json">>},
+                % TN.2: This should be the whole assignment.
                 jiffy:encode({[
-                    {timestamp, list_to_binary(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))}
-                |JSONStruct]}),
+                    {timestamp, list_to_integer(element(2, lists:keyfind("Timestamp", 1, Assignment#tx.tags)))},
+                    {id, ar_util:encode(Assignment#tx.id)}
+                %|JSONStruct
+                ]}),
                 Req),
             {ok, Req}
     end.
