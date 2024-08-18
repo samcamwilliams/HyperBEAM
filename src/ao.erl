@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, get/1, c/1]).
+-export([config/0, get/1, c/1, build/0]).
 
 config() ->
     #{
@@ -21,3 +21,6 @@ get(Key) ->
 c(X) ->
     io:format("===== DEBUG PRINT =====~n~80p~n~n", [X]),
     X.
+
+build() ->
+    r3:do(compile, [{dir, "src"}]).
