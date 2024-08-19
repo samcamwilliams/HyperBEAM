@@ -10,6 +10,7 @@
 -define(W_STORE, 'Elixir.Wasmex.Store').
 -define(W_STORELIMITS, 'Elixir.Wasmex.StoreLimits').
 -define(W_STOREORCALLER, 'Elixir.Wasmex.StoreOrCaller').
+-define(W_INSTANCE, 'Elixir.Wasmex.Instance').
 -define(W_MODULE, 'Elixir.Wasmex.Module').
 -define(W_ENGINE, 'Elixir.Wasmex.Engine').
 -define(W_ENGINECONFIG, 'Elixir.Wasmex.EngineConfig').
@@ -36,12 +37,42 @@ new(Bin, Opts, Engine) ->
         Engine
     ),
     {ok, Module} = new_module(Store, Bin),
-    Stubs = create_stubs(Module),
-    {ok, Instance} = ?W:start_link(#{ store => Store, module => Module, engine => Engine, imports => Stubs }),
-    #{ store => Store, module => Module, engine => Engine, stubs => Stubs, instance => Instance}.
+    Imports = create_stubs(Module),
+    %{ok, Instance} = ?W:start_link(#{ store => Store, module => Module, engine => Engine, imports => Stubs }),
+    {ok, Instance} = ?W_INSTANCE:new(Store, Module, Imports, []),
+    #{ store => Store, module => Module, engine => Engine, instance => Instance, imports => Imports}.
 
-call(Env, Func, Args) ->
-    ?W:call_function(maps:get(instance, Env), Func, Args).
+call(Env = #{ instance := Instance, store := Store }, Func, Args) ->
+    ?W_INSTANCE:call_exported_function(Store, Instance, Func, Args, self()),
+    call_server(Env, Func, Args).
+
+call_server(Env = #{ imports := Imports }, Func, Args) ->
+    receive
+        {returned_function_call, Result,_} -> Result;
+        {invoke_callback, Namespace, Name, Context, CallbackArgs, Token} ->
+            {Success, Res} =
+                try
+                    TempEnv = maps:merge(Env, Context),
+                    ImportsNS = maps:get(Namespace, Imports),
+                    {fn, _, ResType, Callback} = maps:get(Name, ImportsNS),
+                    RawRes = apply(Callback, [TempEnv|CallbackArgs]),
+                    ao:c({raw_res, Name, CallbackArgs, RawRes}),
+                    case ResType of
+                        [] -> {true, []};
+                        [_] -> {true, [RawRes]};
+                        Else -> {true, Else}
+                    end
+                catch
+                    _:E ->
+                        ao:c({failed_to_run_import, E}),
+                        {false, E}
+                end,
+            'Elixir.Wasmex.Native':instance_receive_callback_result(Token, Success, Res),
+            call_server(Env, Func, Args);
+        Else ->
+            ao:c({received_other, Else}),
+            Else
+    end.
 
 new_engine() -> new_engine(#{}).
 new_engine(Opts) ->
@@ -84,13 +115,27 @@ exports(Module) ->
     ?W_MODULE:exports(Module).
 
 create_stubs(Env) ->
+    Imports = imports(Env),
     maps:map(fun(_GroupName, Funcs) ->
         maps:map(fun(FuncName, {Type, Inputs, Output}) ->
-            stub(FuncName, Type, Inputs, Output)
+            stub(Env, FuncName, Type, Inputs, Output)
         end, Funcs)
-    end, imports(Env)).
+    end, Imports).
 
-stub(FuncName, Type, Inputs, Output) ->
+stub(Env = #{ store := Store }, <<"invoke_", _/binary>>, Type, Inputs, Output) ->
+    {
+        Type,
+        Inputs,
+        Output,
+        fun(#{ caller := Caller }, _FuncIndex, _Arg1, _Arg2) ->
+            %ao:c([{i_am, self()}, {exports, exports(Env)}, {caller, Caller}, {instance, get(instance)}]),
+            %{ok, SP} = ?W_INSTANCE:call_exported_function(Caller, get(instance), <<"emscripten_stack_get_current">>, [], self()),
+            %ao:c(SP),
+            %{ok, [FuncName]} = call(SP, <<"get_func_name">>, []),
+            todo_call_the_function_in_try_catch
+        end
+    };
+stub(_Env, FuncName, Type, Inputs, Output) ->
     % Generate a stub function that matches on the exact number of arguments.
     % Unforuntately, Erlang lacks a nicer way to do this, aside generating and
     % and compiling an AST live. That might even be dirtier than this.
@@ -132,18 +177,18 @@ load_and_run_basic_test() ->
 
 load_and_run_basic_mem64_test() ->
     % Initialize wasmex
-    {ok, WasmBytes} = file:read_file("test-aos.wasm"),
-    {ok, Instance} = ?W:start_link(#{ bytes => WasmBytes, memory64 => true }),
+    {ok, WasmBytes} = file:read_file("test-64.wasm"),
+    Env = new(WasmBytes, #{ memory64 => true }),
     % Call the fac function in the wasm module
-    {ok, [Result]} = ?W:call_function(Instance, <<"ccall">>, [3.0]),
-    ao:c(Instance),
+    {ok, [Result]} = call(Env, <<"fac">>, [3.0]),
+    ao:c({result, Result}),
     ?assertEqual(6.0, Result).
 
 run_with_fuel_test() ->
-    {ok, WasmBytes} = file:read_file("test.wasm"),
-    Env = new(WasmBytes, #{ consume_fuel => true }),
+    {ok, WasmBytes} = file:read_file("test-wasi-aos.wasm"),
+    Env = new(WasmBytes, #{ consume_fuel => true, memory64 => true }),
     set_fuel(Env, 100),
-    {ok, [Result]} = call(Env, <<"fac">>, [3.0]),
+    {ok, [Result]} = call(Env, <<"main">>, [0, 0]),
     {ok, RemainingFuel} = get_fuel(Env),
     ?assertEqual(6.0, Result),
     ?assertNotEqual(RemainingFuel, 100).
