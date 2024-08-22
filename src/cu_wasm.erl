@@ -16,6 +16,17 @@
 -define(W_ENGINE, 'Elixir.Wasmex.Engine').
 -define(W_ENGINECONFIG, 'Elixir.Wasmex.EngineConfig').
 
+type(T) ->
+    Types = #{
+        $i => i32,
+        $p => i64,
+        $j => i64,
+        $f => f32,
+        $d => f64,
+        $e => externref
+    },
+    maps:get(T, Types, undefined).
+
 start() ->
     load_and_run_aos_test().
 
@@ -145,16 +156,30 @@ create_stubs(Env) ->
         end, Funcs)
     end, Imports).
 
-stub(_Env, <<"invoke_", _/binary>>, Type, Inputs, Output) ->
+invoke_name_to_func_def(FuncName) when is_binary(FuncName) ->
+    invoke_name_to_func_def(binary_to_list(FuncName));
+invoke_name_to_func_def([RetType|ArgTypes]) when is_list(ArgTypes) ->
+    {fn,
+        case RetType of
+            $v -> [];
+            _ -> [other]
+        end,
+        lists:map(fun type/1, ArgTypes)
+    }.
+
+stub(_Env, <<"invoke_", FuncName/binary>>, Type, Inputs, Output) ->
     fun(Context = #{ caller := Caller }, FuncIndex, _Arg1, _Arg2) ->
-        {ok, [StackPtr]} = call(Context, <<"emscripten_stack_get_current">>, []),
-        ao:c({stack_pointer, StackPtr}),
         try
+            {fn, RetType, ArgTypes} = invoke_name_to_func_def(FuncName),
+            {ok, [StackPtr]} = call(Context, <<"emscripten_stack_get_current">>, []),
+            ao:c({stack_pointer, StackPtr}),
             ao:c({func_index, FuncIndex}),
-            ao:c({exports, exports(Context)}),
-            FuncToCall = lists:nth(FuncIndex, exports(Context)),
-            ao:c({func_to_call, FuncToCall}),
-            {ok, [FuncName]} = call(Context, FuncToCall, [])
+            ao:c({func_type, {RetType, ArgTypes}}),
+            ao:c({imports, imports(Context)}),
+            #{ <<"__indirect_function_table">> := {table, Table} } = exports(Context),
+            ao:c({table, Table})
+            %ao:c({func_to_call, FuncToCall}),
+            %{ok, [FuncName]} = call(Context, FuncToCall, [])
         catch
             A:B ->
                 ao:c({exception_triggered, {A, B}}),
@@ -238,7 +263,7 @@ load_and_run_basic_test() ->
 
 load_and_run_aos_test() ->
     % Initialize wasmex
-    {ok, WasmBytes} = file:read_file("test-standalone-ex-aos.wasm"),
+    {ok, WasmBytes} = file:read_file("test-standalone-wex-aos.wasm"),
     Env = new(WasmBytes, #{ memory64 => true }),
     % Call the fac function in the wasm module
     {ok, [Result]} = call(Env, <<"main">>, [0, 0]),
@@ -253,7 +278,7 @@ minimal_exceptions_test() ->
     ok.
 
 wasmex_minimal_exceptions_test() ->
-    {ok, WasmBytes} = file:read_file("test-ex.wasm"),
+    {ok, WasmBytes} = file:read_file("test-standalone-wex-aos.wasm"),
     Env = new(WasmBytes, #{ memory64 => true }),
     #{ store := Store, module := Module, engine := Engine, imports := Imports} = Env,
     {ok, Instance} = ?W:start_link(#{ store => Store, module => Module, engine => Engine, imports => Imports }),
