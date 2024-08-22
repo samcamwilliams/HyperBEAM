@@ -1,7 +1,9 @@
 -module(cu_wasm).
--export([start/0, load/1, run/2]).
--compile(export_all).
+-export([start/0, new/1, load/1, run/2]).
 -include("src/include/ao.hrl").
+
+-compile(export_all).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %% Helper macros for dealing with the Elixir wasmex interface.
@@ -167,8 +169,8 @@ invoke_name_to_func_def([RetType|ArgTypes]) when is_list(ArgTypes) ->
         lists:map(fun type/1, ArgTypes)
     }.
 
-stub(_Env, <<"invoke_", FuncName/binary>>, Type, Inputs, Output) ->
-    fun(Context = #{ caller := Caller }, FuncIndex, _Arg1, _Arg2) ->
+stub(_Env, <<"invoke_", FuncName/binary>>, _Type, _Inputs,_Output) ->
+    fun(Context = #{ caller := _Caller }, FuncIndex, _Arg1, _Arg2) ->
         try
             {fn, RetType, ArgTypes} = invoke_name_to_func_def(FuncName),
             {ok, [StackPtr]} = call(Context, <<"emscripten_stack_get_current">>, []),
@@ -210,7 +212,7 @@ stub(_Env, <<"fd_write">>, fn, _, _) ->
 
         % Process all IO vectors
         {TotalBytesWritten, _} = lists:foldl(
-            fun(I, {BytesWritten, CurrPtr}) ->
+            fun(_I, {BytesWritten, CurrPtr}) ->
                 {BufPtr, BufLen} = ReadIOVec(CurrPtr),
                 Data = ?W_MEMORY:read_binary(Caller, Memory, BufPtr, BufLen),
                 io:format("~s", [Data]),
@@ -226,7 +228,7 @@ stub(_Env, <<"fd_write">>, fn, _, _) ->
         % Return success (0) as per WASI spec
         {ok, [0]}
     end;
-stub(_Env, FuncName, Type, Inputs, Output) ->
+stub(_Env, FuncName, _Type, Inputs, Output) ->
     % Generate a stub function that matches on the exact number of arguments.
     % Unforuntately, Erlang lacks a nicer way to do this, aside generating and
     % and compiling an AST live. That might even be dirtier than this.
