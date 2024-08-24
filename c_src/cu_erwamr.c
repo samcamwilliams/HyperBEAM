@@ -1,5 +1,6 @@
 #include <erl_nif.h>
 #include <wasm_c_api.h>
+#include "wasi_stubs.h"
 #include <string.h>
 
 typedef struct {
@@ -139,6 +140,8 @@ static ERL_NIF_TERM instantiate_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM
     if (!instance) {
         return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to create WASM instance", ERL_NIF_LATIN1));
     }
+
+    register_wasi_functions(instance);
 
     WasmInstanceResource* instance_res = enif_alloc_resource(WASM_INSTANCE_RESOURCE, sizeof(WasmInstanceResource));
     instance_res->instance = instance;
