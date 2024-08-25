@@ -57,21 +57,23 @@ nif_loads_test() ->
 
 simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
-    {ok, Mod} = load(File),
+    {ok, Mod, _ImportMap, _ExportMap} = load(File),
     {ok, Instance} = instantiate(Mod, #{}),
-    {ok, Result} = call(Instance, "fac", [5.0]),
+    {ok, Result} = call(Instance, <<"fac">>, [5.0]),
     ?assertEqual(120.0, Result).
 
 simple_wasm64_test() ->
     {ok, File} = file:read_file("test/test-64.wasm"),
-    {ok, Mod} = load(File),
+    {ok, Mod, _ImportMap, _ExportMap} = load(File),
     {ok, Instance} = instantiate(Mod, #{}),
-    {ok, Result} = call(Instance, "fac", [5.0]),
+    {ok, Result} = call(Instance, <<"fac">>, [5.0]),
     ?assertEqual(120.0, Result).
 
 aos64_wasm_exceptions_test() ->
     {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
-    {ok, Mod} = load(File),
+    {ok, Mod, ImportMap, ExportMap} = load(File),
+    ao:c({import_map, ImportMap}),
+    ao:c({export_map, ExportMap}),
     {ok, Instance} = instantiate(Mod, #{}),
-    {ok, Result} = call(Instance, "main", []),
+    {ok, Result} = call(Instance, <<"main">>, [0, 0]),
     ?assertEqual(120.0, Result).

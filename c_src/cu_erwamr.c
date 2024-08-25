@@ -44,6 +44,16 @@ int wasm_val_to_erlang(ErlNifEnv* env, wasm_val_t* val, ERL_NIF_TERM* term) {
     return 1;
 }
 
+const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
+    switch (kind) {
+        case WASM_EXTERN_FUNC: return "func";
+        case WASM_EXTERN_GLOBAL: return "global";
+        case WASM_EXTERN_TABLE: return "table";
+        case WASM_EXTERN_MEMORY: return "memory";
+        default: return "unknown";
+    }
+}
+
 int erlang_to_wasm_val(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, wasm_valkind_t expected_kind) {
     switch (expected_kind) {
         case WASM_I32:
@@ -58,7 +68,7 @@ int erlang_to_wasm_val(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, wasm_
             break;
         case WASM_I64:
             {
-                long long temp;
+                long temp;
                 if (enif_get_int64(env, term, &temp)) {
                     val->kind = WASM_I64;
                     val->of.i64 = temp;
@@ -94,6 +104,51 @@ static void cleanup_wasm_instance(ErlNifEnv* env, void* obj) {
     if (res->store) wasm_store_delete(res->store);
 }
 
+// Helper function to create a binary term without null terminator
+ERL_NIF_TERM make_binary_term(ErlNifEnv* env, const char* data, size_t size) {
+    // Check if the last character is a null terminator
+    if (size > 0 && data[size - 1] == '\0') {
+        size--; // Decrease size to exclude null terminator
+    }
+    return enif_make_binary(env, &(ErlNifBinary){.size = size, .data = (unsigned char*)data});
+}
+
+// Helper function to convert wasm_valtype_t to char
+char wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
+    switch (wasm_valtype_kind(valtype)) {
+        case WASM_I32: return 'i';
+        case WASM_I64: return 'I';
+        case WASM_F32: return 'f';
+        case WASM_F64: return 'F';
+        default: return '?';
+    }
+}
+
+// New helper function to get function type in the "(iIiI)i" format
+ERL_NIF_TERM get_function_type_term(ErlNifEnv* env, const wasm_externtype_t* type) {
+    if (wasm_externtype_kind(type) == WASM_EXTERN_FUNC) {
+        const wasm_functype_t* functype = wasm_externtype_as_functype_const(type);
+        const wasm_valtype_vec_t* params = wasm_functype_params(functype);
+        const wasm_valtype_vec_t* results = wasm_functype_results(functype);
+
+        char type_str[256] = "(";
+        size_t offset = 1;
+
+        for (size_t i = 0; i < params->size; ++i) {
+            offset += snprintf(type_str + offset, sizeof(type_str) - offset, "%c", wasm_valtype_kind_to_char(params->data[i]));
+        }
+
+        offset += snprintf(type_str + offset, sizeof(type_str) - offset, ")");
+
+        for (size_t i = 0; i < results->size; ++i) {
+            offset += snprintf(type_str + offset, sizeof(type_str) - offset, "%c", wasm_valtype_kind_to_char(results->data[i]));
+        }
+
+        return make_binary_term(env, type_str, strlen(type_str));
+    }
+    return enif_make_atom(env, "undefined");
+}
+
 static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
     ErlNifBinary wasm_binary;
     if (argc != 1 || !enif_inspect_binary(env, argv[0], &wasm_binary)) {
@@ -116,6 +171,52 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
     wasm_byte_vec_delete(&binary);
 
+    // Get imports
+    wasm_importtype_vec_t imports;
+    wasm_module_imports(module, &imports);
+
+    // Get exports
+    wasm_exporttype_vec_t exports;
+    wasm_module_exports(module, &exports);
+
+    // Create Erlang lists for imports and exports
+    ERL_NIF_TERM import_list = enif_make_list(env, 0);
+    ERL_NIF_TERM export_list = enif_make_list(env, 0);
+
+    // Process imports
+    for (size_t i = 0; i < imports.size; ++i) {
+        const wasm_importtype_t* import = imports.data[i];
+        const wasm_name_t* module_name = wasm_importtype_module(import);
+        const wasm_name_t* name = wasm_importtype_name(import);
+        const wasm_externtype_t* type = wasm_importtype_type(import);
+
+        ERL_NIF_TERM module_name_term = make_binary_term(env, module_name->data, module_name->size);
+        ERL_NIF_TERM name_term = make_binary_term(env, name->data, name->size);
+        ERL_NIF_TERM type_term = enif_make_atom(env, wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
+        ERL_NIF_TERM func_type_term = get_function_type_term(env, type);
+
+        ERL_NIF_TERM import_tuple = enif_make_tuple4(env, type_term, module_name_term, name_term, func_type_term);
+        import_list = enif_make_list_cell(env, import_tuple, import_list);
+    }
+
+    // Process exports
+    for (size_t i = 0; i < exports.size; ++i) {
+        const wasm_exporttype_t* export = exports.data[i];
+        const wasm_name_t* name = wasm_exporttype_name(export);
+        const wasm_externtype_t* type = wasm_exporttype_type(export);
+
+        ERL_NIF_TERM name_term = make_binary_term(env, name->data, name->size);
+        ERL_NIF_TERM type_term = enif_make_atom(env, wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
+        ERL_NIF_TERM func_type_term = get_function_type_term(env, type);
+
+        ERL_NIF_TERM export_tuple = enif_make_tuple3(env, type_term, name_term, func_type_term);
+        export_list = enif_make_list_cell(env, export_tuple, export_list);
+    }
+
+    // Clean up
+    wasm_importtype_vec_delete(&imports);
+    wasm_exporttype_vec_delete(&exports);
+
     WasmModuleResource* module_res = enif_alloc_resource(WASM_MODULE_RESOURCE, sizeof(WasmModuleResource));
     module_res->module = module;
     module_res->store = store;
@@ -123,7 +224,8 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     ERL_NIF_TERM module_term = enif_make_resource(env, module_res);
     enif_release_resource(module_res);
 
-    return enif_make_tuple2(env, atom_ok, module_term);
+    // Return the module term along with import and export lists
+    return enif_make_tuple4(env, atom_ok, module_term, import_list, export_list);
 }
 
 static ERL_NIF_TERM instantiate_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
@@ -162,10 +264,15 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         return enif_make_badarg(env);
     }
 
-    char function_name[256];
-    if (!enif_get_string(env, argv[1], function_name, sizeof(function_name), ERL_NIF_LATIN1)) {
+    ErlNifBinary function_name_binary;
+    if (!enif_inspect_binary(env, argv[1], &function_name_binary)) {
         return enif_make_badarg(env);
     }
+
+    // Ensure the binary is null-terminated for C string operations
+    char* function_name = enif_alloc(function_name_binary.size + 1);
+    memcpy(function_name, function_name_binary.data, function_name_binary.size);
+    function_name[function_name_binary.size] = '\0';
 
     wasm_extern_vec_t exports;
     wasm_instance_exports(instance_res->instance, &exports);
@@ -236,6 +343,9 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         cleanup_resources(&args, &results, &exports, &export_types);
         return enif_make_tuple2(env, atom_error, enif_make_string(env, "Unexpected result", ERL_NIF_LATIN1));
     }
+
+    // Don't forget to free the allocated memory when you're done with it
+    enif_free(function_name);
 }
 
 static int nif_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info) {
