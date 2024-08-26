@@ -38,8 +38,24 @@ load(WasmBinary) ->
             Error
     end.
 
-call(InstanceResource, FunctionName, Args) when is_list(Args) ->
-    call_nif(InstanceResource, FunctionName, Args).
+stdlib(InstanceResource, Module, Func, Args) ->
+    ao:c({stdlib_called, InstanceResource, Module, Func, Args}).
+
+call(InstanceResource, FunctionName, Args) ->
+    call(InstanceResource, FunctionName, Args, fun stdlib/4).
+call(InstanceResource, FunctionName, Args, ImportFunc) ->
+    exec_call(InstanceResource, ImportFunc, call_nif(InstanceResource, FunctionName, Args)).
+
+exec_call(InstanceResource, ImportFunc, Res) ->
+    case Res of
+        {ok, Result} ->
+            Result;
+        {import, Module, Func, Args} ->
+            Res = ImportFunc(InstanceResource, Module, Func, Args),
+            exec_call(InstanceResource, ImportFunc, resume_nif(InstanceResource, Res));
+        Error ->
+            Error
+    end.
 
 load_nif(_WasmBinary) ->
     erlang:nif_error("NIF library not loaded").
@@ -48,6 +64,15 @@ instantiate_nif(_ModuleResource, _ImportMap) ->
     erlang:nif_error("NIF library not loaded").
 
 call_nif(_InstanceResource, _FunctionName, _Args) ->
+    erlang:nif_error("NIF library not loaded").
+
+resume_nif(_InstanceResource, _Res) ->
+    erlang:nif_error("NIF library not loaded").
+
+read_nif(_InstanceResource, _Offset, _Size) ->
+    erlang:nif_error("NIF library not loaded").
+
+write_nif(_InstanceResource, _Offset, _Data) ->
     erlang:nif_error("NIF library not loaded").
 
 %% Tests
@@ -59,6 +84,10 @@ simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
     {ok, Mod, _ImportMap, _ExportMap} = load(File),
     {ok, Instance} = instantiate(Mod, #{}),
+    Bin = read_nif(Instance, 0, 1),
+    ao:c({bin, Bin}),
+    write_nif(Instance, 0, Bin),
+    ao:c(wrote),
     {ok, Result} = call(Instance, <<"fac">>, [5.0]),
     ?assertEqual(120.0, Result).
 

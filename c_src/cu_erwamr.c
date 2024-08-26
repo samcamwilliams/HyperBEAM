@@ -1,17 +1,51 @@
 #include <erl_nif.h>
 #include <wasm_c_api.h>
-#include "wasi_stubs.h"
+#include <wasm_export.h>
 #include <string.h>
+#include <setjmp.h>
+#include <stdarg.h>
+#include <stdint.h>
+
+typedef struct {
+    char* module_name;
+    char* field_name;
+    char* signature;
+    void* attachment;
+    uint32_t (*func)(wasm_exec_env_t exec_env, ...);
+} ImportHook;
+
+typedef struct {
+    char* module_name;
+    ImportHook* import_hooks;
+    int count;
+} HookLib;
+
+typedef struct {
+    const char* module_name;
+    const char* field_name;
+    ERL_NIF_TERM args;
+    ERL_NIF_TERM signature;
+    char ret_type;
+    wasm_val_t result;
+    int has_result;
+} ImportCallInfo;
 
 typedef struct {
     wasm_instance_t* instance;
     wasm_module_t* module;
+    wasm_memory_t* memory;
     wasm_store_t* store;
+    jmp_buf env_buffer;
+    int import_hit;
+    ImportCallInfo current_import;
+    int is_running;
 } WasmInstanceResource;
 
 typedef struct {
     wasm_module_t* module;
     wasm_store_t* store;
+    HookLib* hook_libs;
+    int lib_count;
 } WasmModuleResource;
 
 static ErlNifResourceType* WASM_MODULE_RESOURCE;
@@ -20,18 +54,7 @@ static ErlNifResourceType* WASM_INSTANCE_RESOURCE;
 static ERL_NIF_TERM atom_ok;
 static ERL_NIF_TERM atom_error;
 
-#define CLEANUP_AND_RETURN_ERROR(env, message) do { \
-    cleanup_resources(&args, &results, &exports, &export_types); \
-    return enif_make_tuple2(env, atom_error, enif_make_string(env, message, ERL_NIF_LATIN1)); \
-} while(0)
-
-static void cleanup_resources(wasm_val_vec_t* args, wasm_val_vec_t* results, 
-                              wasm_extern_vec_t* exports, wasm_exporttype_vec_t* export_types) {
-    if (args) wasm_val_vec_delete(args);
-    if (results) wasm_val_vec_delete(results);
-    if (exports) wasm_extern_vec_delete(exports);
-    if (export_types) wasm_exporttype_vec_delete(export_types);
-}
+#define NIF_ERROR(message) printf("[%s:%d] NIF_ERROR: %s\n", __FILE__, __LINE__, message);
 
 int wasm_val_to_erlang(ErlNifEnv* env, wasm_val_t* val, ERL_NIF_TERM* term) {
     switch (val->kind) {
@@ -98,6 +121,121 @@ int erlang_to_wasm_val(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, wasm_
     return 0;
 }
 
+wasm_valkind_t erlang_to_wasm_val_char(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, char kind) {
+    switch (kind) {
+        case 'i': return erlang_to_wasm_val(env, term, val, WASM_I32);
+        case 'I': return erlang_to_wasm_val(env, term, val, WASM_I64);
+        case 'f': return erlang_to_wasm_val(env, term, val, WASM_F32);
+        case 'F': return erlang_to_wasm_val(env, term, val, WASM_F64);
+        case 'R': return erlang_to_wasm_val(env, term, val, WASM_EXTERNREF);
+        case 'V': return erlang_to_wasm_val(env, term, val, WASM_V128);
+        case 'c': return erlang_to_wasm_val(env, term, val, WASM_FUNCREF);
+        default: return WASM_I32;
+    }
+}
+
+uint32_t generic_import_handler(wasm_exec_env_t exec_env, ...) {
+    ImportHook* import_hook = (ImportHook*)wasm_runtime_get_function_attachment(exec_env);
+    const char* module_name = import_hook->module_name;
+    const char* field_name = import_hook->field_name;
+    const char* signature = import_hook->signature;
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    WasmInstanceResource* instance_res = wasm_runtime_get_custom_data(module_inst);
+
+    va_list args;
+    va_start(args, exec_env);
+
+    ErlNifEnv* env = enif_alloc_env();
+
+    // Parse the signature and convert arguments to Erlang terms
+    ERL_NIF_TERM arg_list = enif_make_list(env, 0);
+    const char* sig_ptr = signature + 1;  // Skip the opening parenthesis
+    while (*sig_ptr != ')') {
+        ERL_NIF_TERM term;
+        switch (*sig_ptr) {
+            case 'i':
+                term = enif_make_int(env, va_arg(args, int32_t));
+                break;
+            case 'I':
+                term = enif_make_int64(env, va_arg(args, int64_t));
+                break;
+            case 'f':
+                term = enif_make_double(env, va_arg(args, double));
+                break;
+            case 'F':
+                term = enif_make_double(env, va_arg(args, double));
+                break;
+            default:
+                NIF_ERROR("Unknown type in signature");
+                va_end(args);
+                enif_free_env(env);
+                return 0;
+        }
+        arg_list = enif_make_list_cell(env, term, arg_list);
+        sig_ptr++;
+    }
+
+    sig_ptr += 1;
+
+    char ret_type = *sig_ptr ? *sig_ptr : 0;
+
+    ERL_NIF_TERM reversed_list;
+    if (!enif_make_reverse_list(env, arg_list, &reversed_list)) {
+        NIF_ERROR("Failed to reverse list");
+        va_end(args);
+        enif_free_env(env);
+        return 0;
+    }
+    arg_list = reversed_list;
+
+    va_end(args);
+
+    // Set current import information
+    instance_res->current_import.module_name = module_name;
+    instance_res->current_import.field_name = field_name;
+    instance_res->current_import.args = arg_list;
+    instance_res->current_import.signature = enif_make_string(env, signature, ERL_NIF_LATIN1);
+    instance_res->current_import.ret_type = ret_type;
+    instance_res->current_import.has_result = 0;
+    
+    if (setjmp(instance_res->env_buffer) == 0) {
+        // First time through, jump back to call_nif
+        instance_res->import_hit = 1;
+        longjmp(instance_res->env_buffer, 1);
+    }
+    
+    // When we return here after resuming, convert the result back to C type
+    if (instance_res->current_import.has_result) {
+        // Convert the Erlang term result back to the appropriate C type
+        switch (signature[strlen(signature) - 1]) {
+            case 'i':
+                return instance_res->current_import.result.of.i32;
+            case 'I':
+                return instance_res->current_import.result.of.i64;
+            // Add more cases as needed for other return types
+            default:
+                // Handle unknown type or error
+                return 0;
+        }
+    }
+
+    enif_free_env(env);
+    return 0;
+}
+
+#define CLEANUP_AND_RETURN_ERROR(env, message) do { \
+    cleanup_resources(&args, &results, &exports, &export_types); \
+    return enif_make_tuple2(env, atom_error, enif_make_string(env, message, ERL_NIF_LATIN1)); \
+} while(0)
+
+static void cleanup_resources(wasm_val_vec_t* args, wasm_val_vec_t* results, 
+                              wasm_extern_vec_t* exports, wasm_exporttype_vec_t* export_types) {
+    if (args) wasm_val_vec_delete(args);
+    if (results) wasm_val_vec_delete(results);
+    if (exports) wasm_extern_vec_delete(exports);
+    if (export_types) wasm_exporttype_vec_delete(export_types);
+}
+
 static void cleanup_wasm_instance(ErlNifEnv* env, void* obj) {
     WasmInstanceResource* res = (WasmInstanceResource*)obj;
     if (res->instance) wasm_instance_delete(res->instance);
@@ -120,12 +258,14 @@ char wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
         case WASM_I64: return 'I';
         case WASM_F32: return 'f';
         case WASM_F64: return 'F';
+        case WASM_EXTERNREF: return 'R';
+        case WASM_V128: return 'V';
+        case WASM_FUNCREF: return 'c';
         default: return '?';
     }
 }
 
-// New helper function to get function type in the "(iIiI)i" format
-ERL_NIF_TERM get_function_type_term(ErlNifEnv* env, const wasm_externtype_t* type) {
+int get_function_sig(const wasm_externtype_t* type, char* type_str) {
     if (wasm_externtype_kind(type) == WASM_EXTERN_FUNC) {
         const wasm_functype_t* functype = wasm_externtype_as_functype_const(type);
         const wasm_valtype_vec_t* params = wasm_functype_params(functype);
@@ -135,18 +275,67 @@ ERL_NIF_TERM get_function_type_term(ErlNifEnv* env, const wasm_externtype_t* typ
         size_t offset = 1;
 
         for (size_t i = 0; i < params->size; ++i) {
-            offset += snprintf(type_str + offset, sizeof(type_str) - offset, "%c", wasm_valtype_kind_to_char(params->data[i]));
+            type_str[offset++] = wasm_valtype_kind_to_char(params->data[i]);
         }
-
-        offset += snprintf(type_str + offset, sizeof(type_str) - offset, ")");
+        type_str[offset++] = ')';
 
         for (size_t i = 0; i < results->size; ++i) {
-            offset += snprintf(type_str + offset, sizeof(type_str) - offset, "%c", wasm_valtype_kind_to_char(results->data[i]));
+            type_str[offset++] = wasm_valtype_kind_to_char(results->data[i]);
         }
+        type_str[offset] = '\0';
 
+        return 1;
+    }
+    return 0;
+}
+
+// New helper function to get function type in the "(iIiI)i" format
+ERL_NIF_TERM get_function_type_term(ErlNifEnv* env, const wasm_externtype_t* type) {
+    char type_str[256];
+    if(get_function_sig(type, type_str)) {
         return make_binary_term(env, type_str, strlen(type_str));
     }
     return enif_make_atom(env, "undefined");
+}
+
+// Function to find or create a HookLib for a given module name
+static HookLib* find_or_create_hook_lib(HookLib** hook_libs, int* hook_libs_count, const char* module_name) {
+    for (int i = 0; i < *hook_libs_count; i++) {
+        if (strcmp((*hook_libs)[i].module_name, module_name) == 0) {
+            return &(*hook_libs)[i];
+        }
+    }
+
+    // If no existing HookLib, create a new one
+    (*hook_libs_count)++;
+    *hook_libs = realloc(*hook_libs, (*hook_libs_count) * sizeof(HookLib));
+    HookLib* new_lib = &(*hook_libs)[*hook_libs_count - 1];
+
+    new_lib->module_name = strdup(module_name);
+    new_lib->import_hooks = NULL;
+    new_lib->count = 0;
+
+    return new_lib;
+}
+
+// Function to split the big HookLib into multiple HookLibs by module_name
+HookLib* split_hooklib_by_module(HookLib* big_hook_lib, int* out_hook_libs_count) {
+    HookLib* split_hook_libs = NULL;
+    *out_hook_libs_count = 0;
+
+    for (int i = 0; i < big_hook_lib->count; i++) {
+        ImportHook* hook = &big_hook_lib->import_hooks[i];
+
+        // Find or create a HookLib for the current module_name
+        HookLib* lib = find_or_create_hook_lib(&split_hook_libs, out_hook_libs_count, hook->module_name);
+
+        // Add the current ImportHook to the HookLib
+        lib->count++;
+        lib->import_hooks = realloc(lib->import_hooks, lib->count * sizeof(ImportHook));
+        lib->import_hooks[lib->count - 1] = *hook;
+    }
+
+    return split_hook_libs;
 }
 
 static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
@@ -183,6 +372,11 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     ERL_NIF_TERM import_list = enif_make_list(env, 0);
     ERL_NIF_TERM export_list = enif_make_list(env, 0);
 
+    // TODO: Free this memory...
+    HookLib* hook_lib = malloc(sizeof(HookLib));
+    hook_lib->count = imports.size;
+    hook_lib->import_hooks = malloc(imports.size * sizeof(ImportHook));
+
     // Process imports
     for (size_t i = 0; i < imports.size; ++i) {
         const wasm_importtype_t* import = imports.data[i];
@@ -197,7 +391,24 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
         ERL_NIF_TERM import_tuple = enif_make_tuple4(env, type_term, module_name_term, name_term, func_type_term);
         import_list = enif_make_list_cell(env, import_tuple, import_list);
+
+        char* type_str = malloc(64);
+        get_function_sig(type, type_str);
+
+        hook_lib->import_hooks[i].module_name = strdup(module_name->data);
+        hook_lib->import_hooks[i].field_name = strdup(name->data);
+        hook_lib->import_hooks[i].func = generic_import_handler;
+        hook_lib->import_hooks[i].signature = type_str;
+
+        ImportHook* attachment = malloc(sizeof(ImportHook));
+        attachment->module_name = module_name->data;
+        attachment->field_name = name->data;
+        attachment->signature = type_str;
+        hook_lib->import_hooks[i].attachment = (void*)attachment;
     }
+
+    int lib_count;
+    HookLib* hook_libs = split_hooklib_by_module(hook_lib, &lib_count);
 
     // Process exports
     for (size_t i = 0; i < exports.size; ++i) {
@@ -220,12 +431,39 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     WasmModuleResource* module_res = enif_alloc_resource(WASM_MODULE_RESOURCE, sizeof(WasmModuleResource));
     module_res->module = module;
     module_res->store = store;
+    module_res->hook_libs = hook_libs;
+    module_res->lib_count = lib_count;
 
     ERL_NIF_TERM module_term = enif_make_resource(env, module_res);
     enif_release_resource(module_res);
 
     // Return the module term along with import and export lists
     return enif_make_tuple4(env, atom_ok, module_term, import_list, export_list);
+}
+
+wasm_memory_t* find_memory_export(const wasm_instance_t* instance) {
+    wasm_memory_t* memory = NULL;
+
+    // Get the exports from the instance
+    wasm_extern_vec_t instance_exports;
+    wasm_instance_exports(instance, &instance_exports);
+
+    // Iterate over the exports to find the memory
+    for (size_t i = 0; i < instance_exports.size; i++) {
+        wasm_extern_t* export = instance_exports.data[i];
+
+        // Check if the export is of memory kind
+        if (wasm_extern_kind(export) == WASM_EXTERN_MEMORY) {
+            // Cast the export to wasm_memory_t*
+            memory = wasm_extern_as_memory(export);
+            break; // Stop after finding the first memory
+        }
+    }
+
+    // Clean up
+    wasm_extern_vec_delete(&instance_exports);
+
+    return memory;
 }
 
 static ERL_NIF_TERM instantiate_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
@@ -243,12 +481,31 @@ static ERL_NIF_TERM instantiate_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM
         return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to create WASM instance", ERL_NIF_LATIN1));
     }
 
-    register_wasi_functions(instance);
+    // Register hook libs
+    for (int i = 0; i < module_res->lib_count; i++) {
+        HookLib* lib = &module_res->hook_libs[i];
+        int n_native_symbols = lib->count;
+        NativeSymbol* native_symbols = malloc(n_native_symbols * sizeof(NativeSymbol));
+        for (int j = 0; j < n_native_symbols; j++) {
+            native_symbols[j].symbol = lib->import_hooks[j].field_name;
+            native_symbols[j].func_ptr = lib->import_hooks[j].func;
+            native_symbols[j].signature = lib->import_hooks[j].signature;
+            native_symbols[j].attachment = lib->import_hooks[j].attachment;
+        }
+        if (!wasm_runtime_register_natives(lib->module_name,
+                                           native_symbols,
+                                           n_native_symbols)) {
+            wasm_instance_delete(instance);
+            return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to register hook libs", ERL_NIF_LATIN1));
+        }
+    }
 
     WasmInstanceResource* instance_res = enif_alloc_resource(WASM_INSTANCE_RESOURCE, sizeof(WasmInstanceResource));
     instance_res->instance = instance;
     instance_res->module = module_res->module;
     instance_res->store = module_res->store;
+    instance_res->is_running = 0;  // Initialize the flag
+    instance_res->memory = find_memory_export(instance);
 
     ERL_NIF_TERM instance_term = enif_make_resource(env, instance_res);
     enif_release_resource(instance_res);
@@ -264,8 +521,16 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         return enif_make_badarg(env);
     }
 
+    // Check if the instance is already running
+    if (instance_res->is_running) {
+        return enif_make_tuple2(env, atom_error, enif_make_atom(env, "instance_already_running"));
+    }
+    // Set the running flag
+    instance_res->is_running = 1;
+
     ErlNifBinary function_name_binary;
     if (!enif_inspect_binary(env, argv[1], &function_name_binary)) {
+        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
         return enif_make_badarg(env);
     }
 
@@ -297,6 +562,7 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
     if (!func) {
         cleanup_resources(NULL, NULL, &exports, &export_types);
+        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
         return enif_make_tuple2(env, atom_error, enif_make_string(env, "Function not found", ERL_NIF_LATIN1));
     }
 
@@ -307,6 +573,7 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     unsigned arg_count;
     if (!enif_get_list_length(env, arg_list, &arg_count) || param_types->size != arg_count) {
         cleanup_resources(NULL, NULL, &exports, &export_types);
+        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
         return enif_make_tuple2(env, atom_error, enif_make_string(env, "Invalid argument count", ERL_NIF_LATIN1));
     }
 
@@ -319,33 +586,77 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         if (!enif_get_list_cell(env, tail, &head, &tail) ||
             !erlang_to_wasm_val(env, head, &args.data[i], wasm_valtype_kind(param_types->data[i]))) {
             cleanup_resources(&args, &results, &exports, &export_types);
+            instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
             return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to convert argument", ERL_NIF_LATIN1));
         }
     }
 
-    wasm_trap_t* trap = wasm_func_call(func, &args, &results);
+    if (setjmp(instance_res->env_buffer) == 0) {
+        // Normal execution
+        wasm_trap_t* trap = wasm_func_call(func, &args, &results);
 
-    if (trap) {
-        wasm_message_t message;
-        wasm_trap_message(trap, &message);
-        ERL_NIF_TERM error_term = enif_make_tuple2(env, atom_error, enif_make_string(env, message.data, ERL_NIF_LATIN1));
-        wasm_trap_delete(trap);
-        wasm_byte_vec_delete(&message);
-        cleanup_resources(&args, &results, &exports, &export_types);
-        return error_term;
-    }
+        if (trap) {
+            wasm_message_t message;
+            wasm_trap_message(trap, &message);
+            ERL_NIF_TERM error_term = enif_make_tuple2(env, atom_error, enif_make_string(env, message.data, ERL_NIF_LATIN1));
+            wasm_trap_delete(trap);
+            wasm_byte_vec_delete(&message);
+            cleanup_resources(&args, &results, &exports, &export_types);
+            instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
+            return error_term;
+        }
 
-    ERL_NIF_TERM result_term;
-    if (results.size == 1 && wasm_val_to_erlang(env, &results.data[0], &result_term)) {
-        cleanup_resources(&args, &results, &exports, &export_types);
-        return enif_make_tuple2(env, atom_ok, result_term);
+        ERL_NIF_TERM result_term;
+        if (results.size == 1 && wasm_val_to_erlang(env, &results.data[0], &result_term)) {
+            cleanup_resources(&args, &results, &exports, &export_types);
+            instance_res->is_running = 0;  // Clear the flag before returning
+            return enif_make_tuple2(env, atom_ok, result_term);
+        } else {
+            cleanup_resources(&args, &results, &exports, &export_types);
+            instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
+            return enif_make_tuple2(env, atom_error, enif_make_string(env, "Unexpected result", ERL_NIF_LATIN1));
+        }
     } else {
-        cleanup_resources(&args, &results, &exports, &export_types);
-        return enif_make_tuple2(env, atom_error, enif_make_string(env, "Unexpected result", ERL_NIF_LATIN1));
+        // Import hit
+        // Don't clear the running flag here, as we expect a resume_nif call
+        return enif_make_tuple4(env,
+            enif_make_atom(env, "import"),
+            enif_make_atom(env, instance_res->current_import.module_name),
+            enif_make_atom(env, instance_res->current_import.field_name),
+            enif_make_tuple2(env, instance_res->current_import.args, instance_res->current_import.signature)
+        );
     }
 
-    // Don't forget to free the allocated memory when you're done with it
-    enif_free(function_name);
+    // This point is never reached
+    return enif_make_atom(env, "error");
+}
+
+static ERL_NIF_TERM resume_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+    if (argc != 2) return enif_make_badarg(env);
+
+    WasmInstanceResource* instance_res;
+    if (!enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)) {
+        return enif_make_badarg(env);
+    }
+
+    // Check if the instance is actually running
+    if (!instance_res->is_running) {
+        return enif_make_tuple2(env, atom_error, enif_make_atom(env, "instance_not_running"));
+    }
+
+    // Convert Erlang term to WASM value
+    if (!erlang_to_wasm_val_char(env, argv[1], &instance_res->current_import.result, instance_res->current_import.ret_type)) {
+        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
+        return enif_make_tuple2(env, atom_error, enif_make_atom(env, "invalid_result"));
+    }
+
+    instance_res->current_import.has_result = 1;
+
+    // Jump back to generic_import_handler
+    longjmp(instance_res->env_buffer, 1);
+
+    // This point is never reached
+    return enif_make_atom(env, "error");
 }
 
 static int nif_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info) {
@@ -361,10 +672,61 @@ static int nif_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info) {
     return 0;
 }
 
+// NIF function to read WASM memory
+static ERL_NIF_TERM read_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+    WasmInstanceResource* instance_res;
+    uint32_t offset;
+    uint32_t length;
+
+    if (argc != 3 || !enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)
+        || !enif_get_uint(env, argv[1], &offset) || !enif_get_uint(env, argv[2], &length)) {
+        return enif_make_badarg(env);
+    }
+
+    byte_t* data = wasm_memory_data(instance_res->memory);
+    size_t data_size = wasm_memory_data_size(instance_res->memory);
+
+    if (offset + length > data_size) {
+        return enif_make_tuple2(env, enif_make_atom(env, "error"), enif_make_atom(env, "access_out_of_bounds"));
+    }
+
+    ERL_NIF_TERM binary_term;
+    unsigned char* binary_data = enif_make_new_binary(env, length, &binary_term);
+    memcpy(binary_data, data + offset, length);
+
+    return enif_make_tuple2(env, enif_make_atom(env, "ok"), binary_term);
+}
+
+// NIF function to write WASM memory
+static ERL_NIF_TERM write_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+    WasmInstanceResource* instance_res;
+    uint32_t offset;
+    ErlNifBinary input_binary;
+
+    if (argc != 3 || !enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)
+        || !enif_get_uint(env, argv[1], &offset) || !enif_inspect_binary(env, argv[2], &input_binary)) {
+        return enif_make_badarg(env);
+    }
+
+    byte_t* data = wasm_memory_data(instance_res->memory);
+    size_t data_size = wasm_memory_data_size(instance_res->memory);
+
+    if (offset + input_binary.size > data_size) {
+        return enif_make_tuple2(env, enif_make_atom(env, "error"), enif_make_atom(env, "access_out_of_bounds"));
+    }
+
+    memcpy(data + offset, input_binary.data, input_binary.size);
+
+    return enif_make_atom(env, "ok");
+}
+
 static ErlNifFunc nif_funcs[] = {
     {"load_nif", 1, load_nif},
     {"instantiate_nif", 2, instantiate_nif},
-    {"call_nif", 3, call_nif}
+    {"call_nif", 3, call_nif},
+    {"resume_nif", 2, resume_nif},
+    {"read_nif", 3, read_nif},
+    {"write_nif", 3, write_nif}
 };
 
 ERL_NIF_INIT(cu_erwamr, nif_funcs, nif_load, NULL, NULL, NULL)
