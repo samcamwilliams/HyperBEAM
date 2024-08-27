@@ -49,11 +49,12 @@ call(InstanceResource, FunctionName, Args, ImportFunc) ->
 exec_call(InstanceResource, ImportFunc, Res) ->
     case Res of
         {ok, Result} ->
-            Result;
+            {ok, Result};
         {import, Module, Func, Args} ->
             Res = ImportFunc(InstanceResource, Module, Func, Args),
             exec_call(InstanceResource, ImportFunc, resume_nif(InstanceResource, Res));
         Error ->
+            ao:c({exception, Error}),
             Error
     end.
 
