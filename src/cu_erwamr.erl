@@ -27,7 +27,7 @@ load(WasmBinary) ->
     case load_nif(WasmBinary) of
         {ok, InstanceResource, ImportMap} ->
             ProcessedImportMap = maps:map(
-                fun(K, V) ->
+                fun(_K, V) ->
                     {fn, Args, Results} = V,
                     {fn, [binary_to_atom(A, utf8) || A <- Args], [binary_to_atom(R, utf8) || R <- Results]}
                 end,
@@ -38,27 +38,30 @@ load(WasmBinary) ->
             Error
     end.
 
-stdlib(InstanceResource, Module, Func, Args) ->
-    ao:c({stdlib_called, InstanceResource, Module, Func, Args}),
+stdlib(Module, Func, Args) ->
+    ao:c({stdlib_called, Module, Func, Args}),
     1.
 
 call(InstanceResource, FunctionName, Args) ->
-    call(InstanceResource, FunctionName, Args, fun stdlib/4).
+    call(InstanceResource, FunctionName, Args, fun stdlib/3).
 call(InstanceResource, FunctionName, Args, ImportFunc) ->
-    exec_call(InstanceResource, ImportFunc, call_nif(InstanceResource, FunctionName, Args)).
+    ao:c({call_started, InstanceResource, FunctionName, Args}),
+    Parent = self(),
+    Worker = spawn(fun() -> call_nif(InstanceResource, FunctionName, Args, Parent) end),
+    exec_call(ImportFunc, Worker).
 
-exec_call(InstanceResource, ImportFunc, Res) ->
-    ao:c({exec_call, Res}),
-    case Res of
-        {ok, Result} ->
+exec_call(ImportFunc, Worker) ->
+    receive
+        {result, Result} ->
             {ok, Result};
         {import, Module, Func, Args} ->
             ao:c({import_called, Module, Func, Args}),
-            ErlRes = ImportFunc(InstanceResource, Module, Func, Args),
+            ErlRes = ImportFunc(Module, Func, Args),
             ao:c({import_returned, ErlRes}),
-            exec_call(InstanceResource, ImportFunc, resume_nif(InstanceResource, ErlRes));
+            Worker ! {resume, ErlRes},
+            exec_call(ImportFunc, Worker);
         Error ->
-            ao:c({exception, Error}),
+            ao:c({unexpected_result, Error}),
             Error
     end.
 
@@ -68,10 +71,7 @@ load_nif(_WasmBinary) ->
 instantiate_nif(_ModuleResource, _ImportMap) ->
     erlang:nif_error("NIF library not loaded").
 
-call_nif(_InstanceResource, _FunctionName, _Args) ->
-    erlang:nif_error("NIF library not loaded").
-
-resume_nif(_InstanceResource, _Res) ->
+call_nif(_InstanceResource, _FunctionName, _Args, _Parent) ->
     erlang:nif_error("NIF library not loaded").
 
 read_nif(_InstanceResource, _Offset, _Size) ->
