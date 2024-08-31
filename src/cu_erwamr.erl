@@ -39,7 +39,8 @@ load(WasmBinary) ->
     end.
 
 stdlib(InstanceResource, Module, Func, Args) ->
-    ao:c({stdlib_called, InstanceResource, Module, Func, Args}).
+    ao:c({stdlib_called, InstanceResource, Module, Func, Args}),
+    1.
 
 call(InstanceResource, FunctionName, Args) ->
     call(InstanceResource, FunctionName, Args, fun stdlib/4).
@@ -47,12 +48,15 @@ call(InstanceResource, FunctionName, Args, ImportFunc) ->
     exec_call(InstanceResource, ImportFunc, call_nif(InstanceResource, FunctionName, Args)).
 
 exec_call(InstanceResource, ImportFunc, Res) ->
+    ao:c({exec_call, Res}),
     case Res of
         {ok, Result} ->
             {ok, Result};
         {import, Module, Func, Args} ->
-            Res = ImportFunc(InstanceResource, Module, Func, Args),
-            exec_call(InstanceResource, ImportFunc, resume_nif(InstanceResource, Res));
+            ao:c({import_called, Module, Func, Args}),
+            ErlRes = ImportFunc(InstanceResource, Module, Func, Args),
+            ao:c({import_returned, ErlRes}),
+            exec_call(InstanceResource, ImportFunc, resume_nif(InstanceResource, ErlRes));
         Error ->
             ao:c({exception, Error}),
             Error
@@ -93,6 +97,7 @@ simple_wasm_test() ->
     ?assertEqual(120.0, Result).
 
 simple_wasm64_test() ->
+    ao:c(simple_wasm64_test),
     {ok, File} = file:read_file("test/test-64.wasm"),
     {ok, Mod, _ImportMap, _ExportMap} = load(File),
     {ok, Instance} = instantiate(Mod, #{}),

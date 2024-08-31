@@ -8,20 +8,6 @@
 #include "cu_erwamr_imports.h"
 
 typedef struct {
-    char* module_name;
-    char* field_name;
-    char* signature;
-    void* attachment;
-    uint32_t (*func)(wasm_exec_env_t exec_env, ...);
-} ImportHook;
-
-typedef struct {
-    char* module_name;
-    ImportHook* import_hooks;
-    int count;
-} HookLib;
-
-typedef struct {
     const char* module_name;
     const char* field_name;
     ERL_NIF_TERM args;
@@ -36,7 +22,8 @@ typedef struct {
     wasm_module_t* module;
     wasm_memory_t* memory;
     wasm_store_t* store;
-    jmp_buf env_buffer;
+    jmp_buf call_buffer;
+    jmp_buf import_buffer;
     int import_hit;
     ImportCallInfo current_import;
     int is_running;
@@ -45,9 +32,14 @@ typedef struct {
 typedef struct {
     wasm_module_t* module;
     wasm_store_t* store;
-    HookLib* hook_libs;
-    int lib_count;
 } WasmModuleResource;
+
+typedef struct {
+    char* module_name;
+    char* field_name;
+    char* signature;
+    WasmInstanceResource* instance;
+} ImportHook;
 
 static ErlNifResourceType* WASM_MODULE_RESOURCE;
 static ErlNifResourceType* WASM_INSTANCE_RESOURCE;
@@ -144,54 +136,57 @@ wasm_valkind_t erlang_to_wasm_val_char(ErlNifEnv* env, ERL_NIF_TERM term, wasm_v
     }
 }
 
-uint32_t generic_import_handler(wasm_exec_env_t exec_env, ...) {
-    NIF_DEBUG("Entering generic_import_handler");
-    ImportHook* import_hook = (ImportHook*)wasm_runtime_get_function_attachment(exec_env);
-    if (!import_hook) {
-        NIF_DEBUG("import_hook is NULL");
-        return 0;
-    }
-    return 0;
-    const char* module_name = import_hook->module_name;
-    const char* field_name = import_hook->field_name;
-    const char* signature = import_hook->signature;
+// A function closure.
+wasm_trap_t* generic_import_handler_test(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
+  int i = *(int*)env;
+  printf("Calling back closure...\n");
+  printf("> %d\n", i);
+
+  results->data[0].kind = WASM_I32;
+  results->data[0].of.i32 = (int32_t)i;
+  return NULL;
+}
+
+wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
+    NIF_DEBUG("<<< Entering generic_import_handler");
+    ImportHook import_hook = *(ImportHook*)env;
+    WasmInstanceResource* instance = import_hook.instance;
+    NIF_DEBUG("instance: %p", instance);
+    const char* module_name = import_hook.module_name;
+    const char* field_name = import_hook.field_name;
+    const char* signature = import_hook.signature;
     NIF_DEBUG("Successfully got import_hook %p", import_hook);
-    NIF_DEBUG("module_name: %p %c", module_name, *module_name);
-    NIF_DEBUG("field_name: %p %c", field_name, *field_name);
-    NIF_DEBUG("signature: %p %c", signature, *signature);
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
-    WasmInstanceResource* instance_res = wasm_runtime_get_custom_data(module_inst);
+    NIF_DEBUG("module_name: %p %s", module_name, module_name);
+    NIF_DEBUG("field_name: %p %s", field_name, field_name);
+    NIF_DEBUG("signature: %p %s", signature, signature);
 
-    va_list args;
-    va_start(args, exec_env);
-
-    ErlNifEnv* env = enif_alloc_env();
+    ErlNifEnv* erl_env = enif_alloc_env();
 
     // Parse the signature and convert arguments to Erlang terms
-    ERL_NIF_TERM arg_list = enif_make_list(env, 0);
+    ERL_NIF_TERM arg_list = enif_make_list(erl_env, 0);
     const char* sig_ptr = signature + 1;  // Skip the opening parenthesis
     while (*sig_ptr != ')') {
+        NIF_DEBUG("Adding param: %c", *sig_ptr);
         ERL_NIF_TERM term;
         switch (*sig_ptr) {
             case 'i':
-                term = enif_make_int(env, va_arg(args, int32_t));
+                term = enif_make_int(erl_env, 0);
                 break;
             case 'I':
-                term = enif_make_int64(env, va_arg(args, int64_t));
+                term = enif_make_int64(erl_env, 0);
                 break;
             case 'f':
-                term = enif_make_double(env, va_arg(args, double));
+                term = enif_make_double(erl_env, 0);
                 break;
             case 'F':
-                term = enif_make_double(env, va_arg(args, double));
+                term = enif_make_double(erl_env, 0);
                 break;
             default:
                 NIF_DEBUG("Unknown type in signature: %c", *sig_ptr);
-                va_end(args);
-                enif_free_env(env);
-                return 0;
+                enif_free_env(erl_env);
+                return NULL;
         }
-        arg_list = enif_make_list_cell(env, term, arg_list);
+        arg_list = enif_make_list_cell(erl_env, term, arg_list);
         sig_ptr++;
     }
 
@@ -200,52 +195,65 @@ uint32_t generic_import_handler(wasm_exec_env_t exec_env, ...) {
     char ret_type = *sig_ptr ? *sig_ptr : 0;
 
     ERL_NIF_TERM reversed_list;
-    if (!enif_make_reverse_list(env, arg_list, &reversed_list)) {
+    if (!enif_make_reverse_list(erl_env, arg_list, &reversed_list)) {
         NIF_DEBUG("Failed to reverse list");
-        va_end(args);
-        enif_free_env(env);
-        return 0;
+        enif_free_env(erl_env);
+        return NULL;
     }
     arg_list = reversed_list;
 
-    va_end(args);
-
     // Set current import information
-    instance_res->current_import.module_name = module_name;
-    instance_res->current_import.field_name = field_name;
-    instance_res->current_import.args = arg_list;
-    instance_res->current_import.signature = enif_make_string(env, signature, ERL_NIF_LATIN1);
-    instance_res->current_import.ret_type = ret_type;
-    instance_res->current_import.has_result = 0;
+    instance->current_import.module_name = module_name;
+    instance->current_import.field_name = field_name;
+    instance->current_import.args = arg_list;
+    instance->current_import.signature = enif_make_string(erl_env, signature, ERL_NIF_LATIN1);
+    instance->current_import.ret_type = ret_type;
+    instance->current_import.has_result = 0;
     
-    if (setjmp(instance_res->env_buffer) == 0) {
+    NIF_DEBUG("Calling setjmp");
+    if (setjmp(instance->import_buffer) == 0) {
         // First time through, jump back to call_nif
-        instance_res->import_hit = 1;
-        longjmp(instance_res->env_buffer, 1);
+        NIF_DEBUG(">>> setjmp first time!");
+        instance->import_hit = 1;
+        longjmp(instance->call_buffer, 1);
     }
     
     // When we return here after resuming, convert the result back to C type
-    if (instance_res->current_import.has_result) {
+    NIF_DEBUG("<<< setjmp second time!");
+    if (instance->current_import.has_result) {
         // Convert the Erlang term result back to the appropriate C type
-        switch (signature[strlen(signature) - 1]) {
+        switch (instance->current_import.ret_type) {
             case 'i':
-                return instance_res->current_import.result.of.i32;
+                NIF_DEBUG("Converting result to i32: %d", instance->current_import.result.of.i32);
+                results->data[0].kind = WASM_I32;
+                results->data[0] = instance->current_import.result;
+                break;
             case 'I':
-                return instance_res->current_import.result.of.i64;
+                results->data[0].kind = WASM_I64;
+                results->data[0] = instance->current_import.result;
+                break;
+            case 'f':
+                results->data[0].kind = WASM_F32;
+                results->data[0] = instance->current_import.result;
+                break;
+            case 'F':
+                results->data[0].kind = WASM_F64;
+                results->data[0] = instance->current_import.result;
+                break;
             // Add more cases as needed for other return types
             default:
                 // Handle unknown type or error
-                return 0;
+                return wasm_trap_new(instance->store, "Unknown return type");
         }
     }
 
-    enif_free_env(env);
-    return 0;
+    enif_free_env(erl_env);
+    return NULL;
 }
 
-#define CLEANUP_AND_RETURN_ERROR(env, message) do { \
+#define CLEANUP_AND_RETURN_ERROR(erl_env, message) do { \
     cleanup_resources(&args, &results, &exports, &export_types); \
-    return enif_make_tuple2(env, atom_error, enif_make_string(env, message, ERL_NIF_LATIN1)); \
+    return enif_make_tuple2(erl_env, atom_error, enif_make_string(erl_env, message, ERL_NIF_LATIN1)); \
 } while(0)
 
 static void cleanup_resources(wasm_val_vec_t* args, wasm_val_vec_t* results, 
@@ -318,44 +326,14 @@ ERL_NIF_TERM get_function_type_term(ErlNifEnv* env, const wasm_externtype_t* typ
     return enif_make_atom(env, "undefined");
 }
 
-// Function to find or create a HookLib for a given module name
-static HookLib* find_or_create_hook_lib(HookLib** hook_libs, int* hook_libs_count, const char* module_name) {
-    for (int i = 0; i < *hook_libs_count; i++) {
-        if (strcmp((*hook_libs)[i].module_name, module_name) == 0) {
-            return &(*hook_libs)[i];
-        }
-    }
-
-    // If no existing HookLib, create a new one
-    (*hook_libs_count)++;
-    *hook_libs = realloc(*hook_libs, (*hook_libs_count) * sizeof(HookLib));
-    HookLib* new_lib = &(*hook_libs)[*hook_libs_count - 1];
-
-    new_lib->module_name = strdup(module_name);
-    new_lib->import_hooks = NULL;
-    new_lib->count = 0;
-
-    return new_lib;
-}
-
-// Function to split the big HookLib into multiple HookLibs by module_name
-HookLib* split_hooklib_by_module(HookLib* big_hook_lib, int* out_hook_libs_count) {
-    HookLib* split_hook_libs = NULL;
-    *out_hook_libs_count = 0;
-
-    for (int i = 0; i < big_hook_lib->count; i++) {
-        ImportHook* hook = &big_hook_lib->import_hooks[i];
-
-        // Find or create a HookLib for the current module_name
-        HookLib* lib = find_or_create_hook_lib(&split_hook_libs, out_hook_libs_count, hook->module_name);
-
-        // Add the current ImportHook to the HookLib
-        lib->count++;
-        lib->import_hooks = realloc(lib->import_hooks, lib->count * sizeof(ImportHook));
-        lib->import_hooks[lib->count - 1] = *hook;
-    }
-
-    return split_hook_libs;
+wasm_functype_t* wasm_functype_new_generic(
+    size_t param_count, wasm_valtype_t** params,
+    size_t result_count, wasm_valtype_t** results
+) {
+    wasm_valtype_vec_t param_vec, result_vec;
+    wasm_valtype_vec_new(&param_vec, param_count, params);
+    wasm_valtype_vec_new(&result_vec, result_count, results);
+    return wasm_functype_new(&param_vec, &result_vec);
 }
 
 static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
@@ -364,10 +342,7 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         return enif_make_badarg(env);
     }
 
-    // Run full init
-    RuntimeInitArgs init_args = {};
-    init_args.running_mode = Mode_Fast_JIT;
-    wasm_runtime_full_init(&init_args);
+    wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
 
     wasm_engine_t* engine = wasm_engine_new();
     wasm_store_t* store = wasm_store_new(engine);
@@ -382,13 +357,11 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         wasm_engine_delete(engine);
         return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to compile module", ERL_NIF_LATIN1));
     }
-
     wasm_byte_vec_delete(&binary);
 
     // Get imports
     wasm_importtype_vec_t imports;
     wasm_module_imports(module, &imports);
-
     // Get exports
     wasm_exporttype_vec_t exports;
     wasm_module_exports(module, &exports);
@@ -397,13 +370,8 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     ERL_NIF_TERM import_list = enif_make_list(env, 0);
     ERL_NIF_TERM export_list = enif_make_list(env, 0);
 
-    // TODO: Free this memory...
-    HookLib* hook_lib = malloc(sizeof(HookLib));
-    hook_lib->count = imports.size;
-    hook_lib->import_hooks = malloc(imports.size * sizeof(ImportHook));
-
     // Process imports
-    for (size_t i = 0; i < imports.size; ++i) {
+    for (int i = 0; i < imports.size; ++i) {
         const wasm_importtype_t* import = imports.data[i];
         const wasm_name_t* module_name = wasm_importtype_module(import);
         const wasm_name_t* name = wasm_importtype_name(import);
@@ -416,28 +384,8 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
         ERL_NIF_TERM import_tuple = enif_make_tuple4(env, type_term, module_name_term, name_term, func_type_term);
         import_list = enif_make_list_cell(env, import_tuple, import_list);
-
-        char* type_str = malloc(64);
-        get_function_sig(type, type_str);
-
-        hook_lib->import_hooks[i].module_name = strdup(module_name->data);
-        hook_lib->import_hooks[i].field_name = strdup(name->data);
-        hook_lib->import_hooks[i].func = generic_import_handler;
-        hook_lib->import_hooks[i].signature = strdup(type_str);
-
-        ImportHook* attachment = malloc(sizeof(ImportHook));
-        attachment->module_name = module_name->data;
-        attachment->field_name = name->data;
-        attachment->signature = strdup(type_str);
-        hook_lib->import_hooks[i].attachment = (void*)attachment;
-
-        NIF_DEBUG("Added ImportHook: %s.%s (%s)", hook_lib->import_hooks[i].module_name, hook_lib->import_hooks[i].field_name, type_str);
+        NIF_DEBUG("Adding ImportHook to Erlang: %s.%s", module_name->data, name->data);
     }
-
-    int lib_count;
-    HookLib* hook_libs = split_hooklib_by_module(hook_lib, &lib_count);
-
-    NIF_DEBUG("Split hook libs into modules: %d", lib_count);
 
     // Process exports
     for (size_t i = 0; i < exports.size; ++i) {
@@ -460,8 +408,6 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
     WasmModuleResource* module_res = enif_alloc_resource(WASM_MODULE_RESOURCE, sizeof(WasmModuleResource));
     module_res->module = module;
     module_res->store = store;
-    module_res->hook_libs = hook_libs;
-    module_res->lib_count = lib_count;
 
     ERL_NIF_TERM module_term = enif_make_resource(env, module_res);
     enif_release_resource(module_res);
@@ -496,58 +442,70 @@ wasm_memory_t* find_memory_export(const wasm_instance_t* instance) {
 }
 
 static ERL_NIF_TERM instantiate_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-    if (argc != 2) return enif_make_badarg(env);
-
+    WasmInstanceResource* instance_res = enif_alloc_resource(WASM_INSTANCE_RESOURCE, sizeof(WasmInstanceResource));
     WasmModuleResource* module_res;
+    if (argc != 2) {
+        return enif_make_badarg(env);
+    }
     if (!enif_get_resource(env, argv[0], WASM_MODULE_RESOURCE, (void**)&module_res)) {
         return enif_make_badarg(env);
     }
 
-    wasm_extern_vec_t imports = WASM_EMPTY_VEC;
-    wasm_instance_t* instance = wasm_instance_new(module_res->store, module_res->module, &imports, NULL);
-
-    if (!instance) {
-        return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to create WASM instance", ERL_NIF_LATIN1));
+    // Get imports
+    wasm_importtype_vec_t imports;
+    wasm_module_imports(module_res->module, &imports);
+    // Create stubs for imports
+    wasm_extern_t *stubs[imports.size];
+    for (int i = 0; i < imports.size; i++) {
+        stubs[i] = NULL;
     }
 
-    // Register hook libs
-    for (int i = 0; i < module_res->lib_count; i++) {
-        HookLib* lib = &module_res->hook_libs[i];
-        int n_native_symbols = lib->count;
-        NativeSymbol* native_symbols = malloc(n_native_symbols * sizeof(NativeSymbol));
-        for (int j = 0; j < n_native_symbols; j++) {
-            native_symbols[j].symbol = strdup(lib->import_hooks[j].field_name);
-            native_symbols[j].func_ptr = generic_import_handler;
-            native_symbols[j].signature = strdup(lib->import_hooks[j].signature);
-            ImportHook* attachment = malloc(sizeof(ImportHook));
-            attachment->module_name = strdup(lib->module_name);
-            attachment->field_name = strdup(lib->import_hooks[j].field_name);
-            attachment->signature = strdup(lib->import_hooks[j].signature);
-            native_symbols[j].attachment = attachment;
-            NIF_DEBUG("Registering hook: %s.%s (%s) => %p", lib->module_name, lib->import_hooks[j].field_name, native_symbols[j].signature, native_symbols[j].func_ptr);
-            NIF_DEBUG("Hook string lengths: sig %d, module %d, field %d", strlen(native_symbols[j].signature), strlen(lib->module_name), strlen(lib->import_hooks[j].field_name));
-        }
-        NIF_DEBUG("Registered hook lib: %s (%d)", lib->module_name, n_native_symbols);
-        if (!wasm_runtime_register_natives(lib->module_name,
-                                           native_symbols,
-                                           n_native_symbols)) {
-            wasm_instance_delete(instance);
-            return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to register hook libs", ERL_NIF_LATIN1));
-        }
-    }
-
-    //register_native_symbols();
-
-    wasm_importtype_vec_t check_imports;
-    wasm_module_imports(module_res->module, &check_imports);
-    for (size_t i = 0; i < check_imports.size; ++i) {
-        const wasm_importtype_t* import = check_imports.data[i];
+    for (int i = 0; i < imports.size; ++i) {
+        const wasm_importtype_t* import = imports.data[i];
         const wasm_name_t* module_name = wasm_importtype_module(import);
         const wasm_name_t* name = wasm_importtype_name(import);
-        NIF_DEBUG("Import: %s.%s => %d", module_name->data, name->data, wasm_runtime_is_import_func_linked(module_name->data, name->data));
+        const wasm_externtype_t* type = wasm_importtype_type(import);
+
+        printf("Creating callback for %s.%s\n", module_name->data, name->data);
+        ImportHook* hook = malloc(sizeof(ImportHook));
+        hook->module_name = module_name->data;
+        hook->field_name = name->data;
+        hook->signature = malloc(256);
+        get_function_sig(type, hook->signature);
+        hook->instance = instance_res;
+
+        wasm_func_t *stub_func = wasm_func_new_with_env(module_res->store, type, generic_import_handler, hook, NULL);
+        stubs[i] = wasm_func_as_extern(stub_func);
+
+        NIF_DEBUG("Added ImportHook: %s.%s", module_name->data, name->data);
     }
 
-    WasmInstanceResource* instance_res = enif_alloc_resource(WASM_INSTANCE_RESOURCE, sizeof(WasmInstanceResource));
+    // Create instance!
+    wasm_extern_vec_t externs;
+    wasm_extern_vec_new(&externs, imports.size, stubs);
+    wasm_trap_t* trap = NULL;
+    wasm_instance_t* instance = wasm_instance_new(module_res->store, module_res->module, &externs, &trap);
+    // wasm_extern_vec_delete(&imports);
+    // for (int i = 0; i < imports.size; i++) {
+    //     wasm_func_delete(stubs[i]);
+    // }
+
+    if (!instance) {
+        const char* error_message = "Failed to create WASM instance";
+        if (trap) {
+            wasm_message_t message;
+            wasm_trap_message(trap, &message);
+            error_message = (const char*)message.data;
+        }
+        ERL_NIF_TERM result = enif_make_tuple2(env, atom_error, enif_make_string(env, error_message, ERL_NIF_LATIN1));
+        if (trap) {
+            wasm_trap_delete(trap);
+        }
+        return result;
+    }
+
+    NIF_DEBUG("Instance created: %p", instance);
+
     instance_res->instance = instance;
     instance_res->module = module_res->module;
     instance_res->store = module_res->store;
@@ -568,16 +526,16 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         return enif_make_badarg(env);
     }
 
-    NIF_DEBUG("Call time");
+    NIF_DEBUG("Call time. Instance res: %p", instance_res);
 
-    wasm_importtype_vec_t check_imports;
-    wasm_module_imports(instance_res->module, &check_imports);
-    for (size_t i = 0; i < check_imports.size; ++i) {
-        const wasm_importtype_t* import = check_imports.data[i];
-        const wasm_name_t* module_name = wasm_importtype_module(import);
-        const wasm_name_t* name = wasm_importtype_name(import);
-        NIF_DEBUG("Call time imports: %s.%s => %d", module_name->data, name->data, wasm_runtime_is_import_func_linked(module_name->data, name->data));
-    }
+    // wasm_importtype_vec_t check_imports;
+    // wasm_module_imports(instance_res->module, &check_imports);
+    // for (size_t i = 0; i < check_imports.size; ++i) {
+    //     const wasm_importtype_t* import = check_imports.data[i];
+    //     const wasm_name_t* module_name = wasm_importtype_module(import);
+    //     const wasm_name_t* name = wasm_importtype_name(import);
+    //     NIF_DEBUG("Call time imports: %s.%s => %d", module_name->data, name->data, wasm_runtime_is_import_func_linked(module_name->data, name->data));
+    // }
 
     // Check if the instance is already running
     if (instance_res->is_running) {
@@ -649,8 +607,9 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         }
     }
 
-    if (setjmp(instance_res->env_buffer) == 0) {
+    if (setjmp(instance_res->call_buffer) == 0) {
         // Normal execution
+        NIF_DEBUG(">>> Calling WASM function...");
         wasm_trap_t* trap = wasm_func_call(func, &args, &results);
 
         if (trap) {
@@ -676,7 +635,8 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         }
     } else {
         // Import hit
-        // Don't clear the running flag here, as we expect a resume_nif call
+        NIF_DEBUG("Import hit! Returning to Erlang");
+        instance_res->is_running = 1;  // Set the running flag
         return enif_make_tuple4(env,
             enif_make_atom(env, "import"),
             enif_make_atom(env, instance_res->current_import.module_name),
@@ -685,12 +645,14 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         );
     }
 
-    // This point is never reached
-    return enif_make_atom(env, "error");
+    NIF_DEBUG("[UNREACHABLE RETURN REACHED.]");
+    instance_res->is_running = 0;  // Clear the running flag
+    return enif_make_tuple2(env, atom_error, enif_make_string(env, "Unexpected return from wasm_func_call", ERL_NIF_LATIN1));
 }
 
 static ERL_NIF_TERM resume_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
     if (argc != 2) return enif_make_badarg(env);
+    NIF_DEBUG(">>> Calling resume_nif...");
 
     WasmInstanceResource* instance_res;
     if (!enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)) {
@@ -710,8 +672,9 @@ static ERL_NIF_TERM resume_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv
 
     instance_res->current_import.has_result = 1;
 
+    NIF_DEBUG("Returning to WASM handler");
     // Jump back to generic_import_handler
-    longjmp(instance_res->env_buffer, 1);
+    longjmp(instance_res->import_buffer, 1);
 
     // This point is never reached
     return enif_make_atom(env, "error");
