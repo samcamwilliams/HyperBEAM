@@ -17,9 +17,9 @@ start(WasmBinary) ->
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
     ao:c({waiting_for_init_from, Port}),
     receive
-        {Port, X} ->
-            ao:c({wasm_driver_output, X}),
-            {ok, Port};
+        {ok, Imports, Exports} ->
+            ao:c({wasm_init_success, Imports, Exports}),
+            {ok, Port, Imports, Exports};
         Other ->
             ao:c({unexpected_result, Other}),
             Other
@@ -33,11 +33,10 @@ call(Port, FunctionName, Args) ->
     call(Port, FunctionName, Args, fun stdlib/3).
 call(Port, FunctionName, Args, ImportFunc) ->
     ao:c({call_started, Port, FunctionName, Args}),
-    Parent = self(),
-    Port ! {self(), {self(), {call, FunctionName, Args}}},
+    Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     exec_call(ImportFunc, Port).
 
-exec_call(ImportFunc, Worker) ->
+exec_call(ImportFunc, Port) ->
     receive
         {result, Result} ->
             {ok, Result};
@@ -45,8 +44,8 @@ exec_call(ImportFunc, Worker) ->
             ao:c({import_called, Module, Func, Args}),
             ErlRes = ImportFunc(Module, Func, Args),
             ao:c({import_returned, ErlRes}),
-            Worker ! {resume, ErlRes},
-            exec_call(ImportFunc, Worker);
+            Port ! {self(), {command, term_to_binary({import_result, ErlRes})}},
+            exec_call(ImportFunc, Port);
         Error ->
             ao:c({unexpected_result, Error}),
             Error
@@ -65,12 +64,12 @@ nif_loads_test() ->
 
 simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
-    {ok, Port, _ImportMap} = start(File),
+    {ok, Port, _Imports, _Exports} = start(File),
     Bin = read(Port, 0, 1),
     ao:c({bin, Bin}),
     write(Port, 0, Bin),
     ao:c(wrote),
-    {ok, Result} = call(Port, fac, [5.0]),
+    {ok, Result} = call(Port, <<"fac">>, [5.0]),
     ?assertEqual(120.0, Result).
 
 simple_wasm64_test() ->
