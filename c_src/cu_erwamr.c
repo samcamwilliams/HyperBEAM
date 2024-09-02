@@ -1,70 +1,83 @@
-#include <erl_nif.h>
+#include <erl_driver.h>
+#include <ei.h>
 #include <wasm_c_api.h>
 #include <wasm_export.h>
 #include <string.h>
-#include <setjmp.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include "cu_erwamr_imports.h"
 
 typedef struct {
-    const char* module_name;
-    const char* field_name;
-    ERL_NIF_TERM args;
-    ERL_NIF_TERM signature;
-    char ret_type;
-    wasm_val_t result;
-    int has_result;
-} ImportCallInfo;
+    void* binary;
+    long size;
+} WasmModuleBinary;
+
+typedef struct {
+    ErlDrvMutex* providing_response;
+    ErlDrvCond* cond;
+    int ready;
+    char* error_message;
+    wasm_val_vec_t result;
+} ImportResponse;
 
 typedef struct {
     wasm_instance_t* instance;
     wasm_module_t* module;
     wasm_memory_t* memory;
     wasm_store_t* store;
-    ErlNifPid caller_pid;
-    int is_running;
-} WasmInstanceResource;
-
-typedef struct {
-    wasm_module_t* module;
-    wasm_store_t* store;
-} WasmModuleResource;
+    ErlDrvPort port;
+    ErlDrvMutex* is_running;
+    char* current_function;
+    ei_term* current_args;
+    int current_args_length;
+    ImportResponse* current_import;
+    ErlDrvTermData pid;
+    int is_initialized;
+} Proc;
 
 typedef struct {
     char* module_name;
     char* field_name;
     char* signature;
-    WasmInstanceResource* instance;
+    Proc* proc;
 } ImportHook;
 
-static ErlNifResourceType* WASM_MODULE_RESOURCE;
-static ErlNifResourceType* WASM_INSTANCE_RESOURCE;
+static ErlDrvTermData atom_ok;
+static ErlDrvTermData atom_error;
+static ErlDrvTermData atom_import;
 
-static ERL_NIF_TERM atom_ok;
-static ERL_NIF_TERM atom_error;
-
-#define NIF_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
+#define DRV_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
 
 void debug_print(const char* file, int line, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    printf(".");
-    printf("[%s:%d] NIF_DEBUG: ", file, line);
+    char* thread_name = erl_drv_thread_name(erl_drv_thread_self());
+    printf("[DBG_%s @ %s:%d] ", thread_name, file, line);
     vprintf(format, args);
     printf("\n");
     va_end(args);
 }
 
-int wasm_val_to_erlang(ErlNifEnv* env, wasm_val_t* val, ERL_NIF_TERM* term) {
+int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val, ErlDrvTermData* erl_type) {
     switch (val->kind) {
-        case WASM_I32: *term = enif_make_int(env, val->of.i32); break;
-        case WASM_I64: *term = enif_make_int64(env, val->of.i64); break;
-        case WASM_F32: *term = enif_make_double(env, (double)val->of.f32); break;
-        case WASM_F64: *term = enif_make_double(env, val->of.f64); break;
-        default: return 0;
+        case WASM_I32: 
+            *erl_type = ERL_DRV_INT;
+            *term = (ErlDrvTermData)val->of.i32;
+            return 1;
+        case WASM_I64: 
+            *erl_type = ERL_DRV_INT64;
+            *term = (ErlDrvTermData)val->of.i64;
+            return 1;
+        case WASM_F32: 
+            *erl_type = ERL_DRV_FLOAT;
+            *term = (ErlDrvTermData)val->of.f32;
+            return 1;
+        case WASM_F64: 
+            *erl_type = ERL_DRV_FLOAT;
+            *term = (ErlDrvTermData)val->of.f64;
+            return 1;
+        default: 
+            return 0;
     }
-    return 1;
 }
 
 const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
@@ -77,41 +90,33 @@ const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
     }
 }
 
-int erlang_to_wasm_val(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, wasm_valkind_t expected_kind) {
+int erl_term_to_wasm_val(ErlDrvTermData term, wasm_val_t* val, wasm_valkind_t expected_kind) {
     switch (expected_kind) {
         case WASM_I32:
-            {
-                int temp;
-                if (enif_get_int(env, term, &temp)) {
-                    val->kind = WASM_I32;
-                    val->of.i32 = temp;
-                    return 1;
-                }
+            if (term == ERL_DRV_INT) {
+                val->kind = WASM_I32;
+                val->of.i32 = term;
+                return 1;
             }
             break;
         case WASM_I64:
-            {
-                long temp;
-                if (enif_get_int64(env, term, &temp)) {
-                    val->kind = WASM_I64;
-                    val->of.i64 = temp;
-                    return 1;
-                }
+            if (term == ERL_DRV_INT64) {
+                val->kind = WASM_I64;
+                val->of.i64 = term;
+                return 1;
             }
             break;
         case WASM_F32:
-            {
-                double temp;
-                if (enif_get_double(env, term, &temp)) {
+        case WASM_F64:
+            if (term == ERL_DRV_FLOAT) {
+                double temp = term;
+                if (expected_kind == WASM_F32) {
                     val->kind = WASM_F32;
                     val->of.f32 = (float)temp;
-                    return 1;
+                } else {
+                    val->kind = WASM_F64;
+                    val->of.f64 = temp;
                 }
-            }
-            break;
-        case WASM_F64:
-            if (enif_get_double(env, term, &val->of.f64)) {
-                val->kind = WASM_F64;
                 return 1;
             }
             break;
@@ -121,122 +126,29 @@ int erlang_to_wasm_val(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, wasm_
     return 0;
 }
 
-wasm_valkind_t erlang_to_wasm_val_char(ErlNifEnv* env, ERL_NIF_TERM term, wasm_val_t* val, char kind) {
+wasm_valkind_t erl_term_to_wasm_val_char(ErlDrvTermData term, wasm_val_t* val, char kind) {
     switch (kind) {
-        case 'i': return erlang_to_wasm_val(env, term, val, WASM_I32);
-        case 'I': return erlang_to_wasm_val(env, term, val, WASM_I64);
-        case 'f': return erlang_to_wasm_val(env, term, val, WASM_F32);
-        case 'F': return erlang_to_wasm_val(env, term, val, WASM_F64);
-        case 'R': return erlang_to_wasm_val(env, term, val, WASM_EXTERNREF);
-        case 'V': return erlang_to_wasm_val(env, term, val, WASM_V128);
-        case 'c': return erlang_to_wasm_val(env, term, val, WASM_FUNCREF);
+        case 'i': return erl_term_to_wasm_val(term, val, WASM_I32);
+        case 'I': return erl_term_to_wasm_val(term, val, WASM_I64);
+        case 'f': return erl_term_to_wasm_val(term, val, WASM_F32);
+        case 'F': return erl_term_to_wasm_val(term, val, WASM_F64);
+        // Note: WASM_EXTERNREF, WASM_V128, and WASM_FUNCREF are not directly supported
+        // by ErlDrvTermData. You may need to implement custom encoding for these types.
         default: return WASM_I32;
     }
 }
 
-wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
-    ImportHook* import_hook = (ImportHook*)env;
-    WasmInstanceResource* instance = import_hook->instance;
-
-    ErlNifEnv* erl_env = enif_alloc_env();
-
-    // Convert args to Erlang terms
-    ERL_NIF_TERM arg_list = enif_make_list(erl_env, 0);
-    for (size_t i = 0; i < args->size; i++) {
-        ERL_NIF_TERM term;
-        if (!wasm_val_to_erlang(erl_env, &args->data[i], &term)) {
-            enif_free_env(erl_env);
-            wasm_message_t message = { 0 };
-            wasm_name_new_from_string_nt(&message, "Failed to convert argument to Erlang term");
-            return wasm_trap_new(instance->store, &message);
-        }
-        arg_list = enif_make_list_cell(erl_env, term, arg_list);
-    }
-
-    ERL_NIF_TERM reversed_list;
-    enif_make_reverse_list(erl_env, arg_list, &reversed_list);
-
-    // Prepare the message to send to the Erlang side
-    ERL_NIF_TERM message = enif_make_tuple4(erl_env,
-        enif_make_atom(erl_env, "import"),
-        enif_make_atom(erl_env, import_hook->module_name),
-        enif_make_atom(erl_env, import_hook->field_name),
-        enif_make_tuple2(erl_env, reversed_list, enif_make_string(erl_env, import_hook->signature, ERL_NIF_LATIN1))
-    );
-
-    // Send the message to the caller process
-    enif_send(NULL, &instance->caller_pid, NULL, message);
-
-    // Receive the response
-    ERL_NIF_TERM response;
-    int received = enif_recv(erl_env, NULL, &response, 5000); // 5 second timeout
-
-    if (!received) {
-        enif_free_env(erl_env);
-        return wasm_trap_new(instance->store, "Timeout waiting for import function response");
-    }
-
-    // Convert the response back to WASM values
-    if (enif_is_tuple(erl_env, response)) {
-        const ERL_NIF_TERM* tuple;
-        int arity;
-        if (enif_get_tuple(erl_env, response, &arity, &tuple) && arity == 2 && enif_is_atom(erl_env, tuple[0])) {
-            char atom[256];
-            if (enif_get_atom(erl_env, tuple[0], atom, sizeof(atom), ERL_NIF_LATIN1) && strcmp(atom, "ok") == 0) {
-                if (!erlang_to_wasm_val(erl_env, tuple[1], &results->data[0], results->data[0].kind)) {
-                    enif_free_env(erl_env);
-                    return wasm_trap_new(instance->store, "Failed to convert result to WASM value");
-                }
-            } else {
-                enif_free_env(erl_env);
-                return wasm_trap_new(instance->store, "Import function returned an error");
-            }
-        }
-    }
-
-    enif_free_env(erl_env);
-    return NULL;
-}
-
-#define CLEANUP_AND_RETURN_ERROR(erl_env, message) do { \
-    cleanup_resources(&args, &results, &exports, &export_types); \
-    return enif_make_tuple2(erl_env, atom_error, enif_make_string(erl_env, message, ERL_NIF_LATIN1)); \
-} while(0)
-
-static void cleanup_resources(wasm_val_vec_t* args, wasm_val_vec_t* results, 
-                              wasm_extern_vec_t* exports, wasm_exporttype_vec_t* export_types) {
-    if (args) wasm_val_vec_delete(args);
-    if (results) wasm_val_vec_delete(results);
-    if (exports) wasm_extern_vec_delete(exports);
-    if (export_types) wasm_exporttype_vec_delete(export_types);
-}
-
-static void cleanup_wasm_instance(ErlNifEnv* env, void* obj) {
-    WasmInstanceResource* res = (WasmInstanceResource*)obj;
-    if (res->instance) wasm_instance_delete(res->instance);
-    if (res->store) wasm_store_delete(res->store);
-}
-
-// Helper function to create a binary term without null terminator
-ERL_NIF_TERM make_binary_term(ErlNifEnv* env, const char* data, size_t size) {
-    // Check if the last character is a null terminator
-    if (size > 0 && data[size - 1] == '\0') {
-        size--; // Decrease size to exclude null terminator
-    }
-    return enif_make_binary(env, &(ErlNifBinary){.size = size, .data = (unsigned char*)data});
-}
-
 // Helper function to convert wasm_valtype_t to char
-char wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
+int wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
     switch (wasm_valtype_kind(valtype)) {
         case WASM_I32: return 'i';
         case WASM_I64: return 'I';
         case WASM_F32: return 'f';
         case WASM_F64: return 'F';
-        case WASM_EXTERNREF: return 'R';
-        case WASM_V128: return 'V';
-        case WASM_FUNCREF: return 'c';
-        default: return '?';
+        case WASM_EXTERNREF: return 'e';
+        case WASM_V128: return 'v';
+        case WASM_FUNCREF: return 'f';
+        default: return 'u';
     }
 }
 
@@ -249,12 +161,12 @@ int get_function_sig(const wasm_externtype_t* type, char* type_str) {
         type_str[0] = '(';
         size_t offset = 1;
 
-        for (size_t i = 0; i < params->size; ++i) {
+        for (size_t i = 0; i < params->size; i++) {
             type_str[offset++] = wasm_valtype_kind_to_char(params->data[i]);
         }
         type_str[offset++] = ')';
 
-        for (size_t i = 0; i < results->size; ++i) {
+        for (size_t i = 0; i < results->size; i++) {
             type_str[offset++] = wasm_valtype_kind_to_char(results->data[i]);
         }
         type_str[offset] = '\0';
@@ -264,58 +176,151 @@ int get_function_sig(const wasm_externtype_t* type, char* type_str) {
     return 0;
 }
 
-// New helper function to get function type in the "(iIiI)i" format
-ERL_NIF_TERM get_function_type_term(ErlNifEnv* env, const wasm_externtype_t* type) {
-    char type_str[256];
-    if(get_function_sig(type, type_str)) {
-        return make_binary_term(env, type_str, strlen(type_str));
-    }
-    return enif_make_atom(env, "undefined");
+void drv_lock(ErlDrvMutex* mutex) {
+    DRV_DEBUG("Locking: %p", mutex);
+    erl_drv_mutex_lock(mutex);
+    DRV_DEBUG("Locked: %p", mutex);
 }
 
-wasm_functype_t* wasm_functype_new_generic(
-    size_t param_count, wasm_valtype_t** params,
-    size_t result_count, wasm_valtype_t** results
-) {
-    wasm_valtype_vec_t param_vec, result_vec;
-    wasm_valtype_vec_new(&param_vec, param_count, params);
-    wasm_valtype_vec_new(&result_vec, result_count, results);
-    return wasm_functype_new(&param_vec, &result_vec);
+void drv_unlock(ErlDrvMutex* mutex) {
+    DRV_DEBUG("Unlocking: %p", mutex);
+    erl_drv_mutex_unlock(mutex);
+    DRV_DEBUG("Unlocked: %p", mutex);
 }
 
-static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-    ErlNifBinary wasm_binary;
-    if (argc != 1 || !enif_inspect_binary(env, argv[0], &wasm_binary)) {
-        return enif_make_badarg(env);
+void drv_signal(ErlDrvCond* cond, int* ready) {
+    DRV_DEBUG("Signaling: %p. Pre-signal ready state: %d", cond, *ready);
+    *ready = 1;
+    erl_drv_cond_signal(cond);
+    DRV_DEBUG("Signaled: %p. Post-signal ready state: %d", cond, *ready);
+}
+
+void drv_wait(ErlDrvCond* cond, ErlDrvMutex* mutex, int* ready) {
+    DRV_DEBUG("Started to wait: %p. Ready: %d", cond, *ready);
+    drv_lock(mutex);
+    while (!*ready) {
+        DRV_DEBUG("Waiting: %p", cond);
+        erl_drv_cond_wait(cond, mutex);
+        DRV_DEBUG("Woke up: %p. Ready: %d", cond, *ready);
+    }
+    drv_unlock(mutex);
+    DRV_DEBUG("Finish waiting: %p", cond);
+}
+
+wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
+    ImportHook* import_hook = (ImportHook*)env;
+    Proc* proc = import_hook->proc;
+
+    // Initialize the message object
+    ErlDrvTermData msg[(3*2) + ((args->size + 1) * 2) + ((results->size + 1) * 2) + 2];
+    int msg_index = 0;
+    msg[msg_index++] = ERL_DRV_ATOM;
+    msg[msg_index++] = atom_import;
+    msg[msg_index++] = ERL_DRV_ATOM;
+    msg[msg_index++] = driver_mk_atom(import_hook->module_name);
+    msg[msg_index++] = ERL_DRV_ATOM;
+    msg[msg_index++] = driver_mk_atom(import_hook->field_name);
+
+    // Encode args
+    for (size_t i = 0; i < args->size; i++) {
+        ErlDrvTermData term;
+        ErlDrvTermData erl_type;
+        wasm_val_to_erl_term(&term, &args->data[i], &erl_type);
+        msg[msg_index++] = erl_type;
+        msg[msg_index++] = term;
+    }
+    msg[msg_index++] = ERL_DRV_LIST;
+    msg[msg_index++] = args->size;
+
+    // Encode function signature
+    msg[msg_index++] = ERL_DRV_STRING;
+    msg[msg_index++] = (ErlDrvTermData) import_hook->signature;
+    msg[msg_index++] = strlen(import_hook->signature);
+
+    // Prepare the message to send to the Erlang side
+    msg[msg_index++] = ERL_DRV_TUPLE;
+    msg[msg_index++] = 5;
+
+    // Send the message to the caller process
+    erl_drv_send_term(driver_mk_port(proc->port), proc->pid, msg, sizeof(msg) / sizeof(ErlDrvTermData));
+
+    // Create and initialize a is_running and condition variable for the response
+    proc->current_import = driver_alloc(sizeof(ImportResponse));
+    proc->current_import->providing_response = erl_drv_mutex_create("response_mutex");
+    proc->current_import->cond = erl_drv_cond_create("response_cond");
+
+    // Initialize the result vector and set the required result types 
+    wasm_val_vec_new_uninitialized(&proc->current_import->result, results->size);
+    for (size_t i = 0; i < results->size; i++) {
+        proc->current_import->result.data[i].kind = results->data[i].kind;
     }
 
+    // Wait for the response
+    drv_wait(proc->current_import->cond, proc->current_import->providing_response, &proc->current_import->ready);
+
+    // Handle error in the response
+    if (proc->current_import->error_message) {
+        DRV_DEBUG("Import execution failed. Error message: %s", proc->current_import->error_message);
+        wasm_name_t message;
+        wasm_name_new_from_string_nt(&message, proc->current_import->error_message);
+        wasm_trap_t* trap = wasm_trap_new(proc->store, &message);
+        driver_free(proc->current_import);
+        proc->current_import = NULL;
+        return trap;
+    }
+
+    // Convert the response back to WASM values
+    for(int i = 0; i < proc->current_import->result.size; i++) {
+        results->data[i] = proc->current_import->result.data[i];
+        results->data[i].kind = results->data[i].kind;
+    }
+
+    // Clean up
+    erl_drv_mutex_destroy(proc->current_import->providing_response);
+    erl_drv_cond_destroy(proc->current_import->cond);
+    driver_free(proc->current_import);
+    proc->current_import = NULL;
+
+    return NULL;
+}
+
+// Async initialization function
+static void async_init(void* raw) {
+    DRV_DEBUG("Initializing WASM module");
+    WasmModuleBinary* mod_bin = (WasmModuleBinary*)raw;
+    Proc* proc = driver_alloc(sizeof(Proc));
+    proc->is_running = erl_drv_mutex_create("is_running_mutex");
+    drv_lock(proc->is_running);
+    // Initialize WASM engine, store, etc.
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
-
     wasm_engine_t* engine = wasm_engine_new();
-    wasm_store_t* store = wasm_store_new(engine);
+    driver_send_term(driver_mk_port(proc->port), proc->pid, driver_mk_atom("created_engine"), 1);
+    proc->store = wasm_store_new(engine);
+    driver_send_term(driver_mk_port(proc->port), proc->pid, driver_mk_atom("created_store"), 1);
 
+    // Load WASM module
     wasm_byte_vec_t binary;
-    wasm_byte_vec_new(&binary, wasm_binary.size, (const wasm_byte_t*)wasm_binary.data);
-
-    wasm_module_t* module = wasm_module_new(store, &binary);
-    if (!module) {
+    wasm_byte_vec_new(&binary, mod_bin->size, (const wasm_byte_t*)mod_bin->binary);
+    proc->module = wasm_module_new(proc->store, &binary);
+    if (!proc->module) {
         wasm_byte_vec_delete(&binary);
-        wasm_store_delete(store);
+        wasm_store_delete(proc->store);
         wasm_engine_delete(engine);
-        return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to compile module", ERL_NIF_LATIN1));
+        return;
     }
     wasm_byte_vec_delete(&binary);
 
+
     // Get imports
     wasm_importtype_vec_t imports;
-    wasm_module_imports(module, &imports);
-    // Get exports
-    wasm_exporttype_vec_t exports;
-    wasm_module_exports(module, &exports);
+    wasm_module_imports(proc->module, &imports);
+    wasm_extern_t *stubs[imports.size];
 
-    // Create Erlang lists for imports and exports
-    ERL_NIF_TERM import_list = enif_make_list(env, 0);
-    ERL_NIF_TERM export_list = enif_make_list(env, 0);
+    // Create Erlang lists for imports
+    ErlDrvTermData* init_msg = driver_alloc(sizeof(ErlDrvTermData) * (6 + 13 * imports.size));
+    int msg_i = 0;
+    init_msg[msg_i++] = ERL_DRV_ATOM;
+    init_msg[msg_i++] = atom_ok;
 
     // Process imports
     for (int i = 0; i < imports.size; ++i) {
@@ -324,181 +329,88 @@ static ERL_NIF_TERM load_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
         const wasm_name_t* name = wasm_importtype_name(import);
         const wasm_externtype_t* type = wasm_importtype_type(import);
 
-        ERL_NIF_TERM module_name_term = make_binary_term(env, module_name->data, module_name->size);
-        ERL_NIF_TERM name_term = make_binary_term(env, name->data, name->size);
-        ERL_NIF_TERM type_term = enif_make_atom(env, wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
-        ERL_NIF_TERM func_type_term = get_function_type_term(env, type);
+        char type_str[256];
+        get_function_sig(type, type_str);
 
-        ERL_NIF_TERM import_tuple = enif_make_tuple4(env, type_term, module_name_term, name_term, func_type_term);
-        import_list = enif_make_list_cell(env, import_tuple, import_list);
-        NIF_DEBUG("Adding ImportHook to Erlang: %s.%s", module_name->data, name->data);
-    }
-
-    // Process exports
-    for (size_t i = 0; i < exports.size; ++i) {
-        const wasm_exporttype_t* export = exports.data[i];
-        const wasm_name_t* name = wasm_exporttype_name(export);
-        const wasm_externtype_t* type = wasm_exporttype_type(export);
-
-        ERL_NIF_TERM name_term = make_binary_term(env, name->data, name->size);
-        ERL_NIF_TERM type_term = enif_make_atom(env, wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
-        ERL_NIF_TERM func_type_term = get_function_type_term(env, type);
-
-        ERL_NIF_TERM export_tuple = enif_make_tuple3(env, type_term, name_term, func_type_term);
-        export_list = enif_make_list_cell(env, export_tuple, export_list);
-    }
-
-    // Clean up
-    wasm_importtype_vec_delete(&imports);
-    wasm_exporttype_vec_delete(&exports);
-
-    WasmModuleResource* module_res = enif_alloc_resource(WASM_MODULE_RESOURCE, sizeof(WasmModuleResource));
-    module_res->module = module;
-    module_res->store = store;
-
-    ERL_NIF_TERM module_term = enif_make_resource(env, module_res);
-    enif_release_resource(module_res);
-
-    // Return the module term along with import and export lists
-    return enif_make_tuple4(env, atom_ok, module_term, import_list, export_list);
-}
-
-wasm_memory_t* find_memory_export(const wasm_instance_t* instance) {
-    wasm_memory_t* memory = NULL;
-
-    // Get the exports from the instance
-    wasm_extern_vec_t instance_exports;
-    wasm_instance_exports(instance, &instance_exports);
-
-    // Iterate over the exports to find the memory
-    for (size_t i = 0; i < instance_exports.size; i++) {
-        wasm_extern_t* export = instance_exports.data[i];
-
-        // Check if the export is of memory kind
-        if (wasm_extern_kind(export) == WASM_EXTERN_MEMORY) {
-            // Cast the export to wasm_memory_t*
-            memory = wasm_extern_as_memory(export);
-            break; // Stop after finding the first memory
-        }
-    }
-
-    // Clean up
-    wasm_extern_vec_delete(&instance_exports);
-
-    return memory;
-}
-
-static ERL_NIF_TERM instantiate_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-    WasmInstanceResource* instance_res = enif_alloc_resource(WASM_INSTANCE_RESOURCE, sizeof(WasmInstanceResource));
-    WasmModuleResource* module_res;
-    if (argc != 2) {
-        return enif_make_badarg(env);
-    }
-    if (!enif_get_resource(env, argv[0], WASM_MODULE_RESOURCE, (void**)&module_res)) {
-        return enif_make_badarg(env);
-    }
-
-    // Get imports
-    wasm_importtype_vec_t imports;
-    wasm_module_imports(module_res->module, &imports);
-    // Create stubs for imports
-    wasm_extern_t *stubs[imports.size];
-    for (int i = 0; i < imports.size; i++) {
-        stubs[i] = NULL;
-    }
-
-    for (int i = 0; i < imports.size; ++i) {
-        const wasm_importtype_t* import = imports.data[i];
-        const wasm_name_t* module_name = wasm_importtype_module(import);
-        const wasm_name_t* name = wasm_importtype_name(import);
-        const wasm_externtype_t* type = wasm_importtype_type(import);
+        init_msg[msg_i++] = ERL_DRV_ATOM;
+        init_msg[msg_i++] = driver_mk_atom((char*)wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
+        init_msg[msg_i++] = ERL_DRV_BUF2BINARY;
+        init_msg[msg_i++] = (ErlDrvTermData)module_name->data;
+        init_msg[msg_i++] = module_name->size;
+        init_msg[msg_i++] = ERL_DRV_BUF2BINARY;
+        init_msg[msg_i++] = (ErlDrvTermData)name->data;
+        init_msg[msg_i++] = name->size;
+        init_msg[msg_i++] = ERL_DRV_STRING;
+        init_msg[msg_i++] = (ErlDrvTermData)type_str;
+        init_msg[msg_i++] = strlen(type_str);
+        init_msg[msg_i++] = ERL_DRV_TUPLE;
+        init_msg[msg_i++] = 4;
 
         printf("Creating callback for %s.%s\n", module_name->data, name->data);
-        ImportHook* hook = malloc(sizeof(ImportHook));
+        ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;
         hook->signature = malloc(256);
         get_function_sig(type, hook->signature);
-        hook->instance = instance_res;
+        hook->proc = proc;
 
-        wasm_func_t *stub_func = wasm_func_new_with_env(module_res->store, type, generic_import_handler, hook, NULL);
+        wasm_func_t *stub_func =
+            wasm_func_new_with_env(
+                proc->store,
+                wasm_externtype_as_functype_const(type),
+                generic_import_handler,
+                hook,
+                NULL
+            );
         stubs[i] = wasm_func_as_extern(stub_func);
 
-        NIF_DEBUG("Added ImportHook: %s.%s", module_name->data, name->data);
+        DRV_DEBUG("Adding ImportHook to Erlang: %s.%s", module_name->data, name->data);
     }
 
-    // Create instance!
+    init_msg[msg_i++] = ERL_DRV_LIST;
+    init_msg[msg_i++] = imports.size + 1;
+    init_msg[msg_i++] = ERL_DRV_TUPLE;
+    init_msg[msg_i++] = 2;
+
+    erl_drv_send_term(driver_mk_port(proc->port), proc->pid, init_msg, msg_i);
+    driver_free(init_msg);
+
+    // Create proc!
     wasm_extern_vec_t externs;
     wasm_extern_vec_new(&externs, imports.size, stubs);
     wasm_trap_t* trap = NULL;
-    wasm_instance_t* instance = wasm_instance_new(module_res->store, module_res->module, &externs, &trap);
-    // wasm_extern_vec_delete(&imports);
-    // for (int i = 0; i < imports.size; i++) {
-    //     wasm_func_delete(stubs[i]);
-    // }
-
-    if (!instance) {
-        const char* error_message = "Failed to create WASM instance";
-        if (trap) {
-            wasm_message_t message;
-            wasm_trap_message(trap, &message);
-            error_message = (const char*)message.data;
-        }
-        ERL_NIF_TERM result = enif_make_tuple2(env, atom_error, enif_make_string(env, error_message, ERL_NIF_LATIN1));
-        if (trap) {
-            wasm_trap_delete(trap);
-        }
-        return result;
+    proc->instance = wasm_instance_new(proc->store, proc->module, &externs, &trap);
+    if (!proc->instance) {
+        DRV_DEBUG("Failed to create WASM proc");
+        return;
     }
 
-    NIF_DEBUG("Instance created: %p", instance);
+    // Get memory export
+    wasm_extern_vec_t exports;
+    wasm_instance_exports(proc->instance, &exports);
+    for (size_t i = 0; i < exports.size; ++i) {
+        if (wasm_extern_kind(exports.data[i]) == WASM_EXTERN_MEMORY) {
+            proc->memory = wasm_extern_as_memory(exports.data[i]);
+            break;
+        }
+    }
 
-    instance_res->instance = instance;
-    instance_res->module = module_res->module;
-    instance_res->store = module_res->store;
-    instance_res->is_running = 0;  // Initialize the flag
-    instance_res->memory = find_memory_export(instance);
-
-    ERL_NIF_TERM instance_term = enif_make_resource(env, instance_res);
-    enif_release_resource(instance_res);
-
-    return enif_make_tuple2(env, atom_ok, instance_term);
+    proc->is_initialized = 1;
+    drv_unlock(proc->is_running);
 }
 
-static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-    if (argc != 4) return enif_make_badarg(env);
+static void async_call(void* raw) {
+    Proc* proc = (Proc*)raw;
+    drv_lock(proc->is_running);
+    char* function_name = proc->current_function;
 
-    WasmInstanceResource* instance_res;
-    if (!enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)) {
-        return enif_make_badarg(env);
-    }
-
-    // Check if the instance is already running
-    if (instance_res->is_running) {
-        return enif_make_tuple2(env, atom_error, enif_make_atom(env, "instance_already_running"));
-    }
-    // Set the running flag
-    instance_res->is_running = 1;
-
-    ErlNifBinary function_name_binary;
-    if (!enif_inspect_binary(env, argv[1], &function_name_binary)) {
-        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
-        return enif_make_badarg(env);
-    }
-
-    // Ensure the binary is null-terminated for C string operations
-    char* function_name = enif_alloc(function_name_binary.size + 1);
-    memcpy(function_name, function_name_binary.data, function_name_binary.size);
-    function_name[function_name_binary.size] = '\0';
-
+    // Find the function in the exports
     wasm_extern_vec_t exports;
-    wasm_instance_exports(instance_res->instance, &exports);
-
+    wasm_instance_exports(proc->instance, &exports);
     wasm_exporttype_vec_t export_types;
-    wasm_module_exports(instance_res->module, &export_types);
-
+    wasm_module_exports(proc->module, &export_types);
     wasm_func_t* func = NULL;
-    const wasm_functype_t* func_type = NULL;
+
     for (size_t i = 0; i < exports.size; ++i) {
         wasm_extern_t* ext = exports.data[i];
         if (wasm_extern_kind(ext) == WASM_EXTERN_FUNC) {
@@ -506,143 +418,227 @@ static ERL_NIF_TERM call_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
             if (name && name->size == strlen(function_name) + 1 && 
                 strncmp(name->data, function_name, name->size - 1) == 0) {
                 func = wasm_extern_as_func(ext);
-                func_type = wasm_func_type(func);
                 break;
             }
         }
     }
 
-    if (!func) {
-        cleanup_resources(NULL, NULL, &exports, &export_types);
-        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
-        return enif_make_tuple2(env, atom_error, enif_make_string(env, "Function not found", ERL_NIF_LATIN1));
+    if(!func) {
+        DRV_DEBUG("Function not found: %s", function_name);
+        return;
     }
 
+    const wasm_functype_t* func_type = wasm_func_type(func);
     const wasm_valtype_vec_t* param_types = wasm_functype_params(func_type);
     const wasm_valtype_vec_t* result_types = wasm_functype_results(func_type);
 
-    ERL_NIF_TERM arg_list = argv[2];
-    unsigned arg_count;
-    if (!enif_get_list_length(env, arg_list, &arg_count) || param_types->size != arg_count) {
-        cleanup_resources(NULL, NULL, &exports, &export_types);
-        instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
-        return enif_make_tuple2(env, atom_error, enif_make_string(env, "Invalid argument count", ERL_NIF_LATIN1));
-    }
-
     wasm_val_vec_t args, results;
     wasm_val_vec_new_uninitialized(&args, param_types->size);
-    wasm_val_vec_new_uninitialized(&results, result_types->size);
-
-    ERL_NIF_TERM head, tail = arg_list;
-    for (size_t i = 0; i < param_types->size; ++i) {
-        if (!enif_get_list_cell(env, tail, &head, &tail) ||
-            !erlang_to_wasm_val(env, head, &args.data[i], wasm_valtype_kind(param_types->data[i]))) {
-            cleanup_resources(&args, &results, &exports, &export_types);
-            instance_res->is_running = 0;  // Clear the flag if we're returning due to an error
-            return enif_make_tuple2(env, atom_error, enif_make_string(env, "Failed to convert argument", ERL_NIF_LATIN1));
+    for (size_t i = 0; i < param_types->size; i++) {
+        args.data[i].kind = wasm_valtype_kind(param_types->data[i]);
+        switch (args.data[i].kind) {
+            case WASM_I32:
+                args.data[i].of.i32 = 0;
+                break;
+            case WASM_I64:
+                args.data[i].of.i64 = 0;
+                break;
+            case WASM_F32:
+                args.data[i].of.f32 = 0;
+                break;
+            case WASM_F64:
+                args.data[i].of.f64 = 0;
+                break;
+            default:
+                DRV_DEBUG("Unsupported parameter type: %d", args.data[i].kind);
+                return;
         }
     }
-
-    ErlNifPid* parent_pid = enif_alloc(sizeof(ErlNifPid));
-    if (!enif_get_local_pid(env, argv[3], parent_pid)) {
-        enif_free(parent_pid);
-        return enif_make_badarg(env);
+    wasm_val_vec_new_uninitialized(&results, result_types->size);
+    for (size_t i = 0; i < result_types->size; i++) {
+        results.data[i].kind = wasm_valtype_kind(result_types->data[i]);
     }
-    instance_res->parent_pid = parent_pid;
 
-    wasm_trap_t* trap = wasm_func_call(call_info->func, &call_info->args, &call_info->results);
+    // Call the function
+    wasm_trap_t* trap = wasm_func_call(func, &args, &results);
 
-    ERL_NIF_TERM result_term;
     if (trap) {
-        wasm_message_t message;
-        wasm_trap_message(trap, &message);
-        result_term = enif_make_tuple2(env, atom_error, enif_make_string(env, message.data, ERL_NIF_LATIN1));
-        wasm_trap_delete(trap);
-        wasm_byte_vec_delete(&message);
-    } else if (call_info->results.size == 1 && wasm_val_to_erlang(env, &call_info->results.data[0], &result_term)) {
-        result_term = enif_make_tuple2(env, atom_ok, result_term);
-    } else {
-        result_term = enif_make_tuple2(env, atom_error, enif_make_string(env, "Unexpected result", ERL_NIF_LATIN1));
+        DRV_DEBUG("Function call failed");
+        return;
     }
 
-    enif_send(NULL, &call_info->caller_pid, NULL, result_term);
+    // Send the results back to Erlang
+    ErlDrvTermData msg[(results.size * 2) + 1];
+    int msg_index = 0;
+    msg[msg_index++] = ERL_DRV_ATOM;
+    msg[msg_index++] = atom_ok;
+    for (size_t i = 0; i < results.size; i++) {
+        ErlDrvTermData term;
+        ErlDrvTermData erl_type;
+        wasm_val_to_erl_term(&term, &results.data[i], &erl_type);
+        msg[msg_index++] = erl_type;
+        msg[msg_index++] = term;
+    }
+    msg[msg_index++] = ERL_DRV_LIST;
+    msg[msg_index++] = results.size;
+    msg[msg_index++] = ERL_DRV_TUPLE;
+    msg[msg_index++] = 2;
+    erl_drv_send_term(driver_mk_port(proc->port), proc->pid, msg, sizeof(msg) / sizeof(ErlDrvTermData));
 
-    // Cleanup
-    wasm_val_vec_delete(&call_info->args);
-    wasm_val_vec_delete(&call_info->results);
-    enif_free(call_info);
+    wasm_val_vec_delete(&results);
 
-    return enif_make_atom(env, "ok");
+    wasm_exporttype_vec_delete(&export_types);
+    drv_unlock(proc->is_running);
 }
 
-static int nif_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info) {
-    atom_ok = enif_make_atom(env, "ok");
-    atom_error = enif_make_atom(env, "error");
-
-    WASM_MODULE_RESOURCE = enif_open_resource_type(env, NULL, "wasm_module_resource", NULL, ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, NULL);
-    if (!WASM_MODULE_RESOURCE) return -1;
-
-    WASM_INSTANCE_RESOURCE = enif_open_resource_type(env, NULL, "wasm_instance_resource", cleanup_wasm_instance, ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, NULL);
-    if (!WASM_INSTANCE_RESOURCE) return -1;
-
-    return 0;
+static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
+    Proc* proc = driver_alloc(sizeof(Proc));
+    proc->port = port;
+    proc->is_running = erl_drv_mutex_create("wasm_instance_mutex");
+    proc->is_initialized = 0;
+    return (ErlDrvData)proc;
 }
 
-// NIF function to read WASM memory
-static ERL_NIF_TERM read_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-    WasmInstanceResource* instance_res;
-    uint32_t offset;
-    uint32_t length;
-
-    if (argc != 3 || !enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)
-        || !enif_get_uint(env, argv[1], &offset) || !enif_get_uint(env, argv[2], &length)) {
-        return enif_make_badarg(env);
+static void wasm_driver_stop(ErlDrvData raw) {
+    Proc* proc = (Proc*)raw;
+    erl_drv_mutex_destroy(proc->is_running);
+    // Cleanup WASM resources
+    if (proc->is_initialized) {
+        wasm_instance_delete(proc->instance);
+        wasm_module_delete(proc->module);
+        wasm_store_delete(proc->store);
     }
-
-    byte_t* data = wasm_memory_data(instance_res->memory);
-    size_t data_size = wasm_memory_data_size(instance_res->memory);
-
-    if (offset + length > data_size) {
-        return enif_make_tuple2(env, enif_make_atom(env, "error"), enif_make_atom(env, "access_out_of_bounds"));
-    }
-
-    ERL_NIF_TERM binary_term;
-    unsigned char* binary_data = enif_make_new_binary(env, length, &binary_term);
-    memcpy(binary_data, data + offset, length);
-
-    return enif_make_tuple2(env, enif_make_atom(env, "ok"), binary_term);
+    driver_free(proc);
 }
 
-// NIF function to write WASM memory
-static ERL_NIF_TERM write_nif(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-    WasmInstanceResource* instance_res;
-    uint32_t offset;
-    ErlNifBinary input_binary;
+static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) {
+    DRV_DEBUG("WASM driver output received");
+    Proc* proc = (Proc*)raw;
 
-    if (argc != 3 || !enif_get_resource(env, argv[0], WASM_INSTANCE_RESOURCE, (void**)&instance_res)
-        || !enif_get_uint(env, argv[1], &offset) || !enif_inspect_binary(env, argv[2], &input_binary)) {
-        return enif_make_badarg(env);
+    int index = 0;
+    int version;
+    int ver_res = ei_decode_version(buff, &index, &version);
+    DRV_DEBUG("Received term has version: %d", version);
+    DRV_DEBUG("Index: %d. buff_len: %d. buff: %p", index, bufflen, buff);
+    int arity;
+    ei_decode_tuple_header(buff, &index, &arity);
+    DRV_DEBUG("Term arity: %d", arity);
+    if (arity != 2) {
+        DRV_DEBUG("Invalid tuple arity: %d", arity);
+        return;
     }
 
-    byte_t* data = wasm_memory_data(instance_res->memory);
-    size_t data_size = wasm_memory_data_size(instance_res->memory);
+    char command[MAXATOMLEN];
+    ei_decode_atom(buff, &index, command);
+    DRV_DEBUG("Command: %s", command);
+    
+    if (strcmp(command, "init") == 0) {
+        // Start async initialization
+        proc->pid = driver_caller(proc->port);
+        DRV_DEBUG("Caller PID: %d", proc->pid);
+        int size, type;
+        ei_get_type(buff, &index, &type, &size);
+        DRV_DEBUG("WASM binary size: %d bytes. Type: %d", size, type);
+        void* wasm_binary = driver_alloc(size);
+        long size_l = (long)size;
+        ei_decode_binary(buff, &index, wasm_binary, &size_l);
+        WasmModuleBinary* mod_bin = driver_alloc(sizeof(WasmModuleBinary));
+        mod_bin->binary = wasm_binary;
+        mod_bin->size = size;
+        DRV_DEBUG("Calling for async thread to init");
+        driver_async(proc->port, NULL, async_init, mod_bin, NULL);
+    } else if (strcmp(command, "call") == 0) {
+        if (!proc->is_initialized) {
+            DRV_DEBUG("Not initialized");
+            return;
+        }
+        // Extract the function name and the args from the Erlang term and generate the wasm_val_vec_t
+        char* function_name = driver_alloc(MAXATOMLEN);
+        ei_decode_atom(buff, &index, function_name);
+        int arg_length;
+        ei_term* args = driver_alloc(sizeof(ei_term) * arg_length);
+        ei_decode_list_header(buff, &index, &arg_length);
 
-    if (offset + input_binary.size > data_size) {
-        return enif_make_tuple2(env, enif_make_atom(env, "error"), enif_make_atom(env, "access_out_of_bounds"));
+        for (int i = 0; i < arg_length; i++) {
+            ei_decode_ei_term(buff, &index, &args[i]);
+            DRV_DEBUG("Decoded arg %d: ", i);
+            DRV_DEBUG("Type: %d", args[i].ei_type);
+        }
+        proc->current_function = function_name;
+        proc->current_args = args;
+
+        driver_async(proc->port, NULL, async_call, proc, NULL);
+    } else if (strcmp(command, "import_response") == 0) {
+        // Handle import response
+        DRV_DEBUG("Import response received. Providing...");
+        if (proc->current_import) {
+            drv_lock(proc->current_import->providing_response);
+            // Decode the result list from the Erlang side into a new wasm_val_vec_t
+            int list_length;
+            ei_decode_list_header(buff, &index, &list_length);
+            wasm_val_vec_new_uninitialized(&proc->current_import->result, list_length);
+            for (int i = 0; i < list_length; i++) {
+                switch (proc->current_import->result.data[i].kind) {
+                    case WASM_I32:
+                        ei_decode_long(buff, &index, (long*)&proc->current_import->result.data[i].of.i32);
+                        break;
+                    case WASM_I64:
+                        ei_decode_longlong(buff, &index, &proc->current_import->result.data[i].of.i64);
+                        break;
+                    case WASM_F32:
+                        {
+                            double temp;
+                            ei_decode_double(buff, &index, &temp);
+                            proc->current_import->result.data[i].of.f32 = (float)temp;
+                        }
+                        break;
+                    case WASM_F64:
+                        ei_decode_double(buff, &index, &proc->current_import->result.data[i].of.f64);
+                        break;
+                    default:
+                        DRV_DEBUG("Unsupported return type: %d", proc->current_import->result.data[i].kind);
+                        proc->current_import->error_message = "Unsupported return type";
+                }
+            }
+
+            // Signal that the response is ready
+            drv_signal(proc->current_import->cond, &proc->current_import->ready);
+        } else {
+            DRV_DEBUG("No pending import response waiting");
+        }
+
     }
-
-    memcpy(data + offset, input_binary.data, input_binary.size);
-
-    return enif_make_atom(env, "ok");
 }
 
-static ErlNifFunc nif_funcs[] = {
-    {"load_nif", 1, load_nif},
-    {"instantiate_nif", 2, instantiate_nif},
-    {"call_nif", 3, call_nif},
-    {"execute_wasm_call", 1, execute_wasm_call, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"read_nif", 3, read_nif},
-    {"write_nif", 3, write_nif}
+static ErlDrvEntry wasm_driver_entry = {
+    NULL,
+    wasm_driver_start,
+    wasm_driver_stop,
+    wasm_driver_output,
+    NULL,
+    NULL,
+    "cu_erwamr",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    ERL_DRV_FLAG_USE_PORT_LOCKING,
+    NULL,
+    NULL,
+    NULL
 };
 
-ERL_NIF_INIT(cu_erwamr, nif_funcs, nif_load, NULL, NULL, NULL)
+DRIVER_INIT(wasm_driver) {
+    atom_ok = driver_mk_atom("ok");
+    atom_error = driver_mk_atom("error");
+    atom_import = driver_mk_atom("import");
+    return &wasm_driver_entry;
+}
