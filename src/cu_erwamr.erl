@@ -19,7 +19,10 @@ start(WasmBinary) ->
     receive
         {Port, X} ->
             ao:c({wasm_driver_output, X}),
-            {ok, Port}
+            {ok, Port};
+        Other ->
+            ao:c({unexpected_result, Other}),
+            Other
     end.
 
 stdlib(Module, Func, Args) ->

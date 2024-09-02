@@ -4,12 +4,8 @@
 #include <wasm_export.h>
 #include <string.h>
 #include <stdarg.h>
+#include <time.h>
 #include "cu_erwamr_imports.h"
-
-typedef struct {
-    void* binary;
-    long size;
-} WasmModuleBinary;
 
 typedef struct {
     ErlDrvMutex* providing_response;
@@ -25,6 +21,7 @@ typedef struct {
     wasm_memory_t* memory;
     wasm_store_t* store;
     ErlDrvPort port;
+    ErlDrvTermData port_term;
     ErlDrvMutex* is_running;
     char* current_function;
     ei_term* current_args;
@@ -32,7 +29,14 @@ typedef struct {
     ImportResponse* current_import;
     ErlDrvTermData pid;
     int is_initialized;
+    time_t start_time;
 } Proc;
+
+typedef struct {
+    void* binary;
+    long size;
+    Proc* proc;
+} LoadWasmReq;
 
 typedef struct {
     char* module_name;
@@ -287,28 +291,30 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 // Async initialization function
 static void async_init(void* raw) {
     DRV_DEBUG("Initializing WASM module");
-    WasmModuleBinary* mod_bin = (WasmModuleBinary*)raw;
-    Proc* proc = driver_alloc(sizeof(Proc));
-    proc->is_running = erl_drv_mutex_create("is_running_mutex");
+    LoadWasmReq* mod_bin = (LoadWasmReq*)raw;
+    Proc* proc = mod_bin->proc;
     drv_lock(proc->is_running);
     // Initialize WASM engine, store, etc.
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
     wasm_engine_t* engine = wasm_engine_new();
-    driver_send_term(driver_mk_port(proc->port), proc->pid, driver_mk_atom("created_engine"), 1);
-    proc->store = wasm_store_new(engine);
-    driver_send_term(driver_mk_port(proc->port), proc->pid, driver_mk_atom("created_store"), 1);
-
+    DRV_DEBUG("Created engine");
     // Load WASM module
     wasm_byte_vec_t binary;
     wasm_byte_vec_new(&binary, mod_bin->size, (const wasm_byte_t*)mod_bin->binary);
+    for (int i = 0; i < binary.size; i++) {
+        DRV_DEBUG("Byte %d: %d", i, binary.data[i]);
+    }
     proc->module = wasm_module_new(proc->store, &binary);
+
     if (!proc->module) {
+        DRV_DEBUG("Failed to create module");
         wasm_byte_vec_delete(&binary);
         wasm_store_delete(proc->store);
         wasm_engine_delete(engine);
         return;
     }
     wasm_byte_vec_delete(&binary);
+    DRV_DEBUG("Created module");
 
 
     // Get imports
@@ -328,6 +334,8 @@ static void async_init(void* raw) {
         const wasm_name_t* module_name = wasm_importtype_module(import);
         const wasm_name_t* name = wasm_importtype_name(import);
         const wasm_externtype_t* type = wasm_importtype_type(import);
+
+        DRV_DEBUG("Import: %s.%s", module_name->data, name->data);
 
         char type_str[256];
         get_function_sig(type, type_str);
@@ -494,8 +502,13 @@ static void async_call(void* raw) {
 static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
     Proc* proc = driver_alloc(sizeof(Proc));
     proc->port = port;
+    DRV_DEBUG("Port: %p", proc->port);
+    proc->port_term = driver_mk_port(proc->port);
+    DRV_DEBUG("Port term: %p", proc->port_term);
     proc->is_running = erl_drv_mutex_create("wasm_instance_mutex");
     proc->is_initialized = 0;
+    proc->start_time = time(NULL);
+    DRV_DEBUG("Start time: %ld", proc->start_time);
     return (ErlDrvData)proc;
 }
 
@@ -514,6 +527,8 @@ static void wasm_driver_stop(ErlDrvData raw) {
 static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) {
     DRV_DEBUG("WASM driver output received");
     Proc* proc = (Proc*)raw;
+    DRV_DEBUG("Port: %p", proc->port);
+    DRV_DEBUG("Port term: %p", proc->port_term);
 
     int index = 0;
     int version;
@@ -542,7 +557,8 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         void* wasm_binary = driver_alloc(size);
         long size_l = (long)size;
         ei_decode_binary(buff, &index, wasm_binary, &size_l);
-        WasmModuleBinary* mod_bin = driver_alloc(sizeof(WasmModuleBinary));
+        LoadWasmReq* mod_bin = driver_alloc(sizeof(LoadWasmReq));
+        mod_bin->proc = proc;
         mod_bin->binary = wasm_binary;
         mod_bin->size = size;
         DRV_DEBUG("Calling for async thread to init");
