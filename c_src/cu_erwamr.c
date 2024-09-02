@@ -310,9 +310,9 @@ static void async_init(void* raw) {
     // Load WASM module
     wasm_byte_vec_t binary;
     wasm_byte_vec_new(&binary, mod_bin->size, (const wasm_byte_t*)mod_bin->binary);
-    for (int i = 0; i < binary.size; i++) {
-        DRV_DEBUG("Byte %d: %d", i, binary.data[i]);
-    }
+    // for (int i = 0; i < binary.size; i++) {
+    //     DRV_DEBUG("Byte %d: %d", i, binary.data[i]);
+    // }
     proc->module = wasm_module_new(proc->store, &binary);
     DRV_DEBUG("RETURNED FROM MODULE NEW");
     DRV_DEBUG("Module: %p", proc->module);
@@ -333,8 +333,12 @@ static void async_init(void* raw) {
     DRV_DEBUG("Imports size: %d", imports.size);
     wasm_extern_t *stubs[imports.size];
 
+    // Get exports
+    wasm_exporttype_vec_t exports;
+    wasm_module_exports(proc->module, &exports);
+
     // Create Erlang lists for imports
-    ErlDrvTermData* init_msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + (13 * imports.size)));
+    ErlDrvTermData* init_msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + (13 * imports.size) + (11 * exports.size)));
     DRV_DEBUG("Allocated init message");
     int msg_i = 0;
     init_msg[msg_i++] = ERL_DRV_ATOM;
@@ -355,15 +359,15 @@ static void async_init(void* raw) {
 
         init_msg[msg_i++] = ERL_DRV_ATOM;
         init_msg[msg_i++] = driver_mk_atom((char*)wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
-        init_msg[msg_i++] = ERL_DRV_BUF2BINARY;
+        init_msg[msg_i++] = ERL_DRV_STRING;
         init_msg[msg_i++] = (ErlDrvTermData)module_name->data;
-        init_msg[msg_i++] = module_name->size;
-        init_msg[msg_i++] = ERL_DRV_BUF2BINARY;
+        init_msg[msg_i++] = module_name->size - 1;
+        init_msg[msg_i++] = ERL_DRV_STRING;
         init_msg[msg_i++] = (ErlDrvTermData)name->data;
-        init_msg[msg_i++] = name->size;
+        init_msg[msg_i++] = name->size - 1;
         init_msg[msg_i++] = ERL_DRV_STRING;
         init_msg[msg_i++] = (ErlDrvTermData)type_str;
-        init_msg[msg_i++] = strlen(type_str);
+        init_msg[msg_i++] = strlen(type_str) - 1;
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
@@ -402,35 +406,36 @@ static void async_init(void* raw) {
         return;
     }
 
-    // Get memory export
-    wasm_extern_vec_t exports;
-    wasm_instance_exports(proc->instance, &exports);
     for (size_t i = 0; i < exports.size; ++i) {
         DRV_DEBUG("Processing export %d", i);
-        if (wasm_extern_kind(exports.data[i]) == WASM_EXTERN_MEMORY) {
+        const wasm_exporttype_t* export = exports.data[i];
+        const wasm_name_t* name = wasm_exporttype_name(export);
+        const wasm_externtype_t* type = wasm_exporttype_type(export);
+        const char* kind_str = wasm_externtype_kind_to_string(wasm_externtype_kind(type));
+
+        if (strcmp("memory", kind_str) == 0) {
             proc->memory = wasm_extern_as_memory(exports.data[i]);
             DRV_DEBUG("Found memory: %p", proc->memory);
         }
-        const wasm_exporttype_t* export = exports.data[i];
-        const wasm_name_t* name = wasm_exporttype_name(exports.data[i]);
-        char* kind_str = wasm_externtype_kind_to_string(wasm_extern_kind(exports.data[i]));
-        const wasm_externtype_t* type = wasm_exporttype_type(export);
-        DRV_DEBUG("export name: %.2s (%d). kind: %s", (int) name->data, name->size, kind_str);
-        char type_str[256] = "";
+        char* type_str = malloc(256);
         get_function_sig(type, type_str);
-        DRV_DEBUG("export sig: %s", type_str);
+        DRV_DEBUG("Export: %s [%s] -> %s", name->data, kind_str, type_str);
 
-        init_msg[msg_i++] = ERL_DRV_BUF2BINARY;
-        init_msg[msg_i++] = (ErlDrvTermData)name->data;
-        init_msg[msg_i++] = 1;
+        init_msg[msg_i++] = ERL_DRV_ATOM;
+        init_msg[msg_i++] = driver_mk_atom(kind_str);
         init_msg[msg_i++] = ERL_DRV_STRING;
-        init_msg[msg_i++] = (ErlDrvTermData)kind_str;
-        init_msg[msg_i++] = strlen(kind_str);
+        init_msg[msg_i++] = (ErlDrvTermData)name->data;
+        init_msg[msg_i++] = name->size - 1;
+        init_msg[msg_i++] = ERL_DRV_STRING;
+        init_msg[msg_i++] = (ErlDrvTermData)type_str;
+        init_msg[msg_i++] = strlen(type_str);
+        init_msg[msg_i++] = ERL_DRV_TUPLE;
+        init_msg[msg_i++] = 3;
     }
 
     init_msg[msg_i++] = ERL_DRV_NIL;
     init_msg[msg_i++] = ERL_DRV_LIST;
-    init_msg[msg_i++] = (2 * exports.size) + 1;
+    init_msg[msg_i++] = (exports.size) + 1;
     init_msg[msg_i++] = ERL_DRV_TUPLE;
     init_msg[msg_i++] = 3;
 
@@ -444,7 +449,7 @@ static void async_init(void* raw) {
     drv_unlock(proc->is_running);
 }
 
-wasm_func_t* get_exported_function(Proc* proc, const char* name) {
+wasm_func_t* get_exported_function(Proc* proc, const char* target_name) {
     wasm_extern_vec_t exports;
     wasm_instance_exports(proc->instance, &exports);
     wasm_exporttype_vec_t export_types;
@@ -454,9 +459,9 @@ wasm_func_t* get_exported_function(Proc* proc, const char* name) {
     for (size_t i = 0; i < exports.size; ++i) {
         wasm_extern_t* ext = exports.data[i];
         if (wasm_extern_kind(ext) == WASM_EXTERN_FUNC) {
-            const wasm_name_t* name = wasm_exporttype_name(export_types.data[i]);
-            if (name && name->size == strlen(name) + 1 && 
-                strncmp(name->data, name, name->size - 1) == 0) {
+            const wasm_name_t* exp_name = wasm_exporttype_name(export_types.data[i]);
+            if (exp_name && exp_name->size == strlen(target_name) + 1 && 
+                strncmp(exp_name->data, target_name, exp_name->size - 1) == 0) {
                 func = wasm_extern_as_func(ext);
                 break;
             }
