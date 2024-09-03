@@ -219,8 +219,11 @@ void drv_wait(ErlDrvCond* cond, ErlDrvMutex* mutex, int* ready) {
 }
 
 wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
+    DRV_DEBUG("generic_import_handler called");
     ImportHook* import_hook = (ImportHook*)env;
     Proc* proc = import_hook->proc;
+    DRV_DEBUG("Proc: %p. Args size: %d", proc, args->size);
+    DRV_DEBUG("Import name: %s.%s [%s]", import_hook->module_name, import_hook->field_name, import_hook->signature);
 
     // Initialize the message object
     ErlDrvTermData msg[(3*2) + ((args->size + 1) * 2) + ((results->size + 1) * 2) + 2];
@@ -338,6 +341,7 @@ static void async_init(void* raw) {
     wasm_module_exports(proc->module, &exports);
 
     // Create Erlang lists for imports
+    DRV_DEBUG("Exports size: %d", exports.size);
     ErlDrvTermData* init_msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + (13 * imports.size) + (11 * exports.size)));
     DRV_DEBUG("Allocated init message");
     int msg_i = 0;
@@ -472,6 +476,7 @@ wasm_func_t* get_exported_function(Proc* proc, const char* target_name) {
 
 static void async_call(void* raw) {
     Proc* proc = (Proc*)raw;
+    //DRV_DEBUG("Calling function: %s", proc->current_function);
     drv_lock(proc->is_running);
     char* function_name = proc->current_function;
 
@@ -481,6 +486,7 @@ static void async_call(void* raw) {
         DRV_DEBUG("Function not found: %s", function_name);
         return;
     }
+    DRV_DEBUG("Func: %p", func);
 
     const wasm_functype_t* func_type = wasm_func_type(func);
     const wasm_valtype_vec_t* param_types = wasm_functype_params(func_type);
@@ -489,19 +495,20 @@ static void async_call(void* raw) {
     wasm_val_vec_t args, results;
     wasm_val_vec_new_uninitialized(&args, param_types->size);
     for (size_t i = 0; i < param_types->size; i++) {
+        ei_term arg = proc->current_args[i];
         args.data[i].kind = wasm_valtype_kind(param_types->data[i]);
         switch (args.data[i].kind) {
             case WASM_I32:
-                args.data[i].of.i32 = 0;
+                args.data[i].of.i32 = (int) arg.value.i_val;
                 break;
             case WASM_I64:
-                args.data[i].of.i64 = 0;
+                args.data[i].of.i64 = (long) arg.value.i_val;
                 break;
             case WASM_F32:
-                args.data[i].of.f32 = 0;
+                args.data[i].of.f32 = (float) arg.value.d_val;
                 break;
             case WASM_F64:
-                args.data[i].of.f64 = 0;
+                args.data[i].of.f64 = arg.value.d_val;
                 break;
             default:
                 DRV_DEBUG("Unsupported parameter type: %d", args.data[i].kind);
@@ -521,23 +528,56 @@ static void async_call(void* raw) {
         return;
     }
 
+    DRV_DEBUG("Results size: %d", results.size);
+    for (size_t i = 0; i < results.size; i++) {
+
+    }
+
     // Send the results back to Erlang
-    ErlDrvTermData msg[(results.size * 2) + 1];
+    ErlDrvTermData* msg = malloc(sizeof(ErlDrvTermData) * (7 + (results.size * 2)));
+    DRV_DEBUG("Allocated msg");
     int msg_index = 0;
     msg[msg_index++] = ERL_DRV_ATOM;
     msg[msg_index++] = atom_ok;
     for (size_t i = 0; i < results.size; i++) {
+        DRV_DEBUG("Processing result %d", i);
         ErlDrvTermData term;
         ErlDrvTermData erl_type;
-        wasm_val_to_erl_term(&term, &results.data[i], &erl_type);
-        msg[msg_index++] = erl_type;
-        msg[msg_index++] = term;
+        switch (results.data[i].kind) {
+            case WASM_I32:
+                DRV_DEBUG("Result %d: %d", i, results.data[i].of.i32);
+                msg[msg_index++] = ERL_DRV_INT;
+                msg[msg_index++] = results.data[i].of.i32;
+                break;
+            case WASM_I64:
+                DRV_DEBUG("Result %d: %ld", i, results.data[i].of.i64);
+                msg[msg_index++] = ERL_DRV_INT64;
+                msg[msg_index++] = &results.data[i].of.i64;
+                break;
+            case WASM_F32:
+                DRV_DEBUG("Result %d: %f", i, results.data[i].of.f32);
+                msg[msg_index++] = ERL_DRV_FLOAT;
+                msg[msg_index++] = &results.data[i].of.f32;
+                break;
+            case WASM_F64:
+                DRV_DEBUG("Result %d: %f", i, results.data[i].of.f64);
+                msg[msg_index++] = ERL_DRV_FLOAT;
+                msg[msg_index++] = &results.data[i].of.f64;
+                break;
+            default:
+                DRV_DEBUG("Unsupported result type: %d", results.data[i].kind);
+                return;
+        }
     }
+    msg[msg_index++] = ERL_DRV_NIL;
     msg[msg_index++] = ERL_DRV_LIST;
-    msg[msg_index++] = results.size;
+    msg[msg_index++] = results.size + 1;
     msg[msg_index++] = ERL_DRV_TUPLE;
     msg[msg_index++] = 2;
-    erl_drv_output_term(proc->port_term, msg, msg_index);
+    DRV_DEBUG("Sending %d terms", msg_index);
+    int response_msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+
+    DRV_DEBUG("Msg: %d", response_msg_res);
 
     wasm_val_vec_delete(&results);
 
@@ -619,7 +659,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
 
         for (int i = 0; i < arg_length; i++) {
             ei_decode_ei_term(buff, &index, &args[i]);
-            DRV_DEBUG("Decoded arg %d. Type: %d", i, args[i].ei_type);
+            DRV_DEBUG("Decoded arg %d. Type: %c", i, args[i].ei_type);
         }
         proc->current_function = function_name;
         proc->current_args = args;

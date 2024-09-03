@@ -38,7 +38,8 @@ call(Port, FunctionName, Args, ImportFunc) ->
 
 exec_call(ImportFunc, Port) ->
     receive
-        {result, Result} ->
+        {ok, Result} ->
+            ao:c({call_result, Result}),
             {ok, Result};
         {import, Module, Func, Args} ->
             ao:c({import_called, Module, Func, Args}),
@@ -69,18 +70,18 @@ simple_wasm_test() ->
     ao:c({bin, Bin}),
     write(Port, 0, Bin),
     ao:c(wrote),
-    {ok, Result} = call(Port, <<"fac">>, [5.0]),
+    {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
 simple_wasm64_test() ->
     ao:c(simple_wasm64_test),
     {ok, File} = file:read_file("test/test-64.wasm"),
-    {ok, Port, _ImportMap} = start(File),
-    {ok, Result} = call(Port, fac, [5.0]),
+    {ok, Port, _ImportMap, _Exports} = start(File),
+    {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
 aos64_wasm_exceptions_test() ->
     {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
-    {ok, Port, _ImportMap} = start(File),
-    {ok, Result} = call(Port, main, [0, 0]),
+    {ok, Port, _ImportMap, _Exports} = start(File),
+    {ok, [Result]} = call(Port, "main", [0, 0]),
     ?assertEqual(120.0, Result).
