@@ -351,6 +351,8 @@ static void async_init(void* raw) {
 
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
 
+    wasm_runtime_set_default_running_mode(Mode_Interp);
+
     proc->engine = wasm_engine_new();
     DRV_DEBUG("Created engine");
     proc->store = wasm_store_new(proc->engine);
