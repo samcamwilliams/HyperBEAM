@@ -199,23 +199,25 @@ void drv_unlock(ErlDrvMutex* mutex) {
     DRV_DEBUG("Unlocked: %p", mutex);
 }
 
-void drv_signal(ErlDrvCond* cond, int* ready) {
+void drv_signal(ErlDrvMutex* mut, ErlDrvCond* cond, int* ready) {
     DRV_DEBUG("Signaling: %p. Pre-signal ready state: %d", cond, *ready);
+    drv_lock(mut);
     *ready = 1;
     erl_drv_cond_signal(cond);
+    drv_unlock(mut);
     DRV_DEBUG("Signaled: %p. Post-signal ready state: %d", cond, *ready);
 }
 
-void drv_wait(ErlDrvCond* cond, ErlDrvMutex* mutex, int* ready) {
+void drv_wait(ErlDrvMutex* mut, ErlDrvCond* cond, int* ready) {
     DRV_DEBUG("Started to wait: %p. Ready: %d", cond, *ready);
-    DRV_DEBUG("Mutex: %d", mutex);
-    drv_lock(mutex);
+    DRV_DEBUG("Mutex: %p", mut);
+    drv_lock(mut);
     while (!*ready) {
-        DRV_DEBUG("Waiting: d", cond);
-        erl_drv_cond_wait(cond, mutex);
-        //DRV_DEBUG("Woke up: %p. Ready: %d", cond, *ready);
+        DRV_DEBUG("Waiting: %p", cond);
+        erl_drv_cond_wait(cond, mut);
+        DRV_DEBUG("Woke up: Ready: %d", *ready);
     }
-    drv_unlock(mutex);
+    drv_unlock(mut);
     DRV_DEBUG("Finish waiting: %p", cond);
 }
 
@@ -304,7 +306,7 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 
     DRV_DEBUG("Mutex and cond created");
     // Wait for the response
-    drv_wait(proc->current_import->cond, proc->current_import->providing_response, &proc->current_import->ready);
+    drv_wait(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
 
     // Handle error in the response
     if (proc->current_import->error_message) {
@@ -721,7 +723,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         // Handle import response
         DRV_DEBUG("Import response received. Providing...");
         if (proc->current_import) {
-            drv_lock(proc->current_import->providing_response);
+            //drv_lock(proc->current_import->providing_response);
             // Decode the result list from the Erlang side into a new wasm_val_vec_t
             int list_length;
             ei_decode_list_header(buff, &index, &list_length);
@@ -752,7 +754,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
             }
 
             // Signal that the response is ready
-            drv_signal(proc->current_import->cond, &proc->current_import->ready);
+            drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
         } else {
             DRV_DEBUG("No pending import response waiting");
         }
