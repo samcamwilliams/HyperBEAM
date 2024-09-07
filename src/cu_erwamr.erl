@@ -1,8 +1,11 @@
 -module(cu_erwamr).
--export([start/1, call/3]).
+-export([start/1, call/3, test/0]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+test() ->
+    aos64_wasm_exceptions_test().
 
 load_driver() ->
     case erl_ddll:load("./priv", ?MODULE) of
@@ -25,12 +28,12 @@ start(WasmBinary) ->
             Other
     end.
 
-stdlib(Module, Func, Args) ->
-    ao:c({stdlib_called, Module, Func, Args}),
-    1.
+stdlib(Module, Func, Args, Signature) ->
+    ao:c({stdlib_called, Module, Func, Args, Signature}),
+    [1].
 
 call(Port, FunctionName, Args) ->
-    call(Port, FunctionName, Args, fun stdlib/3).
+    call(Port, FunctionName, Args, fun stdlib/4).
 call(Port, FunctionName, Args, ImportFunc) ->
     ao:c({call_started, Port, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
@@ -41,12 +44,15 @@ exec_call(ImportFunc, Port) ->
         {ok, Result} ->
             ao:c({call_result, Result}),
             {ok, Result};
-        {import, Module, Func, Args} ->
-            ao:c({import_called, Module, Func, Args}),
-            ErlRes = ImportFunc(Module, Func, Args),
+        {import, Module, Func, Args, Signature} ->
+            ao:c({import_called, Module, Func, Args, Signature}),
+            ErlRes = ImportFunc(Module, Func, Args, Signature),
             ao:c({import_returned, ErlRes}),
-            Port ! {self(), {command, term_to_binary({import_result, ErlRes})}},
+            Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
             exec_call(ImportFunc, Port);
+        error ->
+            ao:c(wasm_error),
+            error;
         Error ->
             ao:c({unexpected_result, Error}),
             Error
