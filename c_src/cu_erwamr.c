@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#include <pthread.h>
 #include "cu_erwamr_imports.h"
 
 typedef struct {
@@ -12,7 +13,8 @@ typedef struct {
     ErlDrvCond* cond;
     int ready;
     char* error_message;
-    wasm_val_vec_t result;
+    ei_term* result_terms;
+    int result_length;
 } ImportResponse;
 
 typedef struct {
@@ -34,17 +36,18 @@ typedef struct {
 } Proc;
 
 typedef struct {
-    void* binary;
-    long size;
-    Proc* proc;
-} LoadWasmReq;
-
-typedef struct {
     char* module_name;
     char* field_name;
     char* signature;
     Proc* proc;
+    wasm_func_t* stub_func;
 } ImportHook;
+
+typedef struct {
+    void* binary;
+    long size;
+    Proc* proc;
+} LoadWasmReq;
 
 static ErlDrvTermData atom_ok;
 static ErlDrvTermData atom_error;
@@ -56,14 +59,15 @@ static ErlDrvTermData atom_import;
 void debug_print(const char* file, int line, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    fprintf(stderr, "[DBG @ %s:%d] ", file, line);
-    vfprintf(stderr, format, args);
-    fprintf(stderr, "\n");
+    pthread_t thread_id = pthread_self();
+    printf("[DBG#%p @ %s:%d] ", thread_id, file, line);
+    vprintf(format, args);
+    printf("\n");
     va_end(args);
 }
 
-const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
-    switch (kind) {
+const char* wasm_externtype_to_kind_string(wasm_externtype_t* type) {
+    switch (wasm_externtype_kind(type)) {
         case WASM_EXTERN_FUNC: return "func";
         case WASM_EXTERN_GLOBAL: return "global";
         case WASM_EXTERN_TABLE: return "table";
@@ -73,7 +77,7 @@ const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
 }
 
 // Helper function to convert wasm_valtype_t to char
-int wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
+char wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
     switch (wasm_valtype_kind(valtype)) {
         case WASM_I32: return 'i';
         case WASM_I64: return 'I';
@@ -112,12 +116,83 @@ int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val) {
     }
 }
 
+int erl_term_to_wasm_val(wasm_val_t* val, ei_term* term) {
+    DRV_DEBUG("Converting erl term to wasm val");
+    switch (val->kind) {
+        case WASM_I32:
+            val->of.i32 = (int) term->value.i_val;
+            break;
+        case WASM_I64:
+            val->of.i64 = (long) term->value.i_val;
+            break;
+        case WASM_F32:
+            val->of.f32 = (float) term->value.d_val;
+            break;
+        case WASM_F64:
+            val->of.f64 = term->value.d_val;
+            break;
+        default:
+            DRV_DEBUG("Unsupported parameter type: %d", val->kind);
+            return -1;
+    }
+    return 0;
+}
+
+int erl_terms_to_wasm_vals(wasm_val_vec_t* vals, ErlDrvTermData* terms) {
+    for(int i = 0; i < vals->size; i++) {
+        int res = erl_term_to_wasm_val(&vals->data[i], &terms[i]);
+        if(res == -1) {
+            DRV_DEBUG("Failed to convert term to wasm val");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+ei_term* decode_list(char* buff, int* index) {
+    int arity, type;
+
+    if(ei_get_type(buff, index, &type, &arity) == -1) {
+        DRV_DEBUG("Failed to get type");
+        return NULL;
+    }
+
+    ei_term* res = driver_alloc(sizeof(ei_term) * arity);
+
+    if(type == ERL_LIST_EXT) {
+        DRV_DEBUG("Decoding list");
+        ei_decode_list_header(buff, index, &arity);
+        DRV_DEBUG("Decoded list header. Arity: %d", arity);
+        for(int i = 0; i < arity; i++) {
+            DRV_DEBUG("Decoding Erlang term %d", i);
+            ei_decode_ei_term(buff, index, &res[i]);
+        }
+    }
+    else if(type == ERL_STRING_EXT) {
+        DRV_DEBUG("Decoding list encoded as string");
+        char* str = driver_alloc(arity * sizeof(char) + 1);
+        ei_decode_string(buff, index, str);
+        for(int i = 0; i < arity; i++) {
+            res[i].ei_type = ERL_INTEGER_EXT;
+            res[i].value.i_val = str[i];
+            DRV_DEBUG("Decoded term %d: %d", i, res[i].value.i_val);
+        }
+        driver_free(str);
+    }
+    else {
+        DRV_DEBUG("Unknown type: %d", type);
+        return NULL;
+    }
+
+    return res;
+}
+
 int get_function_sig(const wasm_externtype_t* type, char* type_str) {
     if (wasm_externtype_kind(type) == WASM_EXTERN_FUNC) {
         DRV_DEBUG("wasm_externtype_kind(type) == WASM_EXTERN_FUNC");
         const wasm_functype_t* functype = wasm_externtype_as_functype_const(type);
-        wasm_valtype_vec_t* params = wasm_functype_params(functype);
-        wasm_valtype_vec_t* results = wasm_functype_results(functype);
+        const wasm_valtype_vec_t* params = wasm_functype_params(functype);
+        const wasm_valtype_vec_t* results = wasm_functype_results(functype);
 
         if(!params || !results) {
             DRV_DEBUG("Export function params/results are NULL");
@@ -222,11 +297,6 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 
     // Initialize the result vector and set the required result types 
     proc->current_import = driver_alloc(sizeof(ImportResponse));
-    wasm_val_vec_new_uninitialized(&proc->current_import->result, results->size);
-    proc->current_import->result.num_elems = results->num_elems;
-    for (size_t i = 0; i < results->size; i++) {
-        proc->current_import->result.data[i].kind = results->data[i].kind;
-    }
 
     // Create and initialize a is_running and condition variable for the response
     proc->current_import->providing_response = erl_drv_mutex_create("response_mutex");
@@ -249,10 +319,17 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     }
 
     // Convert the response back to WASM values
-    for(int i = 0; i < proc->current_import->result.size; i++) {
-        results->data[i] = proc->current_import->result.data[i];
-        results->data[i].kind = results->data[i].kind;
+    const wasm_valtype_vec_t* result_types = wasm_functype_results(wasm_func_type(import_hook->stub_func));
+    for(int i = 0; i < proc->current_import->result_length; i++) {
+        results->data[i].kind = wasm_valtype_kind(result_types->data[i]);
     }
+    int res = erl_terms_to_wasm_vals(results, proc->current_import->result_terms);
+    if(res == -1) {
+        DRV_DEBUG("Failed to convert terms to wasm vals");
+        return NULL;
+    }
+
+    results->num_elems = result_types->num_elems;
 
     // Clean up
     DRV_DEBUG("Cleaning up import response");
@@ -271,17 +348,18 @@ static void async_init(void* raw) {
     Proc* proc = mod_bin->proc;
     drv_lock(proc->is_running);
     // Initialize WASM engine, store, etc.
+
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
+
     proc->engine = wasm_engine_new();
     DRV_DEBUG("Created engine");
     proc->store = wasm_store_new(proc->engine);
     DRV_DEBUG("Created store");
+
     // Load WASM module
     wasm_byte_vec_t binary;
     wasm_byte_vec_new(&binary, mod_bin->size, (const wasm_byte_t*)mod_bin->binary);
-    // for (int i = 0; i < binary.size; i++) {
-    //     DRV_DEBUG("Byte %d: %d", i, binary.data[i]);
-    // }
+
     proc->module = wasm_module_new(proc->store, &binary);
     DRV_DEBUG("RETURNED FROM MODULE NEW");
     DRV_DEBUG("Module: %p", proc->module);
@@ -324,11 +402,14 @@ static void async_init(void* raw) {
 
         DRV_DEBUG("Import: %s.%s", module_name->data, name->data);
 
-        char type_str[256];
-        get_function_sig(type, type_str);
+        char* type_str = driver_alloc(256);
+        if(!get_function_sig(type, type_str)) {
+            // TODO: Handle other types of imports?
+            continue;
+        }
 
         init_msg[msg_i++] = ERL_DRV_ATOM;
-        init_msg[msg_i++] = driver_mk_atom((char*)wasm_externtype_kind_to_string(wasm_externtype_kind(type)));
+        init_msg[msg_i++] = driver_mk_atom((char*)wasm_externtype_to_kind_string(type));
         init_msg[msg_i++] = ERL_DRV_STRING;
         init_msg[msg_i++] = (ErlDrvTermData)module_name->data;
         init_msg[msg_i++] = module_name->size - 1;
@@ -337,7 +418,7 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = name->size - 1;
         init_msg[msg_i++] = ERL_DRV_STRING;
         init_msg[msg_i++] = (ErlDrvTermData)type_str;
-        init_msg[msg_i++] = strlen(type_str) - 1;
+        init_msg[msg_i++] = strlen(type_str);
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
@@ -345,11 +426,10 @@ static void async_init(void* raw) {
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;
-        hook->signature = driver_alloc(256);
-        get_function_sig(type, hook->signature);
         hook->proc = proc;
+        hook->signature = type_str;
 
-        wasm_func_t *stub_func =
+        hook->stub_func =
             wasm_func_new_with_env(
                 proc->store,
                 wasm_externtype_as_functype_const(type),
@@ -357,7 +437,7 @@ static void async_init(void* raw) {
                 hook,
                 NULL
             );
-        stubs[i] = wasm_func_as_extern(stub_func);
+        stubs[i] = wasm_func_as_extern(hook->stub_func);
 
         DRV_DEBUG("Adding ImportHook to Erlang: %s.%s", module_name->data, name->data);
     }
@@ -381,7 +461,7 @@ static void async_init(void* raw) {
         const wasm_exporttype_t* export = exports.data[i];
         const wasm_name_t* name = wasm_exporttype_name(export);
         const wasm_externtype_t* type = wasm_exporttype_type(export);
-        const char* kind_str = wasm_externtype_kind_to_string(wasm_externtype_kind(type));
+        const char* kind_str = wasm_externtype_to_kind_string(type);
 
         if (strcmp("memory", kind_str) == 0) {
             proc->memory = wasm_extern_as_memory(exports.data[i]);
@@ -462,27 +542,16 @@ static void async_call(void* raw) {
     wasm_val_vec_t args, results;
     wasm_val_vec_new_uninitialized(&args, param_types->size);
     args.num_elems = param_types->num_elems;
-    for (size_t i = 0; i < param_types->size; i++) {
-        ei_term arg = proc->current_args[i];
+    // CONV: ei_term* -> wasm_val_vec_t
+    for(int i = 0; i < param_types->size; i++) {
         args.data[i].kind = wasm_valtype_kind(param_types->data[i]);
-        switch (args.data[i].kind) {
-            case WASM_I32:
-                args.data[i].of.i32 = (int) arg.value.i_val;
-                break;
-            case WASM_I64:
-                args.data[i].of.i64 = (long) arg.value.i_val;
-                break;
-            case WASM_F32:
-                args.data[i].of.f32 = (float) arg.value.d_val;
-                break;
-            case WASM_F64:
-                args.data[i].of.f64 = arg.value.d_val;
-                break;
-            default:
-                DRV_DEBUG("Unsupported parameter type: %d", args.data[i].kind);
-                return;
-        }
     }
+    int res = erl_terms_to_wasm_vals(&args, proc->current_args);
+    if(res == -1) {
+        DRV_DEBUG("Failed to convert terms to wasm vals");
+        return;
+    }
+
     wasm_val_vec_new_uninitialized(&results, result_types->size);
     results.num_elems = result_types->num_elems;
     for (size_t i = 0; i < result_types->size; i++) {
@@ -615,7 +684,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         DRV_DEBUG("Caller PID: %d", proc->pid);
         int size, type;
         ei_get_type(buff, &index, &type, &size);
-        DRV_DEBUG("WASM binary size: %d bytes. Type: %d", size, type);
+        DRV_DEBUG("WASM binary size: %d bytes. Type: %c", size, type);
         void* wasm_binary = driver_alloc(size);
         long size_l = (long)size;
         ei_decode_binary(buff, &index, wasm_binary, &size_l);
@@ -634,53 +703,20 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         char* function_name = driver_alloc(MAXATOMLEN);
         ei_decode_string(buff, &index, function_name);
         DRV_DEBUG("Function name: %s", function_name);
-        int arg_length;
-        ei_decode_list_header(buff, &index, &arg_length);
-        DRV_DEBUG("Args length: %d", arg_length);
-        ei_term* args = driver_alloc(sizeof(ei_term) * arg_length);
-
-        for (int i = 0; i < arg_length; i++) {
-            ei_decode_ei_term(buff, &index, &args[i]);
-            DRV_DEBUG("Decoded arg %d. Type: %c", i, args[i].ei_type);
-            //DRV_DEBUG("Arg %d: %d", i, args[i].value.i_val);
-        }
         proc->current_function = function_name;
-        proc->current_args = args;
+
+        DRV_DEBUG("Decoding args. Buff: %p. Index: %d", buff, index);
+        proc->current_args = decode_list(buff, &index);
 
         driver_async(proc->port, NULL, async_call, proc, NULL);
     } else if (strcmp(command, "import_response") == 0) {
         // Handle import response
+        // TODO: We should probably start a mutex on the current_import object here.
+        // At the moment current_import->providing_response must not be locked so that signalling can happen.
         DRV_DEBUG("Import response received. Providing...");
         if (proc->current_import) {
-            //drv_lock(proc->current_import->providing_response);
-            // Decode the result list from the Erlang side into a new wasm_val_vec_t
-            int list_length;
-            ei_decode_list_header(buff, &index, &list_length);
-            list_length = 0;
-            DRV_DEBUG("Result list length: %d", list_length);
-            for (int i = 0; i < list_length; i++) {
-                switch (proc->current_import->result.data[i].kind) {
-                    case WASM_I32:
-                        ei_decode_long(buff, &index, (long*)&proc->current_import->result.data[i].of.i32);
-                        break;
-                    case WASM_I64:
-                        ei_decode_longlong(buff, &index, &proc->current_import->result.data[i].of.i64);
-                        break;
-                    case WASM_F32:
-                        {
-                            double temp;
-                            ei_decode_double(buff, &index, &temp);
-                            proc->current_import->result.data[i].of.f32 = (float)temp;
-                        }
-                        break;
-                    case WASM_F64:
-                        ei_decode_double(buff, &index, &proc->current_import->result.data[i].of.f64);
-                        break;
-                    default:
-                        DRV_DEBUG("Unsupported return type: %d", proc->current_import->result.data[i].kind);
-                        proc->current_import->error_message = "Unsupported return type";
-                }
-            }
+            DRV_DEBUG("Decoding import response");
+            proc->current_import->result_terms = decode_list(buff, &index);
 
             // Signal that the response is ready
             drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
