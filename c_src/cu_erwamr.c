@@ -62,29 +62,6 @@ void debug_print(const char* file, int line, const char* format, ...) {
     va_end(args);
 }
 
-int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val, ErlDrvTermData* erl_type) {
-    switch (val->kind) {
-        case WASM_I32: 
-            *erl_type = ERL_DRV_INT;
-            *term = (ErlDrvTermData)val->of.i32;
-            return 1;
-        case WASM_I64: 
-            *erl_type = ERL_DRV_INT64;
-            *term = (ErlDrvTermData)val->of.i64;
-            return 1;
-        case WASM_F32: 
-            *erl_type = ERL_DRV_FLOAT;
-            *term = (ErlDrvTermData)val->of.f32;
-            return 1;
-        case WASM_F64: 
-            *erl_type = ERL_DRV_FLOAT;
-            *term = (ErlDrvTermData)val->of.f64;
-            return 1;
-        default: 
-            return 0;
-    }
-}
-
 const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
     switch (kind) {
         case WASM_EXTERN_FUNC: return "func";
@@ -92,54 +69,6 @@ const char* wasm_externtype_kind_to_string(wasm_externkind_t kind) {
         case WASM_EXTERN_TABLE: return "table";
         case WASM_EXTERN_MEMORY: return "memory";
         default: return "unknown";
-    }
-}
-
-int erl_term_to_wasm_val(ErlDrvTermData term, wasm_val_t* val, wasm_valkind_t expected_kind) {
-    switch (expected_kind) {
-        case WASM_I32:
-            if (term == ERL_DRV_INT) {
-                val->kind = WASM_I32;
-                val->of.i32 = term;
-                return 1;
-            }
-            break;
-        case WASM_I64:
-            if (term == ERL_DRV_INT64) {
-                val->kind = WASM_I64;
-                val->of.i64 = term;
-                return 1;
-            }
-            break;
-        case WASM_F32:
-        case WASM_F64:
-            if (term == ERL_DRV_FLOAT) {
-                double temp = term;
-                if (expected_kind == WASM_F32) {
-                    val->kind = WASM_F32;
-                    val->of.f32 = (float)temp;
-                } else {
-                    val->kind = WASM_F64;
-                    val->of.f64 = temp;
-                }
-                return 1;
-            }
-            break;
-        default:
-            return 0;
-    }
-    return 0;
-}
-
-wasm_valkind_t erl_term_to_wasm_val_char(ErlDrvTermData term, wasm_val_t* val, char kind) {
-    switch (kind) {
-        case 'i': return erl_term_to_wasm_val(term, val, WASM_I32);
-        case 'I': return erl_term_to_wasm_val(term, val, WASM_I64);
-        case 'f': return erl_term_to_wasm_val(term, val, WASM_F32);
-        case 'F': return erl_term_to_wasm_val(term, val, WASM_F64);
-        // Note: WASM_EXTERNREF, WASM_V128, and WASM_FUNCREF are not directly supported
-        // by ErlDrvTermData. You may need to implement custom encoding for these types.
-        default: return WASM_I32;
     }
 }
 
@@ -154,6 +83,32 @@ int wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
         case WASM_V128: return 'v';
         case WASM_FUNCREF: return 'f';
         default: return 'u';
+    }
+}
+
+int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val) {
+    DRV_DEBUG("Adding wasm val to erl term");
+    DRV_DEBUG("Val of: %d (%c)", val->of.i32, wasm_valtype_kind_to_char(val));
+    switch (val->kind) {
+        case WASM_I32:
+            term[0] = ERL_DRV_INT;
+            term[1] = val->of.i32;
+            return 2;
+        case WASM_I64:
+            term[0] = ERL_DRV_INT64;
+            term[1] = &val->of.i64;
+            return 2;
+        case WASM_F32:
+            term[0] = ERL_DRV_FLOAT;
+            term[1] = &val->of.f32;
+            return 2;
+        case WASM_F64:
+            term[0] = ERL_DRV_FLOAT;
+            term[1] = &val->of.f64;
+            return 2;
+        default:
+            DRV_DEBUG("Unsupported result type: %d", val->kind);
+            return 0;
     }
 }
 
@@ -221,32 +176,6 @@ void drv_wait(ErlDrvMutex* mut, ErlDrvCond* cond, int* ready) {
     DRV_DEBUG("Finish waiting: %p", cond);
 }
 
-int add_wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val) {
-    DRV_DEBUG("Adding wasm val to erl term");
-    DRV_DEBUG("Val of: %d (%c)", val->of.i32, wasm_valtype_kind_to_char(val));
-    switch (val->kind) {
-        case WASM_I32:
-            term[0] = ERL_DRV_INT;
-            term[1] = val->of.i32;
-            return 2;
-        case WASM_I64:
-            term[0] = ERL_DRV_INT64;
-            term[1] = &val->of.i64;
-            return 2;
-        case WASM_F32:
-            term[0] = ERL_DRV_FLOAT;
-            term[1] = &val->of.f32;
-            return 2;
-        case WASM_F64:
-            term[0] = ERL_DRV_FLOAT;
-            term[1] = &val->of.f64;
-            return 2;
-        default:
-            DRV_DEBUG("Unsupported result type: %d", val->kind);
-            return 0;
-    }
-}
-
 wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
     DRV_DEBUG("generic_import_handler called");
     ImportHook* import_hook = (ImportHook*)env;
@@ -268,7 +197,7 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 
     // Encode args
     for (size_t i = 0; i < args->size; i++) {
-        msg_index += add_wasm_val_to_erl_term(&msg[msg_index], &args->data[i]);
+        msg_index += wasm_val_to_erl_term(&msg[msg_index], &args->data[i]);
     }
     msg[msg_index++] = ERL_DRV_NIL;
     msg[msg_index++] = ERL_DRV_LIST;
@@ -595,7 +524,7 @@ static void async_call(void* raw) {
     msg[msg_index++] = atom_ok;
     for (size_t i = 0; i < results.size; i++) {
         DRV_DEBUG("Processing result %d", i);
-        int res_size = add_wasm_val_to_erl_term(&msg[msg_index], &results.data[i]);
+        int res_size = wasm_val_to_erl_term(&msg[msg_index], &results.data[i]);
         msg_index += res_size;
     }
     msg[msg_index++] = ERL_DRV_NIL;
