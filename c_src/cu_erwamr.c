@@ -21,7 +21,6 @@ typedef struct {
     wasm_engine_t* engine;
     wasm_instance_t* instance;
     wasm_module_t* module;
-    wasm_memory_t* memory;
     wasm_store_t* store;
     ErlDrvPort port;
     ErlDrvTermData port_term;
@@ -160,22 +159,21 @@ ei_term* decode_list(char* buff, int* index) {
     ei_term* res = driver_alloc(sizeof(ei_term) * arity);
 
     if(type == ERL_LIST_EXT) {
-        DRV_DEBUG("Decoding list");
+        //DRV_DEBUG("Decoding list");
         ei_decode_list_header(buff, index, &arity);
-        DRV_DEBUG("Decoded list header. Arity: %d", arity);
+        //DRV_DEBUG("Decoded list header. Arity: %d", arity);
         for(int i = 0; i < arity; i++) {
-            DRV_DEBUG("Decoding Erlang term %d", i);
             ei_decode_ei_term(buff, index, &res[i]);
         }
     }
     else if(type == ERL_STRING_EXT) {
-        DRV_DEBUG("Decoding list encoded as string");
+        //DRV_DEBUG("Decoding list encoded as string");
         char* str = driver_alloc(arity * sizeof(char) + 1);
         ei_decode_string(buff, index, str);
         for(int i = 0; i < arity; i++) {
             res[i].ei_type = ERL_INTEGER_EXT;
             res[i].value.i_val = str[i];
-            DRV_DEBUG("Decoded term %d: %d", i, res[i].value.i_val);
+            //DRV_DEBUG("Decoded term %d: %d", i, res[i].value.i_val);
         }
         driver_free(str);
     }
@@ -189,7 +187,6 @@ ei_term* decode_list(char* buff, int* index) {
 
 int get_function_sig(const wasm_externtype_t* type, char* type_str) {
     if (wasm_externtype_kind(type) == WASM_EXTERN_FUNC) {
-        DRV_DEBUG("wasm_externtype_kind(type) == WASM_EXTERN_FUNC");
         const wasm_functype_t* functype = wasm_externtype_as_functype_const(type);
         const wasm_valtype_vec_t* params = wasm_functype_params(functype);
         const wasm_valtype_vec_t* results = wasm_functype_results(functype);
@@ -249,6 +246,60 @@ void drv_wait(ErlDrvMutex* mut, ErlDrvCond* cond, int* ready) {
     }
     drv_unlock(mut);
     DRV_DEBUG("Finish waiting: %p", cond);
+}
+
+wasm_func_t* get_exported_function(Proc* proc, const char* target_name) {
+    wasm_extern_vec_t exports;
+    wasm_instance_exports(proc->instance, &exports);
+    wasm_exporttype_vec_t export_types;
+    wasm_module_exports(proc->module, &export_types);
+    wasm_func_t* func = NULL;
+
+    for (size_t i = 0; i < exports.size; ++i) {
+        wasm_extern_t* ext = exports.data[i];
+        if (wasm_extern_kind(ext) == WASM_EXTERN_FUNC) {
+            const wasm_name_t* exp_name = wasm_exporttype_name(export_types.data[i]);
+            if (exp_name && exp_name->size == strlen(target_name) + 1 && 
+                strncmp(exp_name->data, target_name, exp_name->size - 1) == 0) {
+                func = wasm_extern_as_func(ext);
+                break;
+            }
+        }
+    }
+
+    return func;
+}
+
+wasm_memory_t* get_memory(Proc* proc) {
+    wasm_extern_vec_t exports;
+    wasm_instance_exports(proc->instance, &exports);
+    for (size_t i = 0; i < exports.size; i++) {
+        if (wasm_extern_kind(exports.data[i]) == WASM_EXTERN_MEMORY) {
+            return wasm_extern_as_memory(exports.data[i]);
+        }
+    }
+    return NULL;
+}
+
+void send_error(Proc* proc, const char* message_fmt, ...) {
+    va_list args;
+    va_start(args, message_fmt);
+    char* message = driver_alloc(256);
+    vsnprintf(message, 256, message_fmt, args);
+    DRV_DEBUG("Sending error message: %s", message);
+    ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
+    int msg_index = 0;
+    msg[msg_index++] = ERL_DRV_ATOM;
+    msg[msg_index++] = atom_error;
+    msg[msg_index++] = ERL_DRV_STRING;
+    msg[msg_index++] = (ErlDrvTermData)message;
+    msg[msg_index++] = strlen(message);
+    msg[msg_index++] = ERL_DRV_TUPLE;
+    msg[msg_index++] = 2;
+
+    int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+    DRV_DEBUG("Sent error message. Res: %d", msg_res);
+    va_end(args);
 }
 
 wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_val_vec_t* results) {
@@ -363,8 +414,7 @@ static void async_init(void* raw) {
     wasm_byte_vec_new(&binary, mod_bin->size, (const wasm_byte_t*)mod_bin->binary);
 
     proc->module = wasm_module_new(proc->store, &binary);
-    DRV_DEBUG("RETURNED FROM MODULE NEW");
-    DRV_DEBUG("Module: %p", proc->module);
+    DRV_DEBUG("Module created: %p", proc->module);
     if (!proc->module) {
         DRV_DEBUG("Failed to create module");
         wasm_byte_vec_delete(&binary);
@@ -378,7 +428,6 @@ static void async_init(void* raw) {
     // Get imports
     wasm_importtype_vec_t imports;
     wasm_module_imports(proc->module, &imports);
-    DRV_DEBUG("Got imports");
     DRV_DEBUG("Imports size: %d", imports.size);
     wasm_extern_t *stubs[imports.size];
 
@@ -387,22 +436,22 @@ static void async_init(void* raw) {
     wasm_module_exports(proc->module, &exports);
 
     // Create Erlang lists for imports
-    DRV_DEBUG("Exports size: %d", exports.size);
+    //DRV_DEBUG("Exports size: %d", exports.size);
     ErlDrvTermData* init_msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + (13 * imports.size) + (11 * exports.size)));
-    DRV_DEBUG("Allocated init message");
+    //DRV_DEBUG("Allocated init message");
     int msg_i = 0;
     init_msg[msg_i++] = ERL_DRV_ATOM;
     init_msg[msg_i++] = atom_ok;
 
     // Process imports
     for (int i = 0; i < imports.size; ++i) {
-        DRV_DEBUG("Processing import %d", i);
+        //DRV_DEBUG("Processing import %d", i);
         const wasm_importtype_t* import = imports.data[i];
         const wasm_name_t* module_name = wasm_importtype_module(import);
         const wasm_name_t* name = wasm_importtype_name(import);
         const wasm_externtype_t* type = wasm_importtype_type(import);
 
-        DRV_DEBUG("Import: %s.%s", module_name->data, name->data);
+        //DRV_DEBUG("Import: %s.%s", module_name->data, name->data);
 
         char* type_str = driver_alloc(256);
         if(!get_function_sig(type, type_str)) {
@@ -424,7 +473,7 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
-        printf("Creating callback for %s.%s\n", module_name->data, name->data);
+        DRV_DEBUG("Creating callback for %s.%s\n", module_name->data, name->data);
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;
@@ -440,8 +489,6 @@ static void async_init(void* raw) {
                 NULL
             );
         stubs[i] = wasm_func_as_extern(hook->stub_func);
-
-        DRV_DEBUG("Adding ImportHook to Erlang: %s.%s", module_name->data, name->data);
     }
 
     init_msg[msg_i++] = ERL_DRV_NIL;
@@ -458,17 +505,15 @@ static void async_init(void* raw) {
         return;
     }
 
-    for (size_t i = 0; i < exports.size; ++i) {
-        DRV_DEBUG("Processing export %d", i);
+    // Refresh the exports now that we have an instance
+    wasm_module_exports(proc->module, &exports);
+    for (size_t i = 0; i < exports.size; i++) {
+        //DRV_DEBUG("Processing export %d", i);
         const wasm_exporttype_t* export = exports.data[i];
         const wasm_name_t* name = wasm_exporttype_name(export);
-        const wasm_externtype_t* type = wasm_exporttype_type(export);
-        const char* kind_str = wasm_externtype_to_kind_string(type);
+        wasm_externtype_t* type = wasm_exporttype_type(export);
+        char* kind_str = wasm_externtype_to_kind_string(type);
 
-        if (strcmp("memory", kind_str) == 0) {
-            proc->memory = wasm_extern_as_memory(exports.data[i]);
-            DRV_DEBUG("Found memory: %p", proc->memory);
-        }
         char* type_str = driver_alloc(256);
         get_function_sig(type, type_str);
         DRV_DEBUG("Export: %s [%s] -> %s", name->data, kind_str, type_str);
@@ -501,28 +546,6 @@ static void async_init(void* raw) {
     drv_unlock(proc->is_running);
 }
 
-wasm_func_t* get_exported_function(Proc* proc, const char* target_name) {
-    wasm_extern_vec_t exports;
-    wasm_instance_exports(proc->instance, &exports);
-    wasm_exporttype_vec_t export_types;
-    wasm_module_exports(proc->module, &export_types);
-    wasm_func_t* func = NULL;
-
-    for (size_t i = 0; i < exports.size; ++i) {
-        wasm_extern_t* ext = exports.data[i];
-        if (wasm_extern_kind(ext) == WASM_EXTERN_FUNC) {
-            const wasm_name_t* exp_name = wasm_exporttype_name(export_types.data[i]);
-            if (exp_name && exp_name->size == strlen(target_name) + 1 && 
-                strncmp(exp_name->data, target_name, exp_name->size - 1) == 0) {
-                func = wasm_extern_as_func(ext);
-                break;
-            }
-        }
-    }
-
-    return func;
-}
-
 static void async_call(void* raw) {
     Proc* proc = (Proc*)raw;
     //DRV_DEBUG("Calling function: %s", proc->current_function);
@@ -532,7 +555,8 @@ static void async_call(void* raw) {
     // Find the function in the exports
     wasm_func_t* func = get_exported_function(proc, function_name);
     if (!func) {
-        DRV_DEBUG("Function not found: %s", function_name);
+        send_error(proc, "Function not found: %s", function_name);
+        drv_unlock(proc->is_running);
         return;
     }
     DRV_DEBUG("Func: %p", func);
@@ -550,7 +574,8 @@ static void async_call(void* raw) {
     }
     int res = erl_terms_to_wasm_vals(&args, proc->current_args);
     if(res == -1) {
-        DRV_DEBUG("Failed to convert terms to wasm vals");
+        send_error(proc, "Failed to convert terms to wasm vals");
+        drv_unlock(proc->is_running);
         return;
     }
 
@@ -564,24 +589,7 @@ static void async_call(void* raw) {
     wasm_trap_t* trap = wasm_func_call(func, &args, &results);
 
     if (trap) {
-        DRV_DEBUG("Function call failed");
-        wasm_message_t* message;
-        wasm_trap_message(trap, &message);
-        //DRV_DEBUG("Message: %s", message->data);
-        //ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
-        // int msg_index = 0;
-        // msg[msg_index++] = ERL_DRV_ATOM;
-        // msg[msg_index++] = atom_error;
-        // msg[msg_index++] = ERL_DRV_STRING;
-        // msg[msg_index++] = (ErlDrvTermData)message->data;
-        // msg[msg_index++] = strlen(message->data);
-        // msg[msg_index++] = ERL_DRV_TUPLE;
-        // msg[msg_index++] = 2;
-        // int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
-        ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 2);
-        msg[0] = ERL_DRV_ATOM;
-        msg[1] = atom_error;
-        int msg_res = erl_drv_output_term(proc->port_term, msg, 2);
+        send_error(proc, "Function call failed during WASM execution.");
         drv_unlock(proc->is_running);
         return;
     }
@@ -642,10 +650,7 @@ static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
     proc->is_running = erl_drv_mutex_create("wasm_instance_mutex");
     proc->is_initialized = 0;
     proc->start_time = time(NULL);
-    DRV_DEBUG("Start time: %ld", proc->start_time);
     return (ErlDrvData)proc;
-
-
 }
 
 static void wasm_driver_stop(ErlDrvData raw) {
@@ -662,31 +667,31 @@ static void wasm_driver_stop(ErlDrvData raw) {
 }
 
 static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) {
-    DRV_DEBUG("WASM driver output received");
+    //DRV_DEBUG("WASM driver output received");
     Proc* proc = (Proc*)raw;
-    DRV_DEBUG("Port: %p", proc->port);
-    DRV_DEBUG("Port term: %p", proc->port_term);
+    //DRV_DEBUG("Port: %p", proc->port);
+    //DRV_DEBUG("Port term: %p", proc->port_term);
 
     int index = 0;
     int version;
     int ver_res = ei_decode_version(buff, &index, &version);
-    DRV_DEBUG("Received term has version: %d", version);
-    DRV_DEBUG("Index: %d. buff_len: %d. buff: %p", index, bufflen, buff);
+    //DRV_DEBUG("Received term has version: %d", version);
+    //DRV_DEBUG("Index: %d. buff_len: %d. buff: %p", index, bufflen, buff);
     int arity;
     ei_decode_tuple_header(buff, &index, &arity);
-    DRV_DEBUG("Term arity: %d", arity);
+    //DRV_DEBUG("Term arity: %d", arity);
 
     char command[MAXATOMLEN];
     ei_decode_atom(buff, &index, command);
-    DRV_DEBUG("Command: %s", command);
+    DRV_DEBUG("Port %p received command: %s, arity: %d", proc->port, command, arity);
     
     if (strcmp(command, "init") == 0) {
         // Start async initialization
         proc->pid = driver_caller(proc->port);
-        DRV_DEBUG("Caller PID: %d", proc->pid);
+        //DRV_DEBUG("Caller PID: %d", proc->pid);
         int size, type;
         ei_get_type(buff, &index, &type, &size);
-        DRV_DEBUG("WASM binary size: %d bytes. Type: %c", size, type);
+        //DRV_DEBUG("WASM binary size: %d bytes. Type: %c", size, type);
         void* wasm_binary = driver_alloc(size);
         long size_l = (long)size;
         ei_decode_binary(buff, &index, wasm_binary, &size_l);
@@ -694,20 +699,20 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         mod_bin->proc = proc;
         mod_bin->binary = wasm_binary;
         mod_bin->size = size;
-        DRV_DEBUG("Calling for async thread to init");
+        //DRV_DEBUG("Calling for async thread to init");
         driver_async(proc->port, NULL, async_init, mod_bin, NULL);
     } else if (strcmp(command, "call") == 0) {
         if (!proc->is_initialized) {
-            DRV_DEBUG("Not initialized");
+            send_error(proc, "Cannot run WASM function as module not initialized.");
             return;
         }
         // Extract the function name and the args from the Erlang term and generate the wasm_val_vec_t
         char* function_name = driver_alloc(MAXATOMLEN);
         ei_decode_string(buff, &index, function_name);
-        DRV_DEBUG("Function name: %s", function_name);
+        //DRV_DEBUG("Function name: %s", function_name);
         proc->current_function = function_name;
 
-        DRV_DEBUG("Decoding args. Buff: %p. Index: %d", buff, index);
+        //DRV_DEBUG("Decoding args. Buff: %p. Index: %d", buff, index);
         proc->current_args = decode_list(buff, &index);
 
         driver_async(proc->port, NULL, async_call, proc, NULL);
@@ -715,17 +720,73 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         // Handle import response
         // TODO: We should probably start a mutex on the current_import object here.
         // At the moment current_import->providing_response must not be locked so that signalling can happen.
-        DRV_DEBUG("Import response received. Providing...");
+        //Import response received. Providing...");
         if (proc->current_import) {
-            DRV_DEBUG("Decoding import response");
+            DRV_DEBUG("Decoding import response from Erlang...");
             proc->current_import->result_terms = decode_list(buff, &index);
 
             // Signal that the response is ready
             drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
         } else {
-            DRV_DEBUG("No pending import response waiting");
+            send_error(proc, "No pending import response waiting");
         }
+    } else if (strcmp(command, "write") == 0) {
+        DRV_DEBUG("Write received");
+        long ptr, size;
+        int type;
+        ei_decode_tuple_header(buff, &index, &arity);
+        ei_decode_long(buff, &index, &ptr);
+        ei_get_type(buff, &index, &type, &size);
+        long size_l = (long)size;
+        char* wasm_binary;
+        int res = ei_decode_bitstring(buff, &index, &wasm_binary, NULL, &size_l);
+        DRV_DEBUG("Decoded binary. Res: %d. Size (bits): %ld", res, size_l);
+        long size_bytes = size_l / 8;
+        DRV_DEBUG("Write received. Ptr: %ld. Bytes: %ld", ptr, size_bytes);
+        byte_t* memory_data = wasm_memory_data(get_memory(proc));
+        DRV_DEBUG("Memory location to write to: %p", ptr+memory_data);
 
+        memcpy(memory_data + ptr, wasm_binary, size_bytes);
+        DRV_DEBUG("Write complete");
+
+        ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 2);
+        msg[0] = ERL_DRV_ATOM;
+        msg[1] = atom_ok;
+        erl_drv_output_term(proc->port_term, msg, 2);
+    }
+    else if (strcmp(command, "read") == 0) {
+        DRV_DEBUG("Read received");
+        long ptr, size;
+        int type;
+        ei_decode_tuple_header(buff, &index, &arity);
+        ei_decode_long(buff, &index, &ptr);
+        ei_decode_long(buff, &index, &size);
+        long size_l = (long)size;
+        DRV_DEBUG("Read received. Ptr: %ld. Size: %ld", ptr, size_l);
+        byte_t* memory_data = wasm_memory_data(get_memory(proc));
+        DRV_DEBUG("Memory location to read from: %p", memory_data + ptr);
+        
+        char* out_binary = driver_alloc(size_l);
+        memcpy(out_binary, memory_data + ptr, size_l);
+
+        DRV_DEBUG("Read complete. Binary: %p", out_binary);
+
+        ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + size_l));
+        int msg_index = 0;
+        msg[msg_index++] = ERL_DRV_ATOM;
+        msg[msg_index++] = atom_ok;
+        msg[msg_index++] = ERL_DRV_BUF2BINARY;
+        msg[msg_index++] = (ErlDrvTermData)out_binary;
+        msg[msg_index++] = size_l;
+        msg[msg_index++] = ERL_DRV_TUPLE;
+        msg[msg_index++] = 2;
+        
+        int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+        DRV_DEBUG("Read response sent: %d", msg_res);
+    }
+    else {
+        DRV_DEBUG("Unknown command: %s", command);
+        send_error(proc, "Unknown command");
     }
 }
 
