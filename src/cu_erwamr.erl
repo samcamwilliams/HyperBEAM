@@ -1,11 +1,12 @@
 -module(cu_erwamr).
--export([start/1, call/3, test/0]).
+-export([start/1, call/3, test/0, write/3]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 test() ->
-    aos64_wasm_exceptions_test().
+    aos64_wasm_exceptions_test(),
+    erlang:halt().
 
 load_driver() ->
     case erl_ddll:load("./priv", ?MODULE) of
@@ -28,8 +29,7 @@ start(WasmBinary) ->
             Other
     end.
 
-stdlib(Module, Func, Args, Signature) ->
-    ao:c({stdlib_called, Module, Func, Args, Signature}),
+stdlib(_Module, _Func, _Args, _Signature) ->
     [1].
 
 call(Port, FunctionName, Args) ->
@@ -50,18 +50,24 @@ exec_call(ImportFunc, Port) ->
             ao:c({import_returned, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
             exec_call(ImportFunc, Port);
-        error ->
-            ao:c(wasm_error),
-            error;
+        {error, Error} ->
+            ao:c({wasm_error, Error}),
+            {error, Error};
         Error ->
             ao:c({unexpected_result, Error}),
             Error
     end.
 
-read(_Port, _Offset, _Size) ->
-    not_implemented.
+write(Port, Offset, Data) ->
+    Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
+    receive
+        ok ->
+            ok;
+        Error ->
+            Error
+    end.
 
-write(_Port, _Offset, _Data) ->
+read(_Port, _Offset, _Size) ->
     not_implemented.
 
 %% Tests
@@ -89,5 +95,11 @@ simple_wasm64_test() ->
 aos64_wasm_exceptions_test() ->
     {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
-    {ok, [Result]} = call(Port, "main", [0, 0]),
-    ?assertEqual(120.0, Result).
+    {ok, [_Result]} = call(Port, "main", [1, 0]),
+    {ok, [Ptr1]} = call(Port, "malloc", [100]),
+    {ok, [Ptr2]} = call(Port, "malloc", [100]),
+    write(Port, Ptr1, <<"{ssdfasdfasdfs}a">>),
+    write(Port, Ptr2, <<"{asdfasdfasdf}aa">>),
+    {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
+    {ok, [Bin]} = call(Port, "read", [Ptr3, 0, 1]),
+    ?assertEqual(Bin, <<0>>).
