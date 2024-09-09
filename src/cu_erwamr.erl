@@ -29,27 +29,29 @@ start(WasmBinary) ->
             Other
     end.
 
-read_iovecs(_Port, _Ptr, 0) -> [];
 read_iovecs(Port, Ptr, Vecs) ->
+    Bin = iolist_to_binary(do_read_iovecs(Port, Ptr, Vecs)),
+    {ok, Bin}.
+
+do_read_iovecs(_Port, _Ptr, 0) -> [];
+do_read_iovecs(Port, Ptr, Vecs) ->
     {ok, VecStruct} = read(Port, Ptr, 16),
-    ao:c({wasi_fd_read_vec, VecStruct}),
     <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
-    ao:c({wasi_fd_read_vec_bin_ptr, BinPtr}),
-    ao:c({wasi_fd_read_vec_len, Len}),
     {ok, VecData} = read(Port, BinPtr, Len),
-    ao:c({wasi_fd_read_vec_data, VecData}),
-    [ VecData | read_iovecs(Port, Ptr + 16, Vecs - 1) ].
+    [ VecData | do_read_iovecs(Port, Ptr + 16, Vecs - 1) ].
 
 stdlib(Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature) ->
     ao:c({wasi_fd_write, Fd, Ptr, Vecs, RetPtr}),
-    VecData = read_iovecs(Port, Ptr, Vecs),
+    {ok, VecData} = read_iovecs(Port, Ptr, Vecs),
     ao:c({wasi_fd_write_vecs, VecData}),
-    BytesWritten = lists:sum( [ byte_size(D) || D <- VecData ] ),
+    BytesWritten = byte_size(VecData),
     ao:c({wasi_fd_write_bytes_written, BytesWritten}),
     write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     [0];
+stdlib(_Port, _Module, "clock_time_get", _Args, _Signature) ->
+    [1];
 stdlib(_Port, _Module, _Func, _Args, _Signature) ->
-    [1].
+    [0].
 
 call(Port, FunctionName, Args) ->
     call(Port, FunctionName, Args, fun stdlib/5).
@@ -78,6 +80,7 @@ exec_call(ImportFunc, Port) ->
     end.
 
 write(Port, Offset, Data) ->
+    ao:c({write_started, Port, Offset, byte_size(Data)}),
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
     receive
         ok ->
@@ -91,6 +94,18 @@ read(Port, Offset, Size) ->
     receive
         {ok, Result} ->
             {ok, Result};
+        Error ->
+            Error
+    end.
+
+malloc(Port, Size) ->
+    case call(Port, "malloc", [Size]) of
+        {ok, [0]} ->
+            ao:c({malloc_failed, Size}),
+            {error, malloc_failed};
+        {ok, [Ptr]} ->
+            ao:c({malloc_success, Ptr, Size}),
+            {ok, Ptr};
         Error ->
             Error
     end.
@@ -118,12 +133,21 @@ simple_wasm64_test() ->
     ?assertEqual(120.0, Result).
 
 aos64_wasm_exceptions_test() ->
+    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}]}}">>,
+    Msg = <<"{\"Target\":\"A\",\"Owner\":\"F\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}">>,
     {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [_Result]} = call(Port, "main", [1, 0]),
-    {ok, [Ptr1]} = call(Port, "malloc", [200]),
-    {ok, [Ptr2]} = call(Port, "malloc", [200]),
-    write(Port, Ptr1, <<"{Process:{Id:'AOS',Owner:'FOOBAR',Tags:[{name:'Name',value:'Thomas'}]}}">>),
-    write(Port, Ptr2, <<"{Target:'AOS',Owner:'FOOBAR',['Block-Height']:\"1000\",Id:\"1234xyxfoo\",Module:\"WOOPAWOOPA\",Tags:[{name:'Action',value:'Eval'}],Data:'return 1+1'}">>),
+    {ok, Ptr1} = malloc(Port, byte_size(Env)),
+    ?assertNotEqual(0, Ptr1),
+    write(Port, Ptr1, Env),
+    {ok, Ptr2} = malloc(Port, byte_size(Msg)),
+    ?assertNotEqual(0, Ptr2),
+    write(Port, Ptr2, Msg),
+    % Read the strings to validate they are correctly passed
+    {ok, EnvBin} = read(Port, Ptr1, byte_size(Env)),
+    {ok, MsgBin} = read(Port, Ptr2, byte_size(Msg)),
+    ?assertEqual(Env, EnvBin),
+    ?assertEqual(Msg, MsgBin),
     {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
     ao:c({success, Ptr3}).

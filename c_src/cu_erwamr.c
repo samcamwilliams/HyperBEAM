@@ -592,7 +592,15 @@ static void async_call(void* raw) {
     wasm_trap_t* trap = wasm_func_call(func, &args, &results);
 
     if (trap) {
-        send_error(proc, "Function call failed during WASM execution.");
+        wasm_message_t trap_msg;
+        wasm_trap_message(trap, &trap_msg);
+        // wasm_frame_t* origin = wasm_trap_origin(trap);
+        // int32_t func_index = wasm_frame_func_index(origin);
+        // int32_t func_offset = wasm_frame_func_offset(origin);
+        // char* func_name;
+
+        // DRV_DEBUG("WASM Exception: [func_index: %d, func_offset: %d] %.*s", func_index, func_offset, trap_msg.size, trap_msg.data);
+        send_error(proc, "WASM Exception: %.*s", trap_msg.size, trap_msg.data);
         drv_unlock(proc->is_running);
         return;
     }
@@ -667,8 +675,9 @@ static void wasm_driver_stop(ErlDrvData raw) {
         DRV_DEBUG("Signalling import_response with error");
         drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
         DRV_DEBUG("Signalled worker to fail. Locking is_running mutex to shutdown");
-        drv_lock(proc->is_running);
     }
+    // We need to first grab the lock, then unlock it and destroy it. Must be a better way...
+    drv_lock(proc->is_running);
     drv_unlock(proc->is_running);
     erl_drv_mutex_destroy(proc->is_running);
     // Cleanup WASM resources
