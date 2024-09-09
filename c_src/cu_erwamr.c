@@ -358,6 +358,8 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     // Wait for the response
     drv_wait(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
 
+    DRV_DEBUG("Response ready");
+
     // Handle error in the response
     if (proc->current_import->error_message) {
         DRV_DEBUG("Import execution failed. Error message: %s", proc->current_import->error_message);
@@ -724,6 +726,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         if (proc->current_import) {
             DRV_DEBUG("Decoding import response from Erlang...");
             proc->current_import->result_terms = decode_list(buff, &index);
+            proc->current_import->error_message = NULL;
 
             // Signal that the response is ready
             drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
@@ -770,8 +773,16 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         memcpy(out_binary, memory_data + ptr, size_l);
 
         DRV_DEBUG("Read complete. Binary: %p", out_binary);
+        if(size_l % 16 == 0) {
+            long* test = (long*)out_binary;
+            DRV_DEBUG("First as long: %ld", *test);
+            DRV_DEBUG("Second as long: %ld", test[1]);
+        }
+        else {
+            DRV_DEBUG("First bytes as string: %.10s", out_binary);
+        }
 
-        ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + size_l));
+        ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
         int msg_index = 0;
         msg[msg_index++] = ERL_DRV_ATOM;
         msg[msg_index++] = atom_ok;

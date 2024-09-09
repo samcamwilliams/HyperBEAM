@@ -29,11 +29,30 @@ start(WasmBinary) ->
             Other
     end.
 
-stdlib(_Module, _Func, _Args, _Signature) ->
+read_iovecs(_Port, _Ptr, 0) -> [];
+read_iovecs(Port, Ptr, Vecs) ->
+    {ok, VecStruct} = read(Port, Ptr, 16),
+    ao:c({wasi_fd_read_vec, VecStruct}),
+    <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
+    ao:c({wasi_fd_read_vec_bin_ptr, BinPtr}),
+    ao:c({wasi_fd_read_vec_len, Len}),
+    {ok, VecData} = read(Port, BinPtr, Len),
+    ao:c({wasi_fd_read_vec_data, VecData}),
+    [ VecData | read_iovecs(Port, Ptr + 16, Vecs - 1) ].
+
+stdlib(Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature) ->
+    ao:c({wasi_fd_write, Fd, Ptr, Vecs, RetPtr}),
+    VecData = read_iovecs(Port, Ptr, Vecs),
+    ao:c({wasi_fd_write_vecs, VecData}),
+    BytesWritten = lists:sum( [ byte_size(D) || D <- VecData ] ),
+    ao:c({wasi_fd_write_bytes_written, BytesWritten}),
+    write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
+    [0];
+stdlib(_Port, _Module, _Func, _Args, _Signature) ->
     [1].
 
 call(Port, FunctionName, Args) ->
-    call(Port, FunctionName, Args, fun stdlib/4).
+    call(Port, FunctionName, Args, fun stdlib/5).
 call(Port, FunctionName, Args, ImportFunc) ->
     ao:c({call_started, Port, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
@@ -46,7 +65,7 @@ exec_call(ImportFunc, Port) ->
             {ok, Result};
         {import, Module, Func, Args, Signature} ->
             ao:c({import_called, Module, Func, Args, Signature}),
-            ErlRes = ImportFunc(Module, Func, Args, Signature),
+            ErlRes = ImportFunc(Port, Module, Func, Args, Signature),
             ao:c({import_returned, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
             exec_call(ImportFunc, Port);
@@ -102,11 +121,9 @@ aos64_wasm_exceptions_test() ->
     {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [_Result]} = call(Port, "main", [1, 0]),
-    {ok, [Ptr1]} = call(Port, "malloc", [100]),
-    {ok, [Ptr2]} = call(Port, "malloc", [100]),
-    write(Port, Ptr1, <<"{ssdfasdfasdfs}a">>),
-    write(Port, Ptr2, <<"{asdfasdfasdf}aa">>),
+    {ok, [Ptr1]} = call(Port, "malloc", [200]),
+    {ok, [Ptr2]} = call(Port, "malloc", [200]),
+    write(Port, Ptr1, <<"{Process:{Id:'AOS',Owner:'FOOBAR',Tags:[{name:'Name',value:'Thomas'}]}}">>),
+    write(Port, Ptr2, <<"{Target:'AOS',Owner:'FOOBAR',['Block-Height']:\"1000\",Id:\"1234xyxfoo\",Module:\"WOOPAWOOPA\",Tags:[{name:'Action',value:'Eval'}],Data:'return 1+1'}">>),
     {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
-    {ok, Bin} = read(Port, Ptr1, 5),
-    ?assertEqual(Bin, <<"{ssdf">>),
-    ao:c(success).
+    ao:c({success, Ptr3}).
