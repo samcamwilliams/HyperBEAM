@@ -1,5 +1,5 @@
 -module(cu_erwamr).
--export([start/1, call/3, test/0, write/3]).
+-export([start/1, call/3, test/0, write/3, read/3]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -67,8 +67,14 @@ write(Port, Offset, Data) ->
             Error
     end.
 
-read(_Port, _Offset, _Size) ->
-    not_implemented.
+read(Port, Offset, Size) ->
+    Port ! {self(), {command, term_to_binary({read, Offset, Size})}},
+    receive
+        {ok, Result} ->
+            {ok, Result};
+        Error ->
+            Error
+    end.
 
 %% Tests
 
@@ -101,5 +107,6 @@ aos64_wasm_exceptions_test() ->
     write(Port, Ptr1, <<"{ssdfasdfasdfs}a">>),
     write(Port, Ptr2, <<"{asdfasdfasdf}aa">>),
     {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
-    {ok, [Bin]} = call(Port, "read", [Ptr3, 0, 1]),
-    ?assertEqual(Bin, <<0>>).
+    {ok, Bin} = read(Port, Ptr1, 5),
+    ?assertEqual(Bin, <<"{ssdf">>),
+    ao:c(success).
