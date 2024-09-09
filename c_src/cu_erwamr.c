@@ -215,37 +215,38 @@ int get_function_sig(const wasm_externtype_t* type, char* type_str) {
 }
 
 void drv_lock(ErlDrvMutex* mutex) {
-    DRV_DEBUG("Locking: %p", mutex);
+    DRV_DEBUG("Locking: %s", erl_drv_mutex_name(mutex));
     erl_drv_mutex_lock(mutex);
-    DRV_DEBUG("Locked: %p", mutex);
+    DRV_DEBUG("Locked: %s", erl_drv_mutex_name(mutex));
 }
 
 void drv_unlock(ErlDrvMutex* mutex) {
-    DRV_DEBUG("Unlocking: %p", mutex);
+    char* name;
+    DRV_DEBUG("Unlocking: %s", erl_drv_mutex_name(mutex));
     erl_drv_mutex_unlock(mutex);
-    DRV_DEBUG("Unlocked: %p", mutex);
+    DRV_DEBUG("Unlocked: %s", erl_drv_mutex_name(mutex));
 }
 
 void drv_signal(ErlDrvMutex* mut, ErlDrvCond* cond, int* ready) {
-    DRV_DEBUG("Signaling: %p. Pre-signal ready state: %d", cond, *ready);
+    DRV_DEBUG("Signaling: %s. Pre-signal ready state: %d", erl_drv_cond_name(cond), *ready);
     drv_lock(mut);
     *ready = 1;
     erl_drv_cond_signal(cond);
     drv_unlock(mut);
-    DRV_DEBUG("Signaled: %p. Post-signal ready state: %d", cond, *ready);
+    DRV_DEBUG("Signaled: %s. Post-signal ready state: %d", erl_drv_cond_name(cond), *ready);
 }
 
 void drv_wait(ErlDrvMutex* mut, ErlDrvCond* cond, int* ready) {
-    DRV_DEBUG("Started to wait: %p. Ready: %d", cond, *ready);
-    DRV_DEBUG("Mutex: %p", mut);
+    DRV_DEBUG("Started to wait: %s. Ready: %d", erl_drv_cond_name(cond), *ready);
+    DRV_DEBUG("Mutex: %s", erl_drv_mutex_name(mut));
     drv_lock(mut);
     while (!*ready) {
-        DRV_DEBUG("Waiting: %p", cond);
+        DRV_DEBUG("Waiting: %s", erl_drv_cond_name(cond));
         erl_drv_cond_wait(cond, mut);
         DRV_DEBUG("Woke up: Ready: %d", *ready);
     }
     drv_unlock(mut);
-    DRV_DEBUG("Finish waiting: %p", cond);
+    DRV_DEBUG("Finish waiting: %s", erl_drv_cond_name(cond));
 }
 
 wasm_func_t* get_exported_function(Proc* proc, const char* target_name) {
@@ -658,6 +659,17 @@ static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
 static void wasm_driver_stop(ErlDrvData raw) {
     Proc* proc = (Proc*)raw;
     DRV_DEBUG("Stopping WASM driver");
+
+    // TODO: We should probably lock a mutex here and in the import_response function.
+    if(proc->current_import) {
+        proc->current_import->error_message = "WASM driver unloaded during import response";
+        proc->current_import->ready = 1;
+        DRV_DEBUG("Signalling import_response with error");
+        drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
+        DRV_DEBUG("Signalled worker to fail. Locking is_running mutex to shutdown");
+        drv_lock(proc->is_running);
+    }
+    drv_unlock(proc->is_running);
     erl_drv_mutex_destroy(proc->is_running);
     // Cleanup WASM resources
     if (proc->is_initialized) {
