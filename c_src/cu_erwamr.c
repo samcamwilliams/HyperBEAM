@@ -137,7 +137,7 @@ int erl_term_to_wasm_val(wasm_val_t* val, ei_term* term) {
     return 0;
 }
 
-int erl_terms_to_wasm_vals(wasm_val_vec_t* vals, ErlDrvTermData* terms) {
+int erl_terms_to_wasm_vals(wasm_val_vec_t* vals, ei_term* terms) {
     for(int i = 0; i < vals->size; i++) {
         int res = erl_term_to_wasm_val(&vals->data[i], &terms[i]);
         if(res == -1) {
