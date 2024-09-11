@@ -6,7 +6,6 @@
 #include <stdarg.h>
 #include <time.h>
 #include <pthread.h>
-#include "cu_erwamr_imports.h"
 
 typedef struct {
     ErlDrvMutex* providing_response;
@@ -52,10 +51,16 @@ static ErlDrvTermData atom_ok;
 static ErlDrvTermData atom_error;
 static ErlDrvTermData atom_import;
 
+#define HB_DEBUG 1
+
+#if HB_DEBUG == 1
+#define DRV_DBG_MODE 1
+#endif
 
 #define DRV_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
 
 void debug_print(const char* file, int line, const char* format, ...) {
+#if DRV_DBG_MODE
     va_list args;
     va_start(args, format);
     pthread_t thread_id = pthread_self();
@@ -63,9 +68,10 @@ void debug_print(const char* file, int line, const char* format, ...) {
     vprintf(format, args);
     printf("\n");
     va_end(args);
+#endif
 }
 
-const char* wasm_externtype_to_kind_string(wasm_externtype_t* type) {
+const char* wasm_externtype_to_kind_string(const wasm_externtype_t* type) {
     switch (wasm_externtype_kind(type)) {
         case WASM_EXTERN_FUNC: return "func";
         case WASM_EXTERN_GLOBAL: return "global";
@@ -89,9 +95,9 @@ char wasm_valtype_kind_to_char(const wasm_valtype_t* valtype) {
     }
 }
 
-int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val) {
+int wasm_val_to_erl_term(ErlDrvTermData* term, const wasm_val_t* val) {
     DRV_DEBUG("Adding wasm val to erl term");
-    DRV_DEBUG("Val of: %d (%c)", val->of.i32, wasm_valtype_kind_to_char(val));
+    DRV_DEBUG("Val of: %d", val->of.i32);
     switch (val->kind) {
         case WASM_I32:
             term[0] = ERL_DRV_INT;
@@ -99,15 +105,15 @@ int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val) {
             return 2;
         case WASM_I64:
             term[0] = ERL_DRV_INT64;
-            term[1] = &val->of.i64;
+            term[1] = (ErlDrvTermData) &val->of.i64;
             return 2;
         case WASM_F32:
             term[0] = ERL_DRV_FLOAT;
-            term[1] = &val->of.f32;
+            term[1] = (ErlDrvTermData) &val->of.f32;
             return 2;
         case WASM_F64:
             term[0] = ERL_DRV_FLOAT;
-            term[1] = &val->of.f64;
+            term[1] = (ErlDrvTermData) &val->of.f64;
             return 2;
         default:
             DRV_DEBUG("Unsupported result type: %d", val->kind);
@@ -116,7 +122,7 @@ int wasm_val_to_erl_term(ErlDrvTermData* term, wasm_val_t* val) {
 }
 
 int erl_term_to_wasm_val(wasm_val_t* val, ei_term* term) {
-    DRV_DEBUG("Converting erl term to wasm val");
+    DRV_DEBUG("Converting erl term to wasm val. Term: %d. Size: %d", term->value.i_val, term->size);
     switch (val->kind) {
         case WASM_I32:
             val->of.i32 = (int) term->value.i_val;
@@ -138,7 +144,10 @@ int erl_term_to_wasm_val(wasm_val_t* val, ei_term* term) {
 }
 
 int erl_terms_to_wasm_vals(wasm_val_vec_t* vals, ei_term* terms) {
+    DRV_DEBUG("Converting erl terms to wasm vals");
+    DRV_DEBUG("Vals: %d", vals->size);
     for(int i = 0; i < vals->size; i++) {
+        DRV_DEBUG("Converting term %d: %p", i, &vals->data[i]);
         int res = erl_term_to_wasm_val(&vals->data[i], &terms[i]);
         if(res == -1) {
             DRV_DEBUG("Failed to convert term to wasm val");
@@ -164,6 +173,7 @@ ei_term* decode_list(char* buff, int* index) {
         //DRV_DEBUG("Decoded list header. Arity: %d", arity);
         for(int i = 0; i < arity; i++) {
             ei_decode_ei_term(buff, index, &res[i]);
+            DRV_DEBUG("Decoded term (assuming int) %d: %d", i, res[i].value.i_val);
         }
     }
     else if(type == ERL_STRING_EXT) {
@@ -221,7 +231,6 @@ void drv_lock(ErlDrvMutex* mutex) {
 }
 
 void drv_unlock(ErlDrvMutex* mutex) {
-    char* name;
     DRV_DEBUG("Unlocking: %s", erl_drv_mutex_name(mutex));
     erl_drv_mutex_unlock(mutex);
     DRV_DEBUG("Unlocked: %s", erl_drv_mutex_name(mutex));
@@ -316,10 +325,10 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     msg[msg_index++] = ERL_DRV_ATOM;
     msg[msg_index++] = atom_import;
     msg[msg_index++] = ERL_DRV_STRING;
-    msg[msg_index++] = import_hook->module_name;
+    msg[msg_index++] = (ErlDrvTermData) import_hook->module_name;
     msg[msg_index++] = strlen(import_hook->module_name);
     msg[msg_index++] = ERL_DRV_STRING;
-    msg[msg_index++] = import_hook->field_name;
+    msg[msg_index++] = (ErlDrvTermData) import_hook->field_name;
     msg[msg_index++] = strlen(import_hook->field_name);
 
     // Encode args
@@ -403,7 +412,11 @@ static void async_init(void* raw) {
     drv_lock(proc->is_running);
     // Initialize WASM engine, store, etc.
 
+#if DRV_DBG_MODE
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
+#else
+    wasm_runtime_set_log_level(WASM_LOG_LEVEL_ERROR);
+#endif
 
     wasm_runtime_set_default_running_mode(Mode_Interp);
 
@@ -514,8 +527,8 @@ static void async_init(void* raw) {
         //DRV_DEBUG("Processing export %d", i);
         const wasm_exporttype_t* export = exports.data[i];
         const wasm_name_t* name = wasm_exporttype_name(export);
-        wasm_externtype_t* type = wasm_exporttype_type(export);
-        char* kind_str = wasm_externtype_to_kind_string(type);
+        const wasm_externtype_t* type = wasm_exporttype_type(export);
+        char* kind_str = (char*) wasm_externtype_to_kind_string(type);
 
         char* type_str = driver_alloc(256);
         get_function_sig(type, type_str);
@@ -576,6 +589,12 @@ static void async_call(void* raw) {
         args.data[i].kind = wasm_valtype_kind(param_types->data[i]);
     }
     int res = erl_terms_to_wasm_vals(&args, proc->current_args);
+
+    for(int i = 0; i < args.size; i++) {
+        DRV_DEBUG("Arg %d: %d", i, args.data[i].of.i64);
+        DRV_DEBUG("Source term: %d", proc->current_args[i].value.i_val);
+    }
+
     if(res == -1) {
         send_error(proc, "Failed to convert terms to wasm vals");
         drv_unlock(proc->is_running);
@@ -614,6 +633,25 @@ static void async_call(void* raw) {
     msg[msg_index++] = atom_ok;
     for (size_t i = 0; i < results.size; i++) {
         DRV_DEBUG("Processing result %d", i);
+        DRV_DEBUG("Result type: %d", results.data[i].kind);
+        switch(results.data[i].kind) {
+            case WASM_I32:
+                DRV_DEBUG("Value: %d", results.data[i].of.i32);
+                break;
+            case WASM_I64:
+                DRV_DEBUG("Value: %ld", results.data[i].of.i64);
+                break;
+            case WASM_F32:
+                DRV_DEBUG("Value: %f", results.data[i].of.f32);
+                break;
+            case WASM_F64:
+                DRV_DEBUG("Value: %f", results.data[i].of.f64);
+                break;
+            default:
+                DRV_DEBUG("Unknown result type.", results.data[i].kind);
+                break;
+        }
+        
         int res_size = wasm_val_to_erl_term(&msg[msg_index], &results.data[i]);
         msg_index += res_size;
     }
@@ -628,6 +666,7 @@ static void async_call(void* raw) {
     DRV_DEBUG("Msg: %d", response_msg_res);
 
     wasm_val_vec_delete(&results);
+    proc->current_import = NULL;
 
     drv_unlock(proc->is_running);
 }
@@ -697,7 +736,10 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
 
     int index = 0;
     int version;
-    int ver_res = ei_decode_version(buff, &index, &version);
+    if(ei_decode_version(buff, &index, &version) != 0) {
+        send_error(proc, "Failed to decode message header (version).");
+        return;
+    }
     //DRV_DEBUG("Received term has version: %d", version);
     //DRV_DEBUG("Index: %d. buff_len: %d. buff: %p", index, bufflen, buff);
     int arity;
@@ -743,7 +785,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         // Handle import response
         // TODO: We should probably start a mutex on the current_import object here.
         // At the moment current_import->providing_response must not be locked so that signalling can happen.
-        //Import response received. Providing...");
+        DRV_DEBUG("Import response received. Providing...");
         if (proc->current_import) {
             DRV_DEBUG("Decoding import response from Erlang...");
             proc->current_import->result_terms = decode_list(buff, &index);
@@ -781,7 +823,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
     else if (strcmp(command, "read") == 0) {
         DRV_DEBUG("Read received");
         long ptr, size;
-        int type;
         ei_decode_tuple_header(buff, &index, &arity);
         ei_decode_long(buff, &index, &ptr);
         ei_decode_long(buff, &index, &size);
@@ -829,7 +870,7 @@ static ErlDrvEntry wasm_driver_entry = {
     wasm_driver_output,
     NULL,
     NULL,
-    "cu_erwamr",
+    "beamr",
     NULL,
     NULL,
     NULL,

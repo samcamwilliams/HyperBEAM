@@ -4,7 +4,13 @@ compile:
 	rebar3 compile
 
 WAMR_VERSION = 2.1.2
-WAMR_DIR = _build/wamr
+WAMR_DIR = $(REBAR_BUILD_DIR)/wamr
+
+ifdef HB_DEBUG
+	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DCMAKE_BUILD_TYPE=Debug
+else
+	WAMR_FLAGS = -DCMAKE_BUILD_TYPE=Release
+endif
 
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
@@ -31,9 +37,9 @@ $(WAMR_DIR):
 
 # Build the WAMR library
 wamr: $(WAMR_DIR)
+	echo "HB_DEBUG: $(HB_DEBUG)"
 	cmake \
-		-DCMAKE_BUILD_TYPE=Debug \
-		-DWASM_ENABLE_LOG=1 \
+		$(WAMR_FLAGS) \
 		-S $(WAMR_DIR) \
 		-B $(WAMR_DIR)/lib \
 		-DWAMR_BUILD_TARGET=$(WAMR_BUILD_TARGET) \
@@ -46,12 +52,11 @@ wamr: $(WAMR_DIR)
 		-DWAMR_BUILD_AOT=0 \
 		-DWAMR_BUILD_FAST_INTERP=0 \
 		-DWAMR_BUILD_INTERP=1 \
-		-DWAMR_BUILD_JIT=0 \
-		-DWAMR_ENABLE_MEMORY_PROFILING=1
-	make -C $(WAMR_DIR)/lib -j
+		-DWAMR_BUILD_JIT=0
+	make -C $(WAMR_DIR)/lib
 
 clean:
-	rm -rf $(WAMR_DIR) lib
+	rebar3 clean
 
 # Add a new target to print the library path
 print-lib-path:

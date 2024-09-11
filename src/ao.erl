@@ -19,7 +19,7 @@ get(Key) ->
     maps:get(Key, config()).
 
 c(X) ->
-    io:format("===== DEBUG PRINT =====~n~80p~n~n", [X]),
+    io:format("===== DEBUG PRINT =====> ~80p~n", [X]),
     X.
 
 build() ->

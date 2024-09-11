@@ -1,11 +1,11 @@
--module(cu_erwamr).
+-module(beamr).
 -export([start/1, call/3, test/0, write/3, read/3]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 test() ->
-    aos64_wasm_exceptions_test(),
+    aos64_standalone_wex_test(),
     erlang:halt().
 
 load_driver() ->
@@ -17,7 +17,7 @@ load_driver() ->
 
 start(WasmBinary) ->
     ok = load_driver(),
-    Port = open_port({spawn, "cu_erwamr"}, []),
+    Port = open_port({spawn, "beamr"}, []),
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
     ao:c({waiting_for_init_from, Port}),
     receive
@@ -41,14 +41,16 @@ do_read_iovecs(Port, Ptr, Vecs) ->
     [ VecData | do_read_iovecs(Port, Ptr + 16, Vecs - 1) ].
 
 stdlib(Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature) ->
-    ao:c({wasi_fd_write, Fd, Ptr, Vecs, RetPtr}),
+    ao:c({fwd_write, Fd, Ptr, Vecs, RetPtr}),
     {ok, VecData} = read_iovecs(Port, Ptr, Vecs),
-    ao:c({wasi_fd_write_vecs, VecData}),
     BytesWritten = byte_size(VecData),
-    ao:c({wasi_fd_write_bytes_written, BytesWritten}),
+    error_logger:info_report(VecData),
+    ao:c({processed, BytesWritten}),
+    % Set return pointer to number of bytes written
     write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     [0];
 stdlib(_Port, _Module, "clock_time_get", _Args, _Signature) ->
+    ao:c({stub_called, wasi_clock_time_get, 1}),
     [1];
 stdlib(_Port, _Module, _Func, _Args, _Signature) ->
     [0].
@@ -98,6 +100,16 @@ read(Port, Offset, Size) ->
             Error
     end.
 
+read_string(Port, Offset) ->
+    {ok, iolist_to_binary(do_read_string(Port, Offset, 8))}.
+
+do_read_string(Port, Offset, ChunkSize) ->
+    {ok, Data} = read(Port, Offset, ChunkSize),
+    case binary:split(Data, [<<0>>]) of
+        [Data|[]] -> [Data|do_read_string(Port, Offset + ChunkSize, ChunkSize)];
+        [FinalData|_Remainder] -> [FinalData]
+    end.
+
 malloc(Port, Size) ->
     case call(Port, "malloc", [Size]) of
         {ok, [0]} ->
@@ -118,23 +130,40 @@ nif_loads_test() ->
 simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),
-    Bin = read(Port, 0, 1),
-    ao:c({bin, Bin}),
-    write(Port, 0, Bin),
-    ao:c(wrote),
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
-simple_wasm64_test() ->
+simple_wasm_calling_test() ->
+    {ok, File} = file:read_file("test/test-calling.wasm"),
+    {ok, Port, _Imports, _Exports} = start(File),
+    {ok, [Result]} = call(Port, "main", [1,1]),
+    ?assertEqual(1, Result),
+    Arg0 = <<"Test string arg 000000000000000\0">>,
+    Arg1 = <<"Test string arg 111111111111111\0">>,
+    {ok, Ptr0} = malloc(Port, byte_size(Arg0)),
+    ?assertNotEqual(0, Ptr0),
+    write(Port, Ptr0, Arg0),
+    {ok, Ptr1} = malloc(Port, byte_size(Arg1)),
+    ?assertNotEqual(0, Ptr1),
+    write(Port, Ptr1, Arg1),
+    {ok, []} = call(Port, "print_args", [Ptr0, Ptr1]).
+
+wasm64_test() ->
     ao:c(simple_wasm64_test),
     {ok, File} = file:read_file("test/test-64.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
-aos64_wasm_exceptions_test() ->
-    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}]}}">>,
-    Msg = <<"{\"Target\":\"A\",\"Owner\":\"F\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}">>,
+wasm_exceptions_test_skip() ->
+    {ok, File} = file:read_file("test/test-ex.wasm"),
+    {ok, Port, _Imports, _Exports} = start(File),
+    {ok, [Result]} = call(Port, "main", [1, 0]),
+    ?assertEqual(1, Result).
+
+aos64_standalone_wex_test() ->
+    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}]}}\0">>,
+    Msg = <<"{\"Target\":\"A\",\"Owner\":\"F\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}\0">>,
     {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [_Result]} = call(Port, "main", [1, 0]),
@@ -150,4 +179,5 @@ aos64_wasm_exceptions_test() ->
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
     {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
-    ao:c({success, Ptr3}).
+    {ok, ResBin} = read_string(Port, Ptr3),
+    ao:c({success, ResBin}).
