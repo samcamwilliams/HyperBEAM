@@ -51,16 +51,14 @@ static ErlDrvTermData atom_ok;
 static ErlDrvTermData atom_error;
 static ErlDrvTermData atom_import;
 
+#ifndef HB_DEBUG
 #define HB_DEBUG 1
-
-#if HB_DEBUG == 1
-#define DRV_DBG_MODE 1
 #endif
 
 #define DRV_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
 
 void debug_print(const char* file, int line, const char* format, ...) {
-#if DRV_DBG_MODE
+#if HB_DEBUG==1
     va_list args;
     va_start(args, format);
     pthread_t thread_id = pthread_self();
@@ -412,7 +410,7 @@ static void async_init(void* raw) {
     drv_lock(proc->is_running);
     // Initialize WASM engine, store, etc.
 
-#if DRV_DBG_MODE
+#if HB_DEBUG==1
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_VERBOSE);
 #else
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_ERROR);
@@ -489,7 +487,7 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
-        DRV_DEBUG("Creating callback for %s.%s\n", module_name->data, name->data);
+        DRV_DEBUG("Creating callback for %s.%s", module_name->data, name->data);
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;

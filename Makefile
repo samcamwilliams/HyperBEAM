@@ -4,7 +4,7 @@ compile:
 	rebar3 compile
 
 WAMR_VERSION = 2.1.2
-WAMR_DIR = $(REBAR_BUILD_DIR)/wamr
+WAMR_DIR = _build/wamr
 
 ifdef HB_DEBUG
 	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DCMAKE_BUILD_TYPE=Debug
@@ -27,6 +27,15 @@ else
     WAMR_BUILD_TARGET = AARCH64
 endif
 
+wamr: $(WAMR_DIR)/lib/libvmlib.a
+
+debug: debug-clean $(WAMR_DIR)/lib/libvmlib.a
+	CFLAGS="-DHB_DEBUG=1" rebar3 compile
+
+debug-clean:
+	rm -rf priv/beamr.so
+	make -C $(WAMR_DIR)/lib clean
+
 # Clone the WAMR repository at our target release
 $(WAMR_DIR):
 	git clone \
@@ -35,9 +44,7 @@ $(WAMR_DIR):
 		-b WAMR-$(WAMR_VERSION) \
 		--single-branch
 
-# Build the WAMR library
-wamr: $(WAMR_DIR)
-	echo "HB_DEBUG: $(HB_DEBUG)"
+$(WAMR_DIR)/lib/libvmlib.a: $(WAMR_DIR)
 	cmake \
 		$(WAMR_FLAGS) \
 		-S $(WAMR_DIR) \
