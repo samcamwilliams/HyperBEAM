@@ -162,6 +162,7 @@ ei_term* decode_list(char* buff, int* index) {
         DRV_DEBUG("Failed to get type");
         return NULL;
     }
+    DRV_DEBUG("Decoded header. Arity: %d", arity);
 
     ei_term* res = driver_alloc(sizeof(ei_term) * arity);
 
@@ -176,12 +177,12 @@ ei_term* decode_list(char* buff, int* index) {
     }
     else if(type == ERL_STRING_EXT) {
         //DRV_DEBUG("Decoding list encoded as string");
-        char* str = driver_alloc(arity * sizeof(char) + 1);
+        unsigned char* str = driver_alloc(arity * sizeof(char) + 1);
         ei_decode_string(buff, index, str);
         for(int i = 0; i < arity; i++) {
             res[i].ei_type = ERL_INTEGER_EXT;
-            res[i].value.i_val = str[i];
-            //DRV_DEBUG("Decoded term %d: %d", i, res[i].value.i_val);
+            res[i].value.i_val = (long) str[i];
+            DRV_DEBUG("Decoded term %d: %d", i, res[i].value.i_val);
         }
         driver_free(str);
     }
@@ -513,7 +514,7 @@ static void async_init(void* raw) {
     wasm_extern_vec_t externs;
     wasm_extern_vec_new(&externs, imports.size, stubs);
     wasm_trap_t* trap = NULL;
-    proc->instance = wasm_instance_new(proc->store, proc->module, &externs, &trap);
+    proc->instance = wasm_instance_new_with_args(proc->store, proc->module, &externs, &trap, 0x10000, 0x10000);
     if (!proc->instance) {
         DRV_DEBUG("Failed to create WASM proc");
         return;
@@ -562,7 +563,7 @@ static void async_init(void* raw) {
 
 static void async_call(void* raw) {
     Proc* proc = (Proc*)raw;
-    //DRV_DEBUG("Calling function: %s", proc->current_function);
+    DRV_DEBUG("Calling function: %s", proc->current_function);
     drv_lock(proc->is_running);
     char* function_name = proc->current_function;
 
@@ -606,6 +607,7 @@ static void async_call(void* raw) {
     }
 
     // Call the function
+    DRV_DEBUG("Calling function: %s", function_name);
     wasm_trap_t* trap = wasm_func_call(func, &args, &results);
 
     if (trap) {
