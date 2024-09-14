@@ -82,7 +82,7 @@ exec_call(ImportFunc, Port) ->
     end.
 
 write(Port, Offset, Data) ->
-    ao:c({write_started, Port, Offset, byte_size(Data)}),
+    %ao:c({write_started, Port, Offset, byte_size(Data)}),
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
     receive
         ok ->
@@ -162,22 +162,23 @@ wasm_exceptions_test_skip() ->
     ?assertEqual(1, Result).
 
 aos64_standalone_wex_test() ->
-    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}]}}\0">>,
-    Msg = <<"{\"Target\":\"A\",\"Owner\":\"F\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}\0">>,
-    {ok, File} = file:read_file("test/test-standalone-wex-aos.wasm"),
+    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>,
+    Msg = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}\0">>,
+    {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
-    {ok, [_Result]} = call(Port, "main", [1, 0]),
-    {ok, Ptr1} = malloc(Port, byte_size(Env)),
+    {ok, Ptr1} = malloc(Port, byte_size(Msg)),
     ?assertNotEqual(0, Ptr1),
-    write(Port, Ptr1, Env),
-    {ok, Ptr2} = malloc(Port, byte_size(Msg)),
+    write(Port, Ptr1, Msg),
+    {ok, Ptr2} = malloc(Port, byte_size(Env)),
     ?assertNotEqual(0, Ptr2),
-    write(Port, Ptr2, Msg),
+    write(Port, Ptr2, Env),
     % Read the strings to validate they are correctly passed
-    {ok, EnvBin} = read(Port, Ptr1, byte_size(Env)),
-    {ok, MsgBin} = read(Port, Ptr2, byte_size(Msg)),
+    {ok, MsgBin} = read(Port, Ptr1, byte_size(Msg)),
+    {ok, EnvBin} = read(Port, Ptr2, byte_size(Env)),
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
     {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
     {ok, ResBin} = read_string(Port, Ptr3),
-    ao:c({success, ResBin}).
+    #{<<"ok">> := true, <<"response">> := Resp} = jiffy:decode(ResBin, [return_maps]),
+    #{<<"Output">> := #{ <<"data">> := Data }} = Resp,
+    ?assertEqual(<<"2">>, Data).

@@ -52,7 +52,7 @@ static ErlDrvTermData atom_error;
 static ErlDrvTermData atom_import;
 
 #ifndef HB_DEBUG
-#define HB_DEBUG 1
+#define HB_DEBUG 0
 #endif
 
 #define DRV_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
