@@ -3,6 +3,8 @@
 
 -include("include/ar.hrl").
 
+%%% SU HTTP Server API
+
 routes() ->
     {
         "/su", % Namespace
@@ -147,3 +149,12 @@ send_data(ID, Req) ->
         ar_bundles:serialize(Message),
         Req
     ).
+
+%%% SU HTTP Client
+get_assignments(Process) ->
+    case su_registry:find(Process#tx.id, false) of
+        not_found ->
+            % Process is not held locally. Find SU-Locator record and get from remote.
+            not_implemented;
+        PID ->
+            su_process:get_assignments(PID)

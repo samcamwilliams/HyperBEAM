@@ -1,4 +1,5 @@
 -module(ao_client).
+-export([download/1]).
 -export([upload/1, arweave_timestamp/0]).
 -export([schedule/1, assign/1, register_su/1, register_su/2]).
 -export([compute/1, cron/1, cron/2, cron/3, cron_cursor/1]).
@@ -7,6 +8,13 @@
 -include("include/ao.hrl").
 
 %%% Arweave API functions
+
+download(ID) ->
+    % TODO: Need to recreate full data items, not just data...
+    case httpc:request(ao:get(gateway) ++ "/" ++ ID) of
+        {ok, {{_, 200, _}, _, Body}} -> #tx{ data = Body };
+        Rest -> throw({id_get_failed, Res})
+    end.
 
 upload(Item) ->
     case httpc:request(

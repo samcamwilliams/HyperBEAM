@@ -1,5 +1,15 @@
 -module(ao).
--export([config/0, get/1, c/1, build/0]).
+-export([config/0, get/1, get/2, c/1, build/0]).
+-export([wallet/0, wallet/1]).
+
+-include("include/ar.hrl").
+
+wallet() -> wallet(get(key_location)).
+wallet(Location) ->
+    case file:read_file_info(WalletFile) of
+        {ok, _} -> ar_wallet:load_keyfile(WalletFile);
+        {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
+    end.
 
 config() ->
     #{
@@ -9,14 +19,25 @@ config() ->
         bundler => "https://up.arweave.net",
         su => "http://localhost:8734/su",
         mu => "http://localhost:8734/mu",
-        cu => "https://cu24.ao-testnet.xyz",
+        cu => "http://localhost:8734/cu",
         key_location => "hyperbeam-key.json",
         default_page_limit => 5,
-        scheduler_location_ttl => 60 * 60 * 24 * 30
+        scheduler_location_ttl => 60 * 60 * 24 * 30,
+        preloaded_devices =>
+            #{
+                <<"Checkpoint">> => dev_checkpoint,
+                <<"Cron">> => dev_cron,
+                <<"Deduplicate">> => dev_dedup,
+                <<"JSON-Interface">> => dev_json_iface,
+                <<"Monitor">> => dev_monitor,
+                <<"WASM64-pure">> => dev_wasm
+            },
+        loadable_devices => []
     }.
 
-get(Key) ->
-    maps:get(Key, config()).
+get(Key) -> get(Key, undefined).
+get(Key, Default) ->
+    maps:get(Key, config(), Default).
 
 c(X) ->
     io:format("===== DEBUG PRINT =====> ~80p~n", [X]),

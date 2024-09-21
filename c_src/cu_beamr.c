@@ -870,7 +870,7 @@ static ErlDrvEntry wasm_driver_entry = {
     wasm_driver_output,
     NULL,
     NULL,
-    "beamr",
+    "cu_beamr",
     NULL,
     NULL,
     NULL,

@@ -5,11 +5,7 @@
 
 start() -> start(ao:get(key_location)).
 start(WalletFile) ->
-    Wallet =
-        case file:read_file_info(WalletFile) of
-            {ok, _} -> ar_wallet:load_keyfile(WalletFile);
-            {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
-        end,
+    Wallet = ao:wallet(WalletFile),
     register(?MODULE, spawn(fun() -> server(#{}, Wallet) end)).
 
 find(ProcID) -> find(ProcID, false);

@@ -1,5 +1,5 @@
--module(beamr).
--export([start/1, call/3, test/0, write/3, read/3]).
+-module(cu_beamr).
+-export([start/1, call/4, call/5, test/0, write/3, read/3]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -40,42 +40,32 @@ do_read_iovecs(Port, Ptr, Vecs) ->
     {ok, VecData} = read(Port, BinPtr, Len),
     [ VecData | do_read_iovecs(Port, Ptr + 16, Vecs - 1) ].
 
-stdlib(Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature) ->
-    ao:c({fwd_write, Fd, Ptr, Vecs, RetPtr}),
-    {ok, VecData} = read_iovecs(Port, Ptr, Vecs),
-    BytesWritten = byte_size(VecData),
-    error_logger:info_report(VecData),
-    ao:c({processed, BytesWritten}),
-    % Set return pointer to number of bytes written
-    write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
-    [0];
-stdlib(_Port, _Module, "clock_time_get", _Args, _Signature) ->
-    ao:c({stub_called, wasi_clock_time_get, 1}),
-    [1];
-stdlib(_Port, _Module, _Func, _Args, _Signature) ->
-    [0].
-
 call(Port, FunctionName, Args) ->
-    call(Port, FunctionName, Args, fun stdlib/5).
-call(Port, FunctionName, Args, ImportFunc) ->
+    {ResType, Res, _} = call(undefined, Port, FunctionName, Args, fun stub_stdlib/6),
+    {ResType, Res}.
+call(Port, FunctionName, Args, ImportFunc, S) ->
     ao:c({call_started, Port, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
-    exec_call(ImportFunc, Port).
+    exec_call(ImportFunc, Port, S).
 
-exec_call(ImportFunc, Port) ->
+stub_stdlib(_Port, _Module, Func, _Args, _Signature, _S) ->
+    ao:c({stub_stdlib_called, Func}),
+    {[0], S}.
+
+exec_call(ImportFunc, Port, S) ->
     receive
         {ok, Result} ->
             ao:c({call_result, Result}),
-            {ok, Result};
+            {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
             ao:c({import_called, Module, Func, Args, Signature}),
-            ErlRes = ImportFunc(Port, Module, Func, Args, Signature),
+            {ErlRes, S2} = ImportFunc(Port, Module, Func, Args, Signature, S),
             ao:c({import_returned, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
-            exec_call(ImportFunc, Port);
+            exec_call(ImportFunc, Port, S2);
         {error, Error} ->
             ao:c({wasm_error, Error}),
-            {error, Error};
+            {error, Error, S};
         Error ->
             ao:c({unexpected_result, Error}),
             Error
@@ -112,14 +102,14 @@ do_read_string(Port, Offset, ChunkSize) ->
 
 malloc(Port, Size) ->
     case call(Port, "malloc", [Size]) of
-        {ok, [0]} ->
+        {ok, [0], _} ->
             ao:c({malloc_failed, Size}),
             {error, malloc_failed};
-        {ok, [Ptr]} ->
+        {ok, [Ptr], _} ->
             ao:c({malloc_success, Ptr, Size}),
             {ok, Ptr};
-        Error ->
-            Error
+        {error, Error, _} ->
+            {error, Error}
     end.
 
 %% Tests
@@ -177,7 +167,7 @@ aos64_standalone_wex_test() ->
     {ok, EnvBin} = read(Port, Ptr2, byte_size(Env)),
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
-    {ok, [Ptr3]} = call(Port, "handle", [Ptr1, Ptr2]),
+    {ok, [Ptr3], _} = call(Port, "handle", [Ptr1, Ptr2]),
     {ok, ResBin} = read_string(Port, Ptr3),
     #{<<"ok">> := true, <<"response">> := Resp} = jiffy:decode(ResBin, [return_maps]),
     #{<<"Output">> := #{ <<"data">> := Data }} = Resp,

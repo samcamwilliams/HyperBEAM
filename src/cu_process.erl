@@ -4,114 +4,134 @@
 
 -include("include/ao.hrl").
 
+%%% A process is represented as a queue of messages and a stack of components.
+%%% Each AO process runs as an Erlang process consuming messages from -- and placing items
+%%% into -- its schedule.
+%%% 
+%%% Components in a process's stack may return either `ok` or `pass` as their output.
+%%% In the case of `ok`, the process will continue to the next device in its stack, or
+%%% begin to process the next message in its schedule.
+%%% In the case of `pass`, the process will start again from the first device in its stack,
+%%% with the state transitions from the device executions thus far will be persisted and the 
+%%% `pass` count in the state incremented.
+%%% 
+%%% The core components of this framework are:
+%%% 
+%%% DevMod:init(Params, State) -> {ok, State}
+%%% 
+%%% start(ProcMsg, Schedule) -> ErlangProcessID
+%%% 
+%%% process(Message, State#{ schedule := Schedule, devices := Devices }) -> 
+%%%     {Result, Schedule, Devices}
+%%% 
+%%% DeviceMod:execute(Message, State) -> {ok, State} | {break, State} | {pass, State}
+%%%     | {stop, Reason, State}
+%%%
+%%% This architecture also allows for parralelization of device execution. Each device can
+%%% exposes a `DevMod:uses()` function that returns a list of state components that it
+%%% employs in its execution:
+%%% 
+%%% DeviceMod:uses() -> all | [StateComponentNameAtom | {StateComponentNameAtom, read | write }]
+%%% 
+%%% When no specifier is given, it is assumed that the device will read from and write to
+%%% the given state key. When no `DeviceMod:uses()` function is provided, it is assumed
+%%% that the device will read and write to all state components (as with the `all` specifier).
+%%% 
+%%% An example process may look something like this:
+%%%     Device: Scheduler
+%%%     Location: [SchedulerAddress]
+%%%     Device: Dedup
+%%%     Variant: 1.0
+%%%     Device: JSON-Interface
+%%%     Variant: wasm64-aos
+%%%     Device: wasm
+%%%     Variant: wasm64-wasi_preview1-unknown
+%%% 
+%%% The host environment may then additionally add Checkpoint and Messenging devices in order
+%%% to operate like a MU or CU interface.
+
 %% Start a new Erlang process for the AO process, optionally giving the assignments so far.
-start(Process, Wallet) ->
-    BootReplyPID = self(),
-    spawn(fun() -> boot(Process, Wallet, BootReplyPID) end).
+start(Process) -> start(Process, #{}).
+start(Process, Opts) ->
+    spawn(fun() -> boot(Process, Opts) end).
 
-start_wait(Process, Wallet) ->
-    ProcPID = start(Process, Wallet),
+run(Process) -> run(Process, Opts)
+run(Process, RawOpts) ->
+    Self = self(),
+    Opts = RawOpts#{
+        post => maps:get(post, RawOpts, []) ++ [
+                {
+                    dev_monitor,
+                    [fun(Msg, S) ->
+                        Self ! {result, self(), ao_message:id(Msg), S#{ result } }
+                    end]
+                }
+            ]
+    },
+    ProcPID = spawn_monitor(fun() -> boot(Process, Opts) end),
+    monitor(ProcID)
+
+monitor(ProcID) ->
     receive
-        {boot, Process#tx.id, failed, Reason} ->
-            {error, Reason};
-        {boot, Process#tx.id, ok} ->
-            {ok, ProcPID}
+        {result, ProcID, MsgID, Result} ->
+            ao:c({intermediate_result, ID, Result}),
+            observe_run(Process, Wallet, ProcPID, Result);
+        {end_of_schedule, ProcID} ->
+            ProcID ! {self(), shutdown(ProcID)};
+        Else ->
+            ao:c(Else),
+            monitor(ProcID)
     end.
 
-%% A recursive function that runs through each boot stage in turn, building the pstate
-%% data for a new process.
-boot(Process, Wallet, BootReplyPID) ->
-    boot(register,
-        #pstate {
-            process = Process,
-            wallet = Wallet,
-            assignments = []
-        },
-        BootReplyPID
-    ).
-
-boot(register, S, ReplyID) ->
-    not_implemented,
-    boot(id, S, ReplyPID);
-boot(id, S, ReplyPID) ->
-    % Extract the PID for quick access
-    boot({components, create}, S#pstate { id = (S#id.process)#tx.id }, ReplyPID);
-boot({components, create}, S, ReplyPID) ->
-    % Extract component modules from a process definition
-    MachineMod = cu_component:tag_to_mod(Proc, <<"Machine">>),
-    InterfaceMod = cu_component:tag_to_mod(Proc, <<"Interface">>),
-    Transforms = cu_component:tags_to_mods(Proc, <<"Transform">>),
-    Devices = cu_component:tags_to_mods(Proc, <<"Device">>),
-    % Check that all components are implemented by the node.
-    case lists:filter(
-            fun({not_supported, Tag}) -> true; (_) -> false end,
-            [MachineMod, InterfaceMod] ++ Transforms ++ Devices) of
-        [] ->
-            boot(
-                validate_component_params,
-                S#pstate {
-                    vm_mod = MachineMod,
-                    iface_mod = InterfaceMod,
-                    transforms =
-                        [ {TransMod, undefined} || TransMod <- Transforms ],
-                    devices =
-                        [ {DevMod, undefined} || DevMod <- Transforms ],
-                },
-                ReplyPID
-            );
-        UnsupportComponents ->
-            boot_failed(S, ReplyPID, {components, create}, UnsupportedComponents),
-    end;
-boot({components, validate}, S, ReplyPID) ->
-    % Ensure that each component believes that the process definition is viable
-    case lists:filter(fun(Mod) -> not Mod:viable(S#pstate.process) end, components(S)) of
-        [] -> boot(checkpoint, S, ReplyPID);
-        InviableMods ->
-            boot_failed(S, ReplyPID, {components, validate}, {inviable, InviableMods})
-    end;
-boot(checkpoint, S, ReplyPID) ->
-    % Load a process-scope checkpoint, if available.
-    case cu_checkpoint:latest(
-            process,
-            S#pstate.id,
-            trusted_checkpointers(S),
-            S#proc.transforms, S#proc.devices) of
-        not_found ->
-            % There are no checkpoints, boot fully
-            boot(init_components, S, ReplyPID);
-        {Epoch, Slot, Mach, Iface, Trans, Devs} ->
-            boot(
-                finished,
-                S#pstate {
-                    epoch = Epoch,
-                    slot = Slot,
-                    vm_s = MachineMod,
-                    iface_s = InterfaceMod,
-                    transforms = Trans,
-                    devices = Devs
-                },
-                ReplyPID
-            );
-boot(init_components, S, ReplyPID) ->
-    case cu_component:init_all(S) of
-        {ok, NewS} -> boot(finished, NewS, ReplyPID);
-        {error, E} ->
-            boot_failed(S, ReplyPID, init_components, E)
-    end;
-boot(finished, S, ReplyPID) ->
-    ReplyPID ! {boot, S#tx.id, ok},
-    server(S).
-
-server(S) ->
-    receive
-        stop -> ok
+boot(Process, Opts) ->
+    InitState = #{
+        process := Process,
+        wallet := maps:get(wallet, Opts, ao:wallet()),
+        schedule := maps:get(schedule, Opts, []),
+        devices :=
+            cu_device:normalize_devs(
+                maps:get(pre, Opts, []),
+                Process,
+                maps:get(post, Opts, [])
+            )
+    },
+    case cu_device_stack:call(InitState, init) of
+        {ok, State} ->
+            execute_sched(State);
+        {error, N, DevMod, Info} ->
+            throw({error, boot, N, DevMod, Info})
     end.
 
-boot_failed(S, ReplyPID, Reason) ->
-    ReplyPID ! {boot, (S#pstate.process)#tx.id, failed, Reason},
-    failed.
+execute_schedule(State) ->
+    case State of
+        #{ schedule := [] } ->
+            case execute_eos(State) of
+                NS#{ schedule := [] } ->
+                    await_command(State);
+                NS ->
+                    execute_schedule(NS)
+            end;
+        #{ schedule := Sched = [Msg | NextSched] } ->
+            case execute_msg(Msg, State) of
+                {ok, NewState = #{ schedule := [Msg|NextSched]}} ->
+                    execute_schedule(NewState#{ schedule := NextSched });
+                {ok, NewState} ->
+                    ao:c({schedule_updated, not_popping}),
+                    execute_schedule(NewState)
+                Err = {error, Err} ->
+                    shutdown(State),
+                    throw(Err)
+            end
+    end.
 
-components(S) ->
-    ComponentMods = [ S#pstate.vm_mod, S#pstate.iface_mod]
-        ++ [ TransMod || {TransMod, _} < - S#pstate.transforms ]
-        ++ [ DevMod || {DevMod, _} <- S#pstate.devices ].
+execute_msg(Msg, State) ->
+    cu_device_stack:call(State, execute, #{ pre => [Msg] }).
+   
+%% After execution of the current schedule has finished the Erlang process should
+%% enter a hibernation state, waiting for either more work or termination.
+await_command(State) ->
+    receive
+        {add, Msg} ->
+            execute_sched(State#{ schedule := [Msg | State#{ schedule } ] });
+        stop -> shutdown(State)
+    end.

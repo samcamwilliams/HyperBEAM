@@ -5,6 +5,7 @@
 -export([encode_tags/1, decode_tags/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([item_to_json_struct/1, json_struct_to_item/1]).
+-export([data_item_signature_data/1]).
 
 -include("include/ar.hrl").
 
