@@ -1,8 +1,10 @@
 -module(cu_process).
+-export([simple_stack_test/0]).
 -export([start/2, start/3]).
 -export([state/1, result/2]).
 
 -include("include/ao.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% A process is represented as a queue of messages and a stack of components.
 %%% Each AO process runs as an Erlang process consuming messages from -- and placing items
@@ -62,9 +64,13 @@ run(Process, RawOpts) ->
         post => maps:get(post, RawOpts, []) ++ [
                 {
                     dev_monitor,
-                    [fun(Msg, S) ->
-                        Self ! {result, self(), ao_message:id(Msg), S#{ result } }
-                    end]
+                    [
+                        fun(end_of_schedule, S) ->
+                            Self ! {end_of_sechedule, ao_message:id(S#{ process })};
+                        (Msg, S) ->
+                            Self ! {result, self(), ao_message:id(Msg), S#{ result } }
+                        end
+                    ]
                 }
             ]
     },
@@ -75,12 +81,11 @@ monitor(ProcID) ->
     receive
         {result, ProcID, MsgID, Result} ->
             ao:c({intermediate_result, ID, Result}),
-            observe_run(Process, Wallet, ProcPID, Result);
+            [{MsgID, Result}|monitor(Process, Wallet, ProcPID, Result)];
         {end_of_schedule, ProcID} ->
-            ProcID ! {self(), shutdown(ProcID)};
-        Else ->
-            ao:c(Else),
-            monitor(ProcID)
+            ProcID ! {self(), shutdown(ProcID)},
+            [];
+        Else -> [Else]
     end.
 
 boot(Process, Opts) ->
@@ -135,3 +140,29 @@ await_command(State) ->
             execute_sched(State#{ schedule := [Msg | State#{ schedule } ] });
         stop -> shutdown(State)
     end.
+
+%%% Tests
+
+simple_stack_test() ->
+    Proc =
+        #tx {
+            tags = [
+                {<<"Device">>, <<"JSON-Interface">>},
+                {<<"Device">>, <<"WASM64-pure">>},
+                {<<"Image">>, <<"aos64-pure.wasm">>}
+                {<<"Device">>, <<"Cron">>},
+                {<<"Time">>, <<"100-Milliseconds">>}
+                {<<"Device">>, <<"Checkpoint">>}
+            ]
+        },
+    Schedule =
+        [
+            #tx {
+                tags = [
+                    {<<"Action">>, <<"Eval">>}
+                ],
+                Data = <<"return 1+1">>
+            }
+        ]
+    Res = run(Proc, #{ schedule => Schedule }),
+    Res.
