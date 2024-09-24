@@ -7,7 +7,7 @@
 
 -include("include/ao.hrl").
 
-from_process(M) when is_record(tx, M) ->
+from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
 from_process([]) -> [];
 from_process([{<<"Device">>, DevID}| Tags]) ->
@@ -28,7 +28,7 @@ extract_params(Params, [{PName, PVal}|Rest]) ->
     extract_params([{PName, PVal}|Params], Rest).
 
 normalize(Pre, Proc, Post) ->
-    Devs = normalize(Pre) ++ extract_devs(Proc) ++ normalize(Post),
+    Devs = normalize(Pre) ++ from_process(Proc) ++ normalize(Post),
     lists:merge(
         fun({DevMod, DevS, Params}, N) ->
             case cu_device_loader:from_id(DevMod) of
@@ -37,36 +37,39 @@ normalize(Pre, Proc, Post) ->
                 Else -> throw(Else)
             end
         end,
-        lists:zip(Devs, lists:seq(1, lists:length(Devs))
+        lists:zip(Devs, lists:seq(1, lists:length(Devs)))
     ).
+
 normalize([]) -> [];
 normalize([{DevMod, Params}|Rest]) ->
     [{DevMod, undefined, Params} | normalize(Rest) ];
 normalize([ Dev = {_DevMod, _InitPriv, _Params} | Rest ]) ->
-    [ Dev | normalize_devs(Rest) ];
+    [ Dev | normalize(Rest) ];
 normalize([DevID|Rest]) ->
-    [{DevID, undefined, []} | normalize_devs(Rest) ].
+    [{DevID, undefined, []} | normalize(Rest) ].
 
 %% @doc Run a call across a state containing a stack of devices
 call(S, FuncName) -> call(S, FuncName, #{}).
-call(S#state { devices = Devs }, FuncName, Opts) ->
+call(S = #{ devices := Devs }, FuncName, Opts) ->
     % Reset the shared global state variables for the stack before calling
     do_call(
         Devs,
         S#{ result => undefined, errors => [], pass => 1 }, FuncName, Opts
     ).
 
-do_call([], S, _FuncName, _Opts) ->
+do_call([], S = #{ errors := Errs }, _FuncName, Opts) ->
     case maps:get(return, Opts, ok_if_no_errors) of
         ok_if_no_errors ->
-            case S#{ errors } of
+            case Errs of
                 [] -> {ok, S};
-                Errs -> {error, Errs, S}
+                _ -> {error, Errs, S}
             end;
         ok -> {ok, S}
     end;
-do_call([Dev = {N, DevMod, DevS, Params}|Devs], S#{ pass := Pass }, FuncName, Opts) ->
-    case call_dev(Dev, FuncName, maps:get(pre, Opts, []) ++ [S, DevS, Params]) of
+do_call([Dev = {N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass, errors := Errs }, FuncName, Opts) ->
+    case call_dev(S, Dev, FuncName, maps:get(pre, Opts, []) ++ [S, DevS, Params]) of
+        {ok, NewS} -> do_call(Devs, NewS, FuncName, Opts);
+        {ok, NewS, NewPrivS} -> do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
         {error, Info} ->
             case maps:get(error_strategy, Opts, stop) of
                 stop -> {error, N, DevMod, Info};
@@ -74,7 +77,7 @@ do_call([Dev = {N, DevMod, DevS, Params}|Devs], S#{ pass := Pass }, FuncName, Op
                 continue ->
                     do_call(
                         Devs,
-                        S#{ errors = S#{errors} ++ [{N, DevMod, Info}]},
+                        S#{ errors := Errs ++ [{N, DevMod, Info}]},
                         FuncName,
                         Opts
                     );
@@ -88,29 +91,22 @@ do_call([Dev = {N, DevMod, DevS, Params}|Devs], S#{ pass := Pass }, FuncName, Op
                     % the device stack to the caller, as well as the new state.
                     {repass, Devs, NewS};
                 allowed ->
-                    do_call(NewS#{ devices }, NewS#{ pass => Pass + 1 }, FuncName, Opts)
-            end;
-        {ok, NewS} ->
-            do_call(Devs, NewS, FuncName, Opts)
+                    #{ devices := NewDevs } = NewS,
+                    do_call(NewDevs, NewS#{ pass => Pass + 1 }, FuncName, Opts)
+            end
     end.
     
 
-call_dev(DevMod, FuncName, []) ->
+call_dev(_S, DevMod, FuncName, []) ->
     {error, {not_runnable, DevMod, FuncName}};
-call_dev(Dev = {_, DevMod, _, _}, FuncName, Args) ->
+call_dev(S, Dev = {_, DevMod, _, _}, FuncName, Args) ->
     case erlang:function_exported(DevMod, FuncName, length(Args)) of
-        true -> handle_result(Dev, erlang:apply(DevMod, FuncName, Args));
-        false -> call_dev(DevMod, FuncName, lists:droplast(Args))
+        true -> erlang:apply(DevMod, FuncName, Args);
+        false -> call_dev(S, Dev, FuncName, lists:droplast(Args))
     end.
 
-%% @doc If the device returned a new private state, roll this into the global
-%% state, returning only ok and this term.
-handle_result(Dev, {ok, NewState, NewPrivState}) ->
-    {ok, #{ devices = update(NewState, Dev, PrivState)}};
-handle_result(_Dev, Res) -> Res.
-
 %% @doc Update the private state of the device (maintaining list stability).
-update(State#{ devices = Devs }, {N, Mod, _, Params}, NewDevState) ->
-    State#{
-        devices = lists:keyreplace(N, 1, Devs, {N, Mod, NewDevState, Params})
+update(S = #{ devices := Devs }, {N, Mod, _, Params}, NewDevState) ->
+    S#{
+        devices := lists:keyreplace(N, 1, Devs, {N, Mod, NewDevState, Params})
     }.

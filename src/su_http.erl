@@ -157,4 +157,5 @@ get_assignments(Process) ->
             % Process is not held locally. Find SU-Locator record and get from remote.
             not_implemented;
         PID ->
-            su_process:get_assignments(PID)
+            su_process:get_assignments(PID, false)
+    end.

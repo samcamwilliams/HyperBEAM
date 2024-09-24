@@ -3,13 +3,13 @@
 
 uses() -> all.
 
-init(Params, State) ->
+init(_Params, State) ->
     % TODO: Read the latest checkpoint if it exists.
     {ok, State}.
 
-execute(Msg, State#{ phase := post_exec }) ->
+execute(_Msg, State = #{ phase := post_exec }) ->
     % TODO: Optionally checkpoint the state here.
     % We should always cache the result at this stage.
     {ok, State};
-execute(Msg, State) ->
+execute(_Msg, State) ->
     {ok, State}.

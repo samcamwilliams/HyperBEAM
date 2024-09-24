@@ -13,7 +13,7 @@ download(ID) ->
     % TODO: Need to recreate full data items, not just data...
     case httpc:request(ao:get(gateway) ++ "/" ++ ID) of
         {ok, {{_, 200, _}, _, Body}} -> #tx{ data = Body };
-        Rest -> throw({id_get_failed, Res})
+        _Rest -> throw({id_get_failed, ID})
     end.
 
 upload(Item) ->

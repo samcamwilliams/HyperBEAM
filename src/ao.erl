@@ -4,10 +4,10 @@
 
 -include("include/ar.hrl").
 
-wallet() -> wallet(get(key_location)).
+wallet() -> wallet(ao:get(key_location)).
 wallet(Location) ->
-    case file:read_file_info(WalletFile) of
-        {ok, _} -> ar_wallet:load_keyfile(WalletFile);
+    case file:read_file_info(Location) of
+        {ok, _} -> ar_wallet:load_keyfile(Location);
         {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
     end.
 

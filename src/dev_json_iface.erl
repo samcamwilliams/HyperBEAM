@@ -1,32 +1,33 @@
 -module(dev_json_iface).
 -export([init/2, execute/2, uses/0, stdlib/6]).
 
--record(state, {
-    stdout = []
-}).
+-include("include/ao.hrl").
 
 uses() -> all.
 
-init(Port, S) ->
-    {ok, S#{ stdlib := fun stdlib/6, json_iface := #state{} }}.
+init(_Port, S) ->
+    {ok, S#{ stdlib := fun stdlib/6, json_iface := #{} }}.
 
-execute(M, S#{ pass := 1, json_iface := IfaceS }) ->
-    {ok, S#{ call := prep_call(M, S), json_iface := IfaceS#state{ stdout := [] } }};
-execute(M, S#{ pass := 2, json_iface := IfaceS }) ->
+execute(M, S = #{ pass := 1, json_iface := IfaceS }) ->
+    {ok, S#{
+        call := prep_call(M, S),
+        json_iface := IfaceS#{ stdout => [] } }
+    };
+execute(_M, S = #{ pass := 2 }) ->
     {ok, result(S) }.
 
-prep_call(M, S#{ wasm = Port }) ->
+prep_call(M, #{ wasm := Port, process := Process }) ->
     MsgJson = jiffy:encode(M),
     MsgJsonSize = byte_size(MsgJson),
     {ok, MsgJsonPtr} = cu_beamr:malloc(Port, MsgJsonSize),
     cu_beamr:write(Port, MsgJsonPtr, MsgJson),
-    EnvJson = jiffy:encode({[{<<"Process">>, ar_bundle:tx_to_json_struct(S#{ process })}]}),
+    EnvJson = jiffy:encode({[{<<"Process">>, ar_bundle:tx_to_json_struct(Process)}]}),
     {ok, EnvJsonPtr} = cu_beamr:malloc(Port, byte_size(EnvJson)),
     cu_beamr:write(Port, EnvJsonPtr, EnvJson),
     {call, "json_parse", [MsgJsonPtr, EnvJsonPtr]}.
 
-result(S#{ result := Res, json_iface := IfaceS }) ->
-    ao:c({stdout, iolist_to_binary(IfaceS#state.stdout)}),
+result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }) ->
+    ao:c({stdout, iolist_to_binary(Stdout)}),
     case Res of
         {error, Res} ->
             S#{
@@ -50,30 +51,30 @@ result(S#{ result := Res, json_iface := IfaceS }) ->
             end
     end.
 
-stdlib(Port, ModName, FuncName, Args, Sig, S#{ json_iface := IfaceS }) ->
-    {Res, IfaceS2} = lib(Port, ModName, FuncName, Args, Sig, IfaceS),
+stdlib(Port, ModName, FuncName, Args, Sig, S = #{ json_iface := IfaceS }) ->
+    {Res, IfaceS2} = lib(IfaceS, Port, ModName, FuncName, Args, Sig),
     {Res, S#{ json_iface := IfaceS2 }}.
 
-lib(Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature, S) ->
+lib(S = #{ stdout := Stdout }, Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature) ->
     ao:c({fwd_write, Fd, Ptr, Vecs, RetPtr}),
-    {ok, VecData} = read_iovecs(Port, Ptr, Vecs),
+    {ok, VecData} = cu_beamr:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
     error_logger:info_report(VecData),
     NewStdio =
-        case S#{ stdout } of
+        case Stdout of
             undefined ->
                 [VecData];
             Existing ->
                 Existing ++ [VecData]
         end,
     % Set return pointer to number of bytes written
-    write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
-    {[0], S#{ stdout := NewStdio }};
+    cu_beamr:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
+    {S#{ stdout := NewStdio }, [0]};
 lib(_Port, _Module, "clock_time_get", _Args, _Signature, S) ->
     ao:c({stub_called, wasi_clock_time_get, 1}),
-    {[1], S};
+    {S, [1]};
 lib(_Port, _Module, _Func, _Args, _Signature, S) ->
-    {[0], S}.
+    {S, [0]}.
 
 read_string(Port, Offset) ->
     {ok, iolist_to_binary(do_read_string(Port, Offset, 8))}.

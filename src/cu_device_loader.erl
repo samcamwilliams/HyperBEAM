@@ -1,15 +1,17 @@
 -module(cu_device_loader).
 -export([from_id/1, from_id/2]).
 
+-include("include/ao.hrl").
+
 %%% A module for handling the loading and execution of device modules inside
 %%% the Erlang environments.
 
 from_id(ID) -> from_id(ID, #{}).
-from_id(ID, Opts) when is_atom(ID) ->
-    try ID:module_info() -> {ok, ID}
+from_id(ID, _Opts) when is_atom(ID) ->
+    try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-from_id(ID, Opts) when is_binary(ID) when byte_size(43) ->
+from_id(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
     case lists:member(ID, ao:get(loadable_devices)) of
         true ->
             Msg = ao_client:download(ID),
@@ -25,8 +27,8 @@ from_id(ID, Opts) when is_binary(ID) when byte_size(43) ->
             end;
         false -> {error, module_not_admissable}
     end;
-from_id(ID, Opts) ->
+from_id(ID, _Opts) ->
     case maps:get(ID, ao:get(preloaded_devices), unsupported) of
-        unsupported -> {error, module_not_admissable}
+        unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
     end.

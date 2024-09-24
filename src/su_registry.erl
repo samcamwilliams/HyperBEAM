@@ -8,7 +8,7 @@ start(WalletFile) ->
     Wallet = ao:wallet(WalletFile),
     register(?MODULE, spawn(fun() -> server(#{}, Wallet) end)).
 
-find(ProcID) -> find(ProcID, false);
+find(ProcID) -> find(ProcID, false).
 find(ProcID, GenIfNotHosted) ->
     ReplyPID = self(),
     ?MODULE ! {find, ProcID, ReplyPID, GenIfNotHosted},
@@ -47,7 +47,7 @@ server(Registry, Wallet) ->
             server(
                 case Process of
                     not_found -> Registry;
-                    NewProcess -> Registry#{ProcID => Process}
+                    NewProcess -> Registry#{ProcID => NewProcess}
                 end,
                 Wallet
             );

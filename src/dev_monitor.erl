@@ -6,10 +6,10 @@
 %%% to be called with the current process state during each pass. The monitor
 %%% functions must not mutate state.
 
-init(State, PrivParams, Params) ->
+init(State, PrivParams, _Params) ->
     {ok,  State#{ monitors := PrivParams }}.
 
-execute(Message, State) ->
+execute(_Message, State = #{ monitors := Mons }) ->
     % TODO: Pmap this instead?
     Monitors =
         lists:filter(
@@ -19,7 +19,7 @@ execute(Message, State) ->
                     _ -> true
                 end
             end,
-            State#{ monitors }
+            Mons
         ),
     {ok, State#{ monitors := Monitors }}.
 

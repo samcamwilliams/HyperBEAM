@@ -17,15 +17,15 @@ handle(<<"GET">>, [], Req) ->
         ]}),
         Req),
     {ok, Req};
-handle(_, [ID], Req) when is_binary(ID) and byte_size(ID) == 43 ->
-    % Handle a request for the outcome of an interaction on a process.
-    % There are 3 different core forms/styles of these requests that can be intermingled:
-    % - Requests for state output
-    {ok, ReqBin} = ao_http_router:read_body(Req),
-    _MonitorPID = mu_push:start(TX = ar_bundles:deserialize(ReqBin)),
-    cowboy_req:reply(201,
-        #{<<"Content-Type">> => <<"application/json">>},
-        jiffy:encode({[{id, ar_util:encode(TX#tx.id)}]}),
-        Req
-    ),
-    {ok, Req}.
+handle(<<"GET">>, [ProcID], Req) when is_binary(ProcID) and byte_size(ProcID) == 43 ->
+    case dev_checkpoint:read(ProcID) of
+        unavailable ->
+            {ok, ReqBin} = ao_http_router:read_body(Req),
+            _MonitorPID = mu_push:start(TX = ar_bundles:deserialize(ReqBin)),
+            cowboy_req:reply(201,
+                #{<<"Content-Type">> => <<"application/json">>},
+                jiffy:encode({[{id, ar_util:encode(TX#tx.id)}]}),
+                Req
+            ),
+            {ok, Req}
+    end.

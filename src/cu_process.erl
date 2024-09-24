@@ -1,7 +1,6 @@
 -module(cu_process).
--export([simple_stack_test/0]).
--export([start/2, start/3]).
--export([state/1, result/2]).
+-export([start/1, start/2]).
+-export([run/1, run/2]).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -57,7 +56,7 @@ start(Process) -> start(Process, #{}).
 start(Process, Opts) ->
     spawn(fun() -> boot(Process, Opts) end).
 
-run(Process) -> run(Process, Opts)
+run(Process) -> run(Process, #{}).
 run(Process, RawOpts) ->
     Self = self(),
     Opts = RawOpts#{
@@ -65,35 +64,34 @@ run(Process, RawOpts) ->
                 {
                     dev_monitor,
                     [
-                        fun(end_of_schedule, S) ->
-                            Self ! {end_of_sechedule, ao_message:id(S#{ process })};
-                        (Msg, S) ->
-                            Self ! {result, self(), ao_message:id(Msg), S#{ result } }
+                        fun(end_of_schedule, #{ process := ProcMsg }) ->
+                            Self ! {end_of_sechedule, ao_message:id(ProcMsg)};
+                        (Msg, #{ result := Result }) ->
+                            Self ! {result, self(), ao_message:id(Msg), Result}
                         end
                     ]
                 }
             ]
     },
-    ProcPID = spawn_monitor(fun() -> boot(Process, Opts) end),
-    monitor(ProcID)
+    monitor(spawn_monitor(fun() -> boot(Process, Opts) end)).
 
 monitor(ProcID) ->
     receive
         {result, ProcID, MsgID, Result} ->
-            ao:c({intermediate_result, ID, Result}),
-            [{MsgID, Result}|monitor(Process, Wallet, ProcPID, Result)];
+            ao:c({intermediate_result, ProcID, Result}),
+            [{MsgID, Result}|monitor(ProcID)];
         {end_of_schedule, ProcID} ->
-            ProcID ! {self(), shutdown(ProcID)},
+            ProcID ! {self(), shutdown},
             [];
         Else -> [Else]
     end.
 
 boot(Process, Opts) ->
     InitState = #{
-        process := Process,
-        wallet := maps:get(wallet, Opts, ao:wallet()),
-        schedule := maps:get(schedule, Opts, []),
-        devices :=
+        process => Process,
+        wallet => maps:get(wallet, Opts, ao:wallet()),
+        schedule => maps:get(schedule, Opts, []),
+        devices =>
             cu_device:normalize_devs(
                 maps:get(pre, Opts, []),
                 Process,
@@ -102,7 +100,7 @@ boot(Process, Opts) ->
     },
     case cu_device_stack:call(InitState, init) of
         {ok, State} ->
-            execute_sched(State);
+            execute_schedule(State);
         {error, N, DevMod, Info} ->
             throw({error, boot, N, DevMod, Info})
     end.
@@ -111,34 +109,40 @@ execute_schedule(State) ->
     case State of
         #{ schedule := [] } ->
             case execute_eos(State) of
-                NS#{ schedule := [] } ->
+                #{ schedule := [] } ->
                     await_command(State);
                 NS ->
                     execute_schedule(NS)
             end;
-        #{ schedule := Sched = [Msg | NextSched] } ->
-            case execute_msg(Msg, State) of
+        #{ schedule := [Msg | NextSched] } ->
+            case execute_message(Msg, State) of
                 {ok, NewState = #{ schedule := [Msg|NextSched]}} ->
                     execute_schedule(NewState#{ schedule := NextSched });
                 {ok, NewState} ->
                     ao:c({schedule_updated, not_popping}),
-                    execute_schedule(NewState)
+                    execute_schedule(NewState);
                 Err = {error, Err} ->
-                    shutdown(State),
+                    execute_shutdown(State),
                     throw(Err)
             end
     end.
 
-execute_msg(Msg, State) ->
+execute_message(Msg, State) ->
     cu_device_stack:call(State, execute, #{ pre => [Msg] }).
-   
+
+execute_shutdown(S) ->
+    cu_device_stack:call(S, terminate).
+
+execute_eos(S) ->
+    cu_device_stack:call(S, end_of_schedule).
+
 %% After execution of the current schedule has finished the Erlang process should
 %% enter a hibernation state, waiting for either more work or termination.
-await_command(State) ->
+await_command(State = #{ schedule := Sched }) ->
     receive
         {add, Msg} ->
-            execute_sched(State#{ schedule := [Msg | State#{ schedule } ] });
-        stop -> shutdown(State)
+            execute_schedule(State#{ schedule := [Msg | Sched ] });
+        stop -> execute_shutdown(State)
     end.
 
 %%% Tests
@@ -149,9 +153,9 @@ simple_stack_test() ->
             tags = [
                 {<<"Device">>, <<"JSON-Interface">>},
                 {<<"Device">>, <<"WASM64-pure">>},
-                {<<"Image">>, <<"aos64-pure.wasm">>}
+                {<<"Image">>, <<"aos64-pure.wasm">>},
                 {<<"Device">>, <<"Cron">>},
-                {<<"Time">>, <<"100-Milliseconds">>}
+                {<<"Time">>, <<"100-Milliseconds">>},
                 {<<"Device">>, <<"Checkpoint">>}
             ]
         },
@@ -161,8 +165,8 @@ simple_stack_test() ->
                 tags = [
                     {<<"Action">>, <<"Eval">>}
                 ],
-                Data = <<"return 1+1">>
+                data = <<"return 1+1">>
             }
-        ]
+        ],
     Res = run(Proc, #{ schedule => Schedule }),
     Res.

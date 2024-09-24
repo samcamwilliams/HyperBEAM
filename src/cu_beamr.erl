@@ -41,28 +41,30 @@ do_read_iovecs(Port, Ptr, Vecs) ->
     [ VecData | do_read_iovecs(Port, Ptr + 16, Vecs - 1) ].
 
 call(Port, FunctionName, Args) ->
-    {ResType, Res, _} = call(undefined, Port, FunctionName, Args, fun stub_stdlib/6),
+    call(Port, FunctionName, Args, fun stub_stdlib/6).
+call(Port, FunctionName, Args, Stdlib) ->
+    {ResType, Res, _} = call(undefined, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
-call(Port, FunctionName, Args, ImportFunc, S) ->
+call(S, Port, FunctionName, Args, ImportFunc) ->
     ao:c({call_started, Port, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     exec_call(ImportFunc, Port, S).
 
-stub_stdlib(_Port, _Module, Func, _Args, _Signature, _S) ->
+stub_stdlib(S, _Port, _Module, Func, _Args, _Signature) ->
     ao:c({stub_stdlib_called, Func}),
-    {[0], S}.
+    {S, [0]}.
 
-exec_call(ImportFunc, Port, S) ->
+exec_call(S, ImportFunc, Port) ->
     receive
         {ok, Result} ->
             ao:c({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
             ao:c({import_called, Module, Func, Args, Signature}),
-            {ErlRes, S2} = ImportFunc(Port, Module, Func, Args, Signature, S),
+            {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
             ao:c({import_returned, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
-            exec_call(ImportFunc, Port, S2);
+            exec_call(S2, ImportFunc, Port);
         {error, Error} ->
             ao:c({wasm_error, Error}),
             {error, Error, S};
