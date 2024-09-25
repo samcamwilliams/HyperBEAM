@@ -196,10 +196,11 @@ item_to_json_struct(
 		signature = Sig
 	}) ->
 	Fields = [
-		{id, ar_util:encode(ID)},
-		{anchor, ar_util:encode(Last)}, % NOTE: In Arweave TXs, these are called "last_tx"
-		{owner, ar_util:encode(Owner)},
-		{tags,
+		{<<"Id">>, ar_util:encode(ID)},
+		{<<"Anchor">>, ar_util:encode(Last)}, % NOTE: In Arweave TXs, these are called "last_tx"
+		{<<"Owner">>, ar_util:encode(Owner)},
+		{<<"From">>, ar_util:encode(ar_wallet:to_address(Owner))},
+		{<<"Tags">>,
 			lists:map(
 				fun({Name, Value}) ->
 					{
@@ -212,9 +213,9 @@ item_to_json_struct(
 				Tags
 			)
 		},
-		{target, ar_util:encode(Target)},
-		{data, Data},
-		{signature, ar_util:encode(Sig)}
+		{<<"Target">>, ar_util:encode(Target)},
+		{<<"Data">>, Data},
+		{<<"Signature">>, ar_util:encode(Sig)}
 	],
 	{Fields}.
 

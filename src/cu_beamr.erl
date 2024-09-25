@@ -1,5 +1,5 @@
 -module(cu_beamr).
--export([start/1, call/4, call/5, test/0, write/3, read/3]).
+-export([start/1, call/3, call/4, call/5, stop/1, test/0]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -17,7 +17,7 @@ load_driver() ->
 
 start(WasmBinary) ->
     ok = load_driver(),
-    Port = open_port({spawn, "beamr"}, []),
+    Port = open_port({spawn, "cu_beamr"}, []),
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
     ao:c({waiting_for_init_from, Port}),
     receive
@@ -29,16 +29,9 @@ start(WasmBinary) ->
             Other
     end.
 
-read_iovecs(Port, Ptr, Vecs) ->
-    Bin = iolist_to_binary(do_read_iovecs(Port, Ptr, Vecs)),
-    {ok, Bin}.
-
-do_read_iovecs(_Port, _Ptr, 0) -> [];
-do_read_iovecs(Port, Ptr, Vecs) ->
-    {ok, VecStruct} = read(Port, Ptr, 16),
-    <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
-    {ok, VecData} = read(Port, BinPtr, Len),
-    [ VecData | do_read_iovecs(Port, Ptr + 16, Vecs - 1) ].
+stop(Port) ->
+    port_close(Port),
+    ok.
 
 call(Port, FunctionName, Args) ->
     call(Port, FunctionName, Args, fun stub_stdlib/6).
@@ -46,9 +39,9 @@ call(Port, FunctionName, Args, Stdlib) ->
     {ResType, Res, _} = call(undefined, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
 call(S, Port, FunctionName, Args, ImportFunc) ->
-    ao:c({call_started, Port, FunctionName, Args}),
+    ao:c({call_started, Port, FunctionName, Args, ImportFunc}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
-    exec_call(ImportFunc, Port, S).
+    exec_call(S, ImportFunc, Port).
 
 stub_stdlib(S, _Port, _Module, Func, _Args, _Signature) ->
     ao:c({stub_stdlib_called, Func}),
@@ -73,46 +66,7 @@ exec_call(S, ImportFunc, Port) ->
             Error
     end.
 
-write(Port, Offset, Data) ->
-    %ao:c({write_started, Port, Offset, byte_size(Data)}),
-    Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
-    receive
-        ok ->
-            ok;
-        Error ->
-            Error
-    end.
 
-read(Port, Offset, Size) ->
-    Port ! {self(), {command, term_to_binary({read, Offset, Size})}},
-    receive
-        {ok, Result} ->
-            {ok, Result};
-        Error ->
-            Error
-    end.
-
-read_string(Port, Offset) ->
-    {ok, iolist_to_binary(do_read_string(Port, Offset, 8))}.
-
-do_read_string(Port, Offset, ChunkSize) ->
-    {ok, Data} = read(Port, Offset, ChunkSize),
-    case binary:split(Data, [<<0>>]) of
-        [Data|[]] -> [Data|do_read_string(Port, Offset + ChunkSize, ChunkSize)];
-        [FinalData|_Remainder] -> [FinalData]
-    end.
-
-malloc(Port, Size) ->
-    case call(Port, "malloc", [Size]) of
-        {ok, [0], _} ->
-            ao:c({malloc_failed, Size}),
-            {error, malloc_failed};
-        {ok, [Ptr], _} ->
-            ao:c({malloc_success, Ptr, Size}),
-            {ok, Ptr};
-        {error, Error, _} ->
-            {error, Error}
-    end.
 
 %% Tests
 
@@ -132,12 +86,12 @@ simple_wasm_calling_test() ->
     ?assertEqual(1, Result),
     Arg0 = <<"Test string arg 000000000000000\0">>,
     Arg1 = <<"Test string arg 111111111111111\0">>,
-    {ok, Ptr0} = malloc(Port, byte_size(Arg0)),
+    {ok, Ptr0} = cu_beamr_io:malloc(Port, byte_size(Arg0)),
     ?assertNotEqual(0, Ptr0),
-    write(Port, Ptr0, Arg0),
-    {ok, Ptr1} = malloc(Port, byte_size(Arg1)),
+    cu_beamr_io:write(Port, Ptr0, Arg0),
+    {ok, Ptr1} = cu_beamr_io:malloc(Port, byte_size(Arg1)),
     ?assertNotEqual(0, Ptr1),
-    write(Port, Ptr1, Arg1),
+    cu_beamr_io:write(Port, Ptr1, Arg1),
     {ok, []} = call(Port, "print_args", [Ptr0, Ptr1]).
 
 wasm64_test() ->
@@ -147,30 +101,30 @@ wasm64_test() ->
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
-wasm_exceptions_test_skip() ->
-    {ok, File} = file:read_file("test/test-ex.wasm"),
-    {ok, Port, _Imports, _Exports} = start(File),
-    {ok, [Result]} = call(Port, "main", [1, 0]),
-    ?assertEqual(1, Result).
+% wasm_exceptions_test_skip() ->
+%     {ok, File} = file:read_file("test/test-ex.wasm"),
+%     {ok, Port, _Imports, _Exports} = start(File),
+%     {ok, [Result]} = call(Port, "main", [1, 0]),
+%     ?assertEqual(1, Result).
 
 aos64_standalone_wex_test() ->
     Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>,
     Msg = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}\0">>,
     {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
-    {ok, Ptr1} = malloc(Port, byte_size(Msg)),
+    {ok, Ptr1} = cu_beamr_io:malloc(Port, byte_size(Msg)),
     ?assertNotEqual(0, Ptr1),
-    write(Port, Ptr1, Msg),
-    {ok, Ptr2} = malloc(Port, byte_size(Env)),
+    cu_beamr_io:write(Port, Ptr1, Msg),
+    {ok, Ptr2} = cu_beamr_io:malloc(Port, byte_size(Env)),
     ?assertNotEqual(0, Ptr2),
-    write(Port, Ptr2, Env),
+    cu_beamr_io:write(Port, Ptr2, Env),
     % Read the strings to validate they are correctly passed
-    {ok, MsgBin} = read(Port, Ptr1, byte_size(Msg)),
-    {ok, EnvBin} = read(Port, Ptr2, byte_size(Env)),
+    {ok, MsgBin} = cu_beamr_io:read(Port, Ptr1, byte_size(Msg)),
+    {ok, EnvBin} = cu_beamr_io:read(Port, Ptr2, byte_size(Env)),
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
     {ok, [Ptr3], _} = call(Port, "handle", [Ptr1, Ptr2]),
-    {ok, ResBin} = read_string(Port, Ptr3),
+    {ok, ResBin} = cu_beamr_io:read_string(Port, Ptr3),
     #{<<"ok">> := true, <<"response">> := Resp} = jiffy:decode(ResBin, [return_maps]),
     #{<<"Output">> := #{ <<"data">> := Data }} = Resp,
     ?assertEqual(<<"2">>, Data).

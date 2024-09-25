@@ -4,8 +4,8 @@
 %%% A device that deduplicates messages to a process.
 %%% Only runs on the first pass.
 
-init([<<"Variant">>, <<"1.0">>], State) ->
-    {ok, State#{ dedup := [] }}.
+init(State, [<<"Variant">>, <<"1.0">>]) ->
+    {ok, State#{ dedup => [] }}.
 
 execute(Message, State = #{ pass := 1, dedup := Dedup }) ->
     case lists:member(ID = ao_message:id(Message), Dedup) of

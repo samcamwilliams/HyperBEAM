@@ -40,7 +40,7 @@ get(Key, Default) ->
     maps:get(Key, config(), Default).
 
 c(X) ->
-    io:format("===== DEBUG PRINT =====> ~80p~n", [X]),
+    io:format(standard_error, "===== DEBUG PRINT =====> ~80p~n", [X]),
     X.
 
 build() ->

@@ -557,6 +557,7 @@ static void async_init(void* raw) {
     DRV_DEBUG("Send result: %d", send_res);
     //driver_free(init_msg);
 
+    proc->current_import = NULL;
     proc->is_initialized = 1;
     drv_unlock(proc->is_running);
 }

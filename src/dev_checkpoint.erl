@@ -3,7 +3,7 @@
 
 uses() -> all.
 
-init(_Params, State) ->
+init(State, _Params) ->
     % TODO: Read the latest checkpoint if it exists.
     {ok, State}.
 
