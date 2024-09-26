@@ -40,6 +40,7 @@ arweave_timestamp() ->
 %%% Scheduler API functions
 
 schedule(Item) ->
+    % send message to su
     case
         httpc:request(
             post,
@@ -53,6 +54,7 @@ schedule(Item) ->
                 {error, _} ->
                     {error, assignment_format_invalid, Item};
                 Assignment ->
+                    % verify assignment
                     case ar_bundles:verify_item(Assignment) of
                         true ->
                             {ok, Assignment};
