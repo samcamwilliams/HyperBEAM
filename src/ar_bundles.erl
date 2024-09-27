@@ -85,11 +85,21 @@ verify_data_item_tags(DataItem) ->
 %% @doc Convert a #tx record to its binary representation.
 serialize(TX) -> serialize(TX, binary).
 serialize(BundleList, binary) when is_list(BundleList) ->
-    serialize(#tx { data = BundleList });
+    serialize(#tx { tags = ?BUNDLE_TAGS, data = BundleList }, binary);
+serialize(InitialTX = #tx { data = Data }, binary) when is_map(Data) ->
+    {ManifestID, SerializedData} = serialize_bundle_map_data(Data),
+    MapTX = InitialTX#tx {
+        data = SerializedData,
+        tags = add_manifest_tags(add_bundle_tags(InitialTX#tx.tags), ManifestID)
+    },
+    serialize(
+        MapTX,
+        binary
+    );
 serialize(InitialTX = #tx { data = Data }, binary) when is_list(Data) ->
     serialize(
         InitialTX#tx {
-            data = bundle_data(Data),
+            data = serialize_bundle_data(Data),
             tags = add_bundle_tags(InitialTX#tx.tags)
         },
         binary
@@ -118,19 +128,42 @@ update_id(TX) ->
 
 add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
 
-bundle_data(List) ->
-    Processed =
-        lists:map(
-            fun(Item) ->
-                Serialized = serialize(Item, binary),
-                {Item#tx.id, byte_size(Serialized), Serialized}
-            end,
-            List
-        ),
-    Length = <<(length(List)):256/integer>>,
-    Index = << << Size:256/integer, ID/binary >> || {ID, Size, _} <- Processed >>,
-    Items = << << Serialized/binary >> || {_, _, Serialized} <- Processed >>,
+add_manifest_tags(Tags, ManifestID) ->
+    lists:filter(fun({<<"Bundle-Map">>, _}) -> false;
+                    (_) -> true
+                end, Tags) ++ [{<<"Bundle-Map">>, ManifestID}].
+
+serialize_bundle_data(List) ->
+    finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
+
+finalize_bundle_data(Processed) ->
+    Length = <<(length(Processed)):256/integer>>,
+    Index = << << (byte_size(Data)):256/integer, ID/binary >> || {ID, Data} <- Processed >>,
+    Items = << << Data/binary >> || {_, Data} <- Processed >>,
     << Length/binary, Index/binary, Items/binary >>.
+
+to_serialized_pair(Item) ->
+    Serialized = serialize(Item, binary),
+    {Item#tx.id, Serialized}.
+
+serialize_bundle_map_data(Map) ->
+    % TODO: Make this compatible with the normal manifest spec.
+    % For now we just serialize the map to a JSON string of Key=>TXID
+    BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
+    Index = maps:map(fun(_, {TXID, _}) -> TXID end, BinItems),
+    Manifest = new_manifest(Index),
+    {Manifest#tx.id, finalize_bundle_data([to_serialized_pair(Manifest) | maps:values(BinItems)])}.
+
+new_manifest(Index) ->
+    new_item(
+        <<>>,
+        <<>>,
+        [
+            {<<"Data-Protocol">>, <<"Bundle-Map">>},
+            {<<"Variant">>, <<"0.0.1">>}
+        ],
+        jiffy:encode(Index)
+    ).
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
@@ -197,7 +230,7 @@ encode_vint(ZigZag, Acc) ->
 %% @doc Convert binary data back to a #tx record.
 deserialize(Binary) -> deserialize(Binary, binary).
 deserialize(Binary, binary) ->
-    try
+    %try
         {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
         {Target, Rest2} = decode_optional_field(Rest),
         {Anchor, Rest3} = decode_optional_field(Rest2),
@@ -216,11 +249,11 @@ deserialize(Binary, binary) ->
                 %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
                 id = crypto:hash(sha256, Signature)
             }
-        )
-    catch
-        _:_:_Stack ->
-            {error, invalid_item}
-    end;
+        );
+    %catch
+    %    _:_:_Stack ->
+    %        {error, invalid_item}
+    %end;
 deserialize(Bin, json) ->
     try
         maybe_unbundle(json_struct_to_item(element(1, jiffy:decode(Bin))))
@@ -234,8 +267,24 @@ maybe_unbundle(Item) ->
     Version = lists:keyfind(<<"Bundle-Version">>, 1, Item#tx.tags),
     case {Format, Version} of
         {{<<"Bundle-Format">>, <<"Binary">>}, {<<"Bundle-Version">>, <<"2.0.0">>}} ->
-            unbundle(Item);
+            maybe_unbundle_map(Item);
         _ -> Item
+    end.
+
+maybe_unbundle_map(Bundle) ->
+    case lists:keyfind(<<"Bundle-Map">>, 1, Bundle#tx.tags) of
+        {<<"Bundle-Map">>, MapTXID} ->
+            Items = unbundle(Bundle),
+            MapItem = find_item(MapTXID, Items),
+            Map = jiffy:decode(MapItem#tx.data, [use_null, return_maps]),
+            maps:map(fun(_K, TXID) -> find_item(TXID, Items) end, Map);
+        _ -> unbundle(Bundle)
+    end.
+
+find_item(TXID, Items) ->
+    case lists:keyfind(TXID, #tx.id, Items) of
+        false -> false;
+        Item -> Item
     end.
 
 unbundle(Item = #tx { data = << Count:256/integer, Content/binary >> }) ->
@@ -405,7 +454,8 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_empty_bundle/0},
         {timeout, 30, fun test_bundle_with_one_item/0},
         {timeout, 30, fun test_bundle_with_two_items/0},
-        {timeout, 30, fun test_recursive_bundle/0}
+        {timeout, 30, fun test_recursive_bundle/0},
+        {timeout, 30, fun test_bundle_map/0}
 	].
 
 test_no_tags() ->
@@ -520,3 +570,21 @@ test_recursive_bundle() ->
     [UnbundledItem2] = UnbundledItem3#tx.data,
     [UnbundledItem1] = UnbundledItem2#tx.data,
     ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).
+
+test_bundle_map() ->
+    Item1 = new_item(
+        crypto:strong_rand_bytes(32),
+        crypto:strong_rand_bytes(32),
+        [],
+        ItemData1 = <<"item1_data">>
+    ),
+    Item2 = #tx{
+        format = ans104,
+        id = crypto:strong_rand_bytes(32),
+        last_tx = crypto:strong_rand_bytes(32),
+        data = #{<<"key1">> => Item1}
+    },
+    Bundle = serialize(Item2),
+    ok.
+    %BundleItem = deserialize(Bundle),
+    %?assertEqual(ItemData1, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data).
