@@ -17,7 +17,6 @@ signal(State = #{ monitors := StartingMonitors }, Signal) ->
     RemainingMonitors =
         lists:filter(
             fun(Mon) ->
-                ao:c({monitor_signal, Mon, Signal}),
                 case Mon(State, Signal) of
                     done -> false;
                     _ -> true

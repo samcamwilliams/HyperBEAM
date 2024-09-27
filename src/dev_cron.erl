@@ -44,7 +44,7 @@ execute(Message, State = #{ cron := #state { time = MilliSecs, last_run = LastRu
     case timestamp(Message) - LastRun of
         Time when Time > MilliSecs ->
             NextCronMsg = create_cron(State, CronTime = timestamp(Message) + MilliSecs),
-            {restack,
+            {pass,
                 State#{
                     cron := #state { last_run = CronTime },
                     schedule := [NextCronMsg | Sched]

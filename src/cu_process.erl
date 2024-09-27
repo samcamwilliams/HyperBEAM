@@ -73,7 +73,6 @@ monitor(ProcID) ->
             ProcID ! {self(), shutdown},
             [State];
         {monitor, State, {message, Message}} ->
-            ao:c({intermediate_result, maps:get(result, State, no_result)}),
             [{message_processed, ao_message:id(Message), maps:get(result, State, {no_result, State})}|monitor(ProcID)];
         Else -> [Else]
     end.
@@ -173,7 +172,6 @@ simple_stack_test() ->
                 data = <<"return 1+1">>
             }, Wallet)
         ],
-    ao:c({schedule, jiffy:encode(ar_bundles:item_to_json_struct(hd(Schedule)))}),
-    Res = run(Proc, #{ schedule => Schedule, error_strategy => stop }),
-    Res,
+    [{message_processed, _, TX}|_] = run(Proc, #{ schedule => Schedule, error_strategy => stop }),
+    ao:c({simple_stack_test_result, TX#tx.data}),
     ok.

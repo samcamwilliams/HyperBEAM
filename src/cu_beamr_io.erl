@@ -50,7 +50,7 @@ do_read_string(Port, Offset, ChunkSize) ->
     end.
 
 read_iovecs(Port, Ptr, Vecs) ->
-    ao:c({read_iovecs_started, Port, Ptr, Vecs}),
+    %ao:c({read_iovecs_started, Port, Ptr, Vecs}),
     Bin = iolist_to_binary(do_read_iovecs(Port, Ptr, Vecs)),
     {ok, Bin}.
 
