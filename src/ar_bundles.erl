@@ -11,6 +11,11 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(BUNDLE_TAGS, [
+    {<<"Bundle-Format">>, <<"Binary">>},
+    {<<"Bundle-Version">>, <<"2.0.0">>}
+]).
+
 %%%===================================================================
 %%% Public interface.
 %%%===================================================================
@@ -79,7 +84,19 @@ verify_data_item_tags(DataItem) ->
 
 %% @doc Convert a #tx record to its binary representation.
 serialize(TX) -> serialize(TX, binary).
-serialize(TX, binary) ->
+serialize(BundleList, binary) when is_list(BundleList) ->
+    serialize(#tx { data = BundleList });
+serialize(InitialTX = #tx { data = Data }, binary) when is_list(Data) ->
+    serialize(
+        InitialTX#tx {
+            data = bundle_data(Data),
+            tags = add_bundle_tags(InitialTX#tx.tags)
+        },
+        binary
+    );
+serialize(TX, binary) when is_binary(TX) -> TX;
+serialize(RawTX, binary) ->
+    TX = update_id(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
@@ -93,6 +110,27 @@ serialize(TX, binary) ->
     >>;
 serialize(TX, json) ->
     jiffy:encode(item_to_json_struct(TX)).
+
+update_id(TX = #tx{}) when TX#tx.id =:= ?DEFAULT_ID; TX#tx.signature =:= ?DEFAULT_SIG ->
+    TX#tx{ id = data_item_signature_data(TX) };
+update_id(TX) ->
+    TX.
+
+add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
+
+bundle_data(List) ->
+    Processed =
+        lists:map(
+            fun(Item) ->
+                Serialized = serialize(Item, binary),
+                {Item#tx.id, byte_size(Serialized), Serialized}
+            end,
+            List
+        ),
+    Length = <<(length(List)):256/integer>>,
+    Index = << << Size:256/integer, ID/binary >> || {ID, Size, _} <- Processed >>,
+    Items = << << Serialized/binary >> || {_, _, Serialized} <- Processed >>,
+    << Length/binary, Index/binary, Items/binary >>.
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
@@ -164,26 +202,58 @@ deserialize(Binary, binary) ->
         {Target, Rest2} = decode_optional_field(Rest),
         {Anchor, Rest3} = decode_optional_field(Rest2),
         {Tags, Data} = decode_tags(Rest3),
-        #tx{
-            format=ans104,
-            signature_type = SignatureType, 
-            signature = Signature,
-            owner = Owner,
-            target = Target,
-            last_tx = Anchor,
-            tags = Tags,
-            data = Data,
-            data_size = byte_size(Data),
-            %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
-            id = crypto:hash(sha256, Signature)
-        }
+        maybe_unbundle(
+            #tx{
+                format=ans104,
+                signature_type = SignatureType, 
+                signature = Signature,
+                owner = Owner,
+                target = Target,
+                last_tx = Anchor,
+                tags = Tags,
+                data = Data,
+                data_size = byte_size(Data),
+                %% Since the id isn't included in the data-item spec, we'll fill it in ourselves.
+                id = crypto:hash(sha256, Signature)
+            }
+        )
     catch
         _:_:_Stack ->
             {error, invalid_item}
     end;
 deserialize(Bin, json) ->
-    {JSONStruct} = jiffy:decode(Bin),
-    json_struct_to_item(JSONStruct).
+    try
+        maybe_unbundle(json_struct_to_item(element(1, jiffy:decode(Bin))))
+    catch
+        _:_:_Stack ->
+            {error, invalid_item}
+    end.
+
+maybe_unbundle(Item) ->
+    Format = lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags),
+    Version = lists:keyfind(<<"Bundle-Version">>, 1, Item#tx.tags),
+    case {Format, Version} of
+        {{<<"Bundle-Format">>, <<"Binary">>}, {<<"Bundle-Version">>, <<"2.0.0">>}} ->
+            unbundle(Item);
+        _ -> Item
+    end.
+
+unbundle(Item = #tx { data = << Count:256/integer, Content/binary >> }) ->
+    {ItemsBin, Items} = decode_bundle_header(Count, Content),
+    Item#tx { data = decode_bundle_items(Items, ItemsBin) }.
+
+decode_bundle_items([], <<>>) -> [];
+decode_bundle_items([{_ID, Size} | RestItems], ItemsBin) ->
+    [
+        deserialize(binary:part(ItemsBin, 0, Size))
+    |
+        decode_bundle_items(RestItems, binary:part(ItemsBin, Size, byte_size(ItemsBin) - Size))
+    ].
+
+decode_bundle_header(Count, Bin) -> decode_bundle_header(Count, Bin, []).
+decode_bundle_header(0, ItemsBin, Header) -> {ItemsBin, lists:reverse(Header)};
+decode_bundle_header(Count, << Size:256/integer, ID:32/binary, Rest/binary >>, Header) ->
+    decode_bundle_header(Count - 1, Rest, [ {ID, Size} | Header ]).
 
 item_to_json_struct(
 	#tx{
@@ -331,7 +401,11 @@ ar_bundles_test_() ->
 		{timeout, 30, fun test_no_tags/0},
         {timeout, 30, fun test_no_tags_from_disk/0},
         {timeout, 30, fun test_with_tags/0},
-        {timeout, 30, fun test_with_tags_from_disk/0}
+        {timeout, 30, fun test_with_tags_from_disk/0},
+        {timeout, 30, fun test_empty_bundle/0},
+        {timeout, 30, fun test_bundle_with_one_item/0},
+        {timeout, 30, fun test_bundle_with_two_items/0},
+        {timeout, 30, fun test_recursive_bundle/0}
 	].
 
 test_no_tags() ->
@@ -353,9 +427,7 @@ test_no_tags() ->
 
 test_no_tags_from_disk() ->
     {ok, BinaryDataItem} = file:read_file("src/test/dataitem_notags"),
-    
     DataItem = deserialize(BinaryDataItem),
-
     ?assertEqual(true, verify_item(DataItem)),
     ?assertEqual(<<"notags">>, DataItem#tx.data).
 
@@ -391,3 +463,60 @@ assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(Tags, DataItem#tx.tags),
     ?assertEqual(Data, DataItem#tx.data),
     ?assertEqual(byte_size(Data), DataItem#tx.data_size).
+
+test_empty_bundle() ->
+    Bundle = serialize([]),
+    BundleItem = deserialize(Bundle),
+    ?assertEqual([], BundleItem#tx.data).
+
+test_bundle_with_one_item() ->
+    Item = new_item(
+        crypto:strong_rand_bytes(32),
+        crypto:strong_rand_bytes(32),
+        [],
+        ItemData = crypto:strong_rand_bytes(32)
+    ),
+    Bundle = serialize([Item]),
+    BundleItem = deserialize(Bundle),
+    ?assertEqual(ItemData, (hd(BundleItem#tx.data))#tx.data).
+
+test_bundle_with_two_items() ->
+    Item1 = new_item(
+        crypto:strong_rand_bytes(32),
+        crypto:strong_rand_bytes(32),
+        [],
+        ItemData1 = crypto:strong_rand_bytes(32)
+    ),
+    Item2 = new_item(
+        crypto:strong_rand_bytes(32),
+        crypto:strong_rand_bytes(32),
+        [{<<"tag1">>, <<"value1">>}, {<<"tag2">>, <<"value2">>}],
+        ItemData2 = crypto:strong_rand_bytes(32)
+    ),
+    Bundle = serialize([Item1, Item2]),
+    BundleItem = deserialize(Bundle),
+    ?assertEqual(ItemData1, (hd(BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (hd(tl(BundleItem#tx.data)))#tx.data).
+
+test_recursive_bundle() ->
+    Item1 = #tx{
+        id = crypto:strong_rand_bytes(32),
+        last_tx = crypto:strong_rand_bytes(32),
+        data = << 1:256/integer >>
+    },
+    Item2 = #tx{
+        id = crypto:strong_rand_bytes(32),
+        last_tx = crypto:strong_rand_bytes(32),
+        data = [Item1]
+    },
+    Item3 = #tx{
+        id = crypto:strong_rand_bytes(32),
+        last_tx = crypto:strong_rand_bytes(32),
+        data = [Item2]
+    },
+    Bundle = serialize([Item3]),
+    BundleItem = deserialize(Bundle),
+    [UnbundledItem3] = BundleItem#tx.data,
+    [UnbundledItem2] = UnbundledItem3#tx.data,
+    [UnbundledItem1] = UnbundledItem2#tx.data,
+    ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).
