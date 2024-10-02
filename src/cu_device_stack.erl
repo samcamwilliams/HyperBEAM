@@ -63,10 +63,11 @@ do_call([], S, _FuncName, _Opts) -> {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S, FuncName, Opts) ->
     ao:c({calling, DevMod, FuncName}),
     case call_dev(S, Dev, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params]) of
-        {ok, NewS} -> do_call(Devs, NewS, FuncName, Opts);
-        {ok, NewS, NewPrivS} -> do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
-        {pass, NewS} -> maybe_pass(NewS, FuncName, Opts);
-        {pass, NewS, NewPrivS} -> maybe_pass(update(NewS, Dev, NewPrivS), FuncName, Opts);
+        {ok, NewS} when is_map(NewS) ->
+            do_call(Devs, NewS, FuncName, Opts);
+        {ok, NewS, NewPrivS} when is_map(NewS) -> do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
+        {pass, NewS} when is_map(NewS) -> maybe_pass(NewS, FuncName, Opts);
+        {pass, NewS, NewPrivS} when is_map(NewS) -> maybe_pass(update(NewS, Dev, NewPrivS), FuncName, Opts);
         {error, Info} -> maybe_error(AllDevs, S, FuncName, Opts, Info);
         Unexpected -> maybe_error(AllDevs, S, FuncName, Opts, {unexpected_result, Unexpected})
     end.

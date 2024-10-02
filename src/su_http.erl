@@ -1,7 +1,7 @@
 -module(su_http).
 -export([handle/3, routes/0]).
 
--include("include/ar.hrl").
+-include("include/ao.hrl").
 
 %%% SU HTTP Server API
 
@@ -78,9 +78,6 @@ handle(<<"POST">>, [], Req) ->
                     #{process := undefined} -> binary_to_list(ar_util:encode(Message#tx.target));
                     #{process := ProcessID} -> ProcessID
                 end,
-            ao:c({running_actual_scheduling, Message#tx.id, AOProcID}),
-            %ao:c({su_registry, su_registry:find(AOProcID)}),
-            ao:c({su_registry_gen, su_registry:find(AOProcID, false)}),
             ao_http:reply(
                 Req,
                 su_process:schedule(su_registry:find(AOProcID, true), Message)
@@ -107,14 +104,16 @@ send_stream(ProcID, From, To, Req) ->
         ),
     ao_http:reply(
         Req,
-        #tx{
-            tags = [
-                {<<"Type">>, <<"Assignments">>},
-                {<<"Process">>, ProcID},
-                {<<"Continues">>, More}
-            ],
-            data = assignments_to_bundle(Assignments)
-        }
+        ar_bundles:sign_item(#tx{
+                tags = [
+                    {<<"Type">>, <<"Assignments">>},
+                    {<<"Process">>, ProcID},
+                    {<<"Continues">>, atom_to_binary(More, utf8)}
+                ],
+                data = assignments_to_bundle(Assignments)
+            },
+            ao:wallet()
+        )
     ).
 
 send_data(ID, Req) ->

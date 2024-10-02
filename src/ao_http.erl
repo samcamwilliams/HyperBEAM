@@ -1,7 +1,7 @@
 -module(ao_http).
 -export([get/2, post/3, reply/2, reply/3]).
 
--include("include/ar.hrl").
+-include("include/ao.hrl").
 
 get(Host, Path) ->
     ao:c({http_get, Host ++ Path}),
@@ -13,7 +13,7 @@ get(Host, Path) ->
     end.
 
 post(Host, Path, Item) ->
-    ao:c({http_post, Item#tx.id, Host ++ Path}),
+    ao:c({http_post, ar_util:encode(Item#tx.id), Host ++ Path}),
     case httpc:request(
         post,
         {Host ++ Path, [], "application/octet-stream", ar_bundles:serialize(Item)},
@@ -28,7 +28,13 @@ post(Host, Path, Item) ->
 
 reply(Req, Item) -> reply(Req, 200, Item).
 reply(Req, Status, Item) ->
-    ao:c({replying, Status, case is_record(Item, tx) of true -> Item#tx.id; false -> Item end}),
+    ao:c(
+        {replying,
+            Status,
+            maps:get(method, Req, undef_method),
+            maps:get(path, Req, undef_path),
+            case is_record(Item, tx) of true -> ar_util:encode(Item#tx.id); false -> Item end}
+    ),
     cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},

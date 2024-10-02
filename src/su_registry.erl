@@ -6,12 +6,12 @@
 start() -> start(ao:get(key_location)).
 start(WalletFile) ->
     Wallet = ao:wallet(WalletFile),
-    register(?MODULE, spawn(fun() -> server(#{}, Wallet) end)).
+    register(?MODULE, PID = spawn(fun() -> server(#{}, Wallet) end)),
+    PID.
 
 find(ProcID) -> find(ProcID, false).
 find(ProcID, GenIfNotHosted) ->
     ReplyPID = self(),
-    ao:c({finding, ProcID, GenIfNotHosted, erlang:is_process_alive(whereis(?MODULE))}),
     ?MODULE ! {find, ProcID, ReplyPID, GenIfNotHosted},
     receive
         {process, Process} -> Process
