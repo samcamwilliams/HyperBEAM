@@ -1,5 +1,5 @@
 -module(ao_message).
--export([id/1, get/1, to_json/1]).
+-export([id/1, get/1, to_json/1, from_json/1, to_binary/1, from_binary/1]).
 
 -include("include/ao.hrl").
 
@@ -12,3 +12,13 @@ get(ID) ->
 
 to_json(M) ->
     jiffy:encode(ar_bundles:item_to_json_struct(M)).
+
+from_json(J) ->
+    {JSONStruct} = jiffy:decode(J),
+    ar_bundles:json_struct_to_item(JSONStruct).
+
+to_binary(M) ->
+    ar_bundles:serialize(M).
+
+from_binary(B) ->
+    ar_bundles:deserialize(B).

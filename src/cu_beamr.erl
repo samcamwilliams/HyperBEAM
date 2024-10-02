@@ -53,9 +53,9 @@ exec_call(S, ImportFunc, Port) ->
             ao:c({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
-            ao:c({import_called, Module, Func, Args, Signature}),
+            %ao:c({import_called, Module, Func, Args, Signature}),
             {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
-            ao:c({import_returned, ErlRes}),
+            ao:c({import_returned, Module, Func, Args, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
             exec_call(S2, ImportFunc, Port);
         {error, Error} ->

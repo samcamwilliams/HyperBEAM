@@ -3,7 +3,7 @@
 -include("src/include/ar.hrl").
 
 routes() ->
-    {"/cu", [ "/" ]}.
+    {"/cu", [ "/", "/:id", "/:id/:assignment_id" ]}.
 
 handle(<<"GET">>, [], Req) ->
     % Return node info the client.
@@ -17,15 +17,19 @@ handle(<<"GET">>, [], Req) ->
         ]}),
         Req),
     {ok, Req};
-handle(<<"GET">>, [ProcID], Req) when is_binary(ProcID) and byte_size(ProcID) == 43 ->
-    case dev_checkpoint:read(ProcID) of
+handle(<<"GET">>, [ProcID, AssignmentID], Req)  ->
+    case dev_checkpoint:read(ProcID, AssignmentID) of
         unavailable ->
-            {ok, ReqBin} = ao_http_router:read_body(Req),
-            _MonitorPID = mu_push:start(TX = ar_bundles:deserialize(ReqBin)),
-            cowboy_req:reply(201,
-                #{<<"Content-Type">> => <<"application/json">>},
-                jiffy:encode({[{id, ar_util:encode(TX#tx.id)}]}),
-                Req
-            ),
-            {ok, Req}
-    end.
+            ResultLog = cu_process:run(su_data:read_message(ProcID), #{}),
+            % TODO: Don't get the wallet again from disk every time.
+            Req2 = ao_http:reply(Req, ar_bundles:sign_item(lists:last(ResultLog), ao:wallet())),
+            {ok, Req2};
+        {ok, Result} ->
+            Req2 = ao_http:reply(Req, Result),
+            {ok, Req2}
+    end;
+handle(<<"GET">>, [ProcID], Req) ->
+    handle(<<"GET">>, [ProcID, undefined], Req);
+handle(_, _, Req) ->
+    cowboy_req:reply(404, #{}, <<"Not Implemented">>, Req),
+    {ok, Req}.

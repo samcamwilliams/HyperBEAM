@@ -22,7 +22,6 @@ prep_call(M, #{ wasm := Port, process := Process }) ->
     BlockHeight = <<"0">>,
     RawMsgJson = ao_message:to_json(M),
     {Props} = jiffy:decode(RawMsgJson),
-    ao:c({prep_call, Module, BlockHeight}),
     MsgJson = jiffy:encode({Props ++ [{<<"Module">>, Module}, {<<"Block-Height">>, BlockHeight}]}),
     {ok, MsgJsonPtr} = cu_beamr_io:write_string(Port, MsgJson),
     EnvJson = jiffy:encode({[{<<"Process">>, ar_bundles:item_to_json_struct(Process)}]}),
@@ -39,15 +38,17 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
         {ok, [Ptr]} ->
             {ok, Str} = cu_beamr_io:read_string(Port, Ptr),
             try jiffy:decode(Str, [return_maps]) of
+                % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
-                    #{<<"Output">> := Output = #{ <<"data">> := Data }} = Resp,
+                    #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages } = Resp,
                     S#{
-                        stdout => iolist_to_binary(Stdout),
-                        outbox => [ ar_bundle:json_struct_to_tx(Msg) || Msg <- maps:get(<<"Outbox">>, Output, []) ],
-                        result =>
+                        result => 
                             #tx {
-                                tags = [{<<"Result">>, <<"OK">>}],
-                                data = jiffy:encode(#{ <<"Data">> => Data })
+                                data = #{
+                                    <<"/outbox/messages">> => [ ao_message:to_binary(ao_message:from_json(Msg)) || Msg <- Messages ],
+                                    <<"/data">> => Data,
+                                    <<"/stdout">> => iolist_to_binary(Stdout)
+                                }
                             }
                     };
                 #{<<"ok">> := false} ->
@@ -84,11 +85,11 @@ stdlib(S = #{ json_iface := IfaceS }, Port, ModName, FuncName, Args, Sig) ->
     {IfaceS2, Res} = lib(IfaceS, Port, ModName, FuncName, Args, Sig),
     {S#{ json_iface := IfaceS2 }, Res}.
 
-lib(S = #{ stdout := Stdout }, Port, "wasi_snapshot_preview1","fd_write", [Fd, Ptr, Vecs, RetPtr], _Signature) ->
-    ao:c({fd_write, Fd, Ptr, Vecs, RetPtr}),
+lib(S = #{ stdout := Stdout }, Port, "wasi_snapshot_preview1","fd_write", [_Fd, Ptr, Vecs, RetPtr], _Signature) ->
+    %ao:c({fd_write, Fd, Ptr, Vecs, RetPtr}),
     {ok, VecData} = cu_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
-    ao:c({fd_write_data, VecData}),
+    %ao:c({fd_write_data, VecData}),
     NewStdio =
         case Stdout of
             undefined ->

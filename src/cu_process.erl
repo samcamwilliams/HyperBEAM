@@ -1,7 +1,7 @@
 -module(cu_process).
 -export([start/1, start/2]).
 -export([run/1, run/2]).
--export([test/0]).
+-export([generate_test_data/0]).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -73,7 +73,6 @@ monitor(ProcID) ->
             ProcID ! {self(), shutdown},
             [State];
         {monitor, State, {message, Message}} ->
-            ao:c({intermediate_result, maps:get(result, State, no_result)}),
             [{message_processed, ao_message:id(Message), maps:get(result, State, {no_result, State})}|monitor(ProcID)];
         Else -> [Else]
     end.
@@ -141,10 +140,7 @@ await_command(State = #{ schedule := Sched }, Opts) ->
 
 %%% Tests
 
-test() -> 
-    simple_stack_test().
-
-simple_stack_test() ->
+simple_stack_test_ignore() ->
     Wallet = ao:wallet(),
     Authority = ar_wallet:to_address(Wallet),
     RawProc =
@@ -173,7 +169,46 @@ simple_stack_test() ->
                 data = <<"return 1+1">>
             }, Wallet)
         ],
-    ao:c({schedule, jiffy:encode(ar_bundles:item_to_json_struct(hd(Schedule)))}),
-    Res = run(Proc, #{ schedule => Schedule, error_strategy => stop }),
-    Res,
+    [{message_processed, _, TX}|_] = run(Proc, #{ schedule => Schedule, error_strategy => stop }),
+    ao:c({simple_stack_test_result, TX#tx.data}),
     ok.
+
+full_push_test() -> 
+    Msg = generate_test_data(),
+    ao_client:push(Msg).
+
+generate_test_data() ->
+    Wallet = ao:wallet(),
+    ID = ar_wallet:to_address(Wallet),
+    su_data:write_message(
+        Signed = ar_bundles:sign_item(#tx {
+            tags = [
+                    {<<"Protocol">>, <<"ao">>},
+                    {<<"Variant">>, <<"ao.tn.2">>},
+                    {<<"Type">>, <<"Process">>},
+                    {<<"Authority">>, ar_util:encode(ID)},
+                    {<<"Device">>, <<"Scheduler">>},
+                    {<<"Location">>, ar_util:encode(ID)},
+                    {<<"Device">>, <<"JSON-Interface">>},
+                    {<<"Device">>, <<"WASM64-pure">>},
+                    {<<"Image">>, <<"aos-2-pure.wasm">>},
+                    {<<"Module">>, <<"aos-2-pure">>},
+                    {<<"Device">>, <<"Cron">>},
+                    {<<"Time">>, <<"100-Milliseconds">>},
+                    {<<"Device">>, <<"Checkpoint">>}
+                ]
+            }, Wallet)
+    ),
+    ar_bundles:sign_item(
+        #tx {
+            target = Signed#tx.id,
+            tags = [
+                {<<"Protocol">>, <<"ao">>},
+                {<<"Variant">>, <<"ao.tn.2">>},
+                {<<"Type">>, <<"Message">>},
+                {<<"Action">>, <<"Eval">>}
+            ],
+            data = <<"return 1+1">>
+        },
+        Wallet
+    ).

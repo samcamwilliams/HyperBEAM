@@ -1,13 +1,30 @@
 -module(ao_client).
--export([download/1]).
--export([upload/1, arweave_timestamp/0]).
+%% Arweave node API
+-export([arweave_timestamp/0]).
+%% Arweave bundling and data access API
+-export([upload/1,download/1]).
+%% Scheduling Unit API
+-export([get_assignments/1, get_assignments/2, get_assignments/3]).
 -export([schedule/1, assign/1, register_su/1, register_su/2]).
--export([compute/1, cron/1, cron/2, cron/3, cron_cursor/1]).
+-export([cron/1, cron/2, cron/3, cron_cursor/1]).
+%% Compute Unit API
+-export([compute/1, compute/2]).
+%% Messaging Unity API
 -export([push/1]).
 
 -include("include/ao.hrl").
 
-%%% Arweave API functions
+%%% Arweave node API
+
+arweave_timestamp() ->
+    {ok, {{_, 200, _}, _, Body}} = httpc:request(ao:get(gateway) ++ "/block/current"),
+    {Fields} = jiffy:decode(Body),
+    {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
+    {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
+    {_, Height} = lists:keyfind(<<"height">>, 1, Fields),
+    {Timestamp, Height, Hash}.
+
+%%% Bundling and data access API
 
 download(ID) ->
     % TODO: Need to recreate full data items, not just data...
@@ -29,42 +46,14 @@ upload(Item) ->
             {error, bundler_http_error, Response}
     end.
 
-arweave_timestamp() ->
-    {ok, {{_, 200, _}, _, Body}} = httpc:request(ao:get(gateway) ++ "/block/current"),
-    {Fields} = jiffy:decode(Body),
-    {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
-    {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
-    {_, Height} = lists:keyfind(<<"height">>, 1, Fields),
-    {Timestamp, Height, Hash}.
-
-%%% Scheduler API functions
-
-schedule(Item) ->
-    % send message to su
-    case
-        httpc:request(
-            post,
-            {ao:get(su), [], "application/x-www-form-urlencoded", ar_bundles:serialize(Item)},
-            [],
-            []
-        )
-    of
-        {ok, {{_, 201, _}, _, Body}} ->
-            case ar_bundles:deserialize(Body, json) of
-                {error, _} ->
-                    {error, assignment_format_invalid, Item};
-                Assignment ->
-                    % verify assignment
-                    case ar_bundles:verify_item(Assignment) of
-                        true ->
-                            {ok, Assignment};
-                        false ->
-                            {error, assignment_sig_invalid, Assignment}
-                    end
-            end;
-        Response ->
-            {error, su_http_error, Response}
-    end.
+%%% Scheduling Unit API
+schedule(Item) -> schedule(Item, Item#tx.target).
+schedule(Item, Target) ->
+    ao_http:post(
+        su_process:get_location(Target),
+        "/",
+        Item
+    ).
 
 assign(_ID) ->
     ao:c({not_implemented, assignments}).
@@ -85,36 +74,51 @@ register_su(Location, Wallet) ->
     },
     ao_client:upload(ar_bundles:sign_item(TX, Wallet)).
 
-compute(_Item) ->
+get_assignments(ProcID) ->
+    get_assignments(ProcID, 0, undefined).
+get_assignments(ProcID, From) ->
+    get_assignments(ProcID, From, undefined).
+get_assignments(ProcID, From, To) ->
+    ao:c({getting_assignments, ProcID, From, To}),
+    #tx { data = Data } =
+        ao_http:get(
+            su_process:get_location(ProcID),
+            "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?"
+                ++ case From of undefined -> ""; _ -> "&from=" ++ integer_to_list(From) end
+                ++ case To of undefined -> ""; _ -> "&to=" ++ integer_to_list(To) end
+        ),
+    Assignments = maps:map(fun(K, V) -> {list_to_integer(binary_to_list(K)), V} end, Data),
+    extract_assignments(From, To, Assignments).
+
+extract_assignments(_, _, #{}) -> [];
+extract_assignments(From, To, Assignments) ->
+    [
+        maps:get(From, Assignments)|
+        extract_assignments(From + 1, To, maps:remove(From, Assignments))
+    ].
+
+compute(Assignment) when is_record(Assignment, tx) ->
+    {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+    compute(ar_util:decode(ProcessID), Assignment#tx.id).
+compute(ProcID, AssignmentID) ->
     % TN.1: MU Should be reading real results, not mocked-out.
-    case
-        httpc:request(ao:get(cu)
-                ++ "/result/"
-                %TODO: ++ binary_to_list(ar_util:encode(Item#tx.id))
-                ++ "p_HXhuer1pWOzvYEn8NMRrJQEODxneu6vd1wwsPqnXo"
-                ++ "?process-id="
-                %TODO: ++ binary_to_list(ar_util:encode(Item#tx.target))) of
-                ++ "YxpLc0rVpVUuT5KuaVnhA8X0ISCCeBShprozN6r8fKc") of
-            {ok, {{_, 200, _}, _, Body}} ->
-                {ok, parse_result(Body)};
-            Response ->
-                {error, cu_http_error, Response}
-    end.
+    ao_http:get(
+        ao:get(cu),
+        "/"
+        ++ binary_to_list(ar_util:encode(ProcID))
+        ++ "/"
+        ++ binary_to_list(ar_util:encode(AssignmentID))
+    ).
 
 %%% MU API functions
 
 push(Item) ->
-    case
-        httpc:request(
-            post,
-            {ao:get(mu) ++ "/", [], "application/x-www-form-urlencoded", ar_bundles:serialize(Item)},
-            [],
-            []
-        )
-    of
-        {ok, {{_, 201, _}, _, _Body}} -> ok;
-        Response -> {error, mu_http_error, Response}
-    end.
+    ao:c({posting_to_mu, Item#tx.id}),
+    ao_http:post(
+        ao:get(mu),
+        "/",
+        Item
+    ).
 
 %%% CU API functions
 
@@ -166,9 +170,6 @@ parse_result_set(Body) ->
     {_, HasNextPage} = lists:keyfind(<<"hasNextPage">>, 1, PageInfoStruct),
     {_, EdgesStruct} = lists:keyfind(<<"edges">>, 1, JSONStruct),
     {HasNextPage, lists:map(fun json_struct_to_result/1, EdgesStruct)}.
-
-parse_result(Body) ->
-    json_struct_to_result(jiffy:decode(Body)).
 
 %% Parse a CU result into a #result record. If the result is in the form of a
 %% stream, then the cursor is returned in the #result record as well.

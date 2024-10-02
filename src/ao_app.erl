@@ -14,9 +14,9 @@ start(_StartType, _StartArgs) ->
     su_data:init(),
     su_registry:start(),
     su_timestamp:start(),
-    ao_http_router:start([su_http, mu_http]).
-
-    % cu_process:test().
+    ao_http_router:start([su_http, mu_http, cu_http]),
+    cu_process:full_push_test(),
+    self().
 
 stop(_State) ->
     ok.
