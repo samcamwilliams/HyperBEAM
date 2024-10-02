@@ -40,14 +40,16 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
             try jiffy:decode(Str, [return_maps]) of
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
-                    #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages, <<"Print">> := Print} = Resp,
+                    #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages } = Resp,
                     S#{
-                        fs => #{
-                            <<"/outbox/messages">> => [ ao_message:to_binary(ao_message:from_json(Msg)) || Msg <- Messages ],
-                            %<<"/data">> => Data,
-                            %<<"/print">> => Print,
-                            <<"/stdout">> => iolist_to_binary(Stdout)
-                        }
+                        result => 
+                            #tx {
+                                data = #{
+                                    <<"/outbox/messages">> => [ ao_message:to_binary(ao_message:from_json(Msg)) || Msg <- Messages ],
+                                    <<"/data">> => Data,
+                                    <<"/stdout">> => iolist_to_binary(Stdout)
+                                }
+                            }
                     };
                 #{<<"ok">> := false} ->
                     S#{

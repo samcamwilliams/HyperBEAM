@@ -1,6 +1,8 @@
 -module(ao_logger).
 -export([start/0, log/2, register/1, report/1]).
 
+-include("include/ao.hrl").
+
 -record(state, {
     activity = [],
     processes = [],
@@ -50,6 +52,10 @@ loop(State) ->
 
 console(#state { console = false }, _) ->
     not_printing;
+console(S, {Status, Type, Details}) when is_record(Details, tx) ->
+    console(S, {Status, Type, Details#tx.id});
 console(_S, {Status, Type, Details}) ->
     io:format("### MU PUSH REPORT ~p ###~n~p: ~p~n~p~n~n",
-        [self(), Status, Type, Details]).
+        [self(), Status, Type, Details]);
+console(_S, Act) ->
+    io:format("### MU PUSH UNEXPECTED ~p ###~n~p~n~n", [self(), Act]).

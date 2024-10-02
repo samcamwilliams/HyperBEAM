@@ -22,14 +22,16 @@
 
 %% @doc Create a new data item.
 new_item(Target, Anchor, Tags, Data) ->
-    #tx{
-        format = ans104,
-        target = Target,
-        last_tx = Anchor,
-        tags = Tags,
-        data = Data,
-        data_size = byte_size(Data)
-    }.
+    update_id(
+        #tx{
+            format = ans104,
+            target = Target,
+            last_tx = Anchor,
+            tags = Tags,
+            data = Data,
+            data_size = byte_size(Data)
+        }
+    ).
 
 %% @doc Sign a data item.
 sign_item(DataItem, {PrivKey, {KeyType, Owner}}) ->
@@ -86,6 +88,8 @@ verify_data_item_tags(DataItem) ->
 serialize(TX) -> serialize(TX, binary).
 serialize(BundleList, binary) when is_list(BundleList) ->
     serialize(#tx { tags = ?BUNDLE_TAGS, data = BundleList }, binary);
+serialize(BundleMap, binary) when is_map(BundleMap) ->
+    serialize(#tx { tags = ?BUNDLE_TAGS, data = BundleMap }, binary);
 serialize(InitialTX = #tx { data = Data }, binary) when is_map(Data) ->
     {ManifestID, SerializedData} = serialize_bundle_map_data(Data),
     MapTX = InitialTX#tx {
@@ -122,7 +126,7 @@ serialize(TX, json) ->
     jiffy:encode(item_to_json_struct(TX)).
 
 update_id(TX = #tx{}) when TX#tx.id =:= ?DEFAULT_ID; TX#tx.signature =:= ?DEFAULT_SIG ->
-    TX#tx{ id = data_item_signature_data(TX) };
+    TX#tx{ format = ans104, id = crypto:hash(sha256, data_item_signature_data(TX)) };
 update_id(TX) ->
     TX.
 
@@ -131,7 +135,7 @@ add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
 add_manifest_tags(Tags, ManifestID) ->
     lists:filter(fun({<<"Bundle-Map">>, _}) -> false;
                     (_) -> true
-                end, Tags) ++ [{<<"Bundle-Map">>, ManifestID}].
+                end, Tags) ++ [{<<"Bundle-Map">>, ar_util:encode(ManifestID)}].
 
 serialize_bundle_data(List) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
@@ -144,13 +148,14 @@ finalize_bundle_data(Processed) ->
 
 to_serialized_pair(Item) ->
     Serialized = serialize(Item, binary),
-    {Item#tx.id, Serialized}.
+    ID = if is_record(Item, tx) -> Item#tx.id; true -> (deserialize(Serialized, binary))#tx.id end,
+    {ID, Serialized}.
 
 serialize_bundle_map_data(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
     % For now we just serialize the map to a JSON string of Key=>TXID
     BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
-    Index = maps:map(fun(_, {TXID, _}) -> TXID end, BinItems),
+    Index = maps:map(fun(_, {TXID, _}) -> ar_util:encode(TXID) end, BinItems),
     Manifest = new_manifest(Index),
     {Manifest#tx.id, finalize_bundle_data([to_serialized_pair(Manifest) | maps:values(BinItems)])}.
 
@@ -275,13 +280,17 @@ maybe_unbundle_map(Bundle) ->
     case lists:keyfind(<<"Bundle-Map">>, 1, Bundle#tx.tags) of
         {<<"Bundle-Map">>, MapTXID} ->
             Items = unbundle(Bundle),
+            ao:c({unbundled, Items}),
             MapItem = find_item(MapTXID, Items),
             Map = jiffy:decode(MapItem#tx.data, [use_null, return_maps]),
             maps:map(fun(_K, TXID) -> find_item(TXID, Items) end, Map);
         _ -> unbundle(Bundle)
     end.
 
+find_item(TXID, TX) when is_record(TX, tx) ->
+    find_item(TXID, TX#tx.data);
 find_item(TXID, Items) ->
+    ao:c({finding, TXID, [ ar_util:encode(I#tx.id) || I <- Items ]}),
     case lists:keyfind(TXID, #tx.id, Items) of
         false -> false;
         Item -> Item
@@ -378,7 +387,8 @@ json_struct_to_item(RawTXStruct) ->
 %% little-endian format which is why we match on <<1, 0>>.
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
-decode_signature(_Other) ->
+decode_signature(Other) ->
+    ao:c({error_decoding_signature, Other}),
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.

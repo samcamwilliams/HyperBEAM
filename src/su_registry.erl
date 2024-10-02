@@ -11,6 +11,7 @@ start(WalletFile) ->
 find(ProcID) -> find(ProcID, false).
 find(ProcID, GenIfNotHosted) ->
     ReplyPID = self(),
+    ao:c({finding, ProcID, GenIfNotHosted, erlang:is_process_alive(whereis(?MODULE))}),
     ?MODULE ! {find, ProcID, ReplyPID, GenIfNotHosted},
     receive
         {process, Process} -> Process

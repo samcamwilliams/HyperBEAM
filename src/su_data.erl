@@ -38,6 +38,9 @@ read_message(MessageID) ->
 
 write_message(Message) ->
     FN = ?ROOT ++ "/messages/" ++ binary_to_list(ar_util:encode(Message#tx.id)),
+    write_message(Message, FN).
+
+write_message(Message, FN) ->
     filelib:ensure_dir(FN),
     file:write_file(FN, encode(Message)).
 
@@ -48,7 +51,7 @@ read_assignment(ProcID, Slot) ->
     end.
 
 write_assignment(ProcID, Assignment) ->
-    Slot = element(2, lists:keyfind("Nonce", 1, Assignment#tx.tags)),
+    Slot = element(2, lists:keyfind("Slot", 1, Assignment#tx.tags)),
     FN = ?ROOT ++ "/assignments/" ++ ProcID ++ "/" ++ Slot,
     filelib:ensure_dir(FN),
     file:write_file(FN, encode(Assignment)).

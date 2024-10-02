@@ -1,15 +1,18 @@
 -module(dev_checkpoint).
--export([uses/0, init/2, execute/2]).
+-export([uses/0, init/2, execute/2, read/2]).
 
 -include("src/include/ao.hrl").
 
 -define(ROOT, "data").
 
+read(_ProcID, _AssignmentID) ->
+    unavailable.
+
 uses() -> all.
 
 init(State, _Params) ->
     % TODO: Read the latest checkpoint if it exists.
-    {ok, State# { fs := #{} }}.
+    {ok, State# { fs => #{} }}.
 
 execute(_Msg, State = #{ process := Process, fs := FS, phase := post_exec }) ->
     case isCheckpointSlot(State) of
@@ -17,7 +20,7 @@ execute(_Msg, State = #{ process := Process, fs := FS, phase := post_exec }) ->
         false -> ok
     end,
     write_result(Process, FS),
-    {ok, State# { fs := #{} }};
+    {ok, State# { fs => #{} }};
 execute(_Msg, State) ->
     {ok, State}.
 

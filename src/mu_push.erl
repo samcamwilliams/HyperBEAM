@@ -8,13 +8,13 @@ start(Item) -> start(Item, ao_logger:start()).
 start(Res, Monitor) when is_record(Res, result) ->
     lists:map(
         fun(Spawn) ->
-            mu_push:start(maybe_sign(Spawn), Monitor)
+            mu_push:start(Spawn, Monitor)
         end,
         Res#result.spawns
     ),
     lists:map(
         fun(Message) ->
-            mu_push:start(maybe_sign(Message), Monitor)
+            mu_push:start(Message, Monitor)
         end,
         Res#result.messages
     ),
@@ -25,7 +25,7 @@ start(Res, Monitor) when is_record(Res, result) ->
         Res#result.assignments
     );
 start(Item, Monitor) ->
-    ao_logger:log(Monitor, {ok, start, Item}),
+    ao_logger:log(Monitor, {ok, start, Item#tx.id}),
     case ar_bundles:verify_item(Item) of
         true ->
             spawn(
@@ -49,10 +49,3 @@ push(Item, Monitor) ->
             end;
         Error -> ao_logger:log(Monitor, Error)
     end.
-
-maybe_sign(Item) ->
-    %% TN.2: Will be unnecessary when CUs sign data items.
-    ar_bundles:sign_item(
-        Item#tx { last_tx = <<>> },
-        ar_wallet:load_keyfile(ao:get(key_location))
-    ).

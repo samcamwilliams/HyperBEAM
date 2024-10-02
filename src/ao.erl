@@ -26,6 +26,7 @@ config() ->
         preloaded_devices =>
             #{
                 <<"Checkpoint">> => dev_checkpoint,
+                <<"Scheduler">> => dev_scheduler,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,
