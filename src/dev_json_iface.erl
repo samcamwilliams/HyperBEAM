@@ -6,42 +6,49 @@
 uses() -> all.
 
 init(S) ->
-    {ok, S#{ stdlib => fun stdlib/6, json_iface => #{} }}.
+    {ok, S#{stdlib => fun stdlib/6, json_iface => #{}}}.
 
-execute(M, S = #{ pass := 1, json_iface := IfaceS }) ->
+execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
     {ok, S#{
         call => prep_call(M, S),
-        json_iface => IfaceS#{ stdout => [] } }
-    };
-execute(_M, S = #{ pass := 2 }) ->
-    {ok, result(S) }.
+        json_iface => IfaceS#{stdout => []}
+    }};
+execute(_M, S = #{pass := 2}) ->
+    {ok, result(S)}.
 
 prep_call(
-    #tx {
+    #tx{
         data = #{
             <<"Assignment">> := Assignment,
             <<"Message">> := Message
         }
     },
-    #{ wasm := Port, process := Process }
+    #{wasm := Port, process := Process}
 ) ->
     {_, Module} = lists:keyfind(<<"Module">>, 1, Process#tx.tags),
     % TODO: Get block height from the assignment message
     {_, BlockHeight} = lists:keyfind(<<"Block-Height">>, 1, Assignment#tx.tags),
     RawMsgJson = ao_message:to_json(Message),
     {Props} = jiffy:decode(RawMsgJson),
-    MsgJson = jiffy:encode({Props ++ [{<<"Module">>, Module}, {<<"Block-Height">>, BlockHeight}]}),
+    % TODO: Need to set the "From" to owner or process
+    MsgJson = jiffy:encode({
+        Props ++
+            [
+                {<<"Module">>, Module},
+                {<<"Block-Height">>, BlockHeight}
+            ]
+    }),
     {ok, MsgJsonPtr} = cu_beamr_io:write_string(Port, MsgJson),
     EnvJson = jiffy:encode({[{<<"Process">>, ar_bundles:item_to_json_struct(Process)}]}),
     {ok, EnvJsonPtr} = cu_beamr_io:write_string(Port, EnvJson),
     {"handle", [MsgJsonPtr, EnvJsonPtr]}.
 
-result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }) ->
+result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}}) ->
     case Res of
         {error, Res} ->
             S#{
                 outbox := [],
-                result := #tx { tags = [{<<"Result">>, <<"Error">>}], data = Res }
+                result := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
             };
         {ok, [Ptr]} ->
             {ok, Str} = cu_beamr_io:read_string(Port, Ptr),
@@ -49,29 +56,33 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
             try jiffy:decode(Str, [return_maps]) of
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
-                    #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages } = Resp,
+                    #{<<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages} = Resp,
+                    ao:c(process_output),
+                    ao:c(Data),
                     S#{
-                        result => 
+                        result =>
                             #{
                                 <<"/Outbox/Message">> =>
                                     [
                                         ar_bundles:sign_item(
-                                            ar_bundles:json_struct_to_item(maps:remove(<<"Anchor">>, Msg)),
-                                            Wallet)
-                                    ||
-                                        Msg <- Messages
+                                            ar_bundles:json_struct_to_item(
+                                                maps:remove(<<"Anchor">>, Msg)
+                                            ),
+                                            Wallet
+                                        )
+                                     || Msg <- Messages
                                     ],
                                 <<"/Outbox/Data">> =>
-                                    ar_bundles:normalize(#tx { data = Data}),
+                                    ar_bundles:normalize(#tx{data = Data}),
                                 <<"/Outbox/Stdout">> =>
-                                    ar_bundles:normalize(#tx { data = iolist_to_binary(Stdout) })
+                                    ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
                             }
                     };
                 #{<<"ok">> := false} ->
                     S#{
                         outbox => [],
                         result =>
-                            #tx {
+                            #tx{
                                 tags = [{<<"Result">>, <<"Error">>}],
                                 data = jiffy:encode(#{
                                     <<"Error">> => <<"JSON Parse Error">>,
@@ -85,7 +96,7 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
                     S#{
                         outbox => [],
                         result =>
-                            #tx {
+                            #tx{
                                 tags = [{<<"Result">>, <<"Error">>}],
                                 data = jiffy:encode(#{
                                     <<"Error">> => <<"JSON Parse Error">>,
@@ -97,11 +108,18 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
             end
     end.
 
-stdlib(S = #{ json_iface := IfaceS }, Port, ModName, FuncName, Args, Sig) ->
+stdlib(S = #{json_iface := IfaceS}, Port, ModName, FuncName, Args, Sig) ->
     {IfaceS2, Res} = lib(IfaceS, Port, ModName, FuncName, Args, Sig),
-    {S#{ json_iface := IfaceS2 }, Res}.
+    {S#{json_iface := IfaceS2}, Res}.
 
-lib(S = #{ stdout := Stdout }, Port, "wasi_snapshot_preview1","fd_write", [_Fd, Ptr, Vecs, RetPtr], _Signature) ->
+lib(
+    S = #{stdout := Stdout},
+    Port,
+    "wasi_snapshot_preview1",
+    "fd_write",
+    [_Fd, Ptr, Vecs, RetPtr],
+    _Signature
+) ->
     %ao:c({fd_write, Fd, Ptr, Vecs, RetPtr}),
     {ok, VecData} = cu_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
@@ -115,7 +133,7 @@ lib(S = #{ stdout := Stdout }, Port, "wasi_snapshot_preview1","fd_write", [_Fd, 
         end,
     % Set return pointer to number of bytes written
     cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
-    {S#{ stdout := NewStdio }, [0]};
+    {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
     ao:c({called, wasi_clock_time_get, 1}),
     {S, [1]};
