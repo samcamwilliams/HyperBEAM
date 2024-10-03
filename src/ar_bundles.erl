@@ -595,6 +595,5 @@ test_bundle_map() ->
         data = #{<<"key1">> => Item1}
     },
     Bundle = serialize(Item2),
-    ok.
-    %BundleItem = deserialize(Bundle),
-    %?assertEqual(ItemData1, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data).
+    BundleItem = deserialize(Bundle),
+    ?assertEqual(ItemData1, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data).
