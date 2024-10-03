@@ -1,7 +1,19 @@
 -module(cu_beamr_io).
--export([read/3, write/3]).
+-export([size/1, read/3, write/3]).
 -export([read_string/2, read_iovecs/3, write_string/2]).
 -export([malloc/2, free/2]).
+
+-include("include/ao.hrl").
+
+size(Port) ->
+    Port ! {self(), {command, term_to_binary({size})}},
+    receive
+        {ok, Size} ->
+            ?c({got_byte_size, Size}),
+            {ok, Size};
+        Error ->
+            Error
+    end.
 
 write(Port, Offset, Data) ->
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},

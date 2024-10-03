@@ -66,7 +66,14 @@ exec_call(S, ImportFunc, Port) ->
             Error
     end.
 
+serialize(Port) ->
+    {ok, Size} = cu_beamr_io:size(Port),
+    {ok, Mem} = cu_beamr_io:read(Port, 0, Size),
+    {ok, Mem}.
 
+deserialize(Port, Bin) ->
+    % TODO: Be careful of memory growth!
+    ok = cu_beamr_io:write(Port, 0, Bin).
 
 %% Tests
 
@@ -128,3 +135,25 @@ aos64_standalone_wex_test() ->
     #{<<"ok">> := true, <<"response">> := Resp} = jiffy:decode(ResBin, [return_maps]),
     #{<<"Output">> := #{ <<"data">> := Data }} = Resp,
     ?assertEqual(<<"2">>, Data).
+
+aos64_standalone_wex_test() ->
+    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>,
+    Msg1 = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"TestVar = 0\"}\0">>,
+    Msg2 = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"TestVar = 1\"}\0">>,
+    Msg3 = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return TestVar\"}\0">>,
+    {ok, File} = file:read_file("test/aos-2-pure.wasm"),
+    {ok, Port1, _ImportMap, _Exports} = start(File),
+    EnvPtr = cu_beamr_io:write_string(Port1, Env),
+    Msg1Ptr = cu_beamr_io:write_string(Port2, Msg1),
+    Msg2Ptr = cu_beamr_io:write_string(Port2, Msg2),
+    Msg3Ptr = cu_beamr_io:write_string(Port2, Msg3),
+    {ok, [_ResPtr], _} = call(Port1, "handle", [Msg1Ptr, EnvPtr]),
+    {ok, MemCheckpoint} = serialize(Port1),
+    {ok, [_ResPtr], _} = call(Port1, "handle", [Msg2Ptr, EnvPtr]),
+    {ok, [Out1Ptr], _} = call(Port1, "handle", [Msg3Ptr, EnvPtr]),
+    {ok, Port2, _ImportMap, _Exports} = start(File),
+    deserialize(Port2, MemCheckpoint),
+    {ok, [Out2Ptr], _} = call(Port2, "handle", [Msg3Ptr, EnvPtr]),
+    Str1 = ?c(cu_beamr_io:read_string(Port1, Out1Ptr)),
+    Str2 = ?c(cu_beamr_io:read_string(Port2, Out1Ptr)),
+    ?assertNotEqual(Str1, Str2).

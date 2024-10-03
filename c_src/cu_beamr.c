@@ -858,6 +858,23 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
         DRV_DEBUG("Read response sent: %d", msg_res);
     }
+    else if (strcmp(command, "size") == 0) {
+        DRV_DEBUG("Size received");
+        wasm_memory_t* mem = get_memory(proc);
+        long pages = wasm_memory_size(mem);
+        long size = pages * 65536;
+        DRV_DEBUG("Size: %ld", size);
+
+        ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 6);
+        int msg_index = 0;
+        msg[msg_index++] = ERL_DRV_ATOM;
+        msg[msg_index++] = atom_ok;
+        msg[msg_index++] = ERL_DRV_INT;
+        msg[msg_index++] = size;
+        msg[msg_index++] = ERL_DRV_TUPLE;
+        msg[msg_index++] = 2;
+        erl_drv_output_term(proc->port_term, msg, msg_index);
+    }
     else {
         DRV_DEBUG("Unknown command: %s", command);
         send_error(proc, "Unknown command");
