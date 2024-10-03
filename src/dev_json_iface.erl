@@ -45,22 +45,26 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
             };
         {ok, [Ptr]} ->
             {ok, Str} = cu_beamr_io:read_string(Port, Ptr),
+            Wallet = ao:wallet(),
             try jiffy:decode(Str, [return_maps]) of
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages } = Resp,
-                    ?c({messages, Messages}),
                     S#{
                         result => 
                             #{
                                 <<"/Outbox/Message">> =>
                                     [
-                                        ar_bundles:normalize(ar_bundles:json_struct_to_item(maps:remove(<<"Anchor">>, Msg)))
+                                        ar_bundles:sign_item(
+                                            ar_bundles:json_struct_to_item(maps:remove(<<"Anchor">>, Msg)),
+                                            Wallet)
                                     ||
                                         Msg <- Messages
                                     ],
-                                <<"/Outbox/Data">> => ar_bundles:normalize(#tx { data = Data}),
-                                <<"/Outbox/Stdout">> => ar_bundles:normalize(#tx { data = iolist_to_binary(Stdout) })
+                                <<"/Outbox/Data">> =>
+                                    ar_bundles:normalize(#tx { data = Data}),
+                                <<"/Outbox/Stdout">> =>
+                                    ar_bundles:normalize(#tx { data = iolist_to_binary(Stdout) })
                             }
                     };
                 #{<<"ok">> := false} ->

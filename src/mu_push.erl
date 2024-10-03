@@ -31,6 +31,7 @@ start(Item, Monitor) ->
     ao_logger:log(Monitor, {ok, start, Item}),
     case ar_bundles:verify_item(Item) of
         true ->
+            ?c(is_valid),
             % is valid launch process
             spawn(
                 fun() ->

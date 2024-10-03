@@ -1,11 +1,12 @@
 -module(ao_http).
--export([get/2, post/3, reply/2, reply/3]).
+-export([get/1, get/2, post/3, reply/2, reply/3]).
 
 -include("include/ao.hrl").
 
-get(Host, Path) ->
-    ao:c({http_get, Host ++ Path}),
-    case httpc:request(get, {Host ++ Path, []}, [], [{body_format, binary}]) of
+get(Host, Path) -> ?MODULE:get(Host ++ Path).
+get(URL) ->
+    ao:c({http_get, URL}),
+    case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, ar_bundles:deserialize(Body)};
         Response ->

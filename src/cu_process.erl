@@ -230,7 +230,9 @@ generate_test_data() ->
                 {<<"Type">>, <<"Message">>},
                 {<<"Action">>, <<"Eval">>}
             ],
-            data = <<"Send({ Target = ao.id, Data = \"Hello again, Hyperbeam!\"})\nreturn 1+1">>
+            data = <<"
+Handlers.add(\"Ping\", function(m) m.reply({ Action = \"Ping\" }) end)
+Send({ Target = ao.id, Action = \"Ping\" })">>
         },
         Wallet
     ).

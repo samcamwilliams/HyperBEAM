@@ -1,6 +1,6 @@
 -module(cu_http).
 -export([routes/0, handle/3]).
--include("src/include/ar.hrl").
+-include("src/include/ao.hrl").
 
 routes() ->
     {"/cu", [ "/", "/:id", "/:id/:assignment_id" ]}.
@@ -29,6 +29,7 @@ handle(<<"GET">>, [ProcID, AssignmentID], Req)  ->
             {message_processed, _ID, Res} = lists:last(ResultLog),
             % TODO: Don't get the wallet again from disk every time.
             Signed = ar_bundles:sign_item(Res, ao:wallet()),
+            ar_bundles:print(Signed),
             ao_http:reply(Req, Signed);
         {ok, Result} ->
             Req2 = ao_http:reply(Req, Result),
