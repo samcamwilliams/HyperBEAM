@@ -14,18 +14,24 @@ init() ->
     filelib:ensure_dir(?ROOT),
     ok.
 
-get_current_slot("") -> error;
+get_current_slot("") ->
+    error;
 get_current_slot(ProcID) ->
     case file:list_dir(?ROOT ++ "/assignments/" ++ ProcID) of
-        {ok, []} -> {-1, <<>>};
+        {ok, []} ->
+            {-1, <<>>};
         {ok, Files} ->
             AssignmentFile = lists:max([list_to_integer(filename:rootname(F)) || F <- Files]),
             Assignment = read_assignment(ProcID, AssignmentFile),
             {
-                list_to_integer(binary_to_list(element(2, lists:keyfind(<<"Nonce">>, 1, Assignment#tx.tags)))),
+                %list_to_integer(binary_to_list(element(2, lists:keyfind(<<"Nonce">>, 1, Assignment#tx.tags)))),
+                list_to_integer(
+                    binary_to_list(element(2, lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags)))
+                ),
                 ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
             };
-        {error, _} -> {-1, <<>>}
+        {error, _} ->
+            {-1, <<>>}
     end.
 
 read_message(MessageID) when is_binary(MessageID) ->
@@ -69,5 +75,5 @@ reset_data() ->
     init().
 
 store_and_retrieve_test() ->
-    su_data:write_message(Msg = ar_bundles:sign_item(#tx {}, ar_wallet:new())),
+    su_data:write_message(Msg = ar_bundles:sign_item(#tx{}, ar_wallet:new())),
     Msg = su_data:read_message(ar_util:encode(Msg#tx.id)).
