@@ -10,6 +10,11 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
+    case ao:get(profiling) of
+        true ->
+            eprof:start_profiling([self()]);
+        false -> do_nothing
+    end,
     ao_sup:start_link(),
     su_data:init(),
     Reg = su_registry:start(),
