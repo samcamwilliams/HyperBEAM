@@ -2,7 +2,7 @@
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
--export([upload/1,download/1]).
+-export([upload/1, download/1]).
 %% Scheduling Unit API
 -export([get_assignments/1, get_assignments/2, get_assignments/3]).
 -export([schedule/1, assign/1, register_su/1, register_su/2]).
@@ -29,17 +29,19 @@ arweave_timestamp() ->
 download(ID) ->
     % TODO: Need to recreate full data items, not just data...
     case httpc:request(ao:get(gateway) ++ "/" ++ ID) of
-        {ok, {{_, 200, _}, _, Body}} -> #tx{ data = Body };
+        {ok, {{_, 200, _}, _, Body}} -> #tx{data = Body};
         _Rest -> throw({id_get_failed, ID})
     end.
 
 upload(Item) ->
-    case httpc:request(
-        post,
-        {ao:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
-        [],
-        []
-    ) of
+    case
+        httpc:request(
+            post,
+            {ao:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
+            [],
+            []
+        )
+    of
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, jiffy:decode(Body, [return_maps])};
         Response ->
@@ -63,7 +65,7 @@ register_su(Location) ->
 register_su(Location, WalletLoc) when is_list(WalletLoc) ->
     register_su(Location, ar_wallet:load_keyfile(WalletLoc));
 register_su(Location, Wallet) ->
-    TX = #tx {
+    TX = #tx{
         tags = [
             {"Data-Protocol", "ao"},
             {"Variant", "ao.TN.1"},
@@ -79,35 +81,43 @@ get_assignments(ProcID) ->
 get_assignments(ProcID, From) ->
     get_assignments(ProcID, From, undefined).
 get_assignments(ProcID, From, To) ->
-    {ok, #tx { data = Data }} =
+    {ok, #tx{data = Data}} =
         ao_http:get(
             su_process:get_location(ProcID),
-            "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?"
-                ++ case From of undefined -> ""; _ -> "&from=" ++ integer_to_list(From) end
-                ++ case To of undefined -> ""; _ -> "&to=" ++ integer_to_list(To) end
+            "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?" ++
+                case From of
+                    undefined -> "";
+                    _ -> "&from=" ++ integer_to_list(From)
+                end ++
+                case To of
+                    undefined -> "";
+                    _ -> "&to=" ++ integer_to_list(To)
+                end
         ),
     extract_assignments(From, To, Data).
 
-extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 -> 
+extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
     [];
 extract_assignments(From, To, Assignments) ->
     KeyID = list_to_binary(integer_to_list(From)),
     [
-        maps:get(KeyID, Assignments)|
-        extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
+        maps:get(KeyID, Assignments)
+        | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
     ].
 
 compute(Assignment) when is_record(Assignment, tx) ->
     {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-    compute(ar_util:decode(ProcessID), Assignment#tx.id).
-compute(ProcID, AssignmentID) ->
+    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    ao:c(Slot),
+    compute(ar_util:decode(ProcessID), Slot).
+compute(ProcID, Slot) ->
     % TN.1: MU Should be reading real results, not mocked-out.
     ao_http:get(
         ao:get(cu),
-        "/"
-        ++ binary_to_list(ar_util:encode(ProcID))
-        ++ "/"
-        ++ binary_to_list(ar_util:encode(AssignmentID))
+        "/" ++
+            binary_to_list(ar_util:encode(ProcID)) ++
+            "/" ++
+            binary_to_list(Slot)
     ).
 
 %%% MU API functions
@@ -135,23 +145,25 @@ cron(ProcID, undefined, RawLimit) ->
 cron(ProcID, Cursor, Limit) ->
     case
         httpc:request(
-            ao:get(cu)
-                ++ "/cron/"
-                ++ ProcID
-                ++ "?cursor="
-                ++ binary_to_list(Cursor)
-                ++ "&limit="
-                ++ integer_to_list(Limit))
+            ao:get(cu) ++
+                "/cron/" ++
+                ProcID ++
+                "?cursor=" ++
+                binary_to_list(Cursor) ++
+                "&limit=" ++
+                integer_to_list(Limit)
+        )
     of
         {ok, {{_, 200, _}, _, Body}} ->
             try parse_result_set(Body) of
                 {HasNextPage, Results} ->
                     {ok, HasNextPage, Results, (lists:last(Results))#result.cursor}
-                catch
-                    _:_ ->
-                        {error, cu_invalid_cron_response, Body}
-                end;
-        Response -> {error, cu_http_error, Response}
+            catch
+                _:_ ->
+                    {error, cu_invalid_cron_response, Body}
+            end;
+        Response ->
+            {error, cu_http_error, Response}
     end.
 
 cron_cursor(ProcID) ->
@@ -185,11 +197,13 @@ json_struct_to_result(Struct, Res) ->
             Res#result{
                 messages = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    ar_util:find_value(<<"Messages">>, Struct, [])),
+                    ar_util:find_value(<<"Messages">>, Struct, [])
+                ),
                 assignments = ar_util:find_value(<<"Assignments">>, Struct, []),
                 spawns = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    ar_util:find_value(<<"Spawns">>, Struct, [])),
+                    ar_util:find_value(<<"Spawns">>, Struct, [])
+                ),
                 output = ar_util:find_value(<<"Output">>, Struct, [])
             };
         {_, {NodeStruct}} ->

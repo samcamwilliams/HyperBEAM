@@ -6,7 +6,8 @@
 % create logger and call start
 start(Item) -> start(Item, ao_logger:start()).
 
-start(Res, undefined) -> start(Res);
+start(Res, undefined) ->
+    start(Res);
 start(Res, Monitor) when is_record(Res, result) ->
     lists:map(
         fun(Spawn) ->
@@ -37,12 +38,14 @@ start(Item, Monitor) ->
                 fun() ->
                     ao_logger:register(self()),
                     push(Item, Monitor)
-                end),
+                end
+            ),
             Monitor;
-        false -> {error, invalid_item}
+        false ->
+            {error, invalid_item}
     end.
 
-maybe_to_list(Map) when is_map(Map) -> [ V || {_K, V} <- maps:to_list(Map) ];
+maybe_to_list(Map) when is_map(Map) -> [V || {_K, V} <- maps:to_list(Map)];
 maybe_to_list(undefined) -> [];
 maybe_to_list(Else) -> Else.
 
@@ -54,16 +57,18 @@ push(Item, Monitor) ->
             ao_logger:log(Monitor, {ok, scheduled, Assignment}),
             % get result from cu
             case ao_client:compute(Assignment) of
-                {ok, #tx { data = Res }} ->
+                {ok, #tx{data = Res}} ->
                     ao_logger:log(Monitor, {ok, computed, Assignment}),
-                    Result = #result {
+                    Result = #result{
                         messages =
-                            (maps:get(<<"/Outbox/Message">>, Res, #tx { data = [] }))#tx.data,
+                            (maps:get(<<"/Outbox/Message">>, Res, #tx{data = []}))#tx.data,
                         assignments = maps:get(<<"/Outbox/Assignment">>, Res, []),
                         spawns = maps:get(<<"/Outbox/Spawn">>, Res, [])
                     },
                     start(Result, Monitor);
-                Error -> ao_logger:log(Monitor, Error)
+                Error ->
+                    ao_logger:log(Monitor, Error)
             end;
-        Error -> ao_logger:log(Monitor, Error)
+        Error ->
+            ao_logger:log(Monitor, Error)
     end.

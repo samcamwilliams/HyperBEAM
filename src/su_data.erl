@@ -1,6 +1,6 @@
 -module(su_data).
 -export([init/0, get_current_slot/1]).
--export([read_message/1, write_message/1, write_message/2]).
+-export([read_message/1, read_message/2, write_message/1, write_message/2]).
 -export([read_assignment/2, write_assignment/2]).
 -export([encode/1, decode/1]).
 -export([reset_data/0]).
@@ -38,6 +38,12 @@ read_message(MessageID) when is_binary(MessageID) ->
     read_message(binary_to_list(MessageID));
 read_message(MessageID) ->
     case file:read_file(?ROOT ++ "/messages/" ++ MessageID) of
+        {ok, Message} -> decode(Message);
+        {error, _} -> not_found
+    end.
+read_message(MessageID, FN) ->
+    filelib:ensure_dir(FN),
+    case file:read_file(FN ++ "/" ++ MessageID) of
         {ok, Message} -> decode(Message);
         {error, _} -> not_found
     end.
