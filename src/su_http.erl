@@ -7,33 +7,48 @@
 %%% SU HTTP Server API
 
 routes() ->
-    {"/su", % Namespace
-     ["/timestamp",
-      "/:proc_id/slot", % Routes to match
-      "/:id",
-      "/"]}.
+    % Namespace
+    {"/su", [
+        "/timestamp",
+        % Routes to match
+        "/:proc_id/slot",
+        "/:id",
+        "/"
+    ]}.
 
 handle(<<"GET">>, [], Req) ->
     Wallet = su_registry:get_wallet(),
-    cowboy_req:reply(200,
-                     #{<<"Content-Type">> => <<"application/json">>},
-                     jiffy:encode({[{<<"Unit">>, <<"Scheduler">>},
-                                    {<<"Address">>,
-                                     ar_util:encode(
-                                         ar_wallet:to_address(Wallet))},
-                                    {<<"Processes">>,
-                                     lists:map(fun ar_util:encode/1,
-                                               su_registry:get_processes())}]}),
-                     Req),
+    cowboy_req:reply(
+        200,
+        #{<<"Content-Type">> => <<"application/json">>},
+        jiffy:encode(
+            {[
+                {<<"Unit">>, <<"Scheduler">>},
+                {<<"Address">>,
+                    ar_util:encode(
+                        ar_wallet:to_address(Wallet)
+                    )},
+                {<<"Processes">>,
+                    lists:map(
+                        fun ar_util:encode/1,
+                        su_registry:get_processes()
+                    )}
+            ]}
+        ),
+        Req
+    ),
     {ok, Req};
 handle(<<"GET">>, [ProcID, <<"slot">>], Req) ->
     CurrentSlot =
         su_process:get_current_slot(
-            su_registry:find(binary_to_list(ProcID))),
-    cowboy_req:reply(200,
-                     #{<<"Content-Type">> => <<"text/plain">>},
-                     integer_to_list(CurrentSlot),
-                     Req),
+            su_registry:find(binary_to_list(ProcID))
+        ),
+    cowboy_req:reply(
+        200,
+        #{<<"Content-Type">> => <<"text/plain">>},
+        integer_to_list(CurrentSlot),
+        Req
+    ),
     {ok, Req};
 handle(<<"GET">>, [BinID], Req) ->
     ID = binary_to_list(BinID),
@@ -53,19 +68,28 @@ handle(<<"POST">>, [], Req) ->
     Message = ar_bundles:deserialize(Body),
     case {ar_bundles:verify_item(Message), lists:keyfind(<<"Type">>, 1, Message#tx.tags)} of
         {false, _} ->
-            cowboy_req:reply(400,
-                             #{<<"Content-Type">> => <<"application/json">>},
-                             jiffy:encode({[{error, <<"Data item is not valid.">>}]}),
-                             Req),
+            cowboy_req:reply(
+                400,
+                #{<<"Content-Type">> => <<"application/json">>},
+                jiffy:encode({[{error, <<"Data item is not valid.">>}]}),
+                Req
+            ),
             {ok, Req};
         {true, {<<"Type">>, <<"Process">>}} ->
             su_data:write_message(Message),
             ao_client:upload(Message),
-            cowboy_req:reply(201,
-                             #{<<"Content-Type">> => <<"application/json">>},
-                             jiffy:encode({[{id, ar_util:encode(Message#tx.id)},
-                                            {timestamp, erlang:system_time(millisecond)}]}),
-                             Req),
+
+            cowboy_req:reply(
+                201,
+                #{<<"Content-Type">> => <<"application/json">>},
+                jiffy:encode(
+                    {[
+                        {id, ar_util:encode(Message#tx.id)},
+                        {timestamp, erlang:system_time(millisecond)}
+                    ]}
+                ),
+                Req
+            ),
             {ok, Req};
         {true, _} ->
             % If the process-id is not specified, use the target of the message as the process-id
@@ -94,33 +118,42 @@ send_stream(ProcID, From, To, Req) when is_binary(To) ->
 send_stream(ProcID, From, To, Req) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),
     {Assignments, More} = su_process:get_assignments(
-            ProcID,
-            From,
-            To
-        ),
-    ao_http:reply(
-        Req,
-        ar_bundles:sign_item(#tx{
-                tags = [
-                    {<<"Type">>, <<"Schedule">>},
-                    {<<"Process">>, ProcID},
-                    {<<"Continues">>, atom_to_binary(More, utf8)},
-                    {<<"Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
-                    {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
-                    {<<"Block-Hash">>, Hash}
-                ] ++
+        ProcID,
+        From,
+        To
+    ),
+    % TODO: Find out why tags are not getting included in bundle
+    Bundle = #tx{
+        tags =
+            [
+                {<<"Type">>, <<"Schedule">>},
+                {<<"Process">>, ProcID},
+                {<<"Continues">>, atom_to_binary(More, utf8)},
+                {<<"Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
+                {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
+                {<<"Block-Hash">>, Hash}
+            ] ++
                 case Assignments of
-                    [] -> [];
+                    [] ->
+                        [];
                     _ ->
-                        {_, FromSlot} = lists:keyfind(<<"Slot">>, 1, (hd(Assignments))#tx.tags),
-                        {_, ToSlot} = lists:keyfind(<<"Slot">>, 1, (lists:last(Assignments))#tx.tags),
+                        {_, FromSlot} = lists:keyfind(
+                            <<"Slot">>, 1, (hd(Assignments))#tx.tags
+                        ),
+                        {_, ToSlot} = lists:keyfind(
+                            <<"Slot">>, 1, (lists:last(Assignments))#tx.tags
+                        ),
                         [
                             {<<"From">>, FromSlot},
                             {<<"To">>, ToSlot}
                         ]
                 end,
-                data = assignments_to_bundle(Assignments)
-            },
+        data = assignments_to_bundle(Assignments)
+    },
+    ao_http:reply(
+        Req,
+        ar_bundles:sign_item(
+            Bundle,
             ao:wallet()
         )
     ).

@@ -3,7 +3,7 @@
 -include("src/include/ao.hrl").
 
 routes() ->
-    {"/cu", ["/", "/:id", "/:id/:assignment_id"]}.
+    {"/cu", ["/", "/:id", "/:id/:slot"]}.
 
 handle(<<"GET">>, [], Req) ->
     % Return node info the client.
@@ -21,14 +21,14 @@ handle(<<"GET">>, [], Req) ->
         Req
     ),
     {ok, Req};
-handle(<<"GET">>, [ProcID, AssignmentID], Req) ->
-    case dev_checkpoint:read(ProcID, AssignmentID) of
+handle(<<"GET">>, [ProcID, Slot], Req) ->
+    case dev_checkpoint:read(ProcID, Slot) of
         unavailable ->
             ResultLog =
                 cu_process:run(
                     % TODO: Scheduler must only run until message ID!
                     su_data:read_message(ProcID),
-                    #{error_strategy => throw}
+                    #{error_strategy => throw, slot => Slot}
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),
             ar_bundles:print(Res),
