@@ -1,5 +1,5 @@
 -module(dev_json_iface).
--export([init/1, execute/2, uses/0, stdlib/6]).
+-export([init/1, execute/2, uses/0, stdlib/6, lib/6]).
 
 -include("include/ao.hrl").
 
@@ -135,8 +135,8 @@ lib(
     cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
-    ao:c({called, wasi_clock_time_get, 1}),
+    %ao:c({called, wasi_clock_time_get, 1}),
     {S, [1]};
 lib(S, _Port, Module, Func, _Args, _Signature) ->
-    ao:c({unimplemented_stub_called, Module, Func}),
+    %ao:c({unimplemented_stub_called, Module, Func}),
     {S, [0]}.

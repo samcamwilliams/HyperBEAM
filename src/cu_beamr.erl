@@ -1,12 +1,15 @@
 -module(cu_beamr).
 -export([start/1, call/3, call/4, call/5, stop/1, test/0]).
+-export([stub_stdlib/6]).
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 test() ->
-    aos64_standalone_wex_test(),
-    erlang:halt().
+    %aos64_standalone_wex_test(),
+    %checkpoint_and_resume_test().
+    %timed_calls_test().
+    ok.
 
 load_driver() ->
     case erl_ddll:load("./priv", ?MODULE) of
@@ -34,18 +37,16 @@ stop(Port) ->
     ok.
 
 call(Port, FunctionName, Args) ->
-    call(Port, FunctionName, Args, fun stub_stdlib/6).
+    call(Port, FunctionName, Args, fun dev_json_iface:lib/6).
 call(Port, FunctionName, Args, Stdlib) ->
-    {ResType, Res, _} = call(undefined, Port, FunctionName, Args, Stdlib),
+    {ResType, Res, _} = call(#{ stdout => [] }, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
 call(S, Port, FunctionName, Args, ImportFunc) ->
     ao:c({call_started, Port, FunctionName, Args, ImportFunc}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     exec_call(S, ImportFunc, Port).
 
-stub_stdlib(S, _Port, _Module, Func, _Args, _Signature) ->
-    ao:c({stub_stdlib_called, Func}),
-    {S, [0]}.
+stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) -> {S, [0]}.
 
 exec_call(S, ImportFunc, Port) ->
     receive
@@ -53,7 +54,7 @@ exec_call(S, ImportFunc, Port) ->
             ao:c({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
-            %ao:c({import_called, Module, Func, Args, Signature}),
+            ao:c({import_called, Module, Func, Args, Signature}),
             {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
             ao:c({import_returned, Module, Func, Args, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
@@ -114,9 +115,15 @@ wasm64_test() ->
 %     {ok, [Result]} = call(Port, "main", [1, 0]),
 %     ?assertEqual(1, Result).
 
+gen_test_env() ->
+    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
+
+gen_test_aos_msg(Command) ->
+    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"", (list_to_binary(Command))/binary, "\"}\0">>.
+
 aos64_standalone_wex_test() ->
-    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>,
-    Msg = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return 1+1\"}\0">>,
+    Msg = gen_test_aos_msg("return 1+1"),
+    Env = gen_test_env(),
     {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, Ptr1} = cu_beamr_io:malloc(Port, byte_size(Msg)),
@@ -136,24 +143,43 @@ aos64_standalone_wex_test() ->
     #{<<"Output">> := #{ <<"data">> := Data }} = Resp,
     ?assertEqual(<<"2">>, Data).
 
-aos64_standalone_wex_test() ->
-    Env = <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>,
-    Msg1 = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"TestVar = 0\"}\0">>,
-    Msg2 = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"TestVar = 1\"}\0">>,
-    Msg3 = <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"return TestVar\"}\0">>,
+checkpoint_and_resume_test() ->
+    Env = gen_test_env(),
+    Msg1 = gen_test_aos_msg("TestVar = 0"),
+    Msg2 = gen_test_aos_msg("TestVar = 1"),
+    Msg3 = gen_test_aos_msg("return TestVar"),
     {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port1, _ImportMap, _Exports} = start(File),
-    EnvPtr = cu_beamr_io:write_string(Port1, Env),
-    Msg1Ptr = cu_beamr_io:write_string(Port2, Msg1),
-    Msg2Ptr = cu_beamr_io:write_string(Port2, Msg2),
-    Msg3Ptr = cu_beamr_io:write_string(Port2, Msg3),
-    {ok, [_ResPtr], _} = call(Port1, "handle", [Msg1Ptr, EnvPtr]),
+    {ok, EnvPtr} = cu_beamr_io:write_string(Port1, Env),
+    {ok, Msg1Ptr} = cu_beamr_io:write_string(Port1, Msg1),
+    {ok, Msg2Ptr} = cu_beamr_io:write_string(Port1, Msg2),
+    {ok, Msg3Ptr} = cu_beamr_io:write_string(Port1, Msg3),
+    {ok, [_]} = call(Port1, "main", [0, 0]),
+    {ok, [_]} = call(Port1, "handle", [Msg1Ptr, EnvPtr]),
     {ok, MemCheckpoint} = serialize(Port1),
-    {ok, [_ResPtr], _} = call(Port1, "handle", [Msg2Ptr, EnvPtr]),
-    {ok, [Out1Ptr], _} = call(Port1, "handle", [Msg3Ptr, EnvPtr]),
-    {ok, Port2, _ImportMap, _Exports} = start(File),
+    {ok, [_]} = call(Port1, "handle", [Msg2Ptr, EnvPtr]),
+    {ok, [OutPtr1]} = call(Port1, "handle", [Msg3Ptr, EnvPtr]),
+    {ok, Port2, _, _} = start(File),
     deserialize(Port2, MemCheckpoint),
-    {ok, [Out2Ptr], _} = call(Port2, "handle", [Msg3Ptr, EnvPtr]),
-    Str1 = ?c(cu_beamr_io:read_string(Port1, Out1Ptr)),
-    Str2 = ?c(cu_beamr_io:read_string(Port2, Out1Ptr)),
+    {ok, [OutPtr2]} = call(Port2, "handle", [Msg3Ptr, EnvPtr]),
+    Str1 = cu_beamr_io:read_string(Port1, OutPtr1),
+    Str2 = cu_beamr_io:read_string(Port2, OutPtr2),
     ?assertNotEqual(Str1, Str2).
+
+timed_calls_test() ->
+    Env = gen_test_env(),
+    Msg1 = gen_test_aos_msg("return 1+1"),
+    {ok, File} = file:read_file("test/aos-2-pure.wasm"),
+    {ok, Port1, _ImportMap, _Exports} = start(File),
+    {ok, EnvPtr} = cu_beamr_io:write_string(Port1, Env),
+    {ok, Msg1Ptr} = cu_beamr_io:write_string(Port1, Msg1),
+    {Time, _Res} = timer:tc(?MODULE, call, [Port1, "handle", [Msg1Ptr, EnvPtr]]),
+    ?c({'1_run_in', Time, 'microseconds'}),
+    ?assert(Time < 10000000),
+    StartTime = erlang:system_time(millisecond),
+    lists:foreach(fun(_) ->
+        ?c(timer:tc(?MODULE, call, [Port1, "handle", [Msg1Ptr, EnvPtr]]))
+    end, lists:seq(1, 1000)),
+    EndTime = erlang:system_time(millisecond),
+    ?c({'1000_runs_in', Secs = (EndTime - StartTime) / 1000, 'seconds'}),
+    ?assert(Secs < 10).

@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 typedef struct {
-    ErlDrvMutex* providing_response;
+    ErlDrvMutex* response_ready;
     ErlDrvCond* cond;
     int ready;
     char* error_message;
@@ -359,13 +359,13 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     proc->current_import = driver_alloc(sizeof(ImportResponse));
 
     // Create and initialize a is_running and condition variable for the response
-    proc->current_import->providing_response = erl_drv_mutex_create("response_mutex");
+    proc->current_import->response_ready = erl_drv_mutex_create("response_mutex");
     proc->current_import->cond = erl_drv_cond_create("response_cond");
     proc->current_import->ready = 0;
 
     DRV_DEBUG("Mutex and cond created");
     // Wait for the response
-    drv_wait(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
+    drv_wait(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
 
     DRV_DEBUG("Response ready");
 
@@ -395,7 +395,7 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 
     // Clean up
     DRV_DEBUG("Cleaning up import response");
-    erl_drv_mutex_destroy(proc->current_import->providing_response);
+    erl_drv_mutex_destroy(proc->current_import->response_ready);
     erl_drv_cond_destroy(proc->current_import->cond);
     driver_free(proc->current_import);
     proc->current_import = NULL;
@@ -713,7 +713,7 @@ static void wasm_driver_stop(ErlDrvData raw) {
         proc->current_import->error_message = "WASM driver unloaded during import response";
         proc->current_import->ready = 1;
         DRV_DEBUG("Signalling import_response with error");
-        drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
+        drv_signal(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
         DRV_DEBUG("Signalled worker to fail. Locking is_running mutex to shutdown");
     }
     // We need to first grab the lock, then unlock it and destroy it. Must be a better way...
@@ -785,7 +785,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
     } else if (strcmp(command, "import_response") == 0) {
         // Handle import response
         // TODO: We should probably start a mutex on the current_import object here.
-        // At the moment current_import->providing_response must not be locked so that signalling can happen.
+        // At the moment current_import->response_ready must not be locked so that signalling can happen.
         DRV_DEBUG("Import response received. Providing...");
         if (proc->current_import) {
             DRV_DEBUG("Decoding import response from Erlang...");
@@ -793,7 +793,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
             proc->current_import->error_message = NULL;
 
             // Signal that the response is ready
-            drv_signal(proc->current_import->providing_response, proc->current_import->cond, &proc->current_import->ready);
+            drv_signal(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
         } else {
             send_error(proc, "No pending import response waiting");
         }

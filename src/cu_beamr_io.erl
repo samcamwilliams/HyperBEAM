@@ -9,7 +9,6 @@ size(Port) ->
     Port ! {self(), {command, term_to_binary({size})}},
     receive
         {ok, Size} ->
-            ?c({got_byte_size, Size}),
             {ok, Size};
         Error ->
             Error
