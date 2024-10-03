@@ -1,39 +1,57 @@
 -module(dev_checkpoint).
--export([uses/0, init/2, execute/2, read/2]).
+-export([uses/0, init/3, execute/3, read/2]).
 
 -include("src/include/ao.hrl").
 
--define(ROOT, "data").
+-define(DEFAULT_DATA_DIR, "data").
+-define(DEFAULT_FREQ, 2).
 
 read(_ProcID, _AssignmentID) ->
     unavailable.
 
 uses() -> all.
 
-init(State, _Params) ->
+init(State, Params, undefined) ->
+    init(State, Params, #{});
+init(State, _Params, PrivParams) ->
     % TODO: Read the latest checkpoint if it exists.
-    {ok, State# { fs => #{} }}.
+    {ok,
+        State# {
+            fs => #{}
+        },
+        #{
+            frequency => maps:get(frequency, PrivParams, ?DEFAULT_FREQ),
+            data_dir => maps:get(data_dir, PrivParams, ?DEFAULT_DATA_DIR)
+        }
+    }.
 
-execute(_Msg, State = #{ process := Process, fs := FS, phase := post_exec }) ->
-    case isCheckpointSlot(State) of
+execute(Msg, State, PrivS) ->
+    case isCheckpointSlot(Msg, State, PrivS) of
         true -> write_checkpoint(State);
         false -> ok
     end,
-    write_result(Process, FS),
+    write_result(Msg, State, PrivS),
     {ok, State# { fs => #{} }};
-execute(_Msg, State) ->
+execute(_Msg, State, _) ->
     {ok, State}.
 
-isCheckpointSlot(_) -> true.
+isCheckpointSlot(#tx { data = #{ <<"Assignment">> := Assignment } }, _State, #{ frequency := Freq}) ->
+    slot(Assignment) rem Freq == 0.
+
+slot(Assignment) ->
+    {_, SlotBin} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    list_to_integer(binary_to_list(SlotBin)).
 
 write_checkpoint(_State) -> ok.
 
-write_result(Proc, FS) when is_record(Proc, tx) ->
-    write_result(?ROOT ++ "/" ++ binary_to_list(Proc#tx.id) ++ "/results/", FS);
-write_result(Prefix, FS) ->
-    maps:map(fun(Path, Data) when is_binary(Data) ->
-        filelib:ensure_dir(Prefix ++ "/" ++ Path),
-        file:write_file(Prefix ++ "/" ++ Path, Data);
-    (Path, Dir) -> write_result(Prefix ++ "/" ++ Path, Dir)
-    end, FS),
+write_result(
+        #tx { data = #{ <<"Assignment">> := Assignment } },
+        #{ result := Res, process := Proc },
+        #{ data_dir := Dir }) ->
+    Slot = slot(Assignment),
+    ProcID = binary_to_list(ar_util:encode(Proc#tx.id)),
+    su_data:write_message(
+        Res,
+        Dir ++ "/checkpoints/"
+            ++ ProcID ++ "/" ++ integer_to_list(Slot)),
     ok.

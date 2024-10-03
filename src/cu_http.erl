@@ -31,10 +31,8 @@ handle(<<"GET">>, [ProcID, AssignmentID], Req) ->
                     #{error_strategy => throw}
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),
-            % TODO: Don't get the wallet again from disk every time.
-            Signed = ar_bundles:sign_item(Res, ao:wallet()),
-            ar_bundles:print(Signed),
-            ao_http:reply(Req, Signed);
+            ar_bundles:print(Res),
+            ao_http:reply(Req, Res);
         {ok, Result} ->
             Req2 = ao_http:reply(Req, Result),
             {ok, Req2}

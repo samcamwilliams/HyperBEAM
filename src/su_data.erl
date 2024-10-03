@@ -1,6 +1,6 @@
 -module(su_data).
 -export([init/0, get_current_slot/1]).
--export([read_message/1, write_message/1]).
+-export([read_message/1, write_message/1, write_message/2]).
 -export([read_assignment/2, write_assignment/2]).
 -export([encode/1, decode/1]).
 -export([reset_data/0]).

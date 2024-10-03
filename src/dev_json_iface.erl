@@ -61,7 +61,7 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}}) ->
                     ao:c(Data),
                     S#{
                         result =>
-                            #{
+                            ar_bundles:sign_item(#{
                                 <<"/Outbox/Message">> =>
                                     [
                                         ar_bundles:sign_item(
@@ -76,7 +76,7 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}}) ->
                                     ar_bundles:normalize(#tx{data = Data}),
                                 <<"/Outbox/Stdout">> =>
                                     ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
-                            }
+                            }, Wallet)
                     };
                 #{<<"ok">> := false} ->
                     S#{
