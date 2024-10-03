@@ -1,10 +1,19 @@
 -module(mu_http).
+
 -export([routes/0, handle/3]).
+
 -include("src/include/ar.hrl").
 
 routes() ->
-    {"/mu", [ "/" ]}.
+    {"/mu", ["/"]}.
 
+handle(<<"GET">>, [], Req) ->
+    cowboy_req:reply(200,
+                     #{<<"Content-Type">> => <<"application/json">>},
+                     jiffy:encode({[{<<"Name">>, <<"AO Messenger Unit">>}]}),
+                     Req),
+    {ok, Req};
+% receive message to process
 handle(<<"POST">>, [], Req) ->
     #{ trace := Trace } = cowboy_req:match_qs([{trace, [], <<"none">>}], Req),
     {ok, ReqBin} = ao_http_router:read_body(Req),
