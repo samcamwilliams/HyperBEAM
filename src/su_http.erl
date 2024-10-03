@@ -21,20 +21,9 @@ handle(<<"GET">>, [], Req) ->
                                     {<<"Address">>,
                                      ar_util:encode(
                                          ar_wallet:to_address(Wallet))},
-                                    {<<"Timestamp">>,
-                                     list_to_binary(integer_to_list(erlang:system_time(millisecond)))},
                                     {<<"Processes">>,
                                      lists:map(fun ar_util:encode/1,
                                                su_registry:get_processes())}]}),
-                     Req),
-    {ok, Req};
-handle(<<"GET">>, [<<"timestamp">>], Req) ->
-    {Timestamp, Height, Hash} = ao_client:arweave_timestamp(),
-    cowboy_req:reply(200,
-                     #{<<"Content-Type">> => <<"application/json">>},
-                     jiffy:encode({[{<<"Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
-                                    {<<"Height">>, list_to_binary(integer_to_list(Height))},
-                                    {<<"Hash">>, Hash}]}),
                      Req),
     {ok, Req};
 handle(<<"GET">>, [ProcID, <<"slot">>], Req) ->
@@ -103,7 +92,7 @@ send_stream(ProcID, From, To, Req) when is_binary(From) ->
 send_stream(ProcID, From, To, Req) when is_binary(To) ->
     send_stream(ProcID, From, list_to_integer(binary_to_list(To)), Req);
 send_stream(ProcID, From, To, Req) ->
-    % TODO: Add feedback on further assignments to the bundle
+    {Timestamp, Height, Hash} = su_timestamp:get(),
     {Assignments, More} = su_process:get_assignments(
             ProcID,
             From,
@@ -113,10 +102,23 @@ send_stream(ProcID, From, To, Req) ->
         Req,
         ar_bundles:sign_item(#tx{
                 tags = [
-                    {<<"Type">>, <<"Assignments">>},
+                    {<<"Type">>, <<"Schedule">>},
                     {<<"Process">>, ProcID},
-                    {<<"Continues">>, atom_to_binary(More, utf8)}
-                ],
+                    {<<"Continues">>, atom_to_binary(More, utf8)},
+                    {<<"Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
+                    {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
+                    {<<"Block-Hash">>, Hash}
+                ] ++
+                case Assignments of
+                    [] -> [];
+                    _ ->
+                        {_, FromSlot} = lists:keyfind(<<"Slot">>, 1, (hd(Assignments))#tx.tags),
+                        {_, ToSlot} = lists:keyfind(<<"Slot">>, 1, (lists:last(Assignments))#tx.tags),
+                        [
+                            {<<"From">>, FromSlot},
+                            {<<"To">>, ToSlot}
+                        ]
+                end,
                 data = assignments_to_bundle(Assignments)
             },
             ao:wallet()
