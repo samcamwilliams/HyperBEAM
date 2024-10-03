@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, get/1, get/2, c/1, c/2, build/0]).
+-export([config/0, get/1, get/2, c/1, c/2, build/0, profile/0]).
 -export([wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -13,6 +13,7 @@ wallet(Location) ->
 
 config() ->
     #{
+        % Functional options
         http_port => 8734,
         http_host => "localhost",
         gateway => "https://arweave.net",
@@ -33,7 +34,9 @@ config() ->
                 <<"Monitor">> => dev_monitor,
                 <<"WASM64-pure">> => dev_wasm
             },
-        loadable_devices => []
+        loadable_devices => [],
+        % Dev options
+        profiling => true
     }.
 
 get(Key) -> get(Key, undefined).
@@ -48,3 +51,11 @@ c(X, ModStr) ->
 
 build() ->
     r3:do(compile, [{dir, "src"}]).
+
+profile() ->
+    case ao:get(profiling) of
+        false -> not_profiling;
+        true ->
+            eprof:stop_profiling(),
+            eprof:analyze(total)
+    end.
