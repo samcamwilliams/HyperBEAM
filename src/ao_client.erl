@@ -79,22 +79,22 @@ get_assignments(ProcID) ->
 get_assignments(ProcID, From) ->
     get_assignments(ProcID, From, undefined).
 get_assignments(ProcID, From, To) ->
-    ao:c({getting_assignments, ProcID, From, To}),
-    #tx { data = Data } =
+    {ok, #tx { data = Data }} =
         ao_http:get(
             su_process:get_location(ProcID),
             "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?"
                 ++ case From of undefined -> ""; _ -> "&from=" ++ integer_to_list(From) end
                 ++ case To of undefined -> ""; _ -> "&to=" ++ integer_to_list(To) end
         ),
-    Assignments = maps:map(fun(K, V) -> {list_to_integer(binary_to_list(K)), V} end, Data),
-    extract_assignments(From, To, Assignments).
+    extract_assignments(From, To, Data).
 
-extract_assignments(_, _, #{}) -> [];
+extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 -> 
+    [];
 extract_assignments(From, To, Assignments) ->
+    KeyID = list_to_binary(integer_to_list(From)),
     [
-        maps:get(From, Assignments)|
-        extract_assignments(From + 1, To, maps:remove(From, Assignments))
+        maps:get(KeyID, Assignments)|
+        extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
     ].
 
 compute(Assignment) when is_record(Assignment, tx) ->

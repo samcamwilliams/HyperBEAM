@@ -12,11 +12,11 @@
 start(_StartType, _StartArgs) ->
     ao_sup:start_link(),
     su_data:init(),
-    su_registry:start(),
-    su_timestamp:start(),
-    ao_http_router:start([su_http, mu_http, cu_http]),
+    Reg = su_registry:start(),
+    _TS = su_timestamp:start(),
+    _HTTP = ao_http_router:start([su_http, mu_http, cu_http]),
     cu_process:full_push_test(),
-    self().
+    {ok, Reg}.
 
 stop(_State) ->
     ok.

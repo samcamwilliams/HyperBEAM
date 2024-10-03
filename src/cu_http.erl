@@ -20,10 +20,16 @@ handle(<<"GET">>, [], Req) ->
 handle(<<"GET">>, [ProcID, AssignmentID], Req)  ->
     case dev_checkpoint:read(ProcID, AssignmentID) of
         unavailable ->
-            ResultLog = cu_process:run(su_data:read_message(ProcID), #{}),
+            ResultLog =
+                cu_process:run(
+                    % TODO: Scheduler must only run until message ID!
+                    su_data:read_message(ProcID),
+                    #{ error_strategy => throw }
+                ),
+            {message_processed, _ID, Res} = lists:last(ResultLog),
             % TODO: Don't get the wallet again from disk every time.
-            Req2 = ao_http:reply(Req, ar_bundles:sign_item(lists:last(ResultLog), ao:wallet())),
-            {ok, Req2};
+            Signed = ar_bundles:sign_item(Res, ao:wallet()),
+            ao_http:reply(Req, Signed);
         {ok, Result} ->
             Req2 = ao_http:reply(Req, Result),
             {ok, Req2}

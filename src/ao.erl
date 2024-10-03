@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, get/1, get/2, c/1, build/0]).
+-export([config/0, get/1, get/2, c/1, c/2, build/0]).
 -export([wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -40,8 +40,10 @@ get(Key) -> get(Key, undefined).
 get(Key, Default) ->
     maps:get(Key, config(), Default).
 
-c(X) ->
-    io:format(standard_error, "===== DEBUG PRINT =====> ~80p~n", [X]),
+c(X) -> c(X, "").
+c(X, ModAtom) when is_atom(ModAtom) -> c(X, "[" ++ atom_to_list(ModAtom) ++ "]");
+c(X, ModStr) ->
+    io:format(standard_error, "===== DEBUG PRINT~p =====~s> ~80p~n", [self(), ModStr, X]),
     X.
 
 build() ->

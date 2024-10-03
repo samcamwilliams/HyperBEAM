@@ -3,8 +3,8 @@
 
 %% @doc A transaction.
 -record(tx, {
-	%% 1 or 2.
-	format = 1,
+	%% 1 or 2 or ans104.
+	format = ans104,
 	%% The transaction identifier.
 	id = ?DEFAULT_ID,
 	%% Either the identifier of the previous transaction from

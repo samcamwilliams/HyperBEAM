@@ -16,11 +16,19 @@ execute(M, S = #{ pass := 1, json_iface := IfaceS }) ->
 execute(_M, S = #{ pass := 2 }) ->
     {ok, result(S) }.
 
-prep_call(M, #{ wasm := Port, process := Process }) ->
+prep_call(
+    #tx {
+        data = #{
+            <<"Assignment">> := Assignment,
+            <<"Message">> := Message
+        }
+    },
+    #{ wasm := Port, process := Process }
+) ->
     {_, Module} = lists:keyfind(<<"Module">>, 1, Process#tx.tags),
     % TODO: Get block height from the assignment message
-    BlockHeight = <<"0">>,
-    RawMsgJson = ao_message:to_json(M),
+    {_, BlockHeight} = lists:keyfind(<<"Block-Height">>, 1, Assignment#tx.tags),
+    RawMsgJson = ao_message:to_json(Message),
     {Props} = jiffy:decode(RawMsgJson),
     MsgJson = jiffy:encode({Props ++ [{<<"Module">>, Module}, {<<"Block-Height">>, BlockHeight}]}),
     {ok, MsgJsonPtr} = cu_beamr_io:write_string(Port, MsgJson),
@@ -43,12 +51,10 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
                     #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages } = Resp,
                     S#{
                         result => 
-                            #tx {
-                                data = #{
-                                    <<"/outbox/messages">> => [ ao_message:to_binary(ao_message:from_json(Msg)) || Msg <- Messages ],
-                                    <<"/data">> => Data,
-                                    <<"/stdout">> => iolist_to_binary(Stdout)
-                                }
+                            #{
+                                %<<"/outbox/messages">> => [ ao_message:to_binary(ao_message:from_json(Msg)) || Msg <- Messages ],
+                                <<"/data">> => ar_bundles:normalize(#tx { data = Data}),
+                                <<"/stdout">> => ar_bundles:normalize(#tx { data = iolist_to_binary(Stdout) })
                             }
                     };
                 #{<<"ok">> := false} ->

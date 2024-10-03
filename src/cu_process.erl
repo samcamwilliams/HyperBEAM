@@ -71,9 +71,13 @@ monitor(ProcID) ->
     receive
         {monitor, State, end_of_schedule} ->
             ProcID ! {self(), shutdown},
-            [State];
+            [];
         {monitor, State, {message, Message}} ->
-            [{message_processed, ao_message:id(Message), maps:get(result, State, {no_result, State})}|monitor(ProcID)];
+            [
+                {message_processed, ao_message:id(Message), maps:get(result, State, {no_result, State})}
+            |
+                monitor(ProcID)
+            ];
         Else -> [Else]
     end.
 
@@ -105,6 +109,7 @@ execute_schedule(State, Opts) ->
                 {ok, NS} ->
                     execute_schedule(NS, Opts);
                 {error, DevNum, DevMod, Info} ->
+                    ao:c({error, {DevNum, DevMod, Info}}),
                     execute_terminate(State#{ errors := maps:get(errors, State, []) ++ [{DevNum, DevMod, Info}] }, Opts)
             end;
         #{ schedule := [Msg | NextSched] } ->
@@ -143,7 +148,7 @@ await_command(State = #{ schedule := Sched }, Opts) ->
 simple_stack_test_ignore() ->
     Wallet = ao:wallet(),
     Authority = ar_wallet:to_address(Wallet),
-    RawProc =
+    Proc =
         ar_bundles:sign_item(#tx {
             tags = [
                 {<<"Protocol">>, <<"ao">>},
@@ -158,16 +163,31 @@ simple_stack_test_ignore() ->
                 {<<"Device">>, <<"Checkpoint">>}
             ]
         }, Wallet),
-    Proc = RawProc#tx {id = <<"TEST_ID">>},
+    Msg = ar_bundles:sign_item(#tx {
+            target = ar_util:encode(Proc#tx.id),
+            tags = [
+                {<<"Action">>, <<"Eval">>}
+            ],
+            data = <<"return 1+1">>
+        }, Wallet),
     Schedule =
         [
-            ar_bundles:sign_item(#tx {
-                target = <<"TEST_ID">>,
-                tags = [
-                    {<<"Action">>, <<"Eval">>}
-                ],
-                data = <<"return 1+1">>
-            }, Wallet)
+            #tx {
+                data = #{
+                    <<"Message">> => Msg,
+                    <<"Assignment">> => ar_bundles:sign_item(#tx {
+                        target = ar_util:encode(Proc#tx.id),
+                        tags = [
+                            {<<"Slot">>, <<"0">>},
+                            {<<"Message">>, ar_util:encode(Msg#tx.id)},
+                            {<<"Block-Height">>, <<"0">>},
+                            {<<"Timestamp">>, <<"1234567890">>},
+                            {<<"Process">>, ar_util:encode(Proc#tx.id)}
+                        ]
+                    }, Wallet)
+                }
+
+            }
         ],
     [{message_processed, _, TX}|_] = run(Proc, #{ schedule => Schedule, error_strategy => stop }),
     ao:c({simple_stack_test_result, TX#tx.data}),

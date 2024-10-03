@@ -11,23 +11,23 @@ start(Res, Monitor) when is_record(Res, result) ->
         fun(Spawn) ->
             mu_push:start(Spawn, Monitor)
         end,
-        Res#result.spawns
+        maybe_to_list(Res#result.spawns)
     ),
     lists:map(
         fun(Message) ->
             mu_push:start(Message, Monitor)
         end,
-        Res#result.messages
+        maybe_to_list(Res#result.messages)
     ),
     lists:map(
         fun(Assignment) ->
             ao_client:assign(Assignment)
         end,
-        Res#result.assignments
+        maybe_to_list(Res#result.assignments)
     );
 % log start time
 start(Item, Monitor) ->
-    ao_logger:log(Monitor, {ok, start, Item#tx.id}),
+    ao_logger:log(Monitor, {ok, start, Item}),
     case ar_bundles:verify_item(Item) of
         true ->
             % is valid launch process
@@ -40,6 +40,10 @@ start(Item, Monitor) ->
         false -> {error, invalid_item}
     end.
 
+maybe_to_list(Map) when is_map(Map) -> [ V || {_K, V} <- maps:to_list(Map) ];
+maybe_to_list(undefined) -> [];
+maybe_to_list(Else) -> Else.
+
 push(Item, Monitor) ->
     % send message to su
     case ao_client:schedule(Item) of
@@ -48,8 +52,13 @@ push(Item, Monitor) ->
             ao_logger:log(Monitor, {ok, scheduled, Assignment}),
             % get result from cu
             case ao_client:compute(Assignment) of
-                {ok, Result} ->
-                    ao_logger:log(Monitor, {ok, computed, Result}),
+                {ok, ResItem} ->
+                    ao_logger:log(Monitor, {ok, computed, Assignment}),
+                    Result = #result {
+                        messages = maps:get(<<"/Outbox/Message">>, ResItem#tx.data, []),
+                        assignments = maps:get(<<"/Outbox/Assignment">>, ResItem#tx.data, []),
+                        spawns = maps:get(<<"/Outbox/Spawn">>, ResItem#tx.data, [])
+                    },
                     start(Result, Monitor);
                 Error -> ao_logger:log(Monitor, Error)
             end;
