@@ -7,6 +7,7 @@
 -export([item_to_json_struct/1, json_struct_to_item/1]).
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
+-export([print/1]).
 
 -include("include/ao.hrl").
 
@@ -17,9 +18,81 @@
     {<<"Bundle-Version">>, <<"2.0.0">>}
 ]).
 
+% How many bytes of a binary to print with `print/1`.
+-define(BIN_PRINT, 10).
+
 %%%===================================================================
 %%% Public interface.
 %%%===================================================================
+
+print(Item) -> print(Item, 0).
+print(Item, Indent) when is_list(Item); is_map(Item) ->
+    print(normalize(Item), Indent);
+print(Item, Indent) ->
+    Valid = verify_item(Item),
+    print_line("TX { ~s, ~s, ~s } [",
+        [
+            if Item#tx.signature =/= ?DEFAULT_SIG -> "signed"; true -> "unsigned" end,
+            if Item#tx.id =/= ?DEFAULT_ID -> "ID"; true -> "no ID" end,
+            if Valid == true -> "valid"; true -> "INVALID" end
+        ], Indent),
+    print_line("Tags:", Indent + 1),
+    lists:foreach(
+        fun({Key, Val}) -> print_line("~s -> ~s", [Key, Val], Indent + 2) end,
+        Item#tx.tags),
+    print_line("Data:", Indent + 1),
+    print_data(Item, Indent + 2),
+    print_line("]", Indent).
+
+print_data(Item, Indent) when is_binary(Item#tx.data) ->
+    case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
+        {_, _} -> print(deserialize(serialize(Item)), Indent);
+        false ->
+            print_line(
+                "Binary: ~p... <~p bytes>",
+                [format_binary(Item#tx.data), byte_size(Item#tx.data)],
+                Indent
+            )
+    end;
+print_data(Item, Indent) when is_map(Item#tx.data) ->
+    print_line("Map:", Indent),
+    maps:map(
+        fun(Name, MapItem) ->
+            print_line("~s ->", [Name], Indent + 1),
+            print(MapItem, Indent + 2)
+        end,
+        Item#tx.data
+    );
+print_data(Item, Indent) when is_list(Item#tx.data) ->
+    print_line("List:", Indent),
+    lists:foreach(
+        fun(ListItem) ->
+            print(ListItem, Indent + 1)
+        end,
+        Item#tx.data
+    ).
+
+format_binary(Bin) ->
+    lists:flatten(
+        io_lib:format(
+            "~p",
+            [
+                binary:part(
+                    Bin,
+                    0,
+                    case byte_size(Bin) of X when X < ?BIN_PRINT -> X; _ -> ?BIN_PRINT end)
+            ]
+        )
+    ).
+
+print_line(Str, Indent) -> print_line(Str, "", Indent).
+print_line(RawStr, Fmt, Ind) ->
+    Str = lists:flatten(RawStr),
+    io:format(
+        [ $ || _ <- lists:seq(1, Ind) ] ++
+        Str ++ "\n",
+        Fmt
+    ).
 
 %% @doc Create a new data item.
 new_item(Target, Anchor, Tags, Data) ->
