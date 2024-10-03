@@ -5,6 +5,7 @@
 
 start(Item) -> start(Item, ao_logger:start()).
 
+start(Res, undefined) -> start(Res);
 start(Res, Monitor) when is_record(Res, result) ->
     lists:map(
         fun(Spawn) ->
@@ -46,12 +47,13 @@ push(Item, Monitor) ->
         {ok, Assignment} ->
             ao_logger:log(Monitor, {ok, scheduled, Assignment}),
             case ao_client:compute(Assignment) of
-                {ok, ResItem} ->
+                {ok, #tx { data = Res }} ->
                     ao_logger:log(Monitor, {ok, computed, Assignment}),
                     Result = #result {
-                        messages = maps:get(<<"/Outbox/Message">>, ResItem#tx.data, []),
-                        assignments = maps:get(<<"/Outbox/Assignment">>, ResItem#tx.data, []),
-                        spawns = maps:get(<<"/Outbox/Spawn">>, ResItem#tx.data, [])
+                        messages =
+                            (maps:get(<<"/Outbox/Message">>, Res, #tx { data = [] }))#tx.data,
+                        assignments = maps:get(<<"/Outbox/Assignment">>, Res, []),
+                        spawns = maps:get(<<"/Outbox/Spawn">>, Res, [])
                     },
                     start(Result, Monitor);
                 Error -> ao_logger:log(Monitor, Error)

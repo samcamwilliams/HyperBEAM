@@ -9,8 +9,8 @@
 -export([cron/1, cron/2, cron/3, cron_cursor/1]).
 %% Compute Unit API
 -export([compute/1, compute/2]).
-%% Messaging Unity API
--export([push/1]).
+%% Messaging Unit API
+-export([push/1, push/2]).
 
 -include("include/ao.hrl").
 
@@ -112,11 +112,13 @@ compute(ProcID, AssignmentID) ->
 
 %%% MU API functions
 
-push(Item) ->
-    ao:c({posting_to_mu, Item#tx.id}),
+push(Item) -> push(Item, none).
+push(Item, TracingAtom) when is_atom(TracingAtom) ->
+    push(Item, atom_to_list(TracingAtom));
+push(Item, Tracing) ->
     ao_http:post(
         ao:get(mu),
-        "/",
+        "/?trace=" ++ Tracing,
         Item
     ).
 

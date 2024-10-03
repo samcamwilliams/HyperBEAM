@@ -8,7 +8,7 @@
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
 
--include("include/ar.hrl").
+-include("include/ao.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -215,8 +215,6 @@ encode_tags(Tags) ->
     <<ZigZagCount/binary, (list_to_binary(EncodedBlocks))/binary, 0>>.
 
 %% @doc Encode a string for Avro using ZigZag and VInt encoding.
-encode_avro_string(false) ->
-    try throw(invalid_tag) catch Class:Reason:Stacktrace -> ao:c({stacktrace, Stacktrace}) end;
 encode_avro_string(String) ->
     StringBytes = unicode:characters_to_binary(String, utf8),
     Length = byte_size(StringBytes),
@@ -269,7 +267,9 @@ deserialize(Binary, binary) ->
     %end;
 deserialize(Bin, json) ->
     try
-        maybe_unbundle(json_struct_to_item(element(1, jiffy:decode(Bin))))
+        normalize(
+            maybe_unbundle(
+                json_struct_to_item(element(1, jiffy:decode(Bin)))))
     catch
         _:_:_Stack ->
             {error, invalid_item}
@@ -366,6 +366,8 @@ maybe_list_to_binary(List) when is_list(List) ->
 maybe_list_to_binary(Bin) ->
     Bin.
 
+json_struct_to_item(Map) when is_map(Map) ->
+    deserialize(jiffy:encode(Map), json);
 json_struct_to_item({TXStruct}) -> json_struct_to_item(TXStruct);
 json_struct_to_item(RawTXStruct) ->
     TXStruct = [ { string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct ],
@@ -376,12 +378,12 @@ json_struct_to_item(RawTXStruct) ->
 			Xs ->
 				Xs
 		end,
-	TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, <<>>)),
+	TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, ar_util:encode(?DEFAULT_ID))),
 	#tx{
 		format = ans104,
 		id = TXID,
 		last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
-		owner = ar_util:decode(ar_util:find_value(<<"owner">>, TXStruct, <<>>)),
+		owner = ar_util:decode(ar_util:find_value(<<"owner">>, TXStruct, ar_util:encode(?DEFAULT_OWNER))),
 		tags = 
             lists:map(
                 fun({KeyVals}) ->
@@ -393,7 +395,7 @@ json_struct_to_item(RawTXStruct) ->
             ),
 		target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
 		data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
-		signature = ar_util:decode(ar_util:find_value(<<"signature">>, TXStruct, <<>>))
+		signature = ar_util:decode(ar_util:find_value(<<"signature">>, TXStruct, ar_util:encode(?DEFAULT_SIG)))
 	}.
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.

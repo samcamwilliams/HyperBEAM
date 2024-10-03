@@ -195,7 +195,9 @@ simple_stack_test_ignore() ->
 
 full_push_test() -> 
     Msg = generate_test_data(),
-    ao_client:push(Msg).
+    su_data:write_message(Msg),
+    ?c({wrote_test_msg, ar_util:encode(Msg#tx.id)}),
+    ao_client:push(Msg, none).
 
 generate_test_data() ->
     Wallet = ao:wallet(),
@@ -228,7 +230,7 @@ generate_test_data() ->
                 {<<"Type">>, <<"Message">>},
                 {<<"Action">>, <<"Eval">>}
             ],
-            data = <<"return 1+1">>
+            data = <<"Send({ Target = ao.id, Data = \"Hello again, Hyperbeam!\"})\nreturn 1+1">>
         },
         Wallet
     ).

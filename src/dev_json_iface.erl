@@ -49,12 +49,18 @@ result(S = #{ wasm := Port, result := Res, json_iface := #{ stdout := Stdout } }
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     #{<<"Output">> := #{ <<"data">> := Data }, <<"Messages">> := Messages } = Resp,
+                    ?c({messages, Messages}),
                     S#{
                         result => 
                             #{
-                                %<<"/outbox/messages">> => [ ao_message:to_binary(ao_message:from_json(Msg)) || Msg <- Messages ],
-                                <<"/data">> => ar_bundles:normalize(#tx { data = Data}),
-                                <<"/stdout">> => ar_bundles:normalize(#tx { data = iolist_to_binary(Stdout) })
+                                <<"/Outbox/Message">> =>
+                                    [
+                                        ar_bundles:normalize(ar_bundles:json_struct_to_item(maps:remove(<<"Anchor">>, Msg)))
+                                    ||
+                                        Msg <- Messages
+                                    ],
+                                <<"/Outbox/Data">> => ar_bundles:normalize(#tx { data = Data}),
+                                <<"/Outbox/Stdout">> => ar_bundles:normalize(#tx { data = iolist_to_binary(Stdout) })
                             }
                     };
                 #{<<"ok">> := false} ->
