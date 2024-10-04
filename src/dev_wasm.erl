@@ -9,8 +9,13 @@ init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
     Image = ao_message:get(ImageID),
     {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
+    NState =
+        case maps:get(checkpoint, State, undefined) of
+            undefined -> State;
+            Checkpoint -> cu_beamr:deserialize(Port, Checkpoint)
+        end,
     {ok,
-        State#{
+        NState#{
             wasm => Port,
             phase => pre_exec,
             call => undefined,
