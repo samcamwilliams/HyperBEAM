@@ -9,7 +9,15 @@ init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
     Image = ao_message:get(ImageID),
     {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
-    {ok, State#{wasm => Port, phase => pre_exec}}.
+    {ok,
+        State#{
+            wasm => Port,
+            phase => pre_exec,
+            call => undefined,
+            serialize => fun() -> cu_beamr:serialize(Port) end,
+            deserialize => fun(Bin) -> cu_beamr:deserialize(Port, Bin) end
+        }
+    }.
 
 execute(
     M,

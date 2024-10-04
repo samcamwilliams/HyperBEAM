@@ -29,7 +29,7 @@ init(State, _Params, PrivParams) ->
 
 execute(Msg, State, PrivS) ->
     case isCheckpointSlot(Msg, State, PrivS) of
-        true -> write_checkpoint(State);
+        true -> write_checkpoint(Msg, State, PrivS);
         false -> ok
     end,
     write_result(Msg, State, PrivS),
@@ -41,10 +41,28 @@ isCheckpointSlot(#tx{data = #{<<"Assignment">> := Assignment}}, _State, #{freque
     slot(Assignment) rem Freq == 0.
 
 slot(Assignment) ->
+    ar_bundles:print(Assignment),
     {_, SlotBin} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     list_to_integer(binary_to_list(SlotBin)).
 
-write_checkpoint(_State) -> ok.
+write_checkpoint(#tx{data = #{<<"Assignment">> := Assignment}}, #{ process := Proc, serialize := Serialize }, #{data_dir := Dir}) ->
+    ?c(write_checkpoint),
+    Slot = slot(Assignment),
+    ProcID = binary_to_list(ar_util:encode(Proc#tx.id)),
+    {ok, Memory} = Serialize(),
+    su_data:write_message(
+        #tx {
+            tags =
+                [
+                    {<<"Type">>, <<"Checkpoint">>},
+                    {<<"Process">>, ProcID}
+                ],
+            data = Memory
+        },
+        Dir ++ "/checkpoints/" ++
+            ProcID ++ "/state/" ++ integer_to_list(Slot)
+    ),
+    ok.
 
 read_result(ProcID, Slot) ->
     Dir = ?DEFAULT_DATA_DIR,
@@ -64,6 +82,6 @@ write_result(
     su_data:write_message(
         Res,
         Dir ++ "/checkpoints/" ++
-            ProcID ++ "/" ++ integer_to_list(Slot)
+            ProcID ++ "/results/" ++ integer_to_list(Slot)
     ),
     ok.

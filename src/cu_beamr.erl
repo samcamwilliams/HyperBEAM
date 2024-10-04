@@ -1,5 +1,6 @@
 -module(cu_beamr).
 -export([start/1, call/3, call/4, call/5, stop/1, test/0]).
+-export([serialize/1, deserialize/2]).
 -export([stub_stdlib/6]).
 
 -include("src/include/ao.hrl").
