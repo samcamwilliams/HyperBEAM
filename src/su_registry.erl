@@ -1,20 +1,18 @@
 -module(su_registry).
--export([start/0, start/1, find/1, server/2, get_wallet/0, get_processes/0]).
+-export([start/0, start/1, find/1, find/2, server/2, get_wallet/0, get_processes/0]).
 
 -include("include/ar.hrl").
 
 start() -> start(ao:get(key_location)).
 start(WalletFile) ->
-    Wallet =
-        case file:read_file_info(WalletFile) of
-            {ok, _} -> ar_wallet:load_keyfile(WalletFile);
-            {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
-        end,
-    register(?MODULE, spawn(fun() -> server(#{}, Wallet) end)).
+    Wallet = ao:wallet(WalletFile),
+    register(?MODULE, PID = spawn(fun() -> server(#{}, Wallet) end)),
+    PID.
 
-find(ProcID) ->
+find(ProcID) -> find(ProcID, false).
+find(ProcID, GenIfNotHosted) ->
     ReplyPID = self(),
-    ?MODULE ! {find, ProcID, ReplyPID},
+    ?MODULE ! {find, ProcID, ReplyPID, GenIfNotHosted},
     receive
         {process, Process} -> Process
     end.
@@ -33,7 +31,7 @@ get_processes() ->
 
 server(Registry, Wallet) ->
     receive
-        {find, ProcID, ReplyPID} ->
+        {find, ProcID, ReplyPID, GenIfNotHosted} ->
             Process =
                 case maps:find(ProcID, Registry) of
                     {ok, ExistingProcess} ->
@@ -41,13 +39,19 @@ server(Registry, Wallet) ->
                             true ->
                                 ExistingProcess;
                             false ->
-                                new_proc(ProcID, Wallet)
+                                maybe_new_proc(ProcID, Wallet, GenIfNotHosted)
                         end;
                     error ->
-                        new_proc(ProcID, Wallet)
+                        maybe_new_proc(ProcID, Wallet, GenIfNotHosted)
                 end,
             ReplyPID ! {process, Process},
-            server(Registry#{ProcID => Process}, Wallet);
+            server(
+                case Process of
+                    not_found -> Registry;
+                    NewProcess -> Registry#{ProcID => NewProcess}
+                end,
+                Wallet
+            );
         {get_wallet, ReplyPID} ->
             ReplyPID ! {wallet, Wallet},
             server(Registry, Wallet);
@@ -56,5 +60,6 @@ server(Registry, Wallet) ->
             server(Registry, Wallet)
     end.
 
-new_proc(ProcID, Wallet) ->
+maybe_new_proc(_, _, false) -> not_found;
+maybe_new_proc(ProcID, Wallet, _) ->
     spawn(fun() -> su_process:start(ProcID, Wallet) end).

@@ -3,56 +3,72 @@
 
 -include("include/ao.hrl").
 
+% create logger and call start
 start(Item) -> start(Item, ao_logger:start()).
 
+start(Res, undefined) ->
+    start(Res);
 start(Res, Monitor) when is_record(Res, result) ->
     lists:map(
         fun(Spawn) ->
-            mu_push:start(maybe_sign(Spawn), Monitor)
+            mu_push:start(Spawn, Monitor)
         end,
-        Res#result.spawns
+        maybe_to_list(Res#result.spawns)
     ),
     lists:map(
         fun(Message) ->
-            mu_push:start(maybe_sign(Message), Monitor)
+            mu_push:start(Message, Monitor)
         end,
-        Res#result.messages
+        maybe_to_list(Res#result.messages)
     ),
     lists:map(
         fun(Assignment) ->
             ao_client:assign(Assignment)
         end,
-        Res#result.assignments
+        maybe_to_list(Res#result.assignments)
     );
+% log start time
 start(Item, Monitor) ->
     ao_logger:log(Monitor, {ok, start, Item}),
     case ar_bundles:verify_item(Item) of
         true ->
+            ?c(is_valid),
+            % is valid launch process
             spawn(
                 fun() ->
                     ao_logger:register(self()),
                     push(Item, Monitor)
-                end),
+                end
+            ),
             Monitor;
-        false -> {error, invalid_item}
+        false ->
+            {error, invalid_item}
     end.
+
+maybe_to_list(Map) when is_map(Map) -> [V || {_K, V} <- maps:to_list(Map)];
+maybe_to_list(undefined) -> [];
+maybe_to_list(Else) -> Else.
 
 push(Item, Monitor) ->
+    % send message to su
     case ao_client:schedule(Item) of
+        % get assignment response
         {ok, Assignment} ->
             ao_logger:log(Monitor, {ok, scheduled, Assignment}),
+            % get result from cu
             case ao_client:compute(Assignment) of
-                {ok, Result} ->
-                    ao_logger:log(Monitor, {ok, computed, Result}),
+                {ok, #tx{data = Res}} ->
+                    ao_logger:log(Monitor, {ok, computed, Assignment}),
+                    Result = #result{
+                        messages =
+                            (maps:get(<<"/Outbox/Message">>, Res, #tx{data = []}))#tx.data,
+                        assignments = maps:get(<<"/Outbox/Assignment">>, Res, []),
+                        spawns = maps:get(<<"/Outbox/Spawn">>, Res, [])
+                    },
                     start(Result, Monitor);
-                Error -> ao_logger:log(Monitor, Error)
+                Error ->
+                    ao_logger:log(Monitor, Error)
             end;
-        Error -> ao_logger:log(Monitor, Error)
+        Error ->
+            ao_logger:log(Monitor, Error)
     end.
-
-maybe_sign(Item) ->
-    %% TN.2: Will be unnecessary when CUs sign data items.
-    ar_bundles:sign_item(
-        Item#tx { last_tx = <<>> },
-        ar_wallet:load_keyfile(ao:get(key_location))
-    ).
