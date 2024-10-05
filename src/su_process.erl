@@ -1,5 +1,5 @@
 -module(su_process).
--export([start/2, schedule/2, get_location/1]).
+-export([start/2, schedule/2]).
 -export([get_current_slot/1, get_assignments/3]).
 -export([new_proc_test/0]).
 -record(state, {id, current, wallet, hash_chain = <<>> }).
@@ -9,11 +9,7 @@
 
 start(ProcID, Wallet) ->
     {Current, HashChain} = su_data:get_current_slot(ProcID),
-    ao:c({starting, ProcID, Current, HashChain}),
     server(#state{id = ProcID, current = Current, hash_chain = HashChain, wallet = Wallet}).
-
-get_location(_ProcID) ->
-    ao:get(su).
 
 schedule(ProcID, Message) when is_list(ProcID) ->
     schedule(su_registry:find(ProcID), Message);
@@ -78,15 +74,14 @@ do_assign(State, Message, ReplyPID) ->
             Assignment = ar_bundles:sign_item(#tx {
                 tags = [
                     {"Data-Protocol", "ao"},
-                    {"Variant", "ao.TN.2"},
-                    {"Process", State#state.id},
-                    {"Epoch", "0"},
-                    {"Slot", integer_to_list(NextNonce)},
-                    {"Message", binary_to_list(ar_util:encode(Message#tx.id))},
+                    {"Variant", "ao.TN.1"},
                     {"Block-Height", integer_to_list(Height)},
                     {"Block-Hash", binary_to_list(Hash)},
                     {"Block-Timestamp", integer_to_list(Timestamp)},
+                    {"Epoch", "0"},
                     {"Timestamp", integer_to_list(erlang:system_time(millisecond))}, % Local time on the SU, not Arweave
+                    {"Nonce", integer_to_list(NextNonce)},
+                    {"Message", binary_to_list(ar_util:encode(Message#tx.id))},
                     {"Hash-Chain", binary_to_list(ar_util:encode(HashChain))}
                 ]
             }, State#state.wallet),
