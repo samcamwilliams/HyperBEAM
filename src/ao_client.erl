@@ -1,25 +1,20 @@
 -module(ao_client).
--export([upload/1, arweave_timestamp/0]).
+%% Arweave node API
+-export([arweave_timestamp/0]).
+%% Arweave bundling and data access API
+-export([upload/1, download/1]).
+%% Scheduling Unit API
+-export([get_assignments/1, get_assignments/2, get_assignments/3]).
 -export([schedule/1, assign/1, register_su/1, register_su/2]).
--export([compute/1, cron/1, cron/2, cron/3, cron_cursor/1]).
--export([push/1]).
+-export([cron/1, cron/2, cron/3, cron_cursor/1]).
+%% Compute Unit API
+-export([compute/1, compute/2]).
+%% Messaging Unit API
+-export([push/1, push/2]).
 
 -include("include/ao.hrl").
 
-%%% Arweave API functions
-
-upload(Item) ->
-    case httpc:request(
-        post,
-        {ao:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
-        [],
-        []
-    ) of
-        {ok, {{_, 200, _}, _, Body}} ->
-            {ok, jiffy:decode(Body, [return_maps])};
-        Response ->
-            {error, bundler_http_error, Response}
-    end.
+%%% Arweave node API
 
 arweave_timestamp() ->
     {ok, {{_, 200, _}, _, Body}} = httpc:request(ao:get(gateway) ++ "/block/current"),
@@ -29,32 +24,38 @@ arweave_timestamp() ->
     {_, Height} = lists:keyfind(<<"height">>, 1, Fields),
     {Timestamp, Height, Hash}.
 
-%%% Scheduler API functions
+%%% Bundling and data access API
 
-schedule(Item) ->
+download(ID) ->
+    % TODO: Need to recreate full data items, not just data...
+    case httpc:request(ao:get(gateway) ++ "/" ++ ID) of
+        {ok, {{_, 200, _}, _, Body}} -> #tx{data = Body};
+        _Rest -> throw({id_get_failed, ID})
+    end.
+
+upload(Item) ->
     case
         httpc:request(
             post,
-            {ao:get(su), [], "application/x-www-form-urlencoded", ar_bundles:serialize(Item)},
+            {ao:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
             [],
             []
         )
     of
-        {ok, {{_, 201, _}, _, Body}} ->
-            case ar_bundles:deserialize(Body, json) of
-                {error, _} ->
-                    {error, assignment_format_invalid, Item};
-                Assignment ->
-                    case ar_bundles:verify_item(Assignment) of
-                        true ->
-                            {ok, Assignment};
-                        false ->
-                            {error, assignment_sig_invalid, Assignment}
-                    end
-            end;
+        {ok, {{_, 200, _}, _, Body}} ->
+            {ok, jiffy:decode(Body, [return_maps])};
         Response ->
-            {error, su_http_error, Response}
+            {error, bundler_http_error, Response}
     end.
+
+%%% Scheduling Unit API
+schedule(Item) -> schedule(Item, Item#tx.target).
+schedule(Item, Target) ->
+    ao_http:post(
+        su_process:get_location(Target),
+        "/",
+        Item
+    ).
 
 assign(_ID) ->
     ao:c({not_implemented, assignments}).
@@ -64,7 +65,7 @@ register_su(Location) ->
 register_su(Location, WalletLoc) when is_list(WalletLoc) ->
     register_su(Location, ar_wallet:load_keyfile(WalletLoc));
 register_su(Location, Wallet) ->
-    TX = #tx {
+    TX = #tx{
         tags = [
             {"Data-Protocol", "ao"},
             {"Variant", "ao.TN.1"},
@@ -75,36 +76,61 @@ register_su(Location, Wallet) ->
     },
     ao_client:upload(ar_bundles:sign_item(TX, Wallet)).
 
-compute(_Item) ->
+get_assignments(ProcID) ->
+    get_assignments(ProcID, 0, undefined).
+get_assignments(ProcID, From) ->
+    get_assignments(ProcID, From, undefined).
+get_assignments(ProcID, From, To) ->
+    {ok, #tx{data = Data}} =
+        ao_http:get(
+            su_process:get_location(ProcID),
+            "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?" ++
+                case From of
+                    undefined -> "";
+                    _ -> "&from=" ++ integer_to_list(From)
+                end ++
+                case To of
+                    undefined -> "";
+                    _ -> "&to=" ++ integer_to_list(To)
+                end
+        ),
+    extract_assignments(From, To, Data).
+
+extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
+    [];
+extract_assignments(From, To, Assignments) ->
+    KeyID = list_to_binary(integer_to_list(From)),
+    [
+        maps:get(KeyID, Assignments)
+        | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
+    ].
+
+compute(Assignment) when is_record(Assignment, tx) ->
+    {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    ao:c(Slot),
+    compute(ar_util:decode(ProcessID), Slot).
+compute(ProcID, Slot) ->
     % TN.1: MU Should be reading real results, not mocked-out.
-    case
-        httpc:request(ao:get(cu)
-                ++ "/result/"
-                %TODO: ++ binary_to_list(ar_util:encode(Item#tx.id))
-                ++ "p_HXhuer1pWOzvYEn8NMRrJQEODxneu6vd1wwsPqnXo"
-                ++ "?process-id="
-                %TODO: ++ binary_to_list(ar_util:encode(Item#tx.target))) of
-                ++ "YxpLc0rVpVUuT5KuaVnhA8X0ISCCeBShprozN6r8fKc") of
-            {ok, {{_, 200, _}, _, Body}} ->
-                {ok, parse_result(Body)};
-            Response ->
-                {error, cu_http_error, Response}
-    end.
+    ao_http:get(
+        ao:get(cu),
+        "/" ++
+            binary_to_list(ar_util:encode(ProcID)) ++
+            "/" ++
+            binary_to_list(Slot)
+    ).
 
 %%% MU API functions
 
-push(Item) ->
-    case
-        httpc:request(
-            post,
-            {ao:get(mu) ++ "/", [], "application/x-www-form-urlencoded", ar_bundles:serialize(Item)},
-            [],
-            []
-        )
-    of
-        {ok, {{_, 201, _}, _, _Body}} -> ok;
-        Response -> {error, mu_http_error, Response}
-    end.
+push(Item) -> push(Item, none).
+push(Item, TracingAtom) when is_atom(TracingAtom) ->
+    push(Item, atom_to_list(TracingAtom));
+push(Item, Tracing) ->
+    ao_http:post(
+        ao:get(mu),
+        "/?trace=" ++ Tracing,
+        Item
+    ).
 
 %%% CU API functions
 
@@ -119,23 +145,25 @@ cron(ProcID, undefined, RawLimit) ->
 cron(ProcID, Cursor, Limit) ->
     case
         httpc:request(
-            ao:get(cu)
-                ++ "/cron/"
-                ++ ProcID
-                ++ "?cursor="
-                ++ binary_to_list(Cursor)
-                ++ "&limit="
-                ++ integer_to_list(Limit))
+            ao:get(cu) ++
+                "/cron/" ++
+                ProcID ++
+                "?cursor=" ++
+                binary_to_list(Cursor) ++
+                "&limit=" ++
+                integer_to_list(Limit)
+        )
     of
         {ok, {{_, 200, _}, _, Body}} ->
             try parse_result_set(Body) of
                 {HasNextPage, Results} ->
                     {ok, HasNextPage, Results, (lists:last(Results))#result.cursor}
-                catch
-                    _:_ ->
-                        {error, cu_invalid_cron_response, Body}
-                end;
-        Response -> {error, cu_http_error, Response}
+            catch
+                _:_ ->
+                    {error, cu_invalid_cron_response, Body}
+            end;
+        Response ->
+            {error, cu_http_error, Response}
     end.
 
 cron_cursor(ProcID) ->
@@ -157,9 +185,6 @@ parse_result_set(Body) ->
     {_, EdgesStruct} = lists:keyfind(<<"edges">>, 1, JSONStruct),
     {HasNextPage, lists:map(fun json_struct_to_result/1, EdgesStruct)}.
 
-parse_result(Body) ->
-    json_struct_to_result(jiffy:decode(Body)).
-
 %% Parse a CU result into a #result record. If the result is in the form of a
 %% stream, then the cursor is returned in the #result record as well.
 json_struct_to_result(NodeStruct) ->
@@ -172,11 +197,13 @@ json_struct_to_result(Struct, Res) ->
             Res#result{
                 messages = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    ar_util:find_value(<<"Messages">>, Struct, [])),
+                    ar_util:find_value(<<"Messages">>, Struct, [])
+                ),
                 assignments = ar_util:find_value(<<"Assignments">>, Struct, []),
                 spawns = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    ar_util:find_value(<<"Spawns">>, Struct, [])),
+                    ar_util:find_value(<<"Spawns">>, Struct, [])
+                ),
                 output = ar_util:find_value(<<"Output">>, Struct, [])
             };
         {_, {NodeStruct}} ->

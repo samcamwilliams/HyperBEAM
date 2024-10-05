@@ -1,15 +1,19 @@
+-define(DEFAULT_SIG, << 0:4096 >>).
+-define(DEFAULT_ID, << 0:256 >>).
+-define(DEFAULT_OWNER, << 0:4096 >>).
+
 %% @doc A transaction.
 -record(tx, {
-	%% 1 or 2.
-	format = 1,
+	%% 1 or 2 or ans104.
+	format = ans104,
 	%% The transaction identifier.
-	id = <<>>,
+	id = ?DEFAULT_ID,
 	%% Either the identifier of the previous transaction from
 	%% the same wallet or the identifier of one of the
 	%% last ?MAX_TX_ANCHOR_DEPTH blocks.
 	last_tx = <<>>,
 	%% The public key the transaction is signed with.
-	owner =	<<>>,
+	owner =	?DEFAULT_OWNER,
 	%% A list of arbitrary key-value pairs. Keys and values are binaries.
 	tags = [],
 	%% The address of the recipient, if any. The SHA2-256 hash of the public key.
@@ -27,7 +31,7 @@
 	%% The Merkle root of the Merkle tree of data chunks.
 	data_root = <<>>,
 	%% The signature.
-	signature = <<>>,
+	signature = ?DEFAULT_SIG,
 	%% The fee in Winstons.
 	reward = 0,
 
