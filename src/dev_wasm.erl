@@ -14,15 +14,13 @@ init(State, Params) ->
             undefined -> State;
             Checkpoint -> cu_beamr:deserialize(Port, Checkpoint)
         end,
-    {ok,
-        NState#{
-            wasm => Port,
-            phase => pre_exec,
-            call => undefined,
-            serialize => fun() -> cu_beamr:serialize(Port) end,
-            deserialize => fun(Bin) -> cu_beamr:deserialize(Port, Bin) end
-        }
-    }.
+    {ok, NState#{
+        wasm => Port,
+        phase => pre_exec,
+        call => undefined,
+        serialize => fun() -> cu_beamr:serialize(Port) end,
+        deserialize => fun(Bin) -> cu_beamr:deserialize(Port, Bin) end
+    }}.
 
 execute(
     M,

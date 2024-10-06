@@ -30,23 +30,37 @@ print(Item, Indent) when is_list(Item); is_map(Item) ->
     print(normalize(Item), Indent);
 print(Item, Indent) ->
     Valid = verify_item(Item),
-    print_line("TX { ~s, ~s, ~s } [",
+    print_line(
+        "TX { ~s, ~s, ~s } [",
         [
-            if Item#tx.signature =/= ?DEFAULT_SIG -> "signed"; true -> "unsigned" end,
-            if Item#tx.id =/= ?DEFAULT_ID -> "ID"; true -> "no ID" end,
-            if Valid == true -> "valid"; true -> "INVALID" end
-        ], Indent),
+            if
+                Item#tx.signature =/= ?DEFAULT_SIG -> "signed";
+                true -> "unsigned"
+            end,
+            if
+                Item#tx.id =/= ?DEFAULT_ID -> "ID";
+                true -> "no ID"
+            end,
+            if
+                Valid == true -> "valid";
+                true -> "INVALID"
+            end
+        ],
+        Indent
+    ),
     print_line("Tags:", Indent + 1),
     lists:foreach(
         fun({Key, Val}) -> print_line("~s -> ~s", [Key, Val], Indent + 2) end,
-        Item#tx.tags),
+        Item#tx.tags
+    ),
     print_line("Data:", Indent + 1),
     print_data(Item, Indent + 2),
     print_line("]", Indent).
 
 print_data(Item, Indent) when is_binary(Item#tx.data) ->
     case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
-        {_, _} -> print(deserialize(serialize(Item)), Indent);
+        {_, _} ->
+            print(deserialize(serialize(Item)), Indent);
         false ->
             print_line(
                 "Binary: ~p... <~p bytes>",
@@ -80,7 +94,11 @@ format_binary(Bin) ->
                 binary:part(
                     Bin,
                     0,
-                    case byte_size(Bin) of X when X < ?BIN_PRINT -> X; _ -> ?BIN_PRINT end)
+                    case byte_size(Bin) of
+                        X when X < ?BIN_PRINT -> X;
+                        _ -> ?BIN_PRINT
+                    end
+                )
             ]
         )
     ).
@@ -89,8 +107,8 @@ print_line(Str, Indent) -> print_line(Str, "", Indent).
 print_line(RawStr, Fmt, Ind) ->
     Str = lists:flatten(RawStr),
     io:format(
-        [ $ || _ <- lists:seq(1, Ind) ] ++
-        Str ++ "\n",
+        [$\s || _ <- lists:seq(1, Ind)] ++
+            Str ++ "\n",
         Fmt
     ).
 
@@ -109,10 +127,10 @@ new_item(Target, Anchor, Tags, Data) ->
 
 %% @doc Sign a data item.
 sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
-    Item = (normalize_data(RawItem))#tx{ format = ans104, owner = Owner, signature_type = KeyType },
+    Item = (normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
     Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item)),
     ID = crypto:hash(sha256, <<Sig/binary>>),
-    Item#tx{ id = ID, signature = Sig }.
+    Item#tx{id = ID, signature = Sig}.
 
 %% @doc Verify the validity of a data item.
 verify_item(DataItem) ->
@@ -125,14 +143,14 @@ verify_item(DataItem) ->
 %%% Private functions.
 %%%===================================================================
 
-
 %% @doc Generate the data segment to be signed for a data item.
 data_item_signature_data(RawItem) ->
     NormItem = normalize_data(RawItem),
     List = [
         utf8_encoded("dataitem"),
         utf8_encoded("1"),
-        utf8_encoded("1"), %% Only SignatureType 1 is supported for now (RSA 4096)
+        %% Only SignatureType 1 is supported for now (RSA 4096)
+        utf8_encoded("1"),
         <<(NormItem#tx.owner)/binary>>,
         <<(NormItem#tx.target)/binary>>,
         <<(NormItem#tx.last_tx)/binary>>,
@@ -149,32 +167,37 @@ verify_data_item_id(DataItem) ->
 %% @doc Verify the data item's signature.
 verify_data_item_signature(DataItem) ->
     SignatureData = data_item_signature_data(DataItem),
-    ar_wallet:verify({DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature).
+    ar_wallet:verify(
+        {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
+    ).
 
 %% @doc Verify the validity of the data item's tags.
 verify_data_item_tags(DataItem) ->
     ValidCount = length(DataItem#tx.tags) =< 128,
-    ValidTags = lists:all(fun({Name, Value}) ->
-        byte_size(Name) =< 1024 andalso byte_size(Value) =< 3072
-    end, DataItem#tx.tags),
+    ValidTags = lists:all(
+        fun({Name, Value}) ->
+            byte_size(Name) =< 1024 andalso byte_size(Value) =< 3072
+        end,
+        DataItem#tx.tags
+    ),
     ValidCount andalso ValidTags.
 
 normalize(Item) -> update_id(normalize_data(Item)).
 
 %% @doc Ensure that a data item (potentially containing a map or list) has a standard, serialized form.
 normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
-    normalize_data(#tx { data = Bundle });
-normalize_data(Item = #tx { data = Bin }) when is_binary(Bin) -> Item;
-normalize_data(Item = #tx { data = Data }) ->
+    normalize_data(#tx{data = Bundle});
+normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) -> Item;
+normalize_data(Item = #tx{data = Data}) ->
     case serialize_bundle_data(Data) of
         {ManifestID, Bin} ->
-            Item#tx {
+            Item#tx{
                 data = Bin,
                 data_size = byte_size(Bin),
                 tags = add_manifest_tags(add_bundle_tags(Item#tx.tags), ManifestID)
             };
         Bin ->
-            Item#tx {
+            Item#tx{
                 data = Bin,
                 data_size = byte_size(Bin),
                 tags = add_bundle_tags(Item#tx.tags)
@@ -200,34 +223,46 @@ serialize(RawTX, binary) ->
 serialize(TX, json) ->
     jiffy:encode(item_to_json_struct(TX)).
 
-update_id(TX = #tx{ id = ?DEFAULT_ID, signature = ?DEFAULT_SIG }) ->
+update_id(TX = #tx{id = ?DEFAULT_ID, signature = ?DEFAULT_SIG}) ->
     ID = crypto:hash(sha256, data_item_signature_data(TX)),
-    TX#tx{ format = ans104, id = ID };
-update_id(TX = #tx{ id = ?DEFAULT_ID, signature = Sig }) ->
-    TX#tx { format = ans104, id = crypto:hash(sha256, Sig) };
+    TX#tx{format = ans104, id = ID};
+update_id(TX = #tx{id = ?DEFAULT_ID, signature = Sig}) ->
+    TX#tx{format = ans104, id = crypto:hash(sha256, Sig)};
 update_id(TX) ->
     TX.
 
 add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
 
 add_manifest_tags(Tags, ManifestID) ->
-    lists:filter(fun({<<"Bundle-Map">>, _}) -> false;
-                    (_) -> true
-                end, Tags) ++ [{<<"Bundle-Map">>, ar_util:encode(ManifestID)}].
+    lists:filter(
+        fun
+            ({<<"Bundle-Map">>, _}) -> false;
+            (_) -> true
+        end,
+        Tags
+    ) ++ [{<<"Bundle-Map">>, ar_util:encode(ManifestID)}].
 
 finalize_bundle_data(Processed) ->
     Length = <<(length(Processed)):256/integer>>,
-    Index = << << (byte_size(Data)):256/integer, ID/binary >> || {ID, Data} <- Processed >>,
-    Items = << << Data/binary >> || {_, Data} <- Processed >>,
-    << Length/binary, Index/binary, Items/binary >>.
+    Index = <<<<(byte_size(Data)):256/integer, ID/binary>> || {ID, Data} <- Processed>>,
+    Items = <<<<Data/binary>> || {_, Data} <- Processed>>,
+    <<Length/binary, Index/binary, Items/binary>>.
 
 to_serialized_pair(false) ->
-    try throw(wat) catch A:B:C -> ao:c({wat, C}) end;
+    try
+        throw(wat)
+    catch
+        A:B:C -> ao:c({wat, C})
+    end;
 to_serialized_pair(Item) ->
     Serialized = serialize(Item, binary),
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
-    ID = if is_record(Item, tx) -> Item#tx.id; true -> (deserialize(Serialized, binary))#tx.id end,
+    ID =
+        if
+            is_record(Item, tx) -> Item#tx.id;
+            true -> (deserialize(Serialized, binary))#tx.id
+        end,
     {ID, Serialized}.
 
 serialize_bundle_data(Map) when is_map(Map) ->
@@ -241,7 +276,7 @@ serialize_bundle_data(List) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
 
 new_manifest(Index) ->
-    TX = normalize(#tx {
+    TX = normalize(#tx{
         format = ans104,
         tags = [
             {<<"Data-Protocol">>, <<"Bundle-Map">>},
@@ -278,11 +313,14 @@ encode_tags_size(Tags, EncodedTags) ->
 encode_tags([]) ->
     <<>>;
 encode_tags(Tags) ->
-    EncodedBlocks = lists:flatmap(fun({Name, Value}) ->
-        EncName = encode_avro_string(Name),
-        EncValue = encode_avro_string(Value),
-        [EncName, EncValue]
-    end, Tags),
+    EncodedBlocks = lists:flatmap(
+        fun({Name, Value}) ->
+            EncName = encode_avro_string(Name),
+            EncValue = encode_avro_string(Value),
+            [EncName, EncValue]
+        end,
+        Tags
+    ),
     TagCount = length(Tags),
     ZigZagCount = encode_zigzag(TagCount),
     <<ZigZagCount/binary, (list_to_binary(EncodedBlocks))/binary, 0>>.
@@ -317,32 +355,34 @@ encode_vint(ZigZag, Acc) ->
 deserialize(Binary) -> deserialize(Binary, binary).
 deserialize(Binary, binary) ->
     %try
-        {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
-        {Target, Rest2} = decode_optional_field(Rest),
-        {Anchor, Rest3} = decode_optional_field(Rest2),
-        {Tags, Data} = decode_tags(Rest3),
-        maybe_unbundle(
-            update_id(#tx{
-                format=ans104,
-                signature_type = SignatureType, 
-                signature = Signature,
-                owner = Owner,
-                target = Target,
-                last_tx = Anchor,
-                tags = Tags,
-                data = Data,
-                data_size = byte_size(Data)
-            })
-        );
-    %catch
-    %    _:_:_Stack ->
-    %        {error, invalid_item}
-    %end;
+    {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
+    {Target, Rest2} = decode_optional_field(Rest),
+    {Anchor, Rest3} = decode_optional_field(Rest2),
+    {Tags, Data} = decode_tags(Rest3),
+    maybe_unbundle(
+        update_id(#tx{
+            format = ans104,
+            signature_type = SignatureType,
+            signature = Signature,
+            owner = Owner,
+            target = Target,
+            last_tx = Anchor,
+            tags = Tags,
+            data = Data,
+            data_size = byte_size(Data)
+        })
+    );
+%catch
+%    _:_:_Stack ->
+%        {error, invalid_item}
+%end;
 deserialize(Bin, json) ->
     try
         normalize(
             maybe_unbundle(
-                json_struct_to_item(element(1, jiffy:decode(Bin)))))
+                json_struct_to_item(element(1, jiffy:decode(Bin)))
+            )
+        )
     catch
         _:_:_Stack ->
             {error, invalid_item}
@@ -354,7 +394,8 @@ maybe_unbundle(Item) ->
     case {Format, Version} of
         {{<<"Bundle-Format">>, <<"Binary">>}, {<<"Bundle-Version">>, <<"2.0.0">>}} ->
             maybe_unbundle_map(Item);
-        _ -> Item
+        _ ->
+            Item
     end.
 
 maybe_unbundle_map(Bundle) ->
@@ -363,7 +404,7 @@ maybe_unbundle_map(Bundle) ->
             Items = unbundle(Bundle),
             MapItem = find_item(ar_util:decode(MapTXID), Items),
             Map = jiffy:decode(MapItem#tx.data, [return_maps]),
-            Bundle#tx {
+            Bundle#tx{
                 data =
                     maps:map(
                         fun(_K, TXID) ->
@@ -372,7 +413,8 @@ maybe_unbundle_map(Bundle) ->
                         Map
                     )
             };
-        _ -> unbundle(Bundle)
+        _ ->
+            unbundle(Bundle)
     end.
 
 find_item(TXID, TX) when is_record(TX, tx) ->
@@ -383,56 +425,65 @@ find_item(TXID, Items) ->
         Item -> Item
     end.
 
-unbundle(Item = #tx { data = << Count:256/integer, Content/binary >> }) ->
+unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
     {ItemsBin, Items} = decode_bundle_header(Count, Content),
-    Item#tx { data = decode_bundle_items(Items, ItemsBin) }.
+    Item#tx{data = decode_bundle_items(Items, ItemsBin)}.
 
-decode_bundle_items([], <<>>) -> [];
+decode_bundle_items([], <<>>) ->
+    [];
 decode_bundle_items([{_ID, Size} | RestItems], ItemsBin) ->
     [
         deserialize(binary:part(ItemsBin, 0, Size))
-    |
-        decode_bundle_items(RestItems, binary:part(ItemsBin, Size, byte_size(ItemsBin) - Size))
+        | decode_bundle_items(RestItems, binary:part(ItemsBin, Size, byte_size(ItemsBin) - Size))
     ].
 
 decode_bundle_header(Count, Bin) -> decode_bundle_header(Count, Bin, []).
-decode_bundle_header(0, ItemsBin, Header) -> {ItemsBin, lists:reverse(Header)};
-decode_bundle_header(Count, << Size:256/integer, ID:32/binary, Rest/binary >>, Header) ->
-    decode_bundle_header(Count - 1, Rest, [ {ID, Size} | Header ]).
+decode_bundle_header(0, ItemsBin, Header) ->
+    {ItemsBin, lists:reverse(Header)};
+decode_bundle_header(Count, <<Size:256/integer, ID:32/binary, Rest/binary>>, Header) ->
+    decode_bundle_header(Count - 1, Rest, [{ID, Size} | Header]).
 
 item_to_json_struct(
-	#tx{
-		id = ID,
-		last_tx = Last,
-		owner = Owner,
-		tags = Tags,
-		target = Target,
-		data = Data,
-		signature = Sig
-	}) ->
-	Fields = [
-		{<<"Id">>, ar_util:encode(ID)},
-		{<<"Anchor">>, ar_util:encode(Last)}, % NOTE: In Arweave TXs, these are called "last_tx"
-		{<<"Owner">>, ar_util:encode(Owner)},
-		{<<"From">>, ar_util:encode(ar_wallet:to_address(Owner))},
-		{<<"Tags">>,
-			lists:map(
-				fun({Name, Value}) ->
-					{
-						[
-							{name, maybe_list_to_binary(Name)},
-							{value, maybe_list_to_binary(Value)}
-						]
-					}
-				end,
-				Tags
-			)
-		},
-		{<<"Target">>, ar_util:encode(Target)},
-		{<<"Data">>, Data},
-		{<<"Signature">>, ar_util:encode(Sig)}
-	],
-	{Fields}.
+    #tx{
+        id = ID,
+        last_tx = Last,
+        owner = Owner,
+        tags = Tags,
+        target = Target,
+        data = Data,
+        signature = Sig
+    }
+) ->
+    % Set "From" if From-Process is Tag or set with "Owner" address
+    From =
+        case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
+            [{_, FromProcess}] -> FromProcess;
+            [] -> ar_util:encode(ar_wallet:to_address(Owner))
+        end,
+    Fields = [
+        {<<"Id">>, ar_util:encode(ID)},
+        % NOTE: In Arweave TXs, these are called "last_tx"
+        {<<"Anchor">>, ar_util:encode(Last)},
+        % NOTE: When sent to ao "Owner" is the wallet address
+        {<<"Owner">>, ar_util:encode(ar_wallet:to_address(Owner))},
+        {<<"From">>, From},
+        {<<"Tags">>,
+            lists:map(
+                fun({Name, Value}) ->
+                    {
+                        [
+                            {name, maybe_list_to_binary(Name)},
+                            {value, maybe_list_to_binary(Value)}
+                        ]
+                    }
+                end,
+                Tags
+            )},
+        {<<"Target">>, ar_util:encode(Target)},
+        {<<"Data">>, Data},
+        {<<"Signature">>, ar_util:encode(Sig)}
+    ],
+    {Fields}.
 
 maybe_list_to_binary(List) when is_list(List) ->
     list_to_binary(List);
@@ -441,23 +492,26 @@ maybe_list_to_binary(Bin) ->
 
 json_struct_to_item(Map) when is_map(Map) ->
     deserialize(jiffy:encode(Map), json);
-json_struct_to_item({TXStruct}) -> json_struct_to_item(TXStruct);
+json_struct_to_item({TXStruct}) ->
+    json_struct_to_item(TXStruct);
 json_struct_to_item(RawTXStruct) ->
-    TXStruct = [ { string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct ],
-	Tags =
-		case ar_util:find_value(<<"tags">>, TXStruct) of
-			undefined ->
+    TXStruct = [{string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct],
+    Tags =
+        case ar_util:find_value(<<"tags">>, TXStruct) of
+            undefined ->
                 [];
-			Xs ->
-				Xs
-		end,
-	TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, ar_util:encode(?DEFAULT_ID))),
-	#tx{
-		format = ans104,
-		id = TXID,
-		last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
-		owner = ar_util:decode(ar_util:find_value(<<"owner">>, TXStruct, ar_util:encode(?DEFAULT_OWNER))),
-		tags = 
+            Xs ->
+                Xs
+        end,
+    TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, ar_util:encode(?DEFAULT_ID))),
+    #tx{
+        format = ans104,
+        id = TXID,
+        last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
+        owner = ar_util:decode(
+            ar_util:find_value(<<"owner">>, TXStruct, ar_util:encode(?DEFAULT_OWNER))
+        ),
+        tags =
             lists:map(
                 fun({KeyVals}) ->
                     {_, Name} = lists:keyfind(<<"name">>, 1, KeyVals),
@@ -466,10 +520,12 @@ json_struct_to_item(RawTXStruct) ->
                 end,
                 Tags
             ),
-		target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
-		data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
-		signature = ar_util:decode(ar_util:find_value(<<"signature">>, TXStruct, ar_util:encode(?DEFAULT_SIG)))
-	}.
+        target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
+        data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
+        signature = ar_util:decode(
+            ar_util:find_value(<<"signature">>, TXStruct, ar_util:encode(?DEFAULT_SIG))
+        )
+    }.
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
@@ -536,8 +592,6 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
         _ -> decode_vint(Rest, NewResult, Shift + 7)
     end.
 
-
-
 %%%===================================================================
 %%% Unit tests.
 %%% To run:
@@ -545,8 +599,8 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
 %%%===================================================================
 
 ar_bundles_test_() ->
-	[
-		{timeout, 30, fun test_no_tags/0},
+    [
+        {timeout, 30, fun test_no_tags/0},
         {timeout, 30, fun test_no_tags_from_disk/0},
         {timeout, 30, fun test_with_tags/0},
         {timeout, 30, fun test_with_tags_from_disk/0},
@@ -556,7 +610,7 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_bundle_with_two_items/0},
         {timeout, 30, fun test_recursive_bundle/0},
         {timeout, 30, fun test_bundle_map/0}
-	].
+    ].
 
 test_no_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -600,8 +654,8 @@ test_with_tags() ->
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
 
 test_unsigned_data_item_id() ->
-    Item1 = deserialize(serialize(update_id(#tx { format = ans104, data = <<"data1">> }))),
-    Item2 = deserialize(serialize(update_id(#tx { format = ans104, data = <<"data2">> }))),
+    Item1 = deserialize(serialize(update_id(#tx{format = ans104, data = <<"data1">>}))),
+    Item2 = deserialize(serialize(update_id(#tx{format = ans104, data = <<"data2">>}))),
     ?assertNotEqual(Item1#tx.id, Item2#tx.id).
 
 test_with_tags_from_disk() ->
@@ -609,7 +663,7 @@ test_with_tags_from_disk() ->
     DataItem = deserialize(BinaryDataItem),
     ?assertEqual(true, verify_item(DataItem)),
     ?assertEqual(<<"withtags">>, DataItem#tx.data).
-    
+
 assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(KeyType, DataItem#tx.signature_type),
     ?assertEqual(Owner, DataItem#tx.owner),
@@ -657,7 +711,7 @@ test_recursive_bundle() ->
     Item1 = #tx{
         id = crypto:strong_rand_bytes(32),
         last_tx = crypto:strong_rand_bytes(32),
-        data = << 1:256/integer >>
+        data = <<1:256/integer>>
     },
     Item2 = #tx{
         id = crypto:strong_rand_bytes(32),

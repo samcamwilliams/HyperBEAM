@@ -2,6 +2,7 @@
 -export([init/1, execute/2, uses/0, stdlib/6, lib/6]).
 
 -include("include/ao.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 uses() -> all.
 
@@ -30,7 +31,6 @@ prep_call(
     {_, BlockHeight} = lists:keyfind(<<"Block-Height">>, 1, Assignment#tx.tags),
     RawMsgJson = ao_message:to_json(Message),
     {Props} = jiffy:decode(RawMsgJson),
-    % TODO: Need to set the "From" to owner or process
     MsgJson = jiffy:encode({
         Props ++
             [
@@ -43,7 +43,22 @@ prep_call(
     {ok, EnvJsonPtr} = cu_beamr_io:write_string(Port, EnvJson),
     {"handle", [MsgJsonPtr, EnvJsonPtr]}.
 
-result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}}) ->
+%% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
+%% some tags to each message, and spawn to help the target process know these messages are created
+%% by a process.
+%% TODO: "From-Process" and "From-Module" are the tags that should be removed and set by the
+%% signing unit.
+postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
+    % Remove "From-Process" from Tags
+    UpdatedTags = lists:filter(
+        fun(Item) -> maps:get(<<"name">>, Item) =/= <<"From-Process">> end, Tags
+    ),
+    NewTag = #{<<"name">> => <<"From-Process">>, <<"value">> => ar_util:encode(Proc#tx.id)},
+    UpdatedMsg = Msg#{<<"Tags">> => UpdatedTags ++ [NewTag]},
+    % TODO: need to do the same for "From-Module" remove if present and then add from State
+    maps:remove(<<"Anchor">>, UpdatedMsg).
+
+result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
     case Res of
         {error, Res} ->
             S#{
@@ -61,22 +76,25 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}}) ->
                     ao:c(Data),
                     S#{
                         result =>
-                            ar_bundles:sign_item(#{
-                                <<"/Outbox/Message">> =>
-                                    [
-                                        ar_bundles:sign_item(
-                                            ar_bundles:json_struct_to_item(
-                                                maps:remove(<<"Anchor">>, Msg)
-                                            ),
-                                            Wallet
-                                        )
-                                     || Msg <- Messages
-                                    ],
-                                <<"/Outbox/Data">> =>
-                                    ar_bundles:normalize(#tx{data = Data}),
-                                <<"/Outbox/Stdout">> =>
-                                    ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
-                            }, Wallet)
+                            ar_bundles:sign_item(
+                                #{
+                                    <<"/Outbox/Message">> =>
+                                        [
+                                            ar_bundles:sign_item(
+                                                ar_bundles:json_struct_to_item(
+                                                    postProcessResultMessages(Msg, Proc)
+                                                ),
+                                                Wallet
+                                            )
+                                         || Msg <- Messages
+                                        ],
+                                    <<"/Outbox/Data">> =>
+                                        ar_bundles:normalize(#tx{data = Data}),
+                                    <<"/Outbox/Stdout">> =>
+                                        ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
+                                },
+                                Wallet
+                            )
                     };
                 #{<<"ok">> := false} ->
                     S#{
@@ -105,7 +123,9 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}}) ->
                                 })
                             }
                     }
-            end
+            end;
+        {_, Res} ->
+            ok
     end.
 
 stdlib(S = #{json_iface := IfaceS}, Port, ModName, FuncName, Args, Sig) ->
@@ -140,3 +160,18 @@ lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
 lib(S, _Port, Module, Func, _Args, _Signature) ->
     %ao:c({unimplemented_stub_called, Module, Func}),
     {S, [0]}.
+
+result_test() ->
+    Test = postProcessResultMessages(
+        #{
+            <<"Target">> => <<"123345676">>,
+            <<"Anchor">> => <<"00000000001">>,
+            <<"Tags">> => [
+                #{<<"name">> => <<"From-Module">>, <<"value">> => <<"5467">>}
+            ]
+        },
+        #tx{id = <<"1234">>}
+    ),
+    % Test = result(#{result => {foo, <<"Error">>}}),
+    ao:c(Test),
+    ok.

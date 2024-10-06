@@ -10,13 +10,21 @@ init(State, [{<<"Location">>, Location} | _], _) ->
 init(State, _, _) ->
     {ok, State}.
 
-end_of_schedule(State) -> update_schedule(State).
+end_of_schedule(State) ->
+    % update_schedule(State)
+    {ok, State}.
 
-update_schedule(State = #{ process := Proc, slot := Slot, schedule := [] }) ->
-    ToSlot = maps:get(to_slot, State, undefined),
+update_schedule(State = #{process := Proc, slot := Slot, schedule := []}) ->
+    ao:c(get_assignments),
     % TODO: Get from slot via checkpoint
-    Assignments = ao_client:get_assignments(Proc#tx.id, Slot, ToSlot),
-    {ok, State#{schedule => Assignments, next_slot => Slot + length(Assignments)}};
-update_schedule(State) -> {ok, State}.
+    Assignments = ao_client:get_assignments(
+        Proc#tx.id,
+        Slot
+    ),
+    {ok, State#{
+        schedule => Assignments, next_slot => Slot + length(Assignments)
+    }};
+update_schedule(State) ->
+    {ok, State}.
 
 uses() -> all.
