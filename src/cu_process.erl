@@ -86,8 +86,7 @@ monitor(ProcID) ->
 boot(Process, Opts) ->
     InitState = #{
         process => Process,
-        slot => 0,
-        to_slot => maps:get(to_slot, Opts, undefined),
+        to_slot => list_to_integer(binary_to_list(maps:get(slot, Opts, <<0>>))),
         wallet => maps:get(wallet, Opts, ao:wallet()),
         schedule => maps:get(schedule, Opts, []),
         devices =>

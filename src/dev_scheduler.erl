@@ -6,25 +6,22 @@
 %%% A simple scheduler scheme for AO.
 
 init(State, [{<<"Location">>, Location} | _], _) ->
-    update_schedule(State#{su_location => Location});
+    case State of
+        #{schedule := []} -> {ok, update_schedule(State#{su_location => Location})};
+        _ -> {ok, State}
+    end;
 init(State, _, _) ->
     {ok, State}.
 
-end_of_schedule(State) ->
-    % update_schedule(State)
-    {ok, State}.
+end_of_schedule(State) -> {ok, update_schedule(State)}.
 
-update_schedule(State = #{process := Proc, slot := Slot, schedule := []}) ->
-    ao:c(get_assignments),
+update_schedule(State = #{process := Proc}) ->
+    Slot = maps:get(next_slot, State, 0),
+    % ToSlot = maps:get(to_slot, State, Slot),
     % TODO: Get from slot via checkpoint
-    Assignments = ao_client:get_assignments(
-        Proc#tx.id,
-        Slot
-    ),
-    {ok, State#{
-        schedule => Assignments, next_slot => Slot + length(Assignments)
-    }};
-update_schedule(State) ->
-    {ok, State}.
+    Assignments = ao_client:get_assignments(Proc#tx.id, Slot),
+    ?c(assignments_recvd),
+    ar_bundles:print(Assignments),
+    State#{schedule => Assignments, next_slot => Slot + length(Assignments)}.
 
 uses() -> all.

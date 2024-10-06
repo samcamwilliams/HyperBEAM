@@ -26,9 +26,9 @@ handle(<<"GET">>, [ProcID, Slot], Req) ->
         unavailable ->
             ResultLog =
                 cu_process:run(
-                    % TODO: Scheduler must only run until slot!
+                    % TODO: Scheduler must only run until message ID!
                     su_data:read_message(ProcID),
-                    #{error_strategy => throw, to_slot => list_to_integer(binary_to_list(Slot))}
+                    #{error_strategy => throw, slot => Slot}
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),
             ar_bundles:print(Res),

@@ -58,6 +58,7 @@ slot(Assignment) ->
     {_, SlotBin} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     list_to_integer(binary_to_list(SlotBin)).
 
+<<<<<<< HEAD
 write_checkpoint(
     #tx{data = #{<<"Assignment">> := Assignment}}, #{process := Proc, serialize := Serialize}, #{
         data_dir := Dir
@@ -78,6 +79,25 @@ write_checkpoint(
     %     Dir ++ "/checkpoints/" ++
     %         ProcID ++ "/state/" ++ integer_to_list(Slot)
     % ),
+=======
+write_checkpoint(#tx{data = #{<<"Assignment">> := Assignment}}, #{ process := Proc, serialize := Serialize }, #{data_dir := Dir}) ->
+    ?c(write_checkpoint),
+    Slot = slot(Assignment),
+    ProcID = binary_to_list(ar_util:encode(Proc#tx.id)),
+    {ok, Memory} = Serialize(),
+    su_data:write_message(
+        #tx {
+            tags =
+                [
+                    {<<"Type">>, <<"Checkpoint">>},
+                    {<<"Process">>, ProcID}
+                ],
+            data = Memory
+        },
+        Dir ++ "/checkpoints/" ++
+            ProcID ++ "/state/" ++ integer_to_list(Slot)
+    ),
+>>>>>>> 385c07037ff3b129a7b70c4716364bb6068e3eba
     ok.
 
 read_result(ProcID, Slot) ->
