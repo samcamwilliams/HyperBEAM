@@ -16,16 +16,29 @@ uses() -> all.
 
 init(State, Params, undefined) ->
     init(State, Params, #{});
-init(State, _Params, PrivParams) ->
-    % TODO: Read the latest checkpoint if it exists.
-    {ok,
-        State#{
-            fs => #{}
-        },
-        #{
-            frequency => maps:get(frequency, PrivParams, ?DEFAULT_FREQ),
-            data_dir => maps:get(data_dir, PrivParams, ?DEFAULT_DATA_DIR)
-        }}.
+init(State = #{to_slot := To, process := Proc}, _Params, PrivParams) ->
+    Dir = maps:get(data_dir, PrivParams, ?DEFAULT_DATA_DIR),
+    StateDir = Dir ++ "/checkpoints/" ++ binary_to_list(ar_util:encode(Proc#tx.id)) ++ "/state/",
+    NewPrivS = #{frequency => maps:get(frequency, PrivParams, ?DEFAULT_FREQ), data_dir => Dir},
+    case file:list_dir(StateDir) of
+        {ok, Names} when Names =/= [] ->
+            ?c(Names),
+            ClosestSlot =
+                lists:max(
+                    [X || X <- lists:map(fun erlang:list_to_integer/1, Names), X =< To]
+                ),
+            {ok, RawBin} = file:read_file(StateDir ++ integer_to_list(ClosestSlot)),
+            TX = #tx{data = Memory} = ar_bundles:deserialize(RawBin),
+            ar_bundles:print(TX),
+            ?c([{to, To}, {closest_slot, ClosestSlot}]),
+            {ok,
+                (maps:get(deserialize, State, fun(S, _) -> S#{checkpoint => Memory} end))(
+                    State#{slot => ClosestSlot}, Memory
+                ),
+                NewPrivS};
+        _ ->
+            {ok, State, NewPrivS}
+    end.
 
 execute(Msg, State, PrivS) ->
     case isCheckpointSlot(Msg, State, PrivS) of
@@ -45,6 +58,28 @@ slot(Assignment) ->
     {_, SlotBin} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     list_to_integer(binary_to_list(SlotBin)).
 
+<<<<<<< HEAD
+write_checkpoint(
+    #tx{data = #{<<"Assignment">> := Assignment}}, #{process := Proc, serialize := Serialize}, #{
+        data_dir := Dir
+    }
+) ->
+    % Slot = slot(Assignment),
+    % ProcID = binary_to_list(ar_util:encode(Proc#tx.id)),
+    % {ok, Memory} = Serialize(),
+    % su_data:write_message(
+    %     #tx{
+    %         tags =
+    %             [
+    %                 {<<"Type">>, <<"Checkpoint">>},
+    %                 {<<"Process">>, ProcID}
+    %             ],
+    %         data = Memory
+    %     },
+    %     Dir ++ "/checkpoints/" ++
+    %         ProcID ++ "/state/" ++ integer_to_list(Slot)
+    % ),
+=======
 write_checkpoint(#tx{data = #{<<"Assignment">> := Assignment}}, #{ process := Proc, serialize := Serialize }, #{data_dir := Dir}) ->
     ?c(write_checkpoint),
     Slot = slot(Assignment),
@@ -62,6 +97,7 @@ write_checkpoint(#tx{data = #{<<"Assignment">> := Assignment}}, #{ process := Pr
         Dir ++ "/checkpoints/" ++
             ProcID ++ "/state/" ++ integer_to_list(Slot)
     ),
+>>>>>>> 385c07037ff3b129a7b70c4716364bb6068e3eba
     ok.
 
 read_result(ProcID, Slot) ->
