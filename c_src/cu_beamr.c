@@ -56,9 +56,18 @@ static ErlDrvTermData atom_import;
 #endif
 
 #define DRV_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
+#define DRV_PRINT(format, ...) beamr_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
 
 void debug_print(const char* file, int line, const char* format, ...) {
 #if HB_DEBUG==1
+    va_list args;
+    va_start(args, format);
+    beamr_print(file, line, format, args);
+    va_end(args);
+#endif
+}
+
+void beamr_print(const char* file, int line, const char* format, ...) {
     va_list args;
     va_start(args, format);
     pthread_t thread_id = pthread_self();
@@ -66,7 +75,6 @@ void debug_print(const char* file, int line, const char* format, ...) {
     vprintf(format, args);
     printf("\n");
     va_end(args);
-#endif
 }
 
 const char* wasm_externtype_to_kind_string(const wasm_externtype_t* type) {
