@@ -15,13 +15,13 @@ init(State, _, _) ->
 
 end_of_schedule(State) -> {ok, update_schedule(State)}.
 
-update_schedule(State = #{process := Proc}) ->
-    Slot = maps:get(next_slot, State, 0),
-    % ToSlot = maps:get(to_slot, State, Slot),
+update_schedule(State = #{process := Proc, schedule := []}) ->
+    CurrentSlot = maps:get(slot, State, 0),
+    ToSlot = maps:get(to_slot, State),
     % TODO: Get from slot via checkpoint
-    Assignments = ao_client:get_assignments(Proc#tx.id, Slot),
+    Assignments = ao_client:get_assignments(Proc#tx.id, CurrentSlot, ToSlot),
     ?c(assignments_recvd),
-    ar_bundles:print(Assignments),
-    State#{schedule => Assignments, next_slot => Slot + length(Assignments)}.
+    %ar_bundles:print(Assignments),
+    State#{schedule => Assignments}.
 
 uses() -> all.
