@@ -5,23 +5,26 @@
 
 get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
-    ao:c({http_get, URL}),
+    ao:c({http_getting, URL}),
     case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
         {ok, {{_, 200, _}, _, Body}} ->
+            ao:c({http_got, URL}),
             {ok, ar_bundles:deserialize(Body)};
         Response ->
             {error, Response}
     end.
 
-post(Host, Path, Item) ->
-    ao:c({http_post, ar_util:encode(Item#tx.id), Host ++ Path}),
+post(Host, Path, Item) -> post(Host ++ Path, Item).
+post(URL, Item) ->
+    ao:c({http_post, ar_util:encode(Item#tx.id), URL}),
     case httpc:request(
         post,
-        {Host ++ Path, [], "application/octet-stream", ar_bundles:serialize(Item)},
+        {URL, [], "application/octet-stream", ar_bundles:serialize(Item)},
         [],
         [{body_format, binary}]
     ) of
         {ok, {{_, 200, _}, _, Body}} ->
+            ao:c({http_got, URL}),
             {ok, ar_bundles:deserialize(Body)};
         Response ->
             {error, Response}
@@ -42,4 +45,5 @@ reply(Req, Status, Item) ->
         ar_bundles:serialize(Item),
         Req
     ),
+    ao:c(replied),
     {ok, Req}.
