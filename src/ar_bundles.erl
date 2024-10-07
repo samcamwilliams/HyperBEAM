@@ -27,19 +27,14 @@
 print(Item) -> print(Item, 0).
 print(Item, Indent) when is_list(Item); is_map(Item) ->
     print(normalize(Item), Indent);
-print(_, _) -> ?c(ignoring_print);
 print(Item, Indent) ->
     Valid = verify_item(Item),
     print_line(
-        "TX { ~s, ~s, ~s } [",
+        "TX { ~s:~s } [",
         [
             if
                 Item#tx.signature =/= ?DEFAULT_SIG -> "signed";
                 true -> "unsigned"
-            end,
-            if
-                Item#tx.id =/= ?DEFAULT_ID -> "ID";
-                true -> "no ID"
             end,
             if
                 Valid == true -> "valid";
@@ -127,7 +122,7 @@ id(Item) when not is_record(Item, tx) ->
     id(normalize(Item), unsigned);
 id(Item) -> id(Item, signed).
 id(Item, unsigned) ->
-    data_item_signature_data(Item);
+    crypto:hash(sha256, data_item_signature_data(Item));
 id(Item, signed) ->
     Item#tx.id.
 
@@ -206,22 +201,43 @@ normalize(Item) -> update_id(normalize_data(Item)).
 %% @doc Ensure that a data item (potentially containing a map or list) has a standard, serialized form.
 normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
     normalize_data(#tx{data = Bundle});
-normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) -> Item;
+normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
+    normalize_data(
+        Item#tx{
+            data =
+                maps:from_list(
+                    lists:zipwith(
+                        fun(Index, MapItem) ->
+                            {integer_to_binary(Index), normalize_data(MapItem)}
+                        end,
+                        lists:seq(1, length(Data)),
+                        Data
+                    )
+                )
+        }
+    );
+normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) ->
+    normalize_data_size(Item);
 normalize_data(Item = #tx{data = Data}) ->
-    case serialize_bundle_data(Data) of
-        {ManifestID, Bin} ->
-            Item#tx{
-                data = Bin,
-                data_size = byte_size(Bin),
-                tags = add_manifest_tags(add_bundle_tags(Item#tx.tags), ManifestID)
-            };
-        Bin ->
-            Item#tx{
-                data = Bin,
-                data_size = byte_size(Bin),
-                tags = add_bundle_tags(Item#tx.tags)
-            }
-    end.
+    normalize_data_size(
+        case serialize_bundle_data(Data) of
+            {ManifestID, Bin} ->
+                Item#tx{
+                    data = Bin,
+                    tags = add_manifest_tags(add_bundle_tags(Item#tx.tags), ManifestID)
+                };
+            DirectBin ->
+                Item#tx{
+                    data = DirectBin,
+                    tags = add_bundle_tags(Item#tx.tags)
+                }
+        end
+    ).
+
+%% @doc Reset the data size of a data item. Assumes that the data is already normalized.
+normalize_data_size(Item = #tx{data = Bin}) when is_binary(Bin) ->
+    Item#tx{data_size = byte_size(Bin)};
+normalize_data_size(Item) -> Item.
 
 %% @doc Convert a #tx record to its binary representation.
 serialize(TX) -> serialize(TX, binary).
@@ -267,12 +283,6 @@ finalize_bundle_data(Processed) ->
     Items = <<<<Data/binary>> || {_, Data} <- Processed>>,
     <<Length/binary, Index/binary, Items/binary>>.
 
-to_serialized_pair(false) ->
-    try
-        throw(wat)
-    catch
-        A:B:C -> ao:c({wat, C})
-    end;
 to_serialized_pair(Item) ->
     Serialized = serialize(Item, binary),
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
