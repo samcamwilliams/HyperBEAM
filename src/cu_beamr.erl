@@ -26,10 +26,10 @@ start(WasmBinary) ->
     ao:c({waiting_for_init_from, Port}),
     receive
         {ok, Imports, Exports} ->
-            ao:c({wasm_init_success, Imports, Exports}),
+            ao:c({wasm_init_success, {imports, length(Imports)}, {exports, length(Exports)}}),
             {ok, Port, Imports, Exports};
         Other ->
-            ao:c({unexpected_result, Other}),
+            ao:c({unexpected_wasm_init_result, Other}),
             Other
     end.
 
@@ -75,7 +75,8 @@ serialize(Port) ->
 
 deserialize(Port, Bin) ->
     % TODO: Be careful of memory growth!
-    ok = cu_beamr_io:write(Port, 0, Bin).
+    ?c(starting_deserialize).
+    %?c(ok = cu_beamr_io:write(Port, 0, Bin)).
 
 %% Tests
 
