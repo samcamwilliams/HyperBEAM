@@ -1,10 +1,11 @@
 -module(ao_cache).
 -export([
-    read_output/3, write_output/5, write_output/6,
+    read_output/3, write_output/5,
     checkpoints/2, latest/2, latest/3, latest/4, 
-    write_message/2, read_message/2, read_message/3
+    write_message/1, write_message/2, read_message/2, read_message/3
 ]).
 -include("src/include/ao.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(DEFAULT_DATA_DIR, "data").
 -define(COMPUTE_CACHE_DIR, "computed").
@@ -86,7 +87,7 @@ write_output(DirBase, ProcID, MessageID, Slot, Item) ->
     ln(MessagePath, SlotPath).
 
 write_message(Message) ->
-    write_message(?DEFAULT_DATA_DIR, Message).
+    write_message(ao:get(cache_dir), Message).
 write_message(CacheBase, Item) ->
     write(CacheBase ++ "/messages/", Item).
 
@@ -126,7 +127,8 @@ write(ItemBase, Item) ->
                 ItemBase ++ "/" ++ fmt_id(ar_bundles:id(Item, signed)),
                 ItemBase ++ "/" ++ fmt_id(ar_bundles:id(Item, unsigned))
             )
-    end.
+    end,
+    ok.
 
 read_message(DirBase, ID) ->
     read_message(DirBase, ID, all).
@@ -173,7 +175,8 @@ read_message(DirBase, ID, Subpath) ->
                     end
             end;
         simple ->
-            read_simple_message(MessagePath)
+            read_simple_message(MessagePath);
+        not_found -> not_found
     end.
 
 read_simple_message(Path) ->
@@ -196,8 +199,9 @@ best_common_prefix(Base, Subpath) ->
     end, {0, <<>>}, Children),
     {BestChild, binary:part(Subpath, {byte_size(Subpath), -byte_size(LongestCommon)})}.
 
-fmt_id(ID) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID));
-fmt_id(ID) ->
+fmt_id(ID) -> fmt_id(ID, unsigned).
+fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
+fmt_id(ID, _Type) ->
     binary_to_list(ar_util:encode(ID)).
 
 mkdir(Path) ->
@@ -207,3 +211,161 @@ mkdir(Path) ->
 ln(Target, Link) ->
     ?c({symlink, Target, Link}),
     file:make_symlink(Target, Link).
+
+%%% Tests
+
+create_unsigned_tx(Data) ->
+    #tx{
+        format = ans104,
+        data = Data
+    }.
+
+%% Helper function to create signed #tx items.
+create_signed_tx(Data) ->
+    {PrivKey, PubKey} = ar_wallet:new(),
+    UnsignedItem = create_unsigned_tx(Data),
+    ar_bundles:sign_item(UnsignedItem, {PrivKey, PubKey}).
+
+%% Test storing and retrieving a simple unsigned item
+simple_unsigned_item_test() ->
+    DirBase = ao:get(cache_dir),
+    Item = create_unsigned_tx(<<"Simple unsigned data item">>),
+    %% Write the simple unsigned item
+    ok = ao_cache:write_message(Item),
+    %% Read the item back
+    {ok, RetrievedItem} = ao_cache:read_message(DirBase, Item#tx.id),
+    %% Assert that the retrieved item matches the original
+    ?assertEqual(Item, RetrievedItem).
+
+%% Test storing and retrieving a simple signed item
+simple_signed_item_test() ->
+    DirBase = ao:get(cache_dir),
+    Item = create_signed_tx(<<"Simple signed data item">>),
+    %% Write the simple signed item
+    ok = ao_cache:write_message(Item),
+
+    %% Read the item back
+    {ok, RetrievedItem} = ao_cache:read_message(DirBase, Item#tx.id),
+
+    %% Assert that the retrieved item matches the original
+    ?assertEqual(Item, RetrievedItem),
+
+    %% Verify signature
+    ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
+
+%% Test storing and retrieving a composite unsigned item
+composite_unsigned_item_test() ->
+    DirBase = ao:get(cache_dir),
+    Slot = 1,
+    ItemData = #{
+        <<"key1">> => create_unsigned_tx(<<"value1">>),
+        <<"key2">> => create_unsigned_tx(<<"value2">>)
+    },
+    Item = create_unsigned_tx(ItemData),
+
+    %% Write the composite unsigned item
+    ok = ao_cache:write_output(DirBase, Item#tx.id, Item#tx.id, Slot, Item),
+
+    %% Read the item back
+    {ok, RetrievedItem} = ao_cache:read_output(DirBase, Item#tx.id, Item#tx.id),
+
+    %% Assert that the retrieved item matches the original
+    ?assertEqual(Item, RetrievedItem).
+
+%% Test storing and retrieving a composite signed item
+composite_signed_item_test() ->
+    DirBase = ao:get(cache_dir),
+    ProcID = "process_signed_composite",
+    MessageID = "message_composite_signed",
+    Slot = 1,
+    ItemData = #{
+        <<"key1">> => create_signed_tx(<<"value1">>),
+        <<"key2">> => create_signed_tx(<<"value2">>)
+    },
+    Item = create_signed_tx(ItemData),
+
+    %% Write the composite signed item
+    ok = ao_cache:write_output(DirBase, ProcID, MessageID, Slot, Item),
+
+    %% Read the item back
+    {ok, RetrievedItem} = ao_cache:read_output(DirBase, ProcID, MessageID),
+
+    %% Assert that the retrieved item matches the original
+    ?assertEqual(Item, RetrievedItem),
+
+    %% Verify signatures
+    ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)),
+    ?assertEqual(true, ar_bundles:verify_item(maps:get(<<"key1">>, RetrievedItem#tx.data))),
+    ?assertEqual(true, ar_bundles:verify_item(maps:get(<<"key2">>, RetrievedItem#tx.data))).
+
+%% Test deeply nested item storage and retrieval
+nested_item_test() ->
+    DirBase = ao:get(cache_dir),
+    ProcID = "process_nested",
+    MessageID = "message_nested",
+    Slot = 1,
+
+    %% Create nested data
+    DeepValueTx = create_signed_tx(<<"deep_value">>),
+    Level3Tx = create_unsigned_tx(#{
+        <<"level3_key">> => DeepValueTx
+    }),
+    Level2Tx = create_signed_tx(#{
+        <<"level2_key">> => Level3Tx
+    }),
+    Level1Tx = create_unsigned_tx(#{
+        <<"level1_key">> => Level2Tx
+    }),
+
+    %% Write the nested item
+    ok = ao_cache:write_output(DirBase, ProcID, MessageID, Slot, Level1Tx),
+
+    %% Read the deep value back using subpath
+    Subpath = filename:join(["level1_key", "level2_key", "level3_key"]),
+    {ok, RetrievedItem} = ao_cache:read_output(DirBase, ProcID, MessageID, Subpath),
+
+    %% Assert that the retrieved item matches the original deep value
+    ?assertEqual(DeepValueTx, RetrievedItem).
+
+%% Test storing items as computation results with various payloads
+computed_item_test() ->
+    DirBase = ao:get(cache_dir),
+    ProcID = "process_computed",
+    Slot = 1,
+
+    %% Simple unsigned result
+    SimpleUnsignedResult = create_unsigned_tx(<<"Computed simple unsigned data">>),
+    %% Simple signed result
+    SimpleSignedResult = create_signed_tx(<<"Computed simple signed data">>),
+    %% Composite unsigned result
+    CompositeUnsignedResult = create_unsigned_tx(#{
+        <<"comp_key_unsigned">> => create_unsigned_tx(<<"comp_value_unsigned">>)
+    }),
+    %% Composite signed result
+    CompositeSignedResult = create_signed_tx(#{
+        <<"comp_key_signed">> => create_signed_tx(<<"comp_value_signed">>)
+    }),
+
+    %% Write results
+    ok = ao_cache:write_output(DirBase, ProcID, "simple_unsigned", Slot, SimpleUnsignedResult),
+    ok = ao_cache:write_output(DirBase, ProcID, "simple_signed", Slot, SimpleSignedResult),
+    ok = ao_cache:write_output(DirBase, ProcID, "composite_unsigned", Slot, CompositeUnsignedResult),
+    ok = ao_cache:write_output(DirBase, ProcID, "composite_signed", Slot, CompositeSignedResult),
+
+    %% Read back and assert simple unsigned result
+    {ok, RetrievedSimpleUnsigned} = ao_cache:read_output(DirBase, ProcID, "simple_unsigned"),
+    ?assertEqual(SimpleUnsignedResult, RetrievedSimpleUnsigned),
+
+    %% Read back and assert simple signed result
+    {ok, RetrievedSimpleSigned} = ao_cache:read_output(DirBase, ProcID, "simple_signed"),
+    ?assertEqual(SimpleSignedResult, RetrievedSimpleSigned),
+    ?assertEqual(true, ar_bundles:verify_item(RetrievedSimpleSigned)),
+
+    %% Read back and assert composite unsigned result
+    {ok, RetrievedCompositeUnsigned} = ao_cache:read_output(DirBase, ProcID, "composite_unsigned"),
+    ?assertEqual(CompositeUnsignedResult, RetrievedCompositeUnsigned),
+
+    %% Read back and assert composite signed result
+    {ok, RetrievedCompositeSigned} = ao_cache:read_output(DirBase, ProcID, "composite_signed"),
+    ?assertEqual(CompositeSignedResult, RetrievedCompositeSigned),
+    ?assertEqual(true, ar_bundles:verify_item(RetrievedCompositeSigned)).

@@ -24,10 +24,10 @@ write(Key, Value) ->
     end.
 
 type(Key) ->
-    case file:is_dir(Key) of
+    case filelib:is_dir(Key) of
         true -> composite;
         false ->
-            case file:is_file(Key) of
+            case filelib:is_file(Key) of
                 true -> simple;
                 false -> not_found
             end
