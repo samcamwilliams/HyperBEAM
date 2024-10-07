@@ -1,6 +1,6 @@
 -module(ao_cache).
 -export([
-    read_output/3, write_output/5, 
+    read_output/3, write_output/5, write_output/6,
     checkpoints/2, latest/2, latest/3, latest/4, 
     write_message/2, read_message/2, read_message/3
 ]).
@@ -8,7 +8,6 @@
 
 -define(DEFAULT_DATA_DIR, "data").
 -define(COMPUTE_CACHE_DIR, "computed").
--define(DEFAULT_FREQ, 2).
 
 %%% A cache of AO messages and compute results.
 %%% 
@@ -70,7 +69,7 @@ latest(DirBase, ProcID, Subpath, Limit) ->
             _ -> lists:filter(fun(Slot) -> Slot < Limit end, CPs)
         end
     ),
-    read_output(DirBase, ProcID, LatestSlot, Subpath).
+    read_output(DirBase, ProcID, filename:join(["slot", integer_to_list(LatestSlot)]), Subpath).
 
 checkpoints(DirBase, ProcID) ->
     SlotDir = filename:join([DirBase, ?COMPUTE_CACHE_DIR, ProcID, "slot"]),
@@ -107,6 +106,7 @@ write(ItemBase, Item) ->
             ok = mkdir(BasePath),
             ok = file:write_file(BasePath, ar_bundles:serialize(Item#tx{ data = <<>>})),
             maps:map(fun(Key, Subitem) ->
+                % TODO: Check this...
                 ok = mkdir(Subpath = ItemBase ++ "/" ++ Key),
                 SubmessagePath = write(Subpath, Subitem),
                 ln(SubmessagePath, ItemBase ++ "/" ++ fmt_id(Subitem))

@@ -6,7 +6,7 @@
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% A process is represented as a queue of messages and a stack of components.
+%%% A process is a specific type of AO combinator, represented as a stack of components.
 %%% Each AO process runs as an Erlang process consuming messages from -- and placing items
 %%% into -- its schedule.
 %%%
@@ -52,6 +52,9 @@
 %%% The host environment may then additionally add Checkpoint and Messenging devices in order
 %%% to operate like a MU or CU interface.
 
+%% The default frequency for checkpointing is 2 slots.
+-define(DEFAULT_FREQ, 2).
+
 %% Start a new Erlang process for the AO process, optionally giving the assignments so far.
 start(Process) -> start(Process, #{}).
 start(Process, Opts) ->
@@ -83,19 +86,36 @@ monitor(ProcID) ->
             [Else]
     end.
 
+%% Process execution flow =>
+%% Boot:    Read from cache, build init state, run init() on all devices.
+%% Execute: Run execute_schedule for the slot.
+%%          Run execute_message for each device.
+%%          Run checkpoint on all devices if the current slot is a checkpoint slot.
+%%          Cache the result of the computation if the caller requested it.
+%%          Repeat for the next slot.
+%% EOS:     Run end_of_schedule() on all devices to see if there is more work to be done.
+%% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
-    InitState = #{
-        process => Process,
-        to_slot => list_to_integer(binary_to_list(maps:get(slot, Opts, <<0>>))),
-        wallet => maps:get(wallet, Opts, ao:wallet()),
-        schedule => maps:get(schedule, Opts, []),
-        devices =>
-            cu_device_stack:normalize(
-                maps:get(pre, Opts, []),
-                Process,
-                maps:get(post, Opts, [])
-            )
-    },
+    CP = ao_cache:latest(
+        maps:get(cache, Opts, ao:get(cache_dir)),
+        Process#tx.id,
+        state,
+        maps:get(slot, Opts, inf)
+    ),
+    InitState =
+        (CP#tx.data)#{
+            process => Process,
+            to_message => maps:get(to_message, Opts, inf),
+            to_slot => maps:get(slot, Opts, inf),
+            wallet => maps:get(wallet, Opts, ao:wallet()),
+            schedule => maps:get(schedule, Opts, []),
+            devices =>
+                cu_device_stack:normalize(
+                    maps:get(pre, Opts, []),
+                    Process,
+                    maps:get(post, Opts, [])
+                )
+        },
     case cu_device_stack:call(InitState, init) of
         {ok, State} ->
             execute_schedule(State, Opts);
@@ -121,10 +141,10 @@ execute_schedule(State, Opts) ->
         #{schedule := [Msg | NextSched]} ->
             case execute_message(Msg, State, Opts) of
                 {ok, NewState = #{schedule := [Msg | NextSched]}} ->
-                    execute_schedule(NewState#{schedule := NextSched}, Opts);
+                    execute_checkpoint(Msg, NewState#{schedule := NextSched}, Opts);
                 {ok, NewState} ->
                     ao:c({schedule_updated, not_popping}),
-                    execute_schedule(NewState, Opts);
+                    execute_checkpoint(Msg, NewState, Opts);
                 {error, DevNum, DevMod, Info} ->
                     ao:c({error, {DevNum, DevMod, Info}}),
                     execute_terminate(
@@ -134,6 +154,31 @@ execute_schedule(State, Opts) ->
             end
     end.
 
+execute_checkpoint(Msg, State = #{ result := Result, process := Process, slot := Slot }, Opts) ->
+    case is_checkpoint_slot(State, Opts) of
+        true ->
+            % Run checkpoint on the device stack, but we do not propagate the result.
+            {ok, Checkpoint} = cu_device_stack:call(State, checkpoint, Opts),
+            ao_cache:write_output(
+                maps:get(cache, Opts, ao:get(cache_dir)),
+                Process#tx.id,
+                Msg#tx.id,
+                Slot,
+                Checkpoint#{ result => Result }
+            ),
+            State;
+        false ->
+            not_checkpointing
+    end,
+    ao_cache:write_output(
+        maps:get(cache, Opts, ao:get(cache_dir)),
+        Process#tx.id,
+        Msg#tx.id,
+        Slot,
+        #{ result => Result }
+    ),
+    execute_schedule(State, Opts).
+
 execute_message(Msg, State, Opts) ->
     cu_device_stack:call(State, execute, Opts#{arg_prefix => [Msg]}).
 
@@ -142,6 +187,10 @@ execute_terminate(S, Opts) ->
 
 execute_eos(S, Opts) ->
     cu_device_stack:call(S, end_of_schedule, Opts).
+
+is_checkpoint_slot(State, Opts) ->
+    (maps:get(checkpoint, Opts, fun(_) -> false end))(State)
+        orelse maps:get(slot, State) rem maps:get(freq, Opts, ?DEFAULT_FREQ) == 0.
 
 %% After execution of the current schedule has finished the Erlang process should
 %% enter a hibernation state, waiting for either more work or termination.
@@ -228,6 +277,7 @@ generate_test_data() ->
                     {<<"Variant">>, <<"ao.tn.2">>},
                     {<<"Type">>, <<"Process">>},
                     {<<"Authority">>, ar_util:encode(ID)},
+                    {<<"Device">>, <<"Checkpoint">>},
                     {<<"Device">>, <<"Scheduler">>},
                     {<<"Location">>, ar_util:encode(ID)},
                     {<<"Device">>, <<"JSON-Interface">>},
@@ -235,8 +285,7 @@ generate_test_data() ->
                     {<<"Image">>, <<"aos-2-pure.wasm">>},
                     {<<"Module">>, <<"aos-2-pure">>},
                     {<<"Device">>, <<"Cron">>},
-                    {<<"Time">>, <<"100-Milliseconds">>},
-                    {<<"Device">>, <<"Checkpoint">>}
+                    {<<"Time">>, <<"100-Milliseconds">>}
                 ]
             },
             Wallet
