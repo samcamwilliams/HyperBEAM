@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, get/1, get/2, c/1, c/2, build/0, profile/0]).
+-export([config/0, get/1, get/2, c/1, c/2, c/3, build/0, profile/0]).
 -export([wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -22,11 +22,11 @@ config() ->
         mu => "http://localhost:8734/mu",
         cu => "http://localhost:8734/cu",
         key_location => "hyperbeam-key.json",
+        cache_dir => "data",
         default_page_limit => 5,
         scheduler_location_ttl => 60 * 60 * 24 * 30,
         preloaded_devices =>
             #{
-                <<"Checkpoint">> => dev_checkpoint,
                 <<"Scheduler">> => dev_scheduler,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
@@ -45,8 +45,14 @@ get(Key, Default) ->
 
 c(X) -> c(X, "").
 c(X, ModAtom) when is_atom(ModAtom) -> c(X, "[" ++ atom_to_list(ModAtom) ++ "]");
-c(X, ModStr) ->
-    io:format(standard_error, "===== DEBUG PRINT~p =====~s> ~80p~n", [self(), ModStr, X]),
+c(X, Mod) -> c(X, Mod, undefined).
+c(X, ModStr, undefined) -> c(X, ModStr, "");
+c(X, ModStr, Line) ->
+    Now = erlang:system_time(millisecond),
+    Last = erlang:put(last_debug_print, Now),
+    TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
+    io:format(standard_error, "===== DEBUG PRINT[~p ~p:~w ~pms] =====> ~80p~n",
+        [self(), ModStr, Line, TSDiff, X]),
     X.
 
 build() ->
@@ -56,6 +62,6 @@ profile() ->
     case ao:get(profiling) of
         false -> not_profiling;
         true ->
-            eprof:stop_profiling(),
+            %eprof:stop_profiling(),
             eprof:analyze(total)
     end.
