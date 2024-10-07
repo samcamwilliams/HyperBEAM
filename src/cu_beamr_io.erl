@@ -14,8 +14,10 @@ size(Port) ->
             Error
     end.
 
-write(Port, Offset, Data) ->
+write(Port, Offset, Data) when is_binary(Data) ->
+    ?c(writing_to_mem),
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
+    ?c(mem_written),
     receive
         ok ->
             ok;
@@ -25,7 +27,7 @@ write(Port, Offset, Data) ->
 
 write_string(Port, Data) when is_list(Data) ->
     write_string(Port, iolist_to_binary(Data));
-write_string(Port, Data) ->
+write_string(Port, Data) when is_binary(Data) ->
     DataSize = byte_size(Data) + 1,
     String = <<Data/bitstring, 0:8>>,
     case malloc(Port, DataSize) of
