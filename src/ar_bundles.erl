@@ -1,7 +1,6 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
-
--export([new_item/4, sign_item/2, verify_item/1]).
+-export([id/1, new_item/4, sign_item/2, verify_item/1, type/1]).
 -export([encode_tags/1, decode_tags/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([item_to_json_struct/1, json_struct_to_item/1]).
@@ -28,6 +27,7 @@
 print(Item) -> print(Item, 0).
 print(Item, Indent) when is_list(Item); is_map(Item) ->
     print(normalize(Item), Indent);
+print(_, _) -> ?c(ignoring_print);
 print(Item, Indent) ->
     Valid = verify_item(Item),
     print_line(
@@ -111,6 +111,21 @@ print_line(RawStr, Fmt, Ind) ->
             Str ++ "\n",
         Fmt
     ).
+
+type(Item) when not is_record(Item, tx) ->
+    type(normalize(Item));
+type(#tx{data = Data}) when is_binary(Data) ->
+    binary;
+type(#tx{data = Data}) when is_map(Data) ->
+    map;
+type(#tx{data = Data}) when is_list(Data) ->
+    list.
+
+id(Item) when not is_record(Item, tx) ->
+    id(normalize(Item));
+id(Item) when Item#tx.id == ?DEFAULT_ID ->
+    id(normalize_data(Item));
+id(Item) -> Item#tx.id.
 
 %% @doc Create a new data item.
 new_item(Target, Anchor, Tags, Data) ->
