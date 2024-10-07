@@ -1,5 +1,9 @@
 -module(ao_cache).
--export([read/3, latest/3, latest/4, checkpoints/2, write_output/5, write_message/2]).
+-export([
+    read_output/3, write_output/5, 
+    checkpoints/2, latest/2, latest/3, latest/4, 
+    write_message/2, read_message/2, read_message/3
+]).
 -include("src/include/ao.hrl").
 
 -define(DEFAULT_DATA_DIR, "data").
@@ -40,10 +44,10 @@
 %%% 
 %%% 
 
-read(DirBase, ProcID, Msg) -> read(DirBase, ProcID, Msg, all).
-read(DirBase, ProcID, Msg, AtomName) when is_atom(AtomName) ->
-    read(DirBase, ProcID, Msg, atom_to_binary(AtomName));
-read(DirBase, ProcID, Msg, Subpath) ->
+read_output(DirBase, ProcID, Msg) -> read_output(DirBase, ProcID, Msg, all).
+read_output(DirBase, ProcID, Msg, AtomName) when is_atom(AtomName) ->
+    read_output(DirBase, ProcID, Msg, atom_to_binary(AtomName));
+read_output(DirBase, ProcID, Msg, Subpath) ->
     CachePath = filename:join([DirBase, ?COMPUTE_CACHE_DIR, ProcID, Msg]),
     case file:read_link(CachePath) of
         {ok, Target} ->
@@ -55,9 +59,9 @@ read(DirBase, ProcID, Msg, Subpath) ->
             unavailable
     end.
 
+latest(DirBase, ProcID) -> latest(DirBase, ProcID, all).
 latest(DirBase, ProcID, Subpath) ->
     latest(DirBase, ProcID, Subpath, inf).
-
 latest(DirBase, ProcID, Subpath, Limit) ->
     CPs = checkpoints(DirBase, ProcID),
     LatestSlot = lists:max(
@@ -66,7 +70,7 @@ latest(DirBase, ProcID, Subpath, Limit) ->
             _ -> lists:filter(fun(Slot) -> Slot < Limit end, CPs)
         end
     ),
-    read(DirBase, ProcID, LatestSlot, Subpath).
+    read_output(DirBase, ProcID, LatestSlot, Subpath).
 
 checkpoints(DirBase, ProcID) ->
     SlotDir = filename:join([DirBase, ?COMPUTE_CACHE_DIR, ProcID, "slot"]),
@@ -123,6 +127,74 @@ write(ItemBase, Item) ->
                 ItemBase ++ "/" ++ fmt_id(ar_bundles:id(Item, unsigned))
             )
     end.
+
+read_message(DirBase, ID) ->
+    read_message(DirBase, ID, all).
+read_message(DirBase, ID, Subpath) ->
+    MessagePath = filename:join([DirBase, "messages", fmt_id(ID)]),
+    case ao_keyval:type(MessagePath) of
+        composite ->
+            case Subpath of
+                all ->
+                    % The message is a bundle and we want the whole item.
+                    % Read the root and reconstruct it.
+                    Root = read_simple_message(filename:join([MessagePath, ".root"])),
+                    case lists:keyfind(<<"Bundle-Map">>, 1, Root#tx.tags) of
+                        {_, BundleMap} ->
+                            % The bundle is a map of its children by ID. Reconstruct
+                            % the bundle by reading each child.
+                            Map = read_simple_message(filename:join([MessagePath, fmt_id(BundleMap)])),
+                            Root#tx {
+                                data = maps:map(
+                                    fun(_, Key) -> read_message(DirBase, Key, all) end,
+                                    jiffy:decode(Map, [return_maps])
+                                )
+                            };
+                        _ ->
+                            % The bundle is a list of its children. For now, we don't
+                            % need to reconstruct it because they are always stored flat.
+                            % TODO: Implement this.
+                            Root
+                    end;
+                _ ->
+                    % Subpath is specified, so we look for a child message.
+                    case ao_keyval:type(Direct = filename:join([MessagePath, Subpath])) of
+                        not_found ->
+                            % We can't find the in one hop, so find greatest common
+                            % child and recurse.
+                            case best_common_prefix(MessagePath, Subpath) of
+                                {_, Subpath} -> not_found;
+                                {NextID, RemainingSubpath} ->
+                                    read_message(DirBase, NextID, RemainingSubpath)
+                            end;
+                        _ ->
+                            % The subpath is a direct value. Read it.
+                            read_message(DirBase, Direct, all)
+                    end
+            end;
+        simple ->
+            read_simple_message(MessagePath)
+    end.
+
+read_simple_message(Path) ->
+    case ao_keyval:type(Path) of
+        simple ->
+            {ok, Bin} = ao_keyval:read(Path),
+            ar_bundles:deserialize(Bin);
+        _ ->
+            not_readable
+    end.
+
+best_common_prefix(Base, Subpath) ->
+    Children = ao_keyval:children(fmt_id(Base)),
+    {LongestCommon, BestChild} = lists:foldl(fun(Child, {BestSharedBytes, BestSharedPath}) ->
+        Common = binary:longest_common_prefix(Child, Subpath),
+        if
+            byte_size(Common) > BestSharedBytes -> {byte_size(Common), Common};
+            true -> {BestSharedBytes, BestSharedPath}
+        end
+    end, {0, <<>>}, Children),
+    {BestChild, binary:part(Subpath, {byte_size(Subpath), -byte_size(LongestCommon)})}.
 
 fmt_id(ID) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID));
 fmt_id(ID) ->
