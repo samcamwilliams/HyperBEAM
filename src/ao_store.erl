@@ -2,7 +2,7 @@
 -export([behavior_info/1]).
 -export([start/1, stop/1, reset/1]).
 -export([type/2, read/2, write/3, path/2, add_path/3]).
--export([make_group/2, make_link/3]).
+-export([make_group/2, make_link/3, resolve/2]).
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store
@@ -36,3 +36,5 @@ type({Mod, Opts}, Path) -> Mod:type(Opts, Path).
 path({Mod, Opts}, Path) -> Mod:path(Opts, Path).
 
 add_path({Mod, Opts}, Path1, Path2) -> Mod:add_path(Opts, Path1, Path2).
+
+resolve({Mod, Opts}, Path) -> Mod:resolve(Opts, Path).

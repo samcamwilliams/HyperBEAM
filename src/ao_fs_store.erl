@@ -50,11 +50,10 @@ write(#{ dir := DataDir }, PathComponents, Value) ->
     ok = file:write_file(Path, Value).
 
 %% @doc Replace links in a path with the target of the link.
-resolve(Opts = #{ dir := DataDir }, Path) ->
-    LinkedPathWithDataDir = resolve(Opts, "", Path),
-    ?c({resolved, Path, LinkedPathWithDataDir}),
+resolve(Opts = #{ dir := DataDir }, RawPath) ->
+    LinkedPathWithDataDir = resolve(Opts, "", Path = filename:split(join(RawPath))),
     NewPath = ar_util:remove_common(LinkedPathWithDataDir, DataDir),
-    ?c({new_path, NewPath}),
+    ?c({resolved, Path, NewPath}),
     NewPath.
 resolve(#{ dir := DataDir }, CurrPath, []) ->
     join([DataDir, CurrPath]);
@@ -62,6 +61,7 @@ resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
     PathPart = join([CurrPath, Next]),
     case file:read_link(join([DataDir, PathPart])) of
         {ok, Link} ->
+            ?c({resolved_link, Link}),
             resolve(Opts#{ dir := Link }, "", Rest);
         _ ->
             resolve(Opts, PathPart, Rest)

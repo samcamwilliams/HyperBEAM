@@ -2,7 +2,7 @@
 -export([
     read_output/3, write/2, write_output/5,
     checkpoints/2, latest/2, latest/3, latest/4, 
-    lookup/2, read/2, read/3, read/4
+    read/2, read/3, read/4, lookup/2, lookup/3
 ]).
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -155,10 +155,26 @@ write_composite(Store, Path, map, Item) ->
 write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
+lookup(Store, ID) ->
+    lookup(Store, ID, "").
+lookup(Store, ID, Subpath) ->
+    lookup(Store, ID, Subpath, "messages").
+lookup(Store, ID, Subpath, DirBase) ->
+    ResolvedPath =
+        ar_util:remove_common(
+            ao_store:resolve(
+                Store,
+                ao_store:path(Store, [DirBase, fmt_id(ID), Subpath])
+            ),
+            DirBase
+        ),
+    ?c({resolved_path, ResolvedPath}),
+    read(Store, ResolvedPath).
+
 read(Store, ID) ->
-    read(Store, ao_store:path(Store, ["messages", fmt_id(ID)])).
-read(Store, ID, DirBase) when is_binary(ID) andalso byte_size(ID) == 32 ->
-    read(Store, ID, ).
+    read(Store, ID, "messages").
+read(Store, ID, DirBase) ->
+    read(Store, ID, DirBase, all).
 read(Store, ID, DirBase, Subpath) ->
     MessagePath = ao_store:path(Store, [DirBase, fmt_id(ID)]),
     case ao_store:type(Store, MessagePath) of
@@ -217,6 +233,7 @@ best_common_prefix(Base, Subpath) ->
 
 fmt_id(ID) -> fmt_id(ID, unsigned).
 fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
+fmt_id(ID, _) when is_list(ID) andalso length(ID) == 43 -> ID;
 fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
     binary_to_list(ar_util:encode(ID)).
@@ -336,18 +353,7 @@ deeply_nested_item_test() ->
     %% Write the nested item
     ok = write(TestStore = test_cache(), Level1Tx),
     %% Read the deep value back using subpath
-    Subpath = ao_store:resolve(
-        TestStore,
-        [
-            "messages",
-            fmt_id(Level1Tx#tx.id),
-            "level1_key",
-            "level2_key",
-            "level3_key"
-        ]
-    ),
-    ?c({resolved_subpath, Subpath}),
-    RetrievedItem = read(TestStore, Level1Tx#tx.id, "", Subpath),
+    RetrievedItem = lookup(TestStore, Level1Tx#tx.id, ["level1_key", "level2_key", "level3_key"]),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual(<<"deep_value">>, RetrievedItem#tx.data),
     ?assertEqual(
