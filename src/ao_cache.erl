@@ -124,18 +124,31 @@ write_composite(Store, Path, map, Item) ->
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
+    ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
-    ok = ao_store:make_group(Store, ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
-    ok = ao_store:make_group(Store, ao_store:path(Store, [Path, fmt_id(SignedHeaderID)])),
-    ok = ao_store:write(Store, Path, ar_bundles:serialize(Item#tx{ data = <<>>})),
+    ok =
+        ao_store:make_link(
+            Store,
+            ao_store:path(Store, [Path, fmt_id(SignedHeaderID)]),
+            ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])
+        ),
+    ok = ao_store:write(
+        Store,
+        ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID), "item"]),
+        ar_bundles:serialize(Item#tx{ data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) } })
+    ),
     maps:map(fun(Key, Subitem) ->
         StoredItemPath = ao_store:path(Store, ["messages", fmt_id(Subitem)]),
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
         ok = write(Store, Subitem),
-        KeyPath = ao_store:path(Store, [Path, Key]),
-        ok = ao_store:make_link(Store, StoredItemPath, KeyPath)
-    end, Item#tx.data),
+        ok =
+            ao_store:make_link(
+                Store,
+                ao_store:path(Store, [Path, fmt_id(Subitem)]),
+                ao_store:path(Store, [Dir, Key])
+            )
+    end, ar_bundles:map(Item)),
     ok;
 write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
@@ -154,15 +167,14 @@ read(Store, ID, DirBase, Subpath) ->
                     % Read the root and reconstruct it.
                     RootPath = ao_store:path(Store, [MessagePath, "item"]),
                     Root = read_simple_message(Store, RootPath),
-                    {_, BundleMap} = lists:keyfind(<<"Bundle-Map">>, 1, Root#tx.tags),
                     % The bundle is a map of its children by ID. Reconstruct
                     % the bundle by reading each child.
-                    MapPath = ao_store:path(Store, ["messages", fmt_id(BundleMap)]),
-                    Map = read_simple_message(Store, MapPath),
                     Root#tx {
                         data = maps:map(
                             fun(_, Key) -> read(Store, Key) end,
-                            jiffy:decode(Map, [return_maps])
+                            ar_bundles:parse_manifest(
+                                maps:get(<<"manifest">>, Root#tx.data)
+                            )
                         )
                     };
                 _ ->
@@ -208,6 +220,7 @@ best_common_prefix(Base, Subpath) ->
 
 fmt_id(ID) -> fmt_id(ID, unsigned).
 fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
+fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
     binary_to_list(ar_util:encode(ID)).
 
@@ -219,10 +232,7 @@ test_cache() ->
     ?TEST_STORE.
 
 create_unsigned_tx(Data) ->
-    ar_bundles:normalize(#tx{
-        format = ans104,
-        data = Data
-    }).
+    ar_bundles:normalize(#tx{ format = ans104, data = Data }).
 
 %% Helper function to create signed #tx items.
 create_signed_tx(Data) ->
@@ -235,7 +245,6 @@ store_simple_unsigned_item_test() ->
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
     RetrievedItem = read(TestStore, Item),
-    %% Assert that the retrieved item matches the original
     ?assertEqual(Item, RetrievedItem).
 
 %% Test storing and retrieving a simple signed item
@@ -245,34 +254,33 @@ simple_signed_item_test() ->
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
     RetrievedItemUnsigned = read(TestStore, ar_bundles:id(Item, unsigned)),
-    ar_bundles:print(RetrievedItemUnsigned),
     RetrievedItemSigned = read(TestStore, ar_bundles:id(Item, signed)),
-    ar_bundles:print(RetrievedItemSigned),
-    %% Assert that the retrieved item matches the original
+    %% Assert that the retrieved item matches the original and verifies
     ?assertEqual(Item, RetrievedItemUnsigned),
     ?assertEqual(Item, RetrievedItemSigned),
-
-    %% Verify signature
     ?assertEqual(true, ar_bundles:verify_item(RetrievedItemSigned)).
 
 %% Test storing and retrieving a composite unsigned item
-composite_unsigned_item_test_ignore() ->
-    Slot = 1,
+composite_unsigned_item_test() ->
     ItemData = #{
         <<"key1">> => create_unsigned_tx(<<"value1">>),
         <<"key2">> => create_unsigned_tx(<<"value2">>)
     },
-    Item = create_unsigned_tx(ItemData),
-    ok = ao_cache:write_message(TestStore = test_cache(), Item),
-
-    %% Write the composite unsigned item
-    ok = ao_cache:write_output(TestStore, Item#tx.id, Item#tx.id, Slot, Item),
-
-    %% Read the item back
-    {ok, RetrievedItem} = ao_cache:read_output(TestStore, Item#tx.id, Item#tx.id),
-
-    %% Assert that the retrieved item matches the original
-    ?assertEqual(Item, RetrievedItem).
+    Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
+    ok = write(TestStore = test_cache(), Item),
+    RetrievedItem = read(TestStore, Item#tx.id),
+    ?assertEqual(
+        ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
+        ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
+    ),
+    ?assertEqual(
+        ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), unsigned),
+        ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), unsigned)
+    ),
+    ?assertEqual(
+        ar_bundles:id(Item, unsigned),
+        ar_bundles:id(RetrievedItem, unsigned)
+    ).
 
 %% Test storing and retrieving a composite signed item
 composite_signed_item_test_ignore() ->

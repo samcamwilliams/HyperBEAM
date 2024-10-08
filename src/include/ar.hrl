@@ -24,6 +24,7 @@
 	%% is charged based on the "data_size" field, data itself may be uploaded any time
 	%% later in chunks.
 	data = <<>>,
+	manifest = undefined,
 	%% Size in bytes of the transaction data.
 	data_size = 0,
 	%% Deprecated. Not used, not gossiped.

@@ -20,8 +20,6 @@ start(_StartType, _StartArgs) ->
     Reg = su_registry:start(),
     _TS = su_timestamp:start(),
     _HTTP = ao_http_router:start([su_http, mu_http, cu_http]),
-    cu_process:full_push_test(),
-    %cu_beamr:test(),
     {ok, Reg}.
 
 stop(_State) ->

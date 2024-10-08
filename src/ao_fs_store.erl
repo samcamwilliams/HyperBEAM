@@ -35,8 +35,9 @@ read(Path) ->
     end.
 
 write(#{ dir := DataDir }, Key, Value) ->
-    ok = filelib:ensure_dir(Path = filename:join(DataDir, Key)),
+    Path = filename:join(DataDir, Key),
     ?c({writing, Path, byte_size(Value)}),
+    filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
 type(#{ dir := DataDir }, Key) ->
@@ -57,6 +58,7 @@ make_group(#{ dir := DataDir }, Path) ->
     ?c({mkdir, Path}),
     ok = filelib:ensure_dir(filename:join(DataDir, Path)).
 
+make_link(_, Link, Link) -> ok;
 make_link(#{ dir := DataDir }, Existing, New) ->
     ?c({symlink, Existing, New}),
     ok = file:make_symlink(
