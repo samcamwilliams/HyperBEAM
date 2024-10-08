@@ -1,8 +1,9 @@
 -module(ao_fs_store).
 -behavior(ao_store).
 -export([start/1, stop/1, reset/1]).
--export([type/2, read/2, write/3, path/2, add_path/3]).
--export([make_group/2, make_link/3]).
+-export([type/2, read/2, write/3]).
+-export([path/2, add_path/3, join/1]).
+-export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
 -include("include/ao.hrl").
 
@@ -20,9 +21,17 @@ reset(#{ dir := DataDir }) ->
     os:cmd("rm -Rf " ++ DataDir).
 
 %% @doc Read a key from the store, following symlinks as needed.
-read(#{ dir := DataDir }, Key) ->
-    read(filename:join(DataDir, Key)).
+read(Opts = #{ dir := DataDir }, Key) ->
+    case read(join([DataDir, Key])) of
+        not_found ->
+            case resolve(Opts, Key) of
+                Key -> not_found;
+                ResolvedPath -> read(ResolvedPath)
+            end;
+        Result -> Result
+    end.
 read(Path) ->
+    ?c({read, Path}),
     case file:read_file_info(Path) of
         {ok, #file_info{type = regular}} ->
             {ok, File} = file:read_file(Path),
@@ -34,40 +43,67 @@ read(Path) ->
             end
     end.
 
-write(#{ dir := DataDir }, Key, Value) ->
-    Path = filename:join(DataDir, Key),
+write(#{ dir := DataDir }, PathComponents, Value) ->
+    Path = join([DataDir, PathComponents]),
     ?c({writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
+%% @doc Replace links in a path with the target of the link.
+resolve(Opts, Path) ->
+    LinkedPath = resolve(Opts, "", Path),
+    ?c({resolved, Path, LinkedPath}),
+    LinkedPath.
+resolve(#{ dir := DataDir }, CurrPath, []) ->
+    join([DataDir, CurrPath]);
+resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
+    PathPart = join([CurrPath, Next]),
+    case file:read_link(Full = join([DataDir, PathPart])) of
+        {ok, Link} ->
+            ?c({resolved_link, Full, Link}),
+            resolve(Opts#{ dir := Link }, "", Rest);
+        _ ->
+            resolve(Opts, PathPart, Rest)
+    end.
+
 type(#{ dir := DataDir }, Key) ->
-    type(filename:join(DataDir, Key)).
+    type(join([DataDir, Key])).
 type(Path) ->
-    ?c({type, Path}),
-    case file:read_file_info(Path) of
+    ?c({type, join(Path)}),
+    case file:read_file_info(join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
         _ ->
-            case file:read_link(Path) of
+            case file:read_link(join(Path)) of
                 {ok, Link} -> type(Link);
                 _ -> not_found
             end
     end.
 
 make_group(#{ dir := DataDir }, Path) ->
-    ?c({mkdir, Path}),
-    ok = filelib:ensure_dir(filename:join(DataDir, Path)).
+    ?c({mkdir, P = join([DataDir, Path])}),
+    ok = filelib:ensure_dir(P).
 
 make_link(_, Link, Link) -> ok;
 make_link(#{ dir := DataDir }, Existing, New) ->
-    ?c({symlink, Existing, New}),
+    ?c({symlink, join([DataDir, Existing]), join([DataDir, New])}),
     ok = file:make_symlink(
-        filename:join(DataDir, Existing),
-        filename:join(DataDir, New)).
+        join([DataDir, Existing]),
+        join([DataDir, New])
+    ).
 
+%% @doc Create a path from a list of path components.
 path(#{ dir := _DataDir }, Path) ->
-    ?c({making_path, Path}),
-    filename:join(Path).
+    %?c({making_path, Path}),
+    Path.
 
+%% @doc Add two path components together.
 add_path(#{ dir := _DataDir }, Path1, Path2) ->
-    filename:join(Path1, Path2).
+    Path1 ++ Path2.
+
+join([]) -> [];
+join(Path) when is_binary(Path) -> Path;
+join([""|Xs]) -> join(Xs);
+join(FN = [X|_Xs]) when is_integer(X) -> FN;
+join([X|Xs]) -> 
+    filename:join(join(X), join(Xs)).

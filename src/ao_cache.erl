@@ -126,11 +126,13 @@ write_composite(Store, Path, map, Item) ->
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
     ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
+    ?c({signed_id, fmt_id(SignedHeaderID)}),
+    ?c({unsigned_id, fmt_id(UnsignedHeaderID)}),
     ok =
         ao_store:make_link(
             Store,
-            ao_store:path(Store, [Path, fmt_id(SignedHeaderID)]),
-            ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])
+            ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
+            ao_store:path(Store, [Path, fmt_id(SignedHeaderID)])
         ),
     ok = ao_store:write(
         Store,
@@ -238,6 +240,25 @@ create_unsigned_tx(Data) ->
 create_signed_tx(Data) ->
     ar_bundles:sign_item(create_unsigned_tx(Data), ar_wallet:new()).
 
+%% Test path resolution dynamics.
+simple_path_resolution_test() ->
+    ao_store:write(TestStore = test_cache(), "test-file", <<"test-data">>),
+    ao_store:make_link(TestStore, "test-file", "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, ao_store:read(TestStore, "test-link")).
+
+resursive_path_resolution_test() ->
+    ao_store:write(TestStore = test_cache(), "test-file", <<"test-data">>),
+    ao_store:make_link(TestStore, "test-file", "test-link"),
+    ao_store:make_link(TestStore, "test-link", "test-link2"),
+    ?assertEqual({ok, <<"test-data">>}, ao_store:read(TestStore, "test-link2")).
+
+hierarchical_path_resolution_test() ->
+    TestStore = test_cache(),
+    ao_store:make_group(TestStore, "test-dir1"),
+    ao_store:write(TestStore, ["test-dir1", "test-file"], <<"test-data">>),
+    ao_store:make_link(TestStore, ["test-dir1"], "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, ao_store:read(TestStore, ["test-link", "test-file"])).
+
 %% Test storing and retrieving a simple unsigned item
 store_simple_unsigned_item_test() ->
     Item = create_unsigned_tx(<<"Simple unsigned data item">>),
@@ -284,29 +305,27 @@ composite_unsigned_item_test() ->
 
 %% Test storing and retrieving a composite signed item
 composite_signed_item_test_ignore() ->
-    ProcID = "process_signed_composite",
-    MessageID = "message_composite_signed",
-    Slot = 1,
     ItemData = #{
         <<"key1">> => create_signed_tx(<<"value1">>),
         <<"key2">> => create_signed_tx(<<"value2">>)
     },
-    Item = create_signed_tx(ItemData),
+    Item = ar_bundles:deserialize(create_signed_tx(ItemData)),
+    ok = write(TestStore = test_cache(), Item),
+    RetrievedItem = read(TestStore, Item#tx.id),
+    ?assertEqual(
+        ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
+        ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
+    ),
+    ?assertEqual(
+        ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), signed),
+        ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), signed)
+    ),
+    ?assertEqual(ar_bundles:id(Item, unsigned), ar_bundles:id(RetrievedItem, unsigned)),
+    %?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
+    ?assertEqual(true, ar_bundles:verify_item(Item)),
+    ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
 
-    %% Write the composite signed item
-    ok = ao_cache:write_output(TestStore = test_cache(), ProcID, MessageID, Slot, Item),
-
-    %% Read the item back
-    {ok, RetrievedItem} = ao_cache:read_output(TestStore, ProcID, MessageID),
-
-    %% Assert that the retrieved item matches the original
-    ?assertEqual(Item, RetrievedItem),
-
-    %% Verify signatures
-    ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)),
-    ?assertEqual(true, ar_bundles:verify_item(maps:get(<<"key1">>, RetrievedItem#tx.data))),
-    ?assertEqual(true, ar_bundles:verify_item(maps:get(<<"key2">>, RetrievedItem#tx.data))).
-
+%% Test deeply nested item storage and retrieval
 %% Test deeply nested item storage and retrieval
 nested_item_test_ignore() ->
     ProcID = "process_nested",
