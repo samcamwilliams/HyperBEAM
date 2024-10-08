@@ -26,7 +26,7 @@ read(Opts = #{ dir := DataDir }, Key) ->
         not_found ->
             case resolve(Opts, Key) of
                 Key -> not_found;
-                ResolvedPath -> read(ResolvedPath)
+                ResolvedPath -> read(Opts, ResolvedPath)
             end;
         Result -> Result
     end.
@@ -50,17 +50,18 @@ write(#{ dir := DataDir }, PathComponents, Value) ->
     ok = file:write_file(Path, Value).
 
 %% @doc Replace links in a path with the target of the link.
-resolve(Opts, Path) ->
-    LinkedPath = resolve(Opts, "", Path),
-    ?c({resolved, Path, LinkedPath}),
-    LinkedPath.
+resolve(Opts = #{ dir := DataDir }, Path) ->
+    LinkedPathWithDataDir = resolve(Opts, "", Path),
+    ?c({resolved, Path, LinkedPathWithDataDir}),
+    NewPath = ar_util:remove_common(LinkedPathWithDataDir, DataDir),
+    ?c({new_path, NewPath}),
+    NewPath.
 resolve(#{ dir := DataDir }, CurrPath, []) ->
     join([DataDir, CurrPath]);
 resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
     PathPart = join([CurrPath, Next]),
-    case file:read_link(Full = join([DataDir, PathPart])) of
+    case file:read_link(join([DataDir, PathPart])) of
         {ok, Link} ->
-            ?c({resolved_link, Full, Link}),
             resolve(Opts#{ dir := Link }, "", Rest);
         _ ->
             resolve(Opts, PathPart, Rest)
@@ -69,7 +70,6 @@ resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
 type(#{ dir := DataDir }, Key) ->
     type(join([DataDir, Key])).
 type(Path) ->
-    ?c({type, join(Path)}),
     case file:read_file_info(join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;

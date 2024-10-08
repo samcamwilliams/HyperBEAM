@@ -1,8 +1,8 @@
 -module(ao_cache).
 -export([
-    read_output/3, write_output/5,
+    read_output/3, write/2, write_output/5,
     checkpoints/2, latest/2, latest/3, latest/4, 
-    read/2, read/3, read/4
+    lookup/2, read/2, read/3, read/4
 ]).
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -156,9 +156,9 @@ write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
 read(Store, ID) ->
-    read(Store, ID, "messages").
-read(Store, ID, DirBase) ->
-    read(Store, ID, DirBase, all).
+    read(Store, ao_store:path(Store, ["messages", fmt_id(ID)])).
+read(Store, ID, DirBase) when is_binary(ID) andalso byte_size(ID) == 32 ->
+    read(Store, ID, ).
 read(Store, ID, DirBase, Subpath) ->
     MessagePath = ao_store:path(Store, [DirBase, fmt_id(ID)]),
     case ao_store:type(Store, MessagePath) of
@@ -201,13 +201,8 @@ read(Store, ID, DirBase, Subpath) ->
     end.
 
 read_simple_message(Store, Path) ->
-    case ao_store:type(Store, Path) of
-        simple ->
-            {ok, Bin} = ao_store:read(Store, Path),
-            ar_bundles:deserialize(Bin);
-        _ ->
-            not_readable
-    end.
+    {ok, Bin} = ao_store:read(Store, Path),
+    ar_bundles:deserialize(Bin).
 
 best_common_prefix(Base, Subpath) ->
     Children = ao_keyval:children(fmt_id(Base)),
@@ -304,7 +299,7 @@ composite_unsigned_item_test() ->
     ).
 
 %% Test storing and retrieving a composite signed item
-composite_signed_item_test_ignore() ->
+composite_signed_item_test() ->
     ItemData = #{
         <<"key1">> => create_signed_tx(<<"value1">>),
         <<"key2">> => create_signed_tx(<<"value2">>)
@@ -326,12 +321,7 @@ composite_signed_item_test_ignore() ->
     ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
 
 %% Test deeply nested item storage and retrieval
-%% Test deeply nested item storage and retrieval
-nested_item_test_ignore() ->
-    ProcID = "process_nested",
-    MessageID = "message_nested",
-    Slot = 1,
-
+deeply_nested_item_test() ->
     %% Create nested data
     DeepValueTx = create_signed_tx(<<"deep_value">>),
     Level3Tx = create_unsigned_tx(#{
@@ -343,55 +333,24 @@ nested_item_test_ignore() ->
     Level1Tx = create_unsigned_tx(#{
         <<"level1_key">> => Level2Tx
     }),
-
     %% Write the nested item
-    ok = ao_cache:write_output(TestStore = test_cache(), ProcID, MessageID, Slot, Level1Tx),
-
+    ok = write(TestStore = test_cache(), Level1Tx),
     %% Read the deep value back using subpath
-    Subpath = filename:join(["level1_key", "level2_key", "level3_key"]),
-    {ok, RetrievedItem} = ao_cache:read_output(TestStore, ProcID, MessageID, Subpath),
-
+    Subpath = ao_store:resolve(
+        TestStore,
+        [
+            "messages",
+            fmt_id(Level1Tx#tx.id),
+            "level1_key",
+            "level2_key",
+            "level3_key"
+        ]
+    ),
+    ?c({resolved_subpath, Subpath}),
+    RetrievedItem = read(TestStore, Level1Tx#tx.id, "", Subpath),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual(DeepValueTx, RetrievedItem).
-
-%% Test storing items as computation results with various payloads
-computed_item_test_ignore() ->
-    ProcID = "process_computed",
-    Slot = 1,
-
-    %% Simple unsigned result
-    SimpleUnsignedResult = create_unsigned_tx(<<"Computed simple unsigned data">>),
-    %% Simple signed result
-    SimpleSignedResult = create_signed_tx(<<"Computed simple signed data">>),
-    %% Composite unsigned result
-    CompositeUnsignedResult = create_unsigned_tx(#{
-        <<"comp_key_unsigned">> => create_unsigned_tx(<<"comp_value_unsigned">>)
-    }),
-    %% Composite signed result
-    CompositeSignedResult = create_signed_tx(#{
-        <<"comp_key_signed">> => create_signed_tx(<<"comp_value_signed">>)
-    }),
-
-    %% Write results
-    ok = ao_cache:write_output(TestStore = test_cache(), ProcID, "simple_unsigned", Slot, SimpleUnsignedResult),
-    ok = ao_cache:write_output(TestStore, ProcID, "simple_signed", Slot, SimpleSignedResult),
-    ok = ao_cache:write_output(TestStore, ProcID, "composite_unsigned", Slot, CompositeUnsignedResult),
-    ok = ao_cache:write_output(TestStore, ProcID, "composite_signed", Slot, CompositeSignedResult),
-
-    %% Read back and assert simple unsigned result
-    {ok, RetrievedSimpleUnsigned} = ao_cache:read_output(TestStore, ProcID, "simple_unsigned"),
-    ?assertEqual(SimpleUnsignedResult, RetrievedSimpleUnsigned),
-
-    %% Read back and assert simple signed result
-    {ok, RetrievedSimpleSigned} = ao_cache:read_output(TestStore, ProcID, "simple_signed"),
-    ?assertEqual(SimpleSignedResult, RetrievedSimpleSigned),
-    ?assertEqual(true, ar_bundles:verify_item(RetrievedSimpleSigned)),
-
-    %% Read back and assert composite unsigned result
-    {ok, RetrievedCompositeUnsigned} = ao_cache:read_output(TestStore, ProcID, "composite_unsigned"),
-    ?assertEqual(CompositeUnsignedResult, RetrievedCompositeUnsigned),
-
-    %% Read back and assert composite signed result
-    {ok, RetrievedCompositeSigned} = ao_cache:read_output(TestStore, ProcID, "composite_signed"),
-    ?assertEqual(CompositeSignedResult, RetrievedCompositeSigned),
-    ?assertEqual(true, ar_bundles:verify_item(RetrievedCompositeSigned)).
+    ?assertEqual(<<"deep_value">>, RetrievedItem#tx.data),
+    ?assertEqual(
+        ar_bundles:id(DeepValueTx, unsigned),
+        ar_bundles:id(RetrievedItem, unsigned)
+    ).
