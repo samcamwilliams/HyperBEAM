@@ -17,6 +17,10 @@
     {<<"Bundle-Version">>, <<"2.0.0">>}
 ]).
 
+-define(LIST_TAGS, [
+    {<<"Map-Format">>, <<"List">>}
+]).
+
 % How many bytes of a binary to print with `print/1`.
 -define(BIN_PRINT, 10).
 
@@ -27,7 +31,7 @@
 print(Item) -> print(Item, 0).
 print(Item, Indent) when is_list(Item); is_map(Item) ->
     print(normalize(Item), Indent);
-print(Item, Indent) ->
+print(Item, Indent) when is_record(Item, tx) ->
     Valid = verify_item(Item),
     print_line(
         "TX { ~s:~s } [",
@@ -50,7 +54,10 @@ print(Item, Indent) ->
     ),
     print_line("Data:", Indent + 1),
     print_data(Item, Indent + 2),
-    print_line("]", Indent).
+    print_line("]", Indent);
+print(Item, Indent) ->
+    % Whatever we have, its not a tx...
+    print_line("INCORRECT ITEM: ~p", [Item], Indent).
 
 print_data(Item, Indent) when is_binary(Item#tx.data) ->
     case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
@@ -101,7 +108,7 @@ format_binary(Bin) ->
 print_line(Str, Indent) -> print_line(Str, "", Indent).
 print_line(RawStr, Fmt, Ind) ->
     Str = lists:flatten(RawStr),
-    io:format(
+    io:format(standard_error,
         [$\s || _ <- lists:seq(1, Ind)] ++
             Str ++ "\n",
         Fmt
@@ -204,6 +211,7 @@ normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
 normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
     normalize_data(
         Item#tx{
+            tags = add_list_tags(Item#tx.tags),
             data =
                 maps:from_list(
                     lists:zipwith(
@@ -267,6 +275,9 @@ update_id(TX) ->
     TX.
 
 add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
+
+add_list_tags(Tags) ->
+    (?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS)) ++ ?LIST_TAGS.
 
 add_manifest_tags(Tags, ManifestID) ->
     lists:filter(
@@ -422,10 +433,29 @@ maybe_unbundle(Item) ->
     Version = lists:keyfind(<<"Bundle-Version">>, 1, Item#tx.tags),
     case {Format, Version} of
         {{<<"Bundle-Format">>, <<"Binary">>}, {<<"Bundle-Version">>, <<"2.0.0">>}} ->
-            maybe_unbundle_map(Item);
+            maybe_map_to_list(maybe_unbundle_map(Item));
         _ ->
             Item
     end.
+
+maybe_map_to_list(Item) ->
+    case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of
+        {<<"Map-Format">>, <<"List">>} ->
+            unbundle_list(Item);
+        _ ->
+            Item
+    end.
+
+unbundle_list(Item) ->
+    Item#tx{
+        data =
+            lists:map(
+                fun(Index) ->
+                    maps:get(list_to_binary(integer_to_list(Index)), Item#tx.data)
+                end,
+                lists:seq(1, maps:size(Item#tx.data))
+            )
+    }.
 
 maybe_unbundle_map(Bundle) ->
     case lists:keyfind(<<"Bundle-Map">>, 1, Bundle#tx.tags) of
@@ -449,9 +479,10 @@ maybe_unbundle_map(Bundle) ->
 find_item(TXID, TX) when is_record(TX, tx) ->
     find_item(TXID, TX#tx.data);
 find_item(TXID, Items) ->
-    case lists:keyfind(TXID, #tx.id, Items) of
-        false -> false;
-        Item -> Item
+    TX = lists:keyfind(TXID, #tx.id, Items),
+    case is_record(TX, tx) of
+        true -> TX;
+        false -> throw({cannot_find_item, TXID})
     end.
 
 unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
@@ -737,38 +768,43 @@ test_bundle_with_two_items() ->
     ?assertEqual(ItemData2, (hd(tl(BundleItem#tx.data)))#tx.data).
 
 test_recursive_bundle() ->
-    Item1 = #tx{
+    W = ar_wallet:new(),
+    Item1 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
         last_tx = crypto:strong_rand_bytes(32),
         data = <<1:256/integer>>
-    },
-    Item2 = #tx{
+    }, W),
+    Item2 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
         last_tx = crypto:strong_rand_bytes(32),
         data = [Item1]
-    },
-    Item3 = #tx{
+    }, W),
+    Item3 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
         last_tx = crypto:strong_rand_bytes(32),
         data = [Item2]
-    },
+    }, W),
     Bundle = serialize([Item3]),
     BundleItem = deserialize(Bundle),
     [UnbundledItem3] = BundleItem#tx.data,
     [UnbundledItem2] = UnbundledItem3#tx.data,
     [UnbundledItem1] = UnbundledItem2#tx.data,
+    ?assert(verify_item(UnbundledItem1)),
+    % TODO: Verify bundled lists...
     ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).
 
 test_bundle_map() ->
-    Item1 = normalize(#tx{
+    W = ar_wallet:new(),
+    Item1 = sign_item(#tx{
         format = ans104,
         data = <<"item1_data">>
-    }),
-    Item2 = normalize(#tx{
+    }, W),
+    Item2 = sign_item(#tx{
         format = ans104,
         last_tx = crypto:strong_rand_bytes(32),
         data = #{<<"key1">> => Item1}
-    }),
+    }, W),
     Bundle = serialize(Item2),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data).
+    ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
+    ?assert(verify_item(BundleItem)).
