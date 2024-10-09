@@ -96,18 +96,21 @@ monitor(ProcID) ->
 %% EOS:     Run end_of_schedule() on all devices to see if there is more work to be done.
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
-    CP = ao_cache:latest(
-        maps:get(cache, Opts, ao:get(cache_dir)),
-        Process#tx.id,
-        state,
-        maps:get(slot, Opts, inf)
-    ),
+    {Slot, Checkpoint} =
+        case ao_cache:latest(maps:get(store, Opts, ao:get(store)), Process#tx.id) of
+            not_found ->
+                {0, #{}};
+            {LatestSlot, State} ->
+                {LatestSlot, State#tx.data}
+    end,
     InitState =
-        (CP#tx.data)#{
+        (Checkpoint)#{
             process => Process,
+            slot => Slot,
             to_message => maps:get(to_message, Opts, inf),
-            to_slot => maps:get(slot, Opts, inf),
-            wallet => maps:get(wallet, Opts, ao:wallet()),
+            to => maps:get(to, Opts, inf),
+            wallet => maps:get(wallet, Opts, ao:get(wallet)),
+            store => maps:get(store, Opts, ao:get(store)),
             schedule => maps:get(schedule, Opts, []),
             devices =>
                 cu_device_stack:normalize(
@@ -117,8 +120,8 @@ boot(Process, Opts) ->
                 )
         },
     case cu_device_stack:call(InitState, init) of
-        {ok, State} ->
-            execute_schedule(State, Opts);
+        {ok, StateAfterInit} ->
+            execute_schedule(StateAfterInit, Opts);
         {error, N, DevMod, Info} ->
             throw({error, boot, N, DevMod, Info})
     end.
@@ -154,29 +157,47 @@ execute_schedule(State, Opts) ->
             end
     end.
 
-execute_checkpoint(Msg, State = #{ result := Result, process := Process, slot := Slot }, Opts) ->
+execute_checkpoint(
+    Msg,
+    State =
+        #{
+            store := Store,
+            result := Result,
+            process := Process,
+            slot := Slot,
+            wallet := Wallet
+        },
+    Opts) ->
     case is_checkpoint_slot(State, Opts) of
         true ->
             % Run checkpoint on the device stack, but we do not propagate the result.
-            {ok, Checkpoint} = cu_device_stack:call(State, checkpoint, Opts),
+            {ok, CheckpointState} =
+                cu_device_stack:call(
+                    State#{ save_keys => [] },
+                    checkpoint,
+                    Opts
+                ),
+            Checkpoint =
+                maps:from_list(lists:map(
+                    fun(Key) ->
+                        {Key, maps:get(Key, CheckpointState)}
+                    end,
+                    maps:get(save_keys, CheckpointState, [])
+                )),
             ao_cache:write_output(
-                maps:get(cache, Opts, ao:get(cache_dir)),
+                Store,
                 Process#tx.id,
-                Msg#tx.id,
                 Slot,
-                Checkpoint#{ result => Result }
-            ),
-            State;
+                ar_bundles:sign_item(Checkpoint#{ <<"Result">> => Result }, Wallet)
+            );
         false ->
-            not_checkpointing
+            ao_cache:write_output(
+                Store,
+                Process#tx.id,
+                Slot,
+                ar_bundles:sign_item(#{ <<"Result">> => Result }, Wallet)
+            )
     end,
-    ao_cache:write_output(
-        maps:get(cache, Opts, ao:get(cache_dir)),
-        Process#tx.id,
-        Msg#tx.id,
-        Slot,
-        #{ result => Result }
-    ),
     execute_schedule(State, Opts).
 
 execute_message(Msg, State, Opts) ->
@@ -197,6 +218,8 @@ is_checkpoint_slot(State, Opts) ->
 await_command(State = #{schedule := Sched}, Opts) ->
     receive
         {add, Msg} ->
+            % TODO: Should we run `end_of_schedule` or `new_item` (or something)
+            % here?
             execute_schedule(State#{schedule := [Msg | Sched]}, Opts);
         stop ->
             execute_terminate(State, Opts)
@@ -204,8 +227,8 @@ await_command(State = #{schedule := Sched}, Opts) ->
 
 %%% Tests
 
-simple_stack_test_ignore() ->
-    Wallet = ao:wallet(),
+simple_stack_test() ->
+    Wallet = ao:get(wallet),
     Authority = ar_wallet:to_address(Wallet),
     Proc =
         ar_bundles:sign_item(
@@ -256,20 +279,37 @@ simple_stack_test_ignore() ->
                 }
             }
         ],
-    [{message_processed, _, TX} | _] = run(Proc, #{schedule => Schedule, error_strategy => stop}),
+    [{message_processed, _, TX} | _] = 
+        run(Proc, #{schedule => Schedule, error_strategy => stop, wallet => Wallet}),
     ao:c({simple_stack_test_result, TX#tx.data}),
     ok.
 
 full_push_test() ->
     Msg = generate_test_data(),
-    su_data:write_message(Msg),
-    ?c({wrote_test_msg, ar_util:encode(Msg#tx.id)}),
+    ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none).
 
 generate_test_data() ->
+    Store = ao:get(store),
     Wallet = ao:wallet(),
     ID = ar_wallet:to_address(Wallet),
-    su_data:write_message(
+    {ok, Module} = file:read_file("test/aos-2-pure.wasm"),
+    ao_cache:write(
+        Store,
+        Img = ar_bundles:sign_item(
+            #tx {
+                tags = [
+                    {<<"Protocol">>, <<"ao">>},
+                    {<<"Variant">>, <<"ao.tn.2">>},
+                    {<<"Type">>, <<"Image">>}
+                ],
+                data = Module
+            },
+            Wallet
+        )
+    ),
+    ao_cache:write(
+        Store,
         Signed = ar_bundles:sign_item(
             #tx{
                 tags = [
@@ -277,12 +317,11 @@ generate_test_data() ->
                     {<<"Variant">>, <<"ao.tn.2">>},
                     {<<"Type">>, <<"Process">>},
                     {<<"Authority">>, ar_util:encode(ID)},
-                    {<<"Device">>, <<"Checkpoint">>},
                     {<<"Device">>, <<"Scheduler">>},
                     {<<"Location">>, ar_util:encode(ID)},
                     {<<"Device">>, <<"JSON-Interface">>},
                     {<<"Device">>, <<"WASM64-pure">>},
-                    {<<"Image">>, <<"aos-2-pure.wasm">>},
+                    {<<"Image">>, ar_util:encode(Img#tx.id)},
                     {<<"Module">>, <<"aos-2-pure">>},
                     {<<"Device">>, <<"Cron">>},
                     {<<"Time">>, <<"100-Milliseconds">>}

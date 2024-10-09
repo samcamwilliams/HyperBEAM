@@ -21,21 +21,24 @@ handle(<<"GET">>, [], Req) ->
         Req
     ),
     {ok, Req};
-handle(<<"GET">>, [ProcID, Slot], Req) ->
-    case dev_checkpoint:read(ProcID, Slot) of
-        unavailable ->
+handle(<<"GET">>, [ProcID, Msg], Req) ->
+    case ao_cache:read_output(Store = ao:get(store), ProcID, Msg) of
+        not_found ->
+            ?c({starting_execution, ProcID, Msg}),
             ResultLog =
                 cu_process:run(
-                    % TODO: Scheduler must only run until message ID!
-                    su_data:read_message(ProcID),
-                    #{error_strategy => throw, slot => Slot}
+                    ao_cache:read(Store, ProcID),
+                    #{
+                        error_strategy => throw,
+                        to => Msg,
+                        store => Store,
+                        wallet => ao:get(wallet)
+                    }
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),
             ar_bundles:print(Res),
             ao_http:reply(Req, Res);
-        {ok, Result} ->
-            Req2 = ao_http:reply(Req, Result),
-            {ok, Req2}
+        Res -> ao_http:reply(Req, Res)
     end;
 handle(<<"GET">>, [ProcID], Req) ->
     handle(<<"GET">>, [ProcID, undefined], Req);

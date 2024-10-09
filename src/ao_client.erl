@@ -87,11 +87,19 @@ get_assignments(ProcID, From, To) ->
             "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?" ++
                 case From of
                     undefined -> "";
-                    _ -> "&from=" ++ integer_to_list(From)
+                    _ -> "&from=" ++
+                        case is_integer(From) of
+                            true -> integer_to_list(From);
+                            false -> binary_to_list(From)
+                        end
                 end ++
                 case To of
                     undefined -> "";
-                    _ -> "&to=" ++ integer_to_list(To)
+                    _ -> "&to=" ++
+                        case is_integer(To) of
+                            true -> integer_to_list(To);
+                            false -> binary_to_list(To)
+                        end
                 end
         ),
     extract_assignments(From, To, Data).
@@ -108,7 +116,6 @@ extract_assignments(From, To, Assignments) ->
 compute(Assignment) when is_record(Assignment, tx) ->
     {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    ao:c(Slot),
     compute(ar_util:decode(ProcessID), Slot).
 compute(ProcID, Slot) ->
     % TN.1: MU Should be reading real results, not mocked-out.

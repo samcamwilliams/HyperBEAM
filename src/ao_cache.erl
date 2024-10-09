@@ -46,16 +46,19 @@
 %%% (by ID and by subpath), as well as their base message stored at `.base`.
 
 latest(Store, ProcID) ->
-    latest(Store, ProcID, inf).
+    latest(Store, ProcID, undefined).
 latest(Store, ProcID, Limit) ->
-    Outputs = outputs(Store, ProcID),
-    LatestSlot = lists:max(
-        case Limit of
-            inf -> Outputs;
-            _ -> lists:filter(fun(Slot) -> Slot < Limit end, Outputs)
-        end
-    ),
-    read_output(Store, ProcID, ["slot", integer_to_list(LatestSlot)]).
+    case outputs(Store, ProcID) of
+        [] -> not_found;
+        Outputs ->
+            LatestSlot = lists:max(
+                case Limit of
+                    undefined -> Outputs;
+                    _ -> lists:filter(fun(Slot) -> Slot < Limit end, Outputs)
+                end
+            ),
+            {LatestSlot, read_output(Store, ProcID, ["slot", integer_to_list(LatestSlot)])}
+    end.
 
 outputs(Store, ProcID) ->
     SlotDir = ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), "slot"]),
@@ -147,6 +150,8 @@ write_composite(Store, Path, map, Item) ->
 write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
+read_output(Store, ProcID, undefined) ->
+    element(2, latest(Store, ProcID));
 read_output(Store, ProcID, Slot) when is_integer(Slot) ->
     read_output(Store, fmt_id(ProcID), ["slot", integer_to_list(Slot)]);
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
@@ -164,7 +169,10 @@ read_output(Store, ProcID, Input) ->
             "messages"
         ),
     ?c({output_path, ResolvedPath}),
-    read(Store, ResolvedPath).
+    case ao_store:type(Store, ResolvedPath) of
+        not_found -> not_found;
+        _ -> read(Store, ResolvedPath)
+    end.
 
 lookup(Store, ID) ->
     lookup(Store, ID, "").

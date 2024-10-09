@@ -36,7 +36,8 @@ config() ->
             },
         loadable_devices => [],
         % Dev options
-        profiling => true
+        profiling => true,
+        store => {ao_fs_store, #{ dir => "TEST-data" }}
     }.
 
 get(Key) -> get(Key, undefined).

@@ -1,5 +1,6 @@
 -module(dev_wasm).
 -export([uses/0, init/2, execute/3, terminate/1]).
+-export([checkpoint/1]).
 
 -include("include/ao.hrl").
 
@@ -7,19 +8,23 @@
 
 init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
-    Image = ao_message:get(ImageID),
+    Image = ao_cache:lookup(maps:get(store, State, ao:get(store)), ImageID),
     {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
-    NState =
-        case maps:get(checkpoint, State, undefined) of
-            undefined -> State;
-            Checkpoint -> cu_beamr:deserialize(Port, Checkpoint)
-        end,
-    {ok, NState#{
+    ?c(started_wasm),
+    % Apply the checkpoint if it is in the initial state.
+    case maps:get(<<"WASM-State">>, State, undefined) of
+        undefined ->
+            ?c(wasm_no_checkpoint),
+            State;
+        Checkpoint ->
+            ?c(wasm_deserializing),
+            cu_beamr:deserialize(Port, Checkpoint),
+            ?c(wasm_deserialized)
+    end,
+    {ok, State#{
         wasm => Port,
         phase => pre_exec,
-        call => undefined,
-        serialize => fun() -> cu_beamr:serialize(Port) end,
-        deserialize => fun(Bin) -> cu_beamr:deserialize(Port, Bin) end
+        call => undefined
     }}.
 
 execute(
@@ -37,6 +42,12 @@ execute(
 execute(_M, State = #{phase := post_exec}, _) ->
     % Reset the phase indicator for the next run.
     {ok, State#{phase := pre_exec}}.
+
+checkpoint(State = #{wasm := Port, save_keys := SaveKeys}) ->
+    {ok, State#{
+        <<"WASM-State">> => cu_beamr:serialize(Port),
+        save_keys => [<<"WASM-State">> | SaveKeys]
+    }}.
 
 terminate(State = #{wasm := Port}) ->
     cu_beamr:stop(Port),

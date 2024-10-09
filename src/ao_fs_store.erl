@@ -50,14 +50,14 @@ write(#{ dir := DataDir }, PathComponents, Value) ->
     ok = file:write_file(Path, Value).
 
 list(#{ dir := DataDir }, Path) ->
-    ?c({listing, join([DataDir, Path])}),
+    %?c({listing, join([DataDir, Path])}),
     file:list_dir(join([DataDir, Path])).
 
 %% @doc Replace links in a path with the target of the link.
 resolve(Opts = #{ dir := DataDir }, RawPath) ->
     LinkedPathWithDataDir = resolve(Opts, "", Path = filename:split(join(RawPath))),
     NewPath = ar_util:remove_common(LinkedPathWithDataDir, DataDir),
-    ?c({resolved, Path, NewPath}),
+    %?c({resolved, Path, NewPath}),
     NewPath.
 resolve(#{ dir := DataDir }, CurrPath, []) ->
     join([DataDir, CurrPath]);
@@ -65,7 +65,7 @@ resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
     PathPart = join([CurrPath, Next]),
     case file:read_link(join([DataDir, PathPart])) of
         {ok, Link} ->
-            ?c({resolved_link, Link}),
+            %?c({resolved_link, Link}),
             resolve(Opts#{ dir := Link }, "", Rest);
         _ ->
             resolve(Opts, PathPart, Rest)
@@ -85,14 +85,15 @@ type(Path) ->
     end.
 
 make_group(#{ dir := DataDir }, Path) ->
-    ?c({mkdir, P = join([DataDir, Path])}),
+    P = join([DataDir, Path]),
+    %?c({mkdir, P}),
     ok = filelib:ensure_dir(P).
 
 make_link(_, Link, Link) -> ok;
 make_link(#{ dir := DataDir }, Existing, New) ->
-    ?c({symlink, join([DataDir, Existing]), P2 =join([DataDir, New])}),
+    ?c({symlink, join([DataDir, Existing]), P2 = join([DataDir, New])}),
     filelib:ensure_dir(P2),
-    ok = file:make_symlink(
+    file:make_symlink(
         join([DataDir, Existing]),
         join([DataDir, New])
     ).

@@ -37,7 +37,7 @@ reply(Req, Status, Item) ->
             Status,
             maps:get(method, Req, undef_method),
             maps:get(path, Req, undef_path),
-            case is_record(Item, tx) of true -> ar_util:encode(Item#tx.id); false -> Item end}
+            Ref = case is_record(Item, tx) of true -> ar_util:encode(Item#tx.id); false -> Item end}
     ),
     cowboy_req:reply(
         Status,
@@ -45,5 +45,5 @@ reply(Req, Status, Item) ->
         ar_bundles:serialize(Item),
         Req
     ),
-    ao:c(replied),
+    ao:c({replied, Status, Ref}),
     {ok, Req}.

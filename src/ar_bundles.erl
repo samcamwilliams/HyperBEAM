@@ -233,6 +233,7 @@ verify_data_item_tags(DataItem) ->
 normalize(Item) -> update_id(normalize_data(Item)).
 
 %% @doc Ensure that a data item (potentially containing a map or list) has a standard, serialized form.
+normalize_data(not_found) -> throw(not_found);
 normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
     normalize_data(#tx{data = Bundle});
 normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
@@ -276,6 +277,7 @@ normalize_data_size(Item = #tx{data = Bin}) when is_binary(Bin) ->
 normalize_data_size(Item) -> Item.
 
 %% @doc Convert a #tx record to its binary representation.
+serialize(not_found) -> throw(not_found);
 serialize(TX) -> serialize(TX, binary).
 serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
@@ -365,7 +367,7 @@ parse_manifest(Bin) ->
     jiffy:decode(Bin, [return_maps]).
 
 %% @doc Only RSA 4096 is currently supported.
-%% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
+%% Note: the signature type '1' corresponds to RSA 4096 -- but it is is written in
 %% little-endian format which is why we encode to <<1, 0>>.
 encode_signature_type({rsa, 65537}) ->
     <<1, 0>>;
@@ -430,6 +432,7 @@ encode_vint(ZigZag, Acc) ->
     end.
 
 %% @doc Convert binary data back to a #tx record.
+deserialize(not_found) -> throw(not_found);
 deserialize(Binary) -> deserialize(Binary, binary).
 deserialize(Item, binary) when is_record(Item, tx) ->
     maybe_unbundle(Item);

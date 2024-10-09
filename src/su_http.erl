@@ -51,6 +51,7 @@ handle(<<"GET">>, [ProcID, <<"slot">>], Req) ->
     ),
     {ok, Req};
 handle(<<"GET">>, [BinID], Req) ->
+    Store = ao:get(store),
     ID = binary_to_list(BinID),
     #{to := To, from := From} =
         cowboy_req:match_qs([{from, [], undefined}, {to, [], undefined}], Req),
@@ -58,12 +59,13 @@ handle(<<"GET">>, [BinID], Req) ->
     % Else, send a stream of the assignments for the given range
     case {To, From} of
         {undefined, undefined} ->
-            send_data(ID, Req);
+            send_data(Store, ID, Req);
         {_, _} ->
-            send_stream(ID, From, To, Req)
+            send_stream(Store, ID, From, To, Req)
     end,
     {ok, Req};
 handle(<<"POST">>, [], Req) ->
+    Store = ao:get(store),
     {ok, Body} = ao_http_router:read_body(Req),
     Message = ar_bundles:deserialize(Body),
     case {ar_bundles:verify_item(Message), lists:keyfind(<<"Type">>, 1, Message#tx.tags)} of
@@ -76,9 +78,8 @@ handle(<<"POST">>, [], Req) ->
             ),
             {ok, Req};
         {true, {<<"Type">>, <<"Process">>}} ->
-            su_data:write_message(Message),
+            su_cache:write(Store, Message),
             ao_client:upload(Message),
-
             cowboy_req:reply(
                 201,
                 #{<<"Content-Type">> => <<"application/json">>},
@@ -107,15 +108,15 @@ handle(<<"POST">>, [], Req) ->
 %% Private methods
 
 % Send existing-SU GraphQL compatible results
-send_stream(ProcID, undefined, To, Req) ->
-    send_stream(ProcID, 0, To, Req);
-send_stream(ProcID, From, undefined, Req) ->
-    send_stream(ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)), Req);
-send_stream(ProcID, From, To, Req) when is_binary(From) ->
-    send_stream(ProcID, list_to_integer(binary_to_list(From)), To, Req);
-send_stream(ProcID, From, To, Req) when is_binary(To) ->
-    send_stream(ProcID, From, list_to_integer(binary_to_list(To)), Req);
-send_stream(ProcID, From, To, Req) ->
+send_stream(Store, ProcID, undefined, To, Req) ->
+    send_stream(Store, ProcID, 0, To, Req);
+send_stream(Store, ProcID, From, undefined, Req) ->
+    send_stream(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)), Req);
+send_stream(Store, ProcID, From, To, Req) when is_binary(From) ->
+    send_stream(Store, ProcID, list_to_integer(binary_to_list(From)), To, Req);
+send_stream(Store, ProcID, From, To, Req) when is_binary(To) ->
+    send_stream(Store, ProcID, From, list_to_integer(binary_to_list(To)), Req);
+send_stream(Store, ProcID, From, To, Req) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),
     {Assignments, More} = su_process:get_assignments(
         ProcID,
@@ -148,7 +149,7 @@ send_stream(ProcID, From, To, Req) ->
                             {<<"To">>, ToSlot}
                         ]
                 end,
-        data = assignments_to_bundle(Assignments)
+        data = assignments_to_bundle(Store, Assignments)
     },
     ao_http:reply(
         Req,
@@ -158,22 +159,23 @@ send_stream(ProcID, From, To, Req) ->
         )
     ).
 
-send_data(ID, Req) ->
-    Message = su_data:read_message(ID),
+send_data(Store, ID, Req) ->
+    Message = su_cache:read(Store, ID),
     ao_http:reply(
         Req,
         Message
     ).
 
-assignments_to_bundle(Assignments) ->
-    assignments_to_bundle(Assignments, #{}).
-assignments_to_bundle([], Bundle) ->
+assignments_to_bundle(Store, Assignments) ->
+    assignments_to_bundle(Store, Assignments, #{}).
+assignments_to_bundle(_, [], Bundle) ->
     Bundle;
-assignments_to_bundle([Assignment | Assignments], Bundle) ->
+assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
-    Message = su_data:read_message(MessageID),
+    Message = ao_cache:read(Store, MessageID),
     assignments_to_bundle(
+        Store,
         Assignments,
         Bundle#{
             Slot =>
