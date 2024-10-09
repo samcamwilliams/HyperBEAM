@@ -13,7 +13,11 @@ wallet(Location) ->
 
 config() ->
     #{
-        % Functional options
+        %%%%%%%% Functional options %%%%%%%%
+        %% Scheduling mode: Determines when the SU should inform the recipient
+        %% that an assignment has been scheduled for a message.
+        %% Options: aggressive(!), local_confirmation, remote_confirmation
+        scheduling_mode => aggressive, 
         http_port => 8734,
         http_host => "localhost",
         gateway => "https://arweave.net",
@@ -22,7 +26,6 @@ config() ->
         mu => "http://localhost:8734/mu",
         cu => "http://localhost:8734/cu",
         key_location => "hyperbeam-key.json",
-        cache_dir => "data",
         default_page_limit => 5,
         scheduler_location_ttl => 60 * 60 * 24 * 30,
         preloaded_devices =>

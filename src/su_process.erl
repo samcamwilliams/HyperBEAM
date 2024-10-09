@@ -1,7 +1,8 @@
 -module(su_process).
 -export([start/2, schedule/2, get_location/1]).
 -export([get_current_slot/1, get_assignments/3]).
--export([new_proc_test/0]).
+-include_lib("eunit/include/eunit.hrl").
+
 -record(state,
     {
         id,
@@ -20,14 +21,18 @@ start(ProcID, Wallet) ->
 start(ProcID, Wallet, Store) ->
     {Current, HashChain} = su_data:get_current_slot(ProcID),
     ao:c({starting, ProcID, Current, HashChain}),
-    server(
-        #state{
-            id = ProcID,
-            current = Current,
-            hash_chain = HashChain,
-            wallet = Wallet,
-            store = Store
-        }
+    spawn(
+        fun() ->
+            server(
+                #state{
+                    id = ProcID,
+                    current = Current,
+                    hash_chain = HashChain,
+                    wallet = Wallet,
+                    store = Store
+                }
+            )
+        end
     ).
 
 get_location(_ProcID) ->
@@ -92,8 +97,6 @@ do_assign(State, Message, ReplyPID) ->
     % Run the signing of the assignment and writes to the disk in a separate process
     spawn(
         fun() ->
-            ao_cache:write(State#state.store, Message),
-            ?c(wrote_message),
             {Timestamp, Height, Hash} = su_timestamp:get(),
             Assignment = ar_bundles:sign_item(#tx {
                 tags = [
@@ -110,28 +113,48 @@ do_assign(State, Message, ReplyPID) ->
                     {"Hash-Chain", binary_to_list(ar_util:encode(HashChain))}
                 ]
             }, State#state.wallet),
+            maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ao_cache:write(State#state.store, Assignment),
-            ?c(wrote_assignment),
+            ao_cache:write(State#state.store, Message),
             su_data:write_assignment(State#state.id, Assignment),
+            maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
             ao_client:upload(Assignment),
             ao_client:upload(Message),
-            ReplyPID ! {scheduled, Message, Assignment}
+            maybe_inform_recipient(remote_confirmation, ReplyPID, Message, Assignment)
         end
     ),
     State#state{current = NextNonce, hash_chain = HashChain}.
+
+maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
+    case ao:get(scheduling_mode, remote_confirmation) of
+        Mode -> ReplyPID ! {scheduled, Message, Assignment};
+        _ -> ok
+    end.
 
 next_hashchain(HashChain, Message) ->
     crypto:hash(sha256, << HashChain/binary, (Message#tx.id)/binary >>).
 
 %% TESTS
 
-new_proc_test() ->
+new_proc() ->
+    application:ensure_all_started(ao),
     su_data:reset_data(),
     Wallet = ar_wallet:new(),
-    SignedItem = ar_tx:sign(#tx{ data = <<"test">> }, Wallet),
-    SignedItem2 = ar_tx:sign(#tx{ data = <<"test2">> }, Wallet),
-    SignedItem3 = ar_tx:sign(#tx{ data = <<"test3">> }, Wallet),
-    schedule("test", SignedItem),
-    schedule("test", SignedItem2),
-    schedule("test", SignedItem3),
-    {3, _} = su_data:get_current_slot("test").
+    SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
+    ?c(1),
+    SignedItem2 = ar_bundles:sign_item(#tx{ data = <<"test2">> }, Wallet),
+    ?c(2),
+    SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
+    ?c(3),
+    su_registry:find(binary_to_list(ar_util:encode(SignedItem#tx.id)), true),
+    ?c(4),
+    schedule(ID = binary_to_list(ar_util:encode(SignedItem#tx.id)), SignedItem),
+    ?c(5),
+    schedule(ID, SignedItem2),
+    ?c(6),
+    schedule(ID, SignedItem3),
+    {2, _} = su_data:get_current_slot(ID),
+    true.
+
+new_proc_test_() ->
+    {timeout, 60, ?_assert(new_proc())}.

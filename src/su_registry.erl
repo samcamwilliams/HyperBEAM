@@ -1,7 +1,7 @@
 -module(su_registry).
 -export([start/0, start/1, find/1, find/2, server/2, get_wallet/0, get_processes/0]).
 
--include("include/ar.hrl").
+-include("include/ao.hrl").
 
 start() -> start(ao:get(key_location)).
 start(WalletFile) ->
@@ -61,5 +61,4 @@ server(Registry, Wallet) ->
     end.
 
 maybe_new_proc(_, _, false) -> not_found;
-maybe_new_proc(ProcID, Wallet, _) ->
-    spawn(fun() -> su_process:start(ProcID, Wallet) end).
+maybe_new_proc(ProcID, Wallet, _) -> su_process:start(ProcID, Wallet).
