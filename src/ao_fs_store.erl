@@ -86,7 +86,8 @@ make_group(#{ dir := DataDir }, Path) ->
 
 make_link(_, Link, Link) -> ok;
 make_link(#{ dir := DataDir }, Existing, New) ->
-    ?c({symlink, join([DataDir, Existing]), join([DataDir, New])}),
+    ?c({symlink, join([DataDir, Existing]), P2 =join([DataDir, New])}),
+    filelib:ensure_dir(P2),
     ok = file:make_symlink(
         join([DataDir, Existing]),
         join([DataDir, New])
@@ -94,7 +95,6 @@ make_link(#{ dir := DataDir }, Existing, New) ->
 
 %% @doc Create a path from a list of path components.
 path(#{ dir := _DataDir }, Path) ->
-    %?c({making_path, Path}),
     Path.
 
 %% @doc Add two path components together.

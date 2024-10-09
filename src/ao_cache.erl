@@ -1,7 +1,7 @@
 -module(ao_cache).
 -export([
-    read_output/3, write/2, write_output/5,
-    checkpoints/2, latest/2, latest/3, latest/4, 
+    read_output/3, write/2, write_output/4,
+    checkpoints/2, latest/2, latest/3, 
     read/2, read/3, read/4, lookup/2, lookup/3
 ]).
 -include("src/include/ao.hrl").
@@ -45,51 +45,44 @@
 %%% Messages that are composite are represented as directories containing their childen
 %%% (by ID and by subpath), as well as their base message stored at `.base`.
 
-read_output(DirBase, ProcID, Msg) -> read_output(DirBase, ProcID, Msg, all).
-read_output(DirBase, ProcID, Msg, AtomName) when is_atom(AtomName) ->
-    read_output(DirBase, ProcID, Msg, atom_to_binary(AtomName));
-read_output(DirBase, ProcID, Msg, Subpath) ->
-    CachePath = filename:join([DirBase, ?COMPUTE_CACHE_DIR, ProcID, Msg]),
-    case file:read_link(CachePath) of
-        {ok, Target} ->
-            case Subpath of
-                all -> {ok, su_data:read_message(Target)};
-                _ -> {ok, su_data:read_message(filename:join(Target, Subpath))}
-            end;
-        {error, _} ->
-            unavailable
-    end.
-
-latest(DirBase, ProcID) -> latest(DirBase, ProcID, all).
-latest(DirBase, ProcID, Subpath) ->
-    latest(DirBase, ProcID, Subpath, inf).
-latest(DirBase, ProcID, Subpath, Limit) ->
-    CPs = checkpoints(DirBase, ProcID),
+latest(Store, ProcID) ->
+    latest(Store, ProcID, inf).
+latest(Store, ProcID, Limit) ->
+    CPs = checkpoints(Store, ProcID),
     LatestSlot = lists:max(
         case Limit of
             inf -> CPs;
             _ -> lists:filter(fun(Slot) -> Slot < Limit end, CPs)
         end
     ),
-    read_output(DirBase, ProcID, filename:join(["slot", integer_to_list(LatestSlot)]), Subpath).
+    read_output(Store, ProcID, filename:join(["slot", integer_to_list(LatestSlot)])).
 
-checkpoints(DirBase, ProcID) ->
-    SlotDir = filename:join([DirBase, ?COMPUTE_CACHE_DIR, ProcID, "slot"]),
-    case file:list_dir(SlotDir) of
+checkpoints(Store, ProcID) ->
+    SlotDir = ao_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, "slot"]),
+    case ao_store:list_dir(SlotDir) of
         {ok, Names} -> [ list_to_integer(Name) || Name <- Names ];
         {error, _} -> []
     end.
 
 %% Write a full message to the cache.
-write_output(Store, ProcID, MessageID, Slot, Item) ->
+write_output(Store, ProcID, Slot, Item) ->
     % Write the message into the main cache
-    UnderlyingPath = write(Store, Item),
+    ok = write(Store, Item),
+    UnsignedID = fmt_id(Item, unsigned),
+    SignedID = fmt_id(Item, signed),
     % Create symlinks from the message on the process and the slot on the process
     % to the underlying data.
-    MessagePath = ao_store:path(Store, ["computed", fmt_id(ProcID), fmt_id(MessageID)]),
-    SlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), integer_to_list(Slot)]),
-    ao_store:make_link(Store, UnderlyingPath, MessagePath),
-    ao_store:make_link(Store, UnderlyingPath, SlotPath).
+    RawMessagePath = ao_store:path(Store, ["messages", UnsignedID]),
+    ProcMessagePath = ao_store:path(Store, ["computed", fmt_id(ProcID), UnsignedID]),
+    ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), integer_to_list(Slot)]),
+    ok = ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
+    ok = ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
+    if SignedID =/= UnsignedID ->
+        ok = ao_store:make_link(Store, RawMessagePath,
+            ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
+    true -> already_exists
+    end,
+    ok.
 
 write(Store, Item) ->
     write(Store, ao_store:path(Store, ["messages"]), Item).
@@ -140,7 +133,6 @@ write_composite(Store, Path, map, Item) ->
         ar_bundles:serialize(Item#tx{ data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) } })
     ),
     maps:map(fun(Key, Subitem) ->
-        StoredItemPath = ao_store:path(Store, ["messages", fmt_id(Subitem)]),
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
         ok = write(Store, Subitem),
@@ -155,6 +147,25 @@ write_composite(Store, Path, map, Item) ->
 write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
+read_output(Store, ProcID, Slot) when is_integer(Slot) ->
+    read_output(Store, fmt_id(ProcID), integer_to_list(Slot));
+read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
+    read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
+read_output(Store, ProcID, Input) ->
+    ResolvedPath =
+        ar_util:remove_common(
+            ar_util:remove_common(
+                ao_store:resolve(
+                    Store,
+                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
+                ),
+                ?COMPUTE_CACHE_DIR
+            ),
+            "messages"
+        ),
+    ?c({output_path, ResolvedPath}),
+    read(Store, ResolvedPath).
+
 lookup(Store, ID) ->
     lookup(Store, ID, "").
 lookup(Store, ID, Subpath) ->
@@ -166,10 +177,10 @@ lookup(Store, ID, Subpath, DirBase) ->
                 Store,
                 ao_store:path(Store, [DirBase, fmt_id(ID), Subpath])
             ),
-            DirBase
+            "messages"
         ),
     ?c({resolved_path, ResolvedPath}),
-    read(Store, ResolvedPath).
+    read(Store, ResolvedPath, DirBase, DirBase).
 
 read(Store, ID) ->
     read(Store, ID, "messages").
@@ -177,6 +188,7 @@ read(Store, ID, DirBase) ->
     read(Store, ID, DirBase, all).
 read(Store, ID, DirBase, Subpath) ->
     MessagePath = ao_store:path(Store, [DirBase, fmt_id(ID)]),
+    ?c({read, {dir_base, DirBase}, {id, ID}, {subpath, Subpath}}),
     case ao_store:type(Store, MessagePath) of
         composite ->
             case Subpath of
@@ -360,3 +372,15 @@ deeply_nested_item_test() ->
         ar_bundles:id(DeepValueTx, unsigned),
         ar_bundles:id(RetrievedItem, unsigned)
     ).
+
+write_and_read_output_test() ->
+    Store = test_cache(),
+    Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
+    Item1 = create_signed_tx(<<"Simple signed output #1">>),
+    Item2 = create_signed_tx(<<"Simple signed output #2">>),
+    ok = write_output(Store, Proc#tx.id, 0, Item1),
+    ok = write_output(Store, Proc#tx.id, 1, Item2),
+    ?assertEqual(Item1, read(Store, Item1#tx.id)),
+    ?assertEqual(Item2, read(Store, Item2#tx.id)),
+    ?assertEqual(Item2, read_output(Store, fmt_id(Proc#tx.id), 1)),
+    ?assertEqual(Item1, read_output(Store, fmt_id(Proc#tx.id), Item1#tx.id)).
