@@ -1,7 +1,7 @@
 -module(ao_cache).
 -export([
     read_output/3, write/2, write_output/4,
-    checkpoints/2, latest/2, latest/3, 
+    outputs/2, latest/2, latest/3, 
     read/2, read/3, read/4, lookup/2, lookup/3
 ]).
 -include("src/include/ao.hrl").
@@ -48,18 +48,18 @@
 latest(Store, ProcID) ->
     latest(Store, ProcID, inf).
 latest(Store, ProcID, Limit) ->
-    CPs = checkpoints(Store, ProcID),
+    Outputs = outputs(Store, ProcID),
     LatestSlot = lists:max(
         case Limit of
-            inf -> CPs;
-            _ -> lists:filter(fun(Slot) -> Slot < Limit end, CPs)
+            inf -> Outputs;
+            _ -> lists:filter(fun(Slot) -> Slot < Limit end, Outputs)
         end
     ),
-    read_output(Store, ProcID, filename:join(["slot", integer_to_list(LatestSlot)])).
+    read_output(Store, ProcID, ["slot", integer_to_list(LatestSlot)]).
 
-checkpoints(Store, ProcID) ->
-    SlotDir = ao_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, "slot"]),
-    case ao_store:list_dir(SlotDir) of
+outputs(Store, ProcID) ->
+    SlotDir = ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), "slot"]),
+    case ao_store:list(Store, SlotDir) of
         {ok, Names} -> [ list_to_integer(Name) || Name <- Names ];
         {error, _} -> []
     end.
@@ -74,7 +74,7 @@ write_output(Store, ProcID, Slot, Item) ->
     % to the underlying data.
     RawMessagePath = ao_store:path(Store, ["messages", UnsignedID]),
     ProcMessagePath = ao_store:path(Store, ["computed", fmt_id(ProcID), UnsignedID]),
-    ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), integer_to_list(Slot)]),
+    ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
     ok = ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
     ok = ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
     if SignedID =/= UnsignedID ->
@@ -148,7 +148,7 @@ write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
 read_output(Store, ProcID, Slot) when is_integer(Slot) ->
-    read_output(Store, fmt_id(ProcID), integer_to_list(Slot));
+    read_output(Store, fmt_id(ProcID), ["slot", integer_to_list(Slot)]);
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
 read_output(Store, ProcID, Input) ->
@@ -188,7 +188,6 @@ read(Store, ID, DirBase) ->
     read(Store, ID, DirBase, all).
 read(Store, ID, DirBase, Subpath) ->
     MessagePath = ao_store:path(Store, [DirBase, fmt_id(ID)]),
-    ?c({read, {dir_base, DirBase}, {id, ID}, {subpath, Subpath}}),
     case ao_store:type(Store, MessagePath) of
         composite ->
             case Subpath of
@@ -384,3 +383,14 @@ write_and_read_output_test() ->
     ?assertEqual(Item2, read(Store, Item2#tx.id)),
     ?assertEqual(Item2, read_output(Store, fmt_id(Proc#tx.id), 1)),
     ?assertEqual(Item1, read_output(Store, fmt_id(Proc#tx.id), Item1#tx.id)).
+
+latest_output_retrieval_test() ->
+    Store = test_cache(),
+    Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
+    Item1 = create_signed_tx(<<"Simple signed output #1">>),
+    Item2 = create_signed_tx(<<"Simple signed output #2">>),
+    ok = write_output(Store, Proc#tx.id, 0, Item1),
+    ok = write_output(Store, Proc#tx.id, 1, Item2),
+    ?assertEqual(Item2, latest(Store, Proc#tx.id)),
+    % TODO: Validate that this is the correct item -- is the 'limit' inclusive or exclusive?
+    ?assertEqual(Item1, latest(Store, Proc#tx.id, 1)).

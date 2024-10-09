@@ -1,7 +1,7 @@
 -module(ao_fs_store).
 -behavior(ao_store).
 -export([start/1, stop/1, reset/1]).
--export([type/2, read/2, write/3]).
+-export([type/2, read/2, write/3, list/2]).
 -export([path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
@@ -48,6 +48,10 @@ write(#{ dir := DataDir }, PathComponents, Value) ->
     ?c({writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
+
+list(#{ dir := DataDir }, Path) ->
+    ?c({listing, join([DataDir, Path])}),
+    file:list_dir(join([DataDir, Path])).
 
 %% @doc Replace links in a path with the target of the link.
 resolve(Opts = #{ dir := DataDir }, RawPath) ->
