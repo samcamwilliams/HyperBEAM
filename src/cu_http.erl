@@ -32,7 +32,7 @@ handle(<<"GET">>, [ProcID, Msg], Req) ->
                         error_strategy => throw,
                         to => Msg,
                         store => Store,
-                        wallet => ao:get(wallet)
+                        wallet => ao:wallet()
                     }
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),

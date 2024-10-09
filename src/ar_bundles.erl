@@ -157,6 +157,7 @@ new_item(Target, Anchor, Tags, Data) ->
     ).
 
 %% @doc Sign a data item.
+sign_item(_, undefined) -> throw(wallet_not_found);
 sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
     Item = (normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
     Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item)),

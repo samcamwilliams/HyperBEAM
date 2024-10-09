@@ -13,7 +13,7 @@ behavior_info(callbacks) ->
     [
         {start, 1}, {stop, 1}, {reset, 1}, {make_group, 2}, {make_link, 3},
         {type, 2}, {read, 2}, {write, 3},
-        {path, 2}, {add_path, 3}
+        {list, 2}, {path, 2}, {add_path, 3}
     ].
 
 %%% Library wrapper implementations.

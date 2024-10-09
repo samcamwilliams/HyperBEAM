@@ -139,12 +139,11 @@ write_composite(Store, Path, map, Item) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
         ok = write(Store, Subitem),
-        ok =
-            ao_store:make_link(
-                Store,
-                ao_store:path(Store, [Path, fmt_id(Subitem)]),
-                ao_store:path(Store, [Dir, Key])
-            )
+        ao_store:make_link(
+            Store,
+            ao_store:path(Store, [Path, fmt_id(Subitem)]),
+            ao_store:path(Store, [Dir, Key])
+        )
     end, ar_bundles:map(Item)),
     ok;
 write_composite(Store, Path, list, Item) ->

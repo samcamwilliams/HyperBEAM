@@ -109,7 +109,7 @@ boot(Process, Opts) ->
             slot => Slot,
             to_message => maps:get(to_message, Opts, inf),
             to => maps:get(to, Opts, inf),
-            wallet => maps:get(wallet, Opts, ao:get(wallet)),
+            wallet => maps:get(wallet, Opts, ao:wallet()),
             store => maps:get(store, Opts, ao:get(store)),
             schedule => maps:get(schedule, Opts, []),
             devices =>
@@ -188,7 +188,10 @@ execute_checkpoint(
                 Store,
                 Process#tx.id,
                 Slot,
-                ar_bundles:sign_item(Checkpoint#{ <<"Result">> => Result }, Wallet)
+                ar_bundles:sign_item(
+                    #tx { data = Checkpoint#{ <<"Result">> => Result } },
+                    Wallet
+                )
             );
         false ->
             ao_cache:write_output(
@@ -228,7 +231,7 @@ await_command(State = #{schedule := Sched}, Opts) ->
 %%% Tests
 
 simple_stack_test() ->
-    Wallet = ao:get(wallet),
+    Wallet = ao:wallet(),
     Authority = ar_wallet:to_address(Wallet),
     Proc =
         ar_bundles:sign_item(
