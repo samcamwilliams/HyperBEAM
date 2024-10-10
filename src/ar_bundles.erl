@@ -326,13 +326,15 @@ finalize_bundle_data(Processed) ->
     <<Length/binary, Index/binary, Items/binary>>.
 
 to_serialized_pair(Item) ->
-    Serialized = serialize(Item, binary),
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
+    Serialized = serialize(Item, binary),
     ID =
         if
-            is_record(Item, tx) -> Item#tx.id;
-            true -> (deserialize(Serialized, binary))#tx.id
+            is_record(Item, tx) andalso Item#tx.id =/= ?DEFAULT_ID -> Item#tx.id;
+            true -> 
+                Deserialized = deserialize(Serialized, binary),
+                Deserialized#tx.id
         end,
     {ID, Serialized}.
 
@@ -642,7 +644,7 @@ json_struct_to_item(RawTXStruct) ->
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(Other) ->
-    ao:c({error_decoding_signature, Other}),
+    ?c({error_decoding_signature, Other}),
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
@@ -860,19 +862,9 @@ test_bundle_map() ->
 
 extremely_large_bundle_test() ->
     W = ar_wallet:new(),
-    ?c(starting_extremely_large_bundle_test),
-    Data = crypto:strong_rand_bytes(100000000),
-    ?c({data_size, byte_size(Data)}),
-    Item = #tx { data = #{ <<"key">> => Data } },
-    ?c(normalizing_item),
-    Norm = normalize(Item),
-    ?c({normalized_data_size, byte_size(Norm#tx.data)}),
-    ?c(signing_item),
+    Data = crypto:strong_rand_bytes(100_000_000),
+    Norm = normalize(#tx { data = #{ <<"key">> => #tx { data = Data } } }),
     Signed = sign_item(Norm, W),
-    ?c(serializing),
     Serialized = serialize(Signed),
-    ?c({serialized_size, byte_size(Serialized)}),
-    ?c(deserializing),
     Deserialized = deserialize(Serialized),
-    ?c(verifying),
     ?assert(verify_item(Deserialized)).
