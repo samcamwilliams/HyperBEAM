@@ -24,7 +24,6 @@ handle(<<"GET">>, [], Req) ->
 handle(<<"GET">>, [ProcID, Msg], Req) ->
     case ao_cache:read_output(Store = ao:get(store), ProcID, Msg) of
         not_found ->
-            ?c({starting_execution, ProcID, Msg}),
             ResultLog =
                 cu_process:run(
                     ao_cache:read(Store, ProcID),

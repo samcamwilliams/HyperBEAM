@@ -117,16 +117,15 @@ extract_assignments(From, To, Assignments) ->
 
 compute(Assignment) when is_record(Assignment, tx) ->
     {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+    %% TODO: We should be getting the assignment by _ID_, not by slot.
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    compute(ar_util:decode(ProcessID), Slot).
-compute(ProcID, Slot) ->
-    % TN.1: MU Should be reading real results, not mocked-out.
+    compute(binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))).
+compute(ProcID, Slot) when is_integer(Slot) ->
+    compute(ProcID, list_to_binary(integer_to_list(Slot)));
+compute(ProcID, Assignment) ->
     ao_http:get(
         ao:get(cu),
-        "/" ++
-            binary_to_list(ar_util:encode(ProcID)) ++
-            "/" ++
-            binary_to_list(Slot)
+        "/" ++ ProcID ++ "/" ++ Assignment
     ).
 
 %%% MU API functions

@@ -78,7 +78,9 @@ debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
 debug_fmt({X, Y}) ->
     io_lib:format("~p: ~s", [X, debug_fmt(Y)]);
 debug_fmt({X, Y, Z}) ->
-    io_lib:format("~s: ~s: ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z)]);
+    io_lib:format("~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z)]);
+debug_fmt({X, Y, Z, W}) ->
+    io_lib:format("~s, ~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z), debug_fmt(W)]);
 debug_fmt(Str = [X | _]) when X >= 32, X < 127 ->
     lists:flatten(io_lib:format("~s", [Str]));
 debug_fmt(X) ->

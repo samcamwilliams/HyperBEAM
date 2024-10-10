@@ -7,6 +7,8 @@
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-ao_debug(print).
+
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).
@@ -57,6 +59,7 @@ latest(Store, ProcID, Limit) ->
                     _ -> lists:filter(fun(Slot) -> Slot < Limit end, Outputs)
                 end
             ),
+            ?c({latest_slot, LatestSlot}),
             {LatestSlot, read_output(Store, ProcID, ["slot", integer_to_list(LatestSlot)])}
     end.
 
@@ -156,19 +159,20 @@ read_output(Store, ProcID, Slot) when is_integer(Slot) ->
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
 read_output(Store, ProcID, Input) ->
+    ?c({input, Input}),
     ResolvedPath =
         ar_util:remove_common(
             ar_util:remove_common(
-                ao_store:resolve(
+                ?c(ao_store:resolve(
                     Store,
-                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
-                ),
+                    ?c(ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input]))
+                )),
                 ?COMPUTE_CACHE_DIR
             ),
             "messages"
         ),
     ?c({output_path, ResolvedPath}),
-    case ao_store:type(Store, ResolvedPath) of
+    case ao_store:type(Store, ["messages", ResolvedPath]) of
         not_found -> not_found;
         _ -> read(Store, ResolvedPath)
     end.
