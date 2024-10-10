@@ -78,8 +78,10 @@ serialize(Port) ->
 
 deserialize(Port, Bin) ->
     % TODO: Be careful of memory growth!
-    ?c(starting_deserialize).
-    %?c(ok = cu_beamr_io:write(Port, 0, Bin)).
+    ?c(starting_deserialize),
+    ok = cu_beamr_io:write(Port, 0, Bin),
+    ?c(finished_deserialize),
+    ok.
 
 %% Tests
 

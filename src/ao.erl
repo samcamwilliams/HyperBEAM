@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, build/0, profile/0]).
+-export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, build/0, profile/1]).
 -export([wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -39,8 +39,8 @@ config() ->
             },
         loadable_devices => [],
         % Dev options
-        profiling => true,
-        store => {ao_fs_store, #{ dir => "TEST-data" }}
+        store => {ao_fs_store, #{ dir => "TEST-data" }},
+        debug_print => true
     }.
 
 get(Key) -> get(Key, undefined).
@@ -48,14 +48,28 @@ get(Key, Default) ->
     maps:get(Key, config(), Default).
 
 c(X) -> c(X, "").
-c(X, ModAtom) when is_atom(ModAtom) -> c(X, "[" ++ atom_to_list(ModAtom) ++ "]");
 c(X, Mod) -> c(X, Mod, undefined).
 c(X, ModStr, undefined) -> c(X, ModStr, "");
+c(X, ModAtom, Line) when is_atom(ModAtom) ->
+    case lists:member({ao_debug, [print]}, ModAtom:module_info(attributes)) of
+        true -> debug_print(X, atom_to_list(ModAtom), Line);
+        false -> 
+            case lists:member({ao_debug, [no_print]}, ModAtom:module_info(attributes)) of
+                false -> c(X, atom_to_list(ModAtom), Line);
+                true -> X
+            end
+    end;
 c(X, ModStr, Line) ->
+    case ao:get(debug_print) of
+        true -> debug_print(X, ModStr, Line);
+        false -> X
+    end.
+
+debug_print(X, ModStr, Line) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "===== DEBUG PRINT[~p ~p:~w ~pms] =====> ~80p~n",
+    io:format(standard_error, "===== DEBUG PRINT[~p ~s:~w ~pms] =====> ~80p~n",
         [self(), ModStr, Line, TSDiff, X]),
     X.
 
@@ -65,10 +79,11 @@ now() ->
 build() ->
     r3:do(compile, [{dir, "src"}]).
 
-profile() ->
-    case ao:get(profiling) of
-        false -> not_profiling;
-        true ->
-            %eprof:stop_profiling(),
-            eprof:analyze(total)
-    end.
+profile(Fun) ->
+    eprof:start_profiling([self()]),
+    try
+        Fun()
+    after
+        eprof:stop_profiling()
+    end,
+    eprof:analyze(total).

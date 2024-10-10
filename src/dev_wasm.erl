@@ -44,9 +44,8 @@ execute(_M, State = #{phase := post_exec}, _) ->
     {ok, State#{phase := pre_exec}}.
 
 checkpoint(State = #{wasm := Port, save_keys := SaveKeys}) ->
-    ?c(checkpoint_called_on_dev_wasm),
-    TX = ar_bundles:normalize(#tx{data = cu_beamr:serialize(Port)}),
-    ?c({checkpoint_calculated, ar_util:encode(TX#tx.id)}),
+    {ok, Serialized} = cu_beamr:serialize(Port),
+    TX = ar_bundles:normalize(#tx{ data = Serialized }),
     {ok, State#{
         <<"WASM-State">> => TX,
         save_keys => [<<"WASM-State">> | SaveKeys]

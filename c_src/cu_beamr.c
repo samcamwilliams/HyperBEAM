@@ -55,25 +55,18 @@ static ErlDrvTermData atom_import;
 #define HB_DEBUG 0
 #endif
 
-#define DRV_DEBUG(format, ...) debug_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
-#define DRV_PRINT(format, ...) beamr_print(__FILE__, __LINE__, format, ##__VA_ARGS__)
+#define DRV_DEBUG(format, ...) beamr_print(HB_DEBUG, __FILE__, __LINE__, format, ##__VA_ARGS__)
+#define DRV_PRINT(format, ...) beamr_print(1, __FILE__, __LINE__, format, ##__VA_ARGS__)
 
-void debug_print(const char* file, int line, const char* format, ...) {
-#if HB_DEBUG==1
+void beamr_print(int print, const char* file, int line, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    beamr_print(file, line, format, args);
-    va_end(args);
-#endif
-}
-
-void beamr_print(const char* file, int line, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    pthread_t thread_id = pthread_self();
-    printf("[DBG#%p @ %s:%d] ", thread_id, file, line);
-    vprintf(format, args);
-    printf("\n");
+    if(print) {
+        pthread_t thread_id = pthread_self();
+        printf("[DBG#%p @ %s:%d] ", thread_id, file, line);
+        vprintf(format, args);
+        printf("\r\n");
+    }
     va_end(args);
 }
 
@@ -714,31 +707,42 @@ static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
 
 static void wasm_driver_stop(ErlDrvData raw) {
     Proc* proc = (Proc*)raw;
-    DRV_DEBUG("Stopping WASM driver");
+    DRV_PRINT("Stopping WASM driver");
 
     // TODO: We should probably lock a mutex here and in the import_response function.
     if(proc->current_import) {
+        DRV_DEBUG("Shutting down during import response...");
         proc->current_import->error_message = "WASM driver unloaded during import response";
         proc->current_import->ready = 1;
         DRV_DEBUG("Signalling import_response with error");
         drv_signal(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
         DRV_DEBUG("Signalled worker to fail. Locking is_running mutex to shutdown");
     }
+
     // We need to first grab the lock, then unlock it and destroy it. Must be a better way...
+    DRV_DEBUG("Grabbing is_running mutex to shutdown...");
     drv_lock(proc->is_running);
     drv_unlock(proc->is_running);
+    DRV_DEBUG("Destroying is_running mutex");
     erl_drv_mutex_destroy(proc->is_running);
     // Cleanup WASM resources
+    DRV_DEBUG("Cleaning up WASM resources");
     if (proc->is_initialized) {
+        DRV_DEBUG("Deleting WASM instance");
         wasm_instance_delete(proc->instance);
+        DRV_DEBUG("Deleted WASM instance");
         wasm_module_delete(proc->module);
+        DRV_DEBUG("Deleted WASM module");
         wasm_store_delete(proc->store);
+        DRV_DEBUG("Deleted WASM store");
     }
+    DRV_DEBUG("Freeing proc");
     driver_free(proc);
+    DRV_DEBUG("Freed proc");
 }
 
 static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) {
-    //DRV_DEBUG("WASM driver output received");
+    DRV_DEBUG("WASM driver output received");
     Proc* proc = (Proc*)raw;
     //DRV_DEBUG("Port: %p", proc->port);
     //DRV_DEBUG("Port term: %p", proc->port_term);

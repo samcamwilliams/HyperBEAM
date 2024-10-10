@@ -2,6 +2,7 @@
 -export([start/1, start/2]).
 -export([run/1, run/2]).
 -export([generate_test_data/0]).
+-export([full_push_test/0]).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -178,28 +179,36 @@ execute_checkpoint(
                     checkpoint,
                     Opts
                 ),
-            ?c({checkpoint_result, maps:keys(CheckpointState)}),
+            ?c({checkpoint_result_recvd, maps:keys(CheckpointState)}),
             Checkpoint =
-                maps:from_list(lists:map(
-                    fun(Key) ->
-                        case is_record(maps:get(Key, CheckpointState), tx) of
-                            true ->
-                                {Key, maps:get(Key, CheckpointState)};
-                            false -> throw({error, checkpoint_result_not_tx, Key})
-                        end
-                    end,
-                    ?c(maps:get(save_keys, CheckpointState, []))
-                )),
-            ?c({checkpoint_result_normalized, maps:keys(Checkpoint)}),
+                ar_bundles:normalize(
+                    #tx {
+                        data =
+                            maps:from_list(lists:map(
+                                fun(Key) ->
+                                    Item = maps:get(Key, CheckpointState),
+                                    case is_record(Item, tx) of
+                                        true ->
+
+                                            {Key, Item};
+                                        false -> throw({error, checkpoint_result_not_tx, Key})
+                                    end
+                                end,
+                                maps:get(save_keys, CheckpointState, [])
+                            ))
+                    }
+                ),
+            ?c(checkpoint_normalized),
             ao_cache:write_output(
                 Store,
                 Process#tx.id,
                 Slot,
                 ar_bundles:sign_item(
-                    ar_bundles:normalize(#tx { data = Checkpoint#{ <<"Result">> => Result } }),
+                    Checkpoint,
                     Wallet
                 )
-            );
+            ),
+            ?c(checkpointed);
         false ->
             ao_cache:write_output(
                 Store,
@@ -298,7 +307,8 @@ full_push_test_() ->
     {timeout, 150, ?_assert(full_push_test())}.
 
 full_push_test() ->
-    application:ensure_all_started(ao),
+    %application:ensure_all_started(ao),
+    ?c(full_push_test_started),
     Msg = generate_test_data(),
     ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none).
