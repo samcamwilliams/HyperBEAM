@@ -34,6 +34,7 @@ start(WasmBinary) ->
     end.
 
 stop(Port) ->
+    ?c(stop_called_on_dev_wasm),
     port_close(Port),
     ok.
 
@@ -69,8 +70,10 @@ exec_call(S, ImportFunc, Port) ->
     end.
 
 serialize(Port) ->
+    ?c(starting_serialize),
     {ok, Size} = cu_beamr_io:size(Port),
     {ok, Mem} = cu_beamr_io:read(Port, 0, Size),
+    ?c({finished_serialize, byte_size(Mem)}),
     {ok, Mem}.
 
 deserialize(Port, Bin) ->

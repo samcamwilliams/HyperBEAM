@@ -43,8 +43,10 @@ upload(Item) ->
         )
     of
         {ok, {{_, 200, _}, _, Body}} ->
+            ?c(upload_success),
             {ok, jiffy:decode(Body, [return_maps])};
         Response ->
+            ?c(upload_error),
             {error, bundler_http_error, Response}
     end.
 
@@ -133,6 +135,7 @@ push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
 push(Item, Tracing) ->
+    ?c({push_start, ar_util:encode(Item#tx.id)}),
     ao_http:post(
         ao:get(mu),
         "/?trace=" ++ Tracing,

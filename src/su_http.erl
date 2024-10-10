@@ -1,8 +1,7 @@
 -module(su_http).
-
 -export([handle/3, routes/0]).
-
 -include("include/ao.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% SU HTTP Server API
 
@@ -53,16 +52,11 @@ handle(<<"GET">>, [ProcID, <<"slot">>], Req) ->
 handle(<<"GET">>, [BinID], Req) ->
     Store = ao:get(store),
     ID = binary_to_list(BinID),
+    ?c({getting_assignments, ID}),
     #{to := To, from := From} =
-        cowboy_req:match_qs([{from, [], undefined}, {to, [], undefined}], Req),
-    % If neither 'to' nor 'from' is specified, send the message for the given ID
-    % Else, send a stream of the assignments for the given range
-    case {To, From} of
-        {undefined, undefined} ->
-            send_data(Store, ID, Req);
-        {_, _} ->
-            send_stream(Store, ID, From, To, Req)
-    end,
+        cowboy_req:match_qs([{from, [], 0}, {to, [], infinity}], Req),
+    ?c({range, {To, From}}),
+    send_stream(Store, ID, From, To, Req),
     {ok, Req};
 handle(<<"POST">>, [], Req) ->
     Store = ao:get(store),
@@ -123,12 +117,13 @@ send_stream(Store, ProcID, From, To, Req) ->
         From,
         To
     ),
+    ?c({got_assignments, length(Assignments)}),
     % TODO: Find out why tags are not getting included in bundle
     Bundle = #tx{
         tags =
             [
                 {<<"Type">>, <<"Schedule">>},
-                {<<"Process">>, ProcID},
+                {<<"Process">>, list_to_binary(ProcID)},
                 {<<"Continues">>, atom_to_binary(More, utf8)},
                 {<<"Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
                 {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
@@ -151,16 +146,14 @@ send_stream(Store, ProcID, From, To, Req) ->
                 end,
         data = assignments_to_bundle(Store, Assignments)
     },
+    ?c({bundle, ar_util:encode(Bundle#tx.id)}),
     ao_http:reply(
         Req,
-        ar_bundles:sign_item(
-            Bundle,
-            ao:wallet()
-        )
+        ar_bundles:sign_item(Bundle, ao:wallet())
     ).
 
 send_data(Store, ID, Req) ->
-    Message = su_cache:read(Store, ID),
+    Message = ao_cache:read(Store, ID),
     ao_http:reply(
         Req,
         Message
@@ -185,3 +178,23 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
                 }
         }
     ).
+
+%%% Tests
+
+% schedule_many_test() ->
+%     application:ensure_all_started(ao),
+%     su_data:reset_data(),
+%     Wallet = ar_wallet:new(),
+%     Proc = ar_bundles:sign_item(#tx{ data = <<"test-proc">> }, Wallet),
+%     su_registry:find(binary_to_list(ar_util:encode(Proc#tx.id)), true),
+%     SignedItem = ar_bundles:sign_item(#tx{ tags = [{<<"Target">>, ar_util:encode(Proc#tx.id)}], data = <<"test">> }, Wallet),
+%     ?c(signed_item),
+%     lists:foreach(
+%         fun(X) ->
+%             ?c({assigning, X}),
+%             Res = ao_client:schedule(SignedItem),
+%             ?c({assigned, X, Res})
+%         end,
+%         lists:seq(1, 100)
+%     ),
+%     true.

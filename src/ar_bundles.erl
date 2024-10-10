@@ -857,3 +857,22 @@ test_bundle_map() ->
     BundleItem = deserialize(Bundle),
     ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
     ?assert(verify_item(BundleItem)).
+
+extremely_large_bundle_test() ->
+    W = ar_wallet:new(),
+    ?c(starting_extremely_large_bundle_test),
+    Data = crypto:strong_rand_bytes(100000000),
+    ?c({data_size, byte_size(Data)}),
+    Item = #tx { data = #{ <<"key">> => Data } },
+    ?c(normalizing_item),
+    Norm = normalize(Item),
+    ?c({normalized_data_size, byte_size(Norm#tx.data)}),
+    ?c(signing_item),
+    Signed = sign_item(Norm, W),
+    ?c(serializing),
+    Serialized = serialize(Signed),
+    ?c({serialized_size, byte_size(Serialized)}),
+    ?c(deserializing),
+    Deserialized = deserialize(Serialized),
+    ?c(verifying),
+    ?assert(verify_item(Deserialized)).

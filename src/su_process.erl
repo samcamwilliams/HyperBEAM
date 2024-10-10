@@ -157,4 +157,4 @@ new_proc() ->
     true.
 
 new_proc_test_() ->
-    {timeout, 60, ?_assert(new_proc())}.
+    {timeout, 30, ?_assert(new_proc())}.

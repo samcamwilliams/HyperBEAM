@@ -24,9 +24,10 @@ post(URL, Item) ->
         [{body_format, binary}]
     ) of
         {ok, {{_, 200, _}, _, Body}} ->
-            ao:c({http_got, URL}),
+            ao:c({http_post_got, URL}),
             {ok, ar_bundles:deserialize(Body)};
         Response ->
+            ao:c({http_post_error, URL, Response}),
             {error, Response}
     end.
 

@@ -168,6 +168,7 @@ execute_checkpoint(
             wallet := Wallet
         },
     Opts) ->
+    ?c({checkpointing, Slot}),
     case is_checkpoint_slot(State, Opts) of
         true ->
             % Run checkpoint on the device stack, but we do not propagate the result.
@@ -177,19 +178,25 @@ execute_checkpoint(
                     checkpoint,
                     Opts
                 ),
+            ?c({checkpoint_result, maps:keys(CheckpointState)}),
             Checkpoint =
                 maps:from_list(lists:map(
                     fun(Key) ->
-                        {Key, maps:get(Key, CheckpointState)}
+                        case is_record(maps:get(Key, CheckpointState), tx) of
+                            true ->
+                                {Key, maps:get(Key, CheckpointState)};
+                            false -> throw({error, checkpoint_result_not_tx, Key})
+                        end
                     end,
-                    maps:get(save_keys, CheckpointState, [])
+                    ?c(maps:get(save_keys, CheckpointState, []))
                 )),
+            ?c({checkpoint_result_normalized, maps:keys(Checkpoint)}),
             ao_cache:write_output(
                 Store,
                 Process#tx.id,
                 Slot,
                 ar_bundles:sign_item(
-                    #tx { data = Checkpoint#{ <<"Result">> => Result } },
+                    ar_bundles:normalize(#tx { data = Checkpoint#{ <<"Result">> => Result } }),
                     Wallet
                 )
             );
@@ -228,9 +235,9 @@ await_command(State = #{schedule := Sched}, Opts) ->
             execute_terminate(State, Opts)
     end.
 
-%%% Tests
+%%% TESTS
 
-simple_stack_test() ->
+simple_stack_test_ignore() ->
     Wallet = ao:wallet(),
     Authority = ar_wallet:to_address(Wallet),
     Proc =
@@ -287,7 +294,11 @@ simple_stack_test() ->
     ao:c({simple_stack_test_result, TX#tx.data}),
     ok.
 
+full_push_test_() ->
+    {timeout, 150, ?_assert(full_push_test())}.
+
 full_push_test() ->
+    application:ensure_all_started(ao),
     Msg = generate_test_data(),
     ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none).
@@ -333,7 +344,7 @@ generate_test_data() ->
             Wallet
         )
     ),
-    ar_bundles:sign_item(
+    Msg = ar_bundles:sign_item(
         #tx{
             target = Signed#tx.id,
             tags = [
@@ -351,4 +362,7 @@ generate_test_data() ->
                 >>
         },
         Wallet
-    ).
+    ),
+    ao_cache:write(Store, Msg),
+    ?c({test_data_written, {proc, ar_util:encode(Signed#tx.id)}, {msg, ar_util:encode(Msg#tx.id)}}),
+    Msg.

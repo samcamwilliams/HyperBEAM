@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, get/1, get/2, c/1, c/2, c/3, build/0, profile/0]).
+-export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, build/0, profile/0]).
 -export([wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -58,6 +58,9 @@ c(X, ModStr, Line) ->
     io:format(standard_error, "===== DEBUG PRINT[~p ~p:~w ~pms] =====> ~80p~n",
         [self(), ModStr, Line, TSDiff, X]),
     X.
+
+now() ->
+    erlang:system_time(millisecond).
 
 build() ->
     r3:do(compile, [{dir, "src"}]).

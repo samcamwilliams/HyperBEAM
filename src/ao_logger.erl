@@ -40,7 +40,7 @@ loop(State) ->
             loop(State#state{ activity = [Activity | State#state.activity] });
         {register, PID} ->
             ?c(registered),
-            erlang:monitor(process, PID),
+            %erlang:monitor(process, PID),
             console(State, Act = {ok, registered, PID}),
             ?c({registered, PID}),
             loop(State#state{
