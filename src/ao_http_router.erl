@@ -2,6 +2,8 @@
 -export([start/1, allowed_methods/2, read_body/1, init/2]).
 -include("include/ao.hrl").
 
+-ao_debug(no_print).
+
 start(Mods) ->
     application:ensure_all_started(cowboy),
     Dispatcher = cowboy_router:compile(

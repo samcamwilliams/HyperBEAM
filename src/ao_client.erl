@@ -60,7 +60,7 @@ schedule(Item, Target) ->
     ).
 
 assign(_ID) ->
-    ao:c({not_implemented, assignments}).
+    ?c({not_implemented, assignments}).
 
 register_su(Location) ->
     register_su(Location, ao:get(key_location)).

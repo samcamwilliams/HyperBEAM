@@ -20,7 +20,7 @@ start(ProcID, Wallet) ->
     start(ProcID, Wallet, ao:get(store)).
 start(ProcID, Wallet, Store) ->
     {Current, HashChain} = su_data:get_current_slot(ProcID),
-    ao:c({starting, ProcID, Current, HashChain}),
+    ?c({starting, ProcID, Current, HashChain}),
     spawn(
         fun() ->
             server(

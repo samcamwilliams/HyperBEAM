@@ -136,7 +136,7 @@ execute_schedule(State, Opts) ->
                 {ok, NS} ->
                     execute_schedule(NS, Opts);
                 {error, DevNum, DevMod, Info} ->
-                    ao:c({error, {DevNum, DevMod, Info}}),
+                    ?c({error, {DevNum, DevMod, Info}}),
                     execute_terminate(
                         State#{errors := maps:get(errors, State, []) ++ [{DevNum, DevMod, Info}]},
                         Opts
@@ -147,10 +147,10 @@ execute_schedule(State, Opts) ->
                 {ok, NewState = #{schedule := [Msg | NextSched]}} ->
                     execute_checkpoint(Msg, NewState#{schedule := NextSched}, Opts);
                 {ok, NewState} ->
-                    ao:c({schedule_updated, not_popping}),
+                    ?c({schedule_updated, not_popping}),
                     execute_checkpoint(Msg, NewState, Opts);
                 {error, DevNum, DevMod, Info} ->
-                    ao:c({error, {DevNum, DevMod, Info}}),
+                    ?c({error, {DevNum, DevMod, Info}}),
                     execute_terminate(
                         State#{errors := maps:get(errors, State, []) ++ [{DevNum, DevMod, Info}]},
                         Opts
@@ -179,7 +179,6 @@ execute_checkpoint(
                     checkpoint,
                     Opts
                 ),
-            ?c({checkpoint_result_recvd, maps:keys(CheckpointState)}),
             Checkpoint =
                 ar_bundles:normalize(
                     #tx {
@@ -198,7 +197,6 @@ execute_checkpoint(
                             ))
                     }
                 ),
-            ?c(checkpoint_normalized),
             ao_cache:write_output(
                 Store,
                 Process#tx.id,
@@ -207,8 +205,7 @@ execute_checkpoint(
                     Checkpoint,
                     Wallet
                 )
-            ),
-            ?c(checkpointed);
+            );
         false ->
             ao_cache:write_output(
                 Store,
@@ -300,7 +297,7 @@ simple_stack_test_ignore() ->
         ],
     [{message_processed, _, TX} | _] = 
         run(Proc, #{schedule => Schedule, error_strategy => stop, wallet => Wallet}),
-    ao:c({simple_stack_test_result, TX#tx.data}),
+    ?c({simple_stack_test_result, TX#tx.data}),
     ok.
 
 full_push_test_() ->

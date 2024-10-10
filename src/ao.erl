@@ -69,9 +69,20 @@ debug_print(X, ModStr, Line) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "===== DEBUG PRINT[~p ~s:~w ~pms] =====> ~80p~n",
-        [self(), ModStr, Line, TSDiff, X]),
+    io:format(standard_error, "==AO_DEBUG==[~pms in ~p @ ~s:~w]==> ~s~n",
+        [TSDiff, self(), ModStr, Line, debug_fmt(X)]),
     X.
+
+debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
+    io_lib:format("~p: ~p", [X, Y]);
+debug_fmt({X, Y}) ->
+    io_lib:format("~p: ~s", [X, debug_fmt(Y)]);
+debug_fmt({X, Y, Z}) ->
+    io_lib:format("~s: ~s: ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z)]);
+debug_fmt(Str = [X | _]) when X >= 32, X < 127 ->
+    lists:flatten(io_lib:format("~s", [Str]));
+debug_fmt(X) ->
+    lists:flatten(io_lib:format("~120p", [X])).
 
 now() ->
     erlang:system_time(millisecond).

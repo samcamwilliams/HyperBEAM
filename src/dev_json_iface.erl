@@ -71,8 +71,6 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, pro
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     #{<<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages} = Resp,
-                    ao:c(process_output),
-                    ao:c(Data),
                     S#{
                         result =>
                             ar_bundles:sign_item(
@@ -139,10 +137,10 @@ lib(
     [_Fd, Ptr, Vecs, RetPtr],
     _Signature
 ) ->
-    %ao:c({fd_write, Fd, Ptr, Vecs, RetPtr}),
+    %?c({fd_write, Fd, Ptr, Vecs, RetPtr}),
     {ok, VecData} = cu_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
-    %ao:c({fd_write_data, VecData}),
+    %?c({fd_write_data, VecData}),
     NewStdio =
         case Stdout of
             undefined ->
@@ -154,10 +152,10 @@ lib(
     cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
-    %ao:c({called, wasi_clock_time_get, 1}),
+    %?c({called, wasi_clock_time_get, 1}),
     {S, [1]};
 lib(S, _Port, Module, Func, _Args, _Signature) ->
-    %ao:c({unimplemented_stub_called, Module, Func}),
+    %?c({unimplemented_stub_called, Module, Func}),
     {S, [0]}.
 
 result_test() ->
@@ -172,5 +170,4 @@ result_test() ->
         #tx{id = <<"1234">>}
     ),
     % Test = result(#{result => {foo, <<"Error">>}}),
-    ao:c(Test),
     ok.

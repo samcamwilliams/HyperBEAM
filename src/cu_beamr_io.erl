@@ -63,7 +63,7 @@ do_read_string(Port, Offset, ChunkSize) ->
     end.
 
 read_iovecs(Port, Ptr, Vecs) ->
-    %ao:c({read_iovecs_started, Port, Ptr, Vecs}),
+    %?c({read_iovecs_started, Port, Ptr, Vecs}),
     Bin = iolist_to_binary(do_read_iovecs(Port, Ptr, Vecs)),
     {ok, Bin}.
 
@@ -77,10 +77,10 @@ do_read_iovecs(Port, Ptr, Vecs) ->
 malloc(Port, Size) ->
     case cu_beamr:call(Port, "malloc", [Size]) of
         {ok, [0]} ->
-            ao:c({malloc_failed, Size}),
+            ?c({malloc_failed, Size}),
             {error, malloc_failed};
         {ok, [Ptr]} ->
-            ao:c({malloc_success, Ptr, Size}),
+            ?c({malloc_success, Ptr, Size}),
             {ok, Ptr};
         {error, Error} ->
             {error, Error}
@@ -89,7 +89,7 @@ malloc(Port, Size) ->
 free(Port, Ptr) ->
     case cu_beamr:call(Port, "free", [Ptr]) of
         {ok, Res} ->
-            ao:c({free_result, Res}),
+            ?c({free_result, Res}),
             ok;
         {error, Error} ->
             {error, Error}
