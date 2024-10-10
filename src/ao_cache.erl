@@ -81,8 +81,8 @@ write_output(Store, ProcID, Slot, Item) ->
     RawMessagePath = ao_store:path(Store, ["messages", UnsignedID]),
     ProcMessagePath = ao_store:path(Store, ["computed", fmt_id(ProcID), UnsignedID]),
     ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
-    ok = ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
-    ok = ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
+    ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
+    ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
     if SignedID =/= UnsignedID ->
         ok = ao_store:make_link(Store, RawMessagePath,
             ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
@@ -117,7 +117,7 @@ write(Store, Path, Item) ->
     ok.
 
 write_composite(Store, Path, map, Item) ->
-    % The item is a map. We should
+    % The item is a map. We should:
     % 1. Write the header item into the store without its children.
     % 2. Write each child into the store.
     % 3. Make links from the keys in the map to the corresponding messages.

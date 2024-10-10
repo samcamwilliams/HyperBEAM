@@ -6,6 +6,7 @@
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 %%% A process is a specific type of AO combinator, represented as a stack of components.
 %%% Each AO process runs as an Erlang process consuming messages from -- and placing items
@@ -145,10 +146,10 @@ execute_schedule(State, Opts) ->
         #{schedule := [Msg | NextSched]} ->
             case execute_message(Msg, State, Opts) of
                 {ok, NewState = #{schedule := [Msg | NextSched]}} ->
-                    execute_checkpoint(Msg, NewState#{schedule := NextSched}, Opts);
+                    post_execute(Msg, NewState#{schedule := NextSched}, Opts);
                 {ok, NewState} ->
                     ?c({schedule_updated, not_popping}),
-                    execute_checkpoint(Msg, NewState, Opts);
+                    post_execute(Msg, NewState#{schedule := NextSched}, Opts);
                 {error, DevNum, DevMod, Info} ->
                     ?c({error, {DevNum, DevMod, Info}}),
                     execute_terminate(
@@ -158,7 +159,7 @@ execute_schedule(State, Opts) ->
             end
     end.
 
-execute_checkpoint(
+post_execute(
     Msg,
     State =
         #{
@@ -214,7 +215,7 @@ execute_checkpoint(
                 ar_bundles:sign_item(#{ <<"Result">> => Result }, Wallet)
             )
     end,
-    execute_schedule(State, Opts).
+    execute_schedule(State#{ slot := Slot + 1 }, Opts).
 
 execute_message(Msg, State, Opts) ->
     cu_device_stack:call(State, execute, Opts#{arg_prefix => [Msg]}).
@@ -226,7 +227,7 @@ execute_eos(S, Opts) ->
     cu_device_stack:call(S, end_of_schedule, Opts).
 
 is_checkpoint_slot(State, Opts) ->
-    (maps:get(checkpoint, Opts, fun(_) -> false end))(State)
+    (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)
         orelse maps:get(slot, State) rem maps:get(freq, Opts, ?DEFAULT_FREQ) == 0.
 
 %% After execution of the current schedule has finished the Erlang process should

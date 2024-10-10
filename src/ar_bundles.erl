@@ -65,7 +65,7 @@ print(Item, Indent) ->
 print_data(Item, Indent) when is_binary(Item#tx.data) ->
     case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
         {_, _} ->
-            print(deserialize(serialize(Item)), Indent);
+            print_data(deserialize(serialize(Item)), Indent);
         false ->
             print_line(
                 "Binary: ~p... <~p bytes>",
@@ -172,6 +172,7 @@ verify_item(DataItem) ->
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
+    ?c(lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags)),
     case lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags) of
         {<<"Bundle-Map">>, _} ->
             case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of

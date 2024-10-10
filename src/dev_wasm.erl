@@ -3,6 +3,7 @@
 -export([checkpoint/1]).
 
 -include("include/ao.hrl").
+-ao_debug(print).
 
 %%% A device that executes a WASM image on messages.
 
@@ -12,13 +13,16 @@ init(State, Params) ->
     {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
     ?c(started_wasm),
     % Apply the checkpoint if it is in the initial state.
+    ?c({initial_state, maps:keys(State)}),
     case maps:get(<<"WASM-State">>, State, undefined) of
         undefined ->
             ?c(wasm_no_checkpoint),
             State;
         Checkpoint ->
-            ?c(wasm_deserializing),
-            cu_beamr:deserialize(Port, Checkpoint),
+            ?c(wasm_checkpoint_found),
+            ?c({is_tx, is_record(Checkpoint, tx)}),
+            ?c({wasm_deserializing, byte_size(Checkpoint#tx.data)}),
+            cu_beamr:deserialize(Port, Checkpoint#tx.data),
             ?c(wasm_deserialized)
     end,
     {ok, State#{
