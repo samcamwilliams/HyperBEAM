@@ -172,7 +172,7 @@ verify_item(DataItem) ->
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
-    ?c(lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags)),
+    lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags),
     case lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags) of
         {<<"Bundle-Map">>, _} ->
             case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of

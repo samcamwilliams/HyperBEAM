@@ -5,8 +5,6 @@
 -export([path/2, add_path/3]).
 -export([make_group/2, make_link/3, resolve/2]).
 
--ao_debug(print).
-
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store
 %%% implementation later, or even at the configuration level if desired.

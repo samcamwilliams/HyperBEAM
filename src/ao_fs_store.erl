@@ -7,8 +7,6 @@
 -include_lib("kernel/include/file.hrl").
 -include("include/ao.hrl").
 
--ao_debug(no_print).
-
 %%% A key-value store abstraction, such that the underlying implementation
 %%% can be swapped out easily. The default implementation is a file-based
 %%% store.
@@ -57,9 +55,8 @@ list(#{ dir := DataDir }, Path) ->
 
 %% @doc Replace links in a path with the target of the link.
 resolve(Opts = #{ dir := DataDir }, RawPath) ->
-    LinkedPathWithDataDir = resolve(Opts, "", Path = filename:split(join(RawPath))),
+    LinkedPathWithDataDir = resolve(Opts, "", filename:split(join(RawPath))),
     NewPath = ar_util:remove_common(LinkedPathWithDataDir, DataDir),
-    %?c({resolved, Path, NewPath}),
     NewPath.
 resolve(#{ dir := DataDir }, CurrPath, []) ->
     join([DataDir, CurrPath]);
@@ -67,7 +64,6 @@ resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
     PathPart = join([CurrPath, Next]),
     case file:read_link(join([DataDir, PathPart])) of
         {ok, Link} ->
-            %?c({resolved_link, Link}),
             resolve(Opts#{ dir := Link }, "", Rest);
         _ ->
             resolve(Opts, PathPart, Rest)

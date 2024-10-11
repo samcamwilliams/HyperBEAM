@@ -2,7 +2,6 @@
 -export([start/1, start/2]).
 -export([run/1, run/2]).
 -export([generate_test_data/0]).
--export([full_push_test/0]).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -55,7 +54,7 @@
 %%% to operate like a MU or CU interface.
 
 %% The default frequency for checkpointing is 2 slots.
--define(DEFAULT_FREQ, 2).
+-define(DEFAULT_FREQ, 3).
 
 %% Start a new Erlang process for the AO process, optionally giving the assignments so far.
 start(Process) -> start(Process, #{}).
@@ -75,21 +74,28 @@ run(Process, RawOpts) ->
 
 monitor(ProcID) ->
     receive
-        {monitor, _State, end_of_schedule} ->
+        {monitor, _State, terminate} ->
+            ?c(monitor_signalling_shutdown),
             ProcID ! {self(), shutdown},
             [];
+        {monitor, _State, end_of_schedule} ->
+            monitor(ProcID);
         {monitor, State, {message, Message}} ->
+            ?c({stored_for_slot, maps:get(slot, State)}),
             [
                 {message_processed, ao_message:id(Message),
-                    maps:get(result, State, {no_result, State})}
+                    maps:get(results, State, #{})}
                 | monitor(ProcID)
             ];
-        Else ->
-            [Else]
+        _Else ->
+            []
     end.
 
 %% Process execution flow =>
-%% Boot:    Read from cache, build init state, run init() on all devices.
+%% Boot:    Check which devices need checkpoints and which they require
+%%          Read the checkpoint data from the cache if available
+%%          Build init state, mixing checkpoint data with baseline state
+%%          Run init() on all devices
 %% Execute: Run execute_schedule for the slot.
 %%          Run execute_message for each device.
 %%          Run checkpoint on all devices if the current slot is a checkpoint slot.
@@ -98,11 +104,36 @@ monitor(ProcID) ->
 %% EOS:     Run end_of_schedule() on all devices to see if there is more work to be done.
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
+    ?c({booting_process, Process#tx.id}),
+    % Build the device stack.
+    Devs =
+        cu_device_stack:normalize(
+            maps:get(pre, Opts, []),
+            Process,
+            maps:get(post, Opts, [])
+        ),
+    % Get the store we are using for this execution.
+    Store = maps:get(store, Opts, ao:get(store)),
+    % Get checkpoint key names from all devices.
+    {ok,
+        #{keys := [Key|_]}} =
+            cu_device_stack:call(#{devices => Devs, keys => []}, checkpoint_uses),
+    % We don't support partial checkpoints (perhaps we never will?), so just take one key
+    % and use that to find the latest full checkpoint.
+    CheckpointOption =
+        ao_cache:latest(
+            Store,
+            Process#tx.id,
+            maps:get(to_slot, Opts, inf),
+            [Key]
+        ),
     {Slot, Checkpoint} =
-        case ao_cache:latest(maps:get(store, Opts, ao:get(store)), Process#tx.id) of
+        case CheckpointOption of
             not_found ->
+                ?c({wasm_no_checkpoint, maps:get(to_slot, Opts, inf)}),
                 {-1, #{}};
             {LatestSlot, State} ->
+                ?c(wasm_checkpoint),
                 {LatestSlot, State#tx.data}
     end,
     InitState =
@@ -114,12 +145,8 @@ boot(Process, Opts) ->
             wallet => maps:get(wallet, Opts, ao:wallet()),
             store => maps:get(store, Opts, ao:get(store)),
             schedule => maps:get(schedule, Opts, []),
-            devices =>
-                cu_device_stack:normalize(
-                    maps:get(pre, Opts, []),
-                    Process,
-                    maps:get(post, Opts, [])
-                )
+            devices => Devs
+                
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
     case cu_device_stack:call(InitState, init) of
@@ -165,7 +192,7 @@ post_execute(
     State =
         #{
             store := Store,
-            result := Result,
+            results := Results,
             process := Process,
             slot := Slot,
             wallet := Wallet
@@ -186,18 +213,19 @@ post_execute(
                 ar_bundles:normalize(
                     #tx {
                         data =
-                            maps:from_list(lists:map(
-                                fun(Key) ->
-                                    Item = maps:get(Key, CheckpointState),
-                                    case is_record(Item, tx) of
-                                        true ->
-
-                                            {Key, Item};
-                                        false -> throw({error, checkpoint_result_not_tx, Key})
-                                    end
-                                end,
-                                maps:get(save_keys, CheckpointState, [])
-                            ))
+                            maps:merge(
+                                Results,
+                                maps:from_list(lists:map(
+                                    fun(Key) ->
+                                        Item = maps:get(Key, CheckpointState),
+                                        case is_record(Item, tx) of
+                                            true -> {Key, Item};
+                                            false -> throw({error, checkpoint_result_not_tx, Key})
+                                        end
+                                    end,
+                                    maps:get(save_keys, CheckpointState, [])
+                                ))
+                            )
                     }
                 ),
             ?c({checkpoint_normalized_for_slot, Slot}),
@@ -205,23 +233,23 @@ post_execute(
                 Store,
                 Process#tx.id,
                 Slot,
-                ar_bundles:sign_item(
-                    Checkpoint,
-                    Wallet
-                )
-            ),
-            ?c({checkpoint_written_for_slot, Slot});
+                ar_bundles:sign_item(Checkpoint, Wallet)
+            );
         false ->
-            ?c({writing_result_for_slot, Slot}),
-            % ao_cache:write_output(
-            %     Store,
-            %     Process#tx.id,
-            %     Slot,
-            %     ar_bundles:sign_item(#{ <<"Result">> => Result }, Wallet)
-            % ),
+            NormalizedResult = ar_bundles:deserialize(ar_bundles:serialize(Results)),
+            ao_cache:write_output(
+                Store,
+                Process#tx.id,
+                Slot,
+                NormalizedResult
+            ),
             ?c({result_written_for_slot, Slot})
     end,
-    execute_schedule(State#{ slot := Slot + 1 }, Opts).
+    execute_schedule(initialize_slot(State), Opts).
+
+initialize_slot(State = #{slot := Slot}) ->
+    ?c({initializing_slot, Slot + 1}),
+    State#{slot := Slot + 1, pass := 0, results := undefined }.
 
 execute_message(Msg, State, Opts) ->
     cu_device_stack:call(State, execute, Opts#{arg_prefix => [Msg]}).
@@ -238,6 +266,8 @@ is_checkpoint_slot(State, Opts) ->
 
 %% After execution of the current schedule has finished the Erlang process should
 %% enter a hibernation state, waiting for either more work or termination.
+await_command(State, Opts = #{ terminate_on_idle := true }) ->
+    execute_terminate(State, Opts);
 await_command(State = #{schedule := Sched}, Opts) ->
     receive
         {add, Msg} ->
@@ -370,9 +400,8 @@ generate_test_data() ->
             data =
                 <<
                     "\n"
-                    "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(m.From); print(\"Sent Ping\"); end)\n"
+                    "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(\"Sent Ping\"); end)\n"
                     "Send({ Target = ao.id, Action = \"Ping\" })\n"
-                    "print(\"Setup Handler and pushed message\" .. ao.id )\n"
                 >>
         },
         Wallet

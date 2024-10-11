@@ -14,7 +14,7 @@ execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
         json_iface => IfaceS#{stdout => []}
     }};
 execute(_M, S = #{pass := 2}) ->
-    {ok, result(S)}.
+    {ok, results(S)}.
 
 prep_call(
     #tx{
@@ -57,12 +57,12 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
     % TODO: need to do the same for "From-Module" remove if present and then add from State
     maps:remove(<<"Anchor">>, UpdatedMsg).
 
-result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
+results(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
     case Res of
         {error, Res} ->
             S#{
                 outbox := [],
-                result := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
+                results := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
             };
         {ok, [Ptr]} ->
             {ok, Str} = cu_beamr_io:read_string(Port, Ptr),
@@ -72,52 +72,48 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, pro
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     #{<<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages} = Resp,
                     S#{
-                        result =>
-                            ar_bundles:sign_item(
-                                #{
-                                    <<"/Outbox/Message">> =>
-                                        [
+                        results =>
+                            #{
+                                <<"/Outbox">> =>
+                                    maps:from_list([
+                                        {
+                                            list_to_binary(integer_to_list(MessageNum)),
                                             ar_bundles:sign_item(
                                                 ar_bundles:json_struct_to_item(
                                                     postProcessResultMessages(Msg, Proc)
                                                 ),
                                                 Wallet
                                             )
-                                         || Msg <- Messages
-                                        ],
-                                    <<"/Outbox/Data">> =>
-                                        ar_bundles:normalize(#tx{data = Data}),
-                                    <<"/Outbox/Stdout">> =>
-                                        ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
-                                },
-                                Wallet
-                            )
+                                        }
+                                    ||
+                                        {MessageNum, Msg} <-
+                                            lists:zip(lists:seq(1, length(Messages)), Messages)
+                                    ]),
+                                <<"/Data">> =>
+                                    ar_bundles:normalize(#tx{data = Data}),
+                                <<"/Stdout">> =>
+                                    ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
+                            }
                     };
                 #{<<"ok">> := false} ->
                     S#{
                         outbox => [],
-                        result =>
-                            #tx{
-                                tags = [{<<"Result">>, <<"Error">>}],
-                                data = jiffy:encode(#{
-                                    <<"Error">> => <<"JSON Parse Error">>,
-                                    <<"stdout">> => iolist_to_binary(Stdout),
-                                    <<"Data">> => Str
-                                })
+                        results =>
+                            #{
+                                <<"Error">> => <<"JSON Parse Error">>,
+                                <<"stdout">> => iolist_to_binary(Stdout),
+                                <<"Data">> => Str
                             }
                     }
             catch
                 _:_ ->
                     S#{
                         outbox => [],
-                        result =>
-                            #tx{
-                                tags = [{<<"Result">>, <<"Error">>}],
-                                data = jiffy:encode(#{
-                                    <<"Error">> => <<"JSON Parse Error">>,
-                                    <<"stdout">> => iolist_to_binary(Stdout),
-                                    <<"Data">> => Str
-                                })
+                        results =>
+                            #{
+                                <<"Error">> => <<"JSON Parse Error">>,
+                                <<"stdout">> => iolist_to_binary(Stdout),
+                                <<"Data">> => Str
                             }
                     }
             end;

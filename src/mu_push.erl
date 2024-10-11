@@ -61,13 +61,13 @@ push(Item, Monitor) ->
             % Get result from cu
             case ao_client:compute(Assignment) of
                 {ok, #tx{data = Res}} ->
-                    ao_logger:log(Monitor, {ok, computed, Assignment}),
                     Result = #result{
                         messages =
-                            (maps:get(<<"/Outbox/Message">>, Res, #tx{data = []}))#tx.data,
-                        assignments = maps:get(<<"/Outbox/Assignment">>, Res, []),
-                        spawns = maps:get(<<"/Outbox/Spawn">>, Res, [])
+                            (maps:get(<<"/Outbox">>, Res, #tx{data = []}))#tx.data,
+                        assignments = maps:get(<<"/Assignment">>, Res, []),
+                        spawns = maps:get(<<"/Spawn">>, Res, [])
                     },
+                    ao_logger:log(Monitor, {ok, computed}),
                     start(Result, Monitor);
                 Error ->
                     ao_logger:log(Monitor, Error)

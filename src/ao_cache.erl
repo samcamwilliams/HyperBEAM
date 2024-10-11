@@ -1,13 +1,11 @@
 -module(ao_cache).
 -export([
     read_output/3, write/2, write_output/4,
-    outputs/2, latest/2, latest/3, 
+    outputs/2, latest/2, latest/3, latest/4,
     read/2, read/3, read/4, lookup/2, lookup/3
 ]).
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
--ao_debug(print).
 
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
@@ -50,18 +48,55 @@
 latest(Store, ProcID) ->
     latest(Store, ProcID, undefined).
 latest(Store, ProcID, Limit) ->
+    latest(Store, ProcID, Limit, []).
+latest(Store, ProcID, Limit, Path) ->
     case outputs(Store, ProcID) of
         [] -> not_found;
-        Outputs ->
-            LatestSlot = lists:max(
-                case Limit of
-                    undefined -> Outputs;
-                    _ -> lists:filter(fun(Slot) -> Slot < Limit end, Outputs)
-                end
-            ),
-            ?c({latest_slot, LatestSlot}),
-            {LatestSlot, read_output(Store, ProcID, ["slot", integer_to_list(LatestSlot)])}
+        AllOutputSlots ->
+            Slot =
+                first_slot_with_path(
+                    Store,
+                    ProcID,
+                    lists:reverse(lists:sort(AllOutputSlots)),
+                    Limit,
+                    Path
+                ),
+            ResolvedPath =
+                ar_util:remove_common(
+                    ao_store:resolve(
+                        Store,
+                        ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])),
+                    "messages"
+                ),
+            ?c({resolved_path, ResolvedPath}),
+            Msg = read(Store, ResolvedPath),
+            ?c(got_message),
+            {Slot, Msg}
     end.
+
+first_slot_with_path(_Store, _ProcID, [], _Limit, _Path) -> not_found;
+first_slot_with_path(Store, ProcID, [AfterLimit | Rest], Limit, Path) when AfterLimit > Limit ->
+    first_slot_with_path(Store, ProcID, Rest, Limit, Path);
+first_slot_with_path(Store, ProcID, [LatestSlot | Rest], Limit, Path) ->
+    ?c({trying_slot, LatestSlot, Path}),
+    RawPath =
+        build_path(
+            ["computed", process, "slot", slot] ++ Path,
+            #{slot => integer_to_list(LatestSlot), process => fmt_id(ProcID)}
+        ),
+    ResolvedPath = ao_store:resolve(Store, RawPath),
+    case ao_store:type(Store, ResolvedPath) of
+        not_found -> first_slot_with_path(Store, ProcID, Rest, Limit, Path);
+        _ -> LatestSlot
+    end.
+
+build_path(PathList, Map) ->
+    lists:map(
+        fun(Ref) when is_atom(Ref) -> maps:get(Ref, Map);
+           (Other) -> Other
+        end,
+        PathList
+    ).
 
 outputs(Store, ProcID) ->
     SlotDir = ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), "slot"]),
@@ -125,8 +160,6 @@ write_composite(Store, Path, map, Item) ->
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
     ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
-    ?c({signed_id, fmt_id(SignedHeaderID)}),
-    ?c({unsigned_id, fmt_id(UnsignedHeaderID)}),
     ok =
         ao_store:make_link(
             Store,
@@ -141,6 +174,7 @@ write_composite(Store, Path, map, Item) ->
     maps:map(fun(Key, Subitem) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
+        ?c({writing_child, Key}),
         ok = write(Store, Subitem),
         ao_store:make_link(
             Store,

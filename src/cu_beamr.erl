@@ -5,6 +5,7 @@
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 test() ->
     %aos64_standalone_wex_test(),

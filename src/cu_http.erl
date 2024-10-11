@@ -31,7 +31,8 @@ handle(<<"GET">>, [ProcID, Msg], Req) ->
                         error_strategy => throw,
                         to => Msg,
                         store => Store,
-                        wallet => ao:wallet()
+                        wallet => ao:wallet(),
+                        terminate_on_idle => true
                     }
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),

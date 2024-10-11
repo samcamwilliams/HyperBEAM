@@ -1,9 +1,8 @@
 -module(dev_wasm).
 -export([uses/0, init/2, execute/3, terminate/1]).
--export([checkpoint/1]).
+-export([checkpoint/1, checkpoint_uses/1]).
 
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% A device that executes a WASM image on messages.
 
@@ -16,7 +15,6 @@ init(State, Params) ->
     ?c({initial_state, maps:keys(State)}),
     case maps:get(<<"WASM-State">>, State, undefined) of
         undefined ->
-            ?c(wasm_no_checkpoint),
             State;
         Checkpoint ->
             ?c(wasm_checkpoint_found),
@@ -54,6 +52,9 @@ checkpoint(State = #{wasm := Port, save_keys := SaveKeys}) ->
         <<"WASM-State">> => TX,
         save_keys => [<<"WASM-State">> | SaveKeys]
     }}.
+
+checkpoint_uses(S = #{keys := Keys}) ->
+    {ok, S#{keys => [<<"WASM-State">> | Keys]}}.
 
 terminate(State = #{wasm := Port}) ->
     ?c(terminate_called_on_dev_wasm),

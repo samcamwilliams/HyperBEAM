@@ -73,6 +73,8 @@ debug_print(X, ModStr, Line) ->
         [TSDiff, self(), ModStr, Line, debug_fmt(X)]),
     X.
 
+debug_fmt(X) when is_binary(X) andalso byte_size(X) == 32 ->
+    lists:flatten(io_lib:format("~s", [ar_util:encode(X)]));
 debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
     io_lib:format("~p: ~p", [X, Y]);
 debug_fmt({X, Y}) ->
