@@ -40,7 +40,7 @@ config() ->
         loadable_devices => [],
         % Dev options
         store => {ao_fs_store, #{ dir => "TEST-data" }},
-        debug_print => false
+        debug_print => true
     }.
 
 get(Key) -> get(Key, undefined).

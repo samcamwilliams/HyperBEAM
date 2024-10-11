@@ -3,6 +3,8 @@
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-ao_debug(print).
+
 %%% SU HTTP Server API
 
 routes() ->
@@ -74,6 +76,7 @@ handle(<<"POST">>, [], Req) ->
         {true, {<<"Type">>, <<"Process">>}} ->
             su_cache:write(Store, Message),
             ao_client:upload(Message),
+            ?c(old_style_reply),
             cowboy_req:reply(
                 201,
                 #{<<"Content-Type">> => <<"application/json">>},

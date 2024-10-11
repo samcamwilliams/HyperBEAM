@@ -22,7 +22,7 @@ handle(<<"GET">>, [], Req) ->
     ),
     {ok, Req};
 handle(<<"GET">>, [ProcID, Msg], Req) ->
-    case ao_cache:read_output(Store = ao:get(store), ProcID, Msg) of
+    case ao_cache:read_output(Store = ao:get(store), ProcID, parse_end(Msg)) of
         not_found ->
             ResultLog =
                 cu_process:run(
@@ -44,3 +44,8 @@ handle(<<"GET">>, [ProcID], Req) ->
 handle(_, _, Req) ->
     cowboy_req:reply(404, #{}, <<"Not Implemented">>, Req),
     {ok, Req}.
+
+parse_end(undefined) -> undefined;
+parse_end(<<>>) -> undefined;
+parse_end(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 -> Bin;
+parse_end(Slot) -> list_to_integer(binary_to_list(Slot)).

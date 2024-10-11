@@ -54,7 +54,7 @@
 %%% to operate like a MU or CU interface.
 
 %% The default frequency for checkpointing is 2 slots.
--define(DEFAULT_FREQ, 3).
+-define(DEFAULT_FREQ, 100).
 
 %% Start a new Erlang process for the AO process, optionally giving the assignments so far.
 start(Process) -> start(Process, #{}).
@@ -81,7 +81,6 @@ monitor(ProcID) ->
         {monitor, _State, end_of_schedule} ->
             monitor(ProcID);
         {monitor, State, {message, Message}} ->
-            ?c({stored_for_slot, maps:get(slot, State)}),
             [
                 {message_processed, ao_message:id(Message),
                     maps:get(results, State, #{})}
@@ -198,7 +197,7 @@ post_execute(
             wallet := Wallet
         },
     Opts) ->
-    ?c({post_execute_for_slot, Slot}),
+    ?c({handling_post_execute_for_slot, Slot}),
     case is_checkpoint_slot(State, Opts) of
         true ->
             % Run checkpoint on the device stack, but we do not propagate the result.
@@ -234,7 +233,8 @@ post_execute(
                 Process#tx.id,
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
-            );
+            ),
+            ?c({checkpoint_written_for_slot, Slot});
         false ->
             NormalizedResult = ar_bundles:deserialize(ar_bundles:serialize(Results)),
             ao_cache:write_output(
@@ -266,9 +266,9 @@ is_checkpoint_slot(State, Opts) ->
 
 %% After execution of the current schedule has finished the Erlang process should
 %% enter a hibernation state, waiting for either more work or termination.
-await_command(State, Opts = #{ terminate_on_idle := true }) ->
+await_command(State, Opts = #{ on_idle := terminate }) ->
     execute_terminate(State, Opts);
-await_command(State = #{schedule := Sched}, Opts) ->
+await_command(State = #{schedule := Sched}, Opts = #{ on_idle := wait }) ->
     receive
         {add, Msg} ->
             % TODO: Should we run `end_of_schedule` or `new_item` (or something)
@@ -341,11 +341,29 @@ full_push_test_() ->
     {timeout, 150, ?_assert(full_push_test())}.
 
 full_push_test() ->
-    %application:ensure_all_started(ao),
     ?c(full_push_test_started),
     Msg = generate_test_data(),
     ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none).
+
+simple_load_test() ->
+    ?c(scheduling_many_items),
+    Messages = 30,
+    Msg = generate_test_data(),
+    ao_cache:write(ao:get(store), Msg),
+    Start = ao:now(),
+    Assignments = lists:map(
+        fun(_) -> ao_client:schedule(Msg) end,
+        lists:seq(1, Messages)
+    ),
+    Scheduled = ao:now(),
+    {ok, LastAssignment} = lists:last(Assignments),
+    ?c({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
+    ao_client:compute(LastAssignment),
+    Computed = ao:now(),
+    ?c({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
+    ?c({total_time_s, ((Computed - Start) / Messages) / 1000}),
+    ?c({processed_messages, Messages}).
 
 generate_test_data() ->
     Store = ao:get(store),

@@ -38,9 +38,9 @@ reply(Req, Status, Item) ->
             Status,
             maps:get(method, Req, undef_method),
             maps:get(path, Req, undef_path),
-            Ref = case is_record(Item, tx) of true -> ar_util:encode(Item#tx.id); false -> Item end}
+            Ref = case is_record(Item, tx) of true -> ar_util:encode(Item#tx.id); false -> data_body end}
     ),
-    cowboy_req:reply(
+    Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
         ar_bundles:serialize(Item),
