@@ -35,7 +35,6 @@ handle(<<"GET">>, [ProcID, Msg], Req) ->
                     }
                 ),
             {message_processed, _ID, Res} = lists:last(ResultLog),
-            ar_bundles:print(Res),
             ao_http:reply(Req, Res);
         Res -> ao_http:reply(Req, Res)
     end;

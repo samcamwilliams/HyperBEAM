@@ -75,7 +75,7 @@ run(Process, RawOpts) ->
 
 monitor(ProcID) ->
     receive
-        {monitor, State, end_of_schedule} ->
+        {monitor, _State, end_of_schedule} ->
             ProcID ! {self(), shutdown},
             [];
         {monitor, State, {message, Message}} ->
@@ -101,14 +101,14 @@ boot(Process, Opts) ->
     {Slot, Checkpoint} =
         case ao_cache:latest(maps:get(store, Opts, ao:get(store)), Process#tx.id) of
             not_found ->
-                {0, #{}};
+                {-1, #{}};
             {LatestSlot, State} ->
                 {LatestSlot, State#tx.data}
     end,
     InitState =
         (Checkpoint)#{
             process => Process,
-            slot => Slot,
+            slot => Slot + 1,
             to_message => maps:get(to_message, Opts, inf),
             to => maps:get(to, Opts, inf),
             wallet => maps:get(wallet, Opts, ao:wallet()),
@@ -121,6 +121,7 @@ boot(Process, Opts) ->
                     maps:get(post, Opts, [])
                 )
         },
+    ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
     case cu_device_stack:call(InitState, init) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, Opts);
@@ -170,10 +171,11 @@ post_execute(
             wallet := Wallet
         },
     Opts) ->
-    ?c({checkpointing, Slot}),
+    ?c({post_execute_for_slot, Slot}),
     case is_checkpoint_slot(State, Opts) of
         true ->
             % Run checkpoint on the device stack, but we do not propagate the result.
+            ?c({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
                 cu_device_stack:call(
                     State#{ save_keys => [] },
@@ -198,6 +200,7 @@ post_execute(
                             ))
                     }
                 ),
+            ?c({checkpoint_normalized_for_slot, Slot}),
             ao_cache:write_output(
                 Store,
                 Process#tx.id,
@@ -206,14 +209,17 @@ post_execute(
                     Checkpoint,
                     Wallet
                 )
-            );
+            ),
+            ?c({checkpoint_written_for_slot, Slot});
         false ->
-            ao_cache:write_output(
-                Store,
-                Process#tx.id,
-                Slot,
-                ar_bundles:sign_item(#{ <<"Result">> => Result }, Wallet)
-            )
+            ?c({writing_result_for_slot, Slot}),
+            % ao_cache:write_output(
+            %     Store,
+            %     Process#tx.id,
+            %     Slot,
+            %     ar_bundles:sign_item(#{ <<"Result">> => Result }, Wallet)
+            % ),
+            ?c({result_written_for_slot, Slot})
     end,
     execute_schedule(State#{ slot := Slot + 1 }, Opts).
 

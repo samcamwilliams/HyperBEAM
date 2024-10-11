@@ -159,7 +159,7 @@ read_output(Store, ProcID, Slot) when is_integer(Slot) ->
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
 read_output(Store, ProcID, Input) ->
-    ?c({input, Input}),
+    ?c({reading_computed_result, Input}),
     ResolvedPath =
         ar_util:remove_common(
             ar_util:remove_common(
@@ -171,7 +171,7 @@ read_output(Store, ProcID, Input) ->
             ),
             "messages"
         ),
-    ?c({output_path, ResolvedPath}),
+    ?c({resolved_read_path, ResolvedPath}),
     case ao_store:type(Store, ["messages", ResolvedPath]) of
         not_found -> not_found;
         _ -> read(Store, ResolvedPath)
