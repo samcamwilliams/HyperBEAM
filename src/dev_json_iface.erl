@@ -57,7 +57,7 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
     % TODO: need to do the same for "From-Module" remove if present and then add from State
     maps:remove(<<"Anchor">>, UpdatedMsg).
 
-results(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
+results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
     case Res of
         {error, Res} ->
             S#{

@@ -39,7 +39,7 @@ execute(
             {ok, State};
         MsgID ->
             {ResType, Res, State2} = cu_beamr:call(State, Port, Func, Params, Stdlib),
-            {pass, State2#{phase := post_exec, result := {ResType, Res}}, MsgID}
+            {pass, State2#{phase := post_exec, results => {ResType, Res}}, MsgID}
     end;
 execute(_M, State = #{phase := post_exec}, _) ->
     % Reset the phase indicator for the next run.

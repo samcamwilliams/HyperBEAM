@@ -20,7 +20,7 @@ end_of_schedule(State) -> {ok, update_schedule(State)}.
 update_schedule(State = #{store := Store, process := Proc, schedule := []}) ->
     CurrentSlot = maps:get(slot, State, 0),
     ToSlot = maps:get(to, State),
-    ?c({updating_schedule_current, CurrentSlot, to_slot, ToSlot}),
+    ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint
     Assignments = ao_client:get_assignments(Proc#tx.id, CurrentSlot, ToSlot),
     ?c(got_assignments),

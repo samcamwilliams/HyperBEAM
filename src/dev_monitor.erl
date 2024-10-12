@@ -14,10 +14,9 @@ init(State, _, InitState) ->
 
 execute(Message, State) -> signal(State, {message, Message}).
 
-add_monitor(Mon, State) ->
-    ?c({adding_monitor, Mon, State}),
-    receive after infinity -> ok end,
-    {ok, State}.
+add_monitor(Mon, State = #{ monitors := Monitors }) ->
+    ?c({adding_monitor, Mon, length(Monitors)}),
+    {ok, State#{ monitors => [Mon | Monitors] }}.
 
 end_of_schedule(State) -> signal(State, end_of_schedule).
 

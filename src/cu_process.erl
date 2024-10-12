@@ -56,8 +56,8 @@
 %% The default frequency for checkpointing is 2 slots.
 -define(DEFAULT_FREQ, 10).
 
-result(ProcID, Msg, Store, Wallet) ->
-    case ao_cache:read_output(Store, ProcID, Msg) of
+result(ProcID, MsgRef, Store, Wallet) ->
+    case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
             ?c({proc_id, ar_util:encode(ProcID)}),
             case gproc:lookup_pids({n, l, {cu, 1}}) of
@@ -67,14 +67,14 @@ result(ProcID, Msg, Store, Wallet) ->
                     await_results(
                         cu_process:run(
                             Proc,
-                            #{to => Msg, store => Store, wallet => Wallet, on_idle => wait},
-                            create_monitor_for_message(Msg)
+                            #{to => MsgRef, store => Store, wallet => Wallet, on_idle => wait},
+                            create_monitor_for_message(MsgRef)
                         )
                     );
                 [Pid|_] ->
                     ?c({found_cu_for_proc, ar_util:encode(ProcID)}),
-                    Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(Msg)]},
-                    Pid ! {self(), {on_idle, message, Msg}},
+                    Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(MsgRef)]},
+                    Pid ! {on_idle, message, MsgRef},
                     ?c({added_listener_and_message, Pid}),
                     await_results(Pid)
             end;
@@ -163,13 +163,13 @@ boot(Process, Opts) ->
         ao_cache:latest(
             Store,
             Process#tx.id,
-            maps:get(to_slot, Opts, inf),
+            maps:get(to, Opts, inf),
             [Key]
         ),
     {Slot, Checkpoint} =
         case CheckpointOption of
             not_found ->
-                ?c({wasm_no_checkpoint, maps:get(to_slot, Opts, inf)}),
+                ?c({wasm_no_checkpoint, maps:get(to, Opts, inf)}),
                 {-1, #{}};
             {LatestSlot, State} ->
                 ?c(wasm_checkpoint),
@@ -179,7 +179,6 @@ boot(Process, Opts) ->
         (Checkpoint)#{
             process => Process,
             slot => Slot + 1,
-            to_message => maps:get(to_message, Opts, inf),
             to => maps:get(to, Opts, inf),
             wallet => maps:get(wallet, Opts, ao:wallet()),
             store => maps:get(store, Opts, ao:get(store)),
@@ -308,7 +307,7 @@ is_checkpoint_slot(State, Opts) ->
 %% enter a hibernation state, waiting for either more work or termination.
 await_command(State, Opts = #{ on_idle := terminate }) ->
     execute_terminate(State, Opts);
-await_command(State = #{schedule := Sched}, Opts = #{ on_idle := wait }) ->
+await_command(State, Opts = #{ on_idle := wait }) ->
     ?c({awaiting_command, self()}),
     receive
         {on_idle, run, Function, Args} ->
@@ -320,11 +319,12 @@ await_command(State = #{schedule := Sched}, Opts = #{ on_idle := wait }) ->
                     Opts#{arg_prefix => Args}
                 ),
             await_command(NewState, Opts);
-        {on_idle, message, Msg} ->
-            ?c({received_message, Msg}),
+        {on_idle, message, MsgRef} ->
+            ?c({received_message, MsgRef}),
             % TODO: Should we run `end_of_schedule` or `new_item` (or something)
             % here?
-            execute_schedule(State#{schedule := [Msg | Sched]}, Opts);
+            {ok, NewState} = execute_eos(State#{ to => MsgRef }, Opts),
+            execute_schedule(NewState, Opts);
         {on_idle, stop} ->
             ?c({received_stop_command}),
             execute_terminate(State, Opts);
