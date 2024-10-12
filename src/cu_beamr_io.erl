@@ -46,10 +46,7 @@ write_string(Port, Data) when is_binary(Data) ->
 read(Port, Offset, Size) ->
     Port ! {self(), {command, term_to_binary({read, Offset, Size})}},
     receive
-        {ok, Result} ->
-            {ok, Result};
-        Error ->
-            Error
+        {ok, Result} -> {ok, Result}
     end.
 
 read_string(Port, Offset) ->
