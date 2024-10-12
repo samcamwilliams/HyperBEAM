@@ -1,6 +1,6 @@
 -module(cu_process).
--export([start/1, start/2]).
--export([run/1, run/2]).
+-export([start/1, start/2, result/4]).
+-export([run/1, run/2, run/3]).
 -export([generate_test_data/0]).
 
 -include("include/ao.hrl").
@@ -54,7 +54,32 @@
 %%% to operate like a MU or CU interface.
 
 %% The default frequency for checkpointing is 2 slots.
--define(DEFAULT_FREQ, 100).
+-define(DEFAULT_FREQ, 10).
+
+result(ProcID, Msg, Store, Wallet) ->
+    case ao_cache:read_output(Store, ProcID, Msg) of
+        not_found ->
+            ?c({proc_id, ar_util:encode(ProcID)}),
+            case gproc:lookup_pids({n, l, {cu, 1}}) of
+                [] ->
+                    ?c({no_cu_for_proc, ar_util:encode(ProcID)}),
+                    Proc = ao_cache:read(Store, ProcID),
+                    await_results(
+                        cu_process:run(
+                            Proc,
+                            #{to => Msg, store => Store, wallet => Wallet, on_idle => wait},
+                            create_monitor_for_message(Msg)
+                        )
+                    );
+                [Pid|_] ->
+                    ?c({found_cu_for_proc, ar_util:encode(ProcID)}),
+                    Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(Msg)]},
+                    Pid ! {self(), {on_idle, message, Msg}},
+                    ?c({added_listener_and_message, Pid}),
+                    await_results(Pid)
+            end;
+        Result -> Result
+    end.
 
 %% Start a new Erlang process for the AO process, optionally giving the assignments so far.
 start(Process) -> start(Process, #{}).
@@ -62,32 +87,45 @@ start(Process, Opts) ->
     spawn(fun() -> boot(Process, Opts) end).
 
 run(Process) -> run(Process, #{}).
-run(Process, RawOpts) ->
-    Self = self(),
+run(Process, Opts) ->
+    run(Process, Opts, create_persistent_monitor()).
+run(Process, Opts, Monitor) when not is_list(Monitor) ->
+    run(Process, Opts, [Monitor]);
+run(Process, RawOpts, Monitors) ->
     Opts = RawOpts#{
-        post => maps:get(post, RawOpts, []) ++
-            [
-                {dev_monitor, [fun(S, Event) -> Self ! {monitor, S, Event} end]}
-            ]
+        post => maps:get(post, RawOpts, []) ++ [{dev_monitor, Monitors}]
     },
-    monitor(element(1, spawn_monitor(fun() -> boot(Process, Opts) end))).
+    element(1, spawn_monitor(fun() -> boot(Process, Opts) end)).
 
-monitor(ProcID) ->
+await_results(Pid) ->
     receive
-        {monitor, _State, terminate} ->
-            ?c(monitor_signalling_shutdown),
-            ProcID ! {self(), shutdown},
-            [];
-        {monitor, _State, end_of_schedule} ->
-            monitor(ProcID);
-        {monitor, State, {message, Message}} ->
-            [
-                {message_processed, ao_message:id(Message),
-                    maps:get(results, State, #{})}
-                | monitor(ProcID)
-            ];
-        _Else ->
-            []
+        {result, Pid, _Msg, State} -> maps:get(results, State)
+    end.
+
+create_monitor_for_message(Msg) when is_record(Msg, tx) ->
+    create_monitor_for_message(Msg#tx.id);
+create_monitor_for_message(MsgID) ->
+    Listener = self(),
+    fun(S, {message, Inbound}) ->
+        Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
+        Slot =
+            case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
+                {<<"Slot">>, RawSlot} -> list_to_integer(binary_to_list(RawSlot));
+                false -> no_slot
+            end,
+        ?c({slot, Slot}),
+        case (Slot == MsgID) or (Assignment#tx.id == MsgID) of
+            true -> Listener ! {result, self(), Inbound, S}, done;
+            false -> ignored
+        end;
+        (_, _) -> ignored
+    end.
+
+create_persistent_monitor() ->
+    Listener = self(),
+    fun(S, {message, Msg}) ->
+        Listener ! {result, self(), Msg, S};
+        (_, _) -> ok
     end.
 
 %% Process execution flow =>
@@ -103,7 +141,9 @@ monitor(ProcID) ->
 %% EOS:     Run end_of_schedule() on all devices to see if there is more work to be done.
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
-    ?c({booting_process, Process#tx.id}),
+    % Register the process with gproc so that it can be found by its ID.
+    gproc:reg({n, l, {cu, 1}}),
+    ?c({booting_process, ar_util:encode(Process#tx.id)}),
     % Build the device stack.
     Devs =
         cu_device_stack:normalize(
@@ -269,13 +309,28 @@ is_checkpoint_slot(State, Opts) ->
 await_command(State, Opts = #{ on_idle := terminate }) ->
     execute_terminate(State, Opts);
 await_command(State = #{schedule := Sched}, Opts = #{ on_idle := wait }) ->
+    ?c({awaiting_command, self()}),
     receive
-        {add, Msg} ->
+        {on_idle, run, Function, Args} ->
+            ?c({running_command, Function, Args}),
+            {ok, NewState} =
+                cu_device_stack:call(
+                    State,
+                    Function,
+                    Opts#{arg_prefix => Args}
+                ),
+            await_command(NewState, Opts);
+        {on_idle, message, Msg} ->
+            ?c({received_message, Msg}),
             % TODO: Should we run `end_of_schedule` or `new_item` (or something)
             % here?
             execute_schedule(State#{schedule := [Msg | Sched]}, Opts);
-        stop ->
-            execute_terminate(State, Opts)
+        {on_idle, stop} ->
+            ?c({received_stop_command}),
+            execute_terminate(State, Opts);
+        Other ->
+            ?c({received_unknown_message, Other}),
+            await_command(State, Opts)
     end.
 
 %%% TESTS

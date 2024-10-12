@@ -1,6 +1,7 @@
 -module(cu_http).
 -export([routes/0, handle/3]).
 -include("src/include/ao.hrl").
+-ao_debug(print).
 
 routes() ->
     {"/cu", ["/", "/:id", "/:id/:slot"]}.
@@ -22,30 +23,16 @@ handle(<<"GET">>, [], Req) ->
     ),
     {ok, Req};
 handle(<<"GET">>, [ProcID, Msg], Req) ->
-    case ao_cache:read_output(Store = ao:get(store), ProcID, parse_end(Msg)) of
-        not_found ->
-            ResultLog =
-                cu_process:run(
-                    ao_cache:read(Store, ProcID),
-                    #{
-                        error_strategy => throw,
-                        to => Msg,
-                        store => Store,
-                        wallet => ao:wallet(),
-                        terminate_on_idle => true
-                    }
-                ),
-            {message_processed, _ID, Res} = lists:last(ResultLog),
-            ao_http:reply(Req, Res);
-        Res -> ao_http:reply(Req, Res)
-    end;
+    Slot = parse_slot(Msg),
+    Res = cu_process:result(ProcID, Slot, ao:get(store), ao:wallet()),
+    ao_http:reply(Req, Res);
 handle(<<"GET">>, [ProcID], Req) ->
     handle(<<"GET">>, [ProcID, undefined], Req);
 handle(_, _, Req) ->
     cowboy_req:reply(404, #{}, <<"Not Implemented">>, Req),
     {ok, Req}.
 
-parse_end(undefined) -> undefined;
-parse_end(<<>>) -> undefined;
-parse_end(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 -> Bin;
-parse_end(Slot) -> list_to_integer(binary_to_list(Slot)).
+parse_slot(undefined) -> undefined;
+parse_slot(<<>>) -> undefined;
+parse_slot(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 -> Bin;
+parse_slot(Slot) -> list_to_integer(binary_to_list(Slot)).

@@ -7,6 +7,8 @@
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-ao_debug(no_print).
+
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).

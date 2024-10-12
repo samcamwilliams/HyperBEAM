@@ -67,7 +67,7 @@ push(Item, Monitor) ->
                         assignments = maps:get(<<"/Assignment">>, Res, []),
                         spawns = maps:get(<<"/Spawn">>, Res, [])
                     },
-                    ao_logger:log(Monitor, {ok, computed, Res}),
+                    ao_logger:log(Monitor, {ok, computed, Item#tx.id}),
                     start(Result, Monitor);
                 Error ->
                     ao_logger:log(Monitor, Error)
