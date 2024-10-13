@@ -31,7 +31,7 @@ init(State, Params) ->
 
 execute(
     M,
-    State = #{wasm := Port, phase := pre_exec, call := {Func, Params}, stdlib := Stdlib},
+    State = #{wasm := Port, phase := pre_exec, call := {Func, Params}, wasm_stdlib := Stdlib},
     LastExec
 ) ->
     case ao_message:id(M) of

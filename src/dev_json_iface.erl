@@ -6,7 +6,7 @@
 uses() -> all.
 
 init(S) ->
-    {ok, S#{stdlib => fun stdlib/6, json_iface => #{}}}.
+    {ok, S#{ wasm_stdlib => fun stdlib/6, json_iface => #{}}}.
 
 execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
     {ok, S#{
@@ -57,7 +57,7 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
     % TODO: need to do the same for "From-Module" remove if present and then add from State
     maps:remove(<<"Anchor">>, UpdatedMsg).
 
-results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
+results(S = #{wasm := Port, results := Res, process := Proc}) ->
     case Res of
         {error, Res} ->
             S#{
@@ -89,10 +89,7 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
                                         {MessageNum, Msg} <-
                                             lists:zip(lists:seq(1, length(Messages)), Messages)
                                     ]),
-                                <<"/Data">> =>
-                                    ar_bundles:normalize(#tx{data = Data}),
-                                <<"/Stdout">> =>
-                                    ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
+                                <<"/Data">> => ar_bundles:normalize(#tx{data = Data})
                             }
                     };
                 #{<<"ok">> := false} ->
@@ -101,7 +98,6 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
                         results =>
                             #{
                                 <<"Error">> => <<"JSON Parse Error">>,
-                                <<"stdout">> => iolist_to_binary(Stdout),
                                 <<"Data">> => Str
                             }
                     }
@@ -112,7 +108,6 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
                         results =>
                             #{
                                 <<"Error">> => <<"JSON Parse Error">>,
-                                <<"stdout">> => iolist_to_binary(Stdout),
                                 <<"Data">> => Str
                             }
                     }
@@ -121,9 +116,13 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
             ok
     end.
 
-stdlib(S = #{json_iface := IfaceS}, Port, ModName, FuncName, Args, Sig) ->
-    {IfaceS2, Res} = lib(IfaceS, Port, ModName, FuncName, Args, Sig),
-    {S#{json_iface := IfaceS2}, Res}.
+stdlib(S = #{ library := Library }, Port, ModName, FuncName, Args, Sig) ->
+    case maps:get({ModName, FuncName}, Library, undefined) of
+        undefined ->
+            lib(S, Port, ModName, FuncName, Args, Sig);
+        Func ->
+            Func(S, Port, ModName, FuncName, Args, Sig)
+    end.
 
 lib(
     S = #{stdout := Stdout},
@@ -151,7 +150,7 @@ lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
     %?c({called, wasi_clock_time_get, 1}),
     {S, [1]};
 lib(S, _Port, Module, Func, _Args, _Signature) ->
-    %?c({unimplemented_stub_called, Module, Func}),
+    ?c({unimplemented_stub_called, Module, Func}),
     {S, [0]}.
 
 result_test() ->
