@@ -1,5 +1,6 @@
 -module(ar_util).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2, find_value/3]).
+-export([remove_common/2]).
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
@@ -39,3 +40,8 @@ find_value(Key, List, Default) ->
 		{Key, Val} -> Val;
 		false -> Default
 	end.
+
+remove_common([X|Rest1], [X|Rest2]) ->
+    remove_common(Rest1, Rest2);
+remove_common([$/|Path], _) -> Path;
+remove_common(Rest, _) -> Rest.

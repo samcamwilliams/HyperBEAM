@@ -1,6 +1,8 @@
 -module(ao_http_router).
 -export([start/1, allowed_methods/2, read_body/1, init/2]).
--include("include/ar.hrl").
+-include("include/ao.hrl").
+
+-ao_debug(no_print).
 
 start(Mods) ->
     application:ensure_all_started(cowboy),
@@ -31,10 +33,13 @@ start(Mods) ->
     ).
 
 init(Req, Mod) ->
+    Start = ao:now(),
     Method = cowboy_req:method(Req),
     [_Mod | SplitPath] = split_path(cowboy_req:path(Req)),
     case Mod:handle(Method, SplitPath, Req) of
-        {ok, Req} -> {ok, Req, <<>>};
+        {ok, Req} ->
+            ?c({request_handled, ao:now() - Start}),
+            {ok, Req, <<>>};
         Other -> Other
     end.
 

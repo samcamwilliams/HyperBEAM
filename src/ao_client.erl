@@ -43,8 +43,10 @@ upload(Item) ->
         )
     of
         {ok, {{_, 200, _}, _, Body}} ->
+            ?c(upload_success),
             {ok, jiffy:decode(Body, [return_maps])};
         Response ->
+            ?c(upload_error),
             {error, bundler_http_error, Response}
     end.
 
@@ -58,7 +60,7 @@ schedule(Item, Target) ->
     ).
 
 assign(_ID) ->
-    ao:c({not_implemented, assignments}).
+    ?c({not_implemented, assignments}).
 
 register_su(Location) ->
     register_su(Location, ao:get(key_location)).
@@ -87,11 +89,19 @@ get_assignments(ProcID, From, To) ->
             "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?" ++
                 case From of
                     undefined -> "";
-                    _ -> "&from=" ++ integer_to_list(From)
+                    _ -> "&from=" ++
+                        case is_integer(From) of
+                            true -> integer_to_list(From);
+                            false -> binary_to_list(From)
+                        end
                 end ++
                 case To of
                     undefined -> "";
-                    _ -> "&to=" ++ integer_to_list(To)
+                    _ -> "&to=" ++
+                        case is_integer(To) of
+                            true -> integer_to_list(To);
+                            false -> binary_to_list(To)
+                        end
                 end
         ),
     extract_assignments(From, To, Data).
@@ -107,17 +117,15 @@ extract_assignments(From, To, Assignments) ->
 
 compute(Assignment) when is_record(Assignment, tx) ->
     {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+    %% TODO: We should be getting the assignment by _ID_, not by slot.
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    ao:c(Slot),
-    compute(ar_util:decode(ProcessID), Slot).
-compute(ProcID, Slot) ->
-    % TN.1: MU Should be reading real results, not mocked-out.
+    compute(binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))).
+compute(ProcID, Slot) when is_integer(Slot) ->
+    compute(ProcID, list_to_binary(integer_to_list(Slot)));
+compute(ProcID, Assignment) ->
     ao_http:get(
         ao:get(cu),
-        "/" ++
-            binary_to_list(ar_util:encode(ProcID)) ++
-            "/" ++
-            binary_to_list(Slot)
+        "/" ++ ProcID ++ "/" ++ Assignment
     ).
 
 %%% MU API functions
@@ -126,6 +134,7 @@ push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
 push(Item, Tracing) ->
+    ?c({push_start, ar_util:encode(Item#tx.id)}),
     ao_http:post(
         ao:get(mu),
         "/?trace=" ++ Tracing,

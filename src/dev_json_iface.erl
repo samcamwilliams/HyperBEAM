@@ -1,6 +1,5 @@
 -module(dev_json_iface).
 -export([init/1, execute/2, uses/0, stdlib/6, lib/6]).
-
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -15,7 +14,7 @@ execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
         json_iface => IfaceS#{stdout => []}
     }};
 execute(_M, S = #{pass := 2}) ->
-    {ok, result(S)}.
+    {ok, results(S)}.
 
 prep_call(
     #tx{
@@ -58,12 +57,12 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
     % TODO: need to do the same for "From-Module" remove if present and then add from State
     maps:remove(<<"Anchor">>, UpdatedMsg).
 
-result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
+results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
     case Res of
         {error, Res} ->
             S#{
                 outbox := [],
-                result := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
+                results := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
             };
         {ok, [Ptr]} ->
             {ok, Str} = cu_beamr_io:read_string(Port, Ptr),
@@ -72,55 +71,49 @@ result(S = #{wasm := Port, result := Res, json_iface := #{stdout := Stdout}, pro
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     #{<<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages} = Resp,
-                    ao:c(process_output),
-                    ao:c(Data),
                     S#{
-                        result =>
-                            ar_bundles:sign_item(
-                                #{
-                                    <<"/Outbox/Message">> =>
-                                        [
+                        results =>
+                            #{
+                                <<"/Outbox">> =>
+                                    maps:from_list([
+                                        {
+                                            list_to_binary(integer_to_list(MessageNum)),
                                             ar_bundles:sign_item(
                                                 ar_bundles:json_struct_to_item(
                                                     postProcessResultMessages(Msg, Proc)
                                                 ),
                                                 Wallet
                                             )
-                                         || Msg <- Messages
-                                        ],
-                                    <<"/Outbox/Data">> =>
-                                        ar_bundles:normalize(#tx{data = Data}),
-                                    <<"/Outbox/Stdout">> =>
-                                        ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
-                                },
-                                Wallet
-                            )
+                                        }
+                                    ||
+                                        {MessageNum, Msg} <-
+                                            lists:zip(lists:seq(1, length(Messages)), Messages)
+                                    ]),
+                                <<"/Data">> =>
+                                    ar_bundles:normalize(#tx{data = Data}),
+                                <<"/Stdout">> =>
+                                    ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
+                            }
                     };
                 #{<<"ok">> := false} ->
                     S#{
                         outbox => [],
-                        result =>
-                            #tx{
-                                tags = [{<<"Result">>, <<"Error">>}],
-                                data = jiffy:encode(#{
-                                    <<"Error">> => <<"JSON Parse Error">>,
-                                    <<"stdout">> => iolist_to_binary(Stdout),
-                                    <<"Data">> => Str
-                                })
+                        results =>
+                            #{
+                                <<"Error">> => <<"JSON Parse Error">>,
+                                <<"stdout">> => iolist_to_binary(Stdout),
+                                <<"Data">> => Str
                             }
                     }
             catch
                 _:_ ->
                     S#{
                         outbox => [],
-                        result =>
-                            #tx{
-                                tags = [{<<"Result">>, <<"Error">>}],
-                                data = jiffy:encode(#{
-                                    <<"Error">> => <<"JSON Parse Error">>,
-                                    <<"stdout">> => iolist_to_binary(Stdout),
-                                    <<"Data">> => Str
-                                })
+                        results =>
+                            #{
+                                <<"Error">> => <<"JSON Parse Error">>,
+                                <<"stdout">> => iolist_to_binary(Stdout),
+                                <<"Data">> => Str
                             }
                     }
             end;
@@ -140,10 +133,10 @@ lib(
     [_Fd, Ptr, Vecs, RetPtr],
     _Signature
 ) ->
-    %ao:c({fd_write, Fd, Ptr, Vecs, RetPtr}),
+    %?c({fd_write, Fd, Ptr, Vecs, RetPtr}),
     {ok, VecData} = cu_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
-    %ao:c({fd_write_data, VecData}),
+    %?c({fd_write_data, VecData}),
     NewStdio =
         case Stdout of
             undefined ->
@@ -155,10 +148,10 @@ lib(
     cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
-    %ao:c({called, wasi_clock_time_get, 1}),
+    %?c({called, wasi_clock_time_get, 1}),
     {S, [1]};
 lib(S, _Port, Module, Func, _Args, _Signature) ->
-    %ao:c({unimplemented_stub_called, Module, Func}),
+    %?c({unimplemented_stub_called, Module, Func}),
     {S, [0]}.
 
 result_test() ->
@@ -173,5 +166,4 @@ result_test() ->
         #tx{id = <<"1234">>}
     ),
     % Test = result(#{result => {foo, <<"Error">>}}),
-    ao:c(Test),
     ok.

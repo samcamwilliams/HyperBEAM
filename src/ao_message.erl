@@ -1,6 +1,5 @@
 -module(ao_message).
 -export([id/1, get/1, to_json/1, from_json/1, to_binary/1, from_binary/1]).
-
 -include("include/ao.hrl").
 
 id(M) ->

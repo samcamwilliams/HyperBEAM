@@ -1,6 +1,7 @@
 -module(cu_http).
 -export([routes/0, handle/3]).
 -include("src/include/ao.hrl").
+-ao_debug(print).
 
 routes() ->
     {"/cu", ["/", "/:id", "/:id/:slot"]}.
@@ -21,24 +22,17 @@ handle(<<"GET">>, [], Req) ->
         Req
     ),
     {ok, Req};
-handle(<<"GET">>, [ProcID, Slot], Req) ->
-    case dev_checkpoint:read(ProcID, Slot) of
-        unavailable ->
-            ResultLog =
-                cu_process:run(
-                    % TODO: Scheduler must only run until message ID!
-                    su_data:read_message(ProcID),
-                    #{error_strategy => throw, slot => Slot}
-                ),
-            {message_processed, _ID, Res} = lists:last(ResultLog),
-            ar_bundles:print(Res),
-            ao_http:reply(Req, Res);
-        {ok, Result} ->
-            Req2 = ao_http:reply(Req, Result),
-            {ok, Req2}
-    end;
+handle(<<"GET">>, [ProcID, Msg], Req) ->
+    Slot = parse_slot(Msg),
+    Res = cu_process:result(ProcID, Slot, ao:get(store), ao:wallet()),
+    ao_http:reply(Req, Res);
 handle(<<"GET">>, [ProcID], Req) ->
     handle(<<"GET">>, [ProcID, undefined], Req);
 handle(_, _, Req) ->
     cowboy_req:reply(404, #{}, <<"Not Implemented">>, Req),
     {ok, Req}.
+
+parse_slot(undefined) -> undefined;
+parse_slot(<<>>) -> undefined;
+parse_slot(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 -> Bin;
+parse_slot(Slot) -> list_to_integer(binary_to_list(Slot)).

@@ -2,7 +2,7 @@
 
 -export([routes/0, handle/3]).
 
--include("src/include/ar.hrl").
+-include("src/include/ao.hrl").
 
 routes() ->
     {"/mu", ["/"]}.
@@ -16,9 +16,12 @@ handle(<<"GET">>, [], Req) ->
 % receive message to process
 handle(<<"POST">>, [], Req) ->
     #{ trace := Trace } = cowboy_req:match_qs([{trace, [], <<"none">>}], Req),
+    ?c({push_start, reading_body, Trace}),
     {ok, ReqBin} = ao_http_router:read_body(Req),
     Logger = ao_logger:start(self()),
+    ?c({logger_started, Logger}),
     MonitorPID = mu_push:start(Item = ar_bundles:deserialize(ReqBin), Logger),
+    ?c({push_started, MonitorPID}),
     case Trace of
         <<"none">> ->
             ao_http:reply(
@@ -35,8 +38,10 @@ handle(<<"POST">>, [], Req) ->
     end.
 
 trace(Req, <<"all">>, MonitorPID) ->
+    ?c({trace_waiting, MonitorPID}),
     receive
         {ao_logger, MonitorPID, done, Activities} ->
+            ?c({trace_done, MonitorPID}),
             ao_http:reply(
                 Req,
                 lists:map(fun log_to_tx/1, Activities)
@@ -53,7 +58,6 @@ log_to_tx({Status, Type, Details}) ->
         data = [Details]
     }.
 
-to_binary(Bin) -> Bin;
 to_binary(L) when is_list(L) -> list_to_binary(L);
 to_binary(Atom) when is_atom(Atom) ->
     atom_to_binary(Atom);

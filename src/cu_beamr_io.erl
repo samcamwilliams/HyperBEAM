@@ -14,8 +14,10 @@ size(Port) ->
             Error
     end.
 
-write(Port, Offset, Data) ->
+write(Port, Offset, Data) when is_binary(Data) ->
+    ?c(writing_to_mem),
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
+    ?c(mem_written),
     receive
         ok ->
             ok;
@@ -25,7 +27,7 @@ write(Port, Offset, Data) ->
 
 write_string(Port, Data) when is_list(Data) ->
     write_string(Port, iolist_to_binary(Data));
-write_string(Port, Data) ->
+write_string(Port, Data) when is_binary(Data) ->
     DataSize = byte_size(Data) + 1,
     String = <<Data/bitstring, 0:8>>,
     case malloc(Port, DataSize) of
@@ -44,10 +46,7 @@ write_string(Port, Data) ->
 read(Port, Offset, Size) ->
     Port ! {self(), {command, term_to_binary({read, Offset, Size})}},
     receive
-        {ok, Result} ->
-            {ok, Result};
-        Error ->
-            Error
+        {ok, Result} -> {ok, Result}
     end.
 
 read_string(Port, Offset) ->
@@ -61,7 +60,7 @@ do_read_string(Port, Offset, ChunkSize) ->
     end.
 
 read_iovecs(Port, Ptr, Vecs) ->
-    %ao:c({read_iovecs_started, Port, Ptr, Vecs}),
+    %?c({read_iovecs_started, Port, Ptr, Vecs}),
     Bin = iolist_to_binary(do_read_iovecs(Port, Ptr, Vecs)),
     {ok, Bin}.
 
@@ -75,10 +74,10 @@ do_read_iovecs(Port, Ptr, Vecs) ->
 malloc(Port, Size) ->
     case cu_beamr:call(Port, "malloc", [Size]) of
         {ok, [0]} ->
-            ao:c({malloc_failed, Size}),
+            ?c({malloc_failed, Size}),
             {error, malloc_failed};
         {ok, [Ptr]} ->
-            ao:c({malloc_success, Ptr, Size}),
+            ?c({malloc_success, Ptr, Size}),
             {ok, Ptr};
         {error, Error} ->
             {error, Error}
@@ -87,7 +86,7 @@ malloc(Port, Size) ->
 free(Port, Ptr) ->
     case cu_beamr:call(Port, "free", [Ptr]) of
         {ok, Res} ->
-            ao:c({free_result, Res}),
+            ?c({free_result, Res}),
             ok;
         {error, Error} ->
             {error, Error}

@@ -5,6 +5,7 @@
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 test() ->
     %aos64_standalone_wex_test(),
@@ -23,17 +24,18 @@ start(WasmBinary) ->
     ok = load_driver(),
     Port = open_port({spawn, "cu_beamr"}, []),
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
-    ao:c({waiting_for_init_from, Port}),
+    ?c({waiting_for_init_from, Port}),
     receive
         {ok, Imports, Exports} ->
-            ao:c({wasm_init_success, Imports, Exports}),
+            ?c({wasm_init_success, {imports, length(Imports)}, {exports, length(Exports)}}),
             {ok, Port, Imports, Exports};
         Other ->
-            ao:c({unexpected_result, Other}),
+            ?c({unexpected_wasm_init_result, Other}),
             Other
     end.
 
 stop(Port) ->
+    ?c(stop_called_on_dev_wasm),
     port_close(Port),
     ok.
 
@@ -43,7 +45,7 @@ call(Port, FunctionName, Args, Stdlib) ->
     {ResType, Res, _} = call(#{ stdout => [] }, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
 call(S, Port, FunctionName, Args, ImportFunc) ->
-    ao:c({call_started, Port, FunctionName, Args, ImportFunc}),
+    ?c({call_started, Port, FunctionName, Args, ImportFunc}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     exec_call(S, ImportFunc, Port).
 
@@ -52,30 +54,35 @@ stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) -> {S, [0]}.
 exec_call(S, ImportFunc, Port) ->
     receive
         {ok, Result} ->
-            ao:c({call_result, Result}),
+            ?c({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
-            ao:c({import_called, Module, Func, Args, Signature}),
+            ?c({import_called, Module, Func, Args, Signature}),
             {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
-            ao:c({import_returned, Module, Func, Args, ErlRes}),
+            ?c({import_returned, Module, Func, Args, ErlRes}),
             Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
             exec_call(S2, ImportFunc, Port);
         {error, Error} ->
-            ao:c({wasm_error, Error}),
+            ?c({wasm_error, Error}),
             {error, Error, S};
         Error ->
-            ao:c({unexpected_result, Error}),
+            ?c({unexpected_result, Error}),
             Error
     end.
 
 serialize(Port) ->
+    ?c(starting_serialize),
     {ok, Size} = cu_beamr_io:size(Port),
     {ok, Mem} = cu_beamr_io:read(Port, 0, Size),
+    ?c({finished_serialize, byte_size(Mem)}),
     {ok, Mem}.
 
 deserialize(Port, Bin) ->
     % TODO: Be careful of memory growth!
-    ok = cu_beamr_io:write(Port, 0, Bin).
+    ?c(starting_deserialize),
+    Res = cu_beamr_io:write(Port, 0, Bin),
+    ?c({finished_deserialize, Res}),
+    ok.
 
 %% Tests
 
@@ -104,7 +111,7 @@ simple_wasm_calling_test() ->
     {ok, []} = call(Port, "print_args", [Ptr0, Ptr1]).
 
 wasm64_test() ->
-    ao:c(simple_wasm64_test),
+    ?c(simple_wasm64_test),
     {ok, File} = file:read_file("test/test-64.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [Result]} = call(Port, "fac", [5.0]),

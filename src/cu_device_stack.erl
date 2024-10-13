@@ -6,6 +6,7 @@
 %%% specifics.
 
 -include("include/ao.hrl").
+-ao_debug(print).
 
 from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
@@ -61,7 +62,7 @@ call(S = #{ devices := Devs }, FuncName, Opts) ->
 
 do_call([], S, _FuncName, _Opts) -> {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S, FuncName, Opts) ->
-    ao:c({calling, DevMod, FuncName}),
+    ?c({calling, DevMod, FuncName}),
     case call_dev(S, Dev, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params]) of
         {ok, NewS} when is_map(NewS) ->
             do_call(Devs, NewS, FuncName, Opts);
