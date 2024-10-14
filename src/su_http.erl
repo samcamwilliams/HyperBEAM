@@ -74,7 +74,7 @@ handle(<<"POST">>, [], Req) ->
             ),
             {ok, Req};
         {true, {<<"Type">>, <<"Process">>}} ->
-            su_cache:write(Store, Message),
+            ao_cache:write(Store, Message),
             ao_client:upload(Message),
             ?c(old_style_reply),
             cowboy_req:reply(
