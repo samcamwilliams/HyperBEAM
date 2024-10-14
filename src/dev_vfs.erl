@@ -85,39 +85,64 @@ path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
         ),
     {S#{vfs => maps:put(File#fd.index, File, FDs)}, [0, File#fd.index]}.
 
-fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr]) ->
-    File = maps:get(FD, FDs),
-    {ok, Data} = cu_beamr_io:read_iovecs(Port, Ptr, Vecs),
-    BytesWritten = byte_size(Data),
+fd_write(S, Port, [FD, Ptr, Vecs, RetPtr]) ->
+    fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0).
+fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
     cu_beamr_io:write(
         Port,
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
     ),
-    ?c({fd_write, File#fd.filename, BytesWritten, Ptr}),
+    {S, [0]};
+fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
+    File = maps:get(FD, FDs),
+    ?c({fd_write, FD, Ptr, Vecs, BytesWritten}),
+    {Ptr, Len} = parse_iovec(Port, Ptr),
+    {ok, Data} = cu_beamr_io:read(Port, Ptr, Len),
+    Before = binary:part(File#fd.data, 0, File#fd.offset),
+    After = binary:part(File#fd.data, File#fd.offset, byte_size(File#fd.data) - File#fd.offset),
     NewFile = File#fd{
-        data = <<(File#fd.data)/binary, Data/binary>>,
+        data = <<Before/binary, Data/binary, After/binary>>,
         offset = File#fd.offset + byte_size(Data)
     },
-    {
-        S#{
-            vfs => maps:put(NewFile#fd.index, NewFile, FDs)
-        },
-        [0]
-    }.
+    ?c({fd_write, File#fd.filename, BytesWritten, Ptr}),
+    fd_write(
+        S#{vfs => maps:put(FD, NewFile, FDs)},
+        Port,
+        [FD, Ptr + 16, Vecs - 1, RetPtr],
+        BytesWritten + byte_size(Data)
+    ).
 
-fd_read(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs]) ->
+fd_read(S, Port, Args) ->
+    fd_read(S, Port, Args, 0).
+fd_read(S, _Port, [FD, _Ptr, 0], BytesRead) ->
+    ?c({{completed_read, FD, BytesRead}}),
+    {S, [0]};
+fd_read(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs], BytesRead) ->
+    ?c({fd_read, FD, Ptr, Vecs}),
     File = maps:get(FD, FDs),
-    {ok, Data} =
-        cu_beamr_io:read_iovecs(
-            Port,
-            Ptr,
-            Vecs,
-            binary:part(
-                File#fd.data,
-                File#fd.offset,
-                byte_size(File#fd.data) - File#fd.offset
-            )
-        ),
-    ?c({fd_read, File#fd.filename, byte_size(Data), Ptr}),
-    {S, [0]}.
+    {VecPtr, Len} = parse_iovec(Port, Ptr),
+    {FileBytes, NewFile} = get_bytes(File, Len),
+    ok = cu_beamr_io:write(Port, VecPtr, FileBytes),
+    fd_read(
+        S#{vfs => maps:put(FD, NewFile, FDs)},
+        Port,
+        [FD, VecPtr + 16, Vecs - 1],
+        BytesRead + byte_size(FileBytes)
+    ).
+
+get_bytes(#fd { data = Data, offset = Offset }, Size) when is_binary(Data) ->
+    Bin = binary:part(Data, Offset, Size),
+    {Bin, #fd { data = Data, offset = Offset + byte_size(Bin) }};
+get_bytes(File = #fd { data = Function }, Size) ->
+    {Bin, NewFile} = Function(File, Size),
+    {Bin, NewFile}.
+
+parse_iovec(Port, Ptr) ->
+    {ok, VecStruct} = cu_beamr_io:read(Port, Ptr, 16),
+    <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
+    {BinPtr, Len}.
+
+write_file_test() ->
+    {Proc, Msg} = cu_process:generate_test_data(<<"print(file:read(5))">>),
+    cu_process_test:run(Proc, Msg).

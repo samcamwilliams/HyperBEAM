@@ -117,6 +117,7 @@ results(S = #{wasm := Port, results := Res, process := Proc}) ->
     end.
 
 stdlib(S = #{ library := Library }, Port, ModName, FuncName, Args, Sig) ->
+    ?c(stdlib_called),
     case maps:get({ModName, FuncName}, Library, undefined) of
         undefined ->
             lib(S, Port, ModName, FuncName, Args, Sig);

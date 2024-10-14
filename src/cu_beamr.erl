@@ -47,11 +47,13 @@ call(Port, FunctionName, Args, Stdlib) ->
 call(S, Port, FunctionName, Args, ImportFunc) ->
     ?c({call_started, Port, FunctionName, Args, ImportFunc}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
+    ?c({waiting_for_call_result, self(), Port}),
     exec_call(S, ImportFunc, Port).
 
 stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) -> {S, [0]}.
 
 exec_call(S, ImportFunc, Port) ->
+    ?c(waiting_for_call_result),
     receive
         {ok, Result} ->
             ?c({call_result, Result}),

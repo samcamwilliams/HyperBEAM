@@ -1,10 +1,8 @@
 -module(cu_process).
 -export([start/1, start/2, result/4]).
 -export([run/1, run/2, run/3]).
--export([generate_test_data/0]).
 
 -include("include/ao.hrl").
--include_lib("eunit/include/eunit.hrl").
 -ao_debug(print).
 
 %%% A process is a specific type of AO combinator, represented as a stack of components.
@@ -142,7 +140,7 @@ create_persistent_monitor() ->
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
-    gproc:reg({n, l, {cu, 1}}),
+    pg:join({cu, Process#tx.id}, self()),
     ?c({booting_process, ar_util:encode(Process#tx.id)}),
     % Build the device stack.
     Devs =
@@ -226,7 +224,7 @@ execute_schedule(State, Opts) ->
     end.
 
 post_execute(
-    Msg,
+    _Msg,
     State =
         #{
             store := Store,
@@ -332,153 +330,3 @@ await_command(State, Opts = #{ on_idle := wait }) ->
             ?c({received_unknown_message, Other}),
             await_command(State, Opts)
     end.
-
-%%% TESTS
-
-simple_stack_test_ignore() ->
-    Wallet = ao:wallet(),
-    Authority = ar_wallet:to_address(Wallet),
-    Proc =
-        ar_bundles:sign_item(
-            #tx{
-                tags = [
-                    {<<"Protocol">>, <<"ao">>},
-                    {<<"Variant">>, <<"ao.tn.1">>},
-                    {<<"Module">>, <<"aos-2-pure">>},
-                    {<<"Authority">>, ar_util:encode(Authority)},
-                    {<<"Device">>, <<"JSON-Interface">>},
-                    {<<"Device">>, <<"WASM64-pure">>},
-                    {<<"Image">>, <<"aos-2-pure.wasm">>},
-                    {<<"Device">>, <<"Cron">>},
-                    {<<"Time">>, <<"100-Milliseconds">>},
-                    {<<"Device">>, <<"Checkpoint">>}
-                ]
-            },
-            Wallet
-        ),
-    Msg = ar_bundles:sign_item(
-        #tx{
-            target = ar_util:encode(Proc#tx.id),
-            tags = [
-                {<<"Action">>, <<"Eval">>}
-            ],
-            data = <<"return 1+1">>
-        },
-        Wallet
-    ),
-    Schedule =
-        [
-            #tx{
-                data = #{
-                    <<"Message">> => Msg,
-                    <<"Assignment">> => ar_bundles:sign_item(
-                        #tx{
-                            target = ar_util:encode(Proc#tx.id),
-                            tags = [
-                                {<<"Slot">>, <<"0">>},
-                                {<<"Message">>, ar_util:encode(Msg#tx.id)},
-                                {<<"Block-Height">>, <<"0">>},
-                                {<<"Timestamp">>, <<"1234567890">>},
-                                {<<"Process">>, ar_util:encode(Proc#tx.id)}
-                            ]
-                        },
-                        Wallet
-                    )
-                }
-            }
-        ],
-    [{message_processed, _, TX} | _] = 
-        run(Proc, #{schedule => Schedule, error_strategy => stop, wallet => Wallet}),
-    ?c({simple_stack_test_result, TX#tx.data}),
-    ok.
-
-full_push_test_() ->
-    {timeout, 150, ?_assert(full_push_test())}.
-
-full_push_test() ->
-    ?c(full_push_test_started),
-    Msg = generate_test_data(),
-    ao_cache:write(ao:get(store), Msg),
-    ao_client:push(Msg, none).
-
-simple_load_test() ->
-    ?c(scheduling_many_items),
-    Messages = 30,
-    Msg = generate_test_data(),
-    ao_cache:write(ao:get(store), Msg),
-    Start = ao:now(),
-    Assignments = lists:map(
-        fun(_) -> ao_client:schedule(Msg) end,
-        lists:seq(1, Messages)
-    ),
-    Scheduled = ao:now(),
-    {ok, LastAssignment} = lists:last(Assignments),
-    ?c({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
-    ao_client:compute(LastAssignment),
-    Computed = ao:now(),
-    ?c({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
-    ?c({total_time_s, ((Computed - Start) / Messages) / 1000}),
-    ?c({processed_messages, Messages}).
-
-generate_test_data() ->
-    Store = ao:get(store),
-    Wallet = ao:wallet(),
-    ID = ar_wallet:to_address(Wallet),
-    {ok, Module} = file:read_file("test/aos-2-pure.wasm"),
-    ao_cache:write(
-        Store,
-        Img = ar_bundles:sign_item(
-            #tx {
-                tags = [
-                    {<<"Protocol">>, <<"ao">>},
-                    {<<"Variant">>, <<"ao.tn.2">>},
-                    {<<"Type">>, <<"Image">>}
-                ],
-                data = Module
-            },
-            Wallet
-        )
-    ),
-    ao_cache:write(
-        Store,
-        Signed = ar_bundles:sign_item(
-            #tx{
-                tags = [
-                    {<<"Protocol">>, <<"ao">>},
-                    {<<"Variant">>, <<"ao.tn.2">>},
-                    {<<"Type">>, <<"Process">>},
-                    {<<"Authority">>, ar_util:encode(ID)},
-                    {<<"Device">>, <<"Scheduler">>},
-                    {<<"Location">>, ar_util:encode(ID)},
-                    {<<"Device">>, <<"JSON-Interface">>},
-                    {<<"Device">>, <<"WASM64-pure">>},
-                    {<<"Image">>, ar_util:encode(Img#tx.id)},
-                    {<<"Module">>, <<"aos-2-pure">>},
-                    {<<"Device">>, <<"Cron">>},
-                    {<<"Time">>, <<"100-Milliseconds">>}
-                ]
-            },
-            Wallet
-        )
-    ),
-    Msg = ar_bundles:sign_item(
-        #tx{
-            target = Signed#tx.id,
-            tags = [
-                {<<"Protocol">>, <<"ao">>},
-                {<<"Variant">>, <<"ao.tn.2">>},
-                {<<"Type">>, <<"Message">>},
-                {<<"Action">>, <<"Eval">>}
-            ],
-            data =
-                <<
-                    "\n"
-                    "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(\"Sent Ping\"); end)\n"
-                    "Send({ Target = ao.id, Action = \"Ping\" })\n"
-                >>
-        },
-        Wallet
-    ),
-    ao_cache:write(Store, Msg),
-    ?c({test_data_written, {proc, ar_util:encode(Signed#tx.id)}, {msg, ar_util:encode(Msg#tx.id)}}),
-    Msg.
