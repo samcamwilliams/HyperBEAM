@@ -3,7 +3,6 @@
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 %%% A simple registry for SU processes in AO, using gproc.
 %%% In the future, we may want to use this as the basis for 

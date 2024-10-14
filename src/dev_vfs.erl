@@ -1,6 +1,7 @@
 -module(dev_vfs).
 -export([init/2, execute/2]).
 -include("include/ao.hrl").
+-ao_debug(print).
 
 -record(fd, {
     index :: non_neg_integer(),
@@ -33,16 +34,14 @@
 ).
 
 init(S, Params) ->
-    ?c({vfs_init, Params}),
     Lib = maps:merge(maps:get(library, S, #{}), #{
-        {wasi_snapshot_preview1, "path_open"} => fun path_open/3,
-        {wasi_snapshot_preview1, "fd_write"} => fun fd_write/3,
-        {wasi_snapshot_preview1, "fd_read"} => fun fd_read/3
+        {"wasi_snapshot_preview1", "path_open"} => fun path_open/3,
+        {"wasi_snapshot_preview1", "fd_write"} => fun fd_write/3,
+        {"wasi_snapshot_preview1", "fd_read"} => fun fd_read/3
     }),
     {ok, S#{library => Lib, vfs => ?INIT_VFS}}.
 
 execute(_M, S = #{ pass := 2, vfs := FDs }) ->
-    ?c({adding_vfs_to_result, S}),
     {ok, S#{
         results =>
             maps:merge(
@@ -86,7 +85,10 @@ path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
     {S#{vfs => maps:put(File#fd.index, File, FDs)}, [0, File#fd.index]}.
 
 fd_write(S, Port, [FD, Ptr, Vecs, RetPtr]) ->
-    fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0).
+    fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0);
+fd_write(S, Port, Args) ->
+    ?c({fd_write, Port, Args}),
+    {S, [0]}.
 fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
     cu_beamr_io:write(
         Port,
@@ -96,16 +98,14 @@ fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
     {S, [0]};
 fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
     File = maps:get(FD, FDs),
-    ?c({fd_write, FD, Ptr, Vecs, BytesWritten}),
-    {Ptr, Len} = parse_iovec(Port, Ptr),
-    {ok, Data} = cu_beamr_io:read(Port, Ptr, Len),
+    {VecPtr, Len} = parse_iovec(Port, Ptr),
+    {ok, Data} = cu_beamr_io:read(Port, VecPtr, Len),
     Before = binary:part(File#fd.data, 0, File#fd.offset),
     After = binary:part(File#fd.data, File#fd.offset, byte_size(File#fd.data) - File#fd.offset),
     NewFile = File#fd{
         data = <<Before/binary, Data/binary, After/binary>>,
         offset = File#fd.offset + byte_size(Data)
     },
-    ?c({fd_write, File#fd.filename, BytesWritten, Ptr}),
     fd_write(
         S#{vfs => maps:put(FD, NewFile, FDs)},
         Port,

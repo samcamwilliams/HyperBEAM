@@ -6,7 +6,6 @@
 %%% specifics.
 
 -include("include/ao.hrl").
--ao_debug(print).
 
 from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);

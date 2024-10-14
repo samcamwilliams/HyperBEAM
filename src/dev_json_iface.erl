@@ -2,6 +2,7 @@
 -export([init/1, execute/2, uses/0, stdlib/6, lib/6]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 uses() -> all.
 
@@ -116,21 +117,30 @@ results(S = #{wasm := Port, results := Res, process := Proc}) ->
             ok
     end.
 
-stdlib(S = #{ library := Library }, Port, ModName, FuncName, Args, Sig) ->
-    ?c(stdlib_called),
+stdlib(S, Port, ModName, FuncName, Args, Sig) ->
+    Library = maps:get(library, S, #{}),
     case maps:get({ModName, FuncName}, Library, undefined) of
         undefined ->
-            lib(S, Port, ModName, FuncName, Args, Sig);
+            lib(S, Port, Args, ModName, FuncName, Sig);
         Func ->
-            Func(S, Port, ModName, FuncName, Args, Sig)
-    end.
+            {arity, Arity} = erlang:fun_info(Func, arity),
+            ApplicationTerms =
+                lists:sublist(
+                    [S, Port, Args, ModName, FuncName, Sig],
+                    Arity
+                ),
+            erlang:apply(Func, ApplicationTerms)
+    end;
+stdlib(S, Port, ModName, FuncName, Args, Sig) ->
+    ?c(stdlib_called_2),
+    lib(S, Port, ModName, FuncName, Args, Sig).
 
 lib(
     S = #{stdout := Stdout},
     Port,
+    [_Fd, Ptr, Vecs, RetPtr],
     "wasi_snapshot_preview1",
     "fd_write",
-    [_Fd, Ptr, Vecs, RetPtr],
     _Signature
 ) ->
     %?c({fd_write, Fd, Ptr, Vecs, RetPtr}),
@@ -147,11 +157,11 @@ lib(
     % Set return pointer to number of bytes written
     cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
-lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
+lib(S, _Port, _Args, _Module, "clock_time_get", _Signature) ->
     %?c({called, wasi_clock_time_get, 1}),
     {S, [1]};
-lib(S, _Port, Module, Func, _Args, _Signature) ->
-    ?c({unimplemented_stub_called, Module, Func}),
+lib(S, _Port, Args, Module, Func, Signature) ->
+    ?c({unimplemented_stub_called, Module, Func, Args, Signature}),
     {S, [0]}.
 
 result_test() ->

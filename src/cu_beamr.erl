@@ -5,7 +5,6 @@
 
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 test() ->
     %aos64_standalone_wex_test(),
@@ -40,30 +39,39 @@ stop(Port) ->
     ok.
 
 call(Port, FunctionName, Args) ->
-    call(Port, FunctionName, Args, fun dev_json_iface:lib/6).
+    call(Port, FunctionName, Args, fun stub_stdlib/6).
 call(Port, FunctionName, Args, Stdlib) ->
     {ResType, Res, _} = call(#{ stdout => [] }, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
 call(S, Port, FunctionName, Args, ImportFunc) ->
     ?c({call_started, Port, FunctionName, Args, ImportFunc}),
+    ?c({call, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     ?c({waiting_for_call_result, self(), Port}),
     exec_call(S, ImportFunc, Port).
 
-stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) -> {S, [0]}.
+stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) ->
+    ?c(stub_stdlib_called),
+    {S, [0]}.
 
 exec_call(S, ImportFunc, Port) ->
-    ?c(waiting_for_call_result),
     receive
         {ok, Result} ->
             ?c({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
             ?c({import_called, Module, Func, Args, Signature}),
-            {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
-            ?c({import_returned, Module, Func, Args, ErlRes}),
-            Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
-            exec_call(S2, ImportFunc, Port);
+            try
+                {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
+                ?c({import_returned, Module, Func, Args, ErlRes}),
+                Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
+                exec_call(S2, ImportFunc, Port)
+            catch
+                Err:Reason:Stack ->
+                    ?c({import_error, Err, Reason, Stack}),
+                    stop(Port),
+                    {error, Err, Reason, Stack, S}
+            end;
         {error, Error} ->
             ?c({wasm_error, Error}),
             {error, Error, S};

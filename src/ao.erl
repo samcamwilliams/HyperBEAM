@@ -34,6 +34,7 @@ config() ->
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,
+                <<"VFS">> => dev_vfs,
                 <<"Monitor">> => dev_monitor,
                 <<"WASM64-pure">> => dev_wasm
             },

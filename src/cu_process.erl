@@ -3,7 +3,6 @@
 -export([run/1, run/2, run/3]).
 
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% A process is a specific type of AO combinator, represented as a stack of components.
 %%% Each AO process runs as an Erlang process consuming messages from -- and placing items

@@ -3,8 +3,6 @@
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--ao_debug(print).
-
 %%% SU HTTP Server API
 
 routes() ->

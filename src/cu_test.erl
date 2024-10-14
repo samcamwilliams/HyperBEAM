@@ -74,6 +74,7 @@ default_test_devices(Wallet, Img) ->
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:encode(ID)},
         {<<"Device">>, <<"JSON-Interface">>},
+        {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Image">>, ar_util:encode(Img#tx.id)},
         {<<"Module">>, <<"aos-2-pure">>},

@@ -1,7 +1,6 @@
 -module(cu_http).
 -export([routes/0, handle/3]).
 -include("src/include/ao.hrl").
--ao_debug(print).
 
 routes() ->
     {"/cu", ["/", "/:id", "/:id/:slot"]}.
