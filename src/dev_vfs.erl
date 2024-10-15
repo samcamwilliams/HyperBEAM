@@ -1,6 +1,7 @@
 -module(dev_vfs).
 -export([init/2, execute/2]).
 -include("include/ao.hrl").
+-include_lib("eunit/include/eunit.hrl").
 -ao_debug(print).
 
 -record(fd, {
@@ -144,5 +145,11 @@ parse_iovec(Port, Ptr) ->
     {BinPtr, Len}.
 
 write_file_test() ->
-    {Proc, Msg} = cu_process:generate_test_data(<<"print(file:read(5))">>),
-    cu_process_test:run(Proc, Msg).
+    {Proc, Msg} = cu_test:generate_test_data(
+        <<"File = file:open(\"/tmp/test\", [write]).
+        file:write(File, <<\"Hello, World!\">>),
+        file:close(File).">>
+    ),
+    Res = cu_test:run(Proc, Msg),
+    ?c(Res),
+    ok.

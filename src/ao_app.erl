@@ -13,7 +13,6 @@
 
 start(_StartType, _StartArgs) ->
     ao_sup:start_link(),
-    su_data:init(),
     ok = su_registry:start(),
     TS = su_timestamp:start(),
     _HTTP = ao_http_router:start([su_http, mu_http, cu_http]),

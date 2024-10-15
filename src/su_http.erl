@@ -24,12 +24,12 @@ handle(<<"GET">>, [], Req) ->
             {[
                 {<<"Unit">>, <<"Scheduler">>},
                 {<<"Address">>,
-                    ar_util:encode(
+                    ar_util:id(
                         ar_wallet:to_address(Wallet)
                     )},
                 {<<"Processes">>,
                     lists:map(
-                        fun ar_util:encode/1,
+                        fun ar_util:id/1,
                         su_registry:get_processes()
                     )}
             ]}
@@ -52,10 +52,8 @@ handle(<<"GET">>, [ProcID, <<"slot">>], Req) ->
 handle(<<"GET">>, [BinID], Req) ->
     Store = ao:get(store),
     ID = binary_to_list(BinID),
-    ?c({getting_assignments, ID}),
     #{to := To, from := From} =
         cowboy_req:match_qs([{from, [], 0}, {to, [], infinity}], Req),
-    ?c({range, {To, From}}),
     send_stream(Store, ID, From, To, Req),
     {ok, Req};
 handle(<<"POST">>, [], Req) ->
@@ -80,7 +78,7 @@ handle(<<"POST">>, [], Req) ->
                 #{<<"Content-Type">> => <<"application/json">>},
                 jiffy:encode(
                     {[
-                        {id, ar_util:encode(Message#tx.id)},
+                        {id, ar_util:id(Message#tx.id)},
                         {timestamp, erlang:system_time(millisecond)}
                     ]}
                 ),
@@ -91,7 +89,7 @@ handle(<<"POST">>, [], Req) ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
                 case cowboy_req:match_qs([{'process', [], undefined}], Req) of
-                    #{process := undefined} -> binary_to_list(ar_util:encode(Message#tx.target));
+                    #{process := undefined} -> binary_to_list(ar_util:id(Message#tx.target));
                     #{process := ProcessID} -> ProcessID
                 end,
             ao_http:reply(
@@ -107,12 +105,9 @@ send_stream(Store, ProcID, undefined, To, Req) ->
     send_stream(Store, ProcID, 0, To, Req);
 send_stream(Store, ProcID, From, undefined, Req) ->
     send_stream(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)), Req);
-send_stream(Store, ProcID, From, To, Req) when is_binary(From) ->
-    send_stream(Store, ProcID, list_to_integer(binary_to_list(From)), To, Req);
-send_stream(Store, ProcID, From, To, Req) when is_binary(To) ->
-    send_stream(Store, ProcID, From, list_to_integer(binary_to_list(To)), Req);
 send_stream(Store, ProcID, From, To, Req) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),
+    ?c({getting_assignments, ProcID, From, To}),
     {Assignments, More} = su_process:get_assignments(
         ProcID,
         From,
@@ -147,7 +142,7 @@ send_stream(Store, ProcID, From, To, Req) ->
                 end,
         data = assignments_to_bundle(Store, Assignments)
     },
-    ?c({bundle, ar_util:encode(Bundle#tx.id)}),
+    ?c({bundle, ar_util:id(Bundle#tx.id)}),
     ao_http:reply(
         Req,
         ar_bundles:sign_item(Bundle, ao:wallet())
@@ -187,8 +182,8 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
 %     su_data:reset_data(),
 %     Wallet = ar_wallet:new(),
 %     Proc = ar_bundles:sign_item(#tx{ data = <<"test-proc">> }, Wallet),
-%     su_registry:find(binary_to_list(ar_util:encode(Proc#tx.id)), true),
-%     SignedItem = ar_bundles:sign_item(#tx{ tags = [{<<"Target">>, ar_util:encode(Proc#tx.id)}], data = <<"test">> }, Wallet),
+%     su_registry:find(binary_to_list(ar_util:id(Proc#tx.id)), true),
+%     SignedItem = ar_bundles:sign_item(#tx{ tags = [{<<"Target">>, ar_util:id(Proc#tx.id)}], data = <<"test">> }, Wallet),
 %     ?c(signed_item),
 %     lists:foreach(
 %         fun(X) ->

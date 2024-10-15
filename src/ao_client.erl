@@ -86,7 +86,7 @@ get_assignments(ProcID, From, To) ->
     {ok, #tx{data = Data}} =
         ao_http:get(
             su_process:get_location(ProcID),
-            "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?" ++
+            "/" ++ binary_to_list(ar_util:id(ProcID)) ++ "?" ++
                 case From of
                     undefined -> "";
                     _ -> "&from=" ++
@@ -119,8 +119,10 @@ compute(Assignment) when is_record(Assignment, tx) ->
     {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
     %% TODO: We should be getting the assignment by _ID_, not by slot.
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    ?c({compute_is_tx, binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))}),
     compute(binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))).
 compute(ProcID, Slot) when is_integer(Slot) ->
+    ?c({compute_is_int, ProcID, Slot}),
     compute(ProcID, list_to_binary(integer_to_list(Slot)));
 compute(ProcID, Assignment) ->
     ao_http:get(
@@ -134,7 +136,7 @@ push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
 push(Item, Tracing) ->
-    ?c({push_start, ar_util:encode(Item#tx.id)}),
+    ?c({push_start, ar_util:id(Item#tx.id)}),
     ao_http:post(
         ao:get(mu),
         "/?trace=" ++ Tracing,
@@ -148,7 +150,7 @@ cron(ProcID) ->
 cron(ProcID, Cursor) ->
     cron(ProcID, Cursor, ao:get(default_page_limit)).
 cron(ProcID, Cursor, Limit) when is_binary(ProcID) ->
-    cron(binary_to_list(ar_util:encode(ProcID)), Cursor, Limit);
+    cron(binary_to_list(ar_util:id(ProcID)), Cursor, Limit);
 cron(ProcID, undefined, RawLimit) ->
     cron(ProcID, cron_cursor(ProcID), RawLimit);
 cron(ProcID, Cursor, Limit) ->

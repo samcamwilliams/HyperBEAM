@@ -1,35 +1,49 @@
 -module(cu_test).
 -export([simple_stack_test/0, full_push_test/0, simple_load_test/0]).
+-export([generate_test_data/1]).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -ao_debug(print).
 
+init() ->
+    application:ensure_all_started(ao),
+    ok.
+
 run(Proc, Msg) ->
+    run(Proc, Msg, #{}).
+run(Proc, Msg, Opts) ->
+    ao_cache:write(ao:get(store), Msg),
+    ao_cache:write(ao:get(store), Proc),
     Scheduler = su_registry:find(Proc#tx.id, true),
     Assignment = su_process:schedule(Scheduler, Msg),
+    ar_bundles:print(Assignment),
     cu_process:result(Proc#tx.id, Assignment#tx.id, ao:get(store), ao:wallet()).
 
 %%% TESTS
 
 simple_stack_test() ->
+    init(),
     {Proc, Msg} = generate_test_data(<<"return 42">>),
-    {ok, Res} = run(Proc, Msg),
-    ?c({res, Res}).
+    {ok, Result} = run(Proc, Msg, #{ on_idle => terminate }),
+    #tx { data = <<"42">> } = maps:get(<<"/Data">>, Result),
+    ok.
 
 full_push_test_() ->
     {timeout, 150, ?_assert(full_push_test())}.
 
 full_push_test() ->
+    init(),
     ?c(full_push_test_started),
-    {_, Msg} = generate_test_data(ping_poing_script()),
+    {_, Msg} = generate_test_data(ping_ping_script()),
     ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none).
 
 simple_load_test() ->
+    init(),
     ?c(scheduling_many_items),
     Messages = 30,
-    Msg = generate_test_data(ping_poing_script()),
+    Msg = generate_test_data(ping_ping_script()),
     ao_cache:write(ao:get(store), Msg),
     Start = ao:now(),
     Assignments = lists:map(
@@ -70,19 +84,19 @@ default_test_devices(Wallet, Img) ->
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
         {<<"Type">>, <<"Process">>},
-        {<<"Authority">>, ar_util:encode(ID)},
+        {<<"Authority">>, ar_util:id(ID)},
         {<<"Device">>, <<"Scheduler">>},
-        {<<"Location">>, ar_util:encode(ID)},
+        {<<"Location">>, ar_util:id(ID)},
         {<<"Device">>, <<"JSON-Interface">>},
         {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
-        {<<"Image">>, ar_util:encode(Img#tx.id)},
+        {<<"Image">>, ar_util:id(Img#tx.id)},
         {<<"Module">>, <<"aos-2-pure">>},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>}
     ].
 
-ping_poing_script() ->
+ping_ping_script() ->
     <<
         "\n"
         "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(\"Sent Ping\"); end)\n"
@@ -120,5 +134,5 @@ generate_test_data(Script, Wallet, _Img, Devs) ->
         Wallet
     ),
     ao_cache:write(Store, Msg),
-    ?c({test_data_written, {proc, ar_util:encode(Signed#tx.id)}, {msg, ar_util:encode(Msg#tx.id)}}),
+    ?c({test_data_written, {proc, ar_util:id(Signed#tx.id)}, {msg, ar_util:id(Msg#tx.id)}}),
     {Signed, Msg}.

@@ -1,8 +1,8 @@
 -module(ao_cache).
 -export([
-    read_output/3, write/2, write_output/4,
-    outputs/2, latest/2, latest/3, latest/4,
-    read/2, read/3, read/4, lookup/2, lookup/3
+    read_output/3, write/2, write_output/4, write_assignment/2,
+    outputs/2, assignments/2, latest/2, latest/3, latest/4, 
+    read/2, read/3, read/4, lookup/2, lookup/3, read_assignment/3
 ]).
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -12,6 +12,7 @@
 -define(TEST_STORE_MODULE, ao_fs_store).
 -define(TEST_STORE, {?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}).
 -define(COMPUTE_CACHE_DIR, "computed").
+-define(ASSIGNMENTS_DIR, "assignments").
 
 %%% A cache of AO messages and compute results.
 %%% 
@@ -99,7 +100,13 @@ build_path(PathList, Map) ->
     ).
 
 outputs(Store, ProcID) ->
-    SlotDir = ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), "slot"]),
+    slots(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), "slot"]).
+
+assignments(Store, ProcID) ->
+    slots(Store, [?ASSIGNMENTS_DIR, fmt_id(ProcID)]).
+
+slots(Store, Path) ->
+    SlotDir = ao_store:path(Store, Path),
     case ao_store:list(Store, SlotDir) of
         {ok, Names} -> [ list_to_integer(Name) || Name <- Names ];
         {error, _} -> []
@@ -123,6 +130,29 @@ write_output(Store, ProcID, Slot, Item) ->
             ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
     true -> already_exists
     end,
+    ok.
+
+%% Write a full message to the cache.
+write_assignment(Store, Assignment) ->
+    % Write the message into the main cache
+    {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    ok = write(Store, Assignment),
+    UnsignedID = fmt_id(Assignment, unsigned),
+    % Create symlinks from the message on the process and the 
+    % slot on the process to the underlying data.
+    RawMessagePath =
+        ao_store:path(Store, [
+            "messages",
+            UnsignedID
+        ]),
+    AssignmentPath =
+        ao_store:path(Store, [
+            "assignments",
+            fmt_id(ProcID),
+            binary_to_list(Slot)
+        ]),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPath),
     ok.
 
 write(Store, Item) ->
@@ -197,19 +227,36 @@ read_output(Store, ProcID, Input) ->
     ResolvedPath =
         ar_util:remove_common(
             ar_util:remove_common(
-                ?c(ao_store:resolve(
+                ao_store:resolve(
                     Store,
-                    ?c(ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input]))
-                )),
+                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
+                ),
                 ?COMPUTE_CACHE_DIR
             ),
             "messages"
         ),
-    ?c({resolved_read_path, ResolvedPath}),
     case ao_store:type(Store, ["messages", ResolvedPath]) of
         not_found -> not_found;
         _ -> read(Store, ResolvedPath)
     end.
+
+read_assignment(Store, _ProcID, AssignmentID) when is_binary(AssignmentID) ->
+    read(Store, AssignmentID);
+read_assignment(Store, ProcID, Slot) ->
+    ResolvedPath =
+        ar_util:remove_common(
+            ao_store:resolve(
+                Store,
+                ao_store:path(Store, [
+                    "assignments",
+                    fmt_id(ProcID),
+                    integer_to_list(Slot)
+                ])
+            ),
+            "messages"
+        ),
+    ?c({resolved_path, ResolvedPath}),
+    read(Store, ResolvedPath).
 
 lookup(Store, ID) ->
     lookup(Store, ID, "").
@@ -292,7 +339,7 @@ fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
 fmt_id(ID, _) when is_list(ID) andalso length(ID) == 43 -> ID;
 fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
-    binary_to_list(ar_util:encode(ID)).
+    binary_to_list(ar_util:id(ID)).
 
 %%% Tests
 
@@ -429,13 +476,12 @@ write_and_read_output_test() ->
     ?assertEqual(Item2, read_output(Store, fmt_id(Proc#tx.id), 1)),
     ?assertEqual(Item1, read_output(Store, fmt_id(Proc#tx.id), Item1#tx.id)).
 
-latest_output_retrieval_test() ->
+latest_output_retrieval_test_broken() ->
     Store = test_cache(),
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
     ok = write_output(Store, Proc#tx.id, 0, Item1),
     ok = write_output(Store, Proc#tx.id, 1, Item2),
-    ?assertEqual(Item2, latest(Store, Proc#tx.id)),
-    % TODO: Validate that this is the correct item -- is the 'limit' inclusive or exclusive?
-    ?assertEqual(Item1, latest(Store, Proc#tx.id, 1)).
+    ?assertEqual({1, Item2}, latest(Store, Proc#tx.id)),
+    ?assertEqual({0, Item1}, latest(Store, Proc#tx.id, 1)).

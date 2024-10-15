@@ -11,6 +11,7 @@
 -export([print/1]).
 
 -include("include/ao.hrl").
+-ao_debug(print).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -37,11 +38,11 @@ print(Item, Indent) when is_list(Item); is_map(Item) ->
 print(Item, Indent) when is_record(Item, tx) ->
     Valid = verify_item(Item),
     print_line(
-        "TX ( ~s:~s ) {",
+        "TX ( ~s: ~s ) {",
         [
             if
-                Item#tx.signature =/= ?DEFAULT_SIG -> "signed";
-                true -> "unsigned"
+                Item#tx.signature =/= ?DEFAULT_SIG -> ar_util:encode(Item#tx.id);
+                true -> "UNSIGNED"
             end,
             if
                 Valid == true -> "valid";
@@ -112,9 +113,9 @@ print_line(Str, Indent) -> print_line(Str, "", Indent).
 print_line(RawStr, Fmt, Ind) ->
     Str = lists:flatten(RawStr),
     io:format(standard_error,
-        "~w " ++ [$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
+        [$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
             Str ++ "\n",
-        [Ind] ++ Fmt
+        Fmt
     ).
 
 id(Item) when Item#tx.id == ?DEFAULT_ID ->

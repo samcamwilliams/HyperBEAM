@@ -53,7 +53,7 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
     UpdatedTags = lists:filter(
         fun(Item) -> maps:get(<<"name">>, Item) =/= <<"From-Process">> end, Tags
     ),
-    NewTag = #{<<"name">> => <<"From-Process">>, <<"value">> => ar_util:encode(Proc#tx.id)},
+    NewTag = #{<<"name">> => <<"From-Process">>, <<"value">> => ar_util:id(Proc#tx.id)},
     UpdatedMsg = Msg#{<<"Tags">> => UpdatedTags ++ [NewTag]},
     % TODO: need to do the same for "From-Module" remove if present and then add from State
     maps:remove(<<"Anchor">>, UpdatedMsg).

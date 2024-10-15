@@ -27,7 +27,7 @@ update_schedule(State = #{store := Store, process := Proc, schedule := []}) ->
     ?c({assignments_recvd, length(Assignments)}),
     lists:foreach(
         fun(Assignment) ->
-            ?c({writing_recvd_assignment, ar_util:encode(Assignment#tx.id)}),
+            ?c({writing_recvd_assignment, ar_util:id(Assignment#tx.id)}),
             ao_cache:write(Store, Assignment)
         end,
         Assignments

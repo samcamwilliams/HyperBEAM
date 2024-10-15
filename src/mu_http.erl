@@ -28,7 +28,7 @@ handle(<<"POST">>, [], Req) ->
                 Req,
                 ar_bundles:sign_item(
                     #tx { tags = [
-                        {<< "Pushing">>, ar_util:encode(Item#tx.id)},
+                        {<< "Pushing">>, ar_util:id(Item#tx.id)},
                         {<< "Status">>, << "Running">> }
                     ]},
                     ao:wallet()

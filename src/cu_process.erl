@@ -53,13 +53,24 @@
 %% The default frequency for checkpointing is 2 slots.
 -define(DEFAULT_FREQ, 10).
 
-result(ProcID, MsgRef, Store, Wallet) ->
+result(RawProcID, RawMsgRef, Store, Wallet) ->
+    ProcID = ar_util:id(RawProcID),
+    MsgRef =
+        case is_binary(RawMsgRef) of
+            true ->
+                case byte_size(RawMsgRef) of
+                    32 -> ar_util:id(RawMsgRef);
+                    _ -> RawMsgRef
+                end;
+            false -> RawMsgRef
+        end,
+    ?c({result, ProcID, MsgRef, Store}),
     case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
-            ?c({proc_id, ar_util:encode(ProcID)}),
+            ?c({proc_id, ar_util:id(ProcID)}),
             case gproc:lookup_pids({n, l, {cu, 1}}) of
                 [] ->
-                    ?c({no_cu_for_proc, ar_util:encode(ProcID)}),
+                    ?c({no_cu_for_proc, ar_util:id(ProcID)}),
                     Proc = ao_cache:read(Store, ProcID),
                     await_results(
                         cu_process:run(
@@ -69,7 +80,7 @@ result(ProcID, MsgRef, Store, Wallet) ->
                         )
                     );
                 [Pid|_] ->
-                    ?c({found_cu_for_proc, ar_util:encode(ProcID)}),
+                    ?c({found_cu_for_proc, ar_util:id(ProcID)}),
                     Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(MsgRef)]},
                     Pid ! {on_idle, message, MsgRef},
                     ?c({added_listener_and_message, Pid}),
@@ -96,7 +107,7 @@ run(Process, RawOpts, Monitors) ->
 
 await_results(Pid) ->
     receive
-        {result, Pid, _Msg, State} -> maps:get(results, State)
+        {result, Pid, _Msg, State} -> {ok, maps:get(results, State)}
     end.
 
 create_monitor_for_message(Msg) when is_record(Msg, tx) ->
@@ -105,14 +116,16 @@ create_monitor_for_message(MsgID) ->
     Listener = self(),
     fun(S, {message, Inbound}) ->
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
+        AssignmentID = ar_util:id(Assignment#tx.id),
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
                 {<<"Slot">>, RawSlot} -> list_to_integer(binary_to_list(RawSlot));
                 false -> no_slot
             end,
-        ?c({slot, Slot}),
-        case (Slot == MsgID) or (Assignment#tx.id == MsgID) of
-            true -> Listener ! {result, self(), Inbound, S}, done;
+        ScheduledMsgID = ar_util:id((maps:get(<<"Message">>, Inbound#tx.data))#tx.id),
+        case (Slot == MsgID) or (ScheduledMsgID == MsgID) or (AssignmentID == MsgID) of
+            true ->
+                Listener ! {result, self(), Inbound, S}, done;
             false -> ignored
         end;
         (_, _) -> ignored
@@ -140,7 +153,7 @@ create_persistent_monitor() ->
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
     pg:join({cu, Process#tx.id}, self()),
-    ?c({booting_process, ar_util:encode(Process#tx.id)}),
+    ?c({booting_process, ar_util:id(Process#tx.id)}),
     % Build the device stack.
     Devs =
         cu_device_stack:normalize(

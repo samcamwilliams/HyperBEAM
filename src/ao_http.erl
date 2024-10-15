@@ -16,7 +16,7 @@ get(URL) ->
 
 post(Host, Path, Item) -> post(Host ++ Path, Item).
 post(URL, Item) ->
-    ?c({http_post, ar_util:encode(Item#tx.id), URL}),
+    ?c({http_post, ar_util:id(Item#tx.id), URL}),
     case httpc:request(
         post,
         {URL, [], "application/octet-stream", ar_bundles:serialize(Item)},
@@ -38,7 +38,7 @@ reply(Req, Status, Item) ->
             Status,
             maps:get(method, Req, undef_method),
             maps:get(path, Req, undef_path),
-            Ref = case is_record(Item, tx) of true -> ar_util:encode(Item#tx.id); false -> data_body end}
+            Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end}
     ),
     Req2 = cowboy_req:reply(
         Status,
