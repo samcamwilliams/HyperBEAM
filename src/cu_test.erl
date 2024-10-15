@@ -1,6 +1,6 @@
 -module(cu_test).
 -export([simple_stack_test/0, full_push_test/0, simple_load_test/0]).
--export([generate_test_data/1]).
+-export([init/0, generate_test_data/1, run/2]).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -17,7 +17,6 @@ run(Proc, Msg, Opts) ->
     ao_cache:write(ao:get(store), Proc),
     Scheduler = su_registry:find(Proc#tx.id, true),
     Assignment = su_process:schedule(Scheduler, Msg),
-    ar_bundles:print(Assignment),
     cu_process:result(Proc#tx.id, Assignment#tx.id, ao:get(store), ao:wallet()).
 
 %%% TESTS

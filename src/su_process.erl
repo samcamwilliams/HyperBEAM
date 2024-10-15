@@ -91,7 +91,6 @@ get_assignments(ProcID, From, RequestedTo) ->
 do_get_assignments(_ProcID, From, To) when From > To ->
     [];
 do_get_assignments(ProcID, From, To) ->
-    ?c({do_get_assignments, ProcID, From, To}),
     case ao_cache:read_assignment(ao:get(store), ProcID, From) of
         not_found ->
             [];

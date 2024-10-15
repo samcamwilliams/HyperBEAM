@@ -2,7 +2,6 @@
 -export([init/2, execute/2]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 -record(fd, {
     index :: non_neg_integer(),
@@ -42,6 +41,19 @@ init(S, Params) ->
     }),
     {ok, S#{library => Lib, vfs => ?INIT_VFS}}.
 
+execute(M, S = #{ vfs := FDs }) ->
+    #tx { data = Data } = maps:get(<<"Message">>, M#tx.data),
+    ?c({setting_stdin_to_message, byte_size(Data)}),
+    {ok,
+        S#{
+            vfs =>
+                maps:put(
+                    0,
+                    (maps:get(0, FDs))#fd{ data = Data },
+                    FDs
+                )
+        }
+    };
 execute(_M, S = #{ pass := 2, vfs := FDs }) ->
     {ok, S#{
         results =>
@@ -116,24 +128,26 @@ fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
 
 fd_read(S, Port, Args) ->
     fd_read(S, Port, Args, 0).
-fd_read(S, _Port, [FD, _Ptr, 0], BytesRead) ->
+fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
     ?c({{completed_read, FD, BytesRead}}),
+    cu_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
     {S, [0]};
-fd_read(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs], BytesRead) ->
-    ?c({fd_read, FD, Ptr, Vecs}),
+fd_read(S = #{ vfs := FDs }, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
+    ?c({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
     File = maps:get(FD, FDs),
-    {VecPtr, Len} = parse_iovec(Port, Ptr),
+    {VecPtr, Len} = parse_iovec(Port, VecsPtr),
     {FileBytes, NewFile} = get_bytes(File, Len),
     ok = cu_beamr_io:write(Port, VecPtr, FileBytes),
     fd_read(
         S#{vfs => maps:put(FD, NewFile, FDs)},
         Port,
-        [FD, VecPtr + 16, Vecs - 1],
+        [FD, VecsPtr + 16, NumVecs - 1, RetPtr],
         BytesRead + byte_size(FileBytes)
     ).
 
 get_bytes(#fd { data = Data, offset = Offset }, Size) when is_binary(Data) ->
-    Bin = binary:part(Data, Offset, Size),
+    AvailableSize = min(Size, byte_size(Data) - Offset),
+    Bin = binary:part(Data, Offset, AvailableSize),
     {Bin, #fd { data = Data, offset = Offset + byte_size(Bin) }};
 get_bytes(File = #fd { data = Function }, Size) ->
     {Bin, NewFile} = Function(File, Size),
@@ -145,11 +159,12 @@ parse_iovec(Port, Ptr) ->
     {BinPtr, Len}.
 
 write_file_test() ->
+    cu_test:init(),
     {Proc, Msg} = cu_test:generate_test_data(
-        <<"File = file:open(\"/tmp/test\", [write]).
-        file:write(File, <<\"Hello, World!\">>),
-        file:close(File).">>
+        <<"file = io.open(\"/dev/stdin\", \"r\")
+        ourline = file:read(),
+        file:close(file)
+        print(ourline)">>
     ),
-    Res = cu_test:run(Proc, Msg),
-    ?c(Res),
-    ok.
+    {ok, #{ <<"/Data">> := #tx { data = Data } }} = cu_test:run(Proc, Msg),
+    ?assertEqual(Data, <<"file = io.open(\"/dev/stdin\", \"r\")">>).

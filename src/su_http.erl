@@ -107,13 +107,11 @@ send_stream(Store, ProcID, From, undefined, Req) ->
     send_stream(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)), Req);
 send_stream(Store, ProcID, From, To, Req) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),
-    ?c({getting_assignments, ProcID, From, To}),
     {Assignments, More} = su_process:get_assignments(
         ProcID,
         From,
         To
     ),
-    ?c({got_assignments, length(Assignments)}),
     % TODO: Find out why tags are not getting included in bundle
     Bundle = #tx{
         tags =
