@@ -35,13 +35,14 @@ config() ->
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,
                 <<"VFS">> => dev_vfs,
+                <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
                 <<"WASM64-pure">> => dev_wasm
             },
         loadable_devices => [],
         % Dev options
         store => {ao_fs_store, #{ dir => "TEST-data" }},
-        debug_print => false
+        debug_print => true
     }.
 
 get(Key) -> get(Key, undefined).

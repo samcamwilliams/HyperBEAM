@@ -87,10 +87,15 @@ default_test_devices(Wallet, Img) ->
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:id(ID)},
         {<<"Device">>, <<"JSON-Interface">>},
+        {<<"Device">>, <<"PODA">>},
+        {<<"Quorum">>, <<"3">>},
+        {<<"Authority">>, <<"test-authority-1">>},
+        {<<"Authority">>, <<"test-authority-2">>},
+        {<<"Authority">>, <<"test-authority-3">>},
         {<<"Device">>, <<"VFS">>},
+        {<<"Module">>, <<"aos-2-pure">>},
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Image">>, ar_util:id(Img#tx.id)},
-        {<<"Module">>, <<"aos-2-pure">>},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>}
     ].
