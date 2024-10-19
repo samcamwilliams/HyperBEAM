@@ -1,8 +1,6 @@
 -module(mu_http).
-
 -export([routes/0, handle/3]).
-
--include("src/include/ao.hrl").
+-include("include/ao.hrl").
 
 routes() ->
     {"/mu", ["/"]}.
@@ -13,14 +11,19 @@ handle(<<"GET">>, [], Req) ->
                      jiffy:encode({[{<<"Name">>, <<"AO Messenger Unit">>}]}),
                      Req),
     {ok, Req};
-% receive message to process
 handle(<<"POST">>, [], Req) ->
     #{ trace := Trace } = cowboy_req:match_qs([{trace, [], <<"none">>}], Req),
     ?c({push_start, reading_body, Trace}),
     {ok, ReqBin} = ao_http_router:read_body(Req),
     Logger = ao_logger:start(self()),
     ?c({logger_started, Logger}),
-    MonitorPID = mu_push:start(Item = ar_bundles:deserialize(ReqBin), Logger),
+    Store = ao:get(store),
+    Wallet = ao:wallet(),
+    MonitorPID =
+        dev_mu:start(
+            Item = ar_bundles:deserialize(ReqBin),
+            #{ store => Store, logger => Logger, wallet => Wallet }
+        ),
     ?c({push_started, MonitorPID}),
     case Trace of
         <<"none">> ->
@@ -28,8 +31,8 @@ handle(<<"POST">>, [], Req) ->
                 Req,
                 ar_bundles:sign_item(
                     #tx { tags = [
-                        {<< "Pushing">>, ar_util:id(Item#tx.id)},
-                        {<< "Status">>, << "Running">> }
+                        { <<"Pushing">>, ar_util:id(Item#tx.id) },
+                        { <<"Status">>, <<"Running">> }
                     ]},
                     ao:wallet()
                 )

@@ -4,9 +4,8 @@
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% A simple registry for SU processes in AO, using gproc.
-%%% In the future, we may want to use this as the basis for 
-%%% registries for other types of units.
+%%% A simple registry for local services in AO, using pg. Currently,
+%%% only SU processes are supported.
 
 start() ->
     pg:start(pg),
@@ -30,7 +29,7 @@ find(ProcID, GenIfNotHosted) ->
     end.
 
 get_processes() ->
-    [ProcID || {su, ProcID} <- pg:which_groups() ].
+    [ ProcID || {su, ProcID} <- pg:which_groups() ].
 
 maybe_new_proc(_ProcID, false) -> not_found;
 maybe_new_proc(ProcID, _) -> 

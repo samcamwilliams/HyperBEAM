@@ -38,9 +38,18 @@ config() ->
                 <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
                 <<"WASM64-pure">> => dev_wasm,
-                <<"Multipass">> => dev_multipass
+                <<"Multipass">> => dev_multipass,
+                <<"Push">> => dev_mu,
+                <<"Compute">> => dev_cu,
+                <<"P4">> => dev_p4
             },
-        loadable_devices => [],
+        default_mu_stack => [
+            dev_p4,
+            dev_scheduler,
+            dev_cu,
+            dev_poda,
+            dev_mu
+        ],
         % Dev options
         store => {ao_fs_store, #{ dir => "TEST-data" }},
         debug_print => true

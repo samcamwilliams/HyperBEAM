@@ -85,7 +85,7 @@ default_test_devices(Wallet, Img) ->
         {<<"Type">>, <<"Process">>},
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:id(ID)},
-        {<<"Device">>, <<"PODA">>},
+        %{<<"Device">>, <<"PODA">>},
         {<<"Quorum">>, <<"3">>},
         {<<"Authority">>, <<"test-authority-1">>},
         {<<"Authority">>, <<"test-authority-2">>},

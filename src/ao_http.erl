@@ -23,9 +23,15 @@ post(URL, Item) ->
         [],
         [{body_format, binary}]
     ) of
-        {ok, {{_, 200, _}, _, Body}} ->
+        {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->
             ?c({http_post_got, URL}),
-            {ok, ar_bundles:deserialize(Body)};
+            {
+                case Status of
+                    200 -> ok;
+                    201 -> created
+                end,
+                ar_bundles:deserialize(Body)
+            };
         Response ->
             ?c({http_post_error, URL, Response}),
             {error, Response}
@@ -40,6 +46,7 @@ reply(Req, Status, Item) ->
             maps:get(path, Req, undef_path),
             Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end}
     ),
+    % TODO: Should we return Req or Req2?
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},

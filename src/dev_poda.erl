@@ -1,5 +1,7 @@
 -module(dev_poda).
 -export([init/2, execute/3]).
+-export([is_user_signed/1]).
+-export([push/2]).
 -include("include/ao.hrl").
 -ao_debug(print).
 
@@ -7,7 +9,9 @@
 %%% for AO processes.
 
 init(S, Params) ->
-    ?c({poda_init, Params}),
+    {ok, S, extract_opts(Params)}.
+
+extract_opts(Params) ->
     Authorities =
         lists:filtermap(
             fun({<<"Authority">>, Addr}) -> {true, Addr};
@@ -16,12 +20,10 @@ init(S, Params) ->
         ),
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
-    ?c({poda_authorities, Authorities, quorum, Quorum}),
-    {ok, S, #{ authorities => Authorities, quorum => Quorum }}.
+    #{ authorities => Authorities, quorum => Quorum }.
 
-%% TODO: Rather than throwing, we will probably want to skip the message completely.
 execute(M, S = #{ pass := 1 }, Opts) ->
-    case isUserSigned(M) of
+    case is_user_signed(M) of
         true ->
             ?c({poda_skipped, user_signed_msg}),
             {ok, S};
@@ -31,10 +33,11 @@ execute(M, S = #{ pass := 1 }, Opts) ->
             % body of the message that is attached to the assignment we are evaluating.
             Msg = maps:get(<<"Message">>, M#tx.data),
             case maps:get(<<"Message">>, Msg#tx.data, undefined) of
-                undefined -> throw(content_missing);
+                undefined -> return_error(S, <<"Content missing">>);
                 _ ->
                     case maps:get(<<"Attestations">>, Msg) of
-                        undefined -> throw(attestations_missing);
+                        undefined ->
+                            return_error(S, <<"Attestations missing">>);
                         Attestations ->
                             case validate_message(Msg, Opts) of
                                 true ->
@@ -54,7 +57,7 @@ execute(M, S = #{ pass := 1 }, Opts) ->
                                         Attestations
                                     ),
                                     {ok, S#{ vfs => VFS1 }};
-                            {false, Reason} -> throw({poda_validation_failed, Reason})
+                            {false, Reason} -> return_error(S, Reason)
                             end
                     end
             end
@@ -65,7 +68,7 @@ execute(_M, S = #{ pass := 3, results := Results }, _Opts) ->
 execute(_M, S, _Opts) ->
     {ok, S}.
 
-validate_message(Msg, #{ authorities := Authorities, quorum := Quorum }) ->
+validate_message(Msg, Opts = #{ quorum := Quorum }) ->
     case maps:get(<<"Message">>, Msg#tx.data, undefined) of
         undefined -> {false, <<"Content missing">>};
         Content ->
@@ -75,14 +78,18 @@ validate_message(Msg, #{ authorities := Authorities, quorum := Quorum }) ->
                     ?c({poda_execute, Content, Attestations}),
                     % Ensure that all attestations are valid and signed by a
                     % trusted authority.
-                    true = lists:all(fun ar_bundles:verify_item/1, Attestations),
-                        Validations =
-                            lists:filter(
-                                fun(Att) ->
-                                    validate_attestation(Msg, Att, Opts)
-                                end,
-                                Attestations
-                            ),
+                    true =
+                        lists:all(
+                            fun ar_bundles:verify_item/1,
+                            Attestations
+                        ),
+                    Validations =
+                        lists:filter(
+                            fun(Att) ->
+                                validate_attestation(Msg, Att, Opts)
+                            end,
+                            Attestations
+                        ),
                     case length(Validations) >= Quorum of
                         true -> true;
                         false -> {false, <<"Not enough validations">>}
@@ -90,12 +97,83 @@ validate_message(Msg, #{ authorities := Authorities, quorum := Quorum }) ->
             end
     end.
 
-validate_attestation(MsgId, Att, Opts) ->
-    lists:member(
+validate_attestation(Msg, Att, Opts) ->
+    MsgID = ar_bundles:id(Msg, unsigned),
+    ValidSigner = lists:member(
         ar_bundles:signer(Att),
         maps:get(authorities, Opts)
-    ) andalso
-    ar_bundles:verify_item(Att).
+    ),
+    ValidSignature = ar_bundles:verify_item(Att),
+    RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
+        lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
+            == {<<"Attestation-For">>, MsgID},
+    ValidSigner and ValidSignature and RelevantMsg.
 
-isUserSigned(M) ->
+return_error(S = #{ wallet := Wallet }, Reason) ->
+    {skip, S#{
+        results => #{
+            <<"/Outbox">> =>
+                ar_bundles:sign_item(
+                    #tx{
+                        data = Reason,
+                        tags = [{<<"Error">>, <<"PoDA">>}]
+                    },
+                    Wallet
+                )
+        }
+    }}.
+
+is_user_signed(M) ->
     lists:keyfind(<<"From-Process">>, 1, M#tx.tags) == false.
+
+push(_Item, S = #{ results := Results }) ->
+    {ok, S#{
+        results =>
+            maps:map(
+                fun(NewMsg) -> add_attestations(NewMsg, S) end,
+                Results
+            )
+    }}.
+
+add_attestations(NewMsg, S = #{ store := _Store, monitor := _Monitor, wallet := Wallet }) ->
+    Process = find_process(NewMsg, S),
+    case lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
+        true ->
+            #{ authorities := InitAuthorities, quorum := Quorum } =
+                extract_opts(Process#tx.tags),
+            ?c({poda_push, InitAuthorities, Quorum}),
+            % Aggregate validations from other nodes.
+            % TODO: Filter out attestations from the current node.
+            Attestations = lists:filtermap(
+                fun(Address) ->
+                    case ao_router:find(compute, Process#tx.id, Address) of
+                        {ok, Att} -> Att;
+                        _ -> false
+                    end
+                end,
+                InitAuthorities
+            ),
+            ar_bundles:sign_item(
+                #tx{
+                    data = #{
+                        <<"Attestations">> => Attestations,
+                        <<"Message">> => NewMsg
+                    }
+                },
+                Wallet
+            );
+        false -> NewMsg
+    end.
+
+find_process(Item, #{ monitor := Monitor, store := Store }) ->
+    case lists:keyfind(<<"Process">>, 1, Item#tx.tags) of
+        {<<"Process">>, ProcessID} ->
+            ao_store:read(Store, ProcessID);
+        false ->
+            case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
+                {<<"Type">>, <<"Process">>} -> Item;
+                _ ->
+                    ao_logger:log(Monitor, {error, process_not_specified}),
+                    process_not_specified
+            end
+    end.

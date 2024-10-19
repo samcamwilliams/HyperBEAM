@@ -62,29 +62,32 @@ handle(<<"POST">>, [], Req) ->
     Message = ar_bundles:deserialize(Body),
     case {ar_bundles:verify_item(Message), lists:keyfind(<<"Type">>, 1, Message#tx.tags)} of
         {false, _} ->
-            cowboy_req:reply(
+            ao_http:reply(
+                Req,
                 400,
-                #{<<"Content-Type">> => <<"application/json">>},
-                jiffy:encode({[{error, <<"Data item is not valid.">>}]}),
-                Req
-            ),
-            {ok, Req};
+                #tx {
+                    tags = [{<<"Schedule">>, <<"Failed">>}],
+                    data = [<<"Data item is not valid.">>]
+                }
+            );
         {true, {<<"Type">>, <<"Process">>}} ->
             ao_cache:write(Store, Message),
             ao_client:upload(Message),
-            ?c(old_style_reply),
-            cowboy_req:reply(
+            ao_http:reply(
+                Req,
                 201,
-                #{<<"Content-Type">> => <<"application/json">>},
-                jiffy:encode(
-                    {[
-                        {id, ar_util:id(Message#tx.id)},
-                        {timestamp, erlang:system_time(millisecond)}
-                    ]}
-                ),
-                Req
-            ),
-            {ok, Req};
+                ar_bundles:sign_item(
+                    #tx {
+                        tags =
+                            [
+                                {<<"Schedule">>, <<"Started">>},
+                                {<<"Process">>, ar_util:id(Message#tx.id)}
+                            ],
+                        data = []
+                    },
+                    ao:wallet()
+                )
+            );
         {true, _} ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
@@ -94,6 +97,7 @@ handle(<<"POST">>, [], Req) ->
                 end,
             ao_http:reply(
                 Req,
+                201,
                 su_process:schedule(su_registry:find(AOProcID, true), Message)
             )
     end.

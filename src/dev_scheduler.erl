@@ -1,5 +1,8 @@
 -module(dev_scheduler).
+%% CU-flow functions:
 -export([init/3, end_of_schedule/1, uses/0, checkpoint/1]).
+%% MU-flow functions:
+-export([push/2]).
 
 -include("include/ao.hrl").
 
@@ -37,3 +40,13 @@ update_schedule(State = #{store := Store, process := Proc, schedule := []}) ->
 checkpoint(State) -> {ok, State}.
 
 uses() -> all.
+
+%%% MU pushing flow:
+push(Item, State = #{ monitor := Monitor }) ->
+    case ao_client:schedule(Item) of
+        {ok, Assignment} ->
+            {ok, State#{assignment => Assignment}};
+        Error ->
+            ao_logger:log(Monitor, Error),
+            {error, Error}
+    end.
