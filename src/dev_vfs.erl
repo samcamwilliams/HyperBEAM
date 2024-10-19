@@ -41,7 +41,7 @@ init(S, Params) ->
     }),
     {ok, S#{library => Lib, vfs => ?INIT_VFS}}.
 
-execute(M, S = #{ vfs := FDs }) ->
+execute(M, S = #{ pass := 1, vfs := FDs }) ->
     #tx { data = Data } = maps:get(<<"Message">>, M#tx.data),
     ?c({setting_stdin_to_message, byte_size(Data)}),
     {ok,

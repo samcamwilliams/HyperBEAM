@@ -15,16 +15,24 @@ execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
         json_iface => IfaceS#{stdout => []}
     }};
 execute(_M, S = #{pass := 2}) ->
-    {ok, results(S)}.
+    {ok, results(S)};
+execute(_, S) ->
+    {ok, S}.
 
 prep_call(
     #tx{
         data = #{
             <<"Assignment">> := Assignment,
-            <<"Message">> := Message
+            <<"Message">> := Message =
+                #tx {
+                    data = #{
+                        <<"Attestations">> := Attestations,
+                        <<"Message">> := Message
+                    }
+                }
         }
     },
-    #{wasm := Port, process := Process}
+    #{ wasm := Port, process := Process }
 ) ->
     {_, Module} = lists:keyfind(<<"Module">>, 1, Process#tx.tags),
     % TODO: Get block height from the assignment message
@@ -46,16 +54,31 @@ prep_call(
 %% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
 %% some tags to each message, and spawn to help the target process know these messages are created
 %% by a process.
-%% TODO: "From-Process" and "From-Module" are the tags that should be removed and set by the
-%% signing unit.
 postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
-    % Remove "From-Process" from Tags
-    UpdatedTags = lists:filter(
-        fun(Item) -> maps:get(<<"name">>, Item) =/= <<"From-Process">> end, Tags
+    % Remove "From-Process" and "From-Image" from Tags
+    FilteredTags = lists:filter(
+        fun(Item) ->
+            maps:get(<<"name">>, Item) =/= <<"From-Process">> andalso
+                maps:get(<<"name">>, Item) =/= <<"From-Image">>
+        end,
+        Tags
     ),
-    NewTag = #{<<"name">> => <<"From-Process">>, <<"value">> => ar_util:id(Proc#tx.id)},
-    UpdatedMsg = Msg#{<<"Tags">> => UpdatedTags ++ [NewTag]},
-    % TODO: need to do the same for "From-Module" remove if present and then add from State
+    UpdatedMsg =
+        Msg#{
+            <<"Tags">> =>
+                FilteredTags ++
+                    [
+                        #{
+                            <<"name">> => <<"From-Process">>,
+                            <<"value">> => ar_util:id(Proc#tx.id)
+                        },
+                        #{
+                            <<"name">> => <<"From-Image">>,
+                            <<"value">> =>
+                                element(2, lists:keyfind(<<"Image">>, 1, Proc#tx.tags))
+                        }
+                    ]
+        },
     maps:remove(<<"Anchor">>, UpdatedMsg).
 
 results(S = #{wasm := Port, results := Res, process := Proc}) ->

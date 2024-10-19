@@ -11,7 +11,9 @@
 init(State, _, InitState) ->
     {ok,  State#{ monitors => InitState }}.
 
-execute(Message, State) -> signal(State, {message, Message}).
+execute(Message, State = #{ pass := 1 }) ->
+    signal(State, {message, Message});
+execute(_, S) -> {ok, S}.
 
 add_monitor(Mon, State = #{ monitors := Monitors }) ->
     ?c({adding_monitor, Mon, length(Monitors)}),

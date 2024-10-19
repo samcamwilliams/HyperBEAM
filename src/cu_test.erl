@@ -12,7 +12,7 @@ init() ->
 
 run(Proc, Msg) ->
     run(Proc, Msg, #{}).
-run(Proc, Msg, Opts) ->
+run(Proc, Msg, _Opts) ->
     ao_cache:write(ao:get(store), Msg),
     ao_cache:write(ao:get(store), Proc),
     Scheduler = su_registry:find(Proc#tx.id, true),
@@ -83,21 +83,22 @@ default_test_devices(Wallet, Img) ->
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
         {<<"Type">>, <<"Process">>},
-        {<<"Authority">>, ar_util:id(ID)},
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:id(ID)},
-        {<<"Device">>, <<"JSON-Interface">>},
         {<<"Device">>, <<"PODA">>},
         {<<"Quorum">>, <<"3">>},
         {<<"Authority">>, <<"test-authority-1">>},
         {<<"Authority">>, <<"test-authority-2">>},
         {<<"Authority">>, <<"test-authority-3">>},
+        {<<"Device">>, <<"JSON-Interface">>},
         {<<"Device">>, <<"VFS">>},
-        {<<"Module">>, <<"aos-2-pure">>},
         {<<"Device">>, <<"WASM64-pure">>},
+        {<<"Module">>, <<"aos-2-pure">>},
         {<<"Image">>, ar_util:id(Img#tx.id)},
         {<<"Device">>, <<"Cron">>},
-        {<<"Time">>, <<"100-Milliseconds">>}
+        {<<"Time">>, <<"100-Milliseconds">>},
+        {<<"Device">>, <<"Multipass">>},
+        {<<"Passes">>, <<"3">>}
     ].
 
 ping_ping_script() ->

@@ -1,5 +1,6 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
+-export([signer/1]).
 -export([id/1, id/2, type/1, map/1]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
@@ -117,6 +118,9 @@ print_line(RawStr, Fmt, Ind) ->
             Str ++ "\n",
         Fmt
     ).
+
+signer(Item) ->
+    crypto:hash(sha256, Item#tx.signature).
 
 id(Item) when Item#tx.id == ?DEFAULT_ID ->
     id(normalize_data(Item), unsigned);

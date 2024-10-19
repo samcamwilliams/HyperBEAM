@@ -37,7 +37,8 @@ config() ->
                 <<"VFS">> => dev_vfs,
                 <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
-                <<"WASM64-pure">> => dev_wasm
+                <<"WASM64-pure">> => dev_wasm,
+                <<"Multipass">> => dev_multipass
             },
         loadable_devices => [],
         % Dev options
