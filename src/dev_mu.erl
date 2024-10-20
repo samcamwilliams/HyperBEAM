@@ -12,16 +12,16 @@ start(Item) ->
             wallet => ao:wallet()
         }
     ).
-start(Item, Opts = #{ monitor := Monitor }) ->
+start(Item, Opts = #{ logger := Logger }) ->
     spawn(
         fun() ->
-            ao_logger:log(Monitor, {ok, start_push, Item}),
+            ao_logger:log(Logger, {ok, start_push, Item}),
             case ar_bundles:verify_item(Item) of
                 true ->
                     ao_logger:register(self()),
                     exec(Item, Opts);
                 false ->
-                    ao_logger:log(Monitor, {error, invalid_item}),
+                    ao_logger:log(Logger, {error, invalid_item}),
                     {error, invalid_item}
             end
         end
@@ -38,30 +38,30 @@ init_devices(_Item) ->
     % of admissible devices for execution during pushing.
     cu_device_stack:normalize(ao:get(default_mu_stack)).
 
-run_stack(Stack, Item, Opts = #{ monitor := Monitor }) ->
+run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
     InitState = Opts#{
         devices => Stack,
-        monitor => Monitor,
+        logger => Logger,
         item => Item
     },
     cu_device_stack:call(InitState, push, #{ arg_prefix => [Item] }).
 
-push(Item, Opts = #{ results := Results, monitor := Monitor }) ->
+push(Item, Opts = #{ results := Results, logger := Logger }) ->
     Result = #result{
         messages = maps:get(<<"/Outbox">>, Results, #tx{data = []}),
         assignments = maps:get(<<"/Assignment">>, Results, []),
         spawns = maps:get(<<"/Spawn">>, Results, [])
     },
-    ao_logger:log(Monitor, {ok, computed, Item#tx.id}),
+    ao_logger:log(Logger, {ok, computed, Item#tx.id}),
     start(Result, Opts).
 
 %% Take a computation result and fork each message/spawn/... into its own worker.
-fork(Res, Opts = #{ monitor := Monitor }) ->
+fork(Res, Opts = #{ logger := Logger }) ->
     spawn(fun() ->
         lists:map(
             fun(Spawn) ->
                 ao_logger:log(
-                    Monitor,
+                    Logger,
                     {ok, spawning_push_for, ar_bundles:id(Spawn, unsigned)}
                 ),
                 start(Spawn, Opts)
@@ -71,7 +71,7 @@ fork(Res, Opts = #{ monitor := Monitor }) ->
         lists:map(
             fun(Message) ->
                 ao_logger:log(
-                    Monitor,
+                    Logger,
                     {ok, spawning_push_for, ar_bundles:id(Message, unsigned)}
                 ),
                 start(Message, Opts)
@@ -81,7 +81,7 @@ fork(Res, Opts = #{ monitor := Monitor }) ->
         lists:map(
             fun(Assignment) ->
                 ao_logger:log(
-                    Monitor,
+                    Logger,
                     {ok, spawning_push_for, ar_bundles:id(Assignment, unsigned)}
                 ),
                 ao_client:assign(Assignment)

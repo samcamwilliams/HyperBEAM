@@ -135,7 +135,7 @@ push(_Item, S = #{ results := Results }) ->
             )
     }}.
 
-add_attestations(NewMsg, S = #{ store := _Store, monitor := _Monitor, wallet := Wallet }) ->
+add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
     Process = find_process(NewMsg, S),
     case lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
@@ -165,7 +165,7 @@ add_attestations(NewMsg, S = #{ store := _Store, monitor := _Monitor, wallet := 
         false -> NewMsg
     end.
 
-find_process(Item, #{ monitor := Monitor, store := Store }) ->
+find_process(Item, #{ logger := Logger, store := Store }) ->
     case lists:keyfind(<<"Process">>, 1, Item#tx.tags) of
         {<<"Process">>, ProcessID} ->
             ao_store:read(Store, ProcessID);
@@ -173,7 +173,7 @@ find_process(Item, #{ monitor := Monitor, store := Store }) ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;
                 _ ->
-                    ao_logger:log(Monitor, {error, process_not_specified}),
+                    ao_logger:log(Logger, {error, process_not_specified}),
                     process_not_specified
             end
     end.

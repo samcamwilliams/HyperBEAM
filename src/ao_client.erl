@@ -119,10 +119,8 @@ compute(Assignment) when is_record(Assignment, tx) ->
     {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
     %% TODO: We should be getting the assignment by _ID_, not by slot.
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    ?c({compute_is_tx, binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))}),
     compute(binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))).
 compute(ProcID, Slot) when is_integer(Slot) ->
-    ?c({compute_is_int, ProcID, Slot}),
     compute(ProcID, list_to_binary(integer_to_list(Slot)));
 compute(ProcID, Assignment) ->
     ao_http:get(

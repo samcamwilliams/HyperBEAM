@@ -42,11 +42,11 @@ checkpoint(State) -> {ok, State}.
 uses() -> all.
 
 %%% MU pushing flow:
-push(Item, State = #{ monitor := Monitor }) ->
+push(Item, State = #{ logger := Logger }) ->
     case ao_client:schedule(Item) of
-        {ok, Assignment} ->
+        {_Verb, Assignment} ->
             {ok, State#{assignment => Assignment}};
         Error ->
-            ao_logger:log(Monitor, Error),
+            ao_logger:log(Logger, Error),
             {error, Error}
     end.

@@ -109,7 +109,9 @@ call_dev(S, Dev = {_, DevMod, _, _}, FuncName, Args) ->
     case erlang:function_exported(DevMod, FuncName, length(Args)) of
         true ->
             try erlang:apply(DevMod, FuncName, Args)
-            catch _Type:Error:BT -> {error, {Error, BT}}
+            catch _Type:Error:BT ->
+                ?c({error_calling_dev, DevMod, FuncName, Args, {Error, BT}}),
+                {error, {Error, BT}}
             end;
         false -> call_dev(S, Dev, FuncName, lists:droplast(Args))
     end.

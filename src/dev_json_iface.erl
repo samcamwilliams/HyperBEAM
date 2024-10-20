@@ -23,13 +23,7 @@ prep_call(
     #tx{
         data = #{
             <<"Assignment">> := Assignment,
-            <<"Message">> := Message =
-                #tx {
-                    data = #{
-                        <<"Attestations">> := Attestations,
-                        <<"Message">> := Message
-                    }
-                }
+            <<"Message">> := Message
         }
     },
     #{ wasm := Port, process := Process }
