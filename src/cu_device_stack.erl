@@ -6,6 +6,7 @@
 %%% specifics.
 
 -include("include/ao.hrl").
+-ao_debug(print).
 
 from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
@@ -64,7 +65,7 @@ call(S = #{ devices := Devs }, FuncName, Opts) ->
 do_call([], S, _FuncName, _Opts) -> {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }, FuncName, Opts) ->
     ?c({calling, DevMod, FuncName, Pass}),
-    case call_dev(S, Dev, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params]) of
+    case call_dev(S, Opts, Dev, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params]) of
         {ok, NewS} when is_map(NewS) ->
             do_call(Devs, NewS, FuncName, Opts);
         {ok, NewS, NewPrivS} when is_map(NewS) -> do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
@@ -101,19 +102,28 @@ maybe_pass(NewS = #{ pass := Pass }, FuncName, Opts) ->
             do_call(NewDevs, NewS#{ pass => Pass + 1 }, FuncName, Opts)
     end.
 
-call_dev(S, _DevMod, _FuncName, []) ->
+call_dev(S, _Opts, _DevMod, _FuncName, []) ->
     % If the device doesn't implement the function, we just return the state
     % as is.
     {ok, S};
-call_dev(S, Dev = {_, DevMod, _, _}, FuncName, Args) ->
+call_dev(S, Opts, Dev = {_, DevMod, _, _}, FuncName, Args) ->
+    % If the device implements the function with the given arity, call it.
+    % Otherwise, recurse with one fewer arguments.
     case erlang:function_exported(DevMod, FuncName, length(Args)) of
-        true ->
-            try erlang:apply(DevMod, FuncName, Args)
-            catch _Type:Error:BT ->
-                ?c({error_calling_dev, DevMod, FuncName, Args, {Error, BT}}),
-                {error, {Error, BT}}
-            end;
-        false -> call_dev(S, Dev, FuncName, lists:droplast(Args))
+        true -> maybe_unsafe_call(S, Opts, DevMod, FuncName, Args);
+        false -> call_dev(S, Opts, Dev, FuncName, lists:droplast(Args))
+    end.
+
+%% @doc Call a device function without catching exceptions if the error
+%% strategy is set to throw.
+maybe_unsafe_call(_S, #{ error_strategy := throw }, DevMod, FuncName, Args) ->
+    ?c({unsafe_calling, DevMod, FuncName}),
+    erlang:apply(DevMod, FuncName, Args);
+maybe_unsafe_call(_S, Opts, DevMod, FuncName, Args) ->
+    try erlang:apply(DevMod, FuncName, Args)
+    catch _Type:Error:BT ->
+        ?c({error_calling_dev, DevMod, FuncName, Args, {Error, BT}}),
+        {error, {Error, BT}}
     end.
 
 %% @doc Update the private state of the device (maintaining list stability).

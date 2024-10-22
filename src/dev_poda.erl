@@ -129,13 +129,29 @@ is_user_signed(M) when is_map(M#tx.data) ->
 is_user_signed(_) -> false.
 
 push(_Item, S = #{ results := Results }) ->
-    {ok, S#{
-        results =>
+    NewRes = attest_to_results(Results, S),
+    {ok, S#{ results => NewRes }}.
+
+attest_to_results(Msg, S = #{ wallet := Wallet }) ->
+    case is_map(Msg#tx.data) of
+        true ->
+            % Add attestations to the outbox and spawn items.
             maps:map(
-                fun(_, NewMsg) -> add_attestations(NewMsg, S) end,
-                Results#tx.data
-            )
-    }}.
+                fun(Key, IndexMsg) ->
+                    case lists:member(Key, [<<"/Outbox">>, <<"/Spawn">>]) of
+                        true ->
+                            ?c({poda_attest_to_results, Key}),
+                            maps:map(
+                                fun(_, DeepMsg) -> add_attestations(DeepMsg, S) end,
+                                IndexMsg#tx.data
+                            );
+                        false -> IndexMsg
+                    end
+                end,
+                Msg#tx.data
+            );
+        false -> Msg
+    end.
 
 add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
     Process = find_process(NewMsg, S),
@@ -170,7 +186,8 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
-            ao_store:read(Store, Item#tx.target);
+            ?c({poda_find_process, ar_util:id(Item#tx.target)}),
+            ao_store:read(Store, ar_util:id(Item#tx.target));
         _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;
