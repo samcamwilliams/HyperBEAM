@@ -1,7 +1,9 @@
 -module(ao_http).
--export([get/1, get/2, post/3, reply/2, reply/3]).
-
+-export([start/0, get/1, get/2, post/3, reply/2, reply/3]).
 -include("include/ao.hrl").
+
+start() ->
+    httpc:set_options([{max_keep_alive_length, 0}]).
 
 get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
@@ -24,7 +26,6 @@ post(URL, Item) ->
         [{body_format, binary}]
     ) of
         {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->
-            ?c({http_post_got, URL}),
             {
                 case Status of
                     200 -> ok;
@@ -54,4 +55,4 @@ reply(Req, Status, Item) ->
         Req
     ),
     ?c({replied, Status, Ref}),
-    {ok, Req}.
+    {ok, Req2}.

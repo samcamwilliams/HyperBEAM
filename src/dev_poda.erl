@@ -63,7 +63,6 @@ execute(M, S = #{ pass := 1 }, Opts) ->
             end
     end;
 execute(_M, S = #{ pass := 3, results := Results }, _Opts) ->
-    ?c({poda_called_on_results, Results}),
     {ok, S};
 execute(_M, S, _Opts) ->
     {ok, S}.
@@ -130,14 +129,14 @@ push(_Item, S = #{ results := Results }) ->
     {ok, S#{
         results =>
             maps:map(
-                fun(NewMsg) -> add_attestations(NewMsg, S) end,
-                Results
+                fun(_, NewMsg) -> add_attestations(NewMsg, S) end,
+                Results#tx.data
             )
     }}.
 
 add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
     Process = find_process(NewMsg, S),
-    case lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
+    case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
             #{ authorities := InitAuthorities, quorum := Quorum } =
                 extract_opts(Process#tx.tags),
@@ -165,15 +164,13 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
         false -> NewMsg
     end.
 
-find_process(Item, #{ logger := Logger, store := Store }) ->
-    case lists:keyfind(<<"Process">>, 1, Item#tx.tags) of
-        {<<"Process">>, ProcessID} ->
-            ao_store:read(Store, ProcessID);
-        false ->
+find_process(Item, #{ logger := _Logger, store := Store }) ->
+    case Item#tx.target of
+        X when X =/= <<>> ->
+            ao_store:read(Store, Item#tx.target);
+        _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;
-                _ ->
-                    ao_logger:log(Logger, {error, process_not_specified}),
-                    process_not_specified
+                _ -> process_not_specified
             end
     end.

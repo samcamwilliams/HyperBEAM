@@ -60,7 +60,7 @@ simple_load_test() ->
 
 default_test_img(Wallet) ->
     Store = ao:get(store),
-    {ok, Module} = file:read_file("test/aos-2-pure.wasm"),
+    {ok, Module} = file:read_file("test/aos-2-pure-xs.wasm"),
     ao_cache:write(
         Store,
         Img = ar_bundles:sign_item(
@@ -85,7 +85,7 @@ default_test_devices(Wallet, Img) ->
         {<<"Type">>, <<"Process">>},
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:id(ID)},
-        %{<<"Device">>, <<"PODA">>},
+        {<<"Device">>, <<"PODA">>},
         {<<"Quorum">>, <<"3">>},
         {<<"Authority">>, <<"test-authority-1">>},
         {<<"Authority">>, <<"test-authority-2">>},

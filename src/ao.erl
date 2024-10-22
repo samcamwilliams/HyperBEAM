@@ -52,6 +52,7 @@ config() ->
         ],
         % Dev options
         store => {ao_fs_store, #{ dir => "TEST-data" }},
+        mode => debug,
         debug_print => true
     }.
 

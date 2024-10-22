@@ -1,7 +1,6 @@
 -module(su_timestamp).
 -export([start/0, get/0]).
 -define(TIMEOUT, 1000 * 15).
--define(GATEWAY_URL, "https://arweave.net").
 
 start() ->
     TSServer = spawn(fun() -> cache(ao_client:arweave_timestamp()) end),
@@ -27,5 +26,10 @@ cache(Current) ->
 
 refresher(TSServer) ->
     timer:sleep(?TIMEOUT),
-    TSServer ! {refresh, ao_client:arweave_timestamp()},
+    TS =
+        case ao:get(mode) of
+            debug -> { 0, 0, << 0:256 >> };
+            prod -> ao_client:arweave_timestamp()
+        end,
+    TSServer ! {refresh, TS},
     refresher(TSServer).

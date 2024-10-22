@@ -9,7 +9,8 @@
     inets,
     ssl,
     gproc,
-    debugger
+    debugger,
+    gun
    ]},
   {env,[]},
   {modules, []},

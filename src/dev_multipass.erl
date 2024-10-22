@@ -10,7 +10,7 @@ init(S, Params) ->
     {ok, S#{ pass => 1, passes => binary_to_integer(Passes) }}.
 
 execute(_, S = #{ pass := Pass, passes := Passes }) when Pass < Passes ->
-    {pass, S#{ pass := Pass + 1 }};
+    {pass, S};
 execute(_, S) ->
     {ok, S}.
 

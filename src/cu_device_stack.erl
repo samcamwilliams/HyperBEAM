@@ -62,8 +62,8 @@ call(S = #{ devices := Devs }, FuncName, Opts) ->
     ).
 
 do_call([], S, _FuncName, _Opts) -> {ok, S};
-do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S, FuncName, Opts) ->
-    ?c({calling, DevMod, FuncName}),
+do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }, FuncName, Opts) ->
+    ?c({calling, DevMod, FuncName, Pass}),
     case call_dev(S, Dev, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params]) of
         {ok, NewS} when is_map(NewS) ->
             do_call(Devs, NewS, FuncName, Opts);

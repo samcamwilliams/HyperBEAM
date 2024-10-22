@@ -26,8 +26,7 @@ update_schedule(State = #{store := Store, process := Proc, schedule := []}) ->
     ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint
     Assignments = ao_client:get_assignments(Proc#tx.id, CurrentSlot, ToSlot),
-    ?c(got_assignments),
-    ?c({assignments_recvd, length(Assignments)}),
+    ?c({got_assignments_from_su, length(Assignments)}),
     lists:foreach(
         fun(Assignment) ->
             ?c({writing_recvd_assignment, ar_util:id(Assignment#tx.id)}),

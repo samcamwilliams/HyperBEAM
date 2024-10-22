@@ -29,7 +29,8 @@ start(Item, Opts = #{ logger := Logger }) ->
 
 exec(Item, Opts) ->
     Stack = init_devices(Item),
-    run_stack(Stack, Item, Opts).
+    {ok, Res} = ?c(run_stack(Stack, Item, Opts)),
+    fork(Res, Opts).
 
 %% Return a normalized device stack for pushing the given item.
 init_devices(_Item) ->
@@ -48,48 +49,50 @@ run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
 
 push(Item, Opts = #{ results := Results, logger := Logger }) ->
     Result = #result{
-        messages = maps:get(<<"/Outbox">>, Results, #tx{data = []}),
-        assignments = maps:get(<<"/Assignment">>, Results, []),
-        spawns = maps:get(<<"/Spawn">>, Results, [])
+        messages = (maps:get(<<"/Outbox">>, Results, #tx{data = []}))#tx.data,
+        assignments = (maps:get(<<"/Assignment">>, Results, #tx{data = []}))#tx.data,
+        spawns = (maps:get(<<"/Spawn">>, Results, #tx{data = []}))#tx.data
     },
     ao_logger:log(Logger, {ok, computed, Item#tx.id}),
-    start(Result, Opts).
+    fork(Result, Opts).
 
 %% Take a computation result and fork each message/spawn/... into its own worker.
 fork(Res, Opts = #{ logger := Logger }) ->
-    spawn(fun() ->
-        lists:map(
-            fun(Spawn) ->
-                ao_logger:log(
-                    Logger,
-                    {ok, spawning_push_for, ar_bundles:id(Spawn, unsigned)}
-                ),
-                start(Spawn, Opts)
-            end,
-            maybe_to_list(Res#result.spawns)
-        ),
-        lists:map(
-            fun(Message) ->
-                ao_logger:log(
-                    Logger,
-                    {ok, spawning_push_for, ar_bundles:id(Message, unsigned)}
-                ),
-                start(Message, Opts)
-            end,
-            maybe_to_list(Res#result.messages)
-        ),
-        lists:map(
-            fun(Assignment) ->
-                ao_logger:log(
-                    Logger,
-                    {ok, spawning_push_for, ar_bundles:id(Assignment, unsigned)}
-                ),
-                ao_client:assign(Assignment)
-            end,
-            maybe_to_list(Res#result.assignments)
-        )
+    spawn(
+        fun() ->
+            lists:foreach(
+                fun(Spawn) ->
+                    ao_logger:log(
+                        Logger,
+                        {ok, "Running spawn for ", ar_util:id(Spawn)}
+                    ),
+                    start(Spawn, Opts)
+                end,
+                maybe_to_list(Res#result.spawns)
+            ),
+            lists:foreach(
+                fun(Message) ->
+                    ao_logger:log(
+                        Logger,
+                        {ok, "Pushing message ", ar_bundles:id(Message, unsigned)}
+                    ),
+                    start(Message, Opts)
+                end,
+                maybe_to_list(Res#result.messages)
+            ),
+            lists:foreach(
+                fun(Assignment) ->
+                    ao_logger:log(
+                        Logger,
+                        {ok, "Assigning ", ar_bundles:id(Assignment, unsigned)}
+                    ),
+                    ao_client:assign(Assignment)
+                end,
+                maybe_to_list(Res#result.assignments)
+            )
     end).
 
 maybe_to_list(Map) when is_map(Map) -> [V || {_K, V} <- maps:to_list(Map)];
 maybe_to_list(undefined) -> [];
+maybe_to_list(Else) when not is_list(Else) -> [Else];
 maybe_to_list(Else) -> Else.

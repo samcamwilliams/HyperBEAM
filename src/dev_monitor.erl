@@ -11,7 +11,7 @@
 init(State, _, InitState) ->
     {ok,  State#{ monitors => InitState }}.
 
-execute(Message, State = #{ pass := 1 }) ->
+execute(Message, State = #{ pass := Pass, passes := Passes }) when Pass == Passes ->
     signal(State, {message, Message});
 execute(_, S) -> {ok, S}.
 

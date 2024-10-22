@@ -43,15 +43,21 @@ print(Item, Indent) when is_record(Item, tx) ->
         [
             if
                 Item#tx.signature =/= ?DEFAULT_SIG -> ar_util:encode(Item#tx.id);
-                true -> "UNSIGNED"
+                true -> "[UNSIGNED]"
             end,
             if
-                Valid == true -> "valid";
-                true -> "INVALID"
+                Valid == true -> "VALID";
+                true -> "[INVALID]"
             end
         ],
         Indent
     ),
+    print_line("Target: ~s", [
+            case Item#tx.target of
+                <<>> -> "[NONE]";
+                Target -> ar_util:id(Target)
+            end
+        ], Indent + 1),
     print_line("Tags:", Indent + 1),
     lists:foreach(
         fun({Key, Val}) -> print_line("~s -> ~s", [Key, Val], Indent + 2) end,
