@@ -67,8 +67,8 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
     ?c({started_getting_result, ProcID, MsgRef, Store}),
     case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
-            ?c({proc_id, ar_util:id(ProcID)}),
-            case gproc:lookup_pids({n, l, {cu, 1}}) of
+            ?c({proc_id, ProcID}),
+            case pg:get_local_members({cu, ProcID}) of
                 [] ->
                     ?c({no_cu_for_proc, ar_util:id(ProcID)}),
                     Proc = ao_cache:read(Store, ProcID),
@@ -107,7 +107,9 @@ run(Process, RawOpts, Monitors) ->
 
 await_results(Pid) ->
     receive
-        {result, Pid, _Msg, State} -> {ok, maps:get(results, State)}
+        {result, Pid, _Msg, State} ->
+            ?c({returning_results, maps:get(results, State)}),
+            {ok, maps:get(results, State)}
     end.
 
 create_monitor_for_message(Msg) when is_record(Msg, tx) ->
@@ -152,8 +154,8 @@ create_persistent_monitor() ->
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
-    pg:join({cu, Process#tx.id}, self()),
     ?c({booting_process, ar_util:id(Process#tx.id)}),
+    pg:join({cu, ar_util:id(Process#tx.id)}, self()),
     % Build the device stack.
     Devs =
         cu_device_stack:normalize(

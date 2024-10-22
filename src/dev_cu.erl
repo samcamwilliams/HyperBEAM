@@ -6,9 +6,7 @@
 push(_Item, S = #{ assignment := Assignment, logger := Logger }) ->
     case ao_client:compute(Assignment) of
         {ok, Results} ->
-            ar_bundles:print(Results),
             {ok, S#{ results => Results }};
         Error ->
-            ao_logger:log(Logger, Error),
-            {error, Error}
+            throw({cu_error, Error})
     end.

@@ -25,7 +25,6 @@ extract_opts(Params) ->
 execute(M, S = #{ pass := 1 }, Opts) ->
     case is_user_signed(M) of
         true ->
-            ?c({poda_skipped, user_signed_msg}),
             {ok, S};
         false ->
             ?c({poda_execute, Opts}),
@@ -122,8 +121,12 @@ return_error(S = #{ wallet := Wallet }, Reason) ->
         }
     }}.
 
-is_user_signed(M) ->
-    lists:keyfind(<<"From-Process">>, 1, M#tx.tags) == false.
+is_user_signed(M) when is_map(M#tx.data) ->
+    case lists:keyfind(<<"From-Process">>, 1, M#tx.tags) of
+        false -> true;
+        _ -> false
+    end;
+is_user_signed(_) -> false.
 
 push(_Item, S = #{ results := Results }) ->
     {ok, S#{

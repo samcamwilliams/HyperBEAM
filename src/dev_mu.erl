@@ -3,6 +3,8 @@
 -export([push/2]).
 -include("include/ao.hrl").
 
+-ao_debug(print).
+
 start(Item) ->
     start(
         Item,
@@ -29,8 +31,8 @@ start(Item, Opts = #{ logger := Logger }) ->
 
 exec(Item, Opts) ->
     Stack = init_devices(Item),
-    {ok, Res} = ?c(run_stack(Stack, Item, Opts)),
-    fork(Res, Opts).
+    {ok, _Res} = run_stack(Stack, Item, Opts),
+    {ok, Opts}.
 
 %% Return a normalized device stack for pushing the given item.
 init_devices(_Item) ->
@@ -47,14 +49,15 @@ run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
     },
     cu_device_stack:call(InitState, push, #{ arg_prefix => [Item] }).
 
-push(Item, Opts = #{ results := Results, logger := Logger }) ->
-    Result = #result{
-        messages = (maps:get(<<"/Outbox">>, Results, #tx{data = []}))#tx.data,
-        assignments = (maps:get(<<"/Assignment">>, Results, #tx{data = []}))#tx.data,
-        spawns = (maps:get(<<"/Spawn">>, Results, #tx{data = []}))#tx.data
+push(Item, Opts = #{ results := ResTXs, logger := Logger }) ->
+    Res = #result{
+        messages = (maps:get(<<"/Outbox">>, ResTXs, #tx{data = []}))#tx.data,
+        assignments = (maps:get(<<"/Assignment">>, ResTXs, #tx{data = []}))#tx.data,
+        spawns = (maps:get(<<"/Spawn">>, ResTXs, #tx{data = []}))#tx.data
     },
     ao_logger:log(Logger, {ok, computed, Item#tx.id}),
-    fork(Result, Opts).
+    fork(Res, Opts),
+    {ok, Opts}.
 
 %% Take a computation result and fork each message/spawn/... into its own worker.
 fork(Res, Opts = #{ logger := Logger }) ->
@@ -62,20 +65,12 @@ fork(Res, Opts = #{ logger := Logger }) ->
         fun() ->
             lists:foreach(
                 fun(Spawn) ->
-                    ao_logger:log(
-                        Logger,
-                        {ok, "Running spawn for ", ar_util:id(Spawn)}
-                    ),
                     start(Spawn, Opts)
                 end,
                 maybe_to_list(Res#result.spawns)
             ),
             lists:foreach(
                 fun(Message) ->
-                    ao_logger:log(
-                        Logger,
-                        {ok, "Pushing message ", ar_bundles:id(Message, unsigned)}
-                    ),
                     start(Message, Opts)
                 end,
                 maybe_to_list(Res#result.messages)
