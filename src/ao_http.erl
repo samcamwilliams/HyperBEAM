@@ -1,5 +1,6 @@
 -module(ao_http).
 -export([start/0, get/1, get/2, post/3, reply/2, reply/3]).
+-export([tx_to_status/1, req_to_tx/1]).
 -include("include/ao.hrl").
 
 start() ->
@@ -38,7 +39,8 @@ post(URL, Item) ->
             {error, Response}
     end.
 
-reply(Req, Item) -> reply(Req, 200, Item).
+reply(Req, Item) ->
+    reply(Req, tx_to_status(Item), Item).
 reply(Req, Status, Item) ->
     ?c(
         {replying,
@@ -56,3 +58,39 @@ reply(Req, Status, Item) ->
     ),
     ?c({replied, Status, Ref}),
     {ok, Req2}.
+
+%% @doc Get the HTTP status code from a transaction (if it exists).
+tx_to_status(Item) ->
+    case lists:keyfind(<<"Status">>, 1, Item#tx.tags) of
+        {_, RawStatus} ->
+            case is_integer(RawStatus) of
+                true -> RawStatus;
+                false -> binary_to_integer(RawStatus)
+            end;
+        false -> 200
+    end.
+
+%% @doc Convert a cowboy request to a normalized transaction.
+req_to_tx(Req) ->
+    Method = cowboy_req:method(Req),
+    Path = cowboy_req:path(Req),
+    Body = read_body(Req),
+    QueryTags = cowboy_req:parse_qs(Req),
+    ar_bundles:normalize(#tx {
+        tags = [
+            {<<"Method">>, Method},
+            {<<"Path">>, Path}
+        ] ++ QueryTags,
+        data =
+            case Body of
+                <<>> -> <<>>;
+                Body -> #{ <<"1">> => ar_bundles:deserialize(Body) }
+            end
+    }).
+
+read_body(Req) -> read_body(Req, <<>>).
+read_body(Req0, Acc) ->
+    case cowboy_req:read_body(Req0) of
+        {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
+        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
+    end.

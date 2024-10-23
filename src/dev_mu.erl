@@ -1,9 +1,24 @@
 -module(dev_mu).
--export([start/1, start/2]).
+-export([start/1, start/2, execute/2, execute/3]).
 -export([push/2]).
 -include("include/ao.hrl").
 
 -ao_debug(print).
+
+execute(M, S) ->
+    execute(M, S, #{}).
+
+execute(_M, ReqM, Opts) ->
+    maps:map(
+        fun(_K, M) -> start(M, Opts) end,
+        ReqM#tx.data
+    ),
+    % Note: By returning a result binary rather than a state, we are forcing
+    % that we should be the last device if we are in a stack.
+    {ok, #tx {
+        tags = [{<<"Status">>, 200}],
+        data = <<"Started pushing.">>
+    }}.
 
 start(Item) ->
     start(
@@ -39,7 +54,7 @@ init_devices(_Item) ->
     % TODO: We may want to make this respond flexibility to both the item
     % and the configuration of the node. Node operators should set a list
     % of admissible devices for execution during pushing.
-    dev_stack:normalize(ao:get(default_mu_stack)).
+    dev_stack:create(ao:get(default_mu_stack)).
 
 run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
     InitState = Opts#{

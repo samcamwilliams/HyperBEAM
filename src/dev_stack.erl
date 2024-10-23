@@ -1,5 +1,5 @@
 -module(dev_stack).
--export([from_process/1, normalize/1, normalize/2, normalize/3]).
+-export([from_process/1, create/1, create/2, create/3]).
 -export([init/2, execute/2, execute/3]).
 
 %%% A device that contains a stack of other devices, which it runs in order
@@ -8,14 +8,19 @@
 -include("include/ao.hrl").
 -ao_debug(print).
 
-init(M, Opts) ->
-    Devs =
-        dev_stack:normalize(
+init(Process, Opts) ->
+    {ok, S = #{ devices := Devices }} =
+        create(
             maps:get(pre, Opts, []),
-            M,
+            Process,
             maps:get(post, Opts, [])
         ),
-    {ok, #{ devices => Devs }}.
+    call(
+        Devices,
+        S#{ results => undefined, errors => [], pass => 1 },
+        init,
+        maps:get(opts, Opts, #{})
+    ).
 
 from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
@@ -39,9 +44,9 @@ extract_params(Params, Rest = [{<<"Device">>, _}|_]) ->
 extract_params(Params, [{PName, PVal}|Rest]) ->
     extract_params([{PName, PVal}|Params], Rest).
 
-normalize(Pre) -> normalize(Pre, [], []).
-normalize(Pre, Post) -> normalize(Pre, [], Post).
-normalize(Pre, Proc, Post) ->
+create(Pre) -> create(Pre, [], []).
+create(Pre, Post) -> create(Pre, [], Post).
+create(Pre, Proc, Post) ->
     Devs = normalize_list(Pre) ++ from_process(Proc) ++ normalize_list(Post),
     lists:map(
         fun({{DevMod, DevS, Params}, N}) ->
@@ -62,13 +67,35 @@ normalize_list([ Dev = {_DevMod, _InitPriv, _Params} | Rest ]) ->
 normalize_list([DevID|Rest]) ->
     [{DevID, undefined, []} | normalize_list(Rest) ].
 
-%% @doc Run a call across a state containing a stack of devices
-execute(S, FuncName) -> execute(S, FuncName, #{}).
-execute(S = #{ devices := Devs }, FuncName, Opts) ->
-    % Reset the shared global state variables for the stack before calling
+%% @doc Wrap calls to the device stack as if it is a single device.
+%% Call the execute function on each device in the stack, then call the
+%% finalize function on the resulting state.
+execute(M, S) ->
+    {ok, NewS} = only_execute(M, S),
+    call(
+        maps:get(devices, NewS, []),
+        NewS,
+        finalize,
+        maps:get(opts, S, #{})
+    ).
+
+%% @doc Only execute the devices in the stack, without calling the finalize
+%% function.
+only_execute(M, S = #{ devices := Devs, state := S }) ->
+    % Reset the state variables for the devices in the stack before calling
+    call(
+        Devs,
+        S#{ results => undefined, errors => [], pass => 1 },
+        execute,
+        (maps:get(opts, S, #{}))#{ arg_prefix := [M] }
+    ).
+
+call(Devs, S, FuncName, Opts) ->
     do_call(
         Devs,
-        S#{ results => undefined, errors => [], pass => 1 }, FuncName, Opts
+        S#{ results => undefined, errors => [], pass => 1 },
+        FuncName,
+        Opts
     ).
 
 do_call([], S, _FuncName, _Opts) -> {ok, S};
@@ -79,13 +106,20 @@ do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }
             do_call(Devs, S, FuncName, Opts);
         {ok, NewS} when is_map(NewS) ->
             do_call(Devs, NewS, FuncName, Opts);
-        {ok, NewS, NewPrivS} when is_map(NewS) -> do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
-        {skip, NewS} when is_map(NewS) -> NewS;
-        {skip, NewS, NewPrivS} when is_map(NewS) -> update(NewS, Dev, NewPrivS);
-        {pass, NewS} when is_map(NewS) -> maybe_pass(NewS, FuncName, Opts);
-        {pass, NewS, NewPrivS} when is_map(NewS) -> maybe_pass(update(NewS, Dev, NewPrivS), FuncName, Opts);
-        {error, Info} -> maybe_error(AllDevs, S, FuncName, Opts, Info);
-        Unexpected -> maybe_error(AllDevs, S, FuncName, Opts, {unexpected_result, Unexpected})
+        {ok, NewS, NewPrivS} when is_map(NewS) ->
+            do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
+        {skip, NewS} when is_map(NewS) ->
+            NewS;
+        {skip, NewS, NewPrivS} when is_map(NewS) ->
+            update(NewS, Dev, NewPrivS);
+        {pass, NewS} when is_map(NewS) ->
+            maybe_pass(NewS, FuncName, Opts);
+        {pass, NewS, NewPrivS} when is_map(NewS) ->
+            maybe_pass(update(NewS, Dev, NewPrivS), FuncName, Opts);
+        {error, Info} ->
+            maybe_error(AllDevs, S, FuncName, Opts, Info);
+        Unexpected ->
+            maybe_error(AllDevs, S, FuncName, Opts, {unexpected_result, Unexpected})
     end.
 
 maybe_error([{N, DevMod, _DevS, _Params}|Devs], S = #{ errors := Errs }, FuncName, Opts, Info) ->

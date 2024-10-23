@@ -1,4 +1,5 @@
 -module(cu_device).
+-export([from_message/1]).
 -export([call/3, call/4]).
 -include("include/ao.hrl").
 
@@ -9,6 +10,12 @@
 %%% This module abstracts the handling of passing additional optional metadata
 %%% to the device call, as well as catching any errors that may be thrown by the
 %%% device through a generic framework.
+
+from_message(M) ->
+    case lists:keyfind(<<"Device">>, 1, M#tx.tags) of
+        {_, DevID} -> cu_device_loader:from_id(DevID);
+        false -> cu_device_loader:default()
+    end.
 
 call(Dev, FuncName, Args) -> call(#{}, Dev, FuncName, Args).
 call(_DevMod, _FuncName, [], _Opts) ->

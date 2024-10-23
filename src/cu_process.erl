@@ -161,7 +161,8 @@ boot(Process, Opts) ->
     ?c({booting_process, ar_util:id(Process#tx.id)}),
     pg:join({cu, ar_util:id(Process#tx.id)}, self()),
     % Build the device stack.
-    {ok, #{devices := Devs}} = dev_stack:init(Process, Opts),
+    Device = cu_device:from_message(Process),
+    {ok, #{devices := Devs}} = cu_device:call(Device, init, Process, Opts),
     % Get the store we are using for this execution.
     Store = maps:get(store, Opts, ao:get(store)),
     % Get checkpoint key names from all devices.

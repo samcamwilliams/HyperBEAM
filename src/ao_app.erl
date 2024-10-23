@@ -14,9 +14,9 @@
 start(_StartType, _StartArgs) ->
     ao_sup:start_link(),
     ok = su_registry:start(),
-    TS = su_timestamp:start(),
-    _HTTP = ao_http_router:start([su_http, mu_http, cu_http]),
-    {ok, TS}.
+    _TimestampServer = su_timestamp:start(),
+    {ok, HTTP} = ao_http_router:start(),
+    {ok, HTTP}.
 
 stop(_State) ->
     ok.

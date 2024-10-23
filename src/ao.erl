@@ -43,6 +43,12 @@ config() ->
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
             },
+        default_path_messages => [
+            {<<"data">>,
+                [dev_p4, dev_lookup]},
+            {<<"su">>, [dev_p4, dev_su]},
+            {<<"mu">>, [dev_p4, dev_mu]}
+        ],
         default_mu_stack => [
             dev_p4,
             dev_scheduler,
