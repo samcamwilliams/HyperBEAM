@@ -51,7 +51,14 @@ config() ->
             dev_mu
         ],
         % Dev options
-        store => [{ao_fs_store, #{ dir => "TEST-data" }}],
+        store =>
+            [
+                {ao_fs_store, #{ dir => "TEST-data" }},
+                {ao_remote_store, #{ node => "http://localhost:8735" }},
+                {ao_remote_store, #{ node => "http://localhost:8736" }},
+                {ao_remote_store, #{ node => "http://localhost:8737" }}
+            ],
+        local_store => [{ao_fs_store, #{ dir => "TEST-data" }}],
         mode => debug,
         debug_print => true
     }.

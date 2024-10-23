@@ -4,6 +4,10 @@
 
 -include("include/ao.hrl").
 
+%%% NOTE Oct 23, 2024: This comment is (at least partially) out of date. Hyperbeam is still
+%%% in development with an evolving architecture. If you need to know more about the 
+%%% architecture at the moment, either read what the code is doing or ask a hyperbeam dev.
+%%% 
 %%% A process is a specific type of AO combinator, represented as a stack of components.
 %%% Each AO process runs as an Erlang process consuming messages from -- and placing items
 %%% into -- its schedule.
@@ -157,18 +161,13 @@ boot(Process, Opts) ->
     ?c({booting_process, ar_util:id(Process#tx.id)}),
     pg:join({cu, ar_util:id(Process#tx.id)}, self()),
     % Build the device stack.
-    Devs =
-        cu_device_stack:normalize(
-            maps:get(pre, Opts, []),
-            Process,
-            maps:get(post, Opts, [])
-        ),
+    {ok, #{devices := Devs}} = dev_stack:init(Process, Opts),
     % Get the store we are using for this execution.
     Store = maps:get(store, Opts, ao:get(store)),
     % Get checkpoint key names from all devices.
     {ok,
         #{keys := [Key|_]}} =
-            cu_device_stack:call(#{devices => Devs, keys => []}, checkpoint_uses),
+            dev_stack:execute(#{devices => Devs, keys => []}, checkpoint_uses),
     % We don't support partial checkpoints (perhaps we never will?), so just take one key
     % and use that to find the latest full checkpoint.
     CheckpointOption =
@@ -199,7 +198,7 @@ boot(Process, Opts) ->
                 
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
-    case cu_device_stack:call(InitState, init) of
+    case dev_stack:execute(InitState, init) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, Opts);
         {error, N, DevMod, Info} ->
@@ -254,7 +253,7 @@ post_execute(
             % Run checkpoint on the device stack, but we do not propagate the result.
             ?c({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
-                cu_device_stack:call(
+                dev_stack:execute(
                     State#{ save_keys => [] },
                     checkpoint,
                     Opts
@@ -303,13 +302,13 @@ initialize_slot(State = #{slot := Slot}) ->
     State#{slot := Slot + 1, pass := 0, results := undefined }.
 
 execute_message(Msg, State, Opts) ->
-    cu_device_stack:call(State, execute, Opts#{arg_prefix => [Msg]}).
+    dev_stack:execute(State, execute, Opts#{arg_prefix => [Msg]}).
 
 execute_terminate(S, Opts) ->
-    cu_device_stack:call(S, terminate, Opts).
+    dev_stack:execute(S, terminate, Opts).
 
 execute_eos(S, Opts) ->
-    cu_device_stack:call(S, end_of_schedule, Opts).
+    dev_stack:execute(S, end_of_schedule, Opts).
 
 is_checkpoint_slot(State, Opts) ->
     (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)
@@ -325,7 +324,7 @@ await_command(State, Opts = #{ on_idle := wait }) ->
         {on_idle, run, Function, Args} ->
             ?c({running_command, Function, Args}),
             {ok, NewState} =
-                cu_device_stack:call(
+                dev_stack:execute(
                     State,
                     Function,
                     Opts#{arg_prefix => Args}

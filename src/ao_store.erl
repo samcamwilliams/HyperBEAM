@@ -46,6 +46,8 @@ resolve(Modules, Path) -> call_function(Modules, resolve, [Path]).
 list(Modules, Path) -> call_function(Modules, list, [Path]).
 
 %% @doc Call a function on the first module that succeeds.
+call_function(X, _Function, _Args) when not is_list(X) ->
+    call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
     {error, no_store_succeeded};
 call_function([{Mod, Opts} | Rest], Function, Args) ->
@@ -59,7 +61,9 @@ call_function([{Mod, Opts} | Rest], Function, Args) ->
             call_function(Rest, Function, Args)
     end.
 
-%% @doc Call a function on all modules.
+%% @doc Call a function on all given modules.
+call_all(X, _Function, _Args) when not is_list(X) ->
+    call_all([X], _Function, _Args);
 call_all([], _Function, _Args) ->
     ok;
 call_all([{Mod, Opts} | Rest], Function, Args) ->

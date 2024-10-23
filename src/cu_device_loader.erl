@@ -1,5 +1,5 @@
 -module(cu_device_loader).
--export([from_id/1, from_id/2]).
+-export([from_id/1, from_id/2, default/0]).
 
 -include("include/ao.hrl").
 
@@ -32,3 +32,5 @@ from_id(ID, _Opts) ->
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
     end.
+
+default() -> dev_id.

@@ -39,7 +39,7 @@ init_devices(_Item) ->
     % TODO: We may want to make this respond flexibility to both the item
     % and the configuration of the node. Node operators should set a list
     % of admissible devices for execution during pushing.
-    cu_device_stack:normalize(ao:get(default_mu_stack)).
+    dev_stack:normalize(ao:get(default_mu_stack)).
 
 run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
     InitState = Opts#{
@@ -47,7 +47,7 @@ run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
         logger => Logger,
         item => Item
     },
-    cu_device_stack:call(InitState, push, #{ arg_prefix => [Item] }).
+    dev_stack:execute(InitState, push, #{ arg_prefix => [Item] }).
 
 push(Item, Opts = #{ results := ResTXs, logger := Logger }) ->
     throw(stop),
