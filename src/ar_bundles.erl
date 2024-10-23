@@ -12,7 +12,6 @@
 -export([print/1]).
 
 -include("include/ao.hrl").
--ao_debug(print).
 
 -include_lib("eunit/include/eunit.hrl").
 

@@ -7,7 +7,10 @@
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store
-%%% implementation later, or even at the configuration level if desired.
+%%% implementation(s) later, or even at the configuration level if desired.
+%%% It takes a list of modules and their options, and calls the appropriate
+%%% function on the first module that succeeds. If all modules fail, it returns
+%%% {error, no_viable_store}.
 
 behavior_info(callbacks) ->
     [
@@ -18,26 +21,52 @@ behavior_info(callbacks) ->
 
 %%% Library wrapper implementations.
 
-start({Mod, Opts}) -> Mod:start(Opts).
+start(Modules) -> call_all(Modules, start, []).
 
-stop({Mod, Opts}) -> Mod:stop(Opts).
+stop(Modules) -> call_function(Modules, stop, []).
 
-read({Mod, Opts}, Key) -> Mod:read(Opts, Key).
+read(Modules, Key) -> call_function(Modules, read, [Key]).
 
-write({Mod, Opts}, Key, Value) -> Mod:write(Opts, Key, Value).  
+write(Modules, Key, Value) -> call_function(Modules, write, [Key, Value]).
 
-make_group({Mod, Opts}, Path) -> Mod:make_group(Opts, Path).
+make_group(Modules, Path) -> call_function(Modules, make_group, [Path]).
 
-make_link({Mod, Opts}, Existing, New) -> Mod:make_link(Opts, Existing, New).
+make_link(Modules, Existing, New) -> call_function(Modules, make_link, [Existing, New]).
 
-reset({Mod, Opts}) -> Mod:reset(Opts).
+reset(Modules) -> call_function(Modules, reset, []).
 
-type({Mod, Opts}, Path) -> Mod:type(Opts, Path).
+type(Modules, Path) -> call_function(Modules, type, [Path]).
 
-path({Mod, Opts}, Path) -> Mod:path(Opts, Path).
+path(Modules, Path) -> call_function(Modules, path, [Path]).
 
-add_path({Mod, Opts}, Path1, Path2) -> Mod:add_path(Opts, Path1, Path2).
+add_path(Modules, Path1, Path2) -> call_function(Modules, add_path, [Path1, Path2]).
 
-resolve({Mod, Opts}, Path) -> Mod:resolve(Opts, Path).
+resolve(Modules, Path) -> call_function(Modules, resolve, [Path]).
 
-list({Mod, Opts}, Path) -> Mod:list(Opts, Path).
+list(Modules, Path) -> call_function(Modules, list, [Path]).
+
+%% @doc Call a function on the first module that succeeds.
+call_function([], _Function, _Args) ->
+    {error, no_store_succeeded};
+call_function([{Mod, Opts} | Rest], Function, Args) ->
+    try apply(Mod, Function, [Opts | Args]) of
+        not_found ->
+            call_function(Rest, Function, Args);
+        Result ->
+            Result
+    catch
+        _:_ ->
+            call_function(Rest, Function, Args)
+    end.
+
+%% @doc Call a function on all modules.
+call_all([], _Function, _Args) ->
+    ok;
+call_all([{Mod, Opts} | Rest], Function, Args) ->
+    try
+        apply(Mod, Function, [Opts | Args])
+    catch
+        _:_ ->
+            ok
+    end,
+    call_all(Rest, Function, Args).

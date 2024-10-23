@@ -51,9 +51,9 @@ config() ->
             dev_mu
         ],
         % Dev options
-        store => {ao_fs_store, #{ dir => "TEST-data" }},
+        store => [{ao_fs_store, #{ dir => "TEST-data" }}],
         mode => debug,
-        debug_print => false
+        debug_print => true
     }.
 
 get(Key) -> get(Key, undefined).

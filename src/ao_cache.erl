@@ -10,7 +10,7 @@
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).
--define(TEST_STORE, {?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}).
+-define(TEST_STORE, [{?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
 
@@ -279,6 +279,7 @@ read(Store, ID) ->
 read(Store, ID, DirBase) ->
     read(Store, ID, DirBase, all).
 read(Store, ID, DirBase, Subpath) ->
+    ?c({reading_message, ID, DirBase, Subpath}),
     MessagePath = ao_store:path(Store, [DirBase, fmt_id(ID)]),
     case ao_store:type(Store, MessagePath) of
         composite ->

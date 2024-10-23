@@ -50,6 +50,7 @@ run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
     cu_device_stack:call(InitState, push, #{ arg_prefix => [Item] }).
 
 push(Item, Opts = #{ results := ResTXs, logger := Logger }) ->
+    throw(stop),
     Res = #result{
         messages = (maps:get(<<"/Outbox">>, ResTXs, #tx{data = []}))#tx.data,
         assignments = (maps:get(<<"/Assignment">>, ResTXs, #tx{data = []}))#tx.data,

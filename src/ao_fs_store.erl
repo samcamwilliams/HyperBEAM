@@ -6,7 +6,7 @@
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
 -include("include/ao.hrl").
--ao_debug(no_print).
+-ao_debug(print).
 
 %%% A key-value store abstraction, such that the underlying implementation
 %%% can be swapped out easily. The default implementation is a file-based
@@ -35,12 +35,13 @@ read(Path) ->
     ?c({read, Path}),
     case file:read_file_info(Path) of
         {ok, #file_info{type = regular}} ->
-            {ok, File} = file:read_file(Path),
-            {ok, File};
+            {ok, _} = file:read_file(Path);
         _ ->
             case file:read_link(Path) of
-                {ok, Link} -> read(Link);
-                _ -> not_found
+                {ok, Link} ->
+                    read(Link);
+                _ ->
+                    not_found
             end
     end.
 

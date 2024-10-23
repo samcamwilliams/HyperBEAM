@@ -2,7 +2,6 @@
 -export([init/1, execute/2, uses/0, stdlib/6, lib/6]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 uses() -> all.
 

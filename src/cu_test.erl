@@ -4,7 +4,6 @@
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 init() ->
     application:ensure_all_started(ao),
@@ -76,6 +75,7 @@ default_test_img(Wallet) ->
         )
     ),
     Img.
+
 
 default_test_devices(Wallet, Img) ->
     ID = ar_wallet:to_address(Wallet),

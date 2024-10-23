@@ -3,7 +3,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/ao.hrl").
 
-push(_Item, S = #{ assignment := Assignment, logger := Logger }) ->
+push(_Item, S = #{ assignment := Assignment, logger := _Logger }) ->
     case ao_client:compute(Assignment) of
         {ok, Results} ->
             {ok, S#{ results => Results }};

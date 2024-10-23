@@ -119,7 +119,7 @@ call_dev(S, Opts, Dev = {_, DevMod, _, _}, FuncName, Args) ->
 maybe_unsafe_call(_S, #{ error_strategy := throw }, DevMod, FuncName, Args) ->
     ?c({unsafe_calling, DevMod, FuncName}),
     erlang:apply(DevMod, FuncName, Args);
-maybe_unsafe_call(_S, Opts, DevMod, FuncName, Args) ->
+maybe_unsafe_call(_S, _Opts, DevMod, FuncName, Args) ->
     try erlang:apply(DevMod, FuncName, Args)
     catch _Type:Error:BT ->
         ?c({error_calling_dev, DevMod, FuncName, Args, {Error, BT}}),
