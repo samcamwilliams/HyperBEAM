@@ -1,5 +1,5 @@
 -module(cu_device_loader).
--export([from_id/1, from_id/2, default/0]).
+-export([from_id/1, from_id/2, from_message/1,default/0]).
 
 -include("include/ao.hrl").
 
@@ -34,3 +34,14 @@ from_id(ID, _Opts) ->
     end.
 
 default() -> dev_id.
+
+%% @doc Locate the appropriate device module to execute for the given message.
+%% If the message specifies a device for itself, use that. Else, use the default
+%% device.
+from_message(M) ->
+    case lists:keyfind(<<"Device">>, 1, M#tx.tags) of
+        {_, DeviceID} ->
+            from_id(DeviceID);
+        false ->
+            {ok, default()}
+    end.

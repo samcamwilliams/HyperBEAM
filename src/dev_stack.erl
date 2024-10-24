@@ -1,6 +1,6 @@
 -module(dev_stack).
 -export([from_process/1, create/1, create/2, create/3]).
--export([init/2, execute/2, execute/3]).
+-export([init/2, execute/2]).
 
 %%% A device that contains a stack of other devices, which it runs in order
 %%% when its `execute` function is called.
