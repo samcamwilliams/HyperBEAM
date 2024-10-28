@@ -27,7 +27,7 @@ start(Item, Opts = #{ logger := Logger }) ->
         end
     ).
 
-push(Msg, Opts = #{ results := ResTXs, logger := Logger }) ->
+push(Msg, State = #{ results := ResTXs, logger := Logger }) ->
     % Second pass: We have the results, so we can fork the messages/spawns/...
     Res = #result{
         messages = (maps:get(<<"/Outbox">>, ResTXs, #tx{data = []}))#tx.data,
@@ -35,17 +35,18 @@ push(Msg, Opts = #{ results := ResTXs, logger := Logger }) ->
         spawns = (maps:get(<<"/Spawn">>, ResTXs, #tx{data = []}))#tx.data
     },
     ao_logger:log(Logger, {ok, computed, Msg#tx.id}),
-    fork(Res, Opts),
-    {ok, Opts};
-push(Msg, S) ->
+    fork(Res, State),
+    {ok, State};
+push(CarrierMsg, State) ->
     % First pass: We need to verify the message and start the logger.
+    #{ <<"1">> := Msg } = CarrierMsg#tx.data,
     case ar_bundles:verify_item(Msg) of
         true ->
             ao_logger:register(self()),
             Logger = ao_logger:start(),
             ao_logger:register(Logger),
             {ok,
-                S#{
+                State#{
                     store => ao:get(store),
                     logger => Logger,
                     wallet => ao:wallet()

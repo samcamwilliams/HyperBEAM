@@ -51,12 +51,12 @@ upload(Item) ->
     end.
 
 %%% Scheduling Unit API
-schedule(Item) -> schedule(Item, Item#tx.target).
-schedule(Item, Target) ->
+schedule(CarrierMsg) ->
+    Msg = ar_bundles:hd(CarrierMsg),
     ao_http:post(
-        su_process:get_location(Target),
+        su_process:get_location(Msg#tx.target),
         "/",
-        Item
+        Msg
     ).
 
 assign(_ID) ->

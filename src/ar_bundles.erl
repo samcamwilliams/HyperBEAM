@@ -1,7 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
--export([id/1, id/2, type/1, map/1]).
+-export([id/1, id/2, type/1, map/1, hd/1]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
@@ -139,6 +139,11 @@ id(Item, unsigned) ->
     crypto:hash(sha256, data_item_signature_data(Item));
 id(Item, signed) ->
     Item#tx.id.
+
+hd(#tx { data = #{ <<"1">> := Msg } }) -> Msg;
+hd(#tx { data = [First | _] }) -> First;
+hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
+    ?MODULE:hd((deserialize(serialize(TX), binary))#tx.data).
 
 map(#tx { data = Map }) when is_map(Map) -> Map;
 map(#tx { data = Data }) when is_list(Data) ->
@@ -812,7 +817,7 @@ test_bundle_with_one_item() ->
     ),
     Bundle = serialize([Item]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData, (hd(BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData, (erlang:hd(BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
     Item1 = new_item(
@@ -829,8 +834,8 @@ test_bundle_with_two_items() ->
     ),
     Bundle = serialize([Item1, Item2]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData1, (hd(BundleItem#tx.data))#tx.data),
-    ?assertEqual(ItemData2, (hd(tl(BundleItem#tx.data)))#tx.data).
+    ?assertEqual(ItemData1, (erlang:hd(BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (erlang:hd(tl(BundleItem#tx.data)))#tx.data).
 
 test_recursive_bundle() ->
     W = ar_wallet:new(),

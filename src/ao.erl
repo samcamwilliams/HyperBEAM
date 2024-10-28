@@ -47,7 +47,7 @@ config() ->
             {<<"data">>,
                 {<<"execute">>, [dev_p4, dev_lookup]}},
             {<<"su">>,
-                {<<"execute">>, [dev_p4, dev_su]}},
+                {<<"schedule">>, [dev_p4, dev_scheduler]}},
             {<<"mu">>,
                 {<<"push">>, [dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}}
         ],
@@ -60,7 +60,7 @@ config() ->
                 {ao_remote_store, #{ node => "http://localhost:8737" }}
             ],
         local_store => [{ao_fs_store, #{ dir => "TEST-data" }}],
-        mode => debug,
+        mode => prod,
         debug_print => true
     }.
 

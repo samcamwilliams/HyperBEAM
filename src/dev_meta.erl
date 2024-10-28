@@ -12,7 +12,10 @@ execute(CarrierMsg) ->
         {Mods, Msg, Path} when is_list(Mods) ->
             Stack = dev_stack:create(Mods),
             ?c({executing_stack, Stack, Path}),
-            execute_path({dev_stack, execute}, #{ devices => Stack, message => Msg }, Path);
+            execute_path({dev_stack, execute},
+                #{ devices => Stack, message => Msg },
+                Path
+            );
         {Mod, Msg, Path} ->
             ?c({executing_device, Mod, Path}),
             execute_path(Mod, Msg, Path)
@@ -29,7 +32,8 @@ execute_path(Dev, M, [FuncName|Path]) ->
 parse_carrier_msg(CarrierMsg) ->
     case lists:keyfind(<<"Device">>, 1, CarrierMsg#tx.tags) of
         {_, DevMod} ->
-            % If the carrier message itself contains a device, we use that.
+            % If the carrier message itself contains a device, we execute
+            % the path on that device.
             {
                 binary_to_existing_atom(DevMod, utf8),
                 extract_path_components(CarrierMsg),
@@ -50,14 +54,13 @@ do_parse_carrier_msg(CarrierMsg) ->
         {Dev, ExecPath} when is_atom(Dev) or is_list(Dev) ->
             % If the carrier path contains a device, we use that as the
             % root.
-            {Dev, choose_message(Dev, ExecPath, CarrierMsg), ExecPath};
+            {Dev, CarrierMsg, ExecPath};
         {undefined, Path} ->
             % If the device is not specified in the path, we simply execute
             % the path on the carrier message itself.
-            Chosen = choose_message(undefined, Path, CarrierMsg),
             {
-                cu_device_loader:from_message(Chosen),
-                Chosen,
+                cu_device_loader:from_message(CarrierMsg),
+                CarrierMsg,
                 Path
             }
     end.

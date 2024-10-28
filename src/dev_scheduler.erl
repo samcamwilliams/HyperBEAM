@@ -1,13 +1,34 @@
 -module(dev_scheduler).
-%% CU-flow functions:
+%%% Local scheduling functions:
+-export([schedule/1]).
+%%% CU-flow functions:
 -export([init/3, end_of_schedule/1, uses/0, checkpoint/1]).
-%% MU-flow functions:
+%%% MU-flow functions:
 -export([push/2]).
 
 -include("include/ao.hrl").
 
 %%% A simple scheduler scheme for AO.
+%%% The module is composed of three parts:
+%%% 1. The HTTP interface for the scheduler itself.
+%%% 2. The 'push' client function needed for dispatching messages to the SU.
+%%% 3. The device client functions needed in order to manage a schedule
+%%%    for the execution of processes.
 
+%%% HTTP API functions:
+schedule(Item) -> su_http:handle(Item).
+
+%%% MU pushing client functions:
+push(Item, State = #{ logger := Logger }) ->
+    case ao_client:schedule(Item) of
+        {_, Assignment} ->
+            {ok, State#{assignment => Assignment}};
+        Error ->
+            ao_logger:log(Logger, Error),
+            {error, Error}
+    end.
+
+%%% Process/device client functions:
 init(State, [{<<"Location">>, Location} | _], _) ->
     case State of
         #{schedule := []} ->
@@ -39,13 +60,3 @@ update_schedule(State = #{store := Store, process := Proc, schedule := []}) ->
 checkpoint(State) -> {ok, State}.
 
 uses() -> all.
-
-%%% MU pushing flow:
-push(Item, State = #{ logger := Logger }) ->
-    case ao_client:schedule(Item) of
-        {_Verb, Assignment} ->
-            {ok, State#{assignment => Assignment}};
-        Error ->
-            ao_logger:log(Logger, Error),
-            {error, Error}
-    end.

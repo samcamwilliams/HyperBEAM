@@ -98,6 +98,10 @@ do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }
             do_call(Devs, NewS, FuncName, Opts);
         {ok, NewS, NewPrivS} when is_map(NewS) ->
             do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
+        {ok, NewS} when is_record(NewS, tx) ->
+            do_call(Devs, S#{ results => NewS }, FuncName, Opts);
+        {ok, NewS, NewPrivS} when is_record(NewS, tx) ->
+            do_call(Devs, update(S#{ results => NewS }, Dev, NewPrivS), FuncName, Opts);
         {skip, NewS} when is_map(NewS) ->
             NewS;
         {skip, NewS, NewPrivS} when is_map(NewS) ->
