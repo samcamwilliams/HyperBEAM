@@ -1,6 +1,6 @@
 -module(dev_stack).
 -export([from_process/1, create/1, create/2, create/3]).
--export([init/2, execute/2]).
+-export([init/2, execute/2, call/4]).
 
 %%% A device that contains a stack of other devices, which it runs in order
 %%% when its `execute` function is called.
@@ -70,25 +70,15 @@ normalize_list([DevID|Rest]) ->
 %% @doc Wrap calls to the device stack as if it is a single device.
 %% Call the execute function on each device in the stack, then call the
 %% finalize function on the resulting state.
-execute(M, S) ->
-    {ok, NewS} = only_execute(M, S),
-    call(
-        maps:get(devices, NewS, []),
-        NewS,
-        finalize,
-        maps:get(opts, S, #{})
-    ).
-
-%% @doc Only execute the devices in the stack, without calling the finalize
-%% function.
-only_execute(M, S = #{ devices := Devs, state := S }) ->
-    % Reset the state variables for the devices in the stack before calling
-    call(
-        Devs,
-        S#{ results => undefined, errors => [], pass => 1 },
-        execute,
-        (maps:get(opts, S, #{}))#{ arg_prefix := [M] }
-    ).
+execute(FuncName, BaseS = #{ devices := Devs, message := M }) ->
+    {ok, #{ results := NewM }} =
+        call(
+            Devs,
+            BaseS,
+            FuncName,
+            (maps:get(opts, BaseS, #{}))#{ arg_prefix => [M] }
+        ),
+    {ok, NewM}.
 
 call(Devs, S, FuncName, Opts) ->
     do_call(
@@ -100,7 +90,7 @@ call(Devs, S, FuncName, Opts) ->
 
 do_call([], S, _FuncName, _Opts) -> {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }, FuncName, Opts) ->
-    ?c({calling, DevMod, FuncName, Pass}),
+    ?c({calling_dev, DevMod, FuncName, Pass}),
     case cu_device:call(DevMod, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);

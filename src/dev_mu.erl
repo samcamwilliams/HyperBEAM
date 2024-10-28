@@ -1,24 +1,7 @@
 -module(dev_mu).
--export([start/1, start/2, execute/2, execute/3]).
--export([push/2]).
+-export([start/1, start/2, push/2]).
 -include("include/ao.hrl").
-
 -ao_debug(print).
-
-execute(M, S) ->
-    execute(M, S, #{}).
-
-execute(_M, ReqM, Opts) ->
-    maps:map(
-        fun(_K, M) -> start(M, Opts) end,
-        ReqM#tx.data
-    ),
-    % Note: By returning a result binary rather than a state, we are forcing
-    % that we should be the last device if we are in a stack.
-    {ok, #tx {
-        tags = [{<<"Status">>, 200}],
-        data = <<"Started pushing.">>
-    }}.
 
 start(Item) ->
     start(
@@ -36,7 +19,7 @@ start(Item, Opts = #{ logger := Logger }) ->
             case ar_bundles:verify_item(Item) of
                 true ->
                     ao_logger:register(self()),
-                    exec(Item, Opts);
+                    push(Item, Opts);
                 false ->
                     ao_logger:log(Logger, {error, invalid_item}),
                     {error, invalid_item}
@@ -44,36 +27,34 @@ start(Item, Opts = #{ logger := Logger }) ->
         end
     ).
 
-exec(Item, Opts) ->
-    Stack = init_devices(Item),
-    {ok, _Res} = run_stack(Stack, Item, Opts),
-    {ok, Opts}.
-
-%% Return a normalized device stack for pushing the given item.
-init_devices(_Item) ->
-    % TODO: We may want to make this respond flexibility to both the item
-    % and the configuration of the node. Node operators should set a list
-    % of admissible devices for execution during pushing.
-    dev_stack:create(ao:get(default_mu_stack)).
-
-run_stack(Stack, Item, Opts = #{ logger := Logger }) ->
-    InitState = Opts#{
-        devices => Stack,
-        logger => Logger,
-        item => Item
-    },
-    dev_stack:execute(InitState, push, #{ arg_prefix => [Item] }).
-
-push(Item, Opts = #{ results := ResTXs, logger := Logger }) ->
-    throw(stop),
+push(Msg, Opts = #{ results := ResTXs, logger := Logger }) ->
+    % Second pass: We have the results, so we can fork the messages/spawns/...
     Res = #result{
         messages = (maps:get(<<"/Outbox">>, ResTXs, #tx{data = []}))#tx.data,
         assignments = (maps:get(<<"/Assignment">>, ResTXs, #tx{data = []}))#tx.data,
         spawns = (maps:get(<<"/Spawn">>, ResTXs, #tx{data = []}))#tx.data
     },
-    ao_logger:log(Logger, {ok, computed, Item#tx.id}),
+    ao_logger:log(Logger, {ok, computed, Msg#tx.id}),
     fork(Res, Opts),
-    {ok, Opts}.
+    {ok, Opts};
+push(Msg, S) ->
+    % First pass: We need to verify the message and start the logger.
+    case ar_bundles:verify_item(Msg) of
+        true ->
+            ao_logger:register(self()),
+            Logger = ao_logger:start(),
+            ao_logger:register(Logger),
+            {ok,
+                S#{
+                    store => ao:get(store),
+                    logger => Logger,
+                    wallet => ao:wallet()
+                }
+            };
+        false ->
+            ar_bundles:print(Msg),
+            {error, cannot_push_invalid_message}
+    end.
 
 %% Take a computation result and fork each message/spawn/... into its own worker.
 fork(Res, Opts = #{ logger := Logger }) ->

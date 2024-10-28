@@ -49,7 +49,8 @@ reply(Req, Status, Item) ->
             maps:get(path, Req, undef_path),
             Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end}
     ),
-    % TODO: Should we return Req or Req2?
+    % TODO: Should we return Req or Req2? Req2 sometimes seems to have issues,
+    % but logically appears to be the correct choice.
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
@@ -57,7 +58,7 @@ reply(Req, Status, Item) ->
         Req
     ),
     ?c({replied, Status, Ref}),
-    {ok, Req2}.
+    {ok, Req2, no_state}.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 tx_to_status(Item) ->
@@ -74,9 +75,9 @@ tx_to_status(Item) ->
 req_to_tx(Req) ->
     Method = cowboy_req:method(Req),
     Path = cowboy_req:path(Req),
-    Body = read_body(Req),
+    {ok, Body} = read_body(Req),
     QueryTags = cowboy_req:parse_qs(Req),
-    ar_bundles:normalize(#tx {
+    #tx {
         tags = [
             {<<"Method">>, Method},
             {<<"Path">>, Path}
@@ -86,7 +87,7 @@ req_to_tx(Req) ->
                 <<>> -> <<>>;
                 Body -> #{ <<"1">> => ar_bundles:deserialize(Body) }
             end
-    }).
+    }.
 
 read_body(Req) -> read_body(Req, <<>>).
 read_body(Req0, Acc) ->

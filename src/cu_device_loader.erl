@@ -33,7 +33,7 @@ from_id(ID, _Opts) ->
         Mod -> {ok, Mod}
     end.
 
-default() -> dev_id.
+default() -> dev_identity.
 
 %% @doc Locate the appropriate device module to execute for the given message.
 %% If the message specifies a device for itself, use that. Else, use the default

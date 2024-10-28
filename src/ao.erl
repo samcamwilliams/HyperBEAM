@@ -43,18 +43,13 @@ config() ->
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
             },
-        default_path_messages => [
+        default_device_paths => [
             {<<"data">>,
-                [dev_p4, dev_lookup]},
-            {<<"su">>, [dev_p4, dev_su]},
-            {<<"mu">>, [dev_p4, dev_mu]}
-        ],
-        default_mu_stack => [
-            dev_p4,
-            dev_scheduler,
-            dev_cu,
-            dev_poda,
-            dev_mu
+                {<<"execute">>, [dev_p4, dev_lookup]}},
+            {<<"su">>,
+                {<<"execute">>, [dev_p4, dev_su]}},
+            {<<"mu">>,
+                {<<"push">>, [dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}}
         ],
         % Dev options
         store =>
@@ -109,7 +104,7 @@ debug_fmt({X, Y, Z}) ->
     io_lib:format("~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z)]);
 debug_fmt({X, Y, Z, W}) ->
     io_lib:format("~s, ~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z), debug_fmt(W)]);
-debug_fmt(Str = [X | _]) when X >= 32, X < 127 ->
+debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     lists:flatten(io_lib:format("~s", [Str]));
 debug_fmt(X) ->
     lists:flatten(io_lib:format("~120p", [X])).

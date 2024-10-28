@@ -5,7 +5,7 @@
 start() ->
     ao_http:start(),
     application:ensure_all_started(cowboy),
-    Dispatcher = cowboy_router:compile([{'_', ?MODULE}]),
+    Dispatcher = cowboy_router:compile([{'_', [{'_', ?MODULE, init_state}]}]),
     cowboy:start_clear(
         ?MODULE,
         [{port, ao:get(http_port)}],
@@ -25,6 +25,9 @@ init(Req, _) ->
                 ao_http:tx_to_status(NormMessage2),
                 NormMessage2
             );
+        no_match ->
+            % If the device returns no_match, we return a 404.
+            ao_http:reply(Req, 500, #{});
         Other ->
             % If the device returns anything else, we return it as is.
             % The assumption is that this would be a return from an upstream
