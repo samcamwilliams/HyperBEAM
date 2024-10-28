@@ -1,6 +1,6 @@
 -module(dev_stack).
 -export([from_process/1, create/1, create/2, create/3]).
--export([init/2, execute/2, call/4]).
+-export([init/2, execute/2, execute/3, call/4]).
 
 %%% A device that contains a stack of other devices, which it runs in order
 %%% when its `execute` function is called.
@@ -9,15 +9,15 @@
 -ao_debug(print).
 
 init(Process, Opts) ->
-    {ok, S = #{ devices := Devices }} =
-        create(
+    Devices =
+        tl(create(
             maps:get(pre, Opts, []),
             Process,
             maps:get(post, Opts, [])
-        ),
+        )),
     call(
         Devices,
-        S#{ results => undefined, errors => [], pass => 1 },
+        #{ devices => Devices, process => Process },
         init,
         maps:get(opts, Opts, #{})
     ).
@@ -50,6 +50,7 @@ create(Pre, Proc, Post) ->
     Devs = normalize_list(Pre) ++ from_process(Proc) ++ normalize_list(Post),
     lists:map(
         fun({{DevMod, DevS, Params}, N}) ->
+            ?c({creating_device, DevMod, N}),
             case cu_device_loader:from_id(DevMod) of
                 {ok, Mod} ->
                     {N, Mod, DevS, Params};
@@ -70,13 +71,22 @@ normalize_list([DevID|Rest]) ->
 %% @doc Wrap calls to the device stack as if it is a single device.
 %% Call the execute function on each device in the stack, then call the
 %% finalize function on the resulting state.
-execute(FuncName, BaseS = #{ devices := Devs, message := M }) ->
+execute(Func, BaseS) -> execute(Func, BaseS, #{}).
+execute(init, Process, Opts) ->
+    init(Process, Opts);
+execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
     {ok, #{ results := NewM }} =
         call(
             Devs,
             BaseS,
             FuncName,
-            (maps:get(opts, BaseS, #{}))#{ arg_prefix => [M] }
+            Opts#{
+                arg_prefix =>
+                    case maps:get(message, BaseS, undefined) of
+                        undefined -> [];
+                        M -> [M]
+                    end
+            }
         ),
     {ok, NewM}.
 
@@ -88,9 +98,11 @@ call(Devs, S, FuncName, Opts) ->
         Opts
     ).
 
-do_call([], S, _FuncName, _Opts) -> {ok, S};
+do_call([], S, _FuncName, _Opts) ->
+    ?c({end_dev_call, S}),
+    {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }, FuncName, Opts) ->
-    ?c({calling_dev, DevMod, FuncName, Pass}),
+    ?c({start_dev_call, DevMod, FuncName, Pass, S}),
     case cu_device:call(DevMod, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);

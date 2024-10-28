@@ -8,7 +8,7 @@
 -export([schedule/1, assign/1, register_su/1, register_su/2]).
 -export([cron/1, cron/2, cron/3, cron_cursor/1]).
 %% Compute Unit API
--export([compute/1, compute/2]).
+-export([compute/2]).
 %% Messaging Unit API
 -export([push/1, push/2]).
 
@@ -115,17 +115,21 @@ extract_assignments(From, To, Assignments) ->
         | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
     ].
 
-compute(Assignment) when is_record(Assignment, tx) ->
-    {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-    %% TODO: We should be getting the assignment by _ID_, not by slot.
-    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    compute(binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))).
 compute(ProcID, Slot) when is_integer(Slot) ->
     compute(ProcID, list_to_binary(integer_to_list(Slot)));
-compute(ProcID, Assignment) ->
+compute(ProcID, Assignment) when is_binary(Assignment) ->
     ao_http:get(
         ao:get(cu),
-        "/" ++ ProcID ++ "/" ++ Assignment
+        "/?Process=" ++ ProcID ++ "&Assignment=" ++ Assignment
+    );
+compute(Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
+    ao_http:post(
+        ao:get(cu),
+        "/",
+        ar_bundles:normalize(#{
+            <<"Message">> => Msg,
+            <<"Assignment">> => Assignment
+        })
     ).
 
 %%% MU API functions

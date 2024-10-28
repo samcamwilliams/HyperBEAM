@@ -7,6 +7,12 @@
 %%% the Erlang environments.
 
 from_id(ID) -> from_id(ID, #{}).
+
+from_id({ID, Func}, Opts) ->
+    case from_id(ID, Opts) of
+        {ok, Mod} -> {ok, {Mod, Func}};
+        Error -> Error
+    end;
 from_id(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}

@@ -161,16 +161,23 @@ boot(Process, Opts) ->
     ?c({booting_process, ar_util:id(Process#tx.id)}),
     pg:join({cu, ar_util:id(Process#tx.id)}, self()),
     % Build the device stack.
-    Device = cu_device:from_message(Process),
-    {ok, #{devices := Devs}} = cu_device:call(Device, init, Process, Opts),
+    ?c({registered_process, ar_util:id(Process#tx.id)}),
+    {ok, Dev} = cu_device:from_message(Process),
+    ?c({booting_device, Dev}),
+    {ok, BootState} = cu_device:call(Dev, init, [Process, Opts], Opts),
+    ?c(booted_device),
     % Get the store we are using for this execution.
     Store = maps:get(store, Opts, ao:get(store)),
     % Get checkpoint key names from all devices.
+    % TODO: Assumes that the device is a stack or another device that uses maps
+    % for state.
     {ok,
-        #{keys := [Key|_]}} =
-            dev_stack:execute(#{devices => Devs, keys => []}, checkpoint_uses),
-    % We don't support partial checkpoints (perhaps we never will?), so just take one key
-    % and use that to find the latest full checkpoint.
+        CheckpointUseRes} =
+            cu_device:call(Dev, checkpoint_uses, [BootState], Opts),
+    ?c({checkpoint_uses_result, CheckpointUseRes}),
+    #{keys := [Key|_]} = CheckpointUseRes,
+    % We don't support partial checkpoints (perhaps we never will?), so just take
+    % one key and use that to find the latest full checkpoint.
     CheckpointOption =
         ao_cache:latest(
             Store,
@@ -195,11 +202,10 @@ boot(Process, Opts) ->
             wallet => maps:get(wallet, Opts, ao:wallet()),
             store => maps:get(store, Opts, ao:get(store)),
             schedule => maps:get(schedule, Opts, []),
-            devices => Devs
-                
+            devices => Dev
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
-    case dev_stack:execute(InitState, init) of
+    case cu_device:call(Dev, init, [Process, Opts], Opts) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, Opts);
         {error, N, DevMod, Info} ->

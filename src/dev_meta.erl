@@ -83,9 +83,3 @@ parse_path(All = [Start|Rest]) ->
         false ->
             {undefined, All}
     end.
-
-choose_message(_Dev, _Path, CarrierMsg) ->
-    case CarrierMsg#tx.data of
-        #{ <<"1">> := Msg } when is_record(Msg, tx) -> Msg;
-        _ -> CarrierMsg
-    end.

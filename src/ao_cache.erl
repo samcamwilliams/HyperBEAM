@@ -340,7 +340,10 @@ fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
 fmt_id(ID, _) when is_list(ID) andalso length(ID) == 43 -> ID;
 fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
-    binary_to_list(ar_util:id(ID)).
+    binary_to_list(ar_util:id(ID));
+fmt_id(ID, _Type) ->
+    ?c({warning, invalid_id_type, ID, _Type}),
+    ID.
 
 %%% Tests
 

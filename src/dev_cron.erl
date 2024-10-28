@@ -12,6 +12,7 @@
 }).
 
 init(State = #{ process := ProcM }, Params) ->
+    ?c({init, Params}),
     case lists:keyfind(<<"Time">>, 1, Params) of
         {<<"Time">>, CronTime} ->
             MilliSecs = parse_time(CronTime),

@@ -30,6 +30,7 @@ config() ->
         scheduler_location_ttl => 60 * 60 * 24 * 30,
         preloaded_devices =>
             #{
+                <<"Stack">> => {dev_stack, execute},
                 <<"Scheduler">> => dev_scheduler,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
@@ -45,11 +46,13 @@ config() ->
             },
         default_device_paths => [
             {<<"data">>,
-                {<<"execute">>, [dev_p4, dev_lookup]}},
+                {<<"read">>, [dev_p4, dev_lookup]}},
             {<<"su">>,
                 {<<"schedule">>, [dev_p4, dev_scheduler]}},
             {<<"mu">>,
-                {<<"push">>, [dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}}
+                {<<"push">>, [dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}},
+            {<<"cu">>,
+                {<<"execute">>, [dev_p4, dev_cu]}}
         ],
         % Dev options
         store =>
@@ -60,7 +63,7 @@ config() ->
                 {ao_remote_store, #{ node => "http://localhost:8737" }}
             ],
         local_store => [{ao_fs_store, #{ dir => "TEST-data" }}],
-        mode => prod,
+        mode => debug,
         debug_print => true
     }.
 

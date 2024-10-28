@@ -53,8 +53,8 @@ checkpoint(State = #{ wasm := Port, save_keys := SaveKeys }) ->
         save_keys => [ <<"WASM-State">> | SaveKeys ]
     }}.
 
-checkpoint_uses(S = #{ keys := Keys }) ->
-    {ok, S#{ keys => [ <<"WASM-State">> | Keys ] }}.
+checkpoint_uses(S) ->
+    {ok, S#{ keys => [ <<"WASM-State">> | maps:get(keys, S, []) ] }}.
 
 terminate(State = #{wasm := Port}) ->
     ?c(terminate_called_on_dev_wasm),

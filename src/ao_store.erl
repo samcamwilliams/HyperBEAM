@@ -49,7 +49,7 @@ list(Modules, Path) -> call_function(Modules, list, [Path]).
 call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
-    {error, no_store_succeeded};
+    not_found;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
     try apply(Mod, Function, [Opts | Args]) of
         not_found ->

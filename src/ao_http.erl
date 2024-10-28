@@ -22,7 +22,7 @@ post(URL, Item) ->
     ?c({http_post, ar_util:id(Item#tx.id), URL}),
     case httpc:request(
         post,
-        {URL, [], "application/octet-stream", ar_bundles:serialize(Item)},
+        {URL, [], "application/octet-stream", ar_bundles:serialize(ar_bundles:normalize(Item))},
         [],
         [{body_format, binary}]
     ) of
