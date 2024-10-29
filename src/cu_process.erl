@@ -172,10 +172,8 @@ boot(Process, Opts) ->
     % Get checkpoint key names from all devices.
     % TODO: Assumes that the device is a stack or another device that uses maps
     % for state.
-    {ok,
-        CheckpointUseRes} =
-            cu_device:call(Dev, checkpoint_uses, [BootState], Opts),
-    #{keys := [Key|_]} = CheckpointUseRes,
+    {ok, #{keys := [Key|_]}} =
+        cu_device:call(Dev, checkpoint_uses, [BootState], Opts),
     % We don't support partial checkpoints (perhaps we never will?), so just take
     % one key and use that to find the latest full checkpoint.
     CheckpointOption =
@@ -206,15 +204,16 @@ boot(Process, Opts) ->
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
     ?c({boot_state, InitState}),
-    case cu_device:call(Dev, init, [InitState], Opts) of
+    RuntimeOpts = Opts#{ proc_dev => Dev, return => all },
+    ?c({runtime_opts, RuntimeOpts}),
+    case cu_device:call(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->
-            execute_schedule(StateAfterInit, Opts);
+            execute_schedule(StateAfterInit, RuntimeOpts);
         {error, N, DevMod, Info} ->
             throw({error, boot, N, DevMod, Info})
     end.
 
 execute_schedule(State, Opts) ->
-    ?c({executing_schedule, State}),
     case State of
         #{schedule := []} ->
             case execute_eos(State, Opts) of
@@ -310,14 +309,14 @@ initialize_slot(State = #{slot := Slot}) ->
     ?c({initializing_slot, Slot + 1}),
     State#{slot := Slot + 1, pass := 0, results := undefined }.
 
-execute_message(Msg, State, Opts) ->
-    dev_stack:execute(State, execute, Opts#{arg_prefix => [Msg]}).
+execute_message(Msg, State, Opts = #{ proc_dev:= Dev }) ->
+    cu_device:call(Dev, execute, [State, Opts#{ arg_prefix => [Msg]}], Opts).
 
 execute_terminate(S, Opts) ->
-    dev_stack:execute(S, terminate, Opts).
+    cu_device:call(S, terminate, [S, Opts], Opts).
 
 execute_eos(S, Opts) ->
-    dev_stack:execute(S, end_of_schedule, Opts).
+    cu_device:call(S, end_of_schedule, [S, Opts], Opts).
 
 is_checkpoint_slot(State, Opts) ->
     (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)

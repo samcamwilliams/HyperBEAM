@@ -70,8 +70,7 @@ execute(Func, BaseS) -> execute(Func, BaseS, #{}).
 execute(boot, Process, Opts) ->
     boot(Process, Opts);
 execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
-    ?c({executing_func, FuncName, Devs}),
-    {ok, #{ results := NewM }} =
+    {ok, NewState} =
         call(
             Devs,
             BaseS,
@@ -84,7 +83,16 @@ execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
                     end
             }
         ),
-    {ok, NewM}.
+    case maps:get(return, Opts, results) of
+        all ->
+            {ok, NewState};
+        Key when is_atom(Key) ->
+            ?c({returning_key, Key}),
+            {ok, maps:get(Key, NewState)};
+        Keys when is_list(Keys) ->
+            ?c({returning_keys, Keys}),
+            {ok, maps:with(Keys, NewState)}
+    end.
 
 call(Devs, S, FuncName, Opts) ->
     do_call(

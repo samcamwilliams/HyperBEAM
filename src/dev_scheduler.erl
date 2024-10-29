@@ -16,7 +16,8 @@
 %%%    for the execution of processes.
 
 %%% HTTP API functions:
-schedule(Item) -> su_http:handle(Item).
+schedule(Item) ->
+    su_http:handle(Item).
 
 %%% MU pushing client functions:
 push(CarrierMsg, State = #{ logger := Logger }) ->
