@@ -17,7 +17,7 @@ config() ->
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => aggressive, 
+        scheduling_mode => aggressive,
         http_port => 8734,
         http_host => "localhost",
         gateway => "https://arweave.net",
@@ -53,7 +53,7 @@ c(X, ModStr, undefined) -> c(X, ModStr, "");
 c(X, ModAtom, Line) when is_atom(ModAtom) ->
     case lists:member({ao_debug, [print]}, ModAtom:module_info(attributes)) of
         true -> debug_print(X, atom_to_list(ModAtom), Line);
-        false -> 
+        false ->
             case lists:member({ao_debug, [no_print]}, ModAtom:module_info(attributes)) of
                 false -> c(X, atom_to_list(ModAtom), Line);
                 true -> X
@@ -83,6 +83,8 @@ debug_fmt({X, Y, Z}) ->
     io_lib:format("~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z)]);
 debug_fmt({X, Y, Z, W}) ->
     io_lib:format("~s, ~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z), debug_fmt(W)]);
+debug_fmt(_Str = [X]) ->
+    lists:flatten(io_lib:format("~120p", [X]));
 debug_fmt(Str = [X | _]) when X >= 32, X < 127 ->
     lists:flatten(io_lib:format("~s", [Str]));
 debug_fmt(X) ->
