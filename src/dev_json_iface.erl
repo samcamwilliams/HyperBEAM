@@ -15,7 +15,8 @@ execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
     }};
 execute(_M, S = #{pass := 2}) ->
     {ok, results(S)};
-execute(_, S) ->
+execute(M, S) ->
+    ?c({execute_invalid_pass, M, S}),
     {ok, S}.
 
 prep_call(

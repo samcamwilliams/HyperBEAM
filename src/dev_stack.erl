@@ -129,7 +129,9 @@ do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }
             maybe_error(AllDevs, S, FuncName, Opts, Info);
         Unexpected ->
             maybe_error(AllDevs, S, FuncName, Opts, {unexpected_result, Unexpected})
-    end.
+    end;
+do_call(Devs, S, FuncName, Opts) ->
+    ?c({error_invalid_pass_call, S}).
 
 maybe_error([{N, DevMod, _DevS, _Params}|Devs], S = #{ errors := Errs }, FuncName, Opts, Info) ->
     case maps:get(error_strategy, Opts, stop) of

@@ -98,7 +98,7 @@ start(Process) -> start(Process, #{}).
 start(Process, Opts) ->
     spawn(fun() -> boot(Process, Opts) end).
 
-run(Process) -> run(Process, #{}).
+run(Process) -> run(Process, #{ error_strategy => throw }).
 run(Process, Opts) ->
     run(Process, Opts, create_persistent_monitor()).
 run(Process, Opts, Monitor) when not is_list(Monitor) ->
@@ -254,14 +254,14 @@ post_execute(
             slot := Slot,
             wallet := Wallet
         },
-    Opts) ->
+    Opts = #{ proc_dev => Dev}) ->
     ?c({handling_post_execute_for_slot, Slot}),
     case is_checkpoint_slot(State, Opts) of
         true ->
             % Run checkpoint on the device stack, but we do not propagate the result.
             ?c({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
-                dev_stack:execute(
+                cu_device:call(
                     State#{ save_keys => [] },
                     checkpoint,
                     Opts
@@ -309,8 +309,8 @@ initialize_slot(State = #{slot := Slot}) ->
     ?c({initializing_slot, Slot + 1}),
     State#{slot := Slot + 1, pass := 0, results := undefined }.
 
-execute_message(Msg, State, Opts = #{ proc_dev:= Dev }) ->
-    cu_device:call(Dev, execute, [State, Opts#{ arg_prefix => [Msg]}], Opts).
+execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
+    cu_device:call(Dev, execute, [State#{ message => Msg }, Opts], Opts).
 
 execute_terminate(S, Opts) ->
     cu_device:call(S, terminate, [S, Opts], Opts).
