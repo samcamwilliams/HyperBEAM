@@ -51,7 +51,10 @@ checkpoint(State = #{ wasm := Port, save_keys := SaveKeys }) ->
     {ok, State#{
         <<"WASM-State">> => TX,
         save_keys => [ <<"WASM-State">> | SaveKeys ]
-    }}.
+    }};
+checkpoint(InvalidS) ->
+    throw({wat, InvalidS}),
+    {ok, InvalidS}.
 
 checkpoint_uses(S = #{ results := Results }) ->
     Keys = maps:get(keys, Results, []),

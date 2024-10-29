@@ -254,7 +254,8 @@ post_execute(
             slot := Slot,
             wallet := Wallet
         },
-    Opts = #{ proc_dev => Dev}) ->
+    Opts = #{ proc_dev := Dev }
+) ->
     ?c({handling_post_execute_for_slot, Slot}),
     case is_checkpoint_slot(State, Opts) of
         true ->
@@ -262,9 +263,10 @@ post_execute(
             ?c({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
                 cu_device:call(
-                    State#{ save_keys => [] },
+                    Dev,
                     checkpoint,
-                    Opts
+                    [State#{ save_keys => [], message => undefined }],
+                    Opts#{ message => undefined }
                 ),
             Checkpoint =
                 ar_bundles:normalize(
@@ -307,16 +309,16 @@ post_execute(
 
 initialize_slot(State = #{slot := Slot}) ->
     ?c({initializing_slot, Slot + 1}),
-    State#{slot := Slot + 1, pass := 0, results := undefined }.
+    State#{slot := Slot + 1, pass := 0, results := undefined, message => undefined}.
 
 execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
     cu_device:call(Dev, execute, [State#{ message => Msg }, Opts], Opts).
 
-execute_terminate(S, Opts) ->
-    cu_device:call(S, terminate, [S, Opts], Opts).
+execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
+    cu_device:call(Dev, terminate, [S#{ message => undefined }, Opts], Opts).
 
-execute_eos(S, Opts) ->
-    cu_device:call(S, end_of_schedule, [S, Opts], Opts).
+execute_eos(S, Opts = #{ proc_dev := Dev }) ->
+    cu_device:call(Dev, end_of_schedule, [S#{ message => undefined }, Opts], Opts).
 
 is_checkpoint_slot(State, Opts) ->
     (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)

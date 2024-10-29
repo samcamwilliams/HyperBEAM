@@ -109,11 +109,18 @@ get_assignments(ProcID, From, To) ->
 extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
     [];
 extract_assignments(From, To, Assignments) ->
+    ?c({extracting_assignments, From, To}),
     KeyID = list_to_binary(integer_to_list(From)),
-    [
-        maps:get(KeyID, Assignments)
-        | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
-    ].
+    case maps:is_key(KeyID, Assignments) of
+        true ->
+            [
+                maps:get(KeyID, Assignments)
+                | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
+            ];
+        false ->
+            ?c({no_assignment_for_key, KeyID}),
+            []
+    end.
 
 compute(ProcID, Slot) when is_integer(Slot) ->
     compute(ProcID, list_to_binary(integer_to_list(Slot)));
