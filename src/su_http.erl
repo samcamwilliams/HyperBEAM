@@ -10,7 +10,6 @@ handle(M) ->
     (choose_handler(M))(M).
 
 choose_handler(M) ->
-    ar_bundles:print(M),
     Method = lists:keyfind(<<"Method">>, 1, M#tx.tags),
     Action = lists:keyfind(<<"Action">>, 1, M#tx.tags),
     case {Method, Action} of
@@ -101,9 +100,11 @@ schedule(CarrierM) ->
 %% Private methods
 
 % Send existing-SU GraphQL compatible results
+% TODO: Refactor the type coercion here and in su_process:get_assignments.
+% This is absurd.
 send_schedule(Store, ProcID, false, To) ->
     send_schedule(Store, ProcID, 0, To);
-send_schedule(Store, ProcID, From, undefined) ->
+send_schedule(Store, ProcID, From, false) ->
     send_schedule(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)));
 send_schedule(Store, ProcID, {_, From}, To) ->
     send_schedule(Store, ProcID, binary_to_integer(From), To);
@@ -121,7 +122,7 @@ send_schedule(Store, ProcID, From, To) ->
         tags =
             [
                 {<<"Type">>, <<"Schedule">>},
-                {<<"Process">>, list_to_binary(ProcID)},
+                {<<"Process">>, ProcID},
                 {<<"Continues">>, atom_to_binary(More, utf8)},
                 {<<"Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
                 {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},

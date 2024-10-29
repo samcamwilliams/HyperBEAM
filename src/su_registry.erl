@@ -16,6 +16,8 @@ get_wallet() ->
     ao:wallet().
 
 find(ProcID) -> find(ProcID, false).
+find(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
+    find(binary_to_list(ProcID), GenIfNotHosted);
 find(ProcID, GenIfNotHosted) ->
     case pg:get_local_members({su, ProcID}) of
         [] ->
@@ -32,6 +34,8 @@ get_processes() ->
     [ ProcID || {su, ProcID} <- pg:which_groups() ].
 
 maybe_new_proc(_ProcID, false) -> not_found;
+maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
+    maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
     Pid = su_process:start(ProcID, get_wallet()),
     try

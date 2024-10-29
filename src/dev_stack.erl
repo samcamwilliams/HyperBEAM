@@ -1,6 +1,6 @@
 -module(dev_stack).
 -export([from_process/1, create/1, create/2, create/3]).
--export([init/2, execute/2, execute/3, call/4]).
+-export([boot/2, execute/2, execute/3, call/4]).
 
 %%% A device that contains a stack of other devices, which it runs in order
 %%% when its `execute` function is called.
@@ -8,19 +8,14 @@
 -include("include/ao.hrl").
 -ao_debug(print).
 
-init(Process, Opts) ->
+boot(Process, Opts) ->
     Devices =
         tl(create(
             maps:get(pre, Opts, []),
             Process,
             maps:get(post, Opts, [])
         )),
-    call(
-        Devices,
-        #{ devices => Devices, process => Process },
-        init,
-        maps:get(opts, Opts, #{})
-    ).
+    {ok, #{ devices => Devices }}.
 
 from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
@@ -72,9 +67,10 @@ normalize_list([DevID|Rest]) ->
 %% Call the execute function on each device in the stack, then call the
 %% finalize function on the resulting state.
 execute(Func, BaseS) -> execute(Func, BaseS, #{}).
-execute(init, Process, Opts) ->
-    init(Process, Opts);
+execute(boot, Process, Opts) ->
+    boot(Process, Opts);
 execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
+    ?c({executing_func, FuncName, Devs}),
     {ok, #{ results := NewM }} =
         call(
             Devs,
@@ -93,16 +89,15 @@ execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
 call(Devs, S, FuncName, Opts) ->
     do_call(
         Devs,
-        S#{ results => undefined, errors => [], pass => 1 },
+        S#{ results => #{}, errors => [], pass => 1 },
         FuncName,
         Opts
     ).
 
 do_call([], S, _FuncName, _Opts) ->
-    ?c({end_dev_call, S}),
     {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }, FuncName, Opts) ->
-    ?c({start_dev_call, DevMod, FuncName, Pass, S}),
+    ?c({start_dev_call, DevMod, FuncName, Pass}),
     case cu_device:call(DevMod, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);

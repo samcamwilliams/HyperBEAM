@@ -28,7 +28,6 @@ call(DevMod, FuncName, Args, Opts) ->
     % If the device implements the function with the given arity, call it.
     % Otherwise, recurse with one fewer arguments.
     ok = ensure_loaded(DevMod),
-    ?c({considering_call, DevMod, FuncName, length(Args)}),
     case erlang:function_exported(DevMod, FuncName, length(Args)) of
         true -> maybe_unsafe_call(DevMod, FuncName, Args, Opts);
         false -> call(DevMod, FuncName, lists:droplast(Args), Opts)
@@ -43,10 +42,10 @@ ensure_loaded(DevMod) ->
 %% @doc Call a device function without catching exceptions if the error
 %% strategy is set to throw.
 maybe_unsafe_call(DevMod, FuncName, Args, #{ error_strategy := throw }) ->
-    ?c({explicit_call, DevMod, FuncName, length(Args)}),
+    ?c({executing_dev_call, DevMod, FuncName, length(Args)}),
     erlang:apply(DevMod, FuncName, Args);
 maybe_unsafe_call(DevMod, FuncName, Args, Opts) ->
-    try ?c(maybe_unsafe_call(DevMod, FuncName, Args, Opts#{ error_strategy => throw }))
+    try maybe_unsafe_call(DevMod, FuncName, Args, Opts#{ error_strategy => throw })
     catch Type:Error:BT ->
         ?c({error_calling_dev, DevMod, FuncName, length(Args), {Type, Error, BT}}),
         {error, {Type, Error, BT}}

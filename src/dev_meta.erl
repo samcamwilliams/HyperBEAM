@@ -23,6 +23,7 @@ execute(CarrierMsg) ->
 
 execute_path(_, M, []) -> {ok, M};
 execute_path(Dev, M, [FuncName|Path]) ->
+    ?c({path, Dev, FuncName, Path}),
     Func = binary_to_existing_atom(FuncName, utf8),
     {ok, NewM} = cu_device:call(Dev, Func, [M], #{ error_strategy => throw }),
     execute_path(Dev, NewM, Path).

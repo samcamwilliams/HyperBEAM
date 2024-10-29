@@ -51,8 +51,7 @@ upload(Item) ->
     end.
 
 %%% Scheduling Unit API
-schedule(CarrierMsg) ->
-    Msg = ar_bundles:hd(CarrierMsg),
+schedule(Msg) ->
     ao_http:post(
         su_process:get_location(Msg#tx.target),
         "/",
@@ -86,7 +85,8 @@ get_assignments(ProcID, From, To) ->
     {ok, #tx{data = Data}} =
         ao_http:get(
             su_process:get_location(ProcID),
-            "/" ++ binary_to_list(ar_util:id(ProcID)) ++ "?" ++
+            "/?Action=Schedule&Process=" ++
+                binary_to_list(ar_util:id(ProcID)) ++
                 case From of
                     undefined -> "";
                     _ -> "&from=" ++

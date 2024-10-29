@@ -79,7 +79,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     await_results(
                         cu_process:run(
                             Proc,
-                            #{to => MsgRef, store => Store, wallet => Wallet, on_idle => wait},
+                            #{ to => MsgRef, store => Store, wallet => Wallet, on_idle => wait },
                             create_monitor_for_message(MsgRef)
                         )
                     );
@@ -164,7 +164,8 @@ boot(Process, Opts) ->
     ?c({registered_process, ar_util:id(Process#tx.id)}),
     {ok, Dev} = cu_device:from_message(Process),
     ?c({booting_device, Dev}),
-    {ok, BootState} = cu_device:call(Dev, init, [Process, Opts], Opts),
+    {ok, BootState = #{ devices := Devs }}
+        = cu_device:call(Dev, boot, [Process, Opts], Opts),
     ?c(booted_device),
     % Get the store we are using for this execution.
     Store = maps:get(store, Opts, ao:get(store)),
@@ -174,7 +175,6 @@ boot(Process, Opts) ->
     {ok,
         CheckpointUseRes} =
             cu_device:call(Dev, checkpoint_uses, [BootState], Opts),
-    ?c({checkpoint_uses_result, CheckpointUseRes}),
     #{keys := [Key|_]} = CheckpointUseRes,
     % We don't support partial checkpoints (perhaps we never will?), so just take
     % one key and use that to find the latest full checkpoint.
@@ -202,10 +202,11 @@ boot(Process, Opts) ->
             wallet => maps:get(wallet, Opts, ao:wallet()),
             store => maps:get(store, Opts, ao:get(store)),
             schedule => maps:get(schedule, Opts, []),
-            devices => Dev
+            devices => Devs
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
-    case cu_device:call(Dev, init, [Process, Opts], Opts) of
+    ?c({boot_state, InitState}),
+    case cu_device:call(Dev, init, [InitState], Opts) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, Opts);
         {error, N, DevMod, Info} ->
@@ -213,6 +214,7 @@ boot(Process, Opts) ->
     end.
 
 execute_schedule(State, Opts) ->
+    ?c({executing_schedule, State}),
     case State of
         #{schedule := []} ->
             case execute_eos(State, Opts) of

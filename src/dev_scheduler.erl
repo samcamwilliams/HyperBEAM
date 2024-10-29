@@ -2,7 +2,7 @@
 %%% Local scheduling functions:
 -export([schedule/1]).
 %%% CU-flow functions:
--export([init/3, end_of_schedule/1, uses/0, checkpoint/1]).
+-export([init/2, end_of_schedule/1, uses/0, checkpoint/1]).
 %%% MU-flow functions:
 -export([push/2]).
 
@@ -19,8 +19,9 @@
 schedule(Item) -> su_http:handle(Item).
 
 %%% MU pushing client functions:
-push(Item, State = #{ logger := Logger }) ->
-    case ao_client:schedule(Item) of
+push(CarrierMsg, State = #{ logger := Logger }) ->
+    Msg = ar_bundles:hd(CarrierMsg),
+    case ao_client:schedule(Msg) of
         {_, Assignment} ->
             {ok, State#{assignment => Assignment}};
         Error ->
@@ -29,19 +30,20 @@ push(Item, State = #{ logger := Logger }) ->
     end.
 
 %%% Process/device client functions:
-init(State, [{<<"Location">>, Location} | _], _) ->
+init(State, [{<<"Location">>, Location} | _]) ->
     case State of
-        #{schedule := []} ->
-            {ok, update_schedule(State#{su_location => Location})};
+        #{schedule := Schedule} when Schedule =/= [] ->
+            {ok, State};
         _ ->
-            {ok, State}
+            {ok, update_schedule(State#{su_location => Location})}
     end;
-init(State, _, _) ->
+init(State, _) ->
     {ok, State}.
 
 end_of_schedule(State) -> {ok, update_schedule(State)}.
 
-update_schedule(State = #{store := Store, process := Proc, schedule := []}) ->
+update_schedule(State = #{ process := Proc }) ->
+    Store = maps:get(store, State, ao:get(store)),
     CurrentSlot = maps:get(slot, State, 0),
     ToSlot = maps:get(to, State),
     ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),

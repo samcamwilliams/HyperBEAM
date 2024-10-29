@@ -53,7 +53,6 @@ push(CarrierMsg, State) ->
                 }
             };
         false ->
-            ar_bundles:print(Msg),
             {error, cannot_push_invalid_message}
     end.
 
