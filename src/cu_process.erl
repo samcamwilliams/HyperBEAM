@@ -68,7 +68,6 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                 end;
             false -> RawMsgRef
         end,
-    ?c({started_getting_result, ProcID, MsgRef, Store}),
     case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
             ?c({proc_id, ProcID}),
@@ -327,22 +326,15 @@ is_checkpoint_slot(State, Opts) ->
 await_command(State, Opts = #{ on_idle := terminate }) ->
     execute_terminate(State, Opts);
 await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
-    ?c({awaiting_command, self()}),
     receive
         {on_idle, run, Function, Args} ->
             ?c({running_command, Function, Args}),
-            {ok, NewState} =
-                cu_device:call(
-                    Dev,
-                    Function,
-                    [State#{ message => undefined }],
-                    Opts#{ message => hd(Args) }
-                ),
+            {ok, NewState} = cu_device:call(Dev, Function, [State#{ message => hd(Args) }, Opts], Opts),
             await_command(NewState, Opts);
         {on_idle, message, MsgRef} ->
             ?c({received_message, MsgRef}),
-            % TODO: Should we run `end_of_schedule` or `new_item` (or something)
-            % here?
+            % TODO: As with starting from a message, we should avoid the unnecessary SU
+            % call if possible here.
             {ok, NewState} = execute_eos(State#{ to => MsgRef }, Opts),
             execute_schedule(NewState, Opts);
         {on_idle, stop} ->

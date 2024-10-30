@@ -22,7 +22,6 @@ execute(CarrierMsg, S) ->
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-                ?c({executing, ProcID, Assignment#tx.id}),
                 cu_process:result(ProcID, Assignment#tx.id, Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of

@@ -26,7 +26,7 @@ read(Opts = #{ dir := DataDir }, Key) ->
         not_found ->
             case resolve(Opts, Key) of
                 Key -> not_found;
-                ResolvedPath -> read(Opts, ResolvedPath)
+                ResolvedPath -> read(ResolvedPath)
             end;
         Result -> Result
     end.

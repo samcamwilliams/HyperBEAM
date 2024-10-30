@@ -190,13 +190,12 @@ write_composite(Store, Path, map, Item) ->
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
     ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
-    ok =
-        ao_store:make_link(
-            Store,
-            ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
-            ao_store:path(Store, [Path, fmt_id(SignedHeaderID)])
-        ),
-    ok = ao_store:write(
+    ao_store:make_link(
+        Store,
+        ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
+        ao_store:path(Store, [Path, fmt_id(SignedHeaderID)])
+    ),
+    ao_store:write(
         Store,
         ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID), "item"]),
         ar_bundles:serialize(Item#tx{ data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) } })

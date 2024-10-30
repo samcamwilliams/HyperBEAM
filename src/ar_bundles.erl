@@ -45,11 +45,11 @@ print(Item, Indent) when is_record(Item, tx) ->
         [
             if
                 Item#tx.signature =/= ?DEFAULT_SIG -> ar_util:encode(Item#tx.id);
-                true -> "[UNSIGNED]"
+                true -> ar_util:encode(id(Item, unsigned))
             end,
             if
-                Valid == true -> "VALID";
-                true -> "[INVALID]"
+                Valid == true -> "[SIGNED+VALID]";
+                true -> "[UNSIGNED/INVALID]"
             end
         ],
         Indent
@@ -556,7 +556,7 @@ find_item(TXID, Items) ->
     case is_record(TX, tx) of
         true -> TX;
         false ->
-            ?c({cannot_find_item, [ {ar_util:encode(id(T, unsigned)), ar_util:encode(id(T, signed))} || T <- Items]}),
+            ?c({cannot_find_item, ar_util:encode(TXID), [ print(T) || T <- Items]}),
             throw({cannot_find_item, ar_util:encode(TXID)})
     end.
 

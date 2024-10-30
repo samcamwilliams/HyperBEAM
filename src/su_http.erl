@@ -2,6 +2,7 @@
 -export([handle/1]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 %%% The SU device's API functions. Enables clients to read/write messages into
 %%% the schedule for a process.
@@ -117,7 +118,6 @@ send_schedule(Store, ProcID, From, To) ->
         From,
         To
     ),
-    % TODO: Find out why tags are not getting included in bundle
     Bundle = #tx{
         tags =
             [
@@ -145,7 +145,8 @@ send_schedule(Store, ProcID, From, To) ->
                 end,
         data = assignments_to_bundle(Store, Assignments)
     },
-    {ok, Bundle}.
+    SignedBundle = ar_bundles:sign_item(Bundle, ao:wallet()),
+    {ok, SignedBundle}.
 
 assignments_to_bundle(Store, Assignments) ->
     assignments_to_bundle(Store, Assignments, #{}).
@@ -160,9 +161,18 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
         Assignments,
         Bundle#{
             Slot =>
-                #{
-                    <<"Assignment">> => Assignment,
-                    <<"Message">> => Message
-                }
+                ar_bundles:sign_item(
+                    #tx{
+                        tags = [
+                            {<<"Assignment">>, Slot},
+                            {<<"Message">>, MessageID}
+                        ],
+                        data = #{
+                            <<"Assignment">> => Assignment,
+                            <<"Message">> => Message
+                        }
+                    },
+                    ao:wallet()
+                )
         }
     ).
