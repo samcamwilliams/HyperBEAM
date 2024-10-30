@@ -46,8 +46,8 @@ push(CarrierMsg, State) ->
                 CarriedMsg;
             _ -> CarrierMsg
         end,
+    ?no_prod(fix_mu_push_validation),
     %case ar_bundles:verify_item(Msg) of
-    ?prod(fix_mu_push_validation),
     case true of
         true ->
             Logger =
@@ -64,7 +64,6 @@ push(CarrierMsg, State) ->
                 }
             };
         false ->
-            ar_bundles:print(Msg),
             {error, cannot_push_invalid_message}
     end.
 
@@ -80,13 +79,29 @@ fork(Res, Opts = #{ logger := Logger }) ->
         maybe_to_list(Res#result.assignments)
     ).
 
-fork_items(Items, _Opts) ->
+fork_items(Items, Opts) ->
     % TODO: We should definitely not be using the HTTP interface for this!
     lists:foreach(
         fun(Item) ->
-            ?c(pushing),
-            ar_bundles:print(Item),
-            spawn(fun() -> ao_client:push(Item, none) end)
+            spawn(
+                fun() ->
+                    cu_device:call(
+                        dev_meta,
+                        execute,
+                        [
+                            ar_bundles:sign_item(#tx {
+                                tags = [
+                                    {<<"Method">>, <<"POST">>},
+                                    {<<"Path">>, <<"/mu/">>},
+                                    {<<"Trace">>, <<"none">>}
+                                ],
+                                data = #{ <<"1">> => Item }
+                            }, ao:wallet())
+                        ],
+                        Opts
+                    )
+                end
+            )
         end,
         maybe_to_list(Items)
     ).

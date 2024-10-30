@@ -85,6 +85,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     );
                 [Pid|_] ->
                     ?c({found_cu_for_proc, ar_util:id(ProcID)}),
+                    ?no_prod("The CU process IPC API is poorly named."),
                     Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(MsgRef)]},
                     Pid ! {on_idle, message, MsgRef},
                     ?c({added_listener_and_message, Pid}),
@@ -325,16 +326,17 @@ is_checkpoint_slot(State, Opts) ->
 %% enter a hibernation state, waiting for either more work or termination.
 await_command(State, Opts = #{ on_idle := terminate }) ->
     execute_terminate(State, Opts);
-await_command(State, Opts = #{ on_idle := wait }) ->
+await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
     ?c({awaiting_command, self()}),
     receive
         {on_idle, run, Function, Args} ->
             ?c({running_command, Function, Args}),
             {ok, NewState} =
-                dev_stack:execute(
-                    State,
+                cu_device:call(
+                    Dev,
                     Function,
-                    Opts#{arg_prefix => Args}
+                    [State#{ message => undefined }],
+                    Opts#{ message => hd(Args) }
                 ),
             await_command(NewState, Opts);
         {on_idle, message, MsgRef} ->

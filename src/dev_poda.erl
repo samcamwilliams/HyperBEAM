@@ -27,6 +27,7 @@ execute(M, S = #{ pass := 1 }, Opts) ->
         true ->
             {ok, S};
         false ->
+            throw({poda, validate}),
             ?c({poda_execute, Opts}),
             % For now, the message itself will be at `/Message/Message`. It is the message
             % body of the message that is attached to the assignment we are evaluating.
@@ -172,16 +173,21 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                 end,
                 InitAuthorities
             ),
-            ?c({poda_attestations, Attestations}),
+            ?no_prod(use_real_attestations_in_poda),
+            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
+            Attestation = ar_bundles:sign_item(
+                #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
+                Wallet
+            ),
+            TestAttestations = #{ <<"1">> => Attestation },
             ar_bundles:sign_item(
-                ar_bundles:normalize(
-                    #tx{
-                        data = #{
-                        <<"Attestations">> => Attestations,
+                #tx{
+                    target = NewMsg#tx.target,
+                    data = #{
+                        <<"Attestations">> => #{ <<"1">> => #tx{ data = TestAttestations } },
                         <<"Message">> => NewMsg
-                        }
                     }
-                ),
+                },
                 Wallet
             );
         false -> NewMsg

@@ -28,6 +28,9 @@
 -define(BIN_PRINT, 10).
 -define(INDENT_SPACES, 2).
 
+
+-ao_debug(print).
+
 %%%===================================================================
 %%% Public interface.
 %%%===================================================================
@@ -143,7 +146,8 @@ id(Item, signed) ->
 hd(#tx { data = #{ <<"1">> := Msg } }) -> Msg;
 hd(#tx { data = [First | _] }) -> First;
 hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
-    ?MODULE:hd((deserialize(serialize(TX), binary))#tx.data).
+    ?MODULE:hd((deserialize(serialize(TX), binary))#tx.data);
+hd(#{ <<"1">> := Msg }) -> Msg.
 
 map(#tx { data = Map }) when is_map(Map) -> Map;
 map(#tx { data = Data }) when is_list(Data) ->
@@ -551,7 +555,9 @@ find_item(TXID, Items) ->
     TX = lists:keyfind(TXID, #tx.id, Items),
     case is_record(TX, tx) of
         true -> TX;
-        false -> throw({cannot_find_item, TXID})
+        false ->
+            ?c({cannot_find_item, [ {ar_util:encode(id(T, unsigned)), ar_util:encode(id(T, signed))} || T <- Items]}),
+            throw({cannot_find_item, ar_util:encode(TXID)})
     end.
 
 unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
