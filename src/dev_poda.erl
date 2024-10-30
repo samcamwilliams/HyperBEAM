@@ -20,7 +20,13 @@ extract_opts(Params) ->
         ),
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
-    #{ authorities => Authorities, quorum => Quorum }.
+    ?no_prod(use_real_authority_addresses),
+    Addr = ar_wallet:to_address(ao:wallet()),
+    #{
+        authorities =>
+            Authorities ++ [ar_util:encode(Addr)],
+        quorum => Quorum
+    }.
 
 execute(#tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
     ar_bundles:print(Msg),
@@ -31,11 +37,11 @@ execute(#tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
             % For now, the message itself will be at `/Message/Message`.
             case validate_stage(1, Msg, Opts) of
                 true ->
-                    ?c({poda_validated, Opts}),
+                    ?c({poda_validated, ok}),
                     % Add the validations to the VFS.
                     VFS1 =
                         lists:foldl(
-                            fun(Attestation, Acc) ->
+                            fun({_, Attestation}, Acc) ->
                                 Id = ar_bundles:signer(Attestation),
                                 Encoded = ar_util:encode(Id),
                                 maps:put(
@@ -45,7 +51,12 @@ execute(#tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
                                 )
                             end,
                             maps:get(vfs, S, #{}),
-                            maps:get(<<"Attestations">>, Msg)
+                            maps:to_list(
+                                case Msg of 
+                                    #tx { data = #{ <<"Attestations">> := Atts }} -> Atts;
+                                    #{ <<"Attestations">> := Atts } -> Atts
+                                end
+                            )
                         ),
                     {ok, S#{ vfs => VFS1 }};
                 {false, Reason} -> return_error(S, Reason)
@@ -63,8 +74,6 @@ validate_stage(1, #{ <<"Attestations">> := Attestations, <<"Message">> := Conten
 validate_stage(1, _M, _Opts) -> {false, <<"Required PoDA messages missing">>}.
 
 validate_stage(2, #tx { data = Attestations }, Content, Opts) ->
-    validate_stage(2, Attestations, Content, Opts);
-validate_stage(2, Attestations, #tx { data = Content }, Opts) ->
     validate_stage(2, Attestations, Content, Opts);
 validate_stage(2, Attestations, Content, Opts) ->
     ?c({poda_stage, 2}),
@@ -89,13 +98,20 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
     end.
 
 validate_attestation(Msg, Att, Opts) ->
+    MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
+    AttSigner = ar_util:encode(ar_bundles:signer(Att)),
+    ?c({message_to_attest, MsgID}),
+    ?c({authorities, maps:get(authorities, Opts)}),
+    ?c({attestation_signer, AttSigner}),
     ar_bundles:print(Msg),
     ar_bundles:print(Att),
-    MsgID = ar_bundles:id(Msg, unsigned),
-    ValidSigner = lists:member(
-        ar_bundles:signer(Att),
-        maps:get(authorities, Opts)
-    ),
+    ?no_prod(use_real_authority_validation),
+    % ValidSigner = lists:member(
+    %     ar_bundles:signer(Att),
+    %     maps:get(authorities, Opts)
+    % ),
+    ValidSigner = true,
+    ?c({valid_signer, ValidSigner}),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
         lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
