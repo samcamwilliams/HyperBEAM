@@ -9,7 +9,7 @@ read(Opts, Key) when is_binary(Key) ->
     read(Opts, binary_to_list(Key));
 read(#{ node := Node }, Key) ->
     ?c({reading, Node, Key}),
-    Path = Node ++ "/id/" ++ Key,
+    Path = Node ++ "/data/" ++ Key,
     case ao_http:get(Path) of
         {ok, RespBin} -> ar_bundles:deserialize(RespBin);
         Error -> Error

@@ -1,5 +1,5 @@
 -module(su_process).
--export([start/2, schedule/2, get_location/1]).
+-export([start/2, schedule/2]).
 -export([get_current_slot/1, get_assignments/3]).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -46,9 +46,6 @@ slot_from_cache(ProcID) ->
                 ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
             }
     end.
-
-get_location(_ProcID) ->
-    ao:get(su).
 
 schedule(ProcID, Message) when is_list(ProcID) ->
     schedule(su_registry:find(ProcID), Message);

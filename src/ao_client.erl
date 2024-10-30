@@ -53,7 +53,7 @@ upload(Item) ->
 %%% Scheduling Unit API
 schedule(Msg) ->
     ao_http:post(
-        su_process:get_location(Msg#tx.target),
+        maps:get(schedule, ao:get(nodes)),
         "/",
         Msg
     ).
@@ -84,7 +84,7 @@ get_assignments(ProcID, From) ->
 get_assignments(ProcID, From, To) ->
     {ok, #tx{data = Data}} =
         ao_http:get(
-            su_process:get_location(ProcID),
+            maps:get(schedule, ao:get(nodes)),
             "/?Action=Schedule&Process=" ++
                 binary_to_list(ar_util:id(ProcID)) ++
                 case From of
@@ -126,12 +126,12 @@ compute(ProcID, Slot) when is_integer(Slot) ->
     compute(ProcID, list_to_binary(integer_to_list(Slot)));
 compute(ProcID, Assignment) when is_binary(Assignment) ->
     ao_http:get(
-        ao:get(cu),
+        maps:get(compute, ao:get(nodes)),
         "/?Process=" ++ ProcID ++ "&Assignment=" ++ Assignment
     );
 compute(Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
     ao_http:post(
-        ao:get(cu),
+        maps:get(compute, ao:get(nodes)),
         "/",
         ar_bundles:normalize(#{
             <<"Message">> => Msg,
@@ -147,7 +147,7 @@ push(Item, TracingAtom) when is_atom(TracingAtom) ->
 push(Item, Tracing) ->
     ?c({calling_remote_push, ar_util:id(Item#tx.id)}),
     ao_http:post(
-        ao:get(mu),
+        maps:get(message, ao:get(nodes)),
         "/?trace=" ++ Tracing,
         Item
     ).
@@ -165,7 +165,7 @@ cron(ProcID, undefined, RawLimit) ->
 cron(ProcID, Cursor, Limit) ->
     case
         httpc:request(
-            ao:get(cu) ++
+            maps:get(compute, ao:get(nodes)) ++
                 "/cron/" ++
                 ProcID ++
                 "?cursor=" ++
@@ -187,7 +187,7 @@ cron(ProcID, Cursor, Limit) ->
     end.
 
 cron_cursor(ProcID) ->
-    case httpc:request(ao:get(cu) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
+    case httpc:request(maps:get(compute, ao:get(nodes)) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
         {ok, {{_, 200, _}, _, Body}} ->
             {_, Res} = parse_result_set(Body),
             case Res of

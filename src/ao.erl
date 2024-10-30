@@ -25,6 +25,11 @@ config() ->
         su => "http://localhost:8734/su",
         mu => "http://localhost:8734/mu",
         cu => "http://localhost:8734/cu",
+        nodes => #{
+            compute => "http://localhost:8734/cu",
+            message => "http://localhost:8734/mu",
+            schedule => "http://localhost:8734/su"
+        },
         key_location => "hyperbeam-key.json",
         default_page_limit => 5,
         scheduler_location_ttl => 60 * 60 * 24 * 30,
@@ -55,9 +60,9 @@ config() ->
         store =>
             [
                 {ao_fs_store, #{ dir => "TEST-data" }},
-                {ao_remote_store, #{ node => "http://localhost:8735" }},
-                {ao_remote_store, #{ node => "http://localhost:8736" }},
-                {ao_remote_store, #{ node => "http://localhost:8737" }}
+                {ao_remote_store, #{ node => "http://localhost:8734" }},
+                {ao_remote_store, #{ node => "http://localhost:8734" }},
+                {ao_remote_store, #{ node => "http://localhost:8734" }}
             ],
         local_store => [{ao_fs_store, #{ dir => "TEST-data" }}],
         mode => debug,
