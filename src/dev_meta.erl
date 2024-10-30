@@ -1,7 +1,6 @@
 -module(dev_meta).
 -export([execute/1]).
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% The hyperbeam HTTP API meta device, which is the default entry point
 %%% for all messages. This device executes a 'path' of functions upon a

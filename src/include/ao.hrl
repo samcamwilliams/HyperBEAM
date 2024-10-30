@@ -1,5 +1,6 @@
 -include("include/ar.hrl").
 -define(c(X), ao:c(X, ?MODULE, ?LINE)).
+-define(prod(X), ao:prod(X, ?MODULE, ?LINE)).
 
 -record(result, {
 	messages = [],

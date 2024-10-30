@@ -129,6 +129,7 @@ is_user_signed(M) when is_map(M#tx.data) ->
 is_user_signed(_) -> false.
 
 push(_Item, S = #{ results := Results }) ->
+    %?c({poda_push, Results}),
     NewRes = attest_to_results(Results, S),
     {ok, S#{ results => NewRes }}.
 
@@ -173,12 +174,14 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             ),
             ?c({poda_attestations, Attestations}),
             ar_bundles:sign_item(
-                #tx{
-                    data = #{
+                ar_bundles:normalize(
+                    #tx{
+                        data = #{
                         <<"Attestations">> => Attestations,
                         <<"Message">> => NewMsg
+                        }
                     }
-                },
+                ),
                 Wallet
             );
         false -> NewMsg

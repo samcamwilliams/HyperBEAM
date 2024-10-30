@@ -2,6 +2,7 @@
 -export([push/2, execute/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/ao.hrl").
+-ao_debug(print).
 
 push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
@@ -16,22 +17,23 @@ execute(CarrierMsg, S) ->
     MaybeBundle = ar_bundles:hd(CarrierMsg),
     Store = ao:get(store),
     Wallet = ao:wallet(),
-    case MaybeBundle of
-        #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
-            % TODO: Execute without needing to call the SU unnecessarily.
-            {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-            ?c({executing, ProcID, Assignment#tx.id}),
-            cu_process:result(ProcID, Assignment#tx.id, Store, Wallet);
-        _ ->
-            case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
-                {_, Process} ->
-                    {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
-                    cu_process:result(Process, Slot, Store, Wallet);
-                false ->
-                    {error, no_viable_computation}
-            end
-    end,
-    {ok, S}.
+    {ok, Results} =
+        case MaybeBundle of
+            #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
+                % TODO: Execute without needing to call the SU unnecessarily.
+                {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+                ?c({executing, ProcID, Assignment#tx.id}),
+                cu_process:result(ProcID, Assignment#tx.id, Store, Wallet);
+            _ ->
+                case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
+                    {_, Process} ->
+                        {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
+                        cu_process:result(Process, Slot, Store, Wallet);
+                    false ->
+                        {error, no_viable_computation}
+                end
+        end,
+    {ok, S#{ results => Results }}.
 
 
 parse_slot(undefined) -> undefined;

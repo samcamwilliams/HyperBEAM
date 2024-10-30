@@ -87,10 +87,8 @@ execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
         all ->
             {ok, NewState};
         Key when is_atom(Key) ->
-            ?c({returning_key, Key}),
             {ok, maps:get(Key, NewState)};
         Keys when is_list(Keys) ->
-            ?c({returning_keys, Keys}),
             {ok, maps:with(Keys, NewState)}
     end.
 

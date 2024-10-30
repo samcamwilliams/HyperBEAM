@@ -1,8 +1,8 @@
 -module(cu_process).
 -export([start/1, start/2, result/4]).
 -export([run/1, run/2, run/3]).
-
 -include("include/ao.hrl").
+-ao_debug(print).
 
 %%% NOTE Oct 23, 2024: This comment is (at least partially) out of date. Hyperbeam is still
 %%% in development with an evolving architecture. If you need to know more about the 
@@ -112,7 +112,6 @@ run(Process, RawOpts, Monitors) ->
 await_results(Pid) ->
     receive
         {result, Pid, _Msg, State} ->
-            ?c({returning_results, maps:get(results, State)}),
             {ok, maps:get(results, State)}
     end.
 
@@ -203,9 +202,7 @@ boot(Process, Opts) ->
             devices => Devs
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
-    ?c({boot_state, InitState}),
     RuntimeOpts = Opts#{ proc_dev => Dev, return => all },
-    ?c({runtime_opts, RuntimeOpts}),
     case cu_device:call(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, RuntimeOpts);

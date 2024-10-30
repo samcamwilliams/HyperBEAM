@@ -6,7 +6,6 @@
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% A key-value store abstraction, such that the underlying implementation
 %%% can be swapped out easily. The default implementation is a file-based
