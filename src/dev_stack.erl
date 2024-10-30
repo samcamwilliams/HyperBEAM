@@ -93,18 +93,28 @@ execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
     end.
 
 call(Devs, S, FuncName, Opts) ->
-    do_call(
+    Res = do_call(
         Devs,
-        S#{ results => #{}, errors => [], pass => 1 },
+        S#{
+            results => #{},
+            errors => [],
+            pass => 1,
+            arg_prefix => maps:get(arg_prefix, Opts, [])
+        },
         FuncName,
         Opts
-    ).
+    ),
+    case Res of
+        {ok, NewS = #{ arg_prefix := _ }} ->
+            {ok, maps:remove(arg_prefix, NewS)};
+        Other -> Other
+    end.
 
 do_call([], S, _FuncName, _Opts) ->
     {ok, S};
-do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass }, FuncName, Opts) ->
+do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass, arg_prefix := ArgPrefix }, FuncName, Opts) ->
     ?c({start_dev_call, DevMod, FuncName, Pass}),
-    case cu_device:call(DevMod, FuncName, maps:get(arg_prefix, Opts, []) ++ [S, DevS, Params], Opts) of
+    case cu_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);
         {ok, NewS} when is_map(NewS) ->

@@ -28,7 +28,7 @@ extract_opts(Params) ->
         quorum => Quorum
     }.
 
-execute(#tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
+execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
     ar_bundles:print(Msg),
     case is_user_signed(Msg) of
         true ->
@@ -39,6 +39,14 @@ execute(#tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
                 true ->
                     ?c({poda_validated, ok}),
                     % Add the validations to the VFS.
+                    Atts =
+                        maps:to_list(
+                            case Msg of 
+                                #tx { data = #{ <<"Attestations">> := #tx { data = X } }} -> X;
+                                #tx { data = #{ <<"Attestations">> := X }} -> X;
+                                #{ <<"Attestations">> := X } -> X
+                            end
+                        ),
                     VFS1 =
                         lists:foldl(
                             fun({_, Attestation}, Acc) ->
@@ -46,19 +54,26 @@ execute(#tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
                                 Encoded = ar_util:encode(Id),
                                 maps:put(
                                     <<"/Attestations/", Encoded/binary>>,
-                                    Attestation,
+                                    Attestation#tx.data,
                                     Acc
                                 )
                             end,
                             maps:get(vfs, S, #{}),
-                            maps:to_list(
-                                case Msg of 
-                                    #tx { data = #{ <<"Attestations">> := Atts }} -> Atts;
-                                    #{ <<"Attestations">> := Atts } -> Atts
-                                end
-                            )
+                            Atts
                         ),
-                    {ok, S#{ vfs => VFS1 }};
+                    ?c({poda_vfs, VFS1}),
+                    % Update the arg prefix to include the unwrapped message.
+                    {ok, S#{ vfs => VFS1, arg_prefix =>
+                        [
+                            % Traverse two layers of `/Message/Message` to get
+                            % the actual message, then replace `/Message` with it.
+                            Outer#tx{
+                                data = (Outer#tx.data)#{
+                                    <<"Message">> => maps:get(<<"Message">>, Msg#tx.data)
+                                }
+                            }
+                        ]
+                    }};
                 {false, Reason} -> return_error(S, Reason)
             end
     end;
