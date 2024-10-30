@@ -12,4 +12,4 @@ find(Type, ID) ->
 
 find(Type, ID, Addr) ->
     ?c({find, Type, ID, Addr}),
-    maps:get(Type, ao:get(nodes)).
+    {ok, maps:get(Type, ao:get(nodes))}.

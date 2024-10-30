@@ -122,12 +122,16 @@ extract_assignments(From, To, Assignments) ->
             []
     end.
 
+compute(ProcID, Slot) when is_binary(ProcID) ->
+    compute(binary_to_list(ar_util:id(ProcID)), Slot);
 compute(ProcID, Slot) when is_integer(Slot) ->
-    compute(ProcID, list_to_binary(integer_to_list(Slot)));
-compute(ProcID, Assignment) when is_binary(Assignment) ->
+    compute(ProcID, integer_to_list(Slot));
+compute(ProcID, Slot) when is_binary(Slot) ->
+    compute(ProcID, binary_to_list(Slot));
+compute(ProcID, Slot) when is_list(Slot) ->
     ao_http:get(
         maps:get(compute, ao:get(nodes)),
-        "/?Process=" ++ ProcID ++ "&Assignment=" ++ Assignment
+        "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot
     );
 compute(Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
     ao_http:post(

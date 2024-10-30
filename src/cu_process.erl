@@ -68,6 +68,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                 end;
             false -> RawMsgRef
         end,
+    ?c({reading_store, Store, ProcID, MsgRef}),
     case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
             ?c({proc_id, ProcID}),

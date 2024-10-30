@@ -13,6 +13,7 @@
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
+-ao_debug(print).
 
 %%% A cache of AO messages and compute results.
 %%% 
@@ -221,20 +222,19 @@ read_output(Store, ProcID, Slot) when is_integer(Slot) ->
     read_output(Store, fmt_id(ProcID), ["slot", integer_to_list(Slot)]);
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
+read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
+    read_output(Store, ProcID, ["slot", binary_to_list(SlotBin)]);
 read_output(Store, ProcID, Input) ->
     ?c({reading_computed_result, Input}),
     ResolvedPath =
-        ar_util:remove_common(
-            ar_util:remove_common(
-                ao_store:resolve(
-                    Store,
-                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
-                ),
-                ?COMPUTE_CACHE_DIR
-            ),
-            "messages"
-        ),
-    case ao_store:type(Store, ["messages", ResolvedPath]) of
+        ?c(ao_store:resolve(
+            Store,
+            ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
+        )),
+    CommonPrefix = binary:longest_common_prefix(ResolvedPath, <<"TEST-data/computed">>),
+    ID = binary:part(ResolvedPath, {byte_size(ResolvedPath), -byte_size(CommonPrefix)}),
+    ?c({resolved_path, ID, CommonPrefix}),
+    case ?c(ao_store:type(Store, ["messages", ID])) of
         not_found -> not_found;
         _ -> read(Store, ResolvedPath)
     end.

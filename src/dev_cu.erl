@@ -14,6 +14,7 @@ push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     end.
 
 execute(CarrierMsg, S) ->
+    ar_bundles:print(CarrierMsg),
     MaybeBundle = ar_bundles:hd(CarrierMsg),
     Store = ao:get(store),
     Wallet = ao:wallet(),

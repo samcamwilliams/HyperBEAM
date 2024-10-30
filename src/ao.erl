@@ -22,9 +22,6 @@ config() ->
         http_host => "localhost",
         gateway => "https://arweave.net",
         bundler => "https://up.arweave.net",
-        su => "http://localhost:8734/su",
-        mu => "http://localhost:8734/mu",
-        cu => "http://localhost:8734/cu",
         nodes => #{
             compute => "http://localhost:8734/cu",
             message => "http://localhost:8734/mu",

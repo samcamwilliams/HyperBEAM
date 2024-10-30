@@ -49,6 +49,7 @@ find_value(Key, List, Default) ->
 		false -> Default
 	end.
 
+remove_common(<< X, Rest/binary>>, X) -> Rest;
 remove_common([X|Rest1], [X|Rest2]) ->
     remove_common(Rest1, Rest2);
 remove_common([$/|Path], _) -> Path;

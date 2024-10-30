@@ -191,7 +191,16 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             Attestations = lists:filtermap(
                 fun(Address) ->
                     case ao_router:find(compute, Process#tx.id, Address) of
-                        {ok, Att} -> Att;
+                        {ok, ComputeNode} ->
+                            ?c({poda_asking_peer_for_attestation, ComputeNode}),
+                            case ao_client:compute(Process#tx.id, 0) of
+                                {ok, Att} ->
+                                    ?c({poda_got_attestation, Att}),
+                                    {true, Att};
+                                {error, Error} ->
+                                    ?c({poda_error_getting_attestation, Error}),
+                                    false
+                            end;
                         _ -> false
                     end
                 end,
@@ -199,16 +208,20 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             ),
             ?no_prod(use_real_attestations_in_poda),
             MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
-            Attestation = ar_bundles:sign_item(
+            LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
                 Wallet
             ),
-            TestAttestations = ar_bundles:sign_item(#tx { data = #{ <<"1">> => Attestation } }, Wallet),
+            CompleteAttestations =
+                ar_bundles:sign_item(
+                    #tx { data = [LocalAttestation | Attestations] },
+                    Wallet
+                ),
             AttestationBundle = ar_bundles:sign_item(
                 #tx{
                     target = NewMsg#tx.target,
                     data = #{
-                        <<"Attestations">> => TestAttestations,
+                        <<"Attestations">> => CompleteAttestations,
                         <<"Message">> => NewMsg
                     }
                 },

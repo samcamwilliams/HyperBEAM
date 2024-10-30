@@ -147,7 +147,8 @@ hd(#tx { data = #{ <<"1">> := Msg } }) -> Msg;
 hd(#tx { data = [First | _] }) -> First;
 hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
     ?MODULE:hd((deserialize(serialize(TX), binary))#tx.data);
-hd(#{ <<"1">> := Msg }) -> Msg.
+hd(#{ <<"1">> := Msg }) -> Msg;
+hd(_) -> undefined.
 
 map(#tx { data = Map }) when is_map(Map) -> Map;
 map(#tx { data = Data }) when is_list(Data) ->
