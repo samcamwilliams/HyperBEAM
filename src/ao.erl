@@ -53,7 +53,8 @@ config() ->
                 <<"Multipass">> => dev_multipass,
                 <<"Push">> => dev_mu,
                 <<"Compute">> => dev_cu,
-                <<"P4">> => dev_p4
+                <<"P4">> => dev_p4,
+                <<"Oracle">> => dev_oracle
             },
         default_device_paths => [
             {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},

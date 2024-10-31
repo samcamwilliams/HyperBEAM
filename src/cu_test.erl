@@ -37,6 +37,13 @@ full_push_test() ->
     ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none).
 
+oracle_test() ->
+    init(),
+    ?c(oracle_test_started),
+    {_, Msg} = generate_test_data(oracle_script()),
+    ao_cache:write(ao:get(store), Msg),
+    ao_client:push(Msg, none).
+
 simple_load_test() ->
     init(),
     ?c(scheduling_many_items),
@@ -96,6 +103,7 @@ default_test_devices(Wallet, Img) ->
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
         {<<"Image">>, ar_util:id(Img#tx.id)},
+        {<<"Device">>, <<"Oracle">>},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
         {<<"Device">>, <<"Multipass">>},
@@ -107,6 +115,13 @@ ping_ping_script() ->
         "\n"
         "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(\"Sent Ping\"); end)\n"
         "Send({ Target = ao.id, Action = \"Ping\" })\n"
+    >>.
+
+oracle_script() ->
+    <<
+        "\n"
+        "Handlers.add(\"Receive-Data\", function(m) print(\"GOT DATA!\"); m.reply({ Data = \"42\" }); end)\n"
+        "Send({ Target = ao.id, Action = \"Get-Oracle-Data\", Data = \"http://arweave.net\" })\n"
     >>.
 
 generate_test_data(Script) ->
