@@ -29,7 +29,6 @@ extract_opts(Params) ->
     }.
 
 execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
-    ar_bundles:print(Msg),
     case is_user_signed(Msg) of
         true ->
             {ok, S};
@@ -61,7 +60,6 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
                             maps:get(vfs, S, #{}),
                             Atts
                         ),
-                    ?c({poda_vfs, VFS1}),
                     % Update the arg prefix to include the unwrapped message.
                     {ok, S#{ vfs => VFS1, arg_prefix =>
                         [
@@ -108,25 +106,21 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
         ),
     ?c({poda_validations, length(Validations)}),
     case length(Validations) >= Quorum of
-        true -> true;
+        true ->
+            ?c({poda_quorum_reached, length(Validations)}),
+            true;
         false -> {false, <<"Not enough validations">>}
     end.
 
 validate_attestation(Msg, Att, Opts) ->
     MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = ar_util:encode(ar_bundles:signer(Att)),
-    ?c({message_to_attest, MsgID}),
-    ?c({authorities, maps:get(authorities, Opts)}),
-    ?c({attestation_signer, AttSigner}),
-    ar_bundles:print(Msg),
-    ar_bundles:print(Att),
     ?no_prod(use_real_authority_validation),
     % ValidSigner = lists:member(
     %     ar_bundles:signer(Att),
     %     maps:get(authorities, Opts)
     % ),
     ValidSigner = true,
-    ?c({valid_signer, ValidSigner}),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
         lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
@@ -180,6 +174,8 @@ attest_to_results(Msg, S = #{ wallet := Wallet }) ->
     end.
 
 add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
+    ?no_prod("PoDA currently waits for 1 second before getting attestations!"),
+    receive after 1000 -> ok end,
     Process = find_process(NewMsg, S),
     case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
@@ -193,12 +189,12 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                     case ao_router:find(compute, Process#tx.id, Address) of
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
+                            % TODO: Use the slot number.
+                            ?no_prod("Get attestation on correct slot."),
                             case ao_client:compute(Process#tx.id, 0) of
                                 {ok, Att} ->
-                                    ?c({poda_got_attestation, Att}),
                                     {true, Att};
                                 {error, Error} ->
-                                    ?c({poda_error_getting_attestation, Error}),
                                     false
                             end;
                         _ -> false
@@ -206,7 +202,6 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                 end,
                 InitAuthorities
             ),
-            ?no_prod(use_real_attestations_in_poda),
             MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
@@ -214,22 +209,32 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             ),
             CompleteAttestations =
                 ar_bundles:sign_item(
-                    #tx { data = [LocalAttestation | Attestations] },
+                    ar_bundles:normalize(
+                        #tx {
+                            data = 
+                                maps:from_list(
+                                    lists:zipwith(
+                                        fun(Index, Att) -> {integer_to_binary(Index), Att} end,
+                                        lists:seq(1, length([LocalAttestation | Attestations])),
+                                        [LocalAttestation | Attestations]
+                                    )
+                                )
+                        }
+                    ),
                     Wallet
                 ),
             AttestationBundle = ar_bundles:sign_item(
-                #tx{
-                    target = NewMsg#tx.target,
-                    data = #{
-                        <<"Attestations">> => CompleteAttestations,
-                        <<"Message">> => NewMsg
+                ar_bundles:normalize(
+                    #tx{
+                        target = NewMsg#tx.target,
+                        data = #{
+                            <<"Attestations">> => CompleteAttestations,
+                            <<"Message">> => NewMsg
+                        }
                     }
-                },
+                ),
                 Wallet
             ),
-            ?c(poda_attestations),
-            ar_bundles:print(AttestationBundle),
-            ?c(bundle_printed),
             AttestationBundle;
         false -> NewMsg
     end.

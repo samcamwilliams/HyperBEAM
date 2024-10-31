@@ -68,9 +68,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                 end;
             false -> RawMsgRef
         end,
-    ?c({reading_store, Store, ProcID, MsgRef}),
     ?no_prod("Pause such that the store has time to write from the previous run."),
-    receive after 1000 -> ok end,
     case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
             ?c({proc_id, ProcID}),

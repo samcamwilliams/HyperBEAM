@@ -60,6 +60,12 @@ print(Item, Indent) when is_record(Item, tx) ->
         ],
         Indent
     ),
+    case (not Valid) andalso Item#tx.signature =/= ?DEFAULT_SIG of
+        true ->
+            print_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1),
+            print_line("Signature in full: ~p", [Item#tx.signature], Indent + 1);
+        false -> ok
+    end,
     print_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";

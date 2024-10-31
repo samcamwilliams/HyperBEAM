@@ -13,7 +13,6 @@
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
--ao_debug(print).
 
 %%% A cache of AO messages and compute results.
 %%% 
@@ -204,7 +203,6 @@ write_composite(Store, Path, map, Item) ->
     maps:map(fun(Key, Subitem) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
-        ?c({writing_child, Key}),
         ok = write(Store, Subitem),
         ao_store:make_link(
             Store,

@@ -66,15 +66,16 @@ current_schedule(M) ->
 schedule(CarrierM) ->
     #{ <<"1">> := M } = CarrierM#tx.data,
     Store = ao:get(store),
+    ?no_prod("Must verify data item in SU!"),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
-        {false, _} ->
-            {ok,
-                #tx{
-                    tags = [{<<"Status">>, <<"Failed">>}],
-                    data = [<<"Data item is not valid.">>]
-                }
-            };
-        {true, {<<"Type">>, <<"Process">>}} ->
+        % {false, _} ->
+        %     {ok,
+        %         #tx{
+        %             tags = [{<<"Status">>, <<"Failed">>}],
+        %             data = [<<"Data item is not valid.">>]
+        %         }
+        %     };
+        {_, {<<"Type">>, <<"Process">>}} ->
             ao_cache:write(Store, M),
             ao_client:upload(M),
             {ok,
@@ -88,7 +89,7 @@ schedule(CarrierM) ->
                     data = []
                 }
             };
-        {true, _} ->
+        {_, _} ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
                 case lists:keyfind(<<"Process">>, 1, M#tx.tags) of

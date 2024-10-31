@@ -44,11 +44,12 @@ reply(Req, Item) ->
     reply(Req, tx_to_status(Item), Item).
 reply(Req, Status, Item) ->
     ?c(
-        {replying,
+        {
             Status,
             maps:get(method, Req, undef_method),
             maps:get(path, Req, undef_path),
-            Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end}
+            Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end
+        }
     ),
     % TODO: Should we return Req or Req2? Req2 sometimes seems to have issues,
     % but logically appears to be the correct choice.

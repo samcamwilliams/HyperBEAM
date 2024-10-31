@@ -45,7 +45,6 @@ create(Pre, Proc, Post) ->
     Devs = normalize_list(Pre) ++ from_process(Proc) ++ normalize_list(Post),
     lists:map(
         fun({{DevMod, DevS, Params}, N}) ->
-            ?c({creating_device, DevMod, N}),
             case cu_device_loader:from_id(DevMod) of
                 {ok, Mod} ->
                     {N, Mod, DevS, Params};
@@ -113,7 +112,6 @@ call(Devs, S, FuncName, Opts) ->
 do_call([], S, _FuncName, _Opts) ->
     {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass, arg_prefix := ArgPrefix }, FuncName, Opts) ->
-    ?c({start_dev_call, DevMod, FuncName, Pass}),
     case cu_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);
