@@ -17,6 +17,7 @@ execute(CarrierMsg, S) ->
     MaybeBundle = ar_bundles:hd(CarrierMsg),
     Store = ao:get(store),
     Wallet = ao:wallet(),
+    %ar_bundles:print(MaybeBundle),
     {ok, Results} =
         case MaybeBundle of
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->

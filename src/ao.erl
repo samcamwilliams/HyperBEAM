@@ -61,7 +61,14 @@ config() ->
             {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
             {<<"mu">>,
                 {<<"push">>, [
-                    dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}}
+                    dev_p4,
+                    dev_mu,
+                    dev_scheduler,
+                    dev_cu,
+                    dev_poda,
+                    dev_mu
+                ]}
+            }
         ],
         % Dev options
         store =>
