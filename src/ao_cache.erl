@@ -227,15 +227,19 @@ read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
 read_output(Store, ProcID, Input) ->
     ?c({reading_computed_result, Input}),
     ResolvedPath =
-        ?c(ao_store:resolve(
-            Store,
-            ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
-        )),
-    CommonPrefix = binary:longest_common_prefix(ResolvedPath, <<"TEST-data/computed">>),
-    ID = binary:part(ResolvedPath, {byte_size(ResolvedPath), -byte_size(CommonPrefix)}),
-    ?c({resolved_path, ID, CommonPrefix}),
-    case ?c(ao_store:type(Store, ["messages", ID])) of
-        not_found -> not_found;
+        ar_util:remove_common(
+            ar_util:remove_common(
+                ?c(ao_store:resolve(
+                    Store,
+                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
+                )),
+                ?COMPUTE_CACHE_DIR
+            ),
+            "messages"
+        ),
+    ?c({resolved_path, ResolvedPath}),
+    case ao_store:type(Store, ["messages", ResolvedPath]) of
+        not_found -> ?c(not_found);
         _ -> read(Store, ResolvedPath)
     end.
 

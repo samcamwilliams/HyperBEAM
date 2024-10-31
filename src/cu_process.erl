@@ -69,6 +69,8 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
             false -> RawMsgRef
         end,
     ?c({reading_store, Store, ProcID, MsgRef}),
+    ?no_prod("Pause such that the store has time to write from the previous run."),
+    receive after 1000 -> ok end,
     case ao_cache:read_output(Store, ProcID, MsgRef) of
         not_found ->
             ?c({proc_id, ProcID}),
@@ -91,7 +93,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     ?c({added_listener_and_message, Pid}),
                     await_results(Pid)
             end;
-        Result -> Result
+        Result -> {ok, Result}
     end.
 
 %% Start a new Erlang process for the AO process, optionally giving the assignments so far.

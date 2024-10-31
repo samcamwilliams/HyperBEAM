@@ -44,7 +44,13 @@ print(Item, Indent) when is_record(Item, tx) ->
         "TX ( ~s: ~s ) {",
         [
             if
-                Item#tx.signature =/= ?DEFAULT_SIG -> ar_util:encode(Item#tx.id);
+                Item#tx.signature =/= ?DEFAULT_SIG ->
+                    lists:flatten(
+                        io_lib:format(
+                            "~s (signed) ~s (unsigned)",
+                            [ar_util:encode(Item#tx.id), ar_util:encode(id(Item, unsigned))]
+                        )
+                    );
                 true -> ar_util:encode(id(Item, unsigned))
             end,
             if
@@ -269,7 +275,7 @@ normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
                 maps:from_list(
                     lists:zipwith(
                         fun(Index, MapItem) ->
-                            {integer_to_binary(Index), normalize_data(MapItem)}
+                            {integer_to_binary(Index), update_id(normalize_data(MapItem))}
                         end,
                         lists:seq(1, length(Data)),
                         Data
@@ -352,15 +358,9 @@ finalize_bundle_data(Processed) ->
 to_serialized_pair(Item) ->
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
-    Serialized = serialize(Item, binary),
-    ID =
-        if
-            is_record(Item, tx) andalso Item#tx.id =/= ?DEFAULT_ID -> Item#tx.id;
-            true -> 
-                Deserialized = deserialize(Serialized, binary),
-                Deserialized#tx.id
-        end,
-    {ID, Serialized}.
+    Serialized = serialize(update_id(normalize(Item)), binary),
+    Deserialized = deserialize(Serialized, binary),
+    {Deserialized#tx.id, Serialized}.
 
 serialize_bundle_data(Map) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
