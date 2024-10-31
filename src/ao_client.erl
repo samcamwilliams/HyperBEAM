@@ -8,7 +8,7 @@
 -export([schedule/1, assign/1, register_su/1, register_su/2]).
 -export([cron/1, cron/2, cron/3, cron_cursor/1]).
 %% Compute Unit API
--export([compute/1, compute/2]).
+-export([compute/2]).
 %% Messaging Unit API
 -export([push/1, push/2]).
 
@@ -51,12 +51,11 @@ upload(Item) ->
     end.
 
 %%% Scheduling Unit API
-schedule(Item) -> schedule(Item, Item#tx.target).
-schedule(Item, Target) ->
+schedule(Msg) ->
     ao_http:post(
-        su_process:get_location(Target),
+        maps:get(schedule, ao:get(nodes)),
         "/",
-        Item
+        Msg
     ).
 
 assign(_ID) ->
@@ -85,8 +84,9 @@ get_assignments(ProcID, From) ->
 get_assignments(ProcID, From, To) ->
     {ok, #tx{data = Data}} =
         ao_http:get(
-            su_process:get_location(ProcID),
-            "/" ++ binary_to_list(ar_util:encode(ProcID)) ++ "?" ++
+            maps:get(schedule, ao:get(nodes)),
+            "/?Action=Schedule&Process=" ++
+                binary_to_list(ar_util:id(ProcID)) ++
                 case From of
                     undefined -> "";
                     _ -> "&from=" ++
@@ -109,23 +109,38 @@ get_assignments(ProcID, From, To) ->
 extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
     [];
 extract_assignments(From, To, Assignments) ->
+    ?c({extracting_assignments, From, To}),
     KeyID = list_to_binary(integer_to_list(From)),
-    [
-        maps:get(KeyID, Assignments)
-        | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
-    ].
+    case maps:is_key(KeyID, Assignments) of
+        true ->
+            [
+                maps:get(KeyID, Assignments)
+                | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
+            ];
+        false ->
+            ?c({no_assignment_for_key, KeyID}),
+            []
+    end.
 
-compute(Assignment) when is_record(Assignment, tx) ->
-    {_, ProcessID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-    %% TODO: We should be getting the assignment by _ID_, not by slot.
-    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    compute(binary_to_list(ProcessID), list_to_integer(binary_to_list(Slot))).
+compute(ProcID, Slot) when is_binary(ProcID) ->
+    compute(binary_to_list(ar_util:id(ProcID)), Slot);
 compute(ProcID, Slot) when is_integer(Slot) ->
-    compute(ProcID, list_to_binary(integer_to_list(Slot)));
-compute(ProcID, Assignment) ->
+    compute(ProcID, integer_to_list(Slot));
+compute(ProcID, Slot) when is_binary(Slot) ->
+    compute(ProcID, binary_to_list(Slot));
+compute(ProcID, Slot) when is_list(Slot) ->
     ao_http:get(
-        ao:get(cu),
-        "/" ++ ProcID ++ "/" ++ Assignment
+        maps:get(compute, ao:get(nodes)),
+        "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot
+    );
+compute(Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
+    ao_http:post(
+        maps:get(compute, ao:get(nodes)),
+        "/",
+        ar_bundles:normalize(#{
+            <<"Message">> => Msg,
+            <<"Assignment">> => Assignment
+        })
     ).
 
 %%% MU API functions
@@ -134,9 +149,9 @@ push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
 push(Item, Tracing) ->
-    ?c({push_start, ar_util:encode(Item#tx.id)}),
+    ?c({calling_remote_push, ar_util:id(Item#tx.id)}),
     ao_http:post(
-        ao:get(mu),
+        maps:get(message, ao:get(nodes)),
         "/?trace=" ++ Tracing,
         Item
     ).
@@ -148,13 +163,13 @@ cron(ProcID) ->
 cron(ProcID, Cursor) ->
     cron(ProcID, Cursor, ao:get(default_page_limit)).
 cron(ProcID, Cursor, Limit) when is_binary(ProcID) ->
-    cron(binary_to_list(ar_util:encode(ProcID)), Cursor, Limit);
+    cron(binary_to_list(ar_util:id(ProcID)), Cursor, Limit);
 cron(ProcID, undefined, RawLimit) ->
     cron(ProcID, cron_cursor(ProcID), RawLimit);
 cron(ProcID, Cursor, Limit) ->
     case
         httpc:request(
-            ao:get(cu) ++
+            maps:get(compute, ao:get(nodes)) ++
                 "/cron/" ++
                 ProcID ++
                 "?cursor=" ++
@@ -176,7 +191,7 @@ cron(ProcID, Cursor, Limit) ->
     end.
 
 cron_cursor(ProcID) ->
-    case httpc:request(ao:get(cu) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
+    case httpc:request(maps:get(compute, ao:get(nodes)) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
         {ok, {{_, 200, _}, _, Body}} ->
             {_, Res} = parse_result_set(Body),
             case Res of

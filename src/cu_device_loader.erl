@@ -1,5 +1,5 @@
 -module(cu_device_loader).
--export([from_id/1, from_id/2]).
+-export([from_id/1, from_id/2, from_message/1,default/0]).
 
 -include("include/ao.hrl").
 
@@ -7,6 +7,12 @@
 %%% the Erlang environments.
 
 from_id(ID) -> from_id(ID, #{}).
+
+from_id({ID, Func}, Opts) ->
+    case from_id(ID, Opts) of
+        {ok, Mod} -> {ok, {Mod, Func}};
+        Error -> Error
+    end;
 from_id(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
@@ -31,4 +37,17 @@ from_id(ID, _Opts) ->
     case maps:get(ID, ao:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
+    end.
+
+default() -> dev_identity.
+
+%% @doc Locate the appropriate device module to execute for the given message.
+%% If the message specifies a device for itself, use that. Else, use the default
+%% device.
+from_message(M) ->
+    case lists:keyfind(<<"Device">>, 1, M#tx.tags) of
+        {_, DeviceID} ->
+            from_id(DeviceID);
+        false ->
+            {ok, default()}
     end.

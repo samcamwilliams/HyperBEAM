@@ -8,7 +8,7 @@
     stdlib,
     inets,
     ssl,
-    gproc
+    debugger
    ]},
   {env,[]},
   {modules, []},

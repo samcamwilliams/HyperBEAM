@@ -1,6 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
--export([id/1, id/2, type/1, map/1]).
+-export([signer/1, is_signed/1]).
+-export([id/1, id/2, type/1, map/1, hd/1]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
@@ -27,6 +28,9 @@
 -define(BIN_PRINT, 10).
 -define(INDENT_SPACES, 2).
 
+
+-ao_debug(print).
+
 %%%===================================================================
 %%% Public interface.
 %%%===================================================================
@@ -37,19 +41,37 @@ print(Item, Indent) when is_list(Item); is_map(Item) ->
 print(Item, Indent) when is_record(Item, tx) ->
     Valid = verify_item(Item),
     print_line(
-        "TX ( ~s:~s ) {",
+        "TX ( ~s: ~s ) {",
         [
             if
-                Item#tx.signature =/= ?DEFAULT_SIG -> "signed";
-                true -> "unsigned"
+                Item#tx.signature =/= ?DEFAULT_SIG ->
+                    lists:flatten(
+                        io_lib:format(
+                            "~s (signed) ~s (unsigned)",
+                            [ar_util:encode(Item#tx.id), ar_util:encode(id(Item, unsigned))]
+                        )
+                    );
+                true -> ar_util:encode(id(Item, unsigned))
             end,
             if
-                Valid == true -> "valid";
-                true -> "INVALID"
+                Valid == true -> "[SIGNED+VALID]";
+                true -> "[UNSIGNED/INVALID]"
             end
         ],
         Indent
     ),
+    case (not Valid) andalso Item#tx.signature =/= ?DEFAULT_SIG of
+        true ->
+            print_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1),
+            print_line("Signature in full: ~p", [Item#tx.signature], Indent + 1);
+        false -> ok
+    end,
+    print_line("Target: ~s", [
+            case Item#tx.target of
+                <<>> -> "[NONE]";
+                Target -> ar_util:id(Target)
+            end
+        ], Indent + 1),
     print_line("Tags:", Indent + 1),
     lists:foreach(
         fun({Key, Val}) -> print_line("~s -> ~s", [Key, Val], Indent + 2) end,
@@ -112,10 +134,16 @@ print_line(Str, Indent) -> print_line(Str, "", Indent).
 print_line(RawStr, Fmt, Ind) ->
     Str = lists:flatten(RawStr),
     io:format(standard_error,
-        "~w " ++ [$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
+        [$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
             Str ++ "\n",
-        [Ind] ++ Fmt
+        Fmt
     ).
+
+signer(Item) ->
+    crypto:hash(sha256, Item#tx.signature).
+
+is_signed(Item) ->
+    Item#tx.signature =/= ?DEFAULT_SIG.
 
 id(Item) when Item#tx.id == ?DEFAULT_ID ->
     id(normalize_data(Item), unsigned);
@@ -126,6 +154,13 @@ id(Item, unsigned) ->
     crypto:hash(sha256, data_item_signature_data(Item));
 id(Item, signed) ->
     Item#tx.id.
+
+hd(#tx { data = #{ <<"1">> := Msg } }) -> Msg;
+hd(#tx { data = [First | _] }) -> First;
+hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
+    ?MODULE:hd((deserialize(serialize(TX), binary))#tx.data);
+hd(#{ <<"1">> := Msg }) -> Msg;
+hd(_) -> undefined.
 
 map(#tx { data = Map }) when is_map(Map) -> Map;
 map(#tx { data = Data }) when is_list(Data) ->
@@ -246,7 +281,7 @@ normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
                 maps:from_list(
                     lists:zipwith(
                         fun(Index, MapItem) ->
-                            {integer_to_binary(Index), normalize_data(MapItem)}
+                            {integer_to_binary(Index), update_id(normalize_data(MapItem))}
                         end,
                         lists:seq(1, length(Data)),
                         Data
@@ -329,15 +364,9 @@ finalize_bundle_data(Processed) ->
 to_serialized_pair(Item) ->
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
-    Serialized = serialize(Item, binary),
-    ID =
-        if
-            is_record(Item, tx) andalso Item#tx.id =/= ?DEFAULT_ID -> Item#tx.id;
-            true -> 
-                Deserialized = deserialize(Serialized, binary),
-                Deserialized#tx.id
-        end,
-    {ID, Serialized}.
+    Serialized = serialize(update_id(normalize(Item)), binary),
+    Deserialized = deserialize(Serialized, binary),
+    {Deserialized#tx.id, Serialized}.
 
 serialize_bundle_data(Map) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
@@ -533,7 +562,9 @@ find_item(TXID, Items) ->
     TX = lists:keyfind(TXID, #tx.id, Items),
     case is_record(TX, tx) of
         true -> TX;
-        false -> throw({cannot_find_item, TXID})
+        false ->
+            ?c({cannot_find_item, ar_util:encode(TXID), [ print(T) || T <- Items]}),
+            throw({cannot_find_item, ar_util:encode(TXID)})
     end.
 
 unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
@@ -799,7 +830,7 @@ test_bundle_with_one_item() ->
     ),
     Bundle = serialize([Item]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData, (hd(BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData, (erlang:hd(BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
     Item1 = new_item(
@@ -816,8 +847,8 @@ test_bundle_with_two_items() ->
     ),
     Bundle = serialize([Item1, Item2]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData1, (hd(BundleItem#tx.data))#tx.data),
-    ?assertEqual(ItemData2, (hd(tl(BundleItem#tx.data)))#tx.data).
+    ?assertEqual(ItemData1, (erlang:hd(BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (erlang:hd(tl(BundleItem#tx.data)))#tx.data).
 
 test_recursive_bundle() ->
     W = ar_wallet:new(),

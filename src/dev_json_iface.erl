@@ -6,7 +6,7 @@
 uses() -> all.
 
 init(S) ->
-    {ok, S#{stdlib => fun stdlib/6, json_iface => #{}}}.
+    {ok, S#{ wasm_stdlib => fun stdlib/6, json_iface => #{}}}.
 
 execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
     {ok, S#{
@@ -14,7 +14,9 @@ execute(M, S = #{pass := 1, json_iface := IfaceS}) ->
         json_iface => IfaceS#{stdout => []}
     }};
 execute(_M, S = #{pass := 2}) ->
-    {ok, results(S)}.
+    {ok, results(S)};
+execute(_M, S) ->
+    {ok, S}.
 
 prep_call(
     #tx{
@@ -23,7 +25,7 @@ prep_call(
             <<"Message">> := Message
         }
     },
-    #{wasm := Port, process := Process}
+    #{ wasm := Port, process := Process }
 ) ->
     {_, Module} = lists:keyfind(<<"Module">>, 1, Process#tx.tags),
     % TODO: Get block height from the assignment message
@@ -45,19 +47,34 @@ prep_call(
 %% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
 %% some tags to each message, and spawn to help the target process know these messages are created
 %% by a process.
-%% TODO: "From-Process" and "From-Module" are the tags that should be removed and set by the
-%% signing unit.
 postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
-    % Remove "From-Process" from Tags
-    UpdatedTags = lists:filter(
-        fun(Item) -> maps:get(<<"name">>, Item) =/= <<"From-Process">> end, Tags
+    % Remove "From-Process" and "From-Image" from Tags
+    FilteredTags = lists:filter(
+        fun(Item) ->
+            maps:get(<<"name">>, Item) =/= <<"From-Process">> andalso
+                maps:get(<<"name">>, Item) =/= <<"From-Image">>
+        end,
+        Tags
     ),
-    NewTag = #{<<"name">> => <<"From-Process">>, <<"value">> => ar_util:encode(Proc#tx.id)},
-    UpdatedMsg = Msg#{<<"Tags">> => UpdatedTags ++ [NewTag]},
-    % TODO: need to do the same for "From-Module" remove if present and then add from State
+    UpdatedMsg =
+        Msg#{
+            <<"Tags">> =>
+                FilteredTags ++
+                    [
+                        #{
+                            <<"name">> => <<"From-Process">>,
+                            <<"value">> => ar_util:id(Proc#tx.id)
+                        },
+                        #{
+                            <<"name">> => <<"From-Image">>,
+                            <<"value">> =>
+                                element(2, lists:keyfind(<<"Image">>, 1, Proc#tx.tags))
+                        }
+                    ]
+        },
     maps:remove(<<"Anchor">>, UpdatedMsg).
 
-results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, process := Proc}) ->
+results(S = #{wasm := Port, results := Res, process := Proc}) ->
     case Res of
         {error, Res} ->
             S#{
@@ -89,10 +106,7 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
                                         {MessageNum, Msg} <-
                                             lists:zip(lists:seq(1, length(Messages)), Messages)
                                     ]),
-                                <<"/Data">> =>
-                                    ar_bundles:normalize(#tx{data = Data}),
-                                <<"/Stdout">> =>
-                                    ar_bundles:normalize(#tx{data = iolist_to_binary(Stdout)})
+                                <<"/Data">> => ar_bundles:normalize(#tx{data = Data})
                             }
                     };
                 #{<<"ok">> := false} ->
@@ -101,7 +115,6 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
                         results =>
                             #{
                                 <<"Error">> => <<"JSON Parse Error">>,
-                                <<"stdout">> => iolist_to_binary(Stdout),
                                 <<"Data">> => Str
                             }
                     }
@@ -112,7 +125,6 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
                         results =>
                             #{
                                 <<"Error">> => <<"JSON Parse Error">>,
-                                <<"stdout">> => iolist_to_binary(Stdout),
                                 <<"Data">> => Str
                             }
                     }
@@ -121,16 +133,30 @@ results(S = #{wasm := Port, results := Res, json_iface := #{stdout := Stdout}, p
             ok
     end.
 
-stdlib(S = #{json_iface := IfaceS}, Port, ModName, FuncName, Args, Sig) ->
-    {IfaceS2, Res} = lib(IfaceS, Port, ModName, FuncName, Args, Sig),
-    {S#{json_iface := IfaceS2}, Res}.
+stdlib(S, Port, ModName, FuncName, Args, Sig) ->
+    Library = maps:get(library, S, #{}),
+    case maps:get({ModName, FuncName}, Library, undefined) of
+        undefined ->
+            lib(S, Port, Args, ModName, FuncName, Sig);
+        Func ->
+            {arity, Arity} = erlang:fun_info(Func, arity),
+            ApplicationTerms =
+                lists:sublist(
+                    [S, Port, Args, ModName, FuncName, Sig],
+                    Arity
+                ),
+            erlang:apply(Func, ApplicationTerms)
+    end;
+stdlib(S, Port, ModName, FuncName, Args, Sig) ->
+    ?c(stdlib_called_2),
+    lib(S, Port, ModName, FuncName, Args, Sig).
 
 lib(
     S = #{stdout := Stdout},
     Port,
+    [_Fd, Ptr, Vecs, RetPtr],
     "wasi_snapshot_preview1",
     "fd_write",
-    [_Fd, Ptr, Vecs, RetPtr],
     _Signature
 ) ->
     %?c({fd_write, Fd, Ptr, Vecs, RetPtr}),
@@ -147,11 +173,11 @@ lib(
     % Set return pointer to number of bytes written
     cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
-lib(S, _Port, _Module, "clock_time_get", _Args, _Signature) ->
+lib(S, _Port, _Args, _Module, "clock_time_get", _Signature) ->
     %?c({called, wasi_clock_time_get, 1}),
     {S, [1]};
-lib(S, _Port, Module, Func, _Args, _Signature) ->
-    %?c({unimplemented_stub_called, Module, Func}),
+lib(S, _Port, Args, Module, Func, Signature) ->
+    ?c({unimplemented_stub_called, Module, Func, Args, Signature}),
     {S, [0]}.
 
 result_test() ->

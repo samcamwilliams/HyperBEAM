@@ -20,7 +20,7 @@ log(Monitor, Data) ->
     Monitor ! {log, Data}.
 
 register(Monitor) ->
-    ?c(registering),
+    ?c({self(), registering}),
     Monitor ! {register, self()}.
 
 report(Monitor) ->

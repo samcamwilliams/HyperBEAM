@@ -6,7 +6,6 @@
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
 -include("include/ao.hrl").
--ao_debug(no_print).
 
 %%% A key-value store abstraction, such that the underlying implementation
 %%% can be swapped out easily. The default implementation is a file-based
@@ -27,7 +26,7 @@ read(Opts = #{ dir := DataDir }, Key) ->
         not_found ->
             case resolve(Opts, Key) of
                 Key -> not_found;
-                ResolvedPath -> read(Opts, ResolvedPath)
+                ResolvedPath -> read(ResolvedPath)
             end;
         Result -> Result
     end.
@@ -35,12 +34,13 @@ read(Path) ->
     ?c({read, Path}),
     case file:read_file_info(Path) of
         {ok, #file_info{type = regular}} ->
-            {ok, File} = file:read_file(Path),
-            {ok, File};
+            {ok, _} = file:read_file(Path);
         _ ->
             case file:read_link(Path) of
-                {ok, Link} -> read(Link);
-                _ -> not_found
+                {ok, Link} ->
+                    read(Link);
+                _ ->
+                    not_found
             end
     end.
 
@@ -73,13 +73,15 @@ resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
 type(#{ dir := DataDir }, Key) ->
     type(join([DataDir, Key])).
 type(Path) ->
-    case file:read_file_info(join(Path)) of
+    case file:read_file_info(Joint = join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
         _ ->
-            case file:read_link(join(Path)) of
-                {ok, Link} -> type(Link);
-                _ -> not_found
+            case file:read_link(Joint) of
+                {ok, Link} ->
+                    type(Link);
+                _ ->
+                    not_found
             end
     end.
 

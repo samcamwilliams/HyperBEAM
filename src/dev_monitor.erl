@@ -10,12 +10,13 @@
 %%% functions must not mutate state.
 
 init(State, _, InitState) ->
-    {ok,  State#{ monitors => InitState }}.
+    {ok, State#{ monitors => InitState }}.
 
-execute(Message, State) -> signal(State, {message, Message}).
+execute(Message, State = #{ pass := Pass, passes := Passes }) when Pass == Passes ->
+    signal(State, {message, Message});
+execute(_, S) -> {ok, S}.
 
 add_monitor(Mon, State = #{ monitors := Monitors }) ->
-    ?c({adding_monitor, Mon, length(Monitors)}),
     {ok, State#{ monitors => [Mon | Monitors] }}.
 
 end_of_schedule(State) -> signal(State, end_of_schedule).
@@ -24,7 +25,7 @@ signal(State = #{ monitors := StartingMonitors }, Signal) ->
     RemainingMonitors =
         lists:filter(
             fun(Mon) ->
-                case ?c(Mon(State, Signal)) of
+                case Mon(State, Signal) of
                     done -> false;
                     _ -> true
                 end
