@@ -175,8 +175,8 @@ attest_to_results(Msg, S = #{ wallet := Wallet }) ->
 
 add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
     ?no_prod("PoDA currently waits for 1 second before getting attestations!"),
-    receive after 1000 -> ok end,
     Process = find_process(NewMsg, S),
+    receive after 1000 -> ok end,
     case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
             #{ authorities := InitAuthorities, quorum := Quorum } =
@@ -192,10 +192,8 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                             % TODO: Use the slot number.
                             ?no_prod("Get attestation on correct slot."),
                             case ao_client:compute(Process#tx.id, 0) of
-                                {ok, Att} ->
-                                    {true, Att};
-                                {error, Error} ->
-                                    false
+                                {ok, Att} -> {true, Att};
+                                _ -> false
                             end;
                         _ -> false
                     end
@@ -249,4 +247,15 @@ find_process(Item, #{ logger := _Logger, store := Store }) ->
                 {<<"Type">>, <<"Process">>} -> Item;
                 _ -> process_not_specified
             end
+    end.
+
+retry(Fun, Delay, Attempts) -> retry(Fun, Delay, Attempts, no_error).
+retry(_Fun, _Delay, 0, LastError) -> LastError;
+retry(Fun, Delay, Attempts, _LastError) ->
+    try Fun() of
+        Result -> Result
+    catch A:B:C ->
+        ?c({"Error: ", A, ":", B, ":", C, ". Retrying in ", Delay, "ms"}),
+        receive after Delay -> ok end,
+        retry(Fun, Delay, Attempts - 1, {A, B, C})
     end.

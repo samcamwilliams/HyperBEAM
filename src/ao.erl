@@ -3,8 +3,17 @@
 -export([wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
+-define(ENV_KEYS,
+    #{ key_location => {"AO_KEY", fun erlang:id/1},
+       http_port => {"AO_PORT", fun list_to_integer/1} }).
 
-wallet() -> wallet(ao:get(key_location)).
+wallet() ->
+    wallet(
+        case os:getenv("AO_KEY") of
+            false -> ao:get(key_location);
+            Location -> Location
+        end
+    ).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} -> ar_wallet:load_keyfile(Location);
@@ -51,7 +60,8 @@ config() ->
             {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
             {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
             {<<"mu">>,
-                {<<"push">>, [dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}}
+                {<<"push">>, [
+                    dev_p4, dev_mu, dev_scheduler, dev_cu, dev_poda, dev_mu]}}
         ],
         % Dev options
         store =>
@@ -68,7 +78,16 @@ config() ->
 
 get(Key) -> get(Key, undefined).
 get(Key, Default) ->
-    maps:get(Key, config(), Default).
+    case maps:get(Key, ?ENV_KEYS, false) of
+        false -> config_lookup(Key, Default);
+        {EnvKey, EnvFunc} ->
+            case os:getenv(EnvKey) of
+                false -> config_lookup(Key, Default);
+                Value -> EnvFunc(Value)
+            end
+    end.
+
+config_lookup(Key, Default) -> maps:get(Key, config(), Default).
 
 c(X) -> c(X, "").
 c(X, Mod) -> c(X, Mod, undefined).
