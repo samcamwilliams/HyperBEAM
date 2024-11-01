@@ -6,6 +6,8 @@ compile:
 WAMR_VERSION = 2.1.2
 WAMR_DIR = _build/wamr
 
+SHELL=/bin/bash
+
 ifdef HB_DEBUG
 	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DWAMR_BUILD_DUMP_CALL_STACK=1 -DCMAKE_BUILD_TYPE=Debug
 else
