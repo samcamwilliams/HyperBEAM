@@ -184,14 +184,16 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             ?c({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
-            Attestations = lists:filtermap(
+            Attestations = pfiltermap(
                 fun(Address) ->
                     case ao_router:find(compute, Process#tx.id, Address) of
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
                             % TODO: Use the slot number.
                             ?no_prod("Get attestation on correct slot."),
-                            case ao_client:compute(Process#tx.id, 0) of
+                            {ok, ComputeNode} =
+                                ao_router:find(compute, Process#tx.id, Address),
+                            case ao_client:compute(ComputeNode, Process#tx.id, 0) of
                                 {ok, Att} -> {true, Att};
                                 _ -> false
                             end;
@@ -236,6 +238,23 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             AttestationBundle;
         false -> NewMsg
     end.
+
+%% @doc Execute a predicate in parallel and filter the results.
+pfiltermap(Pred, List) ->
+    Parent = self(),
+    Pids = lists:map(fun(X) -> 
+        spawn_monitor(fun() -> 
+            Result = {X, Pred(X)},
+            Parent ! {self(), Result}
+        end)
+    end, List),
+    lists:filtermap(fun({Ref, Pid}) ->
+        receive
+            {Pid, Result} -> Result;
+            % Handle crashes as filterable events
+            {'DOWN', Ref, process, Pid, _Reason} -> false
+        end
+    end, Pids).
 
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of

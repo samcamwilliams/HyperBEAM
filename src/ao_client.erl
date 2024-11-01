@@ -4,13 +4,13 @@
 %% Arweave bundling and data access API
 -export([upload/1, download/1]).
 %% Scheduling Unit API
--export([get_assignments/1, get_assignments/2, get_assignments/3]).
--export([schedule/1, assign/1, register_su/1, register_su/2]).
--export([cron/1, cron/2, cron/3, cron_cursor/1]).
+-export([get_assignments/1, get_assignments/2, get_assignments/3, get_assignments/4]).
+-export([schedule/1, schedule/2, assign/1, register_su/1, register_su/2]).
+-export([cron/1, cron/2, cron/3, cron/4, cron_cursor/1, cron_cursor/2]).
 %% Compute Unit API
--export([compute/2]).
+-export([compute/2, compute/3]).
 %% Messaging Unit API
--export([push/1, push/2]).
+-export([push/1, push/2, push/3]).
 
 -include("include/ao.hrl").
 
@@ -52,8 +52,11 @@ upload(Item) ->
 
 %%% Scheduling Unit API
 schedule(Msg) ->
+    {ok, Node} = ao_router:find(schedule, Msg#tx.id),
+    schedule(Node, Msg).
+schedule(Node, Msg) ->
     ao_http:post(
-        maps:get(schedule, ao:get(nodes)),
+        Node,
         "/",
         Msg
     ).
@@ -82,9 +85,12 @@ get_assignments(ProcID) ->
 get_assignments(ProcID, From) ->
     get_assignments(ProcID, From, undefined).
 get_assignments(ProcID, From, To) ->
+    {ok, Node} = ao_router:find(schedule, ProcID),
+    get_assignments(Node, ProcID, From, To).
+get_assignments(Node, ProcID, From, To) ->
     {ok, #tx{data = Data}} =
         ao_http:get(
-            maps:get(schedule, ao:get(nodes)),
+            Node,
             "/?Action=Schedule&Process=" ++
                 binary_to_list(ar_util:id(ProcID)) ++
                 case From of
@@ -122,20 +128,24 @@ extract_assignments(From, To, Assignments) ->
             []
     end.
 
-compute(ProcID, Slot) when is_binary(ProcID) ->
-    compute(binary_to_list(ar_util:id(ProcID)), Slot);
-compute(ProcID, Slot) when is_integer(Slot) ->
-    compute(ProcID, integer_to_list(Slot));
-compute(ProcID, Slot) when is_binary(Slot) ->
-    compute(ProcID, binary_to_list(Slot));
-compute(ProcID, Slot) when is_list(Slot) ->
+
+compute(ProcID, Slot) ->
+    {ok, Node} = ao_router:find(compute, ProcID),
+    compute(Node, ProcID, Slot).
+compute(Node, ProcID, Slot) when is_binary(ProcID) ->
+    compute(Node, binary_to_list(ar_util:id(ProcID)), Slot);
+compute(Node, ProcID, Slot) when is_integer(Slot) ->
+    compute(Node, ProcID, integer_to_list(Slot));
+compute(Node, ProcID, Slot) when is_binary(Slot) ->
+    compute(Node, ProcID, binary_to_list(Slot));
+compute(Node, ProcID, Slot) when is_list(Slot) ->
     ao_http:get(
-        maps:get(compute, ao:get(nodes)),
+        Node,
         "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot
     );
-compute(Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
+compute(Node, Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
     ao_http:post(
-        maps:get(compute, ao:get(nodes)),
+        Node,
         "/",
         ar_bundles:normalize(#{
             <<"Message">> => Msg,
@@ -149,9 +159,12 @@ push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
 push(Item, Tracing) ->
+    {ok, Node} = ao_router:find(message, Item#tx.id),
+    push(Node, Item, Tracing).
+push(Node, Item, Tracing) ->
     ?c({calling_remote_push, ar_util:id(Item#tx.id)}),
     ao_http:post(
-        maps:get(message, ao:get(nodes)),
+        Node,
         "/?trace=" ++ Tracing,
         Item
     ).
@@ -167,9 +180,12 @@ cron(ProcID, Cursor, Limit) when is_binary(ProcID) ->
 cron(ProcID, undefined, RawLimit) ->
     cron(ProcID, cron_cursor(ProcID), RawLimit);
 cron(ProcID, Cursor, Limit) ->
+    {ok, Node} = ao_router:find(compute, ProcID),
+    cron(Node, ProcID, Cursor, Limit).
+cron(Node, ProcID, Cursor, Limit) ->
     case
         httpc:request(
-            maps:get(compute, ao:get(nodes)) ++
+            Node ++
                 "/cron/" ++
                 ProcID ++
                 "?cursor=" ++
@@ -191,7 +207,10 @@ cron(ProcID, Cursor, Limit) ->
     end.
 
 cron_cursor(ProcID) ->
-    case httpc:request(maps:get(compute, ao:get(nodes)) ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
+    {ok, Node} = ao_router:find(compute, ProcID),
+    cron_cursor(Node, ProcID).
+cron_cursor(Node, ProcID) ->
+    case httpc:request(Node ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of
         {ok, {{_, 200, _}, _, Body}} ->
             {_, Res} = parse_result_set(Body),
             case Res of

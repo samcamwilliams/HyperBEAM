@@ -77,8 +77,10 @@ default_test_img(Wallet) ->
     Img.
 
 
-default_test_devices(Wallet, Img) ->
+default_test_devices(Wallet, Opts) ->
     ID = ar_wallet:to_address(Wallet),
+    Img = maps:get(image, Opts),
+    Quorum = maps:get(quorum, Opts, 1),
     [
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
@@ -87,10 +89,14 @@ default_test_devices(Wallet, Img) ->
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:id(ID)},
         {<<"Device">>, <<"PODA">>},
-        {<<"Quorum">>, <<"1">>},
-        {<<"Authority">>, <<"test-authority-1">>},
-        {<<"Authority">>, <<"test-authority-2">>},
-        {<<"Authority">>, <<"test-authority-3">>},
+        {<<"Quorum">>, integer_to_binary(Quorum)}
+    ] ++
+    [
+        {<<"Authority">>, Addr} ||
+            Addr <- maps:keys(maps:get(compute, ao:get(nodes))),
+            Addr =/= '_'
+    ] ++
+    [
         {<<"Device">>, <<"JSON-Interface">>},
         {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
@@ -113,11 +119,11 @@ generate_test_data(Script) ->
     generate_test_data(Script, ao:wallet()).
 generate_test_data(Script, Wallet) ->
     Img = default_test_img(Wallet),
-    generate_test_data(Script, Wallet, Img).
-generate_test_data(Script, Wallet, Img) ->
-    Devs = default_test_devices(Wallet, Img),
-    generate_test_data(Script, Wallet, Img, Devs).
-generate_test_data(Script, Wallet, _Img, Devs) ->
+    generate_test_data(Script, Wallet, #{image => Img}).
+generate_test_data(Script, Wallet, Opts) ->
+    Devs = default_test_devices(Wallet, Opts),
+    generate_test_data(Script, Wallet, Opts, Devs).
+generate_test_data(Script, Wallet, _Opts, Devs) ->
     Store = ao:get(store),
     ao_cache:write(
         Store,

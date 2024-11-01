@@ -1,24 +1,22 @@
 -module(ao).
 -export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, prod/3, build/0, profile/1]).
--export([wallet/0, wallet/1]).
+-export([address/0, wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
 -define(ENV_KEYS,
-    #{ key_location => {"AO_KEY", fun erlang:id/1},
-       http_port => {"AO_PORT", fun list_to_integer/1} }).
+    #{ key_location => {"AO_KEY", "hyperbeam-key.json"},
+       http_port => {"AO_PORT", fun list_to_integer/1, "8734"} }).
 
 wallet() ->
-    wallet(
-        case os:getenv("AO_KEY") of
-            false -> ao:get(key_location);
-            Location -> Location
-        end
-    ).
+    wallet(ao:get(key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} -> ar_wallet:load_keyfile(Location);
         {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
     end.
+
+address() ->
+    ar_util:encode(ar_wallet:to_address(wallet())).
 
 config() ->
     #{
@@ -27,14 +25,25 @@ config() ->
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
         scheduling_mode => aggressive, 
-        http_port => 8734,
         http_host => "localhost",
         gateway => "https://arweave.net",
         bundler => "https://up.arweave.net",
         nodes => #{
-            compute => "http://localhost:8734/cu",
-            message => "http://localhost:8734/mu",
-            schedule => "http://localhost:8734/su"
+            compute =>
+                #{
+                    address() => "http://localhost:8734/cu",
+                    <<"vcaPe4JWnrSOCktDHBgXge-zWUb6JRkqbom5w9t7i-4">> => "http://localhost:8735/cu",
+                    <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> => "http://localhost:8736/cu",
+                    '_' => "http://localhost:8734/cu"
+                },
+            message => #{
+                address() => "http://localhost:8734/mu",
+                '_' => "http://localhost:8734/mu"
+            },
+            schedule => #{
+                address() => "http://localhost:8734/su",
+                '_' => "http://localhost:8734/su"
+            }
         },
         key_location => "hyperbeam-key.json",
         default_page_limit => 5,
@@ -55,7 +64,7 @@ config() ->
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
             },
-        default_device_paths => [
+        default_device_stacks => [
             {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
             {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
             {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
@@ -87,11 +96,10 @@ get(Key) -> get(Key, undefined).
 get(Key, Default) ->
     case maps:get(Key, ?ENV_KEYS, false) of
         false -> config_lookup(Key, Default);
-        {EnvKey, EnvFunc} ->
-            case os:getenv(EnvKey) of
-                false -> config_lookup(Key, Default);
-                Value -> EnvFunc(Value)
-            end
+        {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
+            ValParser(os:getenv(EnvKey, DefaultValue));
+        {EnvKey, DefaultValue} ->
+            os:getenv(EnvKey, DefaultValue)
     end.
 
 config_lookup(Key, Default) -> maps:get(Key, config(), Default).

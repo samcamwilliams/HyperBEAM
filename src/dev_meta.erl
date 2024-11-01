@@ -74,7 +74,7 @@ extract_path_components(CarrierMsg) ->
 parse_path([ID|Path]) when is_binary(ID) andalso byte_size(ID) == 43 ->
     {ID, Path};
 parse_path(All = [Start|Rest]) ->
-    case lists:keyfind(Start, 1, ao:get(default_device_paths)) of
+    case lists:keyfind(Start, 1, ao:get(default_device_stacks)) of
         {_, {DefaultCall, Dev}} ->
             case Rest of
                 [] -> {Dev, [DefaultCall]};

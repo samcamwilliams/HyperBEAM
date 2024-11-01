@@ -1,7 +1,6 @@
 -module(dev_mu).
 -export([start/1, start/2, push/2]).
 -include("include/ao.hrl").
--ao_debug(print).
 
 start(Item) ->
     start(

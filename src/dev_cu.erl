@@ -2,7 +2,6 @@
 -export([push/2, execute/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/ao.hrl").
--ao_debug(print).
 
 push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
@@ -33,6 +32,7 @@ execute(CarrierMsg, S) ->
                         {error, no_viable_computation}
                 end
         end,
+    ar_bundles:print(Results),
     {ok, S#{ results => Results }}.
 
 
