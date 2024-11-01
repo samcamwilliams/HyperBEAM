@@ -1,5 +1,5 @@
 -module(su_process).
--export([start/2, schedule/2, get_location/1]).
+-export([start/2, schedule/2]).
 -export([get_current_slot/1, get_assignments/3]).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -19,8 +19,7 @@
 start(ProcID, Wallet) ->
     start(ProcID, Wallet, ao:get(store)).
 start(ProcID, Wallet, Store) ->
-    {Current, HashChain} = su_data:get_current_slot(ProcID),
-    ?c({starting, ProcID, Current, HashChain}),
+    {Current, HashChain} = slot_from_cache(ProcID),
     spawn(
         fun() ->
             server(
@@ -35,8 +34,18 @@ start(ProcID, Wallet, Store) ->
         end
     ).
 
-get_location(_ProcID) ->
-    ao:get(su).
+slot_from_cache(ProcID) ->
+    case ao_cache:assignments(ao:get(store), ProcID) of
+        [] ->
+            {-1, <<>>};
+        Assignments ->
+            AssignmentNum = lists:max(Assignments),
+            Assignment = ao_cache:read_assignment(ao:get(store), ProcID, AssignmentNum),
+            {
+                AssignmentNum,
+                ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
+            }
+    end.
 
 schedule(ProcID, Message) when is_list(ProcID) ->
     schedule(su_registry:find(ProcID), Message);
@@ -56,7 +65,20 @@ get_current_slot(ProcID) ->
 
 get_assignments(ProcID, From, undefined) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
+get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
+    From = ao_cache:read_assignment(ao:get(store), ProcID, From),
+    {_, Slot} = lists:keyfind(<<"Slot">>, 1, From#tx.tags),
+    get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
+get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
+    Assignment = ao_cache:read_assignment(ao:get(store), ProcID, RequestedTo),
+    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    get_assignments(ProcID, From, binary_to_integer(Slot));
+get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
+    get_assignments(ProcID, binary_to_integer(From), RequestedTo);
+get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) ->
+    get_assignments(ProcID, From, binary_to_integer(RequestedTo));
 get_assignments(ProcID, From, RequestedTo) ->
+    ?c({get_assignments, ProcID, From, RequestedTo}),
     ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
         true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
         false -> RequestedTo
@@ -66,11 +88,18 @@ get_assignments(ProcID, From, RequestedTo) ->
 do_get_assignments(_ProcID, From, To) when From > To ->
     [];
 do_get_assignments(ProcID, From, To) ->
-    case su_data:read_assignment(ProcID, From) of
+    case ao_cache:read_assignment(ao:get(store), ProcID, From) of
         not_found ->
             [];
         Assignment ->
-            [Assignment | do_get_assignments(ProcID, From + 1, To)]
+            [
+                Assignment
+                | do_get_assignments(
+                    ProcID,
+                    From + 1,
+                    To
+                )
+            ]
     end.
 
 server(State) ->
@@ -100,23 +129,22 @@ do_assign(State, Message, ReplyPID) ->
             {Timestamp, Height, Hash} = su_timestamp:get(),
             Assignment = ar_bundles:sign_item(#tx {
                 tags = [
-                    {"Data-Protocol", "ao"},
-                    {"Variant", "ao.TN.2"},
-                    {"Process", State#state.id},
-                    {"Epoch", "0"},
-                    {"Slot", integer_to_list(NextNonce)},
-                    {"Message", binary_to_list(ar_util:encode(Message#tx.id))},
-                    {"Block-Height", integer_to_list(Height)},
-                    {"Block-Hash", binary_to_list(Hash)},
-                    {"Block-Timestamp", integer_to_list(Timestamp)},
-                    {"Timestamp", integer_to_list(erlang:system_time(millisecond))}, % Local time on the SU, not Arweave
-                    {"Hash-Chain", binary_to_list(ar_util:encode(HashChain))}
+                    {<<"Data-Protocol">>, <<"ao">>},
+                    {<<"Variant">>, <<"ao.TN.2">>},
+                    {<<"Process">>, ar_util:id(State#state.id)},
+                    {<<"Epoch">>, <<"0">>},
+                    {<<"Slot">>, list_to_binary(integer_to_list(NextNonce))},
+                    {<<"Message">>, ar_util:id(Message#tx.id)},
+                    {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
+                    {<<"Block-Hash">>, Hash},
+                    {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
+                    {<<"Timestamp">>, list_to_binary(integer_to_list(erlang:system_time(millisecond)))}, % Local time on the SU, not Arweave
+                    {<<"Hash-Chain">>, ar_util:id(HashChain)}
                 ]
             }, State#state.wallet),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
-            ao_cache:write(State#state.store, Assignment),
+            ao_cache:write_assignment(State#state.store, Assignment),
             ao_cache:write(State#state.store, Message),
-            su_data:write_assignment(State#state.id, Assignment),
             maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
             ao_client:upload(Assignment),
             ao_client:upload(Message),
@@ -146,9 +174,9 @@ new_proc() ->
     ?c(2),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
     ?c(3),
-    su_registry:find(binary_to_list(ar_util:encode(SignedItem#tx.id)), true),
+    su_registry:find(binary_to_list(ar_util:id(SignedItem#tx.id)), true),
     ?c(4),
-    schedule(ID = binary_to_list(ar_util:encode(SignedItem#tx.id)), SignedItem),
+    schedule(ID = binary_to_list(ar_util:id(SignedItem#tx.id)), SignedItem),
     ?c(5),
     schedule(ID, SignedItem2),
     ?c(6),

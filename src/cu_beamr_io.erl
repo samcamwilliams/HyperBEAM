@@ -1,6 +1,6 @@
 -module(cu_beamr_io).
 -export([size/1, read/3, write/3]).
--export([read_string/2, read_iovecs/3, write_string/2]).
+-export([read_string/2, write_string/2]).
 -export([malloc/2, free/2]).
 
 -include("include/ao.hrl").
@@ -59,17 +59,7 @@ do_read_string(Port, Offset, ChunkSize) ->
         [FinalData|_Remainder] -> [FinalData]
     end.
 
-read_iovecs(Port, Ptr, Vecs) ->
-    %?c({read_iovecs_started, Port, Ptr, Vecs}),
-    Bin = iolist_to_binary(do_read_iovecs(Port, Ptr, Vecs)),
-    {ok, Bin}.
 
-do_read_iovecs(_Port, _Ptr, 0) -> [];
-do_read_iovecs(Port, Ptr, Vecs) ->
-    {ok, VecStruct} = read(Port, Ptr, 16),
-    <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
-    {ok, VecData} = read(Port, BinPtr, Len),
-    [ VecData | do_read_iovecs(Port, Ptr + 16, Vecs - 1) ].
 
 malloc(Port, Size) ->
     case cu_beamr:call(Port, "malloc", [Size]) of

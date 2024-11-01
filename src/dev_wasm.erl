@@ -10,9 +10,7 @@ init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
     Image = ao_cache:lookup(maps:get(store, State, ao:get(store)), ImageID),
     {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
-    ?c(started_wasm),
     % Apply the checkpoint if it is in the initial state.
-    ?c({initial_state, maps:keys(State)}),
     case maps:get(<<"WASM-State">>, State, undefined) of
         undefined ->
             State;
@@ -31,7 +29,7 @@ init(State, Params) ->
 
 execute(
     M,
-    State = #{wasm := Port, phase := pre_exec, call := {Func, Params}, stdlib := Stdlib},
+    State = #{pass := 1, wasm := Port, phase := pre_exec, call := {Func, Params}, wasm_stdlib := Stdlib},
     LastExec
 ) ->
     case ao_message:id(M) of
@@ -39,22 +37,28 @@ execute(
             {ok, State};
         MsgID ->
             {ResType, Res, State2} = cu_beamr:call(State, Port, Func, Params, Stdlib),
-            {pass, State2#{phase := post_exec, results => {ResType, Res}}, MsgID}
+            {ok, State2#{ phase := post_exec, results => {ResType, Res} }, MsgID}
     end;
-execute(_M, State = #{phase := post_exec}, _) ->
+execute(_M, State = #{ pass := 2, phase := post_exec }, _) ->
     % Reset the phase indicator for the next run.
-    {ok, State#{phase := pre_exec}}.
+    {ok, State#{ phase := pre_exec }};
+execute(_, S, _) ->
+    {ok, S}.
 
-checkpoint(State = #{wasm := Port, save_keys := SaveKeys}) ->
+checkpoint(State = #{ wasm := Port, save_keys := SaveKeys }) ->
     {ok, Serialized} = cu_beamr:serialize(Port),
     TX = ar_bundles:normalize(#tx{ data = Serialized }),
     {ok, State#{
         <<"WASM-State">> => TX,
-        save_keys => [<<"WASM-State">> | SaveKeys]
-    }}.
+        save_keys => [ <<"WASM-State">> | SaveKeys ]
+    }};
+checkpoint(InvalidS) ->
+    throw({wat, InvalidS}),
+    {ok, InvalidS}.
 
-checkpoint_uses(S = #{keys := Keys}) ->
-    {ok, S#{keys => [<<"WASM-State">> | Keys]}}.
+checkpoint_uses(S = #{ results := Results }) ->
+    Keys = maps:get(keys, Results, []),
+    {ok, S#{ results => Results#{ keys => [ <<"WASM-State">> | Keys ] } }}.
 
 terminate(State = #{wasm := Port}) ->
     ?c(terminate_called_on_dev_wasm),
