@@ -21,6 +21,7 @@ rebar3.crashdump
 *~
 
 *.json
+!.vscode/*
 
 *.bin
 c_src/*.o
