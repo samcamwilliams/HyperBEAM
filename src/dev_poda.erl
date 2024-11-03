@@ -112,7 +112,7 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
         false -> {false, <<"Not enough validations">>}
     end.
 
-validate_attestation(Msg, Att, Opts) ->
+validate_attestation(Msg, Att, _Opts) ->
     MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = ar_util:encode(ar_bundles:signer(Att)),
     ?no_prod(use_real_authority_validation),
@@ -123,12 +123,15 @@ validate_attestation(Msg, Att, Opts) ->
     ValidSigner = true,
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
-        lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
-            == {<<"Attestation-For">>, MsgID},
+        (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
+            == {<<"Attestation-For">>, MsgID}) orelse
+        ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
+    ?c({poda_attestation, {valid_signer, ValidSigner}, {valid_signature, ValidSignature}, {relevant_msg, RelevantMsg}, {signer, AttSigner}}),
     ValidSigner and ValidSignature and RelevantMsg.
 
 return_error(S = #{ wallet := Wallet }, Reason) ->
     ?c({poda_return_error, Reason}),
+    receive after 10000 -> ok end,
     {skip, S#{
         results => #{
             <<"/Outbox">> =>
@@ -173,7 +176,7 @@ attest_to_results(Msg, S = #{ wallet := Wallet }) ->
         false -> Msg
     end.
 
-add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
+add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logger := _Logger, wallet := Wallet }) ->
     ?no_prod("PoDA currently waits for 1 second before getting attestations!"),
     Process = find_process(NewMsg, S),
     receive after 1000 -> ok end,
@@ -189,12 +192,11 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                     case ao_router:find(compute, Process#tx.id, Address) of
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
-                            % TODO: Use the slot number.
-                            ?no_prod("Get attestation on correct slot."),
-                            {ok, ComputeNode} =
-                                ao_router:find(compute, Process#tx.id, Address),
-                            case ao_client:compute(ComputeNode, Process#tx.id, 0) of
-                                {ok, Att} -> {true, Att};
+                            {<<"Slot">>, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+                            ?c({poda_slot, Slot}),
+                            {ok, ComputeNode} = ao_router:find(compute, Process#tx.id, Address),
+                            case ao_client:compute(ComputeNode, Process#tx.id, binary_to_integer(Slot)) of
+                                {ok, Att} -> Att;
                                 _ -> false
                             end;
                         _ -> false
@@ -202,6 +204,7 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                 end,
                 InitAuthorities
             ),
+            ?c({poda_attestations, length(Attestations)}),
             MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
@@ -223,6 +226,7 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                     ),
                     Wallet
                 ),
+            ?c(poda_complete_attestations),
             AttestationBundle = ar_bundles:sign_item(
                 ar_bundles:normalize(
                     #tx{
@@ -235,6 +239,7 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                 ),
                 Wallet
             ),
+            ?c({poda_attestation_bundle_signed, length(Attestations)}),
             AttestationBundle;
         false -> NewMsg
     end.
@@ -248,13 +253,20 @@ pfiltermap(Pred, List) ->
             Parent ! {self(), Result}
         end)
     end, List),
-    lists:filtermap(fun({Ref, Pid}) ->
-        receive
-            {Pid, Result} -> Result;
-            % Handle crashes as filterable events
-            {'DOWN', Ref, process, Pid, _Reason} -> false
-        end
-    end, Pids).
+    [
+        Res
+    ||
+        Res <-
+            lists:map(fun({Pid, Ref}) ->
+                receive
+                    {Pid, {_Item, Result}} ->
+                        Result;
+                    % Handle crashes as filterable events
+                    {'DOWN', Ref, process, Pid, _Reason} -> false
+                end
+            end, Pids),
+        Res =/= false
+    ].
 
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
@@ -266,15 +278,4 @@ find_process(Item, #{ logger := _Logger, store := Store }) ->
                 {<<"Type">>, <<"Process">>} -> Item;
                 _ -> process_not_specified
             end
-    end.
-
-retry(Fun, Delay, Attempts) -> retry(Fun, Delay, Attempts, no_error).
-retry(_Fun, _Delay, 0, LastError) -> LastError;
-retry(Fun, Delay, Attempts, _LastError) ->
-    try Fun() of
-        Result -> Result
-    catch A:B:C ->
-        ?c({"Error: ", A, ":", B, ":", C, ". Retrying in ", Delay, "ms"}),
-        receive after Delay -> ok end,
-        retry(Fun, Delay, Attempts - 1, {A, B, C})
     end.
