@@ -1,7 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
--export([id/1, id/2, type/1, map/1, hd/1]).
+-export([id/1, id/2, type/1, map/1, hd/1, member/2]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
@@ -170,6 +170,23 @@ map(#tx { data = Data }) when is_list(Data) ->
     );
 map(Item = #tx { data = Data }) when is_binary(Data) ->
     (maybe_unbundle(Item))#tx.data.
+
+member(Key, Map) when is_map(Map) ->
+    ?no_prod("Assess these semantics. In the circumstances " ++
+        "when this is called, are we OK looking for just IDs?"),
+    maps:is_key(Key, Map) orelse
+        member(Key, maps:values(Map));
+member(Key, List) when is_list(List) ->
+    lists:any(fun(V) -> member(Key, V) end, List);
+member(Key, #tx { id = Key }) -> true;
+member(Key, Item = #tx { data = Data }) ->
+    (id(Item, unsigned) == Key) orelse
+        case is_binary(Data) of
+            false -> member(Key, Data);
+            true -> false
+        end;
+member(_Key, _) ->
+    false.
 
 manifest_item(#tx { manifest = Manifest }) when is_record(Manifest, tx) ->
     Manifest;
@@ -749,7 +766,9 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_bundle_with_one_item/0},
         {timeout, 30, fun test_bundle_with_two_items/0},
         {timeout, 30, fun test_recursive_bundle/0},
-        {timeout, 30, fun test_bundle_map/0}
+        {timeout, 30, fun test_bundle_map/0},
+        {timeout, 30, fun test_basic_member_id/0},
+        {timeout, 30, fun test_deep_member/0}
     ].
 
 test_no_tags() ->
@@ -897,3 +916,42 @@ extremely_large_bundle_test() ->
     Serialized = serialize(Signed),
     Deserialized = deserialize(Serialized),
     ?assert(verify_item(Deserialized)).
+
+test_basic_member_id() ->
+    W = ar_wallet:new(),
+    Item = sign_item(
+        #tx{
+            data = <<"data">>
+        },
+        W
+    ),
+    ?assertEqual(true, member(Item#tx.id, Item)),
+    ?assertEqual(true, member(id(Item, unsigned), Item)),
+    ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item)).
+
+test_deep_member() ->
+    W = ar_wallet:new(),
+    Item = sign_item(
+        #tx{
+            data =
+                #{<<"key1">> =>
+                    sign_item(#tx{
+                        data = <<"data">>
+                    }, W)
+                }
+        },
+        W
+    ),
+    Item2 = deserialize(serialize(sign_item(
+        #tx{
+            data = #{ <<"key2">> => Item }
+        },
+        W
+    ))),
+    ?assertEqual(true, member(<<"key1">>, Item2)),
+    ?assertEqual(true, member(<<"key2">>, Item2)),
+    ?assertEqual(true, member(Item#tx.id, Item2)),
+    ?assertEqual(true, member(Item2#tx.id, Item2)),
+    ?assertEqual(true, member(id(Item, unsigned), Item2)),
+    ?assertEqual(true, member(id(Item2, unsigned), Item2)),
+    ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item2)).
