@@ -80,7 +80,7 @@ default_test_img(Wallet) ->
 default_test_devices(Wallet, Opts) ->
     ID = ar_wallet:to_address(Wallet),
     Img = maps:get(image, Opts),
-    Quorum = maps:get(quorum, Opts, 1),
+    Quorum = maps:get(quorum, Opts, 2),
     [
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
@@ -91,11 +91,11 @@ default_test_devices(Wallet, Opts) ->
         {<<"Device">>, <<"PODA">>},
         {<<"Quorum">>, integer_to_binary(Quorum)}
     ] ++
-    [
+    lists:sublist([
         {<<"Authority">>, Addr} ||
             Addr <- maps:keys(maps:get(compute, ao:get(nodes))),
             Addr =/= '_'
-    ] ++
+    ], 2) ++
     [
         {<<"Device">>, <<"JSON-Interface">>},
         {<<"Device">>, <<"VFS">>},
