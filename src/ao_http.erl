@@ -15,6 +15,7 @@ get(URL) ->
             ?c({http_got, URL}),
             {ok, ar_bundles:deserialize(Body)};
         Response ->
+            ?c({http_get_error, URL, Response}),
             {error, Response}
     end.
 

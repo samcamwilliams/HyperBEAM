@@ -2,34 +2,28 @@
 -behavior(ao_store).
 -export([start/1, stop/1, reset/1]).
 -export([type/2, read/2, write/3, list/2]).
--export([path/2, add_path/3, join/1]).
+-export([path/2, add_path/3]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
 -include("include/ao.hrl").
+-ao_debug(print).
 
 %%% A key-value store abstraction, such that the underlying implementation
 %%% can be swapped out easily. The default implementation is a file-based
 %%% store.
 
-start(#{ dir := DataDir }) ->
+start(#{ prefix := DataDir }) ->
     ok = filelib:ensure_dir(DataDir).
 
-stop(#{ dir := _DataDir }) ->
+stop(#{ prefix := _DataDir }) ->
     ok.
 
-reset(#{ dir := DataDir }) ->
+reset(#{ prefix := DataDir }) ->
     os:cmd("rm -Rf " ++ DataDir).
 
 %% @doc Read a key from the store, following symlinks as needed.
-read(Opts = #{ dir := DataDir }, Key) ->
-    case read(join([DataDir, Key])) of
-        not_found ->
-            case resolve(Opts, Key) of
-                Key -> not_found;
-                ResolvedPath -> read(ResolvedPath)
-            end;
-        Result -> Result
-    end.
+read(Opts, Key) ->
+    read(ao_store_common:add_prefix(Opts, resolve(Opts, Key))).
 read(Path) ->
     ?c({read, Path}),
     case file:read_file_info(Path) of
@@ -38,42 +32,53 @@ read(Path) ->
         _ ->
             case file:read_link(Path) of
                 {ok, Link} ->
+                    ?c({link_found, Path, Link}),
                     read(Link);
                 _ ->
                     not_found
             end
     end.
 
-write(#{ dir := DataDir }, PathComponents, Value) ->
-    Path = join([DataDir, PathComponents]),
+write(Opts, PathComponents, Value) ->
+    Path = ao_store_common:add_prefix(Opts, PathComponents),
     ?c({writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
-list(#{ dir := DataDir }, Path) ->
-    %?c({listing, join([DataDir, Path])}),
-    file:list_dir(join([DataDir, Path])).
+list(Opts, Path) ->
+    file:list_dir(ao_store_common:add_prefix(Opts, Path)).
 
-%% @doc Replace links in a path with the target of the link.
-resolve(Opts = #{ dir := DataDir }, RawPath) ->
-    LinkedPathWithDataDir = resolve(Opts, "", filename:split(join(RawPath))),
-    NewPath = ar_util:remove_common(LinkedPathWithDataDir, DataDir),
-    NewPath.
-resolve(#{ dir := DataDir }, CurrPath, []) ->
-    join([DataDir, CurrPath]);
-resolve(Opts = #{ dir := DataDir }, CurrPath, [Next|Rest]) ->
-    PathPart = join([CurrPath, Next]),
-    case file:read_link(join([DataDir, PathPart])) of
-        {ok, Link} ->
-            resolve(Opts#{ dir := Link }, "", Rest);
+%% @doc Replace links in a path successively, returning the final path.
+%% Each element of the path is resolved in turn, with the result of each
+%% resolution becoming the prefix for the next resolution. This allows 
+%% paths to resolve across many links. For example, a structure as follows:
+%%
+%%    /a/b/c: "Not the right data"
+%%    /a/b -> /a/alt-b
+%%    /a/alt-b/c: "Correct data"
+%%
+%% will resolve "a/b/c" to "Correct data".
+resolve(Opts, RawPath) ->
+    Res = resolve(Opts, "", filename:split(ao_store_common:join(RawPath))),
+    ?c({resolved, RawPath, Res}),
+    Res.
+resolve(_, CurrPath, []) ->
+    ao_store_common:join(CurrPath);
+resolve(Opts, CurrPath, [Next|Rest]) ->
+    PathPart = ao_store_common:join([CurrPath, Next]),
+    ?c({resolving, {accumulated_path, CurrPath}, {next_segment, Next}, {generated_partial_path_to_test, PathPart}}),
+    case file:read_link(ao_store_common:add_prefix(Opts, PathPart)) of
+        {ok, RawLink} ->
+            Link = ao_store_common:remove_prefix(Opts, RawLink),
+            resolve(Opts, Link, Rest);
         _ ->
             resolve(Opts, PathPart, Rest)
     end.
 
-type(#{ dir := DataDir }, Key) ->
-    type(join([DataDir, Key])).
+type(#{ prefix := DataDir }, Key) ->
+    type(ao_store_common:join([DataDir, Key])).
 type(Path) ->
-    case file:read_file_info(Joint = join(Path)) of
+    case file:read_file_info(Joint = ao_store_common:join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
         _ ->
@@ -85,31 +90,26 @@ type(Path) ->
             end
     end.
 
-make_group(#{ dir := DataDir }, Path) ->
-    P = join([DataDir, Path]),
-    %?c({mkdir, P}),
+make_group(#{ prefix := DataDir }, Path) ->
+    P = ao_store_common:join([DataDir, Path]),
+    ?c({making_group, P}),
     ok = filelib:ensure_dir(P).
 
 make_link(_, Link, Link) -> ok;
-make_link(#{ dir := DataDir }, Existing, New) ->
-    ?c({symlink, join([DataDir, Existing]), P2 = join([DataDir, New])}),
+make_link(Opts, Existing, New) ->
+    ?c({symlink,
+        ao_store_common:add_prefix(Opts, Existing),
+        P2 = ao_store_common:add_prefix(Opts, New)}),
     filelib:ensure_dir(P2),
     file:make_symlink(
-        join([DataDir, Existing]),
-        join([DataDir, New])
+        ao_store_common:add_prefix(Opts, Existing),
+        ao_store_common:add_prefix(Opts, New)
     ).
 
 %% @doc Create a path from a list of path components.
-path(#{ dir := _DataDir }, Path) ->
+path(#{ prefix := _DataDir }, Path) ->
     Path.
 
 %% @doc Add two path components together.
-add_path(#{ dir := _DataDir }, Path1, Path2) ->
+add_path(#{ prefix := _DataDir }, Path1, Path2) ->
     Path1 ++ Path2.
-
-join([]) -> [];
-join(Path) when is_binary(Path) -> Path;
-join([""|Xs]) -> join(Xs);
-join(FN = [X|_Xs]) when is_integer(X) -> FN;
-join([X|Xs]) -> 
-    filename:join(join(X), join(Xs)).

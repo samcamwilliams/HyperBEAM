@@ -193,7 +193,6 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
                             {<<"Slot">>, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-                            ?c({poda_slot, Slot}),
                             {ok, ComputeNode} = ao_router:find(compute, Process#tx.id, Address),
                             case ao_client:compute(ComputeNode, Process#tx.id, binary_to_integer(Slot)) of
                                 {ok, Att} -> Att;

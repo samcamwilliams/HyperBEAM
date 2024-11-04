@@ -50,8 +50,14 @@ find_value(Key, List, Default) ->
 		false -> Default
 	end.
 
+%% @doc Remove the common prefix from two strings, returning the remainder of the
+%% first string. This function also coerces lists to binaries where appropriate,
+%% returning the type of the first argument.
+remove_common(MainStr, SubStr) when is_binary(MainStr) and is_list(SubStr) ->
+    remove_common(MainStr, list_to_binary(SubStr));
+remove_common(MainStr, SubStr) when is_list(MainStr) and is_binary(SubStr) ->
+    binary_to_list(remove_common(list_to_binary(MainStr), SubStr));
 remove_common(<< X:8, Rest1/binary>>, << X:8, Rest2/binary>>) ->
-	?c({common_prefix, X}),
     remove_common(Rest1, Rest2);
 remove_common([X|Rest1], [X|Rest2]) ->
     remove_common(Rest1, Rest2);

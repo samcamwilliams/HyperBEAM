@@ -4,8 +4,21 @@
 
 -include("include/ar.hrl").
 -define(ENV_KEYS,
-    #{ key_location => {"AO_KEY", "hyperbeam-key.json"},
-       http_port => {"AO_PORT", fun list_to_integer/1, "8734"} }).
+    #{
+        key_location => {"AO_KEY", "hyperbeam-key.json"},
+        http_port => {"AO_PORT", fun list_to_integer/1, "8734"},
+        store =>
+            {"AO_STORE",
+                fun(Dir) ->
+                    [
+                        {ao_fs_store, #{ prefix => Dir }},
+                        {ao_remote_store, #{ node => "http://localhost:8734" }}
+                    ]
+                end,
+                "TEST-data"
+            }
+    }
+).
 
 wallet() ->
     wallet(ao:get(key_location)).
@@ -32,8 +45,10 @@ config() ->
             compute =>
                 #{
                     address() => "http://localhost:8734/cu",
-                    <<"vcaPe4JWnrSOCktDHBgXge-zWUb6JRkqbom5w9t7i-4">> => "http://localhost:8735/cu",
-                    <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> => "http://localhost:8736/cu",
+                    <<"vcaPe4JWnrSOCktDHBgXge-zWUb6JRkqbom5w9t7i-4">> =>
+                        "http://localhost:8735/cu",
+                    <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> =>
+                        "http://localhost:8736/cu",
                     '_' => "http://localhost:8734/cu"
                 },
             message => #{
@@ -80,16 +95,9 @@ config() ->
             }
         ],
         % Dev options
-        store =>
-            [
-                {ao_fs_store, #{ dir => "TEST-data" }},
-                {ao_remote_store, #{ node => "http://localhost:8734" }},
-                {ao_remote_store, #{ node => "http://localhost:8734" }},
-                {ao_remote_store, #{ node => "http://localhost:8734" }}
-            ],
-        local_store => [{ao_fs_store, #{ dir => "TEST-data" }}],
+        store => [{ao_fs_store, #{ prefix => "TEST-data" }}],
         mode => debug,
-        debug_print => false
+        debug_print => true
     }.
 
 get(Key) -> get(Key, undefined).

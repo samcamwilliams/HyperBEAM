@@ -10,7 +10,7 @@
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).
--define(TEST_STORE, [{?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}]).
+-define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
 
@@ -222,14 +222,14 @@ read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_siz
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
 read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
     read_output(Store, ProcID, ["slot", binary_to_list(SlotBin)]);
-read_output(Store, ProcID, Input) ->
-    ?c({reading_computed_result, Input}),
+read_output(Store, ProcID, SlotRef) ->
+    ?c({reading_computed_result, SlotRef}),
     ResolvedPath =
         ar_util:remove_common(
             ar_util:remove_common(
                 ?c(ao_store:resolve(
                     Store,
-                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
+                    P1 = ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), SlotRef])
                 )),
                 ?COMPUTE_CACHE_DIR
             ),
