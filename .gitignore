@@ -35,3 +35,4 @@ priv/*
 rebar.lock
 .DS_STORE
 TEST-data/*
+test-cache/*
