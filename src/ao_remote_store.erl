@@ -8,7 +8,7 @@
 type(Opts = #{ node := Node }, Key) ->
     ?no_prod("No need to get the whole message in order to get its type..."),
     ?c({remote_type, Node, Key}),
-    case read(Opts, Key) of
+    case ?c(read(Opts, Key)) of
         {ok, #tx { data = Map }} when is_map(Map) -> composite;
         {ok, _} -> simple;
         _Error -> not_found
@@ -16,9 +16,9 @@ type(Opts = #{ node := Node }, Key) ->
 
 read(Opts, Key) when is_binary(Key) ->
     read(Opts, binary_to_list(Key));
-read(#{ node := Node }, Key) ->
-    ?c({reading, Node, Key}),
-    Path = Node ++ "/data?" ++ ao_store_common:join(Key),
+read(Opts = #{ node := Node }, Key) ->
+    Path = Node ++ "/data?Subpath=" ++ uri_string:quote(ao_store_common:join(Key)),
+    ?c({reading, Key, Path, Opts}),
     case ao_http:get(Path) of
         {ok, RespBin} -> ar_bundles:deserialize(RespBin);
         Error -> Error

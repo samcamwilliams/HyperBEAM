@@ -95,7 +95,7 @@ config() ->
             }
         ],
         % Dev options
-        store => [{ao_fs_store, #{ prefix => "TEST-data" }}],
+        local_store => [{ao_fs_store, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_print => true
     }.

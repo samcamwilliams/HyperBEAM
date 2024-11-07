@@ -14,7 +14,7 @@ In this document we refer to 'the permaweb' as the collection of all pieces of p
 
 Every item on the permaweb is described as a `Message`. Each `Message` is interpretable by PAM as a `map` of named functions, or as a concrete binary term. Each function in a message may take another message as a `map` of arguments.
 
-Each `message` on the permaweb may optionally state a `Device` which should be used by PAM-compatible systems to interpret its contents. If no `Device` key is explicitly stated by the message, it must be infered as `Identity`. The `Map` device should be implemented to simply return the binary or message at a given function name (a `key` in the map). Every `Device` must implement functions with the names `ID` and `Keys`. An `ID` is a function that can be used in order to refer to a message at a later time, while `Keys` should return a binary representation (with `Encoding` optionally specified as a parameter in the argument message) of each key in the message.
+Each `message` on the permaweb may optionally state a `Device` which should be used by PAM-compatible systems to interpret its contents. If no `Device` key is explicitly stated by the message, it must be infered as `Map`. The `Map` device should be implemented to simply return the binary or message at a given function name (a `key` in the map). Every `Device` must implement functions with the names `ID` and `Keys`. An `ID` is a function that can be used in order to refer to a message at a later time, while `Keys` should return a binary representation (with `Encoding` optionally specified as a parameter in the argument message) of each key in the message.
 
 Concretely, these relations can be expressed as follows:
 ```
