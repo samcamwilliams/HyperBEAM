@@ -1,6 +1,7 @@
 -module(ao_store).
 -export([behavior_info/1]).
 -export([start/1, stop/1, reset/1]).
+-export([filter/2, scope/2]).
 -export([type/2, read/2, write/3, list/2]).
 -export([path/2, add_path/3]).
 -export([make_group/2, make_link/3, resolve/2]).
@@ -25,6 +26,23 @@ behavior_info(callbacks) ->
 start(Modules) -> call_all(Modules, start, []).
 
 stop(Modules) -> call_function(Modules, stop, []).
+
+%% @doc Takes a store object and a filter function, returning a new store
+%% object with only the modules that match the filter. The filter function
+%% takes 3 arguments: the module, the options, and the properties.
+filter(Modules, Filter) ->
+    lists:filter(
+        fun({Mod, Opts, Properties}) ->
+            try Filter(Mod, Opts, Properties)
+            catch _:_ -> false
+            end
+        end,
+        Modules
+    ).
+
+%% @doc Limit the store scope to only locally/remotely accessible resolvers.
+scope(Modules, Scope) ->
+    filter(Modules, fun(_Mod, _Opts, #{ scope := S }) when S == Scope -> true end).
 
 read(Modules, Key) -> call_function(Modules, read, [Key]).
 
@@ -51,7 +69,7 @@ call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
     not_found;
-call_function([{Mod, Opts} | Rest], Function, Args) ->
+call_function([{Mod, Opts, _Props} | Rest], Function, Args) ->
     ?c({calling, Mod, Function}),
     try apply(Mod, Function, [Opts | Args]) of
         not_found ->
@@ -68,7 +86,7 @@ call_all(X, _Function, _Args) when not is_list(X) ->
     call_all([X], _Function, _Args);
 call_all([], _Function, _Args) ->
     ok;
-call_all([{Mod, Opts} | Rest], Function, Args) ->
+call_all([{Mod, Opts, _Props} | Rest], Function, Args) ->
     try
         apply(Mod, Function, [Opts | Args])
     catch

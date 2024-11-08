@@ -11,8 +11,16 @@
             {"AO_STORE",
                 fun(Dir) ->
                     [
-                        {ao_fs_store, #{ prefix => Dir }},
-                        {ao_remote_store, #{ node => "http://localhost:8734" }}
+                        {
+                            ao_fs_store,
+                            #{ prefix => Dir },
+                            #{ scope => local }
+                        },
+                        {
+                            ao_remote_store,
+                            #{ node => "http://localhost:8734" },
+                            #{ scope => remote }
+                        }
                     ]
                 end,
                 "TEST-data"
@@ -95,7 +103,7 @@ config() ->
             }
         ],
         % Dev options
-        local_store => [{ao_fs_store, #{ prefix => "TEST-data" }}],
+        local_store => [{ao_fs_store, #{ prefix => "TEST-data" }, #{ scope => local }}],
         mode => debug,
         debug_print => false
     }.
