@@ -213,7 +213,7 @@ write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
 read_message(Store, MessageID) ->
-    read(Store, ["messages", fmt_id(MessageID)]).
+    lookup(Store, ["messages", MessageID]).
 
 read_output(Store, ProcID, undefined) ->
     element(2, latest(Store, ProcID));
@@ -224,14 +224,14 @@ read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_siz
 read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
     read_output(Store, ProcID, ["slot", binary_to_list(SlotBin)]);
 read_output(Store, ProcID, SlotRef) ->
-    ?c({reading_computed_result, SlotRef}),
+    ?c({reading_computed_result, ProcID, SlotRef}),
     ResolvedPath =
         P2 = ao_store:resolve(
             Store,
             P1 = ao_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, SlotRef])
         ),
     ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
-    case ao_store:type(Store, ["messages", ResolvedPath]) of
+    case ao_store:type(Store, ResolvedPath) of
         not_found -> ?c(not_found);
         _ -> read(Store, ResolvedPath)
     end.
@@ -251,11 +251,13 @@ read_assignment(Store, ProcID, Slot) ->
     ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     read(Store, ResolvedPath).
 
+lookup(Store, PathPart) when not is_list(PathPart) ->
+    lookup(Store, [PathPart]);
 lookup(Store, Path) ->
     ResolvedPath =
         P2 = ao_store:resolve(
             Store,
-            P1 = ao_store:path(Store, Path)
+            P1 = ao_store:path(Store, lists:map(fun fmt_id/1, Path))
         ),
     ?c({resolved_path, P1, P2, ResolvedPath}),
     read(Store, ResolvedPath).
@@ -295,7 +297,7 @@ fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
     binary_to_list(ar_util:id(ID));
 fmt_id(ID, _Type) ->
-    ?c({warning, invalid_id_type, ID, _Type}),
+    %?c({warning, invalid_id_type, ID, _Type}),
     ID.
 
 %%% Tests
@@ -402,7 +404,7 @@ composite_signed_item_test() ->
 %% Test deeply nested item storage and retrieval
 deeply_nested_item_test() ->
     %% Create nested data
-    DeepValueTx = create_signed_tx(<<"deep_f_value">>),
+    DeepValueTx = create_signed_tx(<<"deep_value">>),
     Level3Tx = create_unsigned_tx(#{
         <<"level3_key">> => DeepValueTx
     }),
@@ -430,8 +432,8 @@ write_and_read_output_test() ->
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
     ok = write_output(Store, Proc#tx.id, 0, Item1),
     ok = write_output(Store, Proc#tx.id, 1, Item2),
-    ?assertEqual(Item1, read(Store, Item1#tx.id)),
-    ?assertEqual(Item2, read(Store, Item2#tx.id)),
+    ?assertEqual(Item1, read_message(Store, Item1#tx.id)),
+    ?assertEqual(Item2, read_message(Store, Item2#tx.id)),
     ?assertEqual(Item2, read_output(Store, fmt_id(Proc#tx.id), 1)),
     ?assertEqual(Item1, read_output(Store, fmt_id(Proc#tx.id), Item1#tx.id)).
 

@@ -97,7 +97,7 @@ config() ->
         % Dev options
         local_store => [{ao_fs_store, #{ prefix => "TEST-data" }}],
         mode => debug,
-        debug_print => true
+        debug_print => false
     }.
 
 get(Key) -> get(Key, undefined).

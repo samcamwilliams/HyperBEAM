@@ -10,4 +10,7 @@ read(#tx { tags = Tags }) ->
     % the value directly.
     {<<"Subpath">>, Subpath} = lists:keyfind(<<"Subpath">>, 1, Tags),
     ?c({looking_up_for_remote_peer, Subpath}),
-    ao_cache:read(ao:get(local_store), Subpath).
+    case ao_cache:lookup(ao:get(local_store), Subpath) of
+        not_found -> {ok, #tx { tags = [{<<"Error">>, <<"Not found">>}, {<<"Status">>, <<"404">>}] }};
+        Val -> {ok, Val}
+    end.

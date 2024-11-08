@@ -74,7 +74,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
                     ?c({no_cu_for_proc, ar_util:id(ProcID)}),
-                    Proc = ao_cache:read(Store, ProcID),
+                    Proc = ao_cache:read_message(Store, ProcID),
                     await_results(
                         cu_process:run(
                             Proc,

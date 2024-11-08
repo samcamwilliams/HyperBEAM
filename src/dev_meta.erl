@@ -50,7 +50,7 @@ do_parse_carrier_msg(CarrierMsg) ->
         {ID, ExecPath} when is_binary(ID) ->
             % When the first part of the path is an ID, we read the message
             % from the caches and apply the rest of the path to it.
-            {ao_cache:read(ao:get(store), Start), CarrierMsg, ExecPath};
+            {ao_cache:read_message(ao:get(store), Start), CarrierMsg, ExecPath};
         {Dev, ExecPath} when is_atom(Dev) or is_list(Dev) ->
             % If the carrier path contains a device, we use that as the
             % root.

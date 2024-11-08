@@ -11,12 +11,12 @@ get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
     ?c({http_getting, URL}),
     case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
-        {ok, {{_, 200, _}, _, Body}} ->
+        {ok, {{_, 500, _}, _, Body}} ->
+            ?c({http_got_server_error, URL, Body}),
+            {error, Body};
+        {ok, {{_, _, _}, _, Body}} ->
             ?c({http_got, URL}),
-            {ok, ar_bundles:deserialize(Body)};
-        Response ->
-            ?c({http_get_error, URL, Response}),
-            {error, Response}
+            {ok, ar_bundles:deserialize(Body)}
     end.
 
 post(Host, Path, Item) -> post(Host ++ Path, Item).
