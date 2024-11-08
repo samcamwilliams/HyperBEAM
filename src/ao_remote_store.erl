@@ -21,11 +21,14 @@ read(Opts = #{ node := Node }, Key) ->
     ?c({reading, Key, Path, Opts}),
     case ao_http:get(Path) of
         {ok, Bundle} ->
-            ?c(got_ok_reply),
-            ar_bundles:print(Bundle),
             case lists:keyfind(<<"Status">>, 1, Bundle#tx.tags) of
-                {<<"Status">>, <<"404">>} -> not_found;
-                _ -> Bundle
+                {<<"Status">>, <<"404">>} ->
+                    not_found;
+                _ ->
+                    ?no_prod("Unnecessarily wasteful to serialize to deserialize later."),
+                    {ok, ar_bundles:serialize(Bundle)}
             end;
-        Error -> Error
+        Error ->
+            ?no_prod("Validate this response path."),
+            {ok, ar_bundles:serialize(Error)}
     end.
