@@ -68,7 +68,8 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                 end;
             false -> RawMsgRef
         end,
-    case ao_cache:read_output(Store, ProcID, MsgRef) of
+    LocalStore = ao_store:scope(Store, local),
+    case ao_cache:read_output(LocalStore, ProcID, MsgRef) of
         not_found ->
             ?c({proc_id, ProcID}),
             case pg:get_local_members({cu, ProcID}) of
@@ -131,9 +132,16 @@ create_monitor_for_message(MsgID) ->
         case (Slot == MsgID) or (ScheduledMsgID == MsgID) or (AssignmentID == MsgID) of
             true ->
                 Listener ! {result, self(), Inbound, S}, done;
-            false -> ignored
+            false ->
+                ?c({monitor_got_message_for_wrong_slot, Slot, MsgID}),
+                ignored
         end;
-        (_, _) -> ignored
+        (S, end_of_schedule) ->
+            ?c({monitor_got_eos, maps:get(slot, S, no_slot)}),
+            ignored;
+        (_, Signal) ->
+            ?c({monitor_got_unknown_signal, Signal}),
+            ignored
     end.
 
 create_persistent_monitor() ->

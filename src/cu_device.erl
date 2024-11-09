@@ -2,6 +2,7 @@
 -export([from_message/1]).
 -export([call/3, call/4]).
 -include("include/ao.hrl").
+-ao_debug(print).
 
 %%% The root implementation of the device call logic.
 %%% Every device is a simple module that takes a single message as an argument

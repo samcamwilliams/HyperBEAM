@@ -13,6 +13,8 @@ start() ->
     ).
 
 init(Req, _) ->
+    Path = cowboy_req:path(Req),
+    ?c({http_called_with_path, Path}),
     case cu_device:call(dev_meta, execute, [ao_http:req_to_tx(Req)]) of
         {ok, ResultingMessage} when is_record(ResultingMessage, tx) or is_map(ResultingMessage) ->
             % If the device returns a message (either normalized or not),

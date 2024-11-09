@@ -1,5 +1,6 @@
 -include("include/ar.hrl").
 -define(c(X), ao:c(X, ?MODULE, ?LINE)).
+-define(debug_wait(T), ao:debug_wait(T, ?MODULE, ?LINE)).
 
 -define(no_prod(X), ao:prod(X, ?MODULE, ?LINE)).
 

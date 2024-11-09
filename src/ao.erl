@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, prod/3, build/0, profile/1]).
+-export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, prod/3, build/0, profile/1, debug_wait/3]).
 -export([address/0, wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -53,8 +53,6 @@ config() ->
             compute =>
                 #{
                     address() => "http://localhost:8734/cu",
-                    <<"vcaPe4JWnrSOCktDHBgXge-zWUb6JRkqbom5w9t7i-4">> =>
-                        "http://localhost:8735/cu",
                     <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> =>
                         "http://localhost:8736/cu",
                     '_' => "http://localhost:8734/cu"
@@ -105,7 +103,7 @@ config() ->
         % Dev options
         local_store => [{ao_fs_store, #{ prefix => "TEST-data" }, #{ scope => local }}],
         mode => debug,
-        debug_print => false
+        debug_print => true
     }.
 
 get(Key) -> get(Key, undefined).
@@ -184,3 +182,7 @@ profile(Fun) ->
         eprof:stop_profiling()
     end,
     eprof:analyze(total).
+
+debug_wait(T, Mod, Line) ->
+    c({debug_wait, T, Mod, Line}),
+    receive after T -> ok end.

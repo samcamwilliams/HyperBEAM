@@ -136,8 +136,8 @@ print_line(RawStr, Fmt, Ind) ->
         Fmt
     ).
 
-signer(Item) ->
-    crypto:hash(sha256, Item#tx.signature).
+signer(#tx { owner = ?DEFAULT_OWNER }) -> undefined;
+signer(Item) -> crypto:hash(sha256, Item#tx.owner).
 
 is_signed(Item) ->
     Item#tx.signature =/= ?DEFAULT_SIG.
@@ -148,7 +148,7 @@ id(Item) when not is_record(Item, tx) ->
     id(normalize(Item), unsigned);
 id(Item) -> id(Item, signed).
 id(Item, unsigned) ->
-    crypto:hash(sha256, data_item_signature_data(Item));
+    crypto:hash(sha256, data_item_signature_data(Item, unsigned));
 id(Item, signed) ->
     Item#tx.id.
 
@@ -218,6 +218,7 @@ verify_item(DataItem) ->
     ValidID = verify_data_item_id(DataItem),
     ValidSignature = verify_data_item_signature(DataItem),
     ValidTags = verify_data_item_tags(DataItem),
+    ?c({verify_item, ar_util:encode(id(DataItem, unsigned)), ValidID, ValidSignature, ValidTags}),
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
@@ -244,8 +245,12 @@ type(_) ->
 
 %% @doc Generate the data segment to be signed for a data item.
 data_item_signature_data(RawItem) ->
+    data_item_signature_data(RawItem, signed).
+data_item_signature_data(RawItem, unsigned) ->
+    data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
+data_item_signature_data(RawItem, signed) ->
     NormItem = normalize_data(RawItem),
-    List = [
+    ar_deep_hash:hash([
         utf8_encoded("dataitem"),
         utf8_encoded("1"),
         %% Only SignatureType 1 is supported for now (RSA 4096)
@@ -255,8 +260,7 @@ data_item_signature_data(RawItem) ->
         <<(NormItem#tx.last_tx)/binary>>,
         encode_tags(NormItem#tx.tags),
         <<(NormItem#tx.data)/binary>>
-    ],
-    ar_deep_hash:hash(List).
+    ]).
 
 %% @doc Verify the data item's ID matches the signature.
 verify_data_item_id(DataItem) ->
@@ -266,6 +270,7 @@ verify_data_item_id(DataItem) ->
 %% @doc Verify the data item's signature.
 verify_data_item_signature(DataItem) ->
     SignatureData = data_item_signature_data(DataItem),
+    ?c({unsigned_id, ar_util:encode(id(DataItem, unsigned)), ar_util:encode(SignatureData)}),
     ar_wallet:verify(
         {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
     ).
@@ -348,7 +353,7 @@ serialize(TX, json) ->
     jiffy:encode(item_to_json_struct(TX)).
 
 update_id(TX = #tx{id = ?DEFAULT_ID, signature = ?DEFAULT_SIG}) ->
-    ID = crypto:hash(sha256, data_item_signature_data(TX)),
+    ID = id(TX, unsigned),
     TX#tx{format = ans104, id = ID};
 update_id(TX = #tx{id = ?DEFAULT_ID, signature = Sig}) ->
     TX#tx{format = ans104, id = crypto:hash(sha256, Sig)};

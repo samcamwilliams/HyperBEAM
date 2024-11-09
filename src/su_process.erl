@@ -78,7 +78,7 @@ get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) ->
     get_assignments(ProcID, From, binary_to_integer(RequestedTo));
 get_assignments(ProcID, From, RequestedTo) ->
-    ?c({get_assignments, ProcID, From, RequestedTo}),
+    ?c({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
     ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
         true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
         false -> RequestedTo

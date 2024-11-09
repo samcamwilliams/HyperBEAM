@@ -12,7 +12,7 @@ get(URL) ->
     ?c({http_getting, URL}),
     case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
         {ok, {{_, 500, _}, _, Body}} ->
-            ?c({http_got_server_error, URL, Body}),
+            ?c({http_got_server_error, URL}),
             {error, Body};
         {ok, {{_, _, _}, _, Body}} ->
             ?c({http_got, URL}),
@@ -46,8 +46,8 @@ reply(Req, Item) ->
 reply(Req, Status, Item) ->
     ?c(
         {
+            replying,
             Status,
-            maps:get(method, Req, undef_method),
             maps:get(path, Req, undef_path),
             Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end
         }

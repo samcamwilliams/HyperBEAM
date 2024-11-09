@@ -20,6 +20,7 @@ extract_opts(Params) ->
         ),
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
+    ?c({poda_authorities, Authorities}),
     ?no_prod(use_real_authority_addresses),
     Addr = ar_wallet:to_address(ao:wallet()),
     #{
@@ -34,7 +35,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
             {ok, S};
         false ->
             % For now, the message itself will be at `/Message/Message`.
-            case validate_stage(1, Msg, Opts) of
+            case validate(Msg, Opts) of
                 true ->
                     ?c({poda_validated, ok}),
                     % Add the validations to the VFS.
@@ -80,6 +81,9 @@ execute(_M, S = #{ pass := 3, results := _Results }, _Opts) ->
 execute(_M, S, _Opts) ->
     {ok, S}.
 
+validate(Msg, Opts) ->
+    validate_stage(1, Msg, Opts).
+
 validate_stage(1, Msg, Opts) when is_record(Msg, tx) ->
     validate_stage(1, Msg#tx.data, Opts);
 validate_stage(1, #{ <<"Attestations">> := Attestations, <<"Message">> := Content }, Opts) ->
@@ -112,26 +116,30 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
         false -> {false, <<"Not enough validations">>}
     end.
 
-validate_attestation(Msg, Att, _Opts) ->
+validate_attestation(Msg, Att, Opts) ->
     MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = ar_util:encode(ar_bundles:signer(Att)),
-    ?no_prod(use_real_authority_validation),
-    % ValidSigner = lists:member(
-    %     ar_bundles:signer(Att),
-    %     maps:get(authorities, Opts)
-    % ),
-    ValidSigner = true,
+    ?c({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
+    ar_bundles:print(Att),
+    ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
         (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
             == {<<"Attestation-For">>, MsgID}) orelse
         ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
-    ?c({poda_attestation, {valid_signer, ValidSigner}, {valid_signature, ValidSignature}, {relevant_msg, RelevantMsg}, {signer, AttSigner}}),
+    ?c(
+        {poda_attestation,
+            {valid_signer, ValidSigner},
+            {valid_signature, ValidSignature},
+            {relevant_msg, RelevantMsg},
+            {signer, AttSigner}
+        }
+    ),
     ValidSigner and ValidSignature and RelevantMsg.
 
 return_error(S = #{ wallet := Wallet }, Reason) ->
     ?c({poda_return_error, Reason}),
-    receive after 10000 -> ok end,
+    ?debug_wait(10000),
     {skip, S#{
         results => #{
             <<"/Outbox">> =>
@@ -179,7 +187,6 @@ attest_to_results(Msg, S = #{ wallet := Wallet }) ->
 add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logger := _Logger, wallet := Wallet }) ->
     ?no_prod("PoDA currently waits for 1 second before getting attestations!"),
     Process = find_process(NewMsg, S),
-    receive after 1000 -> ok end,
     case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
             #{ authorities := InitAuthorities, quorum := Quorum } =
@@ -192,10 +199,11 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                     case ao_router:find(compute, Process#tx.id, Address) of
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
-                            {<<"Slot">>, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-                            {ok, ComputeNode} = ao_router:find(compute, Process#tx.id, Address),
-                            case ao_client:compute(ComputeNode, Process#tx.id, binary_to_integer(Slot)) of
-                                {ok, Att} -> Att;
+                            case ao_client:compute(ComputeNode, Process#tx.id, Assignment#tx.id) of
+                                {ok, Att} ->
+                                    ?c({poda_got_attestation_from_peer, ComputeNode}),
+                                    ar_bundles:print(Att),
+                                    {true, Att};
                                 _ -> false
                             end;
                         _ -> false
@@ -249,22 +257,29 @@ pfiltermap(Pred, List) ->
     Pids = lists:map(fun(X) -> 
         spawn_monitor(fun() -> 
             Result = {X, Pred(X)},
+            ?c({pfiltermap, sending_result, self()}),
             Parent ! {self(), Result}
         end)
     end, List),
+    ?c({pfiltermap, waiting_for_results, Pids}),
     [
         Res
     ||
-        Res <-
+        {true, Res} <-
             lists:map(fun({Pid, Ref}) ->
                 receive
                     {Pid, {_Item, Result}} ->
+                        ?c({pfiltermap, received_result, Pid}),
                         Result;
                     % Handle crashes as filterable events
-                    {'DOWN', Ref, process, Pid, _Reason} -> false
+                    {'DOWN', Ref, process, Pid, _Reason} ->
+                        ?c({pfiltermap, crashed, Pid}),
+                        false;
+                    Other ->
+                        ?c({pfiltermap, unexpected_message, Other}),
+                        false
                 end
-            end, Pids),
-        Res =/= false
+            end, Pids)
     ].
 
 find_process(Item, #{ logger := _Logger, store := Store }) ->

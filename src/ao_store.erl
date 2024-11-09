@@ -6,6 +6,7 @@
 -export([path/2, add_path/3]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include("include/ao.hrl").
+-ao_debug(no_print).
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store
@@ -27,9 +28,9 @@ start(Modules) -> call_all(Modules, start, []).
 
 stop(Modules) -> call_function(Modules, stop, []).
 
-%% @doc Takes a store object and a filter function, returning a new store
-%% object with only the modules that match the filter. The filter function
-%% takes 3 arguments: the module, the options, and the properties.
+%% @doc Takes a store object and a filter function or match spec, returning a
+%% new store object with only the modules that match the filter. The filter
+%% function takes 3 arguments: the module, the options, and the properties.
 filter(Modules, Filter) ->
     lists:filter(
         fun({Mod, Opts, Properties}) ->

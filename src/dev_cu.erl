@@ -7,12 +7,15 @@ push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
     case ao_client:compute(Assignment, Msg) of
         {ok, Results} ->
+            ?c(computed_results),
+            ar_bundles:print(Results),
             {ok, S#{ results => Results }};
         Error ->
             throw({cu_error, Error})
     end.
 
 execute(CarrierMsg, S) ->
+    receive after 750 -> ok end,
     MaybeBundle = ar_bundles:hd(CarrierMsg),
     Store = ao:get(store),
     Wallet = ao:wallet(),
@@ -31,6 +34,8 @@ execute(CarrierMsg, S) ->
                         {error, no_viable_computation}
                 end
         end,
+    ?c(returning_computed_results),
+    ar_bundles:print(Results),
     {ok, S#{ results => Results }}.
 
 

@@ -88,7 +88,7 @@ get_assignments(ProcID, From, To) ->
     {ok, Node} = ao_router:find(schedule, ProcID),
     get_assignments(Node, ProcID, From, To).
 get_assignments(Node, ProcID, From, To) ->
-    {ok, #tx{data = Data}} =
+    {ok, Res = #tx{data = Data}} =
         ao_http:get(
             Node,
             "/?Action=Schedule&Process=" ++
@@ -110,6 +110,8 @@ get_assignments(Node, ProcID, From, To) ->
                         end
                 end
         ),
+    ?c({requested_assignments, From, To}),
+    ar_bundles:print(Res),
     extract_assignments(From, To, Data).
 
 extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
@@ -136,8 +138,8 @@ compute(Node, ProcID, Slot) when is_binary(ProcID) ->
     compute(Node, binary_to_list(ar_util:id(ProcID)), Slot);
 compute(Node, ProcID, Slot) when is_integer(Slot) ->
     compute(Node, ProcID, integer_to_list(Slot));
-compute(Node, ProcID, Slot) when is_binary(Slot) ->
-    compute(Node, ProcID, binary_to_list(Slot));
+compute(Node, ProcID, AssignmentID) when is_binary(AssignmentID) ->
+    compute(Node, ProcID, binary_to_list(ar_util:id(AssignmentID)));
 compute(Node, ProcID, Slot) when is_list(Slot) ->
     ao_http:get(
         Node,
