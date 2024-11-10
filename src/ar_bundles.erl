@@ -842,6 +842,7 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_with_tags/0},
         {timeout, 30, fun test_with_tags_from_disk/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
+        {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
         {timeout, 30, fun test_bundle_with_one_item/0},
         {timeout, 30, fun test_bundle_with_two_items/0},
@@ -900,6 +901,11 @@ test_unsigned_data_item_id() ->
     Item2 = deserialize(
         serialize(reset_ids(#tx{format = ans104, data = <<"data2">>}))),
     ?assertNotEqual(Item1#tx.unsigned_id, Item2#tx.unsigned_id).
+
+test_unsigned_data_item_normalization() ->
+    NewItem = normalize(#tx{ format = ans104, data = <<"Unsigned data">> }),
+    ReNormItem = deserialize(serialize(NewItem)),
+    ?assertEqual(NewItem, ReNormItem).
 
 test_with_tags_from_disk() ->
     {ok, BinaryDataItem} = file:read_file("src/test/dataitem_withtags"),
