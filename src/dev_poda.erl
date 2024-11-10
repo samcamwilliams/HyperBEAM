@@ -217,15 +217,24 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             ?c({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
+            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
             Attestations = lists:filtermap(
                 fun(Address) ->
                     case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
-                            case ao_client:compute(ComputeNode, ar_bundles:id(Process, unsigned), ar_bundles:id(Assignment, unsigned)) of
+                            Res = ao_client:compute(
+                                ComputeNode,
+                                ar_bundles:id(Process, unsigned),
+                                ar_bundles:id(Assignment, unsigned),
+                                #{}
+                            ),
+                            case Res of
                                 {ok, Att} ->
                                     ?c({poda_got_attestation_from_peer, ComputeNode}),
-                                    {true, Att};
+                                    ?c(poda_compute_result),
+                                    ar_bundles:print(Att),
+                                    {true, element(2, Res)};
                                 _ -> false
                             end;
                         _ -> false
@@ -234,7 +243,6 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 InitAuthorities
             ),
             ?c({poda_attestations, length(Attestations)}),
-            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
                 Wallet

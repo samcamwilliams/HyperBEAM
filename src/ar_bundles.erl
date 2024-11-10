@@ -1,7 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
--export([id/1, id/2, type/1, map/1, hd/1, member/2]).
+-export([id/1, id/2, type/1, map/1, hd/1, member/2, find/2]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).

@@ -8,7 +8,7 @@
 -export([schedule/1, schedule/2, assign/1, register_su/1, register_su/2]).
 -export([cron/1, cron/2, cron/3, cron/4, cron_cursor/1, cron_cursor/2]).
 %% Compute Unit API
--export([compute/2, compute/3]).
+-export([compute/2, compute/3, compute/4]).
 %% Messaging Unit API
 -export([push/1, push/2, push/3]).
 
@@ -133,21 +133,31 @@ extract_assignments(From, To, Assignments) ->
 compute(ProcID, Slot) ->
     {ok, Node} = ao_router:find(compute, ProcID),
     compute(Node, ProcID, Slot).
-compute(Node, ProcID, Slot) when is_binary(ProcID) ->
-    compute(Node, binary_to_list(ar_util:id(ProcID)), Slot);
-compute(Node, ProcID, Slot) when is_integer(Slot) ->
-    compute(Node, ProcID, integer_to_list(Slot));
-compute(Node, ProcID, AssignmentID) when is_binary(AssignmentID) ->
-    compute(Node, ProcID, binary_to_list(ar_util:id(AssignmentID)));
-compute(Node, ProcID, Slot) when is_list(Slot) ->
+compute(Node, ProcID, Slot) ->
+    compute(Node, ProcID, Slot, #{}).
+compute(Node, ProcID, Slot, Opts) when is_binary(ProcID) ->
+    compute(Node, binary_to_list(ar_util:id(ProcID)), Slot, Opts);
+compute(Node, ProcID, Slot, Opts) when is_integer(Slot) ->
+    compute(Node, ProcID, integer_to_list(Slot), Opts);
+compute(Node, ProcID, AssignmentID, Opts) when is_binary(AssignmentID) ->
+    compute(Node, ProcID, binary_to_list(ar_util:id(AssignmentID)), Opts);
+compute(Node, ProcID, Slot, Opts) when is_list(Slot) ->
+    % TODO: Unify these repetitive calls.
     ao_http:get(
         Node,
-        "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot
+        "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot ++
+            case maps:is_key(attest_to, Opts) of
+                true -> "&Attest-To=" ++ ar_util:id(maps:get(attest_to, Opts));
+                false -> ""
+            end
     );
-compute(Node, Assignment, Msg) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
+compute(Node, Assignment, Msg, Opts) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
     ao_http:post(
         Node,
-        "/",
+        "/" ++ case maps:is_key(attest_to, Opts) of
+            true -> "?Attest-To=" ++ ar_util:id(maps:get(attest_to, Opts));
+            false -> ""
+        end,
         ar_bundles:normalize(#{
             <<"Message">> => Msg,
             <<"Assignment">> => Assignment

@@ -24,11 +24,6 @@
                             ao_remote_store,
                             #{ node => "http://localhost:8734" },
                             #{ scope => remote }
-                        },
-                        {
-                            ao_remote_store,
-                            #{ node => "http://localhost:8736" },
-                            #{ scope => remote }
                         }
                     ]
                 end,
