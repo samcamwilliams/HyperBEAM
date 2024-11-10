@@ -32,12 +32,15 @@
 %%% Public interface.
 %%%===================================================================
 
-print(Item) -> print(Item, 0).
-print(Item, Indent) when is_list(Item); is_map(Item) ->
-    print(normalize(Item), Indent);
-print(Item, Indent) when is_record(Item, tx) ->
+print(Item) ->
+    io:format(standard_error, "~s", [lists:flatten(format(Item))]).
+
+format(Item) -> format(Item, 0).
+format(Item, Indent) when is_list(Item); is_map(Item) ->
+    format(normalize(Item), Indent);
+format(Item, Indent) when is_record(Item, tx) ->
     Valid = verify_item(Item),
-    print_line(
+    format_line(
         "TX ( ~s: ~s ) {",
         [
             if
@@ -56,55 +59,56 @@ print(Item, Indent) when is_record(Item, tx) ->
             end
         ],
         Indent
-    ),
+    ) ++
     case (not Valid) andalso Item#tx.signature =/= ?DEFAULT_SIG of
         true ->
-            print_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
-        false -> ok
-    end,
-    print_line("Target: ~s", [
+            format_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
+        false -> []
+    end ++
+    format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
                 Target -> ar_util:id(Target)
             end
-        ], Indent + 1),
-    print_line("Tags:", Indent + 1),
-    lists:foreach(
-        fun({Key, Val}) -> print_line("~s -> ~s", [Key, Val], Indent + 2) end,
+        ], Indent + 1) ++
+    format_line("Tags:", Indent + 1) ++
+    lists:map(
+        fun({Key, Val}) -> format_line("~s -> ~s", [Key, Val], Indent + 2) end,
         Item#tx.tags
-    ),
-    print_line("Data:", Indent + 1),
-    print_data(Item, Indent + 2),
-    print_line("}", Indent);
-print(Item, Indent) ->
+    ) ++
+    format_line("Data:", Indent + 1) ++
+    format_line("Data:", Indent + 1) ++
+    format_data(Item, Indent + 2) ++
+    format_line("}", Indent);
+format(Item, Indent) ->
     % Whatever we have, its not a tx...
-    print_line("INCORRECT ITEM: ~p", [Item], Indent).
+    format_line("INCORRECT ITEM: ~p", [Item], Indent).
 
-print_data(Item, Indent) when is_binary(Item#tx.data) ->
+format_data(Item, Indent) when is_binary(Item#tx.data) ->
     case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
         {_, _} ->
-            print_data(deserialize(serialize(Item)), Indent);
+            format_data(deserialize(serialize(Item)), Indent);
         false ->
-            print_line(
+            format_line(
                 "Binary: ~p... <~p bytes>",
                 [format_binary(Item#tx.data), byte_size(Item#tx.data)],
                 Indent
             )
     end;
-print_data(Item, Indent) when is_map(Item#tx.data) ->
-    print_line("Map:", Indent),
-    maps:map(
-        fun(Name, MapItem) ->
-            print_line("~s ->", [Name], Indent + 1),
-            print(MapItem, Indent + 2)
+format_data(Item, Indent) when is_map(Item#tx.data) ->
+    format_line("Map:", Indent) ++
+    lists:map(
+        fun({Name, MapItem}) ->
+            format_line("~s ->", [Name], Indent + 1) ++
+            format(MapItem, Indent + 2)
         end,
-        Item#tx.data
+        maps:to_list(Item#tx.data)
     );
-print_data(Item, Indent) when is_list(Item#tx.data) ->
-    print_line("List:", Indent),
-    lists:foreach(
+format_data(Item, Indent) when is_list(Item#tx.data) ->
+    format_line("List:", Indent) ++
+    lists:map(
         fun(ListItem) ->
-            print(ListItem, Indent + 1)
+            format(ListItem, Indent + 1)
         end,
         Item#tx.data
     ).
@@ -126,12 +130,11 @@ format_binary(Bin) ->
         )
     ).
 
-print_line(Str, Indent) -> print_line(Str, "", Indent).
-print_line(RawStr, Fmt, Ind) ->
-    Str = lists:flatten(RawStr),
-    io:format(standard_error,
+format_line(Str, Indent) -> format_line(Str, "", Indent).
+format_line(RawStr, Fmt, Ind) ->
+    io_lib:format(
         [$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
-            Str ++ "\n",
+            lists:flatten(RawStr) ++ "\n",
         Fmt
     ).
 
@@ -1044,9 +1047,9 @@ test_serialize_deserialize_deep_signed_bundle() ->
     Item2 = sign_item(#tx{data = #{<<"key1">> => Item1}}, W),
     Bundle = serialize(Item2),
     Deser2 = deserialize(Bundle),
-    print(Deser2),
+    format(Deser2),
     #{ <<"key1">> := Deser1 } = Deser2#tx.data,
-    print(Deser1),
+    format(Deser1),
     ?assertEqual(id(Item2, unsigned), id(Deser2, unsigned)),
     ?assertEqual(id(Item2, signed), id(Deser2, signed)),
     ?assertEqual(id(Item1, unsigned), id(Deser1, unsigned)),
@@ -1058,7 +1061,7 @@ test_serialize_deserialize_deep_signed_bundle() ->
     % Test that we can write to disk and read back the same ID.
     ao_cache:write(ao:get(local_store), Item2),
     FromDisk = ao_cache:read_message(ao:get(local_store), ar_util:encode(id(Item2, unsigned))),
-    print(FromDisk),
+    format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.
     NormItem2 = normalize(Item2),
