@@ -158,7 +158,7 @@ write(Store, Item) ->
 
 write(Store, Path, Item) when not is_record(Item, tx) ->
     write(Store, Path, ar_bundles:normalize(Item));
-write(Store, Path, Item) when Item#tx.id == ?DEFAULT_ID ->
+write(Store, Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }) ->
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item) ->
     case ar_bundles:type(Item) of
@@ -184,6 +184,8 @@ write(Store, Path, Item) ->
 write_composite(Store, Path, map, Item) ->
     % The item is a map. We should:
     % 1. Write the header item into the store without its children.
+    %    The header item is the normal item, but with the manifest placed
+    %    in the data field. This is unpacked in `read/2`.
     % 2. Write each child into the store.
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
@@ -198,7 +200,11 @@ write_composite(Store, Path, map, Item) ->
     ao_store:write(
         Store,
         ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID), "item"]),
-        ar_bundles:serialize(Item#tx{ data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) } })
+        ar_bundles:serialize(
+            Item#tx{
+                data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) }
+            }
+        )
     ),
     maps:map(fun(Key, Subitem) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
@@ -220,7 +226,7 @@ read_message(Store, MessageID) ->
 read_output(Store, ProcID, undefined) ->
     element(2, latest(Store, ProcID));
 read_output(Store, ProcID, Slot) when is_integer(Slot) ->
-    read_output(Store, fmt_id(ProcID), ["slot", integer_to_list(Slot)]);
+    read_output(Store, ProcID, ["slot", integer_to_list(Slot)]);
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
 read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
@@ -276,14 +282,19 @@ read(Store, RawPath) ->
             Root = read_simple_message(Store, RootPath),
             % The bundle is a map of its children by ID. Reconstruct
             % the bundle by reading each child.
-            Root#tx {
+            ?no_prod("Reconstructing bundle unnecessarily serializes and deserializes"),
+            %% This serialization/deserialization normalizes away the manifest wrapping
+            %% tags and object, added by `write_composite/3`. We do this so that we can
+            %% separate the bundle items from the main object in storage, but if ar_bundles
+            %% exposed a function to rebuild the TX object's manifest we could avoid this.
+            ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
                 data = maps:map(
                     fun(_, Key) -> read(Store, ["messages", fmt_id(Key)]) end,
                     ar_bundles:parse_manifest(
                         maps:get(<<"manifest">>, Root#tx.data)
                     )
                 )
-            };
+            }));
         simple ->read_simple_message(Store, MessagePath);
         not_found -> not_found
     end.
@@ -310,7 +321,13 @@ test_cache() ->
     ?TEST_STORE.
 
 create_unsigned_tx(Data) ->
-    ar_bundles:normalize(#tx{ format = ans104, data = Data }).
+    ar_bundles:normalize(
+        #tx{
+            format = ans104,
+            tags = [{<<"Example">>, <<"Tag">>}],
+            data = Data
+        }
+    ).
 
 %% Helper function to create signed #tx items.
 create_signed_tx(Data) ->
@@ -341,7 +358,7 @@ store_simple_unsigned_item_test() ->
     %% Write the simple unsigned item
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
-    RetrievedItem = read(TestStore, ["messages", fmt_id(Item#tx.id)]),
+    RetrievedItem = read(TestStore, ["messages", fmt_id(Item)]),
     ?assertEqual(Item, RetrievedItem).
 
 %% Test storing and retrieving a simple signed item
@@ -366,8 +383,8 @@ composite_unsigned_item_test() ->
     Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
     ?c(written),
-    RetrievedItem = read_message(TestStore, Item#tx.id),
-    ?c({retrieved_item, RetrievedItem}),
+    RetrievedItem = read_message(TestStore, ar_bundles:id(Item)),
+    ?c(RetrievedItem),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
@@ -389,7 +406,7 @@ composite_signed_item_test() ->
     },
     Item = ar_bundles:deserialize(create_signed_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
-    RetrievedItem = read_message(TestStore, Item#tx.id),
+    RetrievedItem = read_message(TestStore, ar_bundles:id(Item, signed)),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
@@ -399,7 +416,7 @@ composite_signed_item_test() ->
         ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), signed)
     ),
     ?assertEqual(ar_bundles:id(Item, unsigned), ar_bundles:id(RetrievedItem, unsigned)),
-    %?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
+    ?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
     ?assertEqual(true, ar_bundles:verify_item(Item)),
     ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
 
@@ -419,7 +436,7 @@ deeply_nested_item_test() ->
     %% Write the nested item
     ok = write(TestStore = test_cache(), Level1Tx),
     %% Read the deep value back using subpath
-    RetrievedItem = read_message(TestStore, [fmt_id(Level1Tx#tx.id), "level1_key", "level2_key", "level3_key"]),
+    RetrievedItem = read_message(TestStore, [fmt_id(Level1Tx), "level1_key", "level2_key", "level3_key"]),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual(<<"deep_value">>, RetrievedItem#tx.data),
     ?assertEqual(
@@ -432,19 +449,19 @@ write_and_read_output_test() ->
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, Proc#tx.id, 0, Item1),
-    ok = write_output(Store, Proc#tx.id, 1, Item2),
-    ?assertEqual(Item1, read_message(Store, Item1#tx.id)),
-    ?assertEqual(Item2, read_message(Store, Item2#tx.id)),
-    ?assertEqual(Item2, read_output(Store, fmt_id(Proc#tx.id), 1)),
-    ?assertEqual(Item1, read_output(Store, fmt_id(Proc#tx.id), Item1#tx.id)).
+    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    ?assertEqual(Item1, read_message(Store, ar_bundles:id(Item1, unsigned))),
+    ?assertEqual(Item2, read_message(Store, ar_bundles:id(Item2, unsigned))),
+    ?assertEqual(Item2, read_output(Store, fmt_id(Proc, signed), 1)),
+    ?assertEqual(Item1, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
 
 latest_output_retrieval_test_broken() ->
     Store = test_cache(),
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, Proc#tx.id, 0, Item1),
-    ok = write_output(Store, Proc#tx.id, 1, Item2),
-    ?assertEqual({1, Item2}, latest(Store, Proc#tx.id)),
-    ?assertEqual({0, Item1}, latest(Store, Proc#tx.id, 1)).
+    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    ?assertEqual({1, Item2}, latest(Store, fmt_id(Proc, signed))),
+    ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 1)).

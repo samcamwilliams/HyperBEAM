@@ -4,6 +4,8 @@
 -include("include/ao.hrl").
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
+id(TX) when is_record(TX, tx) ->
+	id(ar_bundles:id(TX#tx.id, unsigned));
 id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->

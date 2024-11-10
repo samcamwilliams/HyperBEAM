@@ -76,9 +76,7 @@ format(Item, Indent) when is_record(Item, tx) ->
         fun({Key, Val}) -> format_line("~s -> ~s", [Key, Val], Indent + 2) end,
         Item#tx.tags
     ) ++
-    format_line("Data:", Indent + 1) ++
-    format_line("Data:", Indent + 1) ++
-    format_data(Item, Indent + 2) ++
+    format_line("Data:", Indent + 1) ++ format_data(Item, Indent + 2) ++
     format_line("}", Indent);
 format(Item, Indent) ->
     % Whatever we have, its not a tx...
