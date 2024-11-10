@@ -5,6 +5,7 @@
 
 push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
+    ?c({pushing, Msg}),
     case ao_client:compute(Assignment, Msg) of
         {ok, Results} ->
             ?c(computed_results),

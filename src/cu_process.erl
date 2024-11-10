@@ -71,7 +71,6 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
     LocalStore = ao_store:scope(Store, local),
     case ao_cache:read_output(LocalStore, ProcID, MsgRef) of
         not_found ->
-            ?c({proc_id, ProcID}),
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
                     ?c({no_cu_for_proc, ar_util:id(ProcID)}),
@@ -79,7 +78,12 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     await_results(
                         cu_process:run(
                             Proc,
-                            #{ to => MsgRef, store => Store, wallet => Wallet, on_idle => wait },
+                            #{
+                                to => MsgRef,
+                                store => Store,
+                                wallet => Wallet,
+                                on_idle => wait
+                            },
                             create_monitor_for_message(MsgRef)
                         )
                     );

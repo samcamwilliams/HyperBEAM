@@ -10,10 +10,9 @@
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).
--define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }}]).
+-define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }, #{ scope => local }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
--ao_debug(no_print).
 
 %%% A cache of AO messages and compute results.
 %%% 
@@ -169,9 +168,11 @@ write(Store, Path, Item) ->
             UnsignedID = ar_bundles:id(Item, unsigned),
             SignedID = ar_bundles:id(Item, signed),
             UnsignedPath = ao_store:path(Store, [Path, fmt_id(UnsignedID)]),
+            ?c({writing_item, UnsignedPath}),
             ok = ao_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
             if SignedID =/= UnsignedID ->
                 SignedPath = ao_store:path(Store, [Path, fmt_id(SignedID)]),
+                ?c({linking_item, SignedPath}),
                 ao_store:make_link(Store, UnsignedPath, SignedPath);
             true -> link_unnecessary
             end;
@@ -233,7 +234,7 @@ read_output(Store, ProcID, SlotRef) ->
         ),
     ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     case ao_store:type(Store, ResolvedPath) of
-        not_found -> ?c(not_found);
+        not_found -> not_found;
         _ -> read(Store, ResolvedPath)
     end.
 

@@ -2,7 +2,6 @@
 -export([start/0, get/1, get/2, post/3, reply/2, reply/3]).
 -export([tx_to_status/1, req_to_tx/1]).
 -include("include/ao.hrl").
--ao_debug(print).
 
 start() ->
     httpc:set_options([{max_keep_alive_length, 0}]).
@@ -16,7 +15,8 @@ get(URL) ->
             {error, Body};
         {ok, {{_, _, _}, _, Body}} ->
             ?c({http_got, URL}),
-            {ok, ar_bundles:deserialize(Body)}
+            Message = ar_bundles:deserialize(Body),
+            {ok, Message}
     end.
 
 post(Host, Path, Item) -> post(Host ++ Path, Item).
@@ -48,12 +48,14 @@ reply(Req, Status, Item) ->
         {
             replying,
             Status,
-            maps:get(path, Req, undef_path),
-            Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end
+            maps:get(path, Req, undefined_path),
+            Ref =
+                case is_record(Item, tx) of
+                    true -> ar_util:id(Item#tx.id);
+                    false -> data_body
+                end
         }
     ),
-    % TODO: Should we return Req or Req2? Req2 sometimes seems to have issues,
-    % but logically appears to be the correct choice.
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},

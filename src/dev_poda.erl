@@ -6,7 +6,16 @@
 -ao_debug(print).
 
 %%% A simple exemplar decentralized proof of authority consensus algorithm
-%%% for AO processes.
+%%% for AO processes. This device is split into two flows, spanning three
+%%% actions.
+%%% 
+%%% Execution flow:
+%%% 1. Initialization.
+%%% 2. Validation of incoming messages before execution.
+%%% Attestation flow:
+%%% 1. Adding attestations to results, either on a CU or MU.
+
+%%% Execution flow: Initialization.
 
 init(S, Params) ->
     {ok, S, extract_opts(Params)}.
@@ -28,6 +37,8 @@ extract_opts(Params) ->
             Authorities ++ [ar_util:encode(Addr)],
         quorum => Quorum
     }.
+
+%%% Execution flow: Pre-execution validation.
 
 execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
     case is_user_signed(Msg) of
@@ -96,7 +107,13 @@ validate_stage(2, Attestations, Content, Opts) ->
     ?c({poda_stage, 2}),
     % Ensure that all attestations are valid and signed by a
     % trusted authority.
-    case lists:all(fun({_, Att}) -> ar_bundles:verify_item(Att) end, maps:to_list(Attestations)) of
+    case
+        lists:all(
+            fun({_, Att}) ->
+                ar_bundles:verify_item(Att)
+            end,
+            maps:to_list(Attestations)
+        ) of
         true -> validate_stage(3, Content, Attestations, Opts);
         false -> {false, <<"Invalid attestations">>}
     end;
@@ -122,6 +139,7 @@ validate_attestation(Msg, Att, Opts) ->
     ?c({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
     ar_bundles:print(Att),
     ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
+    ?no_prod(use_real_signature_verification),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
         (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
@@ -137,6 +155,8 @@ validate_attestation(Msg, Att, Opts) ->
     ),
     ValidSigner and ValidSignature and RelevantMsg.
 
+%%% Execution flow: Error handling.
+%%% Skip execution of this message, instead returning an error message.
 return_error(S = #{ wallet := Wallet }, Reason) ->
     ?c({poda_return_error, Reason}),
     ?debug_wait(10000),
@@ -157,6 +177,8 @@ is_user_signed(#tx { data = #{ <<"Message">> := Msg } }) ->
     ?no_prod(use_real_attestation_detection),
     lists:keyfind(<<"From-Process">>, 1, Msg#tx.tags) == false;
 is_user_signed(_) -> true.
+
+%%% Attestation flow: Adding attestations to results.
 
 push(_Item, S = #{ results := Results }) ->
     %?c({poda_push, Results}),
@@ -185,7 +207,6 @@ attest_to_results(Msg, S = #{ wallet := Wallet }) ->
     end.
 
 add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logger := _Logger, wallet := Wallet }) ->
-    ?no_prod("PoDA currently waits for 1 second before getting attestations!"),
     Process = find_process(NewMsg, S),
     case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
@@ -246,12 +267,14 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 ),
                 Wallet
             ),
+            ar_bundles:print(AttestationBundle),
             ?c({poda_attestation_bundle_signed, length(Attestations)}),
             AttestationBundle;
         false -> NewMsg
     end.
 
-%% @doc Execute a predicate in parallel and filter the results.
+%% @doc Helper function for parallel execution of attestation
+%% gathering.
 pfiltermap(Pred, List) ->
     Parent = self(),
     Pids = lists:map(fun(X) -> 
@@ -282,6 +305,8 @@ pfiltermap(Pred, List) ->
             end, Pids)
     ].
 
+%% @doc Find the process that this message is targeting, in order to
+%% determine which attestations to add.
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
