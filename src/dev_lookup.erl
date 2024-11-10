@@ -1,6 +1,7 @@
 -module(dev_lookup).
 -export([read/1]).
 -include("include/ao.hrl").
+-ao_debug(print).
 
 %%% The lookup device: Look up an ID by name and return it.
 
@@ -10,7 +11,7 @@ read(#tx { tags = Tags }) ->
     % the value directly.
     {<<"Subpath">>, Subpath} = lists:keyfind(<<"Subpath">>, 1, Tags),
     ?c({looking_up_for_remote_peer, Subpath}),
-    case ao_cache:lookup(ao:get(local_store), Subpath) of
+    case ao_cache:lookup(ao_store:scope(ao:get(store), local), Subpath) of
         not_found -> {ok, #tx { tags = [{<<"Error">>, <<"Not found">>}, {<<"Status">>, <<"404">>}] }};
         Val -> {ok, Val}
     end.

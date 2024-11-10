@@ -161,8 +161,10 @@ write(Store, Item) ->
     write(Store, ao_store:path(Store, ["messages"]), Item).
 
 write(Store, Path, Item) when not is_record(Item, tx) ->
+    ?c(writing_non_tx_item),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }) ->
+    ?c(writing_tx_item_with_default_id),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item) ->
     case ar_bundles:type(Item) of
@@ -194,8 +196,10 @@ write_composite(Store, Path, map, Item) ->
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
+    ?c({starting_composite_write, fmt_id(UnsignedHeaderID)}),
     ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
+    ?c({writing_composite_header, {unsigned, fmt_id(UnsignedHeaderID)}, {signed, fmt_id(SignedHeaderID)}}),
     ao_store:make_link(
         Store,
         ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),

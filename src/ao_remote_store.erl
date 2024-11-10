@@ -1,9 +1,17 @@
 -module(ao_remote_store).
--export([type/2, read/2]).
+-export([type/2, read/2, resolve/2, path/2]).
 -include("include/ao.hrl").
 -ao_debug(print).
 
 %%% A store module that reads data from (an)other AO node(s).
+
+resolve(#{ node := Node }, Key) ->
+    ?c({resolving_to_self, Node, Key}),
+    Key.
+
+path(#{ node := Node }, Key) ->
+    ?c({pathing_to_self, Node, Key}),
+    Key.
 
 type(Opts = #{ node := Node }, Key) ->
     ?no_prod("No need to get the whole message in order to get its type..."),
@@ -26,7 +34,8 @@ read(Opts = #{ node := Node }, Key) ->
                     not_found;
                 _ ->
                     ?no_prod("Unnecessarily wasteful to serialize to deserialize later."),
-                    {ok, ar_bundles:serialize(Bundle)}
+                    %ar_bundles:print(Bundle#tx.data),
+                    {ok, ar_bundles:serialize(Bundle#tx.data)}
             end;
         Error ->
             ?no_prod("Validate this response path."),

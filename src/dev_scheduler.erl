@@ -25,7 +25,6 @@ schedule(Item) ->
 push(CarrierMsg, State = #{ logger := Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
     ?c(pushing_message),
-    ar_bundles:print(Msg),
     case ao_client:schedule(Msg) of
         {_, Assignment} ->
             {ok, State#{assignment => Assignment}};

@@ -64,17 +64,17 @@ current_schedule(M) ->
     ).
 
 schedule(CarrierM) ->
+    ?c(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
     Store = ao:get(store),
-    ?no_prod("Must verify data item in SU!"),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
-        % {false, _} ->
-        %     {ok,
-        %         #tx{
-        %             tags = [{<<"Status">>, <<"Failed">>}],
-        %             data = [<<"Data item is not valid.">>]
-        %         }
-        %     };
+        {false, _} ->
+            {ok,
+                #tx{
+                    tags = [{<<"Status">>, <<"Failed">>}],
+                    data = [<<"Data item is not valid.">>]
+                }
+            };
         {_, {<<"Type">>, <<"Process">>}} ->
             ao_cache:write(Store, M),
             ao_client:upload(M),
@@ -146,6 +146,8 @@ send_schedule(Store, ProcID, From, To) ->
                 end,
         data = assignments_to_bundle(Store, Assignments)
     },
+    ?c(assignments_bundle_outbound),
+    %ar_bundles:print(Bundle),
     SignedBundle = ar_bundles:sign_item(Bundle, ao:wallet()),
     {ok, SignedBundle}.
 

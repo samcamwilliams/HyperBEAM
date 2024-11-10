@@ -36,7 +36,7 @@ execute(CarrierMsg, S) ->
                 end
         end,
     ?c(returning_computed_results),
-    ar_bundles:print(Results),
+    %ar_bundles:print(Results),
     {ok, S#{ results => Results }}.
 
 

@@ -1,5 +1,9 @@
 -module(ao).
--export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, no_prod/3, build/0, profile/1, debug_wait/3, read/1]).
+%%% Configuration and environment:
+-export([config/0, now/0, get/1, get/2, build/0]).
+%%% Debugging tools:
+-export([c/1, c/2, c/3, no_prod/3, read/1, read/2, debug_wait/3, profile/1]).
+%%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -19,6 +23,11 @@
                         {
                             ao_remote_store,
                             #{ node => "http://localhost:8734" },
+                            #{ scope => remote }
+                        },
+                        {
+                            ao_remote_store,
+                            #{ node => "http://localhost:8736" },
                             #{ scope => remote }
                         }
                     ]
@@ -161,8 +170,9 @@ debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
 debug_fmt(X) ->
     lists:flatten(io_lib:format("~120p", [X])).
 
-read(ID) ->
-    ao_cache:read_message(ao_store:scope(ao:get(store), local), ar_util:id(ID)).
+read(ID) -> read(ID, local).
+read(ID, Scope) ->
+    ao_cache:read_message(ao_store:scope(ao:get(store), Scope), ar_util:id(ID)).
 
 no_prod(X, Mod, Line) ->
     case ao:get(mode) of
