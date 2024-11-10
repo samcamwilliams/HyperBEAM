@@ -215,12 +215,12 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             ?c({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
-            Attestations = pfiltermap(
+            Attestations = lists:filtermap(
                 fun(Address) ->
-                    case ao_router:find(compute, Process#tx.id, Address) of
+                    case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
                             ?c({poda_asking_peer_for_attestation, ComputeNode}),
-                            case ao_client:compute(ComputeNode, Process#tx.id, Assignment#tx.id) of
+                            case ao_client:compute(ComputeNode, ar_bundles:id(Process, unsigned), ar_bundles:id(Assignment, unsigned)) of
                                 {ok, Att} ->
                                     ?c({poda_got_attestation_from_peer, ComputeNode}),
                                     ar_bundles:print(Att),

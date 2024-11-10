@@ -16,6 +16,7 @@ push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     end.
 
 execute(CarrierMsg, S) ->
+    ?no_prod("CU waits for 750ms"),
     receive after 750 -> ok end,
     MaybeBundle = ar_bundles:hd(CarrierMsg),
     Store = ao:get(store),
