@@ -110,6 +110,8 @@ validate_stage(2, Attestations, Content, Opts) ->
     case
         lists:all(
             fun({_, Att}) ->
+                ?c(validating_attestation),
+                ar_bundles:print(Att),
                 ar_bundles:verify_item(Att)
             end,
             maps:to_list(Attestations)
@@ -223,7 +225,6 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                             case ao_client:compute(ComputeNode, ar_bundles:id(Process, unsigned), ar_bundles:id(Assignment, unsigned)) of
                                 {ok, Att} ->
                                     ?c({poda_got_attestation_from_peer, ComputeNode}),
-                                    ar_bundles:print(Att),
                                     {true, Att};
                                 _ -> false
                             end;

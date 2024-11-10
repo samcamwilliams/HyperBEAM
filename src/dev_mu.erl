@@ -34,7 +34,7 @@ push(Msg, State = #{ results := ResTXs, logger := Logger }) ->
         assignments = maps:get(<<"/Assignment">>, ResTXs, #{}),
         spawns = maps:get(<<"/Spawn">>, ResTXs, #{})
     },
-    ao_logger:log(Logger, {ok, computed, ar_util:id(Msg#tx.id)}),
+    ao_logger:log(Logger, {ok, computed, ar_util:id(Msg, unsigned)}),
     fork(Res, maps:remove(results, State)),
     {ok, State};
 push(CarrierMsg, State) ->

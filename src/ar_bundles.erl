@@ -48,7 +48,7 @@ format(Item, Indent) when is_record(Item, tx) ->
                     lists:flatten(
                         io_lib:format(
                             "~s (signed) ~s (unsigned)",
-                            [ar_util:encode(Item#tx.id), ar_util:encode(id(Item, unsigned))]
+                            [ar_util:encode(id(Item, signed)), ar_util:encode(id(Item, unsigned))]
                         )
                     );
                 true -> ar_util:encode(id(Item, unsigned))
@@ -379,6 +379,8 @@ serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
     TX = normalize(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
+    enforce_size(TX#tx.target, [0, 32], target),
+    enforce_size(TX#tx.last_tx, [0, 32], last_tx),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
         (TX#tx.signature)/binary,
@@ -495,6 +497,25 @@ encode_optional_field(<<>>) ->
     <<0>>;
 encode_optional_field(Field) ->
     <<1:8/integer, Field/binary>>.
+
+%% @doc Force that a binary is either empty or the given number of bytes.
+enforce_size(Bin, Size) ->
+    enforce_size(Bin, Size, undefined_field).
+enforce_size(Bin, X, FieldName) when not is_list(X) ->
+    enforce_size(Bin, [X], FieldName);
+enforce_size(Bin, Sizes, FieldName) ->
+    case lists:member(byte_size(Bin), Sizes) of
+        true -> Bin;
+        false ->
+            throw(
+                {
+                    invalid_field_size,
+                    FieldName,
+                    {expected, Sizes},
+                    {actual, byte_size(Bin)}
+                }
+            )
+    end.
 
 %% @doc Encode a UTF-8 string to binary.
 utf8_encoded(String) ->

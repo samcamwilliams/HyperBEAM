@@ -13,6 +13,7 @@
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }, #{ scope => local }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
+-ao_debug(print).
 
 %%% A cache of AO messages and compute results.
 %%% 
@@ -54,23 +55,26 @@ latest(Store, ProcID, Limit, Path) ->
     case outputs(Store, ProcID) of
         [] -> not_found;
         AllOutputSlots ->
-            Slot =
-                first_slot_with_path(
+            ?c({searching_for_latest_slot, {proc_id, fmt_id(ProcID)}, {limit, Limit}, {path, Path}, {all_output_slots, AllOutputSlots}}),
+            case first_slot_with_path(
                     Store,
-                    ProcID,
+                    fmt_id(ProcID),
                     lists:reverse(lists:sort(AllOutputSlots)),
                     Limit,
                     Path
-                ),
-            ResolvedPath =
-                ao_store:resolve(
-                    Store,
-                    ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
-                ),
-            ?c({resolved_path, ResolvedPath}),
-            Msg = read(Store, ResolvedPath),
-            ?c(got_message),
-            {Slot, Msg}
+                ) of
+                not_found -> not_found;
+                Slot ->
+                    ResolvedPath =
+                        ao_store:resolve(
+                            Store,
+                            ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
+                        ),
+                    ?c({resolved_path, ResolvedPath}),
+                    Msg = read(Store, ResolvedPath),
+                    ?c(got_message),
+                    {Slot, Msg}
+            end
     end.
 
 first_slot_with_path(_Store, _ProcID, [], _Limit, _Path) -> not_found;
@@ -170,7 +174,7 @@ write(Store, Path, Item) ->
             UnsignedPath = ao_store:path(Store, [Path, fmt_id(UnsignedID)]),
             ?c({writing_item, UnsignedPath}),
             ok = ao_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
-            if SignedID =/= UnsignedID ->
+            if SignedID =/= not_signed ->
                 SignedPath = ao_store:path(Store, [Path, fmt_id(SignedID)]),
                 ?c({linking_item, SignedPath}),
                 ao_store:make_link(Store, UnsignedPath, SignedPath);
@@ -262,6 +266,7 @@ read_assignment(Store, ProcID, Slot) ->
 lookup(Store, PathPart) when not is_list(PathPart) ->
     lookup(Store, [PathPart]);
 lookup(Store, Path) ->
+    ?c({looking_up, Path}),
     ResolvedPath =
         P2 = ao_store:resolve(
             Store,
@@ -309,9 +314,7 @@ fmt_id(ID, _) when is_list(ID) andalso length(ID) == 43 -> ID;
 fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
     binary_to_list(ar_util:id(ID));
-fmt_id(ID, _Type) ->
-    %?c({warning, invalid_id_type, ID, _Type}),
-    ID.
+fmt_id(ID, _Type) -> ID.
 
 %%% Tests
 

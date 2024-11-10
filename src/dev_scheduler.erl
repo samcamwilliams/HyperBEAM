@@ -53,11 +53,11 @@ update_schedule(State = #{ process := Proc }) ->
     ToSlot = maps:get(to, State),
     ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint
-    Assignments = ao_client:get_assignments(Proc#tx.id, CurrentSlot, ToSlot),
+    Assignments = ao_client:get_assignments(ar_util:id(Proc, signed), CurrentSlot, ToSlot),
     ?c({got_assignments_from_su, length(Assignments)}),
     lists:foreach(
         fun(Assignment) ->
-            ?c({writing_recvd_assignment, ar_util:id(Assignment#tx.id)}),
+            ?c({writing_recvd_assignment, ar_util:id(Assignment, unsigned)}),
             ao_cache:write(Store, Assignment)
         end,
         Assignments

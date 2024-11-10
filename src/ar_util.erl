@@ -1,16 +1,17 @@
 -module(ar_util).
--export([id/1, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2, find_value/3]).
+-export([id/1, id/2, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2, find_value/3]).
 -export([remove_common/2]).
 -include("include/ao.hrl").
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
-id(TX) when is_record(TX, tx) ->
-	id(ar_bundles:id(TX#tx.id, unsigned));
-id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+id(Item) -> id(Item, unsigned).
+id(TX, Type) when is_record(TX, tx) ->
+	id(ar_bundles:id(TX, Type));
+id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
-id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 	b64fast:encode(Bin);
-id(Data) when is_list(Data) ->
+id(Data, _) when is_list(Data) ->
 	id(list_to_binary(Data)).
 
 %% @doc Encode a binary to URL safe base64 binary string.

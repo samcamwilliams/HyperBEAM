@@ -1,5 +1,5 @@
 -module(ao).
--export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, prod/3, build/0, profile/1, debug_wait/3]).
+-export([config/0, now/0, get/1, get/2, c/1, c/2, c/3, no_prod/3, build/0, profile/1, debug_wait/3, read/1]).
 -export([address/0, wallet/0, wallet/1]).
 
 -include("include/ar.hrl").
@@ -101,7 +101,8 @@ config() ->
             }
         ],
         % Dev options
-        local_store => [{ao_fs_store, #{ prefix => "TEST-data" }, #{ scope => local }}],
+        local_store =>
+            [{ao_fs_store, #{ prefix => "TEST-data" }, #{ scope => local }}],
         mode => debug,
         debug_print => false
     }.
@@ -153,16 +154,21 @@ debug_fmt({X, Y}) ->
 debug_fmt({X, Y, Z}) ->
     io_lib:format("~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z)]);
 debug_fmt({X, Y, Z, W}) ->
-    io_lib:format("~s, ~s, ~s, ~s", [debug_fmt(X), debug_fmt(Y), debug_fmt(Z), debug_fmt(W)]);
+    io_lib:format("~s, ~s, ~s, ~s",
+        [debug_fmt(X), debug_fmt(Y), debug_fmt(Z), debug_fmt(W)]);
 debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     lists:flatten(io_lib:format("~s", [Str]));
 debug_fmt(X) ->
     lists:flatten(io_lib:format("~120p", [X])).
 
-prod(X, Mod, Line) ->
+read(ID) ->
+    ao_cache:read_message(ao_store:scope(ao:get(store), local), ar_util:id(ID)).
+
+no_prod(X, Mod, Line) ->
     case ao:get(mode) of
         prod ->
-            io:format(standard_error, "================ NOT PROD READY =================~n", []),
+            io:format(standard_error,
+                "================ NOT PROD READY =================~n", []),
             io:format(standard_error, "~w:~w:       ~p~n", [Mod, Line, X]),
             throw(X);
         _ -> X

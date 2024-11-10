@@ -74,7 +74,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
                     ?c({no_cu_for_proc, ar_util:id(ProcID)}),
-                    Proc = ao_cache:read_message(Store, ProcID),
+                    Proc = ao_cache:read_message(Store, ar_util:id(ProcID)),
                     await_results(
                         cu_process:run(
                             Proc,
@@ -121,18 +121,20 @@ await_results(Pid) ->
     end.
 
 create_monitor_for_message(Msg) when is_record(Msg, tx) ->
-    create_monitor_for_message(Msg#tx.id);
+    create_monitor_for_message(ar_bundles:id(Msg, unsigned));
 create_monitor_for_message(MsgID) ->
     Listener = self(),
     fun(S, {message, Inbound}) ->
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
-        AssignmentID = ar_util:id(Assignment#tx.id),
+        % TODO: Validate that the _unsigned_ assignment is the correct one to test.
+        % Shouldn't make a difference, but it's not obvious.
+        AssignmentID = ar_util:id(Assignment, unsigned),
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
                 {<<"Slot">>, RawSlot} -> list_to_integer(binary_to_list(RawSlot));
                 false -> no_slot
             end,
-        ScheduledMsgID = ar_util:id((maps:get(<<"Message">>, Inbound#tx.data))#tx.id),
+        ScheduledMsgID = ar_util:id((maps:get(<<"Message">>, Inbound#tx.data)), unsigned),
         case (Slot == MsgID) or (ScheduledMsgID == MsgID) or (AssignmentID == MsgID) of
             true ->
                 Listener ! {result, self(), Inbound, S}, done;
@@ -169,10 +171,10 @@ create_persistent_monitor() ->
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
-    ?c({booting_process, ar_util:id(Process#tx.id)}),
-    pg:join({cu, ar_util:id(Process#tx.id)}, self()),
+    ?c({booting_process, ar_util:id(Process, signed)}),
+    pg:join({cu, ar_util:id(Process, signed)}, self()),
     % Build the device stack.
-    ?c({registered_process, ar_util:id(Process#tx.id)}),
+    ?c({registered_process, ar_util:id(Process, signed)}),
     {ok, Dev} = cu_device:from_message(Process),
     ?c({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
@@ -190,7 +192,7 @@ boot(Process, Opts) ->
     CheckpointOption =
         ao_cache:latest(
             Store,
-            Process#tx.id,
+            ar_bundles:id(Process, signed),
             maps:get(to, Opts, inf),
             [Key]
         ),
@@ -299,7 +301,7 @@ post_execute(
             ?c({checkpoint_normalized_for_slot, Slot}),
             ao_cache:write_output(
                 Store,
-                Process#tx.id,
+                ar_util:id(Process, signed),
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
             ),
@@ -308,7 +310,7 @@ post_execute(
             NormalizedResult = ar_bundles:deserialize(ar_bundles:serialize(Results)),
             ao_cache:write_output(
                 Store,
-                Process#tx.id,
+                ar_util:id(Process, signed),
                 Slot,
                 NormalizedResult
             ),

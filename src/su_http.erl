@@ -84,7 +84,7 @@ schedule(CarrierM) ->
                         [
                             {<<"Status">>, <<"OK">>},
                             {<<"Initial-Assignment">>, <<"0">>},
-                            {<<"Process">>, ar_util:id(M#tx.id)}
+                            {<<"Process">>, ar_util:id(M, signed)}
                         ],
                     data = []
                 }

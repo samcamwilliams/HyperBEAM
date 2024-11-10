@@ -52,7 +52,7 @@ upload(Item) ->
 
 %%% Scheduling Unit API
 schedule(Msg) ->
-    {ok, Node} = ao_router:find(schedule, Msg#tx.id),
+    {ok, Node} = ao_router:find(schedule, ar_bundles:id(Msg, signed)),
     schedule(Node, Msg).
 schedule(Node, Msg) ->
     ao_http:post(
@@ -111,7 +111,6 @@ get_assignments(Node, ProcID, From, To) ->
                 end
         ),
     ?c({requested_assignments, From, To}),
-    ar_bundles:print(Res),
     extract_assignments(From, To, Data).
 
 extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
@@ -161,10 +160,10 @@ push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
 push(Item, Tracing) ->
-    {ok, Node} = ao_router:find(message, Item#tx.id),
+    {ok, Node} = ao_router:find(message, ar_bundles:id(Item, unsigned)),
     push(Node, Item, Tracing).
 push(Node, Item, Tracing) ->
-    ?c({calling_remote_push, ar_util:id(Item#tx.id)}),
+    ?c({calling_remote_push, ar_util:id(Item)}),
     ao_http:post(
         Node,
         "/?trace=" ++ Tracing,

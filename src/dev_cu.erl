@@ -9,7 +9,6 @@ push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     case ao_client:compute(Assignment, Msg) of
         {ok, Results} ->
             ?c(computed_results),
-            ar_bundles:print(Results),
             {ok, S#{ results => Results }};
         Error ->
             throw({cu_error, Error})
@@ -26,7 +25,7 @@ execute(CarrierMsg, S) ->
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-                cu_process:result(ProcID, Assignment#tx.id, Store, Wallet);
+                cu_process:result(ProcID, ar_util:id(Assignment, unsigned), Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->

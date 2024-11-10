@@ -14,9 +14,9 @@ run(Proc, Msg) ->
 run(Proc, Msg, _Opts) ->
     ao_cache:write(ao:get(store), Msg),
     ao_cache:write(ao:get(store), Proc),
-    Scheduler = su_registry:find(Proc#tx.id, true),
+    Scheduler = su_registry:find(ar_util:id(Proc, signed), true),
     Assignment = su_process:schedule(Scheduler, Msg),
-    cu_process:result(Proc#tx.id, Assignment#tx.id, ao:get(store), ao:wallet()).
+    cu_process:result(ar_util:id(Proc, signed), ar_util:id(Assignment, unsigned), ao:get(store), ao:wallet()).
 
 %%% TESTS
 
@@ -103,7 +103,7 @@ default_test_devices(Wallet, Opts) ->
         {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
-        {<<"Image">>, ar_util:id(Img#tx.id)},
+        {<<"Image">>, ar_util:id(Img)},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
         {<<"Device">>, <<"Multipass">>},
@@ -129,14 +129,14 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
     Store = ao:get(store),
     ao_cache:write(
         Store,
-        Signed = ar_bundles:sign_item(
+        SignedProcess = ar_bundles:sign_item(
             #tx{ tags = Devs },
             Wallet
         )
     ),
     Msg = ar_bundles:sign_item(
         #tx{
-            target = Signed#tx.id,
+            target = ar_bundles:id(SignedProcess, signed),
             tags = [
                 {<<"Protocol">>, <<"ao">>},
                 {<<"Variant">>, <<"ao.tn.2">>},
@@ -148,5 +148,5 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
         Wallet
     ),
     ao_cache:write(Store, Msg),
-    ?c({test_data_written, {proc, ar_util:id(Signed#tx.id)}, {msg, ar_util:id(Msg#tx.id)}}),
-    {Signed, Msg}.
+    ?c({test_data_written, {proc, ar_util:id(SignedProcess, signed)}, {msg, ar_util:id(Msg, unsigned)}}),
+    {SignedProcess, Msg}.
