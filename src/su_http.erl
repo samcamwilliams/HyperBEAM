@@ -67,14 +67,15 @@ schedule(CarrierM) ->
     ?c(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
     Store = ao:get(store),
+	?no_prod("SU does not validate item before writing into stream."),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
-        {false, _} ->
-            {ok,
-                #tx{
-                    tags = [{<<"Status">>, <<"Failed">>}],
-                    data = [<<"Data item is not valid.">>]
-                }
-            };
+        % {false, _} ->
+        %     {ok,
+        %         #tx{
+        %             tags = [{<<"Status">>, <<"Failed">>}],
+        %             data = <<"Data item is not valid.">>
+        %         }
+        %     };
         {_, {<<"Type">>, <<"Process">>}} ->
             ao_cache:write(Store, M),
             ao_client:upload(M),
