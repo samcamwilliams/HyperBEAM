@@ -6,7 +6,6 @@
 
 push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
-    ?c({pushing, Msg}),
     case ao_client:compute(Assignment, Msg) of
         {ok, Results} ->
             ?c(computed_results),
@@ -38,15 +37,23 @@ execute(CarrierMsg, S) ->
         end,
     {ResType, ModState = #{ results := ModResults }} =
         case lists:keyfind(<<"Attest-To">>, 1, CarrierMsg#tx.tags) of
-            {_, AttestTo} ->
+            {_, RawAttestTo} ->
+                AttestTo = ar_util:decode(RawAttestTo),
                 ?c({attest_to_only_message, AttestTo}),
+				ar_bundles:print(Results),
+				?c(writing_attestation),
+				ao_cache:write(ao:get(store), Results),
                 case ar_bundles:find(AttestTo, Results) of
                     not_found ->
                         ?c(message_to_attest_to_not_found),
-                        {error,
-                            #tx{
-                                tags = [{<<"Status">>, <<"Failed">>}],
-                                data = [<<"Requested message to attest to not in results bundle.">>]
+                        ar_bundles:print(Results),
+                        {ok,
+                            S#{
+                                results =>
+                                    #tx {
+                                        tags = [{<<"Status">>, <<"404">>}],
+                                        data = <<"Requested message to attest to not in results bundle.">>
+                                    }
                             }
                         };
                     _ ->
@@ -55,8 +62,8 @@ execute(CarrierMsg, S) ->
                             results => ar_bundles:sign_item(
                                 #tx {
                                     tags = [
-                                        {<<"Status">>, <<"Success">>},
-                                        {<<"Attestation-For">>, AttestTo}
+                                        {<<"Status">>, <<"200">>},
+                                        {<<"Attestation-For">>, RawAttestTo}
                                     ],
                                     data = <<>>
                                 },

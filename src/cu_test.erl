@@ -95,8 +95,7 @@ default_test_devices(Wallet, Opts) ->
     [
         {<<"Authority">>, Addr} ||
             Addr <- maps:keys(maps:get(compute, ao:get(nodes))),
-            Addr =/= '_',
-            Addr =/= LocalAddress
+            Addr =/= '_'
     ] ++
     [
         {<<"Device">>, <<"JSON-Interface">>},

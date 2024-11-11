@@ -30,11 +30,8 @@ extract_opts(Params) ->
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
     ?c({poda_authorities, Authorities}),
-    ?no_prod(use_real_authority_addresses),
-    Addr = ar_wallet:to_address(ao:wallet()),
     #{
-        authorities =>
-            Authorities ++ [ar_util:encode(Addr)],
+        authorities => Authorities,
         quorum => Quorum
     }.
 
@@ -229,12 +226,13 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                                 ar_bundles:id(Assignment, unsigned),
                                 #{ <<"Attest-To">> => MsgID }
                             ),
+
                             case Res of
                                 {ok, Att} ->
                                     ?c({poda_got_attestation_from_peer, ComputeNode}),
                                     ?c(poda_compute_result),
                                     ar_bundles:print(Att),
-                                    {true, element(2, Res)};
+                                    {true, Att};
                                 _ -> false
                             end;
                         _ -> false

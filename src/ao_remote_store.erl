@@ -35,7 +35,7 @@ read(Opts = #{ node := Node }, Key) ->
                 _ ->
                     ?no_prod("Unnecessarily wasteful to serialize to deserialize later."),
                     %ar_bundles:print(Bundle#tx.data),
-                    {ok, ar_bundles:serialize(Bundle#tx.data)}
+                    {ok, ar_bundles:serialize(Bundle)}
             end;
         Error ->
             ?no_prod("Validate this response path."),

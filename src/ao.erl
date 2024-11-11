@@ -10,7 +10,7 @@
 -define(ENV_KEYS,
     #{
         key_location => {"AO_KEY", "hyperbeam-key.json"},
-        http_port => {"AO_PORT", fun list_to_integer/1, "8734"},
+        http_port => {"AO_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
             {"AO_STORE",
                 fun(Dir) ->
@@ -56,7 +56,8 @@ config() ->
         nodes => #{
             compute =>
                 #{
-                    address() => "http://localhost:8734/cu",
+                    <<"ggltHF0Cnv9ylH3vM1p7amR2vXLMoPLQIUQmAEwLP-k">> =>
+                        "http://localhost:8734/cu",
                     <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> =>
                         "http://localhost:8736/cu",
                     '_' => "http://localhost:8734/cu"
@@ -165,9 +166,14 @@ debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
 debug_fmt(X) ->
     lists:flatten(io_lib:format("~120p", [X])).
 
+%% @doc Debugging function to read a message from the cache.
+%% Specify either a scope atom (local or remote) or a store tuple
+%% as the second argument.
 read(ID) -> read(ID, local).
-read(ID, Scope) ->
-    ao_cache:read_message(ao_store:scope(ao:get(store), Scope), ar_util:id(ID)).
+read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
+    read(ID, ao_store:scope(ao:get(store), ScopeAtom));
+read(ID, Store) ->
+    ao_cache:read_message(Store, ar_util:id(ID)).
 
 no_prod(X, Mod, Line) ->
     case ao:get(mode) of
