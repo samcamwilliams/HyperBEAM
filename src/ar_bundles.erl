@@ -25,7 +25,7 @@
 ]).
 
 % How many bytes of a binary to print with `print/1`.
--define(BIN_PRINT, 10).
+-define(BIN_PRINT, 50).
 -define(INDENT_SPACES, 2).
 
 %%%===================================================================
@@ -65,6 +65,11 @@ format(Item, Indent) when is_record(Item, tx) ->
             format_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
         false -> []
     end ++
+	case is_signed(Item) of
+		true ->
+			format_line("Signer: ~s", [ar_util:encode(signer(Item))], Indent + 1);
+		false -> []
+	end ++
     format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
