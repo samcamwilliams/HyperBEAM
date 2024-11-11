@@ -2,6 +2,7 @@
 -export([start/0, get/1, get/2, post/3, reply/2, reply/3]).
 -export([tx_to_status/1, req_to_tx/1]).
 -include("include/ao.hrl").
+-ao_debug(print).
 
 start() ->
     httpc:set_options([{max_keep_alive_length, 0}]).

@@ -88,7 +88,7 @@ get_assignments(ProcID, From, To) ->
     {ok, Node} = ao_router:find(schedule, ProcID),
     get_assignments(Node, ProcID, From, To).
 get_assignments(Node, ProcID, From, To) ->
-    {ok, Res = #tx{data = Data}} =
+    {ok, #tx{data = Data}} =
         ao_http:get(
             Node,
             "/?Action=Schedule&Process=" ++
@@ -110,7 +110,7 @@ get_assignments(Node, ProcID, From, To) ->
                         end
                 end
         ),
-    ?c({requested_assignments, From, To}),
+    ?c({requested_assignments_returned, From, To}),
     extract_assignments(From, To, Data).
 
 extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
@@ -142,22 +142,14 @@ compute(Node, ProcID, Slot, Opts) when is_integer(Slot) ->
 compute(Node, ProcID, AssignmentID, Opts) when is_binary(AssignmentID) ->
     compute(Node, ProcID, binary_to_list(ar_util:id(AssignmentID)), Opts);
 compute(Node, ProcID, Slot, Opts) when is_list(Slot) ->
-    % TODO: Unify these repetitive calls.
     ao_http:get(
         Node,
-        "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot ++
-            case maps:is_key(attest_to, Opts) of
-                true -> "&Attest-To=" ++ ar_util:id(maps:get(attest_to, Opts));
-                false -> ""
-            end
+        "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot ++ path_opts(Opts, "&")
     );
 compute(Node, Assignment, Msg, Opts) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
     ao_http:post(
         Node,
-        "/" ++ case maps:is_key(attest_to, Opts) of
-            true -> "?Attest-To=" ++ ar_util:id(maps:get(attest_to, Opts));
-            false -> ""
-        end,
+        "/" ++ path_opts(Opts, "?"),
         ar_bundles:normalize(#{
             <<"Message">> => Msg,
             <<"Assignment">> => Assignment
@@ -231,6 +223,29 @@ cron_cursor(Node, ProcID) ->
         Response ->
             {error, cu_http_error, Response}
     end.
+
+%%% Utility functions
+
+%% @doc Convert a map of parameters into a query string, starting with the
+%% given separator.
+path_opts(Opts) ->
+    path_opts(Opts, "?").
+path_opts(EmptyMap, _Sep) when map_size(EmptyMap) == 0 -> "";
+path_opts(Opts, Sep) ->
+    PathParts = tl(lists:flatten(lists:map(
+        fun({Key, Val}) ->
+            "&" ++ format_path_opt(Key) ++ "=" ++ format_path_opt(Val)
+        end,
+        maps:to_list(Opts)
+    ))),
+    Sep ++ PathParts.
+
+format_path_opt(Val) when is_atom(Val) ->
+    atom_to_list(Val);
+format_path_opt(Val) when is_binary(Val) ->
+    binary_to_list(Val);
+format_path_opt(Val) when is_integer(Val) ->
+    integer_to_list(Val).
 
 parse_result_set(Body) ->
     {JSONStruct} = jiffy:decode(Body),

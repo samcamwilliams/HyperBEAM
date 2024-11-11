@@ -222,12 +222,12 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 fun(Address) ->
                     case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
-                            ?c({poda_asking_peer_for_attestation, ComputeNode}),
+                            ?c({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
                             Res = ao_client:compute(
                                 ComputeNode,
                                 ar_bundles:id(Process, unsigned),
                                 ar_bundles:id(Assignment, unsigned),
-                                #{}
+                                #{ <<"Attest-To">> => MsgID }
                             ),
                             case Res of
                                 {ok, Att} ->
