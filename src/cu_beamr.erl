@@ -25,12 +25,9 @@ start(WasmBinary) ->
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
     ?c({waiting_for_init_from, Port}),
     receive
-        {ok, Imports, Exports} ->
+        {execution_result, Imports, Exports} ->
             ?c({wasm_init_success, {imports, length(Imports)}, {exports, length(Exports)}}),
-            {ok, Port, Imports, Exports};
-        Other ->
-            ?c({unexpected_wasm_init_result, Other}),
-            Other
+            {ok, Port, Imports, Exports}
     end.
 
 stop(Port) ->
@@ -56,7 +53,7 @@ stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) ->
 
 exec_call(S, ImportFunc, Port) ->
     receive
-        {ok, Result} ->
+        {execution_result, Result} ->
             ?c({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
@@ -74,10 +71,7 @@ exec_call(S, ImportFunc, Port) ->
             end;
         {error, Error} ->
             ?c({wasm_error, Error}),
-            {error, Error, S};
-        Error ->
-            ?c({unexpected_result, Error}),
-            Error
+            {error, Error, S}
     end.
 
 serialize(Port) ->
