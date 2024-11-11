@@ -1,6 +1,6 @@
 -module(ar_util).
 
--export([id/1, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2,
+-export([id/1, id/2, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2,
          find_value/3]).
 -export([remove_common/2]).
 
