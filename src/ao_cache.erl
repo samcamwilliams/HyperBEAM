@@ -389,9 +389,7 @@ composite_unsigned_item_test() ->
     },
     Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
-    ?c(written),
     RetrievedItem = read_message(TestStore, ar_bundles:id(Item)),
-    ?c(RetrievedItem),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)

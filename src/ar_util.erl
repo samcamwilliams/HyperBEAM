@@ -1,11 +1,9 @@
 -module(ar_util).
-
 -export([id/1, id/2, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2,
          find_value/3]).
 -export([remove_common/2]).
 
 -include("include/ao.hrl").
-
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).
 id(TX, Type) when is_record(TX, tx) ->
