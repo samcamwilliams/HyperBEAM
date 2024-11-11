@@ -2,7 +2,6 @@
 -export([start/2, schedule/2]).
 -export([get_current_slot/1, get_assignments/3]).
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 -record(state,
     {
@@ -147,13 +146,13 @@ do_assign(State, Message, ReplyPID) ->
             ao_cache:write_assignment(State#state.store, Assignment),
             ?c(starting_message_write),
             ao_cache:write(State#state.store, Message),
-            ?c(message_written),
-            ?c(assignment_after_write),
-            ar_bundles:print(Assignment),
-            ?c(message_after_assignment_written),
-            ar_bundles:print(Message),
-            ?c(read_from_disk),
-            ar_bundles:print(ao_cache:read(ao_store:scope(State#state.store, local), ar_util:id(Message, unsigned))),
+            % ?c(message_written),
+            % ?c(assignment_after_write),
+            % ar_bundles:print(Assignment),
+            % ?c(message_after_assignment_written),
+            % ar_bundles:print(Message),
+            % ?c(read_from_disk),
+            % ar_bundles:print(ao_cache:read(ao_store:scope(State#state.store, local), ar_util:id(Message, unsigned))),
             maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
             ao_client:upload(Assignment),
             ao_client:upload(Message),

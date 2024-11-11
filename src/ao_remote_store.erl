@@ -1,7 +1,6 @@
 -module(ao_remote_store).
 -export([type/2, read/2, resolve/2, path/2]).
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% A store module that reads data from (an)other AO node(s).
 

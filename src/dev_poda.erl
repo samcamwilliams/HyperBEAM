@@ -107,8 +107,6 @@ validate_stage(2, Attestations, Content, Opts) ->
     case
         lists:all(
             fun({_, Att}) ->
-                ?c(validating_attestation),
-                ar_bundles:print(Att),
                 ar_bundles:verify_item(Att)
             end,
             maps:to_list(Attestations)
@@ -136,7 +134,6 @@ validate_attestation(Msg, Att, Opts) ->
     MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = ar_util:encode(ar_bundles:signer(Att)),
     ?c({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
-    ar_bundles:print(Att),
     ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
     ?no_prod(use_real_signature_verification),
     ValidSignature = ar_bundles:verify_item(Att),
@@ -230,8 +227,6 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                             case Res of
                                 {ok, Att} ->
                                     ?c({poda_got_attestation_from_peer, ComputeNode}),
-                                    ?c(poda_compute_result),
-                                    ar_bundles:print(Att),
                                     {true, Att};
                                 _ -> false
                             end;
@@ -274,7 +269,6 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 ),
                 Wallet
             ),
-            ar_bundles:print(AttestationBundle),
             ?c({poda_attestation_bundle_signed, length(Attestations)}),
             AttestationBundle;
         false -> NewMsg

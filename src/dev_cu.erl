@@ -40,13 +40,9 @@ execute(CarrierMsg, S) ->
             {_, RawAttestTo} ->
                 AttestTo = ar_util:decode(RawAttestTo),
                 ?c({attest_to_only_message, AttestTo}),
-				ar_bundles:print(Results),
-				?c(writing_attestation),
-				ao_cache:write(ao:get(store), Results),
                 case ar_bundles:find(AttestTo, Results) of
                     not_found ->
                         ?c(message_to_attest_to_not_found),
-                        ar_bundles:print(Results),
                         {ok,
                             S#{
                                 results =>
@@ -75,7 +71,7 @@ execute(CarrierMsg, S) ->
                 {ok, S#{ results => Results }}
         end,
     ?c(returning_computed_results),
-    ar_bundles:print(ModResults),
+	ar_bundles:print(ModResults),
     {ResType, ModState}.
 
 

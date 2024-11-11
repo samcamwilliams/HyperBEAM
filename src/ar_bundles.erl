@@ -240,16 +240,6 @@ sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
     % Generate the signature from the data item's data segment in 'signed'-ready mode.
     Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item, signed)),
     ID = crypto:hash(sha256, <<Sig/binary>>),
-    % ?c(
-    %     {signed_item,
-    %         ar_util:encode(id(Item, unsigned)),
-    %         case id(Item, signed) of
-    %             not_signed -> "not_signed";
-    %             SignedID -> ar_util:encode(SignedID)
-    %         end,
-    %         ar_util:encode(ID)
-    %     }
-    % ),
     Item#tx{id = ID, signature = Sig}.
 
 %% @doc Verify the validity of a data item.

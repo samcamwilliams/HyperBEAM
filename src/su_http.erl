@@ -2,7 +2,6 @@
 -export([handle/1]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 %%% The SU device's API functions. Enables clients to read/write messages into
 %%% the schedule for a process.

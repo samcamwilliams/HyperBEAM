@@ -6,7 +6,6 @@
 -export([path/2, add_path/3]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include("include/ao.hrl").
--ao_debug(no_print).
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store

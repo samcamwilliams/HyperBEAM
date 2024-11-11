@@ -1,7 +1,6 @@
 -module(dev_lookup).
 -export([read/1]).
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% The lookup device: Look up an ID by name and return it.
 

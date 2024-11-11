@@ -13,7 +13,6 @@
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }, #{ scope => local }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
--ao_debug(print).
 
 %%% A cache of AO messages and compute results.
 %%% 
