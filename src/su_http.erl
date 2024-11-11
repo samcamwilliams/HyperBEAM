@@ -65,6 +65,7 @@ current_schedule(M) ->
 schedule(CarrierM) ->
     ?c(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
+	ar_bundles:print(M),
     Store = ao:get(store),
 	?no_prod("SU does not validate item before writing into stream."),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of

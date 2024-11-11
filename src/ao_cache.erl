@@ -126,10 +126,11 @@ write_output(Store, ProcID, Slot, Item) ->
     ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
     ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
     ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
-    if SignedID =/= UnsignedID ->
-        ok = ao_store:make_link(Store, RawMessagePath,
-            ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
-    true -> already_exists
+    case ar_bundles:is_signed(Item) of
+        true ->
+            ok = ao_store:make_link(Store, RawMessagePath,
+                ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
+        false -> already_exists
     end,
     ok.
 

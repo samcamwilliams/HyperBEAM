@@ -181,7 +181,7 @@ push(_Item, S = #{ results := Results }) ->
     NewRes = attest_to_results(Results, S),
     {ok, S#{ results => NewRes }}.
 
-attest_to_results(Msg, S = #{ wallet := Wallet }) ->
+attest_to_results(Msg, S) ->
     case is_map(Msg#tx.data) of
         true ->
             % Add attestations to the outbox and spawn items.
@@ -223,7 +223,6 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                                 ar_bundles:id(Assignment, unsigned),
                                 #{ <<"Attest-To">> => MsgID }
                             ),
-
                             case Res of
                                 {ok, Att} ->
                                     ?c({poda_got_attestation_from_peer, ComputeNode}),
@@ -233,7 +232,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                         _ -> false
                     end
                 end,
-                InitAuthorities
+                InitAuthorities -- [ao:wallet()]
             ),
             ?c({poda_attestations, length(Attestations)}),
             LocalAttestation = ar_bundles:sign_item(

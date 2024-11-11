@@ -50,11 +50,10 @@ reply(Req, Status, Item) ->
             replying,
             Status,
             maps:get(path, Req, undefined_path),
-            Ref =
-                case is_record(Item, tx) of
-                    true -> ar_util:id(Item);
-                    false -> data_body
-                end
+            case is_record(Item, tx) of
+                true -> ar_util:id(Item);
+                false -> data_body
+            end
         }
     ),
     Req2 = cowboy_req:reply(
@@ -63,7 +62,6 @@ reply(Req, Status, Item) ->
         ar_bundles:serialize(Item),
         Req
     ),
-    ?c({replied, Status, Ref}),
     {ok, Req2, no_state}.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).

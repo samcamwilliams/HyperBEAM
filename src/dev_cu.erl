@@ -6,6 +6,9 @@
 
 push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     Msg = ar_bundles:hd(CarrierMsg),
+	?c({pushing_message, ar_util:id(Assignment, unsigned), ar_util:id(Msg, unsigned)}),
+	?c({assignment, ar_util:id(Assignment, unsigned)}),
+	ar_bundles:print(Assignment),
     case ao_client:compute(Assignment, Msg) of
         {ok, Results} ->
             ?c(computed_results),
@@ -15,8 +18,6 @@ push(CarrierMsg, S = #{ assignment := Assignment, logger := _Logger }) ->
     end.
 
 execute(CarrierMsg, S) ->
-    ?no_prod("CU waits for 750ms"),
-    receive after 750 -> ok end,
     MaybeBundle = ar_bundles:hd(CarrierMsg),
     Store = ao:get(store),
     Wallet = ao:wallet(),

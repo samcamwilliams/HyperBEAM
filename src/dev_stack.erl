@@ -112,7 +112,7 @@ call(Devs, S, FuncName, Opts) ->
 do_call([], S, _FuncName, _Opts) ->
     {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ arg_prefix := ArgPrefix }, FuncName, Opts) ->
-    ?c({DevMod, FuncName, maps:get(slot, S, "[no_slot]"), maps:get(pass, S, "[no_pass_num]")}),
+    %?c({DevMod, FuncName, {slot, maps:get(slot, S, "[no_slot]")}, {pass, maps:get(pass, S, "[no_pass_num]")}}),
     case cu_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
         {skip, NewS} when is_map(NewS) ->
             {ok, NewS};

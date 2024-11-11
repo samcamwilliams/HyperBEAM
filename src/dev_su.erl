@@ -1,4 +1,4 @@
--module(dev_scheduler).
+-module(dev_su).
 %%% Local scheduling functions:
 -export([schedule/1]).
 %%% CU-flow functions:
@@ -18,6 +18,7 @@
 %%% HTTP API functions:
 schedule(Item) ->
     {ok, Output} = su_http:handle(Item),
+	%?debug_wait(1000),
     {ok, Output}.
 
 %%% MU pushing client functions:
@@ -52,10 +53,18 @@ update_schedule(State = #{ process := Proc }) ->
     ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint
     Assignments = ao_client:get_assignments(ar_util:id(Proc, signed), CurrentSlot, ToSlot),
-    ?c({got_assignments_from_su, length(Assignments)}),
+    ?c({got_assignments_from_su,
+		[
+			{
+				%element(2, lists:keyfind(<<"Slot">>, 1, A#tx.tags)),
+				ar_bundles:print(A),
+				ar_util:id(A, signed),
+				ar_util:id(A, unsigned)
+			}
+		|| A <- Assignments ]}),
     lists:foreach(
         fun(Assignment) ->
-            ?c({writing_recvd_assignment, ar_util:id(Assignment, unsigned)}),
+            ?c({writing_assignment_to_cache, ar_util:id(Assignment, unsigned)}),
             ao_cache:write(Store, Assignment)
         end,
         Assignments

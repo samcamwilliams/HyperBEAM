@@ -49,7 +49,7 @@ config() ->
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => aggressive, 
+        scheduling_mode => local_confirmation, 
         http_host => "localhost",
         gateway => "https://arweave.net",
         bundler => "https://up.arweave.net",
@@ -77,7 +77,7 @@ config() ->
         preloaded_devices =>
             #{
                 <<"Stack">> => {dev_stack, execute},
-                <<"Scheduler">> => dev_scheduler,
+                <<"Scheduler">> => dev_su,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,
@@ -92,13 +92,13 @@ config() ->
             },
         default_device_stacks => [
             {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
-            {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
+            {<<"su">>, {<<"schedule">>, [dev_p4, dev_su]}},
             {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
             {<<"mu">>,
                 {<<"push">>, [
                     dev_p4,
                     dev_mu,
-                    dev_scheduler,
+                    dev_su,
                     dev_cu,
                     dev_poda,
                     dev_mu
@@ -201,5 +201,5 @@ profile(Fun) ->
     eprof:analyze(total).
 
 debug_wait(T, Mod, Line) ->
-    c({debug_wait, T, Mod, Line}),
+    debug_print({debug_wait, T}, Mod, Line),
     receive after T -> ok end.
