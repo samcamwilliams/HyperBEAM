@@ -5,7 +5,6 @@
 -export([init/2, end_of_schedule/1, uses/0, checkpoint/1]).
 %%% MU-flow functions:
 -export([push/2]).
--ao_debug(print).
 
 -include("include/ao.hrl").
 

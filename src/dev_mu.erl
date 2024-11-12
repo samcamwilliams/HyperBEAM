@@ -1,7 +1,6 @@
 -module(dev_mu).
 -export([push/2]).
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% The main pushing logic for messages around the system.s
 

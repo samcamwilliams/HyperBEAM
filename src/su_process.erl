@@ -2,7 +2,6 @@
 -export([start/2, schedule/2]).
 -export([get_current_slot/1, get_assignments/3]).
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 -record(state,
     {
