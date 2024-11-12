@@ -2,6 +2,7 @@
 -export([handle/1]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 %%% The SU device's API functions. Enables clients to read/write messages into
 %%% the schedule for a process.
@@ -102,16 +103,15 @@ schedule(CarrierM) ->
 
 %% Private methods
 
-% Send existing-SU GraphQL compatible results
-% TODO: Refactor the type coercion here and in su_process:get_assignments.
-% This is absurd.
 send_schedule(Store, ProcID, false, To) ->
     send_schedule(Store, ProcID, 0, To);
 send_schedule(Store, ProcID, From, false) ->
     send_schedule(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)));
-send_schedule(Store, ProcID, {_, From}, To) ->
+send_schedule(Store, ProcID, {<<"From">>, From}, To) ->
     send_schedule(Store, ProcID, binary_to_integer(From), To);
-send_schedule(Store, ProcID, From, {_, To}) ->
+send_schedule(Store, ProcID, From, {<<"To">>, To}) when byte_size(To) == 43 ->
+    send_schedule(Store, ProcID, From, To);
+send_schedule(Store, ProcID, From, {<<"To">>, To}) ->
     send_schedule(Store, ProcID, From, binary_to_integer(To));
 send_schedule(Store, ProcID, From, To) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),

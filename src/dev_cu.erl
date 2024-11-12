@@ -35,7 +35,6 @@ execute(CarrierMsg, S) ->
                     {_, Process} ->
                         {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
 						?c({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
-						ar_bundles:print(CarrierMsg),
                         cu_process:result(Process, Slot, Store, Wallet);
                     false ->
                         {error, no_viable_computation}

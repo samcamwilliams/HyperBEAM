@@ -105,7 +105,7 @@ get_assignments(Node, ProcID, From, To) ->
                 binary_to_list(ar_util:id(ProcID)) ++
                 case From of
                     undefined -> "";
-                    _ -> "&from=" ++
+                    _ -> "&From=" ++
                         case is_integer(From) of
                             true -> integer_to_list(From);
                             false -> binary_to_list(From)
@@ -113,7 +113,7 @@ get_assignments(Node, ProcID, From, To) ->
                 end ++
                 case To of
                     undefined -> "";
-                    _ -> "&to=" ++
+                    _ -> "&To=" ++
                         case is_integer(To) of
                             true -> integer_to_list(To);
                             false -> binary_to_list(To)

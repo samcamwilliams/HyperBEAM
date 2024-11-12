@@ -56,7 +56,7 @@ update_schedule(State = #{ process := Proc }) ->
     CurrentSlot = maps:get(slot, State, 0),
     ToSlot = maps:get(to, State),
     ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
-    % TODO: Get from slot via checkpoint
+    % TODO: Get from slot via checkpoint. (Done, right?)
     Assignments = ao_client:get_assignments(ar_util:id(Proc, signed), CurrentSlot, ToSlot),
     ?c({got_assignments_from_su,
 		[

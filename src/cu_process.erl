@@ -149,7 +149,7 @@ create_monitor_for_message(MsgID) ->
                 Listener ! {result, self(), Inbound, S}, done;
             false ->
                 ?c({monitor_got_message_for_wrong_slot, Slot, MsgID}),
-				ar_bundles:print(Inbound),
+				%ar_bundles:print(Inbound),
                 ignored
         end;
         (S, end_of_schedule) ->

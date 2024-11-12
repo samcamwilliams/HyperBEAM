@@ -141,6 +141,7 @@ write_assignment(Store, Assignment) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     ok = write(Store, Assignment),
     UnsignedID = fmt_id(Assignment, unsigned),
+    SignedID = fmt_id(Assignment, signed),
     % Create symlinks from the message on the process and the 
     % slot on the process to the underlying data.
     RawMessagePath =
@@ -148,13 +149,27 @@ write_assignment(Store, Assignment) ->
             "messages",
             UnsignedID
         ]),
-    AssignmentPath =
+    AssignmentPathByNum =
         ao_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
             binary_to_list(Slot)
         ]),
-    ao_store:make_link(Store, RawMessagePath, AssignmentPath),
+	AssignmentPathByID =
+        ao_store:path(Store, [
+            "assignments",
+            fmt_id(ProcID),
+            SignedID
+        ]),
+	AssignmentPathByUnsignedID =
+        ao_store:path(Store, [
+            "assignments",
+            fmt_id(ProcID),
+            UnsignedID
+        ]),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPathByNum),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPathByID),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPathByUnsignedID),
     ok.
 
 write(Store, Item) ->
@@ -252,8 +267,8 @@ read_output(Store, ProcID, SlotRef) ->
         _ -> read(Store, ResolvedPath)
     end.
 
-read_assignment(Store, _ProcID, AssignmentID) when is_binary(AssignmentID) ->
-    read(Store, AssignmentID);
+read_assignment(Store, ProcID, Slot) when is_integer(Slot) ->
+    read_assignment(Store, ProcID, integer_to_list(Slot));
 read_assignment(Store, ProcID, Slot) ->
     ResolvedPath =
         P2 = ao_store:resolve(
@@ -261,7 +276,7 @@ read_assignment(Store, ProcID, Slot) ->
             P1 = ao_store:path(Store, [
                 "assignments",
                 fmt_id(ProcID),
-                integer_to_list(Slot)
+                Slot
             ])
         ),
     ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
