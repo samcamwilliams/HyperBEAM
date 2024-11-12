@@ -65,7 +65,7 @@ current_schedule(M) ->
 schedule(CarrierM) ->
     ?c(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
-	ar_bundles:print(M),
+	%ar_bundles:print(M),
     Store = ao:get(store),
 	?no_prod("SU does not validate item before writing into stream."),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
@@ -115,6 +115,7 @@ send_schedule(Store, ProcID, From, {_, To}) ->
     send_schedule(Store, ProcID, From, binary_to_integer(To));
 send_schedule(Store, ProcID, From, To) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),
+	?c({servicing_request_for_assignments, {proc_id, ProcID}, {from, From}, {to, To}}),
     {Assignments, More} = su_process:get_assignments(
         ProcID,
         From,
@@ -160,6 +161,7 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
     Message = ao_cache:read_message(Store, MessageID),
+	?c({adding_assignment_to_bundle, Slot, {requested, MessageID}, ar_util:id(Assignment, signed), ar_util:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
         Assignments,

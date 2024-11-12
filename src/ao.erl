@@ -49,10 +49,18 @@ config() ->
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => local_confirmation, 
+        scheduling_mode => local_confirmation,
+		%% Compute mode: Determines whether the CU should attempt to execute
+		%% more messages on a process after it has returned a result.
+		%% Options: aggressive, lazy
+		compute_mode => lazy,
+		%% Choice of remote nodes for tasks that are not local to hyperbeam.
         http_host => "localhost",
         gateway => "https://arweave.net",
         bundler => "https://up.arweave.net",
+		%% Choice of nodes for remote tasks, in the form of a map between
+		%% node addresses and HTTP URLs.
+		%% `_` is a wildcard for any other address that is not specified.
         nodes => #{
             compute =>
                 #{
@@ -71,9 +79,16 @@ config() ->
                 '_' => "http://localhost:8734/su"
             }
         },
+		%% Location of the wallet keyfile on disk that this node will use.
         key_location => "hyperbeam-key.json",
+		%% Default page limit for pagination of results from the APIs.
+		%% Currently used in the SU devices.
         default_page_limit => 5,
+		%% The time-to-live that should be specified when we register
+		%% ourselves as a scheduler on the network.
         scheduler_location_ttl => 60 * 60 * 24 * 30,
+		%% Preloaded devices for the node to use. These names override
+		%% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
                 <<"Stack">> => {dev_stack, execute},
@@ -90,6 +105,8 @@ config() ->
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
             },
+		%% The stacks of devices that the node should expose by default.
+		%% These represent the core flows of functionality of the node.
         default_device_stacks => [
             {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
             {<<"su">>, {<<"schedule">>, [dev_p4, dev_su]}},
@@ -97,10 +114,6 @@ config() ->
             {<<"mu">>,
                 {<<"push">>, [
                     dev_p4,
-                    dev_mu,
-                    dev_su,
-                    dev_cu,
-                    dev_poda,
                     dev_mu
                 ]}
             }

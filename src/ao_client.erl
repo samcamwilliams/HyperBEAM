@@ -16,6 +16,7 @@
 
 %%% Arweave node API
 
+%% @doc Grab the latest block information from the Arweave gateway node.
 arweave_timestamp() ->
     {ok, {{_, 200, _}, _, Body}} = httpc:request(ao:get(gateway) ++ "/block/current"),
     {Fields} = jiffy:decode(Body),
@@ -26,6 +27,7 @@ arweave_timestamp() ->
 
 %%% Bundling and data access API
 
+%% @doc Download the data associated with a given ID. See TODO below.
 download(ID) ->
     % TODO: Need to recreate full data items, not just data...
     case httpc:request(ao:get(gateway) ++ "/" ++ ID) of
@@ -33,6 +35,7 @@ download(ID) ->
         _Rest -> throw({id_get_failed, ID})
     end.
 
+%% @doc Upload a data item to the bundler node.
 upload(Item) ->
     case
         httpc:request(
@@ -51,6 +54,8 @@ upload(Item) ->
     end.
 
 %%% Scheduling Unit API
+
+%% @doc Schedule a message on a process.
 schedule(Msg) ->
     {ok, Node} = ao_router:find(schedule, ar_bundles:id(Msg, signed)),
     schedule(Node, Msg).
@@ -61,9 +66,13 @@ schedule(Node, Msg) ->
         Msg
     ).
 
+%% @doc Not implemented. Should gain an assignment from the SU for an ID
+%% without having the full message.
 assign(_ID) ->
     ?c({not_implemented, assignments}).
 
+%% Send a Scheduler-Location message to the network so other nodes
+%% know where to find this address's SU.
 register_su(Location) ->
     register_su(Location, ao:get(key_location)).
 register_su(Location, WalletLoc) when is_list(WalletLoc) ->
@@ -80,6 +89,7 @@ register_su(Location, Wallet) ->
     },
     ao_client:upload(ar_bundles:sign_item(TX, Wallet)).
 
+%% @doc Ask a SU for the assignments on a process.
 get_assignments(ProcID) ->
     get_assignments(ProcID, 0, undefined).
 get_assignments(ProcID, From) ->
@@ -129,10 +139,32 @@ extract_assignments(From, To, Assignments) ->
             []
     end.
 
-
-compute(ProcID, Slot) ->
-    {ok, Node} = ao_router:find(compute, ProcID),
-    compute(Node, ProcID, Slot).
+%% @doc Compute the result of a message on a process.
+compute(ProcIDBarer, Msg) when is_record(ProcIDBarer, tx) ->
+	case lists:keyfind(<<"Process">>, 1, ProcIDBarer#tx.tags) of
+		{<<"Process">>, ProcID} ->
+			% Potential point of confusion: If the ProcIDBarer message
+			% has a `Process` tag, then it is an _assignment_ -- not a
+			% process message. We extract the `Process` tag to use as the
+			% process ID.
+			{ok, Node} = ao_router:find(compute, ProcID),
+			compute(Node, ProcIDBarer, Msg);
+		false ->
+			case lists:keyfind(<<"Type">>, 1, ProcIDBarer#tx.tags) of
+				{<<"Type">>, <<"Process">>} ->
+					% If the ProcIDBarer message has a `Type` tag, then it is
+					% a _process message_ -- not an assignment. Extract its ID and
+					% run on that.
+					{ok, Node} =
+						ao_router:find(compute, ProcID = ar_util:id(Msg, signed)),
+					compute(Node, ProcID, Msg);
+				false ->
+					throw(
+						{unrecognized_message_to_compute_on,
+							ar_util:id(Msg, unsigned)}
+					)
+			end
+	end.
 compute(Node, ProcID, Slot) ->
     compute(Node, ProcID, Slot, #{}).
 compute(Node, ProcID, Slot, Opts) when is_binary(ProcID) ->
@@ -158,6 +190,7 @@ compute(Node, Assignment, Msg, Opts) when is_record(Assignment, tx) andalso is_r
 
 %%% MU API functions
 
+%% @doc Trigger the process of pushing a message around the network.
 push(Item) -> push(Item, none).
 push(Item, TracingAtom) when is_atom(TracingAtom) ->
     push(Item, atom_to_list(TracingAtom));
@@ -174,6 +207,8 @@ push(Node, Item, Tracing) ->
 
 %%% CU API functions
 
+%% @deprecated This should not be used anywhere.
+%% TODO: Remove?
 cron(ProcID) ->
     cron(ProcID, cron_cursor(ProcID)).
 cron(ProcID, Cursor) ->
@@ -209,6 +244,7 @@ cron(Node, ProcID, Cursor, Limit) ->
             {error, cu_http_error, Response}
     end.
 
+%% @doc See above: Should also be unnecessary.
 cron_cursor(ProcID) ->
     {ok, Node} = ao_router:find(compute, ProcID),
     cron_cursor(Node, ProcID).

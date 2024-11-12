@@ -2,30 +2,40 @@
 -export([execute/1]).
 -include("include/ao.hrl").
 
-%%% The hyperbeam HTTP API meta device, which is the default entry point
-%%% for all messages. This device executes a 'path' of functions upon a
-%%% message, sequentially, returning the message resulting from the last
-%%% function.
-execute(CarrierMsg) ->
-    case parse_carrier_msg(CarrierMsg) of
-        {Mods, Msg, Path} when is_list(Mods) ->
-            Stack = dev_stack:create(Mods),
-            ?c({executing_stack, Stack, Path}),
-            execute_path({dev_stack, execute},
-                #{ devices => Stack, message => Msg },
-                Path
-            );
-        {Mod, Msg, Path} ->
-            ?c({executing_device, Mod, Path}),
-            execute_path(Mod, Msg, Path)
-    end.
+%%% The hyperbeam meta device, which is the default entry point
+%%% for all messages on the HTTP API. This device executes a 'path' of
+%%% functions upon a message, sequentially, returning the message resulting
+%%% from the last function.
+
+%% @doc Execute a message on hyperbeam. Also takes a tuple for internal use
+%% of the form `{Mods, Msg, Path}`, where `Mods` is a list of device modules,
+%% `Msg` is a message to execute, and `Path` is a list of function names to
+%% execute on the message. In general, you probably should not do that. Use
+%% the normal cu_device flow instead.
+execute(CarrierMsg) when is_record(CarrierMsg, tx) ->
+	execute(parse_carrier_msg(CarrierMsg));
+execute({Mods, Msg, Path}) when is_list(Mods) ->
+	Stack = dev_stack:create(Mods),
+	?c({executing_stack, Stack, Path}),
+	execute_path({dev_stack, execute},
+		#{ devices => Stack, message => Msg },
+		Path
+	);
+execute({Mod, Msg, Path}) ->
+	?c({executing_device, Mod, Path}),
+	execute_path(Mod, Msg, Path).
 
 execute_path(_, M, []) -> {ok, M};
 execute_path(Dev, M, [FuncName|Path]) ->
-    ?c({meta_executing_on_path, {device, Dev}, {function, FuncName}, {path, Path}}),
-    Func = binary_to_existing_atom(FuncName, utf8),
-    {ok, NewM} = cu_device:call(Dev, Func, [M], #{ error_strategy => throw }),
-    execute_path(Dev, NewM, Path).
+	?c({meta_executing_on_path, {device, Dev}, {function, FuncName}, {path, Path}}),
+	Func = parse_path_to_func(FuncName),
+	{ok, NewM} = cu_device:call(Dev, Func, [M], #{ error_strategy => throw }),
+	execute_path(Dev, NewM, Path).
+
+parse_path_to_func(BinName) when is_binary(BinName) ->
+	binary_to_existing_atom(BinName, utf8);
+parse_path_to_func(AtomName) when is_atom(AtomName) ->
+	AtomName.
 
 %% @doc Resolve the carrier message to an executable message, either by extracting
 %% from its body or reading from its referenced ID.

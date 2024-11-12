@@ -101,7 +101,6 @@ validate_stage(1, _M, _Opts) -> {false, <<"Required PoDA messages missing">>}.
 validate_stage(2, #tx { data = Attestations }, Content, Opts) ->
     validate_stage(2, Attestations, Content, Opts);
 validate_stage(2, Attestations, Content, Opts) ->
-    ?c({poda_stage, 2}),
     % Ensure that all attestations are valid and signed by a
     % trusted authority.
     case
@@ -116,7 +115,6 @@ validate_stage(2, Attestations, Content, Opts) ->
     end;
 
 validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
-    ?c({poda_stage, 3}),
     Validations =
         lists:filter(
             fun({_, Att}) -> validate_attestation(Content, Att, Opts) end,
@@ -141,15 +139,18 @@ validate_attestation(Msg, Att, Opts) ->
         (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
             == {<<"Attestation-For">>, MsgID}) orelse
         ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
-    ?c(
-        {poda_attestation,
-            {valid_signer, ValidSigner},
-            {valid_signature, ValidSignature},
-            {relevant_msg, RelevantMsg},
-            {signer, AttSigner}
-        }
-    ),
-    ValidSigner and ValidSignature and RelevantMsg.
+	case ValidSigner and ValidSignature and RelevantMsg of
+		false ->
+			?c({poda_attestation_invalid,
+					{attestation, ar_bundles:id(Att, signed)},
+					{signer, AttSigner},
+					{valid_signer, ValidSigner},
+					{valid_signature, ValidSignature},
+					{relevant_msg, RelevantMsg}}
+			),
+			false;
+		true -> true
+	end.
 
 %%% Execution flow: Error handling.
 %%% Skip execution of this message, instead returning an error message.
@@ -176,9 +177,10 @@ is_user_signed(_) -> true.
 
 %%% Attestation flow: Adding attestations to results.
 
-push(_Item, S = #{ results := Results }) ->
-    %?c({poda_push, Results}),
-    NewRes = attest_to_results(Results, S),
+%% @doc Hook used by the MU pathway (currently) to add attestations to an
+%% outbound message if the computation requests it.
+push(_Item, S = #{ results := ResultsMsg }) ->
+    NewRes = attest_to_results(ResultsMsg, S),
     {ok, S#{ results => NewRes }}.
 
 attest_to_results(Msg, S) ->
@@ -187,9 +189,11 @@ attest_to_results(Msg, S) ->
             % Add attestations to the outbox and spawn items.
             maps:map(
                 fun(Key, IndexMsg) ->
+					?no_prod("Currently we only attest to the outbox and spawn items."
+						"Make it general?"),
                     case lists:member(Key, [<<"/Outbox">>, <<"/Spawn">>]) of
                         true ->
-                            ?c({poda_attest_to_results, Key}),
+                            ?c({poda_starting_to_attest_to_result, Key}),
                             maps:map(
                                 fun(_, DeepMsg) -> add_attestations(DeepMsg, S) end,
                                 IndexMsg#tx.data
@@ -212,6 +216,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
             MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
+			?c({poda_add_attestations_from, InitAuthorities, {self,ao:address()}}),
             Attestations = lists:filtermap(
                 fun(Address) ->
                     case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
@@ -219,8 +224,8 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                             ?c({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
                             Res = ao_client:compute(
                                 ComputeNode,
-                                ar_bundles:id(Process, unsigned),
-                                ar_bundles:id(Assignment, unsigned),
+                                ar_bundles:id(Process, signed),
+                                ar_bundles:id(Assignment, signed),
                                 #{ <<"Attest-To">> => MsgID }
                             ),
                             case Res of
@@ -232,9 +237,8 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                         _ -> false
                     end
                 end,
-                InitAuthorities -- [ao:wallet()]
+                ?c(InitAuthorities -- [ao:address()])
             ),
-            ?c({poda_attestations, length(Attestations)}),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
                 Wallet
@@ -248,14 +252,13 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                                     lists:zipwith(
                                         fun(Index, Att) -> {integer_to_binary(Index), Att} end,
                                         lists:seq(1, length([LocalAttestation | Attestations])),
-                                        [LocalAttestation | Attestations]
+                                        AttList = [LocalAttestation | Attestations]
                                     )
                                 )
                         }
                     ),
                     Wallet
                 ),
-            ?c(poda_complete_attestations),
             AttestationBundle = ar_bundles:sign_item(
                 ar_bundles:normalize(
                     #tx{
@@ -268,7 +271,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 ),
                 Wallet
             ),
-            ?c({poda_attestation_bundle_signed, length(Attestations)}),
+            ?c({poda_attestation_bundle_signed, {attestations, length(AttList)}}),
             AttestationBundle;
         false -> NewMsg
     end.
