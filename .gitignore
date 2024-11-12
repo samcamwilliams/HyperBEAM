@@ -34,5 +34,5 @@ c_src/*.d
 priv/*
 rebar.lock
 .DS_STORE
-TEST-data/*
+TEST-data*
 test-cache/*

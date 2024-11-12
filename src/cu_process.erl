@@ -68,18 +68,22 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                 end;
             false -> RawMsgRef
         end,
-    ?no_prod("Pause such that the store has time to write from the previous run."),
-    case ao_cache:read_output(Store, ProcID, MsgRef) of
+    LocalStore = ao_store:scope(Store, local),
+    case ao_cache:read_output(LocalStore, ProcID, MsgRef) of
         not_found ->
-            ?c({proc_id, ProcID}),
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
                     ?c({no_cu_for_proc, ar_util:id(ProcID)}),
-                    Proc = ao_cache:read(Store, ProcID),
+                    Proc = ao_cache:read_message(Store, ar_util:id(ProcID)),
                     await_results(
                         cu_process:run(
                             Proc,
-                            #{ to => MsgRef, store => Store, wallet => Wallet, on_idle => wait },
+                            #{
+                                to => MsgRef,
+                                store => Store,
+                                wallet => Wallet,
+                                on_idle => wait
+                            },
                             create_monitor_for_message(MsgRef)
                         )
                     );
@@ -88,7 +92,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(MsgRef)]},
                     Pid ! {on_idle, message, MsgRef},
-                    ?c({added_listener_and_message, Pid}),
+                    ?c({added_listener_and_message, Pid, MsgRef}),
                     await_results(Pid)
             end;
         Result -> {ok, Result}
@@ -117,24 +121,48 @@ await_results(Pid) ->
     end.
 
 create_monitor_for_message(Msg) when is_record(Msg, tx) ->
-    create_monitor_for_message(Msg#tx.id);
+    create_monitor_for_message(ar_bundles:id(Msg, unsigned));
 create_monitor_for_message(MsgID) ->
     Listener = self(),
     fun(S, {message, Inbound}) ->
+		% Gather messages
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
-        AssignmentID = ar_util:id(Assignment#tx.id),
+		Msg = maps:get(<<"Message">>, Inbound#tx.data),
+		% Gather IDs
+        AssignmentID = ar_util:id(Assignment, signed),
+        AssignmentUnsignedID = ar_util:id(Assignment, unsigned),
+        ScheduledMsgID = ar_util:id(Msg, signed),
+        ScheduledMsgUnsignedID = ar_util:id(Msg, unsigned),
+		% Gather slot
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
                 {<<"Slot">>, RawSlot} -> list_to_integer(binary_to_list(RawSlot));
                 false -> no_slot
             end,
-        ScheduledMsgID = ar_util:id((maps:get(<<"Message">>, Inbound#tx.data))#tx.id),
-        case (Slot == MsgID) or (ScheduledMsgID == MsgID) or (AssignmentID == MsgID) of
+		% Check if the message is relevant
+        IsRelevant =
+            (Slot == MsgID) or (ScheduledMsgID == MsgID) or (AssignmentID == MsgID) or
+            (ScheduledMsgUnsignedID == MsgID) or (AssignmentUnsignedID == MsgID),
+		% Send the result if the message is relevant. Continue waiting otherwise.
+        case IsRelevant of
             true ->
                 Listener ! {result, self(), Inbound, S}, done;
-            false -> ignored
+            false ->
+                ?c({monitor_got_message_for_wrong_slot, Slot, MsgID}),
+				%ar_bundles:print(Inbound),
+                ignored
         end;
-        (_, _) -> ignored
+        (S, end_of_schedule) ->
+            ?c(
+				{monitor_got_eos,
+					{waiting_for_slot, maps:get(slot, S, no_slot)},
+					{to, maps:get(to, S, no_to)}
+				}
+			),
+            ignored;
+        (_, Signal) ->
+            ?c({monitor_got_unknown_signal, Signal}),
+            ignored
     end.
 
 create_persistent_monitor() ->
@@ -154,14 +182,16 @@ create_persistent_monitor() ->
 %%          Run checkpoint on all devices if the current slot is a checkpoint slot.
 %%          Cache the result of the computation if the caller requested it.
 %%          Repeat for the next slot.
-%% EOS:     Run end_of_schedule() on all devices to see if there is more work to be done.
+%% EOS:     Check if we are in aggressive/lazy execution mode.
+%%          Run end_of_schedule() on all devices to see if there is more work in
+%%          aggressive mode, or move to await_command() in lazy mode.
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
-    ?c({booting_process, ar_util:id(Process#tx.id)}),
-    pg:join({cu, ar_util:id(Process#tx.id)}, self()),
+    ?c({booting_process, {signed, ar_util:id(Process, signed)}, {unsigned, ar_util:id(Process, unsigned)}}),
+    pg:join({cu, ar_util:id(Process, signed)}, self()),
     % Build the device stack.
-    ?c({registered_process, ar_util:id(Process#tx.id)}),
+    ?c({registered_process, ar_util:id(Process, signed)}),
     {ok, Dev} = cu_device:from_message(Process),
     ?c({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
@@ -179,7 +209,7 @@ boot(Process, Opts) ->
     CheckpointOption =
         ao_cache:latest(
             Store,
-            Process#tx.id,
+            ar_bundles:id(Process, signed),
             maps:get(to, Opts, inf),
             [Key]
         ),
@@ -203,7 +233,13 @@ boot(Process, Opts) ->
             devices => Devs
         },
     ?c({running_init_on_slot, Slot + 1, maps:get(to, Opts, inf), maps:keys(Checkpoint)}),
-    RuntimeOpts = Opts#{ proc_dev => Dev, return => all },
+    RuntimeOpts =
+		Opts#{
+			proc_dev => Dev,
+			return => all,
+			% If no compute mode is already set, use the global default.
+			compute_mode => maps:get(compute_mode, Opts, ao:get(compute_mode))
+		},
     case cu_device:call(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, RuntimeOpts);
@@ -212,20 +248,36 @@ boot(Process, Opts) ->
     end.
 
 execute_schedule(State, Opts) ->
+	?c(
+		{
+			process_executing_slot,
+			maps:get(slot, State),
+			{proc_id, ar_util:id(maps:get(process, State))},
+			{to, maps:get(to, State)}
+		}
+	),
     case State of
         #{schedule := []} ->
-            case execute_eos(State, Opts) of
-                {ok, #{schedule := []}} ->
-                    await_command(State, Opts);
-                {ok, NS} ->
-                    execute_schedule(NS, Opts);
-                {error, DevNum, DevMod, Info} ->
-                    ?c({error, {DevNum, DevMod, Info}}),
-                    execute_terminate(
-                        State#{errors := maps:get(errors, State, []) ++ [{DevNum, DevMod, Info}]},
-                        Opts
-                    )
-            end;
+			?c({process_finished_schedule, {final_slot, maps:get(slot, State)}}),
+			case maps:get(compute_mode, Opts) of
+				aggressive ->
+					case execute_eos(State, Opts) of
+						{ok, #{schedule := []}} ->
+							?c(eos_did_not_yield_more_work),
+							await_command(State, Opts);
+						{ok, NS} ->
+							execute_schedule(NS, Opts);
+						{error, DevNum, DevMod, Info} ->
+							?c({error, {DevNum, DevMod, Info}}),
+							execute_terminate(
+								State#{errors := maps:get(errors, State, []) ++ [{DevNum, DevMod, Info}]},
+								Opts
+							)
+					end;
+				lazy ->
+					?c({lazy_compute_mode, moving_to_await_state}),
+					await_command(State, Opts)
+			end;
         #{schedule := [Msg | NextSched]} ->
             case execute_message(Msg, State, Opts) of
                 {ok, NewState = #{schedule := [Msg | NextSched]}} ->
@@ -288,7 +340,7 @@ post_execute(
             ?c({checkpoint_normalized_for_slot, Slot}),
             ao_cache:write_output(
                 Store,
-                Process#tx.id,
+                ar_util:id(Process, signed),
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
             ),
@@ -297,7 +349,7 @@ post_execute(
             NormalizedResult = ar_bundles:deserialize(ar_bundles:serialize(Results)),
             ao_cache:write_output(
                 Store,
-                Process#tx.id,
+                ar_util:id(Process, signed),
                 Slot,
                 NormalizedResult
             ),

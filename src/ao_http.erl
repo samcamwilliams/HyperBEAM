@@ -11,16 +11,18 @@ get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
     ?c({http_getting, URL}),
     case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
-        {ok, {{_, 200, _}, _, Body}} ->
+        {ok, {{_, 500, _}, _, Body}} ->
+            ?c({http_got_server_error, URL}),
+            {error, Body};
+        {ok, {{_, _, _}, _, Body}} ->
             ?c({http_got, URL}),
-            {ok, ar_bundles:deserialize(Body)};
-        Response ->
-            {error, Response}
+            Message = ar_bundles:deserialize(Body),
+            {ok, Message}
     end.
 
 post(Host, Path, Item) -> post(Host ++ Path, Item).
 post(URL, Item) ->
-    ?c({http_post, ar_util:id(Item#tx.id), URL}),
+    ?c({http_post, ar_util:id(Item, unsigned), URL}),
     case httpc:request(
         post,
         {URL, [], "application/octet-stream", ar_bundles:serialize(ar_bundles:normalize(Item))},
@@ -45,21 +47,21 @@ reply(Req, Item) ->
 reply(Req, Status, Item) ->
     ?c(
         {
+            replying,
             Status,
-            maps:get(method, Req, undef_method),
-            maps:get(path, Req, undef_path),
-            Ref = case is_record(Item, tx) of true -> ar_util:id(Item#tx.id); false -> data_body end
+            maps:get(path, Req, undefined_path),
+            case is_record(Item, tx) of
+                true -> ar_util:id(Item);
+                false -> data_body
+            end
         }
     ),
-    % TODO: Should we return Req or Req2? Req2 sometimes seems to have issues,
-    % but logically appears to be the correct choice.
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
         ar_bundles:serialize(Item),
         Req
     ),
-    ?c({replied, Status, Ref}),
     {ok, Req2, no_state}.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).

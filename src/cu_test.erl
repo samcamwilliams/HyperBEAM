@@ -1,6 +1,7 @@
 -module(cu_test).
 -export([simple_stack_test/0, full_push_test/0, simple_load_test/0]).
 -export([init/0, generate_test_data/1, run/2]).
+-ao_debug(print).
 
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -14,9 +15,9 @@ run(Proc, Msg) ->
 run(Proc, Msg, _Opts) ->
     ao_cache:write(ao:get(store), Msg),
     ao_cache:write(ao:get(store), Proc),
-    Scheduler = su_registry:find(Proc#tx.id, true),
+    Scheduler = su_registry:find(ar_util:id(Proc, signed), true),
     Assignment = su_process:schedule(Scheduler, Msg),
-    cu_process:result(Proc#tx.id, Assignment#tx.id, ao:get(store), ao:wallet()).
+    cu_process:result(ar_util:id(Proc, signed), ar_util:id(Assignment, unsigned), ao:get(store), ao:wallet()).
 
 %%% TESTS
 
@@ -35,7 +36,8 @@ full_push_test() ->
     ?c(full_push_test_started),
     {_, Msg} = generate_test_data(ping_ping_script()),
     ao_cache:write(ao:get(store), Msg),
-    ao_client:push(Msg, none).
+    ao_client:push(Msg, none),
+    ok.
 
 simple_load_test() ->
     init(),
@@ -77,8 +79,11 @@ default_test_img(Wallet) ->
     Img.
 
 
-default_test_devices(Wallet, Img) ->
+default_test_devices(Wallet, Opts) ->
     ID = ar_wallet:to_address(Wallet),
+    Img = maps:get(image, Opts),
+    Quorum = maps:get(quorum, Opts, 2),
+    LocalAddress = ao:address(),
     [
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
@@ -87,15 +92,19 @@ default_test_devices(Wallet, Img) ->
         {<<"Device">>, <<"Scheduler">>},
         {<<"Location">>, ar_util:id(ID)},
         {<<"Device">>, <<"PODA">>},
-        {<<"Quorum">>, <<"1">>},
-        {<<"Authority">>, <<"test-authority-1">>},
-        {<<"Authority">>, <<"test-authority-2">>},
-        {<<"Authority">>, <<"test-authority-3">>},
+        {<<"Quorum">>, integer_to_binary(Quorum)}
+    ] ++
+    [
+        {<<"Authority">>, Addr} ||
+            Addr <- maps:keys(maps:get(compute, ao:get(nodes))),
+            Addr =/= '_'
+    ] ++
+    [
         {<<"Device">>, <<"JSON-Interface">>},
         {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
-        {<<"Image">>, ar_util:id(Img#tx.id)},
+        {<<"Image">>, ar_util:id(Img)},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
         {<<"Device">>, <<"Multipass">>},
@@ -113,22 +122,22 @@ generate_test_data(Script) ->
     generate_test_data(Script, ao:wallet()).
 generate_test_data(Script, Wallet) ->
     Img = default_test_img(Wallet),
-    generate_test_data(Script, Wallet, Img).
-generate_test_data(Script, Wallet, Img) ->
-    Devs = default_test_devices(Wallet, Img),
-    generate_test_data(Script, Wallet, Img, Devs).
-generate_test_data(Script, Wallet, _Img, Devs) ->
+    generate_test_data(Script, Wallet, #{image => Img}).
+generate_test_data(Script, Wallet, Opts) ->
+    Devs = default_test_devices(Wallet, Opts),
+    generate_test_data(Script, Wallet, Opts, Devs).
+generate_test_data(Script, Wallet, _Opts, Devs) ->
     Store = ao:get(store),
     ao_cache:write(
         Store,
-        Signed = ar_bundles:sign_item(
+        SignedProcess = ar_bundles:sign_item(
             #tx{ tags = Devs },
             Wallet
         )
     ),
     Msg = ar_bundles:sign_item(
         #tx{
-            target = Signed#tx.id,
+            target = ar_bundles:id(SignedProcess, signed),
             tags = [
                 {<<"Protocol">>, <<"ao">>},
                 {<<"Variant">>, <<"ao.tn.2">>},
@@ -140,5 +149,5 @@ generate_test_data(Script, Wallet, _Img, Devs) ->
         Wallet
     ),
     ao_cache:write(Store, Msg),
-    ?c({test_data_written, {proc, ar_util:id(Signed#tx.id)}, {msg, ar_util:id(Msg#tx.id)}}),
-    {Signed, Msg}.
+    ?c({test_data_written, {proc, ar_util:id(SignedProcess, signed)}, {msg, ar_util:id(Msg, unsigned)}}),
+    {SignedProcess, Msg}.

@@ -1,7 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
--export([id/1, id/2, type/1, map/1, hd/1]).
+-export([id/1, id/2, type/1, map/1, hd/1, member/2, find/2]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
@@ -25,22 +25,22 @@
 ]).
 
 % How many bytes of a binary to print with `print/1`.
--define(BIN_PRINT, 10).
+-define(BIN_PRINT, 50).
 -define(INDENT_SPACES, 2).
-
-
--ao_debug(print).
 
 %%%===================================================================
 %%% Public interface.
 %%%===================================================================
 
-print(Item) -> print(Item, 0).
-print(Item, Indent) when is_list(Item); is_map(Item) ->
-    print(normalize(Item), Indent);
-print(Item, Indent) when is_record(Item, tx) ->
+print(Item) ->
+    io:format(standard_error, "~s", [lists:flatten(format(Item))]).
+
+format(Item) -> format(Item, 0).
+format(Item, Indent) when is_list(Item); is_map(Item) ->
+    format(normalize(Item), Indent);
+format(Item, Indent) when is_record(Item, tx) ->
     Valid = verify_item(Item),
-    print_line(
+    format_line(
         "TX ( ~s: ~s ) {",
         [
             if
@@ -48,7 +48,7 @@ print(Item, Indent) when is_record(Item, tx) ->
                     lists:flatten(
                         io_lib:format(
                             "~s (signed) ~s (unsigned)",
-                            [ar_util:encode(Item#tx.id), ar_util:encode(id(Item, unsigned))]
+                            [ar_util:encode(id(Item, signed)), ar_util:encode(id(Item, unsigned))]
                         )
                     );
                 true -> ar_util:encode(id(Item, unsigned))
@@ -59,56 +59,59 @@ print(Item, Indent) when is_record(Item, tx) ->
             end
         ],
         Indent
-    ),
+    ) ++
     case (not Valid) andalso Item#tx.signature =/= ?DEFAULT_SIG of
         true ->
-            print_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1),
-            print_line("Signature in full: ~p", [Item#tx.signature], Indent + 1);
-        false -> ok
-    end,
-    print_line("Target: ~s", [
+            format_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
+        false -> []
+    end ++
+	case is_signed(Item) of
+		true ->
+			format_line("Signer: ~s", [ar_util:encode(signer(Item))], Indent + 1);
+		false -> []
+	end ++
+    format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
                 Target -> ar_util:id(Target)
             end
-        ], Indent + 1),
-    print_line("Tags:", Indent + 1),
-    lists:foreach(
-        fun({Key, Val}) -> print_line("~s -> ~s", [Key, Val], Indent + 2) end,
+        ], Indent + 1) ++
+    format_line("Tags:", Indent + 1) ++
+    lists:map(
+        fun({Key, Val}) -> format_line("~s -> ~s", [Key, Val], Indent + 2) end,
         Item#tx.tags
-    ),
-    print_line("Data:", Indent + 1),
-    print_data(Item, Indent + 2),
-    print_line("}", Indent);
-print(Item, Indent) ->
+    ) ++
+    format_line("Data:", Indent + 1) ++ format_data(Item, Indent + 2) ++
+    format_line("}", Indent);
+format(Item, Indent) ->
     % Whatever we have, its not a tx...
-    print_line("INCORRECT ITEM: ~p", [Item], Indent).
+    format_line("INCORRECT ITEM: ~p", [Item], Indent).
 
-print_data(Item, Indent) when is_binary(Item#tx.data) ->
+format_data(Item, Indent) when is_binary(Item#tx.data) ->
     case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
         {_, _} ->
-            print_data(deserialize(serialize(Item)), Indent);
+            format_data(deserialize(serialize(Item)), Indent);
         false ->
-            print_line(
+            format_line(
                 "Binary: ~p... <~p bytes>",
                 [format_binary(Item#tx.data), byte_size(Item#tx.data)],
                 Indent
             )
     end;
-print_data(Item, Indent) when is_map(Item#tx.data) ->
-    print_line("Map:", Indent),
-    maps:map(
-        fun(Name, MapItem) ->
-            print_line("~s ->", [Name], Indent + 1),
-            print(MapItem, Indent + 2)
+format_data(Item, Indent) when is_map(Item#tx.data) ->
+    format_line("Map:", Indent) ++
+    lists:map(
+        fun({Name, MapItem}) ->
+            format_line("~s ->", [Name], Indent + 1) ++
+            format(MapItem, Indent + 2)
         end,
-        Item#tx.data
+        maps:to_list(Item#tx.data)
     );
-print_data(Item, Indent) when is_list(Item#tx.data) ->
-    print_line("List:", Indent),
-    lists:foreach(
+format_data(Item, Indent) when is_list(Item#tx.data) ->
+    format_line("List:", Indent) ++
+    lists:map(
         fun(ListItem) ->
-            print(ListItem, Indent + 1)
+            format(ListItem, Indent + 1)
         end,
         Item#tx.data
     ).
@@ -130,31 +133,39 @@ format_binary(Bin) ->
         )
     ).
 
-print_line(Str, Indent) -> print_line(Str, "", Indent).
-print_line(RawStr, Fmt, Ind) ->
-    Str = lists:flatten(RawStr),
-    io:format(standard_error,
+format_line(Str, Indent) -> format_line(Str, "", Indent).
+format_line(RawStr, Fmt, Ind) ->
+    io_lib:format(
         [$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
-            Str ++ "\n",
+            lists:flatten(RawStr) ++ "\n",
         Fmt
     ).
 
-signer(Item) ->
-    crypto:hash(sha256, Item#tx.signature).
+%% @doc Return the address of the signer of an item, if it is signed.
+signer(#tx { owner = ?DEFAULT_OWNER }) -> undefined;
+signer(Item) -> crypto:hash(sha256, Item#tx.owner).
 
+%% @doc Check if an item is signed.
 is_signed(Item) ->
     Item#tx.signature =/= ?DEFAULT_SIG.
 
-id(Item) when Item#tx.id == ?DEFAULT_ID ->
-    id(normalize_data(Item), unsigned);
-id(Item) when not is_record(Item, tx) ->
-    id(normalize(Item), unsigned);
-id(Item) -> id(Item, signed).
-id(Item, unsigned) ->
-    crypto:hash(sha256, data_item_signature_data(Item));
-id(Item, signed) ->
-    Item#tx.id.
+%% @doc Return the ID of an item -- either signed or unsigned as specified.
+%% If the item is unsigned and the user requests the signed ID, we return
+%% the atom `not_signed'. In all other cases, we return the ID of the item.
+id(Item) -> id(Item, unsigned).
+id(Item, Type) when not is_record(Item, tx) ->
+    id(normalize(Item), Type);
+id(Item = #tx { unsigned_id = ?DEFAULT_ID }, unsigned) ->
+    CorrectedItem = reset_ids(Item),
+    CorrectedItem#tx.unsigned_id;
+id(#tx { unsigned_id = UnsignedID }, unsigned) ->
+    UnsignedID;
+id(#tx { id = ?DEFAULT_ID }, signed) ->
+    not_signed;
+id(#tx { id = ID }, signed) ->
+    ID.
 
+%% @doc Return the first item in a bundle-map/list.
 hd(#tx { data = #{ <<"1">> := Msg } }) -> Msg;
 hd(#tx { data = [First | _] }) -> First;
 hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
@@ -162,6 +173,7 @@ hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
 hd(#{ <<"1">> := Msg }) -> Msg;
 hd(_) -> undefined.
 
+%% @doc Convert an item containing a map or list into an Erlang map.
 map(#tx { data = Map }) when is_map(Map) -> Map;
 map(#tx { data = Data }) when is_list(Data) ->
     maps:from_list(
@@ -174,13 +186,43 @@ map(#tx { data = Data }) when is_list(Data) ->
 map(Item = #tx { data = Data }) when is_binary(Data) ->
     (maybe_unbundle(Item))#tx.data.
 
+%% @doc Check if an item exists in a bundle-map/list.
+member(Key, Item) ->
+    find(Key, Item) =/= not_found.
+
+%% @doc Find an item in a bundle-map/list and return it.
+find(Key, Map) when is_map(Map) ->
+    case maps:get(Key, Map, not_found) of
+        not_found -> find(Key, maps:values(Map));
+        Item -> Item
+    end;
+find(_Key, []) -> not_found;
+find(Key, [Item|Rest]) ->
+    case find(Key, Item) of
+        not_found -> find(Key, Rest);
+        CorrectItem -> CorrectItem
+    end;
+find(Key, Item = #tx { id = Key }) -> Item;
+find(Key, Item = #tx { data = Data }) ->
+    case id(Item, unsigned) of
+        Key -> Item;
+        _ ->
+            case is_binary(Data) of
+                false -> find(Key, Data);
+                true -> not_found
+            end
+    end;
+find(_Key, _) ->
+    not_found.
+
+%% @doc Return the manifest item in a bundle-map/list.
 manifest_item(#tx { manifest = Manifest }) when is_record(Manifest, tx) ->
     Manifest;
 manifest_item(_Item) -> undefined.
 
-%% @doc Create a new data item.
+%% @doc Create a new data item. Should only be used for testing.
 new_item(Target, Anchor, Tags, Data) ->
-    update_id(
+    reset_ids(
         #tx{
             format = ans104,
             target = Target,
@@ -195,7 +237,8 @@ new_item(Target, Anchor, Tags, Data) ->
 sign_item(_, undefined) -> throw(wallet_not_found);
 sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
     Item = (normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
-    Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item)),
+    % Generate the signature from the data item's data segment in 'signed'-ready mode.
+    Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item, signed)),
     ID = crypto:hash(sha256, <<Sig/binary>>),
     Item#tx{id = ID, signature = Sig}.
 
@@ -204,6 +247,7 @@ verify_item(DataItem) ->
     ValidID = verify_data_item_id(DataItem),
     ValidSignature = verify_data_item_signature(DataItem),
     ValidTags = verify_data_item_tags(DataItem),
+    %?c({verify_item, ar_util:encode(id(DataItem, unsigned)), ValidID, ValidSignature, ValidTags}),
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
@@ -230,8 +274,12 @@ type(_) ->
 
 %% @doc Generate the data segment to be signed for a data item.
 data_item_signature_data(RawItem) ->
+    data_item_signature_data(RawItem, signed).
+data_item_signature_data(RawItem, unsigned) ->
+    data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
+data_item_signature_data(RawItem, signed) ->
     NormItem = normalize_data(RawItem),
-    List = [
+    ar_deep_hash:hash([
         utf8_encoded("dataitem"),
         utf8_encoded("1"),
         %% Only SignatureType 1 is supported for now (RSA 4096)
@@ -241,8 +289,7 @@ data_item_signature_data(RawItem) ->
         <<(NormItem#tx.last_tx)/binary>>,
         encode_tags(NormItem#tx.tags),
         <<(NormItem#tx.data)/binary>>
-    ],
-    ar_deep_hash:hash(List).
+    ]).
 
 %% @doc Verify the data item's ID matches the signature.
 verify_data_item_id(DataItem) ->
@@ -252,6 +299,7 @@ verify_data_item_id(DataItem) ->
 %% @doc Verify the data item's signature.
 verify_data_item_signature(DataItem) ->
     SignatureData = data_item_signature_data(DataItem),
+    %?c({unsigned_id, ar_util:encode(id(DataItem, unsigned)), ar_util:encode(SignatureData)}),
     ar_wallet:verify(
         {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
     ).
@@ -267,12 +315,12 @@ verify_data_item_tags(DataItem) ->
     ),
     ValidCount andalso ValidTags.
 
-normalize(Item) -> update_id(normalize_data(Item)).
+normalize(Item) -> reset_ids(normalize_data(Item)).
 
 %% @doc Ensure that a data item (potentially containing a map or list) has a standard, serialized form.
 normalize_data(not_found) -> throw(not_found);
 normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
-    normalize_data(#tx{data = Bundle});
+    normalize_data(#tx{ data = Bundle });
 normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
     normalize_data(
         Item#tx{
@@ -281,7 +329,10 @@ normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
                 maps:from_list(
                     lists:zipwith(
                         fun(Index, MapItem) ->
-                            {integer_to_binary(Index), update_id(normalize_data(MapItem))}
+                            {
+                                integer_to_binary(Index),
+                                update_ids(normalize_data(MapItem))
+                            }
                         end,
                         lists:seq(1, length(Data)),
                         Data
@@ -293,12 +344,15 @@ normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) ->
     normalize_data_size(Item);
 normalize_data(Item = #tx{data = Data}) ->
     normalize_data_size(
-        case serialize_bundle_data(Data) of
+        case serialize_bundle_data(Data, Item#tx.manifest) of
             {Manifest, Bin} ->
                 Item#tx{
                     data = Bin,
                     manifest = Manifest,
-                    tags = add_manifest_tags(add_bundle_tags(Item#tx.tags), Manifest#tx.id)
+                    tags = add_manifest_tags(
+                        add_bundle_tags(Item#tx.tags),
+                        id(Manifest, unsigned)
+                    )
                 };
             DirectBin ->
                 Item#tx{
@@ -320,6 +374,8 @@ serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
     TX = normalize(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
+    enforce_size(TX#tx.target, [0, 32], target),
+    enforce_size(TX#tx.last_tx, [0, 32], last_tx),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
         (TX#tx.signature)/binary,
@@ -333,13 +389,35 @@ serialize(RawTX, binary) ->
 serialize(TX, json) ->
     jiffy:encode(item_to_json_struct(TX)).
 
-update_id(TX = #tx{id = ?DEFAULT_ID, signature = ?DEFAULT_SIG}) ->
-    ID = crypto:hash(sha256, data_item_signature_data(TX)),
-    TX#tx{format = ans104, id = ID};
-update_id(TX = #tx{id = ?DEFAULT_ID, signature = Sig}) ->
-    TX#tx{format = ans104, id = crypto:hash(sha256, Sig)};
-update_id(TX) ->
-    TX.
+%% @doc Take an item and ensure that both the unsigned and signed IDs are
+%% appropriately set. This function is structured to fall through all cases
+%% of poorly formed items, recursively ensuring its correctness for each case
+%% until the item has a coherent set of IDs.
+%% The cases in turn are:
+%% - The item has no unsigned_id. This is never valid.
+%% - The item has a signature. We calculate the ID from the signature.
+%% - Valid: The item is fully formed and has both an unsigned and signed ID.
+update_ids(Item = #tx { unsigned_id = ?DEFAULT_ID }) ->
+    update_ids(
+        Item#tx {
+            unsigned_id =
+                crypto:hash(
+                    sha256,
+                    data_item_signature_data(Item, unsigned)
+                )
+        }
+    );
+update_ids(Item = #tx { signature = ?DEFAULT_SIG }) ->
+    Item#tx { id = ?DEFAULT_ID };
+update_ids(Item = #tx { signature = Sig }) when Sig =/= ?DEFAULT_SIG ->
+    Item#tx { id = crypto:hash(sha256, Sig) };
+update_ids(TX) -> TX.
+
+%% @doc Re-calculate both of the IDs for an item. This is a wrapper
+%% function around `update_id/1' that ensures both IDs are set from
+%% scratch.
+reset_ids(Item) ->
+    update_ids(Item#tx { unsigned_id = ?DEFAULT_ID, id = ?DEFAULT_ID }).
 
 add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
 
@@ -364,18 +442,20 @@ finalize_bundle_data(Processed) ->
 to_serialized_pair(Item) ->
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
-    Serialized = serialize(update_id(normalize(Item)), binary),
+    Serialized = serialize(reset_ids(normalize(Item)), binary),
     Deserialized = deserialize(Serialized, binary),
-    {Deserialized#tx.id, Serialized}.
+    UnsignedID = id(Deserialized, unsigned),
+    {UnsignedID, Serialized}.
 
-serialize_bundle_data(Map) when is_map(Map) ->
+serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
     % For now we just serialize the map to a JSON string of Key=>TXID
     BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
     Index = maps:map(fun(_, {TXID, _}) -> ar_util:encode(TXID) end, BinItems),
-    Manifest = new_manifest(Index),
-    {Manifest, finalize_bundle_data([to_serialized_pair(Manifest) | maps:values(BinItems)])};
-serialize_bundle_data(List) ->
+    NewManifest = new_manifest(Index),
+    %?c({generated_manifest, NewManifest == Manifest, ar_util:encode(id(NewManifest, unsigned)), Index}),
+    {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
+serialize_bundle_data(List, _Manifest) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
 
 new_manifest(Index) ->
@@ -412,6 +492,25 @@ encode_optional_field(<<>>) ->
     <<0>>;
 encode_optional_field(Field) ->
     <<1:8/integer, Field/binary>>.
+
+%% @doc Force that a binary is either empty or the given number of bytes.
+enforce_size(Bin, Size) ->
+    enforce_size(Bin, Size, undefined_field).
+enforce_size(Bin, X, FieldName) when not is_list(X) ->
+    enforce_size(Bin, [X], FieldName);
+enforce_size(Bin, Sizes, FieldName) ->
+    case lists:member(byte_size(Bin), Sizes) of
+        true -> Bin;
+        false ->
+            throw(
+                {
+                    invalid_field_size,
+                    FieldName,
+                    {expected, Sizes},
+                    {actual, byte_size(Bin)}
+                }
+            )
+    end.
 
 %% @doc Encode a UTF-8 string to binary.
 utf8_encoded(String) ->
@@ -476,7 +575,7 @@ deserialize(Binary, binary) ->
     {Anchor, Rest3} = decode_optional_field(Rest2),
     {Tags, Data} = decode_tags(Rest3),
     maybe_unbundle(
-        update_id(#tx{
+        reset_ids(#tx{
             format = ans104,
             signature_type = SignatureType,
             signature = Signature,
@@ -539,14 +638,14 @@ maybe_unbundle_map(Bundle) ->
             case unbundle(Bundle) of
                 detached -> Bundle#tx { data = detached };
                 Items ->
-                    MapItem = find_item(ar_util:decode(MapTXID), Items),
+                    MapItem = find_single_layer(ar_util:decode(MapTXID), Items),
                     Map = jiffy:decode(MapItem#tx.data, [return_maps]),
                     Bundle#tx{
                         manifest = MapItem,
                         data =
                             maps:map(
                                 fun(_K, TXID) ->
-                                    find_item(ar_util:decode(TXID), Items)
+                                    find_single_layer(ar_util:decode(TXID), Items)
                                 end,
                                 Map
                             )
@@ -556,15 +655,16 @@ maybe_unbundle_map(Bundle) ->
             unbundle(Bundle)
     end.
 
-find_item(TXID, TX) when is_record(TX, tx) ->
-    find_item(TXID, TX#tx.data);
-find_item(TXID, Items) ->
-    TX = lists:keyfind(TXID, #tx.id, Items),
+%% @doc An internal helper for finding an item in a single-layer of a bundle.
+%% Does not recurse! You probably want `find/2` in most cases.
+find_single_layer(UnsignedID, TX) when is_record(TX, tx) ->
+    find_single_layer(UnsignedID, TX#tx.data);
+find_single_layer(UnsignedID, Items) ->
+    TX = lists:keyfind(UnsignedID, #tx.unsigned_id, Items),
     case is_record(TX, tx) of
         true -> TX;
         false ->
-            ?c({cannot_find_item, ar_util:encode(TXID), [ print(T) || T <- Items]}),
-            throw({cannot_find_item, ar_util:encode(TXID)})
+            throw({cannot_find_item, ar_util:encode(UnsignedID)})
     end.
 
 unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
@@ -576,8 +676,16 @@ decode_bundle_items([], <<>>) ->
     [];
 decode_bundle_items([{_ID, Size} | RestItems], ItemsBin) ->
     [
-        deserialize(binary:part(ItemsBin, 0, Size))
-        | decode_bundle_items(RestItems, binary:part(ItemsBin, Size, byte_size(ItemsBin) - Size))
+            deserialize(binary:part(ItemsBin, 0, Size))
+        |
+            decode_bundle_items(
+                RestItems,
+                binary:part(
+                    ItemsBin,
+                    Size,
+                    byte_size(ItemsBin) - Size
+                )
+            )
     ].
 
 decode_bundle_header(Count, Bin) -> decode_bundle_header(Count, Bin, []).
@@ -748,11 +856,15 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_with_tags/0},
         {timeout, 30, fun test_with_tags_from_disk/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
+        {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
         {timeout, 30, fun test_bundle_with_one_item/0},
         {timeout, 30, fun test_bundle_with_two_items/0},
         {timeout, 30, fun test_recursive_bundle/0},
-        {timeout, 30, fun test_bundle_map/0}
+        {timeout, 30, fun test_bundle_map/0},
+        {timeout, 30, fun test_basic_member_id/0},
+        {timeout, 30, fun test_deep_member/0},
+        {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
     ].
 
 test_no_tags() ->
@@ -797,9 +909,17 @@ test_with_tags() ->
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
 
 test_unsigned_data_item_id() ->
-    Item1 = deserialize(serialize(update_id(#tx{format = ans104, data = <<"data1">>}))),
-    Item2 = deserialize(serialize(update_id(#tx{format = ans104, data = <<"data2">>}))),
-    ?assertNotEqual(Item1#tx.id, Item2#tx.id).
+    Item1 = deserialize(
+        serialize(reset_ids(#tx{format = ans104, data = <<"data1">>}))
+    ),
+    Item2 = deserialize(
+        serialize(reset_ids(#tx{format = ans104, data = <<"data2">>}))),
+    ?assertNotEqual(Item1#tx.unsigned_id, Item2#tx.unsigned_id).
+
+test_unsigned_data_item_normalization() ->
+    NewItem = normalize(#tx{ format = ans104, data = <<"Unsigned data">> }),
+    ReNormItem = deserialize(serialize(NewItem)),
+    ?assertEqual(NewItem, ReNormItem).
 
 test_with_tags_from_disk() ->
     {ok, BinaryDataItem} = file:read_file("src/test/dataitem_withtags"),
@@ -900,3 +1020,70 @@ extremely_large_bundle_test() ->
     Serialized = serialize(Signed),
     Deserialized = deserialize(Serialized),
     ?assert(verify_item(Deserialized)).
+
+test_basic_member_id() ->
+    W = ar_wallet:new(),
+    Item = sign_item(
+        #tx{
+            data = <<"data">>
+        },
+        W
+    ),
+    ?assertEqual(true, member(Item#tx.id, Item)),
+    ?assertEqual(true, member(id(Item, unsigned), Item)),
+    ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item)).
+
+test_deep_member() ->
+    W = ar_wallet:new(),
+    Item = sign_item(
+        #tx{
+            data =
+                #{<<"key1">> =>
+                    sign_item(#tx{
+                        data = <<"data">>
+                    }, W)
+                }
+        },
+        W
+    ),
+    Item2 = deserialize(serialize(sign_item(
+        #tx{
+            data = #{ <<"key2">> => Item }
+        },
+        W
+    ))),
+    ?assertEqual(true, member(<<"key1">>, Item2)),
+    ?assertEqual(true, member(<<"key2">>, Item2)),
+    ?assertEqual(true, member(Item#tx.id, Item2)),
+    ?assertEqual(true, member(Item2#tx.id, Item2)),
+    ?assertEqual(true, member(id(Item, unsigned), Item2)),
+    ?assertEqual(true, member(id(Item2, unsigned), Item2)),
+    ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item2)).
+
+test_serialize_deserialize_deep_signed_bundle() ->
+    W = ar_wallet:new(),
+    % Test that we can serialize, deserialize, and get the same IDs back.
+    Item1 = sign_item(#tx{data = <<"item1_data">>}, W),
+    Item2 = sign_item(#tx{data = #{<<"key1">> => Item1}}, W),
+    Bundle = serialize(Item2),
+    Deser2 = deserialize(Bundle),
+    format(Deser2),
+    #{ <<"key1">> := Deser1 } = Deser2#tx.data,
+    format(Deser1),
+    ?assertEqual(id(Item2, unsigned), id(Deser2, unsigned)),
+    ?assertEqual(id(Item2, signed), id(Deser2, signed)),
+    ?assertEqual(id(Item1, unsigned), id(Deser1, unsigned)),
+    ?assertEqual(id(Item1, signed), id(Deser1, signed)),
+    % Test that we can sign an item twice and the unsigned ID is the same.
+    Item3 = sign_item(Item2, W),
+    ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
+    ?assert(verify_item(Item3)),
+    % Test that we can write to disk and read back the same ID.
+    ao_cache:write(ao:get(local_store), Item2),
+    FromDisk = ao_cache:read_message(ao:get(local_store), ar_util:encode(id(Item2, unsigned))),
+    format(FromDisk),
+    ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
+    % Test that normalizing the item and signing it again yields the same unsigned ID.
+    NormItem2 = normalize(Item2),
+    SignedNormItem2 = sign_item(NormItem2, W),
+    ?assertEqual(id(SignedNormItem2, unsigned), id(Item2, unsigned)).

@@ -12,8 +12,6 @@
 
 -include("include/ao.hrl").
 
--ao_debug(print).
-
 start(_StartType, _StartArgs) ->
     attest_key(),
     ao_sup:start_link(),

@@ -63,7 +63,7 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
                     [
                         #{
                             <<"name">> => <<"From-Process">>,
-                            <<"value">> => ar_util:id(Proc#tx.id)
+                            <<"value">> => ar_util:id(Proc, signed)
                         },
                         #{
                             <<"name">> => <<"From-Image">>,

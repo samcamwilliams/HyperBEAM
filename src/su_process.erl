@@ -78,7 +78,7 @@ get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) ->
     get_assignments(ProcID, From, binary_to_integer(RequestedTo));
 get_assignments(ProcID, From, RequestedTo) ->
-    ?c({get_assignments, ProcID, From, RequestedTo}),
+    ?c({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
     ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
         true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
         false -> RequestedTo
@@ -134,7 +134,7 @@ do_assign(State, Message, ReplyPID) ->
                     {<<"Process">>, ar_util:id(State#state.id)},
                     {<<"Epoch">>, <<"0">>},
                     {<<"Slot">>, list_to_binary(integer_to_list(NextNonce))},
-                    {<<"Message">>, ar_util:id(Message#tx.id)},
+                    {<<"Message">>, ar_util:id(Message, signed)},
                     {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
                     {<<"Block-Hash">>, Hash},
                     {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
@@ -144,7 +144,15 @@ do_assign(State, Message, ReplyPID) ->
             }, State#state.wallet),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ao_cache:write_assignment(State#state.store, Assignment),
+            ?c(starting_message_write),
             ao_cache:write(State#state.store, Message),
+            % ?c(message_written),
+            % ?c(assignment_after_write),
+            % ar_bundles:print(Assignment),
+            % ?c(message_after_assignment_written),
+            % ar_bundles:print(Message),
+            % ?c(read_from_disk),
+            % ar_bundles:print(ao_cache:read(ao_store:scope(State#state.store, local), ar_util:id(Message, unsigned))),
             maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
             ao_client:upload(Assignment),
             ao_client:upload(Message),
@@ -160,7 +168,7 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
     end.
 
 next_hashchain(HashChain, Message) ->
-    crypto:hash(sha256, << HashChain/binary, (Message#tx.id)/binary >>).
+    crypto:hash(sha256, << HashChain/binary, (ar_util:id(Message, signed))/binary >>).
 
 %% TESTS
 
@@ -174,9 +182,9 @@ new_proc() ->
     ?c(2),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
     ?c(3),
-    su_registry:find(binary_to_list(ar_util:id(SignedItem#tx.id)), true),
+    su_registry:find(binary_to_list(ar_util:id(SignedItem, signed)), true),
     ?c(4),
-    schedule(ID = binary_to_list(ar_util:id(SignedItem#tx.id)), SignedItem),
+    schedule(ID = binary_to_list(ar_util:id(SignedItem, signed)), SignedItem),
     ?c(5),
     schedule(ID, SignedItem2),
     ?c(6),
