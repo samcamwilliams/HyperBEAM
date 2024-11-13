@@ -1,4 +1,4 @@
--module(su_http).
+-module(dev_scheduler_interface).
 -export([handle/1]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -20,7 +20,7 @@ choose_handler(M) ->
     end.
 
 info(_M) ->
-    Wallet = su_registry:get_wallet(),
+    Wallet = dev_scheduler_registry:get_wallet(),
     {ok,
         #tx{
             tags = [
@@ -31,7 +31,7 @@ info(_M) ->
                 jiffy:encode(
                     lists:map(
                         fun ar_util:id/1,
-                        su_registry:get_processes()
+                        dev_scheduler_registry:get_processes()
                     )
                 )
             }
@@ -39,13 +39,13 @@ info(_M) ->
 
 current_slot(M) ->
     {_, ProcID} = lists:keyfind(<<"Process">>, 1, M#tx.tags),
-    {Timestamp, Hash, Height} = su_timestamp:get(),
+    {Timestamp, Hash, Height} = ar_timestamp:get(),
     {ok, #tx{
         tags = [
             {<<"Process">>, ProcID},
             {<<"Current-Slot">>,
-                su_process:get_current_slot(
-                    su_registry:find(binary_to_list(ProcID)))
+                dev_scheduler_server:get_current_slot(
+                    dev_scheduler_registry:find(binary_to_list(ProcID)))
             },
             {<<"Timestamp">>, Timestamp},
             {<<"Block-Height">>, Height},
@@ -97,7 +97,7 @@ schedule(CarrierM) ->
                     false -> binary_to_list(ao_message:id(M#tx.target));
                     {_, ProcessID} -> ProcessID
                 end,
-            {ok, su_process:schedule(su_registry:find(AOProcID, true), M)}
+            {ok, dev_scheduler_server:schedule(dev_scheduler_registry:find(AOProcID, true), M)}
     end.
 
 %% Private methods
@@ -105,7 +105,7 @@ schedule(CarrierM) ->
 send_schedule(Store, ProcID, false, To) ->
     send_schedule(Store, ProcID, 0, To);
 send_schedule(Store, ProcID, From, false) ->
-    send_schedule(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)));
+    send_schedule(Store, ProcID, From, dev_scheduler_server:get_current_slot(dev_scheduler_registry:find(ProcID)));
 send_schedule(Store, ProcID, {<<"From">>, From}, To) ->
     send_schedule(Store, ProcID, binary_to_integer(From), To);
 send_schedule(Store, ProcID, From, {<<"To">>, To}) when byte_size(To) == 43 ->
@@ -113,9 +113,9 @@ send_schedule(Store, ProcID, From, {<<"To">>, To}) when byte_size(To) == 43 ->
 send_schedule(Store, ProcID, From, {<<"To">>, To}) ->
     send_schedule(Store, ProcID, From, binary_to_integer(To));
 send_schedule(Store, ProcID, From, To) ->
-    {Timestamp, Height, Hash} = su_timestamp:get(),
+    {Timestamp, Height, Hash} = ar_timestamp:get(),
 	?c({servicing_request_for_assignments, {proc_id, ProcID}, {from, From}, {to, To}}),
-    {Assignments, More} = su_process:get_assignments(
+    {Assignments, More} = dev_scheduler_server:get_assignments(
         ProcID,
         From,
         To

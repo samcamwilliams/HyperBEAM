@@ -1,4 +1,4 @@
--module(cu_device_loader).
+-module(ao_device_loader).
 -export([from_id/1, from_id/2, from_message/1,default/0]).
 
 -include("include/ao.hrl").

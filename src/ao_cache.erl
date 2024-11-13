@@ -10,7 +10,7 @@
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).
--define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }, #{ scope => local }}]).
+-define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
 
@@ -179,7 +179,7 @@ write(Store, Path, Item) when not is_record(Item, tx) ->
     ?c(writing_non_tx_item),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }) ->
-    ?c(writing_tx_item_with_default_id),
+    ?c(write_of_default_id_tx_requested),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item) ->
     case ar_bundles:type(Item) of

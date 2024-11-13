@@ -1,4 +1,4 @@
--module(dev_su).
+-module(dev_scheduler).
 %%% Local scheduling functions:
 -export([schedule/1]).
 %%% CU-flow functions:
@@ -17,7 +17,7 @@
 
 %%% HTTP API functions:
 schedule(Item) ->
-    {ok, Output} = su_http:handle(Item),
+    {ok, Output} = dev_scheduler_interface:handle(Item),
 	%?debug_wait(1000),
     {ok, Output}.
 

@@ -29,13 +29,13 @@ execute(CarrierMsg, S) ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
 				?c({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, ao_message:id(Assignment, signed)}}),
-                cu_process:result(ProcID, ao_message:id(Assignment, signed), Store, Wallet);
+                ao_process:result(ProcID, ao_message:id(Assignment, signed), Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->
                         {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
 						?c({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
-                        cu_process:result(Process, Slot, Store, Wallet);
+                        ao_process:result(Process, Slot, Store, Wallet);
                     false ->
                         {error, no_viable_computation}
                 end

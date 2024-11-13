@@ -1,4 +1,4 @@
--module(su_registry).
+-module(dev_scheduler_registry).
 -export([start/0, find/1, find/2, get_wallet/0, get_processes/0]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -38,7 +38,7 @@ maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
     maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
 	?c({starting_su_for, ProcID}),
-    Pid = su_process:start(ProcID, get_wallet()),
+    Pid = dev_scheduler_server:start(ProcID, get_wallet()),
     try
         pg:join({su, ProcID}, Pid),
         Pid
@@ -58,29 +58,29 @@ setup() ->
 
 find_non_existent_process_test() ->
     setup(),
-    ?assertEqual(not_found, su_registry:find(?TEST_PROC_ID1)).
+    ?assertEqual(not_found, ?MODULE:find(?TEST_PROC_ID1)).
 
 create_and_find_process_test() ->
     setup(),
-    Pid1 = su_registry:find(?TEST_PROC_ID1, true),
+    Pid1 = ?MODULE:find(?TEST_PROC_ID1, true),
     ?assert(is_pid(Pid1)),
-    ?assertEqual(Pid1, su_registry:find(?TEST_PROC_ID1)).
+    ?assertEqual(Pid1, ?MODULE:find(?TEST_PROC_ID1)).
 
 create_multiple_processes_test() ->
     setup(),
-    Pid1 = su_registry:find(?TEST_PROC_ID1, true),
-    Pid2 = su_registry:find(?TEST_PROC_ID2, true),
+    Pid1 = ?MODULE:find(?TEST_PROC_ID1, true),
+    Pid2 = ?MODULE:find(?TEST_PROC_ID2, true),
     ?assert(is_pid(Pid1)),
     ?assert(is_pid(Pid2)),
     ?assertNotEqual(Pid1, Pid2),
-    ?assertEqual(Pid1, su_registry:find(?TEST_PROC_ID1)),
-    ?assertEqual(Pid2, su_registry:find(?TEST_PROC_ID2)).
+    ?assertEqual(Pid1, ?MODULE:find(?TEST_PROC_ID1)),
+    ?assertEqual(Pid2, ?MODULE:find(?TEST_PROC_ID2)).
 
 get_all_processes_test() ->
     setup(),
-    su_registry:find(?TEST_PROC_ID1, true),
-    su_registry:find(?TEST_PROC_ID2, true),
-    Processes = su_registry:get_processes(),
+    ?MODULE:find(?TEST_PROC_ID1, true),
+    ?MODULE:find(?TEST_PROC_ID2, true),
+    Processes = ?MODULE:get_processes(),
     ?assertEqual(2, length(Processes)),
     ?assert(lists:member(?TEST_PROC_ID1, Processes)),
     ?assert(lists:member(?TEST_PROC_ID2, Processes)).

@@ -15,8 +15,8 @@
 start(_StartType, _StartArgs) ->
     attest_key(),
     ao_sup:start_link(),
-    ok = su_registry:start(),
-    _TimestampServer = su_timestamp:start(),
+    ok = dev_scheduler_registry:start(),
+    _TimestampServer = ar_timestamp:start(),
     {ok, _} = ao_http_router:start().
 
 stop(_State) ->

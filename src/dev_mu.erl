@@ -5,9 +5,9 @@
 %%% The main pushing logic for messages around the system.s
 
 %% We should run the following device stack on the message:
-%% dev_su -> dev_cu -> dev_poda
+%% dev_scheduler -> dev_cu -> dev_poda
 %% After execution we take the result and fork again based on it.
--define(PUSH_DEV_STACK, [dev_su, dev_cu, dev_poda]).
+-define(PUSH_DEV_STACK, [dev_scheduler, dev_cu, dev_poda]).
 
 %% @doc The main entry point for pushing a message. Assumes the message is
 %% a carrier message, and will extract the carried message to push from it.
@@ -73,7 +73,7 @@ push_messages(upload, Messages, Opts) ->
 						}
 					),
 					Stack = dev_stack:create(?PUSH_DEV_STACK),
-                    {ok, Results} = cu_device:call(
+                    {ok, Results} = ao_device:call(
 						{dev_stack, execute},
 						push,
 						[

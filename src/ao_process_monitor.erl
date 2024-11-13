@@ -1,4 +1,4 @@
--module(mu_monitor).
+-module(ao_process_monitor).
 -export([start/1, start/2, start/3, stop/1]).
 
 -include("include/ao.hrl").

@@ -2,6 +2,8 @@
 -define(DEFAULT_ID, << 0:256 >>).
 -define(DEFAULT_OWNER, << 0:4096 >>).
 
+-define(MAX_TAG_NAME_SIZE, 3072).
+-define(MAX_TAG_VALUE_SIZE, 3072).
 %% @doc A transaction.
 -record(tx, {
 	%% 1 or 2 or ans104.

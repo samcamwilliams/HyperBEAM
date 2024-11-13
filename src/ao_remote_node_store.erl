@@ -1,15 +1,17 @@
--module(ao_remote_store).
--export([type/2, read/2, resolve/2, path/2]).
+-module(ao_remote_node_store).
+-export([scope/1, type/2, read/2, resolve/2]).
 -include("include/ao.hrl").
 
-%%% A store module that reads data from (an)other AO node(s).
+%%% A store module that reads data from another AO node.
+%%% Notably, this store only provides the _read_ side of the store interface.
+%%% The write side could be added, returning an attestation that the data has
+%%% been written to the remote node. In that case, the node would probably want
+%%% to upload it to an Arweave bundler to ensure persistence, too.
+
+scope(_) -> remote.
 
 resolve(#{ node := Node }, Key) ->
     ?c({resolving_to_self, Node, Key}),
-    Key.
-
-path(#{ node := Node }, Key) ->
-    ?c({pathing_to_self, Node, Key}),
     Key.
 
 type(Opts = #{ node := Node }, Key) ->
@@ -26,17 +28,13 @@ read(Opts, Key) when is_binary(Key) ->
 read(Opts = #{ node := Node }, Key) ->
     Path = Node ++ "/data?Subpath=" ++ uri_string:quote(ao_store_common:join(Key)),
     ?c({reading, Key, Path, Opts}),
-    case ao_http:get(Path) of
+    case ao_http:get_binary(Path) of
         {ok, Bundle} ->
             case lists:keyfind(<<"Status">>, 1, Bundle#tx.tags) of
                 {<<"Status">>, <<"404">>} ->
                     not_found;
                 _ ->
-                    ?no_prod("Unnecessarily wasteful to serialize to deserialize later."),
-                    %ar_bundles:print(Bundle#tx.data),
-                    {ok, ar_bundles:serialize(Bundle)}
+                    {ok, Bundle}
             end;
-        Error ->
-            ?no_prod("Validate this response path."),
-            {ok, ar_bundles:serialize(Error)}
+        Error -> Error
     end.

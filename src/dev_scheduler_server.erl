@@ -1,4 +1,4 @@
--module(su_process).
+-module(dev_scheduler_server).
 -export([start/2, schedule/2]).
 -export([get_current_slot/1, get_assignments/3]).
 -include_lib("eunit/include/eunit.hrl").
@@ -48,7 +48,7 @@ slot_from_cache(ProcID) ->
     end.
 
 schedule(ProcID, Message) when is_list(ProcID) ->
-    schedule(su_registry:find(ProcID), Message);
+    schedule(dev_scheduler_registry:find(ProcID), Message);
 schedule(ProcID, Message) ->
     ProcID ! {schedule, Message, self()},
     receive
@@ -126,7 +126,7 @@ do_assign(State, Message, ReplyPID) ->
     % Run the signing of the assignment and writes to the disk in a separate process
     spawn(
         fun() ->
-            {Timestamp, Height, Hash} = su_timestamp:get(),
+            {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = ar_bundles:sign_item(#tx {
                 tags = [
                     {<<"Data-Protocol">>, <<"ao">>},
@@ -182,7 +182,7 @@ new_proc() ->
     ?c(2),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
     ?c(3),
-    su_registry:find(binary_to_list(ao_message:id(SignedItem, signed)), true),
+    dev_scheduler_registry:find(binary_to_list(ao_message:id(SignedItem, signed)), true),
     ?c(4),
     schedule(ID = binary_to_list(ao_message:id(SignedItem, signed)), SignedItem),
     ?c(5),

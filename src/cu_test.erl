@@ -15,9 +15,9 @@ run(Proc, Msg) ->
 run(Proc, Msg, _Opts) ->
     ao_cache:write(ao:get(store), Msg),
     ao_cache:write(ao:get(store), Proc),
-    Scheduler = su_registry:find(ao_message:id(Proc, signed), true),
-    Assignment = su_process:schedule(Scheduler, Msg),
-    cu_process:result(ao_message:id(Proc, signed), ao_message:id(Assignment, unsigned), ao:get(store), ao:wallet()).
+    Scheduler = dev_scheduler_registry:find(ao_message:id(Proc, signed), true),
+    Assignment = dev_scheduler_server:schedule(Scheduler, Msg),
+    ao_process:result(ao_message:id(Proc, signed), ao_message:id(Assignment, unsigned), ao:get(store), ao:wallet()).
 
 %%% TESTS
 

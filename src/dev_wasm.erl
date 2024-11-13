@@ -9,7 +9,7 @@
 init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
     Image = ao_cache:read_message(maps:get(store, State, ao:get(store)), ImageID),
-    {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
+    {ok, Port, _ImportMap, _Exports} = ao_beamr:start(Image#tx.data),
     % Apply the checkpoint if it is in the initial state.
     case maps:get(<<"WASM-State">>, State, undefined) of
         undefined ->
@@ -18,7 +18,7 @@ init(State, Params) ->
             ?c(wasm_checkpoint_found),
             ?c({is_tx, is_record(Checkpoint, tx)}),
             ?c({wasm_deserializing, byte_size(Checkpoint#tx.data)}),
-            cu_beamr:deserialize(Port, Checkpoint#tx.data),
+            ao_beamr:deserialize(Port, Checkpoint#tx.data),
             ?c(wasm_deserialized)
     end,
     {ok, State#{
@@ -36,7 +36,7 @@ execute(
         LastExec ->
             {ok, State};
         MsgID ->
-            {ResType, Res, State2} = cu_beamr:call(State, Port, Func, Params, Stdlib),
+            {ResType, Res, State2} = ao_beamr:call(State, Port, Func, Params, Stdlib),
             {ok, State2#{ phase := post_exec, results => {ResType, Res} }, MsgID}
     end;
 execute(_M, State = #{ pass := 2, phase := post_exec }, _) ->
@@ -46,7 +46,7 @@ execute(_, S, _) ->
     {ok, S}.
 
 checkpoint(State = #{ wasm := Port, save_keys := SaveKeys }) ->
-    {ok, Serialized} = cu_beamr:serialize(Port),
+    {ok, Serialized} = ao_beamr:serialize(Port),
     TX = ar_bundles:normalize(#tx{ data = Serialized }),
     {ok, State#{
         <<"WASM-State">> => TX,
@@ -62,7 +62,7 @@ checkpoint_uses(S = #{ results := Results }) ->
 
 terminate(State = #{wasm := Port}) ->
     ?c(terminate_called_on_dev_wasm),
-    cu_beamr:stop(Port),
+    ao_beamr:stop(Port),
     {ok, State#{wasm := undefined}}.
 
 uses() -> all.

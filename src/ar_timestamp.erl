@@ -1,6 +1,9 @@
--module(su_timestamp).
+-module(ar_timestamp).
 -export([start/0, get/0]).
 -define(TIMEOUT, 1000 * 15).
+
+%%% A simple Erlang server that caches the current Arweave timestamp and
+%%% refreshes it periodically.
 
 start() ->
     TSServer = spawn(fun() -> cache(ao_client:arweave_timestamp()) end),

@@ -9,7 +9,7 @@
 -export([item_to_json_struct/1, json_struct_to_item/1]).
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
--export([print/1]).
+-export([print/1, format/1, format/2]).
 
 -include("include/ao.hrl").
 
@@ -25,7 +25,7 @@
 ]).
 
 % How many bytes of a binary to print with `print/1`.
--define(BIN_PRINT, 50).
+-define(BIN_PRINT, 20).
 -define(INDENT_SPACES, 2).
 
 %%%===================================================================
@@ -278,6 +278,7 @@ data_item_signature_data(RawItem) ->
 data_item_signature_data(RawItem, unsigned) ->
     data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
 data_item_signature_data(RawItem, signed) ->
+	ok = enforce_valid_tx(RawItem),
     NormItem = normalize_data(RawItem),
     ar_deep_hash:hash([
         utf8_encoded("dataitem"),
@@ -372,10 +373,9 @@ serialize(not_found) -> throw(not_found);
 serialize(TX) -> serialize(TX, binary).
 serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
+	ok = enforce_valid_tx(RawTX),
     TX = normalize(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
-    enforce_size(TX#tx.target, [0, 32], target),
-    enforce_size(TX#tx.last_tx, [0, 32], last_tx),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
         (TX#tx.signature)/binary,
@@ -387,7 +387,87 @@ serialize(RawTX, binary) ->
         (TX#tx.data)/binary
     >>;
 serialize(TX, json) ->
+	ok = enforce_valid_tx(TX),
     jiffy:encode(item_to_json_struct(TX)).
+
+%% @doc Take an item and ensure that it is of valid form. Useful for ensuring
+%% that a message is viable for serialization/deserialization before execution.
+%% This function should throw simple, easy to follow errors to aid devs in
+%% debugging issues.
+enforce_valid_tx(TX) ->
+    ok_or_throw(TX,
+        check_size(TX#tx.id, [0, 32]),
+        {invalid_field, id, TX#tx.id}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.unsigned_id, [0, 32]),
+        {invalid_field, unsigned_id, TX#tx.unsigned_id}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.last_tx, [0, 32]),
+        {invalid_field, last_tx, TX#tx.last_tx}
+    ),
+	ok_or_throw(TX,
+		check_size(TX#tx.owner, [0, byte_size(?DEFAULT_OWNER)]),
+		{invalid_field, owner, TX#tx.owner}
+	),
+    ok_or_throw(TX,
+        check_size(TX#tx.target, [0, 32]),
+        {invalid_field, target, TX#tx.target}
+    ),
+	ok_or_throw(TX,
+		check_size(TX#tx.signature, [0, byte_size(?DEFAULT_SIG)]),
+		{invalid_field, signature, TX#tx.signature}
+	),
+	lists:foreach(
+		fun({Name, Value}) ->
+			ok_or_throw(TX,
+				check_type(Name, binary),
+				{invalid_field, tag_name, Name}
+			),
+			ok_or_throw(TX,
+				check_size(Name, {range, 0, ?MAX_TAG_NAME_SIZE}),
+				{invalid_field, tag_name, Name}
+			),
+			ok_or_throw(TX,
+				check_type(Value, binary),
+				{invalid_field, tag_value, Value}
+			),
+			ok_or_throw(TX,
+				check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
+				{invalid_field, tag_value, Value}
+			)
+		end,
+		TX#tx.tags
+	),
+	ok.
+
+%% @doc Force that a binary is either empty or the given number of bytes.
+check_size(Bin, {range, Start, End}) ->
+	check_type(Bin, binary)
+		andalso byte_size(Bin) >= Start
+		andalso byte_size(Bin) =< End;
+check_size(Bin, X) when not is_list(X) ->
+    check_size(Bin, [X]);
+check_size(Bin, Sizes) ->
+	check_type(Bin, binary)
+		andalso lists:member(byte_size(Bin), Sizes).
+
+%% @doc Ensure that a value is of the given type.
+check_type(Value, binary) when is_binary(Value) -> true;
+check_type(Value, _) when is_binary(Value) -> false;
+check_type(Value, list) when is_list(Value) -> true;
+check_type(Value, _) when is_list(Value) -> false;
+check_type(Value, map) when is_map(Value) -> true;
+check_type(Value, _) when is_map(Value) -> false;
+check_type(Value, message) ->
+	is_record(Value, tx) or is_map(Value) or is_list(Value);
+check_type(_Value, _) -> false.
+
+%% @doc Throw an error if the given value is not ok.
+ok_or_throw(_, true, _) -> true;
+ok_or_throw(_TX, false, Error) ->
+	throw(Error).
 
 %% @doc Take an item and ensure that both the unsigned and signed IDs are
 %% appropriately set. This function is structured to fall through all cases
@@ -492,25 +572,6 @@ encode_optional_field(<<>>) ->
     <<0>>;
 encode_optional_field(Field) ->
     <<1:8/integer, Field/binary>>.
-
-%% @doc Force that a binary is either empty or the given number of bytes.
-enforce_size(Bin, Size) ->
-    enforce_size(Bin, Size, undefined_field).
-enforce_size(Bin, X, FieldName) when not is_list(X) ->
-    enforce_size(Bin, [X], FieldName);
-enforce_size(Bin, Sizes, FieldName) ->
-    case lists:member(byte_size(Bin), Sizes) of
-        true -> Bin;
-        false ->
-            throw(
-                {
-                    invalid_field_size,
-                    FieldName,
-                    {expected, Sizes},
-                    {actual, byte_size(Bin)}
-                }
-            )
-    end.
 
 %% @doc Encode a UTF-8 string to binary.
 utf8_encoded(String) ->

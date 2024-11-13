@@ -77,7 +77,7 @@ execute(_M, S) ->
 
 path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
     ?c({path_open, FDPtr, LookupFlag, PathPtr}),
-    Path = cu_beamr_io:read_string(Port, PathPtr),
+    Path = ao_beamr_io:read_string(Port, PathPtr),
     ?c({path_open, Path}),
     File =
         maps:get(
@@ -103,7 +103,7 @@ fd_write(S, Port, Args) ->
     ?c({fd_write, Port, Args}),
     {S, [0]}.
 fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
-    cu_beamr_io:write(
+    ao_beamr_io:write(
         Port,
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
@@ -112,7 +112,7 @@ fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
 fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, Ptr),
-    {ok, Data} = cu_beamr_io:read(Port, VecPtr, Len),
+    {ok, Data} = ao_beamr_io:read(Port, VecPtr, Len),
     Before = binary:part(File#fd.data, 0, File#fd.offset),
     After = binary:part(File#fd.data, File#fd.offset, byte_size(File#fd.data) - File#fd.offset),
     NewFile = File#fd{
@@ -130,14 +130,14 @@ fd_read(S, Port, Args) ->
     fd_read(S, Port, Args, 0).
 fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
     ?c({{completed_read, FD, BytesRead}}),
-    cu_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
+    ao_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
     {S, [0]};
 fd_read(S = #{ vfs := FDs }, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
     ?c({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, VecsPtr),
     {FileBytes, NewFile} = get_bytes(File, Len),
-    ok = cu_beamr_io:write(Port, VecPtr, FileBytes),
+    ok = ao_beamr_io:write(Port, VecPtr, FileBytes),
     fd_read(
         S#{vfs => maps:put(FD, NewFile, FDs)},
         Port,
@@ -154,7 +154,7 @@ get_bytes(File = #fd { data = Function }, Size) ->
     {Bin, NewFile}.
 
 parse_iovec(Port, Ptr) ->
-    {ok, VecStruct} = cu_beamr_io:read(Port, Ptr, 16),
+    {ok, VecStruct} = ao_beamr_io:read(Port, Ptr, 16),
     <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
     {BinPtr, Len}.
 

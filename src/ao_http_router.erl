@@ -15,7 +15,7 @@ start() ->
 init(Req, _) ->
     Path = cowboy_req:path(Req),
     ?c({http_called_with_path, Path}),
-    case cu_device:call(dev_meta, execute, [ao_http:req_to_tx(Req)]) of
+    case ao_device:call(dev_meta, execute, [ao_http:req_to_tx(Req)]) of
         {ok, ResultingMessage} when is_record(ResultingMessage, tx) or is_map(ResultingMessage) ->
             % If the device returns a message (either normalized or not),
             % we normalize and serialize it, returning it to the client.
@@ -34,12 +34,12 @@ init(Req, _) ->
             );
         no_match ->
             % If the device returns no_match, we return a 404.
-            ao_http:reply(Req, 500, #{});
-        Other ->
-            % If the device returns anything else, we return it as is.
-            % The assumption is that this would be a return from an upstream
-            % cowboy interaction (new state, etc).
-            Other
+            ao_http:reply(Req,
+				#tx {
+					tags = [{<<"Status">>, <<"500">>}],
+					data = <<"No matching device found.">>
+				}
+			)
     end.
 
 allowed_methods(Req, State) ->

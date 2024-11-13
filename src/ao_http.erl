@@ -1,14 +1,32 @@
 -module(ao_http).
--export([start/0, get/1, get/2, post/3, reply/2, reply/3]).
+-export([start/0]).
+-export([get/1, get/2, get_binary/1]).
+-export([post/2, post/3, post_binary/2]).
+-export([reply/2, reply/3]).
 -export([tx_to_status/1, req_to_tx/1]).
 -include("include/ao.hrl").
 -ao_debug(print).
 
+%%% Hyperbeam's core HTTP request/reply functionality. The functions in this
+%%% module generally take a message in request and return a response in message
+%%% form. This module is mostly used by ao_client, but can also be used by other
+%%% modules that need to make HTTP requests.
+
 start() ->
     httpc:set_options([{max_keep_alive_length, 0}]).
 
+%% @doc Gets a URL via HTTP and returns the resulting message in deserialized
+%% form.
 get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
+	case get_binary(URL) of
+		{ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+		Error -> Error
+	end.
+
+%% @doc Gets a URL via HTTP and returns the raw binary body. Abstracted such that
+%% we can easily swap out the HTTP client library later.
+get_binary(URL) ->
     ?c({http_getting, URL}),
     case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
         {ok, {{_, 500, _}, _, Body}} ->
@@ -16,16 +34,27 @@ get(URL) ->
             {error, Body};
         {ok, {{_, _, _}, _, Body}} ->
             ?c({http_got, URL}),
-            Message = ar_bundles:deserialize(Body),
-            {ok, Message}
+            {ok, Body}
     end.
 
-post(Host, Path, Item) -> post(Host ++ Path, Item).
-post(URL, Item) ->
-    ?c({http_post, ao_message:id(Item, unsigned), URL}),
+%% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
+%% resulting message in deserialized form.
+post(Host, Path, Message) -> post(Host ++ Path, Message).
+post(URL, Message) when not is_binary(Message) ->
+    ?c({http_post, ao_message:id(Message, unsigned), ao_message:id(Message, signed), URL}),
+	post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
+post(URL, Message) ->
+	case post_binary(URL, Message) of
+		{ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+		Error -> Error
+	end.
+
+%% @doc Posts a binary to a URL on a remote peer via HTTP, returning the raw
+%% binary body.
+post_binary(URL, Message) ->
     case httpc:request(
         post,
-        {URL, [], "application/octet-stream", ar_bundles:serialize(ar_bundles:normalize(Item))},
+        {URL, [], "application/octet-stream", Message},
         [],
         [{body_format, binary}]
     ) of
@@ -35,23 +64,24 @@ post(URL, Item) ->
                     200 -> ok;
                     201 -> created
                 end,
-                ar_bundles:deserialize(Body)
+                Body
             };
         Response ->
             ?c({http_post_error, URL, Response}),
             {error, Response}
     end.
 
-reply(Req, Item) ->
-    reply(Req, tx_to_status(Item), Item).
-reply(Req, Status, Item) ->
+%% @doc Reply to the client's HTTP request with a message.
+reply(Req, Message) ->
+    reply(Req, tx_to_status(Message), Message).
+reply(Req, Status, Message) ->
     ?c(
         {
             replying,
             Status,
             maps:get(path, Req, undefined_path),
-            case is_record(Item, tx) of
-                true -> ao_message:id(Item);
+            case is_record(Message, tx) of
+                true -> ao_message:id(Message);
                 false -> data_body
             end
         }
@@ -59,7 +89,7 @@ reply(Req, Status, Item) ->
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
-        ar_bundles:serialize(Item),
+        ar_bundles:serialize(Message),
         Req
     ),
     {ok, Req2, no_state}.
@@ -93,6 +123,7 @@ req_to_tx(Req) ->
             end
     }.
 
+%% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
 read_body(Req0, Acc) ->
     case cowboy_req:read_body(Req0) of

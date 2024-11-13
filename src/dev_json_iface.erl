@@ -39,9 +39,9 @@ prep_call(
                 {<<"Block-Height">>, BlockHeight}
             ]
     }),
-    {ok, MsgJsonPtr} = cu_beamr_io:write_string(Port, MsgJson),
+    {ok, MsgJsonPtr} = ao_beamr_io:write_string(Port, MsgJson),
     EnvJson = jiffy:encode({[{<<"Process">>, ar_bundles:item_to_json_struct(Process)}]}),
-    {ok, EnvJsonPtr} = cu_beamr_io:write_string(Port, EnvJson),
+    {ok, EnvJsonPtr} = ao_beamr_io:write_string(Port, EnvJson),
     {"handle", [MsgJsonPtr, EnvJsonPtr]}.
 
 %% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
@@ -82,7 +82,7 @@ results(S = #{wasm := Port, results := Res, process := Proc}) ->
                 results := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
             };
         {ok, [Ptr]} ->
-            {ok, Str} = cu_beamr_io:read_string(Port, Ptr),
+            {ok, Str} = ao_beamr_io:read_string(Port, Ptr),
             Wallet = ao:wallet(),
             try jiffy:decode(Str, [return_maps]) of
                 % TODO: Handle all JSON interface outputs
@@ -160,7 +160,7 @@ lib(
     _Signature
 ) ->
     %?c({fd_write, Fd, Ptr, Vecs, RetPtr}),
-    {ok, VecData} = cu_beamr_io:read_iovecs(Port, Ptr, Vecs),
+    {ok, VecData} = ao_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
     %?c({fd_write_data, VecData}),
     NewStdio =
@@ -171,7 +171,7 @@ lib(
                 Existing ++ [VecData]
         end,
     % Set return pointer to number of bytes written
-    cu_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
+    ao_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Args, _Module, "clock_time_get", _Signature) ->
     %?c({called, wasi_clock_time_get, 1}),

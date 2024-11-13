@@ -1,4 +1,4 @@
--module(cu_beamr).
+-module(ao_beamr).
 -export([start/1, call/3, call/4, call/5, stop/1, test/0]).
 -export([serialize/1, deserialize/2]).
 -export([stub_stdlib/6]).
@@ -21,7 +21,7 @@ load_driver() ->
 
 start(WasmBinary) ->
     ok = load_driver(),
-    Port = open_port({spawn, "cu_beamr"}, []),
+    Port = open_port({spawn, "ao_beamr"}, []),
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
     ?c({waiting_for_init_from, Port}),
     receive
@@ -76,15 +76,15 @@ exec_call(S, ImportFunc, Port) ->
 
 serialize(Port) ->
     ?c(starting_serialize),
-    {ok, Size} = cu_beamr_io:size(Port),
-    {ok, Mem} = cu_beamr_io:read(Port, 0, Size),
+    {ok, Size} = ao_beamr_io:size(Port),
+    {ok, Mem} = ao_beamr_io:read(Port, 0, Size),
     ?c({finished_serialize, byte_size(Mem)}),
     {ok, Mem}.
 
 deserialize(Port, Bin) ->
     % TODO: Be careful of memory growth!
     ?c(starting_deserialize),
-    Res = cu_beamr_io:write(Port, 0, Bin),
+    Res = ao_beamr_io:write(Port, 0, Bin),
     ?c({finished_deserialize, Res}),
     ok.
 
@@ -106,12 +106,12 @@ simple_wasm_calling_test() ->
     ?assertEqual(1, Result),
     Arg0 = <<"Test string arg 000000000000000\0">>,
     Arg1 = <<"Test string arg 111111111111111\0">>,
-    {ok, Ptr0} = cu_beamr_io:malloc(Port, byte_size(Arg0)),
+    {ok, Ptr0} = ao_beamr_io:malloc(Port, byte_size(Arg0)),
     ?assertNotEqual(0, Ptr0),
-    cu_beamr_io:write(Port, Ptr0, Arg0),
-    {ok, Ptr1} = cu_beamr_io:malloc(Port, byte_size(Arg1)),
+    ao_beamr_io:write(Port, Ptr0, Arg0),
+    {ok, Ptr1} = ao_beamr_io:malloc(Port, byte_size(Arg1)),
     ?assertNotEqual(0, Ptr1),
-    cu_beamr_io:write(Port, Ptr1, Arg1),
+    ao_beamr_io:write(Port, Ptr1, Arg1),
     {ok, []} = call(Port, "print_args", [Ptr0, Ptr1]).
 
 wasm64_test() ->
@@ -138,19 +138,19 @@ aos64_standalone_wex_test() ->
     Env = gen_test_env(),
     {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
-    {ok, Ptr1} = cu_beamr_io:malloc(Port, byte_size(Msg)),
+    {ok, Ptr1} = ao_beamr_io:malloc(Port, byte_size(Msg)),
     ?assertNotEqual(0, Ptr1),
-    cu_beamr_io:write(Port, Ptr1, Msg),
-    {ok, Ptr2} = cu_beamr_io:malloc(Port, byte_size(Env)),
+    ao_beamr_io:write(Port, Ptr1, Msg),
+    {ok, Ptr2} = ao_beamr_io:malloc(Port, byte_size(Env)),
     ?assertNotEqual(0, Ptr2),
-    cu_beamr_io:write(Port, Ptr2, Env),
+    ao_beamr_io:write(Port, Ptr2, Env),
     % Read the strings to validate they are correctly passed
-    {ok, MsgBin} = cu_beamr_io:read(Port, Ptr1, byte_size(Msg)),
-    {ok, EnvBin} = cu_beamr_io:read(Port, Ptr2, byte_size(Env)),
+    {ok, MsgBin} = ao_beamr_io:read(Port, Ptr1, byte_size(Msg)),
+    {ok, EnvBin} = ao_beamr_io:read(Port, Ptr2, byte_size(Env)),
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
     {ok, [Ptr3], _} = call(Port, "handle", [Ptr1, Ptr2]),
-    {ok, ResBin} = cu_beamr_io:read_string(Port, Ptr3),
+    {ok, ResBin} = ao_beamr_io:read_string(Port, Ptr3),
     #{<<"ok">> := true, <<"response">> := Resp} = jiffy:decode(ResBin, [return_maps]),
     #{<<"Output">> := #{ <<"data">> := Data }} = Resp,
     ?assertEqual(<<"2">>, Data).
@@ -162,10 +162,10 @@ checkpoint_and_resume_test() ->
     Msg3 = gen_test_aos_msg("return TestVar"),
     {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port1, _ImportMap, _Exports} = start(File),
-    {ok, EnvPtr} = cu_beamr_io:write_string(Port1, Env),
-    {ok, Msg1Ptr} = cu_beamr_io:write_string(Port1, Msg1),
-    {ok, Msg2Ptr} = cu_beamr_io:write_string(Port1, Msg2),
-    {ok, Msg3Ptr} = cu_beamr_io:write_string(Port1, Msg3),
+    {ok, EnvPtr} = ao_beamr_io:write_string(Port1, Env),
+    {ok, Msg1Ptr} = ao_beamr_io:write_string(Port1, Msg1),
+    {ok, Msg2Ptr} = ao_beamr_io:write_string(Port1, Msg2),
+    {ok, Msg3Ptr} = ao_beamr_io:write_string(Port1, Msg3),
     {ok, [_]} = call(Port1, "main", [0, 0]),
     {ok, [_]} = call(Port1, "handle", [Msg1Ptr, EnvPtr]),
     {ok, MemCheckpoint} = serialize(Port1),
@@ -174,8 +174,8 @@ checkpoint_and_resume_test() ->
     {ok, Port2, _, _} = start(File),
     deserialize(Port2, MemCheckpoint),
     {ok, [OutPtr2]} = call(Port2, "handle", [Msg3Ptr, EnvPtr]),
-    Str1 = cu_beamr_io:read_string(Port1, OutPtr1),
-    Str2 = cu_beamr_io:read_string(Port2, OutPtr2),
+    Str1 = ao_beamr_io:read_string(Port1, OutPtr1),
+    Str2 = ao_beamr_io:read_string(Port2, OutPtr2),
     ?assertNotEqual(Str1, Str2).
 
 timed_calls_test() ->
@@ -183,8 +183,8 @@ timed_calls_test() ->
     Msg1 = gen_test_aos_msg("return 1+1"),
     {ok, File} = file:read_file("test/aos-2-pure.wasm"),
     {ok, Port1, _ImportMap, _Exports} = start(File),
-    {ok, EnvPtr} = cu_beamr_io:write_string(Port1, Env),
-    {ok, Msg1Ptr} = cu_beamr_io:write_string(Port1, Msg1),
+    {ok, EnvPtr} = ao_beamr_io:write_string(Port1, Env),
+    {ok, Msg1Ptr} = ao_beamr_io:write_string(Port1, Msg1),
     {Time, _Res} = timer:tc(?MODULE, call, [Port1, "handle", [Msg1Ptr, EnvPtr]]),
     ?c({'1_run_in', Time, 'microseconds'}),
     ?assert(Time < 10000000),

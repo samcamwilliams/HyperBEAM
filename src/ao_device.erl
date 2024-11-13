@@ -1,4 +1,4 @@
--module(cu_device).
+-module(ao_device).
 -export([from_message/1]).
 -export([call/3, call/4]).
 -include("include/ao.hrl").
@@ -13,8 +13,8 @@
 
 from_message(M) ->
     case lists:keyfind(<<"Device">>, 1, M#tx.tags) of
-        {_, DevID} -> cu_device_loader:from_id(DevID);
-        false -> cu_device_loader:default()
+        {_, DevID} -> ao_device_loader:from_id(DevID);
+        false -> ao_device_loader:default()
     end.
 
 call(Dev, FuncName, Args) -> call(Dev, FuncName, Args, #{}).
