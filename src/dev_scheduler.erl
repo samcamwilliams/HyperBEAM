@@ -23,18 +23,18 @@ schedule(Item) ->
 
 %%% MU pushing client functions:
 push(Msg, State = #{ logger := Logger }) ->
-    ?c(su_scheduling_message_for_push),
+    ?event(su_scheduling_message_for_push),
     case ao_client:schedule(Msg) of
         {ok, Assignment} ->
-			?c({scheduled_message, ao_message:id(Assignment, unsigned)}),
+			?event({scheduled_message, ao_message:id(Assignment, unsigned)}),
             {ok, State#{assignment => Assignment}};
         Error ->
-			?c({error_scheduling_message, Error}),
+			?event({error_scheduling_message, Error}),
             ao_logger:log(Logger, Error),
             {error, Error}
     end;
 push(Arg1, Arg2) ->
-	?c({unhandled_push_args, maps:keys(Arg2)}),
+	?event({unhandled_push_args, maps:keys(Arg2)}),
 	{error, unhandled_push_args}.
 
 %%% Process/device client functions:
@@ -54,10 +54,10 @@ update_schedule(State = #{ process := Proc }) ->
     Store = maps:get(store, State, ao:get(store)),
     CurrentSlot = maps:get(slot, State, 0),
     ToSlot = maps:get(to, State),
-    ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
+    ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint. (Done, right?)
     Assignments = ao_client:get_assignments(ao_message:id(Proc, signed), CurrentSlot, ToSlot),
-    ?c({got_assignments_from_su,
+    ?event({got_assignments_from_su,
 		[
 			{
 				element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
@@ -67,7 +67,7 @@ update_schedule(State = #{ process := Proc }) ->
 		|| A <- Assignments ]}),
     lists:foreach(
         fun(Assignment) ->
-            ?c({writing_assignment_to_cache, ao_message:id(Assignment, unsigned)}),
+            ?event({writing_assignment_to_cache, ao_message:id(Assignment, unsigned)}),
             ao_cache:write(Store, Assignment)
         end,
         Assignments

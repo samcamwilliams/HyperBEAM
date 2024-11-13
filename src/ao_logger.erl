@@ -20,7 +20,7 @@ log(Monitor, Data) ->
     Monitor ! {log, Data}.
 
 register(Monitor) ->
-    ?c({self(), registering}),
+    ?event({self(), registering}),
     Monitor ! {register, self()}.
 
 report(Monitor) ->
@@ -39,10 +39,10 @@ loop(State) ->
             console(State, Activity),
             loop(State#state{ activity = [Activity | State#state.activity] });
         {register, PID} ->
-            ?c(registered),
+            ?event(registered),
             %erlang:monitor(process, PID),
             console(State, Act = {ok, registered, PID}),
-            ?c({registered, PID}),
+            ?event({registered, PID}),
             loop(State#state{
                 processes =
                     [PID | case State#state.processes of waiting -> []; L -> L end],
@@ -50,7 +50,7 @@ loop(State) ->
             });
         {'DOWN', _MonitorRef, process, PID, Reason} ->
             console(State, Act = {terminated, Reason, PID}),
-            ?c({dead, PID}),
+            ?event({dead, PID}),
             loop(State#state{
                 processes = State#state.processes -- [PID],
                 activity = [Act | State#state.activity]

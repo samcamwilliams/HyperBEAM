@@ -43,7 +43,7 @@ init(S, Params) ->
 
 execute(M, S = #{ pass := 1, vfs := FDs }) ->
     #tx { data = Data } = maps:get(<<"Message">>, M#tx.data),
-    ?c({setting_stdin_to_message, byte_size(Data)}),
+    ?event({setting_stdin_to_message, byte_size(Data)}),
     {ok,
         S#{
             vfs =>
@@ -76,9 +76,9 @@ execute(_M, S) ->
     {ok, S}.
 
 path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
-    ?c({path_open, FDPtr, LookupFlag, PathPtr}),
+    ?event({path_open, FDPtr, LookupFlag, PathPtr}),
     Path = ao_beamr_io:read_string(Port, PathPtr),
-    ?c({path_open, Path}),
+    ?event({path_open, Path}),
     File =
         maps:get(
             hd(maps:keys(
@@ -100,7 +100,7 @@ path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
 fd_write(S, Port, [FD, Ptr, Vecs, RetPtr]) ->
     fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0);
 fd_write(S, Port, Args) ->
-    ?c({fd_write, Port, Args}),
+    ?event({fd_write, Port, Args}),
     {S, [0]}.
 fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
     ao_beamr_io:write(
@@ -129,11 +129,11 @@ fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
 fd_read(S, Port, Args) ->
     fd_read(S, Port, Args, 0).
 fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
-    ?c({{completed_read, FD, BytesRead}}),
+    ?event({{completed_read, FD, BytesRead}}),
     ao_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
     {S, [0]};
 fd_read(S = #{ vfs := FDs }, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
-    ?c({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
+    ?event({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, VecsPtr),
     {FileBytes, NewFile} = get_bytes(File, Len),
@@ -159,12 +159,12 @@ parse_iovec(Port, Ptr) ->
     {BinPtr, Len}.
 
 write_file_test() ->
-    cu_test:init(),
-    {Proc, Msg} = cu_test:generate_test_data(
+    ao_test:init(),
+    {Proc, Msg} = ao_test:generate_test_data(
         <<"file = io.open(\"/dev/stdin\", \"r\")
         ourline = file:read(),
         file:close(file)
         print(ourline)">>
     ),
-    {ok, #{ <<"/Data">> := #tx { data = Data } }} = cu_test:run(Proc, Msg),
+    {ok, #{ <<"/Data">> := #tx { data = Data } }} = ao_test:run(Proc, Msg),
     ?assertEqual(Data, <<"file = io.open(\"/dev/stdin\", \"r\")">>).

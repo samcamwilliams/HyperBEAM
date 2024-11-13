@@ -41,11 +41,11 @@ ensure_loaded(DevMod) ->
 %% @doc Call a device function without catching exceptions if the error
 %% strategy is set to throw.
 maybe_unsafe_call(DevMod, FuncName, Args, #{ error_strategy := throw }) ->
-    ?c({executing_dev_call, DevMod, FuncName, length(Args)}),
+    ?event({executing_dev_call, DevMod, FuncName, length(Args)}),
     erlang:apply(DevMod, FuncName, Args);
 maybe_unsafe_call(DevMod, FuncName, Args, Opts) ->
     try maybe_unsafe_call(DevMod, FuncName, Args, Opts#{ error_strategy => throw })
     catch Type:Error:BT ->
-        ?c({error_calling_dev, DevMod, FuncName, length(Args), {Type, Error, BT}}),
+        ?event({error_calling_dev, DevMod, FuncName, length(Args), {Type, Error, BT}}),
         {error, {Type, Error, BT}}
     end.

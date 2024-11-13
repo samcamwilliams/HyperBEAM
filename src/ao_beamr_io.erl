@@ -13,9 +13,9 @@ size(Port) ->
     end.
 
 write(Port, Offset, Data) when is_binary(Data) ->
-    ?c(writing_to_mem),
+    ?event(writing_to_mem),
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
-    ?c(mem_written),
+    ?event(mem_written),
     receive
         ok -> ok
     end.
@@ -52,10 +52,10 @@ do_read_string(Port, Offset, ChunkSize) ->
 malloc(Port, Size) ->
     case ao_beamr:call(Port, "malloc", [Size]) of
         {ok, [0]} ->
-            ?c({malloc_failed, Size}),
+            ?event({malloc_failed, Size}),
             {error, malloc_failed};
         {ok, [Ptr]} ->
-            ?c({malloc_success, Ptr, Size}),
+            ?event({malloc_success, Ptr, Size}),
             {ok, Ptr};
         {error, Error} ->
             {error, Error}
@@ -64,7 +64,7 @@ malloc(Port, Size) ->
 free(Port, Ptr) ->
     case ao_beamr:call(Port, "free", [Ptr]) of
         {ok, Res} ->
-            ?c({free_result, Res}),
+            ?event({free_result, Res}),
             ok;
         {error, Error} ->
             {error, Error}

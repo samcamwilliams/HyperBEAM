@@ -11,12 +11,12 @@
 scope(_) -> remote.
 
 resolve(#{ node := Node }, Key) ->
-    ?c({resolving_to_self, Node, Key}),
+    ?event({resolving_to_self, Node, Key}),
     Key.
 
 type(Opts = #{ node := Node }, Key) ->
     ?no_prod("No need to get the whole message in order to get its type..."),
-    ?c({remote_type, Node, Key}),
+    ?event({remote_type, Node, Key}),
     case read(Opts, Key) of
         not_found -> not_found;
         #tx { data = Map } when is_map(Map) -> composite;
@@ -27,7 +27,7 @@ read(Opts, Key) when is_binary(Key) ->
     read(Opts, binary_to_list(Key));
 read(Opts = #{ node := Node }, Key) ->
     Path = Node ++ "/data?Subpath=" ++ uri_string:quote(ao_store_common:join(Key)),
-    ?c({reading, Key, Path, Opts}),
+    ?event({reading, Key, Path, Opts}),
     case ao_http:get_binary(Path) of
         {ok, Bundle} ->
             case lists:keyfind(<<"Status">>, 1, Bundle#tx.tags) of

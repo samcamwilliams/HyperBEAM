@@ -5,7 +5,7 @@
 -ao_debug(print).
 
 push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
-	?c(
+	?event(
 		{pushing_message,
 			{assignment, ao_message:id(Assignment, unsigned)},
 			{message, ao_message:id(Msg, unsigned)}
@@ -13,7 +13,7 @@ push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
 	),
     case ao_client:compute(Assignment, Msg) of
         {ok, Results} ->
-            ?c(computed_results),
+            ?event(computed_results),
             {ok, S#{ results => Results }};
         Error ->
             throw({cu_error, Error})
@@ -28,13 +28,13 @@ execute(CarrierMsg, S) ->
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-				?c({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, ao_message:id(Assignment, signed)}}),
+				?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, ao_message:id(Assignment, signed)}}),
                 ao_process:result(ProcID, ao_message:id(Assignment, signed), Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->
                         {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
-						?c({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
+						?event({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
                         ao_process:result(Process, Slot, Store, Wallet);
                     false ->
                         {error, no_viable_computation}
@@ -44,10 +44,10 @@ execute(CarrierMsg, S) ->
         case lists:keyfind(<<"Attest-To">>, 1, CarrierMsg#tx.tags) of
             {_, RawAttestTo} ->
                 AttestTo = ar_util:decode(RawAttestTo),
-                ?c({attest_to_only_message, RawAttestTo}),
+                ?event({attest_to_only_message, RawAttestTo}),
                 case ar_bundles:find(AttestTo, Results) of
                     not_found ->
-                        ?c(message_to_attest_to_not_found),
+                        ?event(message_to_attest_to_not_found),
                         {ok,
                             S#{
                                 results =>
@@ -58,7 +58,7 @@ execute(CarrierMsg, S) ->
                             }
                         };
                     _ ->
-                        ?c(message_to_attest_to_found),
+                        ?event(message_to_attest_to_found),
                         {ok, S#{
                             results => ar_bundles:sign_item(
                                 #tx {
@@ -75,7 +75,7 @@ execute(CarrierMsg, S) ->
             false ->
                 {ok, S#{ results => Results }}
         end,
-    ?c(returning_computed_results),
+    ?event(returning_computed_results),
 	%ar_bundles:print(ModResults),
     {ResType, ModState}.
 

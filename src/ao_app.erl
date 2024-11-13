@@ -49,7 +49,7 @@ attest_key() ->
                 true ->
                     % If CommandResult is a list of integers, convert it to binary
                     BinaryResult = list_to_binary(CommandResult),
-                    ?c(BinaryResult),
+                    ?event(BinaryResult),
                     Signed = ar_bundles:sign_item(
                         #tx{
                             tags = [
@@ -60,7 +60,7 @@ attest_key() ->
                         },
                         W
                     ),
-                    ?c(Signed),
+                    ?event(Signed),
                     ao_client:upload(Signed),
                     ok;
                 false ->

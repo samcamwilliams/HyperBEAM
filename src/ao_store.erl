@@ -157,7 +157,7 @@ call_function(X, _Function, _Args) when not is_list(X) ->
 call_function([], _Function, _Args) ->
     no_viable_store;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
-    ?c({calling, Mod, Function}),
+    ?event({calling, Mod, Function}),
     try apply(Mod, Function, [Opts | Args]) of
         not_found ->
             call_function(Rest, Function, Args);

@@ -15,11 +15,11 @@ init(State, Params) ->
         undefined ->
             State;
         Checkpoint ->
-            ?c(wasm_checkpoint_found),
-            ?c({is_tx, is_record(Checkpoint, tx)}),
-            ?c({wasm_deserializing, byte_size(Checkpoint#tx.data)}),
+            ?event(wasm_checkpoint_found),
+            ?event({is_tx, is_record(Checkpoint, tx)}),
+            ?event({wasm_deserializing, byte_size(Checkpoint#tx.data)}),
             ao_beamr:deserialize(Port, Checkpoint#tx.data),
-            ?c(wasm_deserialized)
+            ?event(wasm_deserialized)
     end,
     {ok, State#{
         wasm => Port,
@@ -61,7 +61,7 @@ checkpoint_uses(S = #{ results := Results }) ->
     {ok, S#{ results => Results#{ keys => [ <<"WASM-State">> | Keys ] } }}.
 
 terminate(State = #{wasm := Port}) ->
-    ?c(terminate_called_on_dev_wasm),
+    ?event(terminate_called_on_dev_wasm),
     ao_beamr:stop(Port),
     {ok, State#{wasm := undefined}}.
 

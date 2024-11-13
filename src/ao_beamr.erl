@@ -23,15 +23,15 @@ start(WasmBinary) ->
     ok = load_driver(),
     Port = open_port({spawn, "ao_beamr"}, []),
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
-    ?c({waiting_for_init_from, Port}),
+    ?event({waiting_for_init_from, Port}),
     receive
         {execution_result, Imports, Exports} ->
-            ?c({wasm_init_success, {imports, length(Imports)}, {exports, length(Exports)}}),
+            ?event({wasm_init_success, {imports, length(Imports)}, {exports, length(Exports)}}),
             {ok, Port, Imports, Exports}
     end.
 
 stop(Port) ->
-    ?c(stop_called_on_dev_wasm),
+    ?event(stop_called_on_dev_wasm),
     port_close(Port),
     ok.
 
@@ -41,51 +41,51 @@ call(Port, FunctionName, Args, Stdlib) ->
     {ResType, Res, _} = call(#{ stdout => [] }, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
 call(S, Port, FunctionName, Args, ImportFunc) ->
-    ?c({call_started, Port, FunctionName, Args, ImportFunc}),
-    ?c({call, FunctionName, Args}),
+    ?event({call_started, Port, FunctionName, Args, ImportFunc}),
+    ?event({call, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
-    ?c({waiting_for_call_result, self(), Port}),
+    ?event({waiting_for_call_result, self(), Port}),
     exec_call(S, ImportFunc, Port).
 
 stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) ->
-    ?c(stub_stdlib_called),
+    ?event(stub_stdlib_called),
     {S, [0]}.
 
 exec_call(S, ImportFunc, Port) ->
     receive
         {execution_result, Result} ->
-            ?c({call_result, Result}),
+            ?event({call_result, Result}),
             {ok, Result, S};
         {import, Module, Func, Args, Signature} ->
-            ?c({import_called, Module, Func, Args, Signature}),
+            ?event({import_called, Module, Func, Args, Signature}),
             try
                 {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
-                ?c({import_returned, Module, Func, Args, ErlRes}),
+                ?event({import_returned, Module, Func, Args, ErlRes}),
                 Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
                 exec_call(S2, ImportFunc, Port)
             catch
                 Err:Reason:Stack ->
-                    ?c({import_error, Err, Reason, Stack}),
+                    ?event({import_error, Err, Reason, Stack}),
                     stop(Port),
                     {error, Err, Reason, Stack, S}
             end;
         {error, Error} ->
-            ?c({wasm_error, Error}),
+            ?event({wasm_error, Error}),
             {error, Error, S}
     end.
 
 serialize(Port) ->
-    ?c(starting_serialize),
+    ?event(starting_serialize),
     {ok, Size} = ao_beamr_io:size(Port),
     {ok, Mem} = ao_beamr_io:read(Port, 0, Size),
-    ?c({finished_serialize, byte_size(Mem)}),
+    ?event({finished_serialize, byte_size(Mem)}),
     {ok, Mem}.
 
 deserialize(Port, Bin) ->
     % TODO: Be careful of memory growth!
-    ?c(starting_deserialize),
+    ?event(starting_deserialize),
     Res = ao_beamr_io:write(Port, 0, Bin),
-    ?c({finished_deserialize, Res}),
+    ?event({finished_deserialize, Res}),
     ok.
 
 %% Tests
@@ -115,7 +115,7 @@ simple_wasm_calling_test() ->
     {ok, []} = call(Port, "print_args", [Ptr0, Ptr1]).
 
 wasm64_test() ->
-    ?c(simple_wasm64_test),
+    ?event(simple_wasm64_test),
     {ok, File} = file:read_file("test/test-64.wasm"),
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [Result]} = call(Port, "fac", [5.0]),
@@ -186,12 +186,12 @@ timed_calls_test() ->
     {ok, EnvPtr} = ao_beamr_io:write_string(Port1, Env),
     {ok, Msg1Ptr} = ao_beamr_io:write_string(Port1, Msg1),
     {Time, _Res} = timer:tc(?MODULE, call, [Port1, "handle", [Msg1Ptr, EnvPtr]]),
-    ?c({'1_run_in', Time, 'microseconds'}),
+    ?event({'1_run_in', Time, 'microseconds'}),
     ?assert(Time < 10000000),
     StartTime = erlang:system_time(millisecond),
     lists:foreach(fun(_) ->
-        ?c(timer:tc(?MODULE, call, [Port1, "handle", [Msg1Ptr, EnvPtr]]))
+        ?event(timer:tc(?MODULE, call, [Port1, "handle", [Msg1Ptr, EnvPtr]]))
     end, lists:seq(1, 1000)),
     EndTime = erlang:system_time(millisecond),
-    ?c({'1000_runs_in', Secs = (EndTime - StartTime) / 1000, 'seconds'}),
+    ?event({'1000_runs_in', Secs = (EndTime - StartTime) / 1000, 'seconds'}),
     ?assert(Secs < 10).

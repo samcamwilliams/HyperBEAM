@@ -37,7 +37,7 @@ maybe_new_proc(_ProcID, false) -> not_found;
 maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
     maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
-	?c({starting_su_for, ProcID}),
+	?event({starting_su_for, ProcID}),
     Pid = dev_scheduler_server:start(ProcID, get_wallet()),
     try
         pg:join({su, ProcID}, Pid),

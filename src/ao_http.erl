@@ -27,13 +27,13 @@ get(URL) ->
 %% @doc Gets a URL via HTTP and returns the raw binary body. Abstracted such that
 %% we can easily swap out the HTTP client library later.
 get_binary(URL) ->
-    ?c({http_getting, URL}),
+    ?event({http_getting, URL}),
     case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
         {ok, {{_, 500, _}, _, Body}} ->
-            ?c({http_got_server_error, URL}),
+            ?event({http_got_server_error, URL}),
             {error, Body};
         {ok, {{_, _, _}, _, Body}} ->
-            ?c({http_got, URL}),
+            ?event({http_got, URL}),
             {ok, Body}
     end.
 
@@ -41,7 +41,7 @@ get_binary(URL) ->
 %% resulting message in deserialized form.
 post(Host, Path, Message) -> post(Host ++ Path, Message).
 post(URL, Message) when not is_binary(Message) ->
-    ?c({http_post, ao_message:id(Message, unsigned), ao_message:id(Message, signed), URL}),
+    ?event({http_post, ao_message:id(Message, unsigned), ao_message:id(Message, signed), URL}),
 	post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
 post(URL, Message) ->
 	case post_binary(URL, Message) of
@@ -67,7 +67,7 @@ post_binary(URL, Message) ->
                 Body
             };
         Response ->
-            ?c({http_post_error, URL, Response}),
+            ?event({http_post_error, URL, Response}),
             {error, Response}
     end.
 
@@ -75,7 +75,7 @@ post_binary(URL, Message) ->
 reply(Req, Message) ->
     reply(Req, tx_to_status(Message), Message).
 reply(Req, Status, Message) ->
-    ?c(
+    ?event(
         {
             replying,
             Status,

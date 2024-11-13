@@ -19,7 +19,7 @@ push(CarrierMsg, State) ->
                 CarriedMsg;
             _ -> CarrierMsg
         end,
-	?c({starting_push_for,
+	?event({starting_push_for,
 		{unsigned, ao_message:id(Msg, unsigned)},
 		{signed, ao_message:id(Msg, signed)},
 		{target, ao_message:id(Msg#tx.target)}
@@ -64,7 +64,7 @@ push_messages(upload, Messages, Opts) ->
         fun(Message) ->
             spawn(
                 fun() ->
-					?c(
+					?event(
 						{mu_forking_for,
 							{unsigned, ao_message:id(Message, unsigned)},
 							{signed, ao_message:id(Message, signed)},
@@ -86,7 +86,7 @@ push_messages(upload, Messages, Opts) ->
 							}
 						]
 					),
-					?c({pushing_result_for_computed_message,
+					?event({pushing_result_for_computed_message,
 						{unsigned, ao_message:id(Message, unsigned)},
 						{signed, ao_message:id(Message, signed)},
 						{target, ao_message:id(Message#tx.target)}
@@ -114,7 +114,7 @@ handle_push_result(Results, Opts = #{ depth := Depth }) ->
 		assignments = maps:get(<<"/Assignment">>, Results, #{}),
 		spawns = maps:get(<<"/Spawn">>, Results, #{})
 	},
-	?c({push_recursing,
+	?event({push_recursing,
 		{depth, Depth},
 		{messages, maps:size(Res#result.messages)},
 		{assignments, maps:size(Res#result.assignments)},

@@ -27,14 +27,14 @@ reset(#{ prefix := DataDir }) ->
 read(Opts, Key) ->
     read(add_prefix(Opts, resolve(Opts, Key))).
 read(Path) ->
-    ?c({read, Path}),
+    ?event({read, Path}),
     case file:read_file_info(Path) of
         {ok, #file_info{type = regular}} ->
             {ok, _} = file:read_file(Path);
         _ ->
             case file:read_link(Path) of
                 {ok, Link} ->
-                    ?c({link_found, Path, Link}),
+                    ?event({link_found, Path, Link}),
                     read(Link);
                 _ ->
                     not_found
@@ -43,7 +43,7 @@ read(Path) ->
 
 write(Opts, PathComponents, Value) ->
     Path = add_prefix(Opts, PathComponents),
-    ?c({writing, Path, byte_size(Value)}),
+    ?event({writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
@@ -62,13 +62,13 @@ list(Opts, Path) ->
 %% will resolve "a/b/c" to "Correct data".
 resolve(Opts, RawPath) ->
     Res = resolve(Opts, "", filename:split(ao_store_common:join(RawPath))),
-    ?c({resolved, RawPath, Res}),
+    ?event({resolved, RawPath, Res}),
     Res.
 resolve(_, CurrPath, []) ->
     ao_store_common:join(CurrPath);
 resolve(Opts, CurrPath, [Next|Rest]) ->
     PathPart = ao_store_common:join([CurrPath, Next]),
-    ?c({resolving, {accumulated_path, CurrPath}, {next_segment, Next}, {generated_partial_path_to_test, PathPart}}),
+    ?event({resolving, {accumulated_path, CurrPath}, {next_segment, Next}, {generated_partial_path_to_test, PathPart}}),
     case file:read_link(add_prefix(Opts, PathPart)) of
         {ok, RawLink} ->
             Link = remove_prefix(Opts, RawLink),
@@ -80,7 +80,7 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
 type(#{ prefix := DataDir }, Key) ->
     type(ao_store_common:join([DataDir, Key])).
 type(Path) ->
-    ?c({type, Path}),
+    ?event({type, Path}),
     case file:read_file_info(Joint = ao_store_common:join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
@@ -95,12 +95,12 @@ type(Path) ->
 
 make_group(#{ prefix := DataDir }, Path) ->
     P = ao_store_common:join([DataDir, Path]),
-    ?c({making_group, P}),
+    ?event({making_group, P}),
     ok = filelib:ensure_dir(P).
 
 make_link(_, Link, Link) -> ok;
 make_link(Opts, Existing, New) ->
-    ?c({symlink,
+    ?event({symlink,
         add_prefix(Opts, Existing),
         P2 = add_prefix(Opts, New)}),
     filelib:ensure_dir(P2),

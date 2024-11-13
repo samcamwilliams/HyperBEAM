@@ -1,4 +1,4 @@
--module(cu_test).
+-module(ao_test).
 -export([simple_stack_test/0, full_push_test/0, simple_load_test/0]).
 -export([init/0, generate_test_data/1, run/2]).
 -ao_debug(print).
@@ -17,7 +17,12 @@ run(Proc, Msg, _Opts) ->
     ao_cache:write(ao:get(store), Proc),
     Scheduler = dev_scheduler_registry:find(ao_message:id(Proc, signed), true),
     Assignment = dev_scheduler_server:schedule(Scheduler, Msg),
-    ao_process:result(ao_message:id(Proc, signed), ao_message:id(Assignment, unsigned), ao:get(store), ao:wallet()).
+    ao_process:result(
+        ao_message:id(Proc, signed),
+        ao_message:id(Assignment, unsigned),
+        ao:get(store),
+        ao:wallet()
+    ).
 
 %%% TESTS
 
@@ -33,7 +38,7 @@ full_push_test_() ->
 
 full_push_test() ->
     init(),
-    ?c(full_push_test_started),
+    ?event(full_push_test_started),
     {_, Msg} = generate_test_data(ping_ping_script()),
     ao_cache:write(ao:get(store), Msg),
     ao_client:push(Msg, none),
@@ -41,7 +46,7 @@ full_push_test() ->
 
 simple_load_test() ->
     init(),
-    ?c(scheduling_many_items),
+    ?event(scheduling_many_items),
     Messages = 30,
     Msg = generate_test_data(ping_ping_script()),
     ao_cache:write(ao:get(store), Msg),
@@ -52,12 +57,12 @@ simple_load_test() ->
     ),
     Scheduled = ao:now(),
     {ok, LastAssignment} = lists:last(Assignments),
-    ?c({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
+    ?event({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
     ao_client:compute(LastAssignment, Msg),
     Computed = ao:now(),
-    ?c({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
-    ?c({total_time_s, ((Computed - Start) / Messages) / 1000}),
-    ?c({processed_messages, Messages}).
+    ?event({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
+    ?event({total_time_s, ((Computed - Start) / Messages) / 1000}),
+    ?event({processed_messages, Messages}).
 
 default_test_img(Wallet) ->
     Store = ao:get(store),
@@ -149,5 +154,5 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
         Wallet
     ),
     ao_cache:write(Store, Msg),
-    ?c({test_data_written, {proc, ao_message:id(SignedProcess, signed)}, {msg, ao_message:id(Msg, unsigned)}}),
+    ?event({test_data_written, {proc, ao_message:id(SignedProcess, signed)}, {msg, ao_message:id(Msg, unsigned)}}),
     {SignedProcess, Msg}.

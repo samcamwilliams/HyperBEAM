@@ -63,7 +63,7 @@ current_schedule(M) ->
     ).
 
 schedule(CarrierM) ->
-    ?c(scheduling_message),
+    ?event(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
 	%ar_bundles:print(M),
     Store = ao:get(store),
@@ -114,7 +114,7 @@ send_schedule(Store, ProcID, From, {<<"To">>, To}) ->
     send_schedule(Store, ProcID, From, binary_to_integer(To));
 send_schedule(Store, ProcID, From, To) ->
     {Timestamp, Height, Hash} = ar_timestamp:get(),
-	?c({servicing_request_for_assignments, {proc_id, ProcID}, {from, From}, {to, To}}),
+	?event({servicing_request_for_assignments, {proc_id, ProcID}, {from, From}, {to, To}}),
     {Assignments, More} = dev_scheduler_server:get_assignments(
         ProcID,
         From,
@@ -147,7 +147,7 @@ send_schedule(Store, ProcID, From, To) ->
                 end,
         data = assignments_to_bundle(Store, Assignments)
     },
-    ?c(assignments_bundle_outbound),
+    ?event(assignments_bundle_outbound),
     %ar_bundles:print(Bundle),
     SignedBundle = ar_bundles:sign_item(Bundle, ao:wallet()),
     {ok, SignedBundle}.
@@ -160,7 +160,7 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
     Message = ao_cache:read_message(Store, MessageID),
-	?c({adding_assignment_to_bundle, Slot, {requested, MessageID}, ao_message:id(Assignment, signed), ao_message:id(Assignment, unsigned)}),
+	?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, ao_message:id(Assignment, signed), ao_message:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
         Assignments,

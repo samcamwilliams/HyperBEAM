@@ -78,7 +78,7 @@ get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) ->
     get_assignments(ProcID, From, binary_to_integer(RequestedTo));
 get_assignments(ProcID, From, RequestedTo) ->
-    ?c({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
+    ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
     ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
         true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
         false -> RequestedTo
@@ -116,7 +116,7 @@ assign(State, Message, ReplyPID) ->
         do_assign(State, Message, ReplyPID)
     catch
         _Class:Reason:Stack ->
-            ?c({error_scheduling, Reason, Stack}),
+            ?event({error_scheduling, Reason, Stack}),
             {error, State}
     end.
 
@@ -144,14 +144,14 @@ do_assign(State, Message, ReplyPID) ->
             }, State#state.wallet),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ao_cache:write_assignment(State#state.store, Assignment),
-            ?c(starting_message_write),
+            ?event(starting_message_write),
             ao_cache:write(State#state.store, Message),
-            % ?c(message_written),
-            % ?c(assignment_after_write),
+            % ?event(message_written),
+            % ?event(assignment_after_write),
             % ar_bundles:print(Assignment),
-            % ?c(message_after_assignment_written),
+            % ?event(message_after_assignment_written),
             % ar_bundles:print(Message),
-            % ?c(read_from_disk),
+            % ?event(read_from_disk),
             % ar_bundles:print(ao_cache:read(ao_store:scope(State#state.store, local), ao_message:id(Message, unsigned))),
             maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
             ao_client:upload(Assignment),
@@ -177,17 +177,17 @@ new_proc() ->
     su_data:reset_data(),
     Wallet = ar_wallet:new(),
     SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
-    ?c(1),
+    ?event(1),
     SignedItem2 = ar_bundles:sign_item(#tx{ data = <<"test2">> }, Wallet),
-    ?c(2),
+    ?event(2),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
-    ?c(3),
+    ?event(3),
     dev_scheduler_registry:find(binary_to_list(ao_message:id(SignedItem, signed)), true),
-    ?c(4),
+    ?event(4),
     schedule(ID = binary_to_list(ao_message:id(SignedItem, signed)), SignedItem),
-    ?c(5),
+    ?event(5),
     schedule(ID, SignedItem2),
-    ?c(6),
+    ?event(6),
     schedule(ID, SignedItem3),
     {2, _} = su_data:get_current_slot(ID),
     true.

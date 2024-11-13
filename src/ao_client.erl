@@ -46,10 +46,10 @@ upload(Item) ->
         )
     of
         {ok, {{_, 200, _}, _, Body}} ->
-            ?c(upload_success),
+            ?event(upload_success),
             {ok, jiffy:decode(Body, [return_maps])};
         Response ->
-            ?c(upload_error),
+            ?event(upload_error),
             {error, bundler_http_error, Response}
     end.
 
@@ -69,7 +69,7 @@ schedule(Node, Msg) ->
 %% @doc Not implemented. Should gain an assignment from the SU for an ID
 %% without having the full message.
 assign(_ID) ->
-    ?c({not_implemented, assignments}).
+    ?event({not_implemented, assignments}).
 
 %% Send a Scheduler-Location message to the network so other nodes
 %% know where to find this address's SU.
@@ -120,13 +120,13 @@ get_assignments(Node, ProcID, From, To) ->
                         end
                 end
         ),
-    ?c({requested_assignments_returned, From, To}),
+    ?event({requested_assignments_returned, From, To}),
     extract_assignments(From, To, Data).
 
 extract_assignments(_, _, Assignments) when map_size(Assignments) == 0 ->
     [];
 extract_assignments(From, To, Assignments) ->
-    ?c({extracting_assignments, From, To}),
+    ?event({extracting_assignments, From, To}),
     KeyID = list_to_binary(integer_to_list(From)),
     case maps:is_key(KeyID, Assignments) of
         true ->
@@ -135,7 +135,7 @@ extract_assignments(From, To, Assignments) ->
                 | extract_assignments(From + 1, To, maps:remove(KeyID, Assignments))
             ];
         false ->
-            ?c({no_assignment_for_key, KeyID}),
+            ?event({no_assignment_for_key, KeyID}),
             []
     end.
 
@@ -198,7 +198,7 @@ push(Item, Tracing) ->
     {ok, Node} = ao_router:find(message, ar_bundles:id(Item, unsigned)),
     push(Node, Item, Tracing).
 push(Node, Item, Tracing) ->
-    ?c({calling_remote_push, ao_message:id(Item)}),
+    ?event({calling_remote_push, ao_message:id(Item)}),
     ao_http:post(
         Node,
         "/?trace=" ++ Tracing,

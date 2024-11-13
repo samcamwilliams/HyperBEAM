@@ -75,7 +75,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
         not_found ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
-                    ?c({no_cu_for_proc, ao_message:id(ProcID)}),
+                    ?event({no_cu_for_proc, ao_message:id(ProcID)}),
                     Proc = ao_cache:read_message(
                         Store,
                         ao_message:id(ProcID)
@@ -93,7 +93,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                         )
                     );
                 [Pid|_] ->
-                    ?c({found_cu_for_proc, ao_message:id(ProcID)}),
+                    ?event({found_cu_for_proc, ao_message:id(ProcID)}),
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid !
 						{
@@ -103,7 +103,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
 							[create_monitor_for_message(MsgRef)]
 						},
                     Pid ! {on_idle, message, MsgRef},
-                    ?c({added_listener_and_message, Pid, MsgRef}),
+                    ?event({added_listener_and_message, Pid, MsgRef}),
                     await_results(Pid)
             end;
         Result -> {ok, Result}
@@ -165,12 +165,12 @@ create_monitor_for_message(MsgID) ->
             true ->
                 Listener ! {result, self(), Inbound, S}, done;
             false ->
-                ?c({monitor_got_message_for_wrong_slot, Slot, MsgID}),
+                ?event({monitor_got_message_for_wrong_slot, Slot, MsgID}),
 				%ar_bundles:print(Inbound),
                 ignored
         end;
         (S, end_of_schedule) ->
-            ?c(
+            ?event(
 				{monitor_got_eos,
 					{waiting_for_slot, maps:get(slot, S, no_slot)},
 					{to, maps:get(to, S, no_to)}
@@ -178,7 +178,7 @@ create_monitor_for_message(MsgID) ->
 			),
             ignored;
         (_, Signal) ->
-            ?c({monitor_got_unknown_signal, Signal}),
+            ?event({monitor_got_unknown_signal, Signal}),
             ignored
     end.
 
@@ -205,7 +205,7 @@ create_persistent_monitor() ->
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
-    ?c(
+    ?event(
 		{booting_process,
 			{signed, ao_message:id(Process, signed)},
 			{unsigned, ao_message:id(Process, unsigned)}
@@ -213,12 +213,12 @@ boot(Process, Opts) ->
 	),
     pg:join({cu, ao_message:id(Process, signed)}, self()),
     % Build the device stack.
-    ?c({registered_process, ao_message:id(Process, signed)}),
+    ?event({registered_process, ao_message:id(Process, signed)}),
     {ok, Dev} = ao_device:from_message(Process),
-    ?c({booting_device, Dev}),
+    ?event({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
         = ao_device:call(Dev, boot, [Process, Opts], Opts),
-    ?c(booted_device),
+    ?event(booted_device),
     % Get the store we are using for this execution.
     Store = maps:get(store, Opts, ao:get(store)),
     % Get checkpoint key names from all devices.
@@ -238,10 +238,10 @@ boot(Process, Opts) ->
     {Slot, Checkpoint} =
         case CheckpointOption of
             not_found ->
-                ?c({wasm_no_checkpoint, maps:get(to, Opts, inf)}),
+                ?event({wasm_no_checkpoint, maps:get(to, Opts, inf)}),
                 {-1, #{}};
             {LatestSlot, State} ->
-                ?c(wasm_checkpoint),
+                ?event(wasm_checkpoint),
                 {LatestSlot, State#tx.data}
     end,
     InitState =
@@ -254,7 +254,7 @@ boot(Process, Opts) ->
             schedule => maps:get(schedule, Opts, []),
             devices => Devs
         },
-    ?c(
+    ?event(
 		{running_init_on_slot,
 			Slot + 1,
 			maps:get(to, Opts, inf),
@@ -276,7 +276,7 @@ boot(Process, Opts) ->
     end.
 
 execute_schedule(State, Opts) ->
-	?c(
+	?event(
 		{
 			process_executing_slot,
 			maps:get(slot, State),
@@ -286,7 +286,7 @@ execute_schedule(State, Opts) ->
 	),
     case State of
         #{schedule := []} ->
-			?c(
+			?event(
 				{process_finished_schedule,
 					{final_slot, maps:get(slot, State)}
 				}
@@ -295,12 +295,12 @@ execute_schedule(State, Opts) ->
 				aggressive ->
 					case execute_eos(State, Opts) of
 						{ok, #{schedule := []}} ->
-							?c(eos_did_not_yield_more_work),
+							?event(eos_did_not_yield_more_work),
 							await_command(State, Opts);
 						{ok, NS} ->
 							execute_schedule(NS, Opts);
 						{error, DevNum, DevMod, Info} ->
-							?c({error, {DevNum, DevMod, Info}}),
+							?event({error, {DevNum, DevMod, Info}}),
 							execute_terminate(
 								State#{
 									errors :=
@@ -311,7 +311,7 @@ execute_schedule(State, Opts) ->
 							)
 					end;
 				lazy ->
-					?c({lazy_compute_mode, moving_to_await_state}),
+					?event({lazy_compute_mode, moving_to_await_state}),
 					await_command(State, Opts)
 			end;
         #{schedule := [Msg | NextSched]} ->
@@ -323,14 +323,14 @@ execute_schedule(State, Opts) ->
                         Opts
                     );
                 {ok, NewState} ->
-                    ?c({schedule_updated, not_popping}),
+                    ?event({schedule_updated, not_popping}),
                     post_execute(
                         Msg,
                         NewState#{schedule := NextSched},
                         Opts
                     );
                 {error, DevNum, DevMod, Info} ->
-                    ?c({error, {DevNum, DevMod, Info}}),
+                    ?event({error, {DevNum, DevMod, Info}}),
                     execute_terminate(
                         State#{
                             errors :=
@@ -354,12 +354,12 @@ post_execute(
         },
     Opts = #{ proc_dev := Dev }
 ) ->
-    ?c({handling_post_execute_for_slot, Slot}),
+    ?event({handling_post_execute_for_slot, Slot}),
     case is_checkpoint_slot(State, Opts) of
         true ->
             % Run checkpoint on the device stack, but we do not propagate the
             % result.
-            ?c({checkpointing_for_slot, Slot}),
+            ?event({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
                 ao_device:call(
                     Dev,
@@ -387,14 +387,14 @@ post_execute(
                             )
                     }
                 ),
-            ?c({checkpoint_normalized_for_slot, Slot}),
+            ?event({checkpoint_normalized_for_slot, Slot}),
             ao_cache:write_output(
                 Store,
                 ao_message:id(Process, signed),
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
             ),
-            ?c({checkpoint_written_for_slot, Slot});
+            ?event({checkpoint_written_for_slot, Slot});
         false ->
             NormalizedResult =
 				ar_bundles:deserialize(ar_bundles:serialize(Results)),
@@ -404,12 +404,12 @@ post_execute(
                 Slot,
                 NormalizedResult
             ),
-            ?c({result_written_for_slot, Slot})
+            ?event({result_written_for_slot, Slot})
     end,
     execute_schedule(initialize_slot(State), Opts).
 
 initialize_slot(State = #{slot := Slot}) ->
-    ?c({preparing_for_next_slot, Slot + 1}),
+    ?event({preparing_for_next_slot, Slot + 1}),
     State#{
         slot := Slot + 1,
         pass := 0,
@@ -453,7 +453,7 @@ await_command(State, Opts = #{ on_idle := terminate }) ->
 await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
     receive
         {on_idle, run, Function, Args} ->
-            ?c({running_command, Function, Args}),
+            ?event({running_command, Function, Args}),
             {ok, NewState} = ao_device:call(
 				Dev,
 				Function,
@@ -462,15 +462,15 @@ await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
 			),
             await_command(NewState, Opts);
         {on_idle, message, MsgRef} ->
-            ?c({received_message, MsgRef}),
+            ?event({received_message, MsgRef}),
             % TODO: As with starting from a message, we should avoid the
             % unnecessary SU call if possible here.
             {ok, NewState} = execute_eos(State#{ to => MsgRef }, Opts),
             execute_schedule(NewState, Opts);
         {on_idle, stop} ->
-            ?c({received_stop_command}),
+            ?event({received_stop_command}),
             execute_terminate(State, Opts);
         Other ->
-            ?c({received_unknown_message, Other}),
+            ?event({received_unknown_message, Other}),
             await_command(State, Opts)
     end.

@@ -247,7 +247,7 @@ verify_item(DataItem) ->
     ValidID = verify_data_item_id(DataItem),
     ValidSignature = verify_data_item_signature(DataItem),
     ValidTags = verify_data_item_tags(DataItem),
-    %?c({verify_item, ar_util:encode(id(DataItem, unsigned)), ValidID, ValidSignature, ValidTags}),
+    %?event({verify_item, ar_util:encode(id(DataItem, unsigned)), ValidID, ValidSignature, ValidTags}),
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
@@ -300,7 +300,7 @@ verify_data_item_id(DataItem) ->
 %% @doc Verify the data item's signature.
 verify_data_item_signature(DataItem) ->
     SignatureData = data_item_signature_data(DataItem),
-    %?c({unsigned_id, ar_util:encode(id(DataItem, unsigned)), ar_util:encode(SignatureData)}),
+    %?event({unsigned_id, ar_util:encode(id(DataItem, unsigned)), ar_util:encode(SignatureData)}),
     ar_wallet:verify(
         {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
     ).
@@ -533,7 +533,7 @@ serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
     Index = maps:map(fun(_, {TXID, _}) -> ar_util:encode(TXID) end, BinItems),
     NewManifest = new_manifest(Index),
-    %?c({generated_manifest, NewManifest == Manifest, ar_util:encode(id(NewManifest, unsigned)), Index}),
+    %?event({generated_manifest, NewManifest == Manifest, ar_util:encode(id(NewManifest, unsigned)), Index}),
     {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
 serialize_bundle_data(List, _Manifest) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
@@ -845,7 +845,7 @@ json_struct_to_item(RawTXStruct) ->
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(Other) ->
-    ?c({error_decoding_signature, Other}),
+    ?event({error_decoding_signature, Other}),
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.

@@ -5,5 +5,5 @@
 %%% The identity device: Simply return the message as it is.
 
 execute(Arg) ->
-    ?c({identity_device_called, Arg}),
+    ?event({identity_device_called, Arg}),
     {ok, Arg}.

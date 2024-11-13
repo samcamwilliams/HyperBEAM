@@ -148,7 +148,7 @@ stdlib(S, Port, ModName, FuncName, Args, Sig) ->
             erlang:apply(Func, ApplicationTerms)
     end;
 stdlib(S, Port, ModName, FuncName, Args, Sig) ->
-    ?c(stdlib_called_2),
+    ?event(stdlib_called_2),
     lib(S, Port, ModName, FuncName, Args, Sig).
 
 lib(
@@ -159,10 +159,10 @@ lib(
     "fd_write",
     _Signature
 ) ->
-    %?c({fd_write, Fd, Ptr, Vecs, RetPtr}),
+    %?event({fd_write, Fd, Ptr, Vecs, RetPtr}),
     {ok, VecData} = ao_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
-    %?c({fd_write_data, VecData}),
+    %?event({fd_write_data, VecData}),
     NewStdio =
         case Stdout of
             undefined ->
@@ -174,10 +174,10 @@ lib(
     ao_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Args, _Module, "clock_time_get", _Signature) ->
-    %?c({called, wasi_clock_time_get, 1}),
+    %?event({called, wasi_clock_time_get, 1}),
     {S, [1]};
 lib(S, _Port, Args, Module, Func, Signature) ->
-    ?c({unimplemented_stub_called, Module, Func, Args, Signature}),
+    ?event({unimplemented_stub_called, Module, Func, Args, Signature}),
     {S, [0]}.
 
 result_test() ->

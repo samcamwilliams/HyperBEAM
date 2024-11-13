@@ -26,23 +26,23 @@
 %% execute on the message. In general, you probably should not do that. Use
 %% the normal ao_device flow instead.
 execute(CarrierMsg, S) when is_record(CarrierMsg, tx) ->
-	?c({executing_carrier_msg, CarrierMsg}),
+	?event({executing_carrier_msg, CarrierMsg}),
 	execute(parse_carrier_msg(CarrierMsg, S), S);
 execute({Mods, Msg, Path}, S) when is_list(Mods) ->
 	Stack = dev_stack:create(Mods),
-	?c({executing_stack, Stack, Path}),
+	?event({executing_stack, Stack, Path}),
 	execute_path({dev_stack, execute},
 		#{ devices => Stack, message => Msg },
 		Path,
 		S
 	);
 execute({Mod, Msg, Path}, S) ->
-	?c({executing_device, Mod, Path}),
+	?event({executing_device, Mod, Path}),
 	execute_path(Mod, Msg, Path, S).
 
 execute_path(_, M, [], _) -> {ok, M};
 execute_path(Dev, M, [FuncName|Path], S) ->
-	?c({meta_executing_on_path, {device, Dev}, {function, FuncName}, {path, Path}}),
+	?event({meta_executing_on_path, {device, Dev}, {function, FuncName}, {path, Path}}),
 	Func = parse_path_to_func(FuncName),
 	{ok, NewM} = ao_device:call(Dev, Func, [M], #{ error_strategy => throw }, S),
 	execute_path(Dev, NewM, Path, S).

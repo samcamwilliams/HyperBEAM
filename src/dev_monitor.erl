@@ -31,7 +31,7 @@ signal(State = #{ monitors := StartingMonitors }, Signal) ->
             end,
             StartingMonitors
         ),
-    ?c({remaining_monitors, length(RemainingMonitors)}),
+    ?event({remaining_monitors, length(RemainingMonitors)}),
     {ok, State#{ monitors := RemainingMonitors }}.
 
 uses() -> all.

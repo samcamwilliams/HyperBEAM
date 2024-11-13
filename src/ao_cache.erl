@@ -54,7 +54,7 @@ latest(Store, ProcID, Limit, Path) ->
     case outputs(Store, ProcID) of
         [] -> not_found;
         AllOutputSlots ->
-            ?c({searching_for_latest_slot, {proc_id, fmt_id(ProcID)}, {limit, Limit}, {path, Path}, {all_output_slots, AllOutputSlots}}),
+            ?event({searching_for_latest_slot, {proc_id, fmt_id(ProcID)}, {limit, Limit}, {path, Path}, {all_output_slots, AllOutputSlots}}),
             case first_slot_with_path(
                     Store,
                     fmt_id(ProcID),
@@ -69,9 +69,9 @@ latest(Store, ProcID, Limit, Path) ->
                             Store,
                             ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
                         ),
-                    ?c({resolved_path, ResolvedPath}),
+                    ?event({resolved_path, ResolvedPath}),
                     Msg = read(Store, ResolvedPath),
-                    ?c(got_message),
+                    ?event(got_message),
                     {Slot, Msg}
             end
     end.
@@ -80,7 +80,7 @@ first_slot_with_path(_Store, _ProcID, [], _Limit, _Path) -> not_found;
 first_slot_with_path(Store, ProcID, [AfterLimit | Rest], Limit, Path) when AfterLimit > Limit ->
     first_slot_with_path(Store, ProcID, Rest, Limit, Path);
 first_slot_with_path(Store, ProcID, [LatestSlot | Rest], Limit, Path) ->
-    ?c({trying_slot, LatestSlot, Path}),
+    ?event({trying_slot, LatestSlot, Path}),
     RawPath =
         build_path(
             ["computed", process, "slot", slot] ++ Path,
@@ -176,10 +176,10 @@ write(Store, Item) ->
     write(Store, ao_store:path(Store, ["messages"]), Item).
 
 write(Store, Path, Item) when not is_record(Item, tx) ->
-    ?c(writing_non_tx_item),
+    ?event(writing_non_tx_item),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }) ->
-    ?c(write_of_default_id_tx_requested),
+    ?event(write_of_default_id_tx_requested),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item) ->
     case ar_bundles:type(Item) of
@@ -189,11 +189,11 @@ write(Store, Path, Item) ->
             UnsignedID = ar_bundles:id(Item, unsigned),
             SignedID = ar_bundles:id(Item, signed),
             UnsignedPath = ao_store:path(Store, [Path, fmt_id(UnsignedID)]),
-            ?c({writing_item, UnsignedPath}),
+            ?event({writing_item, UnsignedPath}),
             ok = ao_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
             if SignedID =/= not_signed ->
                 SignedPath = ao_store:path(Store, [Path, fmt_id(SignedID)]),
-                ?c({linking_item, SignedPath}),
+                ?event({linking_item, SignedPath}),
                 ao_store:make_link(Store, UnsignedPath, SignedPath);
             true -> link_unnecessary
             end;
@@ -211,10 +211,10 @@ write_composite(Store, Path, map, Item) ->
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
-    ?c({starting_composite_write, fmt_id(UnsignedHeaderID)}),
+    ?event({starting_composite_write, fmt_id(UnsignedHeaderID)}),
     ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
-    ?c({writing_composite_header, {unsigned, fmt_id(UnsignedHeaderID)}, {signed, fmt_id(SignedHeaderID)}}),
+    ?event({writing_composite_header, {unsigned, fmt_id(UnsignedHeaderID)}, {signed, fmt_id(SignedHeaderID)}}),
     ao_store:make_link(
         Store,
         ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
@@ -255,13 +255,13 @@ read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_siz
 read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
     read_output(Store, ProcID, ["slot", binary_to_list(SlotBin)]);
 read_output(Store, ProcID, SlotRef) ->
-    ?c({reading_computed_result, ProcID, SlotRef}),
+    ?event({reading_computed_result, ProcID, SlotRef}),
     ResolvedPath =
         P2 = ao_store:resolve(
             Store,
             P1 = ao_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, SlotRef])
         ),
-    ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
+    ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     case ao_store:type(Store, ResolvedPath) of
         not_found -> not_found;
         _ -> read(Store, ResolvedPath)
@@ -279,27 +279,27 @@ read_assignment(Store, ProcID, Slot) ->
                 Slot
             ])
         ),
-    ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
+    ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     read(Store, ResolvedPath).
 
 lookup(Store, PathPart) when not is_list(PathPart) ->
     lookup(Store, [PathPart]);
 lookup(Store, Path) ->
-    ?c({looking_up, Path}),
+    ?event({looking_up, Path}),
     ResolvedPath =
         P2 = ao_store:resolve(
             Store,
             P1 = ao_store:path(Store, lists:map(fun fmt_id/1, Path))
         ),
-    ?c({resolved_path, P1, P2, ResolvedPath}),
+    ?event({resolved_path, P1, P2, ResolvedPath}),
     read(Store, ResolvedPath).
 
 read(Store, RawPath) ->
-    ?c({reading_message, RawPath, Store}),
+    ?event({reading_message, RawPath, Store}),
     MessagePath = ao_store:path(Store, RawPath),
     case ao_store:type(Store, MessagePath) of
         composite ->
-            ?c({reading_composite_message, MessagePath}),
+            ?event({reading_composite_message, MessagePath}),
             % The message is a bundle and we want the whole item.
             % Read the root and reconstruct it.
             RootPath = ao_store:path(Store, [MessagePath, "item"]),
