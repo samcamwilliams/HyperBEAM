@@ -2,7 +2,8 @@
 %%% Configuration and environment:
 -export([config/0, now/0, get/1, get/2, build/0]).
 %%% Debugging tools:
--export([c/1, c/2, c/3, no_prod/3, read/1, read/2, debug_wait/3, profile/1]).
+-export([event/1, event/2, event/3, no_prod/3]).
+-export([read/1, read/2, debug_wait/3, profile/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
 -include("include/ar.hrl").
@@ -217,19 +218,19 @@ config_lookup(Key, Default) -> maps:get(Key, config(), Default).
 
 %% @doc Debugging event logging function. For now, it just prints to standard
 %% error.
-c(X) -> c(X, "").
-c(X, Mod) -> c(X, Mod, undefined).
-c(X, ModStr, undefined) -> c(X, ModStr, "");
-c(X, ModAtom, Line) when is_atom(ModAtom) ->
+event(X) -> event(X, "").
+event(X, Mod) -> event(X, Mod, undefined).
+event(X, ModStr, undefined) -> event(X, ModStr, "");
+event(X, ModAtom, Line) when is_atom(ModAtom) ->
     case lists:member({ao_debug, [print]}, ModAtom:module_info(attributes)) of
         true -> debug_print(X, atom_to_list(ModAtom), Line);
         false -> 
             case lists:keyfind(ao_debug, 1, ModAtom:module_info(attributes)) of
                 {ao_debug, [no_print]} -> X;
-                _ -> c(X, atom_to_list(ModAtom), Line)
+                _ -> event(X, atom_to_list(ModAtom), Line)
             end
     end;
-c(X, ModStr, Line) ->
+event(X, ModStr, Line) ->
     case ao:get(debug_print) of
         true -> debug_print(X, ModStr, Line);
         false -> X
@@ -241,7 +242,7 @@ debug_print(X, ModStr, Line) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "==AO_DEBUG==[~pms in ~p @ ~s:~w]==>~s~n",
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w]==>~s~n",
         [TSDiff, self(), ModStr, Line, debug_fmt(X)]),
     X.
 
