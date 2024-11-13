@@ -111,8 +111,13 @@ call(Devs, S, FuncName, Opts) ->
 
 do_call([], S, _FuncName, _Opts) ->
     {ok, S};
-do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass, arg_prefix := ArgPrefix }, FuncName, Opts) ->
+do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ arg_prefix := ArgPrefix }, FuncName, Opts) ->
+    %?c({DevMod, FuncName, {slot, maps:get(slot, S, "[no_slot]")}, {pass, maps:get(pass, S, "[no_pass_num]")}}),
     case cu_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
+        {skip, NewS} when is_map(NewS) ->
+            {ok, NewS};
+        {skip, NewS, NewPrivS} when is_map(NewS) ->
+            {ok, update(NewS, Dev, NewPrivS)};
         no_match ->
             do_call(Devs, S, FuncName, Opts);
         {ok, NewS} when is_map(NewS) ->
@@ -123,10 +128,6 @@ do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ pass := Pass, 
             do_call(Devs, S#{ results => NewS }, FuncName, Opts);
         {ok, NewS, NewPrivS} when is_record(NewS, tx) ->
             do_call(Devs, update(S#{ results => NewS }, Dev, NewPrivS), FuncName, Opts);
-        {skip, NewS} when is_map(NewS) ->
-            NewS;
-        {skip, NewS, NewPrivS} when is_map(NewS) ->
-            update(NewS, Dev, NewPrivS);
         {pass, NewS} when is_map(NewS) ->
             maybe_pass(NewS, FuncName, Opts);
         {pass, NewS, NewPrivS} when is_map(NewS) ->

@@ -8,7 +8,7 @@
 
 init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
-    Image = ao_cache:lookup(maps:get(store, State, ao:get(store)), ImageID),
+    Image = ao_cache:read_message(maps:get(store, State, ao:get(store)), ImageID),
     {ok, Port, _ImportMap, _Exports} = cu_beamr:start(Image#tx.data),
     % Apply the checkpoint if it is in the initial state.
     case maps:get(<<"WASM-State">>, State, undefined) of

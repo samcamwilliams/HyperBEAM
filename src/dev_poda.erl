@@ -6,7 +6,16 @@
 -ao_debug(print).
 
 %%% A simple exemplar decentralized proof of authority consensus algorithm
-%%% for AO processes.
+%%% for AO processes. This device is split into two flows, spanning three
+%%% actions.
+%%% 
+%%% Execution flow:
+%%% 1. Initialization.
+%%% 2. Validation of incoming messages before execution.
+%%% Attestation flow:
+%%% 1. Adding attestations to results, either on a CU or MU.
+
+%%% Execution flow: Initialization.
 
 init(S, Params) ->
     {ok, S, extract_opts(Params)}.
@@ -20,13 +29,13 @@ extract_opts(Params) ->
         ),
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
-    ?no_prod(use_real_authority_addresses),
-    Addr = ar_wallet:to_address(ao:wallet()),
+    ?c({poda_authorities, Authorities}),
     #{
-        authorities =>
-            Authorities ++ [ar_util:encode(Addr)],
+        authorities => Authorities,
         quorum => Quorum
     }.
+
+%%% Execution flow: Pre-execution validation.
 
 execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
     case is_user_signed(Msg) of
@@ -34,7 +43,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
             {ok, S};
         false ->
             % For now, the message itself will be at `/Message/Message`.
-            case validate_stage(1, Msg, Opts) of
+            case validate(Msg, Opts) of
                 true ->
                     ?c({poda_validated, ok}),
                     % Add the validations to the VFS.
@@ -80,6 +89,9 @@ execute(_M, S = #{ pass := 3, results := _Results }, _Opts) ->
 execute(_M, S, _Opts) ->
     {ok, S}.
 
+validate(Msg, Opts) ->
+    validate_stage(1, Msg, Opts).
+
 validate_stage(1, Msg, Opts) when is_record(Msg, tx) ->
     validate_stage(1, Msg#tx.data, Opts);
 validate_stage(1, #{ <<"Attestations">> := Attestations, <<"Message">> := Content }, Opts) ->
@@ -89,16 +101,20 @@ validate_stage(1, _M, _Opts) -> {false, <<"Required PoDA messages missing">>}.
 validate_stage(2, #tx { data = Attestations }, Content, Opts) ->
     validate_stage(2, Attestations, Content, Opts);
 validate_stage(2, Attestations, Content, Opts) ->
-    ?c({poda_stage, 2}),
     % Ensure that all attestations are valid and signed by a
     % trusted authority.
-    case lists:all(fun({_, Att}) -> ar_bundles:verify_item(Att) end, maps:to_list(Attestations)) of
+    case
+        lists:all(
+            fun({_, Att}) ->
+                ar_bundles:verify_item(Att)
+            end,
+            maps:to_list(Attestations)
+        ) of
         true -> validate_stage(3, Content, Attestations, Opts);
         false -> {false, <<"Invalid attestations">>}
     end;
 
 validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
-    ?c({poda_stage, 3}),
     Validations =
         lists:filter(
             fun({_, Att}) -> validate_attestation(Content, Att, Opts) end,
@@ -115,20 +131,32 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
 validate_attestation(Msg, Att, Opts) ->
     MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = ar_util:encode(ar_bundles:signer(Att)),
-    ?no_prod(use_real_authority_validation),
-    % ValidSigner = lists:member(
-    %     ar_bundles:signer(Att),
-    %     maps:get(authorities, Opts)
-    % ),
-    ValidSigner = true,
+    ?c({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
+    ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
+    ?no_prod(use_real_signature_verification),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
-        lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
-            == {<<"Attestation-For">>, MsgID},
-    ValidSigner and ValidSignature and RelevantMsg.
+        (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
+            == {<<"Attestation-For">>, MsgID}) orelse
+        ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
+	case ValidSigner and ValidSignature and RelevantMsg of
+		false ->
+			?c({poda_attestation_invalid,
+					{attestation, ar_bundles:id(Att, signed)},
+					{signer, AttSigner},
+					{valid_signer, ValidSigner},
+					{valid_signature, ValidSignature},
+					{relevant_msg, RelevantMsg}}
+			),
+			false;
+		true -> true
+	end.
 
+%%% Execution flow: Error handling.
+%%% Skip execution of this message, instead returning an error message.
 return_error(S = #{ wallet := Wallet }, Reason) ->
     ?c({poda_return_error, Reason}),
+    ?debug_wait(10000),
     {skip, S#{
         results => #{
             <<"/Outbox">> =>
@@ -147,20 +175,25 @@ is_user_signed(#tx { data = #{ <<"Message">> := Msg } }) ->
     lists:keyfind(<<"From-Process">>, 1, Msg#tx.tags) == false;
 is_user_signed(_) -> true.
 
-push(_Item, S = #{ results := Results }) ->
-    %?c({poda_push, Results}),
-    NewRes = attest_to_results(Results, S),
+%%% Attestation flow: Adding attestations to results.
+
+%% @doc Hook used by the MU pathway (currently) to add attestations to an
+%% outbound message if the computation requests it.
+push(_Item, S = #{ results := ResultsMsg }) ->
+    NewRes = attest_to_results(ResultsMsg, S),
     {ok, S#{ results => NewRes }}.
 
-attest_to_results(Msg, S = #{ wallet := Wallet }) ->
+attest_to_results(Msg, S) ->
     case is_map(Msg#tx.data) of
         true ->
             % Add attestations to the outbox and spawn items.
             maps:map(
                 fun(Key, IndexMsg) ->
+					?no_prod("Currently we only attest to the outbox and spawn items."
+						"Make it general?"),
                     case lists:member(Key, [<<"/Outbox">>, <<"/Spawn">>]) of
                         true ->
-                            ?c({poda_attest_to_results, Key}),
+                            ?c({poda_starting_to_attest_to_result, Key}),
                             maps:map(
                                 fun(_, DeepMsg) -> add_attestations(DeepMsg, S) end,
                                 IndexMsg#tx.data
@@ -173,10 +206,8 @@ attest_to_results(Msg, S = #{ wallet := Wallet }) ->
         false -> Msg
     end.
 
-add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wallet }) ->
-    ?no_prod("PoDA currently waits for 1 second before getting attestations!"),
+add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logger := _Logger, wallet := Wallet }) ->
     Process = find_process(NewMsg, S),
-    receive after 1000 -> ok end,
     case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
             #{ authorities := InitAuthorities, quorum := Quorum } =
@@ -184,23 +215,30 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
             ?c({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
+            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
+			?c({poda_add_attestations_from, InitAuthorities, {self,ao:address()}}),
             Attestations = lists:filtermap(
                 fun(Address) ->
-                    case ao_router:find(compute, Process#tx.id, Address) of
+                    case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
-                            ?c({poda_asking_peer_for_attestation, ComputeNode}),
-                            % TODO: Use the slot number.
-                            ?no_prod("Get attestation on correct slot."),
-                            case ao_client:compute(Process#tx.id, 0) of
-                                {ok, Att} -> {true, Att};
+                            ?c({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
+                            Res = ao_client:compute(
+                                ComputeNode,
+                                ar_bundles:id(Process, signed),
+                                ar_bundles:id(Assignment, signed),
+                                #{ <<"Attest-To">> => MsgID }
+                            ),
+                            case Res of
+                                {ok, Att} ->
+                                    ?c({poda_got_attestation_from_peer, ComputeNode}),
+                                    {true, Att};
                                 _ -> false
                             end;
                         _ -> false
                     end
                 end,
-                InitAuthorities
+                ?c(InitAuthorities -- [ao:address()])
             ),
-            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
                 Wallet
@@ -214,7 +252,7 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                                     lists:zipwith(
                                         fun(Index, Att) -> {integer_to_binary(Index), Att} end,
                                         lists:seq(1, length([LocalAttestation | Attestations])),
-                                        [LocalAttestation | Attestations]
+                                        AttList = [LocalAttestation | Attestations]
                                     )
                                 )
                         }
@@ -233,29 +271,53 @@ add_attestations(NewMsg, S = #{ store := _Store, logger := _Logger, wallet := Wa
                 ),
                 Wallet
             ),
+            ?c({poda_attestation_bundle_signed, {attestations, length(AttList)}}),
             AttestationBundle;
         false -> NewMsg
     end.
 
+%% @doc Helper function for parallel execution of attestation
+%% gathering.
+pfiltermap(Pred, List) ->
+    Parent = self(),
+    Pids = lists:map(fun(X) -> 
+        spawn_monitor(fun() -> 
+            Result = {X, Pred(X)},
+            ?c({pfiltermap, sending_result, self()}),
+            Parent ! {self(), Result}
+        end)
+    end, List),
+    ?c({pfiltermap, waiting_for_results, Pids}),
+    [
+        Res
+    ||
+        {true, Res} <-
+            lists:map(fun({Pid, Ref}) ->
+                receive
+                    {Pid, {_Item, Result}} ->
+                        ?c({pfiltermap, received_result, Pid}),
+                        Result;
+                    % Handle crashes as filterable events
+                    {'DOWN', Ref, process, Pid, _Reason} ->
+                        ?c({pfiltermap, crashed, Pid}),
+                        false;
+                    Other ->
+                        ?c({pfiltermap, unexpected_message, Other}),
+                        false
+                end
+            end, Pids)
+    ].
+
+%% @doc Find the process that this message is targeting, in order to
+%% determine which attestations to add.
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
             ?c({poda_find_process, ar_util:id(Item#tx.target)}),
-            ao_cache:read(Store, ar_util:id(Item#tx.target));
+            ao_cache:read_message(Store, ar_util:id(Item#tx.target));
         _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;
                 _ -> process_not_specified
             end
-    end.
-
-retry(Fun, Delay, Attempts) -> retry(Fun, Delay, Attempts, no_error).
-retry(_Fun, _Delay, 0, LastError) -> LastError;
-retry(Fun, Delay, Attempts, _LastError) ->
-    try Fun() of
-        Result -> Result
-    catch A:B:C ->
-        ?c({"Error: ", A, ":", B, ":", C, ". Retrying in ", Delay, "ms"}),
-        receive after Delay -> ok end,
-        retry(Fun, Delay, Attempts - 1, {A, B, C})
     end.

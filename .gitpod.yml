@@ -8,3 +8,9 @@ image:
 
 tasks:
   - init: make
+
+vscode:
+  extensions:
+    - "editorconfig.editorconfig"
+    - "pgourlain.erlang"
+

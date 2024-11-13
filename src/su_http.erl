@@ -2,7 +2,6 @@
 -export([handle/1]).
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
 
 %%% The SU device's API functions. Enables clients to read/write messages into
 %%% the schedule for a process.
@@ -64,15 +63,17 @@ current_schedule(M) ->
     ).
 
 schedule(CarrierM) ->
+    ?c(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
+	%ar_bundles:print(M),
     Store = ao:get(store),
-    ?no_prod("Must verify data item in SU!"),
+	?no_prod("SU does not validate item before writing into stream."),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
         % {false, _} ->
         %     {ok,
         %         #tx{
         %             tags = [{<<"Status">>, <<"Failed">>}],
-        %             data = [<<"Data item is not valid.">>]
+        %             data = <<"Data item is not valid.">>
         %         }
         %     };
         {_, {<<"Type">>, <<"Process">>}} ->
@@ -84,7 +85,7 @@ schedule(CarrierM) ->
                         [
                             {<<"Status">>, <<"OK">>},
                             {<<"Initial-Assignment">>, <<"0">>},
-                            {<<"Process">>, ar_util:id(M#tx.id)}
+                            {<<"Process">>, ar_util:id(M, signed)}
                         ],
                     data = []
                 }
@@ -101,19 +102,19 @@ schedule(CarrierM) ->
 
 %% Private methods
 
-% Send existing-SU GraphQL compatible results
-% TODO: Refactor the type coercion here and in su_process:get_assignments.
-% This is absurd.
 send_schedule(Store, ProcID, false, To) ->
     send_schedule(Store, ProcID, 0, To);
 send_schedule(Store, ProcID, From, false) ->
     send_schedule(Store, ProcID, From, su_process:get_current_slot(su_registry:find(ProcID)));
-send_schedule(Store, ProcID, {_, From}, To) ->
+send_schedule(Store, ProcID, {<<"From">>, From}, To) ->
     send_schedule(Store, ProcID, binary_to_integer(From), To);
-send_schedule(Store, ProcID, From, {_, To}) ->
+send_schedule(Store, ProcID, From, {<<"To">>, To}) when byte_size(To) == 43 ->
+    send_schedule(Store, ProcID, From, To);
+send_schedule(Store, ProcID, From, {<<"To">>, To}) ->
     send_schedule(Store, ProcID, From, binary_to_integer(To));
 send_schedule(Store, ProcID, From, To) ->
     {Timestamp, Height, Hash} = su_timestamp:get(),
+	?c({servicing_request_for_assignments, {proc_id, ProcID}, {from, From}, {to, To}}),
     {Assignments, More} = su_process:get_assignments(
         ProcID,
         From,
@@ -146,6 +147,8 @@ send_schedule(Store, ProcID, From, To) ->
                 end,
         data = assignments_to_bundle(Store, Assignments)
     },
+    ?c(assignments_bundle_outbound),
+    %ar_bundles:print(Bundle),
     SignedBundle = ar_bundles:sign_item(Bundle, ao:wallet()),
     {ok, SignedBundle}.
 
@@ -156,7 +159,8 @@ assignments_to_bundle(_, [], Bundle) ->
 assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
-    Message = ao_cache:read(Store, MessageID),
+    Message = ao_cache:read_message(Store, MessageID),
+	?c({adding_assignment_to_bundle, Slot, {requested, MessageID}, ar_util:id(Assignment, signed), ar_util:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
         Assignments,
