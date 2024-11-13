@@ -159,6 +159,9 @@ config() ->
             {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
             {<<"mu">>, {<<"push">>, [dev_p4, dev_mu]}}
         ],
+		%% Should the node attempt to access data from remote caches for
+		%% client requests?
+		access_remote_cache_for_client => false,
         % Dev options
         local_store =>
             [{ao_fs_store, #{ prefix => "TEST-data" }}],
