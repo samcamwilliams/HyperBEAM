@@ -63,7 +63,7 @@ loop(State) ->
 console(#state { console = false }, _) ->
     not_printing;
 console(S, {Status, Type, Details}) when is_record(Details, tx) ->
-    console(S, {Status, Type, ar_util:id(Details)});
+    console(S, {Status, Type, ao_message:id(Details)});
 console(_S, {Status, Type, Details}) ->
     io:format("### MU PUSH REPORT ~p ###~n~p: ~p~n~p~n~n",
         [self(), Status, Type, Details]);

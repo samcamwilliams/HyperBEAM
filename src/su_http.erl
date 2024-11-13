@@ -25,7 +25,7 @@ info(_M) ->
         #tx{
             tags = [
                 {<<"Unit">>, <<"Scheduler">>},
-                {<<"Address">>, ar_util:id(ar_wallet:to_address(Wallet))}
+                {<<"Address">>, ao_message:id(ar_wallet:to_address(Wallet))}
             ],
             data =
                 jiffy:encode(
@@ -85,7 +85,7 @@ schedule(CarrierM) ->
                         [
                             {<<"Status">>, <<"OK">>},
                             {<<"Initial-Assignment">>, <<"0">>},
-                            {<<"Process">>, ar_util:id(M, signed)}
+                            {<<"Process">>, ao_message:id(M, signed)}
                         ],
                     data = []
                 }
@@ -94,7 +94,7 @@ schedule(CarrierM) ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
                 case lists:keyfind(<<"Process">>, 1, M#tx.tags) of
-                    false -> binary_to_list(ar_util:id(M#tx.target));
+                    false -> binary_to_list(ao_message:id(M#tx.target));
                     {_, ProcessID} -> ProcessID
                 end,
             {ok, su_process:schedule(su_registry:find(AOProcID, true), M)}
@@ -160,7 +160,7 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
     Message = ao_cache:read_message(Store, MessageID),
-	?c({adding_assignment_to_bundle, Slot, {requested, MessageID}, ar_util:id(Assignment, signed), ar_util:id(Assignment, unsigned)}),
+	?c({adding_assignment_to_bundle, Slot, {requested, MessageID}, ao_message:id(Assignment, signed), ao_message:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
         Assignments,

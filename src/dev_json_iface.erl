@@ -30,7 +30,7 @@ prep_call(
     {_, Module} = lists:keyfind(<<"Module">>, 1, Process#tx.tags),
     % TODO: Get block height from the assignment message
     {_, BlockHeight} = lists:keyfind(<<"Block-Height">>, 1, Assignment#tx.tags),
-    RawMsgJson = ao_message:to_json(Message),
+    RawMsgJson = ao_message:serialize(Message, json),
     {Props} = jiffy:decode(RawMsgJson),
     MsgJson = jiffy:encode({
         Props ++
@@ -63,7 +63,7 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
                     [
                         #{
                             <<"name">> => <<"From-Process">>,
-                            <<"value">> => ar_util:id(Proc, signed)
+                            <<"value">> => ao_message:id(Proc, signed)
                         },
                         #{
                             <<"name">> => <<"From-Image">>,

@@ -102,7 +102,7 @@ get_assignments(Node, ProcID, From, To) ->
         ao_http:get(
             Node,
             "/?Action=Schedule&Process=" ++
-                binary_to_list(ar_util:id(ProcID)) ++
+                binary_to_list(ao_message:id(ProcID)) ++
                 case From of
                     undefined -> "";
                     _ -> "&From=" ++
@@ -156,23 +156,23 @@ compute(ProcIDBarer, Msg) when is_record(ProcIDBarer, tx) ->
 					% a _process message_ -- not an assignment. Extract its ID and
 					% run on that.
 					{ok, Node} =
-						ao_router:find(compute, ProcID = ar_util:id(Msg, signed)),
+						ao_router:find(compute, ProcID = ao_message:id(Msg, signed)),
 					compute(Node, ProcID, Msg);
 				false ->
 					throw(
 						{unrecognized_message_to_compute_on,
-							ar_util:id(Msg, unsigned)}
+							ao_message:id(Msg, unsigned)}
 					)
 			end
 	end.
 compute(Node, ProcID, Slot) ->
     compute(Node, ProcID, Slot, #{}).
 compute(Node, ProcID, Slot, Opts) when is_binary(ProcID) ->
-    compute(Node, binary_to_list(ar_util:id(ProcID)), Slot, Opts);
+    compute(Node, binary_to_list(ao_message:id(ProcID)), Slot, Opts);
 compute(Node, ProcID, Slot, Opts) when is_integer(Slot) ->
     compute(Node, ProcID, integer_to_list(Slot), Opts);
 compute(Node, ProcID, AssignmentID, Opts) when is_binary(AssignmentID) ->
-    compute(Node, ProcID, binary_to_list(ar_util:id(AssignmentID)), Opts);
+    compute(Node, ProcID, binary_to_list(ao_message:id(AssignmentID)), Opts);
 compute(Node, ProcID, Slot, Opts) when is_list(Slot) ->
     ao_http:get(
         Node,
@@ -198,7 +198,7 @@ push(Item, Tracing) ->
     {ok, Node} = ao_router:find(message, ar_bundles:id(Item, unsigned)),
     push(Node, Item, Tracing).
 push(Node, Item, Tracing) ->
-    ?c({calling_remote_push, ar_util:id(Item)}),
+    ?c({calling_remote_push, ao_message:id(Item)}),
     ao_http:post(
         Node,
         "/?trace=" ++ Tracing,
@@ -214,7 +214,7 @@ cron(ProcID) ->
 cron(ProcID, Cursor) ->
     cron(ProcID, Cursor, ao:get(default_page_limit)).
 cron(ProcID, Cursor, Limit) when is_binary(ProcID) ->
-    cron(binary_to_list(ar_util:id(ProcID)), Cursor, Limit);
+    cron(binary_to_list(ao_message:id(ProcID)), Cursor, Limit);
 cron(ProcID, undefined, RawLimit) ->
     cron(ProcID, cron_cursor(ProcID), RawLimit);
 cron(ProcID, Cursor, Limit) ->

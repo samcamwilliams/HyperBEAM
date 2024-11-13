@@ -15,9 +15,9 @@ run(Proc, Msg) ->
 run(Proc, Msg, _Opts) ->
     ao_cache:write(ao:get(store), Msg),
     ao_cache:write(ao:get(store), Proc),
-    Scheduler = su_registry:find(ar_util:id(Proc, signed), true),
+    Scheduler = su_registry:find(ao_message:id(Proc, signed), true),
     Assignment = su_process:schedule(Scheduler, Msg),
-    cu_process:result(ar_util:id(Proc, signed), ar_util:id(Assignment, unsigned), ao:get(store), ao:wallet()).
+    cu_process:result(ao_message:id(Proc, signed), ao_message:id(Assignment, unsigned), ao:get(store), ao:wallet()).
 
 %%% TESTS
 
@@ -90,7 +90,7 @@ default_test_devices(Wallet, Opts) ->
         {<<"Type">>, <<"Process">>},
         {<<"Device">>, <<"Stack">>},
         {<<"Device">>, <<"Scheduler">>},
-        {<<"Location">>, ar_util:id(ID)},
+        {<<"Location">>, ao_message:id(ID)},
         {<<"Device">>, <<"PODA">>},
         {<<"Quorum">>, integer_to_binary(Quorum)}
     ] ++
@@ -104,7 +104,7 @@ default_test_devices(Wallet, Opts) ->
         {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
-        {<<"Image">>, ar_util:id(Img)},
+        {<<"Image">>, ao_message:id(Img)},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
         {<<"Device">>, <<"Multipass">>},
@@ -149,5 +149,5 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
         Wallet
     ),
     ao_cache:write(Store, Msg),
-    ?c({test_data_written, {proc, ar_util:id(SignedProcess, signed)}, {msg, ar_util:id(Msg, unsigned)}}),
+    ?c({test_data_written, {proc, ao_message:id(SignedProcess, signed)}, {msg, ao_message:id(Msg, unsigned)}}),
     {SignedProcess, Msg}.

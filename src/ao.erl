@@ -111,12 +111,7 @@ config() ->
             {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
             {<<"su">>, {<<"schedule">>, [dev_p4, dev_su]}},
             {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
-            {<<"mu">>,
-                {<<"push">>, [
-                    dev_p4,
-                    dev_mu
-                ]}
-            }
+            {<<"mu">>, {<<"push">>, [dev_p4, dev_mu]}}
         ],
         % Dev options
         local_store =>
@@ -186,7 +181,7 @@ read(ID) -> read(ID, local).
 read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
     read(ID, ao_store:scope(ao:get(store), ScopeAtom));
 read(ID, Store) ->
-    ao_cache:read_message(Store, ar_util:id(ID)).
+    ao_cache:read_message(Store, ao_message:id(ID)).
 
 no_prod(X, Mod, Line) ->
     case ao:get(mode) of

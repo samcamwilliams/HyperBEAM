@@ -26,7 +26,7 @@ push(Msg, State = #{ logger := Logger }) ->
     ?c(su_scheduling_message_for_push),
     case ao_client:schedule(Msg) of
         {ok, Assignment} ->
-			?c({scheduled_message, ar_util:id(Assignment, unsigned)}),
+			?c({scheduled_message, ao_message:id(Assignment, unsigned)}),
             {ok, State#{assignment => Assignment}};
         Error ->
 			?c({error_scheduling_message, Error}),
@@ -56,18 +56,18 @@ update_schedule(State = #{ process := Proc }) ->
     ToSlot = maps:get(to, State),
     ?c({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint. (Done, right?)
-    Assignments = ao_client:get_assignments(ar_util:id(Proc, signed), CurrentSlot, ToSlot),
+    Assignments = ao_client:get_assignments(ao_message:id(Proc, signed), CurrentSlot, ToSlot),
     ?c({got_assignments_from_su,
 		[
 			{
 				element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
-				ar_util:id(A, signed),
-				ar_util:id(A, unsigned)
+				ao_message:id(A, signed),
+				ao_message:id(A, unsigned)
 			}
 		|| A <- Assignments ]}),
     lists:foreach(
         fun(Assignment) ->
-            ?c({writing_assignment_to_cache, ar_util:id(Assignment, unsigned)}),
+            ?c({writing_assignment_to_cache, ao_message:id(Assignment, unsigned)}),
             ao_cache:write(Store, Assignment)
         end,
         Assignments

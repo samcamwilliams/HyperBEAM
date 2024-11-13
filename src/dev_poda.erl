@@ -313,8 +313,8 @@ pfiltermap(Pred, List) ->
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
-            ?c({poda_find_process, ar_util:id(Item#tx.target)}),
-            ao_cache:read_message(Store, ar_util:id(Item#tx.target));
+            ?c({poda_find_process, ao_message:id(Item#tx.target)}),
+            ao_cache:read_message(Store, ao_message:id(Item#tx.target));
         _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;

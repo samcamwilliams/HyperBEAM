@@ -20,9 +20,9 @@ push(CarrierMsg, State) ->
             _ -> CarrierMsg
         end,
 	?c({starting_push_for,
-		{unsigned, ar_util:id(Msg, unsigned)},
-		{signed, ar_util:id(Msg, signed)},
-		{target, ar_util:id(Msg#tx.target)}
+		{unsigned, ao_message:id(Msg, unsigned)},
+		{signed, ao_message:id(Msg, signed)},
+		{target, ao_message:id(Msg#tx.target)}
 	}),
     ?no_prod(fix_mu_push_validation),
     case ar_bundles:verify_item(Msg) of
@@ -66,9 +66,9 @@ push_messages(upload, Messages, Opts) ->
                 fun() ->
 					?c(
 						{mu_forking_for,
-							{unsigned, ar_util:id(Message, unsigned)},
-							{signed, ar_util:id(Message, signed)},
-							{target, ar_util:id(Message#tx.target)},
+							{unsigned, ao_message:id(Message, unsigned)},
+							{signed, ao_message:id(Message, signed)},
+							{target, ao_message:id(Message#tx.target)},
 							{logger, maps:get(logger, Opts, undefined)}
 						}
 					),
@@ -87,9 +87,9 @@ push_messages(upload, Messages, Opts) ->
 						]
 					),
 					?c({pushing_result_for_computed_message,
-						{unsigned, ar_util:id(Message, unsigned)},
-						{signed, ar_util:id(Message, signed)},
-						{target, ar_util:id(Message#tx.target)}
+						{unsigned, ao_message:id(Message, unsigned)},
+						{signed, ao_message:id(Message, signed)},
+						{target, ao_message:id(Message#tx.target)}
 					}),
 					handle_push_result(Results, Opts)
                 end

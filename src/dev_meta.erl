@@ -3,9 +3,22 @@
 -include("include/ao.hrl").
 
 %%% The hyperbeam meta device, which is the default entry point
-%%% for all messages on the HTTP API. This device executes a 'path' of
+%%% for all messages processed by the machine. This device executes a 'path' of
 %%% functions upon a message, sequentially, returning the message resulting
 %%% from the last function.
+
+%%% The ideal API should support:
+%%% GET /id/Execute/Report?1.Mode=Fast&2.Mode=Terse <- Edge case?
+%%% GET /id/Outbox/1/Target <- Getting results from a process. Common case.
+%%% GET /id/Execute/Output?Action=Transfer <- 'Normal' dry-run request.
+%%% POST /id/Execute/Output?Action=Transfer <- 'Normal' push request.
+%%% POST /id/Schedule <- Schedule the contained message to be executed.
+%%% GET /id/Schedule <- Get the schedule of a process by its ID.
+%%% POST /id/Schedule <- Send a new message to the schedule of a process.
+%%% POST /id/Push <- Push a new message on a process.
+%%% POST /Push <- Push a new message on the referenced message.
+%%% GET /Execute <- Execute an assignment on the referenced process?
+%%% GET /Thing/in/cache <- Get a thing from the cache by its path.
 
 %% @doc Execute a message on hyperbeam. Also takes a tuple for internal use
 %% of the form `{Mods, Msg, Path}`, where `Mods` is a list of device modules,

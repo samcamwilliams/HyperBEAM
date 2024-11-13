@@ -22,7 +22,7 @@ get(URL) ->
 
 post(Host, Path, Item) -> post(Host ++ Path, Item).
 post(URL, Item) ->
-    ?c({http_post, ar_util:id(Item, unsigned), URL}),
+    ?c({http_post, ao_message:id(Item, unsigned), URL}),
     case httpc:request(
         post,
         {URL, [], "application/octet-stream", ar_bundles:serialize(ar_bundles:normalize(Item))},
@@ -51,7 +51,7 @@ reply(Req, Status, Item) ->
             Status,
             maps:get(path, Req, undefined_path),
             case is_record(Item, tx) of
-                true -> ar_util:id(Item);
+                true -> ao_message:id(Item);
                 false -> data_body
             end
         }

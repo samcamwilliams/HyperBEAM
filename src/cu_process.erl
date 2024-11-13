@@ -58,12 +58,12 @@
 -define(DEFAULT_FREQ, 10).
 
 result(RawProcID, RawMsgRef, Store, Wallet) ->
-    ProcID = ar_util:id(RawProcID),
+    ProcID = ao_message:id(RawProcID),
     MsgRef =
         case is_binary(RawMsgRef) of
             true ->
                 case byte_size(RawMsgRef) of
-                    32 -> ar_util:id(RawMsgRef);
+                    32 -> ao_message:id(RawMsgRef);
                     _ -> RawMsgRef
                 end;
             false -> RawMsgRef
@@ -73,8 +73,8 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
         not_found ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
-                    ?c({no_cu_for_proc, ar_util:id(ProcID)}),
-                    Proc = ao_cache:read_message(Store, ar_util:id(ProcID)),
+                    ?c({no_cu_for_proc, ao_message:id(ProcID)}),
+                    Proc = ao_cache:read_message(Store, ao_message:id(ProcID)),
                     await_results(
                         cu_process:run(
                             Proc,
@@ -88,7 +88,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                         )
                     );
                 [Pid|_] ->
-                    ?c({found_cu_for_proc, ar_util:id(ProcID)}),
+                    ?c({found_cu_for_proc, ao_message:id(ProcID)}),
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid ! {on_idle, run, add_monitor, [create_monitor_for_message(MsgRef)]},
                     Pid ! {on_idle, message, MsgRef},
@@ -129,10 +129,10 @@ create_monitor_for_message(MsgID) ->
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
 		Msg = maps:get(<<"Message">>, Inbound#tx.data),
 		% Gather IDs
-        AssignmentID = ar_util:id(Assignment, signed),
-        AssignmentUnsignedID = ar_util:id(Assignment, unsigned),
-        ScheduledMsgID = ar_util:id(Msg, signed),
-        ScheduledMsgUnsignedID = ar_util:id(Msg, unsigned),
+        AssignmentID = ao_message:id(Assignment, signed),
+        AssignmentUnsignedID = ao_message:id(Assignment, unsigned),
+        ScheduledMsgID = ao_message:id(Msg, signed),
+        ScheduledMsgUnsignedID = ao_message:id(Msg, unsigned),
 		% Gather slot
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
@@ -188,10 +188,10 @@ create_persistent_monitor() ->
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
-    ?c({booting_process, {signed, ar_util:id(Process, signed)}, {unsigned, ar_util:id(Process, unsigned)}}),
-    pg:join({cu, ar_util:id(Process, signed)}, self()),
+    ?c({booting_process, {signed, ao_message:id(Process, signed)}, {unsigned, ao_message:id(Process, unsigned)}}),
+    pg:join({cu, ao_message:id(Process, signed)}, self()),
     % Build the device stack.
-    ?c({registered_process, ar_util:id(Process, signed)}),
+    ?c({registered_process, ao_message:id(Process, signed)}),
     {ok, Dev} = cu_device:from_message(Process),
     ?c({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
@@ -252,7 +252,7 @@ execute_schedule(State, Opts) ->
 		{
 			process_executing_slot,
 			maps:get(slot, State),
-			{proc_id, ar_util:id(maps:get(process, State))},
+			{proc_id, ao_message:id(maps:get(process, State))},
 			{to, maps:get(to, State)}
 		}
 	),
@@ -340,7 +340,7 @@ post_execute(
             ?c({checkpoint_normalized_for_slot, Slot}),
             ao_cache:write_output(
                 Store,
-                ar_util:id(Process, signed),
+                ao_message:id(Process, signed),
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
             ),
@@ -349,7 +349,7 @@ post_execute(
             NormalizedResult = ar_bundles:deserialize(ar_bundles:serialize(Results)),
             ao_cache:write_output(
                 Store,
-                ar_util:id(Process, signed),
+                ao_message:id(Process, signed),
                 Slot,
                 NormalizedResult
             ),
