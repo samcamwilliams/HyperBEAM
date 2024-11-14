@@ -49,7 +49,7 @@ filter(Modules, Filter) ->
 scope(Store, Scope) ->
     filter(
         Store,
-        fun(_Mod, _Opts, #{ scope := StoreScope }) ->
+        fun(StoreScope, _) ->
             StoreScope == Scope orelse
 				(is_list(Scope) andalso lists:member(StoreScope, Scope))
         end
@@ -155,7 +155,7 @@ list(Modules, Path) -> call_function(Modules, list, [Path]).
 call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
-    no_viable_store;
+    not_found;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
     ?event({calling, Mod, Function}),
     try apply(Mod, Function, [Opts | Args]) of

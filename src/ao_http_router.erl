@@ -20,7 +20,8 @@ start() ->
 							% remote clients.
 							#{
 								store => ao:get(store),
-								wallet => ao:get(wallet)
+								wallet => ao:get(wallet),
+								error_strategy => ao:get(client_error_strategy)
 							}
 						}
 					]
@@ -36,7 +37,11 @@ start() ->
 init(Req, State) ->
     Path = cowboy_req:path(Req),
     ?event({http_called_with_path, Path}),
-    case ao_device:call(dev_meta, execute, [ao_http:req_to_tx(Req), State]) of
+	% Note: We pass the state twice in the call below: Once for the device
+	% to optionally have it if useful, and once for the ao_device module
+	% itself. This lets us send execution environment parameters as well as
+	% the request itself to the device.
+    case ao_device:call(dev_meta, execute, [ao_http:req_to_tx(Req), State], State) of
         {ok, ResultingMessage} when is_record(ResultingMessage, tx) or is_map(ResultingMessage) ->
             % If the device returns a message (either normalized or not),
             % we normalize and serialize it, returning it to the client.

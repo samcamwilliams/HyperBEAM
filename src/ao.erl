@@ -162,6 +162,8 @@ config() ->
 		%% Should the node attempt to access data from remote caches for
 		%% client requests?
 		access_remote_cache_for_client => false,
+		%% What should the node do if a client error occurs?
+		client_error_strategy => throw,
         % Dev options
         local_store =>
             [{ao_fs_store, #{ prefix => "TEST-data" }}],
