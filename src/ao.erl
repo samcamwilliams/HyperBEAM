@@ -241,36 +241,35 @@ event(X, ModStr, Line) ->
 
 %% @doc Print a message to the standard error stream, prefixed by the amount
 %% of time that has elapsed since the last call to this function.
-debug_print(X, ModStr, Line) ->
+debug_print(X, ModStr, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w]==>~s~n",
-        [TSDiff, self(), ModStr, Line, debug_fmt(X)]),
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w]==> ~s~n",
+        [
+			TSDiff, self(), ModStr, LineNum,
+			lists:flatten(debug_fmt(X))
+		]),
     X.
 
 %% @doc Convert a term to a string for debugging print purposes.
-debug_fmt({value, X}) -> debug_fmt(X);
-debug_fmt(X) when is_tuple(X) ->
-    debug_fmt(tuple_to_list(X));
-debug_fmt([X, Y]) when is_atom(X) and is_record(Y, tx) ->
-    io_lib:format(" ~p:~n~s", [X, ar_bundles:format(Y)]);
-debug_fmt([X, Y]) when is_atom(X) and is_atom(Y) ->
-    io_lib:format(" ~p: ~p", [X, Y]);
-debug_fmt([X, Y]) ->
-    io_lib:format(" ~p: ~s", [X, debug_fmt(Y)]);
-debug_fmt([]) -> [];
-debug_fmt(Args) when is_list(Args) andalso length(Args) < 8 ->
-	% TODO: Label values before recursion such that we can avoid confusion between
-	% strings and values.
-	lists:droplast(lists:flatten(io_lib:format(
-		lists:flatten([ " ~s," || _ <- Args ]),
-		[ debug_fmt(A) || A <- Args ]
-	)));
+debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
+    io_lib:format("~p: ~p", [X, Y]);
+debug_fmt({X, Y}) when is_record(Y, tx) ->
+    io_lib:format("~p => Message:~n~s",
+        [X, lists:flatten(ar_bundles:format(Y, 1))]);
+debug_fmt(Tuple) when is_tuple(Tuple) ->
+    format_tuple(Tuple);
 debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     lists:flatten(io_lib:format("~s", [Str]));
 debug_fmt(X) ->
     lists:flatten(io_lib:format("~120p", [X])).
+
+%% @doc Helper function to format tuples with arity greater than 2.
+format_tuple(Tuple) ->
+    Elements = tuple_to_list(Tuple),
+    FormattedElements = lists:map(fun debug_fmt/1, Elements),
+    io_lib:format("~s", [string:join(FormattedElements, ", ")]).
 
 %% @doc Debugging function to read a message from the cache.
 %% Specify either a scope atom (local or remote) or a store tuple
