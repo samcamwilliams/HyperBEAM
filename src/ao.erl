@@ -259,6 +259,7 @@ debug_fmt([X, Y]) when is_atom(X) and is_atom(Y) ->
     io_lib:format(" ~p: ~p", [X, Y]);
 debug_fmt([X, Y]) ->
     io_lib:format(" ~p: ~s", [X, debug_fmt(Y)]);
+debug_fmt([]) -> [];
 debug_fmt(Args) when is_list(Args) andalso length(Args) < 8 ->
 	% TODO: Label values before recursion such that we can avoid confusion between
 	% strings and values.

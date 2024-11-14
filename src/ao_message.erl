@@ -6,7 +6,10 @@
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).
 id(TX, Type) when is_record(TX, tx) ->
-	id(ar_bundles:id(TX, Type));
+	case ar_bundles:id(TX, Type) of
+		not_signed -> not_signed;
+		ID -> id(ID, Type)
+	end;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->

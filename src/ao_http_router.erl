@@ -5,17 +5,38 @@
 start() ->
     ao_http:start(),
     application:ensure_all_started(cowboy),
-    Dispatcher = cowboy_router:compile([{'_', [{'_', ?MODULE, init_state}]}]),
+    Dispatcher =
+		cowboy_router:compile(
+			[
+				{'_', 
+					[
+						{
+							'_',
+							?MODULE,
+							% The default state/opts for executions from the 
+							% HTTP API. This would be the appropriate place 
+							% to add components (a differently scoped store,
+							% a different wallet, etc.) to execution for 
+							% remote clients.
+							#{
+								store => ao:get(store),
+								wallet => ao:get(wallet)
+							}
+						}
+					]
+				}
+			]
+		),
     cowboy:start_clear(
         ?MODULE,
         [{port, ao:get(http_port)}],
         #{env => #{dispatch => Dispatcher}}
     ).
 
-init(Req, _) ->
+init(Req, State) ->
     Path = cowboy_req:path(Req),
     ?event({http_called_with_path, Path}),
-    case ao_device:call(dev_meta, execute, [ao_http:req_to_tx(Req)]) of
+    case ao_device:call(dev_meta, execute, [ao_http:req_to_tx(Req), State]) of
         {ok, ResultingMessage} when is_record(ResultingMessage, tx) or is_map(ResultingMessage) ->
             % If the device returns a message (either normalized or not),
             % we normalize and serialize it, returning it to the client.
