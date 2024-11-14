@@ -124,6 +124,18 @@ simple_wasm_calling_test() ->
     ?assert(binary:match(Str, <<"Test string arg 00000000000000">>) /= nomatch),
     ?assert(binary:match(Str, <<"Test string arg 11111111111111">>) /= nomatch).
 
+imported_functions_are_called_test() ->
+    {ok, File} = file:read_file("test/pow_calculator.wasm"),
+    {ok, Port, _Imports, _Exports} = start(File),
+    Lib = fun(S, _Port, Module, Function, Args, _Signature) ->
+        ?assertEqual("my_lib", Module),
+        ?assertEqual("mul", Function),
+        [Arg1, Arg2] = Args,
+        {S, [Arg1 * Arg2]}
+    end,
+    {ok, [Result]} = call(Port, "pow", [2, 5], Lib),
+    ?assertEqual(32, Result).
+
 wasm64_test() ->
     ?event(simple_wasm64_test),
     {ok, File} = file:read_file("test/test-64.wasm"),
