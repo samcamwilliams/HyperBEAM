@@ -22,9 +22,7 @@
 
 %% @doc Execute a message on hyperbeam.
 execute(CarrierMsg, S) ->
-	?event({executing_message,
-		ao_message:id(CarrierMsg, signed),
-		ao_message:id(CarrierMsg, unsigned)}),
+	?event({executing_message, CarrierMsg}),
 	{Msg, Path} = parse_carrier_msg(CarrierMsg, S),
 	execute_path(Path, Msg, S).
 
@@ -69,13 +67,14 @@ load_executable_message_from_carrier(CarrierMsg, #{ store := RawStore }) ->
 			true -> RawStore;
 			false -> ao_store:scope(RawStore, local)
 		end,
-	load_path(Path, Store).
+	load_path(Store, Path).
 
 %% @doc Load a path from the cache. Load the whole path if possible, 
 %% backing off to smaller parts of the path until a viable component
 %% (eventually just the message ID) is found.
 load_path(Store, PathParts) -> load_path(Store, PathParts, []).
 load_path(Store, PathParts, Unresolved) ->
+	?event({loading_path, Store, PathParts, Unresolved}),
 	% First, try to read the path directly from the cache.
     case ao_cache:read(Store, PathParts) of
         {ok, Msg} -> {Msg, Unresolved};
