@@ -61,13 +61,13 @@ list(Opts, Path) ->
 %%
 %% will resolve "a/b/c" to "Correct data".
 resolve(Opts, RawPath) ->
-    Res = resolve(Opts, "", filename:split(ao_store_common:join(RawPath))),
+    Res = resolve(Opts, "", filename:split(ao_store:join(RawPath))),
     ?event({resolved, RawPath, Res}),
     Res.
 resolve(_, CurrPath, []) ->
-    ao_store_common:join(CurrPath);
+    ao_store:join(CurrPath);
 resolve(Opts, CurrPath, [Next|Rest]) ->
-    PathPart = ao_store_common:join([CurrPath, Next]),
+    PathPart = ao_store:join([CurrPath, Next]),
     ?event({resolving, {accumulated_path, CurrPath}, {next_segment, Next}, {generated_partial_path_to_test, PathPart}}),
     case file:read_link(add_prefix(Opts, PathPart)) of
         {ok, RawLink} ->
@@ -78,10 +78,10 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
     end.
 
 type(#{ prefix := DataDir }, Key) ->
-    type(ao_store_common:join([DataDir, Key])).
+    type(ao_store:join([DataDir, Key])).
 type(Path) ->
     ?event({type, Path}),
-    case file:read_file_info(Joint = ao_store_common:join(Path)) of
+    case file:read_file_info(Joint = ao_store:join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
         _ ->
@@ -94,7 +94,7 @@ type(Path) ->
     end.
 
 make_group(#{ prefix := DataDir }, Path) ->
-    P = ao_store_common:join([DataDir, Path]),
+    P = ao_store:join([DataDir, Path]),
     ?event({making_group, P}),
     ok = filelib:ensure_dir(P).
 

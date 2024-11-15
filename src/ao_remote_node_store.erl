@@ -26,7 +26,7 @@ type(Opts = #{ node := Node }, Key) ->
 read(Opts, Key) when is_binary(Key) ->
     read(Opts, binary_to_list(Key));
 read(Opts = #{ node := Node }, Key) ->
-    Path = Node ++ "/data?Subpath=" ++ uri_string:quote(ao_store_common:join(Key)),
+    Path = Node ++ "/data?Subpath=" ++ uri_string:quote(ao_store:join(Key)),
     ?event({reading, Key, Path, Opts}),
     case ao_http:get_binary(Path) of
         {ok, Bundle} ->
