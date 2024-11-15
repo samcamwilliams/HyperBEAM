@@ -191,17 +191,21 @@ compute(Node, Assignment, Msg, Opts) when is_record(Assignment, tx) andalso is_r
 %%% MU API functions
 
 %% @doc Trigger the process of pushing a message around the network.
-push(Item) -> push(Item, none).
-push(Item, TracingAtom) when is_atom(TracingAtom) ->
-    push(Item, atom_to_list(TracingAtom));
-push(Item, Tracing) ->
+push(Item) -> push(Item, #{}).
+push(Item, Opts) ->
     {ok, Node} = ao_router:find(message, ar_bundles:id(Item, unsigned)),
-    push(Node, Item, Tracing).
-push(Node, Item, Tracing) ->
+    push(Node, Item, Opts).
+push(Node, Item, Opts) when Item#tx.target =/= <<>> ->
+    ao_http:post(
+        Node,
+        ["/", ar_util:encode(Item#tx.target), "/Push" ++ path_opts(Opts, "?")],
+        Item
+    );
+push(Node, Item, Opts) ->
     ?event({calling_remote_push, ao_message:id(Item)}),
     ao_http:post(
         Node,
-        "/?trace=" ++ Tracing,
+        ["/Push", path_opts(Opts, "?")],
         Item
     ).
 

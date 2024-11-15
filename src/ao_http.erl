@@ -28,7 +28,7 @@ get(URL) ->
 %% we can easily swap out the HTTP client library later.
 get_binary(URL) ->
     ?event({http_getting, URL}),
-    case httpc:request(get, {URL, []}, [], [{body_format, binary}]) of
+    case httpc:request(get, {iolist_to_binary(URL), []}, [], [{body_format, binary}]) of
         {ok, {{_, 500, _}, _, Body}} ->
             ?event({http_got_server_error, URL}),
             {error, Body};
@@ -54,7 +54,7 @@ post(URL, Message) ->
 post_binary(URL, Message) ->
     case httpc:request(
         post,
-        {URL, [], "application/octet-stream", Message},
+        {iolist_to_binary(URL), [], "application/octet-stream", Message},
         [],
         [{body_format, binary}]
     ) of
