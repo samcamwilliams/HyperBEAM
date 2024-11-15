@@ -21,7 +21,7 @@ load(Store, ID) when is_binary(ID)
 		andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
 	ao_cache:read_message(Store, ID);
 load(Store, Path) ->
-	ao_store:read(Store, Path).
+	ao_cache:read(Store, Path).
 
 serialize(M, json) ->
     jiffy:encode(ar_bundles:item_to_json_struct(M));
