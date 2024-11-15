@@ -40,7 +40,7 @@ slot_from_cache(ProcID) ->
             {-1, <<>>};
         Assignments ->
             AssignmentNum = lists:max(Assignments),
-            Assignment = ao_cache:read_assignment(ao:get(store), ProcID, AssignmentNum),
+            {ok, Assignment} = ao_cache:read_assignment(ao:get(store), ProcID, AssignmentNum),
             {
                 AssignmentNum,
                 ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
@@ -66,11 +66,11 @@ get_current_slot(ProcID) ->
 get_assignments(ProcID, From, undefined) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
-    From = ao_cache:read_assignment(ao:get(store), ProcID, From),
+    {ok, From} = ao_cache:read_assignment(ao:get(store), ProcID, From),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, From#tx.tags),
     get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
-    Assignment = ao_cache:read_assignment(ao:get(store), ProcID, RequestedTo),
+    {ok, Assignment} = ao_cache:read_assignment(ao:get(store), ProcID, RequestedTo),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     get_assignments(ProcID, From, binary_to_integer(Slot));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
@@ -91,7 +91,7 @@ do_get_assignments(ProcID, From, To) ->
     case ao_cache:read_assignment(ao:get(store), ProcID, From) of
         not_found ->
             [];
-        Assignment ->
+        {ok, Assignment} ->
             [
                 Assignment
                 | do_get_assignments(

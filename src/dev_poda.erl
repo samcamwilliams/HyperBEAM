@@ -314,7 +314,8 @@ find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
             ?event({poda_find_process, ao_message:id(Item#tx.target)}),
-            ao_cache:read_message(Store, ao_message:id(Item#tx.target));
+            {ok, Proc} = ao_cache:read_message(Store, ao_message:id(Item#tx.target)),
+            Proc;
         _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;

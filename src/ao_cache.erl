@@ -70,7 +70,7 @@ latest(Store, ProcID, Limit, Path) ->
                             ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
                         ),
                     ?event({resolved_path, ResolvedPath}),
-                    Msg = read(Store, ResolvedPath),
+                    {ok, Msg} = read(Store, ResolvedPath),
                     ?event(got_message),
                     {Slot, Msg}
             end
@@ -303,7 +303,7 @@ read(Store, RawPath) ->
             % The message is a bundle and we want the whole item.
             % Read the root and reconstruct it.
             RootPath = ao_store:path(Store, [MessagePath, "item"]),
-            Root = read_simple_message(Store, RootPath),
+            {ok, Root} = read_simple_message(Store, RootPath),
             % The bundle is a map of its children by ID. Reconstruct
             % the bundle by reading each child.
             ?no_prod("Reconstructing bundle unnecessarily serializes and deserializes"),
@@ -311,21 +311,26 @@ read(Store, RawPath) ->
             %% tags and object, added by `write_composite/3`. We do this so that we can
             %% separate the bundle items from the main object in storage, but if ar_bundles
             %% exposed a function to rebuild the TX object's manifest we could avoid this.
-            ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
-                data = maps:map(
-                    fun(_, Key) -> read(Store, ["messages", fmt_id(Key)]) end,
-                    ar_bundles:parse_manifest(
-                        maps:get(<<"manifest">>, Root#tx.data)
-                    )
-                )
-            }));
+            {ok,
+				ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
+					data = maps:map(
+						fun(_, Key) ->
+							{ok, Child} = read(Store, ["messages", fmt_id(Key)]),
+							Child
+						end,
+						ar_bundles:parse_manifest(
+							maps:get(<<"manifest">>, Root#tx.data)
+						)
+					)
+				}))
+			};
         simple ->read_simple_message(Store, MessagePath);
         not_found -> not_found
     end.
 
 read_simple_message(Store, Path) ->
     {ok, Bin} = ao_store:read(Store, Path),
-    ar_bundles:deserialize(Bin).
+    {ok, ar_bundles:deserialize(Bin)}.
 
 fmt_id(ID) -> fmt_id(ID, unsigned).
 fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
@@ -380,7 +385,7 @@ store_simple_unsigned_item_test() ->
     %% Write the simple unsigned item
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
-    RetrievedItem = read(TestStore, ["messages", fmt_id(Item)]),
+    {ok, RetrievedItem} = read(TestStore, ["messages", fmt_id(Item)]),
     ?assertEqual(Item, RetrievedItem).
 
 %% Test storing and retrieving a simple signed item
@@ -389,8 +394,8 @@ simple_signed_item_test() ->
     %% Write the simple signed item
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
-    RetrievedItemUnsigned = read_message(TestStore, ar_bundles:id(Item, unsigned)),
-    RetrievedItemSigned = read_message(TestStore, ar_bundles:id(Item, signed)),
+    {ok, RetrievedItemUnsigned} = read_message(TestStore, ar_bundles:id(Item, unsigned)),
+    {ok, RetrievedItemSigned} = read_message(TestStore, ar_bundles:id(Item, signed)),
     %% Assert that the retrieved item matches the original and verifies
     ?assertEqual(Item, RetrievedItemUnsigned),
     ?assertEqual(Item, RetrievedItemSigned),
@@ -404,7 +409,7 @@ composite_unsigned_item_test() ->
     },
     Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
-    RetrievedItem = read_message(TestStore, ar_bundles:id(Item)),
+    {ok, RetrievedItem} = ?event(read_message(TestStore, ar_bundles:id(Item))),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
@@ -426,7 +431,7 @@ composite_signed_item_test() ->
     },
     Item = ar_bundles:deserialize(create_signed_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
-    RetrievedItem = read_message(TestStore, ar_bundles:id(Item, signed)),
+    {ok, RetrievedItem} = ?event(read_message(TestStore, ar_bundles:id(Item, signed))),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
@@ -456,7 +461,7 @@ deeply_nested_item_test() ->
     %% Write the nested item
     ok = write(TestStore = test_cache(), Level1Tx),
     %% Read the deep value back using subpath
-    RetrievedItem = read_message(TestStore, [fmt_id(Level1Tx), "level1_key", "level2_key", "level3_key"]),
+    {ok, RetrievedItem} = read_message(TestStore, [fmt_id(Level1Tx), "level1_key", "level2_key", "level3_key"]),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual(<<"deep_value">>, RetrievedItem#tx.data),
     ?assertEqual(
@@ -471,10 +476,10 @@ write_and_read_output_test() ->
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
     ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
     ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
-    ?assertEqual(Item1, read_message(Store, ar_bundles:id(Item1, unsigned))),
-    ?assertEqual(Item2, read_message(Store, ar_bundles:id(Item2, unsigned))),
-    ?assertEqual(Item2, read_output(Store, fmt_id(Proc, signed), 1)),
-    ?assertEqual(Item1, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
+    ?assertEqual({ok, Item1}, read_message(Store, ar_bundles:id(Item1, unsigned))),
+    ?assertEqual({ok, Item2}, read_message(Store, ar_bundles:id(Item2, unsigned))),
+    ?assertEqual({ok, Item2}, read_output(Store, fmt_id(Proc, signed), 1)),
+    ?assertEqual({ok, Item1}, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
 
 latest_output_retrieval_test_broken() ->
     Store = test_cache(),

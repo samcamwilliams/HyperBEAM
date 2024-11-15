@@ -1147,7 +1147,7 @@ test_serialize_deserialize_deep_signed_bundle() ->
     ?assert(verify_item(Item3)),
     % Test that we can write to disk and read back the same ID.
     ao_cache:write(ao:get(local_store), Item2),
-    FromDisk = ao_cache:read_message(ao:get(local_store), ar_util:encode(id(Item2, unsigned))),
+    {ok, FromDisk} = ao_cache:read_message(ao:get(local_store), ar_util:encode(id(Item2, unsigned))),
     format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.

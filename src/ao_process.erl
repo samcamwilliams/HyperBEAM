@@ -76,7 +76,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
                     ?event({no_cu_for_proc, ao_message:id(ProcID)}),
-                    Proc = ao_cache:read_message(
+                    {ok, Proc} = ao_cache:read_message(
                         Store,
                         ao_message:id(ProcID)
                     ),
@@ -106,7 +106,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     ?event({added_listener_and_message, Pid, MsgRef}),
                     await_results(Pid)
             end;
-        Result -> {ok, Result}
+        {ok, Result} -> {ok, Result}
     end.
 
 %% Start a new Erlang process for the AO process, optionally giving the 

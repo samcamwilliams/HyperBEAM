@@ -159,7 +159,7 @@ assignments_to_bundle(_, [], Bundle) ->
 assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
-    Message = ao_cache:read_message(Store, MessageID),
+    {ok, Message} = ao_cache:read_message(Store, MessageID),
 	?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, ao_message:id(Assignment, signed), ao_message:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
