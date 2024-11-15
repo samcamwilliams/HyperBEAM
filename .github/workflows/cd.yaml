@@ -26,12 +26,15 @@ jobs:
     - name: Setup GCloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Setup build tools (Packer and Rebar3)
+    - name: Setup build tools (Erlang, Packer and Rebar3)
       run: | 
         curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
         sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
-        sudo apt-get update && sudo apt-get install packer
-        wget https://s3.amazonaws.com/rebar3/rebar3 && chmod +x rebar3
+        sudo apt-get update
+        sudo apt-get install packer
+        sudo apt-get install -y erlang
+        wget https://s3.amazonaws.com/rebar3/rebar3
+        chmod +x rebar3
         sudo mv rebar3 /usr/local/bin/
 
     - name: Build and release AO/HyperBEAM with Rebar3
@@ -44,7 +47,7 @@ jobs:
     - name: Build Packer Image
       run: | 
         packer init .
-        packaer validate .
+        packer validate .
         packer build -var "image_name=${{ env.GCP_IMAGE_NAME }}" -var "project_id=${{ env.GCP_PROJECT }}" .
 
     - name: Create Confidential VM
