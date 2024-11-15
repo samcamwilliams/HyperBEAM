@@ -129,7 +129,7 @@ type(Modules, Path) -> call_function(Modules, type, [Path]).
 path(Path) -> Path.
 path(Store, Path) ->
     case call_function(Store, path, [Path]) of
-        no_viable_store -> path(Path);
+        not_found -> path(Path);
         Result -> Result
     end.
 
