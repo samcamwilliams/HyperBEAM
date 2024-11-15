@@ -17,9 +17,9 @@
 ## Variables
 
 ```sh
-export GCI_NAME=PETES-SEV-SNP-TEST-0
+export GCI_NAME=petes-sev-snp-test-5
 export GCI_PROJECT=arweave-437622
-export GCI_IMAGE=packer-1730219529 
+export GCI_IMAGE=packer-1731351804
 export GCI_ZONE=us-central1-a
 ```
 

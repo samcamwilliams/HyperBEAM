@@ -41,26 +41,44 @@ source "googlecompute" "ubuntu" {
 build {
   sources = ["source.googlecompute.ubuntu"]
 
-  # Add a provisioner to download and install go-tpm-tools
+  # # Add a provisioner to download and install go-tpm-tools
+  # provisioner "shell" {
+  #   inline = [
+  #     "sudo apt-get update -y",
+  #     "sudo apt-get install -y wget tar",
+
+  #     # Download the go-tpm-tools binary archive
+  #     "wget https://github.com/google/go-tpm-tools/releases/download/v0.4.4/go-tpm-tools_Linux_x86_64.tar.gz -O /tmp/go-tpm-tools.tar.gz",
+      
+  #     # Extract the binary
+  #     "tar -xzf /tmp/go-tpm-tools.tar.gz -C /tmp",
+
+  #     # Move the gotpm binary to /usr/local/bin
+  #     "sudo mv /tmp/gotpm /usr/local/bin/",
+      
+  #     # Clean up
+  #     "rm -f /tmp/go-tpm-tools.tar.gz /tmp/LICENSE /tmp/README.md"
+  #   ]
+  # }
+
+  # Add a provisioner to install Rust and snpguest
   provisioner "shell" {
     inline = [
+      # Install Rust
+      "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+      ". ~/.cargo/env",
+
+      # Install snpguest
       "sudo apt-get update -y",
-      "sudo apt-get install -y wget tar",
-
-      # Download the go-tpm-tools binary archive
-      "wget https://github.com/google/go-tpm-tools/releases/download/v0.4.4/go-tpm-tools_Linux_x86_64.tar.gz -O /tmp/go-tpm-tools.tar.gz",
-
-      # Extract the binary
-      "tar -xzf /tmp/go-tpm-tools.tar.gz -C /tmp",
-
-      # Move the gotpm binary to /usr/local/bin
-      "sudo mv /tmp/gotpm /usr/local/bin/",
-
-      # Clean up
-      "rm -f /tmp/go-tpm-tools.tar.gz /tmp/LICENSE /tmp/README.md"
+      "sudo apt-get install -y build-essential",
+      "git clone https://github.com/virtee/snpguest.git",
+      "cd snpguest",
+      "cargo build -r",
+      "sudo cp target/release/snpguest /usr/local/bin/",
+      "cd ..",
+      "rm -rf snpguest"
     ]
   }
-
 
   # Upload the pre-built release (with ERTS included) to the instance
   provisioner "file" {
@@ -73,7 +91,7 @@ build {
       # Move the release to /opt with sudo
       "sudo mv /tmp/ao /opt/ao",
       "sudo chmod -R 755 /opt/ao",
-
+      
       # Create a symlink to make it easier to run the app
       "sudo ln -s /opt/ao/bin/ao /usr/local/bin/ao",
 
@@ -86,19 +104,18 @@ build {
       "echo 'Restart=on-failure' | sudo tee -a /etc/systemd/system/ao.service",
       "echo '[Install]' | sudo tee -a /etc/systemd/system/ao.service",
       "echo 'WantedBy=multi-user.target' | sudo tee -a /etc/systemd/system/ao.service",
-
+      
       # Enable and start the service
       "sudo systemctl enable ao",
       "sudo systemctl start ao"
     ]
   }
 
-  # Disable ssh
+  # Disable ssh if desired
   # provisioner "shell" {
-  #  inline = [
-  #    "sudo systemctl stop ssh",
-  #    "sudo systemctl disable ssh"
-  #  ]
+  #   inline = [
+  #     "sudo systemctl stop ssh",
+  #     "sudo systemctl disable ssh"
+  #   ]
   # }
 }
-
