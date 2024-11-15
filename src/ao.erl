@@ -111,18 +111,18 @@ config() ->
             compute =>
                 #{
                     <<"ggltHF0Cnv9ylH3vM1p7amR2vXLMoPLQIUQmAEwLP-k">> =>
-                        "http://localhost:8734/cu",
+                        "http://localhost:8734",
                     <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> =>
-                        "http://localhost:8736/cu",
-                    '_' => "http://localhost:8734/cu"
+                        "http://localhost:8736",
+                    '_' => "http://localhost:8734"
                 },
             message => #{
-                address() => "http://localhost:8734/mu",
-                '_' => "http://localhost:8734/mu"
+                address() => "http://localhost:8734",
+                '_' => "http://localhost:8734"
             },
             schedule => #{
-                address() => "http://localhost:8734/su",
-                '_' => "http://localhost:8734/su"
+                address() => "http://localhost:8734",
+                '_' => "http://localhost:8734"
             }
         },
 		%% Location of the wallet keyfile on disk that this node will use.
@@ -156,8 +156,7 @@ config() ->
         default_device_stacks => [
             {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
             {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
-            {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}},
-            {<<"mu">>, {<<"push">>, [dev_p4, dev_mu]}}
+            {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}}
         ],
 		%% Should the node attempt to access data from remote caches for
 		%% client requests?
