@@ -41,7 +41,7 @@ full_push_test() ->
     ?event(full_push_test_started),
     {_, Msg} = generate_test_data(ping_ping_script()),
     ao_cache:write(ao:get(store), Msg),
-    ao_client:push(Msg, none),
+    ao_client:push(Msg, #{ tracing => none }),
     ok.
 
 simple_load_test() ->
