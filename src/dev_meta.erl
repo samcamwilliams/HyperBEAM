@@ -35,7 +35,7 @@ execute_path([FuncName|Path], Msg, S) ->
 	execute_path(Path, NewM, S).
 
 parse_path_to_func(BinName) when is_binary(BinName) ->
-	binary_to_existing_atom(BinName, utf8);
+	binary_to_existing_atom(string:lowercase(BinName), utf8);
 parse_path_to_func(AtomName) when is_atom(AtomName) ->
 	AtomName.
 
