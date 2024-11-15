@@ -29,7 +29,8 @@ $ gcloud iam service-accounts create hyperbeam-cd-gha \
 The `.json` was created as follows:
 
 ```sh
-$ gcloud iam service-accounts keys create "hyperbeam-cd-gha.json" --iam-account "hyperbeam-cd-gha@hyperbeam-cd.iam.gserviceaccount.com"
+$ gcloud iam service-accounts keys create "hyperbeam-cd-gha.json" \
+ --iam-account "hyperbeam-cd-gha@hyperbeam-cd.iam.gserviceaccount.com"
 ```
 
 The credentials need to be securely stored, and hence they are stored in the repository as a secret.
