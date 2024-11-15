@@ -1,5 +1,12 @@
-# continous-deployment
+# CD
 
+## Table of Contents
+- [Description](#description)
+- [Variables](#variables)
+- [Project](#project)
+- [Credentials](#credentials)
+
+### Description 
 This workflow is triggered when a push is made to the `main` branch 
 and is responsible for building the application and deploying it to a confidental VM in GCP.
 
@@ -16,8 +23,7 @@ The project is called `hyperbeam-cd` and is a project in the `arweave` organizat
 
 ### Credentials
 
-The credentials are standard GCP service account credentials, stored in a `.json` file.
-
+The credentials are standard GCP service account credentials.
 The service-account is created as follows:
 
 ```sh
@@ -25,8 +31,7 @@ $ gcloud iam service-accounts create hyperbeam-cd-gha \
     --description="Service account for the hyperbeam-cd project" \
     --display-name="hyperbeam-cd-gha"
 ```
-
-The `.json` was created as follows:
+Generally, these are stored in `.json` file, created as follows:
 
 ```sh
 $ gcloud iam service-accounts keys create "hyperbeam-cd-gha.json" \
@@ -34,4 +39,4 @@ $ gcloud iam service-accounts keys create "hyperbeam-cd-gha.json" \
 ```
 
 The credentials need to be securely stored, and hence they are stored in the repository as a secret.
-Improvements here can be made to make sure the credentials have a short time-to-live (TTL), and are not necessarily kept as a GitHub secret, such as for example using GCP workflow identities.
+Improvements here can be made to make sure the credentials have a short time-to-live (TTL), and are not necessarily kept as a GitHub secret.
