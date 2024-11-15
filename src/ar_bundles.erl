@@ -239,15 +239,13 @@ sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
     Item = (normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
     % Generate the signature from the data item's data segment in 'signed'-ready mode.
     Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item, signed)),
-    ID = crypto:hash(sha256, <<Sig/binary>>),
-    Item#tx{id = ID, signature = Sig}.
+    reset_ids(Item#tx{signature = Sig}).
 
 %% @doc Verify the validity of a data item.
 verify_item(DataItem) ->
     ValidID = verify_data_item_id(DataItem),
     ValidSignature = verify_data_item_signature(DataItem),
     ValidTags = verify_data_item_tags(DataItem),
-    %?event({verify_item, ar_util:encode(id(DataItem, unsigned)), ValidID, ValidSignature, ValidTags}),
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
@@ -278,7 +276,7 @@ data_item_signature_data(RawItem) ->
 data_item_signature_data(RawItem, unsigned) ->
     data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
 data_item_signature_data(RawItem, signed) ->
-	ok = enforce_valid_tx(RawItem),
+	true = enforce_valid_tx(RawItem),
     NormItem = normalize_data(RawItem),
     ar_deep_hash:hash([
         utf8_encoded("dataitem"),
@@ -373,7 +371,7 @@ serialize(not_found) -> throw(not_found);
 serialize(TX) -> serialize(TX, binary).
 serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
-	ok = enforce_valid_tx(RawTX),
+	true = enforce_valid_tx(RawTX),
     TX = normalize(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
     <<
@@ -387,13 +385,17 @@ serialize(RawTX, binary) ->
         (TX#tx.data)/binary
     >>;
 serialize(TX, json) ->
-	ok = enforce_valid_tx(TX),
+	true = enforce_valid_tx(TX),
     jiffy:encode(item_to_json_struct(TX)).
 
 %% @doc Take an item and ensure that it is of valid form. Useful for ensuring
 %% that a message is viable for serialization/deserialization before execution.
 %% This function should throw simple, easy to follow errors to aid devs in
 %% debugging issues.
+enforce_valid_tx(List) when is_list(List) ->
+	lists:all(fun enforce_valid_tx/1, List);
+enforce_valid_tx(Map) when is_map(Map) ->
+	lists:all(fun(Item) -> enforce_valid_tx(Item) end, maps:values(Map));
 enforce_valid_tx(TX) ->
     ok_or_throw(TX,
         check_size(TX#tx.id, [0, 32]),
@@ -440,7 +442,7 @@ enforce_valid_tx(TX) ->
 		end,
 		TX#tx.tags
 	),
-	ok.
+	true.
 
 %% @doc Force that a binary is either empty or the given number of bytes.
 check_size(Bin, {range, Start, End}) ->
@@ -475,6 +477,8 @@ ok_or_throw(_TX, false, Error) ->
 %% until the item has a coherent set of IDs.
 %% The cases in turn are:
 %% - The item has no unsigned_id. This is never valid.
+%% - The item has the default signature and ID. This is valid.
+%% - The item has the default signature but a non-default ID. Reset the ID.
 %% - The item has a signature. We calculate the ID from the signature.
 %% - Valid: The item is fully formed and has both an unsigned and signed ID.
 update_ids(Item = #tx { unsigned_id = ?DEFAULT_ID }) ->
@@ -487,6 +491,8 @@ update_ids(Item = #tx { unsigned_id = ?DEFAULT_ID }) ->
                 )
         }
     );
+update_ids(Item = #tx { id = ?DEFAULT_ID, signature = ?DEFAULT_SIG }) ->
+    Item;
 update_ids(Item = #tx { signature = ?DEFAULT_SIG }) ->
     Item#tx { id = ?DEFAULT_ID };
 update_ids(Item = #tx { signature = Sig }) when Sig =/= ?DEFAULT_SIG ->
