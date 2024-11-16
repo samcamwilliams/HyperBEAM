@@ -31,7 +31,13 @@ execute_path([], Msg, _) -> {ok, Msg};
 execute_path([FuncName|Path], Msg, S) ->
 	?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
 	Func = parse_path_to_func(FuncName),
-	{ok, NewM} = ao_device:call(Func, [Msg], #{ error_strategy => throw }, S),
+	{ok, Device} = ao_device_loader:from_message(Msg),
+	{ok, NewM} = ao_device:call(
+		Device,
+		Func,
+		[Msg],
+		S#{ error_strategy => throw }
+	),
 	execute_path(Path, NewM, S).
 
 parse_path_to_func(BinName) when is_binary(BinName) ->

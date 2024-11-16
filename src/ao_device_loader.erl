@@ -1,11 +1,14 @@
 -module(ao_device_loader).
--export([from_id/1, from_id/2, from_message/1,default/0]).
+-export([from_id/1, from_id/2, from_message/1, default/0]).
 
 -include("include/ao.hrl").
 
 %%% A module for handling the loading and execution of device modules inside
 %%% the Erlang environments.
 
+%% @doc Load a device module from its name or a message ID.
+%% Returns {ok, Executable} where Executable is an atom or a tuple of the
+%% form {Mod, Func}. On error, a tuple of the form {error, Reason} is returned.
 from_id(ID) -> from_id(ID, #{}).
 
 from_id({ID, Func}, Opts) ->

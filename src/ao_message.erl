@@ -10,6 +10,8 @@ id(TX, Type) when is_record(TX, tx) ->
 		not_signed -> not_signed;
 		ID -> id(ID, Type)
 	end;
+id(Map, unsigned) when is_map(Map) ->
+	id(ar_bundles:normalize(#tx { data = Map }), unsigned);
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->

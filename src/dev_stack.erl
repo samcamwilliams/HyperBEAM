@@ -1,5 +1,5 @@
 -module(dev_stack).
--export([from_process/1, create/1, create/2, create/3]).
+-export([info/0, from_process/1, create/1, create/2, create/3]).
 -export([boot/2, execute/2, execute/3, call/4]).
 
 %%% A device that contains a stack of other devices, which it runs in order
@@ -7,6 +7,11 @@
 
 -include("include/ao.hrl").
 -ao_debug(print).
+
+info() ->
+    #{
+        default => fun execute/2
+    }.
 
 boot(Process, Opts) ->
     Devices =
@@ -114,12 +119,12 @@ do_call([], S, _FuncName, _Opts) ->
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ arg_prefix := ArgPrefix }, FuncName, Opts) ->
     %?event({DevMod, FuncName, {slot, maps:get(slot, S, "[no_slot]")}, {pass, maps:get(pass, S, "[no_pass_num]")}}),
     case ao_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
+        no_match ->
+            do_call(Devs, S, FuncName, Opts);
         {skip, NewS} when is_map(NewS) ->
             {ok, NewS};
         {skip, NewS, NewPrivS} when is_map(NewS) ->
             {ok, update(NewS, Dev, NewPrivS)};
-        no_match ->
-            do_call(Devs, S, FuncName, Opts);
         {ok, NewS} when is_map(NewS) ->
             do_call(Devs, NewS, FuncName, Opts);
         {ok, NewS, NewPrivS} when is_map(NewS) ->

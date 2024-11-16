@@ -33,9 +33,11 @@ call(DevMod, FuncName, Args, Opts) ->
     end.
 
 ensure_loaded(DevMod) ->
+	?event({ensuring_loaded, DevMod}),
     case code:ensure_loaded(DevMod) of
         {module, _Mod} -> ok;
-        {error, Reason} -> exit({error_loading_device, DevMod, Reason})
+        {error, Reason} ->
+			exit({error_loading_device, DevMod, Reason})
     end.
 
 %% @doc Call a device function without catching exceptions if the error
