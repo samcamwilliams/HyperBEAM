@@ -1,6 +1,7 @@
 -define(DEFAULT_SIG, << 0:4096 >>).
 -define(DEFAULT_ID, << 0:256 >>).
 -define(DEFAULT_OWNER, << 0:4096 >>).
+-define(DEFAULT_DATA, <<>>).
 
 -define(MAX_TAG_NAME_SIZE, 3072).
 -define(MAX_TAG_VALUE_SIZE, 3072).
@@ -26,7 +27,7 @@
 	%% The data to upload, if any. For v2 transactions, the field is optional - a fee
 	%% is charged based on the "data_size" field, data itself may be uploaded any time
 	%% later in chunks.
-	data = <<>>,
+	data = ?DEFAULT_DATA,
 	manifest = undefined,
 	%% Size in bytes of the transaction data.
 	data_size = 0,
