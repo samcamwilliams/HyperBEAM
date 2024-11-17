@@ -1,7 +1,6 @@
 -module(dev_identity).
 -export([info/0, keys/1]).
 -include_lib("eunit/include/eunit.hrl").
--include("include/hb.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
