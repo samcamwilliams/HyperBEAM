@@ -180,10 +180,10 @@ device_id_to_executable(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-device_id_to_executable(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+device_id_to_executable(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 	case hb:get(load_remote_devices) of
 		true ->
-			Msg = hb_client:download(ID),
+			{ok, Msg} = hb_cache:read_message(maps:get(store, Opts), ID),
 			Trusted =
 				lists:any(
 					fun(Signer) ->
