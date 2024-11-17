@@ -1,5 +1,5 @@
 -module(hb_message).
--export([id/1, id/2, load/2, serialize/2, deserialize/2]).
+-export([id/1, id/2, load/2, serialize/2, deserialize/2, signers/1]).
 -include("include/hb.hrl").
 
 %%% The main module for engaing with messages. All messages are represented as
@@ -25,6 +25,11 @@ id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 	ar_util:encode(Bin);
 id(Data, _) when is_list(Data) ->
 	id(list_to_binary(Data)).
+
+%% @doc Return the signers of a message. For now, this is just the signer
+%% of the message itself. In the future, we will support multiple signers.
+signers(Msg) ->
+	[ar_bundles:signer(Msg)].
 
 load(Store, ID) when is_binary(ID)
 		andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
