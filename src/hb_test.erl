@@ -7,7 +7,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 init() ->
-    application:ensure_all_started(ao),
+    application:ensure_all_started(hb),
     ok.
 
 run(Proc, Msg) ->

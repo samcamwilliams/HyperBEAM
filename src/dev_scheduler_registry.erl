@@ -50,7 +50,7 @@ maybe_new_proc(ProcID, _) ->
 %%% Tests
 
 setup() ->
-    application:ensure_all_started(ao),
+    application:ensure_all_started(hb),
     start().
 
 -define(TEST_PROC_ID1, <<0:256>>).

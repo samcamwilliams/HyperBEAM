@@ -173,7 +173,7 @@ next_hashchain(HashChain, Message) ->
 %% TESTS
 
 new_proc() ->
-    application:ensure_all_started(ao),
+    application:ensure_all_started(hb),
     su_data:reset_data(),
     Wallet = ar_wallet:new(),
     SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
