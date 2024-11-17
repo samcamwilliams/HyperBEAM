@@ -16,7 +16,6 @@ info(State) ->
 		handler =>
 			fun(keys, Msg) -> {ok, maps:get(keys, info(Msg))};
 				(Key, Msg) ->
-					?event({device_call, Key, Msg}),
 					{ok, maps:get(Key, Msg)}
 			end
 	}.
