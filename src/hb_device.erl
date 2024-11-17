@@ -28,12 +28,18 @@ call(Msg, Key) ->
 call(Msg, Key, ParamMsg) ->
 	call(Msg, Key, ParamMsg, #{}).
 call(Msg, Key, ParamMsg, Opts) ->
-	% First, try to load the device and get the function to call.
 	try
-		Fun = message_to_fun(Msg, Key),
-		?event({device_call, Fun}),
+		% First, try to load the device and get the function to call.
+		{Status, Fun} = message_to_fun(Msg, Key),
+		% Next, generate the arguments to pass to the function based on the
+		% status of the function load.
+		Args =
+			case Status of
+				ok -> [Msg, ParamMsg, Opts];
+				add_key -> [Key, Msg, ParamMsg, Opts]
+			end,
 		% Then, try to execute the function.
-		try apply(Fun, truncate_args(Fun, [Msg, ParamMsg, Opts]))
+		try apply(Fun, ?event(truncate_args(Fun, Args)))
 		catch
 			ExecClass:ExecException:ExecStacktrace ->
 				handle_error(
@@ -78,6 +84,9 @@ truncate_args(Fun, Args) ->
 %% 4. The device does not implement the key, and has no default handler. We use
 %% the default device to handle the key.
 %% 5. The message does not specify a device, so we use the default device.
+%% 
+%% Returns {ok | add_key, Fun} where Fun is the function to call, and add_key
+%% indicates that the key should be added to the start of the call's arguments.
 message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
 	message_to_fun(Msg#{ device => default() }, Key);
 message_to_fun(Msg = #{ device := RawDev }, Key) ->
@@ -91,7 +100,7 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 	case maps:find(handler, Info = info(Dev, Msg)) of
 		{ok, Handler} ->
 			% Case 1: The device has an explicit handler function.
-			{ok, Handler};
+			{add_key, Handler};
 		error ->
 			case find_exported_function(Dev, Key, 3) of
 				{ok, Func} ->
@@ -101,7 +110,7 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 					case maps:find(default, Info) of
 						{ok, DefaultFunc} ->
 							% Case 3: The device has a default handler.
-							{ok, DefaultFunc};
+							{add_key, DefaultFunc};
 						error ->
 							% Case 4: The device has no default handler.
 							% We use the default device to handle the key.

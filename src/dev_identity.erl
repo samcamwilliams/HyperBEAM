@@ -1,6 +1,7 @@
 -module(dev_identity).
 -export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
@@ -13,8 +14,10 @@ info(State) ->
 				maps:keys(State)
 			),
 		handler =>
-			fun(Msg, Key) ->
-				{ok, maps:get(Key, Msg)}
+			fun(keys, Msg) -> {ok, maps:get(keys, info(Msg))};
+				(Key, Msg) ->
+					?event({device_call, Key, Msg}),
+					{ok, maps:get(Key, Msg)}
 			end
 	}.
 
@@ -48,14 +51,17 @@ is_private_mod_test() ->
 %%% Device functionality tests:
 
 keys_from_device_test() ->
-	?assertEqual([a], hb_device:call(#{a => 1}, keys)).
+	?assertEqual({ok, [a]}, hb_device:call(#{a => 1}, keys)).
 
 private_keys_are_filtered_test() ->
 	?assertEqual(
-		[a],
+		{ok, [a]},
 		hb_device:call(#{a => 1, private => 2}, keys)
 	),
 	?assertEqual(
-		[a],
+		{ok, [a]},
 		hb_device:call(#{a => 1, "priv_foo" => 4}, keys)
 	).
+
+key_from_device_test() ->
+	?assertEqual({ok, 1}, hb_device:call(#{a => 1}, a)).
