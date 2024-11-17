@@ -13,6 +13,11 @@
 %%% state), as well as an optional additional message. It must return a tuple of
 %%% the form {Status, NewMessage}, where Status is either ok or error, and 
 %%% NewMessage is either a new message or a binary.
+%%% 
+%%% Devices can be expressed as either modules or maps. They can also be 
+%%% referenced by an Arweave ID, which can be used to load a device from 
+%%% the network (depending on the value of the `load_remote_devices` and 
+%%% `trusted_device_signers` settings).
 
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, pass a message containing parameters to the call, as
