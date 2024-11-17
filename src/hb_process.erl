@@ -204,7 +204,7 @@ create_persistent_monitor() ->
 %%          in aggressive mode, or move to await_command() in lazy mode.
 %% Waiting: Either wait for a new message to arrive, or exit as requested.
 boot(Process, Opts) ->
-    % Register the process with gproc so that it can be found by its ID.
+    % Register the process so that it can be found by its ID.
     ?event(
 		{booting_process,
 			{signed, hb_message:id(Process, signed)},
