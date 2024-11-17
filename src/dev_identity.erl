@@ -1,24 +1,33 @@
 -module(dev_identity).
--export([info/1]).
+-export([info/0, keys/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
 %%% not included.
-info(State) ->
-	#{
-		keys =>
-			lists:filter(
-				fun(Key) -> not is_private(Key) end,
-				maps:keys(State)
-			),
-		handler =>
-			fun(keys, Msg) -> {ok, maps:get(keys, info(Msg))};
-				(Key, Msg) ->
-					{ok, maps:get(Key, Msg)}
-			end
+
+%% @doc Return the info for the identity device.
+info() -> #{ default => fun get_public/2 }.
+
+%% @doc Get the public keys of a message.
+keys(Msg) ->
+	{
+		ok,
+		lists:filter(
+			fun(Key) -> not is_private(Key) end,
+			maps:keys(Msg)
+		)
 	}.
+
+%% @doc Return the value associated with the key as it exists in the message's
+%% underlying Erlang map.
+get_public(Key, Msg) ->
+	{ok, PublicKeys} = keys(Msg),
+	case lists:member(Key, PublicKeys) of
+		true -> {ok, maps:get(Key, Msg)};
+		false -> {error, {badkey, Key}}
+	end.
 
 %% @doc Check if a key is private.
 is_private(Key) ->
@@ -60,6 +69,12 @@ private_keys_are_filtered_test() ->
 	?assertEqual(
 		{ok, [a]},
 		hb_device:call(#{a => 1, "priv_foo" => 4}, keys)
+	).
+
+cannot_get_private_keys_test() ->
+	?assertEqual(
+		{error, {badkey, private_key}},
+		hb_device:call(#{ a => 1, private_key => 2 }, private_key)
 	).
 
 key_from_device_test() ->
