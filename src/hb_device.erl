@@ -183,9 +183,16 @@ device_id_to_executable(ID, _Opts) when is_atom(ID) ->
 device_id_to_executable(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 	case hb:get(load_remote_devices) of
 		true ->
-			case lists:member(ID, hb:get(trusted_device_signers)) of
+			Msg = hb_client:download(ID),
+			Trusted =
+				lists:any(
+					fun(Signer) ->
+						lists:member(Signer, hb:get(trusted_device_signers))
+					end,
+					hb_message:signers(Msg)
+				),
+			case Trusted of
 				true ->
-					Msg = hb_client:download(ID),
 					RelBin = erlang:system_info(otp_release),
 					case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
 						<<"BEAM/", RelBin/bitstring>> ->
