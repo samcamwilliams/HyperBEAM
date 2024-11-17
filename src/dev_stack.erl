@@ -10,7 +10,7 @@
 
 info() ->
     #{
-        default => fun execute/2
+        handle => fun execute/2
     }.
 
 boot(Process, Opts) ->

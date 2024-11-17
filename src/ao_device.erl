@@ -4,12 +4,14 @@
 -include("include/ao.hrl").
 
 %%% The root implementation of the device call logic.
-%%% Every device is a simple module that takes a single message as an argument
-%%% and returns a single message as a result.
+%%% Every device is a collection of keys/functions that can be called in order
+%%% to find the appropriate result. Each key may return another message, or a 
+%%% binary.
 %%% 
-%%% This module abstracts the handling of passing additional optional metadata
-%%% to the device call, as well as catching any errors that may be thrown by the
-%%% device through a generic framework.
+%%% When a device key is called, it is passed the current message (likely its 
+%%% state), as well as an optional additional message. It must return a tuple of
+%%% the form {Status, NewMessage}, where Status is either ok or error, and 
+%%% NewMessage is either a new message or a binary.
 
 from_message(M) ->
     case lists:keyfind(<<"Device">>, 1, M#tx.tags) of
