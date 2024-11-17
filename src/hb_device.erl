@@ -85,6 +85,9 @@ truncate_args(Fun, Args) ->
 %% the default device to handle the key.
 %% 5. The message does not specify a device, so we use the default device.
 %% 
+%% There is also an error case: If the device is specified, but not loadable,
+%% we raise an error.
+%% 
 %% Returns {ok | add_key, Fun} where Fun is the function to call, and add_key
 %% indicates that the key should be added to the start of the call's arguments.
 message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
