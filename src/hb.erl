@@ -161,6 +161,10 @@ config() ->
 		%% Should the node attempt to access data from remote caches for
 		%% client requests?
 		access_remote_cache_for_client => false,
+		%% Should the node attempt to load devices from remote signers?
+		load_remote_devices => false,
+		%% The list of device signers that the node should trust.
+		trusted_device_signers => [],
 		%% What should the node do if a client error occurs?
 		client_error_strategy => throw,
         % Dev options

@@ -2,6 +2,13 @@
 -export([id/1, id/2, load/2, serialize/2, deserialize/2]).
 -include("include/hb.hrl").
 
+%%% The main module for engaing with messages. All messages are represented as
+%%% maps in Erlang at the data layer, but should be accessed through this
+%%% module such that any necessary executions can be made to retrieve their
+%%% underlying data.
+
+get(Message, Key) ->
+	hb_device:call(Message, Key).
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).

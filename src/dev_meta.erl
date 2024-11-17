@@ -31,14 +31,7 @@ execute_path([], Msg, _) -> {ok, Msg};
 execute_path([FuncName|Path], Msg, S) ->
 	?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
 	Func = parse_path_to_func(FuncName),
-	{ok, Device} = hb_device:from_message(Msg),
-	{ok, NewM} = hb_device:call(
-		Device,
-		Func,
-		[Msg],
-		S#{ error_strategy => throw }
-	),
-	execute_path(Path, NewM, S).
+	execute_path(Path, hb_device:call(Msg, Func, [Msg], S), S).
 
 parse_path_to_func(BinName) when is_binary(BinName) ->
 	binary_to_existing_atom(string:lowercase(BinName), utf8);

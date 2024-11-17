@@ -1,6 +1,5 @@
 -module(hb_device).
--export([from_message/1]).
--export([call/3, call/4]).
+-export([call/2, call/3, call/4]).
 -include("include/hb.hrl").
 
 %%% This module is the root of the device call logic in hyperbeam.
@@ -14,86 +13,157 @@
 %%% the form {Status, NewMessage}, where Status is either ok or error, and 
 %%% NewMessage is either a new message or a binary.
 
-call(Dev, FuncName, Args) -> call(Dev, FuncName, Args, #{}).
-call(_DevMod, _FuncName, [], _Opts) ->
-    % If the device doesn't implement the function, tell the caller.
-    no_match;
-call({DevMod, EmbeddedFunc}, FuncName, Args, Opts) ->
-    call(DevMod, EmbeddedFunc, [FuncName|Args], Opts);
-call(DevMod, FuncName, Args, Opts) ->
-    % If the device implements the function with the given arity, call it.
-    % Otherwise, recurse with one fewer arguments.
-    ok = ensure_loaded(DevMod),
-    case erlang:function_exported(DevMod, FuncName, length(Args)) of
-        true -> maybe_unsafe_call(DevMod, FuncName, Args, Opts);
-        false -> call(DevMod, FuncName, lists:droplast(Args), Opts)
-    end.
+%% @doc Get the value of a message's key by running its associated device
+%% function. Optionally, pass a message containing parameters to the call, as
+%% well as options that control the runtime environment. This function returns
+%% the raw result of the device function call: Typically, but not necessarily,
+%% {ok | error, NewMessage}. In many cases the device will not implement the key,
+%% however, so the default device is used instead. The default (dev_identity)
+%% device simply returns the value associated with the key as it exists in the
+%% message's underlying Erlang map. In this way, devices are able to implement
+%% 'special' keys which do not exist as values in the message's map, while still
+%% exposing the 'normal' keys of a map.
+call(Msg, Key) ->
+	call(Msg, Key, #{}).
+call(Msg, Key, ParamMsg) ->
+	call(Msg, Key, ParamMsg, #{}).
+call(Msg, Key, ParamMsg, Opts) ->
+	% First, try to load the device and get the function to call.
+	try
+		Fun = message_to_fun(Msg, Key),
+		?event({device_call, Fun}),
+		% Then, try to execute the function.
+		try apply(Fun, truncate_args(Fun, [Msg, ParamMsg, Opts]))
+		catch
+			ExecClass:ExecException:ExecStacktrace ->
+				handle_error(
+					device_call,
+					{ExecClass, ExecException, ExecStacktrace},
+					Opts
+				)
+		end
+	catch
+		Class:Exception:Stacktrace ->
+			handle_error(
+				loading_device,
+				{Class, Exception, Stacktrace},
+				Opts
+			)
+	end.
 
-ensure_loaded(DevMod) ->
-	?event({ensuring_loaded, DevMod}),
-    case code:ensure_loaded(DevMod) of
-        {module, _Mod} -> ok;
-        {error, Reason} ->
-			exit({error_loading_device, DevMod, Reason})
-    end.
+%% @doc Handle an error in a device call.
+handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
+	case maps:get(error_strategy, Opts, throw) of
+		throw -> erlang:raise(Class, Exception, Stacktrace);
+		_ -> {error, Whence, {Class, Exception, Stacktrace}}
+	end.
 
-%% @doc Call a device function without catching exceptions if the error
-%% strategy is set to throw.
-maybe_unsafe_call(DevMod, FuncName, Args, #{ error_strategy := throw }) ->
-    ?event({executing_dev_call, DevMod, FuncName, length(Args)}),
-    erlang:apply(DevMod, FuncName, Args);
-maybe_unsafe_call(DevMod, FuncName, Args, Opts) ->
-    try maybe_unsafe_call(DevMod, FuncName, Args, Opts#{ error_strategy => throw })
-    catch Type:Error:BT ->
-        ?event({error_calling_dev, DevMod, FuncName, length(Args), {Type, Error, BT}}),
-        {error, {Type, Error, BT}}
-    end.
+%% @doc Truncate the arguments of a function to the number of arguments it
+%% actually takes.
+truncate_args(Fun, Args) ->
+	{arity, Arity} = erlang:fun_info(Fun, arity),
+	lists:sublist(Args, Arity).
+
+%% @doc Calculate the Erlang function that should be called to get a value for
+%% a given key from a device.
+%% 
+%% This comes in 5 forms:
+%% 1. The device has a `handler` key in its `Dev:info()` map, which is a 
+%% function that takes a key and returns a function to handle that key. We pass
+%% the key as an additional argument to this function.
+%% 2. The device has a function of the name `Key`, which should be called 
+%% directly.
+%% 3. The device does not implement the key, but does have a default handler 
+%% for us to call. We pass it the key as an additional argument.
+%% 4. The device does not implement the key, and has no default handler. We use
+%% the default device to handle the key.
+%% 5. The message does not specify a device, so we use the default device.
+message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
+	message_to_fun(Msg#{ device => default() }, Key);
+message_to_fun(Msg = #{ device := RawDev }, Key) ->
+	Dev =
+		case device_id_to_module(RawDev) of
+			{error, _} ->
+				% Error case: A device is specified, but it is not loadable.
+				throw({error, {device_not_loadable, RawDev}});
+			{ok, DevMod} -> DevMod
+		end,
+	case maps:find(handler, Info = info(Dev, Msg)) of
+		{ok, Handler} ->
+			% Case 1: The device has an explicit handler function.
+			{ok, Handler};
+		error ->
+			case find_exported_function(Dev, Key, 3) of
+				{ok, Func} ->
+					% Case 2: The device has a function of the name `Key`.
+					{ok, Func};
+				not_found ->
+					case maps:find(default, Info) of
+						{ok, DefaultFunc} ->
+							% Case 3: The device has a default handler.
+							{ok, DefaultFunc};
+						error ->
+							% Case 4: The device has no default handler.
+							% We use the default device to handle the key.
+							message_to_fun(Msg#{ device => default() }, Key)
+					end
+			end
+	end.
+
+%% @doc Find the function in a module with the highest arity that has the given
+%% name, if it exists.
+find_exported_function(_Mod, _Key, 0) -> not_found;
+find_exported_function(Mod, Key, Arity) ->
+	case erlang:function_exported(Mod, Key, Arity) of
+		true -> {ok, fun Mod:Key/Arity};
+		false -> find_exported_function(Mod, Key, Arity - 1)
+	end.
 
 %% @doc Load a device module from its name or a message ID.
-%% Returns {ok, Executable} where Executable is an atom or a tuple of the
-%% form {Mod, Func}. On error, a tuple of the form {error, Reason} is returned.
-from_id(ID) -> from_id(ID, #{}).
-
-from_id({ID, Func}, Opts) ->
-    case from_id(ID, Opts) of
-        {ok, Mod} -> {ok, {Mod, Func}};
-        Error -> Error
-    end;
-from_id(ID, _Opts) when is_atom(ID) ->
+%% Returns {ok, Executable} where Executable is the device module. On error,
+%% a tuple of the form {error, Reason} is returned.
+device_id_to_module(ID) -> device_id_to_module(ID, #{}).
+device_id_to_module(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-from_id(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
-    case lists:member(ID, hb:get(loadable_devices)) of
-        true ->
-            Msg = hb_client:download(ID),
-            RelBin = erlang:system_info(otp_release),
-            case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
-                <<"BEAM/", RelBin/bitstring>> ->
-                    {_, ModNameBin} = lists:keyfind(<<"Module-Name">>, 1, Msg#tx.tags),
-                    ModName = list_to_atom(binary_to_list(ModNameBin)),
-                    case erlang:load_module(ModName, Msg#tx.data) of
-                        {module, _} -> {ok, ModName};
-                        {error, Reason} -> {error, Reason}
-                    end
-            end;
-        false -> {error, module_not_admissable}
-    end;
-from_id(ID, _Opts) ->
+device_id_to_module(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+	case hb:get(load_remote_devices) of
+		true ->
+			case lists:member(ID, hb:get(trusted_device_signers)) of
+				true ->
+					Msg = hb_client:download(ID),
+					RelBin = erlang:system_info(otp_release),
+					case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
+						<<"BEAM/", RelBin/bitstring>> ->
+							{_, ModNameBin} =
+								lists:keyfind(<<"Module-Name">>, 1, Msg#tx.tags),
+							ModName = list_to_atom(binary_to_list(ModNameBin)),
+							case erlang:load_module(ModName, Msg#tx.data) of
+								{module, _} -> {ok, ModName};
+								{error, Reason} -> {error, Reason}
+							end
+					end;
+				false -> {error, device_signer_not_trusted}
+			end;
+		false ->
+			{error, remote_devices_disabled}
+	end;
+device_id_to_module(ID, _Opts) ->
     case maps:get(ID, hb:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
     end.
 
-default() -> dev_identity.
+%% @doc Get the info map for a device, optionally giving it a message if the
+%% device's info function is parameterized by one.
+info(DevMod, Msg) ->
+	case find_exported_function(DevMod, info, 1) of
+		{ok, Fun} ->
+			apply(Fun, truncate_args(Fun, [Msg]));
+		not_found -> #{}
+	end.
 
-%% @doc Locate the appropriate device module to execute for the given message.
-%% If the message specifies a device for itself, use that. Else, use the default
-%% device.
-from_message(M) ->
-    case lists:keyfind(<<"Device">>, 1, M#tx.tags) of
-        {_, DeviceID} ->
-            from_id(DeviceID);
-        false ->
-            {ok, default()}
-    end.
+%% @doc The default device is the identity device, which simply returns the
+%% value associated with any key as it exists in its Erlang map.
+default() -> dev_identity.
