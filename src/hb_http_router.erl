@@ -1,9 +1,9 @@
--module(ao_http_router).
+-module(hb_http_router).
 -export([start/0, allowed_methods/2, init/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 start() ->
-    ao_http:start(),
+    hb_http:start(),
     application:ensure_all_started(cowboy),
     Dispatcher =
 		cowboy_router:compile(
@@ -19,9 +19,9 @@ start() ->
 							% a different wallet, etc.) to execution for 
 							% remote clients.
 							#{
-								store => ao:get(store),
-								wallet => ao:get(wallet),
-								error_strategy => ao:get(client_error_strategy)
+								store => hb:get(store),
+								wallet => hb:get(wallet),
+								error_strategy => hb:get(client_error_strategy)
 							}
 						}
 					]
@@ -30,7 +30,7 @@ start() ->
 		),
     cowboy:start_clear(
         ?MODULE,
-        [{port, ao:get(http_port)}],
+        [{port, hb:get(http_port)}],
         #{env => #{dispatch => Dispatcher}}
     ).
 
@@ -38,10 +38,10 @@ init(Req, State) ->
     Path = cowboy_req:path(Req),
     ?event({http_called_with_path, Path}),
 	% Note: We pass the state twice in the call below: Once for the device
-	% to optionally have it if useful, and once for the ao_device module
+	% to optionally have it if useful, and once for the hb_device module
 	% itself. This lets us send execution environment parameters as well as
 	% the request itself to the device.
-    case ao_device:call(dev_meta, execute, [ao_http:req_to_tx(Req), State], State) of
+    case hb_device:call(dev_meta, execute, [hb_http:req_to_tx(Req), State], State) of
         {ok, ResultingMessage} when is_record(ResultingMessage, tx) or is_map(ResultingMessage) ->
             % If the device returns a message (either normalized or not),
             % we normalize and serialize it, returning it to the client.
@@ -51,17 +51,17 @@ init(Req, State) ->
             Signed =
                 case ar_bundles:is_signed(NormMessage) of
                     true -> NormMessage;
-                    false -> ar_bundles:sign_item(NormMessage, ao:wallet())
+                    false -> ar_bundles:sign_item(NormMessage, hb:wallet())
                 end,
-            ao_http:reply(
+            hb_http:reply(
                 Req,
-                ao_http:tx_to_status(Signed),
+                hb_http:tx_to_status(Signed),
                 Signed
             );
         no_match ->
             % If the device returns no_match, we return a 404.
             ?event({could_not_match_path_to_device, Path}),
-            ao_http:reply(Req,
+            hb_http:reply(Req,
 				#tx {
 					tags = [{<<"Status">>, <<"500">>}],
 					data = <<"No matching device found.">>

@@ -1,6 +1,6 @@
 -module(dev_json_iface).
 -export([init/1, execute/2, uses/0, stdlib/6, lib/6]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 uses() -> all.
@@ -30,7 +30,7 @@ prep_call(
     {_, Module} = lists:keyfind(<<"Module">>, 1, Process#tx.tags),
     % TODO: Get block height from the assignment message
     {_, BlockHeight} = lists:keyfind(<<"Block-Height">>, 1, Assignment#tx.tags),
-    RawMsgJson = ao_message:serialize(Message, json),
+    RawMsgJson = hb_message:serialize(Message, json),
     {Props} = jiffy:decode(RawMsgJson),
     MsgJson = jiffy:encode({
         Props ++
@@ -39,9 +39,9 @@ prep_call(
                 {<<"Block-Height">>, BlockHeight}
             ]
     }),
-    {ok, MsgJsonPtr} = ao_beamr_io:write_string(Port, MsgJson),
+    {ok, MsgJsonPtr} = hb_beamr_io:write_string(Port, MsgJson),
     EnvJson = jiffy:encode({[{<<"Process">>, ar_bundles:item_to_json_struct(Process)}]}),
-    {ok, EnvJsonPtr} = ao_beamr_io:write_string(Port, EnvJson),
+    {ok, EnvJsonPtr} = hb_beamr_io:write_string(Port, EnvJson),
     {"handle", [MsgJsonPtr, EnvJsonPtr]}.
 
 %% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
@@ -63,7 +63,7 @@ postProcessResultMessages(Msg = #{<<"Tags">> := Tags}, Proc) ->
                     [
                         #{
                             <<"name">> => <<"From-Process">>,
-                            <<"value">> => ao_message:id(Proc, signed)
+                            <<"value">> => hb_message:id(Proc, signed)
                         },
                         #{
                             <<"name">> => <<"From-Image">>,
@@ -82,8 +82,8 @@ results(S = #{wasm := Port, results := Res, process := Proc}) ->
                 results := #tx{tags = [{<<"Result">>, <<"Error">>}], data = Res}
             };
         {ok, [Ptr]} ->
-            {ok, Str} = ao_beamr_io:read_string(Port, Ptr),
-            Wallet = ao:wallet(),
+            {ok, Str} = hb_beamr_io:read_string(Port, Ptr),
+            Wallet = hb:wallet(),
             try jiffy:decode(Str, [return_maps]) of
                 % TODO: Handle all JSON interface outputs
                 #{<<"ok">> := true, <<"response">> := Resp} ->
@@ -160,7 +160,7 @@ lib(
     _Signature
 ) ->
     %?event({fd_write, Fd, Ptr, Vecs, RetPtr}),
-    {ok, VecData} = ao_beamr_io:read_iovecs(Port, Ptr, Vecs),
+    {ok, VecData} = hb_beamr_io:read_iovecs(Port, Ptr, Vecs),
     BytesWritten = byte_size(VecData),
     %?event({fd_write_data, VecData}),
     NewStdio =
@@ -171,7 +171,7 @@ lib(
                 Existing ++ [VecData]
         end,
     % Set return pointer to number of bytes written
-    ao_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
+    hb_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
     {S#{stdout := NewStdio}, [0]};
 lib(S, _Port, _Args, _Module, "clock_time_get", _Signature) ->
     %?event({called, wasi_clock_time_get, 1}),

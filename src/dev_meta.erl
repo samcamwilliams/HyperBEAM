@@ -1,6 +1,6 @@
 -module(dev_meta).
 -export([execute/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% The hyperbeam meta device, which is the default entry point
 %%% for all messages processed by the machine. This device executes a 'path' of
@@ -31,8 +31,8 @@ execute_path([], Msg, _) -> {ok, Msg};
 execute_path([FuncName|Path], Msg, S) ->
 	?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
 	Func = parse_path_to_func(FuncName),
-	{ok, Device} = ao_device:from_message(Msg),
-	{ok, NewM} = ao_device:call(
+	{ok, Device} = hb_device:from_message(Msg),
+	{ok, NewM} = hb_device:call(
 		Device,
 		Func,
 		[Msg],
@@ -69,9 +69,9 @@ parse_carrier_msg(CarrierMsg, S) ->
 load_executable_message_from_carrier(CarrierMsg, #{ store := RawStore }) ->
     Path = path_from_carrier_message(CarrierMsg),
 	Store =
-		case ao:get(access_remote_cache_for_client) of
+		case hb:get(access_remote_cache_for_client) of
 			true -> RawStore;
-			false -> ao_store:scope(RawStore, local)
+			false -> hb_store:scope(RawStore, local)
 		end,
 	load_path(Store, Path).
 
@@ -82,11 +82,11 @@ load_path(Store, PathParts) -> load_path(Store, PathParts, []).
 load_path(Store, PathParts, Unresolved) ->
 	?event({loading_path, Store, PathParts, Unresolved}),
 	% First, try to read the path directly from the cache.
-    case ao_cache:read(Store, PathParts) of
+    case hb_cache:read(Store, PathParts) of
         {ok, Msg} -> {Msg, Unresolved};
 		not_found ->
 			% If that fails, try to read it as a message.
-			case ao_cache:read_message(Store, PathParts) of
+			case hb_cache:read_message(Store, PathParts) of
 				{ok, Msg} -> {Msg, Unresolved};
 				not_found ->
 					load_path(

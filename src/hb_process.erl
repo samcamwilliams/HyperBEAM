@@ -1,8 +1,8 @@
--module(ao_process).
+-module(hb_process).
 -export([start/1, start/2, result/4]).
 -export([run/1, run/2, run/3]).
--include("include/ao.hrl").
--ao_debug(print).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 %%% This module implements the core AO process execution logic, built around
 %%% Hyperbeam's devices. It persists messages between executions, keeping 
@@ -60,28 +60,28 @@
 -define(DEFAULT_FREQ, 10).
 
 result(RawProcID, RawMsgRef, Store, Wallet) ->
-    ProcID = ao_message:id(RawProcID),
+    ProcID = hb_message:id(RawProcID),
     MsgRef =
         case is_binary(RawMsgRef) of
             true ->
                 case byte_size(RawMsgRef) of
-                    32 -> ao_message:id(RawMsgRef);
+                    32 -> hb_message:id(RawMsgRef);
                     _ -> RawMsgRef
                 end;
             false -> RawMsgRef
         end,
-    LocalStore = ao_store:scope(Store, local),
-    case ao_cache:read_output(LocalStore, ProcID, MsgRef) of
+    LocalStore = hb_store:scope(Store, local),
+    case hb_cache:read_output(LocalStore, ProcID, MsgRef) of
         not_found ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
-                    ?event({no_cu_for_proc, ao_message:id(ProcID)}),
-                    {ok, Proc} = ao_cache:read_message(
+                    ?event({no_cu_for_proc, hb_message:id(ProcID)}),
+                    {ok, Proc} = hb_cache:read_message(
                         Store,
-                        ao_message:id(ProcID)
+                        hb_message:id(ProcID)
                     ),
                     await_results(
-                        ao_process:run(
+                        hb_process:run(
                             Proc,
                             #{
                                 to => MsgRef,
@@ -93,7 +93,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                         )
                     );
                 [Pid|_] ->
-                    ?event({found_cu_for_proc, ao_message:id(ProcID)}),
+                    ?event({found_cu_for_proc, hb_message:id(ProcID)}),
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid !
 						{
@@ -141,10 +141,10 @@ create_monitor_for_message(MsgID) ->
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
 		Msg = maps:get(<<"Message">>, Inbound#tx.data),
 		% Gather IDs
-        AssignmentID = ao_message:id(Assignment, signed),
-        AssignmentUnsignedID = ao_message:id(Assignment, unsigned),
-        ScheduledMsgID = ao_message:id(Msg, signed),
-        ScheduledMsgUnsignedID = ao_message:id(Msg, unsigned),
+        AssignmentID = hb_message:id(Assignment, signed),
+        AssignmentUnsignedID = hb_message:id(Assignment, unsigned),
+        ScheduledMsgID = hb_message:id(Msg, signed),
+        ScheduledMsgUnsignedID = hb_message:id(Msg, unsigned),
 		% Gather slot
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
@@ -207,29 +207,29 @@ boot(Process, Opts) ->
     % Register the process with gproc so that it can be found by its ID.
     ?event(
 		{booting_process,
-			{signed, ao_message:id(Process, signed)},
-			{unsigned, ao_message:id(Process, unsigned)}
+			{signed, hb_message:id(Process, signed)},
+			{unsigned, hb_message:id(Process, unsigned)}
 		}
 	),
-    pg:join({cu, ao_message:id(Process, signed)}, self()),
+    pg:join({cu, hb_message:id(Process, signed)}, self()),
     % Build the device stack.
-    ?event({registered_process, ao_message:id(Process, signed)}),
-    {ok, Dev} = ao_device:from_message(Process),
+    ?event({registered_process, hb_message:id(Process, signed)}),
+    {ok, Dev} = hb_device:from_message(Process),
     ?event({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
-        = ao_device:call(Dev, boot, [Process, Opts], Opts),
+        = hb_device:call(Dev, boot, [Process, Opts], Opts),
     ?event(booted_device),
     % Get the store we are using for this execution.
-    Store = maps:get(store, Opts, ao:get(store)),
+    Store = maps:get(store, Opts, hb:get(store)),
     % Get checkpoint key names from all devices.
     % TODO: Assumes that the device is a stack or another device that uses maps
     % for state.
     {ok, #{keys := [Key|_]}} =
-        ao_device:call(Dev, checkpoint_uses, [BootState], Opts),
+        hb_device:call(Dev, checkpoint_uses, [BootState], Opts),
     % We don't support partial checkpoints (perhaps we never will?), so just
 	% take one key and use that to find the latest full checkpoint.
     CheckpointOption =
-        ao_cache:latest(
+        hb_cache:latest(
             Store,
             ar_bundles:id(Process, signed),
             maps:get(to, Opts, inf),
@@ -249,8 +249,8 @@ boot(Process, Opts) ->
             process => Process,
             slot => Slot + 1,
             to => maps:get(to, Opts, inf),
-            wallet => maps:get(wallet, Opts, ao:wallet()),
-            store => maps:get(store, Opts, ao:get(store)),
+            wallet => maps:get(wallet, Opts, hb:wallet()),
+            store => maps:get(store, Opts, hb:get(store)),
             schedule => maps:get(schedule, Opts, []),
             devices => Devs
         },
@@ -266,9 +266,9 @@ boot(Process, Opts) ->
 			proc_dev => Dev,
 			return => all,
 			% If no compute mode is already set, use the global default.
-			compute_mode => maps:get(compute_mode, Opts, ao:get(compute_mode))
+			compute_mode => maps:get(compute_mode, Opts, hb:get(compute_mode))
 		},
-    case ao_device:call(Dev, init, [InitState, RuntimeOpts]) of
+    case hb_device:call(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, RuntimeOpts);
         {error, N, DevMod, Info} ->
@@ -280,7 +280,7 @@ execute_schedule(State, Opts) ->
 		{
 			process_executing_slot,
 			maps:get(slot, State),
-			{proc_id, ao_message:id(maps:get(process, State))},
+			{proc_id, hb_message:id(maps:get(process, State))},
 			{to, maps:get(to, State)}
 		}
 	),
@@ -361,7 +361,7 @@ post_execute(
             % result.
             ?event({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
-                ao_device:call(
+                hb_device:call(
                     Dev,
                     checkpoint,
                     [State#{ save_keys => [], message => undefined }],
@@ -388,9 +388,9 @@ post_execute(
                     }
                 ),
             ?event({checkpoint_normalized_for_slot, Slot}),
-            ao_cache:write_output(
+            hb_cache:write_output(
                 Store,
-                ao_message:id(Process, signed),
+                hb_message:id(Process, signed),
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
             ),
@@ -398,9 +398,9 @@ post_execute(
         false ->
             NormalizedResult =
 				ar_bundles:deserialize(ar_bundles:serialize(Results)),
-            ao_cache:write_output(
+            hb_cache:write_output(
                 Store,
-                ao_message:id(Process, signed),
+                hb_message:id(Process, signed),
                 Slot,
                 NormalizedResult
             ),
@@ -418,7 +418,7 @@ initialize_slot(State = #{slot := Slot}) ->
     }.
 
 execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
-    ao_device:call(
+    hb_device:call(
 		Dev,
 		execute,
 		[State#{ message => Msg }, Opts],
@@ -426,7 +426,7 @@ execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
 	).
 
 execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
-    ao_device:call(
+    hb_device:call(
 		Dev,
 		terminate,
 		[S#{ message => undefined }, Opts],
@@ -434,7 +434,7 @@ execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
 	).
 
 execute_eos(S, Opts = #{ proc_dev := Dev }) ->
-    ao_device:call(
+    hb_device:call(
 		Dev,
 		end_of_schedule,
 		[S#{ message => undefined }, Opts],
@@ -454,7 +454,7 @@ await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
     receive
         {on_idle, run, Function, Args} ->
             ?event({running_command, Function, Args}),
-            {ok, NewState} = ao_device:call(
+            {ok, NewState} = hb_device:call(
 				Dev,
 				Function,
 				[State#{ message => hd(Args) }, Opts],

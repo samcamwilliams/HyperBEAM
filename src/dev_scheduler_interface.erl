@@ -1,6 +1,6 @@
 -module(dev_scheduler_interface).
 -export([handle/1]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%% The SU device's API functions. Enables clients to read/write messages into
@@ -25,7 +25,7 @@ info(_M) ->
         #tx{
             tags = [
                 {<<"Unit">>, <<"Scheduler">>},
-                {<<"Address">>, ao_message:id(ar_wallet:to_address(Wallet))}
+                {<<"Address">>, hb_message:id(ar_wallet:to_address(Wallet))}
             ],
             data =
                 jiffy:encode(
@@ -56,7 +56,7 @@ current_slot(M) ->
 current_schedule(M) ->
     {_, ProcID} = lists:keyfind(<<"Process">>, 1, M#tx.tags),
     send_schedule(
-        ao:get(store),
+        hb:get(store),
         ProcID,
         lists:keyfind(<<"From">>, 1, M#tx.tags),
         lists:keyfind(<<"To">>, 1, M#tx.tags)
@@ -66,7 +66,7 @@ schedule(CarrierM) ->
     ?event(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
 	%ar_bundles:print(M),
-    Store = ao:get(store),
+    Store = hb:get(store),
 	?no_prod("SU does not validate item before writing into stream."),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
         % {false, _} ->
@@ -77,15 +77,15 @@ schedule(CarrierM) ->
         %         }
         %     };
         {_, {<<"Type">>, <<"Process">>}} ->
-            ao_cache:write(Store, M),
-            ao_client:upload(M),
+            hb_cache:write(Store, M),
+            hb_client:upload(M),
             {ok,
                 #tx{
                     tags =
                         [
                             {<<"Status">>, <<"OK">>},
                             {<<"Initial-Assignment">>, <<"0">>},
-                            {<<"Process">>, ao_message:id(M, signed)}
+                            {<<"Process">>, hb_message:id(M, signed)}
                         ],
                     data = []
                 }
@@ -94,7 +94,7 @@ schedule(CarrierM) ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
                 case lists:keyfind(<<"Process">>, 1, M#tx.tags) of
-                    false -> binary_to_list(ao_message:id(M#tx.target));
+                    false -> binary_to_list(hb_message:id(M#tx.target));
                     {_, ProcessID} -> ProcessID
                 end,
             {ok, dev_scheduler_server:schedule(dev_scheduler_registry:find(AOProcID, true), M)}
@@ -149,7 +149,7 @@ send_schedule(Store, ProcID, From, To) ->
     },
     ?event(assignments_bundle_outbound),
     %ar_bundles:print(Bundle),
-    SignedBundle = ar_bundles:sign_item(Bundle, ao:wallet()),
+    SignedBundle = ar_bundles:sign_item(Bundle, hb:wallet()),
     {ok, SignedBundle}.
 
 assignments_to_bundle(Store, Assignments) ->
@@ -159,8 +159,8 @@ assignments_to_bundle(_, [], Bundle) ->
 assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
-    {ok, Message} = ao_cache:read_message(Store, MessageID),
-	?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, ao_message:id(Assignment, signed), ao_message:id(Assignment, unsigned)}),
+    {ok, Message} = hb_cache:read_message(Store, MessageID),
+	?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, hb_message:id(Assignment, signed), hb_message:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
         Assignments,
@@ -177,7 +177,7 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
                             <<"Message">> => Message
                         }
                     },
-                    ao:wallet()
+                    hb:wallet()
                 )
         }
     ).

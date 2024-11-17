@@ -1,9 +1,9 @@
--module(ao_test).
+-module(hb_test).
 -export([simple_stack_test/0, full_push_test/0, simple_load_test/0]).
 -export([init/0, generate_test_data/1, run/2]).
--ao_debug(print).
+-hb_debug(print).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 init() ->
@@ -13,15 +13,15 @@ init() ->
 run(Proc, Msg) ->
     run(Proc, Msg, #{}).
 run(Proc, Msg, _Opts) ->
-    ao_cache:write(ao:get(store), Msg),
-    ao_cache:write(ao:get(store), Proc),
-    Scheduler = dev_scheduler_registry:find(ao_message:id(Proc, signed), true),
+    hb_cache:write(hb:get(store), Msg),
+    hb_cache:write(hb:get(store), Proc),
+    Scheduler = dev_scheduler_registry:find(hb_message:id(Proc, signed), true),
     Assignment = dev_scheduler_server:schedule(Scheduler, Msg),
-    ao_process:result(
-        ao_message:id(Proc, signed),
-        ao_message:id(Assignment, unsigned),
-        ao:get(store),
-        ao:wallet()
+    hb_process:result(
+        hb_message:id(Proc, signed),
+        hb_message:id(Assignment, unsigned),
+        hb:get(store),
+        hb:wallet()
     ).
 
 %%% TESTS
@@ -40,8 +40,8 @@ full_push_test() ->
     init(),
     ?event(full_push_test_started),
     {_, Msg} = generate_test_data(ping_ping_script()),
-    ao_cache:write(ao:get(store), Msg),
-    ao_client:push(Msg, #{ tracing => none }),
+    hb_cache:write(hb:get(store), Msg),
+    hb_client:push(Msg, #{ tracing => none }),
     ok.
 
 simple_load_test() ->
@@ -49,25 +49,25 @@ simple_load_test() ->
     ?event(scheduling_many_items),
     Messages = 30,
     Msg = generate_test_data(ping_ping_script()),
-    ao_cache:write(ao:get(store), Msg),
-    Start = ao:now(),
+    hb_cache:write(hb:get(store), Msg),
+    Start = hb:now(),
     Assignments = lists:map(
-        fun(_) -> ao_client:schedule(Msg) end,
+        fun(_) -> hb_client:schedule(Msg) end,
         lists:seq(1, Messages)
     ),
-    Scheduled = ao:now(),
+    Scheduled = hb:now(),
     {ok, LastAssignment} = lists:last(Assignments),
     ?event({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
-    ao_client:compute(LastAssignment, Msg),
-    Computed = ao:now(),
+    hb_client:compute(LastAssignment, Msg),
+    Computed = hb:now(),
     ?event({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
     ?event({total_time_s, ((Computed - Start) / Messages) / 1000}),
     ?event({processed_messages, Messages}).
 
 default_test_img(Wallet) ->
-    Store = ao:get(store),
+    Store = hb:get(store),
     {ok, Module} = file:read_file("test/aos-2-pure-xs.wasm"),
-    ao_cache:write(
+    hb_cache:write(
         Store,
         Img = ar_bundles:sign_item(
             #tx {
@@ -88,20 +88,20 @@ default_test_devices(Wallet, Opts) ->
     ID = ar_wallet:to_address(Wallet),
     Img = maps:get(image, Opts),
     Quorum = maps:get(quorum, Opts, 2),
-    LocalAddress = ao:address(),
+    LocalAddress = hb:address(),
     [
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
         {<<"Type">>, <<"Process">>},
         {<<"Device">>, <<"Stack">>},
         {<<"Device">>, <<"Scheduler">>},
-        {<<"Location">>, ao_message:id(ID)},
+        {<<"Location">>, hb_message:id(ID)},
         {<<"Device">>, <<"PODA">>},
         {<<"Quorum">>, integer_to_binary(Quorum)}
     ] ++
     [
         {<<"Authority">>, Addr} ||
-            Addr <- maps:keys(maps:get(compute, ao:get(nodes))),
+            Addr <- maps:keys(maps:get(compute, hb:get(nodes))),
             Addr =/= '_'
     ] ++
     [
@@ -109,7 +109,7 @@ default_test_devices(Wallet, Opts) ->
         {<<"Device">>, <<"VFS">>},
         {<<"Device">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
-        {<<"Image">>, ao_message:id(Img)},
+        {<<"Image">>, hb_message:id(Img)},
         {<<"Device">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
         {<<"Device">>, <<"Multipass">>},
@@ -124,7 +124,7 @@ ping_ping_script() ->
     >>.
 
 generate_test_data(Script) ->
-    generate_test_data(Script, ao:wallet()).
+    generate_test_data(Script, hb:wallet()).
 generate_test_data(Script, Wallet) ->
     Img = default_test_img(Wallet),
     generate_test_data(Script, Wallet, #{image => Img}).
@@ -132,8 +132,8 @@ generate_test_data(Script, Wallet, Opts) ->
     Devs = default_test_devices(Wallet, Opts),
     generate_test_data(Script, Wallet, Opts, Devs).
 generate_test_data(Script, Wallet, _Opts, Devs) ->
-    Store = ao:get(store),
-    ao_cache:write(
+    Store = hb:get(store),
+    hb_cache:write(
         Store,
         SignedProcess = ar_bundles:sign_item(
             #tx{ tags = Devs },
@@ -153,6 +153,6 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
         },
         Wallet
     ),
-    ao_cache:write(Store, Msg),
-    ?event({test_data_written, {proc, ao_message:id(SignedProcess, signed)}, {msg, ao_message:id(Msg, unsigned)}}),
+    hb_cache:write(Store, Msg),
+    ?event({test_data_written, {proc, hb_message:id(SignedProcess, signed)}, {msg, hb_message:id(Msg, unsigned)}}),
     {SignedProcess, Msg}.

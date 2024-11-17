@@ -6,7 +6,7 @@
 %%% MU-flow functions:
 -export([push/2]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% A simple scheduler scheme for AO.
 %%% The module is composed of three parts:
@@ -24,13 +24,13 @@ schedule(Item) ->
 %%% MU pushing client functions:
 push(Msg, State = #{ logger := Logger }) ->
     ?event(su_scheduling_message_for_push),
-    case ao_client:schedule(Msg) of
+    case hb_client:schedule(Msg) of
         {ok, Assignment} ->
-			?event({scheduled_message, ao_message:id(Assignment, unsigned)}),
+			?event({scheduled_message, hb_message:id(Assignment, unsigned)}),
             {ok, State#{assignment => Assignment}};
         Error ->
 			?event({error_scheduling_message, Error}),
-            ao_logger:log(Logger, Error),
+            hb_logger:log(Logger, Error),
             {error, Error}
     end;
 push(Arg1, Arg2) ->
@@ -51,24 +51,24 @@ init(State, _) ->
 end_of_schedule(State) -> {ok, update_schedule(State)}.
 
 update_schedule(State = #{ process := Proc }) ->
-    Store = maps:get(store, State, ao:get(store)),
+    Store = maps:get(store, State, hb:get(store)),
     CurrentSlot = maps:get(slot, State, 0),
     ToSlot = maps:get(to, State),
     ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint. (Done, right?)
-    Assignments = ao_client:get_assignments(ao_message:id(Proc, signed), CurrentSlot, ToSlot),
+    Assignments = hb_client:get_assignments(hb_message:id(Proc, signed), CurrentSlot, ToSlot),
     ?event({got_assignments_from_su,
 		[
 			{
 				element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
-				ao_message:id(A, signed),
-				ao_message:id(A, unsigned)
+				hb_message:id(A, signed),
+				hb_message:id(A, unsigned)
 			}
 		|| A <- Assignments ]}),
     lists:foreach(
         fun(Assignment) ->
-            ?event({writing_assignment_to_cache, ao_message:id(Assignment, unsigned)}),
-            ao_cache:write(Store, Assignment)
+            ?event({writing_assignment_to_cache, hb_message:id(Assignment, unsigned)}),
+            hb_cache:write(Store, Assignment)
         end,
         Assignments
     ),

@@ -1,6 +1,6 @@
 -module(dev_identity).
 -export([execute/1]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% The identity device: Simply return the message as it is.
 

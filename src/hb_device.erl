@@ -1,7 +1,7 @@
--module(ao_device).
+-module(hb_device).
 -export([from_message/1]).
 -export([call/3, call/4]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% This module is the root of the device call logic in hyperbeam.
 %%% 
@@ -64,9 +64,9 @@ from_id(ID, _Opts) when is_atom(ID) ->
     catch _:_ -> {error, not_loadable}
     end;
 from_id(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
-    case lists:member(ID, ao:get(loadable_devices)) of
+    case lists:member(ID, hb:get(loadable_devices)) of
         true ->
-            Msg = ao_client:download(ID),
+            Msg = hb_client:download(ID),
             RelBin = erlang:system_info(otp_release),
             case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
                 <<"BEAM/", RelBin/bitstring>> ->
@@ -80,7 +80,7 @@ from_id(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
         false -> {error, module_not_admissable}
     end;
 from_id(ID, _Opts) ->
-    case maps:get(ID, ao:get(preloaded_devices), unsupported) of
+    case maps:get(ID, hb:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
     end.

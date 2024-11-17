@@ -2,8 +2,8 @@
 -export([init/2, execute/3]).
 -export([is_user_signed/1]).
 -export([push/2]).
--include("include/ao.hrl").
--ao_debug(print).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 %%% A simple exemplar decentralized proof of authority consensus algorithm
 %%% for AO processes. This device is split into two flows, spanning three
@@ -216,13 +216,13 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
             MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
-			?event({poda_add_attestations_from, InitAuthorities, {self,ao:address()}}),
+			?event({poda_add_attestations_from, InitAuthorities, {self,hb:address()}}),
             Attestations = lists:filtermap(
                 fun(Address) ->
-                    case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
+                    case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
                             ?event({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
-                            Res = ao_client:compute(
+                            Res = hb_client:compute(
                                 ComputeNode,
                                 ar_bundles:id(Process, signed),
                                 ar_bundles:id(Assignment, signed),
@@ -237,7 +237,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                         _ -> false
                     end
                 end,
-                ?event(InitAuthorities -- [ao:address()])
+                ?event(InitAuthorities -- [hb:address()])
             ),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
@@ -313,8 +313,8 @@ pfiltermap(Pred, List) ->
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
-            ?event({poda_find_process, ao_message:id(Item#tx.target)}),
-            {ok, Proc} = ao_cache:read_message(Store, ao_message:id(Item#tx.target)),
+            ?event({poda_find_process, hb_message:id(Item#tx.target)}),
+            {ok, Proc} = hb_cache:read_message(Store, hb_message:id(Item#tx.target)),
             Proc;
         _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of

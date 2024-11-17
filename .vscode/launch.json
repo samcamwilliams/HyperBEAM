@@ -7,7 +7,7 @@
       "request": "launch",
       "cwd": "${workspaceRoot}",
       "preLaunchTask": "Rebar3 Compile",
-      "arguments": "-pa _build/default/lib/*/ebin -eval \"ssl:start(), application:ensure_all_started(ao).\"",
+      "arguments": "-pa _build/default/lib/*/ebin -eval \"ssl:start(), application:ensure_all_started(hb).\"",
       "stopOnEntry": false,
       "internalConsoleOptions": "openOnSessionStart"
     },

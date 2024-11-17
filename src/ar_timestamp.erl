@@ -6,9 +6,9 @@
 %%% refreshes it periodically.
 
 start() ->
-    TSServer = spawn(fun() -> cache(ao_client:arweave_timestamp()) end),
+    TSServer = spawn(fun() -> cache(hb_client:arweave_timestamp()) end),
     spawn(fun() -> refresher(TSServer) end),
-    register(?MODULE, TSServer),
+    %register(?MODULE, TSServer),
     TSServer.
 
 get() ->
@@ -30,9 +30,9 @@ cache(Current) ->
 refresher(TSServer) ->
     timer:sleep(?TIMEOUT),
     TS =
-        case ao:get(mode) of
+        case hb:get(mode) of
             debug -> { 0, 0, << 0:256 >> };
-            prod -> ao_client:arweave_timestamp()
+            prod -> hb_client:arweave_timestamp()
         end,
     TSServer ! {refresh, TS},
     refresher(TSServer).

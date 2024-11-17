@@ -1,4 +1,4 @@
--module(ao_client).
+-module(hb_client).
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
@@ -12,13 +12,13 @@
 %% Messaging Unit API
 -export([push/1, push/2, push/3]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% Arweave node API
 
 %% @doc Grab the latest block information from the Arweave gateway node.
 arweave_timestamp() ->
-    {ok, {{_, 200, _}, _, Body}} = httpc:request(ao:get(gateway) ++ "/block/current"),
+    {ok, {{_, 200, _}, _, Body}} = httpc:request(hb:get(gateway) ++ "/block/current"),
     {Fields} = jiffy:decode(Body),
     {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
     {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
@@ -30,7 +30,7 @@ arweave_timestamp() ->
 %% @doc Download the data associated with a given ID. See TODO below.
 download(ID) ->
     % TODO: Need to recreate full data items, not just data...
-    case httpc:request(ao:get(gateway) ++ "/" ++ ID) of
+    case httpc:request(hb:get(gateway) ++ "/" ++ ID) of
         {ok, {{_, 200, _}, _, Body}} -> #tx{data = Body};
         _Rest -> throw({id_get_failed, ID})
     end.
@@ -40,7 +40,7 @@ upload(Item) ->
     case
         httpc:request(
             post,
-            {ao:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
+            {hb:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
             [],
             []
         )
@@ -57,10 +57,10 @@ upload(Item) ->
 
 %% @doc Schedule a message on a process.
 schedule(Msg) ->
-    {ok, Node} = ao_router:find(schedule, ar_bundles:id(Msg, signed)),
+    {ok, Node} = hb_router:find(schedule, ar_bundles:id(Msg, signed)),
     schedule(Node, Msg).
 schedule(Node, Msg) ->
-    ao_http:post(
+    hb_http:post(
         Node,
         "/",
         Msg
@@ -74,7 +74,7 @@ assign(_ID) ->
 %% Send a Scheduler-Location message to the network so other nodes
 %% know where to find this address's SU.
 register_su(Location) ->
-    register_su(Location, ao:get(key_location)).
+    register_su(Location, hb:get(key_location)).
 register_su(Location, WalletLoc) when is_list(WalletLoc) ->
     register_su(Location, ar_wallet:load_keyfile(WalletLoc));
 register_su(Location, Wallet) ->
@@ -84,10 +84,10 @@ register_su(Location, Wallet) ->
             {"Variant", "ao.TN.1"},
             {"Type", "Scheduler-Location"},
             {"Url", Location},
-            {"Time-To-Live", integer_to_list(ao:get(scheduler_location_ttl))}
+            {"Time-To-Live", integer_to_list(hb:get(scheduler_location_ttl))}
         ]
     },
-    ao_client:upload(ar_bundles:sign_item(TX, Wallet)).
+    hb_client:upload(ar_bundles:sign_item(TX, Wallet)).
 
 %% @doc Ask a SU for the assignments on a process.
 get_assignments(ProcID) ->
@@ -95,14 +95,14 @@ get_assignments(ProcID) ->
 get_assignments(ProcID, From) ->
     get_assignments(ProcID, From, undefined).
 get_assignments(ProcID, From, To) ->
-    {ok, Node} = ao_router:find(schedule, ProcID),
+    {ok, Node} = hb_router:find(schedule, ProcID),
     get_assignments(Node, ProcID, From, To).
 get_assignments(Node, ProcID, From, To) ->
     {ok, #tx{data = Data}} =
-        ao_http:get(
+        hb_http:get(
             Node,
             "/?Action=Schedule&Process=" ++
-                binary_to_list(ao_message:id(ProcID)) ++
+                binary_to_list(hb_message:id(ProcID)) ++
                 case From of
                     undefined -> "";
                     _ -> "&From=" ++
@@ -147,7 +147,7 @@ compute(ProcIDBarer, Msg) when is_record(ProcIDBarer, tx) ->
 			% has a `Process` tag, then it is an _assignment_ -- not a
 			% process message. We extract the `Process` tag to use as the
 			% process ID.
-			{ok, Node} = ao_router:find(compute, ProcID),
+			{ok, Node} = hb_router:find(compute, ProcID),
 			compute(Node, ProcIDBarer, Msg);
 		false ->
 			case lists:keyfind(<<"Type">>, 1, ProcIDBarer#tx.tags) of
@@ -156,30 +156,30 @@ compute(ProcIDBarer, Msg) when is_record(ProcIDBarer, tx) ->
 					% a _process message_ -- not an assignment. Extract its ID and
 					% run on that.
 					{ok, Node} =
-						ao_router:find(compute, ProcID = ao_message:id(Msg, signed)),
+						hb_router:find(compute, ProcID = hb_message:id(Msg, signed)),
 					compute(Node, ProcID, Msg);
 				false ->
 					throw(
 						{unrecognized_message_to_compute_on,
-							ao_message:id(Msg, unsigned)}
+							hb_message:id(Msg, unsigned)}
 					)
 			end
 	end.
 compute(Node, ProcID, Slot) ->
     compute(Node, ProcID, Slot, #{}).
 compute(Node, ProcID, Slot, Opts) when is_binary(ProcID) ->
-    compute(Node, binary_to_list(ao_message:id(ProcID)), Slot, Opts);
+    compute(Node, binary_to_list(hb_message:id(ProcID)), Slot, Opts);
 compute(Node, ProcID, Slot, Opts) when is_integer(Slot) ->
     compute(Node, ProcID, integer_to_list(Slot), Opts);
 compute(Node, ProcID, AssignmentID, Opts) when is_binary(AssignmentID) ->
-    compute(Node, ProcID, binary_to_list(ao_message:id(AssignmentID)), Opts);
+    compute(Node, ProcID, binary_to_list(hb_message:id(AssignmentID)), Opts);
 compute(Node, ProcID, Slot, Opts) when is_list(Slot) ->
-    ao_http:get(
+    hb_http:get(
         Node,
         "/?Process=" ++ ProcID ++ "&Slot=" ++ Slot ++ path_opts(Opts, "&")
     );
 compute(Node, Assignment, Msg, Opts) when is_record(Assignment, tx) andalso is_record(Msg, tx) ->
-    ao_http:post(
+    hb_http:post(
         Node,
         "/" ++ path_opts(Opts, "?"),
         ar_bundles:normalize(#{
@@ -193,17 +193,17 @@ compute(Node, Assignment, Msg, Opts) when is_record(Assignment, tx) andalso is_r
 %% @doc Trigger the process of pushing a message around the network.
 push(Item) -> push(Item, #{}).
 push(Item, Opts) ->
-    {ok, Node} = ao_router:find(message, ar_bundles:id(Item, unsigned)),
+    {ok, Node} = hb_router:find(message, ar_bundles:id(Item, unsigned)),
     push(Node, Item, Opts).
 push(Node, Item, Opts) when Item#tx.target =/= <<>> ->
-    ao_http:post(
+    hb_http:post(
         Node,
         ["/", ar_util:encode(Item#tx.target), "/Push" ++ path_opts(Opts, "?")],
         Item
     );
 push(Node, Item, Opts) ->
-    ?event({calling_remote_push, ao_message:id(Item)}),
-    ao_http:post(
+    ?event({calling_remote_push, hb_message:id(Item)}),
+    hb_http:post(
         Node,
         ["/Push", path_opts(Opts, "?")],
         Item
@@ -216,13 +216,13 @@ push(Node, Item, Opts) ->
 cron(ProcID) ->
     cron(ProcID, cron_cursor(ProcID)).
 cron(ProcID, Cursor) ->
-    cron(ProcID, Cursor, ao:get(default_page_limit)).
+    cron(ProcID, Cursor, hb:get(default_page_limit)).
 cron(ProcID, Cursor, Limit) when is_binary(ProcID) ->
-    cron(binary_to_list(ao_message:id(ProcID)), Cursor, Limit);
+    cron(binary_to_list(hb_message:id(ProcID)), Cursor, Limit);
 cron(ProcID, undefined, RawLimit) ->
     cron(ProcID, cron_cursor(ProcID), RawLimit);
 cron(ProcID, Cursor, Limit) ->
-    {ok, Node} = ao_router:find(compute, ProcID),
+    {ok, Node} = hb_router:find(compute, ProcID),
     cron(Node, ProcID, Cursor, Limit).
 cron(Node, ProcID, Cursor, Limit) ->
     case
@@ -250,7 +250,7 @@ cron(Node, ProcID, Cursor, Limit) ->
 
 %% @doc See above: Should also be unnecessary.
 cron_cursor(ProcID) ->
-    {ok, Node} = ao_router:find(compute, ProcID),
+    {ok, Node} = hb_router:find(compute, ProcID),
     cron_cursor(Node, ProcID).
 cron_cursor(Node, ProcID) ->
     case httpc:request(Node ++ "/cron/" ++ ProcID ++ "?sort=DESC&limit=1") of

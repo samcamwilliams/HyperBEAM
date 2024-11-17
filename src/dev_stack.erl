@@ -5,8 +5,8 @@
 %%% A device that contains a stack of other devices, which it runs in order
 %%% when its `execute` function is called.
 
--include("include/ao.hrl").
--ao_debug(print).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 info() ->
     #{
@@ -26,7 +26,7 @@ from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
 from_process([]) -> [];
 from_process([{<<"Device">>, DevID}| Tags]) ->
-    case ao_device:from_id(DevID) of
+    case hb_device:from_id(DevID) of
         {ok, ModName} ->
             {Params, Rest} = extract_params(Tags),
             [{ModName, Params, undefined}|from_process(Rest)];
@@ -50,7 +50,7 @@ create(Pre, Proc, Post) ->
     Devs = normalize_list(Pre) ++ from_process(Proc) ++ normalize_list(Post),
     lists:map(
         fun({{DevMod, DevS, Params}, N}) ->
-            case ao_device:from_id(DevMod) of
+            case hb_device:from_id(DevMod) of
                 {ok, Mod} ->
                     {N, Mod, DevS, Params};
                 Else -> throw(Else)
@@ -118,7 +118,7 @@ do_call([], S, _FuncName, _Opts) ->
     {ok, S};
 do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ arg_prefix := ArgPrefix }, FuncName, Opts) ->
     %?event({DevMod, FuncName, {slot, maps:get(slot, S, "[no_slot]")}, {pass, maps:get(pass, S, "[no_pass_num]")}}),
-    case ao_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
+    case hb_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);
         {skip, NewS} when is_map(NewS) ->

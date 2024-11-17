@@ -1,7 +1,7 @@
--module(ao_logger).
+-module(hb_logger).
 -export([start/0, start/1, log/2, register/1, report/1]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 -record(state, {
     client = undefined,
@@ -63,7 +63,7 @@ loop(State) ->
 console(#state { console = false }, _) ->
     not_printing;
 console(S, {Status, Type, Details}) when is_record(Details, tx) ->
-    console(S, {Status, Type, ao_message:id(Details)});
+    console(S, {Status, Type, hb_message:id(Details)});
 console(_S, {Status, Type, Details}) ->
     io:format("### MU PUSH REPORT ~p ###~n~p: ~p~n~p~n~n",
         [self(), Status, Type, Details]);

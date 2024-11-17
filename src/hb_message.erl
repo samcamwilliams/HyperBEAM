@@ -1,6 +1,6 @@
--module(ao_message).
+-module(hb_message).
 -export([id/1, id/2, load/2, serialize/2, deserialize/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
@@ -21,9 +21,9 @@ id(Data, _) when is_list(Data) ->
 
 load(Store, ID) when is_binary(ID)
 		andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
-	ao_cache:read_message(Store, ID);
+	hb_cache:read_message(Store, ID);
 load(Store, Path) ->
-	ao_cache:read(Store, Path).
+	hb_cache:read(Store, Path).
 
 serialize(M, json) ->
     jiffy:encode(ar_bundles:item_to_json_struct(M));

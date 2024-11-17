@@ -3,7 +3,7 @@
          find_value/3]).
 -export([remove_common/2]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->

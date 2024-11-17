@@ -1,6 +1,6 @@
--module(ao_remote_node_store).
+-module(hb_store_remote_node).
 -export([scope/1, type/2, read/2, resolve/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% A store module that reads data from another AO node.
 %%% Notably, this store only provides the _read_ side of the store interface.
@@ -26,9 +26,9 @@ type(Opts = #{ node := Node }, Key) ->
 read(Opts, Key) when is_binary(Key) ->
     read(Opts, binary_to_list(Key));
 read(Opts = #{ node := Node }, Key) ->
-    Path = Node ++ "/data?Subpath=" ++ uri_string:quote(ao_store:join(Key)),
+    Path = Node ++ "/data?Subpath=" ++ uri_string:quote(hb_store:join(Key)),
     ?event({reading, Key, Path, Opts}),
-    case ao_http:get_binary(Path) of
+    case hb_http:get_binary(Path) of
         {ok, Bundle} ->
             case lists:keyfind(<<"Status">>, 1, Bundle#tx.tags) of
                 {<<"Status">>, <<"404">>} ->

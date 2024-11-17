@@ -1,9 +1,9 @@
--module(ao_beamr_io).
+-module(hb_beamr_io).
 -export([size/1, read/3, write/3]).
 -export([read_string/2, write_string/2]).
 -export([malloc/2, free/2]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 size(Port) ->
     Port ! {self(), {command, term_to_binary({size})}},
@@ -50,7 +50,7 @@ do_read_string(Port, Offset, ChunkSize) ->
     end.
 
 malloc(Port, Size) ->
-    case ao_beamr:call(Port, "malloc", [Size]) of
+    case hb_beamr:call(Port, "malloc", [Size]) of
         {ok, [0]} ->
             ?event({malloc_failed, Size}),
             {error, malloc_failed};
@@ -62,7 +62,7 @@ malloc(Port, Size) ->
     end.
 
 free(Port, Ptr) ->
-    case ao_beamr:call(Port, "free", [Ptr]) of
+    case hb_beamr:call(Port, "free", [Ptr]) of
         {ok, Res} ->
             ?event({free_result, Res}),
             ok;

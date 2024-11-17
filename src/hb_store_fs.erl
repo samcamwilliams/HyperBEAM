@@ -1,10 +1,10 @@
--module(ao_fs_store).
--behavior(ao_store).
+-module(hb_store_fs).
+-behavior(hb_store).
 -export([start/1, stop/1, reset/1, scope/1]).
 -export([type/2, read/2, write/3, list/2]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% A key-value store abstraction, such that the underlying implementation
 %%% can be swapped out easily. The default implementation is a file-based
@@ -61,13 +61,13 @@ list(Opts, Path) ->
 %%
 %% will resolve "a/b/c" to "Correct data".
 resolve(Opts, RawPath) ->
-    Res = resolve(Opts, "", filename:split(ao_store:join(RawPath))),
+    Res = resolve(Opts, "", filename:split(hb_store:join(RawPath))),
     ?event({resolved, RawPath, Res}),
     Res.
 resolve(_, CurrPath, []) ->
-    ao_store:join(CurrPath);
+    hb_store:join(CurrPath);
 resolve(Opts, CurrPath, [Next|Rest]) ->
-    PathPart = ao_store:join([CurrPath, Next]),
+    PathPart = hb_store:join([CurrPath, Next]),
     ?event({resolving, {accumulated_path, CurrPath}, {next_segment, Next}, {generated_partial_path_to_test, PathPart}}),
     case file:read_link(add_prefix(Opts, PathPart)) of
         {ok, RawLink} ->
@@ -78,10 +78,10 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
     end.
 
 type(#{ prefix := DataDir }, Key) ->
-    type(ao_store:join([DataDir, Key])).
+    type(hb_store:join([DataDir, Key])).
 type(Path) ->
     ?event({type, Path}),
-    case file:read_file_info(Joint = ao_store:join(Path)) of
+    case file:read_file_info(Joint = hb_store:join(Path)) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
         _ ->
@@ -94,7 +94,7 @@ type(Path) ->
     end.
 
 make_group(#{ prefix := DataDir }, Path) ->
-    P = ao_store:join([DataDir, Path]),
+    P = hb_store:join([DataDir, Path]),
     ?event({making_group, P}),
     ok = filelib:ensure_dir(P).
 
@@ -111,7 +111,7 @@ make_link(Opts, Existing, New) ->
 
 %% @doc Add the directory prefix to a path.
 add_prefix(#{ prefix := Prefix }, Path) ->
-	ao_store:join([Prefix, Path]).
+	hb_store:join([Prefix, Path]).
 
 %% @doc Remove the directory prefix from a path.
 remove_prefix(#{ prefix := Prefix }, Path) ->

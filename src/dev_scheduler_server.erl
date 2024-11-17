@@ -9,15 +9,15 @@
         current,
         wallet,
         hash_chain = <<>>,
-        store = ao:get(store)
+        store = hb:get(store)
     }
 ).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
 start(ProcID, Wallet) ->
-    start(ProcID, Wallet, ao:get(store)).
+    start(ProcID, Wallet, hb:get(store)).
 start(ProcID, Wallet, Store) ->
     {Current, HashChain} = slot_from_cache(ProcID),
     spawn(
@@ -35,12 +35,12 @@ start(ProcID, Wallet, Store) ->
     ).
 
 slot_from_cache(ProcID) ->
-    case ao_cache:assignments(ao:get(store), ProcID) of
+    case hb_cache:assignments(hb:get(store), ProcID) of
         [] ->
             {-1, <<>>};
         Assignments ->
             AssignmentNum = lists:max(Assignments),
-            {ok, Assignment} = ao_cache:read_assignment(ao:get(store), ProcID, AssignmentNum),
+            {ok, Assignment} = hb_cache:read_assignment(hb:get(store), ProcID, AssignmentNum),
             {
                 AssignmentNum,
                 ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
@@ -66,11 +66,11 @@ get_current_slot(ProcID) ->
 get_assignments(ProcID, From, undefined) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
-    {ok, From} = ao_cache:read_assignment(ao:get(store), ProcID, From),
+    {ok, From} = hb_cache:read_assignment(hb:get(store), ProcID, From),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, From#tx.tags),
     get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
-    {ok, Assignment} = ao_cache:read_assignment(ao:get(store), ProcID, RequestedTo),
+    {ok, Assignment} = hb_cache:read_assignment(hb:get(store), ProcID, RequestedTo),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     get_assignments(ProcID, From, binary_to_integer(Slot));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
@@ -88,7 +88,7 @@ get_assignments(ProcID, From, RequestedTo) ->
 do_get_assignments(_ProcID, From, To) when From > To ->
     [];
 do_get_assignments(ProcID, From, To) ->
-    case ao_cache:read_assignment(ao:get(store), ProcID, From) of
+    case hb_cache:read_assignment(hb:get(store), ProcID, From) of
         not_found ->
             [];
         {ok, Assignment} ->
@@ -131,44 +131,44 @@ do_assign(State, Message, ReplyPID) ->
                 tags = [
                     {<<"Data-Protocol">>, <<"ao">>},
                     {<<"Variant">>, <<"ao.TN.2">>},
-                    {<<"Process">>, ao_message:id(State#state.id)},
+                    {<<"Process">>, hb_message:id(State#state.id)},
                     {<<"Epoch">>, <<"0">>},
                     {<<"Slot">>, list_to_binary(integer_to_list(NextNonce))},
-                    {<<"Message">>, ao_message:id(Message, signed)},
+                    {<<"Message">>, hb_message:id(Message, signed)},
                     {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
                     {<<"Block-Hash">>, Hash},
                     {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
                     {<<"Timestamp">>, list_to_binary(integer_to_list(erlang:system_time(millisecond)))}, % Local time on the SU, not Arweave
-                    {<<"Hash-Chain">>, ao_message:id(HashChain)}
+                    {<<"Hash-Chain">>, hb_message:id(HashChain)}
                 ]
             }, State#state.wallet),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
-            ao_cache:write_assignment(State#state.store, Assignment),
+            hb_cache:write_assignment(State#state.store, Assignment),
             ?event(starting_message_write),
-            ao_cache:write(State#state.store, Message),
+            hb_cache:write(State#state.store, Message),
             % ?event(message_written),
             % ?event(assignment_after_write),
             % ar_bundles:print(Assignment),
             % ?event(message_after_assignment_written),
             % ar_bundles:print(Message),
             % ?event(read_from_disk),
-            % ar_bundles:print(ao_cache:read(ao_store:scope(State#state.store, local), ao_message:id(Message, unsigned))),
+            % ar_bundles:print(hb_cache:read(hb_store:scope(State#state.store, local), hb_message:id(Message, unsigned))),
             maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
-            ao_client:upload(Assignment),
-            ao_client:upload(Message),
+            hb_client:upload(Assignment),
+            hb_client:upload(Message),
             maybe_inform_recipient(remote_confirmation, ReplyPID, Message, Assignment)
         end
     ),
     State#state{current = NextNonce, hash_chain = HashChain}.
 
 maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
-    case ao:get(scheduling_mode, remote_confirmation) of
+    case hb:get(scheduling_mode, remote_confirmation) of
         Mode -> ReplyPID ! {scheduled, Message, Assignment};
         _ -> ok
     end.
 
 next_hashchain(HashChain, Message) ->
-    crypto:hash(sha256, << HashChain/binary, (ao_message:id(Message, signed))/binary >>).
+    crypto:hash(sha256, << HashChain/binary, (hb_message:id(Message, signed))/binary >>).
 
 %% TESTS
 
@@ -182,9 +182,9 @@ new_proc() ->
     ?event(2),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
     ?event(3),
-    dev_scheduler_registry:find(binary_to_list(ao_message:id(SignedItem, signed)), true),
+    dev_scheduler_registry:find(binary_to_list(hb_message:id(SignedItem, signed)), true),
     ?event(4),
-    schedule(ID = binary_to_list(ao_message:id(SignedItem, signed)), SignedItem),
+    schedule(ID = binary_to_list(hb_message:id(SignedItem, signed)), SignedItem),
     ?event(5),
     schedule(ID, SignedItem2),
     ?event(6),

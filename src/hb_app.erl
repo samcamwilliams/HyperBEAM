@@ -3,27 +3,27 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(ao_app).
+-module(hb_app).
 
 -behaviour(application).
 
 -export([start/2, stop/1]).
 -export([attest_key/0]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 start(_StartType, _StartArgs) ->
     attest_key(),
-    ao_sup:start_link(),
+    hb_sup:start_link(),
     ok = dev_scheduler_registry:start(),
     _TimestampServer = ar_timestamp:start(),
-    {ok, _} = ao_http_router:start().
+    {ok, _} = hb_http_router:start().
 
 stop(_State) ->
     ok.
 
 attest_key() ->
-    W = ao:wallet(),
+    W = hb:wallet(),
     Addr = ar_wallet:to_address(W),
 
     % Pad the address to 32 bytes (64 hex characters) for the TPM nonce
@@ -54,14 +54,14 @@ attest_key() ->
                         #tx{
                             tags = [
                                 {<<"Type">>, <<"TEE-Attestation">>},
-                                {<<"Address">>, ao_message:id(Addr)}
+                                {<<"Address">>, hb_message:id(Addr)}
                             ],
                             data = BinaryResult
                         },
                         W
                     ),
                     ?event(Signed),
-                    ao_client:upload(Signed),
+                    hb_client:upload(Signed),
                     ok;
                 false ->
                     {error, "Unexpected output format from gotpm attest command"}

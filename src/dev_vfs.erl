@@ -1,6 +1,6 @@
 -module(dev_vfs).
 -export([init/2, execute/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -record(fd, {
@@ -77,7 +77,7 @@ execute(_M, S) ->
 
 path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
     ?event({path_open, FDPtr, LookupFlag, PathPtr}),
-    Path = ao_beamr_io:read_string(Port, PathPtr),
+    Path = hb_beamr_io:read_string(Port, PathPtr),
     ?event({path_open, Path}),
     File =
         maps:get(
@@ -103,7 +103,7 @@ fd_write(S, Port, Args) ->
     ?event({fd_write, Port, Args}),
     {S, [0]}.
 fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
-    ao_beamr_io:write(
+    hb_beamr_io:write(
         Port,
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
@@ -112,7 +112,7 @@ fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
 fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, Ptr),
-    {ok, Data} = ao_beamr_io:read(Port, VecPtr, Len),
+    {ok, Data} = hb_beamr_io:read(Port, VecPtr, Len),
     Before = binary:part(File#fd.data, 0, File#fd.offset),
     After = binary:part(File#fd.data, File#fd.offset, byte_size(File#fd.data) - File#fd.offset),
     NewFile = File#fd{
@@ -130,14 +130,14 @@ fd_read(S, Port, Args) ->
     fd_read(S, Port, Args, 0).
 fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
     ?event({{completed_read, FD, BytesRead}}),
-    ao_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
+    hb_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
     {S, [0]};
 fd_read(S = #{ vfs := FDs }, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
     ?event({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, VecsPtr),
     {FileBytes, NewFile} = get_bytes(File, Len),
-    ok = ao_beamr_io:write(Port, VecPtr, FileBytes),
+    ok = hb_beamr_io:write(Port, VecPtr, FileBytes),
     fd_read(
         S#{vfs => maps:put(FD, NewFile, FDs)},
         Port,
@@ -154,17 +154,17 @@ get_bytes(File = #fd { data = Function }, Size) ->
     {Bin, NewFile}.
 
 parse_iovec(Port, Ptr) ->
-    {ok, VecStruct} = ao_beamr_io:read(Port, Ptr, 16),
+    {ok, VecStruct} = hb_beamr_io:read(Port, Ptr, 16),
     <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
     {BinPtr, Len}.
 
 write_file_test() ->
-    ao_test:init(),
-    {Proc, Msg} = ao_test:generate_test_data(
+    hb_test:init(),
+    {Proc, Msg} = hb_test:generate_test_data(
         <<"file = io.open(\"/dev/stdin\", \"r\")
         ourline = file:read(),
         file:close(file)
         print(ourline)">>
     ),
-    {ok, #{ <<"/Data">> := #tx { data = Data } }} = ao_test:run(Proc, Msg),
+    {ok, #{ <<"/Data">> := #tx { data = Data } }} = hb_test:run(Proc, Msg),
     ?assertEqual(Data, <<"file = io.open(\"/dev/stdin\", \"r\")">>).

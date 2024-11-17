@@ -1,4 +1,4 @@
--module(ao).
+-module(hb).
 %%% Configuration and environment:
 -export([config/0, now/0, get/1, get/2, build/0]).
 %%% Debugging tools:
@@ -46,22 +46,22 @@
 %%% 
 %%% The core abstractions of the Hyperbeam node are broadly as follows:
 %%% 
-%%% 1. The `ao` module manages the node's configuration, environment variables,
+%%% 1. The `hb` module manages the node's configuration, environment variables,
 %%%    and debugging tools.
-%%% 2. The `ao_http` and `ao_http_router` modules manage all HTTP-related
-%%%    functionality. `ao_http_router` handles turning received HTTP requests
+%%% 2. The `hb_http` and `hb_http_router` modules manage all HTTP-related
+%%%    functionality. `hb_http_router` handles turning received HTTP requests
 %%%    into messages and applying those messages with the appropriate devices.
-%%%    `ao_http` handles making requests and responding with messages. `cowboy`
+%%%    `hb_http` handles making requests and responding with messages. `cowboy`
 %%%    is used to implement the actual HTTP server.
-%%% 3. `ao_device` implements the computation logic of the node: A mechanism
+%%% 3. `hb_device` implements the computation logic of the node: A mechanism
 %%%    for resolving messages to other messages, via the application of logic
-%%%    implemented in devices. `ao_device` also manages the loading of Erlang
+%%%    implemented in devices. `hb_device` also manages the loading of Erlang
 %%%    modules for each device into the node's environment. There are many
 %%%    different default devices implemented in the hyperbeam node, using the
 %%%    namespace `dev_*`. Some of the critical components are:
 %%%    - `dev_meta`: The device responsible for managing all requests to the
 %%%      node. This device takes a message and loads the appropriate devices to
-%%%      execute it. The `ao_http_router` uses this device to resolve incoming
+%%%      execute it. The `hb_http_router` uses this device to resolve incoming
 %%%      HTTP requests.
 %%%    - `dev_stack`: The device responsible for creating and executing stacks
 %%%      of other devices on messages that request it. There are many uses for
@@ -69,12 +69,12 @@
 %%%      typically require it.
 %%%    - `dev_p4`: The device responsible for managing payments for the services
 %%%      provided by the node.
-%%% 4. `ao_store`, `ao_cache` and the store implementations forms a layered
-%%%    system for managing the node's access to persistent storage. `ao_cache`
+%%% 4. `hb_store`, `hb_cache` and the store implementations forms a layered
+%%%    system for managing the node's access to persistent storage. `hb_cache`
 %%%    is used as a resolution mechanism for reading and writing messages, while
-%%%    `ao_store` provides an abstraction over the underlying persistent key-value
-%%%    byte storage mechanisms. Example `ao_store` mechanisms can be found in
-%%%    `ao_fs_store` and `ao_remote_node_store`.
+%%%    `hb_store` provides an abstraction over the underlying persistent key-value
+%%%    byte storage mechanisms. Example `hb_store` mechanisms can be found in
+%%%    `hb_fs_store` and `hb_remote_node_store`.
 %%% 5. `ar_*` modules implement functionality related to the base-layer Arweave
 %%%    protocol and are largely unchanged from their counterparts in the Arweave
 %%%    node codebase presently maintained by the Digital History Association
@@ -165,25 +165,25 @@ config() ->
 		client_error_strategy => throw,
         % Dev options
         local_store =>
-            [{ao_fs_store, #{ prefix => "TEST-data" }}],
+            [{hb_fs_store, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_print => true
     }.
 
 -define(ENV_KEYS,
     #{
-        key_location => {"AO_KEY", "hyperbeam-key.json"},
-        http_port => {"AO_PORT", fun erlang:list_to_integer/1, "8734"},
+        key_location => {"hb_KEY", "hyperbeam-key.json"},
+        http_port => {"hb_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
-            {"AO_STORE",
+            {"hb_STORE",
                 fun(Dir) ->
                     [
                         {
-                            ao_fs_store,
+                            hb_fs_store,
                             #{ prefix => Dir }
                         },
                         {
-                            ao_remote_node_store,
+                            hb_remote_node_store,
                             #{ node => "http://localhost:8734" }
                         }
                     ]
@@ -194,11 +194,11 @@ config() ->
 ).
 
 wallet() ->
-    wallet(ao:get(key_location)).
+    wallet(hb:get(key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} -> ar_wallet:load_keyfile(Location);
-        {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, ao:get(key_location))
+        {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, hb:get(key_location))
     end.
 
 address() ->
@@ -226,16 +226,16 @@ event(X) -> event(X, "").
 event(X, Mod) -> event(X, Mod, undefined).
 event(X, ModStr, undefined) -> event(X, ModStr, "");
 event(X, ModAtom, Line) when is_atom(ModAtom) ->
-    case lists:member({ao_debug, [print]}, ModAtom:module_info(attributes)) of
+    case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
         true -> debug_print(X, atom_to_list(ModAtom), Line);
         false -> 
-            case lists:keyfind(ao_debug, 1, ModAtom:module_info(attributes)) of
-                {ao_debug, [no_print]} -> X;
+            case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
+                {hb_debug, [no_print]} -> X;
                 _ -> event(X, atom_to_list(ModAtom), Line)
             end
     end;
 event(X, ModStr, Line) ->
-    case ao:get(debug_print) of
+    case hb:get(debug_print) of
         true -> debug_print(X, ModStr, Line);
         false -> X
     end.
@@ -277,20 +277,20 @@ format_tuple(Tuple) ->
 %% as the second argument.
 read(ID) -> read(ID, local).
 read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
-    read(ID, ao_store:scope(ao:get(store), ScopeAtom));
+    read(ID, hb_store:scope(hb:get(store), ScopeAtom));
 read(ID, Store) ->
-    ao_cache:read_message(Store, ao_message:id(ID)).
+    hb_cache:read_message(Store, hb_message:id(ID)).
 
 %% @doc Utility function to throw an error if the current mode is prod and
 %% non-prod ready code is being executed. You can find these in the codebase
 %% by looking for ?NO_PROD calls.
 no_prod(X, Mod, Line) ->
-    case ao:get(mode) of
+    case hb:get(mode) of
         prod ->
             io:format(standard_error,
                 "=== DANGER: NON-PROD READY CODE INVOKED IN PROD ===~n", []),
             io:format(standard_error, "~w:~w:       ~p~n", [Mod, Line, X]),
-			case ao:get(exit_on_no_prod) of
+			case hb:get(exit_on_no_prod) of
 				true -> init:stop();
 				false -> throw(X)
 			end;

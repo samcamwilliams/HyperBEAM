@@ -11,7 +11,7 @@
 -export([normalize/1]).
 -export([print/1, format/1, format/2]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -73,7 +73,7 @@ format(Item, Indent) when is_record(Item, tx) ->
     format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
-                Target -> ao_message:id(Target)
+                Target -> hb_message:id(Target)
             end
         ], Indent + 1) ++
     format_line("Tags:", Indent + 1) ++
@@ -1146,8 +1146,8 @@ test_serialize_deserialize_deep_signed_bundle() ->
     ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
     ?assert(verify_item(Item3)),
     % Test that we can write to disk and read back the same ID.
-    ao_cache:write(ao:get(local_store), Item2),
-    {ok, FromDisk} = ao_cache:read_message(ao:get(local_store), ar_util:encode(id(Item2, unsigned))),
+    hb_cache:write(hb:get(local_store), Item2),
+    {ok, FromDisk} = hb_cache:read_message(hb:get(local_store), ar_util:encode(id(Item2, unsigned))),
     format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.

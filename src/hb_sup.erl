@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc supersu top level supervisor.
+%% @doc The HyperBEAM top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
--module(ao_sup).
+-module(hb_sup).
 
 -behaviour(supervisor).
 

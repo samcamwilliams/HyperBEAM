@@ -1,11 +1,11 @@
--module(ao_store).
+-module(hb_store).
 -export([behavior_info/1]).
 -export([start/1, stop/1, reset/1]).
 -export([filter/2, scope/2, sort/2]).
 -export([type/2, read/2, write/3, list/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store

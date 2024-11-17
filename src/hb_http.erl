@@ -1,15 +1,15 @@
--module(ao_http).
+-module(hb_http).
 -export([start/0]).
 -export([get/1, get/2, get_binary/1]).
 -export([post/2, post/3, post_binary/2]).
 -export([reply/2, reply/3]).
 -export([tx_to_status/1, req_to_tx/1]).
--include("include/ao.hrl").
--ao_debug(print).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 %%% Hyperbeam's core HTTP request/reply functionality. The functions in this
 %%% module generally take a message in request and return a response in message
-%%% form. This module is mostly used by ao_client, but can also be used by other
+%%% form. This module is mostly used by hb_client, but can also be used by other
 %%% modules that need to make HTTP requests.
 
 start() ->
@@ -41,7 +41,7 @@ get_binary(URL) ->
 %% resulting message in deserialized form.
 post(Host, Path, Message) -> post(Host ++ Path, Message).
 post(URL, Message) when not is_binary(Message) ->
-    ?event({http_post, ao_message:id(Message, unsigned), ao_message:id(Message, signed), URL}),
+    ?event({http_post, hb_message:id(Message, unsigned), hb_message:id(Message, signed), URL}),
 	post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
 post(URL, Message) ->
 	case post_binary(URL, Message) of
@@ -81,7 +81,7 @@ reply(Req, Status, Message) ->
             Status,
             maps:get(path, Req, undefined_path),
             case is_record(Message, tx) of
-                true -> ao_message:id(Message);
+                true -> hb_message:id(Message);
                 false -> data_body
             end
         }

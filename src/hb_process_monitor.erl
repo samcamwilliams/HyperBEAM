@@ -1,7 +1,7 @@
--module(ao_process_monitor).
+-module(hb_process_monitor).
 -export([start/1, start/2, start/3, stop/1]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 -record(state, {
     proc_id,
@@ -10,11 +10,11 @@
 }).
 
 start(ProcID) ->
-    start(ProcID, ao:get(default_cron_rate)).
+    start(ProcID, hb:get(default_cron_rate)).
 start(ProcID, Rate) ->
-    start(ProcID, Rate, ao_client:cron_cursor(ProcID)).
+    start(ProcID, Rate, hb_client:cron_cursor(ProcID)).
 start(ProcID, Rate, Cursor) ->
-    Logger = ao_logger:start(),
+    Logger = hb_logger:start(),
     Monitor = spawn(
         fun() ->
             server(
@@ -26,9 +26,9 @@ start(ProcID, Rate, Cursor) ->
             )
         end),
     Ticker = spawn(fun() -> ticker(Monitor, Rate) end),
-    ao_logger:register(Monitor),
-    ao_logger:log(Monitor, {ok, started_monitor, {ProcID, Rate, Cursor}}),
-    ao_logger:register(Ticker),
+    hb_logger:register(Monitor),
+    hb_logger:log(Monitor, {ok, started_monitor, {ProcID, Rate, Cursor}}),
+    hb_logger:register(Ticker),
     {Monitor, Logger}.
 
 stop(PID) ->
@@ -41,7 +41,7 @@ server(State) ->
     end.
 
 handle_crons(State) ->
-    case ao_client:cron(State#state.proc_id, State#state.cursor) of
+    case hb_client:cron(State#state.proc_id, State#state.cursor) of
         {ok, HasNextPage, Results, Cursor} ->
             lists:map(
                 fun(Res) -> mu_push:start(Res, State#state.logger) end,
@@ -53,7 +53,7 @@ handle_crons(State) ->
                 false -> handle_crons(NS)
             end;
         Error ->
-            ao_logger:log(State#state.logger, Error),
+            hb_logger:log(State#state.logger, Error),
             State
     end.
 

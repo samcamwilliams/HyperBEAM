@@ -1,6 +1,6 @@
 -module(dev_mu).
 -export([push/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% The main pushing logic for messages around the system.s
 
@@ -20,34 +20,34 @@ push(CarrierMsg, State) ->
             _ -> CarrierMsg
         end,
 	?event({starting_push_for,
-		{unsigned, ao_message:id(Msg, unsigned)},
-		{signed, ao_message:id(Msg, signed)},
-		{target, ao_message:id(Msg#tx.target)}
+		{unsigned, hb_message:id(Msg, unsigned)},
+		{signed, hb_message:id(Msg, signed)},
+		{target, hb_message:id(Msg#tx.target)}
 	}),
     ?no_prod(fix_mu_push_validation),
     case ar_bundles:verify_item(Msg) of
         _ ->
             Logger =
                 case maps:get(logger, State, undefined) of
-                    undefined -> ao_logger:start();
+                    undefined -> hb_logger:start();
                     X -> X
                 end,
-            ao_logger:register(Logger),
+            hb_logger:register(Logger),
 			fork(
 				#result {
 					messages = [Msg]
 				},
                 State#{
 					depth => 0,
-                    store => maps:get(store, State, ao:get(store)),
+                    store => maps:get(store, State, hb:get(store)),
                     logger => Logger,
-                    wallet => maps:get(wallet, State, ao:wallet())
+                    wallet => maps:get(wallet, State, hb:wallet())
                 }
 			),
 			% TODO: Implement trace waiting.
 			ResTX = ar_bundles:sign_item(
 				#tx{ tags = [{<<"Status">>, <<"200">>}]},
-				ao:wallet()),
+				hb:wallet()),
 			{ok, #{ results => ResTX }};
         false ->
             {error, cannot_push_invalid_message}
@@ -66,14 +66,14 @@ push_messages(upload, Messages, Opts) ->
                 fun() ->
 					?event(
 						{mu_forking_for,
-							{unsigned, ao_message:id(Message, unsigned)},
-							{signed, ao_message:id(Message, signed)},
-							{target, ao_message:id(Message#tx.target)},
+							{unsigned, hb_message:id(Message, unsigned)},
+							{signed, hb_message:id(Message, signed)},
+							{target, hb_message:id(Message#tx.target)},
 							{logger, maps:get(logger, Opts, undefined)}
 						}
 					),
 					Stack = dev_stack:create(?PUSH_DEV_STACK),
-                    {ok, Results} = ao_device:call(
+                    {ok, Results} = hb_device:call(
 						{dev_stack, execute},
 						push,
 						[
@@ -81,15 +81,15 @@ push_messages(upload, Messages, Opts) ->
 								devices => Stack,
 								message => Message,
 								logger => maps:get(logger, Opts, undefined),
-								store => maps:get(store, Opts, ao:get(store)),
-								wallet => maps:get(wallet, Opts, ao:wallet())
+								store => maps:get(store, Opts, hb:get(store)),
+								wallet => maps:get(wallet, Opts, hb:wallet())
 							}
 						]
 					),
 					?event({pushing_result_for_computed_message,
-						{unsigned, ao_message:id(Message, unsigned)},
-						{signed, ao_message:id(Message, signed)},
-						{target, ao_message:id(Message#tx.target)}
+						{unsigned, hb_message:id(Message, unsigned)},
+						{signed, hb_message:id(Message, signed)},
+						{target, hb_message:id(Message#tx.target)}
 					}),
 					handle_push_result(Results, Opts)
                 end
@@ -100,8 +100,8 @@ push_messages(upload, Messages, Opts) ->
 push_messages(attest, Assignments, #{ logger := Logger }) ->
     lists:foreach(
         fun(Assignment) ->
-            ao_logger:log(Logger, {ok, "Assigning ", ar_bundles:id(Assignment, signed)}),
-            ao_client:assign(Assignment),
+            hb_logger:log(Logger, {ok, "Assigning ", ar_bundles:id(Assignment, signed)}),
+            hb_client:assign(Assignment),
 			?no_prod("After assigning, don't we want to push the message?")
         end,
         maybe_to_list(Assignments)

@@ -1,17 +1,17 @@
 -module(dev_cu).
 -export([push/2, execute/2]).
 -include_lib("eunit/include/eunit.hrl").
--include("include/ao.hrl").
--ao_debug(print).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
 	?event(
 		{pushing_message,
-			{assignment, ao_message:id(Assignment, unsigned)},
-			{message, ao_message:id(Msg, unsigned)}
+			{assignment, hb_message:id(Assignment, unsigned)},
+			{message, hb_message:id(Msg, unsigned)}
 		}
 	),
-    case ao_client:compute(Assignment, Msg) of
+    case hb_client:compute(Assignment, Msg) of
         {ok, Results} ->
             ?event(computed_results),
             {ok, S#{ results => Results }};
@@ -21,21 +21,21 @@ push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
 
 execute(CarrierMsg, S) ->
     MaybeBundle = ar_bundles:hd(CarrierMsg),
-    Store = ao:get(store),
-    Wallet = ao:wallet(),
+    Store = hb:get(store),
+    Wallet = hb:wallet(),
     {ok, Results} =
         case MaybeBundle of
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-				?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, ao_message:id(Assignment, signed)}}),
-                ao_process:result(ProcID, ao_message:id(Assignment, signed), Store, Wallet);
+				?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_message:id(Assignment, signed)}}),
+                hb_process:result(ProcID, hb_message:id(Assignment, signed), Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->
                         {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
 						?event({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
-                        ao_process:result(Process, Slot, Store, Wallet);
+                        hb_process:result(Process, Slot, Store, Wallet);
                     false ->
                         {error, no_viable_computation}
                 end
@@ -68,7 +68,7 @@ execute(CarrierMsg, S) ->
                                     ],
                                     data = <<>>
                                 },
-                                ao:wallet()
+                                hb:wallet()
                             )
                         }}
                 end;

@@ -1,8 +1,8 @@
 -module(dev_scheduler_registry).
 -export([start/0, find/1, find/2, get_wallet/0, get_processes/0]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
--ao_debug(print).
+-hb_debug(print).
 
 %%% A simple registry for local services in AO, using pg. Currently,
 %%% only SU processes are supported.
@@ -13,7 +13,7 @@ start() ->
 
 get_wallet() ->
     % TODO: We might want to use a different wallet per SU later.
-    ao:wallet().
+    hb:wallet().
 
 find(ProcID) -> find(ProcID, false).
 find(ProcID, GenIfNotHosted) when is_binary(ProcID) ->

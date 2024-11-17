@@ -4,7 +4,7 @@
 %%% A device that inserts new messages into the schedule to allow processes
 %%% to passively 'call' themselves without user interaction.
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 -record(state, {
     time,

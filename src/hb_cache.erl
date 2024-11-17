@@ -1,15 +1,15 @@
--module(ao_cache).
+-module(hb_cache).
 -export([
     read_output/3, write/2, write_output/4, write_assignment/2,
     outputs/2, assignments/2, latest/2, latest/3, latest/4, 
     read/2, lookup/2, read_assignment/3, read_message/2
 ]).
--include("src/include/ao.hrl").
+-include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
--define(TEST_STORE_MODULE, ao_fs_store).
+-define(TEST_STORE_MODULE, hb_fs_store).
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
@@ -65,9 +65,9 @@ latest(Store, ProcID, Limit, Path) ->
                 not_found -> not_found;
                 Slot ->
                     ResolvedPath =
-                        ao_store:resolve(
+                        hb_store:resolve(
                             Store,
-                            ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
+                            hb_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
                         ),
                     ?event({resolved_path, ResolvedPath}),
                     {ok, Msg} = read(Store, ResolvedPath),
@@ -86,8 +86,8 @@ first_slot_with_path(Store, ProcID, [LatestSlot | Rest], Limit, Path) ->
             ["computed", process, "slot", slot] ++ Path,
             #{slot => integer_to_list(LatestSlot), process => fmt_id(ProcID)}
         ),
-    ResolvedPath = ao_store:resolve(Store, RawPath),
-    case ao_store:type(Store, ResolvedPath) of
+    ResolvedPath = hb_store:resolve(Store, RawPath),
+    case hb_store:type(Store, ResolvedPath) of
         not_found -> first_slot_with_path(Store, ProcID, Rest, Limit, Path);
         _ -> LatestSlot
     end.
@@ -107,8 +107,8 @@ assignments(Store, ProcID) ->
     slots(Store, [?ASSIGNMENTS_DIR, fmt_id(ProcID)]).
 
 slots(Store, Path) ->
-    SlotDir = ao_store:path(Store, Path),
-    case ao_store:list(Store, SlotDir) of
+    SlotDir = hb_store:path(Store, Path),
+    case hb_store:list(Store, SlotDir) of
         {ok, Names} -> [ list_to_integer(Name) || Name <- Names ];
         {error, _} -> []
     end.
@@ -121,15 +121,15 @@ write_output(Store, ProcID, Slot, Item) ->
     SignedID = fmt_id(Item, signed),
     % Create symlinks from the message on the process and the slot on the process
     % to the underlying data.
-    RawMessagePath = ao_store:path(Store, ["messages", UnsignedID]),
-    ProcMessagePath = ao_store:path(Store, ["computed", fmt_id(ProcID), UnsignedID]),
-    ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
-    ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
-    ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
+    RawMessagePath = hb_store:path(Store, ["messages", UnsignedID]),
+    ProcMessagePath = hb_store:path(Store, ["computed", fmt_id(ProcID), UnsignedID]),
+    ProcSlotPath = hb_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
+    hb_store:make_link(Store, RawMessagePath, ProcMessagePath),
+    hb_store:make_link(Store, RawMessagePath, ProcSlotPath),
     case ar_bundles:is_signed(Item) of
         true ->
-            ok = ao_store:make_link(Store, RawMessagePath,
-                ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
+            ok = hb_store:make_link(Store, RawMessagePath,
+                hb_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
         false -> already_exists
     end,
     ok.
@@ -145,35 +145,35 @@ write_assignment(Store, Assignment) ->
     % Create symlinks from the message on the process and the 
     % slot on the process to the underlying data.
     RawMessagePath =
-        ao_store:path(Store, [
+        hb_store:path(Store, [
             "messages",
             UnsignedID
         ]),
     AssignmentPathByNum =
-        ao_store:path(Store, [
+        hb_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
             binary_to_list(Slot)
         ]),
 	AssignmentPathByID =
-        ao_store:path(Store, [
+        hb_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
             SignedID
         ]),
 	AssignmentPathByUnsignedID =
-        ao_store:path(Store, [
+        hb_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
             UnsignedID
         ]),
-    ao_store:make_link(Store, RawMessagePath, AssignmentPathByNum),
-    ao_store:make_link(Store, RawMessagePath, AssignmentPathByID),
-    ao_store:make_link(Store, RawMessagePath, AssignmentPathByUnsignedID),
+    hb_store:make_link(Store, RawMessagePath, AssignmentPathByNum),
+    hb_store:make_link(Store, RawMessagePath, AssignmentPathByID),
+    hb_store:make_link(Store, RawMessagePath, AssignmentPathByUnsignedID),
     ok.
 
 write(Store, Item) ->
-    write(Store, ao_store:path(Store, ["messages"]), Item).
+    write(Store, hb_store:path(Store, ["messages"]), Item).
 
 write(Store, Path, Item) when not is_record(Item, tx) ->
     ?event(writing_non_tx_item),
@@ -188,13 +188,13 @@ write(Store, Path, Item) ->
             % link for the signed ID if it is different.
             UnsignedID = ar_bundles:id(Item, unsigned),
             SignedID = ar_bundles:id(Item, signed),
-            UnsignedPath = ao_store:path(Store, [Path, fmt_id(UnsignedID)]),
+            UnsignedPath = hb_store:path(Store, [Path, fmt_id(UnsignedID)]),
             ?event({writing_item, UnsignedPath}),
-            ok = ao_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
+            ok = hb_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
             if SignedID =/= not_signed ->
-                SignedPath = ao_store:path(Store, [Path, fmt_id(SignedID)]),
+                SignedPath = hb_store:path(Store, [Path, fmt_id(SignedID)]),
                 ?event({linking_item, SignedPath}),
-                ao_store:make_link(Store, UnsignedPath, SignedPath);
+                hb_store:make_link(Store, UnsignedPath, SignedPath);
             true -> link_unnecessary
             end;
         CompositeType ->
@@ -212,17 +212,17 @@ write_composite(Store, Path, map, Item) ->
     % This process will recurse as necessary to write grandchild messages.
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
     ?event({starting_composite_write, fmt_id(UnsignedHeaderID)}),
-    ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
+    ok = hb_store:make_group(Store, Dir = hb_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
     ?event({writing_composite_header, {unsigned, fmt_id(UnsignedHeaderID)}, {signed, fmt_id(SignedHeaderID)}}),
-    ao_store:make_link(
+    hb_store:make_link(
         Store,
-        ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
-        ao_store:path(Store, [Path, fmt_id(SignedHeaderID)])
+        hb_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
+        hb_store:path(Store, [Path, fmt_id(SignedHeaderID)])
     ),
-    ao_store:write(
+    hb_store:write(
         Store,
-        ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID), "item"]),
+        hb_store:path(Store, [Path, fmt_id(UnsignedHeaderID), "item"]),
         ar_bundles:serialize(
             Item#tx{
                 data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) }
@@ -233,10 +233,10 @@ write_composite(Store, Path, map, Item) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
         ok = write(Store, Subitem),
-        ao_store:make_link(
+        hb_store:make_link(
             Store,
-            ao_store:path(Store, [Path, fmt_id(Subitem)]),
-            ao_store:path(Store, [Dir, Key])
+            hb_store:path(Store, [Path, fmt_id(Subitem)]),
+            hb_store:path(Store, [Dir, Key])
         )
     end, ar_bundles:map(Item)),
     ok;
@@ -257,12 +257,12 @@ read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
 read_output(Store, ProcID, SlotRef) ->
     ?event({reading_computed_result, ProcID, SlotRef}),
     ResolvedPath =
-        P2 = ao_store:resolve(
+        P2 = hb_store:resolve(
             Store,
-            P1 = ao_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, SlotRef])
+            P1 = hb_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, SlotRef])
         ),
     ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
-    case ao_store:type(Store, ResolvedPath) of
+    case hb_store:type(Store, ResolvedPath) of
         not_found -> not_found;
         _ -> read(Store, ResolvedPath)
     end.
@@ -271,9 +271,9 @@ read_assignment(Store, ProcID, Slot) when is_integer(Slot) ->
     read_assignment(Store, ProcID, integer_to_list(Slot));
 read_assignment(Store, ProcID, Slot) ->
     ResolvedPath =
-        P2 = ao_store:resolve(
+        P2 = hb_store:resolve(
             Store,
-            P1 = ao_store:path(Store, [
+            P1 = hb_store:path(Store, [
                 "assignments",
                 fmt_id(ProcID),
                 Slot
@@ -287,22 +287,22 @@ lookup(Store, PathPart) when not is_list(PathPart) ->
 lookup(Store, Path) ->
     ?event({looking_up, Path}),
     ResolvedPath =
-        P2 = ao_store:resolve(
+        P2 = hb_store:resolve(
             Store,
-            P1 = ao_store:path(Store, lists:map(fun fmt_id/1, Path))
+            P1 = hb_store:path(Store, lists:map(fun fmt_id/1, Path))
         ),
     ?event({resolved_path, P1, P2, ResolvedPath}),
     read(Store, ResolvedPath).
 
 read(Store, RawPath) ->
     ?event({reading_message, RawPath, Store}),
-    MessagePath = ao_store:path(Store, RawPath),
-    case ao_store:type(Store, MessagePath) of
+    MessagePath = hb_store:path(Store, RawPath),
+    case hb_store:type(Store, MessagePath) of
         composite ->
             ?event({reading_composite_message, MessagePath}),
             % The message is a bundle and we want the whole item.
             % Read the root and reconstruct it.
-            RootPath = ao_store:path(Store, [MessagePath, "item"]),
+            RootPath = hb_store:path(Store, [MessagePath, "item"]),
             {ok, Root} = read_simple_message(Store, RootPath),
             % The bundle is a map of its children by ID. Reconstruct
             % the bundle by reading each child.
@@ -329,7 +329,7 @@ read(Store, RawPath) ->
     end.
 
 read_simple_message(Store, Path) ->
-    {ok, Bin} = ao_store:read(Store, Path),
+    {ok, Bin} = hb_store:read(Store, Path),
     {ok, ar_bundles:deserialize(Bin)}.
 
 fmt_id(ID) -> fmt_id(ID, unsigned).
@@ -337,14 +337,14 @@ fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
 fmt_id(ID, _) when is_list(ID) andalso length(ID) == 43 -> ID;
 fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
-    binary_to_list(ao_message:id(ID));
+    binary_to_list(hb_message:id(ID));
 fmt_id(ID, _Type) -> ID.
 
 %%% Tests
 
 %% Helpers
 test_cache() ->
-    ao_store:reset(?TEST_STORE),
+    hb_store:reset(?TEST_STORE),
     ?TEST_STORE.
 
 create_unsigned_tx(Data) ->
@@ -362,22 +362,22 @@ create_signed_tx(Data) ->
 
 %% Test path resolution dynamics.
 simple_path_resolution_test() ->
-    ao_store:write(TestStore = test_cache(), "test-file", <<"test-data">>),
-    ao_store:make_link(TestStore, "test-file", "test-link"),
-    ?assertEqual({ok, <<"test-data">>}, ao_store:read(TestStore, "test-link")).
+    hb_store:write(TestStore = test_cache(), "test-file", <<"test-data">>),
+    hb_store:make_link(TestStore, "test-file", "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, "test-link")).
 
 resursive_path_resolution_test() ->
-    ao_store:write(TestStore = test_cache(), "test-file", <<"test-data">>),
-    ao_store:make_link(TestStore, "test-file", "test-link"),
-    ao_store:make_link(TestStore, "test-link", "test-link2"),
-    ?assertEqual({ok, <<"test-data">>}, ao_store:read(TestStore, "test-link2")).
+    hb_store:write(TestStore = test_cache(), "test-file", <<"test-data">>),
+    hb_store:make_link(TestStore, "test-file", "test-link"),
+    hb_store:make_link(TestStore, "test-link", "test-link2"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, "test-link2")).
 
 hierarchical_path_resolution_test() ->
     TestStore = test_cache(),
-    ao_store:make_group(TestStore, "test-dir1"),
-    ao_store:write(TestStore, ["test-dir1", "test-file"], <<"test-data">>),
-    ao_store:make_link(TestStore, ["test-dir1"], "test-link"),
-    ?assertEqual({ok, <<"test-data">>}, ao_store:read(TestStore, ["test-link", "test-file"])).
+    hb_store:make_group(TestStore, "test-dir1"),
+    hb_store:write(TestStore, ["test-dir1", "test-file"], <<"test-data">>),
+    hb_store:make_link(TestStore, ["test-dir1"], "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, ["test-link", "test-file"])).
 
 %% Test storing and retrieving a simple unsigned item
 store_simple_unsigned_item_test() ->
