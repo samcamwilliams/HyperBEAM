@@ -55,7 +55,7 @@
 %%%    is used to implement the actual HTTP server.
 %%% 3. `ao_device` implements the computation logic of the node: A mechanism
 %%%    for resolving messages to other messages, via the application of logic
-%%%    implemented in devices. `ao_device_loader` manages the loading of Erlang
+%%%    implemented in devices. `ao_device` also manages the loading of Erlang
 %%%    modules for each device into the node's environment. There are many
 %%%    different default devices implemented in the hyperbeam node, using the
 %%%    namespace `dev_*`. Some of the critical components are:

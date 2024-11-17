@@ -31,7 +31,7 @@ execute_path([], Msg, _) -> {ok, Msg};
 execute_path([FuncName|Path], Msg, S) ->
 	?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
 	Func = parse_path_to_func(FuncName),
-	{ok, Device} = ao_device_loader:from_message(Msg),
+	{ok, Device} = ao_device:from_message(Msg),
 	{ok, NewM} = ao_device:call(
 		Device,
 		Func,
