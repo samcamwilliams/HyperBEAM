@@ -3,7 +3,7 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% This module is the root of the device call logic in hyperbeam.
+%%% @doc This module is the root of the device call logic in hyperbeam.
 %%% 
 %%% Every device is a collection of keys/functions that can be called in order
 %%% to yield their values. Each key may return another message, or a 
@@ -23,42 +23,65 @@
 %% function. Optionally, pass a message containing parameters to the call, as
 %% well as options that control the runtime environment. This function returns
 %% the raw result of the device function call: Typically, but not necessarily,
-%% {ok | error, NewMessage}. In many cases the device will not implement the key,
-%% however, so the default device is used instead. The default (dev_identity)
-%% device simply returns the value associated with the key as it exists in the
-%% message's underlying Erlang map. In this way, devices are able to implement
-%% 'special' keys which do not exist as values in the message's map, while still
-%% exposing the 'normal' keys of a map.
+%% {ok | error, NewMessage}.
+%% 
+%% In many cases the device will not implement the key, however, so the default
+%% device is used instead. The default (`dev_identity`) simply returns the value
+%% associated with the key as it exists in the message's underlying Erlang map.
+%% In this way, devices are able to implement 'special' keys which do not exist
+%% as values in the message's map, while still exposing the 'normal' keys of a
+%% map. 'Special' keys which do not exist as values in the message's map are
+%% simply ignored.
+%%
+%% Finally, this function can also take an explicit lambda to call rather than
+%% looking up the key in the device. This allows devices to call functions from
+%% other modules to yield the value for a key (or set of keys), implementing a
+%% form of 'inheritence' or 'delegation' between devices if desired.
 call(Msg, Key) ->
 	call(Msg, Key, #{}).
 call(Msg, Key, ParamMsg) ->
 	call(Msg, Key, ParamMsg, #{}).
-call(Msg, Key, ParamMsg, Opts) ->
-	try
-		% First, try to load the device and get the function to call.
-		{Status, Fun} = message_to_fun(Msg, Key),
-		% Next, generate the arguments to pass to the function based on the
-		% status of the function load.
-		Args =
-			case Status of
-				ok -> [Msg, ParamMsg, Opts];
-				add_key -> [Key, Msg, ParamMsg, Opts]
-			end,
-		% Then, try to execute the function.
-		try apply(Fun, truncate_args(Fun, Args))
+call(Msg, Key, ParamMsg, Opts) when not is_function(Key) ->
+	{Fun, NewOpts} =
+		try
+			% First, try to load the device and get the function to call.
+			{Status, ReturnedFun} = message_to_fun(Msg, Key),
+			% Next, add an option to the Opts map to indicate if we should
+			% add the key to the start of the arguments.
+			{
+				ReturnedFun,
+				Opts#{ add_key =>
+					case Status of
+						add_key -> Key;
+						_ -> false
+					end
+				}
+			}
 		catch
-			ExecClass:ExecException:ExecStacktrace ->
+			Class:Exception:Stacktrace ->
 				handle_error(
-					device_call,
-					{ExecClass, ExecException, ExecStacktrace},
+					loading_device,
+					{Class, Exception, Stacktrace},
 					Opts
 				)
-		end
+		end,
+	call(Msg, Fun, ParamMsg, NewOpts);
+call(Msg, Fun, ParamMsg, Opts) ->
+	% First, determine the arguments to pass to the function.
+	% While calculating the arguments we unset the add_key option.
+	UserOpts = maps:remove(add_key, Opts),
+	Args =
+		case maps:get(add_key, Opts, false) of
+			false -> [Msg, ParamMsg, UserOpts];
+			Key -> [Key, Msg, ParamMsg, UserOpts]
+		end,
+	% Then, try to execute the function.
+	try apply(Fun, truncate_args(Fun, Args))
 	catch
-		Class:Exception:Stacktrace ->
+		ExecClass:ExecException:ExecStacktrace ->
 			handle_error(
-				loading_device,
-				{Class, Exception, Stacktrace},
+				device_call,
+				{ExecClass, ExecException, ExecStacktrace},
 				Opts
 			)
 	end.
@@ -130,7 +153,6 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 %% @doc Find the function with the highest arity that has the given name, if it
 %% exists. If the device is a map, we look for a key in the map. If the device
 %% is a module, we look for a function with the given name.
-find_exported_function(_Dev, _Key, 0) -> not_found;
 find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 	case maps:get(Key, Dev, not_found) of
 		not_found -> not_found;
@@ -141,9 +163,11 @@ find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 				_ -> not_found
 			end
 	end;
+find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
 find_exported_function(Mod, Key, Arity) ->
 	case erlang:function_exported(Mod, Key, Arity) of
-		true -> {ok, fun Mod:Key/Arity};
+		true ->
+			{ok, fun Mod:Key/Arity};
 		false -> find_exported_function(Mod, Key, Arity - 1)
 	end.
 
