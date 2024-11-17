@@ -88,15 +88,14 @@ default_test_devices(Wallet, Opts) ->
     ID = ar_wallet:to_address(Wallet),
     Img = maps:get(image, Opts),
     Quorum = maps:get(quorum, Opts, 2),
-    LocalAddress = hb:address(),
     [
         {<<"Protocol">>, <<"ao">>},
         {<<"Variant">>, <<"ao.tn.2">>},
         {<<"Type">>, <<"Process">>},
         {<<"Device">>, <<"Stack">>},
-        {<<"Device">>, <<"Scheduler">>},
+        {<<"Device.1">>, <<"Scheduler">>},
         {<<"Location">>, hb_message:id(ID)},
-        {<<"Device">>, <<"PODA">>},
+        {<<"Device.2">>, <<"PODA">>},
         {<<"Quorum">>, integer_to_binary(Quorum)}
     ] ++
     [
@@ -105,14 +104,14 @@ default_test_devices(Wallet, Opts) ->
             Addr =/= '_'
     ] ++
     [
-        {<<"Device">>, <<"JSON-Interface">>},
-        {<<"Device">>, <<"VFS">>},
-        {<<"Device">>, <<"WASM64-pure">>},
+        {<<"Device.3">>, <<"JSON-Interface">>},
+        {<<"Device.5">>, <<"VFS">>},
+        {<<"Device.6">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
         {<<"Image">>, hb_message:id(Img)},
-        {<<"Device">>, <<"Cron">>},
+        {<<"Device.7">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
-        {<<"Device">>, <<"Multipass">>},
+        {<<"Device.8">>, <<"Multipass">>},
         {<<"Passes">>, <<"3">>}
     ].
 
