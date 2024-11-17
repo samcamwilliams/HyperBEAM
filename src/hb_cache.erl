@@ -9,7 +9,7 @@
 
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
--define(TEST_STORE_MODULE, hb_fs_store).
+-define(TEST_STORE_MODULE, hb_store_fs).
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").

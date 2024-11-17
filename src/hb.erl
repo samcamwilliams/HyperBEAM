@@ -74,7 +74,7 @@
 %%%    is used as a resolution mechanism for reading and writing messages, while
 %%%    `hb_store` provides an abstraction over the underlying persistent key-value
 %%%    byte storage mechanisms. Example `hb_store` mechanisms can be found in
-%%%    `hb_fs_store` and `hb_remote_node_store`.
+%%%    `hb_store_fs` and `hb_store_remote_node`.
 %%% 5. `ar_*` modules implement functionality related to the base-layer Arweave
 %%%    protocol and are largely unchanged from their counterparts in the Arweave
 %%%    node codebase presently maintained by the Digital History Association
@@ -165,7 +165,7 @@ config() ->
 		client_error_strategy => throw,
         % Dev options
         local_store =>
-            [{hb_fs_store, #{ prefix => "TEST-data" }}],
+            [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_print => true
     }.
@@ -179,11 +179,11 @@ config() ->
                 fun(Dir) ->
                     [
                         {
-                            hb_fs_store,
+                            hb_store_fs,
                             #{ prefix => Dir }
                         },
                         {
-                            hb_remote_node_store,
+                            hb_store_remote_node,
                             #{ node => "http://localhost:8734" }
                         }
                     ]
