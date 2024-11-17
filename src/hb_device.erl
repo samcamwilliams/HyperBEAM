@@ -1,6 +1,7 @@
 -module(hb_device).
 -export([call/2, call/3, call/4]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% This module is the root of the device call logic in hyperbeam.
 %%% 
@@ -39,7 +40,7 @@ call(Msg, Key, ParamMsg, Opts) ->
 				add_key -> [Key, Msg, ParamMsg, Opts]
 			end,
 		% Then, try to execute the function.
-		try apply(Fun, ?event(truncate_args(Fun, Args)))
+		try apply(Fun, truncate_args(Fun, Args))
 		catch
 			ExecClass:ExecException:ExecStacktrace ->
 				handle_error(
@@ -73,28 +74,27 @@ truncate_args(Fun, Args) ->
 %% @doc Calculate the Erlang function that should be called to get a value for
 %% a given key from a device.
 %% 
-%% This comes in 5 forms:
-%% 1. The device has a `handler` key in its `Dev:info()` map, which is a 
+%% This comes in 7 forms:
+%% 1. The message does not specify a device, so we use the default device.
+%% 2. The device has a `handler` key in its `Dev:info()` map, which is a 
 %% function that takes a key and returns a function to handle that key. We pass
 %% the key as an additional argument to this function.
-%% 2. The device has a function of the name `Key`, which should be called 
+%% 3. The device has a function of the name `Key`, which should be called 
 %% directly.
-%% 3. The device does not implement the key, but does have a default handler 
+%% 4. The device does not implement the key, but does have a default handler 
 %% for us to call. We pass it the key as an additional argument.
-%% 4. The device does not implement the key, and has no default handler. We use
+%% 5. The device does not implement the key, and has no default handler. We use
 %% the default device to handle the key.
-%% 5. The message does not specify a device, so we use the default device.
-%% 
-%% There is also an error case: If the device is specified, but not loadable,
-%% we raise an error.
+%% Error: If the device is specified, but not loadable, we raise an error.
 %% 
 %% Returns {ok | add_key, Fun} where Fun is the function to call, and add_key
 %% indicates that the key should be added to the start of the call's arguments.
 message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
+	% Case 1: The message does not specify a device, so we use the default device.
 	message_to_fun(Msg#{ device => default() }, Key);
 message_to_fun(Msg = #{ device := RawDev }, Key) ->
 	Dev =
-		case device_id_to_module(RawDev) of
+		case device_id_to_executable(RawDev) of
 			{error, _} ->
 				% Error case: A device is specified, but it is not loadable.
 				throw({error, {device_not_loadable, RawDev}});
@@ -102,29 +102,40 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 		end,
 	case maps:find(handler, Info = info(Dev, Msg)) of
 		{ok, Handler} ->
-			% Case 1: The device has an explicit handler function.
+			% Case 2: The device has an explicit handler function.
 			{add_key, Handler};
 		error ->
 			case find_exported_function(Dev, Key, 3) of
 				{ok, Func} ->
-					% Case 2: The device has a function of the name `Key`.
+					% Case 3: The device has a function of the name `Key`.
 					{ok, Func};
 				not_found ->
 					case maps:find(default, Info) of
 						{ok, DefaultFunc} ->
-							% Case 3: The device has a default handler.
+							% Case 4: The device has a default handler.
 							{add_key, DefaultFunc};
 						error ->
-							% Case 4: The device has no default handler.
+							% Case 5: The device has no default handler.
 							% We use the default device to handle the key.
 							message_to_fun(Msg#{ device => default() }, Key)
 					end
 			end
 	end.
 
-%% @doc Find the function in a module with the highest arity that has the given
-%% name, if it exists.
-find_exported_function(_Mod, _Key, 0) -> not_found;
+%% @doc Find the function with the highest arity that has the given name, if it
+%% exists. If the device is a map, we look for a key in the map. If the device
+%% is a module, we look for a function with the given name.
+find_exported_function(_Dev, _Key, 0) -> not_found;
+find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
+	case maps:get(Key, Dev, not_found) of
+		not_found -> not_found;
+		Fun when is_function(Fun) ->
+			case erlang:fun_info(Fun, arity) of
+				{arity, Arity} when Arity =< MaxArity ->
+					{ok, Fun};
+				_ -> not_found
+			end
+	end;
 find_exported_function(Mod, Key, Arity) ->
 	case erlang:function_exported(Mod, Key, Arity) of
 		true -> {ok, fun Mod:Key/Arity};
@@ -134,12 +145,13 @@ find_exported_function(Mod, Key, Arity) ->
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
 %% a tuple of the form {error, Reason} is returned.
-device_id_to_module(ID) -> device_id_to_module(ID, #{}).
-device_id_to_module(ID, _Opts) when is_atom(ID) ->
+device_id_to_executable(ID) -> device_id_to_executable(ID, #{}).
+device_id_to_executable(Map, _Opts) when is_map(Map) -> {ok, Map};
+device_id_to_executable(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-device_id_to_module(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+device_id_to_executable(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 	case hb:get(load_remote_devices) of
 		true ->
 			case lists:member(ID, hb:get(trusted_device_signers)) of
@@ -161,7 +173,7 @@ device_id_to_module(ID, _Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 		false ->
 			{error, remote_devices_disabled}
 	end;
-device_id_to_module(ID, _Opts) ->
+device_id_to_executable(ID, _Opts) ->
     case maps:get(ID, hb:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
@@ -171,11 +183,135 @@ device_id_to_module(ID, _Opts) ->
 %% device's info function is parameterized by one.
 info(DevMod, Msg) ->
 	case find_exported_function(DevMod, info, 1) of
-		{ok, Fun} ->
-			apply(Fun, truncate_args(Fun, [Msg]));
+		{ok, Fun} -> apply(Fun, truncate_args(Fun, [Msg]));
 		not_found -> #{}
 	end.
 
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map.
 default() -> dev_identity.
+
+%%% Tests
+
+key_from_id_device_test() ->
+	?assertEqual({ok, 1}, hb_device:call(#{ a => 1 }, a)).
+
+keys_from_id_device_test() ->
+	?assertEqual({ok, [a]}, hb_device:call(#{ a => 1, "priv_a" => 2 }, keys)).
+
+%% @doc Generates a test device with three keys, each of which uses
+%% progressively more of the arguments that can be passed to a device key.
+device_with_keys_using_args_test() ->
+	#{
+		key_using_only_state =>
+			fun(State) ->
+				{ok,
+					<<(maps:get(state_key, State))/binary>>
+				}
+			end,
+		key_using_state_and_msg =>
+			fun(State, Msg) ->
+				{ok,
+					<<
+						(maps:get(state_key, State))/binary,
+						(maps:get(msg_key, Msg))/binary
+					>>
+				}
+			end,
+		key_using_all =>
+			fun(State, Msg, Opts) ->
+				{ok,
+					<<
+						(maps:get(state_key, State))/binary,
+						(maps:get(msg_key, Msg))/binary,
+						(maps:get(opts_key, Opts))/binary
+					>>
+				}
+			end
+	}.
+
+%% @doc Test that arguments are passed to a device key as expected.
+%% Particularly, we need to ensure that the key function in the device can 
+%% specify any arity (1 through 3) and the call is handled correctly.
+key_from_id_device_with_args_test() ->
+	Msg =
+		#{
+			device => device_with_keys_using_args_test(),
+			state_key => <<"1">>
+		},
+	?assertEqual(
+		{ok, <<"1">>},
+		hb_device:call(
+			Msg,
+			key_using_only_state,
+			#{ msg_key => <<"2">> } % Param message, which is ignored
+		)
+	),
+	?assertEqual(
+		{ok, <<"13">>},
+		hb_device:call(
+			Msg,
+			key_using_state_and_msg,
+			#{ msg_key => <<"3">> } % Param message, with value to add
+		)
+	),
+	?assertEqual(
+		{ok, <<"1337">>},
+		hb_device:call(
+			Msg,
+			key_using_all,
+			#{ msg_key => <<"3">> }, % Param message
+			#{ opts_key => <<"37">> } % Opts
+		)
+	).
+
+device_with_handler_function_test() ->
+	Msg =
+		#{
+			device =>
+				#{
+					info =>
+						fun() ->
+							#{
+								handler =>
+									fun(test_key, _S) ->
+										{ok, <<"GOOD">>}
+									end
+							}
+						end
+				},
+			test_key => <<"BAD">>
+		},
+	?assertEqual(
+		{ok, <<"GOOD">>},
+		hb_device:call(Msg, test_key)
+	).
+
+device_with_default_handler_function_test() ->
+	Msg =
+		#{
+			device =>
+				#{
+					info =>
+						fun() ->
+							#{
+								default =>
+									fun(_, _State) ->
+										{ok, <<"DEFAULT">>}
+									end
+							}
+						end,
+					state_key =>
+						fun(_) ->
+							{ok, <<"STATE">>}
+						end
+				}
+		},
+	?assertEqual(
+		{ok, <<"STATE">>},
+		hb_device:call(Msg, state_key)
+	),
+	?assertEqual(
+		{ok, <<"DEFAULT">>},
+		hb_device:call(Msg, any_random_key)
+	).
