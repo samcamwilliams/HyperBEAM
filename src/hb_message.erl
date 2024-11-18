@@ -57,17 +57,19 @@ serialize(M, binary) ->
 %% a binary, which we return as is.
 message_to_tx(Binary) when is_binary(Binary) ->
 	Binary;
-message_to_tx(M) ->
+message_to_tx(M) when is_map(M) ->
 	% Get the keys that will be serialized, excluding private keys.
 	{ok, Keys} = hb_device:call(M, keys),
 	% Translate the keys into a binary map.
-	KeyList =
+	NormalKeyMap =
 		maps:from_list(
 			lists:map(
 				fun(Key) ->
 					{ok, Value} = hb_device:call(M, Key),
 					{Key, message_to_tx(Value)}
 				end,
+				% Remove the data and tags from the keys, as they will be handled
+				% separately.
 				Keys
 			)
 		),
@@ -76,19 +78,19 @@ message_to_tx(M) ->
 	DefaultValues = tl(tuple_to_list(#tx{})),
 	DefaultTXList = lists:zip(TXFields, DefaultValues),
 	% Get the fields that we want users to be able to set.
-	MutableFields = [id, unsigned_id, last_tx, owner, target, data, signature],
+	MutableFields = [id, unsigned_id, last_tx, owner, target, signature],
 	{RemainingMap, BaseTXList} = lists:foldl(
 		fun({Field, Default}, {RemMap, Acc}) ->
 			case lists:member(Field, MutableFields) of
 				true ->
-					case maps:get(Field, KeyList, not_found) of
+					case maps:get(Field, NormalKeyMap, not_found) of
 						not_found -> {RemMap, [Default | Acc]};
 						Value -> {maps:remove(Field, RemMap), [Value | Acc]}
 					end;
 				false -> {RemMap, [Default | Acc]}
 			end
 		end,
-		{KeyList, []},
+		{NormalKeyMap, []},
 		DefaultTXList
 	),
 	TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
@@ -103,21 +105,34 @@ message_to_tx(M) ->
 				|| Key <- maps:keys(RemainingMap) 
 			]
 		),
+	% We don't let the user set the tags directly, but they can instead set any
+	% number of keys to short binary values, which will be included as tags.
 	TX = TXWithoutTags#tx { tags = Tags },
-	case {TX#tx.data, DataItems} of
-		{_, []} -> TX;
-		{?DEFAULT_DATA, _} -> TX#tx { data = DataItems };
+	case {maps:get(data, M, not_provided), DataItems} of
+		{_, []} ->
+			% The user didn't set any data and there are no remaining data items
+			% so we use the default data value.
+			TX;
+		{not_provided, _} ->
+			% The user didn't set any data and there are remaining data items so
+			% we use those as the data.
+			TX#tx { data = maps:from_list(DataItems) };
 		{Data, _} when is_map(Data) ->
+			% The user already set some data and there are remaining data items
+			% so we merge the two.
 			TX#tx { data = maps:merge(Data, maps:from_list(DataItems)) };
-		{Data, _} when is_list(Data) -> TX#tx { data = Data ++ [DataItems] };
 		{Data, _} ->
+			% This should not happen.
 			throw(
 				{incompatible_data_and_keys,
 					{data, Data},
 					{keys, maps:keys(RemainingMap)}
 				}
 			)
-	end.
+	end;
+message_to_tx(Other) ->
+	?event({unexpected_data_type, {explicit, Other}}),
+	throw(invalid_tx).
 
 %% @doc Deserialize a message from a binary representation.
 deserialize(B) -> deserialize(B, binary).
@@ -136,6 +151,7 @@ tx_to_message(TX) ->
 	TXKeyValList = lists:zip(Fields, Values),
 	% Then, convert the list of key-value pairs into a map.
 	RawTXMap = maps:from_list(TXKeyValList),
+	?event({raw_tx_map, {explicit, RawTXMap}}),
 	% Next, filter out the hidden fields.
 	MapWithoutHidden =
 		maps:filter(
@@ -162,12 +178,17 @@ tx_to_message(TX) ->
 		Data when is_map(Data) ->
 			% If the data is a map, we need to recursively turn its children
 			% into messages from their tx representations.
+			?event({merging_data, {explicit, Data}}),
 			maps:merge(
 				MapWithoutData,
 				maps:map(fun message_to_tx/1, Data)
 			);
 		Data when is_binary(Data) ->
-			MapWithoutData#{ data => Data }
+			MapWithoutData#{ data => Data };
+		Data ->
+			?event({unexpected_data_type, {explicit, Data}}),
+			?event({was_processing, {explicit, TX}}),
+			throw(invalid_tx)
 	end.
 
 %%% @doc Unit tests for the module.
@@ -221,9 +242,17 @@ single_layer_tx_to_message_test() ->
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
 	Msg = #{
+		id => << 1:256 >>,
+		<<"tx_depth">> => <<"outer">>,
 		data => #{
-			<<"special_key">> => <<"SPECIAL_KEY">>
+			<<"tx_map_item">> =>
+				#{
+					id => << 2:256 >>,
+					<<"tx_depth">> => <<"inner">>,
+					data => <<"DATA">>
+				}
 		}
 	},
 	TX = message_to_tx(Msg),
+	?event({turning_tx_back_to_message, {explicit, TX}}),
 	?assertEqual(Msg, tx_to_message(TX)).
