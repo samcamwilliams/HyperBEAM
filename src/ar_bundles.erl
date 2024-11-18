@@ -541,8 +541,10 @@ serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     NewManifest = new_manifest(Index),
     %?event({generated_manifest, NewManifest == Manifest, ar_util:encode(id(NewManifest, unsigned)), Index}),
     {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
-serialize_bundle_data(List, _Manifest) ->
-    finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
+serialize_bundle_data(List, _Manifest) when is_list(List) ->
+    finalize_bundle_data(lists:map(fun to_serialized_pair/1, List));
+serialize_bundle_data(_Data, _Manifest) ->
+    throw({cannot_serialize_tx_data, must_be_map_or_list}).
 
 new_manifest(Index) ->
     TX = normalize(#tx{
