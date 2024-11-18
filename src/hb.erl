@@ -263,6 +263,8 @@ debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
 debug_fmt({X, Y}) when is_record(Y, tx) ->
     io_lib:format("~p => Message:~n~s",
         [X, lists:flatten(ar_bundles:format(Y, 1))]);
+debug_fmt({X, Y}) ->
+    io_lib:format("~s: ~s", [debug_fmt(X), debug_fmt(Y)]);
 debug_fmt(Tuple) when is_tuple(Tuple) ->
     format_tuple(Tuple);
 debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
