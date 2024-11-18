@@ -172,6 +172,11 @@ tx_to_message(TX) ->
 
 %%% @doc Unit tests for the module.
 
+basic_map_to_tx_test() ->
+	Msg = #{ <<"NORMAL_KEY">> => <<"NORMAL_VALUE">> },
+	TX = message_to_tx(Msg),
+	?assertEqual([{<<"NORMAL_KEY">>, <<"NORMAL_VALUE">>}], TX#tx.tags).
+
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_tx_test() ->
 	Msg = #{
@@ -213,3 +218,12 @@ single_layer_tx_to_message_test() ->
 	?assertEqual(maps:get(owner, Msg), << 3:256 >>),
 	?assertEqual(maps:get(target, Msg), << 4:256 >>).
 
+%% @doc Test that we can convert a nested message into a tx record and back.
+nested_message_to_tx_and_back_test() ->
+	Msg = #{
+		data => #{
+			<<"special_key">> => <<"SPECIAL_KEY">>
+		}
+	},
+	TX = message_to_tx(Msg),
+	?assertEqual(Msg, tx_to_message(TX)).
