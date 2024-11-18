@@ -195,15 +195,15 @@ find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 			end
 	end;
 find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
-find_exported_function(NonAtomKey, Mod, Arity) ->
+find_exported_function(NonAtomKey, Mod, Arity) when not is_atom(NonAtomKey) ->
 	case key_to_atom(NonAtomKey) of
 		undefined -> not_found;
 		KeyAtom -> find_exported_function(Mod, KeyAtom, Arity)
 	end;
 find_exported_function(Mod, Key, Arity) ->
-	case erlang:function_exported(Mod, KeyAtom = key_to_atom(Key), Arity) of
+	case erlang:function_exported(Mod, Key, Arity) of
 		true ->
-			{ok, fun Mod:KeyAtom/Arity};
+			{ok, fun Mod:Key/Arity};
 		false -> find_exported_function(Mod, Key, Arity - 1)
 	end.
 
