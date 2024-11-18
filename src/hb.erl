@@ -258,10 +258,12 @@ debug_print(X, ModStr, LineNum) ->
     X.
 
 %% @doc Convert a term to a string for debugging print purposes.
+debug_fmt({explicit, X}) ->
+    io_lib:format("~p", [X]);
 debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
     io_lib:format("~p: ~p", [X, Y]);
 debug_fmt({X, Y}) when is_record(Y, tx) ->
-    io_lib:format("~p => Message:~n~s",
+    io_lib:format("~p: [Message body follows]~n~s",
         [X, lists:flatten(ar_bundles:format(Y, 1))]);
 debug_fmt({X, Y}) ->
     io_lib:format("~s: ~s", [debug_fmt(X), debug_fmt(Y)]);
