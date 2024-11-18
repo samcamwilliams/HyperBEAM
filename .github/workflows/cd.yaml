@@ -32,7 +32,7 @@ jobs:
         sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
         sudo apt-get update
         sudo apt-get install -y packer git libssl-dev ncurses-dev make cmake gcc g++
-        git clone https://github.com/erlang/otp.git && cd otp && git checkout maint-27 && ./configure && make && sudo make install
+        git clone https://github.com/erlang/otp.git && cd otp && git checkout maint-27 && ./configure && make -j8 && sudo make install
         git clone https://github.com/erlang/rebar3.git && cd rebar3 && ./bootstrap && sudo mv rebar3 /usr/local/bin/
 
     - name: Build and release AO/HyperBEAM with Rebar3
