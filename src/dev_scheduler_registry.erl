@@ -2,7 +2,6 @@
 -export([start/0, find/1, find/2, get_wallet/0, get_processes/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
--hb_debug(print).
 
 %%% A simple registry for local services in AO, using pg. Currently,
 %%% only SU processes are supported.
@@ -53,8 +52,8 @@ setup() ->
     application:ensure_all_started(hb),
     start().
 
--define(TEST_PROC_ID1, <<0:256>>).
--define(TEST_PROC_ID2, <<1:256>>).
+-define(TEST_PROC_ID1, binary_to_list(<<0:256>>)).
+-define(TEST_PROC_ID2, binary_to_list(<<1:256>>)).
 
 find_non_existent_process_test() ->
     setup(),
@@ -82,5 +81,6 @@ get_all_processes_test() ->
     ?MODULE:find(?TEST_PROC_ID2, true),
     Processes = ?MODULE:get_processes(),
     ?assertEqual(2, length(Processes)),
+	?event({processes, Processes}),
     ?assert(lists:member(?TEST_PROC_ID1, Processes)),
     ?assert(lists:member(?TEST_PROC_ID2, Processes)).

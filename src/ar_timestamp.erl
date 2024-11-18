@@ -8,7 +8,7 @@
 start() ->
     TSServer = spawn(fun() -> cache(hb_client:arweave_timestamp()) end),
     spawn(fun() -> refresher(TSServer) end),
-    %register(?MODULE, TSServer),
+    register(?MODULE, TSServer),
     TSServer.
 
 get() ->

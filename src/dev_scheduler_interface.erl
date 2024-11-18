@@ -30,7 +30,7 @@ info(_M) ->
             data =
                 jiffy:encode(
                     lists:map(
-                        fun ar_util:id/1,
+                        fun hb_message:id/1,
                         dev_scheduler_registry:get_processes()
                     )
                 )

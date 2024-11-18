@@ -26,7 +26,7 @@ from_process(M) when is_record(M, tx) ->
     from_process(M#tx.tags);
 from_process([]) -> [];
 from_process([{<<"Device">>, DevID}| Tags]) ->
-    case hb_device:from_id(DevID) of
+    case hb_device:device_id_to_executable(DevID) of
         {ok, ModName} ->
             {Params, Rest} = extract_params(Tags),
             [{ModName, Params, undefined}|from_process(Rest)];
@@ -50,7 +50,7 @@ create(Pre, Proc, Post) ->
     Devs = normalize_list(Pre) ++ from_process(Proc) ++ normalize_list(Post),
     lists:map(
         fun({{DevMod, DevS, Params}, N}) ->
-            case hb_device:from_id(DevMod) of
+            case hb_device:device_id_to_executable(DevMod) of
                 {ok, Mod} ->
                     {N, Mod, DevS, Params};
                 Else -> throw(Else)

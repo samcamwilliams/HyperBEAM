@@ -1,5 +1,5 @@
 -module(hb_device).
--export([call/2, call/3, call/4]).
+-export([call/2, call/3, call/4, device_id_to_executable/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 

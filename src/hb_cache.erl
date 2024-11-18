@@ -7,7 +7,6 @@
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, hb_store_fs).
 -define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }}]).
@@ -481,7 +480,7 @@ write_and_read_output_test() ->
     ?assertEqual({ok, Item2}, read_output(Store, fmt_id(Proc, signed), 1)),
     ?assertEqual({ok, Item1}, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
 
-latest_output_retrieval_test_broken() ->
+latest_output_retrieval_test() ->
     Store = test_cache(),
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),

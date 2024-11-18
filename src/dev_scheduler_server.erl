@@ -174,7 +174,6 @@ next_hashchain(HashChain, Message) ->
 
 new_proc() ->
     application:ensure_all_started(hb),
-    su_data:reset_data(),
     Wallet = ar_wallet:new(),
     SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
     ?event(1),
@@ -189,7 +188,7 @@ new_proc() ->
     schedule(ID, SignedItem2),
     ?event(6),
     schedule(ID, SignedItem3),
-    {2, _} = su_data:get_current_slot(ID),
+    {2, _} = dev_scheduler_server:get_current_slot(ID),
     true.
 
 new_proc_test_() ->

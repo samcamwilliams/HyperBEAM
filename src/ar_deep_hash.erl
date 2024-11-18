@@ -1,8 +1,6 @@
 -module(ar_deep_hash).
 -export([hash/1]).
 
--include("include/ar.hrl").
-
 hash(List) when is_list(List) -> hash_bin_or_list(List).
 
 %%% INTERNAL

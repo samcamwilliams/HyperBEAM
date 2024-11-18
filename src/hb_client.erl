@@ -268,8 +268,6 @@ cron_cursor(Node, ProcID) ->
 
 %% @doc Convert a map of parameters into a query string, starting with the
 %% given separator.
-path_opts(Opts) ->
-    path_opts(Opts, "?").
 path_opts(EmptyMap, _Sep) when map_size(EmptyMap) == 0 -> "";
 path_opts(Opts, Sep) ->
     PathParts = tl(lists:flatten(lists:map(

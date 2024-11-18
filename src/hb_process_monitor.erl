@@ -1,8 +1,6 @@
 -module(hb_process_monitor).
 -export([start/1, start/2, start/3, stop/1]).
 
--include("include/hb.hrl").
-
 -record(state, {
     proc_id,
     cursor,
@@ -44,7 +42,10 @@ handle_crons(State) ->
     case hb_client:cron(State#state.proc_id, State#state.cursor) of
         {ok, HasNextPage, Results, Cursor} ->
             lists:map(
-                fun(Res) -> mu_push:start(Res, State#state.logger) end,
+                fun(Res) ->
+					% TODO: Validate this
+					dev_mu:push(#{ message => Res }, State)
+				end,
                 Results
             ),
             NS = State#state{cursor = Cursor},

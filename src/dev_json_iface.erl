@@ -151,45 +151,6 @@ stdlib(S, Port, ModName, FuncName, Args, Sig) ->
     ?event(stdlib_called_2),
     lib(S, Port, ModName, FuncName, Args, Sig).
 
-lib(
-    S = #{stdout := Stdout},
-    Port,
-    [_Fd, Ptr, Vecs, RetPtr],
-    "wasi_snapshot_preview1",
-    "fd_write",
-    _Signature
-) ->
-    %?event({fd_write, Fd, Ptr, Vecs, RetPtr}),
-    {ok, VecData} = hb_beamr_io:read_iovecs(Port, Ptr, Vecs),
-    BytesWritten = byte_size(VecData),
-    %?event({fd_write_data, VecData}),
-    NewStdio =
-        case Stdout of
-            undefined ->
-                [VecData];
-            Existing ->
-                Existing ++ [VecData]
-        end,
-    % Set return pointer to number of bytes written
-    hb_beamr_io:write(Port, RetPtr, <<BytesWritten:64/little-unsigned-integer>>),
-    {S#{stdout := NewStdio}, [0]};
-lib(S, _Port, _Args, _Module, "clock_time_get", _Signature) ->
-    %?event({called, wasi_clock_time_get, 1}),
-    {S, [1]};
 lib(S, _Port, Args, Module, Func, Signature) ->
     ?event({unimplemented_stub_called, Module, Func, Args, Signature}),
     {S, [0]}.
-
-result_test() ->
-    Test = postProcessResultMessages(
-        #{
-            <<"Target">> => <<"123345676">>,
-            <<"Anchor">> => <<"00000000001">>,
-            <<"Tags">> => [
-                #{<<"name">> => <<"From-Module">>, <<"value">> => <<"5467">>}
-            ]
-        },
-        #tx{id = <<"1234">>}
-    ),
-    % Test = result(#{result => {foo, <<"Error">>}}),
-    ok.

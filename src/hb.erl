@@ -171,7 +171,7 @@ config() ->
         local_store =>
             [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
-        debug_print => true
+        debug_print => false
     }.
 
 -define(ENV_KEYS,

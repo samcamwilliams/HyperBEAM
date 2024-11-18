@@ -32,12 +32,8 @@ push(Msg, State = #{ logger := Logger }) ->
 			?event({error_scheduling_message, Error}),
             hb_logger:log(Logger, Error),
             {error, Error}
-    end;
-push(Arg1, Arg2) ->
-	?event({unhandled_push_args, maps:keys(Arg2)}),
-	{error, unhandled_push_args}.
+    end.
 
-%%% Process/device client functions:
 init(State, [{<<"Location">>, Location} | _]) ->
     case State of
         #{schedule := Schedule} when Schedule =/= [] ->

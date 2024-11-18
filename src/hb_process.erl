@@ -214,7 +214,7 @@ boot(Process, Opts) ->
     pg:join({cu, hb_message:id(Process, signed)}, self()),
     % Build the device stack.
     ?event({registered_process, hb_message:id(Process, signed)}),
-    {ok, Dev} = hb_device:from_message(Process),
+    {ok, Dev} = hb_device:device_id_to_executable(Process),
     ?event({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
         = hb_device:call(Dev, boot, [Process, Opts], Opts),

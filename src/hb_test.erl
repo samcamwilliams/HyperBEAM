@@ -1,5 +1,4 @@
 -module(hb_test).
--export([simple_stack_test/0, full_push_test/0, simple_load_test/0]).
 -export([init/0, generate_test_data/1, run/2]).
 -hb_debug(print).
 

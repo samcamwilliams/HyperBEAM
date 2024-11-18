@@ -1,5 +1,6 @@
 -module(hb_message).
 -export([id/1, id/2, load/2]).
+-export([get/2, set/2]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -16,8 +17,14 @@
 -define(USER_TX_FIELDS,
 	[id, unsigned_id, last_tx, owner, target, data, signature]).
 
+%% @doc Wrap a device call in the background to retrieve a key from a message.
 get(Message, Key) ->
 	hb_device:call(Message, Key).
+
+%% @doc Set (a) key(s) in a message. Takes a map of key-value pairs and sets
+%% them in the message, overwriting any existing values.
+set(Message, KeyValues) ->
+	maps:merge(Message, maps:from_list(KeyValues)).
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).

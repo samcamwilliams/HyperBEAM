@@ -40,7 +40,7 @@ execute(CarrierMsg, S) ->
                         {error, no_viable_computation}
                 end
         end,
-    {ResType, ModState = #{ results := ModResults }} =
+    {ResType, ModState = #{ results := _ModResults }} =
         case lists:keyfind(<<"Attest-To">>, 1, CarrierMsg#tx.tags) of
             {_, RawAttestTo} ->
                 AttestTo = ar_util:decode(RawAttestTo),
@@ -78,9 +78,3 @@ execute(CarrierMsg, S) ->
     ?event(returning_computed_results),
 	%ar_bundles:print(ModResults),
     {ResType, ModState}.
-
-
-parse_slot(undefined) -> undefined;
-parse_slot(<<>>) -> undefined;
-parse_slot(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 -> Bin;
-parse_slot(Slot) -> list_to_integer(binary_to_list(Slot)).

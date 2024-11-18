@@ -1,5 +1,5 @@
 -module(dev_vfs).
--export([init/2, execute/2]).
+-export([init/1, execute/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -33,7 +33,7 @@
     }
 ).
 
-init(S, Params) ->
+init(S) ->
     Lib = maps:merge(maps:get(library, S, #{}), #{
         {"wasi_snapshot_preview1", "path_open"} => fun path_open/3,
         {"wasi_snapshot_preview1", "fd_write"} => fun fd_write/3,

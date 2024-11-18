@@ -217,7 +217,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             % TODO: Filter out attestations from the current node.
             MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
 			?event({poda_add_attestations_from, InitAuthorities, {self,hb:address()}}),
-            Attestations = lists:filtermap(
+            Attestations = pfiltermap(
                 fun(Address) ->
                     case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
