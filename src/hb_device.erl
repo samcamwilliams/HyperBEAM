@@ -145,17 +145,48 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 						error ->
 							% Case 5: The device has no default handler.
 							% We use the default device to handle the key.
-							message_to_fun(Msg#{ device => default() }, Key)
+							case default() of
+								Dev ->
+									% We are already using the default device,
+									% so we cannot resolve the key. This should
+									% never actually happen in practice, but it
+									% resolves an infinite loop that can occur
+									% during development.
+									throw({
+										error,
+										default_device_could_not_resolve_key,
+										{key, Key}
+									});
+								DefaultDev ->
+									message_to_fun(
+										Msg#{ device => DefaultDev },
+										Key
+									)
+							end
 					end
 			end
 	end.
 
 %% @doc Find the function with the highest arity that has the given name, if it
-%% exists. If the device is a map, we look for a key in the map. If the device
-%% is a module, we look for a function with the given name.
+%% exists.
+%%
+%% If the device is a module, we look for a function with the given name.
+%% 
+%% If the device is a map, we look for a key in the map. First we try to find
+%% the key using its literal value. If that fails, we cast the key to an atom
+%% and try again.
 find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 	case maps:get(Key, Dev, not_found) of
-		not_found -> not_found;
+		not_found ->
+			case key_to_atom(Key) of
+				undefined -> not_found;
+				Key ->
+					% The key is unchanged, so we return not_found.
+					not_found;
+				KeyAtom ->
+					% The key was cast to an atom, so we try again.
+					find_exported_function(Dev, KeyAtom, MaxArity)
+			end;
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
 				{arity, Arity} when Arity =< MaxArity ->
@@ -164,12 +195,30 @@ find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 			end
 	end;
 find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
+find_exported_function(NonAtomKey, Mod, Arity) ->
+	case key_to_atom(NonAtomKey) of
+		undefined -> not_found;
+		KeyAtom -> find_exported_function(Mod, KeyAtom, Arity)
+	end;
 find_exported_function(Mod, Key, Arity) ->
-	case erlang:function_exported(Mod, Key, Arity) of
+	case erlang:function_exported(Mod, KeyAtom = key_to_atom(Key), Arity) of
 		true ->
-			{ok, fun Mod:Key/Arity};
+			{ok, fun Mod:KeyAtom/Arity};
 		false -> find_exported_function(Mod, Key, Arity - 1)
 	end.
+
+%% @doc Convert a key to an atom. Takes care of casting from binaries, lists,
+%% and iolists. Note: This function is safe, but may return undefined if the
+%% key is not an atom, binary, list, iolist, or an existing Erlang atom.
+key_to_atom(Key) ->
+	try unsafe_key_to_atom(Key)
+	catch _:badarg -> undefined
+	end.
+unsafe_key_to_atom(Key) when is_binary(Key) -> binary_to_existing_atom(Key, utf8);
+unsafe_key_to_atom(Key) when is_list(Key) -> 
+	FlattenedKey = lists:flatten(Key),
+	list_to_existing_atom(FlattenedKey);
+unsafe_key_to_atom(Key) when is_atom(Key) -> Key.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
