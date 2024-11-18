@@ -11,6 +11,9 @@
 %% @doc The size at which a value should be made into a body item, instead of a
 %% tag.
 -define(MAX_TAG_VAL, 128).
+%% @doc The list of TX fields that users can set directly.
+-define(USER_TX_FIELDS,
+	[id, unsigned_id, last_tx, owner, target, data, signature]).
 
 get(Message, Key) ->
 	hb_device:call(Message, Key).
@@ -57,19 +60,33 @@ serialize(M, binary) ->
 %% a binary, which we return as is.
 message_to_tx(Binary) when is_binary(Binary) ->
 	Binary;
+message_to_tx(TX) when is_record(TX, tx) -> TX;
 message_to_tx(M) when is_map(M) ->
 	% Get the keys that will be serialized, excluding private keys.
 	{ok, Keys} = hb_device:call(M, keys),
-	% Translate the keys into a binary map.
-	NormalKeyMap =
+	% Translate the keys into a binary map. If a key has a value that is a map,
+	% we recursively turn its children into messages. Notably, we do not simply
+	% call message_to_tx/1 on the inner map because that would lead to adding
+	% an extra layer of nesting to the data.
+	MsgKeyMap =
 		maps:from_list(
 			lists:map(
 				fun(Key) ->
-					{ok, Value} = hb_device:call(M, Key),
-					{Key, message_to_tx(Value)}
+					case hb_device:call(M, Key) of
+						{ok, Map} when is_map(Map) ->
+							{
+								Key,
+								maps:map(
+									fun(_, InnerValue) ->
+										message_to_tx(InnerValue)
+									end,
+									Map
+								)
+							};
+						{ok, Value} -> {Key, Value};
+						not_found -> {Key, not_found}
+					end
 				end,
-				% Remove the data and tags from the keys, as they will be handled
-				% separately.
 				Keys
 			)
 		),
@@ -77,45 +94,44 @@ message_to_tx(M) when is_map(M) ->
 	TXFields = record_info(fields, tx),
 	DefaultValues = tl(tuple_to_list(#tx{})),
 	DefaultTXList = lists:zip(TXFields, DefaultValues),
-	% Get the fields that we want users to be able to set.
-	MutableFields = [id, unsigned_id, last_tx, owner, target, signature],
+	% Iterate through the default fields, replacing them with the values from
+	% the message map if they are present.
 	{RemainingMap, BaseTXList} = lists:foldl(
 		fun({Field, Default}, {RemMap, Acc}) ->
-			case lists:member(Field, MutableFields) of
-				true ->
-					case maps:get(Field, NormalKeyMap, not_found) of
-						not_found -> {RemMap, [Default | Acc]};
-						Value -> {maps:remove(Field, RemMap), [Value | Acc]}
-					end;
-				false -> {RemMap, [Default | Acc]}
+			case maps:get(Field, MsgKeyMap, not_found) of
+				not_found -> {RemMap, [Default | Acc]};
+				Value ->
+					{maps:remove(Field, RemMap), [Value | Acc]}
 			end
 		end,
-		{NormalKeyMap, []},
+		{MsgKeyMap, []},
 		DefaultTXList
 	),
+	% Rebuild the tx record from the new list of fields and values.
 	TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
 	% Calculate which set of the remaining keys will be used as tags.
 	{Tags, DataItems} =
 		lists:partition(
-			fun({_Key, Value}) when byte_size(Value) < ?MAX_TAG_VAL -> true;
+			fun({_Key, Value}) when byte_size(Value) =< ?MAX_TAG_VAL -> true;
 				(_) -> false
 			end,
 			[ 
-				{Key, maps:get(Key, RemainingMap)} 
-				|| Key <- maps:keys(RemainingMap) 
+					{Key, maps:get(Key, RemainingMap)} 
+				||
+					Key <- maps:keys(RemainingMap) 
 			]
 		),
 	% We don't let the user set the tags directly, but they can instead set any
 	% number of keys to short binary values, which will be included as tags.
 	TX = TXWithoutTags#tx { tags = Tags },
-	case {maps:get(data, M, not_provided), DataItems} of
+	% Finally, we set the data based on the remaining keys.
+	case {TX#tx.data, DataItems} of
 		{_, []} ->
-			% The user didn't set any data and there are no remaining data items
-			% so we use the default data value.
+			% There are no remaining data items so we use the default data value.
 			TX;
-		{not_provided, _} ->
-			% The user didn't set any data and there are remaining data items so
-			% we use those as the data.
+		{?DEFAULT_DATA, _} ->
+			% The user didn't set the data field and there are remaining data items
+			% so we use those as the data.
 			TX#tx { data = maps:from_list(DataItems) };
 		{Data, _} when is_map(Data) ->
 			% The user already set some data and there are remaining data items
@@ -131,7 +147,7 @@ message_to_tx(M) when is_map(M) ->
 			)
 	end;
 message_to_tx(Other) ->
-	?event({unexpected_data_type, {explicit, Other}}),
+	?event({unexpected_message_form, {explicit, Other}}),
 	throw(invalid_tx).
 
 %% @doc Deserialize a message from a binary representation.
@@ -148,41 +164,26 @@ tx_to_message(TX) ->
 	% First, get the fields and values of the tx record and pair them.
 	Fields = record_info(fields, tx),
 	Values = tl(tuple_to_list(TX)),
-	TXKeyValList = lists:zip(Fields, Values),
+	TXKeyVals = lists:zip(Fields, Values),
 	% Then, convert the list of key-value pairs into a map.
-	RawTXMap = maps:from_list(TXKeyValList),
-	?event({raw_tx_map, {explicit, RawTXMap}}),
-	% Next, filter out the hidden fields.
-	MapWithoutHidden =
-		maps:filter(
-			fun(Key, _) ->
-				lists:member(
-					Key,
-					[
-						id,
-						unsigned_id,
-						last_tx,
-						owner,
-						target,
-						signature
-					]
-				)
-			end,
-			RawTXMap
-		),
+	UnfilteredTXMap = maps:from_list(TXKeyVals),
+	TXMap = maps:with(?USER_TX_FIELDS, UnfilteredTXMap),
 	% Next, merge the tags into the map.
-	MapWithoutData =
-		maps:merge(MapWithoutHidden, maps:from_list(TX#tx.tags)),
+	MapWithoutData = maps:merge(TXMap, maps:from_list(TX#tx.tags)),
 	% Finally, merge the data into the map.
 	case TX#tx.data of
 		Data when is_map(Data) ->
 			% If the data is a map, we need to recursively turn its children
 			% into messages from their tx representations.
-			?event({merging_data, {explicit, Data}}),
-			maps:merge(
-				MapWithoutData,
-				maps:map(fun message_to_tx/1, Data)
-			);
+			MapWithoutData#{
+				data =>
+					maps:map(
+						fun(_, InnerValue) ->
+							tx_to_message(InnerValue)
+						end,
+						Data
+					)
+			};
 		Data when is_binary(Data) ->
 			MapWithoutData#{ data => Data };
 		Data ->
@@ -239,6 +240,26 @@ single_layer_tx_to_message_test() ->
 	?assertEqual(maps:get(owner, Msg), << 3:256 >>),
 	?assertEqual(maps:get(target, Msg), << 4:256 >>).
 
+%% @doc Test that the keys that are present in both maps match. If a key has a
+%% value that is a map, we recursively check that the keys in the nested map
+%% match.
+present_keys_match(Map1, Map2) ->
+	Keys1 = maps:keys(Map1),
+	Keys2 = maps:keys(Map2),
+	lists:all(
+		fun(Key) ->
+			Val1 = maps:get(Key, Map1, not_found),
+			Val2 = maps:get(Key, Map2, not_found),
+			case is_map(Val1) andalso is_map(Val2) of
+				true -> present_keys_match(Val1, Val2);
+				false ->
+					?assertEqual(Val1, Val2),
+					true
+			end
+		end,
+		lists:filter(fun(Key) -> lists:member(Key, Keys2) end, Keys1)
+	).
+
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
 	Msg = #{
@@ -253,6 +274,4 @@ nested_message_to_tx_and_back_test() ->
 				}
 		}
 	},
-	TX = message_to_tx(Msg),
-	?event({turning_tx_back_to_message, {explicit, TX}}),
-	?assertEqual(Msg, tx_to_message(TX)).
+	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
