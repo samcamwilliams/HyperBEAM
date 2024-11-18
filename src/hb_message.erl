@@ -1,5 +1,6 @@
 -module(hb_message).
--export([id/1, id/2, load/2, serialize/2, deserialize/2, signers/1]).
+-export([id/1, id/2, load/2]).
+-export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -51,7 +52,15 @@ serialize(M) -> serialize(M, binary).
 serialize(M, json) ->
     jiffy:encode(ar_bundles:item_to_json_struct(M));
 serialize(M, binary) ->
-	message_to_tx(M).
+	ar_bundles:serialize(message_to_tx(M)).
+
+%% @doc Deserialize a message from a binary representation.
+deserialize(B) -> deserialize(B, binary).
+deserialize(J, json) ->
+	{JSONStruct} = jiffy:decode(J),
+	ar_bundles:json_struct_to_item(JSONStruct);
+deserialize(B, binary) ->
+	tx_to_message(ar_bundles:deserialize(B)).
 
 %% @doc Internal helper to translate a message to its #tx record representation,
 %% which can then be used by ar_bundles to serialize the message. We call the 
@@ -150,22 +159,15 @@ message_to_tx(Other) ->
 	?event({unexpected_message_form, {explicit, Other}}),
 	throw(invalid_tx).
 
-%% @doc Deserialize a message from a binary representation.
-deserialize(B) -> deserialize(B, binary).
-deserialize(J, json) ->
-    {JSONStruct} = jiffy:decode(J),
-    ar_bundles:json_struct_to_item(JSONStruct);
-deserialize(B, binary) ->
-    tx_to_message(B).
-
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
 tx_to_message(TX) ->
-	% First, get the fields and values of the tx record and pair them.
+	% We need to generate a map from each field of the tx record.
+	% Get the raw fields and values of the tx record and pair them.
 	Fields = record_info(fields, tx),
 	Values = tl(tuple_to_list(TX)),
 	TXKeyVals = lists:zip(Fields, Values),
-	% Then, convert the list of key-value pairs into a map.
+	% Convert the list of key-value pairs into a map.
 	UnfilteredTXMap = maps:from_list(TXKeyVals),
 	TXMap = maps:with(?USER_TX_FIELDS, UnfilteredTXMap),
 	% Next, merge the tags into the map.
@@ -260,6 +262,12 @@ present_keys_match(Map1, Map2) ->
 		lists:filter(fun(Key) -> lists:member(Key, Keys2) end, Keys1)
 	).
 
+%% @doc Test that two txs match. Note: This function uses tx_to_message/1
+%% underneath, which (depending on the test) could potentially lead to false
+%% positives.
+txs_match(TX1, TX2) ->
+	present_keys_match(tx_to_message(TX1), tx_to_message(TX2)).
+
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
 	Msg = #{
@@ -275,3 +283,61 @@ nested_message_to_tx_and_back_test() ->
 		}
 	},
 	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+%% @doc Test that we can convert a signed tx into a message and back.
+signed_tx_to_message_and_back_test() ->
+	TX = #tx {
+		data = <<"TEST_DATA">>,
+		tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
+	},
+	SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
+	?assert(ar_bundles:verify_item(SignedTX)),
+	SignedMsg = tx_to_message(SignedTX),
+	SignedTX2 = message_to_tx(SignedMsg),
+	?assert(ar_bundles:verify_item(SignedTX2)).
+
+signed_deep_tx_to_message_and_back_test() ->
+	TX = #tx {
+		tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}],
+		data = #{
+			<<"NESTED_TX">> =>
+				#tx {
+					data = <<"NESTED_DATA">>,
+					tags = [{<<"NESTED_KEY">>, <<"NESTED_VALUE">>}]
+				}
+		}
+	},
+	SignedTX =
+		ar_bundles:deserialize(
+			ar_bundles:sign_item(TX, hb:wallet())
+		),
+	?assert(ar_bundles:verify_item(SignedTX)),
+	SignedMsg = tx_to_message(SignedTX),
+	SignedTX2 = message_to_tx(SignedMsg),
+	?assert(
+		txs_match(SignedTX, SignedTX2)
+	).
+
+signed_deep_tx_serialize_and_deserialize_test() ->
+	TX = #tx {
+		tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}],
+		data = #{
+			<<"NESTED_TX">> =>
+				#tx {
+					data = <<"NESTED_DATA">>,
+					tags = [{<<"NESTED_KEY">>, <<"NESTED_VALUE">>}]
+				}
+		}
+	},
+	SignedTX = ar_bundles:deserialize(
+		ar_bundles:sign_item(TX, hb:wallet())
+	),
+	?assert(ar_bundles:verify_item(SignedTX)),
+	SerializedTX = serialize(SignedTX),
+	DeserializedTX = deserialize(SerializedTX),
+	?assert(
+		present_keys_match(
+			tx_to_message(SignedTX),
+			DeserializedTX
+		)
+	).
