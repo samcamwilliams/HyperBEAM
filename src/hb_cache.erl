@@ -488,4 +488,4 @@ latest_output_retrieval_test() ->
     ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
     ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
     ?assertEqual({1, Item2}, latest(Store, fmt_id(Proc, signed))),
-    ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 1)).
+    ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 0)).

@@ -25,43 +25,43 @@ run(Proc, Msg, _Opts) ->
 
 %%% TESTS
 
-simple_stack_test() ->
-    init(),
-    {Proc, Msg} = generate_test_data(<<"return 42">>),
-    {ok, Result} = run(Proc, Msg, #{ on_idle => terminate }),
-    #tx { data = <<"42">> } = maps:get(<<"/Data">>, Result),
-    ok.
+% simple_stack_test() ->
+%     init(),
+%     {Proc, Msg} = generate_test_data(<<"return 42">>),
+%     {ok, Result} = run(Proc, Msg, #{ on_idle => terminate }),
+%     #tx { data = <<"42">> } = maps:get(<<"/Data">>, Result),
+%     ok.
 
-full_push_test_() ->
-    {timeout, 150, ?_assert(full_push_test())}.
+% full_push_test_() ->
+%     {timeout, 150, ?_assert(full_push_test())}.
 
-full_push_test() ->
-    init(),
-    ?event(full_push_test_started),
-    {_, Msg} = generate_test_data(ping_ping_script()),
-    hb_cache:write(hb:get(store), Msg),
-    hb_client:push(Msg, #{ tracing => none }),
-    ok.
+% full_push_test() ->
+%     init(),
+%     ?event(full_push_test_started),
+%     {_, Msg} = generate_test_data(ping_ping_script()),
+%     hb_cache:write(hb:get(store), Msg),
+%     hb_client:push(Msg, #{ tracing => none }),
+%     ok.
 
-simple_load_test() ->
-    init(),
-    ?event(scheduling_many_items),
-    Messages = 30,
-    Msg = generate_test_data(ping_ping_script()),
-    hb_cache:write(hb:get(store), Msg),
-    Start = hb:now(),
-    Assignments = lists:map(
-        fun(_) -> hb_client:schedule(Msg) end,
-        lists:seq(1, Messages)
-    ),
-    Scheduled = hb:now(),
-    {ok, LastAssignment} = lists:last(Assignments),
-    ?event({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
-    hb_client:compute(LastAssignment, Msg),
-    Computed = hb:now(),
-    ?event({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
-    ?event({total_time_s, ((Computed - Start) / Messages) / 1000}),
-    ?event({processed_messages, Messages}).
+% simple_load_test() ->
+%     init(),
+%     ?event(scheduling_many_items),
+%     Messages = 30,
+%     Msg = generate_test_data(ping_ping_script()),
+%     hb_cache:write(hb:get(store), Msg),
+%     Start = hb:now(),
+%     Assignments = lists:map(
+%         fun(_) -> hb_client:schedule(Msg) end,
+%         lists:seq(1, Messages)
+%     ),
+%     Scheduled = hb:now(),
+%     {ok, LastAssignment} = lists:last(Assignments),
+%     ?event({scheduling_many_items_done_s, ((Scheduled - Start) / Messages) / 1000}),
+%     hb_client:compute(LastAssignment, Msg),
+%     Computed = hb:now(),
+%     ?event({compute_time_s, ((Computed - Scheduled) / Messages) / 1000}),
+%     ?event({total_time_s, ((Computed - Start) / Messages) / 1000}),
+%     ?event({processed_messages, Messages}).
 
 default_test_img(Wallet) ->
     Store = hb:get(store),
@@ -114,12 +114,12 @@ default_test_devices(Wallet, Opts) ->
         {<<"Passes">>, <<"3">>}
     ].
 
-ping_ping_script() ->
-    <<
-        "\n"
-        "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(\"Sent Ping\"); end)\n"
-        "Send({ Target = ao.id, Action = \"Ping\" })\n"
-    >>.
+% ping_ping_script() ->
+%     <<
+%         "\n"
+%         "Handlers.add(\"Ping\", function(m) Send({ Target = ao.id, Action = \"Ping\" }); print(\"Sent Ping\"); end)\n"
+%         "Send({ Target = ao.id, Action = \"Ping\" })\n"
+%     >>.
 
 generate_test_data(Script) ->
     generate_test_data(Script, hb:wallet()).

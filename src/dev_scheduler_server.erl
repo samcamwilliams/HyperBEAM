@@ -172,24 +172,15 @@ next_hashchain(HashChain, Message) ->
 
 %% TESTS
 
-new_proc() ->
+new_proc_test() ->
     application:ensure_all_started(hb),
     Wallet = ar_wallet:new(),
     SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
-    ?event(1),
     SignedItem2 = ar_bundles:sign_item(#tx{ data = <<"test2">> }, Wallet),
-    ?event(2),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
-    ?event(3),
     dev_scheduler_registry:find(binary_to_list(hb_message:id(SignedItem, signed)), true),
-    ?event(4),
     schedule(ID = binary_to_list(hb_message:id(SignedItem, signed)), SignedItem),
-    ?event(5),
     schedule(ID, SignedItem2),
-    ?event(6),
     schedule(ID, SignedItem3),
-    {2, _} = dev_scheduler_server:get_current_slot(ID),
-    true.
-
-new_proc_test_() ->
-    {timeout, 30, ?_assert(new_proc())}.
+    ?assertEqual(2, dev_scheduler_server:get_current_slot(
+		dev_scheduler_registry:find(ID))).

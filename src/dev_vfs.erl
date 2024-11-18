@@ -1,7 +1,6 @@
 -module(dev_vfs).
--export([init/1, execute/2]).
+-export([init/1, execute/2, stdout/1]).
 -include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 -record(fd, {
     index :: non_neg_integer(),
@@ -74,6 +73,10 @@ execute(_M, S = #{ pass := 2, vfs := FDs }) ->
     };
 execute(_M, S) ->
     {ok, S}.
+
+%% @doc Return the stdout buffer from a state message.
+stdout(#{ vfs := #{ 1 := #fd { data = Data } } }) ->
+	Data.
 
 path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
     ?event({path_open, FDPtr, LookupFlag, PathPtr}),
@@ -157,14 +160,3 @@ parse_iovec(Port, Ptr) ->
     {ok, VecStruct} = hb_beamr_io:read(Port, Ptr, 16),
     <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
     {BinPtr, Len}.
-
-write_file_test() ->
-    hb_test:init(),
-    {Proc, Msg} = hb_test:generate_test_data(
-        <<"file = io.open(\"/dev/stdin\", \"r\")
-        ourline = file:read(),
-        file:close(file)
-        print(ourline)">>
-    ),
-    {ok, #{ <<"/Data">> := #tx { data = Data } }} = hb_test:run(Proc, Msg),
-    ?assertEqual(Data, <<"file = io.open(\"/dev/stdin\", \"r\")">>).

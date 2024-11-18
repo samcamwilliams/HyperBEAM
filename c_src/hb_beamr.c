@@ -708,7 +708,7 @@ static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
 
 static void wasm_driver_stop(ErlDrvData raw) {
     Proc* proc = (Proc*)raw;
-    DRV_PRINT("Stopping WASM driver");
+    DRV_DEBUG("Stopping WASM driver");
 
     // TODO: We should probably lock a mutex here and in the import_response function.
     if(proc->current_import) {
