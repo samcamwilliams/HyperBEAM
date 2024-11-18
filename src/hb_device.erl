@@ -195,8 +195,8 @@ find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 			end
 	end;
 find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
-find_exported_function(NonAtomKey, Mod, Arity) when not is_atom(NonAtomKey) ->
-	case key_to_atom(NonAtomKey) of
+find_exported_function(Mod, Key, Arity) when not is_atom(Key) ->
+	case key_to_atom(Key) of
 		undefined -> not_found;
 		KeyAtom -> find_exported_function(Mod, KeyAtom, Arity)
 	end;
