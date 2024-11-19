@@ -15,6 +15,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      image_name: ${{ steps.set_image_name.outputs.image_name }}
     steps:
       - uses: actions/checkout@v4
       - id: auth
@@ -42,22 +44,22 @@ jobs:
           rebar3 compile
           rebar3 release
 
-      # Store the image name with timestamp and commit SHA
       - name: Set image name with timestamp and commit SHA
+        id: set_image_name
         run: |
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-          echo "TIMESTAMPED_IMAGE_NAME=${{ env.GCP_IMAGE_NAME }}-${SHORT_SHA}-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
+          TIMESTAMPED_IMAGE_NAME="${{ env.GCP_IMAGE_NAME }}-${SHORT_SHA}-$(date +%Y%m%d-%H%M%S)"
+          echo "image_name=${TIMESTAMPED_IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Build Packer Image
         run: | 
           packer init .
           packer validate .
-          packer build -var "image_name=${{ env.TIMESTAMPED_IMAGE_NAME }}" -var "project_id=${{ env.GCP_PROJECT }}" .
+          packer build -var "image_name=${{ steps.set_image_name.outputs.image_name }}" -var "project_id=${{ env.GCP_PROJECT }}" .
 
-      # Tag and store the image name for later jobs
       - name: Tag image for reference
         run: |
-          gcloud compute images add-labels ${{ env.TIMESTAMPED_IMAGE_NAME }} \
+          gcloud compute images add-labels ${{ steps.set_image_name.outputs.image_name }} \
             --project=${{ env.GCP_PROJECT }} \
             --labels=workflow_run=${{ github.run_id }},commit_sha=${{ github.sha }}
 
@@ -90,7 +92,7 @@ jobs:
             --shielded-secure-boot \
             --shielded-vtpm \
             --shielded-integrity-monitoring \
-            --create-disk=auto-delete=yes,boot=yes,image=projects/${{ env.GCP_PROJECT }}/global/images/${{ env.TIMESTAMPED_IMAGE_NAME }},mode=rw,size=20,type=pd-balanced
+            --create-disk=auto-delete=yes,boot=yes,image=projects/${{ env.GCP_PROJECT }}/global/images/${{ needs.build.outputs.image_name }},mode=rw,size=20,type=pd-balanced
 
   test:
     needs: deploy
@@ -105,7 +107,7 @@ jobs:
           echo "Running tests..."
 
   cleanup:
-    needs: test
+    needs: [build, test]  # Added build to needs to access the image name
     if: always()
     runs-on: ubuntu-latest
     steps:
