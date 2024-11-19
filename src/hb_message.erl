@@ -30,10 +30,10 @@ set(Message, KeyValues) ->
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).
-id(Tx, Type) when is_record(Tx, tx) ->
-	ar_bundles:id(Tx, Type);
+id(TX, Type) when is_record(TX, tx) ->
+	ar_util:encode(ar_bundles:id(TX, Type));
 id(Map, Type) when is_map(Map) ->
-	ar_bundles:id(message_to_tx(Map), Type);
+	ar_util:encode(ar_bundles:id(message_to_tx(Map), Type));
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
@@ -360,7 +360,10 @@ calculate_unsigned_message_id_test() ->
 	},
 	UnsignedTX = message_to_tx(Msg),
 	UnsignedMessage = tx_to_message(UnsignedTX),
-	?assertEqual(ar_bundles:id(UnsignedTX, unsigned), id(UnsignedMessage, unsigned)).
+	?assertEqual(
+		ar_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
+		id(UnsignedMessage, unsigned)
+	).
 
 sign_serialize_deserialize_verify_test() ->
 	Msg = #{
@@ -379,7 +382,7 @@ unsigned_id_test() ->
 	UnsignedTX = ar_bundles:normalize(#tx { data = <<"TEST_DATA">> }),
 	UnsignedMessage = tx_to_message(UnsignedTX),
 	?assertEqual(
-		ar_bundles:id(UnsignedTX, unsigned),
+		ar_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
 		hb_message:id(UnsignedMessage, unsigned)
 	).
 
@@ -392,6 +395,6 @@ signed_id_test() ->
 	?assert(ar_bundles:verify_item(SignedTX)),
 	SignedMsg = tx_to_message(SignedTX),
 	?assertEqual(
-		ar_bundles:id(SignedTX, signed),
+		ar_util:encode(ar_bundles:id(SignedTX, signed)),
 		hb_message:id(SignedMsg, signed)
 	).

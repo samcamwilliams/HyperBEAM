@@ -138,8 +138,7 @@ do_assign(State, Message, ReplyPID) ->
 					% due to badarg on byte_length. Not sure that accessing
 					% Message as a record (like process id from State above)
 					% is the correct solution.
-					% {<<"Message">>, hb_message:id(Message, signed)},
-                    {<<"Message">>, hb_message:id(Message#tx.id)},
+					{<<"Message">>, hb_message:id(Message, signed)},
                     {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
                     {<<"Block-Hash">>, Hash},
                     {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
