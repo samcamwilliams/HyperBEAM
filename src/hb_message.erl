@@ -5,17 +5,19 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% The main module for engaing with messages. All messages are represented as
+%%% The main module for managing messages. All messages are represented as
 %%% maps in Erlang at the data layer, but should be accessed through this
 %%% module such that any necessary executions can be made to retrieve their
-%%% underlying data.
+%%% underlying data. The `dev_identity` module wraps this module to provide
+%%% its services as a callable hyperbeam device.
 
 %% @doc The size at which a value should be made into a body item, instead of a
 %% tag.
 -define(MAX_TAG_VAL, 128).
 %% @doc The list of TX fields that users can set directly.
--define(USER_TX_FIELDS,
+-define(USER_TX_KEYS,
 	[id, unsigned_id, last_tx, owner, target, data, signature]).
+-define(REGEN_KEYS, [id, unsigned_id]).
 
 %% @doc Wrap a device call in the background to retrieve a key from a message.
 get(Message, Key) ->
@@ -94,11 +96,17 @@ message_to_tx(M) when is_map(M) ->
 									Map
 								)
 							};
-						{ok, Value} -> {Key, Value};
+						{ok, Value} -> 
+							{Key, Value};
 						not_found -> {Key, not_found}
 					end
 				end,
-				Keys
+				lists:filter(
+					fun(Key) -> 
+						not lists:member(Key, ?REGEN_KEYS)
+					end,
+					Keys
+				)
 			)
 		),
 	% Get the fields and default values of the tx record.
@@ -135,8 +143,8 @@ message_to_tx(M) when is_map(M) ->
 	% We don't let the user set the tags directly, but they can instead set any
 	% number of keys to short binary values, which will be included as tags.
 	TX = TXWithoutTags#tx { tags = Tags },
-	% Finally, we set the data based on the remaining keys.
-	case {TX#tx.data, DataItems} of
+	% Set the data based on the remaining keys.
+	TXWithData = case {TX#tx.data, DataItems} of
 		{_, []} ->
 			% There are no remaining data items so we use the default data value.
 			TX;
@@ -156,7 +164,8 @@ message_to_tx(M) when is_map(M) ->
 					{keys, maps:keys(RemainingMap)}
 				}
 			)
-	end;
+	end,
+	ar_bundles:reset_ids(TXWithData);
 message_to_tx(Other) ->
 	?event({unexpected_message_form, {explicit, Other}}),
 	throw(invalid_tx).
@@ -171,7 +180,7 @@ tx_to_message(TX) ->
 	TXKeyVals = lists:zip(Fields, Values),
 	% Convert the list of key-value pairs into a map.
 	UnfilteredTXMap = maps:from_list(TXKeyVals),
-	TXMap = maps:with(?USER_TX_FIELDS, UnfilteredTXMap),
+	TXMap = maps:with(?USER_TX_KEYS, UnfilteredTXMap),
 	% Next, merge the tags into the map.
 	MapWithoutData = maps:merge(TXMap, maps:from_list(TX#tx.tags)),
 	% Finally, merge the data into the map.
@@ -206,23 +215,19 @@ basic_map_to_tx_test() ->
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_tx_test() ->
 	Msg = #{
-		id => << 0:256 >>,
-		unsigned_id => << 1:256 >>,
 		last_tx => << 2:256 >>,
 		owner => << 3:256 >>,
 		target => << 4:256 >>,
 		data => <<"DATA">>,
-		special_key => <<"SPECIAL_KEY">>
+		<<"special_key">> => <<"SPECIAL_VALUE">>
 	},
 	TX = message_to_tx(Msg),
-	?assertEqual(maps:get(id, Msg), TX#tx.id),
-	?assertEqual(maps:get(unsigned_id, Msg), TX#tx.unsigned_id),
 	?assertEqual(maps:get(last_tx, Msg), TX#tx.last_tx),
 	?assertEqual(maps:get(owner, Msg), TX#tx.owner),
 	?assertEqual(maps:get(target, Msg), TX#tx.target),
 	?assertEqual(maps:get(data, Msg), TX#tx.data),
-	?assertEqual({special_key, <<"SPECIAL_KEY">>},
-		lists:keyfind(special_key, 1, TX#tx.tags)).
+	?assertEqual({<<"special_key">>, <<"SPECIAL_VALUE">>},
+		lists:keyfind(<<"special_key">>, 1, TX#tx.tags)).
 
 %% @doc Test that we can convert a #tx record into a message correctly.
 single_layer_tx_to_message_test() ->
@@ -257,8 +262,12 @@ present_keys_match(Map1, Map2) ->
 			case is_map(Val1) andalso is_map(Val2) of
 				true -> present_keys_match(Val1, Val2);
 				false ->
-					?assertEqual(Val1, Val2),
-					true
+					case Val1 == Val2 of
+						true -> true;
+						false ->
+							?event({key_mismatch, {explicit, {Key, Val1, Val2}}}),
+							false
+					end
 			end
 		end,
 		lists:filter(fun(Key) -> lists:member(Key, Keys2) end, Keys1)
@@ -273,12 +282,10 @@ txs_match(TX1, TX2) ->
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
 	Msg = #{
-		id => << 1:1, 1:255 >>,
 		<<"tx_depth">> => <<"outer">>,
 		data => #{
 			<<"tx_map_item">> =>
 				#{
-					id => << 2:2, 2:254 >>,
 					<<"tx_depth">> => <<"inner">>,
 					data => <<"DATA">>
 				}
@@ -344,10 +351,45 @@ signed_deep_tx_serialize_and_deserialize_test() ->
 		)
 	).
 
+calculate_unsigned_message_id_test() ->
+	Msg = #{
+		data => <<"DATA">>,
+		<<"special_key">> => <<"SPECIAL_KEY">>
+	},
+	UnsignedTX = message_to_tx(Msg),
+	UnsignedMessage = tx_to_message(UnsignedTX),
+	?assertEqual(ar_bundles:id(UnsignedTX, unsigned), id(UnsignedMessage, unsigned)).
+
+sign_serialize_deserialize_verify_test() ->
+	Msg = #{
+		data => <<"DATA">>,
+		<<"special_key">> => <<"SPECIAL_KEY">>
+	},
+	TX = message_to_tx(Msg),
+	SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
+	?assert(ar_bundles:verify_item(SignedTX)),
+	SerializedMsg = serialize(SignedTX),
+	DeserializedMsg = deserialize(SerializedMsg),
+	DeserializedTX = message_to_tx(DeserializedMsg),
+	?assert(ar_bundles:verify_item(DeserializedTX)).
+
 unsigned_id_test() ->
 	UnsignedTX = ar_bundles:normalize(#tx { data = <<"TEST_DATA">> }),
 	UnsignedMessage = tx_to_message(UnsignedTX),
 	?assertEqual(
 		ar_bundles:id(UnsignedTX, unsigned),
 		hb_message:id(UnsignedMessage, unsigned)
+	).
+
+signed_id_test() ->
+	TX = #tx {
+		data = <<"TEST_DATA">>,
+		tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
+	},
+	SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
+	?assert(ar_bundles:verify_item(SignedTX)),
+	SignedMsg = tx_to_message(SignedTX),
+	?assertEqual(
+		ar_bundles:id(SignedTX, signed),
+		hb_message:id(SignedMsg, signed)
 	).

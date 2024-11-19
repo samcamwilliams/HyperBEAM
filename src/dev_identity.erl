@@ -1,31 +1,40 @@
 -module(dev_identity).
 -export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
+-export([no_serialize/0]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
 %%% not included.
 
 %% @doc Return the info for the identity device.
-info() -> #{ default => fun get_public/2 }.
+info() ->
+	#{
+		default => fun get_public/2
+	}.
 
 %% @doc Return the ID of a message. If the message already has an ID, return
 %% that. Otherwise, return the signed ID.
 id(M) ->
-	case maps:get(id, M, undefined) of
-		undefined ->
-			{ok, hb_message:id(M, signed)};
-		ID -> {ok, ID}
-	end.
+	?h(),
+	{ok, hb_message:id(M, signed)}.
+	% case {maps:get(id, M, undefined), maps:get(signature, M, ?DEFAULT_SIG)} of
+	% 	{unsigned, _} ->
+	% 		{ok, hb_message:id(M, signed)};
+	% 	{ID, _} -> {ok, ID}
+	% end.
 
 %% @doc Wrap a call to the `hb_message:id/2` function, which returns the
 %% unsigned ID of a message.
 unsigned_id(M) ->
-	case maps:get(id, M, undefined) of
-		undefined ->
-			{ok, hb_message:id(M, unsigned)};
-		ID -> {ok, ID}
-	end.
+	?h(),
+	{ok, hb_message:id(M, unsigned)}.
+	% case maps:get(id, M, undefined) of
+	% 	X when X == ?DEFAULT_ID orelse X == undefined ->
+	% 		{ok, hb_message:id(M, unsigned)};
+	% 	ID -> {ok, ID}
+	% end.
 
 %% @doc Return the signers of a message.
 signers(M) ->
@@ -49,6 +58,9 @@ get_public(Key, Msg) ->
 		true -> {ok, maps:get(Key, Msg)};
 		false -> {error, {badkey, Key}}
 	end.
+
+%% @doc Return the keys that should not be serialized.
+no_serialize() -> {ok, [id, unsigned_id]}.
 
 %% @doc Check if a key is private.
 is_private(Key) ->
