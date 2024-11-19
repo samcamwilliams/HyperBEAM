@@ -134,7 +134,12 @@ do_assign(State, Message, ReplyPID) ->
                     {<<"Process">>, hb_message:id(State#state.id)},
                     {<<"Epoch">>, <<"0">>},
                     {<<"Slot">>, list_to_binary(integer_to_list(NextNonce))},
-                    {<<"Message">>, hb_message:id(Message, signed)},
+					% This was causing an error during tag encoding,
+					% due to badarg on byte_length. Not sure that accessing
+					% Message as a record (like process id from State above)
+					% is the correct solution.
+					% {<<"Message">>, hb_message:id(Message, signed)},
+                    {<<"Message">>, hb_message:id(Message#tx.id)},
                     {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
                     {<<"Block-Hash">>, Hash},
                     {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
