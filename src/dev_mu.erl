@@ -48,9 +48,9 @@ push(CarrierMsg, State) ->
 			ResTX = ar_bundles:sign_item(
 				#tx{ tags = [{<<"Status">>, <<"200">>}]},
 				hb:wallet()),
-			{ok, #{ results => ResTX }};
-        false ->
-            {error, cannot_push_invalid_message}
+			{ok, #{ results => ResTX }}
+        %false ->
+        %    {error, cannot_push_invalid_message}
     end.
 
 %% Take a computation result and fork each message/spawn/... into its own worker.

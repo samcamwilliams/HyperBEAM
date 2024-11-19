@@ -1,7 +1,7 @@
 -module(ar_util).
--export([encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2,
-         find_value/3]).
--export([remove_common/2]).
+-export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
+-export([find_value/2, find_value/3]).
+-export([number/1, map_hd/1, remove_common/2, list_to_numbered_map/1]).
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
@@ -12,6 +12,7 @@ encode(Bin) ->
 decode(Input) ->
   b64fast:decode(Input).
 
+%% @doc Safely encode a binary to URL safe base64.
 safe_encode(Bin) when is_binary(Bin) ->
   encode(Bin);
 safe_encode(Bin) ->
@@ -27,6 +28,21 @@ safe_decode(E) ->
     _:_ ->
       {error, invalid}
   end.
+
+%% @doc Label a list of elements with a number.
+number(List) ->
+	lists:map(
+		fun({N, Item}) -> {integer_to_binary(N), Item} end,
+		lists:zip(lists:seq(1, length(List)), List)
+	).
+
+%% @doc Convert a list of elements to a map with numbered keys.
+list_to_numbered_map(List) ->
+  maps:from_list(number(List)).
+
+%% @doc Get the first element of a numbered map.
+map_hd(Map) ->
+  maps:get(<<"1">>, Map).
 
 %% @doc Find the value associated with a key in parsed a JSON structure list.
 find_value(Key, List) ->

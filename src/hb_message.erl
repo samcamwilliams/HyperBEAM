@@ -28,13 +28,8 @@ set(Message, KeyValues) ->
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).
-id(TX, Type) when is_record(TX, tx) ->
-	case ar_bundles:id(TX, Type) of
-		not_signed -> not_signed;
-		ID -> id(ID, Type)
-	end;
-id(Map, unsigned) when is_map(Map) ->
-	id(ar_bundles:normalize(#tx { data = Map }), unsigned);
+id(Map, Type) when is_map(Map) ->
+	ar_bundles:id(message_to_tx(Map), Type);
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
@@ -278,12 +273,12 @@ txs_match(TX1, TX2) ->
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
 	Msg = #{
-		id => << 1:256 >>,
+		id => << 1:1, 1:255 >>,
 		<<"tx_depth">> => <<"outer">>,
 		data => #{
 			<<"tx_map_item">> =>
 				#{
-					id => << 2:256 >>,
+					id => << 2:2, 2:254 >>,
 					<<"tx_depth">> => <<"inner">>,
 					data => <<"DATA">>
 				}
@@ -347,4 +342,12 @@ signed_deep_tx_serialize_and_deserialize_test() ->
 			tx_to_message(SignedTX),
 			DeserializedTX
 		)
+	).
+
+unsigned_id_test() ->
+	UnsignedTX = ar_bundles:normalize(#tx { data = <<"TEST_DATA">> }),
+	UnsignedMessage = tx_to_message(UnsignedTX),
+	?assertEqual(
+		ar_bundles:id(UnsignedTX, unsigned),
+		hb_message:id(UnsignedMessage, unsigned)
 	).

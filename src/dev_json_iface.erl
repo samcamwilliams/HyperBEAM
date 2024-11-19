@@ -146,10 +146,7 @@ stdlib(S, Port, ModName, FuncName, Args, Sig) ->
                     Arity
                 ),
             erlang:apply(Func, ApplicationTerms)
-    end;
-stdlib(S, Port, ModName, FuncName, Args, Sig) ->
-    ?event(stdlib_called_2),
-    lib(S, Port, ModName, FuncName, Args, Sig).
+    end.
 
 lib(S, _Port, Args, Module, Func, Signature) ->
     ?event({unimplemented_stub_called, Module, Func, Args, Signature}),

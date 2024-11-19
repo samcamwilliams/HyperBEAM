@@ -1,5 +1,5 @@
 -module(dev_identity).
--export([info/0, keys/1]).
+-export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
 -include_lib("eunit/include/eunit.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
@@ -8,6 +8,28 @@
 
 %% @doc Return the info for the identity device.
 info() -> #{ default => fun get_public/2 }.
+
+%% @doc Return the ID of a message. If the message already has an ID, return
+%% that. Otherwise, return the signed ID.
+id(M) ->
+	case maps:get(id, M, undefined) of
+		undefined ->
+			{ok, hb_message:id(M, signed)};
+		ID -> {ok, ID}
+	end.
+
+%% @doc Wrap a call to the `hb_message:id/2` function, which returns the
+%% unsigned ID of a message.
+unsigned_id(M) ->
+	case maps:get(id, M, undefined) of
+		undefined ->
+			{ok, hb_message:id(M, unsigned)};
+		ID -> {ok, ID}
+	end.
+
+%% @doc Return the signers of a message.
+signers(M) ->
+	{ok, ar_util:list_to_numbered_map(hb_message:signers(M))}.
 
 %% @doc Get the public keys of a message.
 keys(Msg) ->
