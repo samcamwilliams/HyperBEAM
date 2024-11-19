@@ -1,9 +1,21 @@
 -include("include/ar.hrl").
+
+%%% Functional macros that pass the current module and line number to the
+%%% underlying function.
 -define(event(X), hb:event(X, ?MODULE, ?LINE)).
 -define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?LINE)).
-
 -define(no_prod(X), hb:no_prod(X, ?MODULE, ?LINE)).
--define(stop(), erlang:halt()).
+
+%%% Macro shortcuts for debugging.
+%% @doc A macro for marking that you got 'here'.
+-define(h(), hb:event("[Debug point reached.]", ?MODULE, ?LINE)).
+%% @doc Quickly print a value in the logs. Currently uses the event
+%% function, but should be moved to a debug-specific function once we
+%% build out better logging infrastructure.
+-define(p(X), hb:event(X, ?MODULE, ?LINE)).
+% We don't include a macro for waiting, as it is destructive to UX.
+% If you need to wait, it should at least be obvious to readers of
+% the code what is happening.
 
 -record(result, {
 	messages = [],

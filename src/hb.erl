@@ -171,7 +171,7 @@ config() ->
         local_store =>
             [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
-        debug_print => false
+        debug_print => true
     }.
 
 -define(ENV_KEYS,
@@ -327,5 +327,7 @@ profile(Fun) ->
 %% @doc Utility function to wait for a given amount of time, printing a debug
 %% message to the console first.
 debug_wait(T, Mod, Line) ->
-    debug_print({debug_wait, T}, Mod, Line),
+    debug_print(
+		lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
+		Mod, Line),
     receive after T -> ok end.
