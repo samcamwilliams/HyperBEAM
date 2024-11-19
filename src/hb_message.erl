@@ -30,6 +30,8 @@ set(Message, KeyValues) ->
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 id(Item) -> id(Item, unsigned).
+id(Tx, Type) when is_record(Tx, tx) ->
+	ar_bundles:id(Tx, Type);
 id(Map, Type) when is_map(Map) ->
 	ar_bundles:id(message_to_tx(Map), Type);
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
