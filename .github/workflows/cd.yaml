@@ -50,7 +50,7 @@ jobs:
 
     - name: Create Confidential VM
       run: |
-        gcloud compute instance create ${{ env.GCP_INSTANCE_NAME }} \
+        gcloud compute instances create ${{ env.GCP_INSTANCE_NAME }} \
           --image=${{ env.GCP_IMAGE_NAME }} \
           --project=${{ env.GCP_PROJECT }} \
           --zone=${{ env.GCP_ZONE }} \ 
