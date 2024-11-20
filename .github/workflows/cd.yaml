@@ -10,7 +10,7 @@ env:
   GCP_IMAGE_NAME: hyperbeam-image
   GCP_PROJECT: hyperbeam-cd
   GCP_INSTANCE_NAME: hyperbeam
-  GCP_ZONE: us-east1-a
+  GCP_ZONE: us-central1-a
 
 jobs:
   build:
