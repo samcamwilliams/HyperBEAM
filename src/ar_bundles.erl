@@ -48,10 +48,10 @@ format(Item, Indent) when is_record(Item, tx) ->
                     lists:flatten(
                         io_lib:format(
                             "~s (signed) ~s (unsigned)",
-                            [ar_util:encode(id(Item, signed)), ar_util:encode(id(Item, unsigned))]
+                            [hb_util:encode(id(Item, signed)), hb_util:encode(id(Item, unsigned))]
                         )
                     );
-                true -> ar_util:encode(id(Item, unsigned))
+                true -> hb_util:encode(id(Item, unsigned))
             end,
             if
                 Valid == true -> "[SIGNED+VALID]";
@@ -67,7 +67,7 @@ format(Item, Indent) when is_record(Item, tx) ->
     end ++
 	case is_signed(Item) of
 		true ->
-			format_line("Signer: ~s", [ar_util:encode(signer(Item))], Indent + 1);
+			format_line("Signer: ~s", [hb_util:encode(signer(Item))], Indent + 1);
 		false -> []
 	end ++
     format_line("Target: ~s", [
@@ -298,7 +298,7 @@ verify_data_item_id(DataItem) ->
 %% @doc Verify the data item's signature.
 verify_data_item_signature(DataItem) ->
     SignatureData = data_item_signature_data(DataItem),
-    %?event({unsigned_id, ar_util:encode(id(DataItem, unsigned)), ar_util:encode(SignatureData)}),
+    %?event({unsigned_id, hb_util:encode(id(DataItem, unsigned)), hb_util:encode(SignatureData)}),
     ar_wallet:verify(
         {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
     ).
@@ -517,7 +517,7 @@ add_manifest_tags(Tags, ManifestID) ->
             (_) -> true
         end,
         Tags
-    ) ++ [{<<"Bundle-Map">>, ar_util:encode(ManifestID)}].
+    ) ++ [{<<"Bundle-Map">>, hb_util:encode(ManifestID)}].
 
 finalize_bundle_data(Processed) ->
     Length = <<(length(Processed)):256/integer>>,
@@ -537,9 +537,9 @@ serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
     % For now we just serialize the map to a JSON string of Key=>TXID
     BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
-    Index = maps:map(fun(_, {TXID, _}) -> ar_util:encode(TXID) end, BinItems),
+    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
     NewManifest = new_manifest(Index),
-    %?event({generated_manifest, NewManifest == Manifest, ar_util:encode(id(NewManifest, unsigned)), Index}),
+    %?event({generated_manifest, NewManifest == Manifest, hb_util:encode(id(NewManifest, unsigned)), Index}),
     {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
 serialize_bundle_data(List, _Manifest) when is_list(List) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List));
@@ -707,14 +707,14 @@ maybe_unbundle_map(Bundle) ->
             case unbundle(Bundle) of
                 detached -> Bundle#tx { data = detached };
                 Items ->
-                    MapItem = find_single_layer(ar_util:decode(MapTXID), Items),
+                    MapItem = find_single_layer(hb_util:decode(MapTXID), Items),
                     Map = jiffy:decode(MapItem#tx.data, [return_maps]),
                     Bundle#tx{
                         manifest = MapItem,
                         data =
                             maps:map(
                                 fun(_K, TXID) ->
-                                    find_single_layer(ar_util:decode(TXID), Items)
+                                    find_single_layer(hb_util:decode(TXID), Items)
                                 end,
                                 Map
                             )
@@ -733,7 +733,7 @@ find_single_layer(UnsignedID, Items) ->
     case is_record(TX, tx) of
         true -> TX;
         false ->
-            throw({cannot_find_item, ar_util:encode(UnsignedID)})
+            throw({cannot_find_item, hb_util:encode(UnsignedID)})
     end.
 
 unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
@@ -778,14 +778,14 @@ item_to_json_struct(
     From =
         case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
             [{_, FromProcess}] -> FromProcess;
-            [] -> ar_util:encode(ar_wallet:to_address(Owner))
+            [] -> hb_util:encode(ar_wallet:to_address(Owner))
         end,
     Fields = [
-        {<<"Id">>, ar_util:encode(ID)},
+        {<<"Id">>, hb_util:encode(ID)},
         % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, ar_util:encode(Last)},
+        {<<"Anchor">>, hb_util:encode(Last)},
         % NOTE: When sent to ao "Owner" is the wallet address
-        {<<"Owner">>, ar_util:encode(ar_wallet:to_address(Owner))},
+        {<<"Owner">>, hb_util:encode(ar_wallet:to_address(Owner))},
         {<<"From">>, From},
         {<<"Tags">>,
             lists:map(
@@ -799,9 +799,9 @@ item_to_json_struct(
                 end,
                 Tags
             )},
-        {<<"Target">>, ar_util:encode(Target)},
+        {<<"Target">>, hb_util:encode(Target)},
         {<<"Data">>, Data},
-        {<<"Signature">>, ar_util:encode(Sig)}
+        {<<"Signature">>, hb_util:encode(Sig)}
     ],
     {Fields}.
 
@@ -817,19 +817,19 @@ json_struct_to_item({TXStruct}) ->
 json_struct_to_item(RawTXStruct) ->
     TXStruct = [{string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct],
     Tags =
-        case ar_util:find_value(<<"tags">>, TXStruct) of
+        case hb_util:find_value(<<"tags">>, TXStruct) of
             undefined ->
                 [];
             Xs ->
                 Xs
         end,
-    TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, ar_util:encode(?DEFAULT_ID))),
+    TXID = hb_util:decode(hb_util:find_value(<<"id">>, TXStruct, hb_util:encode(?DEFAULT_ID))),
     #tx{
         format = ans104,
         id = TXID,
-        last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
-        owner = ar_util:decode(
-            ar_util:find_value(<<"owner">>, TXStruct, ar_util:encode(?DEFAULT_OWNER))
+        last_tx = hb_util:decode(hb_util:find_value(<<"anchor">>, TXStruct, <<>>)),
+        owner = hb_util:decode(
+            hb_util:find_value(<<"owner">>, TXStruct, hb_util:encode(?DEFAULT_OWNER))
         ),
         tags =
             lists:map(
@@ -840,10 +840,10 @@ json_struct_to_item(RawTXStruct) ->
                 end,
                 Tags
             ),
-        target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
-        data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
-        signature = ar_util:decode(
-            ar_util:find_value(<<"signature">>, TXStruct, ar_util:encode(?DEFAULT_SIG))
+        target = hb_util:decode(hb_util:find_value(<<"target">>, TXStruct, <<>>)),
+        data = hb_util:find_value(<<"data">>, TXStruct, <<>>),
+        signature = hb_util:decode(
+            hb_util:find_value(<<"signature">>, TXStruct, hb_util:encode(?DEFAULT_SIG))
         )
     }.
 
@@ -1149,7 +1149,7 @@ test_serialize_deserialize_deep_signed_bundle() ->
     ?assert(verify_item(Item3)),
     % Test that we can write to disk and read back the same ID.
     hb_cache:write(hb:get(local_store), Item2),
-    {ok, FromDisk} = hb_cache:read_message(hb:get(local_store), ar_util:encode(id(Item2, unsigned))),
+    {ok, FromDisk} = hb_cache:read_message(hb:get(local_store), hb_util:encode(id(Item2, unsigned))),
     format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.

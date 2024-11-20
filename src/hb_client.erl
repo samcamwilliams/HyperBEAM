@@ -198,7 +198,7 @@ push(Item, Opts) ->
 push(Node, Item, Opts) when Item#tx.target =/= <<>> ->
     hb_http:post(
         Node,
-        ["/", ar_util:encode(Item#tx.target), "/Push" ++ path_opts(Opts, "?")],
+        ["/", hb_util:encode(Item#tx.target), "/Push" ++ path_opts(Opts, "?")],
         Item
     );
 push(Node, Item, Opts) ->
@@ -304,20 +304,20 @@ json_struct_to_result(Struct, Res) ->
             Res#result{
                 messages = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    ar_util:find_value(<<"Messages">>, Struct, [])
+                    hb_util:find_value(<<"Messages">>, Struct, [])
                 ),
-                assignments = ar_util:find_value(<<"Assignments">>, Struct, []),
+                assignments = hb_util:find_value(<<"Assignments">>, Struct, []),
                 spawns = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    ar_util:find_value(<<"Spawns">>, Struct, [])
+                    hb_util:find_value(<<"Spawns">>, Struct, [])
                 ),
-                output = ar_util:find_value(<<"Output">>, Struct, [])
+                output = hb_util:find_value(<<"Output">>, Struct, [])
             };
         {_, {NodeStruct}} ->
             json_struct_to_result(
                 NodeStruct,
                 Res#result{
-                    cursor = ar_util:find_value(<<"cursor">>, Struct, undefined)
+                    cursor = hb_util:find_value(<<"cursor">>, Struct, undefined)
                 }
             )
     end.

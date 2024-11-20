@@ -1,124 +1,142 @@
 -module(dev_stack).
 -export([info/0, from_process/1, create/1, create/2, create/3]).
 -export([boot/2, execute/2, execute/3, call/4]).
+-include_lib("eunit/include/eunit.hrl").
 
-%%% A device that contains a stack of other devices, which it runs in order
-%%% when its `execute` function is called.
+%%% @moduledoc A device that contains a stack of other devices, which it runs
+%%% upon input messages in the order of their keys. A stack maintains and passes
+%%% forward a state (expressed as a message) as it progresses through devices,
+%%% in a similar manner to a `fold` operation.
+%%% 
+%%% For example, a stack of devices as follows:
+%%%
+%%%  	Device -> Stack
+%%%  	Device-Stack/1/Name -> Add-One-Device
+%%%		Device-Stack/2/Name -> Add-Two-Device
+%%% 
+%%% When called with the message:
+%%% 
+%%% 	#{ Path = "FuncName", binary => <<"0">> }
+%%% 
+%%% Will produce the output:
+%%% 
+%%% 	#{ Path = "FuncName", binary => <<"3">> }
+%%% 	{ok, #{ bin => <<"3">> }}
+%%% 
+%%% The key that is called upon the device stack is the same key that is used
+%%% upon the devices that are contained within it. For example, in the above
+%%% scenario we resolve FuncName on the stack, leading FuncName to be called on
+%%% Add-One-Device and Add-Two-Device.
+%%% 
+%%% A device stack responds to special tags upon responses as follows:
+%%% 
+%%% 	`skip`: Skips the rest of the device stack for the current pass.
+%%% 	`pass`: Causes the stack to increment its pass number and re-execute
+%%% 	the stack from the first device, maintaining the state accumulated so
+%%% 	far.
+%%% 
+%%% In all cases, the device stack will return the accumulated state to the
+%%% caller as the result of the call to the stack.
+%%% 
+%%% The dev_stack adds additional metadata to the message in order to track
+%%% the state of its execution as it progresses through devices. These keys
+%%% are as follows:
+%%% 
+%%% 	`slot`: The number of times the stack has been executed upon different
+%%% 	messages.
+%%% 	`pass`: The number of times the stack has reset and re-executed from the
+%%% 	first device for the current message.
+%%% 
+%%% All counters used by the stack are initialized to 1.
+%%% 
+%%% Additionally, as implemented in HyperBEAM, the device stack will honor a
+%%% number of options that are passed to it as environment variables (as its
+%%% third `Opts` argument). Each of these options is also passed through to the
+%%% devices contained within the stack during execution. These options include:
+%%% 
+%%% 	Error-Strategy: Determines how the stack handles errors from devices.
+%%% 	See `maybe_error/5` for more information.
+%%% 	Allow-Multipass: Determines whether the stack is allowed to automatically
+%%% 	re-execute from the first device when the `pass` tag is returned. See
+%%% 	`maybe_pass/3` for more information.
 
 -include("include/hb.hrl").
 -hb_debug(print).
 
 info() ->
     #{
-        handle => fun execute/2
+        handler => fun resolve/4
     }.
 
-boot(Process, Opts) ->
-    Devices =
-        tl(create(
-            maps:get(pre, Opts, []),
-            Process,
-            maps:get(post, Opts, [])
-        )),
-    {ok, #{ devices => Devices }}.
+%% @doc Ensures that all devices in the stack have their executable versions
+%% loaded and ready to run, then return a list of the executables, tagged with
+%% their device number. Device stacks are cached in the message so that this
+%% function only needs to resolve the stack once unless it changes.
+executable_devices(Message1, Opts) ->
+	{ok, StackMsg} = hb_pam:resolve(Message1, <<"Device-Stack">>, Opts),
+	case maps:get(priv_stack_cache, hb_pam:private(StackMsg), #{}) of
+		StackMsg -> StackMsg;
+		_Else -> stack_to_executable_devices(StackMsg, Opts)
+	end.
 
-from_process(M) when is_record(M, tx) ->
-    from_process(M#tx.tags);
-from_process([]) -> [];
-from_process([{<<"Device">>, DevID}| Tags]) ->
-    case hb_device:device_id_to_executable(DevID) of
-        {ok, ModName} ->
-            {Params, Rest} = extract_params(Tags),
-            [{ModName, Params, undefined}|from_process(Rest)];
-        {error, Reason} ->
-            throw({error_getting_device, DevID, Reason})
-    end;
-from_process([{_OtherTag, _OtherVal}|Tags]) ->
-    from_process(Tags).
+%% @doc Underlying resolution mechanism for converting a stack message to a
+%% list of executable devices.
+stack_to_executable_devices(StackMsg, Opts) ->
+	lists:map(
+		fun(DevNum, DevMsg) ->
+			{ok, DevName} = hb_pam:resolve(DevMsg, <<"Name">>, Opts),
+			case hb_pam:device_id_to_executable(DevName) of
+				{ok, Executable} -> 
+					hb_pam:resolve(
+						set,
+						DevMsg,
+						#{ priv_executable => Executable }
+					);
+				Else ->
+					throw(
+						{
+							could_not_load_device,
+							DevNum,
+							DevName,
+							{unexpected_result, Else}
+						}
+					)
+			end
+		end,
+		hb_util:message_to_numbered_list(StackMsg)
+	).
 
-extract_params(Tags) -> extract_params([], Tags).
-extract_params(Params, []) ->
-    {lists:reverse(Params), []};
-extract_params(Params, Rest = [{<<"Device">>, _}|_]) ->
-    {lists:reverse(Params), Rest};
-extract_params(Params, [{PName, PVal}|Rest]) ->
-    extract_params([{PName, PVal}|Params], Rest).
-
-create(Pre) -> create(Pre, [], []).
-create(Pre, Post) -> create(Pre, [], Post).
-create(Pre, Proc, Post) ->
-    Devs = normalize_list(Pre) ++ from_process(Proc) ++ normalize_list(Post),
-    lists:map(
-        fun({{DevMod, DevS, Params}, N}) ->
-            case hb_device:device_id_to_executable(DevMod) of
-                {ok, Mod} ->
-                    {N, Mod, DevS, Params};
-                Else -> throw(Else)
-            end
-        end,
-        lists:zip(Devs, lists:seq(1, length(Devs)))
-    ).
-
-normalize_list([]) -> [];
-normalize_list([{DevMod, Params}|Rest]) ->
-    [{DevMod, undefined, Params} | normalize_list(Rest) ];
-normalize_list([ Dev = {_DevMod, _InitPriv, _Params} | Rest ]) ->
-    [ Dev | normalize_list(Rest) ];
-normalize_list([DevID|Rest]) ->
-    [{DevID, undefined, []} | normalize_list(Rest) ].
-
-%% @doc Wrap calls to the device stack as if it is a single device.
+%% @doc The main device stack execution engine.
 %% Call the execute function on each device in the stack, then call the
 %% finalize function on the resulting state.
-execute(Func, BaseS) -> execute(Func, BaseS, #{}).
-execute(boot, Process, Opts) ->
-    boot(Process, Opts);
-execute(FuncName, BaseS = #{ devices := Devs }, Opts) ->
-    {ok, NewState} =
-        call(
-            Devs,
-            BaseS,
-            FuncName,
-            Opts#{
-                arg_prefix =>
-                    case maps:get(message, BaseS, undefined) of
-                        undefined -> [];
-                        M -> [M]
-                    end
-            }
-        ),
-    case maps:get(return, Opts, results) of
-        all ->
-            {ok, NewState};
-        Key when is_atom(Key) ->
-            {ok, maps:get(Key, NewState)};
-        Keys when is_list(Keys) ->
-            {ok, maps:with(Keys, NewState)}
-    end.
-
-call(Devs, S, FuncName, Opts) ->
-    Res = do_call(
-        Devs,
-        S#{
-            results => #{},
-            errors => [],
-            pass => 1,
-            arg_prefix => maps:get(arg_prefix, Opts, [])
-        },
-        FuncName,
-        Opts
-    ),
-    case Res of
-        {ok, NewS = #{ arg_prefix := _ }} ->
-            {ok, maps:remove(arg_prefix, NewS)};
-        Other -> Other
-    end.
+resolve(FuncName, Message1, Message2, Opts) ->
+	
+	ExecutableDevices = executable_devices(StackMsg),
+	{ok, }
+		do_call(
+			ExecutableDevices,
+			Message1#{
+				results => #{},
+				errors => [],
+				pass => 1
+			},
+			FuncName,
+			Message2,
+			Opts
+		).
 
 do_call([], S, _FuncName, _Opts) ->
     {ok, S};
-do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ arg_prefix := ArgPrefix }, FuncName, Opts) ->
-    %?event({DevMod, FuncName, {slot, maps:get(slot, S, "[no_slot]")}, {pass, maps:get(pass, S, "[no_pass_num]")}}),
-    case hb_device:call(DevMod, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
+do_call(AllDevs = [Dev = {_N, DevExec}|Devs], FuncName, Message2, Opts) ->
+    ?event(
+		{
+			DevExec,
+			FuncName,
+			{slot, maps:get(slot, S, "[no_slot]")},
+			{pass, maps:get(pass, S, "[no_pass_num]")}
+		}
+	),
+    case hb_pam:resolve(DevExec, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
         no_match ->
             do_call(Devs, S, FuncName, Opts);
         {skip, NewS} when is_map(NewS) ->
@@ -143,14 +161,14 @@ do_call(AllDevs = [Dev = {_N, DevMod, DevS, Params}|Devs], S = #{ arg_prefix := 
             maybe_error(AllDevs, S, FuncName, Opts, {unexpected_result, Unexpected})
     end.
 
-maybe_error([{N, DevMod, _DevS, _Params}|Devs], S = #{ errors := Errs }, FuncName, Opts, Info) ->
+maybe_error([{N, DevExec, _DevS, _Params}|Devs], S = #{ errors := Errs }, FuncName, Opts, Info) ->
     case maps:get(error_strategy, Opts, stop) of
-        stop -> {error, N, DevMod, Info};
-        throw -> throw({error_running_dev, N, DevMod, Info});
+        stop -> {error, N, DevExec, Info};
+        throw -> throw({error_running_dev, N, DevExec, Info});
         continue ->
             do_call(
                 Devs,
-                S#{ errors := Errs ++ [{N, DevMod, Info}]},
+                S#{ errors := Errs ++ [{N, DevExec, Info}]},
                 FuncName,
                 Opts
             );
@@ -168,8 +186,26 @@ maybe_pass(NewS = #{ pass := Pass }, FuncName, Opts) ->
             do_call(NewDevs, NewS#{ pass => Pass + 1 }, FuncName, Opts)
     end.
 
-%% @doc Update the private state of the device (maintaining list stability).
-update(S = #{ devices := Devs }, {N, Mod, _, Params}, NewDevState) ->
-    S#{
-        devices := lists:keyreplace(N, 1, Devs, {N, Mod, NewDevState, Params})
-    }.
+%%% Tests
+
+generate_append_device(Str) ->
+	#{
+		test =>
+			fun(M = #{ bin := Bin }) ->
+				{ok, << Bin/binary, Str/bitstring >>}
+			end
+	}.
+
+simple_stack_execute_test() ->
+	Msg = #{
+		<<"Device">> => ?MODULE,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device("1"),
+				<<"2">> => generate_append_device("2")
+			}
+	},
+	?assertEqual(
+		{ok, #{ bin => <<"12">> }},
+		hb_pam:resolve(Msg, test)
+	).

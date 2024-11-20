@@ -115,4 +115,4 @@ add_prefix(#{ prefix := Prefix }, Path) ->
 
 %% @doc Remove the directory prefix from a path.
 remove_prefix(#{ prefix := Prefix }, Path) ->
-	ar_util:remove_common(Path, Prefix).
+	hb_util:remove_common(Path, Prefix).

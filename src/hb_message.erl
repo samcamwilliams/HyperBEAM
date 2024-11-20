@@ -1,15 +1,17 @@
 -module(hb_message).
 -export([id/1, id/2, load/2]).
--export([get/2, set/2]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% The main module for managing messages. All messages are represented as
-%%% maps in Erlang at the data layer, but should be accessed through this
-%%% module such that any necessary executions can be made to retrieve their
-%%% underlying data. The `dev_identity` module wraps this module to provide
-%%% its services as a callable hyperbeam device.
+%%% @moduledoc This module acts an adapter between messages, as modeled in the
+%%% Permaweb Abstract Machine (PAM), and their underlying binary representations.
+%%% See `docs/permaweb-abstract-machine.md` for details on PAM. Unless you are
+%%% implementing a new message serialization format, you should not need to 
+%%% interact with this module directly. Instead, use the `hb_pam`
+%%% interfaces to interact with all messages. The `dev_message` module
+%%% implements a device interface for handling messages as the default PAM
+%%% device.
 
 %% @doc The size at which a value should be made into a body item, instead of a
 %% tag.
@@ -19,27 +21,7 @@
 	[id, unsigned_id, last_tx, owner, target, data, signature]).
 -define(REGEN_KEYS, [id, unsigned_id]).
 
-%% @doc Wrap a device call in the background to retrieve a key from a message.
-get(Message, Key) ->
-	hb_device:call(Message, Key).
 
-%% @doc Set (a) key(s) in a message. Takes a map of key-value pairs and sets
-%% them in the message, overwriting any existing values.
-set(Message, KeyValues) ->
-	maps:merge(Message, maps:from_list(KeyValues)).
-
-%% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
-id(Item) -> id(Item, unsigned).
-id(TX, Type) when is_record(TX, tx) ->
-	ar_util:encode(ar_bundles:id(TX, Type));
-id(Map, Type) when is_map(Map) ->
-	ar_util:encode(ar_bundles:id(message_to_tx(Map), Type));
-id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
-	Bin;
-id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
-	ar_util:encode(Bin);
-id(Data, _) when is_list(Data) ->
-	id(list_to_binary(Data)).
 
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
@@ -78,7 +60,7 @@ message_to_tx(Binary) when is_binary(Binary) ->
 message_to_tx(TX) when is_record(TX, tx) -> TX;
 message_to_tx(M) when is_map(M) ->
 	% Get the keys that will be serialized, excluding private keys.
-	{ok, Keys} = hb_device:call(M, keys),
+	{ok, Keys} = hb_pam:resolve(M, keys),
 	% Translate the keys into a binary map. If a key has a value that is a map,
 	% we recursively turn its children into messages. Notably, we do not simply
 	% call message_to_tx/1 on the inner map because that would lead to adding
@@ -87,7 +69,7 @@ message_to_tx(M) when is_map(M) ->
 		maps:from_list(
 			lists:map(
 				fun(Key) ->
-					case hb_device:call(M, Key) of
+					case hb_pam:resolve(M, Key) of
 						{ok, Map} when is_map(Map) ->
 							{
 								Key,
@@ -104,7 +86,9 @@ message_to_tx(M) when is_map(M) ->
 					end
 				end,
 				lists:filter(
-					fun(Key) -> 
+					fun(Key) ->
+						% Filter keys that the user could set directly, but
+						% should be regenerated when moving msg -> TX.
 						not lists:member(Key, ?REGEN_KEYS)
 					end,
 					Keys
@@ -361,7 +345,7 @@ calculate_unsigned_message_id_test() ->
 	UnsignedTX = message_to_tx(Msg),
 	UnsignedMessage = tx_to_message(UnsignedTX),
 	?assertEqual(
-		ar_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
+		hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
 		id(UnsignedMessage, unsigned)
 	).
 
@@ -382,7 +366,7 @@ unsigned_id_test() ->
 	UnsignedTX = ar_bundles:normalize(#tx { data = <<"TEST_DATA">> }),
 	UnsignedMessage = tx_to_message(UnsignedTX),
 	?assertEqual(
-		ar_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
+		hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
 		hb_message:id(UnsignedMessage, unsigned)
 	).
 
@@ -395,6 +379,6 @@ signed_id_test() ->
 	?assert(ar_bundles:verify_item(SignedTX)),
 	SignedMsg = tx_to_message(SignedTX),
 	?assertEqual(
-		ar_util:encode(ar_bundles:id(SignedTX, signed)),
+		hb_util:encode(ar_bundles:id(SignedTX, signed)),
 		hb_message:id(SignedMsg, signed)
 	).

@@ -73,7 +73,7 @@ push_messages(upload, Messages, Opts) ->
 						}
 					),
 					Stack = dev_stack:create(?PUSH_DEV_STACK),
-                    {ok, Results} = hb_device:call(
+                    {ok, Results} = hb_pam:resolve(
 						{dev_stack, execute},
 						push,
 						[

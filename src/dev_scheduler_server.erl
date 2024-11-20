@@ -43,7 +43,7 @@ slot_from_cache(ProcID) ->
             {ok, Assignment} = hb_cache:read_assignment(hb:get(store), ProcID, AssignmentNum),
             {
                 AssignmentNum,
-                ar_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
+                hb_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
             }
     end.
 

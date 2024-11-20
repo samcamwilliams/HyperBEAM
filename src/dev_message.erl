@@ -1,8 +1,7 @@
--module(dev_identity).
--export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
+-module(dev_message).
+-export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/2]).
 -export([no_serialize/0]).
 -include_lib("eunit/include/eunit.hrl").
--include("include/hb.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
@@ -11,34 +10,52 @@
 %% @doc Return the info for the identity device.
 info() ->
 	#{
-		default => fun get_public/2
+		default => fun get_public_map_key/2
 	}.
 
 %% @doc Return the ID of a message. If the message already has an ID, return
 %% that. Otherwise, return the signed ID.
 id(M) ->
-	?h(),
-	{ok, hb_message:id(M, signed)}.
-	% case {maps:get(id, M, undefined), maps:get(signature, M, ?DEFAULT_SIG)} of
-	% 	{unsigned, _} ->
-	% 		{ok, hb_message:id(M, signed)};
-	% 	{ID, _} -> {ok, ID}
-	% end.
+	{ok, raw_id(M, signed)}.
 
 %% @doc Wrap a call to the `hb_message:id/2` function, which returns the
 %% unsigned ID of a message.
 unsigned_id(M) ->
-	?h(),
-	{ok, hb_message:id(M, unsigned)}.
-	% case maps:get(id, M, undefined) of
-	% 	X when X == ?DEFAULT_ID orelse X == undefined ->
-	% 		{ok, hb_message:id(M, unsigned)};
-	% 	ID -> {ok, ID}
-	% end.
+	{ok, raw_id(M, unsigned)}.
+
+%% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
+raw_id(Item) -> raw_id(Item, unsigned).
+raw_id(TX, Type) when is_record(TX, tx) ->
+	hb_util:encode(ar_bundles:id(TX, Type));
+raw_id(Map, Type) when is_map(Map) ->
+	hb_util:encode(ar_bundles:id(hb_message:message_to_tx(Map), Type));
+raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+	Bin;
+raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+	hb_util:encode(Bin);
+raw_id(Data, _) when is_list(Data) ->
+	raw_id(list_to_binary(Data)).
 
 %% @doc Return the signers of a message.
 signers(M) ->
-	{ok, ar_util:list_to_numbered_map(hb_message:signers(M))}.
+	{ok, hb_util:list_to_numbered_map(hb_message:signers(M))}.
+
+%% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
+%% the message, overwriting any existing values.
+set(Message0, NewValuesMsg) ->
+	{ok, KeysToSet} = hb_pam:resolve(<<"Keys">>, NewValuesMsg),
+	{ok,
+		maps:merge(
+			Message0,
+			maps:map(
+				fun(Key, Value) ->
+					{ok, ResolvedValue} = hb_pam:resolve(Key, Value),
+					ResolvedValue
+				end,
+				KeysToSet
+			)
+		)
+	}.
 
 %% @doc Get the public keys of a message.
 keys(Msg) ->
@@ -52,14 +69,15 @@ keys(Msg) ->
 
 %% @doc Return the value associated with the key as it exists in the message's
 %% underlying Erlang map.
-get_public(Key, Msg) ->
+get_public_map_key(Key, Msg) ->
 	{ok, PublicKeys} = keys(Msg),
 	case lists:member(Key, PublicKeys) of
 		true -> {ok, maps:get(Key, Msg)};
 		false -> {error, {badkey, Key}}
 	end.
 
-%% @doc Return the keys that should not be serialized.
+%% @doc Return the keys that should not be serialized, but should be included
+%% in the message's public list of keys.
 no_serialize() -> {ok, [id, unsigned_id]}.
 
 %% @doc Check if a key is private.
@@ -92,23 +110,23 @@ is_private_mod_test() ->
 %%% Device functionality tests:
 
 keys_from_device_test() ->
-	?assertEqual({ok, [a]}, hb_device:call(#{a => 1}, keys)).
+	?assertEqual({ok, [a]}, hb_pam:resolve(#{a => 1}, keys)).
 
 private_keys_are_filtered_test() ->
 	?assertEqual(
 		{ok, [a]},
-		hb_device:call(#{a => 1, private => 2}, keys)
+		hb_pam:resolve(#{a => 1, private => 2}, keys)
 	),
 	?assertEqual(
 		{ok, [a]},
-		hb_device:call(#{a => 1, "priv_foo" => 4}, keys)
+		hb_pam:resolve(#{a => 1, "priv_foo" => 4}, keys)
 	).
 
 cannot_get_private_keys_test() ->
 	?assertEqual(
 		{error, {badkey, private_key}},
-		hb_device:call(#{ a => 1, private_key => 2 }, private_key)
+		hb_pam:resolve(#{ a => 1, private_key => 2 }, private_key)
 	).
 
 key_from_device_test() ->
-	?assertEqual({ok, 1}, hb_device:call(#{a => 1}, a)).
+	?assertEqual({ok, 1}, hb_pam:resolve(#{a => 1}, a)).

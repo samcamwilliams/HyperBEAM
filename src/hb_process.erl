@@ -214,10 +214,10 @@ boot(Process, Opts) ->
     pg:join({cu, hb_message:id(Process, signed)}, self()),
     % Build the device stack.
     ?event({registered_process, hb_message:id(Process, signed)}),
-    {ok, Dev} = hb_device:device_id_to_executable(Process),
+    {ok, Dev} = hb_pam:device_id_to_executable(Process),
     ?event({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
-        = hb_device:call(Dev, boot, [Process, Opts], Opts),
+        = hb_pam:resolve(Dev, boot, [Process, Opts], Opts),
     ?event(booted_device),
     % Get the store we are using for this execution.
     Store = maps:get(store, Opts, hb:get(store)),
@@ -225,7 +225,7 @@ boot(Process, Opts) ->
     % TODO: Assumes that the device is a stack or another device that uses maps
     % for state.
     {ok, #{keys := [Key|_]}} =
-        hb_device:call(Dev, checkpoint_uses, [BootState], Opts),
+        hb_pam:resolve(Dev, checkpoint_uses, [BootState], Opts),
     % We don't support partial checkpoints (perhaps we never will?), so just
 	% take one key and use that to find the latest full checkpoint.
     CheckpointOption =
@@ -268,7 +268,7 @@ boot(Process, Opts) ->
 			% If no compute mode is already set, use the global default.
 			compute_mode => maps:get(compute_mode, Opts, hb:get(compute_mode))
 		},
-    case hb_device:call(Dev, init, [InitState, RuntimeOpts]) of
+    case hb_pam:resolve(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, RuntimeOpts);
         {error, N, DevMod, Info} ->
@@ -361,7 +361,7 @@ post_execute(
             % result.
             ?event({checkpointing_for_slot, Slot}),
             {ok, CheckpointState} =
-                hb_device:call(
+                hb_pam:resolve(
                     Dev,
                     checkpoint,
                     [State#{ save_keys => [], message => undefined }],
@@ -418,7 +418,7 @@ initialize_slot(State = #{slot := Slot}) ->
     }.
 
 execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
-    hb_device:call(
+    hb_pam:resolve(
 		Dev,
 		execute,
 		[State#{ message => Msg }, Opts],
@@ -426,7 +426,7 @@ execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
 	).
 
 execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
-    hb_device:call(
+    hb_pam:resolve(
 		Dev,
 		terminate,
 		[S#{ message => undefined }, Opts],
@@ -434,7 +434,7 @@ execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
 	).
 
 execute_eos(S, Opts = #{ proc_dev := Dev }) ->
-    hb_device:call(
+    hb_pam:resolve(
 		Dev,
 		end_of_schedule,
 		[S#{ message => undefined }, Opts],
@@ -454,7 +454,7 @@ await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
     receive
         {on_idle, run, Function, Args} ->
             ?event({running_command, Function, Args}),
-            {ok, NewState} = hb_device:call(
+            {ok, NewState} = hb_pam:resolve(
 				Dev,
 				Function,
 				[State#{ message => hd(Args) }, Opts],

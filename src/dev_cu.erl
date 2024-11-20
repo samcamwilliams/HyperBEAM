@@ -43,7 +43,7 @@ execute(CarrierMsg, S) ->
     {ResType, ModState = #{ results := _ModResults }} =
         case lists:keyfind(<<"Attest-To">>, 1, CarrierMsg#tx.tags) of
             {_, RawAttestTo} ->
-                AttestTo = ar_util:decode(RawAttestTo),
+                AttestTo = hb_util:decode(RawAttestTo),
                 ?event({attest_to_only_message, RawAttestTo}),
                 case ar_bundles:find(AttestTo, Results) of
                     not_found ->

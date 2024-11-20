@@ -59,7 +59,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
                         lists:foldl(
                             fun({_, Attestation}, Acc) ->
                                 Id = ar_bundles:signer(Attestation),
-                                Encoded = ar_util:encode(Id),
+                                Encoded = hb_util:encode(Id),
                                 maps:put(
                                     <<"/Attestations/", Encoded/binary>>,
                                     Attestation#tx.data,
@@ -129,8 +129,8 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
     end.
 
 validate_attestation(Msg, Att, Opts) ->
-    MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
-    AttSigner = ar_util:encode(ar_bundles:signer(Att)),
+    MsgID = hb_util:encode(ar_bundles:id(Msg, unsigned)),
+    AttSigner = hb_util:encode(ar_bundles:signer(Att)),
     ?event({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
     ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
     ?no_prod(use_real_signature_verification),
@@ -215,7 +215,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             ?event({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
-            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
+            MsgID = hb_util:encode(ar_bundles:id(NewMsg, unsigned)),
 			?event({poda_add_attestations_from, InitAuthorities, {self,hb:address()}}),
             Attestations = pfiltermap(
                 fun(Address) ->

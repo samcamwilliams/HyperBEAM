@@ -1,33 +1,51 @@
--module(hb_device).
--export([call/2, call/3, call/4, device_id_to_executable/1]).
+-module(hb_pam).
+%%% Main device API:
+-export([resolve/2, resolve/3, resolve/4]).
+-export([to_key/1, to_key/2, device_id_to_executable/1]).
+%%% Shortcuts:
+-export([get/2, get/3, set/2, set/3, private/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @doc This module is the root of the device call logic in hyperbeam.
+%%% @moduledoc This module is the root of the device call logic of the 
+%%% Permaweb Abstract Machine (PAM) in HyperBEAM.
 %%% 
-%%% Every device is a collection of keys/functions that can be called in order
-%%% to yield their values. Each key may return another message, or a 
-%%% binary.
+%%% At the PAM layer, every device is simply a collection of keys that can be
+%%% resolved in order to yield their values. Each key may return another 
+%%% message or a binary:
 %%% 
-%%% When a device key is called, it is passed the current message (likely its 
-%%% state), as well as an optional additional message. It must return a tuple of
-%%% the form {Status, NewMessage}, where Status is either ok or error, and 
+%%% 	resolve(Message1, Message2) -> {Status, Message3}
+%%% 
+%%% See `docs/permaweb-abstract-machine.md` for more information about PAM.
+%%% 
+%%% When a device key is called, it is passed the `Message1` (likely its state),
+%%% as well as the message to 'apply' to it. It must return a tuple of the
+%%% form {Status, NewMessage}, where Status is either ok or error, and 
 %%% NewMessage is either a new message or a binary.
+%%% 
+%%% The key to resolve is typically specified by the `Path` field of the 
+%%% message.
+%%% 
+%%% In the HyperBEAM implementation (this module), `Message1` can be replaced
+%%% a function name to execute for ease of development with PAM. In this 
+%%% case, the function name is cast to an unsigned message with the `Path` set
+%%% to the given name.
 %%% 
 %%% Devices can be expressed as either modules or maps. They can also be 
 %%% referenced by an Arweave ID, which can be used to load a device from 
 %%% the network (depending on the value of the `load_remote_devices` and 
-%%% `trusted_device_signers` settings).
+%%% `trusted_device_signers` environment settings).
 
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, pass a message containing parameters to the call, as
 %% well as options that control the runtime environment. This function returns
-%% the raw result of the device function call: Typically, but not necessarily,
-%% {ok | error, NewMessage}.
+%% the raw result of the device function call: {ok | error, NewMessage}.
 %% 
 %% In many cases the device will not implement the key, however, so the default
-%% device is used instead. The default (`dev_identity`) simply returns the value
-%% associated with the key as it exists in the message's underlying Erlang map.
+%% device is used instead. The default (`dev_message`) simply returns the 
+%% value associated with the key as it exists in the message's underlying
+%% Erlang map.
+%% 
 %% In this way, devices are able to implement 'special' keys which do not exist
 %% as values in the message's map, while still exposing the 'normal' keys of a
 %% map. 'Special' keys which do not exist as values in the message's map are
@@ -37,24 +55,29 @@
 %% looking up the key in the device. This allows devices to call functions from
 %% other modules to yield the value for a key (or set of keys), implementing a
 %% form of 'inheritence' or 'delegation' between devices if desired.
-call(Msg, Key) ->
-	call(Msg, Key, #{}).
-call(Msg, Key, ParamMsg) ->
-	call(Msg, Key, ParamMsg, #{}).
-call(Msg, Key, ParamMsg, Opts) when not is_function(Key) ->
+resolve(Msg1, Request) ->
+	resolve(Msg1, Request, default_runtime_opts(Msg1)).
+resolve(Msg1, Msg2, Opts) when is_map(Msg2) ->
+	resolve(Msg1, key_from_path(Msg2, Opts), Msg2, Opts);
+resolve(Msg1, Key, Opts) ->
+	resolve(Msg1, Key, #{ <<"Path">> => [to_key(Key)] }, Opts).
+resolve(Msg1, Key, Msg2, Opts) when not is_function(Key) ->
 	{Fun, NewOpts} =
 		try
 			% First, try to load the device and get the function to call.
-			{Status, ReturnedFun} = message_to_fun(Msg, Key),
+			{Status, ReturnedFun} = message_to_fun(Msg1, Key),
 			% Next, add an option to the Opts map to indicate if we should
-			% add the key to the start of the arguments.
+			% add the key to the start of the arguments. Note: This option
+			% is used downstream by other devices (like `dev_stack`), so 
+			% should be changed with care.
 			{
 				ReturnedFun,
-				Opts#{ add_key =>
-					case Status of
-						add_key -> Key;
-						_ -> false
-					end
+				Opts#{
+					add_key =>
+						case Status of
+							add_key -> Key;
+							_ -> false
+						end
 				}
 			}
 		catch
@@ -65,15 +88,15 @@ call(Msg, Key, ParamMsg, Opts) when not is_function(Key) ->
 					Opts
 				)
 		end,
-	call(Msg, Fun, ParamMsg, NewOpts);
-call(Msg, Fun, ParamMsg, Opts) ->
+	resolve(Msg1, Fun, Msg2, NewOpts);
+resolve(Msg1, Fun, Msg2, Opts) ->
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
 	Args =
 		case maps:get(add_key, Opts, false) of
-			false -> [Msg, ParamMsg, UserOpts];
-			Key -> [Key, Msg, ParamMsg, UserOpts]
+			false -> [Msg1, Msg2, UserOpts];
+			Key -> [Key, Msg1, Msg2, UserOpts]
 		end,
 	% Then, try to execute the function.
 	try apply(Fun, truncate_args(Fun, Args))
@@ -85,6 +108,34 @@ call(Msg, Fun, ParamMsg, Opts) ->
 				Opts
 			)
 	end.
+
+%% @doc Shortcut for resolving a key in a message without its 
+%% status if it is `ok`. This makes it easier to write complex 
+%% logic on top of messages while maintaining a functional style.
+get(Msg, Key) ->
+	% Note: This function should not be refactored to use `get/3`, as it
+	% should honor the default runtime options that `resolve/2` provides.
+	ensure_ok(Key, resolve(Msg, Key), #{}).
+get(Msg, Key, Opts) -> ensure_ok(Key, resolve(Msg, Key, Opts), Opts).
+
+%% @doc Shortcut for setting a key in the message using its underlying device.
+%% Like function honors the `error_strategy` option in the same way as `get/3`.
+set(Msg1, Msg2) ->
+	ensure_ok(set, resolve(Msg1, set, Msg2), #{}).
+set(Msg1, Msg2, Opts) ->
+	ensure_ok(set, resolve(Msg1, set, Msg2, Opts), Opts).
+
+%% @doc Helper for returning `Message2` if the resolution has a status of `ok`,
+%% or handling an error based on the value of the `error_strategy` option.
+ensure_ok(_Key, {ok, Value}, _Opts) -> Value;
+ensure_ok(_Key, {error, Reason}, #{ error_strategy := X }) when X =/= throw ->
+	{unexpected, {error, Reason}};
+ensure_ok(Key, {error, Reason}, _Opts) ->
+	throw({pam_resolution_error, Key, Reason}).
+
+%% @doc Return the `private` key from a message. If the key does not exist, an
+%% empty map is returned.
+private(Msg) -> maps:get(private, Msg, #{}).
 
 %% @doc Handle an error in a device call.
 handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
@@ -119,7 +170,7 @@ truncate_args(Fun, Args) ->
 %% indicates that the key should be added to the start of the call's arguments.
 message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
 	% Case 1: The message does not specify a device, so we use the default device.
-	message_to_fun(Msg#{ device => default() }, Key);
+	message_to_fun(Msg#{ device => default_module() }, Key);
 message_to_fun(Msg = #{ device := RawDev }, Key) ->
 	Dev =
 		case device_id_to_executable(RawDev) of
@@ -145,7 +196,7 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 						error ->
 							% Case 5: The device has no default handler.
 							% We use the default device to handle the key.
-							case default() of
+							case default_module() of
 								Dev ->
 									% We are already using the default device,
 									% so we cannot resolve the key. This should
@@ -178,7 +229,7 @@ message_to_fun(Msg = #{ device := RawDev }, Key) ->
 find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 	case maps:get(Key, Dev, not_found) of
 		not_found ->
-			case key_to_atom(Key) of
+			case to_key(Key) of
 				undefined -> not_found;
 				Key ->
 					% The key is unchanged, so we return not_found.
@@ -196,7 +247,7 @@ find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 	end;
 find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
 find_exported_function(Mod, Key, Arity) when not is_atom(Key) ->
-	case key_to_atom(Key) of
+	case to_key(Key) of
 		undefined -> not_found;
 		KeyAtom -> find_exported_function(Mod, KeyAtom, Arity)
 	end;
@@ -208,17 +259,37 @@ find_exported_function(Mod, Key, Arity) ->
 	end.
 
 %% @doc Convert a key to an atom. Takes care of casting from binaries, lists,
-%% and iolists. Note: This function is safe, but may return undefined if the
-%% key is not an atom, binary, list, iolist, or an existing Erlang atom.
-key_to_atom(Key) ->
-	try unsafe_key_to_atom(Key)
-	catch _:badarg -> undefined
+%% integers, and iolists. This function is unsafe by befault, throwing an error
+%% if the key is not castable, but returns undefined in error cases if the
+%% error_strategy option is set to a value other than throw.
+to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
+to_key(Key, Opts) -> 
+	try to_atom_unsafe(Key)
+	catch Type:_:Trace ->
+		case maps:get(error_strategy, Opts, throw) of
+			throw -> erlang:raise(Type, invalid_key, Trace);
+			_ -> undefined
+		end
 	end.
-unsafe_key_to_atom(Key) when is_binary(Key) -> binary_to_existing_atom(Key, utf8);
-unsafe_key_to_atom(Key) when is_list(Key) -> 
+
+%% @doc Extract the key from a `Message2`'s `Path` field. Returns the first
+%% element of the path if it is a list, otherwise returns the path as is.
+key_from_path(Msg2, Opts) ->
+	case resolve(Msg2, <<"Path">>, Opts) of
+		{ok, Path} when is_list(Path) -> hd(Path);
+		{ok, Path} -> Path;
+		{error, _} -> undefined
+	end.
+
+%% @doc Helper function for key_to_atom that does not check for errors.
+to_atom_unsafe(Key) when is_integer(Key) ->
+	integer_to_binary(Key);
+to_atom_unsafe(Key) when is_binary(Key) ->
+	binary_to_existing_atom(Key, utf8);
+to_atom_unsafe(Key) when is_list(Key) -> 
 	FlattenedKey = lists:flatten(Key),
 	list_to_existing_atom(FlattenedKey);
-unsafe_key_to_atom(Key) when is_atom(Key) -> Key.
+to_atom_unsafe(Key) when is_atom(Key) -> Key.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
@@ -272,21 +343,28 @@ info(DevMod, Msg) ->
 		not_found -> #{}
 	end.
 
+%% @doc The default runtime options for a message. At the moment the `Message1`
+%% but it is included such that we can modulate the options based on the message
+%% if needed in the future.
+default_runtime_opts(_Msg1) -> #{}.
+
 %% @doc The default device is the identity device, which simply returns the
-%% value associated with any key as it exists in its Erlang map.
-default() -> dev_identity.
+%% value associated with any key as it exists in its Erlang map. It should also
+%% implement the `set` key, which returns a `Message3` with the values changed
+%% according to the `Message2` passed to it.
+default_module() -> dev_message.
 
 %%% Tests
 
 key_from_id_device_test() ->
-	?assertEqual({ok, 1}, hb_device:call(#{ a => 1 }, a)).
+	?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, a)).
 
 keys_from_id_device_test() ->
-	?assertEqual({ok, [a]}, hb_device:call(#{ a => 1, "priv_a" => 2 }, keys)).
+	?assertEqual({ok, [a]}, hb_pam:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
 
 %% @doc Generates a test device with three keys, each of which uses
 %% progressively more of the arguments that can be passed to a device key.
-device_with_keys_using_args_test() ->
+generate_device_with_keys_using_args() ->
 	#{
 		key_using_only_state =>
 			fun(State) ->
@@ -321,12 +399,12 @@ device_with_keys_using_args_test() ->
 key_from_id_device_with_args_test() ->
 	Msg =
 		#{
-			device => device_with_keys_using_args_test(),
+			device => generate_device_with_keys_using_args(),
 			state_key => <<"1">>
 		},
 	?assertEqual(
 		{ok, <<"1">>},
-		hb_device:call(
+		hb_pam:resolve(
 			Msg,
 			key_using_only_state,
 			#{ msg_key => <<"2">> } % Param message, which is ignored
@@ -334,7 +412,7 @@ key_from_id_device_with_args_test() ->
 	),
 	?assertEqual(
 		{ok, <<"13">>},
-		hb_device:call(
+		hb_pam:resolve(
 			Msg,
 			key_using_state_and_msg,
 			#{ msg_key => <<"3">> } % Param message, with value to add
@@ -342,7 +420,7 @@ key_from_id_device_with_args_test() ->
 	),
 	?assertEqual(
 		{ok, <<"1337">>},
-		hb_device:call(
+		hb_pam:resolve(
 			Msg,
 			key_using_all,
 			#{ msg_key => <<"3">> }, % Param message
@@ -369,7 +447,7 @@ device_with_handler_function_test() ->
 		},
 	?assertEqual(
 		{ok, <<"GOOD">>},
-		hb_device:call(Msg, test_key)
+		hb_pam:resolve(Msg, test_key)
 	).
 
 device_with_default_handler_function_test() ->
@@ -394,9 +472,53 @@ device_with_default_handler_function_test() ->
 		},
 	?assertEqual(
 		{ok, <<"STATE">>},
-		hb_device:call(Msg, state_key)
+		hb_pam:resolve(Msg, state_key)
 	),
 	?assertEqual(
 		{ok, <<"DEFAULT">>},
-		hb_device:call(Msg, any_random_key)
+		hb_pam:resolve(Msg, any_random_key)
 	).
+
+basic_get_test() ->
+	Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
+	?assertEqual(<<"value1">>, hb_pam:get(Msg, key1)),
+	?assertEqual(<<"value2">>, hb_pam:get(Msg, key2)).
+
+basic_set_test() ->
+	Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
+	UpdatedMsg = hb_pam:set(Msg, #{ key1 => <<"new_value1">> }),
+	?assertEqual(<<"new_value1">>, hb_pam:get(UpdatedMsg, key1)),
+	?assertEqual(<<"value2">>, hb_pam:get(UpdatedMsg, key2)).
+
+get_with_device_test() ->
+	Msg =
+		#{
+			device => generate_device_with_keys_using_args(),
+			state_key => <<"STATE">>
+		},
+	?assertEqual(<<"STATE">>, hb_pam:get(Msg, state_key)),
+	?assertEqual(<<"STATE">>, hb_pam:get(Msg, key_using_only_state)).
+
+set_with_device_test() ->
+	Msg =
+		#{
+			device =>
+				#{
+					set =>
+						fun(State, _Msg) ->
+							{ok,
+								State#{
+									set_count =>
+										1 + maps:get(set_count, State, 0)
+								}
+							}
+						end
+				},
+			state_key => <<"STATE">>
+		},
+	?assertEqual(<<"STATE">>, hb_pam:get(Msg, state_key)),
+	SetOnce = hb_pam:set(Msg, #{ state_key => <<"SET_ONCE">> }),
+	?assertEqual(1, hb_pam:get(SetOnce, set_count)),
+	SetTwice = hb_pam:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
+	?assertEqual(2, hb_pam:get(SetTwice, set_count)),
+	?assertEqual(<<"STATE">>, hb_pam:get(SetTwice, state_key)).
