@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/cd # To be removed before merging
 
 env:
   GCP_IMAGE_NAME: hyperbeam-image
