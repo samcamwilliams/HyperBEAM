@@ -1,7 +1,8 @@
 -module(dev_message).
--export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/2]).
+-export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/3, remove/2]).
 -export([no_serialize/0]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %%% The identity device: Simply return a key from the message as it is found
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
@@ -18,7 +19,7 @@ info() ->
 id(M) ->
 	{ok, raw_id(M, signed)}.
 
-%% @doc Wrap a call to the `hb_message:id/2` function, which returns the
+%% @doc Wrap a call to the `hb_util:id/2` function, which returns the
 %% unsigned ID of a message.
 unsigned_id(M) ->
 	{ok, raw_id(M, unsigned)}.
@@ -42,20 +43,35 @@ signers(M) ->
 
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
-set(Message0, NewValuesMsg) ->
-	{ok, KeysToSet} = hb_pam:resolve(<<"Keys">>, NewValuesMsg),
-	{ok,
+set(Message1, NewValuesMsg, Opts) ->
+	{
+		ok,
 		maps:merge(
-			Message0,
+			Message1,
 			maps:map(
 				fun(Key, Value) ->
-					{ok, ResolvedValue} = hb_pam:resolve(Key, Value),
+					?no_prod("Do not ship this without careful thought. "
+						"Do we want to resolve values during set?"),
+					{ok, ResolvedValue} = hb_pam:resolve(Key, Value, Opts),
 					ResolvedValue
 				end,
-				KeysToSet
+				hb_pam:keys(NewValuesMsg, Opts)
 			)
 		)
 	}.
+
+%% @doc Remove a key or keys from a message.
+remove(Message1, #{ key := Key }) when is_atom(Key) ->
+	{ok, maps:remove(Key, Message1)};
+remove(Message1, #{ keys := Keys }) ->
+	lists:foldl(
+		fun(Key, {ok, Message1n}) ->
+			% Note: We do not call `hb_pam:resolve` here because it may pollute
+			% the HashPath with an extremely large number of calls.
+			remove(Message1n, #{ key => Key }) end,
+		{ok, Message1},
+		Keys
+	).
 
 %% @doc Get the public keys of a message.
 keys(Msg) ->
@@ -130,3 +146,10 @@ cannot_get_private_keys_test() ->
 
 key_from_device_test() ->
 	?assertEqual({ok, 1}, hb_pam:resolve(#{a => 1}, a)).
+
+remove_test() ->
+	Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
+	?assertEqual({ok, #{ <<"Key2">> => <<"Value2">> }},
+		hb_pam:resolve(Msg, #{ key => <<"Key1">> })),
+	?assertEqual({ok, #{}},
+		hb_pam:resolve(Msg, #{ keys => [<<"Key1">>, <<"Key2">>] })).
