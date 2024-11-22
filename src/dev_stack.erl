@@ -1,6 +1,5 @@
 -module(dev_stack).
--export([info/0, from_process/1, create/1, create/2, create/3]).
--export([boot/2, execute/2, execute/3, call/4]).
+-export([info/0]).
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc A device that contains a stack of other devices, which it runs
