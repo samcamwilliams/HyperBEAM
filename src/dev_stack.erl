@@ -156,7 +156,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 							)
 					end;
 				{error, Info} ->
-					maybe_error(Message1, Key, Message2, Opts, Info);
+					maybe_error(Message1, Key, Message2, DevNum + 1, Opts, Info);
 				Unexpected ->
 					maybe_error(
 						Message1,
