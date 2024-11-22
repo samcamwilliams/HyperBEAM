@@ -131,19 +131,19 @@ do_assign(State, Message, ReplyPID) ->
                 tags = [
                     {<<"Data-Protocol">>, <<"ao">>},
                     {<<"Variant">>, <<"ao.TN.2">>},
-                    {<<"Process">>, hb_message:id(State#state.id)},
+                    {<<"Process">>, hb_util:id(State#state.id)},
                     {<<"Epoch">>, <<"0">>},
                     {<<"Slot">>, list_to_binary(integer_to_list(NextNonce))},
 					% This was causing an error during tag encoding,
 					% due to badarg on byte_length. Not sure that accessing
 					% Message as a record (like process id from State above)
 					% is the correct solution.
-					{<<"Message">>, hb_message:id(Message, signed)},
+					{<<"Message">>, hb_util:id(Message, signed)},
                     {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
                     {<<"Block-Hash">>, Hash},
                     {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
                     {<<"Timestamp">>, list_to_binary(integer_to_list(erlang:system_time(millisecond)))}, % Local time on the SU, not Arweave
-                    {<<"Hash-Chain">>, hb_message:id(HashChain)}
+                    {<<"Hash-Chain">>, hb_util:id(HashChain)}
                 ]
             }, State#state.wallet),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
@@ -156,7 +156,7 @@ do_assign(State, Message, ReplyPID) ->
             % ?event(message_after_assignment_written),
             % ar_bundles:print(Message),
             % ?event(read_from_disk),
-            % ar_bundles:print(hb_cache:read(hb_store:scope(State#state.store, local), hb_message:id(Message, unsigned))),
+            % ar_bundles:print(hb_cache:read(hb_store:scope(State#state.store, local), hb_util:id(Message, unsigned))),
             maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
             hb_client:upload(Assignment),
             hb_client:upload(Message),
@@ -172,7 +172,7 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
     end.
 
 next_hashchain(HashChain, Message) ->
-    crypto:hash(sha256, << HashChain/binary, (hb_message:id(Message, signed))/binary >>).
+    crypto:hash(sha256, << HashChain/binary, (hb_util:id(Message, signed))/binary >>).
 
 %% TESTS
 
@@ -182,8 +182,8 @@ new_proc_test() ->
     SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
     SignedItem2 = ar_bundles:sign_item(#tx{ data = <<"test2">> }, Wallet),
     SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
-    dev_scheduler_registry:find(binary_to_list(hb_message:id(SignedItem, signed)), true),
-    schedule(ID = binary_to_list(hb_message:id(SignedItem, signed)), SignedItem),
+    dev_scheduler_registry:find(binary_to_list(hb_util:id(SignedItem, signed)), true),
+    schedule(ID = binary_to_list(hb_util:id(SignedItem, signed)), SignedItem),
     schedule(ID, SignedItem2),
     schedule(ID, SignedItem3),
     ?assertEqual(2, dev_scheduler_server:get_current_slot(

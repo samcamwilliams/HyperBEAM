@@ -41,7 +41,7 @@ get_binary(URL) ->
 %% resulting message in deserialized form.
 post(Host, Path, Message) -> post(Host ++ Path, Message).
 post(URL, Message) when not is_binary(Message) ->
-    ?event({http_post, hb_message:id(Message, unsigned), hb_message:id(Message, signed), URL}),
+    ?event({http_post, hb_util:id(Message, unsigned), hb_util:id(Message, signed), URL}),
 	post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
 post(URL, Message) ->
 	case post_binary(URL, Message) of
@@ -81,7 +81,7 @@ reply(Req, Status, Message) ->
             Status,
             maps:get(path, Req, undefined_path),
             case is_record(Message, tx) of
-                true -> hb_message:id(Message);
+                true -> hb_util:id(Message);
                 false -> data_body
             end
         }

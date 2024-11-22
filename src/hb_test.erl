@@ -14,11 +14,11 @@ run(Proc, Msg) ->
 run(Proc, Msg, _Opts) ->
     hb_cache:write(hb:get(store), Msg),
     hb_cache:write(hb:get(store), Proc),
-    Scheduler = dev_scheduler_registry:find(hb_message:id(Proc, signed), true),
+    Scheduler = dev_scheduler_registry:find(hb_util:id(Proc, signed), true),
     Assignment = dev_scheduler_server:schedule(Scheduler, Msg),
     hb_process:result(
-        hb_message:id(Proc, signed),
-        hb_message:id(Assignment, unsigned),
+        hb_util:id(Proc, signed),
+        hb_util:id(Assignment, unsigned),
         hb:get(store),
         hb:wallet()
     ).
@@ -93,7 +93,7 @@ default_test_devices(Wallet, Opts) ->
         {<<"Type">>, <<"Process">>},
         {<<"Device">>, <<"Stack">>},
         {<<"Device.1">>, <<"Scheduler">>},
-        {<<"Location">>, hb_message:id(ID)},
+        {<<"Location">>, hb_util:id(ID)},
         {<<"Device.2">>, <<"PODA">>},
         {<<"Quorum">>, integer_to_binary(Quorum)}
     ] ++
@@ -107,7 +107,7 @@ default_test_devices(Wallet, Opts) ->
         {<<"Device.5">>, <<"VFS">>},
         {<<"Device.6">>, <<"WASM64-pure">>},
         {<<"Module">>, <<"aos-2-pure">>},
-        {<<"Image">>, hb_message:id(Img)},
+        {<<"Image">>, hb_util:id(Img)},
         {<<"Device.7">>, <<"Cron">>},
         {<<"Time">>, <<"100-Milliseconds">>},
         {<<"Device.8">>, <<"Multipass">>},
@@ -152,5 +152,5 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
         Wallet
     ),
     hb_cache:write(Store, Msg),
-    ?event({test_data_written, {proc, hb_message:id(SignedProcess, signed)}, {msg, hb_message:id(Msg, unsigned)}}),
+    ?event({test_data_written, {proc, hb_util:id(SignedProcess, signed)}, {msg, hb_util:id(Msg, unsigned)}}),
     {SignedProcess, Msg}.

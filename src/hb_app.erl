@@ -54,7 +54,7 @@ attest_key() ->
                         #tx{
                             tags = [
                                 {<<"Type">>, <<"TEE-Attestation">>},
-                                {<<"Address">>, hb_message:id(Addr)}
+                                {<<"Address">>, hb_util:id(Addr)}
                             ],
                             data = BinaryResult
                         },

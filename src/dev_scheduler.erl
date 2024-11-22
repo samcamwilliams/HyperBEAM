@@ -26,7 +26,7 @@ push(Msg, State = #{ logger := Logger }) ->
     ?event(su_scheduling_message_for_push),
     case hb_client:schedule(Msg) of
         {ok, Assignment} ->
-			?event({scheduled_message, hb_message:id(Assignment, unsigned)}),
+			?event({scheduled_message, hb_util:id(Assignment, unsigned)}),
             {ok, State#{assignment => Assignment}};
         Error ->
 			?event({error_scheduling_message, Error}),
@@ -52,18 +52,18 @@ update_schedule(State = #{ process := Proc }) ->
     ToSlot = maps:get(to, State),
     ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),
     % TODO: Get from slot via checkpoint. (Done, right?)
-    Assignments = hb_client:get_assignments(hb_message:id(Proc, signed), CurrentSlot, ToSlot),
+    Assignments = hb_client:get_assignments(hb_util:id(Proc, signed), CurrentSlot, ToSlot),
     ?event({got_assignments_from_su,
 		[
 			{
 				element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
-				hb_message:id(A, signed),
-				hb_message:id(A, unsigned)
+				hb_util:id(A, signed),
+				hb_util:id(A, unsigned)
 			}
 		|| A <- Assignments ]}),
     lists:foreach(
         fun(Assignment) ->
-            ?event({writing_assignment_to_cache, hb_message:id(Assignment, unsigned)}),
+            ?event({writing_assignment_to_cache, hb_util:id(Assignment, unsigned)}),
             hb_cache:write(Store, Assignment)
         end,
         Assignments

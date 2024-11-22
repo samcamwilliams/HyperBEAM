@@ -7,8 +7,8 @@
 push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
 	?event(
 		{pushing_message,
-			{assignment, hb_message:id(Assignment, unsigned)},
-			{message, hb_message:id(Msg, unsigned)}
+			{assignment, hb_util:id(Assignment, unsigned)},
+			{message, hb_util:id(Msg, unsigned)}
 		}
 	),
     case hb_client:compute(Assignment, Msg) of
@@ -28,8 +28,8 @@ execute(CarrierMsg, S) ->
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-				?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_message:id(Assignment, signed)}}),
-                hb_process:result(ProcID, hb_message:id(Assignment, signed), Store, Wallet);
+				?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_util:id(Assignment, signed)}}),
+                hb_process:result(ProcID, hb_util:id(Assignment, signed), Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->

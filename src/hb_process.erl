@@ -60,12 +60,12 @@
 -define(DEFAULT_FREQ, 10).
 
 result(RawProcID, RawMsgRef, Store, Wallet) ->
-    ProcID = hb_message:id(RawProcID),
+    ProcID = hb_util:id(RawProcID),
     MsgRef =
         case is_binary(RawMsgRef) of
             true ->
                 case byte_size(RawMsgRef) of
-                    32 -> hb_message:id(RawMsgRef);
+                    32 -> hb_util:id(RawMsgRef);
                     _ -> RawMsgRef
                 end;
             false -> RawMsgRef
@@ -75,10 +75,10 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
         not_found ->
             case pg:get_local_members({cu, ProcID}) of
                 [] ->
-                    ?event({no_cu_for_proc, hb_message:id(ProcID)}),
+                    ?event({no_cu_for_proc, hb_util:id(ProcID)}),
                     {ok, Proc} = hb_cache:read_message(
                         Store,
-                        hb_message:id(ProcID)
+                        hb_util:id(ProcID)
                     ),
                     await_results(
                         hb_process:run(
@@ -93,7 +93,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                         )
                     );
                 [Pid|_] ->
-                    ?event({found_cu_for_proc, hb_message:id(ProcID)}),
+                    ?event({found_cu_for_proc, hb_util:id(ProcID)}),
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid !
 						{
@@ -141,10 +141,10 @@ create_monitor_for_message(MsgID) ->
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
 		Msg = maps:get(<<"Message">>, Inbound#tx.data),
 		% Gather IDs
-        AssignmentID = hb_message:id(Assignment, signed),
-        AssignmentUnsignedID = hb_message:id(Assignment, unsigned),
-        ScheduledMsgID = hb_message:id(Msg, signed),
-        ScheduledMsgUnsignedID = hb_message:id(Msg, unsigned),
+        AssignmentID = hb_util:id(Assignment, signed),
+        AssignmentUnsignedID = hb_util:id(Assignment, unsigned),
+        ScheduledMsgID = hb_util:id(Msg, signed),
+        ScheduledMsgUnsignedID = hb_util:id(Msg, unsigned),
 		% Gather slot
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
@@ -207,14 +207,14 @@ boot(Process, Opts) ->
     % Register the process so that it can be found by its ID.
     ?event(
 		{booting_process,
-			{signed, hb_message:id(Process, signed)},
-			{unsigned, hb_message:id(Process, unsigned)}
+			{signed, hb_util:id(Process, signed)},
+			{unsigned, hb_util:id(Process, unsigned)}
 		}
 	),
-    pg:join({cu, hb_message:id(Process, signed)}, self()),
+    pg:join({cu, hb_util:id(Process, signed)}, self()),
     % Build the device stack.
-    ?event({registered_process, hb_message:id(Process, signed)}),
-    {ok, Dev} = hb_pam:device_id_to_executable(Process),
+    ?event({registered_process, hb_util:id(Process, signed)}),
+    {ok, Dev} = hb_pam:load_device(Process),
     ?event({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
         = hb_pam:resolve(Dev, boot, [Process, Opts], Opts),
@@ -280,7 +280,7 @@ execute_schedule(State, Opts) ->
 		{
 			process_executing_slot,
 			maps:get(slot, State),
-			{proc_id, hb_message:id(maps:get(process, State))},
+			{proc_id, hb_util:id(maps:get(process, State))},
 			{to, maps:get(to, State)}
 		}
 	),
@@ -390,7 +390,7 @@ post_execute(
             ?event({checkpoint_normalized_for_slot, Slot}),
             hb_cache:write_output(
                 Store,
-                hb_message:id(Process, signed),
+                hb_util:id(Process, signed),
                 Slot,
                 ar_bundles:sign_item(Checkpoint, Wallet)
             ),
@@ -400,7 +400,7 @@ post_execute(
 				ar_bundles:deserialize(ar_bundles:serialize(Results)),
             hb_cache:write_output(
                 Store,
-                hb_message:id(Process, signed),
+                hb_util:id(Process, signed),
                 Slot,
                 NormalizedResult
             ),

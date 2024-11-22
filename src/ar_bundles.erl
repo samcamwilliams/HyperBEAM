@@ -73,7 +73,7 @@ format(Item, Indent) when is_record(Item, tx) ->
     format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
-                Target -> hb_message:id(Target)
+                Target -> hb_util:id(Target)
             end
         ], Indent + 1) ++
     format_line("Tags:", Indent + 1) ++

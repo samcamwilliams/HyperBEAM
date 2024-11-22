@@ -5,6 +5,7 @@
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2]).
+-include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
 

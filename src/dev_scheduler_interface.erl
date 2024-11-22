@@ -25,12 +25,12 @@ info(_M) ->
         #tx{
             tags = [
                 {<<"Unit">>, <<"Scheduler">>},
-                {<<"Address">>, hb_message:id(ar_wallet:to_address(Wallet))}
+                {<<"Address">>, hb_util:id(ar_wallet:to_address(Wallet))}
             ],
             data =
                 jiffy:encode(
                     lists:map(
-                        fun hb_message:id/1,
+                        fun hb_util:id/1,
                         dev_scheduler_registry:get_processes()
                     )
                 )
@@ -85,7 +85,7 @@ schedule(CarrierM) ->
                         [
                             {<<"Status">>, <<"OK">>},
                             {<<"Initial-Assignment">>, <<"0">>},
-                            {<<"Process">>, hb_message:id(M, signed)}
+                            {<<"Process">>, hb_util:id(M, signed)}
                         ],
                     data = []
                 }
@@ -94,7 +94,7 @@ schedule(CarrierM) ->
             % If the process-id is not specified, use the target of the message as the process-id
             AOProcID =
                 case lists:keyfind(<<"Process">>, 1, M#tx.tags) of
-                    false -> binary_to_list(hb_message:id(M#tx.target));
+                    false -> binary_to_list(hb_util:id(M#tx.target));
                     {_, ProcessID} -> ProcessID
                 end,
             {ok, dev_scheduler_server:schedule(dev_scheduler_registry:find(AOProcID, true), M)}
@@ -160,7 +160,7 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
     {ok, Message} = hb_cache:read_message(Store, MessageID),
-	?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, hb_message:id(Assignment, signed), hb_message:id(Assignment, unsigned)}),
+	?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, hb_util:id(Assignment, signed), hb_util:id(Assignment, unsigned)}),
     assignments_to_bundle(
         Store,
         Assignments,

@@ -20,9 +20,9 @@ push(CarrierMsg, State) ->
             _ -> CarrierMsg
         end,
 	?event({starting_push_for,
-		{unsigned, hb_message:id(Msg, unsigned)},
-		{signed, hb_message:id(Msg, signed)},
-		{target, hb_message:id(Msg#tx.target)}
+		{unsigned, hb_util:id(Msg, unsigned)},
+		{signed, hb_util:id(Msg, signed)},
+		{target, hb_util:id(Msg#tx.target)}
 	}),
     ?no_prod(fix_mu_push_validation),
     case ar_bundles:verify_item(Msg) of
@@ -66,9 +66,9 @@ push_messages(upload, Messages, Opts) ->
                 fun() ->
 					?event(
 						{mu_forking_for,
-							{unsigned, hb_message:id(Message, unsigned)},
-							{signed, hb_message:id(Message, signed)},
-							{target, hb_message:id(Message#tx.target)},
+							{unsigned, hb_util:id(Message, unsigned)},
+							{signed, hb_util:id(Message, signed)},
+							{target, hb_util:id(Message#tx.target)},
 							{logger, maps:get(logger, Opts, undefined)}
 						}
 					),
@@ -87,9 +87,9 @@ push_messages(upload, Messages, Opts) ->
 						]
 					),
 					?event({pushing_result_for_computed_message,
-						{unsigned, hb_message:id(Message, unsigned)},
-						{signed, hb_message:id(Message, signed)},
-						{target, hb_message:id(Message#tx.target)}
+						{unsigned, hb_util:id(Message, unsigned)},
+						{signed, hb_util:id(Message, signed)},
+						{target, hb_util:id(Message#tx.target)}
 					}),
 					handle_push_result(Results, Opts)
                 end

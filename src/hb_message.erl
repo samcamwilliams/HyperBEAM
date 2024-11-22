@@ -1,5 +1,5 @@
 -module(hb_message).
--export([id/1, id/2, load/2]).
+-export([load/2]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -20,8 +20,6 @@
 -define(USER_TX_KEYS,
 	[id, unsigned_id, last_tx, owner, target, data, signature]).
 -define(REGEN_KEYS, [id, unsigned_id]).
-
-
 
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
@@ -346,7 +344,7 @@ calculate_unsigned_message_id_test() ->
 	UnsignedMessage = tx_to_message(UnsignedTX),
 	?assertEqual(
 		hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
-		id(UnsignedMessage, unsigned)
+		hb_util:id(UnsignedMessage, unsigned)
 	).
 
 sign_serialize_deserialize_verify_test() ->
@@ -367,7 +365,7 @@ unsigned_id_test() ->
 	UnsignedMessage = tx_to_message(UnsignedTX),
 	?assertEqual(
 		hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
-		hb_message:id(UnsignedMessage, unsigned)
+		hb_util:id(UnsignedMessage, unsigned)
 	).
 
 signed_id_test() ->
@@ -380,5 +378,5 @@ signed_id_test() ->
 	SignedMsg = tx_to_message(SignedTX),
 	?assertEqual(
 		hb_util:encode(ar_bundles:id(SignedTX, signed)),
-		hb_message:id(SignedMsg, signed)
+		hb_util:id(SignedMsg, signed)
 	).

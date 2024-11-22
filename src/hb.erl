@@ -3,7 +3,7 @@
 -export([config/0, now/0, get/1, get/2, build/0]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, no_prod/3]).
--export([read/1, read/2, debug_wait/3, profile/1]).
+-export([read/1, read/2, debug_wait/3, profile/1, debug_fmt/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
 -include("include/ar.hrl").
@@ -287,7 +287,7 @@ read(ID) -> read(ID, local).
 read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
     read(ID, hb_store:scope(hb:get(store), ScopeAtom));
 read(ID, Store) ->
-    hb_cache:read_message(Store, hb_message:id(ID)).
+    hb_cache:read_message(Store, hb_util:id(ID)).
 
 %% @doc Utility function to throw an error if the current mode is prod and
 %% non-prod ready code is being executed. You can find these in the codebase

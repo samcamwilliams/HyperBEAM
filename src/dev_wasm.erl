@@ -32,7 +32,7 @@ execute(
     State = #{pass := 1, wasm := Port, phase := pre_exec, call := {Func, Params}, wasm_stdlib := Stdlib},
     LastExec
 ) ->
-    case hb_message:id(M) of
+    case hb_util:id(M) of
         LastExec ->
             {ok, State};
         MsgID ->
