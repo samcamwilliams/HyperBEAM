@@ -44,16 +44,17 @@ signers(M) ->
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
+	?event({setting_keys, hb_pam:keys(NewValuesMsg, Opts)}),
 	{
 		ok,
 		maps:merge(
 			Message1,
-			maps:map(
-				fun(Key, Value) ->
-					?no_prod("Do not ship this without careful thought. "
-						"Do we want to resolve values during set?"),
-					{ok, ResolvedValue} = hb_pam:resolve(Key, Value, Opts),
-					ResolvedValue
+			lists:map(
+				fun(Key) ->
+					?no_prod("Are we sure that the default device should "
+						"resolve values?"),
+					?event({getting, Key, NewValuesMsg}),
+					{Key, hb_pam:get(Key, NewValuesMsg, Opts)}
 				end,
 				hb_pam:keys(NewValuesMsg, Opts)
 			)
@@ -84,12 +85,12 @@ keys(Msg) ->
 	}.
 
 %% @doc Return the value associated with the key as it exists in the message's
-%% underlying Erlang map.
+%% underlying Erlang map. NEXT: Following RFC-9110, message keys are case-insensitive.
 get_public_map_key(Key, Msg) ->
 	{ok, PublicKeys} = keys(Msg),
 	case lists:member(Key, PublicKeys) of
 		true -> {ok, maps:get(Key, Msg)};
-		false -> {error, {badkey, Key}}
+		false -> throw({bad_message_key, Key, Msg})
 	end.
 
 %% @doc Return the keys that should not be serialized, but should be included

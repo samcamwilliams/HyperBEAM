@@ -1,12 +1,12 @@
 -module(hb).
 %%% Configuration and environment:
--export([config/0, now/0, get/1, get/2, build/0]).
+-export([init/0, config/0, now/0, get/1, get/2, build/0]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, no_prod/3]).
 -export([read/1, read/2, debug_wait/3, profile/1, debug_fmt/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
--include("include/ar.hrl").
+-include("include/hb.hrl").
 
 %%% Hyperbeam is a decentralized node implementation implementing a protocol built
 %%% on top of the Arweave protocol. This protocol offers a computation layer for
@@ -171,6 +171,7 @@ config() ->
         local_store =>
             [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
+		debug_stack_depth => 20,
         debug_print => true
     }.
 
@@ -197,16 +198,32 @@ config() ->
     }
 ).
 
+%% @doc Initialize system-wide settings for the hyperbeam node.
+init() ->
+	?event({setting_debug_stack_depth, hb:get(debug_stack_depth)}),
+    Old = erlang:system_flag(backtrace_depth, hb:get(debug_stack_depth)),
+	?event({old_system_stack_depth, Old}),
+	ok.
+
 wallet() ->
     wallet(hb:get(key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
-        {ok, _} -> ar_wallet:load_keyfile(Location);
-        {error, _} -> ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, hb:get(key_location))
+        {ok, _} ->
+			ar_wallet:load_keyfile(Location);
+        {error, _} -> 
+			Res = ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, Location),
+			?event({created_new_keyfile, Location, address(Res)}),
+			Res
     end.
 
-address() ->
-    hb_util:encode(ar_wallet:to_address(wallet())).
+%% @doc Get the address of a wallet. Defaults to the address of the wallet
+%% specified by the `key_location` configuration key. It can also take a
+%% wallet tuple as an argument.
+address() -> address(wallet()).
+address(Wallet) when is_tuple(Wallet) ->
+    hb_util:encode(ar_wallet:to_address(Wallet));
+address(Location) -> address(wallet(Location)).
 
 %% @doc Get an environment variable or configuration key.
 get(Key) -> get(Key, undefined).

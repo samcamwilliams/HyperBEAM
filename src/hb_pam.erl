@@ -59,11 +59,18 @@
 %% form of 'inheritence' or 'delegation' between devices if desired.
 resolve(Msg1, Request) ->
 	resolve(Msg1, Request, default_runtime_opts(Msg1)).
-resolve(Msg1, Msg2, Opts) when is_map(Msg2) ->
+resolve(Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
+	?event({resolve, Msg1, Msg2, Opts}),
 	resolve(Msg1, key_from_path(Msg2, Opts), Msg2, Opts);
-resolve(Msg1, Key, Opts) ->
-	resolve(Msg1, Key, #{ <<"Path">> => to_path(Key) }, Opts).
+resolve(Msg1, Key, Msg2) ->
+	resolve(
+		Msg1,
+		Key,
+		Msg2#{ <<"Path">> => Key },
+		default_runtime_opts(Msg1)
+	).
 resolve(Msg1, Key, Msg2, Opts) when not is_function(Key) ->
+	?event({pre_resolve_func_load, {msg1, Msg1}, {key, Key}, {msg2, Msg2}, {opts, Opts}}),
 	{Fun, NewOpts} =
 		try
 			% First, try to load the device and get the function to call.
@@ -92,6 +99,7 @@ resolve(Msg1, Key, Msg2, Opts) when not is_function(Key) ->
 		end,
 	resolve(Msg1, Fun, Msg2, NewOpts);
 resolve(Msg1, Fun, Msg2, Opts) ->
+	?event({resolve_call, Msg1, Fun, Msg2, Opts}),
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
@@ -101,7 +109,15 @@ resolve(Msg1, Fun, Msg2, Opts) ->
 			Key -> [Key, Msg1, Msg2, UserOpts]
 		end,
 	% Then, try to execute the function.
-	try apply(Fun, truncate_args(Fun, Args))
+	try
+		Res = apply(Fun, truncate_args(Fun, Args)),
+		?event({resolve_result, Res}),
+		case Res of
+			_ when is_tuple(Res) and element(1, Res) == error ->
+				throw(Res);
+			Else ->
+				Else
+		end
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
 			handle_error(
@@ -150,7 +166,7 @@ set(Msg1, Key, Value, Opts) ->
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [LastKey], Value, Opts) ->
-	ensure_ok(LastKey, resolve(Msg, #{ LastKey => Value }, Opts), Opts);
+	ensure_ok(LastKey, resolve(Msg, set, #{ LastKey => Value }, Opts), Opts);
 deep_set(Msg, [Key | Rest], Value, Opts) ->
 	deep_set(
 		set(
@@ -316,7 +332,8 @@ to_key(Key, Opts) ->
 to_atom_unsafe(Key) when is_integer(Key) ->
 	integer_to_binary(Key);
 to_atom_unsafe(Key) when is_binary(Key) ->
-	binary_to_existing_atom(Key, utf8);
+	binary_to_existing_atom(
+		list_to_binary(string:to_lower(binary_to_list(Key))), utf8);
 to_atom_unsafe(Key) when is_list(Key) -> 
 	FlattenedKey = lists:flatten(Key),
 	list_to_existing_atom(FlattenedKey);
@@ -326,13 +343,18 @@ to_atom_unsafe(Key) when is_atom(Key) -> Key.
 %% atoms. Notably, it does not support strings as lists of characters.
 to_path(Path) -> to_path(Path, #{ error_strategy => throw }).
 to_path(Binary, Opts) when is_binary(Binary) ->
-	to_path(
-		lists:filter(
-			fun(Part) -> byte_size(Part) > 0 end,
-			binary:split(Binary, <<"/">>, [global])
-		),
-		Opts
-	);
+	?event({to_path, Binary}),
+	case binary:match(Binary, <<"/">>) of
+		nomatch -> [Binary];
+		_ ->
+			to_path(
+				lists:filter(
+					fun(Part) -> byte_size(Part) > 0 end,
+					binary:split(Binary, <<"/">>, [global])
+				),
+				Opts
+			)
+	end;
 to_path(List, Opts) when is_list(List) ->
 	lists:map(fun(Part) -> to_key(Part, Opts) end, List);
 to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
@@ -340,6 +362,7 @@ to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
 %% @doc Extract the key from a `Message2`'s `Path` field. Returns the first
 %% element of the path if it is a list, otherwise returns the path as is.
 key_from_path(Msg2, Opts) ->
+	?event({key_from_path, resolve(Msg2, <<"Path">>, Opts)}),
 	hd(to_path(resolve(Msg2, <<"Path">>, Opts))).
 
 %% @doc Load a device module from its name or a message ID.
@@ -397,7 +420,10 @@ info(DevMod, Msg) ->
 %% @doc The default runtime options for a message. At the moment the `Message1`
 %% but it is included such that we can modulate the options based on the message
 %% if needed in the future.
-default_runtime_opts(_Msg1) -> #{}.
+default_runtime_opts(_Msg1) ->
+	#{
+		error_strategy => throw
+	}.
 
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map. It should also
@@ -412,6 +438,10 @@ key_from_id_device_test() ->
 
 keys_from_id_device_test() ->
 	?assertEqual({ok, [a]}, hb_pam:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
+
+path_test() ->
+	?assertEqual({ok, test_path}, hb_pam:resolve(#{ path => test_path }, path)),
+	?assertEqual({ok, a}, hb_pam:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
 
 %% @doc Generates a test device with three keys, each of which uses
 %% progressively more of the arguments that can be passed to a device key.

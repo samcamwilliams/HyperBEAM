@@ -13,6 +13,7 @@
 -include("include/hb.hrl").
 
 start(_StartType, _StartArgs) ->
+    hb:init(),
     attest_key(),
     hb_sup:start_link(),
     ok = dev_scheduler_registry:start(),
