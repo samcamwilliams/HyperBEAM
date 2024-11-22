@@ -332,8 +332,7 @@ to_key(Key, Opts) ->
 to_atom_unsafe(Key) when is_integer(Key) ->
 	integer_to_binary(Key);
 to_atom_unsafe(Key) when is_binary(Key) ->
-	binary_to_existing_atom(
-		list_to_binary(string:to_lower(binary_to_list(Key))), utf8);
+	binary_to_existing_atom(hb_util:to_lower(Key), utf8);
 to_atom_unsafe(Key) when is_list(Key) -> 
 	FlattenedKey = lists:flatten(Key),
 	list_to_existing_atom(FlattenedKey);

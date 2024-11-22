@@ -4,7 +4,7 @@
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
 -export([hd/1, hd/2, hd/3]).
--export([remove_common/2]).
+-export([remove_common/2, to_lower/1]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
@@ -22,6 +22,12 @@ id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 	encode(Bin);
 id(Data, Type) when is_list(Data) ->
 	id(list_to_binary(Data), Type).
+
+%% @doc Convert a string to a lowercase.
+to_lower(Str) when is_list(Str) ->
+	string:to_lower(Str);
+to_lower(Bin) when is_binary(Bin) ->
+	list_to_binary(to_lower(binary_to_list(Bin))).
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
