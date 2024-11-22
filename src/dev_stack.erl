@@ -50,140 +50,161 @@
 %%% All counters used by the stack are initialized to 1.
 %%% 
 %%% Additionally, as implemented in HyperBEAM, the device stack will honor a
-%%% number of options that are passed to it as environment variables (as its
-%%% third `Opts` argument). Each of these options is also passed through to the
-%%% devices contained within the stack during execution. These options include:
+%%% number of options that are passed to it as keys in the message. Each of
+%%% these options is also passed through to the devices contained within the
+%%% stack during execution. These options include:
 %%% 
 %%% 	Error-Strategy: Determines how the stack handles errors from devices.
 %%% 	See `maybe_error/5` for more information.
 %%% 	Allow-Multipass: Determines whether the stack is allowed to automatically
 %%% 	re-execute from the first device when the `pass` tag is returned. See
 %%% 	`maybe_pass/3` for more information.
+%%% 
+%%% Under-the-hood, dev_stack uses a `default` handler to resolve all calls to
+%%% devices, aside `set/2` which it calls itself to mutate the message's `device`
+%%% key in order to change which device is currently being executed. This method
+%%% allows dev_stack to ensure that the message's HashPath is always correct,
+%%% even as it delegates calls to other devices. An example flow for a `dev_stack`
+%%% execution is as follows:
+%%% 
+%%% 	/Msg1/AlicesExcitingKey ->
+%%% 		dev_stack:execute ->
+%%% 			/Msg1/Set?device=/Device-Stack/1 ->
+%%% 			/Msg2/AlicesExcitingKey ->
+%%% 			/Msg3/Set?device=/Device-Stack/2 ->
+%%% 			/Msg4/AlicesExcitingKey
+%%% 			... ->
+%%% 			/MsgN/Set?device=[This-Device] ->
+%%% 		returns {ok, /MsgN+1} ->
+%%% 	/MsgN+1
+%%%
+%%% In this example, the `device` key is mutated a number of times, but the
+%%% resulting HashPath remains correct and verifiable.
 
 -include("include/hb.hrl").
 -hb_debug(print).
 
 info() ->
-    #{
-        handler => fun resolve/4
-    }.
+    #{ handler => fun router/4 }.
 
-%% @doc Ensures that all devices in the stack have their executable versions
-%% loaded and ready to run, then return a list of the executables, tagged with
-%% their device number. Device stacks are cached in the message so that this
-%% function only needs to resolve the stack once unless it changes.
-executable_devices(Message1, Opts) ->
-	{ok, StackMsg} = hb_pam:resolve(Message1, <<"Device-Stack">>, Opts),
-	case maps:get(priv_stack_cache, hb_pam:private(StackMsg), #{}) of
-		StackMsg -> StackMsg;
-		_Else -> stack_to_executable_devices(StackMsg, Opts)
+%% @doc The device stack key router. Sends the request to `resolve_stack`,
+%% except for `set/2` which is handled by the default implementation in
+%% `dev_message`. Note that the argument order here for execution deviates
+%% from the normal `Message1, Key, Message2` order used by `hb_pam:resolve/4`.
+%% This is due to the key variable being prepended by `hb_pam` when the router
+%% is called. Elsewhere in this module, the normal `Message1, Key, Message2`
+%% order is used.
+router(set, Message1, Message2, Opts) ->
+	dev_message:set(Message1, Message2, Opts);
+router(Key, Message1, Message2, Opts) ->
+	{ok, InitDevMsg} = hb_pam:resolve(Message1, <<"Device">>, Opts),
+	case resolve_stack(Key, Message1, Message2, Opts) of
+		{ok, Result} when is_map(Result) ->
+			{ok, hb_pam:set(Result, <<"Device">>, InitDevMsg, Opts)};
+		Else -> Else
 	end.
 
-%% @doc Underlying resolution mechanism for converting a stack message to a
-%% list of executable devices.
-stack_to_executable_devices(StackMsg, Opts) ->
-	lists:map(
-		fun(DevNum, DevMsg) ->
-			{ok, DevName} = hb_pam:resolve(DevMsg, <<"Name">>, Opts),
-			case hb_pam:device_id_to_executable(DevName) of
-				{ok, Executable} -> 
-					hb_pam:resolve(
-						set,
-						DevMsg,
-						#{ priv_executable => Executable }
-					);
-				Else ->
-					throw(
-						{
-							could_not_load_device,
-							DevNum,
-							DevName,
-							{unexpected_result, Else}
-						}
+%% @doc Return Message1, transformed such that the device named `Key` from the
+%% `Device-Stack` key in the message takes the place of the original `Device`
+%% key. This transformation allows dev_stack to correctly track the HashPath
+%% of the message as it delegates execution to devices contained within it.
+transform_device(Message1, Key, Opts) ->
+	case hb_pam:resolve(Message1, [<<"Device-Stack">>, Key], Opts) of
+		{ok, DevMsg} ->
+			{ok,
+				hb_pam:set(
+					Message1,
+					#{ <<"Device">> => DevMsg },
+					Opts
+				)
+			};
+		_ -> not_found
+	end.
+
+%% @doc The main device stack execution engine. See the `moduledoc` for more
+%% information.
+resolve_stack(Message1, Key, Message2, Opts) ->
+	resolve_stack(Message1, Key, Message2, 1, Opts).
+resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
+	case transform_device(Message1, integer_to_binary(DevNum), Opts) of
+		{ok, Message3} ->
+			?event({stack_executing_device, DevNum, Message3}),
+			case hb_pam:resolve(Message3, Key, Message2, Opts) of
+				{ok, Message4} when is_map(Message4) ->
+					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
+				{skip, Message4} when is_map(Message4) ->
+					{ok, Message4};
+				{pass, Message4} when is_map(Message4) ->
+					case hb_pam:resolve(Message4, pass, Opts) of
+						{ok, <<"Allow">>} ->
+							?event({stack_repassing, DevNum, Message4}),
+							resolve_stack(
+								hb_pam:set(Message4, pass, 1, Opts),
+								Key,
+								Message2,
+								1,
+								Opts
+							);
+						_ ->
+							maybe_error(
+								Message1,
+								Key,
+								Message2,
+								DevNum + 1,
+								Opts,
+								{pass_not_allowed, Message4}
+							)
+					end;
+				{error, Info} ->
+					maybe_error(Message1, Key, Message2, Opts, Info);
+				Unexpected ->
+					maybe_error(
+						Message1,
+						Key,
+						Message2,
+						DevNum + 1,
+						Opts,
+						{unexpected_pam_result, Unexpected}
 					)
-			end
-		end,
-		hb_util:message_to_numbered_list(StackMsg)
-	).
+			end;
+		not_found ->
+			?event({stack_execution_finished, DevNum, Message1}),
+			{ok, Message1}
+	end.
 
-%% @doc The main device stack execution engine.
-%% Call the execute function on each device in the stack, then call the
-%% finalize function on the resulting state.
-resolve(FuncName, Message1, Message2, Opts) ->
-	
-	ExecutableDevices = executable_devices(StackMsg),
-	{ok, }
-		do_call(
-			ExecutableDevices,
-			Message1#{
-				results => #{},
-				errors => [],
-				pass => 1
-			},
-			FuncName,
-			Message2,
-			Opts
-		).
-
-do_call([], S, _FuncName, _Opts) ->
-    {ok, S};
-do_call(AllDevs = [Dev = {_N, DevExec}|Devs], FuncName, Message2, Opts) ->
-    ?event(
-		{
-			DevExec,
-			FuncName,
-			{slot, maps:get(slot, S, "[no_slot]")},
-			{pass, maps:get(pass, S, "[no_pass_num]")}
-		}
-	),
-    case hb_pam:resolve(DevExec, FuncName, ArgPrefix ++ [S, DevS, Params], Opts) of
-        no_match ->
-            do_call(Devs, S, FuncName, Opts);
-        {skip, NewS} when is_map(NewS) ->
-            {ok, NewS};
-        {skip, NewS, NewPrivS} when is_map(NewS) ->
-            {ok, update(NewS, Dev, NewPrivS)};
-        {ok, NewS} when is_map(NewS) ->
-            do_call(Devs, NewS, FuncName, Opts);
-        {ok, NewS, NewPrivS} when is_map(NewS) ->
-            do_call(Devs, update(NewS, Dev, NewPrivS), FuncName, Opts);
-        {ok, NewS} when is_record(NewS, tx) ->
-            do_call(Devs, S#{ results => NewS }, FuncName, Opts);
-        {ok, NewS, NewPrivS} when is_record(NewS, tx) ->
-            do_call(Devs, update(S#{ results => NewS }, Dev, NewPrivS), FuncName, Opts);
-        {pass, NewS} when is_map(NewS) ->
-            maybe_pass(NewS, FuncName, Opts);
-        {pass, NewS, NewPrivS} when is_map(NewS) ->
-            maybe_pass(update(NewS, Dev, NewPrivS), FuncName, Opts);
-        {error, Info} ->
-            maybe_error(AllDevs, S, FuncName, Opts, Info);
-        Unexpected ->
-            maybe_error(AllDevs, S, FuncName, Opts, {unexpected_result, Unexpected})
-    end.
-
-maybe_error([{N, DevExec, _DevS, _Params}|Devs], S = #{ errors := Errs }, FuncName, Opts, Info) ->
-    case maps:get(error_strategy, Opts, stop) of
-        stop -> {error, N, DevExec, Info};
-        throw -> throw({error_running_dev, N, DevExec, Info});
-        continue ->
-            do_call(
-                Devs,
-                S#{ errors := Errs ++ [{N, DevExec, Info}]},
-                FuncName,
+maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
+    case hb_pam:get(Message1, <<"Error-Strategy">>, Opts) of
+        <<"Stop">> ->
+			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
+        <<"Throw">> ->
+			throw({error_running_dev, Message1, Key, Message2, DevNum, Info});
+        <<"Continue">> ->
+			?event({continue_stack_execution_after_error, Message1, Key, Info}),
+            resolve_stack(
+                hb_pam:set(Message1,
+					[
+						<<"Errors">>,
+						hb_pam:get(Message1, id, Opts),
+						hb_pam:get(Message1, <<"Pass">>, Opts),
+						DevNum,
+						hb:debug_fmt(Info)
+					],
+					Opts
+				),
+                Key,
+				Message2,
+                DevNum + 1,
                 Opts
             );
-        ignore -> do_call(Devs, S, FuncName, Opts)
-    end.
-
-maybe_pass(NewS = #{ pass := Pass }, FuncName, Opts) ->
-    case maps:get(pass, Opts, allowed) of
-        disallowed ->
-            % If we cannot handle repassing automatically, return the rest of
-            % the device stack to the caller, as well as the new state.
-            {pass, NewS};
-        allowed ->
-            #{ devices := NewDevs } = NewS,
-            do_call(NewDevs, NewS#{ pass => Pass + 1 }, FuncName, Opts)
+        <<"Ignore">> ->
+			?event({ignoring_stack_error, Message1, Key, Info}),
+            resolve_stack(
+                Message1,
+                Key,
+                Message2,
+                DevNum + 1,
+                Opts
+            )
     end.
 
 %%% Tests
@@ -191,7 +212,7 @@ maybe_pass(NewS = #{ pass := Pass }, FuncName, Opts) ->
 generate_append_device(Str) ->
 	#{
 		test =>
-			fun(M = #{ bin := Bin }) ->
+			fun(#{ bin := Bin }) ->
 				{ok, << Bin/binary, Str/bitstring >>}
 			end
 	}.
