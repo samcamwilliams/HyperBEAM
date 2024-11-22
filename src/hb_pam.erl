@@ -1,9 +1,11 @@
 -module(hb_pam).
 %%% Main device API:
 -export([resolve/2, resolve/3, resolve/4]).
--export([to_key/1, to_key/2, device_id_to_executable/1]).
+-export([to_key/1, to_key/2, load_device/1]).
 %%% Shortcuts:
--export([get/2, get/3, set/2, set/3, private/1]).
+-export([keys/1, keys/2]).
+-export([get/2, get/3, get_default/3, get_default/4]).
+-export([set/2, set/3, set/4, remove/2, remove/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -60,7 +62,7 @@ resolve(Msg1, Request) ->
 resolve(Msg1, Msg2, Opts) when is_map(Msg2) ->
 	resolve(Msg1, key_from_path(Msg2, Opts), Msg2, Opts);
 resolve(Msg1, Key, Opts) ->
-	resolve(Msg1, Key, #{ <<"Path">> => [to_key(Key)] }, Opts).
+	resolve(Msg1, Key, #{ <<"Path">> => to_path(Key) }, Opts).
 resolve(Msg1, Key, Msg2, Opts) when not is_function(Key) ->
 	{Fun, NewOpts} =
 		try
@@ -118,12 +120,54 @@ get(Msg, Key) ->
 	ensure_ok(Key, resolve(Msg, Key), #{}).
 get(Msg, Key, Opts) -> ensure_ok(Key, resolve(Msg, Key, Opts), Opts).
 
+%% @doc Get the value of a key from a message, returning a default value if the
+%% key is not found.
+get_default(Msg, Key, Default) ->
+	get_default(Msg, Key, Default, #{}).
+get_default(Msg, Key, Default, Opts) ->
+	case resolve(Msg, Key, Opts) of
+		{ok, Value} -> Value;
+		{error, _} -> Default
+	end.
+
+%% @doc Shortcut to get the list of keys from a message.
+keys(Msg) -> keys(Msg, #{}).
+keys(Msg, Opts) -> get(Msg, keys, Opts).
+
 %% @doc Shortcut for setting a key in the message using its underlying device.
-%% Like function honors the `error_strategy` option in the same way as `get/3`.
+%% Like the `get/3` function, this function honors the `error_strategy` option.
+%% `set` works with maps and recursive paths while maintaining the appropriate
+%% `HashPath` for each step.
 set(Msg1, Msg2) ->
-	ensure_ok(set, resolve(Msg1, set, Msg2), #{}).
-set(Msg1, Msg2, Opts) ->
-	ensure_ok(set, resolve(Msg1, set, Msg2, Opts), Opts).
+	set(Msg1, Msg2, #{}).
+set(Msg1, Msg2, _Opts) when map_size(Msg2) == 0 -> Msg1;
+set(Msg1, Msg2, Opts) when is_map(Msg2) ->
+	Val = get(Msg1, Key = hd(keys(Msg2, Opts)), Opts),
+	set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts).
+set(Msg1, Key, Value, Opts) ->
+	deep_set(Msg1, to_path(Key), Value, Opts).
+
+%% @doc Recursively search a map, resolving keys, and set the value of the key
+%% at the given path.
+deep_set(Msg, [LastKey], Value, Opts) ->
+	ensure_ok(LastKey, resolve(Msg, #{ LastKey => Value }, Opts), Opts);
+deep_set(Msg, [Key | Rest], Value, Opts) ->
+	deep_set(
+		set(
+			Msg,
+			Key,
+			deep_set(Msg, Rest, Value, Opts),
+			Opts
+		),
+		Rest,
+		Value,
+		Opts
+	).
+
+%% @doc Remove a key from a message, using its underlying device.
+remove(Msg, Key) -> remove(Msg, Key, #{}).
+remove(Msg, Key, Opts) ->
+	ensure_ok(Key, resolve(Msg, remove, #{ key => Key }, Opts), Opts).
 
 %% @doc Helper for returning `Message2` if the resolution has a status of `ok`,
 %% or handling an error based on the value of the `error_strategy` option.
@@ -132,10 +176,6 @@ ensure_ok(_Key, {error, Reason}, #{ error_strategy := X }) when X =/= throw ->
 	{unexpected, {error, Reason}};
 ensure_ok(Key, {error, Reason}, _Opts) ->
 	throw({pam_resolution_error, Key, Reason}).
-
-%% @doc Return the `private` key from a message. If the key does not exist, an
-%% empty map is returned.
-private(Msg) -> maps:get(private, Msg, #{}).
 
 %% @doc Handle an error in a device call.
 handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
@@ -173,7 +213,7 @@ message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
 	message_to_fun(Msg#{ device => default_module() }, Key);
 message_to_fun(Msg = #{ device := RawDev }, Key) ->
 	Dev =
-		case device_id_to_executable(RawDev) of
+		case load_device(RawDev) of
 			{error, _} ->
 				% Error case: A device is specified, but it is not loadable.
 				throw({error, {device_not_loadable, RawDev}});
@@ -272,15 +312,6 @@ to_key(Key, Opts) ->
 		end
 	end.
 
-%% @doc Extract the key from a `Message2`'s `Path` field. Returns the first
-%% element of the path if it is a list, otherwise returns the path as is.
-key_from_path(Msg2, Opts) ->
-	case resolve(Msg2, <<"Path">>, Opts) of
-		{ok, Path} when is_list(Path) -> hd(Path);
-		{ok, Path} -> Path;
-		{error, _} -> undefined
-	end.
-
 %% @doc Helper function for key_to_atom that does not check for errors.
 to_atom_unsafe(Key) when is_integer(Key) ->
 	integer_to_binary(Key);
@@ -291,16 +322,36 @@ to_atom_unsafe(Key) when is_list(Key) ->
 	list_to_existing_atom(FlattenedKey);
 to_atom_unsafe(Key) when is_atom(Key) -> Key.
 
+%% @doc Convert a term into an executable path. Supports binaries, lists, and
+%% atoms. Notably, it does not support strings as lists of characters.
+to_path(Path) -> to_path(Path, #{ error_strategy => throw }).
+to_path(Binary, Opts) when is_binary(Binary) ->
+	to_path(
+		lists:filter(
+			fun(Part) -> byte_size(Part) > 0 end,
+			binary:split(Binary, <<"/">>, [global])
+		),
+		Opts
+	);
+to_path(List, Opts) when is_list(List) ->
+	lists:map(fun(Part) -> to_key(Part, Opts) end, List);
+to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
+
+%% @doc Extract the key from a `Message2`'s `Path` field. Returns the first
+%% element of the path if it is a list, otherwise returns the path as is.
+key_from_path(Msg2, Opts) ->
+	hd(to_path(resolve(Msg2, <<"Path">>, Opts))).
+
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
 %% a tuple of the form {error, Reason} is returned.
-device_id_to_executable(ID) -> device_id_to_executable(ID, #{}).
-device_id_to_executable(Map, _Opts) when is_map(Map) -> {ok, Map};
-device_id_to_executable(ID, _Opts) when is_atom(ID) ->
+load_device(ID) -> load_device(ID, #{}).
+load_device(Map, _Opts) when is_map(Map) -> {ok, Map};
+load_device(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-device_id_to_executable(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 	case hb:get(load_remote_devices) of
 		true ->
 			{ok, Msg} = hb_cache:read_message(maps:get(store, Opts), ID),
@@ -329,7 +380,7 @@ device_id_to_executable(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 		false ->
 			{error, remote_devices_disabled}
 	end;
-device_id_to_executable(ID, _Opts) ->
+load_device(ID, _Opts) ->
     case maps:get(ID, hb:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
@@ -522,3 +573,38 @@ set_with_device_test() ->
 	SetTwice = hb_pam:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
 	?assertEqual(2, hb_pam:get(SetTwice, set_count)),
 	?assertEqual(<<"STATE">>, hb_pam:get(SetTwice, state_key)).
+
+deep_set_test() ->
+	Msg = #{ a => #{ b => #{ c => 1 } } },
+	?assertEqual(#{ a => #{ b => #{ c => 2 } } },
+		hb_pam:set(Msg, [a, b, c], 2, #{})),
+	Device = #{
+		set =>
+			fun(Msg1, Msg2) ->
+				% Merge but keep the old state nested under the new key.
+				{ok, maps:merge(Msg1#{ old_key => Msg2 }, Msg2)}
+			end
+	},
+	?assertEqual(
+		#{
+			a => #{
+				b => #{
+					c => 2,
+					old_key => #{
+						c => 1
+					}
+				},
+				old_key => #{
+					b => #{
+						c => 1
+					}
+				}
+			}
+		},
+		set(
+			Msg,
+			[a, b, c],
+			2,
+			#{ device => Device }
+		)
+	).
