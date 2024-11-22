@@ -2,7 +2,7 @@
 -export([
     read_output/3, write/2, write_output/4, write_assignment/2,
     outputs/2, assignments/2, latest/2, latest/3, latest/4, 
-    read/2, read/3, read/4, lookup/2, lookup/3, read_assignment/3
+    read/2, lookup/2, read_assignment/3, read_message/2
 ]).
 -include("src/include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -10,7 +10,7 @@
 -define(DEFAULT_DATA_DIR, "data").
 -define(TEST_DIR, "test-cache").
 -define(TEST_STORE_MODULE, ao_fs_store).
--define(TEST_STORE, [{?TEST_STORE_MODULE, #{ dir => ?TEST_DIR }}]).
+-define(TEST_STORE, [{?TEST_STORE_MODULE, #{ prefix => ?TEST_DIR }, #{ scope => local }}]).
 -define(COMPUTE_CACHE_DIR, "computed").
 -define(ASSIGNMENTS_DIR, "assignments").
 
@@ -54,25 +54,26 @@ latest(Store, ProcID, Limit, Path) ->
     case outputs(Store, ProcID) of
         [] -> not_found;
         AllOutputSlots ->
-            Slot =
-                first_slot_with_path(
+            ?c({searching_for_latest_slot, {proc_id, fmt_id(ProcID)}, {limit, Limit}, {path, Path}, {all_output_slots, AllOutputSlots}}),
+            case first_slot_with_path(
                     Store,
-                    ProcID,
+                    fmt_id(ProcID),
                     lists:reverse(lists:sort(AllOutputSlots)),
                     Limit,
                     Path
-                ),
-            ResolvedPath =
-                ar_util:remove_common(
-                    ao_store:resolve(
-                        Store,
-                        ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])),
-                    "messages"
-                ),
-            ?c({resolved_path, ResolvedPath}),
-            Msg = read(Store, ResolvedPath),
-            ?c(got_message),
-            {Slot, Msg}
+                ) of
+                not_found -> not_found;
+                Slot ->
+                    ResolvedPath =
+                        ao_store:resolve(
+                            Store,
+                            ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)])
+                        ),
+                    ?c({resolved_path, ResolvedPath}),
+                    Msg = read(Store, ResolvedPath),
+                    ?c(got_message),
+                    {Slot, Msg}
+            end
     end.
 
 first_slot_with_path(_Store, _ProcID, [], _Limit, _Path) -> not_found;
@@ -125,10 +126,11 @@ write_output(Store, ProcID, Slot, Item) ->
     ProcSlotPath = ao_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
     ao_store:make_link(Store, RawMessagePath, ProcMessagePath),
     ao_store:make_link(Store, RawMessagePath, ProcSlotPath),
-    if SignedID =/= UnsignedID ->
-        ok = ao_store:make_link(Store, RawMessagePath,
-            ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
-    true -> already_exists
+    case ar_bundles:is_signed(Item) of
+        true ->
+            ok = ao_store:make_link(Store, RawMessagePath,
+                ao_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
+        false -> already_exists
     end,
     ok.
 
@@ -139,6 +141,7 @@ write_assignment(Store, Assignment) ->
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     ok = write(Store, Assignment),
     UnsignedID = fmt_id(Assignment, unsigned),
+    SignedID = fmt_id(Assignment, signed),
     % Create symlinks from the message on the process and the 
     % slot on the process to the underlying data.
     RawMessagePath =
@@ -146,21 +149,37 @@ write_assignment(Store, Assignment) ->
             "messages",
             UnsignedID
         ]),
-    AssignmentPath =
+    AssignmentPathByNum =
         ao_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
             binary_to_list(Slot)
         ]),
-    ao_store:make_link(Store, RawMessagePath, AssignmentPath),
+	AssignmentPathByID =
+        ao_store:path(Store, [
+            "assignments",
+            fmt_id(ProcID),
+            SignedID
+        ]),
+	AssignmentPathByUnsignedID =
+        ao_store:path(Store, [
+            "assignments",
+            fmt_id(ProcID),
+            UnsignedID
+        ]),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPathByNum),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPathByID),
+    ao_store:make_link(Store, RawMessagePath, AssignmentPathByUnsignedID),
     ok.
 
 write(Store, Item) ->
     write(Store, ao_store:path(Store, ["messages"]), Item).
 
 write(Store, Path, Item) when not is_record(Item, tx) ->
+    ?c(writing_non_tx_item),
     write(Store, Path, ar_bundles:normalize(Item));
-write(Store, Path, Item) when Item#tx.id == ?DEFAULT_ID ->
+write(Store, Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }) ->
+    ?c(writing_tx_item_with_default_id),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item) ->
     case ar_bundles:type(Item) of
@@ -170,9 +189,11 @@ write(Store, Path, Item) ->
             UnsignedID = ar_bundles:id(Item, unsigned),
             SignedID = ar_bundles:id(Item, signed),
             UnsignedPath = ao_store:path(Store, [Path, fmt_id(UnsignedID)]),
+            ?c({writing_item, UnsignedPath}),
             ok = ao_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
-            if SignedID =/= UnsignedID ->
+            if SignedID =/= not_signed ->
                 SignedPath = ao_store:path(Store, [Path, fmt_id(SignedID)]),
+                ?c({linking_item, SignedPath}),
                 ao_store:make_link(Store, UnsignedPath, SignedPath);
             true -> link_unnecessary
             end;
@@ -184,12 +205,16 @@ write(Store, Path, Item) ->
 write_composite(Store, Path, map, Item) ->
     % The item is a map. We should:
     % 1. Write the header item into the store without its children.
+    %    The header item is the normal item, but with the manifest placed
+    %    in the data field. This is unpacked in `read/2`.
     % 2. Write each child into the store.
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
     UnsignedHeaderID = ar_bundles:id(Item, unsigned),
+    ?c({starting_composite_write, fmt_id(UnsignedHeaderID)}),
     ok = ao_store:make_group(Store, Dir = ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)])),
     SignedHeaderID = ar_bundles:id(Item, signed),
+    ?c({writing_composite_header, {unsigned, fmt_id(UnsignedHeaderID)}, {signed, fmt_id(SignedHeaderID)}}),
     ao_store:make_link(
         Store,
         ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID)]),
@@ -198,7 +223,11 @@ write_composite(Store, Path, map, Item) ->
     ao_store:write(
         Store,
         ao_store:path(Store, [Path, fmt_id(UnsignedHeaderID), "item"]),
-        ar_bundles:serialize(Item#tx{ data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) } })
+        ar_bundles:serialize(
+            Item#tx{
+                data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) }
+            }
+        )
     ),
     maps:map(fun(Key, Subitem) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
@@ -214,109 +243,82 @@ write_composite(Store, Path, map, Item) ->
 write_composite(Store, Path, list, Item) ->
     write_composite(Store, Path, map, ar_bundles:normalize(Item)).
 
+read_message(Store, MessageID) ->
+    lookup(Store, ["messages", MessageID]).
+
 read_output(Store, ProcID, undefined) ->
     element(2, latest(Store, ProcID));
 read_output(Store, ProcID, Slot) when is_integer(Slot) ->
-    read_output(Store, fmt_id(ProcID), ["slot", integer_to_list(Slot)]);
+    read_output(Store, ProcID, ["slot", integer_to_list(Slot)]);
 read_output(Store, ProcID, MessageID) when is_binary(MessageID) andalso byte_size(MessageID) == 32 ->
     read_output(Store, fmt_id(ProcID), fmt_id(MessageID));
 read_output(Store, ProcID, SlotBin) when is_binary(SlotBin) ->
     read_output(Store, ProcID, ["slot", binary_to_list(SlotBin)]);
-read_output(Store, ProcID, Input) ->
-    ?c({reading_computed_result, Input}),
+read_output(Store, ProcID, SlotRef) ->
+    ?c({reading_computed_result, ProcID, SlotRef}),
     ResolvedPath =
-        ar_util:remove_common(
-            ar_util:remove_common(
-                ?c(ao_store:resolve(
-                    Store,
-                    ao_store:path(Store, [?COMPUTE_CACHE_DIR, fmt_id(ProcID), Input])
-                )),
-                ?COMPUTE_CACHE_DIR
-            ),
-            "messages"
+        P2 = ao_store:resolve(
+            Store,
+            P1 = ao_store:path(Store, [?COMPUTE_CACHE_DIR, ProcID, SlotRef])
         ),
-    ?c({resolved_path, ResolvedPath}),
-    case ao_store:type(Store, ["messages", ResolvedPath]) of
-        not_found -> ?c(not_found);
+    ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
+    case ao_store:type(Store, ResolvedPath) of
+        not_found -> not_found;
         _ -> read(Store, ResolvedPath)
     end.
 
-read_assignment(Store, _ProcID, AssignmentID) when is_binary(AssignmentID) ->
-    read(Store, AssignmentID);
+read_assignment(Store, ProcID, Slot) when is_integer(Slot) ->
+    read_assignment(Store, ProcID, integer_to_list(Slot));
 read_assignment(Store, ProcID, Slot) ->
     ResolvedPath =
-        ar_util:remove_common(
-            ao_store:resolve(
-                Store,
-                ao_store:path(Store, [
-                    "assignments",
-                    fmt_id(ProcID),
-                    integer_to_list(Slot)
-                ])
-            ),
-            "messages"
+        P2 = ao_store:resolve(
+            Store,
+            P1 = ao_store:path(Store, [
+                "assignments",
+                fmt_id(ProcID),
+                Slot
+            ])
         ),
-    ?c({resolved_path, ResolvedPath}),
+    ?c({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     read(Store, ResolvedPath).
 
-lookup(Store, ID) ->
-    lookup(Store, ID, "").
-lookup(Store, ID, Subpath) ->
-    lookup(Store, ID, Subpath, "messages").
-lookup(Store, ID, Subpath, DirBase) ->
+lookup(Store, PathPart) when not is_list(PathPart) ->
+    lookup(Store, [PathPart]);
+lookup(Store, Path) ->
+    ?c({looking_up, Path}),
     ResolvedPath =
-        ar_util:remove_common(
-            ao_store:resolve(
-                Store,
-                ao_store:path(Store, [DirBase, fmt_id(ID), Subpath])
-            ),
-            "messages"
+        P2 = ao_store:resolve(
+            Store,
+            P1 = ao_store:path(Store, lists:map(fun fmt_id/1, Path))
         ),
-    ?c({resolved_path, ResolvedPath}),
-    read(Store, ResolvedPath, DirBase, DirBase).
+    ?c({resolved_path, P1, P2, ResolvedPath}),
+    read(Store, ResolvedPath).
 
-read(Store, ID) ->
-    read(Store, ID, "messages").
-read(Store, ID, DirBase) ->
-    read(Store, ID, DirBase, all).
-read(Store, ID, DirBase, Subpath) ->
-    ?c({reading_message, ID, DirBase, Subpath}),
-    MessagePath = ao_store:path(Store, [DirBase, fmt_id(ID)]),
+read(Store, RawPath) ->
+    ?c({reading_message, RawPath, Store}),
+    MessagePath = ao_store:path(Store, RawPath),
     case ao_store:type(Store, MessagePath) of
         composite ->
-            case Subpath of
-                all ->
-                    % The message is a bundle and we want the whole item.
-                    % Read the root and reconstruct it.
-                    RootPath = ao_store:path(Store, [MessagePath, "item"]),
-                    Root = read_simple_message(Store, RootPath),
-                    % The bundle is a map of its children by ID. Reconstruct
-                    % the bundle by reading each child.
-                    Root#tx {
-                        data = maps:map(
-                            fun(_, Key) -> read(Store, Key) end,
-                            ar_bundles:parse_manifest(
-                                maps:get(<<"manifest">>, Root#tx.data)
-                            )
-                        )
-                    };
-                _ ->
-                    % Subpath is specified, so we look for a child message.
-                    Direct = ao_store:path(Store, [MessagePath, Subpath]),
-                    case ao_store:type(Store, Direct) of
-                        not_found ->
-                            % We can't find the in one hop, so find greatest common
-                            % child and recurse.
-                            case best_common_prefix(MessagePath, Subpath) of
-                                {_, Subpath} -> not_found;
-                                {NextID, RemainingSubpath} ->
-                                    read(Store, NextID, "", RemainingSubpath)
-                            end;
-                        _ ->
-                            % The subpath is a direct value. Read it.
-                            read(Store, Direct, "", "")
-                    end
-            end;
+            ?c({reading_composite_message, MessagePath}),
+            % The message is a bundle and we want the whole item.
+            % Read the root and reconstruct it.
+            RootPath = ao_store:path(Store, [MessagePath, "item"]),
+            Root = read_simple_message(Store, RootPath),
+            % The bundle is a map of its children by ID. Reconstruct
+            % the bundle by reading each child.
+            ?no_prod("Reconstructing bundle unnecessarily serializes and deserializes"),
+            %% This serialization/deserialization normalizes away the manifest wrapping
+            %% tags and object, added by `write_composite/3`. We do this so that we can
+            %% separate the bundle items from the main object in storage, but if ar_bundles
+            %% exposed a function to rebuild the TX object's manifest we could avoid this.
+            ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
+                data = maps:map(
+                    fun(_, Key) -> read(Store, ["messages", fmt_id(Key)]) end,
+                    ar_bundles:parse_manifest(
+                        maps:get(<<"manifest">>, Root#tx.data)
+                    )
+                )
+            }));
         simple ->read_simple_message(Store, MessagePath);
         not_found -> not_found
     end.
@@ -325,26 +327,13 @@ read_simple_message(Store, Path) ->
     {ok, Bin} = ao_store:read(Store, Path),
     ar_bundles:deserialize(Bin).
 
-best_common_prefix(Base, Subpath) ->
-    Children = ao_keyval:children(fmt_id(Base)),
-    {LongestCommon, BestChild} = lists:foldl(fun(Child, {BestSharedBytes, BestSharedPath}) ->
-        Common = binary:longest_common_prefix(Child, Subpath),
-        if
-            byte_size(Common) > BestSharedBytes -> {byte_size(Common), Common};
-            true -> {BestSharedBytes, BestSharedPath}
-        end
-    end, {0, <<>>}, Children),
-    {BestChild, binary:part(Subpath, {byte_size(Subpath), -byte_size(LongestCommon)})}.
-
 fmt_id(ID) -> fmt_id(ID, unsigned).
 fmt_id(ID, Type) when is_record(ID, tx) -> fmt_id(ar_bundles:id(ID, Type));
 fmt_id(ID, _) when is_list(ID) andalso length(ID) == 43 -> ID;
 fmt_id(ID, _) when is_binary(ID) andalso byte_size(ID) == 43 -> ID;
 fmt_id(ID, _Type) when is_binary(ID) andalso byte_size(ID) == 32 ->
     binary_to_list(ar_util:id(ID));
-fmt_id(ID, _Type) ->
-    ?c({warning, invalid_id_type, ID, _Type}),
-    ID.
+fmt_id(ID, _Type) -> ID.
 
 %%% Tests
 
@@ -354,7 +343,13 @@ test_cache() ->
     ?TEST_STORE.
 
 create_unsigned_tx(Data) ->
-    ar_bundles:normalize(#tx{ format = ans104, data = Data }).
+    ar_bundles:normalize(
+        #tx{
+            format = ans104,
+            tags = [{<<"Example">>, <<"Tag">>}],
+            data = Data
+        }
+    ).
 
 %% Helper function to create signed #tx items.
 create_signed_tx(Data) ->
@@ -385,7 +380,7 @@ store_simple_unsigned_item_test() ->
     %% Write the simple unsigned item
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
-    RetrievedItem = read(TestStore, Item),
+    RetrievedItem = read(TestStore, ["messages", fmt_id(Item)]),
     ?assertEqual(Item, RetrievedItem).
 
 %% Test storing and retrieving a simple signed item
@@ -394,8 +389,8 @@ simple_signed_item_test() ->
     %% Write the simple signed item
     ok = write(TestStore = test_cache(), Item),
     %% Read the item back
-    RetrievedItemUnsigned = read(TestStore, ar_bundles:id(Item, unsigned)),
-    RetrievedItemSigned = read(TestStore, ar_bundles:id(Item, signed)),
+    RetrievedItemUnsigned = read_message(TestStore, ar_bundles:id(Item, unsigned)),
+    RetrievedItemSigned = read_message(TestStore, ar_bundles:id(Item, signed)),
     %% Assert that the retrieved item matches the original and verifies
     ?assertEqual(Item, RetrievedItemUnsigned),
     ?assertEqual(Item, RetrievedItemSigned),
@@ -409,7 +404,7 @@ composite_unsigned_item_test() ->
     },
     Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
-    RetrievedItem = read(TestStore, Item#tx.id),
+    RetrievedItem = read_message(TestStore, ar_bundles:id(Item)),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
@@ -431,7 +426,7 @@ composite_signed_item_test() ->
     },
     Item = ar_bundles:deserialize(create_signed_tx(ItemData)),
     ok = write(TestStore = test_cache(), Item),
-    RetrievedItem = read(TestStore, Item#tx.id),
+    RetrievedItem = read_message(TestStore, ar_bundles:id(Item, signed)),
     ?assertEqual(
         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
@@ -441,7 +436,7 @@ composite_signed_item_test() ->
         ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), signed)
     ),
     ?assertEqual(ar_bundles:id(Item, unsigned), ar_bundles:id(RetrievedItem, unsigned)),
-    %?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
+    ?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
     ?assertEqual(true, ar_bundles:verify_item(Item)),
     ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
 
@@ -461,7 +456,7 @@ deeply_nested_item_test() ->
     %% Write the nested item
     ok = write(TestStore = test_cache(), Level1Tx),
     %% Read the deep value back using subpath
-    RetrievedItem = lookup(TestStore, Level1Tx#tx.id, ["level1_key", "level2_key", "level3_key"]),
+    RetrievedItem = read_message(TestStore, [fmt_id(Level1Tx), "level1_key", "level2_key", "level3_key"]),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual(<<"deep_value">>, RetrievedItem#tx.data),
     ?assertEqual(
@@ -474,19 +469,19 @@ write_and_read_output_test() ->
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, Proc#tx.id, 0, Item1),
-    ok = write_output(Store, Proc#tx.id, 1, Item2),
-    ?assertEqual(Item1, read(Store, Item1#tx.id)),
-    ?assertEqual(Item2, read(Store, Item2#tx.id)),
-    ?assertEqual(Item2, read_output(Store, fmt_id(Proc#tx.id), 1)),
-    ?assertEqual(Item1, read_output(Store, fmt_id(Proc#tx.id), Item1#tx.id)).
+    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    ?assertEqual(Item1, read_message(Store, ar_bundles:id(Item1, unsigned))),
+    ?assertEqual(Item2, read_message(Store, ar_bundles:id(Item2, unsigned))),
+    ?assertEqual(Item2, read_output(Store, fmt_id(Proc, signed), 1)),
+    ?assertEqual(Item1, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
 
 latest_output_retrieval_test_broken() ->
     Store = test_cache(),
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, Proc#tx.id, 0, Item1),
-    ok = write_output(Store, Proc#tx.id, 1, Item2),
-    ?assertEqual({1, Item2}, latest(Store, Proc#tx.id)),
-    ?assertEqual({0, Item1}, latest(Store, Proc#tx.id, 1)).
+    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    ?assertEqual({1, Item2}, latest(Store, fmt_id(Proc, signed))),
+    ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 1)).

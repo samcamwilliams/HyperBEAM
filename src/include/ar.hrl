@@ -8,6 +8,7 @@
 	format = ans104,
 	%% The transaction identifier.
 	id = ?DEFAULT_ID,
+	unsigned_id = ?DEFAULT_ID,
 	%% Either the identifier of the previous transaction from
 	%% the same wallet or the identifier of one of the
 	%% last ?MAX_TX_ANCHOR_DEPTH blocks.

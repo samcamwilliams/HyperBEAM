@@ -1,8 +1,8 @@
 -module(su_registry).
 -export([start/0, find/1, find/2, get_wallet/0, get_processes/0]).
-
 -include("include/ao.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-ao_debug(print).
 
 %%% A simple registry for local services in AO, using pg. Currently,
 %%% only SU processes are supported.
@@ -37,6 +37,7 @@ maybe_new_proc(_ProcID, false) -> not_found;
 maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
     maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
+	?c({starting_su_for, ProcID}),
     Pid = su_process:start(ProcID, get_wallet()),
     try
         pg:join({su, ProcID}, Pid),

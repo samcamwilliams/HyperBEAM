@@ -2,7 +2,6 @@
 -export([init/3, execute/2, end_of_schedule/1, uses/0, add_monitor/2]).
 
 -include("include/ao.hrl").
--ao_debug(print).
 
 %%% A simple device that allows flexible monitoring of a process execution.
 %%% Adding a dev_monitor device to a process will cause the listed functions

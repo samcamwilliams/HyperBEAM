@@ -1,18 +1,19 @@
 -module(ar_util).
-
--export([id/1, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2,
+-export([id/1, id/2, encode/1, decode/1, safe_encode/1, safe_decode/1, find_value/2,
          find_value/3]).
 -export([remove_common/2]).
 
 -include("include/ao.hrl").
-
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
-id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
-  Bin;
-id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
-  b64fast:encode(Bin);
-id(Data) when is_list(Data) ->
-  id(list_to_binary(Data)).
+id(Item) -> id(Item, unsigned).
+id(TX, Type) when is_record(TX, tx) ->
+	id(ar_bundles:id(TX, Type));
+id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+	Bin;
+id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+	b64fast:encode(Bin);
+id(Data, _) when is_list(Data) ->
+	id(list_to_binary(Data)).
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
@@ -58,12 +59,16 @@ find_value(Key, List, Default) ->
       Default
   end.
 
-remove_common(<<X:8, Rest1/binary>>, <<X:8, Rest2/binary>>) ->
-  ?c({common_prefix, X}),
-  remove_common(Rest1, Rest2);
-remove_common([X | Rest1], [X | Rest2]) ->
-  remove_common(Rest1, Rest2);
-remove_common([$/ | Path], _) ->
-  Path;
-remove_common(Rest, _) ->
-  Rest.
+%% @doc Remove the common prefix from two strings, returning the remainder of the
+%% first string. This function also coerces lists to binaries where appropriate,
+%% returning the type of the first argument.
+remove_common(MainStr, SubStr) when is_binary(MainStr) and is_list(SubStr) ->
+    remove_common(MainStr, list_to_binary(SubStr));
+remove_common(MainStr, SubStr) when is_list(MainStr) and is_binary(SubStr) ->
+    binary_to_list(remove_common(list_to_binary(MainStr), SubStr));
+remove_common(<< X:8, Rest1/binary>>, << X:8, Rest2/binary>>) ->
+    remove_common(Rest1, Rest2);
+remove_common([X|Rest1], [X|Rest2]) ->
+    remove_common(Rest1, Rest2);
+remove_common([$/|Path], _) -> Path;
+remove_common(Rest, _) -> Rest.

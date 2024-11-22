@@ -50,6 +50,7 @@ typedef struct {
 static ErlDrvTermData atom_ok;
 static ErlDrvTermData atom_error;
 static ErlDrvTermData atom_import;
+static ErlDrvTermData atom_execution_result;
 
 #ifndef HB_DEBUG
 #define HB_DEBUG 0
@@ -457,7 +458,7 @@ static void async_init(void* raw) {
     //DRV_DEBUG("Allocated init message");
     int msg_i = 0;
     init_msg[msg_i++] = ERL_DRV_ATOM;
-    init_msg[msg_i++] = atom_ok;
+    init_msg[msg_i++] = atom_execution_result;
 
     // Process imports
     for (int i = 0; i < imports.size; ++i) {
@@ -632,7 +633,7 @@ static void async_call(void* raw) {
     DRV_DEBUG("Allocated msg");
     int msg_index = 0;
     msg[msg_index++] = ERL_DRV_ATOM;
-    msg[msg_index++] = atom_ok;
+    msg[msg_index++] = atom_execution_result;
     for (size_t i = 0; i < results.size; i++) {
         DRV_DEBUG("Processing result %d", i);
         DRV_DEBUG("Result type: %d", results.data[i].kind);
@@ -860,7 +861,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
         int msg_index = 0;
         msg[msg_index++] = ERL_DRV_ATOM;
-        msg[msg_index++] = atom_ok;
+        msg[msg_index++] = atom_execution_result;
         msg[msg_index++] = ERL_DRV_BUF2BINARY;
         msg[msg_index++] = (ErlDrvTermData)out_binary;
         msg[msg_index++] = size_l;
@@ -880,7 +881,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 6);
         int msg_index = 0;
         msg[msg_index++] = ERL_DRV_ATOM;
-        msg[msg_index++] = atom_ok;
+        msg[msg_index++] = atom_execution_result;
         msg[msg_index++] = ERL_DRV_INT;
         msg[msg_index++] = size;
         msg[msg_index++] = ERL_DRV_TUPLE;
@@ -923,5 +924,6 @@ DRIVER_INIT(wasm_driver) {
     atom_ok = driver_mk_atom("ok");
     atom_error = driver_mk_atom("error");
     atom_import = driver_mk_atom("import");
+	atom_execution_result = driver_mk_atom("execution_result");
     return &wasm_driver_entry;
 }

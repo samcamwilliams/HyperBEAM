@@ -8,10 +8,8 @@
 size(Port) ->
     Port ! {self(), {command, term_to_binary({size})}},
     receive
-        {ok, Size} ->
-            {ok, Size};
-        Error ->
-            Error
+        {execution_result, Size} ->
+            {ok, Size}
     end.
 
 write(Port, Offset, Data) when is_binary(Data) ->
@@ -19,10 +17,7 @@ write(Port, Offset, Data) when is_binary(Data) ->
     Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
     ?c(mem_written),
     receive
-        ok ->
-            ok;
-        Error ->
-            Error
+        ok -> ok
     end.
 
 write_string(Port, Data) when is_list(Data) ->
@@ -33,20 +28,15 @@ write_string(Port, Data) when is_binary(Data) ->
     case malloc(Port, DataSize) of
         {ok, Ptr} ->
             case write(Port, Ptr, String) of
-                ok ->
-                    {ok, Ptr};
-                Error ->
-                    free(Port, Ptr),
-                    Error
+                ok -> {ok, Ptr}
             end;
-        Error ->
-            Error
+        Error -> Error
     end.
 
 read(Port, Offset, Size) ->
     Port ! {self(), {command, term_to_binary({read, Offset, Size})}},
     receive
-        {ok, Result} -> {ok, Result}
+        {execution_result, Result} -> {ok, Result}
     end.
 
 read_string(Port, Offset) ->
@@ -58,8 +48,6 @@ do_read_string(Port, Offset, ChunkSize) ->
         [Data|[]] -> [Data|do_read_string(Port, Offset + ChunkSize, ChunkSize)];
         [FinalData|_Remainder] -> [FinalData]
     end.
-
-
 
 malloc(Port, Size) ->
     case cu_beamr:call(Port, "malloc", [Size]) of
