@@ -6,7 +6,11 @@
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
+-export([format_indented/2, format_indented/3, format_binary/1]).
+-export([format_map/1, format_map/2]).
 -include("include/hb.hrl").
+-define(INDENT_SPACES, 4).
+-define(BIN_PRINT, 20).
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
 
@@ -161,4 +165,48 @@ maybe_throw(Val, Opts) ->
 	case hb_pam:get(error_strategy, Opts) of
 		throw -> throw(Val);
 		_ -> Val
+	end.
+
+%% @doc Format a string with an indentation level.
+format_indented(Str, Indent) -> format_indented(Str, "", Indent).
+format_indented(RawStr, Fmt, Ind) ->
+	lists:droplast(
+		lists:flatten(
+			io_lib:format(
+				[$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
+					lists:flatten(RawStr) ++ "\n",
+				Fmt
+			)
+		)
+	).
+
+%% @doc Format a binary as a short string suitable for printing.
+format_binary(Bin) ->
+	lists:flatten(
+		io_lib:format(
+			"Binary: ~p... <~p bytes>",
+			[
+				binary:part(
+					Bin,
+					0,
+					case byte_size(Bin) of
+						X when X < ?BIN_PRINT -> X;
+						_ -> ?BIN_PRINT
+					end
+				),
+				byte_size(Bin)
+			]
+		)
+	).
+
+%% @doc Format a map as either a single line or a multi-line string depending
+%% on the value of the `debug_print_map_line_threshold` runtime option.
+format_map(Map) -> format_map(Map, 0).
+format_map(Map, Indent) ->
+	MaxLen = hb:get(debug_print_map_line_threshold),
+	SimpleFmt = io_lib:format("~p", [Map]),
+	case lists:flatlength(SimpleFmt) of
+		Len when Len > MaxLen ->
+			"\n" ++ lists:flatten(hb_message:format(Map, Indent));
+		_ -> SimpleFmt
 	end.

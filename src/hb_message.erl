@@ -1,6 +1,8 @@
 -module(hb_message).
 -export([load/2]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
+%%% Debugging tools:
+-export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -20,6 +22,61 @@
 -define(USER_TX_KEYS,
 	[id, unsigned_id, last_tx, owner, target, data, signature]).
 -define(REGEN_KEYS, [id, unsigned_id]).
+
+%% @doc Pretty-print a message.
+print(Msg) -> print(Msg, 0).
+print(Msg, Indent) ->
+    io:format(standard_error, "~s", [lists:flatten(format(Msg, Indent))]).
+
+%% @doc Format a message for printing, optionally taking an indentation level
+%% to start from.
+format(Item) -> format(Item, 0).
+format(Bin, Indent) when is_binary(Bin) ->
+	hb_util:format_indented(
+		hb_util:format_binary(Bin),
+		Indent
+	);
+format(Map, Indent) when is_map(Map) ->
+    Header = hb_util:format_indented("Map: {~n", Indent),
+    Res = lists:map(
+        fun({Key, Val}) ->
+			NormKey = hb_pam:to_key(Key, #{ error_strategy => ignore }),
+			MaxLen = hb:get(debug_print_map_line_threshold),
+			KeyStr = 
+				case NormKey of
+					Key ->
+						io_lib:format("~p", [NormKey]);
+					undefined ->
+						io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
+					_ ->
+						io_lib:format("~p [raw: ~p]", [NormKey, Key])
+				end,
+			hb_util:format_indented(
+				"~s := ~s~n",
+				[
+					lists:flatten(KeyStr),
+					case Val of
+						NextMap when is_map(NextMap) ->
+							hb_util:format_map(NextMap, Indent + 2);
+						Other ->
+							io_lib:format("~p", [Other])
+					end
+				],
+				Indent + 1
+			)
+		end,
+        maps:to_list(Map)
+    ),
+	case Res of
+		[] -> "[Empty map]";
+		_ ->
+			lists:flatten(
+				Header ++ Res ++ hb_util:format_indented("}", Indent)
+			)
+	end;
+format(Item, Indent) ->
+    % Whatever we have is not a message map.
+    hb_util:format_indented("[UNEXPECTED VALUE] ~p", [Item], Indent).
 
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.

@@ -172,6 +172,7 @@ config() ->
             [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
 		debug_stack_depth => 20,
+		debug_print_map_line_threshold => 10,
         debug_print => true
     }.
 
@@ -274,16 +275,23 @@ debug_print(X, ModStr, LineNum) ->
 		]),
     X.
 
+-define(MAP_FMT_MAX_LENGTH, 20).
+
 %% @doc Convert a term to a string for debugging print purposes.
 debug_fmt({explicit, X}) ->
     io_lib:format("~p", [X]);
 debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
     io_lib:format("~p: ~p", [X, Y]);
 debug_fmt({X, Y}) when is_record(Y, tx) ->
-    io_lib:format("~p: [Message body follows]~n~s",
-        [X, lists:flatten(ar_bundles:format(Y, 1))]);
+    io_lib:format("~p: [TX item]~n~s",
+		[X, hb_util:format_binary(Y)]);
+debug_fmt({X, Y}) when is_map(Y) ->
+	io_lib:format("~p: [Message] ~s",
+		[X, hb_util:format_map(Y, 0)]);
 debug_fmt({X, Y}) ->
     io_lib:format("~s: ~s", [debug_fmt(X), debug_fmt(Y)]);
+debug_fmt(Map) when is_map(Map) ->
+	hb_util:format_map(Map, 0);
 debug_fmt(Tuple) when is_tuple(Tuple) ->
     format_tuple(Tuple);
 debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
@@ -293,9 +301,20 @@ debug_fmt(X) ->
 
 %% @doc Helper function to format tuples with arity greater than 2.
 format_tuple(Tuple) ->
-    Elements = tuple_to_list(Tuple),
-    FormattedElements = lists:map(fun debug_fmt/1, Elements),
-    io_lib:format("~s", [string:join(FormattedElements, ", ")]).
+	to_lines(lists:map(
+		fun(Elem) ->
+			debug_fmt(Elem)
+		end,
+		tuple_to_list(Tuple)
+	)).
+
+to_lines([]) -> [];
+to_lines(In =[RawElem | Rest]) ->
+	Elem = lists:flatten(RawElem),
+	case lists:member($\n, Elem) of
+		true -> lists:flatten(lists:join("\n", In));
+		false -> Elem ++ ", " ++ to_lines(Rest)
+	end.
 
 %% @doc Debugging function to read a message from the cache.
 %% Specify either a scope atom (local or remote) or a store tuple
