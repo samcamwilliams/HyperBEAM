@@ -5,6 +5,7 @@
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
+-export([maybe_throw/2]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
@@ -72,7 +73,7 @@ list_to_numbered_map(List) ->
 message_to_numbered_list(Message) ->
 	message_to_numbered_list(Message, #{}).
 message_to_numbered_list(Message, Opts) ->
-	{ok, Keys} = hb_pam:resolve(Message, keys, Opts),
+	{ok, Keys} = hb_pam:keys(Message, Opts),
 	KeyValList =
 		lists:filtermap(
 			fun(Key) ->
@@ -80,7 +81,7 @@ message_to_numbered_list(Message, Opts) ->
 					{Int, ""} ->
 						{
 							true,
-							{Int, hb_pam:get(Message, Key, Opts)}
+							{Int, hb_pam:get(Key, Message, Opts)}
 						};
 					_ -> false
 				end
@@ -153,3 +154,11 @@ remove_common([X|Rest1], [X|Rest2]) ->
     remove_common(Rest1, Rest2);
 remove_common([$/|Path], _) -> Path;
 remove_common(Rest, _) -> Rest.
+
+%% @doc Throw an exception if the Opts map has an `error_strategy` key with the
+%% value `throw`. Otherwise, return the value.
+maybe_throw(Val, Opts) ->
+	case hb_pam:get(error_strategy, Opts) of
+		throw -> throw(Val);
+		_ -> Val
+	end.

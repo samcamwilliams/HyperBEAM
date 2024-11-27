@@ -1,6 +1,5 @@
 -module(dev_message).
--export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/3, remove/2]).
--export([no_serialize/0]).
+-export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/3, remove/2, get/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -8,10 +7,12 @@
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
 %%% not included.
 
+-define(DEVICE_KEYS, [path, id, unsigned_id, signers, keys, get, set, remove]).
+
 %% @doc Return the info for the identity device.
 info() ->
 	#{
-		default => fun get_public_map_key/2
+		default => fun get/3
 	}.
 
 %% @doc Return the ID of a message. If the message already has an ID, return
@@ -49,27 +50,32 @@ set(Message1, NewValuesMsg, Opts) ->
 		ok,
 		maps:merge(
 			Message1,
-			lists:map(
-				fun(Key) ->
-					?no_prod("Are we sure that the default device should "
-						"resolve values?"),
-					?event({getting, Key, NewValuesMsg}),
-					{Key, hb_pam:get(Key, NewValuesMsg, Opts)}
-				end,
-				hb_pam:keys(NewValuesMsg, Opts)
+			maps:from_list(
+				lists:map(
+					fun(Key) ->
+						?no_prod("Are we sure that the default device should "
+							"resolve values?"),
+						?event({resolve_msg2_key, Key, NewValuesMsg}),
+						{Key, hb_pam:get(Key, NewValuesMsg, Opts)}
+					end,
+					lists:filter(
+						fun(Key) -> not is_device_key(Key) end,
+						hb_pam:keys(NewValuesMsg, Opts)
+					)
+				)
 			)
 		)
 	}.
 
 %% @doc Remove a key or keys from a message.
-remove(Message1, #{ key := Key }) when is_atom(Key) ->
+remove(Message1, #{ item := Key }) when is_atom(Key) ->
 	{ok, maps:remove(Key, Message1)};
-remove(Message1, #{ keys := Keys }) ->
+remove(Message1, #{ items := Keys }) ->
 	lists:foldl(
 		fun(Key, {ok, Message1n}) ->
 			% Note: We do not call `hb_pam:resolve` here because it may pollute
 			% the HashPath with an extremely large number of calls.
-			remove(Message1n, #{ key => Key }) end,
+			remove(Message1n, #{ item => Key }) end,
 		{ok, Message1},
 		Keys
 	).
@@ -85,22 +91,43 @@ keys(Msg) ->
 	}.
 
 %% @doc Return the value associated with the key as it exists in the message's
-%% underlying Erlang map. NEXT: Following RFC-9110, message keys are case-insensitive.
-get_public_map_key(Key, Msg) ->
+%% underlying Erlang map. First check the public keys, then check case-
+%% insensitively if the key is a binary.
+get(Key, Msg) -> get(Key, Msg, #{ path => get }).
+get(Key, Msg, _Msg2) ->
 	{ok, PublicKeys} = keys(Msg),
 	case lists:member(Key, PublicKeys) of
 		true -> {ok, maps:get(Key, Msg)};
-		false -> throw({bad_message_key, Key, Msg})
+		false when is_binary(Key) -> case_insensitive_get(Key, Msg);
+		false -> {error, {bad_message_key, Key, Msg}}
 	end.
 
-%% @doc Return the keys that should not be serialized, but should be included
-%% in the message's public list of keys.
-no_serialize() -> {ok, [id, unsigned_id]}.
+%% @doc Key matching should be case insensitive, following RFC-9110, so we 
+%% implement a case-insensitive key lookup rather than delegating to
+%% `maps:get/2`. Encode the key to a binary if it is not already.
+case_insensitive_get(Key, Msg) ->
+	{ok, Keys} = keys(Msg),
+	case_insensitive_get(Key, Msg, Keys).
+case_insensitive_get(Key, Msg, Keys) when byte_size(Key) > 43 ->
+	do_case_insensitive_get(Key, Msg, Keys);
+case_insensitive_get(Key, Msg, Keys) ->
+	do_case_insensitive_get(hb_pam:to_key(Key), Msg, Keys).
+do_case_insensitive_get(_Key, _Msg, []) -> {error, not_found};
+do_case_insensitive_get(Key, Msg, [CurrKey | Keys]) ->
+	case hb_pam:to_key(CurrKey) of
+		Key -> {ok, maps:get(Key, Msg)};
+		_ -> do_case_insensitive_get(Key, Msg, Keys)
+	end.
+
 
 %% @doc Check if a key is private.
 is_private(Key) ->
 	Str = key_to_list(Key),
 	lists:prefix("priv", Str).
+
+%% @doc Check if a key is a function exported by this module.
+is_device_key(Key) ->
+	lists:member(Key, ?DEVICE_KEYS).
 
 %% @doc Convert a key to a list.
 key_to_list(Key) when is_atom(Key) ->
@@ -129,6 +156,11 @@ is_private_mod_test() ->
 keys_from_device_test() ->
 	?assertEqual({ok, [a]}, hb_pam:resolve(#{a => 1}, keys)).
 
+case_insensitive_get_test() ->
+	?assertEqual({ok, 1}, case_insensitive_get(a, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{a => 1})).
+
 private_keys_are_filtered_test() ->
 	?assertEqual(
 		{ok, [a]},
@@ -151,6 +183,6 @@ key_from_device_test() ->
 remove_test() ->
 	Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
 	?assertEqual({ok, #{ <<"Key2">> => <<"Value2">> }},
-		hb_pam:resolve(Msg, #{ key => <<"Key1">> })),
+		hb_pam:resolve(Msg, #{ path => remove, item => <<"Key1">> })),
 	?assertEqual({ok, #{}},
-		hb_pam:resolve(Msg, #{ keys => [<<"Key1">>, <<"Key2">>] })).
+		hb_pam:resolve(Msg, #{ path => remove, items => [<<"Key1">>, <<"Key2">>] })).

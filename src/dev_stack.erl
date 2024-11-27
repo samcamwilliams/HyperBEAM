@@ -172,7 +172,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	end.
 
 maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
-    case hb_pam:get(Message1, <<"Error-Strategy">>, Opts) of
+    case hb_pam:get(<<"Error-Strategy">>, Message1, Opts) of
         <<"Stop">> ->
 			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
         <<"Throw">> ->
@@ -183,8 +183,8 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
                 hb_pam:set(Message1,
 					[
 						<<"Errors">>,
-						hb_pam:get(Message1, id, Opts),
-						hb_pam:get(Message1, <<"Pass">>, Opts),
+						hb_pam:get(id, Message1, Opts),
+						hb_pam:get(pass, Message1, Opts),
 						DevNum,
 						hb:debug_fmt(Info)
 					],
