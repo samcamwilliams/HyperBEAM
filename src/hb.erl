@@ -172,7 +172,8 @@ config() ->
             [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
 		debug_stack_depth => 20,
-		debug_print_map_line_threshold => 10,
+		debug_print_map_line_threshold => 30,
+		debug_print_binary_max => 25,
         debug_print => true
     }.
 
@@ -274,8 +275,6 @@ debug_print(X, ModStr, LineNum) ->
 			lists:flatten(debug_fmt(X))
 		]),
     X.
-
--define(MAP_FMT_MAX_LENGTH, 20).
 
 %% @doc Convert a term to a string for debugging print purposes.
 debug_fmt({explicit, X}) ->
