@@ -144,18 +144,21 @@ set(Msg1, Msg2) ->
 	set(Msg1, Msg2, #{}).
 set(Msg1, Msg2, _Opts) when map_size(Msg2) == 0 -> Msg1;
 set(Msg1, Msg2, Opts) when is_map(Msg2) ->
-	?event({set, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-	Val = get(Key = hd(keys(Msg2, Opts)), Msg1, Opts),
+	?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
+	Val = get(Key = hd(keys(Msg2, Opts)), Msg2, Opts),
+	?event({got_val_to_set, {key, Key}, {val, Val}}),
 	set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts).
 set(Msg1, Key, Value, Opts) ->
-	?event({set, {msg1, Msg1}, {key, Key}, {value, Value}, {opts, Opts}}),
+	?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {value, Value}}),
 	deep_set(Msg1, to_path(Key), Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [LastKey], Value, Opts) ->
+	?event({setting_last_key, {key, LastKey}, {value, Value}}),
 	ensure_ok(LastKey, resolve(Msg, #{ path => set, LastKey => Value }, Opts), Opts);
 deep_set(Msg, [Key | Rest], Value, Opts) ->
+	?event({traversing_to_set, {current_key, Key}, {rest, Rest}}),
 	deep_set(
 		set(
 			Msg,
