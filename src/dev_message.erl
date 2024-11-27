@@ -30,7 +30,8 @@ raw_id(Item) -> raw_id(Item, unsigned).
 raw_id(TX, Type) when is_record(TX, tx) ->
 	hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Map, Type) when is_map(Map) ->
-	hb_util:encode(ar_bundles:id(hb_message:message_to_tx(Map), Type));
+	Msg = hb_message:message_to_tx(Map),
+	hb_util:encode(ar_bundles:id(Msg, Type));
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
@@ -50,24 +51,22 @@ set(Message1, NewValuesMsg, Opts) ->
 			fun(Key) -> not is_device_key(Key) end,
 			hb_pam:keys(NewValuesMsg, Opts)
 		),
-	?event({setting_keys, KeysToSet, Message1}),
-	?event({
+	{
 		ok,
 		maps:merge(
 			Message1,
-			?event(maps:from_list(
+			maps:from_list(
 				lists:map(
 					fun(Key) ->
 						?no_prod("Are we sure that the default device should "
 							"resolve values?"),
-						?event({resolve_msg2_key, Key, NewValuesMsg}),
 						{Key, hb_pam:get(Key, NewValuesMsg, Opts)}
 					end,
 					KeysToSet
 				)
-			))
+			)
 		)
-	}).
+	}.
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ item := Key }) ->

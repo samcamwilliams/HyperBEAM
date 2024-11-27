@@ -173,8 +173,8 @@ config() ->
         mode => debug,
 		debug_stack_depth => 20,
 		debug_print_map_line_threshold => 30,
-		debug_print_binary_max => 25,
-        debug_print => true
+		debug_print_binary_max => 15,
+        debug_print => false
     }.
 
 -define(ENV_KEYS,
@@ -285,8 +285,17 @@ debug_fmt({X, Y}) when is_record(Y, tx) ->
     io_lib:format("~p: [TX item]~n~s",
 		[X, hb_util:format_binary(Y)]);
 debug_fmt({X, Y}) when is_map(Y) ->
-	io_lib:format("~p: [Message] ~s",
-		[X, hb_util:format_map(Y, 0)]);
+	Formatted = hb_util:format_map(Y, 0),
+	HasNewline = lists:member($\n, Formatted),
+	io_lib:format("~p~s",
+		[
+			X,
+			case HasNewline of
+				true -> " ===>" ++ Formatted;
+				false -> ": " ++ Formatted
+			end
+		]
+	);
 debug_fmt({X, Y}) ->
     io_lib:format("~s: ~s", [debug_fmt(X), debug_fmt(Y)]);
 debug_fmt(Map) when is_map(Map) ->

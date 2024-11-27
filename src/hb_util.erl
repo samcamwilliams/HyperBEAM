@@ -20,7 +20,10 @@ id(Item) -> id(Item, unsigned).
 id(TX, Type) when is_record(TX, tx) ->
 	encode(ar_bundles:id(TX, Type));
 id(Map, Type) when is_map(Map) ->
-	hb_pam:get(Map, Type);
+	case Type of
+		unsigned -> hb_pam:get(unsigned_id, Map);
+		signed -> encode(hb_pam:get(id, Map))
+	end;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
 	Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
@@ -182,16 +185,17 @@ format_indented(RawStr, Fmt, Ind) ->
 
 %% @doc Format a binary as a short string suitable for printing.
 format_binary(Bin) ->
+	MaxBinPrint = hb:get(debug_print_binary_max),
 	lists:flatten(
 		io_lib:format(
-			"Binary: ~p... <~p bytes>",
+			"~p... <~p bytes>",
 			[
 				binary:part(
 					Bin,
 					0,
 					case byte_size(Bin) of
-						X when X < ?BIN_PRINT -> X;
-						_ -> ?BIN_PRINT
+						X when X < MaxBinPrint -> X;
+						_ -> MaxBinPrint
 					end
 				),
 				byte_size(Bin)

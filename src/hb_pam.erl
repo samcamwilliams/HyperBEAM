@@ -1,7 +1,7 @@
 -module(hb_pam).
 %%% Main device API:
--export([resolve/2, resolve/3]).
--export([to_key/1, to_key/2, load_device/1]).
+-export([resolve/2, resolve/3, load_device/1]).
+-export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
 %%% Shortcuts:
 -export([keys/1, keys/2]).
 -export([get/2, get/3, get_default/3, get_default/4]).
@@ -60,7 +60,7 @@ resolve(Msg1, Key, Opts) ->
 %% @doc Internal function for resolving the path from a message and loading
 %% the function to call.
 prepare_resolve(Msg1, Msg2, Opts) ->
-	%?event({pre_resolve_func_load, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	?event({pre_resolve_func_load, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	{Fun, NewOpts} =
 		try
 			Key = key_from_path(Msg2, Opts),
@@ -90,7 +90,7 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 		end,
 	do_resolve(Msg1, Fun, Msg2, NewOpts).
 do_resolve(Msg1, Fun, Msg2, Opts) ->
-	?event({resolve_call, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	%?event({resolve_call, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
@@ -146,32 +146,32 @@ set(Msg1, Msg2, _Opts) when map_size(Msg2) == 0 ->
 	% When the msg2 is empty, we do not need to set anything.
 	Msg1;
 set(Msg1, Msg2, Opts) when is_map(Msg2) ->
-	?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
+	%?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
 	% First, get the first key and value to set.
 	Key = hd(keys(Msg2, Opts)),
 	Val = get(Key, Msg2, Opts),
-	?event({got_val_to_set, {key, Key}, {val, Val}}),
+	%?event({got_val_to_set, {key, Key}, {val, Val}}),
 	% Then, set the key and recurse, removing the key from the Msg2.
 	set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts).
 set(Msg1, Key, Value, Opts) ->
 	% For an individual key, we run deep_set with the key as the path.
 	% This handles both the case that the key is a path as well as the case
 	% that it is a single key.
-	?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {value, Value}}),
+	%?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {value, Value}}),
 	deep_set(Msg1, to_path(Key), Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [Key], Value, Opts) ->
-	?event({setting_last_key, {key, Key}, {value, Value}}),
+	%?event({setting_last_key, {key, Key}, {value, Value}}),
 	device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
 	{ok, SubMsg} = resolve(Msg, Key, Opts),
-	?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
+	%?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
 	device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
-	?event({calling_device_set, {key, Key}, {value, Value}}),
+	%?event({calling_device_set, {key, Key}, {value, Value}}),
 	ensure_ok(Key, resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
 
 %% @doc Remove a key from a message, using its underlying device.
@@ -299,7 +299,10 @@ find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
 find_exported_function(Mod, Key, Arity) when not is_atom(Key) ->
 	case to_key(Key) of
 		undefined -> not_found;
-		KeyAtom -> find_exported_function(Mod, KeyAtom, Arity)
+		ConvertedKey when is_atom(ConvertedKey) ->
+			find_exported_function(Mod, ConvertedKey, Arity);
+		BinaryKey when is_binary(BinaryKey) ->
+			not_found
 	end;
 find_exported_function(Mod, Key, Arity) ->
 	case erlang:function_exported(Mod, Key, Arity) of
@@ -308,30 +311,27 @@ find_exported_function(Mod, Key, Arity) ->
 		false -> find_exported_function(Mod, Key, Arity - 1)
 	end.
 
-%% @doc Convert a key to an atom, unless it is a 43-character human readable 
-%% representation of an Arweave ID. If it is an ID, it will be returned as is.
-%% 
-%% Takes care of casting from binaries, lists, and iolists. This function is
-%% unsafe by default, throwing an error if the key is not castable, but returns
-%% undefined in error cases if the error_strategy option is set to a value other
-%% than throw.
+%% @doc Convert a key to an atom if it already exists in the Erlang atom table,
+%% or to a binary otherwise.
 to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
 to_key(Key, _Opts) when byte_size(Key) == 43 -> Key;
-to_key(Key, Opts) -> 
+to_key(Key, _Opts) -> 
 	try to_atom_unsafe(Key)
-	catch Type:_:Trace ->
-		case maps:get(error_strategy, Opts, throw) of
-			throw -> erlang:raise(Type, invalid_key, Trace);
-			_ -> undefined
-		end
+	catch _Type:_:_Trace -> key_to_binary(Key)
 	end.
+
+%% @doc Convert a key to its binary representation.
+key_to_binary(Key) -> key_to_binary(Key, #{}).
+key_to_binary(Key, _Opts) when is_binary(Key) -> Key;
+key_to_binary(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
+key_to_binary(Key, _Opts) when is_list(Key) -> list_to_binary(Key).
 
 %% @doc Helper function for key_to_atom that does not check for errors.
 to_atom_unsafe(Key) when is_integer(Key) ->
 	integer_to_binary(Key);
 to_atom_unsafe(Key) when is_binary(Key) ->
 	binary_to_existing_atom(hb_util:to_lower(Key), utf8);
-to_atom_unsafe(Key) when is_list(Key) -> 
+to_atom_unsafe(Key) when is_list(Key) ->
 	FlattenedKey = lists:flatten(Key),
 	list_to_existing_atom(FlattenedKey);
 to_atom_unsafe(Key) when is_atom(Key) -> Key.
@@ -340,7 +340,7 @@ to_atom_unsafe(Key) when is_atom(Key) -> Key.
 %% atoms. Notably, it does not support strings as lists of characters.
 to_path(Path) -> to_path(Path, #{ error_strategy => throw }).
 to_path(Binary, Opts) when is_binary(Binary) ->
-	?event({to_path, Binary}),
+	%?event({to_path, Binary}),
 	case binary:match(Binary, <<"/">>) of
 		nomatch -> [Binary];
 		_ ->
@@ -449,6 +449,15 @@ path_test() ->
 	?assertEqual({ok, [test_path]}, hb_pam:resolve(#{ path => [test_path] }, path)),
 	?assertEqual({ok, [a]}, hb_pam:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
 
+key_to_binary_test() ->
+	?assertEqual(<<"a">>, hb_pam:key_to_binary(a)),
+	?assertEqual(<<"a">>, hb_pam:key_to_binary(<<"a">>)),
+	?assertEqual(<<"a">>, hb_pam:key_to_binary("a")).
+
+resolve_binary_key_test() ->
+	?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, <<"a">>)),
+	?assertEqual({ok, 1}, hb_pam:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)).
+
 %% @doc Generates a test device with three keys, each of which uses
 %% progressively more of the arguments that can be passed to a device key.
 generate_device_with_keys_using_args() ->
@@ -493,25 +502,33 @@ key_from_id_device_with_args_test() ->
 		{ok, <<"1">>},
 		hb_pam:resolve(
 			Msg,
-			key_using_only_state,
-			#{ msg_key => <<"2">> } % Param message, which is ignored
+			#{
+				path => key_using_only_state,
+				msg_key => <<"2">> % Param message, which is ignored
+			}
 		)
 	),
 	?assertEqual(
 		{ok, <<"13">>},
 		hb_pam:resolve(
 			Msg,
-			key_using_state_and_msg,
-			#{ msg_key => <<"3">> } % Param message, with value to add
+			#{
+				path => key_using_state_and_msg,
+				msg_key => <<"3">> % Param message, with value to add
+			}
 		)
 	),
 	?assertEqual(
 		{ok, <<"1337">>},
 		hb_pam:resolve(
 			Msg,
-			key_using_all,
-			#{ msg_key => <<"3">> }, % Param message
-			#{ opts_key => <<"37">> } % Opts
+			#{
+				path => key_using_all,
+				msg_key => <<"3">> % Param message
+			},
+			#{
+				opts_key => <<"37">> % Opts
+			}
 		)
 	).
 

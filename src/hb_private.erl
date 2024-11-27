@@ -16,7 +16,7 @@
 
 %% @doc Return the `private` key from a message. If the key does not exist, an
 %% empty map is returned.
-from_message(Msg) -> maps:get(priv, Msg, #{}).
+from_message(Msg) -> maps:get(private, Msg, #{}).
 
 %% @doc Helper for getting a value from the private element of a message.
 get(Msg, Key) -> 
@@ -27,7 +27,7 @@ get(Msg, Key, Default) ->
 %% @doc Helper function for setting a key in the private element of a message.
 set(Msg, Key, Value) ->
 	maps:put(
-		priv,
+		private,
 		maps:put(Key, Value, from_message(Msg)),
 		Msg
 	).
@@ -42,9 +42,9 @@ set_private_test() ->
 
 get_private_key_test() ->
 	M1 = #{a => 1, private => #{b => 2}},
-	?assertEqual(#{}, ?MODULE:get(M1, a)),
+	?assertEqual(undefined, ?MODULE:get(M1, a)),
 	{ok, [a]} = hb_pam:resolve(M1, <<"Keys">>),
-	?assertEqual(#{b => 2}, ?MODULE:get(M1, a)),
+	?assertEqual(2, ?MODULE:get(M1, b)),
 	{Res, _} = hb_pam:resolve(M1, <<"Private">>),
 	?assertNotEqual(ok, Res),
 	{Res, _} = hb_pam:resolve(M1, private).

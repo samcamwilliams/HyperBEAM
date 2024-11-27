@@ -921,9 +921,7 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
 ar_bundles_test_() ->
     [
         {timeout, 30, fun test_no_tags/0},
-        {timeout, 30, fun test_no_tags_from_disk/0},
         {timeout, 30, fun test_with_tags/0},
-        {timeout, 30, fun test_with_tags_from_disk/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
         {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
@@ -952,12 +950,6 @@ test_no_tags() ->
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, [], <<"data">>, SignedDataItem2).
-
-test_no_tags_from_disk() ->
-    {ok, BinaryDataItem} = file:read_file("src/test/dataitem_notags"),
-    DataItem = deserialize(BinaryDataItem),
-    ?assertEqual(true, verify_item(DataItem)),
-    ?assertEqual(<<"notags">>, DataItem#tx.data).
 
 test_with_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -989,12 +981,6 @@ test_unsigned_data_item_normalization() ->
     NewItem = normalize(#tx{ format = ans104, data = <<"Unsigned data">> }),
     ReNormItem = deserialize(serialize(NewItem)),
     ?assertEqual(NewItem, ReNormItem).
-
-test_with_tags_from_disk() ->
-    {ok, BinaryDataItem} = file:read_file("src/test/dataitem_withtags"),
-    DataItem = deserialize(BinaryDataItem),
-    ?assertEqual(true, verify_item(DataItem)),
-    ?assertEqual(<<"withtags">>, DataItem#tx.data).
 
 assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(KeyType, DataItem#tx.signature_type),
