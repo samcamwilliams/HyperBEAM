@@ -90,7 +90,7 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 		end,
 	do_resolve(Msg1, Fun, Msg2, NewOpts).
 do_resolve(Msg1, Fun, Msg2, Opts) ->
-	?event({resolve_call, {msg1, Msg1}, {'fun', Fun}, {msg2, Msg2}, {opts, Opts}}),
+	?event({resolve_call, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
@@ -103,15 +103,7 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 	try
 		Res = apply(Fun, truncate_args(Fun, Args)),
 		%?event({resolve_result, Res}),
-		case tuple_to_list(Res) of
-			[ok | _] ->
-				% TODO: Adjust HashPath of the new message.
-				Res;
-			[error | _] ->
-				throw(Res);
-			Else ->
-				Else
-		end
+		Res
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
 			handle_error(
@@ -310,11 +302,15 @@ find_exported_function(Mod, Key, Arity) ->
 		false -> find_exported_function(Mod, Key, Arity - 1)
 	end.
 
-%% @doc Convert a key to an atom. Takes care of casting from binaries, lists,
-%% integers, and iolists. This function is unsafe by befault, throwing an error
-%% if the key is not castable, but returns undefined in error cases if the
-%% error_strategy option is set to a value other than throw.
+%% @doc Convert a key to an atom, unless it is a 43-character human readable 
+%% representation of an Arweave ID. If it is an ID, it will be returned as is.
+%% 
+%% Takes care of casting from binaries, lists, and iolists. This function is
+%% unsafe by default, throwing an error if the key is not castable, but returns
+%% undefined in error cases if the error_strategy option is set to a value other
+%% than throw.
 to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
+to_key(Key, _Opts) when byte_size(Key) == 43 -> Key;
 to_key(Key, Opts) -> 
 	try to_atom_unsafe(Key)
 	catch Type:_:Trace ->

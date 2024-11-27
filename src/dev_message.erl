@@ -68,17 +68,23 @@ set(Message1, NewValuesMsg, Opts) ->
 	}.
 
 %% @doc Remove a key or keys from a message.
-remove(Message1, #{ item := Key }) when is_atom(Key) ->
-	{ok, maps:remove(Key, Message1)};
+remove(Message1, #{ item := Key }) ->
+	remove(Message1, #{ items => [hb_pam:to_key(Key)] });
 remove(Message1, #{ items := Keys }) ->
-	lists:foldl(
-		fun(Key, {ok, Message1n}) ->
-			% Note: We do not call `hb_pam:resolve` here because it may pollute
-			% the HashPath with an extremely large number of calls.
-			remove(Message1n, #{ item => Key }) end,
-		{ok, Message1},
-		Keys
-	).
+	NormalizedKeysToRemove = lists:map(fun hb_pam:to_key/1, Keys),
+	{
+		ok,
+		maps:filtermap(
+			fun(KeyN, Val) ->
+				NormalizedKeyN = hb_pam:to_key(KeyN),
+				case lists:member(NormalizedKeyN, NormalizedKeysToRemove) of
+					true -> false;
+					false -> {true, Val}
+				end
+			end,
+			Message1 
+		)
+	}.
 
 %% @doc Get the public keys of a message.
 keys(Msg) ->
@@ -118,7 +124,6 @@ do_case_insensitive_get(Key, Msg, [CurrKey | Keys]) ->
 		Key -> {ok, maps:get(Key, Msg)};
 		_ -> do_case_insensitive_get(Key, Msg, Keys)
 	end.
-
 
 %% @doc Check if a key is private.
 is_private(Key) ->
@@ -173,7 +178,7 @@ private_keys_are_filtered_test() ->
 
 cannot_get_private_keys_test() ->
 	?assertEqual(
-		{error, {badkey, private_key}},
+		{error, {bad_message_key, private_key, #{ a => 1, private_key => 2 }}},
 		hb_pam:resolve(#{ a => 1, private_key => 2 }, private_key)
 	).
 
