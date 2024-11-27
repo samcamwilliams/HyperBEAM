@@ -45,12 +45,17 @@ signers(M) ->
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
-	?event({setting_keys, hb_pam:keys(NewValuesMsg, Opts)}),
-	{
+	KeysToSet =
+		lists:filter(
+			fun(Key) -> not is_device_key(Key) end,
+			hb_pam:keys(NewValuesMsg, Opts)
+		),
+	?event({setting_keys, KeysToSet, Message1}),
+	?event({
 		ok,
 		maps:merge(
 			Message1,
-			maps:from_list(
+			?event(maps:from_list(
 				lists:map(
 					fun(Key) ->
 						?no_prod("Are we sure that the default device should "
@@ -58,14 +63,11 @@ set(Message1, NewValuesMsg, Opts) ->
 						?event({resolve_msg2_key, Key, NewValuesMsg}),
 						{Key, hb_pam:get(Key, NewValuesMsg, Opts)}
 					end,
-					lists:filter(
-						fun(Key) -> not is_device_key(Key) end,
-						hb_pam:keys(NewValuesMsg, Opts)
-					)
+					KeysToSet
 				)
-			)
+			))
 		)
-	}.
+	}).
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ item := Key }) ->

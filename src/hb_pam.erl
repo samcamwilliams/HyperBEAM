@@ -142,34 +142,37 @@ keys(Msg, Opts) -> get(keys, Msg, Opts).
 %% `HashPath` for each step.
 set(Msg1, Msg2) ->
 	set(Msg1, Msg2, #{}).
-set(Msg1, Msg2, _Opts) when map_size(Msg2) == 0 -> Msg1;
+set(Msg1, Msg2, _Opts) when map_size(Msg2) == 0 -> 
+	% When the msg2 is empty, we do not need to set anything.
+	Msg1;
 set(Msg1, Msg2, Opts) when is_map(Msg2) ->
 	?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
-	Val = get(Key = hd(keys(Msg2, Opts)), Msg2, Opts),
+	% First, get the first key and value to set.
+	Key = hd(keys(Msg2, Opts)),
+	Val = get(Key, Msg2, Opts),
 	?event({got_val_to_set, {key, Key}, {val, Val}}),
+	% Then, set the key and recurse, removing the key from the Msg2.
 	set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts).
 set(Msg1, Key, Value, Opts) ->
+	% For an individual key, we run deep_set with the key as the path.
+	% This handles both the case that the key is a path as well as the case
+	% that it is a single key.
 	?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {value, Value}}),
 	deep_set(Msg1, to_path(Key), Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
-deep_set(Msg, [LastKey], Value, Opts) ->
-	?event({setting_last_key, {key, LastKey}, {value, Value}}),
-	ensure_ok(LastKey, resolve(Msg, #{ path => set, LastKey => Value }, Opts), Opts);
-deep_set(Msg, [Key | Rest], Value, Opts) ->
-	?event({traversing_to_set, {current_key, Key}, {rest, Rest}}),
-	deep_set(
-		set(
-			Msg,
-			Key,
-			deep_set(Msg, Rest, Value, Opts),
-			Opts
-		),
-		Rest,
-		Value,
-		Opts
-	).
+deep_set(Msg, [Key], Value, Opts) ->
+	?event({setting_last_key, {key, Key}, {value, Value}}),
+	device_set(Msg, Key, Value, Opts);
+deep_set(Msg, [Key|Rest], Value, Opts) ->
+	{ok, SubMsg} = resolve(Msg, Key, Opts),
+	?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
+	device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
+
+device_set(Msg, Key, Value, Opts) ->
+	?event({calling_device_set, {key, Key}, {value, Value}}),
+	ensure_ok(Key, resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
@@ -608,36 +611,46 @@ set_with_device_test() ->
 	?assertEqual(<<"STATE">>, hb_pam:get(state_key, SetTwice)).
 
 deep_set_test() ->
+	% First validate second layer changes are handled correctly.
+	Msg0 = #{ a => #{ b => 1 } },
+	?assertEqual(#{ a => #{ b => 2 } },
+		hb_pam:set(Msg0, [a, b], 2, #{})),
+	% Now validate deeper layer changes are handled correctly.
 	Msg = #{ a => #{ b => #{ c => 1 } } },
 	?assertEqual(#{ a => #{ b => #{ c => 2 } } },
-		hb_pam:set(Msg, [a, b, c], 2, #{})),
+		hb_pam:set(Msg, [a, b, c], 2, #{})).
+
+deep_set_with_device_test() ->
 	Device = #{
 		set =>
 			fun(Msg1, Msg2) ->
-				% Merge but keep the old state nested under the new key.
-				{ok, maps:merge(Msg1#{ old_key => Msg2 }, Msg2)}
+				% A device where the set function modifies the key
+				% and adds a modified flag.
+				{Key, Val} = hd(maps:to_list(maps:remove(path, Msg2))),
+				{ok, Msg1#{ Key => Val, modified => true }}
 			end
 	},
-	?assertEqual(
-		#{
-			a => #{
-				b => #{
-					c => 2,
-					old_key => #{
-						c => 1
-					}
-				},
-				old_key => #{
-					b => #{
-						c => 1
-					}
-				}
-			}
-		},
-		set(
-			Msg,
-			[a, b, c],
-			2,
-			#{ device => Device }
-		)
-	).
+	% A message with an interspersed custom device: A and C have it,
+	% B does not. A and C will have the modified flag set to true.
+	Msg = #{
+		device => Device,
+		a =>
+			#{
+				b =>
+					#{
+						device => Device,
+						c => 1,
+						modified => false
+					},
+				modified => false
+			},
+		modified => false
+	},
+	Outer = deep_set(Msg, [a, b, c], 2, #{}),
+	A = hb_pam:get(a, Outer),
+	B = hb_pam:get(b, A),
+	C = hb_pam:get(c, B),
+	?assertEqual(2, C),
+	?assertEqual(true, hb_pam:get(modified, Outer)),
+	?assertEqual(false, hb_pam:get(modified, A)),
+	?assertEqual(true, hb_pam:get(modified, B)).
