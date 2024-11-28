@@ -190,7 +190,7 @@ debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Indent);
 debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
     format_indented("~p: [TX item]~n~s",
-		[X, hb_util:format_binary(Y)],
+		[X, ar_bundles:format(Y, Indent + 1)],
 		Indent
 	);
 debug_fmt({X, Y}, Indent) when is_map(Y) ->

@@ -127,12 +127,14 @@ handle_resolved_result(Msg3, Msg2, UserOpts) when is_binary(Msg3) ->
 	Msg3;
 handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
-handle_resolved_result(Msg2List = [Status|_], Msg2, Opts) when Status =/= ok ->
+handle_resolved_result(Msg2List = [Status, Result|_], _Msg2, _Opts)
+		when Status =/= ok orelse not is_map(Result) ->
 	list_to_tuple(Msg2List);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
-	%Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
-	%hb_cache:write(hb_opts:get(store, no_valid_store, Opts), Msg3),
-	list_to_tuple([ok, Msg3Raw | Rest]).
+	?event({pushing_hashpath_onto, {msg3, Msg3Raw}, {msg2, Msg2}, {opts, Opts}}),
+	Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
+	hb_cache:write(hb_opts:get(store, no_valid_store, Opts), Msg3),
+	list_to_tuple([ok, Msg3 | Rest]).
 
 %% @doc Shortcut for resolving a key in a message without its 
 %% status if it is `ok`. This makes it easier to write complex 

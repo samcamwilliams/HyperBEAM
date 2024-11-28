@@ -397,6 +397,10 @@ enforce_valid_tx(List) when is_list(List) ->
 enforce_valid_tx(Map) when is_map(Map) ->
 	lists:all(fun(Item) -> enforce_valid_tx(Item) end, maps:values(Map));
 enforce_valid_tx(TX) ->
+	ok_or_throw(TX,
+        check_type(TX, message),
+        {invalid_tx, TX}
+    ),
     ok_or_throw(TX,
         check_size(TX#tx.id, [0, 32]),
         {invalid_field, id, TX#tx.id}
@@ -441,6 +445,13 @@ enforce_valid_tx(TX) ->
 			)
 		end,
 		TX#tx.tags
+	),
+	ok_or_throw(
+		TX,
+		check_type(TX#tx.data, binary)
+			orelse check_type(TX#tx.data, map)
+			orelse check_type(TX#tx.data, list),
+		{invalid_field, data, TX#tx.data}
 	),
 	true.
 

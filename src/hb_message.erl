@@ -2,6 +2,7 @@
 -export([load/2]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -export([message_to_tx/1, tx_to_message/1]).
+-export([binary_to_term/1, term_to_binary/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
@@ -139,8 +140,13 @@ message_to_tx(M) when is_map(M) ->
 									Map
 								)
 							};
+						{ok, Value} when is_binary(Value) ->
+							{hb_pam:key_to_binary(Key), Value};
 						{ok, Value} ->
-							{hb_pam:key_to_binary(Key), Value}
+							{
+								hb_pam:key_to_binary(Key),
+								?MODULE:term_to_binary(Value)
+							}
 					end
 				end,
 				lists:filter(
@@ -215,6 +221,28 @@ message_to_tx(Other) ->
 	?event({unexpected_message_form, {explicit, Other}}),
 	throw(invalid_tx).
 
+%% @doc Convert non-binary values to binary for serialization.
+%% CAUTION: This is not a standardized type conversion. We should formalize
+%% this, or use an existing standard, before it becomes entrenched.
+binary_to_term(<< "PAM1_INT::", Integer:64 >>) -> 
+	?no_prod("Non-standardized type conversion invoked."),
+	Integer;
+binary_to_term(<< "PAM1_ATOM::", Atom:8/binary >>) ->
+	?no_prod("Non-standardized type conversion invoked."),
+	binary_to_existing_atom(Atom, latin1);
+binary_to_term(Value) when is_binary(Value) ->
+	Value.
+
+%% @doc Convert a term to a binary representation.
+term_to_binary(Value) when is_binary(Value) -> Value;
+term_to_binary(Value) when is_integer(Value) ->
+	?no_prod("Non-standardized type conversion invoked."),
+	<< "PAM1_INT::", (integer_to_binary(Value, 64))/binary >>;
+term_to_binary(Atom) when is_atom(Atom) ->
+	?no_prod("Non-standardized type conversion invoked."),
+	<< "PAM1_ATOM::", (atom_to_binary(Atom, latin1))/binary >>.
+
+
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
 tx_to_message(TX) ->
@@ -243,7 +271,7 @@ tx_to_message(TX) ->
 					)
 			};
 		Data when is_binary(Data) ->
-			MapWithoutData#{ data => Data };
+			MapWithoutData#{ data => ?MODULE:binary_to_term(Data) };
 		Data ->
 			?event({unexpected_data_type, {explicit, Data}}),
 			?event({was_processing, {explicit, TX}}),
