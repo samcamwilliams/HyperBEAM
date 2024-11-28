@@ -3,7 +3,7 @@
 -export([init/0, config/0, now/0, get/1, get/2, build/0]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, no_prod/3]).
--export([read/1, read/2, debug_wait/3, profile/1, debug_fmt/1]).
+-export([read/1, read/2, debug_wait/3, profile/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
 -include("include/hb.hrl").
@@ -174,7 +174,7 @@ config() ->
 		debug_stack_depth => 20,
 		debug_print_map_line_threshold => 30,
 		debug_print_binary_max => 15,
-        debug_print => false
+        debug_print => true
     }.
 
 -define(ENV_KEYS,
@@ -250,7 +250,7 @@ event(X, Mod) -> event(X, Mod, undefined).
 event(X, ModStr, undefined) -> event(X, ModStr, "");
 event(X, ModAtom, Line) when is_atom(ModAtom) ->
     case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
-        true -> debug_print(X, atom_to_list(ModAtom), Line);
+        true -> hb_util:debug_print(X, atom_to_list(ModAtom), Line);
         false -> 
             case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
                 {hb_debug, [no_print]} -> X;
@@ -259,70 +259,9 @@ event(X, ModAtom, Line) when is_atom(ModAtom) ->
     end;
 event(X, ModStr, Line) ->
     case hb:get(debug_print) of
-        true -> debug_print(X, ModStr, Line);
+        true -> hb_util:debug_print(X, ModStr, Line);
         false -> X
     end.
-
-%% @doc Print a message to the standard error stream, prefixed by the amount
-%% of time that has elapsed since the last call to this function.
-debug_print(X, ModStr, LineNum) ->
-    Now = erlang:system_time(millisecond),
-    Last = erlang:put(last_debug_print, Now),
-    TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w]==> ~s~n",
-        [
-			TSDiff, self(), ModStr, LineNum,
-			lists:flatten(debug_fmt(X))
-		]),
-    X.
-
-%% @doc Convert a term to a string for debugging print purposes.
-debug_fmt({explicit, X}) ->
-    io_lib:format("~p", [X]);
-debug_fmt({X, Y}) when is_atom(X) and is_atom(Y) ->
-    io_lib:format("~p: ~p", [X, Y]);
-debug_fmt({X, Y}) when is_record(Y, tx) ->
-    io_lib:format("~p: [TX item]~n~s",
-		[X, hb_util:format_binary(Y)]);
-debug_fmt({X, Y}) when is_map(Y) ->
-	Formatted = hb_util:format_map(Y, 0),
-	HasNewline = lists:member($\n, Formatted),
-	io_lib:format("~p~s",
-		[
-			X,
-			case HasNewline of
-				true -> " ===>" ++ Formatted;
-				false -> ": " ++ Formatted
-			end
-		]
-	);
-debug_fmt({X, Y}) ->
-    io_lib:format("~s: ~s", [debug_fmt(X), debug_fmt(Y)]);
-debug_fmt(Map) when is_map(Map) ->
-	hb_util:format_map(Map, 0);
-debug_fmt(Tuple) when is_tuple(Tuple) ->
-    format_tuple(Tuple);
-debug_fmt(Str = [X | _]) when is_integer(X) andalso X >= 32 andalso X < 127 ->
-    lists:flatten(io_lib:format("~s", [Str]));
-debug_fmt(X) ->
-    lists:flatten(io_lib:format("~120p", [X])).
-
-%% @doc Helper function to format tuples with arity greater than 2.
-format_tuple(Tuple) ->
-	to_lines(lists:map(
-		fun(Elem) ->
-			debug_fmt(Elem)
-		end,
-		tuple_to_list(Tuple)
-	)).
-
-to_lines([]) -> [];
-to_lines(In =[RawElem | Rest]) ->
-	Elem = lists:flatten(RawElem),
-	case lists:member($\n, Elem) of
-		true -> lists:flatten(lists:join("\n", In));
-		false -> Elem ++ ", " ++ to_lines(Rest)
-	end.
 
 %% @doc Debugging function to read a message from the cache.
 %% Specify either a scope atom (local or remote) or a store tuple
@@ -371,7 +310,7 @@ profile(Fun) ->
 %% @doc Utility function to wait for a given amount of time, printing a debug
 %% message to the console first.
 debug_wait(T, Mod, Line) ->
-    debug_print(
+    hb_util:debug_print(
 		lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
 		Mod, Line),
     receive after T -> ok end.

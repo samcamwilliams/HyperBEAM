@@ -42,7 +42,6 @@ format(Map, Indent) when is_map(Map) ->
     Res = lists:map(
         fun({Key, Val}) ->
 			NormKey = hb_pam:to_key(Key, #{ error_strategy => ignore }),
-			MaxLen = hb:get(debug_print_map_line_threshold),
 			KeyStr = 
 				case NormKey of
 					Key ->

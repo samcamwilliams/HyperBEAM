@@ -8,6 +8,7 @@
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2]).
+-export([debug_print/3, debug_fmt/1]).
 -include("include/hb.hrl").
 -define(INDENT_SPACES, 4).
 -define(BIN_PRINT, 20).
@@ -170,6 +171,71 @@ maybe_throw(Val, Opts) ->
 		_ -> Val
 	end.
 
+%% @doc Print a message to the standard error stream, prefixed by the amount
+%% of time that has elapsed since the last call to this function.
+debug_print(X, ModStr, LineNum) ->
+    Now = erlang:system_time(millisecond),
+    Last = erlang:put(last_debug_print, Now),
+    TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w]==> ~s~n",
+        [
+			TSDiff, self(), ModStr, LineNum,
+			lists:flatten(debug_fmt(X, 0))
+		]),
+    X.
+
+%% @doc Convert a term to a string for debugging print purposes.
+debug_fmt(X) -> debug_fmt(X, 0).
+debug_fmt({explicit, X}, Indent) ->
+    format_indented("~p", [X], Indent);
+debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
+    format_indented("~p: ~p", [X, Y], Indent);
+debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
+    format_indented("~p: [TX item]~n~s",
+		[X, hb_util:format_binary(Y)],
+		Indent
+	);
+debug_fmt({X, Y}, Indent) when is_map(Y) ->
+	Formatted = hb_util:format_map(Y, Indent + 1),
+	HasNewline = lists:member($\n, Formatted),
+	format_indented("~p~s",
+		[
+			X,
+			case HasNewline of
+				true -> " ==>" ++ Formatted;
+				false -> ": " ++ Formatted
+			end
+		],
+		Indent
+	);
+debug_fmt({X, Y}, Indent) ->
+    format_indented("~s: ~s", [debug_fmt(X, Indent), debug_fmt(Y, Indent)], Indent);
+debug_fmt(Map, Indent) when is_map(Map) ->
+	hb_util:format_map(Map, Indent);
+debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
+    format_tuple(Tuple, Indent);
+debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
+    format_indented("~s", [Str], Indent);
+debug_fmt(X, Indent) ->
+    format_indented("~120p", [X], Indent).
+
+%% @doc Helper function to format tuples with arity greater than 2.
+format_tuple(Tuple, Indent) ->
+	to_lines(lists:map(
+		fun(Elem) ->
+			debug_fmt(Elem, Indent)
+		end,
+		tuple_to_list(Tuple)
+	)).
+
+to_lines([]) -> [];
+to_lines(In =[RawElem | Rest]) ->
+	Elem = lists:flatten(RawElem),
+	case lists:member($\n, Elem) of
+		true -> lists:flatten(lists:join("\n", In));
+		false -> Elem ++ ", " ++ to_lines(Rest)
+	end.
+
 %% @doc Format a string with an indentation level.
 format_indented(Str, Indent) -> format_indented(Str, "", Indent).
 format_indented(RawStr, Fmt, Ind) ->
@@ -186,18 +252,25 @@ format_indented(RawStr, Fmt, Ind) ->
 %% @doc Format a binary as a short string suitable for printing.
 format_binary(Bin) ->
 	MaxBinPrint = hb:get(debug_print_binary_max),
+	Printable =
+		binary:part(
+			Bin,
+			0,
+			case byte_size(Bin) of
+				X when X < MaxBinPrint -> X;
+				_ -> MaxBinPrint
+			end
+		),
+	PrintSegment = lists:flatten(io_lib:format("~p", [Printable])),
 	lists:flatten(
 		io_lib:format(
-			"~p... <~p bytes>",
+			"~s~s <~p bytes>",
 			[
-				binary:part(
-					Bin,
-					0,
-					case byte_size(Bin) of
-						X when X < MaxBinPrint -> X;
-						_ -> MaxBinPrint
-					end
-				),
+				PrintSegment,
+				case Bin == Printable of
+					true -> "";
+					false -> "..."
+				end,
 				byte_size(Bin)
 			]
 		)
