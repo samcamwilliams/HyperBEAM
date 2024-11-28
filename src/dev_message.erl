@@ -108,7 +108,7 @@ get(Key, Msg, _Msg2) ->
 	case lists:member(Key, PublicKeys) of
 		true -> {ok, maps:get(Key, Msg)};
 		false when is_binary(Key) -> case_insensitive_get(Key, Msg);
-		false -> {error, {bad_message_key, Key, Msg}}
+		false -> {error, not_found}
 	end.
 
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 

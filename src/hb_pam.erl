@@ -178,7 +178,7 @@ set(Msg1, Key, Value, Opts) ->
 	% This handles both the case that the key is a path as well as the case
 	% that it is a single key.
 	%?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {value, Value}}),
-	deep_set(Msg1, to_path(Key), Value, Opts).
+	deep_set(Msg1, hb_path:term_to_path(Key), Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
@@ -373,26 +373,6 @@ to_atom_unsafe(Key) when is_list(Key) ->
 	list_to_existing_atom(FlattenedKey);
 to_atom_unsafe(Key) when is_atom(Key) -> Key.
 
-%% @doc Convert a term into an executable path. Supports binaries, lists, and
-%% atoms. Notably, it does not support strings as lists of characters.
-to_path(Path) -> to_path(Path, #{ error_strategy => throw }).
-to_path(Binary, Opts) when is_binary(Binary) ->
-	%?event({to_path, Binary}),
-	case binary:match(Binary, <<"/">>) of
-		nomatch -> [Binary];
-		_ ->
-			to_path(
-				lists:filter(
-					fun(Part) -> byte_size(Part) > 0 end,
-					binary:split(Binary, <<"/">>, [global])
-				),
-				Opts
-			)
-	end;
-to_path(List, Opts) when is_list(List) ->
-	lists:map(fun(Part) -> to_key(Part, Opts) end, List);
-to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
-
 %% @doc Extract the key from a `Message2`'s `Path` field. Returns the first
 %% element of the path if it is a list, otherwise returns the path as is.
 %% Note: This function uses the `dev_message:get/3` function, rather than 
@@ -402,7 +382,7 @@ key_from_path(Msg2, Opts) ->
 	case dev_message:get(path, Msg2) of
 		{ok, Path} ->
 			%?event({got_path, Path}),
-			hd(to_path(Path, Opts));
+			hd(hb_path:term_to_path(Path, Opts));
 		{error, not_found} ->
 			?event({path_not_found, Msg2}),
 			throw({error, path_not_provided})
