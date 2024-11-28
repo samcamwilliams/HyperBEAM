@@ -7,12 +7,14 @@
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
 %%% not included.
 
+%% The list of keys that are exported by this device.
 -define(DEVICE_KEYS, [path, id, unsigned_id, signers, keys, get, set, remove]).
 
 %% @doc Return the info for the identity device.
 info() ->
 	#{
-		default => fun get/3
+		default => fun get/3,
+		exports => ?DEVICE_KEYS
 	}.
 
 %% @doc Return the ID of a message. If the message already has an ID, return

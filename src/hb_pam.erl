@@ -60,7 +60,7 @@ resolve(Msg1, Key, Opts) ->
 %% @doc Internal function for resolving the path from a message and loading
 %% the function to call.
 prepare_resolve(Msg1, Msg2, Opts) ->
-	?event({pre_resolve_func_load, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	%?event({pre_resolve_func_load, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	{Fun, NewOpts} =
 		try
 			Key = key_from_path(Msg2, Opts),
@@ -90,7 +90,7 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 		end,
 	do_resolve(Msg1, Fun, Msg2, NewOpts).
 do_resolve(Msg1, Fun, Msg2, Opts) ->
-	%?event({resolve_call, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	?event({resolve_call, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
@@ -102,7 +102,7 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 	% Then, try to execute the function.
 	try
 		Res = apply(Fun, truncate_args(Fun, Args)),
-		%?event({resolve_result, Res}),
+		?event({resolve_result, Res}),
 		Res
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
@@ -291,24 +291,41 @@ find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
 				{arity, Arity} when Arity =< MaxArity ->
-					{ok, Fun};
+					case is_exported(Dev, Key) of
+						true -> {ok, Fun};
+						false -> not_found
+					end;
 				_ -> not_found
 			end
 	end;
 find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
 find_exported_function(Mod, Key, Arity) when not is_atom(Key) ->
 	case to_key(Key) of
-		undefined -> not_found;
 		ConvertedKey when is_atom(ConvertedKey) ->
 			find_exported_function(Mod, ConvertedKey, Arity);
+		undefined -> not_found;
 		BinaryKey when is_binary(BinaryKey) ->
 			not_found
 	end;
 find_exported_function(Mod, Key, Arity) ->
 	case erlang:function_exported(Mod, Key, Arity) of
 		true ->
-			{ok, fun Mod:Key/Arity};
+			case is_exported(Mod, Key) of
+				true -> {ok, fun Mod:Key/Arity};
+				false -> not_found
+			end;
 		false -> find_exported_function(Mod, Key, Arity - 1)
+	end.
+
+%% @doc Check if a device is guarding a key via its `exports` list. Defaults to
+%% true if the device does not specify an `exports` list. The `info` function is
+%% always exported, if it exists.
+is_exported(_, info) -> true;
+is_exported(Dev, Key) ->
+	case info(Dev) of
+		#{ exports := Exports } ->
+			lists:member(Key, Exports);
+		_ -> true
 	end.
 
 %% @doc Convert a key to an atom if it already exists in the Erlang atom table,
@@ -417,6 +434,7 @@ load_device(ID, _Opts) ->
 
 %% @doc Get the info map for a device, optionally giving it a message if the
 %% device's info function is parameterized by one.
+info(DevMod) -> info(DevMod, #{}).
 info(DevMod, Msg) ->
 	case find_exported_function(DevMod, info, 1) of
 		{ok, Fun} -> apply(Fun, truncate_args(Fun, [Msg]));
@@ -671,3 +689,15 @@ deep_set_with_device_test() ->
 	?assertEqual(true, hb_pam:get(modified, Outer)),
 	?assertEqual(false, hb_pam:get(modified, A)),
 	?assertEqual(true, hb_pam:get(modified, B)).
+
+device_exports_test() ->
+	?assert(is_exported(dev_message, info)),
+	?assert(is_exported(dev_message, set)),
+	?assert(not is_exported(dev_message, not_exported)),
+	Dev = #{
+		info => fun() -> #{ exports => [set] } end,
+		set => fun(_, _) -> {ok, <<"SET">>} end
+	},
+	?assert(is_exported(Dev, info)),
+	?assert(is_exported(Dev, set)),
+	?assert(not is_exported(Dev, not_exported)).

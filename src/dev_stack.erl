@@ -88,15 +88,11 @@ info() ->
 
 %% @doc The device stack key router. Sends the request to `resolve_stack`,
 %% except for `set/2` which is handled by the default implementation in
-%% `dev_message`. Note that the argument order here for execution deviates
-%% from the normal `Message1, Key, Message2` order used by `hb_pam:resolve/4`.
-%% This is due to the key variable being prepended by `hb_pam` when the router
-%% is called. Elsewhere in this module, the normal `Message1, Key, Message2`
-%% order is used.
+%% `dev_message`.
 router(set, Message1, Message2, Opts) ->
 	dev_message:set(Message1, Message2, Opts);
 router(Key, Message1, Message2, Opts) ->
-	{ok, InitDevMsg} = hb_pam:resolve(Message1, <<"Device">>, Opts),
+	InitDevMsg = hb_pam:get(<<"Device">>, Message1, Opts),
 	case resolve_stack(Key, Message1, Message2, Opts) of
 		{ok, Result} when is_map(Result) ->
 			{ok, hb_pam:set(Result, <<"Device">>, InitDevMsg, Opts)};
@@ -108,7 +104,7 @@ router(Key, Message1, Message2, Opts) ->
 %% key. This transformation allows dev_stack to correctly track the HashPath
 %% of the message as it delegates execution to devices contained within it.
 transform_device(Message1, Key, Opts) ->
-	case hb_pam:resolve(Message1, [<<"Device-Stack">>, Key], Opts) of
+	case hb_pam:resolve(Message1, #{ path => [<<"Device-Stack">>, Key] }, Opts) of
 		{ok, DevMsg} ->
 			{ok,
 				hb_pam:set(
@@ -128,7 +124,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	case transform_device(Message1, integer_to_binary(DevNum), Opts) of
 		{ok, Message3} ->
 			?event({stack_executing_device, DevNum, Message3}),
-			case hb_pam:resolve(Message3, Key, Message2, Opts) of
+			case hb_pam:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
 				{skip, Message4} when is_map(Message4) ->
@@ -186,7 +182,7 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
 						hb_pam:get(id, Message1, Opts),
 						hb_pam:get(pass, Message1, Opts),
 						DevNum,
-						hb:debug_fmt(Info)
+						hb_util:debug_fmt(Info)
 					],
 					Opts
 				),
