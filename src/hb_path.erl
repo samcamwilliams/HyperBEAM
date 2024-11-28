@@ -41,14 +41,20 @@ push(request, Msg3, Msg2) ->
 
 %%% @doc Add a message to a HashPath.
 push_hashpath(Msg, HashPath) ->
-	Msg.
+	throw(not_implemented).
 
 %%% @doc Add a message to a request path.
 push_request(Msg, Path) ->
-	Msg.
+	throw(not_implemented).
 
 %%% @doc Pop a message from a request path.
 pop_request(Msg) when is_map(Msg) ->
+	throw(not_implemented).
 
-	Path.
+%%% @doc Queue a message to a request path.
+queue_request(Msg, Path) ->
+	throw(not_implemented).
 
+%%% @doc Verify a HashPath.
+verify_hashpath(Msg, HashPath) ->
+	throw(not_implemented).
