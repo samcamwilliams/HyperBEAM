@@ -1,6 +1,6 @@
 -module(hb_crypto).
 -export([sha256_chain/2, accumulate/2]).
--include("hb.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc Implements the cryptographic functions and wraps the primitives
@@ -20,6 +20,7 @@
 
 %% @doc Add a new ID to the end of a SHA-256 hash chain.
 sha256_chain(ID1, ID2) when ?IS_ID(ID1) and ?IS_ID(ID2) ->
+	?no_prod("CAUTION: Unaudited cryptographic function invoked."),
 	sha256(<<ID1:32/binary, ID2:32/binary>>);
 sha256_chain(ID1, ID2) ->
 	throw({cannot_chain_bad_ids, ID1, ID2}).
@@ -56,5 +57,9 @@ sha256_chain_test() ->
 	ID1 = <<1:256>>,
 	ID2 = <<2:256>>,
 	ID3 = sha256_chain(ID1, ID2),
-	?assertEqual(ID3, crypto:hash(sha256, <<ID1:256, ID2:256>>)),
-	?assert(count_zeroes(ID3) < 140).
+	HashBase = << ID1/binary, ID2/binary >>,
+	?assertEqual(ID3, crypto:hash(sha256, HashBase)),
+	% Basic entropy check.
+	Avg = count_zeroes(ID3) / 256,
+	?assert(Avg > 0.4),
+	?assert(Avg < 0.6).
