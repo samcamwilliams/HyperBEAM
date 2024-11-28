@@ -2,7 +2,6 @@
 -export([load/2]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -export([message_to_tx/1, tx_to_message/1]).
--export([binary_to_term/1, term_to_binary/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
@@ -126,7 +125,7 @@ message_to_tx(M) when is_map(M) ->
 	% call message_to_tx/1 on the inner map because that would lead to adding
 	% an extra layer of nesting to the data.
 	MsgKeyMap =
-		maps:from_list(
+		maps:from_list(lists:flatten(
 			lists:map(
 				fun(Key) ->
 					case maps:find(Key, M) of
@@ -143,10 +142,12 @@ message_to_tx(M) when is_map(M) ->
 						{ok, Value} when is_binary(Value) ->
 							{hb_pam:key_to_binary(Key), Value};
 						{ok, Value} ->
-							{
-								hb_pam:key_to_binary(Key),
-								?MODULE:term_to_binary(Value)
-							}
+							ItemKey = hb_pam:key_to_binary(Key),
+							{Type, BinaryValue} = encode_value(Value),
+							[
+								{<<"Type:", ItemKey/binary>>, Type},
+								{ItemKey, BinaryValue}
+							]
 					end
 				end,
 				lists:filter(
@@ -160,7 +161,7 @@ message_to_tx(M) when is_map(M) ->
 					Keys
 				)
 			)
-		),
+		)),
 	% Get the fields and default values of the tx record.
 	TXFields = record_info(fields, tx),
 	DefaultValues = tl(tuple_to_list(#tx{})),
@@ -222,26 +223,30 @@ message_to_tx(Other) ->
 	throw(invalid_tx).
 
 %% @doc Convert non-binary values to binary for serialization.
-%% CAUTION: This is not a standardized type conversion. We should formalize
-%% this, or use an existing standard, before it becomes entrenched.
-binary_to_term(<< "PAM1_INT::", Integer:64 >>) -> 
+decode_value(decimal, Value) ->
+	{item, Number, _} = hb_http_structured_fields:parse_item(Value),
+	Number;
+decode_value(atom, Value) ->
+	{item, {string, AtomString}, _} =
+		hb_http_structured_fields:parse_item(Value),
+	binary_to_existing_atom(AtomString, latin1);
+decode_value(OtherType, Value) ->
+	?event({unexpected_type, OtherType, Value}),
+	throw({unexpected_type, OtherType, Value}).
+
+%% @doc Convert a term to a binary representation, emitting its type for
+%% serialization as a separate tag.
+encode_value(Value) when is_integer(Value) ->
 	?no_prod("Non-standardized type conversion invoked."),
-	Integer;
-binary_to_term(<< "PAM1_ATOM::", Atom:8/binary >>) ->
+	[Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
+	{<<"decimal">>, Encoded};
+encode_value(Value) when is_atom(Value) ->
 	?no_prod("Non-standardized type conversion invoked."),
-	binary_to_existing_atom(Atom, latin1);
-binary_to_term(Value) when is_binary(Value) ->
+	[EncodedIOList, _] = hb_http_structured_fields:item({item, {string, atom_to_binary(Value, latin1)}, []}),
+	Encoded = list_to_binary(EncodedIOList),
+	{<<"atom">>, Encoded};
+encode_value(Value) ->
 	Value.
-
-%% @doc Convert a term to a binary representation.
-term_to_binary(Value) when is_binary(Value) -> Value;
-term_to_binary(Value) when is_integer(Value) ->
-	?no_prod("Non-standardized type conversion invoked."),
-	<< "PAM1_INT::", (integer_to_binary(Value, 64))/binary >>;
-term_to_binary(Atom) when is_atom(Atom) ->
-	?no_prod("Non-standardized type conversion invoked."),
-	<< "PAM1_ATOM::", (atom_to_binary(Atom, latin1))/binary >>.
-
 
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
@@ -254,8 +259,31 @@ tx_to_message(TX) ->
 	% Convert the list of key-value pairs into a map.
 	UnfilteredTXMap = maps:from_list(TXKeyVals),
 	TXMap = maps:with(?USER_TX_KEYS, UnfilteredTXMap),
+	{TXTagsUnparsed, TypeTagPairs} = lists:partition(
+		fun({<<"Type:", _/binary>>, _}) -> false;
+			(_) -> true
+		end,
+		TX#tx.tags
+	),
+	% Parse tags that have a "Type:" prefix.
+	TagTypes =
+		[
+			{Name, binary_to_existing_atom(Value, latin1)}
+		||
+			{<<"Type:", Name/binary>>, Value} <- TypeTagPairs
+		],
+	TXTags =
+		lists:map(
+			fun({Name, BinaryValue}) ->
+				case lists:keyfind(Name, 1, TagTypes) of
+					false -> {Name, BinaryValue};
+					{_, Type} -> {Name, decode_value(Type, BinaryValue)}
+				end
+			end,
+			TXTagsUnparsed
+		),
 	% Next, merge the tags into the map.
-	MapWithoutData = maps:merge(TXMap, maps:from_list(TX#tx.tags)),
+	MapWithoutData = maps:merge(TXMap, maps:from_list(TXTags)),
 	% Finally, merge the data into the map.
 	case TX#tx.data of
 		Data when is_map(Data) ->
@@ -271,7 +299,7 @@ tx_to_message(TX) ->
 					)
 			};
 		Data when is_binary(Data) ->
-			MapWithoutData#{ data => ?MODULE:binary_to_term(Data) };
+			MapWithoutData#{ data => Data };
 		Data ->
 			?event({unexpected_data_type, {explicit, Data}}),
 			?event({was_processing, {explicit, TX}}),
@@ -351,6 +379,15 @@ present_keys_match(Map1, Map2) ->
 %% positives.
 txs_match(TX1, TX2) ->
 	present_keys_match(tx_to_message(TX1), tx_to_message(TX2)).
+
+%% @doc Structured field parsing tests.
+structured_field_atom_parsing_test() ->
+	Msg = #{ highly_unusual_http_header => highly_unusual_value },
+	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+structured_field_decimal_parsing_test() ->
+	Msg = #{ integer_field => 1234567890 },
+	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
 
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
