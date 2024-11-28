@@ -141,10 +141,10 @@ get(Key, Default, Opts = #{ prefer := local }) ->
 
 -define(ENV_KEYS,
     #{
-        key_location => {"hb_KEY", "hyperbeam-key.json"},
-        http_port => {"hb_PORT", fun erlang:list_to_integer/1, "8734"},
+        key_location => {"HB_KEY", "hyperbeam-key.json"},
+        http_port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
-            {"hb_STORE",
+            {"HB_STORE",
                 fun(Dir) ->
                     [
                         {
@@ -158,7 +158,11 @@ get(Key, Default, Opts = #{ prefer := local }) ->
                     ]
                 end,
                 "TEST-data"
-            }
+            },
+		mode =>
+			{"HB_MODE", fun list_to_existing_atom/1},
+		debug_print =>
+			{"HB_DBGPRINT",	fun list_to_existing_atom/1}
     }
 ).
 
@@ -168,6 +172,11 @@ global_get(Key, Default) ->
         Default -> config_lookup(Key, Default);
         {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
             ValParser(os:getenv(EnvKey, DefaultValue));
+		{EnvKey, ValParser} when is_function(ValParser) ->
+			case os:getenv(EnvKey, not_found) of
+				not_found -> config_lookup(Key, Default);
+				Value -> ValParser(Value)
+			end;
         {EnvKey, DefaultValue} ->
             os:getenv(EnvKey, DefaultValue)
     end.
