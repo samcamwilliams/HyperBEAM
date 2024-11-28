@@ -130,7 +130,7 @@ event(X, ModAtom, Line) when is_atom(ModAtom) ->
             end
     end;
 event(X, ModStr, Line) ->
-    case hb:get(debug_print) of
+    case hb_opts:get(debug_print) of
         true -> hb_util:debug_print(X, ModStr, Line);
         false -> X
     end.
@@ -140,7 +140,7 @@ event(X, ModStr, Line) ->
 %% as the second argument.
 read(ID) -> read(ID, local).
 read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
-    read(ID, hb_store:scope(hb:get(store), ScopeAtom));
+    read(ID, hb_store:scope(hb_opts:get(store), ScopeAtom));
 read(ID, Store) ->
     hb_cache:read_message(Store, hb_util:id(ID)).
 
@@ -148,12 +148,12 @@ read(ID, Store) ->
 %% non-prod ready code is being executed. You can find these in the codebase
 %% by looking for ?NO_PROD calls.
 no_prod(X, Mod, Line) ->
-    case hb:get(mode) of
+    case hb_opts:get(mode) of
         prod ->
             io:format(standard_error,
                 "=== DANGER: NON-PROD READY CODE INVOKED IN PROD ===~n", []),
             io:format(standard_error, "~w:~w:       ~p~n", [Mod, Line, X]),
-			case hb:get(exit_on_no_prod) of
+			case hb_opts:get(exit_on_no_prod) of
 				true -> init:stop();
 				false -> throw(X)
 			end;

@@ -21,7 +21,7 @@ push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
 
 execute(CarrierMsg, S) ->
     MaybeBundle = ar_bundles:hd(CarrierMsg),
-    Store = hb:get(store),
+    Store = hb_opts:get(store),
     Wallet = hb:wallet(),
     {ok, Results} =
         case MaybeBundle of

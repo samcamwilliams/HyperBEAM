@@ -18,7 +18,7 @@
 
 %% @doc Grab the latest block information from the Arweave gateway node.
 arweave_timestamp() ->
-    {ok, {{_, 200, _}, _, Body}} = httpc:request(hb:get(gateway) ++ "/block/current"),
+    {ok, {{_, 200, _}, _, Body}} = httpc:request(hb_opts:get(gateway) ++ "/block/current"),
     {Fields} = jiffy:decode(Body),
     {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
     {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
@@ -30,7 +30,7 @@ arweave_timestamp() ->
 %% @doc Download the data associated with a given ID. See TODO below.
 download(ID) ->
     % TODO: Need to recreate full data items, not just data...
-    case httpc:request(hb:get(gateway) ++ "/" ++ ID) of
+    case httpc:request(hb_opts:get(gateway) ++ "/" ++ ID) of
         {ok, {{_, 200, _}, _, Body}} -> #tx{data = Body};
         _Rest -> throw({id_get_failed, ID})
     end.
@@ -40,7 +40,7 @@ upload(Item) ->
     case
         httpc:request(
             post,
-            {hb:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
+            {hb_opts:get(bundler) ++ "/tx", [], "application/octet-stream", ar_bundles:serialize(Item)},
             [],
             []
         )
@@ -74,7 +74,7 @@ assign(_ID) ->
 %% Send a Scheduler-Location message to the network so other nodes
 %% know where to find this address's SU.
 register_su(Location) ->
-    register_su(Location, hb:get(key_location)).
+    register_su(Location, hb_opts:get(key_location)).
 register_su(Location, WalletLoc) when is_list(WalletLoc) ->
     register_su(Location, ar_wallet:load_keyfile(WalletLoc));
 register_su(Location, Wallet) ->
@@ -84,7 +84,7 @@ register_su(Location, Wallet) ->
             {"Variant", "ao.TN.1"},
             {"Type", "Scheduler-Location"},
             {"Url", Location},
-            {"Time-To-Live", integer_to_list(hb:get(scheduler_location_ttl))}
+            {"Time-To-Live", integer_to_list(hb_opts:get(scheduler_location_ttl))}
         ]
     },
     hb_client:upload(ar_bundles:sign_item(TX, Wallet)).
@@ -216,7 +216,7 @@ push(Node, Item, Opts) ->
 cron(ProcID) ->
     cron(ProcID, cron_cursor(ProcID)).
 cron(ProcID, Cursor) ->
-    cron(ProcID, Cursor, hb:get(default_page_limit)).
+    cron(ProcID, Cursor, hb_opts:get(default_page_limit)).
 cron(ProcID, Cursor, Limit) when is_binary(ProcID) ->
     cron(binary_to_list(hb_util:id(ProcID)), Cursor, Limit);
 cron(ProcID, undefined, RawLimit) ->

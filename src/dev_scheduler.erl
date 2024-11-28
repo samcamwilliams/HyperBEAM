@@ -47,7 +47,7 @@ init(State, _) ->
 end_of_schedule(State) -> {ok, update_schedule(State)}.
 
 update_schedule(State = #{ process := Proc }) ->
-    Store = maps:get(store, State, hb:get(store)),
+    Store = maps:get(store, State, hb_opts:get(store)),
     CurrentSlot = maps:get(slot, State, 0),
     ToSlot = maps:get(to, State),
     ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),

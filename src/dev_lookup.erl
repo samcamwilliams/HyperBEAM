@@ -10,4 +10,4 @@ read(#tx { tags = Tags }) ->
     % the value directly.
     {<<"Subpath">>, Subpath} = lists:keyfind(<<"Subpath">>, 1, Tags),
     ?event({looking_up_for_remote_peer, Subpath}),
-    hb_cache:read_message(hb_store:scope(hb:get(store), local), Subpath).
+    hb_cache:read_message(hb_store:scope(hb_opts:get(store), local), Subpath).

@@ -130,9 +130,9 @@ handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 handle_resolved_result(Msg2List = [Status|_], Msg2, Opts) when Status =/= ok ->
 	list_to_tuple(Msg2List);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
-	Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
-	hb_cache:write(hb_opts:get(store, no_valid_store, Opts), Msg3),
-	Msg3.
+	%Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
+	%hb_cache:write(hb_opts:get(store, no_valid_store, Opts), Msg3),
+	list_to_tuple([ok, Msg3Raw | Rest]).
 
 %% @doc Shortcut for resolving a key in a message without its 
 %% status if it is `ok`. This makes it easier to write complex 
@@ -418,13 +418,13 @@ load_device(ID, _Opts) when is_atom(ID) ->
     catch _:_ -> {error, not_loadable}
     end;
 load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
-	case hb:get(load_remote_devices) of
+	case hb_opts:get(load_remote_devices) of
 		true ->
 			{ok, Msg} = hb_cache:read_message(maps:get(store, Opts), ID),
 			Trusted =
 				lists:any(
 					fun(Signer) ->
-						lists:member(Signer, hb:get(trusted_device_signers))
+						lists:member(Signer, hb_opts:get(trusted_device_signers))
 					end,
 					hb_message:signers(Msg)
 				),
@@ -447,7 +447,7 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 			{error, remote_devices_disabled}
 	end;
 load_device(ID, _Opts) ->
-    case maps:get(ID, hb:get(preloaded_devices), unsupported) of
+    case maps:get(ID, hb_opts:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> {ok, Mod}
     end.

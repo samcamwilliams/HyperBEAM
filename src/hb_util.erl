@@ -237,7 +237,7 @@ to_lines(In =[RawElem | Rest]) ->
 %% @doc Format a string with an indentation level.
 format_indented(Str, Indent) -> format_indented(Str, "", Indent).
 format_indented(RawStr, Fmt, Ind) ->
-	IndentSpaces = hb:get(debug_print_indent),
+	IndentSpaces = hb_opts:get(debug_print_indent),
 	lists:droplast(
 		lists:flatten(
 			io_lib:format(
@@ -250,7 +250,7 @@ format_indented(RawStr, Fmt, Ind) ->
 
 %% @doc Format a binary as a short string suitable for printing.
 format_binary(Bin) ->
-	MaxBinPrint = hb:get(debug_print_binary_max),
+	MaxBinPrint = hb_opts:get(debug_print_binary_max),
 	Printable =
 		binary:part(
 			Bin,
@@ -279,7 +279,7 @@ format_binary(Bin) ->
 %% on the value of the `debug_print_map_line_threshold` runtime option.
 format_map(Map) -> format_map(Map, 0).
 format_map(Map, Indent) ->
-	MaxLen = hb:get(debug_print_map_line_threshold),
+	MaxLen = hb_opts:get(debug_print_map_line_threshold),
 	SimpleFmt = io_lib:format("~p", [Map]),
 	case lists:flatlength(SimpleFmt) of
 		Len when Len > MaxLen ->

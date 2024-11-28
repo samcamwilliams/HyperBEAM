@@ -19,9 +19,9 @@ start() ->
 							% a different wallet, etc.) to execution for 
 							% remote clients.
 							#{
-								store => hb:get(store),
-								wallet => hb:get(wallet),
-								error_strategy => hb:get(client_error_strategy)
+								store => hb_opts:get(store),
+								wallet => hb_opts:get(wallet),
+								error_strategy => hb_opts:get(client_error_strategy)
 							}
 						}
 					]
@@ -30,7 +30,7 @@ start() ->
 		),
     cowboy:start_clear(
         ?MODULE,
-        [{port, hb:get(http_port)}],
+        [{port, hb_opts:get(http_port)}],
         #{env => #{dispatch => Dispatcher}}
     ).
 

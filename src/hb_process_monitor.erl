@@ -8,7 +8,7 @@
 }).
 
 start(ProcID) ->
-    start(ProcID, hb:get(default_cron_rate)).
+    start(ProcID, hb_opts:get(default_cron_rate)).
 start(ProcID, Rate) ->
     start(ProcID, Rate, hb_client:cron_cursor(ProcID)).
 start(ProcID, Rate, Cursor) ->

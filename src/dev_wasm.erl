@@ -8,7 +8,7 @@
 
 init(State, Params) ->
     {<<"Image">>, ImageID} = lists:keyfind(<<"Image">>, 1, Params),
-    {ok, Image} = hb_cache:read_message(maps:get(store, State, hb:get(store)), ImageID),
+    {ok, Image} = hb_cache:read_message(maps:get(store, State, hb_opts:get(store)), ImageID),
     {ok, Port, _ImportMap, _Exports} = hb_beamr:start(Image#tx.data),
     % Apply the checkpoint if it is in the initial state.
     case maps:get(<<"WASM-State">>, State, undefined) of

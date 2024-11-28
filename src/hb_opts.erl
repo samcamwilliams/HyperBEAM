@@ -104,7 +104,7 @@ config() ->
 		debug_print_map_line_threshold => 30,
 		debug_print_binary_max => 15,
 		debug_print_indent => 4,
-        debug_print => true
+        debug_print => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
@@ -117,10 +117,10 @@ config() ->
 get(Key) -> ?MODULE:get(Key, undefined).
 get(Key, Default) -> ?MODULE:get(Key, Default, #{ prefer => local}).
 get(Key, Default, Opts = #{ only := local }) ->
-	io:format("Getting local key: ~p. Map: ~p~n", [Key, Opts]),
 	case maps:find(Key, Opts) of
 		{ok, Value} -> Value;
-		error -> Default
+		error -> 
+			Default
 	end;
 get(Key, Default, #{ only := global }) ->
 	case global_get(Key, hb_opts_not_found) of
@@ -134,7 +134,8 @@ get(Key, Default, Opts = #{ prefer := global }) ->
 	end;
 get(Key, Default, Opts = #{ prefer := local }) ->
 	case ?MODULE:get(Key, hb_opts_not_found, Opts#{ only => local }) of
-		hb_opts_not_found -> ?MODULE:get(Key, Default, Opts#{ only => global });
+		hb_opts_not_found ->
+			?MODULE:get(Key, Default, Opts#{ only => global });
 		Value -> Value
 	end.
 
@@ -196,7 +197,7 @@ local_preference_test() ->
 	?assertEqual(correct,
 		?MODULE:get(test_key, undefined, Local#{ test_key => correct })),
 	?assertEqual(correct,
-		?MODULE:get(mode, undefined, Local#{ debug => correct })),
+		?MODULE:get(mode, undefined, Local#{ mode => correct })),
 	?assertNotEqual(undefined,
 		?MODULE:get(mode, undefined, Local)).
 
@@ -204,5 +205,5 @@ global_preference_test() ->
 	Global = #{ prefer => global },
 	?assertEqual(undefined, ?MODULE:get(test_key, undefined, Global)),
 	?assertNotEqual(incorrect,
-	?MODULE:get(mode, undefined, Global#{ debug => incorrect })),
+		?MODULE:get(mode, undefined, Global#{ mode => incorrect })),
 	?assertNotEqual(undefined, ?MODULE:get(mode, undefined, Global)).

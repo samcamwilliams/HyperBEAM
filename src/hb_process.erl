@@ -220,7 +220,7 @@ boot(Process, Opts) ->
         = hb_pam:resolve(Dev, boot, [Process, Opts], Opts),
     ?event(booted_device),
     % Get the store we are using for this execution.
-    Store = maps:get(store, Opts, hb:get(store)),
+    Store = maps:get(store, Opts, hb_opts:get(store)),
     % Get checkpoint key names from all devices.
     % TODO: Assumes that the device is a stack or another device that uses maps
     % for state.
@@ -250,7 +250,7 @@ boot(Process, Opts) ->
             slot => Slot + 1,
             to => maps:get(to, Opts, inf),
             wallet => maps:get(wallet, Opts, hb:wallet()),
-            store => maps:get(store, Opts, hb:get(store)),
+            store => maps:get(store, Opts, hb_opts:get(store)),
             schedule => maps:get(schedule, Opts, []),
             devices => Devs
         },
@@ -266,7 +266,7 @@ boot(Process, Opts) ->
 			proc_dev => Dev,
 			return => all,
 			% If no compute mode is already set, use the global default.
-			compute_mode => maps:get(compute_mode, Opts, hb:get(compute_mode))
+			compute_mode => maps:get(compute_mode, Opts, hb_opts:get(compute_mode))
 		},
     case hb_pam:resolve(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->

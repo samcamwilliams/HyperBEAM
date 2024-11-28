@@ -56,7 +56,7 @@ current_slot(M) ->
 current_schedule(M) ->
     {_, ProcID} = lists:keyfind(<<"Process">>, 1, M#tx.tags),
     send_schedule(
-        hb:get(store),
+        hb_opts:get(store),
         ProcID,
         lists:keyfind(<<"From">>, 1, M#tx.tags),
         lists:keyfind(<<"To">>, 1, M#tx.tags)
@@ -66,7 +66,7 @@ schedule(CarrierM) ->
     ?event(scheduling_message),
     #{ <<"1">> := M } = CarrierM#tx.data,
 	%ar_bundles:print(M),
-    Store = hb:get(store),
+    Store = hb_opts:get(store),
 	?no_prod("SU does not validate item before writing into stream."),
     case {ar_bundles:verify_item(M), lists:keyfind(<<"Type">>, 1, M#tx.tags)} of
         % {false, _} ->

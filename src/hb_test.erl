@@ -12,14 +12,14 @@ init() ->
 run(Proc, Msg) ->
     run(Proc, Msg, #{}).
 run(Proc, Msg, _Opts) ->
-    hb_cache:write(hb:get(store), Msg),
-    hb_cache:write(hb:get(store), Proc),
+    hb_cache:write(hb_opts:get(store), Msg),
+    hb_cache:write(hb_opts:get(store), Proc),
     Scheduler = dev_scheduler_registry:find(hb_util:id(Proc, signed), true),
     Assignment = dev_scheduler_server:schedule(Scheduler, Msg),
     hb_process:result(
         hb_util:id(Proc, signed),
         hb_util:id(Assignment, unsigned),
-        hb:get(store),
+        hb_opts:get(store),
         hb:wallet()
     ).
 
@@ -39,7 +39,7 @@ run(Proc, Msg, _Opts) ->
 %     init(),
 %     ?event(full_push_test_started),
 %     {_, Msg} = generate_test_data(ping_ping_script()),
-%     hb_cache:write(hb:get(store), Msg),
+%     hb_cache:write(hb_opts:get(store), Msg),
 %     hb_client:push(Msg, #{ tracing => none }),
 %     ok.
 
@@ -48,7 +48,7 @@ run(Proc, Msg, _Opts) ->
 %     ?event(scheduling_many_items),
 %     Messages = 30,
 %     Msg = generate_test_data(ping_ping_script()),
-%     hb_cache:write(hb:get(store), Msg),
+%     hb_cache:write(hb_opts:get(store), Msg),
 %     Start = hb:now(),
 %     Assignments = lists:map(
 %         fun(_) -> hb_client:schedule(Msg) end,
@@ -64,7 +64,7 @@ run(Proc, Msg, _Opts) ->
 %     ?event({processed_messages, Messages}).
 
 default_test_img(Wallet) ->
-    Store = hb:get(store),
+    Store = hb_opts:get(store),
     {ok, Module} = file:read_file("test/aos-2-pure-xs.wasm"),
     hb_cache:write(
         Store,
@@ -99,7 +99,7 @@ default_test_devices(Wallet, Opts) ->
     ] ++
     [
         {<<"Authority">>, Addr} ||
-            Addr <- maps:keys(maps:get(compute, hb:get(nodes))),
+            Addr <- maps:keys(maps:get(compute, hb_opts:get(nodes))),
             Addr =/= '_'
     ] ++
     [
@@ -130,7 +130,7 @@ generate_test_data(Script, Wallet, Opts) ->
     Devs = default_test_devices(Wallet, Opts),
     generate_test_data(Script, Wallet, Opts, Devs).
 generate_test_data(Script, Wallet, _Opts, Devs) ->
-    Store = hb:get(store),
+    Store = hb_opts:get(store),
     hb_cache:write(
         Store,
         SignedProcess = ar_bundles:sign_item(

@@ -62,7 +62,7 @@ parse_carrier_msg(CarrierMsg, S) ->
 load_executable_message_from_carrier(CarrierMsg, #{ store := RawStore }) ->
     Path = path_from_carrier_message(CarrierMsg),
 	Store =
-		case hb:get(access_remote_cache_for_client) of
+		case hb_opts:get(access_remote_cache_for_client) of
 			true -> RawStore;
 			false -> hb_store:scope(RawStore, local)
 		end,

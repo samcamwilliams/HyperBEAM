@@ -9,7 +9,7 @@
         current,
         wallet,
         hash_chain = <<>>,
-        store = hb:get(store)
+        store = hb_opts:get(store)
     }
 ).
 
@@ -17,7 +17,7 @@
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
 start(ProcID, Wallet) ->
-    start(ProcID, Wallet, hb:get(store)).
+    start(ProcID, Wallet, hb_opts:get(store)).
 start(ProcID, Wallet, Store) ->
     {Current, HashChain} = slot_from_cache(ProcID),
     spawn(
@@ -35,12 +35,12 @@ start(ProcID, Wallet, Store) ->
     ).
 
 slot_from_cache(ProcID) ->
-    case hb_cache:assignments(hb:get(store), ProcID) of
+    case hb_cache:assignments(hb_opts:get(store), ProcID) of
         [] ->
             {-1, <<>>};
         Assignments ->
             AssignmentNum = lists:max(Assignments),
-            {ok, Assignment} = hb_cache:read_assignment(hb:get(store), ProcID, AssignmentNum),
+            {ok, Assignment} = hb_cache:read_assignment(hb_opts:get(store), ProcID, AssignmentNum),
             {
                 AssignmentNum,
                 hb_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
@@ -66,11 +66,11 @@ get_current_slot(ProcID) ->
 get_assignments(ProcID, From, undefined) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
-    {ok, From} = hb_cache:read_assignment(hb:get(store), ProcID, From),
+    {ok, From} = hb_cache:read_assignment(hb_opts:get(store), ProcID, From),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, From#tx.tags),
     get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
-    {ok, Assignment} = hb_cache:read_assignment(hb:get(store), ProcID, RequestedTo),
+    {ok, Assignment} = hb_cache:read_assignment(hb_opts:get(store), ProcID, RequestedTo),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
     get_assignments(ProcID, From, binary_to_integer(Slot));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
@@ -88,7 +88,7 @@ get_assignments(ProcID, From, RequestedTo) ->
 do_get_assignments(_ProcID, From, To) when From > To ->
     [];
 do_get_assignments(ProcID, From, To) ->
-    case hb_cache:read_assignment(hb:get(store), ProcID, From) of
+    case hb_cache:read_assignment(hb_opts:get(store), ProcID, From) of
         not_found ->
             [];
         {ok, Assignment} ->
@@ -166,7 +166,7 @@ do_assign(State, Message, ReplyPID) ->
     State#state{current = NextNonce, hash_chain = HashChain}.
 
 maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
-    case hb:get(scheduling_mode, remote_confirmation) of
+    case hb_opts:get(scheduling_mode, remote_confirmation) of
         Mode -> ReplyPID ! {scheduled, Message, Assignment};
         _ -> ok
     end.

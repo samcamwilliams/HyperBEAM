@@ -30,7 +30,7 @@ cache(Current) ->
 refresher(TSServer) ->
     timer:sleep(?TIMEOUT),
     TS =
-        case hb:get(mode) of
+        case hb_opts:get(mode) of
             debug -> { 0, 0, << 0:256 >> };
             prod -> hb_client:arweave_timestamp()
         end,

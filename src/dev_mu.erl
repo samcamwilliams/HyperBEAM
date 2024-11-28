@@ -39,7 +39,7 @@ push(CarrierMsg, State) ->
 				},
                 State#{
 					depth => 0,
-                    store => maps:get(store, State, hb:get(store)),
+                    store => maps:get(store, State, hb_opts:get(store)),
                     logger => Logger,
                     wallet => maps:get(wallet, State, hb:wallet())
                 }
@@ -81,7 +81,7 @@ push_messages(upload, Messages, Opts) ->
 								devices => Stack,
 								message => Message,
 								logger => maps:get(logger, Opts, undefined),
-								store => maps:get(store, Opts, hb:get(store)),
+								store => maps:get(store, Opts, hb_opts:get(store)),
 								wallet => maps:get(wallet, Opts, hb:wallet())
 							}
 						]
