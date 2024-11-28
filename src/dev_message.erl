@@ -164,7 +164,7 @@ private_keys_are_filtered_test() ->
 
 cannot_get_private_keys_test() ->
 	?assertEqual(
-		{error, {bad_message_key, private_key, #{ a => 1, private_key => 2 }}},
+		{error, not_found},
 		hb_pam:resolve(#{ a => 1, private_key => 2 }, private_key)
 	).
 
