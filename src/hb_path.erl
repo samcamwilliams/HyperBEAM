@@ -3,7 +3,7 @@
 -export([queue_request/2, pop_request/1]).
 -export([verify_hashpath/3]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
--include("hb.hrl").
+-include("include/hb.hrl").
 
 %%% @moduledoc This module provides utilities for manipulating the paths of a
 %%% message: Its request path (referred to in messages as just the `Path`), and
@@ -42,7 +42,7 @@ push(request, Msg3, Msg2) ->
 	push_request(Msg3, Msg2).
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
-push_hashpath(Msg, Msg2) ->
+push_hashpath(Msg, Msg2) when is_map(Msg2) ->
 	{ok, Msg2ID} = dev_message:unsigned_id(Msg2),
 	push_hashpath(Msg, Msg2ID);
 push_hashpath(Msg, Msg2ID) ->
@@ -110,7 +110,6 @@ verify_hashpath(InitialMsgID, CurrentMsg, MsgList) ->
 		InitialMsgID,
 		MsgList
 	).
-
 
 %% @doc Extract the request path or hashpath from a message. We do not use
 %% PAM for this resolution because this function is called from inside PAM 
