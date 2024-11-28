@@ -116,8 +116,10 @@ message_to_tx(Binary) when is_binary(Binary) ->
 	Binary;
 message_to_tx(TX) when is_record(TX, tx) -> TX;
 message_to_tx(M) when is_map(M) ->
-	% Get the keys that will be serialized, excluding private keys.
-	{ok, Keys} = hb_pam:resolve(M, keys),
+	% Get the keys that will be serialized, excluding private keys. Note that
+	% we do not call hb_pam:resolve here because we want to include all keys
+	% in the underlying map, except the private ones.
+	Keys = maps:keys(M),
 	% Translate the keys into a binary map. If a key has a value that is a map,
 	% we recursively turn its children into messages. Notably, we do not simply
 	% call message_to_tx/1 on the inner map because that would lead to adding
@@ -126,7 +128,7 @@ message_to_tx(M) when is_map(M) ->
 		maps:from_list(
 			lists:map(
 				fun(Key) ->
-					case hb_pam:resolve(M, Key) of
+					case maps:find(Key, M) of
 						{ok, Map} when is_map(Map) ->
 							{
 								hb_pam:key_to_binary(Key),
@@ -144,8 +146,10 @@ message_to_tx(M) when is_map(M) ->
 				lists:filter(
 					fun(Key) ->
 						% Filter keys that the user could set directly, but
-						% should be regenerated when moving msg -> TX.
-						not lists:member(Key, ?REGEN_KEYS)
+						% should be regenerated when moving msg -> TX, as well
+						% as private keys.
+						not lists:member(Key, ?REGEN_KEYS) andalso
+							not hb_private:is_private(Key)
 					end,
 					Keys
 				)

@@ -1,5 +1,5 @@
 -module(hb_private).
--export([from_message/1, get/2, get/3, set/3]).
+-export([from_message/1, get/2, get/3, set/3, reset/1, is_private/1]).
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module provides basic helper utilities for managing the
@@ -29,6 +29,26 @@ set(Msg, Key, Value) ->
 	maps:put(
 		private,
 		maps:put(Key, Value, from_message(Msg)),
+		Msg
+	).
+
+%% @doc Check if a key is private.
+is_private(Key) ->
+	Str = key_to_list(Key),
+	lists:prefix("priv", Str).
+
+%% @doc Convert a key to a list.
+key_to_list(Key) when is_atom(Key) ->
+	atom_to_list(Key);
+key_to_list(Key) when is_binary(Key) ->
+	binary_to_list(Key);
+key_to_list(Key) when is_list(Key) ->
+	binary_to_list(iolist_to_binary(Key)).
+
+%% @doc Unset all of the private keys in a message.
+reset(Msg) ->
+	maps:without(
+		lists:filter(fun is_private/1, maps:keys(Msg)),
 		Msg
 	).
 

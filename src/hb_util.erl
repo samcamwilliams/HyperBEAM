@@ -10,8 +10,6 @@
 -export([format_map/1, format_map/2]).
 -export([debug_print/3, debug_fmt/1]).
 -include("include/hb.hrl").
--define(INDENT_SPACES, 4).
--define(BIN_PRINT, 20).
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
 
@@ -239,10 +237,11 @@ to_lines(In =[RawElem | Rest]) ->
 %% @doc Format a string with an indentation level.
 format_indented(Str, Indent) -> format_indented(Str, "", Indent).
 format_indented(RawStr, Fmt, Ind) ->
+	IndentSpaces = hb:get(debug_print_indent),
 	lists:droplast(
 		lists:flatten(
 			io_lib:format(
-				[$\s || _ <- lists:seq(1, Ind * ?INDENT_SPACES)] ++
+				[$\s || _ <- lists:seq(1, Ind * IndentSpaces)] ++
 					lists:flatten(RawStr) ++ "\n",
 				Fmt
 			)

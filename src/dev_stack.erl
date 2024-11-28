@@ -212,6 +212,38 @@ generate_append_device(Str) ->
 			end
 	}.
 
+%% Create a device that modifies a number when the user tries to set it to a
+%% new value. This is a 'wonky' set device because it does not set the value
+%% because it allows us to infer and test the order in which devices have been
+%% executed, but does not perform a normal `set`.
+generate_wonky_set_device(Modifier) ->
+	#{
+		set =>
+			fun(Msg) ->
+				% Find the first key that is not `path`.
+				Key = hd(maps:keys(Msg) -- [path]),
+				% Set it not to the new value, but the current value plus the
+				% modifier.
+				{ok, hb_pam:set(Msg, Key, hb_pam:get(Key, Msg) + Modifier)}
+			end
+	}.
+
+transform_device_test() ->
+	WonkyDev = generate_wonky_set_device(1),
+	Msg1 =
+		#{
+			<<"Device">> => <<"Stack">>,
+			<<"Device-Stack">> =>
+				#{
+					<<"1">> => WonkyDev,
+					<<"2">> => <<"Message">>
+				}
+		},
+	?assertEqual(
+		{ok, #{ <<"Device">> => <<"Message">> } },
+		transform_device(Msg1, <<"1">>, #{})
+	).
+
 simple_stack_execute_test() ->
 	Msg = #{
 		<<"Device">> => ?MODULE,
@@ -224,4 +256,41 @@ simple_stack_execute_test() ->
 	?assertEqual(
 		{ok, #{ bin => <<"12">> }},
 		hb_pam:resolve(Msg, test)
+	).
+
+%% Ensure that devices are reordered correctly during execution. We use the
+%% 'wonky set' device defined above, as well as the default `message` device,
+%% to test this. We start with a message that has an `x` key set to 1. We then
+%% execute the stack, and ensure that the `x` key is correctly modified to 6:
+%%  	Msg1 => #{ x => 1 } (with stack: Message, WonkyDev)
+%% 		Stack.set(x, 5) =>
+%% 			Message.set(x, 5) =>
+%% 				{ x => 5 }
+%% 			WonkyDev.set(x, 5) =>
+%% 				{ x => 6 }
+%% 		Msg2.x => 6
+%% We then check that reversing the order of the devices in the stack yields
+%% a different result:
+%%  	Msg2 => #{ x => 6 } (with stack: WonkyDev, Message)
+%% 		Stack.set(x, 10) =>
+%% 			WonkyDev.set(x, 10) =>
+%% 				{ x => 11 }
+%% 			Message.set(x, 10) =>
+%% 				{ x => 10 }
+%% 		Msg2.x => 10
+stack_reorder_test() ->
+	WonkyDev = generate_wonky_set_device(1),
+	Msg1 =
+		#{
+			<<"Device">> => <<"Stack">>,
+			<<"Device-Stack">> =>
+				#{
+					<<"1">> => <<"Message">>,
+					<<"2">> => WonkyDev
+				},
+			x => 1
+		},
+	?assertEqual(
+		{ok, #{ x => 6 }},
+		hb_pam:resolve(Msg1, #{ path => [set], x => 5 })
 	).

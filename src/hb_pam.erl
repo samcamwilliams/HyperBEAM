@@ -101,9 +101,9 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 		end,
 	% Then, try to execute the function.
 	try
-		Res = apply(Fun, truncate_args(Fun, Args)),
-		?event({resolve_result, Res}),
-		Res
+		Msg3 = apply(Fun, truncate_args(Fun, Args)),
+		?event({resolve_result, Msg3}),
+		handle_resolved_result(Msg3, Msg2, UserOpts)
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
 			handle_error(
@@ -113,14 +113,33 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 			)
 	end.
 
+%% @doc Internal function for handling the result of a device call.
+%% If the result is a binary or something that doesn't have an `ok` status,
+%% we return it as is. Otherwise, we need to:
+%% 1. Set the HashPath of the Msg3 we have generated from
+%% the Msg1 we started with.
+%% 2. Pop the first element of the path from Msg2.
+%% 3. Write the result to the cache unless the `cache` option is set to false.
+%% 4. If there are still elements in the path, we recurse through execution.
+%% If additional elements are included as part of the result, we pass them 
+%% through to the caller.
+handle_resolved_result(Msg3, Msg2, UserOpts) when is_binary(Msg3) ->
+	Msg3;
+handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
+	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
+handle_resolved_result(Msg2List = [Status|_], Msg2, Opts) when Status =/= ok ->
+	list_to_tuple(Msg2List);
+handle_resolved_result(Msg3Raw, Msg2, Opts) ->
+	Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
+	Msg3.
+
 %% @doc Shortcut for resolving a key in a message without its 
 %% status if it is `ok`. This makes it easier to write complex 
 %% logic on top of messages while maintaining a functional style.
-get(Key, Msg) ->
-	get(Key, Msg, default_runtime_opts(Msg)).
-get(Key, Msg, Opts) ->
-	%?event({get, {key, Key}, {msg, Msg}, {opts, Opts}}),
-	ensure_ok(Key, resolve(Msg, #{ path => Key }, Opts), Opts).
+get(Path, Msg) ->
+	get(Path, Msg, default_runtime_opts(Msg)).
+get(Path, Msg, Opts) ->
+	ensure_ok(Path, resolve(Msg, #{ path => Path }, Opts), Opts).
 
 %% @doc Get the value of a key from a message, returning a default value if the
 %% key is not found.
