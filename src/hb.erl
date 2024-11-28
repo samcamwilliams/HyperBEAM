@@ -1,6 +1,6 @@
 -module(hb).
 %%% Configuration and environment:
--export([init/0, config/0, now/0, get/1, get/2, build/0]).
+-export([init/0, now/0, build/0]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, no_prod/3]).
 -export([read/1, read/2, debug_wait/3, profile/1]).
@@ -88,127 +88,15 @@
 %%% including the node's wallet, address, configuration, and environment
 %%% variables.
 
-%% @doc The default configuration options of the hyperbeam node.
-config() ->
-    #{
-        %%%%%%%% Functional options %%%%%%%%
-        %% Scheduling mode: Determines when the SU should inform the recipient
-        %% that an assignment has been scheduled for a message.
-        %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => local_confirmation,
-		%% Compute mode: Determines whether the CU should attempt to execute
-		%% more messages on a process after it has returned a result.
-		%% Options: aggressive, lazy
-		compute_mode => lazy,
-		%% Choice of remote nodes for tasks that are not local to hyperbeam.
-        http_host => "localhost",
-        gateway => "https://arweave.net",
-        bundler => "https://up.arweave.net",
-		%% Choice of nodes for remote tasks, in the form of a map between
-		%% node addresses and HTTP URLs.
-		%% `_` is a wildcard for any other address that is not specified.
-        nodes => #{
-            compute =>
-                #{
-                    <<"ggltHF0Cnv9ylH3vM1p7amR2vXLMoPLQIUQmAEwLP-k">> =>
-                        "http://localhost:8734",
-                    <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> =>
-                        "http://localhost:8736",
-                    '_' => "http://localhost:8734"
-                },
-            message => #{
-                address() => "http://localhost:8734",
-                '_' => "http://localhost:8734"
-            },
-            schedule => #{
-                address() => "http://localhost:8734",
-                '_' => "http://localhost:8734"
-            }
-        },
-		%% Location of the wallet keyfile on disk that this node will use.
-        key_location => "hyperbeam-key.json",
-		%% Default page limit for pagination of results from the APIs.
-		%% Currently used in the SU devices.
-        default_page_limit => 5,
-		%% The time-to-live that should be specified when we register
-		%% ourselves as a scheduler on the network.
-        scheduler_location_ttl => 60 * 60 * 24 * 30,
-		%% Preloaded devices for the node to use. These names override
-		%% resolution of devices via ID to the default implementations.
-        preloaded_devices =>
-            #{
-                <<"Stack">> => {dev_stack, execute},
-                <<"Scheduler">> => dev_scheduler,
-                <<"Cron">> => dev_cron,
-                <<"Deduplicate">> => dev_dedup,
-                <<"JSON-Interface">> => dev_json_iface,
-                <<"VFS">> => dev_vfs,
-                <<"PODA">> => dev_poda,
-                <<"Monitor">> => dev_monitor,
-                <<"WASM64-pure">> => dev_wasm,
-                <<"Multipass">> => dev_multipass,
-                <<"Push">> => dev_mu,
-                <<"Compute">> => dev_cu,
-                <<"P4">> => dev_p4
-            },
-		%% The stacks of devices that the node should expose by default.
-		%% These represent the core flows of functionality of the node.
-        default_device_stacks => [
-            {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
-            {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
-            {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}}
-        ],
-		%% Should the node attempt to access data from remote caches for
-		%% client requests?
-		access_remote_cache_for_client => false,
-		%% Should the node attempt to load devices from remote signers?
-		load_remote_devices => false,
-		%% The list of device signers that the node should trust.
-		trusted_device_signers => [],
-		%% What should the node do if a client error occurs?
-		client_error_strategy => throw,
-        % Dev options
-        local_store =>
-            [{hb_store_fs, #{ prefix => "TEST-data" }}],
-        mode => debug,
-		debug_stack_depth => 20,
-		debug_print_map_line_threshold => 30,
-		debug_print_binary_max => 15,
-        debug_print => true
-    }.
-
--define(ENV_KEYS,
-    #{
-        key_location => {"hb_KEY", "hyperbeam-key.json"},
-        http_port => {"hb_PORT", fun erlang:list_to_integer/1, "8734"},
-        store =>
-            {"hb_STORE",
-                fun(Dir) ->
-                    [
-                        {
-                            hb_store_fs,
-                            #{ prefix => Dir }
-                        },
-                        {
-                            hb_store_remote_node,
-                            #{ node => "http://localhost:8734" }
-                        }
-                    ]
-                end,
-                "TEST-data"
-            }
-    }
-).
-
 %% @doc Initialize system-wide settings for the hyperbeam node.
 init() ->
-	?event({setting_debug_stack_depth, hb:get(debug_stack_depth)}),
-    Old = erlang:system_flag(backtrace_depth, hb:get(debug_stack_depth)),
+	?event({setting_debug_stack_depth, hb_opts:get(debug_stack_depth)}),
+    Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
 	?event({old_system_stack_depth, Old}),
 	ok.
 
 wallet() ->
-    wallet(hb:get(key_location)).
+    wallet(hb_opts:get(key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} ->
@@ -226,22 +114,6 @@ address() -> address(wallet()).
 address(Wallet) when is_tuple(Wallet) ->
     hb_util:encode(ar_wallet:to_address(Wallet));
 address(Location) -> address(wallet(Location)).
-
-%% @doc Get an environment variable or configuration key.
-get(Key) -> get(Key, undefined).
-get(Key, Default) ->
-    case maps:get(Key, ?ENV_KEYS, false) of
-        false -> config_lookup(Key, Default);
-        {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
-            ValParser(os:getenv(EnvKey, DefaultValue));
-        {EnvKey, DefaultValue} ->
-            os:getenv(EnvKey, DefaultValue)
-    end.
-
-%% @doc An abstraction for looking up configuration variables. In the future,
-%% this is the function that we will want to change to support a more dynamic
-%% configuration system.
-config_lookup(Key, Default) -> maps:get(Key, config(), Default).
 
 %% @doc Debugging event logging function. For now, it just prints to standard
 %% error.
