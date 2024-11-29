@@ -68,7 +68,7 @@ hashpath_function(Msg) ->
 			fun hb_crypto:sha256_chain/2;
 		{ok, <<"accumulate-256">>} ->
 			fun hb_crypto:accumulate/2;
-		not_found ->
+		{error, not_found} ->
 			fun hb_crypto:sha256_chain/2
 	end.
 
