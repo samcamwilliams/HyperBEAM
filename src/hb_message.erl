@@ -124,6 +124,7 @@ message_to_tx(M) when is_map(M) ->
 	% we recursively turn its children into messages. Notably, we do not simply
 	% call message_to_tx/1 on the inner map because that would lead to adding
 	% an extra layer of nesting to the data.
+	%?event({message_to_tx, {keys, Keys}, {map, M}}),
 	MsgKeyMap =
 		maps:from_list(lists:flatten(
 			lists:map(
@@ -132,22 +133,19 @@ message_to_tx(M) when is_map(M) ->
 						{ok, Map} when is_map(Map) ->
 							{
 								hb_pam:key_to_binary(Key),
-								maps:map(
-									fun(_, InnerValue) ->
-										message_to_tx(InnerValue)
-									end,
-									Map
-								)
+								message_to_tx(Map)
 							};
 						{ok, Value} when is_binary(Value) ->
 							{hb_pam:key_to_binary(Key), Value};
-						{ok, Value} ->
+						{ok, Value} when is_atom(Value) or is_integer(Value) ->
 							ItemKey = hb_pam:key_to_binary(Key),
 							{Type, BinaryValue} = encode_value(Value),
 							[
 								{<<"Type:", ItemKey/binary>>, Type},
 								{ItemKey, BinaryValue}
-							]
+							];
+						{ok, _} ->
+							[]
 					end
 				end,
 				lists:filter(
@@ -162,6 +160,7 @@ message_to_tx(M) when is_map(M) ->
 				)
 			)
 		)),
+	%?event({message_to_tx, MsgKeyMap}),
 	% Get the fields and default values of the tx record.
 	TXFields = record_info(fields, tx),
 	DefaultValues = tl(tuple_to_list(#tx{})),
@@ -170,7 +169,8 @@ message_to_tx(M) when is_map(M) ->
 	% the message map if they are present.
 	{RemainingMap, BaseTXList} = lists:foldl(
 		fun({Field, Default}, {RemMap, Acc}) ->
-			case maps:get(NormKey = hb_pam:key_to_binary(Field), MsgKeyMap, not_found) of
+			NormKey = hb_pam:key_to_binary(Field),
+			case maps:get(NormKey, MsgKeyMap, not_found) of
 				not_found -> {RemMap, [Default | Acc]};
 				Value -> {maps:remove(NormKey, RemMap), [Value | Acc]}
 			end
@@ -196,6 +196,7 @@ message_to_tx(M) when is_map(M) ->
 	% number of keys to short binary values, which will be included as tags.
 	TX = TXWithoutTags#tx { tags = Tags },
 	% Set the data based on the remaining keys.
+	%?event({data_items, {explicit, TX}, DataItems}),
 	TXWithData = case {TX#tx.data, DataItems} of
 		{_, []} ->
 			% There are no remaining data items so we use the default data value.
@@ -217,6 +218,7 @@ message_to_tx(M) when is_map(M) ->
 				}
 			)
 	end,
+	%?event({prepared_tx_before_ids, {explicit, TXWithData}}),
 	ar_bundles:reset_ids(TXWithData);
 message_to_tx(Other) ->
 	?event({unexpected_message_form, {explicit, Other}}),
@@ -234,6 +236,21 @@ decode_value(OtherType, Value) ->
 	?event({unexpected_type, OtherType, Value}),
 	throw({unexpected_type, OtherType, Value}).
 
+%% @doc Convert a term to a typed key.
+to_typed_keys({Key, Value}) ->
+	to_typed_keys(Key, Value).
+to_typed_keys(Key, Value) when is_binary(Value) ->
+	[{Key, Value}];
+to_typed_keys(Key, Value) when is_map(Value) ->
+	[{Key, message_to_tx(Value)}];
+to_typed_keys(Key, Value) ->
+	ItemKey = hb_pam:key_to_binary(Key),
+	{Type, BinaryValue} = encode_value(Value),
+	[
+		{<<"Type:", ItemKey/binary>>, Type},
+		{ItemKey, BinaryValue}
+	].
+
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
@@ -242,7 +259,9 @@ encode_value(Value) when is_integer(Value) ->
 	{<<"decimal">>, Encoded};
 encode_value(Value) when is_atom(Value) ->
 	?no_prod("Non-standardized type conversion invoked."),
-	[EncodedIOList, _] = hb_http_structured_fields:item({item, {string, atom_to_binary(Value, latin1)}, []}),
+	[EncodedIOList, _] =
+		hb_http_structured_fields:item(
+			{item, {string, atom_to_binary(Value, latin1)}, []}),
 	Encoded = list_to_binary(EncodedIOList),
 	{<<"atom">>, Encoded};
 encode_value(Value) ->
@@ -306,7 +325,7 @@ tx_to_message(TX) ->
 			throw(invalid_tx)
 	end.
 
-%%% @doc Unit tests for the module.
+%%% Tests
 
 basic_map_to_tx_test() ->
 	Msg = #{ normal_key => <<"NORMAL_VALUE">> },
@@ -388,6 +407,24 @@ structured_field_atom_parsing_test() ->
 structured_field_decimal_parsing_test() ->
 	Msg = #{ integer_field => 1234567890 },
 	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+nested_structured_fields_test() ->
+	NestedMsg = #{ a => #{ b => 1 } },
+	?assert(
+		present_keys_match(
+			NestedMsg,
+			tx_to_message(message_to_tx(NestedMsg))
+		)
+	).
+
+simplest_nested_message_to_tx_and_back_test() ->
+	Msg = #{ <<"a">> => #{ <<"b">> => <<"1">>, c => <<"2">> }, d => <<"3">> },
+	?assert(
+		present_keys_match(
+			Msg,
+			tx_to_message(message_to_tx(Msg))
+		)
+	).
 
 %% @doc Test that we can convert a nested message into a tx record and back.
 nested_message_to_tx_and_back_test() ->
