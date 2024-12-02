@@ -442,7 +442,9 @@ enforce_valid_tx(TX) ->
 			ok_or_throw(TX,
 				check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
 				{invalid_field, tag_value, Value}
-			)
+			);
+			(InvalidTagForm) ->
+				throw({invalid_field, tag, InvalidTagForm})
 		end,
 		TX#tx.tags
 	),
@@ -554,8 +556,8 @@ serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
 serialize_bundle_data(List, _Manifest) when is_list(List) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List));
-serialize_bundle_data(_Data, _Manifest) ->
-    throw({cannot_serialize_tx_data, must_be_map_or_list}).
+serialize_bundle_data(Data, _Manifest) ->
+    throw({cannot_serialize_tx_data, must_be_map_or_list, Data}).
 
 new_manifest(Index) ->
     TX = normalize(#tx{
