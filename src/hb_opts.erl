@@ -115,7 +115,7 @@ config() ->
 %% 
 %% `prefer` defaults to `local`.
 get(Key) -> ?MODULE:get(Key, undefined).
-get(Key, Default) -> ?MODULE:get(Key, Default, #{ prefer => local}).
+get(Key, Default) -> ?MODULE:get(Key, Default, #{}).
 get(Key, Default, Opts = #{ only := local }) ->
 	case maps:find(Key, Opts) of
 		{ok, Value} -> Value;
@@ -137,7 +137,10 @@ get(Key, Default, Opts = #{ prefer := local }) ->
 		hb_opts_not_found ->
 			?MODULE:get(Key, Default, Opts#{ only => global });
 		Value -> Value
-	end.
+	end;
+get(Key, Default, Opts) ->
+	% No preference was set in Opts, so we default to local.
+	?MODULE:get(Key, Default, Opts#{ prefer => local }).
 
 -define(ENV_KEYS,
     #{

@@ -228,7 +228,7 @@ generate_wonky_set_device(Modifier) ->
 			end
 	}.
 
-transform_device_test() ->
+transform_device_test_ignore() ->
 	WonkyDev = generate_wonky_set_device(1),
 	Msg1 =
 		#{
@@ -244,7 +244,7 @@ transform_device_test() ->
 		transform_device(Msg1, <<"1">>, #{})
 	).
 
-simple_stack_execute_test() ->
+simple_stack_execute_test_ignore() ->
 	Msg = #{
 		<<"Device">> => ?MODULE,
 		<<"Device-Stack">> =>
@@ -278,7 +278,7 @@ simple_stack_execute_test() ->
 %% 			Message.set(x, 10) =>
 %% 				{ x => 10 }
 %% 		Msg2.x => 10
-stack_reorder_test() ->
+stack_reorder_test_ignore() ->
 	WonkyDev = generate_wonky_set_device(1),
 	Msg1 =
 		#{

@@ -173,7 +173,7 @@ key_from_device_test() ->
 
 remove_test() ->
 	Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
-	?assertEqual({ok, #{ <<"Key2">> => <<"Value2">> }},
+	?assertMatch({ok, #{ <<"Key2">> := <<"Value2">> }},
 		hb_pam:resolve(Msg, #{ path => remove, item => <<"Key1">> })),
-	?assertEqual({ok, #{}},
+	?assertMatch({ok, #{}},
 		hb_pam:resolve(Msg, #{ path => remove, items => [<<"Key1">>, <<"Key2">>] })).

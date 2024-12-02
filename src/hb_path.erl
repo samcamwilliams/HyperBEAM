@@ -51,14 +51,8 @@ push_hashpath(Msg, Msg2ID) ->
 		" invoked with it."),
 	MsgHashpath = from_message(hashpath, Msg),
 	HashpathFun = hashpath_function(Msg),
-	?event({adding_to_hashpath, {msg, Msg}, {msg2id, Msg2ID}, {hashpath_fun, HashpathFun}}),
 	NewHashpath = HashpathFun(hb_util:native_id(MsgHashpath), hb_util:native_id(Msg2ID)),
-	{ok, TransformedMsg} =
-		dev_message:set(
-			Msg,
-			#{ hashpath => hb_util:human_id(NewHashpath) },
-			#{}
-		),
+	TransformedMsg = Msg#{ hashpath => hb_util:human_id(NewHashpath) },
 	?event({created_new_hashpath,
 		{msg1, hb_util:human_id(MsgHashpath)},
 		{msg2id, hb_util:human_id(Msg2ID)},
