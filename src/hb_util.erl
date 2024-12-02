@@ -1,5 +1,5 @@
 -module(hb_util).
--export([id/1, id/2]).
+-export([id/1, id/2, native_id/1, human_id/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
@@ -35,6 +35,20 @@ to_lower(Str) when is_list(Str) ->
 	string:to_lower(Str);
 to_lower(Bin) when is_binary(Bin) ->
 	list_to_binary(to_lower(binary_to_list(Bin))).
+
+%% @doc Convert a human readable ID to a native binary ID. If the ID is already
+%% a native binary ID, it is returned as is.
+native_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+	decode(Bin);
+native_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+	Bin.
+
+%% @doc Convert a native binary ID to a human readable ID. If the ID is already
+%% a human readable ID, it is returned as is.
+human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+	encode(Bin);
+human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+	Bin.
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->

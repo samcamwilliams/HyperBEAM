@@ -4,6 +4,7 @@
 -export([verify_hashpath/3]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module provides utilities for manipulating the paths of a
 %%% message: Its request path (referred to in messages as just the `Path`), and
@@ -50,13 +51,19 @@ push_hashpath(Msg, Msg2ID) ->
 		" invoked with it."),
 	MsgHashpath = from_message(hashpath, Msg),
 	HashpathFun = hashpath_function(Msg),
-	NewHashpath = HashpathFun(MsgHashpath, Msg2ID),
+	?event({adding_to_hashpath, {msg, Msg}, {msg2id, Msg2ID}, {hashpath_fun, HashpathFun}}),
+	NewHashpath = HashpathFun(hb_util:native_id(MsgHashpath), hb_util:native_id(Msg2ID)),
 	{ok, TransformedMsg} =
 		dev_message:set(
 			Msg,
-			#{ hashpath => NewHashpath },
+			#{ hashpath => hb_util:human_id(NewHashpath) },
 			#{}
 		),
+	?event({created_new_hashpath,
+		{msg1, hb_util:human_id(MsgHashpath)},
+		{msg2id, hb_util:human_id(Msg2ID)},
+		{new_hashpath, hb_util:human_id(NewHashpath)}
+	}),
 	TransformedMsg.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
@@ -96,20 +103,23 @@ verify_hashpath(InitialMsg, CurrentMsg, MsgList) when is_map(InitialMsg) ->
 verify_hashpath(InitialMsgID, CurrentMsg, MsgList) ->
 	?no_prod("Must trace if the Hashpath-Alg has changed between messages."),
 	HashpathFun = hashpath_function(CurrentMsg),
-	lists:foldl(
-		fun(MsgApplied, Acc) ->
-			MsgID =
-				case is_map(MsgApplied) of
-					true ->
-						{ok, ID} = dev_message:unsigned_id(MsgApplied),
-						ID;
-					false -> MsgApplied
-				end,
-			HashpathFun(Acc, MsgID)
-		end,
-		InitialMsgID,
-		MsgList
-	).
+	CalculatedHashpath =
+		lists:foldl(
+			fun(MsgApplied, Acc) ->
+				MsgID =
+					case is_map(MsgApplied) of
+						true ->
+							{ok, ID} = dev_message:unsigned_id(MsgApplied),
+							ID;
+						false -> MsgApplied
+					end,
+				HashpathFun(hb_util:native_id(Acc), hb_util:native_id(MsgID))
+			end,
+			InitialMsgID,
+			MsgList
+		),
+	CurrentHashpath = from_message(hashpath, CurrentMsg),
+	hb_util:human_id(CalculatedHashpath) == hb_util:human_id(CurrentHashpath).
 
 %% @doc Extract the request path or hashpath from a message. We do not use
 %% PAM for this resolution because this function is called from inside PAM 
@@ -123,7 +133,7 @@ from_message(hashpath, Msg) ->
 	?no_prod("We should use the signed ID if the message is being"
 		" invoked with it."),
 	{ok, Path} = dev_message:unsigned_id(Msg),
-	term_to_path(Path);
+	hd(term_to_path(Path));
 from_message(request, #{ path := Path }) ->
 	term_to_path(Path);
 from_message(request, Msg) ->
@@ -151,3 +161,29 @@ term_to_path(Binary, Opts) when is_binary(Binary) ->
 term_to_path(List, Opts) when is_list(List) ->
 	lists:map(fun(Part) -> hb_pam:to_key(Part, Opts) end, List);
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
+
+%%% TESTS
+
+push_hashpath_test() ->
+	Msg1 = #{ <<"empty">> => <<"message">> },
+	Msg2 = #{ <<"exciting">> => <<"message2">> },
+	Msg3 = push_hashpath(Msg1, Msg2),
+	?assert(is_binary(maps:get(hashpath, Msg3))).
+
+push_multiple_hashpaths_test() ->
+	Msg1 = #{ <<"empty">> => <<"message">> },
+	Msg2 = #{ <<"exciting">> => <<"message2">> },
+	Msg3 = push_hashpath(Msg1, Msg2),
+	Msg4 = #{ <<"exciting">> => <<"message4">> },
+	Msg5 = push_hashpath(Msg3, Msg4),
+	?assert(is_binary(maps:get(hashpath, Msg5))).
+
+verify_hashpath_test() ->
+	Msg1 = #{ <<"empty">> => <<"message">> },
+	MsgB1 = #{ <<"exciting1">> => <<"message1">> },
+	MsgB2 = #{ <<"exciting2">> => <<"message2">> },
+	MsgB3 = #{ <<"exciting3">> => <<"message3">> },
+	MsgR1 = push_hashpath(Msg1, MsgB1),
+	MsgR2 = push_hashpath(MsgR1, MsgB2),
+	MsgR3 = push_hashpath(MsgR2, MsgB3),
+	?assert(verify_hashpath(Msg1, MsgR3, [MsgB1, MsgB2, MsgB3])).
