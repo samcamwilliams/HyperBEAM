@@ -298,11 +298,7 @@ message_to_tx(M) when is_map(M) ->
 		end,
 		RawDataItems
 	)),
-	?event({turned_data_items_into_map, {raw_data_items, RawDataItems}, {data_items, DataItems}}),
 	% Set the data based on the remaining keys.
-	?event({tags, {explicit, Tags}, {data_items, DataItems},
-		{has_data, TX#tx.data == ?DEFAULT_DATA}, {data_is_tx, is_record(TX#tx.data, tx)}
-	}),
 	TXWithData = 
 		case {TX#tx.data, maps:size(DataItems)} of
 			{Binary, 0} when is_binary(Binary) ->
@@ -316,13 +312,11 @@ message_to_tx(M) when is_map(M) ->
 			{Data, _} when is_binary(Data) ->
 				TX#tx { data = DataItems#{ data => message_to_tx(Data) } }
 		end,
-	?event({prepared_tx_before_ids,
-		{tags, {explicit, TXWithData#tx.tags}},
-		{data, TXWithData#tx.data}
-	}),
-	ResTX = ar_bundles:reset_ids(ar_bundles:normalize(TXWithData)),
-	?event({resulting_tx, ResTX}),
-	ResTX;
+	% ?event({prepared_tx_before_ids,
+	% 	{tags, {explicit, TXWithData#tx.tags}},
+	% 	{data, TXWithData#tx.data}
+	% }),
+	ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
 message_to_tx(Other) ->
 	?event({unexpected_message_form, {explicit, Other}}),
 	throw(invalid_tx).
