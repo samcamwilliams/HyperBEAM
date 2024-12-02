@@ -20,8 +20,17 @@
 %% tag.
 -define(MAX_TAG_VAL, 128).
 %% @doc The list of TX fields that users can set directly.
--define(USER_TX_KEYS,
-	[id, unsigned_id, last_tx, owner, target, data, signature]).
+-define(TX_KEYS,
+	[id, unsigned_id, last_tx, owner, target, signature]).
+-define(FILTERED_TAGS,
+	[
+		<<"PAM-Large-Binary">>,
+		<<"Bundle-Format">>,
+		<<"Bundle-Map">>,
+		<<"Bundle-Version">>,
+		<<"Type:">>
+	]
+).
 -define(REGEN_KEYS, [id, unsigned_id]).
 
 %% @doc Pretty-print a message.
@@ -91,6 +100,94 @@ load(Store, ID) when is_binary(ID)
 load(Store, Path) ->
 	hb_cache:read(Store, Path).
 
+%% @doc Check if two maps match, including recursively checking nested maps.
+match(Map1, Map2) ->
+	Keys1 = maps:keys(NormMap1 = minimize(normalize(Map1))),
+	Keys2 = maps:keys(NormMap2 = minimize(normalize(Map2))),
+	case Keys1 == Keys2 of
+		true ->
+			lists:all(
+				fun(Key) ->
+					Val1 = maps:get(Key, NormMap1, not_found),
+					Val2 = maps:get(Key, NormMap2, not_found),
+					case is_map(Val1) andalso is_map(Val2) of
+						true -> match(Val1, Val2);
+						false ->
+							case Val1 == Val2 of
+								true -> true;
+								false ->
+									?event(
+										{key_mismatch,
+											{explicit, {Key, Val1, Val2}}
+										}
+									),
+									false
+							end
+					end
+				end,
+				Keys1
+			);
+		false ->
+			?event({keys_mismatch, Keys1, Keys2}),
+			false
+	end.
+	
+matchable_keys(Map) ->
+	lists:sort(lists:map(fun hb_pam:key_to_binary/1, maps:keys(Map))).
+
+%% @doc Normalize the keys in a map. Also takes a list of keys and returns a
+%% sorted list of normalized keys if the input is a list.
+normalize_keys(Keys) when is_list(Keys) ->
+	lists:sort(lists:map(fun hb_pam:key_to_binary/1, Keys));
+normalize_keys(Map) ->
+	maps:from_list(
+		lists:map(
+			fun({Key, Value}) ->
+				{hb_pam:key_to_binary(Key), Value}
+			end,
+			maps:to_list(Map)
+		)
+	).
+
+%% @doc Remove keys from the map that can be regenerated.
+minimize(Map) ->
+	NormRegenKeys = normalize_keys(?REGEN_KEYS),
+	maps:filter(
+		fun(Key, _) ->
+			not lists:member(hb_pam:key_to_binary(Key), NormRegenKeys)
+		end,
+		Map
+	).
+
+%% @doc Return a map with only the keys that necessary, without those that can
+%% be regenerated.
+normalize(Map) ->
+	NormalizedMap = normalize_keys(Map),
+	FilteredMap = filter_default_tx_keys(NormalizedMap),
+	maps:with(matchable_keys(FilteredMap), FilteredMap).
+
+%% @doc Remove keys from a map that have the default values found in the tx
+%% record.
+filter_default_tx_keys(Map) ->
+	DefaultsMap = default_tx_message(),
+	maps:filter(
+		fun(Key, Value) ->
+			case maps:find(hb_pam:key_to_binary(Key), DefaultsMap) of
+				{ok, Value} -> false;
+				_ -> true
+			end
+		end,
+		Map
+	).
+
+%% @doc Get the normalized fields and default values of the tx record.
+default_tx_message() ->
+	normalize_keys(maps:from_list(default_tx_list())).
+
+%% @doc Get the ordered list of fields and default values of the tx record.
+default_tx_list() ->
+	lists:zip(record_info(fields, tx), tl(tuple_to_list(#tx{}))).
+
 %% @doc Serialize a message to a binary representation, either as JSON or the
 %% binary format native to the message/bundles spec in use.
 serialize(M) -> serialize(M, binary).
@@ -113,7 +210,13 @@ deserialize(B, binary) ->
 %% do this recursively to handle nested messages. The base case is that we hit
 %% a binary, which we return as is.
 message_to_tx(Binary) when is_binary(Binary) ->
-	Binary;
+	% ar_bundles cannot serialize just a simple binary or get an ID for it, so
+	% so we turn it into a TX record with a special tag, tx_to_message will
+	% identify this tag and extract just the binary.
+	#tx{
+		tags= [{<<"PAM-Large-Binary">>, integer_to_binary(byte_size(Binary))}],
+		data = Binary
+	};
 message_to_tx(TX) when is_record(TX, tx) -> TX;
 message_to_tx(M) when is_map(M) ->
 	% Get the keys that will be serialized, excluding private keys. Note that
@@ -131,12 +234,9 @@ message_to_tx(M) when is_map(M) ->
 				fun(Key) ->
 					case maps:find(Key, M) of
 						{ok, Map} when is_map(Map) ->
-							{
-								hb_pam:key_to_binary(Key),
-								message_to_tx(Map)
-							};
+							{Key, message_to_tx(Map)};
 						{ok, Value} when is_binary(Value) ->
-							{hb_pam:key_to_binary(Key), Value};
+							{Key, Value};
 						{ok, Value} when is_atom(Value) or is_integer(Value) ->
 							ItemKey = hb_pam:key_to_binary(Key),
 							{Type, BinaryValue} = encode_value(Value),
@@ -160,28 +260,24 @@ message_to_tx(M) when is_map(M) ->
 				)
 			)
 		)),
-	%?event({message_to_tx, MsgKeyMap}),
-	% Get the fields and default values of the tx record.
-	TXFields = record_info(fields, tx),
-	DefaultValues = tl(tuple_to_list(#tx{})),
-	DefaultTXList = lists:zip(TXFields, DefaultValues),
+	NormalizedMsgKeyMap = normalize_keys(MsgKeyMap),
 	% Iterate through the default fields, replacing them with the values from
 	% the message map if they are present.
 	{RemainingMap, BaseTXList} = lists:foldl(
 		fun({Field, Default}, {RemMap, Acc}) ->
 			NormKey = hb_pam:key_to_binary(Field),
-			case maps:get(NormKey, MsgKeyMap, not_found) of
-				not_found -> {RemMap, [Default | Acc]};
-				Value -> {maps:remove(NormKey, RemMap), [Value | Acc]}
+			case maps:find(NormKey, NormalizedMsgKeyMap) of
+				error -> {RemMap, [Default | Acc]};
+				{ok, Value} -> {maps:remove(NormKey, RemMap), [Value | Acc]}
 			end
 		end,
-		{MsgKeyMap, []},
-		DefaultTXList
+		{NormalizedMsgKeyMap, []},
+		default_tx_list()
 	),
 	% Rebuild the tx record from the new list of fields and values.
 	TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
 	% Calculate which set of the remaining keys will be used as tags.
-	{Tags, DataItems} =
+	{Tags, RawDataItems} =
 		lists:partition(
 			fun({_Key, Value}) when byte_size(Value) =< ?MAX_TAG_VAL -> true;
 				(_) -> false
@@ -195,31 +291,38 @@ message_to_tx(M) when is_map(M) ->
 	% We don't let the user set the tags directly, but they can instead set any
 	% number of keys to short binary values, which will be included as tags.
 	TX = TXWithoutTags#tx { tags = Tags },
+	% Recursively turn the remaining data items into tx records.
+	DataItems = maps:from_list(lists:map(
+		fun({Key, Value}) ->
+			{Key, message_to_tx(Value)}
+		end,
+		RawDataItems
+	)),
+	?event({turned_data_items_into_map, {raw_data_items, RawDataItems}, {data_items, DataItems}}),
 	% Set the data based on the remaining keys.
-	%?event({data_items, {explicit, TX}, DataItems}),
-	TXWithData = case {TX#tx.data, DataItems} of
-		{_, []} ->
-			% There are no remaining data items so we use the default data value.
-			TX;
-		{?DEFAULT_DATA, _} ->
-			% The user didn't set the data field and there are remaining data
-			% items so we use those as the data.
-			TX#tx { data = maps:from_list(DataItems) };
-		{Data, _} when is_map(Data) ->
-			% The user already set some data and there are remaining data items
-			% so we merge the two.
-			TX#tx { data = maps:merge(Data, maps:from_list(DataItems)) };
-		{Data, _} ->
-			% This should not happen.
-			throw(
-				{incompatible_data_and_keys,
-					{data, Data},
-					{keys, maps:keys(RemainingMap)}
-				}
-			)
-	end,
-	%?event({prepared_tx_before_ids, {explicit, TXWithData}}),
-	ar_bundles:reset_ids(TXWithData);
+	?event({tags, {explicit, Tags}, {data_items, DataItems},
+		{has_data, TX#tx.data == ?DEFAULT_DATA}, {data_is_tx, is_record(TX#tx.data, tx)}
+	}),
+	TXWithData = 
+		case {TX#tx.data, maps:size(DataItems)} of
+			{Binary, 0} when is_binary(Binary) ->
+				TX;
+			{?DEFAULT_DATA, _} ->
+				TX#tx { data = DataItems };
+			{Data, _} when is_map(Data) ->
+				TX#tx { data = maps:merge(Data, DataItems) };
+			{Data, _} when is_record(Data, tx) ->
+				TX#tx { data = DataItems#{ data => Data } };
+			{Data, _} when is_binary(Data) ->
+				TX#tx { data = DataItems#{ data => message_to_tx(Data) } }
+		end,
+	?event({prepared_tx_before_ids,
+		{tags, {explicit, TXWithData#tx.tags}},
+		{data, TXWithData#tx.data}
+	}),
+	ResTX = ar_bundles:reset_ids(ar_bundles:normalize(TXWithData)),
+	?event({resulting_tx, ResTX}),
+	ResTX;
 message_to_tx(Other) ->
 	?event({unexpected_message_form, {explicit, Other}}),
 	throw(invalid_tx).
@@ -269,7 +372,16 @@ encode_value(Value) ->
 
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
-tx_to_message(TX) ->
+tx_to_message(TX) when is_record(TX, tx) ->
+	case lists:keyfind(<<"PAM-Large-Binary">>, 1, TX#tx.tags) of
+		false ->
+			do_tx_to_message(TX);
+		{_, _Size} ->
+			TX#tx.data
+	end.
+do_tx_to_message(RawTX) ->
+	% Ensure the TX is fully deserialized.
+	TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
 	% We need to generate a map from each field of the tx record.
 	% Get the raw fields and values of the tx record and pair them.
 	Fields = record_info(fields, tx),
@@ -277,9 +389,20 @@ tx_to_message(TX) ->
 	TXKeyVals = lists:zip(Fields, Values),
 	% Convert the list of key-value pairs into a map.
 	UnfilteredTXMap = maps:from_list(TXKeyVals),
-	TXMap = maps:with(?USER_TX_KEYS, UnfilteredTXMap),
-	{TXTagsUnparsed, TypeTagPairs} = lists:partition(
-		fun({<<"Type:", _/binary>>, _}) -> false;
+	TXMap = maps:with(?TX_KEYS, UnfilteredTXMap),
+	{TXTagsUnparsed, FilteredTags} = lists:partition(
+		fun({Key, _}) ->
+			not lists:any(
+				fun(FilterKey) ->
+					case binary:longest_common_prefix([Key, FilterKey]) of
+						Length when Length == byte_size(FilterKey) ->
+							true;
+						_ ->
+							false
+					end
+				end,
+				?FILTERED_TAGS
+			);
 			(_) -> true
 		end,
 		TX#tx.tags
@@ -289,7 +412,7 @@ tx_to_message(TX) ->
 		[
 			{Name, binary_to_existing_atom(Value, latin1)}
 		||
-			{<<"Type:", Name/binary>>, Value} <- TypeTagPairs
+			{<<"Type:", Name/binary>>, Value} <- FilteredTags
 		],
 	TXTags =
 		lists:map(
@@ -304,26 +427,31 @@ tx_to_message(TX) ->
 	% Next, merge the tags into the map.
 	MapWithoutData = maps:merge(TXMap, maps:from_list(TXTags)),
 	% Finally, merge the data into the map.
-	case TX#tx.data of
-		Data when is_map(Data) ->
-			% If the data is a map, we need to recursively turn its children
-			% into messages from their tx representations.
-			MapWithoutData#{
-				data =>
+	normalize(
+		case TX#tx.data of
+			Data when is_map(Data) ->
+				% If the data is a map, we need to recursively turn its children
+				% into messages from their tx representations.
+				?event({merging_map_and_data, MapWithoutData, Data}),
+				maps:merge(
+					MapWithoutData,
 					maps:map(
 						fun(_, InnerValue) ->
 							tx_to_message(InnerValue)
 						end,
 						Data
 					)
-			};
-		Data when is_binary(Data) ->
-			MapWithoutData#{ data => Data };
-		Data ->
-			?event({unexpected_data_type, {explicit, Data}}),
-			?event({was_processing, {explicit, TX}}),
-			throw(invalid_tx)
-	end.
+				);
+			Data when Data == ?DEFAULT_DATA ->
+				MapWithoutData;
+			Data when is_binary(Data) ->
+				MapWithoutData#{ data => Data };
+			Data ->
+				?event({unexpected_data_type, {explicit, Data}}),
+				?event({was_processing, {explicit, TX}}),
+				throw(invalid_tx)
+		end
+	).
 
 %%% Tests
 
@@ -331,6 +459,33 @@ basic_map_to_tx_test() ->
 	Msg = #{ normal_key => <<"NORMAL_VALUE">> },
 	TX = message_to_tx(Msg),
 	?assertEqual([{<<"normal_key">>, <<"NORMAL_VALUE">>}], TX#tx.tags).
+
+%% @doc Test that the filter_default_tx_keys/1 function removes TX fields
+%% that have the default values found in the tx record, but not those that
+%% have been set by the user.
+default_tx_keys_removed_test() ->
+	TX = #tx { unsigned_id = << 1:256 >>, last_tx = << 2:256 >> },
+	TXMap = #{
+		unsigned_id => TX#tx.unsigned_id,
+		last_tx => TX#tx.last_tx,
+		<<"owner">> => TX#tx.owner,
+		<<"target">> => TX#tx.target,
+		data => TX#tx.data
+	},
+	FilteredMap = filter_default_tx_keys(TXMap),
+	?assertEqual(<< 1:256 >>, maps:get(unsigned_id, FilteredMap)),
+	?assertEqual(<< 2:256 >>, maps:get(last_tx, FilteredMap, not_found)),
+	?assertEqual(not_found, maps:get(<<"owner">>, FilteredMap, not_found)),
+	?assertEqual(not_found, maps:get(<<"target">>, FilteredMap, not_found)).
+
+minimization_test() ->
+	Msg = #{
+		unsigned_id => << 1:256 >>,
+		<<"id">> => << 2:256 >>
+	},
+	MinimizedMsg = minimize(Msg),
+	?event({minimized, MinimizedMsg}),
+	?assertEqual(0, maps:size(MinimizedMsg)).
 
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_tx_test() ->
@@ -342,6 +497,7 @@ single_layer_message_to_tx_test() ->
 		<<"Special-Key">> => <<"SPECIAL_VALUE">>
 	},
 	TX = message_to_tx(Msg),
+	?event({tx_to_message, {msg, Msg}, {tx, TX}}),
 	?assertEqual(maps:get(last_tx, Msg), TX#tx.last_tx),
 	?assertEqual(maps:get(owner, Msg), TX#tx.owner),
 	?assertEqual(maps:get(target, Msg), TX#tx.target),
@@ -352,7 +508,6 @@ single_layer_message_to_tx_test() ->
 %% @doc Test that we can convert a #tx record into a message correctly.
 single_layer_tx_to_message_test() ->
 	TX = #tx {
-		id = << 0:256 >>,
 		unsigned_id = << 1:256 >>,
 		last_tx = << 2:256 >>,
 		owner = << 3:256 >>,
@@ -362,83 +517,136 @@ single_layer_tx_to_message_test() ->
 	},
 	Msg = tx_to_message(TX),
 	?assertEqual(maps:get(<<"special_key">>, Msg), <<"SPECIAL_KEY">>),
-	?assertEqual(maps:get(data, Msg), <<"DATA">>),
-	?assertEqual(maps:get(id, Msg), << 0:256 >>),
-	?assertEqual(maps:get(unsigned_id, Msg), << 1:256 >>),
-	?assertEqual(maps:get(last_tx, Msg), << 2:256 >>),
-	?assertEqual(maps:get(owner, Msg), << 3:256 >>),
-	?assertEqual(maps:get(target, Msg), << 4:256 >>).
+	?assertEqual(<< "DATA">>, maps:get(<<"data">>, Msg)),
+	?assertEqual(<< 2:256 >>, maps:get(<<"last_tx">>, Msg)),
+	?assertEqual(<< 3:256 >>, maps:get(<<"owner">>, Msg)),
+	?assertEqual(<< 4:256 >>, maps:get(<<"target">>, Msg)).
 
-%% @doc Test that the keys that are present in both maps match. If a key has a
-%% value that is a map, we recursively check that the keys in the nested map
-%% match.
-present_keys_match(Map1, Map2) ->
-	Keys1 = maps:keys(Map1),
-	Keys2 = maps:keys(Map2),
-	lists:all(
-		fun(Key) ->
-			Val1 = maps:get(Key, Map1, not_found),
-			Val2 = maps:get(Key, Map2, not_found),
-			case is_map(Val1) andalso is_map(Val2) of
-				true -> present_keys_match(Val1, Val2);
-				false ->
-					case Val1 == Val2 of
-						true -> true;
-						false ->
-							?event({key_mismatch, {explicit, {Key, Val1, Val2}}}),
-							false
-					end
-			end
-		end,
-		lists:filter(fun(Key) -> lists:member(Key, Keys2) end, Keys1)
-	).
+%% @doc Test that the message matching function works.
+match_test() ->
+	Msg = #{ a => 1, b => 2 },
+	TX = message_to_tx(Msg),
+	Msg2 = tx_to_message(TX),
+	?assert(match(Msg, Msg2)).
 
 %% @doc Test that two txs match. Note: This function uses tx_to_message/1
 %% underneath, which (depending on the test) could potentially lead to false
 %% positives.
 txs_match(TX1, TX2) ->
-	present_keys_match(tx_to_message(TX1), tx_to_message(TX2)).
+	match(tx_to_message(TX1), tx_to_message(TX2)).
 
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test() ->
 	Msg = #{ highly_unusual_http_header => highly_unusual_value },
-	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
+	?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
 
 structured_field_decimal_parsing_test() ->
 	Msg = #{ integer_field => 1234567890 },
-	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
+	?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
 
-nested_structured_fields_test() ->
-	NestedMsg = #{ a => #{ b => 1 } },
-	?assert(
-		present_keys_match(
-			NestedMsg,
-			tx_to_message(message_to_tx(NestedMsg))
-		)
-	).
+binary_to_binary_test() ->
+	% Serialization must be able to turn a raw binary into a TX, then turn
+	% that TX back into a binary and have the result match the original.
+	Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
+	Msg = message_to_tx(Bin),
+	?assertEqual(Bin, tx_to_message(Msg)).
 
-simplest_nested_message_to_tx_and_back_test() ->
-	Msg = #{ <<"a">> => #{ <<"b">> => <<"1">>, c => <<"2">> }, d => <<"3">> },
+%% @doc Test that the data field is correctly managed when we have multiple
+%% uses for it (the 'data' key itself, as well as keys that cannot fit in
+%% tags).
+message_with_large_keys_test() ->
+	Msg = #{
+		<<"normal_key">> => <<"normal_value">>,
+		<<"large_key">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
+		<<"another_large_key">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
+		<<"another_normal_key">> => <<"another_normal_value">>
+	},
+	?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+%% @doc Check that large keys and data fields are correctly handled together.
+nested_message_with_large_keys_and_data_test() ->
+	Msg = #{
+		<<"normal_key">> => <<"normal_value">>,
+		<<"large_key">> => << 0:(?MAX_TAG_VAL * 16) >>,
+		<<"another_large_key">> => << 0:(?MAX_TAG_VAL * 16) >>,
+		<<"another_normal_key">> => <<"another_normal_value">>,
+		data => <<"Hey from the data field!">>
+	},
+	TX = message_to_tx(Msg),
+	Msg2 = tx_to_message(TX),
+	?event({matching, {input, Msg}, {tx, TX}, {output, Msg2}}),
+	?assert(match(Msg, Msg2)).
+
+simple_nested_message_test() ->
+	Msg = #{
+		a => <<"1">>,
+		nested => #{ <<"b">> => <<"1">> },
+		c => <<"3">>
+	},
+	TX = message_to_tx(Msg),
+	Msg2 = tx_to_message(TX),
+	?event({matching, {input, Msg}, {output, Msg2}}),
 	?assert(
-		present_keys_match(
+		match(
 			Msg,
-			tx_to_message(message_to_tx(Msg))
+			Msg2
 		)
 	).
 
-%% @doc Test that we can convert a nested message into a tx record and back.
-nested_message_to_tx_and_back_test() ->
+%% @doc Test that the data field is correctly managed when we have multiple
+%% uses for it (the 'data' key itself, as well as keys that cannot fit in
+%% tags).
+nested_message_with_large_data_test() ->
 	Msg = #{
 		<<"tx_depth">> => <<"outer">>,
 		data => #{
 			<<"tx_map_item">> =>
 				#{
 					<<"tx_depth">> => <<"inner">>,
-					data => <<"DATA">>
+					<<"large_data_inner">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>
+				},
+			<<"large_data_outer">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>
+		}
+	},
+	?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+%% @doc Test that we can convert a 3 layer nested message into a tx record and back.
+deeply_nested_message_with_data_test() ->
+	Msg = #{
+		<<"tx_depth">> => <<"outer">>,
+		data => #{
+			<<"tx_map_item">> =>
+				#{
+					<<"tx_depth">> => <<"inner">>,
+					data => #{
+						<<"tx_depth">> => <<"innermost">>,
+						data => <<"DATA">>
+					}
 				}
 		}
 	},
-	?assert(present_keys_match(Msg, tx_to_message(message_to_tx(Msg)))).
+	?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+
+nested_structured_fields_test() ->
+	NestedMsg = #{ a => #{ b => 1 } },
+	?assert(
+		match(
+			NestedMsg,
+			tx_to_message(message_to_tx(NestedMsg))
+		)
+	).
+
+nested_message_with_large_keys_test() ->
+	Msg = #{
+		a => <<"1">>,
+		long_data => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
+		nested => #{ <<"b">> => <<"1">> },
+		c => <<"3">>
+	},
+	ResMsg = tx_to_message(message_to_tx(Msg)),
+	?event({matching, {input, Msg}, {output, ResMsg}}),
+	?assert(match(Msg, ResMsg)).
 
 %% @doc Test that we can convert a signed tx into a message and back.
 signed_tx_to_message_and_back_test() ->
@@ -451,28 +659,6 @@ signed_tx_to_message_and_back_test() ->
 	SignedMsg = tx_to_message(SignedTX),
 	SignedTX2 = message_to_tx(SignedMsg),
 	?assert(ar_bundles:verify_item(SignedTX2)).
-
-signed_deep_tx_to_message_and_back_test() ->
-	TX = #tx {
-		tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}],
-		data = #{
-			<<"NESTED_TX">> =>
-				#tx {
-					data = <<"NESTED_DATA">>,
-					tags = [{<<"NESTED_KEY">>, <<"NESTED_VALUE">>}]
-				}
-		}
-	},
-	SignedTX =
-		ar_bundles:deserialize(
-			ar_bundles:sign_item(TX, hb:wallet())
-		),
-	?assert(ar_bundles:verify_item(SignedTX)),
-	SignedMsg = tx_to_message(SignedTX),
-	SignedTX2 = message_to_tx(SignedMsg),
-	?assert(
-		txs_match(SignedTX, SignedTX2)
-	).
 
 signed_deep_tx_serialize_and_deserialize_test() ->
 	TX = #tx {
@@ -492,7 +678,7 @@ signed_deep_tx_serialize_and_deserialize_test() ->
 	SerializedTX = serialize(SignedTX),
 	DeserializedTX = deserialize(SerializedTX),
 	?assert(
-		present_keys_match(
+		match(
 			tx_to_message(SignedTX),
 			DeserializedTX
 		)
