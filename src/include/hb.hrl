@@ -1,5 +1,8 @@
 -include("include/ar.hrl").
 
+%% @doc A macro for checking if a message is empty, ignoring its hashpath.
+-define(IS_EMPTY_MESSAGE(Msg), (map_size(Msg) == 1 andalso is_map_key(hashpath, Msg))).
+
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
 -define(event(X), hb:event(X, ?MODULE, ?LINE)).

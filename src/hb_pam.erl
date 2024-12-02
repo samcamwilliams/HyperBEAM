@@ -134,15 +134,20 @@ handle_resolved_result(Msg3, _Msg2, #{ hashpath := ignore }) ->
 	?event({ignoring_hashpath_add, {msg3, Msg3}}),
 	list_to_tuple(Msg3);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
-	?event({pushing_hashpath_onto, {msg3, Msg3Raw}, {msg2, Msg2}, {opts, Opts}}),
-	Msg3 = Msg3Raw,
-	%Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
+	?event({pushing_hashpath_onto, {msg3, {explicit, Msg3Raw}}, {msg2, Msg2}, {opts, Opts}}),
+	Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
 	?no_prod("For now we are forcing the message to be written as an ANS-104"
 		" message."),
-	hb_cache:write(
-		hb_opts:get(store, no_valid_store, Opts),
-	 	hb_message:message_to_tx(Msg3)
-	),
+	case hb_opts:get(cache_results, true, Opts) of
+		true ->
+			hb_cache:write(
+				hb_opts:get(store, no_valid_store, Opts),
+				hb_message:message_to_tx(Msg3)
+			);
+		false ->
+			?event(ignoring_cache_write),
+			ok
+	end,
 	list_to_tuple([ok, Msg3 | Rest]).
 
 %% @doc Shortcut for resolving a key in a message without its 
@@ -173,17 +178,18 @@ keys(Msg, Opts) -> get(keys, Msg, Opts).
 %% `HashPath` for each step.
 set(Msg1, Msg2) ->
 	set(Msg1, Msg2, #{}).
-set(Msg1, Msg2, _Opts) when map_size(Msg2) == 0 -> 
-	% When the msg2 is empty, we do not need to set anything.
-	Msg1;
 set(Msg1, Msg2, Opts) when is_map(Msg2) ->
-	%?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
-	% First, get the first key and value to set.
-	Key = hd(keys(Msg2, Opts)),
-	Val = get(Key, Msg2, Opts),
-	%?event({got_val_to_set, {key, Key}, {val, Val}}),
-	% Then, set the key and recurse, removing the key from the Msg2.
-	set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts).
+	?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
+	case ?IS_EMPTY_MESSAGE(Msg2) of
+		true -> Msg1;
+		false ->
+			% First, get the first key and value to set.
+			Key = hd(keys(Msg2, Opts#{ hashpath => ignore })),
+			Val = get(Key, Msg2, Opts),
+			?event({got_val_to_set, {key, Key}, {val, Val}}),
+			% Then, set the key and recurse, removing the key from the Msg2.
+			set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts)
+	end.
 set(Msg1, Key, Value, Opts) ->
 	% For an individual key, we run deep_set with the key as the path.
 	% This handles both the case that the key is a path as well as the case
@@ -194,11 +200,11 @@ set(Msg1, Key, Value, Opts) ->
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [Key], Value, Opts) ->
-	%?event({setting_last_key, {key, Key}, {value, Value}}),
+	?event({setting_last_key, {key, Key}, {value, Value}}),
 	device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
 	{ok, SubMsg} = resolve(Msg, Key, Opts),
-	%?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
+	?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
 	device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
@@ -659,11 +665,11 @@ set_with_device_test() ->
 deep_set_test() ->
 	% First validate second layer changes are handled correctly.
 	Msg0 = #{ a => #{ b => 1 } },
-	?assertEqual(#{ a => #{ b => 2 } },
+	?assertMatch(#{ a := #{ b := 2 } },
 		hb_pam:set(Msg0, [a, b], 2, #{})),
 	% Now validate deeper layer changes are handled correctly.
 	Msg = #{ a => #{ b => #{ c => 1 } } },
-	?assertEqual(#{ a => #{ b => #{ c => 2 } } },
+	?assertMatch(#{ a := #{ b := #{ c := 2 } } },
 		hb_pam:set(Msg, [a, b, c], 2, #{})).
 
 deep_set_with_device_test() ->
