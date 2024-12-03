@@ -1,6 +1,6 @@
 -module(hb_path).
--export([push/3, push_hashpath/2, push_request/2]).
--export([queue_request/2, pop_request/1]).
+-export([hd/2, tl/2, push/3, push_hashpath/2, push_request/2]).
+-export([queue_request/2, pop_request/2]).
 -export([verify_hashpath/3]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
 -include("include/hb.hrl").
@@ -35,6 +35,30 @@
 %%% which allows for custom logic to be used for representing the history of a
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
+
+%% @doc Extract the first key from a `Message2`'s `Path` field.
+%% Note: This function uses the `dev_message:get/3` function, rather than 
+%% a generic call as the path should always be an explicit key in the message.
+hd(Msg2, Opts) ->
+	%?event({key_from_path, Msg2, Opts}),
+	case pop_request(Msg2, Opts) of
+		undefined -> undefined;
+		{Head, _} ->
+			% `term_to_path` returns the full path, so we need to take the
+			% `hd` of our `Head`.
+			erlang:hd(term_to_path(Head, Opts))
+	end.
+
+%% @doc Return the message without its first path element. Note that this
+%% is the only transformation in PAM that does _not_ make a log of its
+%% transformation. Subsequently, the message's IDs will not be verifiable 
+%% after executing this transformation.
+%% This may or may not be the mainnet behavior we want.
+tl(Msg2, Opts) ->
+	case pop_request(Msg2, Opts) of
+		undefined -> undefined;
+		{_, Rest} -> Rest
+	end.
 
 %% @doc Add a path element to a message, according to the type given.
 push(hashpath, Msg3, Msg2) ->
@@ -77,9 +101,23 @@ hashpath_function(Msg) ->
 push_request(Msg, Path) ->
 	maps:put(path, term_to_path(Path) ++ from_message(request, Msg), Msg).
 
-%%% @doc Pop a message from a request path.
-pop_request(Msg) when is_map(Msg) ->
-	[Head|Rest] = from_message(request, Msg),
+%%% @doc Pop the next element from a request path or path list.
+pop_request(undefined, _Opts) -> undefined;
+pop_request(Msg, Opts) when is_map(Msg) ->
+	?event({popping_request, Msg}),
+	case pop_request(?event(from_message(request, Msg)), Opts) of
+		undefined ->
+			?event(popped_undefined),
+			undefined;
+		{undefined, Rest} ->
+			undefined;
+		{Head, Rest} ->
+			?event({popped_request, Head, Rest}),
+			{Head, maps:put(path, Rest, Msg)}
+	end;
+pop_request([], _Opts) -> undefined;
+pop_request([Head|Rest], _Opts) ->
+	%?event({popped_request, Head, Rest}),
 	{Head, Rest}.
 
 %%% @doc Queue a message at the back of a request path. `path` is the only
@@ -128,19 +166,16 @@ from_message(hashpath, Msg) ->
 		" invoked with it."),
 	{ok, Path} = dev_message:unsigned_id(Msg),
 	hd(term_to_path(Path));
-from_message(request, #{ path := Path }) ->
+from_message(request, #{ path := [] }) -> undefined;
+from_message(request, #{ path := Path }) when is_list(Path) ->
 	term_to_path(Path);
-from_message(request, Msg) ->
-	?no_prod("We should use the signed ID if the message is being"
-		" invoked with it."),
-	{ok, Path} = dev_message:unsigned_id(Msg),
-	term_to_path(Path).
+from_message(request, #{ path := Other }) ->
+	term_to_path(Other).
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
 term_to_path(Path) -> term_to_path(Path, #{ error_strategy => throw }).
 term_to_path(Binary, Opts) when is_binary(Binary) ->
-	%?event({to_path, Binary}),
 	case binary:match(Binary, <<"/">>) of
 		nomatch -> [Binary];
 		_ ->
@@ -152,6 +187,7 @@ term_to_path(Binary, Opts) when is_binary(Binary) ->
 				Opts
 			)
 	end;
+term_to_path([], _Opts) -> undefined;
 term_to_path(List, Opts) when is_list(List) ->
 	lists:map(fun(Part) -> hb_pam:to_key(Part, Opts) end, List);
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
@@ -181,3 +217,27 @@ verify_hashpath_test() ->
 	MsgR2 = push_hashpath(MsgR1, MsgB2),
 	MsgR3 = push_hashpath(MsgR2, MsgB3),
 	?assert(verify_hashpath(Msg1, MsgR3, [MsgB1, MsgB2, MsgB3])).
+
+validate_path_transitions(X, Opts) ->
+	{Head, X2} = pop_request(X, Opts),
+	?assertEqual(a, Head),
+	{H2, X3} = pop_request(X2, Opts),
+	?assertEqual(b, H2),
+	{H3, X4} = pop_request(X3, Opts),
+	?assertEqual(c, H3),
+	?assertEqual(undefined, pop_request(X4, Opts)).
+
+pop_from_message_test() ->
+	validate_path_transitions(#{ path => [a, b, c] }, #{}).
+
+pop_from_path_list_test() ->
+	validate_path_transitions([a, b, c], #{}).
+
+hd_test() ->
+	?assertEqual(a, hd(#{ path => [a, b, c] }, #{})),
+	?assertEqual(undefined, hd(#{ path => undefined }, #{})).
+
+tl_test() ->
+	?assertMatch(#{ path := [b, c] }, tl(#{ path => [a, b, c] }, #{})),
+	?assertEqual(undefined, tl(#{ path => [] }, #{})),
+	?assertEqual(undefined, tl(#{ path => undefined }, #{})).

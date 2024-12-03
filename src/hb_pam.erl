@@ -63,7 +63,7 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 	%?event({pre_resolve_func_load, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	{Fun, NewOpts} =
 		try
-			Key = key_from_path(Msg2, Opts),
+			Key = hb_path:hd(Msg2, Opts),
 			% Try to load the device and get the function to call.
 			{Status, ReturnedFun} = message_to_fun(Msg1, Key),
 			% Next, add an option to the Opts map to indicate if we should
@@ -389,21 +389,6 @@ to_atom_unsafe(Key) when is_list(Key) ->
 	FlattenedKey = lists:flatten(Key),
 	list_to_existing_atom(FlattenedKey);
 to_atom_unsafe(Key) when is_atom(Key) -> Key.
-
-%% @doc Extract the key from a `Message2`'s `Path` field. Returns the first
-%% element of the path if it is a list, otherwise returns the path as is.
-%% Note: This function uses the `dev_message:get/3` function, rather than 
-%% a generic call as the path should always be an explicit key in the message.
-key_from_path(Msg2, Opts) ->
-	%?event({key_from_path, Msg2, Opts}),
-	case dev_message:get(path, Msg2) of
-		{ok, Path} ->
-			%?event({got_path, Path}),
-			hd(hb_path:term_to_path(Path, Opts));
-		{error, not_found} ->
-			?event({path_not_found, Msg2}),
-			throw({error, path_not_provided})
-	end.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
