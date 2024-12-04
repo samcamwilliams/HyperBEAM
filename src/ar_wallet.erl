@@ -73,14 +73,14 @@ new_keyfile(KeyType, WalletName) ->
 							[
 								{kty, <<"RSA">>},
 								{ext, true},
-								{e, ar_util:encode(Expnt)},
-								{n, ar_util:encode(Pb)},
-								{d, ar_util:encode(Prv)},
-								{p, ar_util:encode(P1)},
-								{q, ar_util:encode(P2)},
-								{dp, ar_util:encode(E1)},
-								{dq, ar_util:encode(E2)},
-								{qi, ar_util:encode(C)}
+								{e, hb_util:encode(Expnt)},
+								{n, hb_util:encode(Pb)},
+								{d, hb_util:encode(Prv)},
+								{p, hb_util:encode(P1)},
+								{q, hb_util:encode(P2)},
+								{dp, hb_util:encode(E1)},
+								{dq, hb_util:encode(E2)},
+								{qi, hb_util:encode(C)}
 							]
 						}
 					),
@@ -96,9 +96,9 @@ new_keyfile(KeyType, WalletName) ->
 							[
 								{kty, <<"EC">>},
 								{crv, <<"secp256k1">>},
-								{x, ar_util:encode(X)},
-								{y, ar_util:encode(Y)},
-								{d, ar_util:encode(Prv)}
+								{x, hb_util:encode(X)},
+								{y, hb_util:encode(Y)},
+								{d, hb_util:encode(Prv)}
 							]
 						}
 					),
@@ -112,8 +112,8 @@ new_keyfile(KeyType, WalletName) ->
 								{kty, <<"OKP">>},
 								{alg, <<"EdDSA">>},
 								{crv, <<"Ed25519">>},
-								{x, ar_util:encode(Pb)},
-								{d, ar_util:encode(Prv)}
+								{x, hb_util:encode(Pb)},
+								{d, hb_util:encode(Prv)}
 							]
 						}
 					),
@@ -134,10 +134,10 @@ wallet_filepath2(Wallet) ->
 %% Return not_found if arweave_keyfile_[addr].json or [addr].json is not found
 %% in [data_dir]/?WALLET_DIR.
 load_key(Addr) ->
-	Path = ar_util:encode(Addr),
+	Path = hb_util:encode(Addr),
 	case filelib:is_file(Path) of
 		false ->
-			Path2 = wallet_filepath2(ar_util:encode(Addr)),
+			Path2 = wallet_filepath2(hb_util:encode(Addr)),
 			case filelib:is_file(Path2) of
 				false ->
 					not_found;
@@ -158,24 +158,24 @@ load_keyfile(File) ->
 				{<<"x">>, XEncoded} = lists:keyfind(<<"x">>, 1, Key),
 				{<<"y">>, YEncoded} = lists:keyfind(<<"y">>, 1, Key),
 				{<<"d">>, PrivEncoded} = lists:keyfind(<<"d">>, 1, Key),
-				OrigPub = iolist_to_binary([<<4:8>>, ar_util:decode(XEncoded),
-						ar_util:decode(YEncoded)]),
+				OrigPub = iolist_to_binary([<<4:8>>, hb_util:decode(XEncoded),
+						hb_util:decode(YEncoded)]),
 				Pb = compress_ecdsa_pubkey(OrigPub),
-				Prv = ar_util:decode(PrivEncoded),
+				Prv = hb_util:decode(PrivEncoded),
 				KyType = {?ECDSA_SIGN_ALG, secp256k1},
 				{Pb, Prv, KyType};
 			{<<"kty">>, <<"OKP">>} ->
 				{<<"x">>, PubEncoded} = lists:keyfind(<<"x">>, 1, Key),
 				{<<"d">>, PrivEncoded} = lists:keyfind(<<"d">>, 1, Key),
-				Pb = ar_util:decode(PubEncoded),
-				Prv = ar_util:decode(PrivEncoded),
+				Pb = hb_util:decode(PubEncoded),
+				Prv = hb_util:decode(PrivEncoded),
 				KyType = {?EDDSA_SIGN_ALG, ed25519},
 				{Pb, Prv, KyType};
 			_ ->
 				{<<"n">>, PubEncoded} = lists:keyfind(<<"n">>, 1, Key),
 				{<<"d">>, PrivEncoded} = lists:keyfind(<<"d">>, 1, Key),
-				Pb = ar_util:decode(PubEncoded),
-				Prv = ar_util:decode(PrivEncoded),
+				Pb = hb_util:decode(PubEncoded),
+				Prv = hb_util:decode(PrivEncoded),
 				KyType = {?RSA_SIGN_ALG, 65537},
 				{Pb, Prv, KyType}
 		end,
@@ -199,7 +199,7 @@ wallet_filepath(WalletName, PubKey, KeyType) ->
 	wallet_filepath(wallet_name(WalletName, PubKey, KeyType)).
 
 wallet_name(wallet_address, PubKey, KeyType) ->
-	ar_util:encode(to_address(PubKey, KeyType));
+	hb_util:encode(to_address(PubKey, KeyType));
 wallet_name(WalletName, _, _) ->
 	WalletName.
 

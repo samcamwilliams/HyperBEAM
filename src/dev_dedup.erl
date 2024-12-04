@@ -8,7 +8,7 @@ init(State, [<<"Variant">>, <<"1.0">>]) ->
     {ok, State#{ dedup => [] }}.
 
 execute(Message, State = #{ pass := 1, dedup := Dedup }) ->
-    case lists:member(ID = ao_message:id(Message), Dedup) of
+    case lists:member(ID = hb_util:id(Message), Dedup) of
         true ->
             {break, State};
         false ->

@@ -1,7 +1,7 @@
 -module(dev_monitor).
 -export([init/3, execute/2, end_of_schedule/1, uses/0, add_monitor/2]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% A simple device that allows flexible monitoring of a process execution.
 %%% Adding a dev_monitor device to a process will cause the listed functions
@@ -31,7 +31,7 @@ signal(State = #{ monitors := StartingMonitors }, Signal) ->
             end,
             StartingMonitors
         ),
-    ?c({remaining_monitors, length(RemainingMonitors)}),
+    ?event({remaining_monitors, length(RemainingMonitors)}),
     {ok, State#{ monitors := RemainingMonitors }}.
 
 uses() -> all.

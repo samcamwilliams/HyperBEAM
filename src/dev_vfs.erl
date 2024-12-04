@@ -1,7 +1,6 @@
 -module(dev_vfs).
--export([init/2, execute/2]).
--include("include/ao.hrl").
--include_lib("eunit/include/eunit.hrl").
+-export([init/1, execute/2, stdout/1]).
+-include("include/hb.hrl").
 
 -record(fd, {
     index :: non_neg_integer(),
@@ -33,7 +32,7 @@
     }
 ).
 
-init(S, Params) ->
+init(S) ->
     Lib = maps:merge(maps:get(library, S, #{}), #{
         {"wasi_snapshot_preview1", "path_open"} => fun path_open/3,
         {"wasi_snapshot_preview1", "fd_write"} => fun fd_write/3,
@@ -43,7 +42,7 @@ init(S, Params) ->
 
 execute(M, S = #{ pass := 1, vfs := FDs }) ->
     #tx { data = Data } = maps:get(<<"Message">>, M#tx.data),
-    ?c({setting_stdin_to_message, byte_size(Data)}),
+    ?event({setting_stdin_to_message, byte_size(Data)}),
     {ok,
         S#{
             vfs =>
@@ -75,10 +74,14 @@ execute(_M, S = #{ pass := 2, vfs := FDs }) ->
 execute(_M, S) ->
     {ok, S}.
 
+%% @doc Return the stdout buffer from a state message.
+stdout(#{ vfs := #{ 1 := #fd { data = Data } } }) ->
+	Data.
+
 path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
-    ?c({path_open, FDPtr, LookupFlag, PathPtr}),
-    Path = cu_beamr_io:read_string(Port, PathPtr),
-    ?c({path_open, Path}),
+    ?event({path_open, FDPtr, LookupFlag, PathPtr}),
+    Path = hb_beamr_io:read_string(Port, PathPtr),
+    ?event({path_open, Path}),
     File =
         maps:get(
             hd(maps:keys(
@@ -100,10 +103,10 @@ path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
 fd_write(S, Port, [FD, Ptr, Vecs, RetPtr]) ->
     fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0);
 fd_write(S, Port, Args) ->
-    ?c({fd_write, Port, Args}),
+    ?event({fd_write, Port, Args}),
     {S, [0]}.
 fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
-    cu_beamr_io:write(
+    hb_beamr_io:write(
         Port,
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
@@ -112,7 +115,7 @@ fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
 fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, Ptr),
-    {ok, Data} = cu_beamr_io:read(Port, VecPtr, Len),
+    {ok, Data} = hb_beamr_io:read(Port, VecPtr, Len),
     Before = binary:part(File#fd.data, 0, File#fd.offset),
     After = binary:part(File#fd.data, File#fd.offset, byte_size(File#fd.data) - File#fd.offset),
     NewFile = File#fd{
@@ -129,15 +132,15 @@ fd_write(S = #{ vfs := FDs }, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
 fd_read(S, Port, Args) ->
     fd_read(S, Port, Args, 0).
 fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
-    ?c({{completed_read, FD, BytesRead}}),
-    cu_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
+    ?event({{completed_read, FD, BytesRead}}),
+    hb_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
     {S, [0]};
 fd_read(S = #{ vfs := FDs }, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
-    ?c({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
+    ?event({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
     File = maps:get(FD, FDs),
     {VecPtr, Len} = parse_iovec(Port, VecsPtr),
     {FileBytes, NewFile} = get_bytes(File, Len),
-    ok = cu_beamr_io:write(Port, VecPtr, FileBytes),
+    ok = hb_beamr_io:write(Port, VecPtr, FileBytes),
     fd_read(
         S#{vfs => maps:put(FD, NewFile, FDs)},
         Port,
@@ -154,17 +157,6 @@ get_bytes(File = #fd { data = Function }, Size) ->
     {Bin, NewFile}.
 
 parse_iovec(Port, Ptr) ->
-    {ok, VecStruct} = cu_beamr_io:read(Port, Ptr, 16),
+    {ok, VecStruct} = hb_beamr_io:read(Port, Ptr, 16),
     <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
     {BinPtr, Len}.
-
-write_file_test() ->
-    cu_test:init(),
-    {Proc, Msg} = cu_test:generate_test_data(
-        <<"file = io.open(\"/dev/stdin\", \"r\")
-        ourline = file:read(),
-        file:close(file)
-        print(ourline)">>
-    ),
-    {ok, #{ <<"/Data">> := #tx { data = Data } }} = cu_test:run(Proc, Msg),
-    ?assertEqual(Data, <<"file = io.open(\"/dev/stdin\", \"r\")">>).

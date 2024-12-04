@@ -2,8 +2,8 @@
 -export([init/2, execute/3]).
 -export([is_user_signed/1]).
 -export([push/2]).
--include("include/ao.hrl").
--ao_debug(print).
+-include("include/hb.hrl").
+-hb_debug(print).
 
 %%% A simple exemplar decentralized proof of authority consensus algorithm
 %%% for AO processes. This device is split into two flows, spanning three
@@ -29,7 +29,7 @@ extract_opts(Params) ->
         ),
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
-    ?c({poda_authorities, Authorities}),
+    ?event({poda_authorities, Authorities}),
     #{
         authorities => Authorities,
         quorum => Quorum
@@ -45,7 +45,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
             % For now, the message itself will be at `/Message/Message`.
             case validate(Msg, Opts) of
                 true ->
-                    ?c({poda_validated, ok}),
+                    ?event({poda_validated, ok}),
                     % Add the validations to the VFS.
                     Atts =
                         maps:to_list(
@@ -59,7 +59,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
                         lists:foldl(
                             fun({_, Attestation}, Acc) ->
                                 Id = ar_bundles:signer(Attestation),
-                                Encoded = ar_util:encode(Id),
+                                Encoded = hb_util:encode(Id),
                                 maps:put(
                                     <<"/Attestations/", Encoded/binary>>,
                                     Attestation#tx.data,
@@ -120,18 +120,18 @@ validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
             fun({_, Att}) -> validate_attestation(Content, Att, Opts) end,
             maps:to_list(Attestations)
         ),
-    ?c({poda_validations, length(Validations)}),
+    ?event({poda_validations, length(Validations)}),
     case length(Validations) >= Quorum of
         true ->
-            ?c({poda_quorum_reached, length(Validations)}),
+            ?event({poda_quorum_reached, length(Validations)}),
             true;
         false -> {false, <<"Not enough validations">>}
     end.
 
 validate_attestation(Msg, Att, Opts) ->
-    MsgID = ar_util:encode(ar_bundles:id(Msg, unsigned)),
-    AttSigner = ar_util:encode(ar_bundles:signer(Att)),
-    ?c({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
+    MsgID = hb_util:encode(ar_bundles:id(Msg, unsigned)),
+    AttSigner = hb_util:encode(ar_bundles:signer(Att)),
+    ?event({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
     ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
     ?no_prod(use_real_signature_verification),
     ValidSignature = ar_bundles:verify_item(Att),
@@ -141,7 +141,7 @@ validate_attestation(Msg, Att, Opts) ->
         ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
 	case ValidSigner and ValidSignature and RelevantMsg of
 		false ->
-			?c({poda_attestation_invalid,
+			?event({poda_attestation_invalid,
 					{attestation, ar_bundles:id(Att, signed)},
 					{signer, AttSigner},
 					{valid_signer, ValidSigner},
@@ -155,7 +155,7 @@ validate_attestation(Msg, Att, Opts) ->
 %%% Execution flow: Error handling.
 %%% Skip execution of this message, instead returning an error message.
 return_error(S = #{ wallet := Wallet }, Reason) ->
-    ?c({poda_return_error, Reason}),
+    ?event({poda_return_error, Reason}),
     ?debug_wait(10000),
     {skip, S#{
         results => #{
@@ -193,7 +193,7 @@ attest_to_results(Msg, S) ->
 						"Make it general?"),
                     case lists:member(Key, [<<"/Outbox">>, <<"/Spawn">>]) of
                         true ->
-                            ?c({poda_starting_to_attest_to_result, Key}),
+                            ?event({poda_starting_to_attest_to_result, Key}),
                             maps:map(
                                 fun(_, DeepMsg) -> add_attestations(DeepMsg, S) end,
                                 IndexMsg#tx.data
@@ -212,17 +212,17 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
         true ->
             #{ authorities := InitAuthorities, quorum := Quorum } =
                 extract_opts(Process#tx.tags),
-            ?c({poda_push, InitAuthorities, Quorum}),
+            ?event({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
-            MsgID = ar_util:encode(ar_bundles:id(NewMsg, unsigned)),
-			?c({poda_add_attestations_from, InitAuthorities, {self,ao:address()}}),
-            Attestations = lists:filtermap(
+            MsgID = hb_util:encode(ar_bundles:id(NewMsg, unsigned)),
+			?event({poda_add_attestations_from, InitAuthorities, {self,hb:address()}}),
+            Attestations = pfiltermap(
                 fun(Address) ->
-                    case ao_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
+                    case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
-                            ?c({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
-                            Res = ao_client:compute(
+                            ?event({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
+                            Res = hb_client:compute(
                                 ComputeNode,
                                 ar_bundles:id(Process, signed),
                                 ar_bundles:id(Assignment, signed),
@@ -230,14 +230,14 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                             ),
                             case Res of
                                 {ok, Att} ->
-                                    ?c({poda_got_attestation_from_peer, ComputeNode}),
+                                    ?event({poda_got_attestation_from_peer, ComputeNode}),
                                     {true, Att};
                                 _ -> false
                             end;
                         _ -> false
                     end
                 end,
-                ?c(InitAuthorities -- [ao:address()])
+                ?event(InitAuthorities -- [hb:address()])
             ),
             LocalAttestation = ar_bundles:sign_item(
                 #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
@@ -271,7 +271,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 ),
                 Wallet
             ),
-            ?c({poda_attestation_bundle_signed, {attestations, length(AttList)}}),
+            ?event({poda_attestation_bundle_signed, {attestations, length(AttList)}}),
             AttestationBundle;
         false -> NewMsg
     end.
@@ -283,11 +283,11 @@ pfiltermap(Pred, List) ->
     Pids = lists:map(fun(X) -> 
         spawn_monitor(fun() -> 
             Result = {X, Pred(X)},
-            ?c({pfiltermap, sending_result, self()}),
+            ?event({pfiltermap, sending_result, self()}),
             Parent ! {self(), Result}
         end)
     end, List),
-    ?c({pfiltermap, waiting_for_results, Pids}),
+    ?event({pfiltermap, waiting_for_results, Pids}),
     [
         Res
     ||
@@ -295,14 +295,14 @@ pfiltermap(Pred, List) ->
             lists:map(fun({Pid, Ref}) ->
                 receive
                     {Pid, {_Item, Result}} ->
-                        ?c({pfiltermap, received_result, Pid}),
+                        ?event({pfiltermap, received_result, Pid}),
                         Result;
                     % Handle crashes as filterable events
                     {'DOWN', Ref, process, Pid, _Reason} ->
-                        ?c({pfiltermap, crashed, Pid}),
+                        ?event({pfiltermap, crashed, Pid}),
                         false;
                     Other ->
-                        ?c({pfiltermap, unexpected_message, Other}),
+                        ?event({pfiltermap, unexpected_message, Other}),
                         false
                 end
             end, Pids)
@@ -313,8 +313,9 @@ pfiltermap(Pred, List) ->
 find_process(Item, #{ logger := _Logger, store := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
-            ?c({poda_find_process, ar_util:id(Item#tx.target)}),
-            ao_cache:read_message(Store, ar_util:id(Item#tx.target));
+            ?event({poda_find_process, hb_util:id(Item#tx.target)}),
+            {ok, Proc} = hb_cache:read_message(Store, hb_util:id(Item#tx.target)),
+            Proc;
         _ ->
             case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
                 {<<"Type">>, <<"Process">>} -> Item;

@@ -1,13 +1,13 @@
 -module(dev_mu).
 -export([push/2]).
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 %%% The main pushing logic for messages around the system.s
 
 %% We should run the following device stack on the message:
-%% dev_su -> dev_cu -> dev_poda
+%% dev_scheduler -> dev_cu -> dev_poda
 %% After execution we take the result and fork again based on it.
--define(PUSH_DEV_STACK, [dev_su, dev_cu, dev_poda]).
+-define(PUSH_DEV_STACK, [dev_scheduler, dev_cu, dev_poda]).
 
 %% @doc The main entry point for pushing a message. Assumes the message is
 %% a carrier message, and will extract the carried message to push from it.
@@ -19,38 +19,38 @@ push(CarrierMsg, State) ->
                 CarriedMsg;
             _ -> CarrierMsg
         end,
-	?c({starting_push_for,
-		{unsigned, ar_util:id(Msg, unsigned)},
-		{signed, ar_util:id(Msg, signed)},
-		{target, ar_util:id(Msg#tx.target)}
+	?event({starting_push_for,
+		{unsigned, hb_util:id(Msg, unsigned)},
+		{signed, hb_util:id(Msg, signed)},
+		{target, hb_util:id(Msg#tx.target)}
 	}),
     ?no_prod(fix_mu_push_validation),
     case ar_bundles:verify_item(Msg) of
         _ ->
             Logger =
                 case maps:get(logger, State, undefined) of
-                    undefined -> ao_logger:start();
+                    undefined -> hb_logger:start();
                     X -> X
                 end,
-            ao_logger:register(Logger),
+            hb_logger:register(Logger),
 			fork(
 				#result {
 					messages = [Msg]
 				},
                 State#{
 					depth => 0,
-                    store => maps:get(store, State, ao:get(store)),
+                    store => maps:get(store, State, hb_opts:get(store)),
                     logger => Logger,
-                    wallet => maps:get(wallet, State, ao:wallet())
+                    wallet => maps:get(wallet, State, hb:wallet())
                 }
 			),
 			% TODO: Implement trace waiting.
 			ResTX = ar_bundles:sign_item(
 				#tx{ tags = [{<<"Status">>, <<"200">>}]},
-				ao:wallet()),
-			{ok, #{ results => ResTX }};
-        false ->
-            {error, cannot_push_invalid_message}
+				hb:wallet()),
+			{ok, #{ results => ResTX }}
+        %false ->
+        %    {error, cannot_push_invalid_message}
     end.
 
 %% Take a computation result and fork each message/spawn/... into its own worker.
@@ -64,16 +64,16 @@ push_messages(upload, Messages, Opts) ->
         fun(Message) ->
             spawn(
                 fun() ->
-					?c(
+					?event(
 						{mu_forking_for,
-							{unsigned, ar_util:id(Message, unsigned)},
-							{signed, ar_util:id(Message, signed)},
-							{target, ar_util:id(Message#tx.target)},
+							{unsigned, hb_util:id(Message, unsigned)},
+							{signed, hb_util:id(Message, signed)},
+							{target, hb_util:id(Message#tx.target)},
 							{logger, maps:get(logger, Opts, undefined)}
 						}
 					),
 					Stack = dev_stack:create(?PUSH_DEV_STACK),
-                    {ok, Results} = cu_device:call(
+                    {ok, Results} = hb_pam:resolve(
 						{dev_stack, execute},
 						push,
 						[
@@ -81,15 +81,15 @@ push_messages(upload, Messages, Opts) ->
 								devices => Stack,
 								message => Message,
 								logger => maps:get(logger, Opts, undefined),
-								store => maps:get(store, Opts, ao:get(store)),
-								wallet => maps:get(wallet, Opts, ao:wallet())
+								store => maps:get(store, Opts, hb_opts:get(store)),
+								wallet => maps:get(wallet, Opts, hb:wallet())
 							}
 						]
 					),
-					?c({pushing_result_for_computed_message,
-						{unsigned, ar_util:id(Message, unsigned)},
-						{signed, ar_util:id(Message, signed)},
-						{target, ar_util:id(Message#tx.target)}
+					?event({pushing_result_for_computed_message,
+						{unsigned, hb_util:id(Message, unsigned)},
+						{signed, hb_util:id(Message, signed)},
+						{target, hb_util:id(Message#tx.target)}
 					}),
 					handle_push_result(Results, Opts)
                 end
@@ -100,8 +100,8 @@ push_messages(upload, Messages, Opts) ->
 push_messages(attest, Assignments, #{ logger := Logger }) ->
     lists:foreach(
         fun(Assignment) ->
-            ao_logger:log(Logger, {ok, "Assigning ", ar_bundles:id(Assignment, signed)}),
-            ao_client:assign(Assignment),
+            hb_logger:log(Logger, {ok, "Assigning ", ar_bundles:id(Assignment, signed)}),
+            hb_client:assign(Assignment),
 			?no_prod("After assigning, don't we want to push the message?")
         end,
         maybe_to_list(Assignments)
@@ -114,7 +114,7 @@ handle_push_result(Results, Opts = #{ depth := Depth }) ->
 		assignments = maps:get(<<"/Assignment">>, Results, #{}),
 		spawns = maps:get(<<"/Spawn">>, Results, #{})
 	},
-	?c({push_recursing,
+	?event({push_recursing,
 		{depth, Depth},
 		{messages, maps:size(Res#result.messages)},
 		{assignments, maps:size(Res#result.assignments)},
