@@ -104,7 +104,8 @@ config() ->
 		debug_print_map_line_threshold => 30,
 		debug_print_binary_max => 15,
 		debug_print_indent => 4,
-        debug_print => false
+        debug_print => false,
+		cache_results => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
@@ -165,7 +166,14 @@ get(Key, Default, Opts) ->
 		mode =>
 			{"HB_MODE", fun list_to_existing_atom/1},
 		debug_print =>
-			{"HB_DBGPRINT",	fun list_to_existing_atom/1}
+			{"HB_PRINT",
+				fun
+					(Str) when Str == "1" -> true;
+					(Str) when Str == "true" -> true;
+					(Str) -> string:tokens(Str, ",")
+				end,
+				"1"
+			}
     }
 ).
 

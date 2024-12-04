@@ -133,6 +133,9 @@ event(X, ModAtom, Func, Line) when is_atom(ModAtom) ->
     end;
 event(X, ModStr, Func, Line) ->
     case hb_opts:get(debug_print) of
+		ModList when is_list(ModList) ->
+			lists:member(ModStr, ModList) andalso
+				hb_util:debug_print(X, ModStr, Func, Line);
         true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
     end.
