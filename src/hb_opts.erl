@@ -171,8 +171,7 @@ get(Key, Default, Opts) ->
 					(Str) when Str == "1" -> true;
 					(Str) when Str == "true" -> true;
 					(Str) -> string:tokens(Str, ",")
-				end,
-				"1"
+				end
 			}
     }
 ).
