@@ -155,10 +155,6 @@ get(Key, Default, Opts) ->
                         {
                             hb_store_fs,
                             #{ prefix => Dir }
-                        },
-                        {
-                            hb_store_remote_node,
-                            #{ node => "http://localhost:8734" }
                         }
                     ]
                 end,
