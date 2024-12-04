@@ -37,6 +37,18 @@
 %%% referenced by an Arweave ID, which can be used to load a device from 
 %%% the network (depending on the value of the `load_remote_devices` and 
 %%% `trusted_device_signers` environment settings).
+%%% 
+%%% Resolution options:
+%%% 
+%%% `update_hashpath`: Whether to add the `Msg2` to `HashPath` for the `Msg3`.
+%%% 					Default: true.
+%%% `cache_results`:   Whether to cache the resolved `Msg3`.
+%%% 					Default: true.
+%%% `add_key`:         Whether to add the key to the start of the arguments.
+%%% 					Default: <not set>.
+%%% 
+%%% In general, all of these options are dangerous. Don't use them unless you
+%%% know what you are doing.
 
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, pass a message containing parameters to the call, as
@@ -90,7 +102,7 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 		end,
 	do_resolve(Msg1, Fun, Msg2, NewOpts).
 do_resolve(Msg1, Fun, Msg2, Opts) ->
-	?event({resolve_call, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	?event({resolving, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
@@ -102,7 +114,7 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 	% Then, try to execute the function.
 	try
 		Msg3 = apply(Fun, truncate_args(Fun, Args)),
-		?event({resolve_result, Msg3}),
+		?event({resolved_result, {explicit, Msg3}}),
 		handle_resolved_result(Msg3, Msg2, UserOpts)
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
@@ -123,21 +135,27 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 %% 4. If there are still elements in the path, we recurse through execution.
 %% If additional elements are included as part of the result, we pass them 
 %% through to the caller.
-handle_resolved_result(Msg3, Msg2, UserOpts) when is_binary(Msg3) ->
+handle_resolved_result(Msg3, _Msg2, _UserOpts) when is_binary(Msg3) ->
 	Msg3;
 handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
 handle_resolved_result(Msg2List = [Status, Result|_], _Msg2, _Opts)
 		when Status =/= ok orelse not is_map(Result) ->
 	list_to_tuple(Msg2List);
-handle_resolved_result(Msg3, _Msg2, #{ hashpath := ignore }) ->
-	?event({ignoring_hashpath_add, {msg3, Msg3}}),
-	list_to_tuple(Msg3);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
-	?event({pushing_hashpath_onto, {msg3, {explicit, Msg3Raw}}, {msg2, Msg2}, {opts, Opts}}),
-	Msg3 = hb_path:push(hashpath, Msg3Raw, Msg2),
-	?no_prod("For now we are forcing the message to be written as an ANS-104"
-		" message."),
+	Msg3 =
+		case hb_opts:get(update_hashpath, true, Opts#{ only => local }) of
+			true ->
+				% ?event(
+				% 	{pushing_hashpath_onto,
+				% 		{msg3, {explicit, Msg3Raw}},
+				% 		{msg2, Msg2},
+				% 		{opts, Opts}
+				% 	}
+				% ),
+				hb_path:push(hashpath, Msg3Raw, Msg2);
+			false -> Msg3Raw
+		end,
 	case hb_opts:get(cache_results, true, Opts) of
 		true ->
 			hb_cache:write(
@@ -145,10 +163,18 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 				hb_message:message_to_tx(Msg3)
 			);
 		false ->
-			?event(ignoring_cache_write),
 			ok
 	end,
-	list_to_tuple([ok, Msg3 | Rest]).
+	case hb_path:tl(Msg2, Opts) of
+		Res when Res == undefined orelse Res == [] ->
+			% The path resolved to the last element, so we return
+			% to the caller.
+			list_to_tuple([ok, Msg3 | Rest]);
+		NextMsg ->
+			% There are more elements in the path, so we recurse.
+			?event({recursing, {input, Msg3}, {next, NextMsg}}),
+			resolve(Msg3, NextMsg, Opts)
+	end.
 
 %% @doc Shortcut for resolving a key in a message without its 
 %% status if it is `ok`. This makes it easier to write complex 
@@ -194,13 +220,14 @@ set(Msg1, Key, Value, Opts) ->
 	% For an individual key, we run deep_set with the key as the path.
 	% This handles both the case that the key is a path as well as the case
 	% that it is a single key.
-	%?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {value, Value}}),
-	deep_set(Msg1, hb_path:term_to_path(Key), Value, Opts).
+	Path = hb_path:term_to_path(Key),
+	%?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {path, Path}, {value, Value}}),
+	deep_set(Msg1, Path, Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [Key], Value, Opts) ->
-	?event({setting_last_key, {key, Key}, {value, Value}}),
+	%?event({setting_last_key, {key, Key}, {value, Value}}),
 	device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
 	{ok, SubMsg} = resolve(Msg, Key, Opts),
@@ -208,7 +235,7 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
 	device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
-	%?event({calling_device_set, {key, Key}, {value, Value}}),
+	?event({calling_device_set, {key, Key}, {value, Value}}),
 	ensure_ok(Key, resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
 
 %% @doc Remove a key from a message, using its underlying device.
@@ -259,6 +286,7 @@ message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
 	% Case 1: The message does not specify a device, so we use the default device.
 	message_to_fun(Msg#{ device => default_module() }, Key);
 message_to_fun(Msg = #{ device := RawDev }, Key) ->
+	?event({message_to_fun, {msg, Msg}, {device, RawDev}, {key, Key}}),
 	Dev =
 		case load_device(RawDev) of
 			{error, _} ->
@@ -611,6 +639,7 @@ basic_get_test() ->
 basic_set_test() ->
 	Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
 	UpdatedMsg = hb_pam:set(Msg, #{ key1 => <<"new_value1">> }),
+	?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
 	?assertEqual(<<"new_value1">>, hb_pam:get(key1, UpdatedMsg)),
 	?assertEqual(<<"value2">>, hb_pam:get(key2, UpdatedMsg)).
 

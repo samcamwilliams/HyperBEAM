@@ -57,6 +57,8 @@ hd(Msg2, Opts) ->
 tl(Msg2, Opts) ->
 	case pop_request(Msg2, Opts) of
 		undefined -> undefined;
+		{_, Rest} when is_map(Rest) ->
+			maps:get(path, Rest, undefined);
 		{_, Rest} -> Rest
 	end.
 
@@ -77,11 +79,11 @@ push_hashpath(Msg, Msg2ID) ->
 	HashpathFun = hashpath_function(Msg),
 	NewHashpath = HashpathFun(hb_util:native_id(MsgHashpath), hb_util:native_id(Msg2ID)),
 	TransformedMsg = Msg#{ hashpath => hb_util:human_id(NewHashpath) },
-	?event({created_new_hashpath,
-		{msg1, hb_util:human_id(MsgHashpath)},
-		{msg2id, hb_util:human_id(Msg2ID)},
-		{new_hashpath, hb_util:human_id(NewHashpath)}
-	}),
+	% ?event({created_new_hashpath,
+	% 	{msg1, hb_util:human_id(MsgHashpath)},
+	% 	{msg2id, hb_util:human_id(Msg2ID)},
+	% 	{new_hashpath, hb_util:human_id(NewHashpath)}
+	% }),
 	TransformedMsg.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
@@ -104,12 +106,11 @@ push_request(Msg, Path) ->
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
 pop_request(Msg, Opts) when is_map(Msg) ->
-	?event({popping_request, Msg}),
-	case pop_request(?event(from_message(request, Msg)), Opts) of
+	case pop_request(from_message(request, Msg), Opts) of
 		undefined ->
 			?event(popped_undefined),
 			undefined;
-		{undefined, Rest} ->
+		{undefined, _} ->
 			undefined;
 		{Head, Rest} ->
 			?event({popped_request, Head, Rest}),
@@ -117,7 +118,6 @@ pop_request(Msg, Opts) when is_map(Msg) ->
 	end;
 pop_request([], _Opts) -> undefined;
 pop_request([Head|Rest], _Opts) ->
-	%?event({popped_request, Head, Rest}),
 	{Head, Rest}.
 
 %%% @doc Queue a message at the back of a request path. `path` is the only
@@ -238,6 +238,6 @@ hd_test() ->
 	?assertEqual(undefined, hd(#{ path => undefined }, #{})).
 
 tl_test() ->
-	?assertMatch(#{ path := [b, c] }, tl(#{ path => [a, b, c] }, #{})),
+	?assertMatch([b, c], tl(#{ path => [a, b, c] }, #{})),
 	?assertEqual(undefined, tl(#{ path => [] }, #{})),
 	?assertEqual(undefined, tl(#{ path => undefined }, #{})).

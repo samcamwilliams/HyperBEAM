@@ -213,18 +213,20 @@ generate_append_device(Str) ->
 	}.
 
 %% Create a device that modifies a number when the user tries to set it to a
-%% new value. This is a 'wonky' set device because it does not set the value
-%% because it allows us to infer and test the order in which devices have been
-%% executed, but does not perform a normal `set`.
+%% new value. This is a 'wonky' set device because it does not actually `set`,
+%% but does allow us to trace the order of execution of devices. We choose 
+%% `set` because it is a common handler that is used by many devices,
+%% increasing the likelihood that a subtle error would be exposed by these
+%% tests.
 generate_wonky_set_device(Modifier) ->
 	#{
 		set =>
-			fun(Msg) ->
-				% Find the first key that is not `path`.
-				Key = hd(maps:keys(Msg) -- [path]),
+			fun(Msg1, Msg2) ->
+				% Find the first key that is not a path.
+				Key = hd(maps:keys(Msg2) -- [path, hashpath]),
 				% Set it not to the new value, but the current value plus the
 				% modifier.
-				{ok, hb_pam:set(Msg, Key, hb_pam:get(Key, Msg) + Modifier)}
+				{ok, hb_pam:set(Msg1, Key, hb_pam:get(Key, Msg2) + Modifier)}
 			end
 	}.
 
@@ -241,7 +243,7 @@ transform_device_test_ignore() ->
 		},
 	?assertEqual(
 		{ok, #{ <<"Device">> => <<"Message">> } },
-		transform_device(Msg1, <<"1">>, #{})
+		transform_device(Msg1, <<"2">>, #{})
 	).
 
 simple_stack_execute_test_ignore() ->

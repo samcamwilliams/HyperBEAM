@@ -48,11 +48,13 @@ signers(M) ->
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
+	?event({setting_keys, {msg1, Message1}, {msg2, NewValuesMsg}, {opts, Opts}}),
 	KeysToSet =
 		lists:filter(
 			fun(Key) -> not lists:member(Key, ?DEVICE_KEYS) end,
 			hb_pam:keys(NewValuesMsg, Opts)
 		),
+	?event({keys_to_set, {keys, KeysToSet}}),
 	{
 		ok,
 		maps:merge(
@@ -104,6 +106,7 @@ keys(Msg) ->
 %% insensitively if the key is a binary.
 get(Key, Msg) -> get(Key, Msg, #{ path => get }).
 get(Key, Msg, _Msg2) ->
+	?event({getting_key, {key, Key}, {msg, Msg}}),
 	{ok, PublicKeys} = keys(Msg),
 	case lists:member(Key, PublicKeys) of
 		true -> {ok, maps:get(Key, Msg)};
