@@ -8,7 +8,7 @@
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2]).
--export([debug_print/3, debug_fmt/1]).
+-export([debug_print/4, debug_fmt/1]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
@@ -185,13 +185,13 @@ maybe_throw(Val, Opts) ->
 
 %% @doc Print a message to the standard error stream, prefixed by the amount
 %% of time that has elapsed since the last call to this function.
-debug_print(X, ModStr, LineNum) ->
+debug_print(X, Mod, Func, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w]==> ~s~n",
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w ~p]==> ~s~n",
         [
-			TSDiff, self(), ModStr, LineNum,
+			TSDiff, self(), Mod, LineNum, Func,
 			lists:flatten(debug_fmt(X, 0))
 		]),
     X.

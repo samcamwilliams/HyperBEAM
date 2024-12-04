@@ -2,7 +2,7 @@
 %%% Configuration and environment:
 -export([init/0, now/0, build/0]).
 %%% Debugging tools:
--export([event/1, event/2, event/3, no_prod/3]).
+-export([event/1, event/2, event/4, no_prod/3]).
 -export([read/1, read/2, debug_wait/3, profile/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
@@ -119,19 +119,21 @@ address(Location) -> address(wallet(Location)).
 %% error.
 event(X) -> event(X, "").
 event(X, Mod) -> event(X, Mod, undefined).
-event(X, ModStr, undefined) -> event(X, ModStr, "");
-event(X, ModAtom, Line) when is_atom(ModAtom) ->
+event(X, Mod, Func) -> event(X, Mod, Func, undefined).
+event(X, Mod, undefined, Line) -> event(X, Mod, "", Line);
+event(X, Mod, Func, undefined) -> event(X, Mod, Func, "");
+event(X, ModAtom, Func, Line) when is_atom(ModAtom) ->
     case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
-        true -> hb_util:debug_print(X, atom_to_list(ModAtom), Line);
+        true -> hb_util:debug_print(X, atom_to_list(ModAtom), Func, Line);
         false -> 
             case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
                 {hb_debug, [no_print]} -> X;
-                _ -> event(X, atom_to_list(ModAtom), Line)
+                _ -> event(X, atom_to_list(ModAtom), Func, Line)
             end
     end;
-event(X, ModStr, Line) ->
+event(X, ModStr, Func, Line) ->
     case hb_opts:get(debug_print) of
-        true -> hb_util:debug_print(X, ModStr, Line);
+        true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
     end.
 

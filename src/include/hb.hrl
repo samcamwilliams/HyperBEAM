@@ -5,7 +5,7 @@
 
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
--define(event(X), hb:event(X, ?MODULE, ?LINE)).
+-define(event(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?LINE)).
 -define(no_prod(X), hb:no_prod(X, ?MODULE, ?LINE)).
 
