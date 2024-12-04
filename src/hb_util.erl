@@ -9,6 +9,7 @@
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2]).
 -export([debug_print/4, debug_fmt/1]).
+-export([print_trace/4]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
@@ -300,3 +301,70 @@ format_map(Map, Indent) ->
 			"\n" ++ lists:flatten(hb_message:format(Map, Indent));
 		_ -> SimpleFmt
 	end.
+
+%% @doc Print the trace of the current stack, up to the first non-hyperbeam
+%% module. Prints each stack frame on a new line, until it finds a frame that
+%% does not start with a prefix in the `stack_print_prefixes` hb_opts.
+%% Optionally, you may call this function with a custom label and caller info,
+%% which will be used instead of the default.
+print_trace(Stack, CallMod, CallFunc, CallLine) ->
+	print_trace(Stack, "HB TRACE",
+		lists:flatten(io_lib:format("[~s:~w ~p]",
+			[CallMod, CallLine, CallFunc])
+	)).
+print_trace({_, {_, Stack}}, Label, CallerInfo) ->
+	print_trace(Stack, Label, CallerInfo);
+print_trace(Stack, Label, CallerInfo) ->
+	io:format(standard_error, "=== ~s ===~s==>~n~s",
+		[
+			Label, CallerInfo,
+			lists:flatten(
+				format_trace(
+					Stack,
+					hb_opts:get(stack_print_prefixes, [], #{})
+				)
+			)
+		]).
+
+%% @doc Format a stack trace as a list of strings, one for each stack frame.
+%% Each stack frame is formatted if it matches the `stack_print_prefixes`
+%% option. At the first frame that does not match a prefix in the
+%% `stack_print_prefixes` option, the rest of the stack is not formatted.
+format_trace([], _) -> [];
+format_trace([Item|Rest], Prefixes) ->
+	case element(1, Item) of
+		Atom when is_atom(Atom) ->
+			case string:tokens(atom_to_list(Atom), "_") of
+				[Prefix, _] ->
+					case lists:member(
+						Prefix,
+						Prefixes
+					) of
+						true ->
+							[
+								format_trace(Item, Prefixes) |
+								format_trace(Rest, Prefixes)
+							];
+						false -> []
+					end;
+				_ -> []
+			end;
+		_ -> []
+	end;
+format_trace({Func, ArityOrTerm, Extras}, Prefixes) ->
+	format_trace({no_module, Func, ArityOrTerm, Extras}, Prefixes);
+format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
+	ExtraMap = maps:from_list(Extras),
+	format_indented(
+		"~p:~p/~p [~s]~n",
+		[
+			Mod, Func, ArityOrTerm,
+			case maps:get(line, ExtraMap, undefined) of
+				undefined -> "No details";
+				Line ->
+					maps:get(file, ExtraMap)
+						++ ":" ++ integer_to_list(Line)
+			end
+		],
+		2
+	).

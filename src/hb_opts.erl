@@ -105,7 +105,8 @@ config() ->
 		debug_print_binary_max => 15,
 		debug_print_indent => 4,
         debug_print => false,
-		cache_results => false
+		cache_results => false,
+		stack_print_prefixes => ["hb", "dev", "ar"]
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

@@ -3,7 +3,7 @@
 -export([init/0, now/0, build/0]).
 %%% Debugging tools:
 -export([event/1, event/2, event/4, no_prod/3]).
--export([read/1, read/2, debug_wait/3, profile/1]).
+-export([read/1, read/2, debug_wait/4, profile/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
 -include("include/hb.hrl").
@@ -186,8 +186,8 @@ profile(Fun) ->
 
 %% @doc Utility function to wait for a given amount of time, printing a debug
 %% message to the console first.
-debug_wait(T, Mod, Line) ->
+debug_wait(T, Mod, Func, Line) ->
     hb_util:debug_print(
 		lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
-		Mod, Line),
+		Mod, Func, Line),
     receive after T -> ok end.

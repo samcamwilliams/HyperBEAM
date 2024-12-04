@@ -6,19 +6,19 @@
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
 -define(event(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
--define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?LINE)).
+-define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(no_prod(X), hb:no_prod(X, ?MODULE, ?LINE)).
 
 %%% Macro shortcuts for debugging.
 %% @doc A macro for marking that you got 'here'.
--define(h(), hb:event("[Debug point reached.]", ?MODULE, ?LINE)).
+-define(h(), hb:event("[Debug point reached.]", ?MODULE, ?FUNCTION_NAME, ?LINE)).
 %% @doc Quickly print a value in the logs. Currently uses the event
 %% function, but should be moved to a debug-specific function once we
 %% build out better logging infrastructure.
--define(p(X), hb:event(X, ?MODULE, ?LINE)).
-% We don't include a macro for waiting, as it is destructive to UX.
-% If you need to wait, it should at least be obvious to readers of
-% the code what is happening.
+-define(p(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+%% @doc Print the trace of the current stack, up to the first non-hyperbeam
+%% module.
+-define(trace(), hb_util:print_trace(catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 
 -record(result, {
 	messages = [],
