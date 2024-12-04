@@ -9,7 +9,7 @@
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2]).
 -export([debug_print/4, debug_fmt/1]).
--export([print_trace/4]).
+-export([print_trace/4, trace_macro_helper/4]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
@@ -312,8 +312,7 @@ print_trace(Stack, CallMod, CallFunc, CallLine) ->
 		lists:flatten(io_lib:format("[~s:~w ~p]",
 			[CallMod, CallLine, CallFunc])
 	)).
-print_trace({_, {_, Stack}}, Label, CallerInfo) ->
-	print_trace(Stack, Label, CallerInfo);
+
 print_trace(Stack, Label, CallerInfo) ->
 	io:format(standard_error, "=== ~s ===~s==>~n~s",
 		[
@@ -366,5 +365,10 @@ format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
 						++ ":" ++ integer_to_list(Line)
 			end
 		],
-		2
+		1
 	).
+
+%% @doc Utility function to help macro `?trace/0` remove the first frame of the
+%% stack trace.
+trace_macro_helper({_, {_, [_IgnoredFrame|Stack]}}, Mod, Func, Line) ->
+	print_trace(Stack, Mod, Func, Line).

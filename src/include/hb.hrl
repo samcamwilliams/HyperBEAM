@@ -18,7 +18,7 @@
 -define(p(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module.
--define(trace(), hb_util:print_trace(catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(trace(), hb_util:trace_macro_helper(catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 
 -record(result, {
 	messages = [],
