@@ -5,7 +5,7 @@
 -hb_debug(print).
 
 %%% This module implements the core AO process execution logic, built around
-%%% Hyperbeam's devices. It persists messages between executions, keeping 
+%%% Hyperbeam's devices. It persists messages between executions, keeping
 %%% the state of the process in memory or cached to disk as needed.
 %%%
 %%% An AO process is a specific type of Arweave message executable by
@@ -37,7 +37,7 @@
 %%% Each device can expose a `DevMod:uses()` function that returns a list of
 %%% state components that it employs in its execution:
 %%%
-%%% DeviceMod:uses() -> 
+%%% DeviceMod:uses() ->
 %%% 	all |
 %%% 	[StateComponentNameAtom | {StateComponentNameAtom, read | write }]
 %%%
@@ -109,7 +109,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
         {ok, Result} -> {ok, Result}
     end.
 
-%% Start a new Erlang process for the AO process, optionally giving the 
+%% Start a new Erlang process for the AO process, optionally giving the
 %% assignments so far.
 start(Process) -> start(Process, #{}).
 start(Process, Opts) ->
@@ -214,7 +214,7 @@ boot(Process, Opts) ->
     pg:join({cu, hb_util:id(Process, signed)}, self()),
     % Build the device stack.
     ?event({registered_process, hb_util:id(Process, signed)}),
-    {ok, Dev} = hb_pam:load_device(Process),
+    {ok, Dev} = hb_pam:load_device(Process, Opts),
     ?event({booting_device, Dev}),
     {ok, BootState = #{ devices := Devs }}
         = hb_pam:resolve(Dev, boot, [Process, Opts], Opts),
@@ -378,7 +378,7 @@ post_execute(
                                         Item = maps:get(Key, CheckpointState),
                                         case is_record(Item, tx) of
                                             true -> {Key, Item};
-                                            false -> 
+                                            false ->
 												throw({error, checkpoint_result_not_tx, Key})
                                         end
                                     end,

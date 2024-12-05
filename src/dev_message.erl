@@ -1,5 +1,6 @@
 -module(dev_message).
--export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/3, remove/2, get/2]).
+-export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
+-export([set/3, remove/2, get/2, get/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -49,16 +50,35 @@ signers(M) ->
 %% the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
 	?event({setting_keys, {msg1, Message1}, {msg2, NewValuesMsg}, {opts, Opts}}),
+	% Filter keys that are in the default device (this one).
 	KeysToSet =
 		lists:filter(
-			fun(Key) -> not lists:member(Key, ?DEVICE_KEYS) end,
+			fun(Key) ->
+				not lists:member(Key, ?DEVICE_KEYS)
+			end,
 			hb_pam:keys(NewValuesMsg, Opts)
 		),
-	?event({keys_to_set, {keys, KeysToSet}}),
+	% Find keys in the message that are already set (case-insensitive), and 
+	% note them for removal.
+	NormalizedKeysToSet = lists:map(fun hb_pam:to_key/1, KeysToSet),
+	ConflictingKeys =
+		lists:filter(
+			fun(Key) ->
+				lists:member(hb_pam:to_key(Key), NormalizedKeysToSet)
+			end,
+			maps:keys(Message1)
+		),
+	?event(
+		{keys_to_set,
+			{keys, KeysToSet},
+			{removing_due_to_conflict, ConflictingKeys},
+			{normalised_msg1_keys, maps:keys(Message1)}
+		}
+	),
 	{
 		ok,
 		maps:merge(
-			Message1,
+			maps:without(ConflictingKeys, Message1),
 			maps:from_list(
 				lists:map(
 					fun(Key) ->
@@ -180,3 +200,9 @@ remove_test() ->
 		hb_pam:resolve(Msg, #{ path => remove, item => <<"Key1">> })),
 	?assertMatch({ok, #{}},
 		hb_pam:resolve(Msg, #{ path => remove, items => [<<"Key1">>, <<"Key2">>] })).
+
+set_conflicting_keys_test() ->
+	Msg1 = #{ <<"Dangerous">> => <<"Value1">> },
+	Msg2 = #{ path => set, dangerous => <<"Value2">> },
+	?assertMatch({ok, #{ dangerous := <<"Value2">> }},
+		hb_pam:resolve(Msg1, Msg2)).
