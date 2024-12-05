@@ -71,12 +71,8 @@ generate_attestation(Nonce) ->
     ?event("Reading the attestation report and public key..."),
 
     % Ensure that read_file returns the binary data as expected
-    {_, ReportData} = sec_helpers:read_file(?REPORT_FILE),
-    {_, PublicKeyData} = sec_helpers:read_file(?VCEK_FILE),
-
-    % Ensure the read data is in binary format (already handled by read_file)
-    ReportBin = list_to_binary(ReportData),
-    PublicKeyBin = list_to_binary(PublicKeyData),
+    {_, ReportBin} = sec_helpers:read_file(?REPORT_FILE),
+    {_, PublicKeyBin} = sec_helpers:read_file(?VCEK_FILE),
 
     % Get sizes of the individual files (in binary)
     ReportSize = byte_size(ReportBin),

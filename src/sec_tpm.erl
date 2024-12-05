@@ -61,7 +61,7 @@ generate_attestation(Nonce) ->
 	end,
 
 	% Setup the keys
-	setup_keys(),
+	ok = setup_keys(),
 
 	% Use the address in hex format as the nonce
 	NonceHex = binary_to_list(binary:encode_hex(Nonce)),
@@ -70,14 +70,9 @@ generate_attestation(Nonce) ->
 	case sec_helpers:run_command(Command) of
 		{ok, _} ->
 			% Read the quote.msg, quote.sig, and ak.pub files
-			{_, QuoteData} = sec_helpers:read_file(?QUOTE_MSG_FILE),
-			{_, SignatureData} = sec_helpers:read_file(?QUOTE_SIG_FILE),
-			{_, AkPubData} = sec_helpers:read_file(?AK_PUB_FILE),
-
-			% Ensure the read data is in binary format
-			QuoteBin = list_to_binary(QuoteData),
-			SignatureBin = list_to_binary(SignatureData),
-			AkPubBin = list_to_binary(AkPubData),
+			{_, QuoteBin} = sec_helpers:read_file(?QUOTE_MSG_FILE),
+			{_, SignatureBin} = sec_helpers:read_file(?QUOTE_SIG_FILE),
+			{_, AkPubBin} = sec_helpers:read_file(?AK_PUB_FILE),
 
 			% Get sizes of the individual files (in binary)
 			QuoteSize = byte_size(QuoteBin),

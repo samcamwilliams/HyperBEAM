@@ -15,7 +15,7 @@ write_to_file(FilePath, Data) ->
 read_file(FilePath) ->
 	?event({"Reading file", FilePath}),
 	case file:read_file(FilePath) of
-		{ok, Data} -> {FilePath, binary:bin_to_list(Data)};
+		{ok, Data} -> {FilePath, Data};
 		{error, Reason} -> {error, Reason}
 	end.
 
