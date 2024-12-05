@@ -1,5 +1,5 @@
 -module(dev_stack).
--export([info/0]).
+-export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc A device that contains a stack of other devices, which it runs
@@ -83,8 +83,10 @@
 -include("include/hb.hrl").
 -hb_debug(print).
 
-info() ->
-    #{ handler => fun router/4 }.
+info(_) ->
+    #{
+		handler => fun router/4
+	}.
 
 %% @doc The device stack key router. Sends the request to `resolve_stack`,
 %% except for `set/2` which is handled by the default implementation in
@@ -230,19 +232,19 @@ generate_wonky_set_device(Modifier) ->
 			end
 	}.
 
-transform_device_test_ignore() ->
+transform_device_test() ->
 	WonkyDev = generate_wonky_set_device(1),
 	Msg1 =
 		#{
-			<<"Device">> => <<"Stack">>,
+			device => <<"Stack/1.0">>,
 			<<"Device-Stack">> =>
 				#{
 					<<"1">> => WonkyDev,
 					<<"2">> => <<"Message">>
 				}
 		},
-	?assertEqual(
-		{ok, #{ <<"Device">> => <<"Message">> } },
+	?assertMatch(
+		{ok, #{ <<"Device">> := <<"Message">> } },
 		transform_device(Msg1, <<"2">>, #{})
 	).
 
