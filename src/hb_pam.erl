@@ -467,10 +467,10 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 		false ->
 			{error, remote_devices_disabled}
 	end;
-load_device(ID, _Opts) ->
+load_device(ID, Opts) ->
     case maps:get(ID, hb_opts:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
-        Mod -> {ok, Mod}
+        Mod -> load_device(Mod, Opts)
     end.
 
 %% @doc Get the info map for a device, optionally giving it a message if the
