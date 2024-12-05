@@ -217,11 +217,14 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
 
 %%% Tests
 
-generate_append_device(Str) ->
+generate_append_device(Separator) ->
 	#{
-		test =>
-			fun(#{ bin := Bin }) ->
-				{ok, << Bin/binary, Str/bitstring >>}
+		append =>
+			fun(#{ result := Existing }, #{ bin := New }) ->
+				?event({appending, {existing, Existing}, {new, New}}),
+				{ok, #{ result =>
+					<< Existing/binary, Separator/binary, New/binary>>
+				}}
 			end
 	}.
 
@@ -233,7 +236,7 @@ generate_append_device(Str) ->
 %% tests.
 generate_wonky_set_device(Modifier) ->
 	#{
-		set =>
+		append =>
 			fun(Msg1, Msg2) ->
 				% Find the first key that is not a path.
 				Key = hd(maps:keys(Msg2) -- [path, hashpath]),
@@ -259,19 +262,33 @@ transform_device_test() ->
 		transform_device(Msg1, <<"2">>, #{})
 	).
 
+example_device_for_stack_test() ->
+	% Test the example device that we use for later stack tests, such that
+	% we know that an error later is actually from the stack, and not from
+	% the example device.
+	?assertMatch(
+		{ok, #{ result := <<"1_2">> }},
+		hb_pam:resolve(
+			#{ device => generate_append_device(<<"_">>), result => <<"1">> },
+			#{ path => append, bin => <<"2">> },
+			#{}
+		)
+	).
+
 simple_stack_execute_test() ->
 	Msg = #{
 		device => <<"Stack/1.0">>,
 		<<"Device-Stack">> =>
 			#{
-				<<"1">> => generate_append_device("1"),
-				<<"2">> => generate_append_device("2")
-			}
+				<<"1">> => generate_append_device(<<"!D1!">>),
+				<<"2">> => generate_append_device(<<"_D2_">>)
+			},
+		result => <<"INIT">>
 	},
 	?event({stack_executing, test, {explicit, Msg}}),
 	?assertEqual(
-		{ok, #{ bin => <<"12">> }},
-		hb_pam:resolve(Msg, test)
+		{ok, #{ result => <<"INIT!D1!2_D2_2">> }},
+		hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> })
 	).
 
 %% Ensure that devices are reordered correctly during execution. We use the

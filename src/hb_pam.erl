@@ -75,9 +75,17 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 	{Fun, NewOpts} =
 		try
 			Key = hb_path:hd(Msg2, Opts),
-			?event({resolving, Key, #{ msg1 => Msg1, msg2 => Msg2, opts => Opts }}),
 			% Try to load the device and get the function to call.
 			{Status, ReturnedFun} = message_to_fun(Msg1, Key, Opts),
+			?event(
+				{resolving, Key,
+					{status, Status},
+					{func, ReturnedFun},
+					{msg1, Msg1},
+					{msg2, Msg2},
+					{opts, Opts}
+				}
+			),
 			% Next, add an option to the Opts map to indicate if we should
 			% add the key to the start of the arguments. Note: This option
 			% is used downstream by other devices (like `dev_stack`), so
@@ -139,9 +147,19 @@ handle_resolved_result(Msg3, _Msg2, _UserOpts) when is_binary(Msg3) ->
 	Msg3;
 handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
-handle_resolved_result(Msg2List = [Status, Result|_], _Msg2, _Opts)
+handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
 		when Status =/= ok orelse not is_map(Result) ->
-	list_to_tuple(Msg2List);
+	Msg3 = list_to_tuple(Msg2List),
+	?event(
+		{abnormal_result,
+			{result, Result},
+			{msg2, Msg2},
+			{msg3, Msg3},
+			{opts, Opts}
+		}
+	),
+	?trace(),
+	Msg3;
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 	Msg3 =
 		case hb_opts:get(update_hashpath, true, Opts#{ only => local }) of
@@ -746,3 +764,10 @@ device_exports_test() ->
 	?assert(is_exported(Dev, info, #{})),
 	?assert(is_exported(Dev, set, #{})),
 	?assert(not is_exported(Dev, not_exported, #{})).
+
+denormalized_device_key_test() ->
+	Msg = #{ <<"Device">> => dev_test },
+	?assertEqual(dev_test, hb_pam:get(device, Msg)),
+	?assertEqual(dev_test, hb_pam:get(<<"Device">>, Msg)),
+	?assertEqual({module, dev_test},
+		erlang:fun_info(element(2, message_to_fun(Msg, test_func, #{})), module)).

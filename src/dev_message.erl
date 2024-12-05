@@ -68,13 +68,13 @@ set(Message1, NewValuesMsg, Opts) ->
 			end,
 			maps:keys(Message1)
 		),
-	?event(
-		{keys_to_set,
-			{keys, KeysToSet},
-			{removing_due_to_conflict, ConflictingKeys},
-			{normalised_msg1_keys, maps:keys(Message1)}
-		}
-	),
+	% ?event(
+	% 	{keys_to_set,
+	% 		{keys, KeysToSet},
+	% 		{removing_due_to_conflict, ConflictingKeys},
+	% 		{normalised_msg1_keys, maps:keys(Message1)}
+	% 	}
+	% ),
 	{
 		ok,
 		maps:merge(
@@ -130,8 +130,7 @@ get(Key, Msg, _Msg2) ->
 	{ok, PublicKeys} = keys(Msg),
 	case lists:member(Key, PublicKeys) of
 		true -> {ok, maps:get(Key, Msg)};
-		false when is_binary(Key) -> case_insensitive_get(Key, Msg);
-		false -> {error, not_found}
+		false -> case_insensitive_get(Key, Msg)
 	end.
 
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 
@@ -139,6 +138,7 @@ get(Key, Msg, _Msg2) ->
 %% `maps:get/2`. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
 	{ok, Keys} = keys(Msg),
+	?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
 	case_insensitive_get(Key, Msg, Keys).
 case_insensitive_get(Key, Msg, Keys) when byte_size(Key) > 43 ->
 	do_case_insensitive_get(Key, Msg, Keys);
@@ -147,7 +147,7 @@ case_insensitive_get(Key, Msg, Keys) ->
 do_case_insensitive_get(_Key, _Msg, []) -> {error, not_found};
 do_case_insensitive_get(Key, Msg, [CurrKey | Keys]) ->
 	case hb_pam:to_key(CurrKey) of
-		Key -> {ok, maps:get(Key, Msg)};
+		Key -> {ok, maps:get(CurrKey, Msg)};
 		_ -> do_case_insensitive_get(Key, Msg, Keys)
 	end.
 
@@ -172,8 +172,12 @@ keys_from_device_test() ->
 
 case_insensitive_get_test() ->
 	?assertEqual({ok, 1}, case_insensitive_get(a, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(a, #{ <<"A">> => 1 })),
+	?assertEqual({ok, 1}, case_insensitive_get(a, #{ <<"a">> => 1 })),
 	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{a => 1})),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{a => 1})).
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"a">> => 1 })),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"A">> => 1 })).
 
 private_keys_are_filtered_test() ->
 	?assertEqual(
