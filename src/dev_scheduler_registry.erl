@@ -36,7 +36,7 @@ maybe_new_proc(_ProcID, false) -> not_found;
 maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
     maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
-	?event({starting_su_for, ProcID}),
+    ?event({starting_su_for, ProcID}),
     Pid = dev_scheduler_server:start(ProcID, get_wallet()),
     try
         pg:join({su, ProcID}, Pid),
@@ -81,6 +81,6 @@ get_all_processes_test() ->
     ?MODULE:find(?TEST_PROC_ID2, true),
     Processes = ?MODULE:get_processes(),
     ?assertEqual(2, length(Processes)),
-	?event({processes, Processes}),
+    ?event({processes, Processes}),
     ?assert(lists:member(?TEST_PROC_ID1, Processes)),
     ?assert(lists:member(?TEST_PROC_ID2, Processes)).

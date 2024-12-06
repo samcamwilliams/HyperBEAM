@@ -42,9 +42,9 @@ handle_crons(State) ->
         {ok, HasNextPage, Results, Cursor} ->
             lists:map(
                 fun(Res) ->
-					% TODO: Validate this
-					dev_mu:push(#{ message => Res }, State)
-				end,
+                    % TODO: Validate this
+                    dev_mu:push(#{ message => Res }, State)
+                end,
                 Results
             ),
             NS = State#state{cursor = Cursor},

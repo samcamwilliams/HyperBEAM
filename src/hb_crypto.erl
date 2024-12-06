@@ -20,46 +20,46 @@
 
 %% @doc Add a new ID to the end of a SHA-256 hash chain.
 sha256_chain(ID1, ID2) when ?IS_ID(ID1) and ?IS_ID(ID2) ->
-	?no_prod("CAUTION: Unaudited cryptographic function invoked."),
-	sha256(<<ID1:32/binary, ID2:32/binary>>);
+    ?no_prod("CAUTION: Unaudited cryptographic function invoked."),
+    sha256(<<ID1:32/binary, ID2:32/binary>>);
 sha256_chain(ID1, ID2) ->
-	throw({cannot_chain_bad_ids, ID1, ID2}).
+    throw({cannot_chain_bad_ids, ID1, ID2}).
 
 %% @doc Accumulate two IDs into a single commitment.
 %% Experimental! This is not necessarily a cryptographically-secure operation.
 accumulate(ID1 = << ID1Int:256 >>, ID2) when ?IS_ID(ID1) and ?IS_ID(ID2) ->
-	?no_prod("CAUTION: Experimental cryptographic algorithm invoked."),
-	<< ID2Int:256 >> = sha256_chain(ID1, ID2),
-	<< (ID1Int + ID2Int):256 >>;
+    ?no_prod("CAUTION: Experimental cryptographic algorithm invoked."),
+    << ID2Int:256 >> = sha256_chain(ID1, ID2),
+    << (ID1Int + ID2Int):256 >>;
 accumulate(ID1, ID2) ->
-	throw({cannot_accumulate_bad_ids, ID1, ID2}).
+    throw({cannot_accumulate_bad_ids, ID1, ID2}).
 
 %% @doc Wrap Erlang's `crypto:hash/2` to provide a standard interface.
 %% Under-the-hood, this uses OpenSSL.
 sha256(Data) ->
-	crypto:hash(sha256, Data).
+    crypto:hash(sha256, Data).
 
 %%% Tests
 
 %% @doc Count the number of leading zeroes in a bitstring.
 count_zeroes(<<>>) ->
-	0;
+    0;
 count_zeroes(<<0:1, Rest/bitstring>>) ->
-	1 + count_zeroes(Rest);
+    1 + count_zeroes(Rest);
 count_zeroes(<<_:1, Rest/bitstring>>) ->
-	count_zeroes(Rest).
+    count_zeroes(Rest).
 
 %% @doc Check that `sha-256-chain` correctly produces a hash matching
 %% the machine's OpenSSL lib's output. Further (in case of a bug in our
 %% or Erlang's usage of OpenSSL), check that the output has at least has
 %% a high level of entropy.
 sha256_chain_test() ->
-	ID1 = <<1:256>>,
-	ID2 = <<2:256>>,
-	ID3 = sha256_chain(ID1, ID2),
-	HashBase = << ID1/binary, ID2/binary >>,
-	?assertEqual(ID3, crypto:hash(sha256, HashBase)),
-	% Basic entropy check.
-	Avg = count_zeroes(ID3) / 256,
-	?assert(Avg > 0.4),
-	?assert(Avg < 0.6).
+    ID1 = <<1:256>>,
+    ID2 = <<2:256>>,
+    ID3 = sha256_chain(ID1, ID2),
+    HashBase = << ID1/binary, ID2/binary >>,
+    ?assertEqual(ID3, crypto:hash(sha256, HashBase)),
+    % Basic entropy check.
+    Avg = count_zeroes(ID3) / 256,
+    ?assert(Avg > 0.4),
+    ?assert(Avg < 0.6).

@@ -19,10 +19,10 @@ start() ->
 %% form.
 get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
-	case get_binary(URL) of
-		{ok, Res} -> {ok, ar_bundles:deserialize(Res)};
-		Error -> Error
-	end.
+    case get_binary(URL) of
+        {ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+        Error -> Error
+    end.
 
 %% @doc Gets a URL via HTTP and returns the raw binary body. Abstracted such that
 %% we can easily swap out the HTTP client library later.
@@ -42,12 +42,12 @@ get_binary(URL) ->
 post(Host, Path, Message) -> post(Host ++ Path, Message).
 post(URL, Message) when not is_binary(Message) ->
     ?event({http_post, hb_util:id(Message, unsigned), hb_util:id(Message, signed), URL}),
-	post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
+    post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
 post(URL, Message) ->
-	case post_binary(URL, Message) of
-		{ok, Res} -> {ok, ar_bundles:deserialize(Res)};
-		Error -> Error
-	end.
+    case post_binary(URL, Message) of
+        {ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+        Error -> Error
+    end.
 
 %% @doc Posts a binary to a URL on a remote peer via HTTP, returning the raw
 %% binary body.

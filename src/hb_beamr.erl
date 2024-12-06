@@ -101,13 +101,13 @@ simple_wasm_test() ->
     ?assertEqual(120.0, Result).
 
 generate_test_vfs() ->
-	dev_vfs:init(#{}).
+    dev_vfs:init(#{}).
 
 test_call(Port, Func, Args) ->
-	{ok, VFSState0} = generate_test_vfs(),
-	test_call(VFSState0, Port, Func, Args).
+    {ok, VFSState0} = generate_test_vfs(),
+    test_call(VFSState0, Port, Func, Args).
 test_call(VFSState, Port, Func, Args) ->
-	call(VFSState, Port, Func, Args, fun dev_json_iface:stdlib/6).
+    call(VFSState, Port, Func, Args, fun dev_json_iface:stdlib/6).
 
 simple_wasm_calling_test() ->
     {ok, File} = file:read_file("test/test-calling.wasm"),
@@ -120,9 +120,9 @@ simple_wasm_calling_test() ->
     {ok, Ptr1} = hb_beamr_io:write_string(Port, Arg1),
     ?assertNotEqual(0, Ptr1),
     {ok, [], State} = test_call(Port, "print_args", [Ptr0, Ptr1]),
-	Str = dev_vfs:stdout(State),
-	?assert(binary:match(Str, <<"Test string arg 00000000000000">>) /= nomatch),
-	?assert(binary:match(Str, <<"Test string arg 11111111111111">>) /= nomatch).
+    Str = dev_vfs:stdout(State),
+    ?assert(binary:match(Str, <<"Test string arg 00000000000000">>) /= nomatch),
+    ?assert(binary:match(Str, <<"Test string arg 11111111111111">>) /= nomatch).
 
 wasm64_test() ->
     ?event(simple_wasm64_test),
@@ -133,14 +133,14 @@ wasm64_test() ->
 
 gen_test_env() ->
     <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":["
-		"{\"name\":\"Name\",\"value\":\"Thomas\"},"
-		"{\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
+        "{\"name\":\"Name\",\"value\":\"Thomas\"},"
+        "{\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
 
 gen_test_aos_msg(Command) ->
     <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\","
-		"\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\","
-		"\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"",
-		(list_to_binary(Command))/binary, "\"}\0">>.
+        "\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\","
+        "\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"",
+        (list_to_binary(Command))/binary, "\"}\0">>.
 
 aos64_standalone_wex_test() ->
     Msg = gen_test_aos_msg("return 1+1"),
