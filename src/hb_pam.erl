@@ -148,18 +148,20 @@ handle_resolved_result(Msg3, _Msg2, _UserOpts) when is_binary(Msg3) ->
 handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
 handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
-		when Status =/= ok orelse not is_map(Result) ->
+		when Status =/= ok ->
 	Msg3 = list_to_tuple(Msg2List),
-	?event(
-		{abnormal_result,
-			{result, Result},
-			{msg2, Msg2},
-			{msg3, Msg3},
-			{opts, Opts}
-		}
-	),
-	?trace(),
+	% ?event(
+	% 	{abnormal_result,
+	% 		{result, Result},
+	% 		{msg2, Msg2},
+	% 		{msg3, Msg3},
+	% 		{opts, Opts}
+	% 	}
+	% ),
 	Msg3;
+handle_resolved_result(Output = [ok, Res|_], _Msg2, _Opts) when not is_map(Res) ->
+	% The result is not a map, so we return it as is.
+	list_to_tuple(Output);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 	Msg3 =
 		case hb_opts:get(update_hashpath, true, Opts#{ only => local }) of
@@ -200,6 +202,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 get(Path, Msg) ->
 	get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
+	?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
 	ensure_ok(Path, resolve(Msg, #{ path => Path }, Opts), Opts).
 
 %% @doc Get the value of a key from a message, returning a default value if the
@@ -319,7 +322,7 @@ message_to_fun(Msg, Key, Opts) ->
 	case maps:find(handler, Info = info(Dev, Msg, Opts)) of
 		{ok, Handler} ->
 			% Case 2: The device has an explicit handler function.
-			{add_key, Handler};
+			info_handler_to_fun(Handler, Msg, Key, Opts);
 		error ->
 			case find_exported_function(Dev, Key, 3, Opts) of
 				{ok, Func} ->
@@ -354,6 +357,26 @@ message_to_fun(Msg, Key, Opts) ->
 							end
 					end
 			end
+	end.
+
+%% @doc Parse a handler key given by a device's `info`.
+info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
+	{add_key, Handler};
+info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
+	case maps:find(exclude, HandlerMap) of
+		{ok, Exclude} ->
+			case lists:member(Key, Exclude) of
+				true ->
+					{ok, MsgWithoutDevice} =
+						dev_message:remove(Msg, #{ item => device }),
+					message_to_fun(
+						MsgWithoutDevice#{ device => default_module() },
+						Key,
+						Opts
+					);
+				false -> {add_key, maps:get(func, HandlerMap)}
+			end;
+		error -> {add_key, maps:get(func, HandlerMap)}
 	end.
 
 %% @doc Find the function with the highest arity that has the given name, if it
@@ -453,6 +476,7 @@ to_atom_unsafe(Key) when is_atom(Key) -> Key.
 %% a tuple of the form {error, Reason} is returned.
 load_device(Map, _Opts) when is_map(Map) -> {ok, Map};
 load_device(ID, _Opts) when is_atom(ID) ->
+	?event({loading_device, {id, ID}}),
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;

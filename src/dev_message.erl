@@ -68,13 +68,13 @@ set(Message1, NewValuesMsg, Opts) ->
 			end,
 			maps:keys(Message1)
 		),
-	% ?event(
-	% 	{keys_to_set,
-	% 		{keys, KeysToSet},
-	% 		{removing_due_to_conflict, ConflictingKeys},
-	% 		{normalised_msg1_keys, maps:keys(Message1)}
-	% 	}
-	% ),
+	?event(
+		{keys_to_set,
+			{keys, KeysToSet},
+			{removing_due_to_conflict, ConflictingKeys},
+			{normalised_msg1_keys, maps:keys(Message1)}
+		}
+	),
 	{
 		ok,
 		maps:merge(
@@ -83,8 +83,8 @@ set(Message1, NewValuesMsg, Opts) ->
 				lists:map(
 					fun(Key) ->
 						?no_prod("Are we sure that the default device should "
-							"resolve values?"),
-						{Key, hb_pam:get(Key, NewValuesMsg, Opts)}
+							"not resolve values during set?"),
+						{Key, maps:get(Key, NewValuesMsg)}
 					end,
 					KeysToSet
 				)
@@ -138,7 +138,7 @@ get(Key, Msg, _Msg2) ->
 %% `maps:get/2`. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
 	{ok, Keys} = keys(Msg),
-	?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
+	%?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
 	case_insensitive_get(Key, Msg, Keys).
 case_insensitive_get(Key, Msg, Keys) when byte_size(Key) > 43 ->
 	do_case_insensitive_get(Key, Msg, Keys);

@@ -81,7 +81,6 @@
 %%% resulting HashPath remains correct and verifiable.
 
 -include("include/hb.hrl").
--hb_debug(print).
 
 info(_) ->
     #{
@@ -91,17 +90,20 @@ info(_) ->
 %% @doc The device stack key router. Sends the request to `resolve_stack`,
 %% except for `set/2` which is handled by the default implementation in
 %% `dev_message`.
+router(keys, Message1, Message2, _Opts) ->
+	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
+	dev_message:keys(Message1);
 router(set, Message1, Message2, Opts) ->
+	?event({set_called, {msg1, Message1}, {msg2, Message2}}),
 	dev_message:set(Message1, Message2, Opts);
 router(Key, Message1, Message2, Opts) ->
 	?event({router_called, {key, Key}, {msg1, Message1}, {msg2, Message2}}),
-	?trace(),
 	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
 	?event({got_device_key, InitDevMsg}),
 	case resolve_stack(Message1, Key, Message2, Opts) of
 		{ok, Result} when is_map(Result) ->
 			?event({router_result, ok, Result}),
-			{ok, hb_pam:set(Result, <<"Device">>, InitDevMsg, Opts)};
+			dev_message:set(Result, #{<<"Device">> => InitDevMsg}, Opts);
 		Else ->
 			?event({router_result, unexpected, Else}),
 			Else
@@ -114,13 +116,25 @@ router(Key, Message1, Message2, Opts) ->
 transform_device(Msg1, Key, Opts) ->
 	case dev_message:get(<<"Device-Stack">>, Msg1, Opts) of
 		{ok, StackMsg} ->
-			DevMsg = hb_pam:get(Key, StackMsg, Opts),
-			dev_message:set(
-				Msg1,
-				#{ <<"Device">> => DevMsg },
-				Opts
-			);
-		_ -> not_found
+			% DevMsg = hb_pam:get(Key, StackMsg, Opts),
+			% dev_message:set(
+			% 	Msg1,
+			% 	#{ <<"Device">> => DevMsg },
+			% 	Opts
+			% );
+			case hb_pam:resolve(StackMsg, #{ path => Key }, Opts) of
+				{ok, DevMsg} ->
+					?event({got_device_key, DevMsg}),
+					dev_message:set(
+						Msg1,
+						#{ <<"Device">> => DevMsg },
+						Opts
+					);
+				_ ->
+					?event({no_device_key, Key}),
+					not_found
+			end;
+		_ -> throw({error, no_valid_device_stack})
 	end.
 
 %% @doc The main device stack execution engine. See the `moduledoc` for more
@@ -143,8 +157,10 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 					case hb_pam:resolve(Message4, pass, Opts) of
 						{ok, <<"Allow">>} ->
 							?event({result, pass, allowed, DevNum, Message4}),
+							?no_prod("Must update the pass number."),
 							resolve_stack(
-								hb_pam:set(Message4, pass, 1, Opts),
+								dev_message:set(Message4, #{ pass =>
+									1 }, Opts),
 								Key,
 								Message2,
 								1,
@@ -181,12 +197,12 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	end.
 
 maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
-    case hb_pam:get(<<"Error-Strategy">>, Message1, Opts) of
-        <<"Stop">> ->
+    case hb_pam:to_key(hb_pam:get(<<"Error-Strategy">>, Message1, Opts)) of
+        stop ->
 			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
-        <<"Throw">> ->
+        throw ->
 			throw({error_running_dev, Message1, Key, Message2, DevNum, Info});
-        <<"Continue">> ->
+        continue ->
 			?event({continue_stack_execution_after_error, Message1, Key, Info}),
             resolve_stack(
                 hb_pam:set(Message1,
@@ -204,7 +220,7 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
                 DevNum + 1,
                 Opts
             );
-        <<"Ignore">> ->
+        ignore ->
 			?event({ignoring_stack_error, Message1, Key, Info}),
             resolve_stack(
                 Message1,
@@ -220,46 +236,31 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
 generate_append_device(Separator) ->
 	#{
 		append =>
-			fun(#{ result := Existing }, #{ bin := New }) ->
+			fun(M1 = #{ result := Existing }, #{ bin := New }) ->
 				?event({appending, {existing, Existing}, {new, New}}),
-				{ok, #{ result =>
+				{ok, M1#{ result =>
 					<< Existing/binary, Separator/binary, New/binary>>
 				}}
 			end
 	}.
 
-%% Create a device that modifies a number when the user tries to set it to a
-%% new value. This is a 'wonky' set device because it does not actually `set`,
-%% but does allow us to trace the order of execution of devices. We choose
-%% `set` because it is a common handler that is used by many devices,
-%% increasing the likelihood that a subtle error would be exposed by these
-%% tests.
-generate_wonky_set_device(Modifier) ->
-	#{
-		append =>
-			fun(Msg1, Msg2) ->
-				% Find the first key that is not a path.
-				Key = hd(maps:keys(Msg2) -- [path, hashpath]),
-				% Set it not to the new value, but the current value plus the
-				% modifier.
-				{ok, hb_pam:set(Msg1, Key, hb_pam:get(Key, Msg2) + Modifier)}
-			end
-	}.
-
 transform_device_test() ->
-	WonkyDev = generate_wonky_set_device(1),
+	AppendDev = generate_append_device(<<"_">>),
 	Msg1 =
 		#{
 			device => <<"Stack/1.0">>,
 			<<"Device-Stack">> =>
 				#{
-					<<"1">> => WonkyDev,
-					<<"2">> => <<"Message">>
+					<<"1">> => AppendDev,
+					<<"2">> => <<"Message/1.0">>
 				}
 		},
 	?assertMatch(
-		{ok, #{ <<"Device">> := <<"Message">> } },
-		transform_device(Msg1, <<"2">>, #{})
+		<<"Message/1.0">>,
+		hb_pam:get(
+			<<"Device">>,
+			element(2, transform_device(Msg1, <<"2">>, #{}))
+		)
 	).
 
 example_device_for_stack_test() ->
@@ -286,44 +287,55 @@ simple_stack_execute_test() ->
 		result => <<"INIT">>
 	},
 	?event({stack_executing, test, {explicit, Msg}}),
-	?assertEqual(
-		{ok, #{ result => <<"INIT!D1!2_D2_2">> }},
+	?assertMatch(
+		{ok, #{ result := <<"INIT!D1!2_D2_2">> }},
 		hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> })
 	).
 
-%% Ensure that devices are reordered correctly during execution. We use the
-%% 'wonky set' device defined above, as well as the default `message` device,
-%% to test this. We start with a message that has an `x` key set to 1. We then
-%% execute the stack, and ensure that the `x` key is correctly modified to 6:
-%%  	Msg1 => #{ x => 1 } (with stack: Message, WonkyDev)
-%% 		Stack.set(x, 5) =>
-%% 			Message.set(x, 5) =>
-%% 				{ x => 5 }
-%% 			WonkyDev.set(x, 5) =>
-%% 				{ x => 6 }
-%% 		Msg2.x => 6
-%% We then check that reversing the order of the devices in the stack yields
-%% a different result:
-%%  	Msg2 => #{ x => 6 } (with stack: WonkyDev, Message)
-%% 		Stack.set(x, 10) =>
-%% 			WonkyDev.set(x, 10) =>
-%% 				{ x => 11 }
-%% 			Message.set(x, 10) =>
-%% 				{ x => 10 }
-%% 		Msg2.x => 10
-stack_reorder_test_ignore() ->
-	WonkyDev = generate_wonky_set_device(1),
-	Msg1 =
-		#{
-			<<"Device">> => <<"Stack">>,
-			<<"Device-Stack">> =>
-				#{
-					<<"1">> => <<"Message">>,
-					<<"2">> => WonkyDev
-				},
-			x => 1
+many_devices_test() ->
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device(<<"+D1">>),
+				<<"2">> => generate_append_device(<<"+D2">>),
+				<<"3">> => generate_append_device(<<"+D3">>),
+				<<"4">> => generate_append_device(<<"+D4">>),
+				<<"5">> => generate_append_device(<<"+D5">>),
+				<<"6">> => generate_append_device(<<"+D6">>),
+				<<"7">> => generate_append_device(<<"+D7">>),
+				<<"8">> => generate_append_device(<<"+D8">>)
+			},
+		result => <<"INIT">>
+	},
+	?assertMatch(
+		{ok,
+			#{
+				result :=
+					<<"INIT+D12+D22+D32+D42+D52+D62+D72+D82">>
+			}
 		},
-	?assertEqual(
-		{ok, #{ x => 6 }},
-		hb_pam:resolve(Msg1, #{ path => [set], x => 5 })
+		hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> })
+	).
+
+reinvocation_test() ->
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device(<<"+D1">>),
+				<<"2">> => generate_append_device(<<"+D2">>)
+			},
+		result => <<"INIT">>
+	},
+	Res1 = hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> }),
+	?assertMatch(
+		{ok, #{ result := <<"INIT+D12+D22">> }},
+		Res1
+	),
+	{ok, Msg2} = Res1,
+	Res2 = hb_pam:resolve(Msg2, #{ path => append, bin => <<"3">> }),
+	?assertMatch(
+		{ok, #{ result := <<"INIT+D12+D22+D13+D23">> }},
+		Res2
 	).

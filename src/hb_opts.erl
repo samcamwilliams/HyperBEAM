@@ -66,6 +66,7 @@ config() ->
 		%% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
+                <<"Message/1.0">> => dev_message,
                 <<"Test/1.0">> => dev_test,
                 <<"Stack/1.0">> => dev_stack,
                 <<"Scheduler">> => dev_scheduler,
