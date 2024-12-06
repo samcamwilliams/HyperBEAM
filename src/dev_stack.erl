@@ -96,6 +96,8 @@ router(keys, Message1, Message2, _Opts) ->
 router(set, Message1, Message2, Opts) ->
 	?event({set_called, {msg1, Message1}, {msg2, Message2}}),
 	dev_message:set(Message1, Message2, Opts);
+router(transform, Message1, _Message2, Opts) ->
+	transformer_message(Message1, Opts);
 router(Key, Message1, Message2, Opts) ->
 	?event({router_called, {key, Key}, {msg1, Message1}, {msg2, Message2}}),
 	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
@@ -109,25 +111,61 @@ router(Key, Message1, Message2, Opts) ->
 			Else
 	end.
 
+
+%% @doc Return a message which, when given a key, will transform the message
+%% such that the device named `Key` from the `Device-Stack` key in the message
+%% takes the place of the original `Device` key. This allows users to call
+%% a single device from the stack:
+%%
+%% 	/Msg1/AlicesExcitingStack/Transform/DeviceName/keyInDevice ->
+%% 		keyInDevice executed on DeviceName against Msg1.
+transformer_message(Msg1, Opts) ->
+	?event({creating_transformer, {for, Msg1}}),
+	{ok, 
+		Msg1#{
+			device => #{
+				info => #{
+					handler =>
+						fun(Key, MsgX1) ->
+							transform(MsgX1, Key, Opts)
+						end
+				},
+				type => <<"Stack-Transformer">>
+			}
+		}
+	}.
+
 %% @doc Return Message1, transformed such that the device named `Key` from the
 %% `Device-Stack` key in the message takes the place of the original `Device`
 %% key. This transformation allows dev_stack to correctly track the HashPath
 %% of the message as it delegates execution to devices contained within it.
-transform_device(Msg1, Key, Opts) ->
+transform(Msg1, Key, Opts) ->
+	% Get the device stack message from Msg1.
 	case dev_message:get(<<"Device-Stack">>, Msg1, Opts) of
 		{ok, StackMsg} ->
-			% DevMsg = hb_pam:get(Key, StackMsg, Opts),
-			% dev_message:set(
-			% 	Msg1,
-			% 	#{ <<"Device">> => DevMsg },
-			% 	Opts
-			% );
+			% Find the requested key in the device stack.
 			case hb_pam:resolve(StackMsg, #{ path => Key }, Opts) of
 				{ok, DevMsg} ->
-					?event({got_device_key, DevMsg}),
+					% Set the:
+					% - Device key to the device we found.
+					% - `/Device-Stack/Previous` key to the device we are
+					%   replacing.
+					?event({activating_device, DevMsg}),
 					dev_message:set(
 						Msg1,
-						#{ <<"Device">> => DevMsg },
+						#{
+							<<"Device">> => DevMsg,
+							<<"Device-Stack">> =>
+								StackMsg#{ <<"Previous">> =>
+									hb_util:ok(
+										dev_message:get(
+											<<"Device">>,
+											Msg1,
+											Opts
+										)
+									)
+								}
+						},
 						Opts
 					);
 				_ ->
@@ -142,8 +180,15 @@ transform_device(Msg1, Key, Opts) ->
 resolve_stack(Message1, Key, Message2, Opts) ->
 	resolve_stack(Message1, Key, Message2, 1, Opts).
 resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
-	?event({stack_transform, DevNum, {key, Key}, {message1, Message1}, {message2, Message2}}),
-	case transform_device(Message1, integer_to_binary(DevNum), Opts) of
+	?event(
+		{stack_transform,
+			DevNum,
+			{key, Key},
+			{message1, Message1},
+			{message2, Message2}
+		}
+	),
+	case transform(Message1, integer_to_binary(DevNum), Opts) of
 		{ok, Message3} ->
 			?event({stack_execute, DevNum, Message3}),
 			case hb_pam:resolve(Message3, Message2, Opts) of
@@ -167,7 +212,14 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 								Opts
 							);
 						_ ->
-							?event({result, pass, not_allowed, DevNum, Message4}),
+							?event(
+								{result,
+									pass,
+									not_allowed,
+									DevNum,
+									Message4
+								}
+							),
 							maybe_error(
 								Message1,
 								Key,
@@ -179,7 +231,14 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 					end;
 				{error, Info} ->
 					?event({result, error, DevNum, Info}),
-					maybe_error(Message1, Key, Message2, DevNum + 1, Opts, Info);
+					maybe_error(
+						Message1,
+						Key,
+						Message2,
+						DevNum + 1,
+						Opts,
+						Info
+					);
 				Unexpected ->
 					?event({result, unexpected, DevNum, Unexpected}),
 					maybe_error(
@@ -234,17 +293,21 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
 %%% Tests
 
 generate_append_device(Separator) ->
+	generate_append_device(Separator, ok).
+generate_append_device(Separator, Status) ->
 	#{
 		append =>
 			fun(M1 = #{ result := Existing }, #{ bin := New }) ->
 				?event({appending, {existing, Existing}, {new, New}}),
-				{ok, M1#{ result =>
+				{Status, M1#{ result =>
 					<< Existing/binary, Separator/binary, New/binary>>
 				}}
 			end
 	}.
 
-transform_device_test() ->
+%% @doc Test that the transform function can be called correctly internally
+%% by other functions in the module.
+transform_internal_call_device_test() ->
 	AppendDev = generate_append_device(<<"_">>),
 	Msg1 =
 		#{
@@ -259,8 +322,41 @@ transform_device_test() ->
 		<<"Message/1.0">>,
 		hb_pam:get(
 			<<"Device">>,
-			element(2, transform_device(Msg1, <<"2">>, #{}))
+			element(2, transform(Msg1, <<"2">>, #{}))
 		)
+	).
+
+%% @doc Ensure we can transform the device via sending a message to the stack.
+transform_external_call_device_test() ->
+	Msg1 = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> =>
+					#{
+						info =>
+							fun() ->
+								#{
+									handler =>
+										fun(Key, MsgX1) ->
+											{ok, Value} =
+												dev_message:get(Key, MsgX1),
+											{ok, MsgX1#{ Key =>
+												<< Value/binary, "-Cool">>
+											}}
+										end
+								}
+							end,
+						suffix => <<"-Cool">>
+					}
+			},
+		<<"Value">> => <<"Super">>
+	},
+	?assertMatch(
+		{ok, #{ <<"Value">> := <<"Super-Cool">> }},
+		hb_pam:resolve(Msg1, #{
+			path => <<"/Transform/1">>
+		})
 	).
 
 example_device_for_stack_test() ->
@@ -338,4 +434,22 @@ reinvocation_test() ->
 	?assertMatch(
 		{ok, #{ result := <<"INIT+D12+D22+D13+D23">> }},
 		Res2
+	).
+
+skip_test() ->
+	Msg1 = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device(<<"+D1">>),
+				<<"2">> => generate_append_device(<<"+D2">>)
+			},
+		result => <<"INIT">>
+	},
+	?assertMatch(
+		{ok, #{ result := <<"INIT+D12">> }},
+		hb_pam:resolve(
+			Msg1,
+			#{ path => append, bin => <<"2">> }
+		)
 	).
