@@ -349,15 +349,7 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     msg[msg_index++] = ERL_DRV_TUPLE;
     msg[msg_index++] = 5;
 
-    DRV_DEBUG("Sending %d terms...", msg_index);
-
-    // Send the message to the caller process
-    int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
-
-    DRV_DEBUG("Send res: %d", msg_res);
-    DRV_DEBUG("Results size: %d", results->size);
-
-    // Initialize the result vector and set the required result types 
+    // Initialize the result vector and set the required result types
     proc->current_import = driver_alloc(sizeof(ImportResponse));
 
     // Create and initialize a is_running and condition variable for the response
@@ -365,8 +357,11 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     proc->current_import->cond = erl_drv_cond_create("response_cond");
     proc->current_import->ready = 0;
 
-    DRV_DEBUG("Mutex and cond created");
-    // Wait for the response
+    DRV_DEBUG("Sending %d terms...", msg_index);
+    // Send the message to the caller process
+    int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+    // Wait for the response (we set this directly after the message was sent
+    // so we have the lock, before Erlang sends us data back)
     drv_wait(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
 
     DRV_DEBUG("Response ready");
@@ -397,11 +392,11 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 
     // Clean up
     DRV_DEBUG("Cleaning up import response");
-    erl_drv_mutex_destroy(proc->current_import->response_ready);
     erl_drv_cond_destroy(proc->current_import->cond);
+    erl_drv_mutex_destroy(proc->current_import->response_ready);
     driver_free(proc->current_import);
-    proc->current_import = NULL;
 
+    proc->current_import = NULL;
     return NULL;
 }
 
@@ -471,6 +466,7 @@ static void async_init(void* raw) {
         //DRV_DEBUG("Import: %s.%s", module_name->data, name->data);
 
         char* type_str = driver_alloc(256);
+        // TODO: What happpens here?
         if(!get_function_sig(type, type_str)) {
             // TODO: Handle other types of imports?
             continue;
@@ -557,7 +553,6 @@ static void async_init(void* raw) {
 
     int send_res = erl_drv_output_term(proc->port_term, init_msg, msg_i);
     DRV_DEBUG("Send result: %d", send_res);
-    //driver_free(init_msg);
 
     proc->current_import = NULL;
     proc->is_initialized = 1;
@@ -665,7 +660,7 @@ static void async_call(void* raw) {
     msg[msg_index++] = 2;
     DRV_DEBUG("Sending %d terms", msg_index);
     int response_msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
-
+    driver_free(msg);
     DRV_DEBUG("Msg: %d", response_msg_res);
 
     wasm_val_vec_delete(&results);
@@ -806,8 +801,12 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
             proc->current_import->error_message = NULL;
 
             // Signal that the response is ready
-            drv_signal(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
+            drv_signal(
+                proc->current_import->response_ready,
+                proc->current_import->cond,
+                &proc->current_import->ready);
         } else {
+            DRV_DEBUG("[error] No pending import response waiting");
             send_error(proc, "No pending import response waiting");
         }
     } else if (strcmp(command, "write") == 0) {
@@ -924,6 +923,6 @@ DRIVER_INIT(wasm_driver) {
     atom_ok = driver_mk_atom("ok");
     atom_error = driver_mk_atom("error");
     atom_import = driver_mk_atom("import");
-	atom_execution_result = driver_mk_atom("execution_result");
+    atom_execution_result = driver_mk_atom("execution_result");
     return &wasm_driver_entry;
 }
