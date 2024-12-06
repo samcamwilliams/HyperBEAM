@@ -18,12 +18,6 @@
     "**/*.md": [
       "markdown-toc-gen insert",
       "prettier --write"
-    ],
-    "src/**/*.{hrl,erl,app.src}": [
-      "rebar3 fmt"
-    ],
-    "rebar.config": [
-      "rebar3 fmt"
     ]
   },
   "prettier": {
