@@ -203,7 +203,7 @@ get(Path, Msg) ->
 	get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
 	?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
-	ensure_ok(Path, resolve(Msg, #{ path => Path }, Opts), Opts).
+	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
 
 %% @doc Get the value of a key from a message, returning a default value if the
 %% key is not found.
@@ -257,20 +257,14 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
 
 device_set(Msg, Key, Value, Opts) ->
 	?event({calling_device_set, {key, Key}, {value, Value}}),
-	ensure_ok(Key, resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
+	hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
 remove(Msg, Key, Opts) ->
-	ensure_ok(Key, resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
+	hb_util:ok(resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
 
-%% @doc Helper for returning `Message2` if the resolution has a status of `ok`,
-%% or handling an error based on the value of the `error_strategy` option.
-ensure_ok(_Key, {ok, Value}, _Opts) -> Value;
-ensure_ok(_Key, {error, Reason}, #{ error_strategy := X }) when X =/= throw ->
-	{unexpected, {error, Reason}};
-ensure_ok(Key, {error, Reason}, _Opts) ->
-	throw({pam_resolution_error, Key, Reason}).
+
 
 %% @doc Handle an error in a device call.
 handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
@@ -518,11 +512,11 @@ load_device(ID, Opts) ->
 %% @doc Get the info map for a device, optionally giving it a message if the
 %% device's info function is parameterized by one.
 info(DevMod, Msg, Opts) ->
-	%?event({calculating_info, {dev, DevMod}, {msg, Msg}}),
+	?event({calculating_info, {dev, DevMod}, {msg, Msg}}),
 	case find_exported_function(DevMod, info, 1, Opts) of
 		{ok, Fun} ->
 			Res = apply(Fun, truncate_args(Fun, [Msg, Opts])),
-			%?event({info_result, {dev, DevMod}, {args, truncate_args(Fun, [Msg])}, {result, Res}}),
+			?event({info_result, {dev, DevMod}, {args, truncate_args(Fun, [Msg])}, {result, Res}}),
 			Res;
 		not_found -> #{}
 	end.

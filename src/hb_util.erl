@@ -10,9 +10,20 @@
 -export([format_map/1, format_map/2]).
 -export([debug_print/4, debug_fmt/1]).
 -export([print_trace/4, trace_macro_helper/4]).
+-export([ok/1, ok/2]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A collection of utility functions for building with HyperBEAM.
+
+%% @doc Unwrap a tuple of the form `{ok, Value}`, or throw/return, depending on
+%% the value of the `error_strategy` option.
+ok(Value) -> ok(Value, #{}).
+ok({ok, Value}, _Opts) -> Value;
+ok(Other, Opts) ->
+	case hb_opts:get(error_strategy, throw, Opts) of
+		throw -> throw({unexpected, Other});
+		_ -> {unexpected, Other}
+	end.
 
 %% @doc Return the human-readable form of an ID of a message when given either
 %% a message explicitly, raw encoded ID, or an Erlang Arweave `tx` record.
