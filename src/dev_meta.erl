@@ -22,21 +22,21 @@
 
 %% @doc Execute a message on hyperbeam.
 execute(CarrierMsg, S) ->
-	?event({executing_message, CarrierMsg}),
-	{Msg, Path} = parse_carrier_msg(CarrierMsg, S),
-	execute_path(Path, Msg, S).
+    ?event({executing_message, CarrierMsg}),
+    {Msg, Path} = parse_carrier_msg(CarrierMsg, S),
+    execute_path(Path, Msg, S).
 
 %% @doc Execute a path on a message, yielding a new message.
 execute_path([], Msg, _) -> {ok, Msg};
 execute_path([FuncName|Path], Msg, S) ->
-	?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
-	Func = parse_path_to_func(FuncName),
-	execute_path(Path, hb_pam:resolve(Msg, Func, [Msg], S), S).
+    ?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
+    Func = parse_path_to_func(FuncName),
+    execute_path(Path, hb_pam:resolve(Msg, Func, [Msg], S), S).
 
 parse_path_to_func(BinName) when is_binary(BinName) ->
-	binary_to_existing_atom(string:lowercase(BinName), utf8);
+    binary_to_existing_atom(string:lowercase(BinName), utf8);
 parse_path_to_func(AtomName) when is_atom(AtomName) ->
-	AtomName.
+    AtomName.
 
 %% @doc Resolve the carrier message to an executable message, either by extracting
 %% from its body or reading from its referenced ID.
@@ -45,7 +45,7 @@ parse_carrier_msg(CarrierMsg, S) ->
         {_, _} ->
             % If the carrier message itself contains a device, we should execute
             % the path on that device.
-			?event({carrier_msg_contains_device, CarrierMsg}),
+            ?event({carrier_msg_contains_device, CarrierMsg}),
             {
                 path_from_carrier_message(CarrierMsg),
                 CarrierMsg
@@ -61,33 +61,33 @@ parse_carrier_msg(CarrierMsg, S) ->
 %% MessageWithID.Schedule(#{From => 0, To => 1}).
 load_executable_message_from_carrier(CarrierMsg, #{ store := RawStore }) ->
     Path = path_from_carrier_message(CarrierMsg),
-	Store =
-		case hb_opts:get(access_remote_cache_for_client) of
-			true -> RawStore;
-			false -> hb_store:scope(RawStore, local)
-		end,
-	load_path(Store, Path).
+    Store =
+        case hb_opts:get(access_remote_cache_for_client) of
+            true -> RawStore;
+            false -> hb_store:scope(RawStore, local)
+        end,
+    load_path(Store, Path).
 
 %% @doc Load a path from the cache. Load the whole path if possible, 
 %% backing off to smaller parts of the path until a viable component
 %% (eventually just the message ID) is found.
 load_path(Store, PathParts) -> load_path(Store, PathParts, []).
 load_path(Store, PathParts, Unresolved) ->
-	?event({loading_path, Store, PathParts, Unresolved}),
-	% First, try to read the path directly from the cache.
+    ?event({loading_path, Store, PathParts, Unresolved}),
+    % First, try to read the path directly from the cache.
     case hb_cache:read(Store, PathParts) of
         {ok, Msg} -> {Msg, Unresolved};
-		not_found ->
-			% If that fails, try to read it as a message.
-			case hb_cache:read_message(Store, PathParts) of
-				{ok, Msg} -> {Msg, Unresolved};
-				not_found ->
-					load_path(
-						Store,
-						lists:droplast(PathParts),
-						Unresolved ++ [lists:last(PathParts)]
-					)
-			end
+        not_found ->
+            % If that fails, try to read it as a message.
+            case hb_cache:read_message(Store, PathParts) of
+                {ok, Msg} -> {Msg, Unresolved};
+                not_found ->
+                    load_path(
+                        Store,
+                        lists:droplast(PathParts),
+                        Unresolved ++ [lists:last(PathParts)]
+                    )
+            end
     end.
 
 %% @doc Extract the components of the path from the carrier message.

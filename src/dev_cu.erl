@@ -5,12 +5,12 @@
 -hb_debug(print).
 
 push(Msg, S = #{ assignment := Assignment, logger := _Logger }) ->
-	?event(
-		{pushing_message,
-			{assignment, hb_util:id(Assignment, unsigned)},
-			{message, hb_util:id(Msg, unsigned)}
-		}
-	),
+    ?event(
+        {pushing_message,
+            {assignment, hb_util:id(Assignment, unsigned)},
+            {message, hb_util:id(Msg, unsigned)}
+        }
+    ),
     case hb_client:compute(Assignment, Msg) of
         {ok, Results} ->
             ?event(computed_results),
@@ -28,13 +28,13 @@ execute(CarrierMsg, S) ->
             #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
-				?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_util:id(Assignment, signed)}}),
+                ?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_util:id(Assignment, signed)}}),
                 hb_process:result(ProcID, hb_util:id(Assignment, signed), Store, Wallet);
             _ ->
                 case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->
                         {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
-						?event({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
+                        ?event({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
                         hb_process:result(Process, Slot, Store, Wallet);
                     false ->
                         {error, no_viable_computation}
@@ -76,5 +76,5 @@ execute(CarrierMsg, S) ->
                 {ok, S#{ results => Results }}
         end,
     ?event(returning_computed_results),
-	%ar_bundles:print(ModResults),
+    %ar_bundles:print(ModResults),
     {ResType, ModState}.

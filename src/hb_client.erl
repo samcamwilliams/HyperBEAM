@@ -141,30 +141,30 @@ extract_assignments(From, To, Assignments) ->
 
 %% @doc Compute the result of a message on a process.
 compute(ProcIDBarer, Msg) when is_record(ProcIDBarer, tx) ->
-	case lists:keyfind(<<"Process">>, 1, ProcIDBarer#tx.tags) of
-		{<<"Process">>, ProcID} ->
-			% Potential point of confusion: If the ProcIDBarer message
-			% has a `Process` tag, then it is an _assignment_ -- not a
-			% process message. We extract the `Process` tag to use as the
-			% process ID.
-			{ok, Node} = hb_router:find(compute, ProcID),
-			compute(Node, ProcIDBarer, Msg);
-		false ->
-			case lists:keyfind(<<"Type">>, 1, ProcIDBarer#tx.tags) of
-				{<<"Type">>, <<"Process">>} ->
-					% If the ProcIDBarer message has a `Type` tag, then it is
-					% a _process message_ -- not an assignment. Extract its ID and
-					% run on that.
-					{ok, Node} =
-						hb_router:find(compute, ProcID = hb_util:id(Msg, signed)),
-					compute(Node, ProcID, Msg);
-				false ->
-					throw(
-						{unrecognized_message_to_compute_on,
-							hb_util:id(Msg, unsigned)}
-					)
-			end
-	end.
+    case lists:keyfind(<<"Process">>, 1, ProcIDBarer#tx.tags) of
+        {<<"Process">>, ProcID} ->
+            % Potential point of confusion: If the ProcIDBarer message
+            % has a `Process` tag, then it is an _assignment_ -- not a
+            % process message. We extract the `Process` tag to use as the
+            % process ID.
+            {ok, Node} = hb_router:find(compute, ProcID),
+            compute(Node, ProcIDBarer, Msg);
+        false ->
+            case lists:keyfind(<<"Type">>, 1, ProcIDBarer#tx.tags) of
+                {<<"Type">>, <<"Process">>} ->
+                    % If the ProcIDBarer message has a `Type` tag, then it is
+                    % a _process message_ -- not an assignment. Extract its ID and
+                    % run on that.
+                    {ok, Node} =
+                        hb_router:find(compute, ProcID = hb_util:id(Msg, signed)),
+                    compute(Node, ProcID, Msg);
+                false ->
+                    throw(
+                        {unrecognized_message_to_compute_on,
+                            hb_util:id(Msg, unsigned)}
+                    )
+            end
+    end.
 compute(Node, ProcID, Slot) ->
     compute(Node, ProcID, Slot, #{}).
 compute(Node, ProcID, Slot, Opts) when is_binary(ProcID) ->

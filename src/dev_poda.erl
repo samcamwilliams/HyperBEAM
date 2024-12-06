@@ -24,8 +24,8 @@ extract_opts(Params) ->
     Authorities =
         lists:filtermap(
             fun({<<"Authority">>, Addr}) -> {true, Addr};
-               (_) -> false end,
-               Params
+                (_) -> false end,
+                Params
         ),
     {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
@@ -139,18 +139,18 @@ validate_attestation(Msg, Att, Opts) ->
         (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
             == {<<"Attestation-For">>, MsgID}) orelse
         ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
-	case ValidSigner and ValidSignature and RelevantMsg of
-		false ->
-			?event({poda_attestation_invalid,
-					{attestation, ar_bundles:id(Att, signed)},
-					{signer, AttSigner},
-					{valid_signer, ValidSigner},
-					{valid_signature, ValidSignature},
-					{relevant_msg, RelevantMsg}}
-			),
-			false;
-		true -> true
-	end.
+    case ValidSigner and ValidSignature and RelevantMsg of
+        false ->
+            ?event({poda_attestation_invalid,
+                    {attestation, ar_bundles:id(Att, signed)},
+                    {signer, AttSigner},
+                    {valid_signer, ValidSigner},
+                    {valid_signature, ValidSignature},
+                    {relevant_msg, RelevantMsg}}
+            ),
+            false;
+        true -> true
+    end.
 
 %%% Execution flow: Error handling.
 %%% Skip execution of this message, instead returning an error message.
@@ -189,8 +189,8 @@ attest_to_results(Msg, S) ->
             % Add attestations to the outbox and spawn items.
             maps:map(
                 fun(Key, IndexMsg) ->
-					?no_prod("Currently we only attest to the outbox and spawn items."
-						"Make it general?"),
+                    ?no_prod("Currently we only attest to the outbox and spawn items."
+                        "Make it general?"),
                     case lists:member(Key, [<<"/Outbox">>, <<"/Spawn">>]) of
                         true ->
                             ?event({poda_starting_to_attest_to_result, Key}),
@@ -216,7 +216,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
             % Aggregate validations from other nodes.
             % TODO: Filter out attestations from the current node.
             MsgID = hb_util:encode(ar_bundles:id(NewMsg, unsigned)),
-			?event({poda_add_attestations_from, InitAuthorities, {self,hb:address()}}),
+            ?event({poda_add_attestations_from, InitAuthorities, {self,hb:address()}}),
             Attestations = pfiltermap(
                 fun(Address) ->
                     case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address) of

@@ -111,8 +111,8 @@ make_link(Opts, Existing, New) ->
 
 %% @doc Add the directory prefix to a path.
 add_prefix(#{ prefix := Prefix }, Path) ->
-	hb_store:join([Prefix, Path]).
+    hb_store:join([Prefix, Path]).
 
 %% @doc Remove the directory prefix from a path.
 remove_prefix(#{ prefix := Prefix }, Path) ->
-	hb_util:remove_common(Path, Prefix).
+    hb_util:remove_common(Path, Prefix).

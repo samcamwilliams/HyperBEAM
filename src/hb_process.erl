@@ -96,12 +96,12 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                     ?event({found_cu_for_proc, hb_util:id(ProcID)}),
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid !
-						{
-							on_idle,
-							run,
-							add_monitor,
-							[create_monitor_for_message(MsgRef)]
-						},
+                        {
+                            on_idle,
+                            run,
+                            add_monitor,
+                            [create_monitor_for_message(MsgRef)]
+                        },
                     Pid ! {on_idle, message, MsgRef},
                     ?event({added_listener_and_message, Pid, MsgRef}),
                     await_results(Pid)
@@ -137,45 +137,45 @@ create_monitor_for_message(Msg) when is_record(Msg, tx) ->
 create_monitor_for_message(MsgID) ->
     Listener = self(),
     fun(S, {message, Inbound}) ->
-		% Gather messages
+        % Gather messages
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
-		Msg = maps:get(<<"Message">>, Inbound#tx.data),
-		% Gather IDs
+        Msg = maps:get(<<"Message">>, Inbound#tx.data),
+        % Gather IDs
         AssignmentID = hb_util:id(Assignment, signed),
         AssignmentUnsignedID = hb_util:id(Assignment, unsigned),
         ScheduledMsgID = hb_util:id(Msg, signed),
         ScheduledMsgUnsignedID = hb_util:id(Msg, unsigned),
-		% Gather slot
+        % Gather slot
         Slot =
             case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
                 {<<"Slot">>, RawSlot} ->
                     list_to_integer(binary_to_list(RawSlot));
                 false -> no_slot
             end,
-		% Check if the message is relevant
+        % Check if the message is relevant
         IsRelevant =
             (Slot == MsgID) or
             (ScheduledMsgID == MsgID) or
             (AssignmentID == MsgID) or
             (ScheduledMsgUnsignedID == MsgID) or
             (AssignmentUnsignedID == MsgID),
-		% Send the result if the message is relevant.
-		% Continue waiting otherwise.
+        % Send the result if the message is relevant.
+        % Continue waiting otherwise.
         case IsRelevant of
             true ->
                 Listener ! {result, self(), Inbound, S}, done;
             false ->
                 ?event({monitor_got_message_for_wrong_slot, Slot, MsgID}),
-				%ar_bundles:print(Inbound),
+                %ar_bundles:print(Inbound),
                 ignored
         end;
         (S, end_of_schedule) ->
             ?event(
-				{monitor_got_eos,
-					{waiting_for_slot, maps:get(slot, S, no_slot)},
-					{to, maps:get(to, S, no_to)}
-				}
-			),
+                {monitor_got_eos,
+                    {waiting_for_slot, maps:get(slot, S, no_slot)},
+                    {to, maps:get(to, S, no_to)}
+                }
+            ),
             ignored;
         (_, Signal) ->
             ?event({monitor_got_unknown_signal, Signal}),
@@ -206,11 +206,11 @@ create_persistent_monitor() ->
 boot(Process, Opts) ->
     % Register the process so that it can be found by its ID.
     ?event(
-		{booting_process,
-			{signed, hb_util:id(Process, signed)},
-			{unsigned, hb_util:id(Process, unsigned)}
-		}
-	),
+        {booting_process,
+            {signed, hb_util:id(Process, signed)},
+            {unsigned, hb_util:id(Process, unsigned)}
+        }
+    ),
     pg:join({cu, hb_util:id(Process, signed)}, self()),
     % Build the device stack.
     ?event({registered_process, hb_util:id(Process, signed)}),
@@ -227,7 +227,7 @@ boot(Process, Opts) ->
     {ok, #{keys := [Key|_]}} =
         hb_pam:resolve(Dev, checkpoint_uses, [BootState], Opts),
     % We don't support partial checkpoints (perhaps we never will?), so just
-	% take one key and use that to find the latest full checkpoint.
+    % take one key and use that to find the latest full checkpoint.
     CheckpointOption =
         hb_cache:latest(
             Store,
@@ -255,19 +255,19 @@ boot(Process, Opts) ->
             devices => Devs
         },
     ?event(
-		{running_init_on_slot,
-			Slot + 1,
-			maps:get(to, Opts, inf),
-			maps:keys(Checkpoint)
-		}
-	),
+        {running_init_on_slot,
+            Slot + 1,
+            maps:get(to, Opts, inf),
+            maps:keys(Checkpoint)
+        }
+    ),
     RuntimeOpts =
-		Opts#{
-			proc_dev => Dev,
-			return => all,
-			% If no compute mode is already set, use the global default.
-			compute_mode => maps:get(compute_mode, Opts, hb_opts:get(compute_mode))
-		},
+        Opts#{
+            proc_dev => Dev,
+            return => all,
+            % If no compute mode is already set, use the global default.
+            compute_mode => maps:get(compute_mode, Opts, hb_opts:get(compute_mode))
+        },
     case hb_pam:resolve(Dev, init, [InitState, RuntimeOpts]) of
         {ok, StateAfterInit} ->
             execute_schedule(StateAfterInit, RuntimeOpts);
@@ -276,44 +276,44 @@ boot(Process, Opts) ->
     end.
 
 execute_schedule(State, Opts) ->
-	?event(
-		{
-			process_executing_slot,
-			maps:get(slot, State),
-			{proc_id, hb_util:id(maps:get(process, State))},
-			{to, maps:get(to, State)}
-		}
-	),
+    ?event(
+        {
+            process_executing_slot,
+            maps:get(slot, State),
+            {proc_id, hb_util:id(maps:get(process, State))},
+            {to, maps:get(to, State)}
+        }
+    ),
     case State of
         #{schedule := []} ->
-			?event(
-				{process_finished_schedule,
-					{final_slot, maps:get(slot, State)}
-				}
-			),
-			case maps:get(compute_mode, Opts) of
-				aggressive ->
-					case execute_eos(State, Opts) of
-						{ok, #{schedule := []}} ->
-							?event(eos_did_not_yield_more_work),
-							await_command(State, Opts);
-						{ok, NS} ->
-							execute_schedule(NS, Opts);
-						{error, DevNum, DevMod, Info} ->
-							?event({error, {DevNum, DevMod, Info}}),
-							execute_terminate(
-								State#{
-									errors :=
-										maps:get(errors, State, [])
-										++ [{DevNum, DevMod, Info}]
-								},
-								Opts
-							)
-					end;
-				lazy ->
-					?event({lazy_compute_mode, moving_to_await_state}),
-					await_command(State, Opts)
-			end;
+            ?event(
+                {process_finished_schedule,
+                    {final_slot, maps:get(slot, State)}
+                }
+            ),
+            case maps:get(compute_mode, Opts) of
+                aggressive ->
+                    case execute_eos(State, Opts) of
+                        {ok, #{schedule := []}} ->
+                            ?event(eos_did_not_yield_more_work),
+                            await_command(State, Opts);
+                        {ok, NS} ->
+                            execute_schedule(NS, Opts);
+                        {error, DevNum, DevMod, Info} ->
+                            ?event({error, {DevNum, DevMod, Info}}),
+                            execute_terminate(
+                                State#{
+                                    errors :=
+                                        maps:get(errors, State, [])
+                                        ++ [{DevNum, DevMod, Info}]
+                                },
+                                Opts
+                            )
+                    end;
+                lazy ->
+                    ?event({lazy_compute_mode, moving_to_await_state}),
+                    await_command(State, Opts)
+            end;
         #{schedule := [Msg | NextSched]} ->
             case execute_message(Msg, State, Opts) of
                 {ok, NewState = #{schedule := [Msg | NextSched]}} ->
@@ -379,7 +379,7 @@ post_execute(
                                         case is_record(Item, tx) of
                                             true -> {Key, Item};
                                             false -> 
-												throw({error, checkpoint_result_not_tx, Key})
+                                                throw({error, checkpoint_result_not_tx, Key})
                                         end
                                     end,
                                     maps:get(save_keys, CheckpointState, [])
@@ -397,7 +397,7 @@ post_execute(
             ?event({checkpoint_written_for_slot, Slot});
         false ->
             NormalizedResult =
-				ar_bundles:deserialize(ar_bundles:serialize(Results)),
+                ar_bundles:deserialize(ar_bundles:serialize(Results)),
             hb_cache:write_output(
                 Store,
                 hb_util:id(Process, signed),
@@ -419,27 +419,27 @@ initialize_slot(State = #{slot := Slot}) ->
 
 execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
     hb_pam:resolve(
-		Dev,
-		execute,
-		[State#{ message => Msg }, Opts],
-		Opts
-	).
+        Dev,
+        execute,
+        [State#{ message => Msg }, Opts],
+        Opts
+    ).
 
 execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
     hb_pam:resolve(
-		Dev,
-		terminate,
-		[S#{ message => undefined }, Opts],
-		Opts
-	).
+        Dev,
+        terminate,
+        [S#{ message => undefined }, Opts],
+        Opts
+    ).
 
 execute_eos(S, Opts = #{ proc_dev := Dev }) ->
     hb_pam:resolve(
-		Dev,
-		end_of_schedule,
-		[S#{ message => undefined }, Opts],
-		Opts
-	).
+        Dev,
+        end_of_schedule,
+        [S#{ message => undefined }, Opts],
+        Opts
+    ).
 
 is_checkpoint_slot(State, Opts) ->
     (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)
@@ -455,11 +455,11 @@ await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
         {on_idle, run, Function, Args} ->
             ?event({running_command, Function, Args}),
             {ok, NewState} = hb_pam:resolve(
-				Dev,
-				Function,
-				[State#{ message => hd(Args) }, Opts],
-				Opts
-			),
+                Dev,
+                Function,
+                [State#{ message => hd(Args) }, Opts],
+                Opts
+            ),
             await_command(NewState, Opts);
         {on_idle, message, MsgRef} ->
             ?event({received_message, MsgRef}),

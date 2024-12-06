@@ -40,14 +40,14 @@
 %% Note: This function uses the `dev_message:get/3` function, rather than 
 %% a generic call as the path should always be an explicit key in the message.
 hd(Msg2, Opts) ->
-	%?event({key_from_path, Msg2, Opts}),
-	case pop_request(Msg2, Opts) of
-		undefined -> undefined;
-		{Head, _} ->
-			% `term_to_path` returns the full path, so we need to take the
-			% `hd` of our `Head`.
-			erlang:hd(term_to_path(Head, Opts))
-	end.
+    %?event({key_from_path, Msg2, Opts}),
+    case pop_request(Msg2, Opts) of
+        undefined -> undefined;
+        {Head, _} ->
+            % `term_to_path` returns the full path, so we need to take the
+            % `hd` of our `Head`.
+            erlang:hd(term_to_path(Head, Opts))
+    end.
 
 %% @doc Return the message without its first path element. Note that this
 %% is the only transformation in PAM that does _not_ make a log of its
@@ -55,103 +55,103 @@ hd(Msg2, Opts) ->
 %% after executing this transformation.
 %% This may or may not be the mainnet behavior we want.
 tl(Msg2, Opts) ->
-	case pop_request(Msg2, Opts) of
-		undefined -> undefined;
-		{_, Rest} when is_map(Rest) ->
-			maps:get(path, Rest, undefined);
-		{_, Rest} -> Rest
-	end.
+    case pop_request(Msg2, Opts) of
+        undefined -> undefined;
+        {_, Rest} when is_map(Rest) ->
+            maps:get(path, Rest, undefined);
+        {_, Rest} -> Rest
+    end.
 
 %% @doc Add a path element to a message, according to the type given.
 push(hashpath, Msg3, Msg2) ->
-	push_hashpath(Msg3, Msg2);
+    push_hashpath(Msg3, Msg2);
 push(request, Msg3, Msg2) ->
-	push_request(Msg3, Msg2).
+    push_request(Msg3, Msg2).
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
 push_hashpath(Msg, Msg2) when is_map(Msg2) ->
-	{ok, Msg2ID} = dev_message:unsigned_id(Msg2),
-	push_hashpath(Msg, Msg2ID);
+    {ok, Msg2ID} = dev_message:unsigned_id(Msg2),
+    push_hashpath(Msg, Msg2ID);
 push_hashpath(Msg, Msg2ID) ->
-	?no_prod("We should use the signed ID if the message is being"
-		" invoked with it."),
-	MsgHashpath = from_message(hashpath, Msg),
-	HashpathFun = hashpath_function(Msg),
-	NewHashpath = HashpathFun(hb_util:native_id(MsgHashpath), hb_util:native_id(Msg2ID)),
-	TransformedMsg = Msg#{ hashpath => hb_util:human_id(NewHashpath) },
-	% ?event({created_new_hashpath,
-	% 	{msg1, hb_util:human_id(MsgHashpath)},
-	% 	{msg2id, hb_util:human_id(Msg2ID)},
-	% 	{new_hashpath, hb_util:human_id(NewHashpath)}
-	% }),
-	TransformedMsg.
+    ?no_prod("We should use the signed ID if the message is being"
+        " invoked with it."),
+    MsgHashpath = from_message(hashpath, Msg),
+    HashpathFun = hashpath_function(Msg),
+    NewHashpath = HashpathFun(hb_util:native_id(MsgHashpath), hb_util:native_id(Msg2ID)),
+    TransformedMsg = Msg#{ hashpath => hb_util:human_id(NewHashpath) },
+    % ?event({created_new_hashpath,
+    % 	{msg1, hb_util:human_id(MsgHashpath)},
+    % 	{msg2id, hb_util:human_id(Msg2ID)},
+    % 	{new_hashpath, hb_util:human_id(NewHashpath)}
+    % }),
+    TransformedMsg.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
 %%% If no hashpath algorithm is specified, the protocol defaults to
 %%% `sha-256-chain`.
 hashpath_function(Msg) ->
-	case dev_message:get(<<"Hashpath-Alg">>, Msg) of
-		{ok, <<"sha-256-chain">>} ->
-			fun hb_crypto:sha256_chain/2;
-		{ok, <<"accumulate-256">>} ->
-			fun hb_crypto:accumulate/2;
-		{error, not_found} ->
-			fun hb_crypto:sha256_chain/2
-	end.
+    case dev_message:get(<<"Hashpath-Alg">>, Msg) of
+        {ok, <<"sha-256-chain">>} ->
+            fun hb_crypto:sha256_chain/2;
+        {ok, <<"accumulate-256">>} ->
+            fun hb_crypto:accumulate/2;
+        {error, not_found} ->
+            fun hb_crypto:sha256_chain/2
+    end.
 
 %%% @doc Add a message to the head (next to execute) of a request path.
 push_request(Msg, Path) ->
-	maps:put(path, term_to_path(Path) ++ from_message(request, Msg), Msg).
+    maps:put(path, term_to_path(Path) ++ from_message(request, Msg), Msg).
 
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
 pop_request(Msg, Opts) when is_map(Msg) ->
-	case pop_request(from_message(request, Msg), Opts) of
-		undefined ->
-			?event(popped_undefined),
-			undefined;
-		{undefined, _} ->
-			undefined;
-		{Head, Rest} ->
-			?event({popped_request, Head, Rest}),
-			{Head, maps:put(path, Rest, Msg)}
-	end;
+    case pop_request(from_message(request, Msg), Opts) of
+        undefined ->
+            ?event(popped_undefined),
+            undefined;
+        {undefined, _} ->
+            undefined;
+        {Head, Rest} ->
+            ?event({popped_request, Head, Rest}),
+            {Head, maps:put(path, Rest, Msg)}
+    end;
 pop_request([], _Opts) -> undefined;
 pop_request([Head|Rest], _Opts) ->
-	{Head, Rest}.
+    {Head, Rest}.
 
 %%% @doc Queue a message at the back of a request path. `path` is the only
 %%% key that we cannot use dev_message's `set/3` function for (as it expects
 %%% the compute path to be there), so we use maps:put/3 instead.
 queue_request(Msg, Path) ->
-	maps:put(path, from_message(request, Msg) ++ term_to_path(Path), Msg).
+    maps:put(path, from_message(request, Msg) ++ term_to_path(Path), Msg).
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history. Only takes the last message's HashPath-Alg into
 %%% account, so shouldn't be used in production yet.
 verify_hashpath(InitialMsg, CurrentMsg, MsgList) when is_map(InitialMsg) ->
-	{ok, InitialMsgID} = dev_message:unsigned_id(InitialMsg),
-	verify_hashpath(InitialMsgID, CurrentMsg, MsgList);
+    {ok, InitialMsgID} = dev_message:unsigned_id(InitialMsg),
+    verify_hashpath(InitialMsgID, CurrentMsg, MsgList);
 verify_hashpath(InitialMsgID, CurrentMsg, MsgList) ->
-	?no_prod("Must trace if the Hashpath-Alg has changed between messages."),
-	HashpathFun = hashpath_function(CurrentMsg),
-	CalculatedHashpath =
-		lists:foldl(
-			fun(MsgApplied, Acc) ->
-				MsgID =
-					case is_map(MsgApplied) of
-						true ->
-							{ok, ID} = dev_message:unsigned_id(MsgApplied),
-							ID;
-						false -> MsgApplied
-					end,
-				HashpathFun(hb_util:native_id(Acc), hb_util:native_id(MsgID))
-			end,
-			InitialMsgID,
-			MsgList
-		),
-	CurrentHashpath = from_message(hashpath, CurrentMsg),
-	hb_util:human_id(CalculatedHashpath) == hb_util:human_id(CurrentHashpath).
+    ?no_prod("Must trace if the Hashpath-Alg has changed between messages."),
+    HashpathFun = hashpath_function(CurrentMsg),
+    CalculatedHashpath =
+        lists:foldl(
+            fun(MsgApplied, Acc) ->
+                MsgID =
+                    case is_map(MsgApplied) of
+                        true ->
+                            {ok, ID} = dev_message:unsigned_id(MsgApplied),
+                            ID;
+                        false -> MsgApplied
+                    end,
+                HashpathFun(hb_util:native_id(Acc), hb_util:native_id(MsgID))
+            end,
+            InitialMsgID,
+            MsgList
+        ),
+    CurrentHashpath = from_message(hashpath, CurrentMsg),
+    hb_util:human_id(CalculatedHashpath) == hb_util:human_id(CurrentHashpath).
 
 %% @doc Extract the request path or hashpath from a message. We do not use
 %% PAM for this resolution because this function is called from inside PAM 
@@ -160,84 +160,84 @@ verify_hashpath(InitialMsgID, CurrentMsg, MsgList) ->
 %% is directly from a user (in which case paths and hashpaths will not have 
 %% been assigned yet).
 from_message(hashpath, #{ hashpath := HashPath }) ->
-	HashPath;
+    HashPath;
 from_message(hashpath, Msg) ->
-	?no_prod("We should use the signed ID if the message is being"
-		" invoked with it."),
-	{ok, Path} = dev_message:unsigned_id(Msg),
-	hd(term_to_path(Path));
+    ?no_prod("We should use the signed ID if the message is being"
+        " invoked with it."),
+    {ok, Path} = dev_message:unsigned_id(Msg),
+    hd(term_to_path(Path));
 from_message(request, #{ path := [] }) -> undefined;
 from_message(request, #{ path := Path }) when is_list(Path) ->
-	term_to_path(Path);
+    term_to_path(Path);
 from_message(request, #{ path := Other }) ->
-	term_to_path(Other).
+    term_to_path(Other).
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
 term_to_path(Path) -> term_to_path(Path, #{ error_strategy => throw }).
 term_to_path(Binary, Opts) when is_binary(Binary) ->
-	case binary:match(Binary, <<"/">>) of
-		nomatch -> [Binary];
-		_ ->
-			term_to_path(
-				lists:filter(
-					fun(Part) -> byte_size(Part) > 0 end,
-					binary:split(Binary, <<"/">>, [global])
-				),
-				Opts
-			)
-	end;
+    case binary:match(Binary, <<"/">>) of
+        nomatch -> [Binary];
+        _ ->
+            term_to_path(
+                lists:filter(
+                    fun(Part) -> byte_size(Part) > 0 end,
+                    binary:split(Binary, <<"/">>, [global])
+                ),
+                Opts
+            )
+    end;
 term_to_path([], _Opts) -> undefined;
 term_to_path(List, Opts) when is_list(List) ->
-	lists:map(fun(Part) -> hb_pam:to_key(Part, Opts) end, List);
+    lists:map(fun(Part) -> hb_pam:to_key(Part, Opts) end, List);
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
 
 %%% TESTS
 
 push_hashpath_test() ->
-	Msg1 = #{ <<"empty">> => <<"message">> },
-	Msg2 = #{ <<"exciting">> => <<"message2">> },
-	Msg3 = push_hashpath(Msg1, Msg2),
-	?assert(is_binary(maps:get(hashpath, Msg3))).
+    Msg1 = #{ <<"empty">> => <<"message">> },
+    Msg2 = #{ <<"exciting">> => <<"message2">> },
+    Msg3 = push_hashpath(Msg1, Msg2),
+    ?assert(is_binary(maps:get(hashpath, Msg3))).
 
 push_multiple_hashpaths_test() ->
-	Msg1 = #{ <<"empty">> => <<"message">> },
-	Msg2 = #{ <<"exciting">> => <<"message2">> },
-	Msg3 = push_hashpath(Msg1, Msg2),
-	Msg4 = #{ <<"exciting">> => <<"message4">> },
-	Msg5 = push_hashpath(Msg3, Msg4),
-	?assert(is_binary(maps:get(hashpath, Msg5))).
+    Msg1 = #{ <<"empty">> => <<"message">> },
+    Msg2 = #{ <<"exciting">> => <<"message2">> },
+    Msg3 = push_hashpath(Msg1, Msg2),
+    Msg4 = #{ <<"exciting">> => <<"message4">> },
+    Msg5 = push_hashpath(Msg3, Msg4),
+    ?assert(is_binary(maps:get(hashpath, Msg5))).
 
 verify_hashpath_test() ->
-	Msg1 = #{ <<"empty">> => <<"message">> },
-	MsgB1 = #{ <<"exciting1">> => <<"message1">> },
-	MsgB2 = #{ <<"exciting2">> => <<"message2">> },
-	MsgB3 = #{ <<"exciting3">> => <<"message3">> },
-	MsgR1 = push_hashpath(Msg1, MsgB1),
-	MsgR2 = push_hashpath(MsgR1, MsgB2),
-	MsgR3 = push_hashpath(MsgR2, MsgB3),
-	?assert(verify_hashpath(Msg1, MsgR3, [MsgB1, MsgB2, MsgB3])).
+    Msg1 = #{ <<"empty">> => <<"message">> },
+    MsgB1 = #{ <<"exciting1">> => <<"message1">> },
+    MsgB2 = #{ <<"exciting2">> => <<"message2">> },
+    MsgB3 = #{ <<"exciting3">> => <<"message3">> },
+    MsgR1 = push_hashpath(Msg1, MsgB1),
+    MsgR2 = push_hashpath(MsgR1, MsgB2),
+    MsgR3 = push_hashpath(MsgR2, MsgB3),
+    ?assert(verify_hashpath(Msg1, MsgR3, [MsgB1, MsgB2, MsgB3])).
 
 validate_path_transitions(X, Opts) ->
-	{Head, X2} = pop_request(X, Opts),
-	?assertEqual(a, Head),
-	{H2, X3} = pop_request(X2, Opts),
-	?assertEqual(b, H2),
-	{H3, X4} = pop_request(X3, Opts),
-	?assertEqual(c, H3),
-	?assertEqual(undefined, pop_request(X4, Opts)).
+    {Head, X2} = pop_request(X, Opts),
+    ?assertEqual(a, Head),
+    {H2, X3} = pop_request(X2, Opts),
+    ?assertEqual(b, H2),
+    {H3, X4} = pop_request(X3, Opts),
+    ?assertEqual(c, H3),
+    ?assertEqual(undefined, pop_request(X4, Opts)).
 
 pop_from_message_test() ->
-	validate_path_transitions(#{ path => [a, b, c] }, #{}).
+    validate_path_transitions(#{ path => [a, b, c] }, #{}).
 
 pop_from_path_list_test() ->
-	validate_path_transitions([a, b, c], #{}).
+    validate_path_transitions([a, b, c], #{}).
 
 hd_test() ->
-	?assertEqual(a, hd(#{ path => [a, b, c] }, #{})),
-	?assertEqual(undefined, hd(#{ path => undefined }, #{})).
+    ?assertEqual(a, hd(#{ path => [a, b, c] }, #{})),
+    ?assertEqual(undefined, hd(#{ path => undefined }, #{})).
 
 tl_test() ->
-	?assertMatch([b, c], tl(#{ path => [a, b, c] }, #{})),
-	?assertEqual(undefined, tl(#{ path => [] }, #{})),
-	?assertEqual(undefined, tl(#{ path => undefined }, #{})).
+    ?assertMatch([b, c], tl(#{ path => [a, b, c] }, #{})),
+    ?assertEqual(undefined, tl(#{ path => [] }, #{})),
+    ?assertEqual(undefined, tl(#{ path => undefined }, #{})).

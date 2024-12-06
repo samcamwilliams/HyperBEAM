@@ -21,11 +21,11 @@
 -define(trace(), hb_util:trace_macro_helper(catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 
 -record(result, {
-	messages = [],
-	assignments = [],
-	spawns = [],
-	output = [],
-	cursor = undefined
+    messages = [],
+    assignments = [],
+    spawns = [],
+    output = [],
+    cursor = undefined
 }).
 
 -record(pstate, {

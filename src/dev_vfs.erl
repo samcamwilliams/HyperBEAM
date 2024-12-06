@@ -76,7 +76,7 @@ execute(_M, S) ->
 
 %% @doc Return the stdout buffer from a state message.
 stdout(#{ vfs := #{ 1 := #fd { data = Data } } }) ->
-	Data.
+    Data.
 
 path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
     ?event({path_open, FDPtr, LookupFlag, PathPtr}),

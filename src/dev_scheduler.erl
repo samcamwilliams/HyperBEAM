@@ -18,7 +18,7 @@
 %%% HTTP API functions:
 schedule(Item) ->
     {ok, Output} = dev_scheduler_interface:handle(Item),
-	%?debug_wait(1000),
+    %?debug_wait(1000),
     {ok, Output}.
 
 %%% MU pushing client functions:
@@ -26,10 +26,10 @@ push(Msg, State = #{ logger := Logger }) ->
     ?event(su_scheduling_message_for_push),
     case hb_client:schedule(Msg) of
         {ok, Assignment} ->
-			?event({scheduled_message, hb_util:id(Assignment, unsigned)}),
+            ?event({scheduled_message, hb_util:id(Assignment, unsigned)}),
             {ok, State#{assignment => Assignment}};
         Error ->
-			?event({error_scheduling_message, Error}),
+            ?event({error_scheduling_message, Error}),
             hb_logger:log(Logger, Error),
             {error, Error}
     end.
@@ -54,13 +54,13 @@ update_schedule(State = #{ process := Proc }) ->
     % TODO: Get from slot via checkpoint. (Done, right?)
     Assignments = hb_client:get_assignments(hb_util:id(Proc, signed), CurrentSlot, ToSlot),
     ?event({got_assignments_from_su,
-		[
-			{
-				element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
-				hb_util:id(A, signed),
-				hb_util:id(A, unsigned)
-			}
-		|| A <- Assignments ]}),
+        [
+            {
+                element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
+                hb_util:id(A, signed),
+                hb_util:id(A, unsigned)
+            }
+        || A <- Assignments ]}),
     lists:foreach(
         fun(Assignment) ->
             ?event({writing_assignment_to_cache, hb_util:id(Assignment, unsigned)}),
