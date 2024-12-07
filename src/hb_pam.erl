@@ -63,11 +63,11 @@
 %% keys of a map. 'Special' keys which do not exist as values in the message's
 %% map are simply ignored.
 resolve(Msg1, Request) ->
-	resolve(Msg1, Request, default_runtime_opts(Msg1)).
+    resolve(Msg1, Request, default_runtime_opts(Msg1)).
 resolve(Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
-	prepare_resolve(Msg1, Msg2, Opts);
+    prepare_resolve(Msg1, Msg2, Opts);
 resolve(Msg1, Key, Opts) ->
-	prepare_resolve(Msg1, #{ path => Key }, Opts).
+    prepare_resolve(Msg1, #{ path => Key }, Opts).
 
 %% @doc Internal function for resolving the path from a message and loading
 %% the function to call.
@@ -144,7 +144,7 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 %% If additional elements are included as part of the result, we pass them
 %% through to the caller.
 handle_resolved_result(Msg3, _Msg2, _UserOpts) when is_binary(Msg3) ->
-	Msg3;
+    Msg3;
 handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
 handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
@@ -200,7 +200,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 %% status if it is `ok`. This makes it easier to write complex
 %% logic on top of messages while maintaining a functional style.
 get(Path, Msg) ->
-	get(Path, Msg, default_runtime_opts(Msg)).
+    get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
 	?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
 	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
@@ -208,12 +208,12 @@ get(Path, Msg, Opts) ->
 %% @doc Get the value of a key from a message, returning a default value if the
 %% key is not found.
 get_default(Key, Msg, Default) ->
-	get_default(Msg, Key, Default, #{}).
+    get_default(Msg, Key, Default, #{}).
 get_default(Key, Msg, Default, Opts) ->
-	case resolve(Msg, Key, Opts) of
-		{ok, Value} -> Value;
-		{error, _} -> Default
-	end.
+    case resolve(Msg, Key, Opts) of
+        {ok, Value} -> Value;
+        {error, _} -> Default
+    end.
 
 %% @doc Shortcut to get the list of keys from a message.
 keys(Msg) -> keys(Msg, #{}).
@@ -224,36 +224,36 @@ keys(Msg, Opts) -> get(keys, Msg, Opts).
 %% `set` works with maps and recursive paths while maintaining the appropriate
 %% `HashPath` for each step.
 set(Msg1, Msg2) ->
-	set(Msg1, Msg2, #{}).
+    set(Msg1, Msg2, #{}).
 set(Msg1, Msg2, Opts) when is_map(Msg2) ->
-	?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
-	case ?IS_EMPTY_MESSAGE(Msg2) of
-		true -> Msg1;
-		false ->
-			% First, get the first key and value to set.
-			Key = hd(keys(Msg2, Opts#{ hashpath => ignore })),
-			Val = get(Key, Msg2, Opts),
-			?event({got_val_to_set, {key, Key}, {val, Val}}),
-			% Then, set the key and recurse, removing the key from the Msg2.
-			set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts)
-	end.
+    ?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
+    case ?IS_EMPTY_MESSAGE(Msg2) of
+        true -> Msg1;
+        false ->
+            % First, get the first key and value to set.
+            Key = hd(keys(Msg2, Opts#{ hashpath => ignore })),
+            Val = get(Key, Msg2, Opts),
+            ?event({got_val_to_set, {key, Key}, {val, Val}}),
+            % Then, set the key and recurse, removing the key from the Msg2.
+            set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts)
+    end.
 set(Msg1, Key, Value, Opts) ->
-	% For an individual key, we run deep_set with the key as the path.
-	% This handles both the case that the key is a path as well as the case
-	% that it is a single key.
-	Path = hb_path:term_to_path(Key),
-	%?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {path, Path}, {value, Value}}),
-	deep_set(Msg1, Path, Value, Opts).
+    % For an individual key, we run deep_set with the key as the path.
+    % This handles both the case that the key is a path as well as the case
+    % that it is a single key.
+    Path = hb_path:term_to_path(Key),
+    %?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {path, Path}, {value, Value}}),
+    deep_set(Msg1, Path, Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [Key], Value, Opts) ->
-	%?event({setting_last_key, {key, Key}, {value, Value}}),
-	device_set(Msg, Key, Value, Opts);
+    %?event({setting_last_key, {key, Key}, {value, Value}}),
+    device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
-	{ok, SubMsg} = resolve(Msg, Key, Opts),
-	?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
-	device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
+    {ok, SubMsg} = resolve(Msg, Key, Opts),
+    ?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
+    device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
 	?event({calling_device_set, {key, Key}, {value, Value}}),
@@ -268,16 +268,16 @@ remove(Msg, Key, Opts) ->
 
 %% @doc Handle an error in a device call.
 handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
-	case maps:get(error_strategy, Opts, throw) of
-		throw -> erlang:raise(Class, Exception, Stacktrace);
-		_ -> {error, Whence, {Class, Exception, Stacktrace}}
-	end.
+    case maps:get(error_strategy, Opts, throw) of
+        throw -> erlang:raise(Class, Exception, Stacktrace);
+        _ -> {error, Whence, {Class, Exception, Stacktrace}}
+    end.
 
 %% @doc Truncate the arguments of a function to the number of arguments it
 %% actually takes.
 truncate_args(Fun, Args) ->
-	{arity, Arity} = erlang:fun_info(Fun, arity),
-	lists:sublist(Args, Arity).
+    {arity, Arity} = erlang:fun_info(Fun, arity),
+    lists:sublist(Args, Arity).
 
 %% @doc Calculate the Erlang function that should be called to get a value for
 %% a given key from a device.
@@ -457,12 +457,12 @@ key_to_binary(Key, _Opts) when is_list(Key) -> list_to_binary(Key).
 
 %% @doc Helper function for key_to_atom that does not check for errors.
 to_atom_unsafe(Key) when is_integer(Key) ->
-	integer_to_binary(Key);
+    integer_to_binary(Key);
 to_atom_unsafe(Key) when is_binary(Key) ->
-	binary_to_existing_atom(hb_util:to_lower(Key), utf8);
+    binary_to_existing_atom(hb_util:to_lower(Key), utf8);
 to_atom_unsafe(Key) when is_list(Key) ->
-	FlattenedKey = lists:flatten(Key),
-	list_to_existing_atom(FlattenedKey);
+    FlattenedKey = lists:flatten(Key),
+    list_to_existing_atom(FlattenedKey);
 to_atom_unsafe(Key) when is_atom(Key) -> Key.
 
 %% @doc Load a device module from its name or a message ID.
@@ -525,9 +525,9 @@ info(DevMod, Msg, Opts) ->
 %% but it is included such that we can modulate the options based on the message
 %% if needed in the future.
 default_runtime_opts(_Msg1) ->
-	#{
-		error_strategy => throw
-	}.
+    #{
+        error_strategy => throw
+    }.
 
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map. It should also
@@ -538,238 +538,238 @@ default_module() -> dev_message.
 %%% Tests
 
 key_from_id_device_test() ->
-	?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, a)).
+    ?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, a)).
 
 keys_from_id_device_test() ->
-	?assertEqual({ok, [a]}, hb_pam:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
+    ?assertEqual({ok, [a]}, hb_pam:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
 
 path_test() ->
-	?assertEqual({ok, [test_path]}, hb_pam:resolve(#{ path => [test_path] }, path)),
-	?assertEqual({ok, [a]}, hb_pam:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
+    ?assertEqual({ok, [test_path]}, hb_pam:resolve(#{ path => [test_path] }, path)),
+    ?assertEqual({ok, [a]}, hb_pam:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
 
 key_to_binary_test() ->
-	?assertEqual(<<"a">>, hb_pam:key_to_binary(a)),
-	?assertEqual(<<"a">>, hb_pam:key_to_binary(<<"a">>)),
-	?assertEqual(<<"a">>, hb_pam:key_to_binary("a")).
+    ?assertEqual(<<"a">>, hb_pam:key_to_binary(a)),
+    ?assertEqual(<<"a">>, hb_pam:key_to_binary(<<"a">>)),
+    ?assertEqual(<<"a">>, hb_pam:key_to_binary("a")).
 
 resolve_binary_key_test() ->
-	?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, <<"a">>)),
-	?assertEqual({ok, 1}, hb_pam:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)).
+    ?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, <<"a">>)),
+    ?assertEqual({ok, 1}, hb_pam:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)).
 
 %% @doc Generates a test device with three keys, each of which uses
 %% progressively more of the arguments that can be passed to a device key.
 generate_device_with_keys_using_args() ->
-	#{
-		key_using_only_state =>
-			fun(State) ->
-				{ok,
-					<<(maps:get(state_key, State))/binary>>
-				}
-			end,
-		key_using_state_and_msg =>
-			fun(State, Msg) ->
-				{ok,
-					<<
-						(maps:get(state_key, State))/binary,
-						(maps:get(msg_key, Msg))/binary
-					>>
-				}
-			end,
-		key_using_all =>
-			fun(State, Msg, Opts) ->
-				{ok,
-					<<
-						(maps:get(state_key, State))/binary,
-						(maps:get(msg_key, Msg))/binary,
-						(maps:get(opts_key, Opts))/binary
-					>>
-				}
-			end
-	}.
+    #{
+        key_using_only_state =>
+            fun(State) ->
+                {ok,
+                    <<(maps:get(state_key, State))/binary>>
+                }
+            end,
+        key_using_state_and_msg =>
+            fun(State, Msg) ->
+                {ok,
+                    <<
+                        (maps:get(state_key, State))/binary,
+                        (maps:get(msg_key, Msg))/binary
+                    >>
+                }
+            end,
+        key_using_all =>
+            fun(State, Msg, Opts) ->
+                {ok,
+                    <<
+                        (maps:get(state_key, State))/binary,
+                        (maps:get(msg_key, Msg))/binary,
+                        (maps:get(opts_key, Opts))/binary
+                    >>
+                }
+            end
+    }.
 
 %% @doc Test that arguments are passed to a device key as expected.
 %% Particularly, we need to ensure that the key function in the device can
 %% specify any arity (1 through 3) and the call is handled correctly.
 key_from_id_device_with_args_test() ->
-	Msg =
-		#{
-			device => generate_device_with_keys_using_args(),
-			state_key => <<"1">>
-		},
-	?assertEqual(
-		{ok, <<"1">>},
-		hb_pam:resolve(
-			Msg,
-			#{
-				path => key_using_only_state,
-				msg_key => <<"2">> % Param message, which is ignored
-			}
-		)
-	),
-	?assertEqual(
-		{ok, <<"13">>},
-		hb_pam:resolve(
-			Msg,
-			#{
-				path => key_using_state_and_msg,
-				msg_key => <<"3">> % Param message, with value to add
-			}
-		)
-	),
-	?assertEqual(
-		{ok, <<"1337">>},
-		hb_pam:resolve(
-			Msg,
-			#{
-				path => key_using_all,
-				msg_key => <<"3">> % Param message
-			},
-			#{
-				opts_key => <<"37">> % Opts
-			}
-		)
-	).
+    Msg =
+        #{
+            device => generate_device_with_keys_using_args(),
+            state_key => <<"1">>
+        },
+    ?assertEqual(
+        {ok, <<"1">>},
+        hb_pam:resolve(
+            Msg,
+            #{
+                path => key_using_only_state,
+                msg_key => <<"2">> % Param message, which is ignored
+            }
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"13">>},
+        hb_pam:resolve(
+            Msg,
+            #{
+                path => key_using_state_and_msg,
+                msg_key => <<"3">> % Param message, with value to add
+            }
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"1337">>},
+        hb_pam:resolve(
+            Msg,
+            #{
+                path => key_using_all,
+                msg_key => <<"3">> % Param message
+            },
+            #{
+                opts_key => <<"37">> % Opts
+            }
+        )
+    ).
 
 device_with_handler_function_test() ->
-	Msg =
-		#{
-			device =>
-				#{
-					info =>
-						fun() ->
-							#{
-								handler =>
-									fun(test_key, _S) ->
-										{ok, <<"GOOD">>}
-									end
-							}
-						end
-				},
-			test_key => <<"BAD">>
-		},
-	?assertEqual(
-		{ok, <<"GOOD">>},
-		hb_pam:resolve(Msg, test_key)
-	).
+    Msg =
+        #{
+            device =>
+                #{
+                    info =>
+                        fun() ->
+                            #{
+                                handler =>
+                                    fun(test_key, _S) ->
+                                        {ok, <<"GOOD">>}
+                                    end
+                            }
+                        end
+                },
+            test_key => <<"BAD">>
+        },
+    ?assertEqual(
+        {ok, <<"GOOD">>},
+        hb_pam:resolve(Msg, test_key)
+    ).
 
 device_with_default_handler_function_test() ->
-	Msg =
-		#{
-			device =>
-				#{
-					info =>
-						fun() ->
-							#{
-								default =>
-									fun(_, _State) ->
-										{ok, <<"DEFAULT">>}
-									end
-							}
-						end,
-					state_key =>
-						fun(_) ->
-							{ok, <<"STATE">>}
-						end
-				}
-		},
-	?assertEqual(
-		{ok, <<"STATE">>},
-		hb_pam:resolve(Msg, state_key)
-	),
-	?assertEqual(
-		{ok, <<"DEFAULT">>},
-		hb_pam:resolve(Msg, any_random_key)
-	).
+    Msg =
+        #{
+            device =>
+                #{
+                    info =>
+                        fun() ->
+                            #{
+                                default =>
+                                    fun(_, _State) ->
+                                        {ok, <<"DEFAULT">>}
+                                    end
+                            }
+                        end,
+                    state_key =>
+                        fun(_) ->
+                            {ok, <<"STATE">>}
+                        end
+                }
+        },
+    ?assertEqual(
+        {ok, <<"STATE">>},
+        hb_pam:resolve(Msg, state_key)
+    ),
+    ?assertEqual(
+        {ok, <<"DEFAULT">>},
+        hb_pam:resolve(Msg, any_random_key)
+    ).
 
 basic_get_test() ->
-	Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-	?assertEqual(<<"value1">>, hb_pam:get(key1, Msg)),
-	?assertEqual(<<"value2">>, hb_pam:get(key2, Msg)).
+    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
+    ?assertEqual(<<"value1">>, hb_pam:get(key1, Msg)),
+    ?assertEqual(<<"value2">>, hb_pam:get(key2, Msg)).
 
 basic_set_test() ->
-	Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-	UpdatedMsg = hb_pam:set(Msg, #{ key1 => <<"new_value1">> }),
-	?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
-	?assertEqual(<<"new_value1">>, hb_pam:get(key1, UpdatedMsg)),
-	?assertEqual(<<"value2">>, hb_pam:get(key2, UpdatedMsg)).
+    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
+    UpdatedMsg = hb_pam:set(Msg, #{ key1 => <<"new_value1">> }),
+    ?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
+    ?assertEqual(<<"new_value1">>, hb_pam:get(key1, UpdatedMsg)),
+    ?assertEqual(<<"value2">>, hb_pam:get(key2, UpdatedMsg)).
 
 get_with_device_test() ->
-	Msg =
-		#{
-			device => generate_device_with_keys_using_args(),
-			state_key => <<"STATE">>
-		},
-	?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
-	?assertEqual(<<"STATE">>, hb_pam:get(key_using_only_state, Msg)).
+    Msg =
+        #{
+            device => generate_device_with_keys_using_args(),
+            state_key => <<"STATE">>
+        },
+    ?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
+    ?assertEqual(<<"STATE">>, hb_pam:get(key_using_only_state, Msg)).
 
 set_with_device_test() ->
-	Msg =
-		#{
-			device =>
-				#{
-					set =>
-						fun(State, _Msg) ->
-							{ok,
-								State#{
-									set_count =>
-										1 + maps:get(set_count, State, 0)
-								}
-							}
-						end
-				},
-			state_key => <<"STATE">>
-		},
-	?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
-	SetOnce = hb_pam:set(Msg, #{ state_key => <<"SET_ONCE">> }),
-	?assertEqual(1, hb_pam:get(set_count, SetOnce)),
-	SetTwice = hb_pam:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
-	?assertEqual(2, hb_pam:get(set_count, SetTwice)),
-	?assertEqual(<<"STATE">>, hb_pam:get(state_key, SetTwice)).
+    Msg =
+        #{
+            device =>
+                #{
+                    set =>
+                        fun(State, _Msg) ->
+                            {ok,
+                                State#{
+                                    set_count =>
+                                        1 + maps:get(set_count, State, 0)
+                                }
+                            }
+                        end
+                },
+            state_key => <<"STATE">>
+        },
+    ?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
+    SetOnce = hb_pam:set(Msg, #{ state_key => <<"SET_ONCE">> }),
+    ?assertEqual(1, hb_pam:get(set_count, SetOnce)),
+    SetTwice = hb_pam:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
+    ?assertEqual(2, hb_pam:get(set_count, SetTwice)),
+    ?assertEqual(<<"STATE">>, hb_pam:get(state_key, SetTwice)).
 
 deep_set_test() ->
-	% First validate second layer changes are handled correctly.
-	Msg0 = #{ a => #{ b => 1 } },
-	?assertMatch(#{ a := #{ b := 2 } },
-		hb_pam:set(Msg0, [a, b], 2, #{})),
-	% Now validate deeper layer changes are handled correctly.
-	Msg = #{ a => #{ b => #{ c => 1 } } },
-	?assertMatch(#{ a := #{ b := #{ c := 2 } } },
-		hb_pam:set(Msg, [a, b, c], 2, #{})).
+    % First validate second layer changes are handled correctly.
+    Msg0 = #{ a => #{ b => 1 } },
+    ?assertMatch(#{ a := #{ b := 2 } },
+        hb_pam:set(Msg0, [a, b], 2, #{})),
+    % Now validate deeper layer changes are handled correctly.
+    Msg = #{ a => #{ b => #{ c => 1 } } },
+    ?assertMatch(#{ a := #{ b := #{ c := 2 } } },
+        hb_pam:set(Msg, [a, b, c], 2, #{})).
 
 deep_set_with_device_test() ->
-	Device = #{
-		set =>
-			fun(Msg1, Msg2) ->
-				% A device where the set function modifies the key
-				% and adds a modified flag.
-				{Key, Val} = hd(maps:to_list(maps:remove(path, Msg2))),
-				{ok, Msg1#{ Key => Val, modified => true }}
-			end
-	},
-	% A message with an interspersed custom device: A and C have it,
-	% B does not. A and C will have the modified flag set to true.
-	Msg = #{
-		device => Device,
-		a =>
-			#{
-				b =>
-					#{
-						device => Device,
-						c => 1,
-						modified => false
-					},
-				modified => false
-			},
-		modified => false
-	},
-	Outer = deep_set(Msg, [a, b, c], 2, #{}),
-	A = hb_pam:get(a, Outer),
-	B = hb_pam:get(b, A),
-	C = hb_pam:get(c, B),
-	?assertEqual(2, C),
-	?assertEqual(true, hb_pam:get(modified, Outer)),
-	?assertEqual(false, hb_pam:get(modified, A)),
-	?assertEqual(true, hb_pam:get(modified, B)).
+    Device = #{
+        set =>
+            fun(Msg1, Msg2) ->
+                % A device where the set function modifies the key
+                % and adds a modified flag.
+                {Key, Val} = hd(maps:to_list(maps:remove(path, Msg2))),
+                {ok, Msg1#{ Key => Val, modified => true }}
+            end
+    },
+    % A message with an interspersed custom device: A and C have it,
+    % B does not. A and C will have the modified flag set to true.
+    Msg = #{
+        device => Device,
+        a =>
+            #{
+                b =>
+                    #{
+                        device => Device,
+                        c => 1,
+                        modified => false
+                    },
+                modified => false
+            },
+        modified => false
+    },
+    Outer = deep_set(Msg, [a, b, c], 2, #{}),
+    A = hb_pam:get(a, Outer),
+    B = hb_pam:get(b, A),
+    C = hb_pam:get(c, B),
+    ?assertEqual(2, C),
+    ?assertEqual(true, hb_pam:get(modified, Outer)),
+    ?assertEqual(false, hb_pam:get(modified, A)),
+    ?assertEqual(true, hb_pam:get(modified, B)).
 
 device_exports_test() ->
 	?assert(is_exported(dev_message, info, #{})),

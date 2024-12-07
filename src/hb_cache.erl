@@ -94,7 +94,7 @@ first_slot_with_path(Store, ProcID, [LatestSlot | Rest], Limit, Path) ->
 build_path(PathList, Map) ->
     lists:map(
         fun(Ref) when is_atom(Ref) -> maps:get(Ref, Map);
-           (Other) -> Other
+            (Other) -> Other
         end,
         PathList
     ).
@@ -154,13 +154,13 @@ write_assignment(Store, Assignment) ->
             fmt_id(ProcID),
             binary_to_list(Slot)
         ]),
-	AssignmentPathByID =
+    AssignmentPathByID =
         hb_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
             SignedID
         ]),
-	AssignmentPathByUnsignedID =
+    AssignmentPathByUnsignedID =
         hb_store:path(Store, [
             "assignments",
             fmt_id(ProcID),
@@ -311,18 +311,18 @@ read(Store, RawPath) ->
             %% separate the bundle items from the main object in storage, but if ar_bundles
             %% exposed a function to rebuild the TX object's manifest we could avoid this.
             {ok,
-				ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
-					data = maps:map(
-						fun(_, Key) ->
-							{ok, Child} = read(Store, ["messages", fmt_id(Key)]),
-							Child
-						end,
-						ar_bundles:parse_manifest(
-							maps:get(<<"manifest">>, Root#tx.data)
-						)
-					)
-				}))
-			};
+                ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
+                    data = maps:map(
+                        fun(_, Key) ->
+                            {ok, Child} = read(Store, ["messages", fmt_id(Key)]),
+                            Child
+                        end,
+                        ar_bundles:parse_manifest(
+                            maps:get(<<"manifest">>, Root#tx.data)
+                        )
+                    )
+                }))
+            };
         simple ->read_simple_message(Store, MessagePath);
         not_found -> not_found
     end.

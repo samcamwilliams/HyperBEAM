@@ -65,11 +65,11 @@ format(Item, Indent) when is_record(Item, tx) ->
             format_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
         false -> []
     end ++
-	case is_signed(Item) of
-		true ->
-			format_line("Signer: ~s", [hb_util:encode(signer(Item))], Indent + 1);
-		false -> []
-	end ++
+    case is_signed(Item) of
+        true ->
+            format_line("Signer: ~s", [hb_util:encode(signer(Item))], Indent + 1);
+        false -> []
+    end ++
     format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
@@ -276,7 +276,7 @@ data_item_signature_data(RawItem) ->
 data_item_signature_data(RawItem, unsigned) ->
     data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
 data_item_signature_data(RawItem, signed) ->
-	true = enforce_valid_tx(RawItem),
+    true = enforce_valid_tx(RawItem),
     NormItem = normalize_data(RawItem),
     ar_deep_hash:hash([
         utf8_encoded("dataitem"),
@@ -371,7 +371,7 @@ serialize(not_found) -> throw(not_found);
 serialize(TX) -> serialize(TX, binary).
 serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
-	true = enforce_valid_tx(RawTX),
+    true = enforce_valid_tx(RawTX),
     TX = normalize(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
     <<
@@ -385,7 +385,7 @@ serialize(RawTX, binary) ->
         (TX#tx.data)/binary
     >>;
 serialize(TX, json) ->
-	true = enforce_valid_tx(TX),
+    true = enforce_valid_tx(TX),
     jiffy:encode(item_to_json_struct(TX)).
 
 %% @doc Take an item and ensure that it is of valid form. Useful for ensuring
@@ -393,11 +393,11 @@ serialize(TX, json) ->
 %% This function should throw simple, easy to follow errors to aid devs in
 %% debugging issues.
 enforce_valid_tx(List) when is_list(List) ->
-	lists:all(fun enforce_valid_tx/1, List);
+    lists:all(fun enforce_valid_tx/1, List);
 enforce_valid_tx(Map) when is_map(Map) ->
-	lists:all(fun(Item) -> enforce_valid_tx(Item) end, maps:values(Map));
+    lists:all(fun(Item) -> enforce_valid_tx(Item) end, maps:values(Map));
 enforce_valid_tx(TX) ->
-	ok_or_throw(TX,
+    ok_or_throw(TX,
         check_type(TX, message),
         {invalid_tx, TX}
     ),
@@ -413,60 +413,60 @@ enforce_valid_tx(TX) ->
         check_size(TX#tx.last_tx, [0, 32]),
         {invalid_field, last_tx, TX#tx.last_tx}
     ),
-	ok_or_throw(TX,
-		check_size(TX#tx.owner, [0, byte_size(?DEFAULT_OWNER)]),
-		{invalid_field, owner, TX#tx.owner}
-	),
+    ok_or_throw(TX,
+        check_size(TX#tx.owner, [0, byte_size(?DEFAULT_OWNER)]),
+        {invalid_field, owner, TX#tx.owner}
+    ),
     ok_or_throw(TX,
         check_size(TX#tx.target, [0, 32]),
         {invalid_field, target, TX#tx.target}
     ),
-	ok_or_throw(TX,
-		check_size(TX#tx.signature, [0, byte_size(?DEFAULT_SIG)]),
-		{invalid_field, signature, TX#tx.signature}
-	),
-	lists:foreach(
-		fun({Name, Value}) ->
-			ok_or_throw(TX,
-				check_type(Name, binary),
-				{invalid_field, tag_name, Name}
-			),
-			ok_or_throw(TX,
-				check_size(Name, {range, 0, ?MAX_TAG_NAME_SIZE}),
-				{invalid_field, tag_name, Name}
-			),
-			ok_or_throw(TX,
-				check_type(Value, binary),
-				{invalid_field, tag_value, Value}
-			),
-			ok_or_throw(TX,
-				check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
-				{invalid_field, tag_value, Value}
-			);
-			(InvalidTagForm) ->
-				throw({invalid_field, tag, InvalidTagForm})
-		end,
-		TX#tx.tags
-	),
-	ok_or_throw(
-		TX,
-		check_type(TX#tx.data, binary)
-			orelse check_type(TX#tx.data, map)
-			orelse check_type(TX#tx.data, list),
-		{invalid_field, data, TX#tx.data}
-	),
-	true.
+    ok_or_throw(TX,
+        check_size(TX#tx.signature, [0, byte_size(?DEFAULT_SIG)]),
+        {invalid_field, signature, TX#tx.signature}
+    ),
+    lists:foreach(
+        fun({Name, Value}) ->
+            ok_or_throw(TX,
+                check_type(Name, binary),
+                {invalid_field, tag_name, Name}
+            ),
+            ok_or_throw(TX,
+                check_size(Name, {range, 0, ?MAX_TAG_NAME_SIZE}),
+                {invalid_field, tag_name, Name}
+            ),
+            ok_or_throw(TX,
+                check_type(Value, binary),
+                {invalid_field, tag_value, Value}
+            ),
+            ok_or_throw(TX,
+                check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
+                {invalid_field, tag_value, Value}
+            );
+            (InvalidTagForm) ->
+                throw({invalid_field, tag, InvalidTagForm})
+        end,
+        TX#tx.tags
+    ),
+    ok_or_throw(
+        TX,
+        check_type(TX#tx.data, binary)
+            orelse check_type(TX#tx.data, map)
+            orelse check_type(TX#tx.data, list),
+        {invalid_field, data, TX#tx.data}
+    ),
+    true.
 
 %% @doc Force that a binary is either empty or the given number of bytes.
 check_size(Bin, {range, Start, End}) ->
-	check_type(Bin, binary)
-		andalso byte_size(Bin) >= Start
-		andalso byte_size(Bin) =< End;
+    check_type(Bin, binary)
+        andalso byte_size(Bin) >= Start
+        andalso byte_size(Bin) =< End;
 check_size(Bin, X) when not is_list(X) ->
     check_size(Bin, [X]);
 check_size(Bin, Sizes) ->
-	check_type(Bin, binary)
-		andalso lists:member(byte_size(Bin), Sizes).
+    check_type(Bin, binary)
+        andalso lists:member(byte_size(Bin), Sizes).
 
 %% @doc Ensure that a value is of the given type.
 check_type(Value, binary) when is_binary(Value) -> true;
@@ -476,13 +476,13 @@ check_type(Value, _) when is_list(Value) -> false;
 check_type(Value, map) when is_map(Value) -> true;
 check_type(Value, _) when is_map(Value) -> false;
 check_type(Value, message) ->
-	is_record(Value, tx) or is_map(Value) or is_list(Value);
+    is_record(Value, tx) or is_map(Value) or is_list(Value);
 check_type(_Value, _) -> false.
 
 %% @doc Throw an error if the given value is not ok.
 ok_or_throw(_, true, _) -> true;
 ok_or_throw(_TX, false, Error) ->
-	throw(Error).
+    throw(Error).
 
 %% @doc Take an item and ensure that both the unsigned and signed IDs are
 %% appropriately set. This function is structured to fall through all cases

@@ -90,21 +90,21 @@
 
 %% @doc Initialize system-wide settings for the hyperbeam node.
 init() ->
-	?event({setting_debug_stack_depth, hb_opts:get(debug_stack_depth)}),
+    ?event({setting_debug_stack_depth, hb_opts:get(debug_stack_depth)}),
     Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
-	?event({old_system_stack_depth, Old}),
-	ok.
+    ?event({old_system_stack_depth, Old}),
+    ok.
 
 wallet() ->
     wallet(hb_opts:get(key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} ->
-			ar_wallet:load_keyfile(Location);
+            ar_wallet:load_keyfile(Location);
         {error, _} -> 
-			Res = ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, Location),
-			?event({created_new_keyfile, Location, address(Res)}),
-			Res
+            Res = ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, Location),
+            ?event({created_new_keyfile, Location, address(Res)}),
+            Res
     end.
 
 %% @doc Get the address of a wallet. Defaults to the address of the wallet
@@ -133,9 +133,9 @@ event(X, ModAtom, Func, Line) when is_atom(ModAtom) ->
     end;
 event(X, ModStr, Func, Line) ->
     case hb_opts:get(debug_print) of
-		ModList when is_list(ModList) ->
-			lists:member(ModStr, ModList) andalso
-				hb_util:debug_print(X, ModStr, Func, Line);
+        ModList when is_list(ModList) ->
+            lists:member(ModStr, ModList) andalso
+                hb_util:debug_print(X, ModStr, Func, Line);
         true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
     end.
@@ -158,10 +158,10 @@ no_prod(X, Mod, Line) ->
             io:format(standard_error,
                 "=== DANGER: NON-PROD READY CODE INVOKED IN PROD ===~n", []),
             io:format(standard_error, "~w:~w:       ~p~n", [Mod, Line, X]),
-			case hb_opts:get(exit_on_no_prod) of
-				true -> init:stop();
-				false -> throw(X)
-			end;
+            case hb_opts:get(exit_on_no_prod) of
+                true -> init:stop();
+                false -> throw(X)
+            end;
         _ -> X
     end.
 
@@ -188,6 +188,6 @@ profile(Fun) ->
 %% message to the console first.
 debug_wait(T, Mod, Func, Line) ->
     hb_util:debug_print(
-		lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
-		Mod, Func, Line),
+        lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
+        Mod, Func, Line),
     receive after T -> ok end.

@@ -33,69 +33,69 @@
 
 %% Generate attestation based on the provided nonce (both TPM and SEV-SNP)
 generate_attestation(Nonce) ->
-	?event({"Generating TPM attestation..."}),
+    ?event({"Generating TPM attestation..."}),
 
-	case sec_tpm:generate_attestation(Nonce) of
-		{ok, TPMAttestation} ->
-			?event({"TPM attestation generated, size:", byte_size(TPMAttestation)}),
+    case sec_tpm:generate_attestation(Nonce) of
+        {ok, TPMAttestation} ->
+            ?event({"TPM attestation generated, size:", byte_size(TPMAttestation)}),
 
-			?event({"Generating SEV-SNP attestation..."}),
+            ?event({"Generating SEV-SNP attestation..."}),
 
-			case sec_tee:generate_attestation(Nonce) of
-				{ok, TEEAttestation} ->
-					?event({"SEV-SNP attestation generated, size:", byte_size(TEEAttestation)}),
+            case sec_tee:generate_attestation(Nonce) of
+                {ok, TEEAttestation} ->
+                    ?event({"SEV-SNP attestation generated, size:", byte_size(TEEAttestation)}),
 
-					%% Calculate sizes of the two attestation binaries
-					TPMSize = byte_size(TPMAttestation),
-					TEESize = byte_size(TEEAttestation),
+                    %% Calculate sizes of the two attestation binaries
+                    TPMSize = byte_size(TPMAttestation),
+                    TEESize = byte_size(TEEAttestation),
 
-					%% Create the header containing the sizes
-					Header = <<TPMSize:32/unit:8, TEESize:32/unit:8>>,
-					?event({"Header created, TPMSize:", TPMSize, "TEESize:", TEESize}),
+                    %% Create the header containing the sizes
+                    Header = <<TPMSize:32/unit:8, TEESize:32/unit:8>>,
+                    ?event({"Header created, TPMSize:", TPMSize, "TEESize:", TEESize}),
 
-					%% Combine the header with the two attestation binaries
-					CombinedAttestation = <<Header/binary, TPMAttestation/binary, TEEAttestation/binary>>,
-					?event({"Combined attestation binary created, total size:", byte_size(CombinedAttestation)}),
+                    %% Combine the header with the two attestation binaries
+                    CombinedAttestation = <<Header/binary, TPMAttestation/binary, TEEAttestation/binary>>,
+                    ?event({"Combined attestation binary created, total size:", byte_size(CombinedAttestation)}),
 
-					{ok, CombinedAttestation};
-				{error, Reason} ->
-					?event({"Error generating SEV-SNP attestation:", Reason}),
-					{error, Reason}
-			end;
-		{error, Reason} ->
-			?event({"Error generating TPM attestation:", Reason}),
-			{error, Reason}
-	end.
+                    {ok, CombinedAttestation};
+                {error, Reason} ->
+                    ?event({"Error generating SEV-SNP attestation:", Reason}),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            ?event({"Error generating TPM attestation:", Reason}),
+            {error, Reason}
+    end.
 
 %% Verify attestation report based on the provided binary (both TPM and SEV-SNP)
 verify_attestation(AttestationBinary) ->
-	?event("Verifying attestation..."),
+    ?event("Verifying attestation..."),
 
-	%% Extract the header (size info) and the attestation binaries
-	<<TPMSize:32/unit:8, TEESize:32/unit:8, Rest/binary>> = AttestationBinary,
-	?event({"Header extracted, TPMSize:", TPMSize, "TEESize:", TEESize}),
+    %% Extract the header (size info) and the attestation binaries
+    <<TPMSize:32/unit:8, TEESize:32/unit:8, Rest/binary>> = AttestationBinary,
+    ?event({"Header extracted, TPMSize:", TPMSize, "TEESize:", TEESize}),
 
-	%% Extract the TPM and SEV-SNP attestation binaries based on their sizes
-	<<TPMAttestation:TPMSize/binary, TEEAttestation:TEESize/binary>> = Rest,
-	?event({"Extracted TPM and SEV-SNP attestation binaries"}),
+    %% Extract the TPM and SEV-SNP attestation binaries based on their sizes
+    <<TPMAttestation:TPMSize/binary, TEEAttestation:TEESize/binary>> = Rest,
+    ?event({"Extracted TPM and SEV-SNP attestation binaries"}),
 
-	%% Verify TPM attestation
-	case sec_tpm:verify_attestation(TPMAttestation) of
-		{ok, _TPMVerification} ->
-			?event({"TPM attestation verification completed"}),
+    %% Verify TPM attestation
+    case sec_tpm:verify_attestation(TPMAttestation) of
+        {ok, _TPMVerification} ->
+            ?event({"TPM attestation verification completed"}),
 
-			%% Verify SEV-SNP attestation
-			case sec_tee:verify_attestation(TEEAttestation) of
-				{ok, _TEEVerification} ->
-					?event({"SEV-SNP attestation verification completed"}),
+            %% Verify SEV-SNP attestation
+            case sec_tee:verify_attestation(TEEAttestation) of
+                {ok, _TEEVerification} ->
+                    ?event({"SEV-SNP attestation verification completed"}),
 
-					%% Return success if both verifications succeeded
-					{ok, "Verified"};
-				{error, Reason} ->
-					?event({"Error verifying SEV-SNP attestation:", Reason}),
-					{error, Reason}
-			end;
-		{error, Reason} ->
-			?event({"Error verifying TPM attestation:", Reason}),
-			{error, Reason}
-	end.
+                    %% Return success if both verifications succeeded
+                    {ok, "Verified"};
+                {error, Reason} ->
+                    ?event({"Error verifying SEV-SNP attestation:", Reason}),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            ?event({"Error verifying TPM attestation:", Reason}),
+            {error, Reason}
+    end.

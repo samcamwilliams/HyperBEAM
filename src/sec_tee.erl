@@ -41,7 +41,7 @@
 
 %% Temporarily hard-code the VCEK download command
 -define(DOWNLOAD_VCEK_CMD,
-	"curl --proto \'=https\' --tlsv1.2 -sSf https://kdsintf.amd.com/vcek/v1/Milan/cert_chain -o " ++ ?CERT_CHAIN_FILE
+    "curl --proto \'=https\' --tlsv1.2 -sSf https://kdsintf.amd.com/vcek/v1/Milan/cert_chain -o " ++ ?CERT_CHAIN_FILE
 ).
 
 %% Generate attestation, request certificates, download VCEK, and upload a transaction

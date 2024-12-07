@@ -51,17 +51,17 @@ scope(Store, Scope) ->
         Store,
         fun(StoreScope, _) ->
             StoreScope == Scope orelse
-				(is_list(Scope) andalso lists:member(StoreScope, Scope))
+                (is_list(Scope) andalso lists:member(StoreScope, Scope))
         end
     ).
 
 %% @doc Ask a store for its own scope. If it doesn't have one, return the
 %% default scope (local).
 get_store_scope(Store) ->
-	case call_function(Store, scope, []) of
-		not_found -> ?DEFAULT_SCOPE;
-		Scope -> Scope
-	end.
+    case call_function(Store, scope, []) of
+        not_found -> ?DEFAULT_SCOPE;
+        Scope -> Scope
+    end.
 
 %% @doc Order a store by a preference of its scopes. This is useful for making
 %% sure that faster (or perhaps cheaper) stores are used first. If a list is
@@ -69,28 +69,28 @@ get_store_scope(Store) ->
 %% scopes will be ordered by the scores in the map. Any unknown scopes will
 %% default to a score of 0.
 sort(Stores, PreferenceOrder) when is_list(PreferenceOrder) ->
-	sort(
-		Stores,
-		maps:from_list(
-			[
-				{Scope, -Index}
-			||
-				{Scope, Index} <-
-					lists:zip(
-						PreferenceOrder,
-						lists:seq(1, length(PreferenceOrder))
-					)
-			]
-		)
-	);
+    sort(
+        Stores,
+        maps:from_list(
+            [
+                {Scope, -Index}
+            ||
+                {Scope, Index} <-
+                    lists:zip(
+                        PreferenceOrder,
+                        lists:seq(1, length(PreferenceOrder))
+                    )
+            ]
+        )
+    );
 sort(Stores, ScoreMap) ->
-	lists:sort(
-		fun(Store1, Store2) ->
-			maps:get(get_store_scope(Store1), ScoreMap, 0) >
-				maps:get(get_store_scope(Store2), ScoreMap, 0)
-		end,
-		Stores
-	).
+    lists:sort(
+        fun(Store1, Store2) ->
+            maps:get(get_store_scope(Store1), ScoreMap, 0) >
+                maps:get(get_store_scope(Store2), ScoreMap, 0)
+        end,
+        Stores
+    ).
 
 %% @doc Join a list of path components together.
 join([]) -> [];
@@ -98,7 +98,7 @@ join(Path) when is_binary(Path) -> Path;
 join([""|Xs]) -> join(Xs);
 join(FN = [X|_Xs]) when is_integer(X) -> FN;
 join([X|Xs]) -> 
-	filename:join(join(X), join(Xs)).
+    filename:join(join(X), join(Xs)).
 
 %%% The store interface that modules should implement.
 
@@ -114,7 +114,7 @@ make_group(Modules, Path) -> call_function(Modules, make_group, [Path]).
 
 %% @doc Make a link from one path to another in the store.
 make_link(Modules, Existing, New) ->
-	call_function(Modules, make_link, [Existing, New]).
+    call_function(Modules, make_link, [Existing, New]).
 
 %% @doc Delete all of the keys in a store. Should be used with extreme
 %% caution. Lost data can lose money in many/most of hyperbeam's use cases.

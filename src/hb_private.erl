@@ -20,17 +20,17 @@ from_message(Msg) -> maps:get(private, Msg, #{}).
 
 %% @doc Helper for getting a value from the private element of a message.
 get(Msg, Key) -> 
-	get(Msg, Key, undefined).
+    get(Msg, Key, undefined).
 get(Msg, Key, Default) -> 
-	maps:get(Key, from_message(Msg), Default).
+    maps:get(Key, from_message(Msg), Default).
 
 %% @doc Helper function for setting a key in the private element of a message.
 set(Msg, Key, Value) ->
-	maps:put(
-		private,
-		maps:put(Key, Value, from_message(Msg)),
-		Msg
-	).
+    maps:put(
+        private,
+        maps:put(Key, Value, from_message(Msg)),
+        Msg
+    ).
 
 %% @doc Check if a key is private.
 is_private(Key) ->
@@ -41,24 +41,24 @@ is_private(Key) ->
 
 %% @doc Unset all of the private keys in a message.
 reset(Msg) ->
-	maps:without(
-		lists:filter(fun is_private/1, maps:keys(Msg)),
-		Msg
-	).
+    maps:without(
+        lists:filter(fun is_private/1, maps:keys(Msg)),
+        Msg
+    ).
 
 %%% Tests
 
 set_private_test() ->
-	?assertEqual(#{a => 1, private => #{b => 2}}, ?MODULE:set(#{a => 1}, b, 2)),
-	Res = ?MODULE:set(#{a => 1}, a, 1),
-	?assertEqual(#{a => 1, private => #{a => 1}}, Res),
-	?assertEqual(#{a => 1, private => #{a => 1}}, ?MODULE:set(Res, a, 1)).
+    ?assertEqual(#{a => 1, private => #{b => 2}}, ?MODULE:set(#{a => 1}, b, 2)),
+    Res = ?MODULE:set(#{a => 1}, a, 1),
+    ?assertEqual(#{a => 1, private => #{a => 1}}, Res),
+    ?assertEqual(#{a => 1, private => #{a => 1}}, ?MODULE:set(Res, a, 1)).
 
 get_private_key_test() ->
-	M1 = #{a => 1, private => #{b => 2}},
-	?assertEqual(undefined, ?MODULE:get(M1, a)),
-	{ok, [a]} = hb_pam:resolve(M1, <<"Keys">>),
-	?assertEqual(2, ?MODULE:get(M1, b)),
-	{Res, _} = hb_pam:resolve(M1, <<"Private">>),
-	?assertNotEqual(ok, Res),
-	{Res, _} = hb_pam:resolve(M1, private).
+    M1 = #{a => 1, private => #{b => 2}},
+    ?assertEqual(undefined, ?MODULE:get(M1, a)),
+    {ok, [a]} = hb_pam:resolve(M1, <<"Keys">>),
+    ?assertEqual(2, ?MODULE:get(M1, b)),
+    {Res, _} = hb_pam:resolve(M1, <<"Private">>),
+    ?assertNotEqual(ok, Res),
+    {Res, _} = hb_pam:resolve(M1, private).

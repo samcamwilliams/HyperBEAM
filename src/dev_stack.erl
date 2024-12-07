@@ -181,7 +181,7 @@ transform(Msg1, Key, Opts) ->
 %% @doc The main device stack execution engine. See the `moduledoc` for more
 %% information.
 resolve_stack(Message1, Key, Message2, Opts) ->
-	resolve_stack(Message1, Key, Message2, 1, Opts).
+    resolve_stack(Message1, Key, Message2, 1, Opts).
 resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	?event(
 		{stack_transform,
@@ -268,17 +268,17 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
 			?event({continue_stack_execution_after_error, Message1, Key, Info}),
             resolve_stack(
                 hb_pam:set(Message1,
-					[
-						<<"Errors">>,
-						hb_pam:get(id, Message1, Opts),
-						hb_pam:get(pass, Message1, Opts),
-						DevNum,
-						hb_util:debug_fmt(Info)
-					],
-					Opts
-				),
+                    [
+                        <<"Errors">>,
+                        hb_pam:get(id, Message1, Opts),
+                        hb_pam:get(pass, Message1, Opts),
+                        DevNum,
+                        hb_util:debug_fmt(Info)
+                    ],
+                    Opts
+                ),
                 Key,
-				Message2,
+                Message2,
                 DevNum + 1,
                 Opts
             );
