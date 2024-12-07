@@ -451,7 +451,7 @@ skip_test() ->
 		device => <<"Stack/1.0">>,
 		<<"Device-Stack">> =>
 			#{
-				<<"1">> => generate_append_device(<<"+D1">>),
+				<<"1">> => generate_append_device(<<"+D1">>, skip),
 				<<"2">> => generate_append_device(<<"+D2">>)
 			},
 		result => <<"INIT">>
