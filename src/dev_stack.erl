@@ -124,12 +124,15 @@ transformer_message(Msg1, Opts) ->
 	{ok, 
 		Msg1#{
 			device => #{
-				info => #{
-					handler =>
-						fun(Key, MsgX1) ->
-							transform(MsgX1, Key, Opts)
-						end
-				},
+				info =>
+					fun() ->
+						#{
+							handler =>
+								fun(Key, MsgX1) ->
+									transform(MsgX1, Key, Opts)
+								end
+						}
+					end,
 				type => <<"Stack-Transformer">>
 			}
 		}
@@ -326,36 +329,43 @@ transform_internal_call_device_test() ->
 		)
 	).
 
-%% @doc Ensure we can transform the device via sending a message to the stack.
+%% @doc Ensure we can generate a transformer message that can be called to
+%% return a version of msg1 with only that device attached.
 transform_external_call_device_test() ->
 	Msg1 = #{
 		device => <<"Stack/1.0">>,
 		<<"Device-Stack">> =>
 			#{
-				<<"1">> =>
+				<<"Make-Cool">> =>
 					#{
 						info =>
 							fun() ->
 								#{
 									handler =>
-										fun(Key, MsgX1) ->
+										fun(keys, MsgX1) ->
+											{ok, maps:keys(MsgX1)};
+										(Key, MsgX1) ->
 											{ok, Value} =
 												dev_message:get(Key, MsgX1),
-											{ok, MsgX1#{ Key =>
-												<< Value/binary, "-Cool">>
-											}}
+											dev_message:set(
+												MsgX1,
+												#{ Key =>
+													<< Value/binary, "-Cool">>
+												},
+												#{}
+											)
 										end
 								}
 							end,
 						suffix => <<"-Cool">>
 					}
 			},
-		<<"Value">> => <<"Super">>
+		value => <<"Super">>
 	},
 	?assertMatch(
-		{ok, #{ <<"Value">> := <<"Super-Cool">> }},
+		{ok, #{ value := <<"Super-Cool">> }},
 		hb_pam:resolve(Msg1, #{
-			path => <<"/Transform/1">>
+			path => <<"/Transform/Make-Cool/Value">>
 		})
 	).
 
