@@ -34,16 +34,10 @@ set(Msg, Key, Value) ->
 
 %% @doc Check if a key is private.
 is_private(Key) ->
-    Str = key_to_list(Key),
-    lists:prefix("priv", Str).
-
-%% @doc Convert a key to a list.
-key_to_list(Key) when is_atom(Key) ->
-    atom_to_list(Key);
-key_to_list(Key) when is_binary(Key) ->
-    binary_to_list(Key);
-key_to_list(Key) when is_list(Key) ->
-    binary_to_list(iolist_to_binary(Key)).
+	case hb_pam:key_to_binary(Key) of
+		<<"priv", _/binary>> -> true;
+		_ -> false
+	end.
 
 %% @doc Unset all of the private keys in a message.
 reset(Msg) ->

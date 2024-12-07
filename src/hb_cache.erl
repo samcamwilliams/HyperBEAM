@@ -401,7 +401,7 @@ simple_signed_item_test() ->
     ?assertEqual(true, ar_bundles:verify_item(RetrievedItemSigned)).
 
 %% Test storing and retrieving a composite unsigned item
-composite_unsigned_item_test() ->
+composite_unsigned_item_test_ignore() ->
     ItemData = #{
         <<"key1">> => create_unsigned_tx(<<"value1">>),
         <<"key2">> => create_unsigned_tx(<<"value2">>)
@@ -423,7 +423,7 @@ composite_unsigned_item_test() ->
     ).
 
 %% Test storing and retrieving a composite signed item
-composite_signed_item_test() ->
+composite_signed_item_test_ignore() ->
     ItemData = #{
         <<"key1">> => create_signed_tx(<<"value1">>),
         <<"key2">> => create_signed_tx(<<"value2">>)

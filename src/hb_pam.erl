@@ -1,6 +1,6 @@
 -module(hb_pam).
 %%% Main device API:
--export([resolve/2, resolve/3, load_device/1]).
+-export([resolve/2, resolve/3, load_device/2]).
 -export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
 %%% Shortcuts:
 -export([keys/1, keys/2]).
@@ -72,58 +72,66 @@ resolve(Msg1, Key, Opts) ->
 %% @doc Internal function for resolving the path from a message and loading
 %% the function to call.
 prepare_resolve(Msg1, Msg2, Opts) ->
-    %?event({pre_resolve_func_load, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    {Fun, NewOpts} =
-        try
-            Key = hb_path:hd(Msg2, Opts),
-            % Try to load the device and get the function to call.
-            {Status, ReturnedFun} = message_to_fun(Msg1, Key),
-            % Next, add an option to the Opts map to indicate if we should
-            % add the key to the start of the arguments. Note: This option
-            % is used downstream by other devices (like `dev_stack`), so 
-            % should be changed with care.
-            {
-                ReturnedFun,
-                Opts#{
-                    add_key =>
-                        case Status of
-                            add_key -> Key;
-                            _ -> false
-                        end
-                }
-            }
-        catch
-            Class:Exception:Stacktrace ->
-                handle_error(
-                    loading_device,
-                    {Class, Exception, Stacktrace},
-                    Opts
-                )
-        end,
-    do_resolve(Msg1, Fun, Msg2, NewOpts).
+	{Fun, NewOpts} =
+		try
+			Key = hb_path:hd(Msg2, Opts),
+			% Try to load the device and get the function to call.
+			{Status, ReturnedFun} = message_to_fun(Msg1, Key, Opts),
+			?event(
+				{resolving, Key,
+					{status, Status},
+					{func, ReturnedFun},
+					{msg1, Msg1},
+					{msg2, Msg2},
+					{opts, Opts}
+				}
+			),
+			% Next, add an option to the Opts map to indicate if we should
+			% add the key to the start of the arguments. Note: This option
+			% is used downstream by other devices (like `dev_stack`), so
+			% should be changed with care.
+			{
+				ReturnedFun,
+				Opts#{
+					add_key =>
+						case Status of
+							add_key -> Key;
+							_ -> false
+						end
+				}
+			}
+		catch
+			Class:Exception:Stacktrace ->
+				handle_error(
+					loading_device,
+					{Class, Exception, Stacktrace},
+					Opts
+				)
+		end,
+	do_resolve(Msg1, Fun, Msg2, NewOpts).
 do_resolve(Msg1, Fun, Msg2, Opts) ->
-    ?event({resolving, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    % First, determine the arguments to pass to the function.
-    % While calculating the arguments we unset the add_key option.
-    UserOpts = maps:remove(add_key, Opts),
-    Args =
-        case maps:get(add_key, Opts, false) of
-            false -> [Msg1, Msg2, UserOpts];
-            Key -> [Key, Msg1, Msg2, UserOpts]
-        end,
-    % Then, try to execute the function.
-    try
-        Msg3 = apply(Fun, truncate_args(Fun, Args)),
-        ?event({resolved_result, {explicit, Msg3}}),
-        handle_resolved_result(Msg3, Msg2, UserOpts)
-    catch
-        ExecClass:ExecException:ExecStacktrace ->
-            handle_error(
-                device_call,
-                {ExecClass, ExecException, ExecStacktrace},
-                Opts
-            )
-    end.
+	%?event({resolving, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	% First, determine the arguments to pass to the function.
+	% While calculating the arguments we unset the add_key option.
+	UserOpts = maps:remove(add_key, Opts),
+	Args =
+		case maps:get(add_key, Opts, false) of
+			false -> [Msg1, Msg2, UserOpts];
+			Key -> [Key, Msg1, Msg2, UserOpts]
+		end,
+	% Then, try to execute the function.
+	try
+		Msg3 = apply(Fun, truncate_args(Fun, Args)),
+		?event({resolved, Msg3}),
+		handle_resolved_result(Msg3, Msg2, UserOpts)
+	catch
+		ExecClass:ExecException:ExecStacktrace ->
+			handle_error(
+				device_call,
+				{ExecClass, ExecException, ExecStacktrace},
+				Opts
+			)
+	end.
 
 %% @doc Internal function for handling the result of a device call.
 %% If the result is a binary or something that doesn't have an `ok` status,
@@ -133,56 +141,69 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 %% 2. Pop the first element of the path from Msg2.
 %% 3. Write the result to the cache unless the `cache` option is set to false.
 %% 4. If there are still elements in the path, we recurse through execution.
-%% If additional elements are included as part of the result, we pass them 
+%% If additional elements are included as part of the result, we pass them
 %% through to the caller.
 handle_resolved_result(Msg3, _Msg2, _UserOpts) when is_binary(Msg3) ->
     Msg3;
 handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
-    handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
-handle_resolved_result(Msg2List = [Status, Result|_], _Msg2, _Opts)
-        when Status =/= ok orelse not is_map(Result) ->
-    list_to_tuple(Msg2List);
+	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
+handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
+		when Status =/= ok ->
+	Msg3 = list_to_tuple(Msg2List),
+	% ?event(
+	% 	{abnormal_result,
+	% 		{result, Result},
+	% 		{msg2, Msg2},
+	% 		{msg3, Msg3},
+	% 		{opts, Opts}
+	% 	}
+	% ),
+	Msg3;
+handle_resolved_result(Output = [ok, Res|_], _Msg2, _Opts) when not is_map(Res) ->
+	% The result is not a map, so we return it as is.
+	list_to_tuple(Output);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
-    Msg3 =
-        case hb_opts:get(update_hashpath, true, Opts#{ only => local }) of
-            true ->
-                % ?event(
-                % 	{pushing_hashpath_onto,
-                % 		{msg3, {explicit, Msg3Raw}},
-                % 		{msg2, Msg2},
-                % 		{opts, Opts}
-                % 	}
-                % ),
-                hb_path:push(hashpath, Msg3Raw, Msg2);
-            false -> Msg3Raw
-        end,
-    case hb_opts:get(cache_results, true, Opts) of
-        true ->
-            hb_cache:write(
-                hb_opts:get(store, no_valid_store, Opts),
-                hb_message:message_to_tx(Msg3)
-            );
-        false ->
-            ok
-    end,
-    case hb_path:tl(Msg2, Opts) of
-        Res when Res == undefined orelse Res == [] ->
-            % The path resolved to the last element, so we return
-            % to the caller.
-            list_to_tuple([ok, Msg3 | Rest]);
-        NextMsg ->
-            % There are more elements in the path, so we recurse.
-            ?event({recursing, {input, Msg3}, {next, NextMsg}}),
-            resolve(Msg3, NextMsg, Opts)
-    end.
+	Msg3 =
+		case hb_opts:get(update_hashpath, true, Opts#{ only => local }) of
+			true ->
+				% ?event(
+				% 	{pushing_hashpath_onto,
+				% 		{msg3, {explicit, Msg3Raw}},
+				% 		{msg2, Msg2},
+				% 		{opts, Opts}
+				% 	}
+				% ),
+				hb_path:push(hashpath, Msg3Raw, Msg2);
+			false -> Msg3Raw
+		end,
+	case hb_opts:get(cache_results, true, Opts) of
+		true ->
+			hb_cache:write(
+				hb_opts:get(store, no_valid_store, Opts),
+				hb_message:message_to_tx(Msg3)
+			);
+		false ->
+			ok
+	end,
+	case hb_path:tl(Msg2, Opts) of
+		Res when Res == undefined orelse Res == [] ->
+			% The path resolved to the last element, so we return
+			% to the caller.
+			list_to_tuple([ok, Msg3 | Rest]);
+		NextMsg ->
+			% There are more elements in the path, so we recurse.
+			?event({recursing, {next, NextMsg}}),
+			resolve(Msg3, NextMsg, Opts)
+	end.
 
-%% @doc Shortcut for resolving a key in a message without its 
-%% status if it is `ok`. This makes it easier to write complex 
+%% @doc Shortcut for resolving a key in a message without its
+%% status if it is `ok`. This makes it easier to write complex
 %% logic on top of messages while maintaining a functional style.
 get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
-    ensure_ok(Path, resolve(Msg, #{ path => Path }, Opts), Opts).
+	?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
+	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
 
 %% @doc Get the value of a key from a message, returning a default value if the
 %% key is not found.
@@ -235,21 +256,15 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
     device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
-    ?event({calling_device_set, {key, Key}, {value, Value}}),
-    ensure_ok(Key, resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
+	?event({calling_device_set, {key, Key}, {value, Value}}),
+	hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
 remove(Msg, Key, Opts) ->
-    ensure_ok(Key, resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
+	hb_util:ok(resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
 
-%% @doc Helper for returning `Message2` if the resolution has a status of `ok`,
-%% or handling an error based on the value of the `error_strategy` option.
-ensure_ok(_Key, {ok, Value}, _Opts) -> Value;
-ensure_ok(_Key, {error, Reason}, #{ error_strategy := X }) when X =/= throw ->
-    {unexpected, {error, Reason}};
-ensure_ok(Key, {error, Reason}, _Opts) ->
-    throw({pam_resolution_error, Key, Reason}).
+
 
 %% @doc Handle an error in a device call.
 handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
@@ -266,141 +281,173 @@ truncate_args(Fun, Args) ->
 
 %% @doc Calculate the Erlang function that should be called to get a value for
 %% a given key from a device.
-%% 
+%%
 %% This comes in 7 forms:
 %% 1. The message does not specify a device, so we use the default device.
-%% 2. The device has a `handler` key in its `Dev:info()` map, which is a 
+%% 2. The device has a `handler` key in its `Dev:info()` map, which is a
 %% function that takes a key and returns a function to handle that key. We pass
 %% the key as an additional argument to this function.
-%% 3. The device has a function of the name `Key`, which should be called 
+%% 3. The device has a function of the name `Key`, which should be called
 %% directly.
-%% 4. The device does not implement the key, but does have a default handler 
+%% 4. The device does not implement the key, but does have a default handler
 %% for us to call. We pass it the key as an additional argument.
 %% 5. The device does not implement the key, and has no default handler. We use
 %% the default device to handle the key.
 %% Error: If the device is specified, but not loadable, we raise an error.
-%% 
+%%
 %% Returns {ok | add_key, Fun} where Fun is the function to call, and add_key
 %% indicates that the key should be added to the start of the call's arguments.
-message_to_fun(Msg, Key) when not is_map_key(device, Msg) ->
-    % Case 1: The message does not specify a device, so we use the default device.
-    message_to_fun(Msg#{ device => default_module() }, Key);
-message_to_fun(Msg = #{ device := RawDev }, Key) ->
-    ?event({message_to_fun, {msg, Msg}, {device, RawDev}, {key, Key}}),
-    Dev =
-        case load_device(RawDev) of
-            {error, _} ->
-                % Error case: A device is specified, but it is not loadable.
-                throw({error, {device_not_loadable, RawDev}});
-            {ok, DevMod} -> DevMod
-        end,
-    case maps:find(handler, Info = info(Dev, Msg)) of
-        {ok, Handler} ->
-            % Case 2: The device has an explicit handler function.
-            {add_key, Handler};
-        error ->
-            case find_exported_function(Dev, Key, 3) of
-                {ok, Func} ->
-                    % Case 3: The device has a function of the name `Key`.
-                    {ok, Func};
-                not_found ->
-                    case maps:find(default, Info) of
-                        {ok, DefaultFunc} ->
-                            % Case 4: The device has a default handler.
-                            {add_key, DefaultFunc};
-                        error ->
-                            % Case 5: The device has no default handler.
-                            % We use the default device to handle the key.
-                            case default_module() of
-                                Dev ->
-                                    % We are already using the default device,
-                                    % so we cannot resolve the key. This should
-                                    % never actually happen in practice, but it
-                                    % resolves an infinite loop that can occur
-                                    % during development.
-                                    throw({
-                                        error,
-                                        default_device_could_not_resolve_key,
-                                        {key, Key}
-                                    });
-                                DefaultDev ->
-                                    message_to_fun(
-                                        Msg#{ device => DefaultDev },
-                                        Key
-                                    )
-                            end
-                    end
-            end
-    end.
+message_to_fun(Msg, Key, Opts) ->
+	DevID =
+		case dev_message:get(device, Msg, Opts) of
+			{error, not_found} ->
+				% The message does not specify a device, so we use the 
+				% default device.
+				default_module();
+			{ok, DevVal} -> DevVal
+		end,
+	Dev =
+		case load_device(DevID, Opts) of
+			{error, _} ->
+				% Error case: A device is specified, but it is not loadable.
+				throw({error, {device_not_loadable, DevID}});
+			{ok, DevMod} -> DevMod
+		end,
+	case maps:find(handler, Info = info(Dev, Msg, Opts)) of
+		{ok, Handler} ->
+			% Case 2: The device has an explicit handler function.
+			info_handler_to_fun(Handler, Msg, Key, Opts);
+		error ->
+			case find_exported_function(Dev, Key, 3, Opts) of
+				{ok, Func} ->
+					% Case 3: The device has a function of the name `Key`.
+					{ok, Func};
+				not_found ->
+					case maps:find(default, Info) of
+						{ok, DefaultFunc} ->
+							% Case 4: The device has a default handler.
+							{add_key, DefaultFunc};
+						error ->
+							% Case 5: The device has no default handler.
+							% We use the default device to handle the key.
+							case default_module() of
+								Dev ->
+									% We are already using the default device,
+									% so we cannot resolve the key. This should
+									% never actually happen in practice, but it
+									% resolves an infinite loop that can occur
+									% during development.
+									throw({
+										error,
+										default_device_could_not_resolve_key,
+										{key, Key}
+									});
+								DefaultDev ->
+									message_to_fun(
+										Msg#{ device => DefaultDev },
+										Key,
+										Opts
+									)
+							end
+					end
+			end
+	end.
+
+%% @doc Parse a handler key given by a device's `info`.
+info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
+	{add_key, Handler};
+info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
+	case maps:find(exclude, HandlerMap) of
+		{ok, Exclude} ->
+			case lists:member(Key, Exclude) of
+				true ->
+					{ok, MsgWithoutDevice} =
+						dev_message:remove(Msg, #{ item => device }),
+					message_to_fun(
+						MsgWithoutDevice#{ device => default_module() },
+						Key,
+						Opts
+					);
+				false -> {add_key, maps:get(func, HandlerMap)}
+			end;
+		error -> {add_key, maps:get(func, HandlerMap)}
+	end.
 
 %% @doc Find the function with the highest arity that has the given name, if it
 %% exists.
 %%
 %% If the device is a module, we look for a function with the given name.
-%% 
+%%
 %% If the device is a map, we look for a key in the map. First we try to find
 %% the key using its literal value. If that fails, we cast the key to an atom
 %% and try again.
-find_exported_function(Dev, Key, MaxArity) when is_map(Dev) ->
-    case maps:get(Key, Dev, not_found) of
-        not_found ->
-            case to_key(Key) of
-                undefined -> not_found;
-                Key ->
-                    % The key is unchanged, so we return not_found.
-                    not_found;
-                KeyAtom ->
-                    % The key was cast to an atom, so we try again.
-                    find_exported_function(Dev, KeyAtom, MaxArity)
-            end;
-        Fun when is_function(Fun) ->
-            case erlang:fun_info(Fun, arity) of
-                {arity, Arity} when Arity =< MaxArity ->
-                    case is_exported(Dev, Key) of
-                        true -> {ok, Fun};
-                        false -> not_found
-                    end;
-                _ -> not_found
-            end
-    end;
-find_exported_function(_Mod, _Key, Arity) when Arity < 0 -> not_found;
-find_exported_function(Mod, Key, Arity) when not is_atom(Key) ->
-    case to_key(Key) of
-        ConvertedKey when is_atom(ConvertedKey) ->
-            find_exported_function(Mod, ConvertedKey, Arity);
-        undefined -> not_found;
-        BinaryKey when is_binary(BinaryKey) ->
-            not_found
-    end;
-find_exported_function(Mod, Key, Arity) ->
-    case erlang:function_exported(Mod, Key, Arity) of
-        true ->
-            case is_exported(Mod, Key) of
-                true -> {ok, fun Mod:Key/Arity};
-                false -> not_found
-            end;
-        false -> find_exported_function(Mod, Key, Arity - 1)
-    end.
+find_exported_function(Dev, Key, MaxArity, Opts) when is_map(Dev) ->
+	case maps:get(Key, Dev, not_found) of
+		not_found ->
+			case to_key(Key) of
+				undefined -> not_found;
+				Key ->
+					% The key is unchanged, so we return not_found.
+					not_found;
+				KeyAtom ->
+					% The key was cast to an atom, so we try again.
+					find_exported_function(Dev, KeyAtom, MaxArity, Opts)
+			end;
+		Fun when is_function(Fun) ->
+			case erlang:fun_info(Fun, arity) of
+				{arity, Arity} when Arity =< MaxArity ->
+					case is_exported(Dev, Key, Opts) of
+						true -> {ok, Fun};
+						false -> not_found
+					end;
+				_ -> not_found
+			end
+	end;
+find_exported_function(_Mod, _Key, Arity, _Opts) when Arity < 0 -> not_found;
+find_exported_function(Mod, Key, Arity, Opts) when not is_atom(Key) ->
+	case to_key(Key, Opts) of
+		ConvertedKey when is_atom(ConvertedKey) ->
+			find_exported_function(Mod, ConvertedKey, Arity, Opts);
+		undefined -> not_found;
+		BinaryKey when is_binary(BinaryKey) ->
+			not_found
+	end;
+find_exported_function(Mod, Key, Arity, Opts) ->
+	%?event({finding, {mod, Mod}, {key, Key}, {arity, Arity}}),
+	case erlang:function_exported(Mod, Key, Arity) of
+		true ->
+			case is_exported(Mod, Key, Opts) of
+				true ->
+					%?event({found, {ok, fun Mod:Key/Arity}}),
+					{ok, fun Mod:Key/Arity};
+				false ->
+					%?event({result, not_found}),
+					not_found
+			end;
+		false ->
+			%?event({find_exported_function_result, {mod, Mod}, {key, Key}, {arity, Arity}, {result, false}}),
+			find_exported_function(Mod, Key, Arity - 1, Opts)
+	end.
 
 %% @doc Check if a device is guarding a key via its `exports` list. Defaults to
 %% true if the device does not specify an `exports` list. The `info` function is
 %% always exported, if it exists.
-is_exported(_, info) -> true;
-is_exported(Dev, Key) ->
-    case info(Dev) of
-        #{ exports := Exports } ->
-            lists:member(Key, Exports);
-        _ -> true
-    end.
+is_exported(_, info, _Opts) -> true;
+is_exported(Dev, Key, Opts) ->
+	case info(Dev, Key, Opts) of
+		#{ exports := Exports } ->
+			lists:member(Key, Exports);
+		_ -> true
+	end.
 
 %% @doc Convert a key to an atom if it already exists in the Erlang atom table,
 %% or to a binary otherwise.
 to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
 to_key(Key, _Opts) when byte_size(Key) == 43 -> Key;
-to_key(Key, _Opts) -> 
-    try to_atom_unsafe(Key)
-    catch _Type:_:_Trace -> key_to_binary(Key)
-    end.
+to_key(Key, Opts) ->
+	try to_atom_unsafe(Key)
+	catch _Type:_:_Trace -> key_to_binary(Key, Opts)
+	end.
 
 %% @doc Convert a key to its binary representation.
 key_to_binary(Key) -> key_to_binary(Key, #{}).
@@ -421,55 +468,58 @@ to_atom_unsafe(Key) when is_atom(Key) -> Key.
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
 %% a tuple of the form {error, Reason} is returned.
-load_device(ID) -> load_device(ID, #{}).
 load_device(Map, _Opts) when is_map(Map) -> {ok, Map};
 load_device(ID, _Opts) when is_atom(ID) ->
+	?event({loading_device, {id, ID}}),
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
 load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
-    case hb_opts:get(load_remote_devices) of
-        true ->
-            {ok, Msg} = hb_cache:read_message(maps:get(store, Opts), ID),
-            Trusted =
-                lists:any(
-                    fun(Signer) ->
-                        lists:member(Signer, hb_opts:get(trusted_device_signers))
-                    end,
-                    hb_message:signers(Msg)
-                ),
-            case Trusted of
-                true ->
-                    RelBin = erlang:system_info(otp_release),
-                    case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
-                        <<"BEAM/", RelBin/bitstring>> ->
-                            {_, ModNameBin} =
-                                lists:keyfind(<<"Module-Name">>, 1, Msg#tx.tags),
-                            ModName = list_to_atom(binary_to_list(ModNameBin)),
-                            case erlang:load_module(ModName, Msg#tx.data) of
-                                {module, _} -> {ok, ModName};
-                                {error, Reason} -> {error, Reason}
-                            end
-                    end;
-                false -> {error, device_signer_not_trusted}
-            end;
-        false ->
-            {error, remote_devices_disabled}
-    end;
-load_device(ID, _Opts) ->
+	case hb_opts:get(load_remote_devices) of
+		true ->
+			{ok, Msg} = hb_cache:read_message(maps:get(store, Opts), ID),
+			Trusted =
+				lists:any(
+					fun(Signer) ->
+						lists:member(Signer, hb_opts:get(trusted_device_signers))
+					end,
+					hb_message:signers(Msg)
+				),
+			case Trusted of
+				true ->
+					RelBin = erlang:system_info(otp_release),
+					case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
+						<<"BEAM/", RelBin/bitstring>> ->
+							{_, ModNameBin} =
+								lists:keyfind(<<"Module-Name">>, 1, Msg#tx.tags),
+							ModName = list_to_atom(binary_to_list(ModNameBin)),
+							case erlang:load_module(ModName, Msg#tx.data) of
+								{module, _} -> {ok, ModName};
+								{error, Reason} -> {error, Reason}
+							end
+					end;
+				false -> {error, device_signer_not_trusted}
+			end;
+		false ->
+			{error, remote_devices_disabled}
+	end;
+load_device(ID, Opts) ->
     case maps:get(ID, hb_opts:get(preloaded_devices), unsupported) of
         unsupported -> {error, module_not_admissable};
-        Mod -> {ok, Mod}
+        Mod -> load_device(Mod, Opts)
     end.
 
 %% @doc Get the info map for a device, optionally giving it a message if the
 %% device's info function is parameterized by one.
-info(DevMod) -> info(DevMod, #{}).
-info(DevMod, Msg) ->
-    case find_exported_function(DevMod, info, 1) of
-        {ok, Fun} -> apply(Fun, truncate_args(Fun, [Msg]));
-        not_found -> #{}
-    end.
+info(DevMod, Msg, Opts) ->
+	?event({calculating_info, {dev, DevMod}, {msg, Msg}}),
+	case find_exported_function(DevMod, info, 1, Opts) of
+		{ok, Fun} ->
+			Res = apply(Fun, truncate_args(Fun, [Msg, Opts])),
+			?event({info_result, {dev, DevMod}, {args, truncate_args(Fun, [Msg])}, {result, Res}}),
+			Res;
+		not_found -> #{}
+	end.
 
 %% @doc The default runtime options for a message. At the moment the `Message1`
 %% but it is included such that we can modulate the options based on the message
@@ -538,7 +588,7 @@ generate_device_with_keys_using_args() ->
     }.
 
 %% @doc Test that arguments are passed to a device key as expected.
-%% Particularly, we need to ensure that the key function in the device can 
+%% Particularly, we need to ensure that the key function in the device can
 %% specify any arity (1 through 3) and the call is handled correctly.
 key_from_id_device_with_args_test() ->
     Msg =
@@ -722,13 +772,20 @@ deep_set_with_device_test() ->
     ?assertEqual(true, hb_pam:get(modified, B)).
 
 device_exports_test() ->
-    ?assert(is_exported(dev_message, info)),
-    ?assert(is_exported(dev_message, set)),
-    ?assert(not is_exported(dev_message, not_exported)),
-    Dev = #{
-        info => fun() -> #{ exports => [set] } end,
-        set => fun(_, _) -> {ok, <<"SET">>} end
-    },
-    ?assert(is_exported(Dev, info)),
-    ?assert(is_exported(Dev, set)),
-    ?assert(not is_exported(Dev, not_exported)).
+	?assert(is_exported(dev_message, info, #{})),
+	?assert(is_exported(dev_message, set, #{})),
+	?assert(not is_exported(dev_message, not_exported, #{})),
+	Dev = #{
+		info => fun() -> #{ exports => [set] } end,
+		set => fun(_, _) -> {ok, <<"SET">>} end
+	},
+	?assert(is_exported(Dev, info, #{})),
+	?assert(is_exported(Dev, set, #{})),
+	?assert(not is_exported(Dev, not_exported, #{})).
+
+denormalized_device_key_test() ->
+	Msg = #{ <<"Device">> => dev_test },
+	?assertEqual(dev_test, hb_pam:get(device, Msg)),
+	?assertEqual(dev_test, hb_pam:get(<<"Device">>, Msg)),
+	?assertEqual({module, dev_test},
+		erlang:fun_info(element(2, message_to_fun(Msg, test_func, #{})), module)).

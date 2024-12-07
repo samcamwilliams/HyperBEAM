@@ -1,5 +1,6 @@
 -module(dev_message).
--export([info/0, keys/1, id/1, unsigned_id/1, signers/1, set/3, remove/2, get/2]).
+-export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
+-export([set/3, remove/2, get/2, get/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -48,29 +49,48 @@ signers(M) ->
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
-    ?event({setting_keys, {msg1, Message1}, {msg2, NewValuesMsg}, {opts, Opts}}),
-    KeysToSet =
-        lists:filter(
-            fun(Key) -> not lists:member(Key, ?DEVICE_KEYS) end,
-            hb_pam:keys(NewValuesMsg, Opts)
-        ),
-    ?event({keys_to_set, {keys, KeysToSet}}),
-    {
-        ok,
-        maps:merge(
-            Message1,
-            maps:from_list(
-                lists:map(
-                    fun(Key) ->
-                        ?no_prod("Are we sure that the default device should "
-                            "resolve values?"),
-                        {Key, hb_pam:get(Key, NewValuesMsg, Opts)}
-                    end,
-                    KeysToSet
-                )
-            )
-        )
-    }.
+	?event({setting_keys, {msg1, Message1}, {msg2, NewValuesMsg}, {opts, Opts}}),
+	% Filter keys that are in the default device (this one).
+	KeysToSet =
+		lists:filter(
+			fun(Key) ->
+				not lists:member(Key, ?DEVICE_KEYS)
+			end,
+			hb_pam:keys(NewValuesMsg, Opts)
+		),
+	% Find keys in the message that are already set (case-insensitive), and 
+	% note them for removal.
+	NormalizedKeysToSet = lists:map(fun hb_pam:to_key/1, KeysToSet),
+	ConflictingKeys =
+		lists:filter(
+			fun(Key) ->
+				lists:member(hb_pam:to_key(Key), NormalizedKeysToSet)
+			end,
+			maps:keys(Message1)
+		),
+	?event(
+		{keys_to_set,
+			{keys, KeysToSet},
+			{removing_due_to_conflict, ConflictingKeys},
+			{normalised_msg1_keys, maps:keys(Message1)}
+		}
+	),
+	{
+		ok,
+		maps:merge(
+			maps:without(ConflictingKeys, Message1),
+			maps:from_list(
+				lists:map(
+					fun(Key) ->
+						?no_prod("Are we sure that the default device should "
+							"not resolve values during set?"),
+						{Key, maps:get(Key, NewValuesMsg)}
+					end,
+					KeysToSet
+				)
+			)
+		)
+	}.
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ item := Key }) ->
@@ -106,30 +126,30 @@ keys(Msg) ->
 %% insensitively if the key is a binary.
 get(Key, Msg) -> get(Key, Msg, #{ path => get }).
 get(Key, Msg, _Msg2) ->
-    ?event({getting_key, {key, Key}, {msg, Msg}}),
-    {ok, PublicKeys} = keys(Msg),
-    case lists:member(Key, PublicKeys) of
-        true -> {ok, maps:get(Key, Msg)};
-        false when is_binary(Key) -> case_insensitive_get(Key, Msg);
-        false -> {error, not_found}
-    end.
+	?event({getting_key, {key, Key}, {msg, Msg}}),
+	{ok, PublicKeys} = keys(Msg),
+	case lists:member(Key, PublicKeys) of
+		true -> {ok, maps:get(Key, Msg)};
+		false -> case_insensitive_get(Key, Msg)
+	end.
 
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 
 %% implement a case-insensitive key lookup rather than delegating to
 %% `maps:get/2`. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
-    {ok, Keys} = keys(Msg),
-    case_insensitive_get(Key, Msg, Keys).
+	{ok, Keys} = keys(Msg),
+	%?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
+	case_insensitive_get(Key, Msg, Keys).
 case_insensitive_get(Key, Msg, Keys) when byte_size(Key) > 43 ->
     do_case_insensitive_get(Key, Msg, Keys);
 case_insensitive_get(Key, Msg, Keys) ->
     do_case_insensitive_get(hb_pam:to_key(Key), Msg, Keys).
 do_case_insensitive_get(_Key, _Msg, []) -> {error, not_found};
 do_case_insensitive_get(Key, Msg, [CurrKey | Keys]) ->
-    case hb_pam:to_key(CurrKey) of
-        Key -> {ok, maps:get(Key, Msg)};
-        _ -> do_case_insensitive_get(Key, Msg, Keys)
-    end.
+	case hb_pam:to_key(CurrKey) of
+		Key -> {ok, maps:get(CurrKey, Msg)};
+		_ -> do_case_insensitive_get(Key, Msg, Keys)
+	end.
 
 %%% Tests
 
@@ -151,9 +171,13 @@ keys_from_device_test() ->
     ?assertEqual({ok, [a]}, hb_pam:resolve(#{a => 1}, keys)).
 
 case_insensitive_get_test() ->
-    ?assertEqual({ok, 1}, case_insensitive_get(a, #{a => 1})),
-    ?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{a => 1})),
-    ?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{a => 1})).
+	?assertEqual({ok, 1}, case_insensitive_get(a, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(a, #{ <<"A">> => 1 })),
+	?assertEqual({ok, 1}, case_insensitive_get(a, #{ <<"a">> => 1 })),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{a => 1})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"a">> => 1 })),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"A">> => 1 })).
 
 private_keys_are_filtered_test() ->
     ?assertEqual(
@@ -175,8 +199,14 @@ key_from_device_test() ->
     ?assertEqual({ok, 1}, hb_pam:resolve(#{a => 1}, a)).
 
 remove_test() ->
-    Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
-    ?assertMatch({ok, #{ <<"Key2">> := <<"Value2">> }},
-        hb_pam:resolve(Msg, #{ path => remove, item => <<"Key1">> })),
-    ?assertMatch({ok, #{}},
-        hb_pam:resolve(Msg, #{ path => remove, items => [<<"Key1">>, <<"Key2">>] })).
+	Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
+	?assertMatch({ok, #{ <<"Key2">> := <<"Value2">> }},
+		hb_pam:resolve(Msg, #{ path => remove, item => <<"Key1">> })),
+	?assertMatch({ok, #{}},
+		hb_pam:resolve(Msg, #{ path => remove, items => [<<"Key1">>, <<"Key2">>] })).
+
+set_conflicting_keys_test() ->
+	Msg1 = #{ <<"Dangerous">> => <<"Value1">> },
+	Msg2 = #{ path => set, dangerous => <<"Value2">> },
+	?assertMatch({ok, #{ dangerous := <<"Value2">> }},
+		hb_pam:resolve(Msg1, Msg2)).
