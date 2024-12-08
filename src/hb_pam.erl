@@ -4,7 +4,7 @@
 -export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
 %%% Shortcuts:
 -export([keys/1, keys/2]).
--export([get/2, get/3, get_default/3, get_default/4]).
+-export([get/2, get/3, get_default/3, get_default/4, get_as/3, get_as/4]).
 -export([set/2, set/3, set/4, remove/2, remove/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -205,6 +205,14 @@ get(Path, Msg, Opts) ->
 	?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
 	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
 
+%% @doc Get the value of a key from a message, using another device to resolve
+%% the key. Makes sure to set the device using `set/3` so that the `HashPath`
+%% tracability is correctly maintained.
+get_as(Device, Path, Msg) ->
+    get_as(Device, Path, Msg, #{}).
+get_as(Device, Path, Msg, Opts) ->
+    get(Path, set(Msg, #{ device => Device }), Opts).
+
 %% @doc Get the value of a key from a message, returning a default value if the
 %% key is not found.
 get_default(Key, Msg, Default) ->
@@ -263,8 +271,6 @@ device_set(Msg, Key, Value, Opts) ->
 remove(Msg, Key) -> remove(Msg, Key, #{}).
 remove(Msg, Key, Opts) ->
 	hb_util:ok(resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
-
-
 
 %% @doc Handle an error in a device call.
 handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
@@ -590,6 +596,40 @@ generate_device_with_keys_using_args() ->
             end
     }.
 
+%% @doc Create a simple test device that implements the default handler.
+gen_default_device() ->
+    #{
+        info =>
+            fun() ->
+                #{
+                    default =>
+                        fun(_, _State) ->
+                            {ok, <<"DEFAULT">>}
+                        end
+                }
+            end,
+        state_key =>
+            fun(_) ->
+                {ok, <<"STATE">>}
+            end
+    }.
+
+%% @doc Create a simple test device that implements the handler key.
+gen_handler_device() ->
+    #{
+        info =>
+            fun() ->
+                #{
+                    handler =>
+                        fun(set, M1, M2, Opts) ->
+                            dev_message:set(M1, M2, Opts);
+                        (_, _, _, _) ->
+                            {ok, <<"HANDLER VALUE">>}
+                        end
+                }
+            end
+    }.
+
 %% @doc Test that arguments are passed to a device key as expected.
 %% Particularly, we need to ensure that the key function in the device can
 %% specify any arity (1 through 3) and the call is handled correctly.
@@ -636,44 +676,18 @@ key_from_id_device_with_args_test() ->
 device_with_handler_function_test() ->
     Msg =
         #{
-            device =>
-                #{
-                    info =>
-                        fun() ->
-                            #{
-                                handler =>
-                                    fun(test_key, _S) ->
-                                        {ok, <<"GOOD">>}
-                                    end
-                            }
-                        end
-                },
+            device => gen_handler_device(),
             test_key => <<"BAD">>
         },
     ?assertEqual(
-        {ok, <<"GOOD">>},
+        {ok, <<"HANDLER VALUE">>},
         hb_pam:resolve(Msg, test_key)
     ).
 
 device_with_default_handler_function_test() ->
     Msg =
         #{
-            device =>
-                #{
-                    info =>
-                        fun() ->
-                            #{
-                                default =>
-                                    fun(_, _State) ->
-                                        {ok, <<"DEFAULT">>}
-                                    end
-                            }
-                        end,
-                    state_key =>
-                        fun(_) ->
-                            {ok, <<"STATE">>}
-                        end
-                }
+            device => gen_default_device()
         },
     ?assertEqual(
         {ok, <<"STATE">>},
@@ -704,6 +718,21 @@ get_with_device_test() ->
         },
     ?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
     ?assertEqual(<<"STATE">>, hb_pam:get(key_using_only_state, Msg)).
+
+get_as_with_device_test() ->
+    Msg =
+        #{
+            device => gen_handler_device(),
+            test_key => <<"ACTUAL VALUE">>
+        },
+    ?assertEqual(
+        <<"HANDLER VALUE">>,
+        hb_pam:get(test_key, Msg)
+    ),
+    ?assertEqual(
+        <<"ACTUAL VALUE">>,
+        hb_pam:get_as(dev_message, test_key, Msg)
+    ).
 
 set_with_device_test() ->
     Msg =
