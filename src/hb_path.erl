@@ -170,7 +170,9 @@ from_message(request, #{ path := [] }) -> undefined;
 from_message(request, #{ path := Path }) when is_list(Path) ->
     term_to_path(Path);
 from_message(request, #{ path := Other }) ->
-    term_to_path(Other).
+    term_to_path(Other);
+from_message(request, _) ->
+    undefined.
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
