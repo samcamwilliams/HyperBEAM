@@ -164,8 +164,8 @@ handle_resolved_result(Output = [ok, Res|_], _Msg2, _Opts) when not is_map(Res) 
 	list_to_tuple(Output);
 handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 	Msg3 =
-		case hb_opts:get(update_hashpath, true, Opts#{ only => local }) of
-			true ->
+		case hb_opts:get(hashpath, update, Opts#{ only => local }) of
+			update ->
 				% ?event(
 				% 	{pushing_hashpath_onto,
 				% 		{msg3, {explicit, Msg3Raw}},
@@ -174,7 +174,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 				% 	}
 				% ),
 				hb_path:push(hashpath, Msg3Raw, Msg2);
-			false -> Msg3Raw
+			ignore -> Msg3Raw
 		end,
 	case hb_opts:get(cache_results, true, Opts) of
 		true ->
