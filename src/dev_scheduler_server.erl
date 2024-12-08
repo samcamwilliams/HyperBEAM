@@ -25,7 +25,7 @@ start(ProcID, Opts) ->
                     id = ProcID,
                     current = Current,
                     hash_chain = HashChain,
-                    wallet = hb_opts:get(wallet, no_viable_wallet, Opts),
+                    wallet = hb_opts:get(wallet, hb:wallet(), Opts),
                     store = hb_opts:get(store, no_viable_store, Opts)
                 }
             )

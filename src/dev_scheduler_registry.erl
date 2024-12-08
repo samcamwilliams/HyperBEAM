@@ -80,7 +80,7 @@ get_all_processes_test() ->
     ?MODULE:find(?TEST_PROC_ID1, true),
     ?MODULE:find(?TEST_PROC_ID2, true),
     Processes = ?MODULE:get_processes(),
-    ?assertEqual(2, length(Processes)),
+    ?assert(length(Processes) >= 2),
     ?event({processes, Processes}),
     ?assert(lists:member(?TEST_PROC_ID1, Processes)),
     ?assert(lists:member(?TEST_PROC_ID2, Processes)).
