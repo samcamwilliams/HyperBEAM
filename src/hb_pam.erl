@@ -313,11 +313,14 @@ message_to_fun(Msg, Key, Opts) ->
 				throw({error, {device_not_loadable, DevID}});
 			{ok, DevMod} -> DevMod
 		end,
+	?event({message_to_fun, {dev, Dev}, {key, Key}, {opts, Opts}}),
 	case maps:find(handler, Info = info(Dev, Msg, Opts)) of
 		{ok, Handler} ->
 			% Case 2: The device has an explicit handler function.
+			?event({info_handler_found, {dev, Dev}, {key, Key}, {handler, Handler}}),
 			info_handler_to_fun(Handler, Msg, Key, Opts);
 		error ->
+			?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
 			case find_exported_function(Dev, Key, 3, Opts) of
 				{ok, Func} ->
 					% Case 3: The device has a function of the name `Key`.

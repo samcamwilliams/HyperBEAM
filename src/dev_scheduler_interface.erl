@@ -10,8 +10,8 @@ handle(M) ->
     (choose_handler(M))(M).
 
 choose_handler(M) ->
-    Method = lists:keyfind(<<"Method">>, 1, M#tx.tags),
-    Action = lists:keyfind(<<"Action">>, 1, M#tx.tags),
+    Method = hb_pam:get(<<"Method">>, M),
+    Action = hb_pam:get(<<"Action">>, M),
     case {Method, Action} of
         {{_, <<"GET">>}, {_, <<"Info">>}} -> fun info/1;
         {{_, <<"GET">>}, {_, <<"Slot">>}} -> fun current_slot/1;
@@ -19,22 +19,20 @@ choose_handler(M) ->
         {{_, <<"POST">>}, _} -> fun schedule/1
     end.
 
-info(_M) ->
+info(M) ->
     Wallet = dev_scheduler_registry:get_wallet(),
     {ok,
-        #tx{
-            tags = [
-                {<<"Unit">>, <<"Scheduler">>},
-                {<<"Address">>, hb_util:id(ar_wallet:to_address(Wallet))}
-            ],
-            data =
+        #{
+            <<"Unit">> => <<"Scheduler">>,
+            <<"Address">> => hb_util:id(ar_wallet:to_address(Wallet)),
+            <<"Data">> =>
                 jiffy:encode(
                     lists:map(
                         fun hb_util:id/1,
                         dev_scheduler_registry:get_processes()
                     )
                 )
-            }
+        }
     }.
 
 current_slot(M) ->
