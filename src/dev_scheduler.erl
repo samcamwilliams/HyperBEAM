@@ -41,18 +41,21 @@ status(_M1, _M2, _Opts) ->
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
-    case hb_pam:get(method, Msg1) of
-        post -> post_schedule(Msg1, Msg2, Opts);
-        get -> get_schedule(Msg1, Msg2, Opts)
+    case hb_pam:get(<<"Method">>, Msg2) of
+        <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
+        <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
 
 %% @doc Schedules a new message on the SU.
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
-    ToSched = hb_pam:get(message, Msg2),
+    ToSched = hb_pam:get(message, Msg2, Opts#{ hashpath => ignore }),
+    ToSchedID = hb_pam:get(id, ToSched),
+    ?event({post_schedule, {id, ToSchedID}, {msg, ToSched}}),
     Store = hb_opts:get(store, no_viable_store, Opts),
-    %?no_prod("SU does not validate item before writing into stream."),
-    case {ar_bundles:verify_item(ToSched), hb_pam:get(type, ToSched)} of
+    ?no_prod("SU does not validate item before writing into stream."),
+    %case {ar_bundles:verify_item(ToSched), hb_pam:get(type, ToSched)} of
+    case {true, hb_pam:get(type, ToSched)} of
         {false, _} ->
             {ok,
                 #{
@@ -61,23 +64,22 @@ post_schedule(Msg1, Msg2, Opts) ->
                 }
             };
         {_, <<"Process">>} ->
-            hb_cache:write(Store, ToSched),
-            hb_client:upload(ToSched),
+            ?no_prod("SU does not write to cache or upload to bundler."),
+            %hb_cache:write(Store, ToSched),
+            %hb_client:upload(ToSched),
+            dev_scheduler_registry:find(ToSchedID, true),
             {ok,
                 #{
                     <<"Status">> => <<"OK">>,
                     <<"Initial-Assignment">> => <<"0">>,
-                    <<"Process">> => hb_pam:get(id, ToSched)
+                    <<"Process">> => ToSchedID
                 }
             };
         {_, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
             {ok,
                 dev_scheduler_server:schedule(
-                    dev_scheduler_registry:find(
-                        hb_pam:get(id, ToSched),
-                        true
-                    ),
+                    dev_scheduler_registry:find(ToSchedID, true),
                     ToSched
                 )
             }
@@ -240,31 +242,44 @@ checkpoint(State) -> {ok, State}.
 %%% dev_process, such that the full process is found in `/process`, but the
 %%% scheduler is the device of the primary message.
 
+%% @doc Helper to ensure that the environment is started before running tests.
+init() ->
+    dev_scheduler_registry:start(),
+    ok.
+
 test_process() ->
     #{
         device => ?MODULE,
         process => #{
             <<"Device-Stack">> => [dev_cron, dev_wasm, dev_poda],
-            <<"Image">> => <<"wasm-image-id">>
+            <<"Image">> => <<"wasm-image-id">>,
+            <<"Type">> => <<"Process">>
         }
     }.
 
 status_test() ->
+    init(),
     ?assertMatch(
-        {ok, #{<<"Processes">> := Processes,
-            <<"Address">> := Address}}
+        #{<<"Processes">> := Processes,
+            <<"Address">> := Address}
             when is_list(Processes) and is_binary(Address),
         hb_pam:get(status, test_process())
     ).
 
 register_new_process_test() ->
-    ProcMsg = test_process(),
-    ProcID = hb_util:id(ProcMsg),
-    ?assertEqual(ok,
+    init(),
+    Msg1 = test_process(),
+    Proc = hb_pam:get(process, Msg1),
+    ProcID = hb_util:id(Proc),
+    ?event({test_registering_new_process, {id, ProcID}, {msg, Msg1}}),
+    ?assertMatch({ok, _},
         hb_pam:resolve(
-            ProcMsg,
-            #{ method => post, path => <<"Schedule">> }
+            Msg1,
+            #{
+                <<"Method">> => <<"POST">>,
+                path => <<"Schedule">>,
+                <<"Message">> => Proc
+            }
         )
     ),
-    {ok, Processes} = hb_pam:get(status, ProcMsg),
-    ?assertEqual([ProcID], maps:get(processes, Processes)).
+    ?assertEqual([ProcID], hb_pam:get(processes, hb_pam:get(status, Msg1))).

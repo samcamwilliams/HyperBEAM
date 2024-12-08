@@ -150,14 +150,15 @@ handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
 		when Status =/= ok ->
 	Msg3 = list_to_tuple(Msg2List),
-	% ?event(
-	% 	{abnormal_result,
-	% 		{result, Result},
-	% 		{msg2, Msg2},
-	% 		{msg3, Msg3},
-	% 		{opts, Opts}
-	% 	}
-	% ),
+	?event(
+		{abnormal_result,
+			{result, Result},
+			{msg2, Msg2},
+			{msg3, Msg3},
+			{opts, Opts}
+		}
+	),
+    ?trace(),
 	Msg3;
 handle_resolved_result(Output = [ok, Res|_], _Msg2, _Opts) when not is_map(Res) ->
 	% The result is not a map, so we return it as is.

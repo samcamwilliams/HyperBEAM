@@ -16,9 +16,7 @@
 -include("include/hb.hrl").
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
-start(ProcID, Wallet) ->
-    start(ProcID, Wallet, hb_opts:get(store)).
-start(ProcID, Wallet, Store) ->
+start(ProcID, Opts) ->
     {Current, HashChain} = slot_from_cache(ProcID),
     spawn(
         fun() ->
@@ -27,8 +25,8 @@ start(ProcID, Wallet, Store) ->
                     id = ProcID,
                     current = Current,
                     hash_chain = HashChain,
-                    wallet = Wallet,
-                    store = Store
+                    wallet = hb_opts:get(wallet, no_viable_wallet, Opts),
+                    store = hb_opts:get(store, no_viable_store, Opts)
                 }
             )
         end
