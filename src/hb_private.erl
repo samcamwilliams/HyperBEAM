@@ -11,7 +11,7 @@
 %%% should _not_ be used for encoding state that makes the execution of a
 %%% device non-deterministic (unless you are sure you know what you are doing).
 %%% 
-%%% See `hb_converge` for more information about the Converge Protocol (Converge)
+%%% See `hb_converge` for more information about the Converge Protocol
 %%% and private elements of messages.
 
 %% @doc Return the `private` key from a message. If the key does not exist, an

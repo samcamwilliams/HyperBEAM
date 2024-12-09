@@ -8,8 +8,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol (Converge), and their underlying binary representations.
-%%% See `docs/permaweb-abstract-machine.md` for details on Converge. Unless you are
+%%% Converge Protocol, and their underlying binary representations.
+%%% See `docs/converge-protocol.md` for details on Converge. Unless you are
 %%% implementing a new message serialization format, you should not need to 
 %%% interact with this module directly. Instead, use the `hb_converge`
 %%% interfaces to interact with all messages. The `dev_message` module

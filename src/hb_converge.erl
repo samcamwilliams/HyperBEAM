@@ -10,7 +10,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module is the root of the device call logic of the 
-%%% Converge Protocol (Converge) in HyperBEAM.
+%%% Converge Protocol in HyperBEAM.
 %%% 
 %%% At the Converge layer, every device is simply a collection of keys that can be
 %%% resolved in order to yield their values. Each key may return another 
@@ -18,7 +18,7 @@
 %%% 
 %%% 	resolve(Message1, Message2) -> {Status, Message3}
 %%% 
-%%% See `docs/permaweb-abstract-machine.md` for more information about Converge.
+%%% See `docs/converge-protocol.md` for more information about Converge.
 %%% 
 %%% When a device key is called, it is passed the `Message1` (likely its state),
 %%% as well as the message to 'apply' to it. It must return a tuple of the
