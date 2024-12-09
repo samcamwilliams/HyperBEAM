@@ -70,6 +70,7 @@ status(_M1, _M2, _Opts) ->
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
+    ?no_prod("SU must check it is the correct authority before scheduling."),
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
     case hb_converge:get(<<"Method">>, Msg2) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);

@@ -1,5 +1,5 @@
 -module(dev_process).
--export([info/2, compute/3, schedule/3]).
+-export([info/2, compute/3, schedule/3, slot/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -33,11 +33,19 @@
 %%%     Execution-Stack: Scheduler, Cron, WASM, PoDA
 %%%     
 
-%% @doc When the info key is called, we should return the process definition.
+%% @doc When the info key is called, we should return the process exports.
 info(_Msg1, _Opts) ->
     #{
-        exports => [schedule, compute]
+        exports => [compute, schedule, slot]
     }.
+
+%% Wraps the schedule function in the Scheduler device.
+schedule(Msg1, Msg2, Opts) ->
+    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
+
+%% Wraps the slot function in the Scheduler device.
+slot(Msg1, Msg2, Opts) ->
+    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves.
@@ -59,9 +67,6 @@ compute(Msg1, Msg2, Opts) ->
         Msg2,
         Opts
     ).
-
-schedule(Msg1, Msg2, Opts) ->
-    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key`. After execution, the device is swapped back
@@ -109,6 +114,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
 init() ->
     application:ensure_all_started(hb),
     ok.
+
 test_process() ->
     #{
         device => ?MODULE,
@@ -117,33 +123,28 @@ test_process() ->
         <<"Device-Stack">> => [dev_cron, dev_wasm],
         <<"WASM-Image">> => <<"wasm-image-id">>,
         <<"Type">> => <<"Process">>,
-        <<"Exciting-Random-Number">> => rand:uniform(1337),
+        <<"Test-Key-Random-Number">> => rand:uniform(1337),
         <<"Scheduler-Authority">> => <<"scheduler-id">>
     }.
 
-schedule_on_process_test() ->
-    init(),
-    Msg1 = test_process(),
+schedule_test_message(Msg1, Text) ->
     Msg2 = #{
         path => <<"Schedule">>,
         <<"Method">> => <<"POST">>,
         <<"Message">> =>
             #{
                 <<"Type">> => <<"Message">>,
-                <<"Exciting">> => <<"Reasonably">>
-            }
-    },
-    Msg3 = #{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
-            #{
-                <<"Type">> => <<"Message">>,
-                <<"Exciting">> => <<"Getting old.">>
+                <<"Test-Key">> => Text
             }
     },
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
+    ok.
+
+schedule_on_process_test() ->
+    init(),
+    Msg1 = test_process(),
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?event(messages_scheduled),
     {ok, SchedulerRes} =
         hb_converge:resolve(Msg1, #{
@@ -151,10 +152,24 @@ schedule_on_process_test() ->
             path => <<"Schedule">>
         }, #{}),
     ?assertMatch(
-        <<"Reasonably">>,
-        hb_converge:get(<<"Assignments/0/Message/Exciting">>, SchedulerRes)
+        <<"TEST TEXT 1">>,
+        hb_converge:get(<<"Assignments/0/Message/Test-Key">>, SchedulerRes)
     ),
     ?assertMatch(
-        <<"Getting old.">>,
-        hb_converge:get(<<"Assignments/1/Message/Exciting">>, SchedulerRes)
+        <<"TEST TEXT 2">>,
+        hb_converge:get(<<"Assignments/1/Message/Test-Key">>, SchedulerRes)
+    ).
+
+get_scheduler_slot_test() ->
+    init(),
+    Msg1 = test_process(),
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
+    Msg2 = #{
+        path => <<"Slot">>,
+        <<"Method">> => <<"GET">>
+    },
+    ?assertMatch(
+        {ok, #{ <<"Current-Slot">> := CurrentSlot }} when CurrentSlot > 0,
+        hb_converge:resolve(Msg1, Msg2, #{})
     ).
