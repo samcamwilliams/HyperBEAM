@@ -1,5 +1,5 @@
 -module(dev_process).
--export([info/2, scheduler/3, compute/3]).
+-export([info/2, compute/3, schedule/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -36,24 +36,8 @@
 %% @doc When the info key is called, we should return the process definition.
 info(_Msg1, _Opts) ->
     #{
-        exports => [scheduler, compute],
-        default_handler => dev_message
+        exports => [schedule, compute]
     }.
-
-%% @doc When the scheduler key is called, we should run the request through
-%% the scheduler.
-scheduler(Msg1, Msg2, Opts) ->
-    hb_converge:resolve(
-        #{
-            device =>
-                hb_converge:get_as(
-                    dev_message, <<"Scheduler">>, Msg1, Opts
-                ),
-            process => Msg1
-        },
-        Msg2,
-        Opts
-    ).
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves.
@@ -76,55 +60,69 @@ compute(Msg1, Msg2, Opts) ->
         Opts
     ).
 
+schedule(Msg1, Msg2, Opts) ->
+    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
+
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key`. After execution, the device is swapped back
 %% to the original device.
 run_as(Key, Msg1, Msg2, Opts) ->
     BaseDevice = hb_converge:get_as(dev_message, <<"Device">>, Msg1, Opts),
+    ?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    PreparedMsg =
+        hb_converge:set(
+            Msg1,
+            #{
+                device => 
+                    hb_converge:get_as(
+                        dev_message,
+                        Key,
+                        Msg1,
+                        Opts
+                    ),
+                <<"Process">> =>
+                    case hb_converge:get_as(
+                        dev_message,
+                        <<"Process">>,
+                        Msg1,
+                        Opts#{ hashpath => ignore }
+                    ) of
+                        not_found ->
+                            Msg1;
+                        Process ->
+                            Process
+                    end
+            }
+        ),
+    ?event({prepared_msg, {msg1, PreparedMsg}, {msg2, Msg2}}),
     {ok, BaseResult} =
         hb_converge:resolve(
-            hb_converge:set(
-                Msg1,
-                #{
-                    device => <<"Stack/1.0">>,
-                    <<"Device-Stack">> =>
-                        hb_converge:get_as(
-                            dev_message,
-                            Key,
-                            Msg1,
-                            Opts
-                        ),
-                    path => <<"Init">>,
-                    <<"Process">> =>
-                        case hb_converge:get_as(
-                            dev_message, <<"Process">>, Msg1, Opts
-                        ) of
-                            not_found ->
-                                Msg1;
-                            Process ->
-                                Process
-                        end
-                }
-            ),
+            PreparedMsg,
             Msg2,
             Opts
         ),
+    ?event({base_result_before_device_swap_back, BaseResult}),
     {ok, hb_converge:set(BaseResult, #{ device => BaseDevice })}.
 
 %%% Tests
 
+init() ->
+    application:ensure_all_started(hb),
+    ok.
 test_process() ->
     #{
         device => ?MODULE,
-        process => #{
-            <<"Execution-Stack">> => [dev_cron, dev_wasm],
-            <<"WASM-Image">> => <<"wasm-image-id">>,
-            <<"Type">> => <<"Process">>,
-            <<"Exciting-Random-Number">> => rand:uniform(1337)
-        }
+        <<"Executor">> => <<"Stack/1.0">>,
+        <<"Scheduler">> => <<"Scheduler/1.0">>,
+        <<"Device-Stack">> => [dev_cron, dev_wasm],
+        <<"WASM-Image">> => <<"wasm-image-id">>,
+        <<"Type">> => <<"Process">>,
+        <<"Exciting-Random-Number">> => rand:uniform(1337),
+        <<"Scheduler-Authority">> => <<"scheduler-id">>
     }.
 
 schedule_on_process_test() ->
+    init(),
     Msg1 = test_process(),
     Msg2 = #{
         path => <<"Schedule">>,
@@ -144,18 +142,13 @@ schedule_on_process_test() ->
                 <<"Exciting">> => <<"Getting old.">>
             }
     },
-    ?assertMatch(
-        {ok, _},
-        hb_converge:resolve(Msg1, Msg2, #{})
-    ),
-    ?assertMatch(
-        {ok, _},
-        hb_converge:resolve(Msg1, Msg3, #{})
-    ),
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
+    ?event(messages_scheduled),
     ?assertMatch(
         {ok, _},
         ?event(hb_converge:resolve(Msg1, #{
             <<"Method">> => <<"GET">>,
-            <<"Path">> => <<"Schedule">>
+            path => <<"Schedule">>
         }, #{}))
     ).
