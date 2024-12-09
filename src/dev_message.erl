@@ -21,7 +21,13 @@ info() ->
 %% @doc Return the ID of a message. If the message already has an ID, return
 %% that. Otherwise, return the signed ID.
 id(M) ->
-    {ok, raw_id(M, signed)}.
+    ID = 
+        case maps:get(signature, M, ?DEFAULT_SIG) of
+            ?DEFAULT_SIG -> raw_id(M, unsigned);
+            _ -> raw_id(M, signed)
+        end,
+    ?event({generated_id, {id, ID}, {msg, M}}),
+    {ok, ID}.
 
 %% @doc Wrap a call to the `hb_util:id/2` function, which returns the
 %% unsigned ID of a message.

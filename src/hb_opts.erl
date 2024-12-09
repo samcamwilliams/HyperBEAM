@@ -102,7 +102,7 @@ config() ->
         local_store =>
             [{hb_store_fs, #{ prefix => "TEST-data" }}],
         mode => debug,
-        debug_stack_depth => 20,
+        debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 15,
         debug_print_indent => 4,

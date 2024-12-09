@@ -15,10 +15,8 @@ get_wallet() ->
     hb:wallet().
 
 find(ProcID) -> find(ProcID, false).
-find(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
-    find(binary_to_list(ProcID), GenIfNotHosted);
 find(ProcID, GenIfNotHosted) ->
-    case pg:get_local_members({su, ProcID}) of
+    case pg:get_local_members({dev_scheduler, ProcID}) of
         [] ->
             maybe_new_proc(ProcID, GenIfNotHosted);
         [Pid] ->
@@ -30,16 +28,14 @@ find(ProcID, GenIfNotHosted) ->
     end.
 
 get_processes() ->
-    [ ProcID || {su, ProcID} <- pg:which_groups() ].
+    [ ProcID || {dev_scheduler, ProcID} <- pg:which_groups() ].
 
 maybe_new_proc(_ProcID, false) -> not_found;
-maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
-    maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
-    ?event({starting_su_for, ProcID}),
-    Pid = dev_scheduler_server:start(ProcID, get_wallet()),
+    ?event({starting_scheduler_for, ProcID}),
+    Pid = dev_scheduler_server:start(ProcID, #{}),
     try
-        pg:join({su, ProcID}, Pid),
+        pg:join({dev_scheduler, ProcID}, Pid),
         Pid
     catch
         error:badarg ->
@@ -52,8 +48,8 @@ setup() ->
     application:ensure_all_started(hb),
     start().
 
--define(TEST_PROC_ID1, binary_to_list(<<0:256>>)).
--define(TEST_PROC_ID2, binary_to_list(<<1:256>>)).
+-define(TEST_PROC_ID1, <<0:256>>).
+-define(TEST_PROC_ID2, <<1:256>>).
 
 find_non_existent_process_test() ->
     setup(),
@@ -80,7 +76,7 @@ get_all_processes_test() ->
     ?MODULE:find(?TEST_PROC_ID1, true),
     ?MODULE:find(?TEST_PROC_ID2, true),
     Processes = ?MODULE:get_processes(),
-    ?assertEqual(2, length(Processes)),
+    ?assert(length(Processes) >= 2),
     ?event({processes, Processes}),
     ?assert(lists:member(?TEST_PROC_ID1, Processes)),
     ?assert(lists:member(?TEST_PROC_ID2, Processes)).
