@@ -235,17 +235,22 @@ keys(Msg, Opts) -> get(keys, Msg, Opts).
 %% `HashPath` for each step.
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
-set(Msg1, Msg2, Opts) when is_map(Msg2) ->
+set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
+    Msg2 = maps:without([hashpath], RawMsg2),
     ?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
-    case ?IS_EMPTY_MESSAGE(Msg2) of
-        true -> Msg1;
-        false ->
+    case map_size(Msg2) of
+        0 -> Msg1;
+        _ ->
             % First, get the first key and value to set.
             Key = hd(keys(Msg2, Opts#{ hashpath => ignore })),
             Val = get(Key, Msg2, Opts),
             ?event({got_val_to_set, {key, Key}, {val, Val}}),
             % Then, set the key and recurse, removing the key from the Msg2.
-            set(set(Msg1, Key, Val, Opts), remove(Msg2, Key, Opts), Opts)
+            set(
+                set(Msg1, Key, Val, Opts),
+                remove(Msg2, Key, Opts),
+                Opts
+            )
     end.
 set(Msg1, Key, Value, Opts) ->
     % For an individual key, we run deep_set with the key as the path.
