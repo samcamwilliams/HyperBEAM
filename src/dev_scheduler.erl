@@ -262,6 +262,8 @@ init() ->
     application:ensure_all_started(hb),
     ok.
 
+%% @doc Generate a _transformed_ process message, not as they are generated 
+%% by users. See `dev_process` for examples of AO process messages.
 test_process() ->
     #{
         device => ?MODULE,
