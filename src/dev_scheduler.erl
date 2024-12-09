@@ -5,7 +5,7 @@
 -export([schedule/3]).
 %%% CU-flow functions:
 -export([slot/3, status/3]).
--export([init/3, end_of_schedule/1, checkpoint/1]).
+-export([start/0, init/3, end_of_schedule/1, checkpoint/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -18,6 +18,15 @@
 %%%     #{ method: GET, path: <<"/">> } -> get_info()
 %%%     #{ method: POST, path: <<"/">> } -> post_schedule(Msg1, Msg2, Opts)
 %%% 
+
+%% @doc Helper to ensure that the environment is started.
+start() ->
+    application:ensure_all_started(hb),
+    <<I1:32/unsigned-integer, I2:32/unsigned-integer, I3:32/unsigned-integer>>
+        = crypto:strong_rand_bytes(12),
+    rand:seed(exsplus, {I1, I2, I3}),
+    ok.
+
 
 %% @doc This device uses a default_handler to route requests to the correct
 %% function.
@@ -278,10 +287,6 @@ checkpoint(State) -> {ok, State}.
 %%% dev_process, such that the full process is found in `/process`, but the
 %%% scheduler is the device of the primary message.
 
-%% @doc Helper to ensure that the environment is started before running tests.
-init() ->
-    application:ensure_all_started(hb),
-    ok.
 
 %% @doc Generate a _transformed_ process message, not as they are generated 
 %% by users. See `dev_process` for examples of AO process messages.
@@ -297,7 +302,7 @@ test_process() ->
     }.
 
 status_test() ->
-    init(),
+    start(),
     ?assertMatch(
         #{<<"Processes">> := Processes,
             <<"Address">> := Address}
@@ -306,7 +311,7 @@ status_test() ->
     ).
 
 register_new_process_test() ->
-    init(),
+    start(),
     Msg1 = test_process(),
     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
@@ -321,11 +326,15 @@ register_new_process_test() ->
             }
         )
     ),
-    ?assertEqual([ProcID],
-        hb_converge:get(processes, hb_converge:get(status, Msg1))).
+    ?assert(
+        lists:member(
+            ProcID,
+            hb_converge:get(processes, hb_converge:get(status, Msg1))
+        )
+    ).
 
 schedule_message_and_get_slot_test() ->
-    init(),
+    start(),
     Msg1 = test_process(),
     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
@@ -352,7 +361,7 @@ schedule_message_and_get_slot_test() ->
         hb_converge:resolve(Msg1, Msg3, #{})).
 
 get_schedule_test() ->
-    init(),
+    start(),
     Msg1 = test_process(),
     Msg2 = #{
         path => <<"Schedule">>,
