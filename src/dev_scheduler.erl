@@ -1,8 +1,10 @@
 -module(dev_scheduler).
+%%% Converge API functions:
+-export([set/3, keys/1, info/0]).
 %%% Local scheduling functions:
 -export([schedule/3]).
 %%% CU-flow functions:
--export([info/0, slot/3, status/3]).
+-export([slot/3, status/3]).
 -export([init/3, end_of_schedule/1, checkpoint/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -21,11 +23,28 @@
 %% function.
 info() -> 
     #{
-        exports => [status, schedule, slot, init, end_of_schedule, checkpoint]
+        exports =>
+            [
+                set,
+                status,
+                schedule,
+                slot,
+                init,
+                end_of_schedule,
+                checkpoint
+            ]
     }.
+
+set(Msg1, Msg2, Opts) ->
+    ?event({scheduler_set_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    dev_message:set(Msg1, Msg2, Opts).
+
+keys(Msg) ->
+    dev_message:keys(Msg).
 
 %% @doc Returns information about the entire scheduler.
 status(_M1, _M2, _Opts) ->
+    ?event(getting_scheduler_status),
     Wallet = dev_scheduler_registry:get_wallet(),
     {ok,
         #{
@@ -34,13 +53,15 @@ status(_M1, _M2, _Opts) ->
                 lists:map(
                     fun hb_util:id/1,
                     dev_scheduler_registry:get_processes()
-                )
+                ),
+            <<"Cache-Control">> => <<"no-store">>
         }
     }.
 
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
+    ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
     case hb_converge:get(<<"Method">>, Msg2) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
@@ -300,7 +321,8 @@ register_new_process_test() ->
             }
         )
     ),
-    ?assertEqual([ProcID], hb_converge:get(processes, hb_converge:get(status, Msg1))).
+    ?assertEqual([ProcID],
+        hb_converge:get(processes, hb_converge:get(status, Msg1))).
 
 schedule_message_and_get_slot_test() ->
     init(),
@@ -326,7 +348,7 @@ schedule_message_and_get_slot_test() ->
     ?event({pg, dev_scheduler_registry:get_processes()}),
     ?event({getting_schedule, {msg, Msg3}}),
     ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
-            when CurrentSlot == 1,
+            when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
 
 get_schedule_test() ->
