@@ -150,15 +150,14 @@ handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
 handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
 		when Status =/= ok ->
 	Msg3 = list_to_tuple(Msg2List),
-	?event(
-		{abnormal_result,
-			{result, Result},
-			{msg2, Msg2},
-			{msg3, Msg3},
-			{opts, Opts}
-		}
-	),
-    ?trace(),
+	% ?event(
+	% 	{abnormal_result,
+	% 		{result, Result},
+	% 		{msg2, Msg2},
+	% 		{msg3, Msg3},
+	% 		{opts, Opts}
+	% 	}
+	% ),
 	Msg3;
 handle_resolved_result(Output = [ok, Res|_], _Msg2, _Opts) when not is_map(Res) ->
 	% The result is not a map, so we return it as is.
@@ -167,13 +166,14 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 	Msg3 =
 		case hb_opts:get(hashpath, update, Opts#{ only => local }) of
 			update ->
-				% ?event(
-				% 	{pushing_hashpath_onto,
-				% 		{msg3, {explicit, Msg3Raw}},
-				% 		{msg2, Msg2},
-				% 		{opts, Opts}
-				% 	}
-				% ),
+				?event(
+					{pushing_hashpath_onto,
+						{msg3, {explicit, Msg3Raw}},
+						{msg2, Msg2},
+						{opts, Opts}
+					}
+				),
+
 				hb_path:push(hashpath, Msg3Raw, Msg2);
 			ignore -> Msg3Raw
 		end,
@@ -463,7 +463,8 @@ to_key(Key, Opts) ->
 key_to_binary(Key) -> key_to_binary(Key, #{}).
 key_to_binary(Key, _Opts) when is_binary(Key) -> Key;
 key_to_binary(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
-key_to_binary(Key, _Opts) when is_list(Key) -> list_to_binary(Key).
+key_to_binary(Key, _Opts) when is_list(Key) -> list_to_binary(Key);
+key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key).
 
 %% @doc Helper function for key_to_atom that does not check for errors.
 to_atom_unsafe(Key) when is_integer(Key) ->

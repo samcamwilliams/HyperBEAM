@@ -1,5 +1,5 @@
 -module(hb_message).
--export([load/2]).
+-export([load/2, sign/2, verify/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -export([message_to_tx/1, tx_to_message/1]).
 %%% Debugging tools:
@@ -94,11 +94,20 @@ format(Item, Indent) ->
 signers(Msg) ->
     [ar_bundles:signer(Msg)].
 
+%% @doc Sign a message with the given wallet.
+sign(Msg, Wallet) ->
+    tx_to_message(ar_bundles:sign_item(message_to_tx(Msg), Wallet)).
+
+%% @doc Verify a message.
+verify(Msg) ->
+    ar_bundles:verify_item(message_to_tx(Msg)).
+
+%% @doc Load a message from the cache.
 load(Store, ID) when is_binary(ID)
         andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
-    hb_cache:read_message(Store, ID);
+    tx_to_message(hb_cache:read_message(Store, ID));
 load(Store, Path) ->
-    hb_cache:read(Store, Path).
+    tx_to_message(hb_cache:read(Store, Path)).
 
 %% @doc Check if two maps match, including recursively checking nested maps.
 match(Map1, Map2) ->

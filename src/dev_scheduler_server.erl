@@ -20,6 +20,13 @@ start(ProcID, Opts) ->
     {Current, HashChain} = slot_from_cache(ProcID),
     spawn(
         fun() ->
+            ?event(
+                {starting_scheduling_server,
+                    {proc_id, ProcID},
+                    {current, Current},
+                    {hash_chain, HashChain}
+                }
+            ),
             server(
                 #state{
                     id = ProcID,
@@ -35,17 +42,19 @@ start(ProcID, Opts) ->
 slot_from_cache(ProcID) ->
     case hb_cache:assignments(hb_opts:get(store), ProcID) of
         [] ->
+            ?event({no_assignments_in_cache, {proc_id, ProcID}}),
             {-1, <<>>};
         Assignments ->
             AssignmentNum = lists:max(Assignments),
-            {ok, Assignment} = hb_cache:read_assignment(hb_opts:get(store), ProcID, AssignmentNum),
+            ?event({found_assignment_from_cache, {proc_id, ProcID}, {assignment_num, AssignmentNum}}),
+            {ok, Assignment} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, AssignmentNum),
             {
                 AssignmentNum,
                 hb_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
             }
     end.
 
-schedule(ProcID, Message) when is_list(ProcID) ->
+schedule(ProcID, Message) when is_binary(ProcID) ->
     schedule(dev_scheduler_registry:find(ProcID), Message);
 schedule(ProcID, Message) ->
     ProcID ! {schedule, Message, self()},
@@ -55,6 +64,7 @@ schedule(ProcID, Message) ->
     end.
 
 get_current_slot(ProcID) ->
+    ?event({getting_current_slot, {proc_id, ProcID}}),
     ProcID ! {get_current_slot, self()},
     receive
         {current_slot, CurrentSlot} ->
@@ -64,12 +74,12 @@ get_current_slot(ProcID) ->
 get_assignments(ProcID, From, undefined) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
-    {ok, From} = hb_cache:read_assignment(hb_opts:get(store), ProcID, From),
-    {_, Slot} = lists:keyfind(<<"Slot">>, 1, From#tx.tags),
+    {ok, From} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, From),
+    {_, Slot} = hb_pam:get(<<"Slot">>, From, #{ hashpath => ignore }),
     get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
-    {ok, Assignment} = hb_cache:read_assignment(hb_opts:get(store), ProcID, RequestedTo),
-    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    {ok, Assignment} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, RequestedTo),
+    {_, Slot} = hb_pam:get(<<"Slot">>, Assignment, #{ hashpath => ignore }),
     get_assignments(ProcID, From, binary_to_integer(Slot));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
     get_assignments(ProcID, binary_to_integer(From), RequestedTo);
@@ -86,7 +96,7 @@ get_assignments(ProcID, From, RequestedTo) ->
 do_get_assignments(_ProcID, From, To) when From > To ->
     [];
 do_get_assignments(ProcID, From, To) ->
-    case hb_cache:read_assignment(hb_opts:get(store), ProcID, From) of
+    case hb_cache:read_assignment_message(hb_opts:get(store), ProcID, From) of
         not_found ->
             [];
         {ok, Assignment} ->
@@ -119,34 +129,34 @@ assign(State, Message, ReplyPID) ->
     end.
 
 do_assign(State, Message, ReplyPID) ->
+    ?event({assigning_message, {id, hb_pam:get(id, Message)}, {message, Message}}),
     HashChain = next_hashchain(State#state.hash_chain, Message),
     NextNonce = State#state.current + 1,
     % Run the signing of the assignment and writes to the disk in a separate process
     spawn(
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
-            Assignment = ar_bundles:sign_item(#tx {
-                tags = [
-                    {<<"Data-Protocol">>, <<"ao">>},
-                    {<<"Variant">>, <<"ao.TN.2">>},
-                    {<<"Process">>, hb_util:id(State#state.id)},
-                    {<<"Epoch">>, <<"0">>},
-                    {<<"Slot">>, list_to_binary(integer_to_list(NextNonce))},
-                    % This was causing an error during tag encoding,
-                    % due to badarg on byte_length. Not sure that accessing
-                    % Message as a record (like process id from State above)
-                    % is the correct solution.
-                    {<<"Message">>, hb_util:id(Message, signed)},
-                    {<<"Block-Height">>, list_to_binary(integer_to_list(Height))},
-                    {<<"Block-Hash">>, Hash},
-                    {<<"Block-Timestamp">>, list_to_binary(integer_to_list(Timestamp))},
-                    {<<"Timestamp">>, list_to_binary(integer_to_list(erlang:system_time(millisecond)))}, % Local time on the SU, not Arweave
-                    {<<"Hash-Chain">>, hb_util:id(HashChain)}
-                ]
+            Assignment = hb_message:sign(#{
+                <<"Data-Protocol">> => <<"ao">>,
+                <<"Variant">> => <<"ao.TN.2">>,
+                <<"Process">> => hb_util:id(State#state.id),
+                <<"Epoch">> => <<"0">>,
+                <<"Slot">> => NextNonce,
+                % This was causing an error during tag encoding,
+                % due to badarg on byte_length. Not sure that accessing
+                % Message as a record (like process id from State above)
+                % is the correct solution.
+                <<"Message">> => hb_pam:get(id, Message),
+                <<"Block-Height">> => Height,
+                <<"Block-Hash">> => Hash,
+                <<"Block-Timestamp">> => Timestamp,
+                % Local time on the SU, not Arweave
+                <<"Timestamp">> => erlang:system_time(millisecond),
+                <<"Hash-Chain">> => hb_util:id(HashChain)
             }, State#state.wallet),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
-            hb_cache:write_assignment(State#state.store, Assignment),
             ?event(starting_message_write),
+            hb_cache:write_assignment_message(State#state.store, Assignment),
             hb_cache:write(State#state.store, Message),
             % ?event(message_written),
             % ?event(assignment_after_write),
@@ -177,11 +187,11 @@ next_hashchain(HashChain, Message) ->
 new_proc_test() ->
     application:ensure_all_started(hb),
     Wallet = ar_wallet:new(),
-    SignedItem = ar_bundles:sign_item(#tx{ data = <<"test">> }, Wallet),
-    SignedItem2 = ar_bundles:sign_item(#tx{ data = <<"test2">> }, Wallet),
-    SignedItem3 = ar_bundles:sign_item(#tx{ data = <<"test3">> }, Wallet),
-    dev_scheduler_registry:find(binary_to_list(hb_util:id(SignedItem, signed)), true),
-    schedule(ID = binary_to_list(hb_util:id(SignedItem, signed)), SignedItem),
+    SignedItem = hb_message:sign(#{ <<"Data">> => <<"test">> }, Wallet),
+    SignedItem2 = hb_message:sign(#{ <<"Data">> => <<"test2">> }, Wallet),
+    SignedItem3 = hb_message:sign(#{ <<"Data">> => <<"test3">> }, Wallet),
+    dev_scheduler_registry:find(hb_pam:get(id, SignedItem), true),
+    schedule(ID = hb_pam:get(id, SignedItem), SignedItem),
     schedule(ID, SignedItem2),
     schedule(ID, SignedItem3),
     ?assertEqual(2, dev_scheduler_server:get_current_slot(

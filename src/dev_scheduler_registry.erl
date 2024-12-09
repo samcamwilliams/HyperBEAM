@@ -15,8 +15,6 @@ get_wallet() ->
     hb:wallet().
 
 find(ProcID) -> find(ProcID, false).
-find(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
-    find(binary_to_list(ProcID), GenIfNotHosted);
 find(ProcID, GenIfNotHosted) ->
     case pg:get_local_members({dev_scheduler, ProcID}) of
         [] ->
@@ -33,8 +31,6 @@ get_processes() ->
     [ ProcID || {dev_scheduler, ProcID} <- pg:which_groups() ].
 
 maybe_new_proc(_ProcID, false) -> not_found;
-maybe_new_proc(ProcID, GenIfNotHosted) when is_binary(ProcID) ->
-    maybe_new_proc(binary_to_list(ProcID), GenIfNotHosted);
 maybe_new_proc(ProcID, _) -> 
     ?event({starting_scheduler_for, ProcID}),
     Pid = dev_scheduler_server:start(ProcID, #{}),
@@ -52,8 +48,8 @@ setup() ->
     application:ensure_all_started(hb),
     start().
 
--define(TEST_PROC_ID1, binary_to_list(<<0:256>>)).
--define(TEST_PROC_ID2, binary_to_list(<<1:256>>)).
+-define(TEST_PROC_ID1, <<0:256>>).
+-define(TEST_PROC_ID2, <<1:256>>).
 
 find_non_existent_process_test() ->
     setup(),

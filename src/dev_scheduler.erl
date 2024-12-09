@@ -51,7 +51,16 @@ post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
     ToSched = hb_pam:get(message, Msg2, Opts#{ hashpath => ignore }),
     ToSchedID = hb_pam:get(id, ToSched),
-    ?event({post_schedule, {id, ToSchedID}, {msg, ToSched}}),
+    Proc = hb_pam:get(process, Msg1, Opts#{ hashpath => ignore }),
+    ProcID = hb_pam:get(id, Proc),
+    ?event(
+        {post_schedule,
+            {process_id, ProcID},
+            {process, Proc},
+            {message_id, ToSchedID},
+            {message, ToSched}
+        }
+    ),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ?no_prod("SU does not validate item before writing into stream."),
     %case {ar_bundles:verify_item(ToSched), hb_pam:get(type, ToSched)} of
@@ -65,21 +74,28 @@ post_schedule(Msg1, Msg2, Opts) ->
             };
         {_, <<"Process">>} ->
             ?no_prod("SU does not write to cache or upload to bundler."),
-            %hb_cache:write(Store, ToSched),
-            %hb_client:upload(ToSched),
-            dev_scheduler_registry:find(ToSchedID, true),
+            hb_cache:write(Store, ToSched),
+            hb_client:upload(ToSched),
+            PID = dev_scheduler_registry:find(ProcID, true),
+            ?event(
+                {registering_new_process,
+                    {proc_id, ProcID},
+                    {pid, PID},
+                    {is_alive, is_process_alive(PID)}
+                }
+            ),
             {ok,
                 #{
                     <<"Status">> => <<"OK">>,
                     <<"Initial-Assignment">> => <<"0">>,
-                    <<"Process">> => ToSchedID
+                    <<"Process">> => ProcID
                 }
             };
         {_, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
             {ok,
                 dev_scheduler_server:schedule(
-                    dev_scheduler_registry:find(ToSchedID, true),
+                    dev_scheduler_registry:find(ProcID, true),
                     ToSched
                 )
             }
@@ -87,8 +103,10 @@ post_schedule(Msg1, Msg2, Opts) ->
 
 %% @doc Returns information about the current slot for a process.
 slot(M1, _M2, _Opts) ->
-    Proc = hb_pam:get_as(dev_message, process, M1),
+    ?event({getting_current_slot, {msg, M1}}),
+    Proc = hb_pam:get_as(dev_message, process, M1, #{ hashpath => ignore }),
     ProcID = hb_pam:get(id, Proc),
+    ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
     {ok, #{
         <<"Process">> => ProcID,
@@ -102,16 +120,17 @@ slot(M1, _M2, _Opts) ->
     }}.
 
 get_schedule(Msg1, Msg2, Opts) ->
-    Proc = hb_pam:get_as(dev_message, process, Msg1),
+    Proc = hb_pam:get_as(dev_message, process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_pam:get(id, Proc),
     From =
         case hb_pam:get_default(from, Msg2, not_found, Opts) of
-            not_found -> false;
+            not_found -> 0;
             FromRes -> FromRes
         end,
     To =
         case hb_pam:get_default(to, Msg2, not_found, Opts) of
             not_found ->
+                ?event({getting_current_slot, {proc_id, ProcID}}),
                 dev_scheduler_server:get_current_slot(
                     dev_scheduler_registry:find(ProcID)
                 );
@@ -135,6 +154,7 @@ gen_schedule(ProcID, From, To, Opts) ->
         From,
         To
     ),
+    ?event({got_assignments, {first, hd(Assignments)}, {more, More}}),
     Bundle = #{
         <<"Type">> => <<"Schedule">>,
         <<"Process">> => ProcID,
@@ -145,7 +165,7 @@ gen_schedule(ProcID, From, To, Opts) ->
         <<"Assignments">> => assignments_message(Assignments, Opts)
     },
     ?event(assignments_bundle_outbound),
-    Signed = ar_bundles:sign_item(Bundle, hb:wallet()),
+    Signed = hb_message:sign(Bundle, hb:wallet()),
     {ok, Signed}.
 
 assignments_message(Assignments, Opts) ->
@@ -154,9 +174,10 @@ assignments_message([], Bundle, _Opts) ->
     Bundle;
 assignments_message([Assignment | Assignments], Bundle, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
-    {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
-    {_, MessageID} = lists:keyfind(<<"Message">>, 1, Assignment#tx.tags),
-    {ok, Message} = hb_cache:read_message(Store, MessageID),
+    Slot = hb_pam:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
+    MessageID = hb_pam:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
+    {ok, MessageTX} = hb_cache:read_message(Store, MessageID),
+    Message = hb_message:tx_to_message(MessageTX),
     ?event(
         {adding_assignment_to_bundle,
             Slot,
@@ -169,16 +190,10 @@ assignments_message([Assignment | Assignments], Bundle, Opts) ->
         Assignments,
         Bundle#{
             Slot =>
-                ar_bundles:sign_item(
-                    #tx{
-                        tags = [
-                            {<<"Assignment">>, Slot},
-                            {<<"Message">>, MessageID}
-                        ],
-                        data = #{
-                            <<"Assignment">> => Assignment,
-                            <<"Message">> => Message
-                        }
+                hb_message:sign(
+                    #{
+                        <<"Assignment">> => Assignment,
+                        <<"Message">> => Message
                     },
                     hb:wallet()
                 )
@@ -244,7 +259,7 @@ checkpoint(State) -> {ok, State}.
 
 %% @doc Helper to ensure that the environment is started before running tests.
 init() ->
-    dev_scheduler_registry:start(),
+    application:ensure_all_started(hb),
     ok.
 
 test_process() ->
@@ -253,7 +268,8 @@ test_process() ->
         process => #{
             <<"Device-Stack">> => [dev_cron, dev_wasm, dev_poda],
             <<"Image">> => <<"wasm-image-id">>,
-            <<"Type">> => <<"Process">>
+            <<"Type">> => <<"Process">>,
+            <<"Exciting-Random-Number">> => rand:uniform(1337)
         }
     }.
 
@@ -269,7 +285,7 @@ status_test() ->
 register_new_process_test() ->
     init(),
     Msg1 = test_process(),
-    Proc = hb_pam:get(process, Msg1),
+    Proc = hb_pam:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
     ?event({test_registering_new_process, {id, ProcID}, {msg, Msg1}}),
     ?assertMatch({ok, _},
@@ -283,3 +299,61 @@ register_new_process_test() ->
         )
     ),
     ?assertEqual([ProcID], hb_pam:get(processes, hb_pam:get(status, Msg1))).
+
+schedule_message_and_get_slot_test() ->
+    init(),
+    Msg1 = test_process(),
+    Proc = hb_pam:get(process, Msg1, #{ hashpath => ignore }),
+    ProcID = hb_util:id(Proc),
+    Msg2 = #{
+        path => <<"Schedule">>,
+        <<"Method">> => <<"POST">>,
+        <<"Message">> =>
+            #{
+                <<"Type">> => <<"Message">>,
+                <<"Exciting">> => <<"true">>
+            }
+    },
+    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg2, #{})),
+    Msg3 = #{
+        path => <<"Slot">>,
+        <<"Method">> => <<"GET">>,
+        <<"Process">> => ProcID
+    },
+    ?event({pg, dev_scheduler_registry:get_processes()}),
+    ?event({getting_schedule, {msg, Msg3}}),
+    ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
+            when CurrentSlot == 1,
+        hb_pam:resolve(Msg1, Msg3, #{})).
+
+get_schedule_test() ->
+    init(),
+    Msg1 = test_process(),
+    Msg2 = #{
+        path => <<"Schedule">>,
+        <<"Method">> => <<"POST">>,
+        <<"Message">> =>
+            #{
+                <<"Type">> => <<"Message">>,
+                <<"Exciting">> => <<"Reasonably">>
+            }
+    },
+    Msg3 = #{
+        path => <<"Schedule">>,
+        <<"Method">> => <<"POST">>,
+        <<"Message">> =>
+            #{
+                <<"Type">> => <<"Message">>,
+                <<"Exciting">> => <<"Getting old.">>
+            }
+    },
+    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg3, #{})),
+    ?assertMatch(
+        {ok, _},
+        ?event(hb_pam:resolve(Msg1, #{
+            <<"Method">> => <<"GET">>,
+            path => <<"Schedule">>
+        }))
+    ).

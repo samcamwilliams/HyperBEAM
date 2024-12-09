@@ -43,7 +43,8 @@ current_slot(M) ->
             {<<"Process">>, ProcID},
             {<<"Current-Slot">>,
                 dev_scheduler_server:get_current_slot(
-                    dev_scheduler_registry:find(binary_to_list(ProcID)))
+                    dev_scheduler_registry:find(ProcID)
+                )
             },
             {<<"Timestamp">>, Timestamp},
             {<<"Block-Height">>, Height},

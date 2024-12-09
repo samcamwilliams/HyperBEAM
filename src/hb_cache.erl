@@ -1,8 +1,14 @@
 -module(hb_cache).
+%%% TX API
 -export([
     read_output/3, write/2, write_output/4, write_assignment/2,
     outputs/2, assignments/2, latest/2, latest/3, latest/4, 
     read/2, lookup/2, read_assignment/3, read_message/2
+]).
+%%% Message API
+-export([
+    write_output_message/4, write_assignment_message/2, read_output_message/3,
+    read_assignment_message/3
 ]).
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -44,6 +50,8 @@
 %%% Outputs are stored as symlinks to the actual file or directory containing the message.
 %%% Messages that are composite are represented as directories containing their childen
 %%% (by ID and by subpath), as well as their base message stored at `.base`.
+
+
 
 latest(Store, ProcID) ->
     latest(Store, ProcID, undefined).
@@ -108,9 +116,14 @@ assignments(Store, ProcID) ->
 slots(Store, Path) ->
     SlotDir = hb_store:path(Store, Path),
     case hb_store:list(Store, SlotDir) of
-        {ok, Names} -> [ list_to_integer(Name) || Name <- Names ];
+        {ok, Names} ->
+            ?event({found_slots, {path, SlotDir}, {names, Names}}),
+            [ list_to_integer(Name) || Name <- Names ];
         {error, _} -> []
     end.
+
+write_output_message(Store, ProcID, Slot, Item) ->
+    write_output(Store, ProcID, Slot, hb_message:message_to_tx(Item)).
 
 %% Write a full message to the cache.
 write_output(Store, ProcID, Slot, Item) ->
@@ -133,14 +146,18 @@ write_output(Store, ProcID, Slot, Item) ->
     end,
     ok.
 
+write_assignment_message(Store, Assignment) ->
+    write_assignment(Store, hb_message:message_to_tx(Assignment)).
+
 %% Write a full message to the cache.
 write_assignment(Store, Assignment) ->
     % Write the message into the main cache
     {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
     {_, Slot} = lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags),
+    ?event({writing_assignment, {proc_id, ProcID}, {slot, Slot}, {assignment, Assignment}}),
     ok = write(Store, Assignment),
     UnsignedID = fmt_id(Assignment, unsigned),
-    SignedID = fmt_id(Assignment, signed),
+    %SignedID = fmt_id(Assignment, signed),
     % Create symlinks from the message on the process and the 
     % slot on the process to the underlying data.
     RawMessagePath =
@@ -154,26 +171,32 @@ write_assignment(Store, Assignment) ->
             fmt_id(ProcID),
             binary_to_list(Slot)
         ]),
-    AssignmentPathByID =
-        hb_store:path(Store, [
-            "assignments",
-            fmt_id(ProcID),
-            SignedID
-        ]),
-    AssignmentPathByUnsignedID =
-        hb_store:path(Store, [
-            "assignments",
-            fmt_id(ProcID),
-            UnsignedID
-        ]),
+    % AssignmentPathByID =
+    %     hb_store:path(Store, [
+    %         "assignments",
+    %         fmt_id(ProcID),
+    %         SignedID
+    %     ]),
+    % AssignmentPathByUnsignedID =
+    %     hb_store:path(Store, [
+    %         "assignments",
+    %         fmt_id(ProcID),
+    %         UnsignedID
+    %     ]),
     hb_store:make_link(Store, RawMessagePath, AssignmentPathByNum),
-    hb_store:make_link(Store, RawMessagePath, AssignmentPathByID),
-    hb_store:make_link(Store, RawMessagePath, AssignmentPathByUnsignedID),
+    % hb_store:make_link(Store, RawMessagePath, AssignmentPathByID),
+    % hb_store:make_link(Store, RawMessagePath, AssignmentPathByUnsignedID),
     ok.
 
 write(Store, Item) ->
     write(Store, hb_store:path(Store, ["messages"]), Item).
 
+write(Store, Path, Message) when is_map(Message) ->
+    write(
+        Store,
+        Path,
+        ar_bundles:normalize(hb_message:message_to_tx(Message))
+    );
 write(Store, Path, Item) when not is_record(Item, tx) ->
     ?event(writing_non_tx_item),
     write(Store, Path, ar_bundles:normalize(Item));
@@ -181,6 +204,7 @@ write(Store, Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }) ->
     ?event(write_of_default_id_tx_requested),
     write(Store, Path, ar_bundles:normalize(Item));
 write(Store, Path, Item) ->
+    ?event({writing_item, {path, Path}, {item, Item}}),
     case ar_bundles:type(Item) of
         binary ->
             % The item is a raw binary. Write it into the store and make a
@@ -197,6 +221,7 @@ write(Store, Path, Item) ->
             true -> link_unnecessary
             end;
         CompositeType ->
+            ?event({writing_composite_item, {path, Path}, {item, Item}}),
             write_composite(Store, Path, CompositeType, Item)
     end,
     ok.
@@ -245,6 +270,13 @@ write_composite(Store, Path, list, Item) ->
 read_message(Store, MessageID) ->
     lookup(Store, ["messages", MessageID]).
 
+read_output_message(Store, ProcID, Slot) ->
+    case read_output(Store, ProcID, Slot) of
+        {ok, Message} ->
+            {ok, hb_message:tx_to_message(Message)};
+        not_found -> not_found
+    end.
+
 read_output(Store, ProcID, undefined) ->
     element(2, latest(Store, ProcID));
 read_output(Store, ProcID, Slot) when is_integer(Slot) ->
@@ -266,6 +298,13 @@ read_output(Store, ProcID, SlotRef) ->
         _ -> read(Store, ResolvedPath)
     end.
 
+read_assignment_message(Store, ProcID, Slot) ->
+    case read_assignment(Store, ProcID, Slot) of
+        {ok, Assignment} ->
+            {ok, hb_message:tx_to_message(Assignment)};
+        not_found -> not_found
+    end.
+
 read_assignment(Store, ProcID, Slot) when is_integer(Slot) ->
     read_assignment(Store, ProcID, integer_to_list(Slot));
 read_assignment(Store, ProcID, Slot) ->
@@ -280,6 +319,13 @@ read_assignment(Store, ProcID, Slot) ->
         ),
     ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
     read(Store, ResolvedPath).
+
+lookup_message(Store, Path) ->
+    case lookup(Store, Path) of
+        {ok, Item} ->
+            {ok, hb_message:tx_to_message(Item)};
+        not_found -> not_found
+    end.
 
 lookup(Store, PathPart) when not is_list(PathPart) ->
     lookup(Store, [PathPart]);
