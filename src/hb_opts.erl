@@ -69,7 +69,7 @@ config() ->
                 <<"Message/1.0">> => dev_message,
                 <<"Test/1.0">> => dev_test,
                 <<"Stack/1.0">> => dev_stack,
-                <<"Scheduler">> => dev_scheduler,
+                <<"Scheduler/1.0">> => dev_scheduler,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,
