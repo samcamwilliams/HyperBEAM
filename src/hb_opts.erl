@@ -108,7 +108,8 @@ config() ->
         debug_print_indent => 4,
         debug_print => false,
         cache_results => false,
-        stack_print_prefixes => ["hb", "dev", "ar"]
+        stack_print_prefixes => ["hb", "dev", "ar"],
+        debug_print_trace => short % `short` | `false`. Has performance impact.
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
