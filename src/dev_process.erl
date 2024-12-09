@@ -145,10 +145,16 @@ schedule_on_process_test() ->
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
     ?event(messages_scheduled),
-    ?assertMatch(
-        {ok, _},
-        ?event(hb_converge:resolve(Msg1, #{
+    {ok, SchedulerRes} =
+        hb_converge:resolve(Msg1, #{
             <<"Method">> => <<"GET">>,
             path => <<"Schedule">>
-        }, #{}))
+        }, #{}),
+    ?assertMatch(
+        <<"Reasonably">>,
+        hb_converge:get(<<"Assignments/0/Message/Exciting">>, SchedulerRes)
+    ),
+    ?assertMatch(
+        <<"Getting old.">>,
+        hb_converge:get(<<"Assignments/1/Message/Exciting">>, SchedulerRes)
     ).
