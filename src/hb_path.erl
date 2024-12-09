@@ -57,9 +57,10 @@ hd(Msg2, Opts) ->
 tl(Msg2, Opts) ->
     case pop_request(Msg2, Opts) of
         undefined -> undefined;
-        {_, Rest} when is_map(Rest) ->
-            maps:get(path, Rest, undefined);
-        {_, Rest} -> Rest
+        {_, Rest} ->
+            ?no_prod("We need to show the state transformation of the path"
+                " in the message somehow."),
+            Rest
     end.
 
 %% @doc Add a path element to a message, according to the type given.
@@ -106,12 +107,11 @@ push_request(Msg, Path) ->
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
 pop_request(Msg, Opts) when is_map(Msg) ->
+    %?event({popping_request, {msg, Msg}, {opts, Opts}}),
     case pop_request(from_message(request, Msg), Opts) of
-        undefined ->
-            ?event(popped_undefined),
-            undefined;
-        {undefined, _} ->
-            undefined;
+        undefined -> undefined;
+        {undefined, _} -> undefined;
+        {Head, []} -> {Head, undefined};
         {Head, Rest} ->
             ?event({popped_request, Head, Rest}),
             {Head, maps:put(path, Rest, Msg)}
@@ -240,6 +240,7 @@ hd_test() ->
     ?assertEqual(undefined, hd(#{ path => undefined }, #{})).
 
 tl_test() ->
-    ?assertMatch([b, c], tl(#{ path => [a, b, c] }, #{})),
+    ?assertMatch([b, c], maps:get(path, tl(#{ path => [a, b, c] }, #{}))),
     ?assertEqual(undefined, tl(#{ path => [] }, #{})),
+    ?assertEqual(undefined, tl(#{ path => a }, #{})),
     ?assertEqual(undefined, tl(#{ path => undefined }, #{})).

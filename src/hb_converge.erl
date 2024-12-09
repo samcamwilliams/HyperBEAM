@@ -184,7 +184,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 			ok
 	end,
 	case hb_path:tl(Msg2, Opts) of
-		Res when Res == undefined orelse Res == [] ->
+		undefined ->
 			% The path resolved to the last element, so we return
 			% to the caller.
 			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
