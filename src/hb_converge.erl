@@ -79,7 +79,6 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 			{Status, ReturnedFun} = message_to_fun(Msg1, Key, Opts),
 			?event(
 				{resolving, Key,
-					{status, Status},
 					{func, ReturnedFun},
 					{msg1, Msg1},
 					{msg2, Msg2},
@@ -122,7 +121,6 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 	% Then, try to execute the function.
 	try
 		Msg3 = apply(Fun, truncate_args(Fun, Args)),
-		?event({resolved, Msg3}),
 		handle_resolved_result(Msg3, Msg2, UserOpts)
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
@@ -166,14 +164,13 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 	Msg3 =
 		case hb_opts:get(hashpath, update, Opts#{ only => local }) of
 			update ->
-				?event(
-					{pushing_hashpath_onto,
-						{msg3, {explicit, Msg3Raw}},
-						{msg2, Msg2},
-						{opts, Opts}
-					}
-				),
-
+				% ?event(
+				% 	{pushing_hashpath_onto,
+				% 		{msg3, {explicit, Msg3Raw}},
+				% 		{msg2, Msg2},
+				% 		{opts, Opts}
+				% 	}
+				% ),
 				hb_path:push(hashpath, Msg3Raw, Msg2);
 			ignore -> Msg3Raw
 		end,
@@ -190,10 +187,11 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 		Res when Res == undefined orelse Res == [] ->
 			% The path resolved to the last element, so we return
 			% to the caller.
+			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
 			list_to_tuple([ok, Msg3 | Rest]);
 		NextMsg ->
 			% There are more elements in the path, so we recurse.
-			?event({recursing, {next, NextMsg}}),
+			?event({resolution_recursing, {next_msg, NextMsg}}),
 			resolve(Msg3, NextMsg, Opts)
 	end.
 
@@ -203,7 +201,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
-	?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
+	%?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
 	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
 
 %% @doc Get the value of a key from a message, using another device to resolve
@@ -251,7 +249,14 @@ set(Msg1, Key, Value, Opts) ->
     % This handles both the case that the key is a path as well as the case
     % that it is a single key.
     Path = hb_path:term_to_path(Key),
-    %?event({setting_individual_key, {msg1, Msg1}, {key, Key}, {path, Path}, {value, Value}}),
+    % ?event(
+    %     {setting_individual_key,
+    %         {msg1, Msg1},
+    %         {key, Key},
+    %         {path, Path},
+    %         {value, Value}
+    %     }
+    % ),
     deep_set(Msg1, Path, Value, Opts).
 
 %% @doc Recursively search a map, resolving keys, and set the value of the key
@@ -265,8 +270,10 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
     device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
-	?event({calling_device_set, {key, Key}, {value, Value}}),
-	hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts).
+	?event({calling_device_set, {msg, Msg}, {applying_path, #{ path => set, Key => Value }}}),
+	Res = hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts),
+	?event({device_set_result, Res}),
+	Res.
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
@@ -320,23 +327,33 @@ message_to_fun(Msg, Key, Opts) ->
 				throw({error, {device_not_loadable, DevID}});
 			{ok, DevMod} -> DevMod
 		end,
-	?event({message_to_fun, {dev, Dev}, {key, Key}, {opts, Opts}}),
+	%?event({message_to_fun, {dev, Dev}, {key, Key}, {opts, Opts}}),
 	case maps:find(handler, Info = info(Dev, Msg, Opts)) of
 		{ok, Handler} ->
 			% Case 2: The device has an explicit handler function.
 			?event({info_handler_found, {dev, Dev}, {key, Key}, {handler, Handler}}),
 			info_handler_to_fun(Handler, Msg, Key, Opts);
 		error ->
-			?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
+			%?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
 			case find_exported_function(Dev, Key, 3, Opts) of
 				{ok, Func} ->
 					% Case 3: The device has a function of the name `Key`.
 					{ok, Func};
 				not_found ->
 					case maps:find(default, Info) of
-						{ok, DefaultFunc} ->
+						{ok, DefaultFunc} when is_function(DefaultFunc) ->
 							% Case 4: The device has a default handler.
+                            %?event({default_handler_func, DefaultFunc}),
 							{add_key, DefaultFunc};
+                        {ok, DefaultMod} when is_atom(DefaultMod) ->
+                            % ?event(
+                            %     {
+                            %         default_handler_mod,
+                            %         {dev, DefaultMod},
+                            %         {key, Key}
+                            %     }
+                            % ),
+                            message_to_fun(Msg#{ device => DefaultMod }, Key, Opts);
 						error ->
 							% Case 5: The device has no default handler.
 							% We use the default device to handle the key.
@@ -481,7 +498,6 @@ to_atom_unsafe(Key) when is_atom(Key) -> Key.
 %% a tuple of the form {error, Reason} is returned.
 load_device(Map, _Opts) when is_map(Map) -> {ok, Map};
 load_device(ID, _Opts) when is_atom(ID) ->
-	?event({loading_device, {id, ID}}),
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
@@ -523,11 +539,16 @@ load_device(ID, Opts) ->
 %% @doc Get the info map for a device, optionally giving it a message if the
 %% device's info function is parameterized by one.
 info(DevMod, Msg, Opts) ->
-	?event({calculating_info, {dev, DevMod}, {msg, Msg}}),
+	%?event({calculating_info, {dev, DevMod}, {msg, Msg}}),
 	case find_exported_function(DevMod, info, 1, Opts) of
 		{ok, Fun} ->
 			Res = apply(Fun, truncate_args(Fun, [Msg, Opts])),
-			?event({info_result, {dev, DevMod}, {args, truncate_args(Fun, [Msg])}, {result, Res}}),
+			% ?event({
+            %     info_result,
+            %     {dev, DevMod},
+            %     {args, truncate_args(Fun, [Msg])},
+            %     {result, Res}
+            % }),
 			Res;
 		not_found -> #{}
 	end.
