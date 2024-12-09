@@ -202,7 +202,10 @@ get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
 	%?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
-	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
+	case resolve(Msg, #{ path => Path }, Opts) of
+		{ok, Value} -> Value;
+		{error, _} -> not_found
+	end.
 
 %% @doc Get the value of a key from a message, using another device to resolve
 %% the key. Makes sure to set the device using `set/3` so that the `HashPath`
