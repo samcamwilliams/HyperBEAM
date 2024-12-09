@@ -2,7 +2,7 @@
 -export([info/2, scheduler/3, compute/3]).
 
 %%% @moduledoc This module contains notes for the implmenetation of AO processes
-%%% in PAM.
+%%% in Converge.
 %%% 
 %%% The ideal API for an AO process would be:
 %%% 
@@ -42,7 +42,7 @@ info(_Msg1, _Opts) ->
 %% the scheduler.
 scheduler(Msg1, Msg2, Opts) ->
     {ok, Scheduler} = dev_message:get(scheduler, Msg1, Opts),
-    hb_pam:resolve(
+    hb_converge:resolve(
         #{
             device => Scheduler,
             process => Msg1
@@ -59,19 +59,19 @@ compute(Msg1, Msg2, Opts) ->
         {ok, Result} -> {ok, Result};
         not_found ->
             Initialized =
-                case hb_pam:get(initialized, Msg1, Opts) of
+                case hb_converge:get(initialized, Msg1, Opts) of
                     {ok, _Initialized} ->
                         Msg1;
                     not_found ->
-                        {ok, Init} = hb_pam:resolve(
-                            hb_pam:set(Msg1, #{ device => stack }),
+                        {ok, Init} = hb_converge:resolve(
+                            hb_converge:set(Msg1, #{ device => stack }),
                             #{ path => <<"Init">> },
                             Opts
                         ),
                         Init
                 end,
-            hb_pam:resolve(
-                hb_pam:set(Initialized, #{ device => <<"Stack/1.0">> }),
+            hb_converge:resolve(
+                hb_converge:set(Initialized, #{ device => <<"Stack/1.0">> }),
                 Msg2,
                 Opts
             )

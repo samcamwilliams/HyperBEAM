@@ -32,8 +32,8 @@ id(TX, Type) when is_record(TX, tx) ->
     encode(ar_bundles:id(TX, Type));
 id(Map, Type) when is_map(Map) ->
     case Type of
-        unsigned -> hb_pam:get(unsigned_id, Map);
-        signed -> encode(hb_pam:get(id, Map))
+        unsigned -> hb_converge:get(unsigned_id, Map);
+        signed -> encode(hb_converge:get(id, Map))
     end;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin;
@@ -105,7 +105,7 @@ list_to_numbered_map(List) ->
 message_to_numbered_list(Message) ->
     message_to_numbered_list(Message, #{}).
 message_to_numbered_list(Message, Opts) ->
-    {ok, Keys} = hb_pam:keys(Message, Opts),
+    {ok, Keys} = hb_converge:keys(Message, Opts),
     KeyValList =
         lists:filtermap(
             fun(Key) ->
@@ -113,7 +113,7 @@ message_to_numbered_list(Message, Opts) ->
                     {Int, ""} ->
                         {
                             true,
-                            {Int, hb_pam:get(Key, Message, Opts)}
+                            {Int, hb_converge:get(Key, Message, Opts)}
                         };
                     _ -> false
                 end
@@ -132,25 +132,25 @@ message_to_numbered_list(Message, Opts) ->
 %% If `error_strategy` is `throw`, raise an exception if no integer keys are
 %% found. If `error_strategy` is `any`, return `undefined` if no integer keys
 %% are found. By default, the function does not pass a `throw` execution
-%% strategy to `hb_pam:to_key/2`, such that non-integer keys present in the
+%% strategy to `hb_converge:to_key/2`, such that non-integer keys present in the
 %% message will not lead to an exception.
 hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    {ok, Keys} = hb_pam:resolve(Message, keys),
+    {ok, Keys} = hb_converge:resolve(Message, keys),
     hd(Message, Keys, 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
 hd(_Map, [], _Index, _ReturnType, _Opts) -> undefined;
 hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
-    case hb_pam:to_key(Key, Opts#{ error_strategy => return }) of
+    case hb_converge:to_key(Key, Opts#{ error_strategy => return }) of
         undefined ->
             hd(Message, Rest, Index + 1, ReturnType, Opts);
         Key ->
             case ReturnType of
                 key -> Key;
-                value -> hb_pam:resolve(Message, Key)
+                value -> hb_converge:resolve(Message, Key)
             end
     end.
 
@@ -190,7 +190,7 @@ remove_common(Rest, _) -> Rest.
 %% @doc Throw an exception if the Opts map has an `error_strategy` key with the
 %% value `throw`. Otherwise, return the value.
 maybe_throw(Val, Opts) ->
-    case hb_pam:get(error_strategy, Opts) of
+    case hb_converge:get(error_strategy, Opts) of
         throw -> throw(Val);
         _ -> Val
     end.

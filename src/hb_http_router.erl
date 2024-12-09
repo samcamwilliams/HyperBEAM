@@ -47,10 +47,10 @@ init(Req, State) ->
     Path = cowboy_req:path(Req),
     ?event({http_called_with_path, Path}),
     % Note: We pass the state twice in the call below: Once for the device
-    % to optionally have it if useful, and once for the hb_pam module
+    % to optionally have it if useful, and once for the hb_converge module
     % itself. This lets us send execution environment parameters as well as
     % the request itself to the device.
-    case hb_pam:resolve(dev_meta, execute, [hb_http:req_to_tx(Req), State], State) of
+    case hb_converge:resolve(dev_meta, execute, [hb_http:req_to_tx(Req), State], State) of
         {ok, ResultingMessage} when is_record(ResultingMessage, tx) or is_map(ResultingMessage) ->
             % If the device returns a message (either normalized or not),
             % we normalize and serialize it, returning it to the client.

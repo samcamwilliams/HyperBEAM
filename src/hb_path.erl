@@ -13,7 +13,7 @@
 %%% A HashPath is a rolling Merkle list of the messages that have been applied 
 %%% in order to generate a given message. Because applied messages can
 %%% themselves be the result of message applications with the Permaweb Abstract
-%%% Machine (PAM), the HashPath can be thought of as the tree of messages that
+%%% Machine (Converge), the HashPath can be thought of as the tree of messages that
 %%% represent the history of a given message. The initial message on a HashPath
 %%% is referred to by its ID and serves as its user-generated 'root'.
 %%% 
@@ -23,7 +23,7 @@
 %%% 
 %%%     Msg1.HashPath = Msg1.ID
 %%%     Msg3.HashPath = Msg1.Hash(Msg1.HashPath, Msg2.ID)
-%%%     Msg3.{...} = PAM.apply(Msg1, Msg2)
+%%%     Msg3.{...} = Converge.apply(Msg1, Msg2)
 %%%     ...
 %%% 
 %%% A message's ID itself includes its HashPath, leading to the mixing of
@@ -50,7 +50,7 @@ hd(Msg2, Opts) ->
     end.
 
 %% @doc Return the message without its first path element. Note that this
-%% is the only transformation in PAM that does _not_ make a log of its
+%% is the only transformation in Converge that does _not_ make a log of its
 %% transformation. Subsequently, the message's IDs will not be verifiable 
 %% after executing this transformation.
 %% This may or may not be the mainnet behavior we want.
@@ -154,7 +154,7 @@ verify_hashpath(InitialMsgID, CurrentMsg, MsgList) ->
     hb_util:human_id(CalculatedHashpath) == hb_util:human_id(CurrentHashpath).
 
 %% @doc Extract the request path or hashpath from a message. We do not use
-%% PAM for this resolution because this function is called from inside PAM 
+%% Converge for this resolution because this function is called from inside Converge 
 %% itself. This imparts a requirement: the message's device must store a 
 %% viable hashpath and path in its Erlang map at all times, unless the message
 %% is directly from a user (in which case paths and hashpaths will not have 
@@ -191,7 +191,7 @@ term_to_path(Binary, Opts) when is_binary(Binary) ->
     end;
 term_to_path([], _Opts) -> undefined;
 term_to_path(List, Opts) when is_list(List) ->
-    lists:map(fun(Part) -> hb_pam:to_key(Part, Opts) end, List);
+    lists:map(fun(Part) -> hb_converge:to_key(Part, Opts) end, List);
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
 
 %%% TESTS

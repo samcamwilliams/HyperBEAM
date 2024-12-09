@@ -2,7 +2,7 @@
 -export([info/1, test_func/1]).
 -include_lib("eunit/include/eunit.hrl").
 
-%%% A simple test device for PAM, so that we can test the functionality that
+%%% A simple test device for Converge, so that we can test the functionality that
 %%% depends on using Erlang's module system.
 
 %% @doc Exports a default_handler function that can be used to test the
@@ -23,5 +23,5 @@ device_with_function_key_module_test() ->
 		},
 	?assertEqual(
 		{ok, <<"GOOD_FUNCTION">>},
-		hb_pam:resolve(Msg, test_func)
+		hb_converge:resolve(Msg, test_func)
 	).

@@ -53,7 +53,7 @@ to analyze would HB's path management `dev_message` modules are doing while you
 run your tests, just execute:
 
 ```
-	HB_PRINT=hb_path,hb_pam rebar3 eunit --module=your_mod
+	HB_PRINT=hb_path,hb_converge rebar3 eunit --module=your_mod
 ```
 
 The HB printing system is reasonably intelligent. It has a custom

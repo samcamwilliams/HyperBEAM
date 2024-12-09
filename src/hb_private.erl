@@ -11,7 +11,7 @@
 %%% should _not_ be used for encoding state that makes the execution of a
 %%% device non-deterministic (unless you are sure you know what you are doing).
 %%% 
-%%% See `hb_pam` for more information about the Permaweb Abstract Machine (PAM)
+%%% See `hb_converge` for more information about the Converge Protocol (Converge)
 %%% and private elements of messages.
 
 %% @doc Return the `private` key from a message. If the key does not exist, an
@@ -34,7 +34,7 @@ set(Msg, Key, Value) ->
 
 %% @doc Check if a key is private.
 is_private(Key) ->
-	case hb_pam:key_to_binary(Key) of
+	case hb_converge:key_to_binary(Key) of
 		<<"priv", _/binary>> -> true;
 		_ -> false
 	end.
@@ -57,8 +57,8 @@ set_private_test() ->
 get_private_key_test() ->
     M1 = #{a => 1, private => #{b => 2}},
     ?assertEqual(undefined, ?MODULE:get(M1, a)),
-    {ok, [a]} = hb_pam:resolve(M1, <<"Keys">>),
+    {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>),
     ?assertEqual(2, ?MODULE:get(M1, b)),
-    {Res, _} = hb_pam:resolve(M1, <<"Private">>),
+    {Res, _} = hb_converge:resolve(M1, <<"Private">>),
     ?assertNotEqual(ok, Res),
-    {Res, _} = hb_pam:resolve(M1, private).
+    {Res, _} = hb_converge:resolve(M1, private).
