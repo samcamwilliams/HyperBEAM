@@ -41,7 +41,7 @@ status(_M1, _M2, _Opts) ->
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
-    case hb_pam:get(<<"Method">>, Msg2) of
+    case hb_converge:get(<<"Method">>, Msg2) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
@@ -49,10 +49,10 @@ schedule(Msg1, Msg2, Opts) ->
 %% @doc Schedules a new message on the SU.
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
-    ToSched = hb_pam:get(message, Msg2, Opts#{ hashpath => ignore }),
-    ToSchedID = hb_pam:get(id, ToSched),
-    Proc = hb_pam:get(process, Msg1, Opts#{ hashpath => ignore }),
-    ProcID = hb_pam:get(id, Proc),
+    ToSched = hb_converge:get(message, Msg2, Opts#{ hashpath => ignore }),
+    ToSchedID = hb_converge:get(id, ToSched),
+    Proc = hb_converge:get(process, Msg1, Opts#{ hashpath => ignore }),
+    ProcID = hb_converge:get(id, Proc),
     ?event(
         {post_schedule,
             {process_id, ProcID},
@@ -63,8 +63,8 @@ post_schedule(Msg1, Msg2, Opts) ->
     ),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ?no_prod("SU does not validate item before writing into stream."),
-    %case {ar_bundles:verify_item(ToSched), hb_pam:get(type, ToSched)} of
-    case {true, hb_pam:get(type, ToSched)} of
+    %case {ar_bundles:verify_item(ToSched), hb_converge:get(type, ToSched)} of
+    case {true, hb_converge:get(type, ToSched)} of
         {false, _} ->
             {ok,
                 #{
@@ -104,8 +104,8 @@ post_schedule(Msg1, Msg2, Opts) ->
 %% @doc Returns information about the current slot for a process.
 slot(M1, _M2, _Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
-    Proc = hb_pam:get_as(dev_message, process, M1, #{ hashpath => ignore }),
-    ProcID = hb_pam:get(id, Proc),
+    Proc = hb_converge:get_as(dev_message, process, M1, #{ hashpath => ignore }),
+    ProcID = hb_converge:get(id, Proc),
     ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
     {ok, #{
@@ -120,15 +120,15 @@ slot(M1, _M2, _Opts) ->
     }}.
 
 get_schedule(Msg1, Msg2, Opts) ->
-    Proc = hb_pam:get_as(dev_message, process, Msg1, #{ hashpath => ignore }),
-    ProcID = hb_pam:get(id, Proc),
+    Proc = hb_converge:get_as(dev_message, process, Msg1, #{ hashpath => ignore }),
+    ProcID = hb_converge:get(id, Proc),
     From =
-        case hb_pam:get_default(from, Msg2, not_found, Opts) of
+        case hb_converge:get_default(from, Msg2, not_found, Opts) of
             not_found -> 0;
             FromRes -> FromRes
         end,
     To =
-        case hb_pam:get_default(to, Msg2, not_found, Opts) of
+        case hb_converge:get_default(to, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
                 dev_scheduler_server:get_current_slot(
@@ -174,8 +174,8 @@ assignments_message([], Bundle, _Opts) ->
     Bundle;
 assignments_message([Assignment | Assignments], Bundle, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
-    Slot = hb_pam:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
-    MessageID = hb_pam:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
+    Slot = hb_converge:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
+    MessageID = hb_converge:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
     {ok, MessageTX} = hb_cache:read_message(Store, MessageID),
     Message = hb_message:tx_to_message(MessageTX),
     ?event(
@@ -207,8 +207,8 @@ assignments_message([Assignment | Assignments], Bundle, Opts) ->
 
 %% @doc Initializes the scheduler state.
 init(M1, M2, Opts) ->
-    {ok, M3} = hb_pam:resolve(
-        hb_pam:set(M1, #{ device => dev_message }),
+    {ok, M3} = hb_converge:resolve(
+        hb_converge:set(M1, #{ device => dev_message }),
         M2,
         Opts
     ),
@@ -279,17 +279,17 @@ status_test() ->
         #{<<"Processes">> := Processes,
             <<"Address">> := Address}
             when is_list(Processes) and is_binary(Address),
-        hb_pam:get(status, test_process())
+        hb_converge:get(status, test_process())
     ).
 
 register_new_process_test() ->
     init(),
     Msg1 = test_process(),
-    Proc = hb_pam:get(process, Msg1, #{ hashpath => ignore }),
+    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
     ?event({test_registering_new_process, {id, ProcID}, {msg, Msg1}}),
     ?assertMatch({ok, _},
-        hb_pam:resolve(
+        hb_converge:resolve(
             Msg1,
             #{
                 <<"Method">> => <<"POST">>,
@@ -298,12 +298,12 @@ register_new_process_test() ->
             }
         )
     ),
-    ?assertEqual([ProcID], hb_pam:get(processes, hb_pam:get(status, Msg1))).
+    ?assertEqual([ProcID], hb_converge:get(processes, hb_converge:get(status, Msg1))).
 
 schedule_message_and_get_slot_test() ->
     init(),
     Msg1 = test_process(),
-    Proc = hb_pam:get(process, Msg1, #{ hashpath => ignore }),
+    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
     Msg2 = #{
         path => <<"Schedule">>,
@@ -314,8 +314,8 @@ schedule_message_and_get_slot_test() ->
                 <<"Exciting">> => <<"true">>
             }
     },
-    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg2, #{})),
-    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     Msg3 = #{
         path => <<"Slot">>,
         <<"Method">> => <<"GET">>,
@@ -325,7 +325,7 @@ schedule_message_and_get_slot_test() ->
     ?event({getting_schedule, {msg, Msg3}}),
     ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
             when CurrentSlot == 1,
-        hb_pam:resolve(Msg1, Msg3, #{})).
+        hb_converge:resolve(Msg1, Msg3, #{})).
 
 get_schedule_test() ->
     init(),
@@ -348,11 +348,11 @@ get_schedule_test() ->
                 <<"Exciting">> => <<"Getting old.">>
             }
     },
-    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg2, #{})),
-    ?assertMatch({ok, _}, hb_pam:resolve(Msg1, Msg3, #{})),
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
     ?assertMatch(
         {ok, _},
-        ?event(hb_pam:resolve(Msg1, #{
+        ?event(hb_converge:resolve(Msg1, #{
             <<"Method">> => <<"GET">>,
             path => <<"Schedule">>
         }))

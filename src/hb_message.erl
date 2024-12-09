@@ -8,12 +8,12 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module acts an adapter between messages, as modeled in the
-%%% Permaweb Abstract Machine (PAM), and their underlying binary representations.
-%%% See `docs/permaweb-abstract-machine.md` for details on PAM. Unless you are
+%%% Converge Protocol, and their underlying binary representations.
+%%% See `docs/converge-protocol.md` for details on Converge. Unless you are
 %%% implementing a new message serialization format, you should not need to 
-%%% interact with this module directly. Instead, use the `hb_pam`
+%%% interact with this module directly. Instead, use the `hb_converge`
 %%% interfaces to interact with all messages. The `dev_message` module
-%%% implements a device interface for handling messages as the default PAM
+%%% implements a device interface for handling messages as the default Converge
 %%% device.
 
 %% @doc The size at which a value should be made into a body item, instead of a
@@ -24,7 +24,7 @@
     [id, unsigned_id, last_tx, owner, target, signature]).
 -define(FILTERED_TAGS,
     [
-        <<"PAM-Large-Binary">>,
+        <<"Converge-Large-Binary">>,
         <<"Bundle-Format">>,
         <<"Bundle-Map">>,
         <<"Bundle-Version">>,
@@ -50,7 +50,7 @@ format(Map, Indent) when is_map(Map) ->
     Header = hb_util:format_indented("Message {~n", Indent),
     Res = lists:map(
         fun({Key, Val}) ->
-            NormKey = hb_pam:to_key(Key, #{ error_strategy => ignore }),
+            NormKey = hb_converge:to_key(Key, #{ error_strategy => ignore }),
             KeyStr = 
                 case NormKey of
                     Key ->
@@ -142,17 +142,17 @@ match(Map1, Map2) ->
     end.
 	
 matchable_keys(Map) ->
-    lists:sort(lists:map(fun hb_pam:key_to_binary/1, maps:keys(Map))).
+    lists:sort(lists:map(fun hb_converge:key_to_binary/1, maps:keys(Map))).
 
 %% @doc Normalize the keys in a map. Also takes a list of keys and returns a
 %% sorted list of normalized keys if the input is a list.
 normalize_keys(Keys) when is_list(Keys) ->
-    lists:sort(lists:map(fun hb_pam:key_to_binary/1, Keys));
+    lists:sort(lists:map(fun hb_converge:key_to_binary/1, Keys));
 normalize_keys(Map) ->
     maps:from_list(
         lists:map(
             fun({Key, Value}) ->
-                {hb_pam:key_to_binary(Key), Value}
+                {hb_converge:key_to_binary(Key), Value}
             end,
             maps:to_list(Map)
         )
@@ -163,7 +163,7 @@ minimize(Map) ->
     NormRegenKeys = normalize_keys(?REGEN_KEYS),
     maps:filter(
         fun(Key, _) ->
-            not lists:member(hb_pam:key_to_binary(Key), NormRegenKeys)
+            not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys)
         end,
         Map
     ).
@@ -181,7 +181,7 @@ filter_default_tx_keys(Map) ->
     DefaultsMap = default_tx_message(),
     maps:filter(
         fun(Key, Value) ->
-            case maps:find(hb_pam:key_to_binary(Key), DefaultsMap) of
+            case maps:find(hb_converge:key_to_binary(Key), DefaultsMap) of
                 {ok, Value} -> false;
                 _ -> true
             end
@@ -223,13 +223,13 @@ message_to_tx(Binary) when is_binary(Binary) ->
     % so we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
     #tx{
-        tags= [{<<"PAM-Large-Binary">>, integer_to_binary(byte_size(Binary))}],
+        tags= [{<<"Converge-Large-Binary">>, integer_to_binary(byte_size(Binary))}],
         data = Binary
     };
 message_to_tx(TX) when is_record(TX, tx) -> TX;
 message_to_tx(M) when is_map(M) ->
     % Get the keys that will be serialized, excluding private keys. Note that
-    % we do not call hb_pam:resolve here because we want to include all keys
+    % we do not call hb_converge:resolve here because we want to include all keys
     % in the underlying map, except the private ones.
     Keys = maps:keys(M),
     % Translate the keys into a binary map. If a key has a value that is a map,
@@ -247,7 +247,7 @@ message_to_tx(M) when is_map(M) ->
                         {ok, Value} when is_binary(Value) ->
                             {Key, Value};
                         {ok, Value} when is_atom(Value) or is_integer(Value) ->
-                            ItemKey = hb_pam:key_to_binary(Key),
+                            ItemKey = hb_converge:key_to_binary(Key),
                             {Type, BinaryValue} = encode_value(Value),
                             [
                                 {<<"Type:", ItemKey/binary>>, Type},
@@ -274,7 +274,7 @@ message_to_tx(M) when is_map(M) ->
     % the message map if they are present.
     {RemainingMap, BaseTXList} = lists:foldl(
         fun({Field, Default}, {RemMap, Acc}) ->
-            NormKey = hb_pam:key_to_binary(Field),
+            NormKey = hb_converge:key_to_binary(Field),
             case maps:find(NormKey, NormalizedMsgKeyMap) of
                 error -> {RemMap, [Default | Acc]};
                 {ok, Value} -> {maps:remove(NormKey, RemMap), [Value | Acc]}
@@ -350,7 +350,7 @@ to_typed_keys(Key, Value) when is_binary(Value) ->
 to_typed_keys(Key, Value) when is_map(Value) ->
     [{Key, message_to_tx(Value)}];
 to_typed_keys(Key, Value) ->
-    ItemKey = hb_pam:key_to_binary(Key),
+    ItemKey = hb_converge:key_to_binary(Key),
     {Type, BinaryValue} = encode_value(Value),
     [
         {<<"Type:", ItemKey/binary>>, Type},
@@ -376,7 +376,7 @@ encode_value(Value) ->
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
 tx_to_message(TX) when is_record(TX, tx) ->
-    case lists:keyfind(<<"PAM-Large-Binary">>, 1, TX#tx.tags) of
+    case lists:keyfind(<<"Converge-Large-Binary">>, 1, TX#tx.tags) of
         false ->
             do_tx_to_message(TX);
         {_, _Size} ->

@@ -1,4 +1,4 @@
--module(hb_pam).
+-module(hb_converge).
 %%% Main device API:
 -export([resolve/2, resolve/3, load_device/2]).
 -export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
@@ -10,15 +10,15 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module is the root of the device call logic of the 
-%%% Permaweb Abstract Machine (PAM) in HyperBEAM.
+%%% Converge Protocol in HyperBEAM.
 %%% 
-%%% At the PAM layer, every device is simply a collection of keys that can be
+%%% At the Converge layer, every device is simply a collection of keys that can be
 %%% resolved in order to yield their values. Each key may return another 
 %%% message or a binary:
 %%% 
 %%% 	resolve(Message1, Message2) -> {Status, Message3}
 %%% 
-%%% See `docs/permaweb-abstract-machine.md` for more information about PAM.
+%%% See `docs/converge-protocol.md` for more information about Converge.
 %%% 
 %%% When a device key is called, it is passed the `Message1` (likely its state),
 %%% as well as the message to 'apply' to it. It must return a tuple of the
@@ -29,7 +29,7 @@
 %%% message.
 %%% 
 %%% In the HyperBEAM implementation (this module), `Message1` can be replaced
-%%% a function name to execute for ease of development with PAM. In this 
+%%% a function name to execute for ease of development with Converge. In this 
 %%% case, the function name is cast to an unsigned message with the `Path` set
 %%% to the given name.
 %%% 
@@ -549,23 +549,23 @@ default_module() -> dev_message.
 %%% Tests
 
 key_from_id_device_test() ->
-    ?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, a)).
+    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a)).
 
 keys_from_id_device_test() ->
-    ?assertEqual({ok, [a]}, hb_pam:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
+    ?assertEqual({ok, [a]}, hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
 
 path_test() ->
-    ?assertEqual({ok, [test_path]}, hb_pam:resolve(#{ path => [test_path] }, path)),
-    ?assertEqual({ok, [a]}, hb_pam:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
+    ?assertEqual({ok, [test_path]}, hb_converge:resolve(#{ path => [test_path] }, path)),
+    ?assertEqual({ok, [a]}, hb_converge:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
 
 key_to_binary_test() ->
-    ?assertEqual(<<"a">>, hb_pam:key_to_binary(a)),
-    ?assertEqual(<<"a">>, hb_pam:key_to_binary(<<"a">>)),
-    ?assertEqual(<<"a">>, hb_pam:key_to_binary("a")).
+    ?assertEqual(<<"a">>, hb_converge:key_to_binary(a)),
+    ?assertEqual(<<"a">>, hb_converge:key_to_binary(<<"a">>)),
+    ?assertEqual(<<"a">>, hb_converge:key_to_binary("a")).
 
 resolve_binary_key_test() ->
-    ?assertEqual({ok, 1}, hb_pam:resolve(#{ a => 1 }, <<"a">>)),
-    ?assertEqual({ok, 1}, hb_pam:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)).
+    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, <<"a">>)),
+    ?assertEqual({ok, 1}, hb_converge:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)).
 
 %% @doc Generates a test device with three keys, each of which uses
 %% progressively more of the arguments that can be passed to a device key.
@@ -643,7 +643,7 @@ key_from_id_device_with_args_test() ->
         },
     ?assertEqual(
         {ok, <<"1">>},
-        hb_pam:resolve(
+        hb_converge:resolve(
             Msg,
             #{
                 path => key_using_only_state,
@@ -653,7 +653,7 @@ key_from_id_device_with_args_test() ->
     ),
     ?assertEqual(
         {ok, <<"13">>},
-        hb_pam:resolve(
+        hb_converge:resolve(
             Msg,
             #{
                 path => key_using_state_and_msg,
@@ -663,7 +663,7 @@ key_from_id_device_with_args_test() ->
     ),
     ?assertEqual(
         {ok, <<"1337">>},
-        hb_pam:resolve(
+        hb_converge:resolve(
             Msg,
             #{
                 path => key_using_all,
@@ -683,7 +683,7 @@ device_with_handler_function_test() ->
         },
     ?assertEqual(
         {ok, <<"HANDLER VALUE">>},
-        hb_pam:resolve(Msg, test_key)
+        hb_converge:resolve(Msg, test_key)
     ).
 
 device_with_default_handler_function_test() ->
@@ -693,24 +693,24 @@ device_with_default_handler_function_test() ->
         },
     ?assertEqual(
         {ok, <<"STATE">>},
-        hb_pam:resolve(Msg, state_key)
+        hb_converge:resolve(Msg, state_key)
     ),
     ?assertEqual(
         {ok, <<"DEFAULT">>},
-        hb_pam:resolve(Msg, any_random_key)
+        hb_converge:resolve(Msg, any_random_key)
     ).
 
 basic_get_test() ->
     Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-    ?assertEqual(<<"value1">>, hb_pam:get(key1, Msg)),
-    ?assertEqual(<<"value2">>, hb_pam:get(key2, Msg)).
+    ?assertEqual(<<"value1">>, hb_converge:get(key1, Msg)),
+    ?assertEqual(<<"value2">>, hb_converge:get(key2, Msg)).
 
 basic_set_test() ->
     Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-    UpdatedMsg = hb_pam:set(Msg, #{ key1 => <<"new_value1">> }),
+    UpdatedMsg = hb_converge:set(Msg, #{ key1 => <<"new_value1">> }),
     ?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
-    ?assertEqual(<<"new_value1">>, hb_pam:get(key1, UpdatedMsg)),
-    ?assertEqual(<<"value2">>, hb_pam:get(key2, UpdatedMsg)).
+    ?assertEqual(<<"new_value1">>, hb_converge:get(key1, UpdatedMsg)),
+    ?assertEqual(<<"value2">>, hb_converge:get(key2, UpdatedMsg)).
 
 get_with_device_test() ->
     Msg =
@@ -718,8 +718,8 @@ get_with_device_test() ->
             device => generate_device_with_keys_using_args(),
             state_key => <<"STATE">>
         },
-    ?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
-    ?assertEqual(<<"STATE">>, hb_pam:get(key_using_only_state, Msg)).
+    ?assertEqual(<<"STATE">>, hb_converge:get(state_key, Msg)),
+    ?assertEqual(<<"STATE">>, hb_converge:get(key_using_only_state, Msg)).
 
 get_as_with_device_test() ->
     Msg =
@@ -729,11 +729,11 @@ get_as_with_device_test() ->
         },
     ?assertEqual(
         <<"HANDLER VALUE">>,
-        hb_pam:get(test_key, Msg)
+        hb_converge:get(test_key, Msg)
     ),
     ?assertEqual(
         <<"ACTUAL VALUE">>,
-        hb_pam:get_as(dev_message, test_key, Msg)
+        hb_converge:get_as(dev_message, test_key, Msg)
     ).
 
 set_with_device_test() ->
@@ -753,22 +753,22 @@ set_with_device_test() ->
                 },
             state_key => <<"STATE">>
         },
-    ?assertEqual(<<"STATE">>, hb_pam:get(state_key, Msg)),
-    SetOnce = hb_pam:set(Msg, #{ state_key => <<"SET_ONCE">> }),
-    ?assertEqual(1, hb_pam:get(set_count, SetOnce)),
-    SetTwice = hb_pam:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
-    ?assertEqual(2, hb_pam:get(set_count, SetTwice)),
-    ?assertEqual(<<"STATE">>, hb_pam:get(state_key, SetTwice)).
+    ?assertEqual(<<"STATE">>, hb_converge:get(state_key, Msg)),
+    SetOnce = hb_converge:set(Msg, #{ state_key => <<"SET_ONCE">> }),
+    ?assertEqual(1, hb_converge:get(set_count, SetOnce)),
+    SetTwice = hb_converge:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
+    ?assertEqual(2, hb_converge:get(set_count, SetTwice)),
+    ?assertEqual(<<"STATE">>, hb_converge:get(state_key, SetTwice)).
 
 deep_set_test() ->
     % First validate second layer changes are handled correctly.
     Msg0 = #{ a => #{ b => 1 } },
     ?assertMatch(#{ a := #{ b := 2 } },
-        hb_pam:set(Msg0, [a, b], 2, #{})),
+        hb_converge:set(Msg0, [a, b], 2, #{})),
     % Now validate deeper layer changes are handled correctly.
     Msg = #{ a => #{ b => #{ c => 1 } } },
     ?assertMatch(#{ a := #{ b := #{ c := 2 } } },
-        hb_pam:set(Msg, [a, b, c], 2, #{})).
+        hb_converge:set(Msg, [a, b, c], 2, #{})).
 
 deep_set_with_device_test() ->
     Device = #{
@@ -797,13 +797,13 @@ deep_set_with_device_test() ->
         modified => false
     },
     Outer = deep_set(Msg, [a, b, c], 2, #{}),
-    A = hb_pam:get(a, Outer),
-    B = hb_pam:get(b, A),
-    C = hb_pam:get(c, B),
+    A = hb_converge:get(a, Outer),
+    B = hb_converge:get(b, A),
+    C = hb_converge:get(c, B),
     ?assertEqual(2, C),
-    ?assertEqual(true, hb_pam:get(modified, Outer)),
-    ?assertEqual(false, hb_pam:get(modified, A)),
-    ?assertEqual(true, hb_pam:get(modified, B)).
+    ?assertEqual(true, hb_converge:get(modified, Outer)),
+    ?assertEqual(false, hb_converge:get(modified, A)),
+    ?assertEqual(true, hb_converge:get(modified, B)).
 
 device_exports_test() ->
 	?assert(is_exported(dev_message, info, #{})),
@@ -819,7 +819,7 @@ device_exports_test() ->
 
 denormalized_device_key_test() ->
 	Msg = #{ <<"Device">> => dev_test },
-	?assertEqual(dev_test, hb_pam:get(device, Msg)),
-	?assertEqual(dev_test, hb_pam:get(<<"Device">>, Msg)),
+	?assertEqual(dev_test, hb_converge:get(device, Msg)),
+	?assertEqual(dev_test, hb_converge:get(<<"Device">>, Msg)),
 	?assertEqual({module, dev_test},
 		erlang:fun_info(element(2, message_to_fun(Msg, test_func, #{})), module)).

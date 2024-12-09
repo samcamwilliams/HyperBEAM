@@ -147,7 +147,7 @@ transform(Msg1, Key, Opts) ->
 	case dev_message:get(<<"Device-Stack">>, Msg1, Opts) of
 		{ok, StackMsg} ->
 			% Find the requested key in the device stack.
-			case hb_pam:resolve(StackMsg, #{ path => Key }, Opts) of
+			case hb_converge:resolve(StackMsg, #{ path => Key }, Opts) of
 				{ok, DevMsg} ->
 					% Set the:
 					% - Device key to the device we found.
@@ -194,7 +194,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	case transform(Message1, integer_to_binary(DevNum), Opts) of
 		{ok, Message3} ->
 			?event({stack_execute, DevNum, Message3}),
-			case hb_pam:resolve(Message3, Message2, Opts) of
+			case hb_converge:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
 					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
@@ -202,7 +202,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 					?event({result, skip, DevNum, Message4}),
 					{ok, Message4};
 				{pass, Message4} when is_map(Message4) ->
-					case hb_pam:resolve(Message4, pass, Opts) of
+					case hb_converge:resolve(Message4, pass, Opts) of
 						{ok, <<"Allow">>} ->
 							?event({result, pass, allowed, DevNum, Message4}),
 							?no_prod("Must update the pass number."),
@@ -259,7 +259,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	end.
 
 maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
-    case hb_pam:to_key(hb_pam:get(<<"Error-Strategy">>, Message1, Opts)) of
+    case hb_converge:to_key(hb_converge:get(<<"Error-Strategy">>, Message1, Opts)) of
         stop ->
 			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
         throw ->
@@ -267,11 +267,11 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
         continue ->
 			?event({continue_stack_execution_after_error, Message1, Key, Info}),
             resolve_stack(
-                hb_pam:set(Message1,
+                hb_converge:set(Message1,
                     [
                         <<"Errors">>,
-                        hb_pam:get(id, Message1, Opts),
-                        hb_pam:get(pass, Message1, Opts),
+                        hb_converge:get(id, Message1, Opts),
+                        hb_converge:get(pass, Message1, Opts),
                         DevNum,
                         hb_util:debug_fmt(Info)
                     ],
@@ -323,7 +323,7 @@ transform_internal_call_device_test() ->
 		},
 	?assertMatch(
 		<<"Message/1.0">>,
-		hb_pam:get(
+		hb_converge:get(
 			<<"Device">>,
 			element(2, transform(Msg1, <<"2">>, #{}))
 		)
@@ -364,7 +364,7 @@ transform_external_call_device_test() ->
 	},
 	?assertMatch(
 		{ok, #{ value := <<"Super-Cool">> }},
-		hb_pam:resolve(Msg1, #{
+		hb_converge:resolve(Msg1, #{
 			path => <<"/Transform/Make-Cool/Value">>
 		})
 	).
@@ -375,7 +375,7 @@ example_device_for_stack_test() ->
 	% the example device.
 	?assertMatch(
 		{ok, #{ result := <<"1_2">> }},
-		hb_pam:resolve(
+		hb_converge:resolve(
 			#{ device => generate_append_device(<<"_">>), result => <<"1">> },
 			#{ path => append, bin => <<"2">> },
 			#{}
@@ -395,7 +395,7 @@ simple_stack_execute_test() ->
 	?event({stack_executing, test, {explicit, Msg}}),
 	?assertMatch(
 		{ok, #{ result := <<"INIT!D1!2_D2_2">> }},
-		hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> })
+		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> })
 	).
 
 many_devices_test() ->
@@ -421,7 +421,7 @@ many_devices_test() ->
 					<<"INIT+D12+D22+D32+D42+D52+D62+D72+D82">>
 			}
 		},
-		hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> })
+		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> })
 	).
 
 reinvocation_test() ->
@@ -434,13 +434,13 @@ reinvocation_test() ->
 			},
 		result => <<"INIT">>
 	},
-	Res1 = hb_pam:resolve(Msg, #{ path => append, bin => <<"2">> }),
+	Res1 = hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }),
 	?assertMatch(
 		{ok, #{ result := <<"INIT+D12+D22">> }},
 		Res1
 	),
 	{ok, Msg2} = Res1,
-	Res2 = hb_pam:resolve(Msg2, #{ path => append, bin => <<"3">> }),
+	Res2 = hb_converge:resolve(Msg2, #{ path => append, bin => <<"3">> }),
 	?assertMatch(
 		{ok, #{ result := <<"INIT+D12+D22+D13+D23">> }},
 		Res2
@@ -458,7 +458,7 @@ skip_test() ->
 	},
 	?assertMatch(
 		{ok, #{ result := <<"INIT+D12">> }},
-		hb_pam:resolve(
+		hb_converge:resolve(
 			Msg1,
 			#{ path => append, bin => <<"2">> }
 		)

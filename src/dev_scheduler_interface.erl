@@ -10,8 +10,8 @@ handle(M) ->
     (choose_handler(M))(M).
 
 choose_handler(M) ->
-    Method = hb_pam:get(<<"Method">>, M),
-    Action = hb_pam:get(<<"Action">>, M),
+    Method = hb_converge:get(<<"Method">>, M),
+    Action = hb_converge:get(<<"Action">>, M),
     case {Method, Action} of
         {{_, <<"GET">>}, {_, <<"Info">>}} -> fun info/1;
         {{_, <<"GET">>}, {_, <<"Slot">>}} -> fun current_slot/1;

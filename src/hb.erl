@@ -53,9 +53,9 @@
 %%%    into messages and applying those messages with the appropriate devices.
 %%%    `hb_http` handles making requests and responding with messages. `cowboy`
 %%%    is used to implement the actual HTTP server.
-%%% 3. `hb_pam` implements the computation logic of the node: A mechanism
+%%% 3. `hb_converge` implements the computation logic of the node: A mechanism
 %%%    for resolving messages to other messages, via the application of logic
-%%%    implemented in devices. `hb_pam` also manages the loading of Erlang
+%%%    implemented in devices. `hb_converge` also manages the loading of Erlang
 %%%    modules for each device into the node's environment. There are many
 %%%    different default devices implemented in the hyperbeam node, using the
 %%%    namespace `dev_*`. Some of the critical components are:

@@ -31,7 +31,7 @@ execute_path([], Msg, _) -> {ok, Msg};
 execute_path([FuncName|Path], Msg, S) ->
     ?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
     Func = parse_path_to_func(FuncName),
-    execute_path(Path, hb_pam:resolve(Msg, Func, [Msg], S), S).
+    execute_path(Path, hb_converge:resolve(Msg, Func, [Msg], S), S).
 
 parse_path_to_func(BinName) when is_binary(BinName) ->
     binary_to_existing_atom(string:lowercase(BinName), utf8);

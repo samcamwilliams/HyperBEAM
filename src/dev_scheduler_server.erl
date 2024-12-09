@@ -50,7 +50,7 @@ slot_from_cache(ProcID) ->
             {ok, Assignment} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, AssignmentNum),
             {
                 AssignmentNum,
-                hb_util:decode(element(2, lists:keyfind(<<"Hash-Chain">>, 1, Assignment#tx.tags)))
+                hb_converge:get(<<"Hash-Chain">>, Assignment, #{ hashpath => ignore })
             }
     end.
 
@@ -75,11 +75,11 @@ get_assignments(ProcID, From, undefined) ->
     get_assignments(ProcID, From, get_current_slot(ProcID));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
     {ok, From} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, From),
-    {_, Slot} = hb_pam:get(<<"Slot">>, From, #{ hashpath => ignore }),
+    {_, Slot} = hb_converge:get(<<"Slot">>, From, #{ hashpath => ignore }),
     get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
 get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
     {ok, Assignment} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, RequestedTo),
-    {_, Slot} = hb_pam:get(<<"Slot">>, Assignment, #{ hashpath => ignore }),
+    {_, Slot} = hb_converge:get(<<"Slot">>, Assignment, #{ hashpath => ignore }),
     get_assignments(ProcID, From, binary_to_integer(Slot));
 get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
     get_assignments(ProcID, binary_to_integer(From), RequestedTo);
@@ -129,7 +129,7 @@ assign(State, Message, ReplyPID) ->
     end.
 
 do_assign(State, Message, ReplyPID) ->
-    ?event({assigning_message, {id, hb_pam:get(id, Message)}, {message, Message}}),
+    ?event({assigning_message, {id, hb_converge:get(id, Message)}, {message, Message}}),
     HashChain = next_hashchain(State#state.hash_chain, Message),
     NextNonce = State#state.current + 1,
     % Run the signing of the assignment and writes to the disk in a separate process
@@ -146,7 +146,7 @@ do_assign(State, Message, ReplyPID) ->
                 % due to badarg on byte_length. Not sure that accessing
                 % Message as a record (like process id from State above)
                 % is the correct solution.
-                <<"Message">> => hb_pam:get(id, Message),
+                <<"Message">> => hb_converge:get(id, Message),
                 <<"Block-Height">> => Height,
                 <<"Block-Hash">> => Hash,
                 <<"Block-Timestamp">> => Timestamp,
@@ -187,11 +187,17 @@ next_hashchain(HashChain, Message) ->
 new_proc_test() ->
     application:ensure_all_started(hb),
     Wallet = ar_wallet:new(),
-    SignedItem = hb_message:sign(#{ <<"Data">> => <<"test">> }, Wallet),
-    SignedItem2 = hb_message:sign(#{ <<"Data">> => <<"test2">> }, Wallet),
+    SignedItem = hb_message:sign(
+        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        Wallet
+    ),
+    SignedItem2 = hb_message:sign(
+        #{ <<"Data">> => <<"test2">> },
+        Wallet
+    ),
     SignedItem3 = hb_message:sign(#{ <<"Data">> => <<"test3">> }, Wallet),
-    dev_scheduler_registry:find(hb_pam:get(id, SignedItem), true),
-    schedule(ID = hb_pam:get(id, SignedItem), SignedItem),
+    dev_scheduler_registry:find(hb_converge:get(id, SignedItem), true),
+    schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
     schedule(ID, SignedItem2),
     schedule(ID, SignedItem3),
     ?assertEqual(2, dev_scheduler_server:get_current_slot(
