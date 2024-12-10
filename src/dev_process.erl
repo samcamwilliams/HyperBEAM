@@ -79,7 +79,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
             Msg1,
             #{
                 device => 
-                    hb_converge:get_as(
+                    DeviceSet = hb_converge:get_as(
                         dev_message,
                         Key,
                         Msg1,
@@ -107,7 +107,12 @@ run_as(Key, Msg1, Msg2, Opts) ->
             Opts
         ),
     ?event({base_result_before_device_swap_back, BaseResult}),
-    {ok, hb_converge:set(BaseResult, #{ device => BaseDevice })}.
+    case BaseResult of
+        #{ device := DeviceSet } ->
+            {ok, hb_converge:set(BaseResult, #{ device => BaseDevice })};
+        _ ->
+            {ok, BaseResult}
+    end.
 
 %%% Tests
 
@@ -115,12 +120,12 @@ init() ->
     application:ensure_all_started(hb),
     ok.
 
-test_process() ->
+basic_test_process() ->
     #{
         device => ?MODULE,
         <<"Executor">> => <<"Stack/1.0">>,
         <<"Scheduler">> => <<"Scheduler/1.0">>,
-        <<"Device-Stack">> => [dev_cron, dev_wasm],
+        <<"Device-Stack">> => [dev_wasm],
         <<"WASM-Image">> => <<"wasm-image-id">>,
         <<"Type">> => <<"Process">>,
         <<"Test-Key-Random-Number">> => rand:uniform(1337),
@@ -142,7 +147,7 @@ schedule_test_message(Msg1, Text) ->
 
 schedule_on_process_test() ->
     init(),
-    Msg1 = test_process(),
+    Msg1 = basic_test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?event(messages_scheduled),
@@ -162,7 +167,7 @@ schedule_on_process_test() ->
 
 get_scheduler_slot_test() ->
     init(),
-    Msg1 = test_process(),
+    Msg1 = basic_test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     Msg2 = #{
@@ -173,3 +178,21 @@ get_scheduler_slot_test() ->
         {ok, #{ <<"Current-Slot">> := CurrentSlot }} when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
+
+basic_wasm_test_process() ->
+    maps:merge(basic_test_process(), #{
+        <<"Device-Stack">> => [dev_vfs, dev_wasm],
+        <<"WASM-Image">> => <<"test/test-standalone-wex-aos.wasm">>
+    }).
+
+basic_wasm_process_test() ->
+    init(),
+    Msg1 = basic_wasm_test_process(),
+    schedule_test_message(Msg1, <<"TEST TEXT 1">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
+    schedule_test_message(Msg1, <<"TEST TEXT 3">>),
+    ?assertMatch(
+        CurrentSlot when CurrentSlot > 0,
+        hb_converge:get(<<"Slot/Current-Slot">>, Msg1)
+    ),
+    ok.
