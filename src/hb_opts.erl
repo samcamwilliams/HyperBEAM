@@ -70,13 +70,13 @@ config() ->
                 <<"Test/1.0">> => dev_test,
                 <<"Stack/1.0">> => dev_stack,
                 <<"Scheduler/1.0">> => dev_scheduler,
+                <<"VFS/1.0">> => dev_vfs,
+                <<"WASM64/1.0">> => dev_wasm,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,
-                <<"VFS">> => dev_vfs,
                 <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
-                <<"WASM64-pure">> => dev_wasm,
                 <<"Multipass">> => dev_multipass,
                 <<"Push">> => dev_mu,
                 <<"Compute">> => dev_cu,
@@ -109,7 +109,8 @@ config() ->
         debug_print => false,
         cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
-        debug_print_trace => short % `short` | `false`. Has performance impact.
+        debug_print_trace => short, % `short` | `false`. Has performance impact.
+        short_trace_len => 5
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
