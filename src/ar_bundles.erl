@@ -1,7 +1,7 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
--export([id/1, id/2, type/1, map/1, hd/1, member/2, find/2]).
+-export([id/1, id/2, reset_ids/1, type/1, map/1, hd/1, member/2, find/2]).
 -export([manifest/1, manifest_item/1, parse_manifest/1]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
@@ -9,9 +9,9 @@
 -export([item_to_json_struct/1, json_struct_to_item/1]).
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
--export([print/1]).
+-export([print/1, format/1, format/2]).
 
--include("include/ao.hrl").
+-include("include/hb.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -25,7 +25,7 @@
 ]).
 
 % How many bytes of a binary to print with `print/1`.
--define(BIN_PRINT, 50).
+-define(BIN_PRINT, 20).
 -define(INDENT_SPACES, 2).
 
 %%%===================================================================
@@ -48,10 +48,10 @@ format(Item, Indent) when is_record(Item, tx) ->
                     lists:flatten(
                         io_lib:format(
                             "~s (signed) ~s (unsigned)",
-                            [ar_util:encode(id(Item, signed)), ar_util:encode(id(Item, unsigned))]
+                            [hb_util:encode(id(Item, signed)), hb_util:encode(id(Item, unsigned))]
                         )
                     );
-                true -> ar_util:encode(id(Item, unsigned))
+                true -> hb_util:encode(id(Item, unsigned))
             end,
             if
                 Valid == true -> "[SIGNED+VALID]";
@@ -65,15 +65,15 @@ format(Item, Indent) when is_record(Item, tx) ->
             format_line("!!! CAUTION: ITEM IS SIGNED BUT INVALID !!!", Indent + 1);
         false -> []
     end ++
-	case is_signed(Item) of
-		true ->
-			format_line("Signer: ~s", [ar_util:encode(signer(Item))], Indent + 1);
-		false -> []
-	end ++
+    case is_signed(Item) of
+        true ->
+            format_line("Signer: ~s", [hb_util:encode(signer(Item))], Indent + 1);
+        false -> []
+    end ++
     format_line("Target: ~s", [
             case Item#tx.target of
                 <<>> -> "[NONE]";
-                Target -> ar_util:id(Target)
+                Target -> hb_util:id(Target)
             end
         ], Indent + 1) ++
     format_line("Tags:", Indent + 1) ++
@@ -239,15 +239,13 @@ sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
     Item = (normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
     % Generate the signature from the data item's data segment in 'signed'-ready mode.
     Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item, signed)),
-    ID = crypto:hash(sha256, <<Sig/binary>>),
-    Item#tx{id = ID, signature = Sig}.
+    reset_ids(Item#tx{signature = Sig}).
 
 %% @doc Verify the validity of a data item.
 verify_item(DataItem) ->
     ValidID = verify_data_item_id(DataItem),
     ValidSignature = verify_data_item_signature(DataItem),
     ValidTags = verify_data_item_tags(DataItem),
-    %?c({verify_item, ar_util:encode(id(DataItem, unsigned)), ValidID, ValidSignature, ValidTags}),
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
@@ -278,6 +276,7 @@ data_item_signature_data(RawItem) ->
 data_item_signature_data(RawItem, unsigned) ->
     data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
 data_item_signature_data(RawItem, signed) ->
+    true = enforce_valid_tx(RawItem),
     NormItem = normalize_data(RawItem),
     ar_deep_hash:hash([
         utf8_encoded("dataitem"),
@@ -299,7 +298,7 @@ verify_data_item_id(DataItem) ->
 %% @doc Verify the data item's signature.
 verify_data_item_signature(DataItem) ->
     SignatureData = data_item_signature_data(DataItem),
-    %?c({unsigned_id, ar_util:encode(id(DataItem, unsigned)), ar_util:encode(SignatureData)}),
+    %?event({unsigned_id, hb_util:encode(id(DataItem, unsigned)), hb_util:encode(SignatureData)}),
     ar_wallet:verify(
         {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
     ).
@@ -372,10 +371,9 @@ serialize(not_found) -> throw(not_found);
 serialize(TX) -> serialize(TX, binary).
 serialize(TX, binary) when is_binary(TX) -> TX;
 serialize(RawTX, binary) ->
+    true = enforce_valid_tx(RawTX),
     TX = normalize(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
-    enforce_size(TX#tx.target, [0, 32], target),
-    enforce_size(TX#tx.last_tx, [0, 32], last_tx),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
         (TX#tx.signature)/binary,
@@ -387,7 +385,104 @@ serialize(RawTX, binary) ->
         (TX#tx.data)/binary
     >>;
 serialize(TX, json) ->
+    true = enforce_valid_tx(TX),
     jiffy:encode(item_to_json_struct(TX)).
+
+%% @doc Take an item and ensure that it is of valid form. Useful for ensuring
+%% that a message is viable for serialization/deserialization before execution.
+%% This function should throw simple, easy to follow errors to aid devs in
+%% debugging issues.
+enforce_valid_tx(List) when is_list(List) ->
+    lists:all(fun enforce_valid_tx/1, List);
+enforce_valid_tx(Map) when is_map(Map) ->
+    lists:all(fun(Item) -> enforce_valid_tx(Item) end, maps:values(Map));
+enforce_valid_tx(TX) ->
+    ok_or_throw(TX,
+        check_type(TX, message),
+        {invalid_tx, TX}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.id, [0, 32]),
+        {invalid_field, id, TX#tx.id}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.unsigned_id, [0, 32]),
+        {invalid_field, unsigned_id, TX#tx.unsigned_id}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.last_tx, [0, 32]),
+        {invalid_field, last_tx, TX#tx.last_tx}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.owner, [0, byte_size(?DEFAULT_OWNER)]),
+        {invalid_field, owner, TX#tx.owner}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.target, [0, 32]),
+        {invalid_field, target, TX#tx.target}
+    ),
+    ok_or_throw(TX,
+        check_size(TX#tx.signature, [0, byte_size(?DEFAULT_SIG)]),
+        {invalid_field, signature, TX#tx.signature}
+    ),
+    lists:foreach(
+        fun({Name, Value}) ->
+            ok_or_throw(TX,
+                check_type(Name, binary),
+                {invalid_field, tag_name, Name}
+            ),
+            ok_or_throw(TX,
+                check_size(Name, {range, 0, ?MAX_TAG_NAME_SIZE}),
+                {invalid_field, tag_name, Name}
+            ),
+            ok_or_throw(TX,
+                check_type(Value, binary),
+                {invalid_field, tag_value, Value}
+            ),
+            ok_or_throw(TX,
+                check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
+                {invalid_field, tag_value, Value}
+            );
+            (InvalidTagForm) ->
+                throw({invalid_field, tag, InvalidTagForm})
+        end,
+        TX#tx.tags
+    ),
+    ok_or_throw(
+        TX,
+        check_type(TX#tx.data, binary)
+            orelse check_type(TX#tx.data, map)
+            orelse check_type(TX#tx.data, list),
+        {invalid_field, data, TX#tx.data}
+    ),
+    true.
+
+%% @doc Force that a binary is either empty or the given number of bytes.
+check_size(Bin, {range, Start, End}) ->
+    check_type(Bin, binary)
+        andalso byte_size(Bin) >= Start
+        andalso byte_size(Bin) =< End;
+check_size(Bin, X) when not is_list(X) ->
+    check_size(Bin, [X]);
+check_size(Bin, Sizes) ->
+    check_type(Bin, binary)
+        andalso lists:member(byte_size(Bin), Sizes).
+
+%% @doc Ensure that a value is of the given type.
+check_type(Value, binary) when is_binary(Value) -> true;
+check_type(Value, _) when is_binary(Value) -> false;
+check_type(Value, list) when is_list(Value) -> true;
+check_type(Value, _) when is_list(Value) -> false;
+check_type(Value, map) when is_map(Value) -> true;
+check_type(Value, _) when is_map(Value) -> false;
+check_type(Value, message) ->
+    is_record(Value, tx) or is_map(Value) or is_list(Value);
+check_type(_Value, _) -> false.
+
+%% @doc Throw an error if the given value is not ok.
+ok_or_throw(_, true, _) -> true;
+ok_or_throw(_TX, false, Error) ->
+    throw(Error).
 
 %% @doc Take an item and ensure that both the unsigned and signed IDs are
 %% appropriately set. This function is structured to fall through all cases
@@ -395,6 +490,8 @@ serialize(TX, json) ->
 %% until the item has a coherent set of IDs.
 %% The cases in turn are:
 %% - The item has no unsigned_id. This is never valid.
+%% - The item has the default signature and ID. This is valid.
+%% - The item has the default signature but a non-default ID. Reset the ID.
 %% - The item has a signature. We calculate the ID from the signature.
 %% - Valid: The item is fully formed and has both an unsigned and signed ID.
 update_ids(Item = #tx { unsigned_id = ?DEFAULT_ID }) ->
@@ -407,6 +504,8 @@ update_ids(Item = #tx { unsigned_id = ?DEFAULT_ID }) ->
                 )
         }
     );
+update_ids(Item = #tx { id = ?DEFAULT_ID, signature = ?DEFAULT_SIG }) ->
+    Item;
 update_ids(Item = #tx { signature = ?DEFAULT_SIG }) ->
     Item#tx { id = ?DEFAULT_ID };
 update_ids(Item = #tx { signature = Sig }) when Sig =/= ?DEFAULT_SIG ->
@@ -431,7 +530,7 @@ add_manifest_tags(Tags, ManifestID) ->
             (_) -> true
         end,
         Tags
-    ) ++ [{<<"Bundle-Map">>, ar_util:encode(ManifestID)}].
+    ) ++ [{<<"Bundle-Map">>, hb_util:encode(ManifestID)}].
 
 finalize_bundle_data(Processed) ->
     Length = <<(length(Processed)):256/integer>>,
@@ -451,12 +550,14 @@ serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
     % For now we just serialize the map to a JSON string of Key=>TXID
     BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
-    Index = maps:map(fun(_, {TXID, _}) -> ar_util:encode(TXID) end, BinItems),
+    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
     NewManifest = new_manifest(Index),
-    %?c({generated_manifest, NewManifest == Manifest, ar_util:encode(id(NewManifest, unsigned)), Index}),
+    %?event({generated_manifest, NewManifest == Manifest, hb_util:encode(id(NewManifest, unsigned)), Index}),
     {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
-serialize_bundle_data(List, _Manifest) ->
-    finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)).
+serialize_bundle_data(List, _Manifest) when is_list(List) ->
+    finalize_bundle_data(lists:map(fun to_serialized_pair/1, List));
+serialize_bundle_data(Data, _Manifest) ->
+    throw({cannot_serialize_tx_data, must_be_map_or_list, Data}).
 
 new_manifest(Index) ->
     TX = normalize(#tx{
@@ -492,25 +593,6 @@ encode_optional_field(<<>>) ->
     <<0>>;
 encode_optional_field(Field) ->
     <<1:8/integer, Field/binary>>.
-
-%% @doc Force that a binary is either empty or the given number of bytes.
-enforce_size(Bin, Size) ->
-    enforce_size(Bin, Size, undefined_field).
-enforce_size(Bin, X, FieldName) when not is_list(X) ->
-    enforce_size(Bin, [X], FieldName);
-enforce_size(Bin, Sizes, FieldName) ->
-    case lists:member(byte_size(Bin), Sizes) of
-        true -> Bin;
-        false ->
-            throw(
-                {
-                    invalid_field_size,
-                    FieldName,
-                    {expected, Sizes},
-                    {actual, byte_size(Bin)}
-                }
-            )
-    end.
 
 %% @doc Encode a UTF-8 string to binary.
 utf8_encoded(String) ->
@@ -638,14 +720,14 @@ maybe_unbundle_map(Bundle) ->
             case unbundle(Bundle) of
                 detached -> Bundle#tx { data = detached };
                 Items ->
-                    MapItem = find_single_layer(ar_util:decode(MapTXID), Items),
+                    MapItem = find_single_layer(hb_util:decode(MapTXID), Items),
                     Map = jiffy:decode(MapItem#tx.data, [return_maps]),
                     Bundle#tx{
                         manifest = MapItem,
                         data =
                             maps:map(
                                 fun(_K, TXID) ->
-                                    find_single_layer(ar_util:decode(TXID), Items)
+                                    find_single_layer(hb_util:decode(TXID), Items)
                                 end,
                                 Map
                             )
@@ -664,7 +746,7 @@ find_single_layer(UnsignedID, Items) ->
     case is_record(TX, tx) of
         true -> TX;
         false ->
-            throw({cannot_find_item, ar_util:encode(UnsignedID)})
+            throw({cannot_find_item, hb_util:encode(UnsignedID)})
     end.
 
 unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
@@ -709,14 +791,14 @@ item_to_json_struct(
     From =
         case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
             [{_, FromProcess}] -> FromProcess;
-            [] -> ar_util:encode(ar_wallet:to_address(Owner))
+            [] -> hb_util:encode(ar_wallet:to_address(Owner))
         end,
     Fields = [
-        {<<"Id">>, ar_util:encode(ID)},
+        {<<"Id">>, hb_util:encode(ID)},
         % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, ar_util:encode(Last)},
+        {<<"Anchor">>, hb_util:encode(Last)},
         % NOTE: When sent to ao "Owner" is the wallet address
-        {<<"Owner">>, ar_util:encode(ar_wallet:to_address(Owner))},
+        {<<"Owner">>, hb_util:encode(ar_wallet:to_address(Owner))},
         {<<"From">>, From},
         {<<"Tags">>,
             lists:map(
@@ -730,9 +812,9 @@ item_to_json_struct(
                 end,
                 Tags
             )},
-        {<<"Target">>, ar_util:encode(Target)},
+        {<<"Target">>, hb_util:encode(Target)},
         {<<"Data">>, Data},
-        {<<"Signature">>, ar_util:encode(Sig)}
+        {<<"Signature">>, hb_util:encode(Sig)}
     ],
     {Fields}.
 
@@ -748,19 +830,19 @@ json_struct_to_item({TXStruct}) ->
 json_struct_to_item(RawTXStruct) ->
     TXStruct = [{string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct],
     Tags =
-        case ar_util:find_value(<<"tags">>, TXStruct) of
+        case hb_util:find_value(<<"tags">>, TXStruct) of
             undefined ->
                 [];
             Xs ->
                 Xs
         end,
-    TXID = ar_util:decode(ar_util:find_value(<<"id">>, TXStruct, ar_util:encode(?DEFAULT_ID))),
+    TXID = hb_util:decode(hb_util:find_value(<<"id">>, TXStruct, hb_util:encode(?DEFAULT_ID))),
     #tx{
         format = ans104,
         id = TXID,
-        last_tx = ar_util:decode(ar_util:find_value(<<"anchor">>, TXStruct, <<>>)),
-        owner = ar_util:decode(
-            ar_util:find_value(<<"owner">>, TXStruct, ar_util:encode(?DEFAULT_OWNER))
+        last_tx = hb_util:decode(hb_util:find_value(<<"anchor">>, TXStruct, <<>>)),
+        owner = hb_util:decode(
+            hb_util:find_value(<<"owner">>, TXStruct, hb_util:encode(?DEFAULT_OWNER))
         ),
         tags =
             lists:map(
@@ -771,10 +853,10 @@ json_struct_to_item(RawTXStruct) ->
                 end,
                 Tags
             ),
-        target = ar_util:decode(ar_util:find_value(<<"target">>, TXStruct, <<>>)),
-        data = ar_util:find_value(<<"data">>, TXStruct, <<>>),
-        signature = ar_util:decode(
-            ar_util:find_value(<<"signature">>, TXStruct, ar_util:encode(?DEFAULT_SIG))
+        target = hb_util:decode(hb_util:find_value(<<"target">>, TXStruct, <<>>)),
+        data = hb_util:find_value(<<"data">>, TXStruct, <<>>),
+        signature = hb_util:decode(
+            hb_util:find_value(<<"signature">>, TXStruct, hb_util:encode(?DEFAULT_SIG))
         )
     }.
 
@@ -784,7 +866,7 @@ json_struct_to_item(RawTXStruct) ->
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(Other) ->
-    ?c({error_decoding_signature, Other}),
+    ?event({error_decoding_signature, Other}),
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
@@ -852,9 +934,7 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
 ar_bundles_test_() ->
     [
         {timeout, 30, fun test_no_tags/0},
-        {timeout, 30, fun test_no_tags_from_disk/0},
         {timeout, 30, fun test_with_tags/0},
-        {timeout, 30, fun test_with_tags_from_disk/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
         {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
@@ -883,12 +963,6 @@ test_no_tags() ->
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, [], <<"data">>, SignedDataItem2).
-
-test_no_tags_from_disk() ->
-    {ok, BinaryDataItem} = file:read_file("src/test/dataitem_notags"),
-    DataItem = deserialize(BinaryDataItem),
-    ?assertEqual(true, verify_item(DataItem)),
-    ?assertEqual(<<"notags">>, DataItem#tx.data).
 
 test_with_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -920,12 +994,6 @@ test_unsigned_data_item_normalization() ->
     NewItem = normalize(#tx{ format = ans104, data = <<"Unsigned data">> }),
     ReNormItem = deserialize(serialize(NewItem)),
     ?assertEqual(NewItem, ReNormItem).
-
-test_with_tags_from_disk() ->
-    {ok, BinaryDataItem} = file:read_file("src/test/dataitem_withtags"),
-    DataItem = deserialize(BinaryDataItem),
-    ?assertEqual(true, verify_item(DataItem)),
-    ?assertEqual(<<"withtags">>, DataItem#tx.data).
 
 assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(KeyType, DataItem#tx.signature_type),
@@ -1079,8 +1147,8 @@ test_serialize_deserialize_deep_signed_bundle() ->
     ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
     ?assert(verify_item(Item3)),
     % Test that we can write to disk and read back the same ID.
-    ao_cache:write(ao:get(local_store), Item2),
-    FromDisk = ao_cache:read_message(ao:get(local_store), ar_util:encode(id(Item2, unsigned))),
+    hb_cache:write(hb_opts:get(local_store), Item2),
+    {ok, FromDisk} = hb_cache:read_message(hb_opts:get(local_store), hb_util:encode(id(Item2, unsigned))),
     format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.

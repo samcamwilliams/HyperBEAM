@@ -1,95 +1,97 @@
 -module(dev_meta).
--export([execute/1]).
--include("include/ao.hrl").
+-export([execute/2]).
+-include("include/hb.hrl").
 
 %%% The hyperbeam meta device, which is the default entry point
-%%% for all messages on the HTTP API. This device executes a 'path' of
+%%% for all messages processed by the machine. This device executes a 'path' of
 %%% functions upon a message, sequentially, returning the message resulting
 %%% from the last function.
 
-%% @doc Execute a message on hyperbeam. Also takes a tuple for internal use
-%% of the form `{Mods, Msg, Path}`, where `Mods` is a list of device modules,
-%% `Msg` is a message to execute, and `Path` is a list of function names to
-%% execute on the message. In general, you probably should not do that. Use
-%% the normal cu_device flow instead.
-execute(CarrierMsg) when is_record(CarrierMsg, tx) ->
-	execute(parse_carrier_msg(CarrierMsg));
-execute({Mods, Msg, Path}) when is_list(Mods) ->
-	Stack = dev_stack:create(Mods),
-	?c({executing_stack, Stack, Path}),
-	execute_path({dev_stack, execute},
-		#{ devices => Stack, message => Msg },
-		Path
-	);
-execute({Mod, Msg, Path}) ->
-	?c({executing_device, Mod, Path}),
-	execute_path(Mod, Msg, Path).
+%%% The ideal API should support:
+%%% GET /id/Execute/Report?1.Mode=Fast&2.Mode=Terse <- Edge case?
+%%% GET /id/Outbox/1/Target <- Getting results from a process. Common case.
+%%% GET /id/Execute/Output?Action=Transfer <- 'Normal' dry-run request.
+%%% POST /id/Execute/Output?Action=Transfer <- 'Normal' push request.
+%%% POST /id/Schedule <- Schedule the contained message to be executed.
+%%% GET /id/Schedule <- Get the schedule of a process by its ID.
+%%% POST /id/Schedule <- Send a new message to the schedule of a process.
+%%% POST /id/Push <- Push a new message on a process.
+%%% POST /Push <- Push a new message on the referenced message.
+%%% GET /Execute <- Execute an assignment on the referenced process?
+%%% GET /Thing/in/cache <- Get a thing from the cache by its path.
 
-execute_path(_, M, []) -> {ok, M};
-execute_path(Dev, M, [FuncName|Path]) ->
-	?c({meta_executing_on_path, {device, Dev}, {function, FuncName}, {path, Path}}),
-	Func = parse_path_to_func(FuncName),
-	{ok, NewM} = cu_device:call(Dev, Func, [M], #{ error_strategy => throw }),
-	execute_path(Dev, NewM, Path).
+%% @doc Execute a message on hyperbeam.
+execute(CarrierMsg, S) ->
+    ?event({executing_message, CarrierMsg}),
+    {Msg, Path} = parse_carrier_msg(CarrierMsg, S),
+    execute_path(Path, Msg, S).
+
+%% @doc Execute a path on a message, yielding a new message.
+execute_path([], Msg, _) -> {ok, Msg};
+execute_path([FuncName|Path], Msg, S) ->
+    ?event({meta_executing_on_path, {function, FuncName}, {path, Path}}),
+    Func = parse_path_to_func(FuncName),
+    execute_path(Path, hb_converge:resolve(Msg, Func, [Msg], S), S).
 
 parse_path_to_func(BinName) when is_binary(BinName) ->
-	binary_to_existing_atom(BinName, utf8);
+    binary_to_existing_atom(string:lowercase(BinName), utf8);
 parse_path_to_func(AtomName) when is_atom(AtomName) ->
-	AtomName.
+    AtomName.
 
 %% @doc Resolve the carrier message to an executable message, either by extracting
 %% from its body or reading from its referenced ID.
-parse_carrier_msg(CarrierMsg) ->
+parse_carrier_msg(CarrierMsg, S) ->
     case lists:keyfind(<<"Device">>, 1, CarrierMsg#tx.tags) of
-        {_, DevMod} ->
-            % If the carrier message itself contains a device, we execute
+        {_, _} ->
+            % If the carrier message itself contains a device, we should execute
             % the path on that device.
+            ?event({carrier_msg_contains_device, CarrierMsg}),
             {
-                binary_to_existing_atom(DevMod, utf8),
-                extract_path_components(CarrierMsg),
+                path_from_carrier_message(CarrierMsg),
                 CarrierMsg
             };
         false ->
-            % Otherwise, we try to parse the device from the path + body.
-            do_parse_carrier_msg(CarrierMsg)
+            % Otherwise, we try to parse the message from the path + body.
+            load_executable_message_from_carrier(CarrierMsg, S)
     end.
 
-do_parse_carrier_msg(CarrierMsg) ->
-    AllParts = [Start|_] = extract_path_components(CarrierMsg),
-    case parse_path(AllParts) of
-        {ID, ExecPath} when is_binary(ID) ->
-            % When the first part of the path is an ID, we read the message
-            % from the caches and apply the rest of the path to it.
-            {ao_cache:read_message(ao:get(store), Start), CarrierMsg, ExecPath};
-        {Dev, ExecPath} when is_atom(Dev) or is_list(Dev) ->
-            % If the carrier path contains a device, we use that as the
-            % root.
-            {Dev, CarrierMsg, ExecPath};
-        {undefined, Path} ->
-            % If the device is not specified in the path, we simply execute
-            % the path on the carrier message itself.
-            {
-                cu_device_loader:from_message(CarrierMsg),
-                CarrierMsg,
-                Path
-            }
+%% @doc The carrier message itself does not contain a device, so we try to
+%% load the message from the first element of the path, then apply the carrier
+%% message that. For example, GET /id/Schedule?From=0&To=1 will result in
+%% MessageWithID.Schedule(#{From => 0, To => 1}).
+load_executable_message_from_carrier(CarrierMsg, #{ store := RawStore }) ->
+    Path = path_from_carrier_message(CarrierMsg),
+    Store =
+        case hb_opts:get(access_remote_cache_for_client) of
+            true -> RawStore;
+            false -> hb_store:scope(RawStore, local)
+        end,
+    load_path(Store, Path).
+
+%% @doc Load a path from the cache. Load the whole path if possible, 
+%% backing off to smaller parts of the path until a viable component
+%% (eventually just the message ID) is found.
+load_path(Store, PathParts) -> load_path(Store, PathParts, []).
+load_path(Store, PathParts, Unresolved) ->
+    ?event({loading_path, Store, PathParts, Unresolved}),
+    % First, try to read the path directly from the cache.
+    case hb_cache:read(Store, PathParts) of
+        {ok, Msg} -> {Msg, Unresolved};
+        not_found ->
+            % If that fails, try to read it as a message.
+            case hb_cache:read_message(Store, PathParts) of
+                {ok, Msg} -> {Msg, Unresolved};
+                not_found ->
+                    load_path(
+                        Store,
+                        lists:droplast(PathParts),
+                        Unresolved ++ [lists:last(PathParts)]
+                    )
+            end
     end.
 
 %% @doc Extract the components of the path from the carrier message.
-extract_path_components(CarrierMsg) ->
+path_from_carrier_message(CarrierMsg) ->
     {_, Path} = lists:keyfind(<<"Path">>, 1, CarrierMsg#tx.tags),
     lists:filter(fun(Part) -> byte_size(Part) > 0 end,
         binary:split(Path, <<"/">>, [global])).
-
-parse_path([ID|Path]) when is_binary(ID) andalso byte_size(ID) == 43 ->
-    {ID, Path};
-parse_path(All = [Start|Rest]) ->
-    case lists:keyfind(Start, 1, ao:get(default_device_stacks)) of
-        {_, {DefaultCall, Dev}} ->
-            case Rest of
-                [] -> {Dev, [DefaultCall]};
-                _ -> {Dev, Rest}
-            end;
-        false ->
-            {undefined, All}
-    end.

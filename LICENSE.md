@@ -3,9 +3,9 @@ License text copyright (c) 2020 MariaDB Corporation Ab, All Rights Reserved.
 
 Parameters
 
-Licensor:            Forward Research
-Licensed Work:       ao codebase. The Licensed Work is (c) 2024 Forward Research
-Additional Use Grant: The ao codebases is offered under the BSL 1.1 license for the duration
+Licensor:             Forward Research
+Licensed Work:        HyperBEAM and AO codebase. The Licensed Work is (c) 2024 Forward Research
+Additional Use Grant: The HyperBEAM AO codebases is offered under the BSL 1.1 license for the duration
                       of the testnet period. After the testnet phase is over, the code will be made
                       available under either a new evolutionary forking license, or a traditional OSS license (GPLv3/v2, MIT, etc).
                       Consult https://arweave.medium.com/arweave-is-an-evolutionary-protocol-e072f5e69eaa for more info.
