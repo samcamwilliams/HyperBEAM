@@ -1,5 +1,5 @@
 -module(dev_vfs).
--export([init/1, execute/2, stdout/1]).
+-export([init/1, execute/3, stdout/1]).
 -include("include/hb.hrl").
 
 -record(fd, {
@@ -11,94 +11,120 @@
 
 -define(INIT_VFS,
     #{
-        0 => #fd{
-            index = 0,
-            filename = <<"/dev/stdin">>,
-            data = <<>>,
-            offset = 0
-        },
-        1 => #fd{
-            index = 1,
-            filename = <<"/dev/stdout">>,
-            data = <<>>,
-            offset = 0
-        },
-        2 => #fd{
-            index = 2,
-            filename = <<"/dev/stderr">>,
-            data = <<>>,
-            offset = 0
+        <<"dev">> => #{
+            <<"stdin">> => #{
+                index => 0,
+                data => <<>>,
+                offset => 0
+            },
+            <<"stdout">> => #{
+                index => 1,
+                data => <<>>,
+                offset => 0
+            },
+            <<"stderr">> => #{
+                index => 2,
+                data => <<>>,
+                offset => 0
+            }
         }
     }
 ).
 
-init(S) ->
-    Lib = maps:merge(maps:get(library, S, #{}), #{
-        {"wasi_snapshot_preview1", "path_open"} => fun path_open/3,
-        {"wasi_snapshot_preview1", "fd_write"} => fun fd_write/3,
-        {"wasi_snapshot_preview1", "fd_read"} => fun fd_read/3
-    }),
-    {ok, S#{library => Lib, vfs => ?INIT_VFS}}.
-
-execute(M, S = #{ pass := 1, vfs := FDs }) ->
-    #tx { data = Data } = maps:get(<<"Message">>, M#tx.data),
-    ?event({setting_stdin_to_message, byte_size(Data)}),
+init(M1, _M2, Opts) ->
+    Lib =
+        hb_converge:set(
+            hb_converge:get(<<"priv_lib">>, M1, Opts),
+            #{
+                {"wasi_snapshot_preview1", "path_open"} =>
+                    fun path_open/3,
+                {"wasi_snapshot_preview1", "fd_write"} =>
+                    fun fd_write/3,
+                {"wasi_snapshot_preview1", "fd_read"} =>
+                    fun fd_read/3
+            },
+            Opts
+        ),
     {ok,
-        S#{
-            vfs =>
-                maps:put(
-                    0,
-                    (maps:get(0, FDs))#fd{ data = Data },
-                    FDs
-                )
-        }
+        hb_converge:set(
+            M1,
+            <<"VFS">>,
+            ?INIT_VFS,
+            Opts
+        )
+    }.
+
+execute(M1 = #{ pass := 1 }, M2, Opts) ->
+    MsgToProc = hb_converge:get(<<"Message">>, M2, Opts),
+    JSON =
+        ar_bundles:serialize(
+            hb_message:message_to_tx(MsgToProc),
+            json
+        ),
+    ?event(setting_stdin_to_message),
+    {ok,
+        hb_converge:set(
+            M1,
+            <<"vfs/dev/stdin/data">>,
+            JSON,
+            Opts
+        )
     };
-execute(_M, S = #{ pass := 2, vfs := FDs }) ->
-    {ok, S#{
-        results =>
-            maps:merge(
-                maps:get(results, S, #{}),
-                maps:from_list(
-                    [
-                        {Filename, ar_bundles:normalize(#tx{data = Data})}
-                    ||
-                        #fd{
-                            filename = Filename,
-                            data = Data
-                        } <- maps:values(FDs)
-                    ]
-                )
-            )
-        }
+execute(M1 = #{ pass := 2, vfs := FDs }, _M2, Opts) ->
+    {ok, 
+        hb_converge:set(
+            M1,
+            <<"Results/vfs">>,
+            maps:from_list(
+                [
+                    {Filename, Data}
+                ||
+                    #{
+                        filename := Filename,
+                        data := Data
+                    } <- maps:values(FDs)
+                ]
+            ),
+            Opts
+        )
     };
-execute(_M, S) ->
-    {ok, S}.
+execute(M1, _M2, _Opts) ->
+    {ok, M1}.
 
 %% @doc Return the stdout buffer from a state message.
-stdout(#{ vfs := #{ 1 := #fd { data = Data } } }) ->
-    Data.
+stdout(M) ->
+    hb_converge:get(<<"vfs/1/data">>, M).
 
-path_open(S = #{ vfs := FDs }, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
+path_open(M, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
+    FDs = hb_converge:get(<<"File-Descriptors">>, M),
     ?event({path_open, FDPtr, LookupFlag, PathPtr}),
     Path = hb_beamr_io:read_string(Port, PathPtr),
     ?event({path_open, Path}),
     File =
-        maps:get(
-            hd(maps:keys(
-                maps:filter(
-                    fun(_, #fd{filename = FN}) -> FN =/= Path end,
-                    FDs
-                )
-            )),
-            FDs,
-            #fd {
-                index = maps:size(FDs) + 1,
-                filename = Path,
-                data = <<>>,
-                offset = 0
-            }
+        case hb_converge:get(<<"vfs/", Path/binary>>, M) of
+            not_found ->
+                #{
+                    index => maps:size(FDs) + 1,
+                    filename => Path,
+                    data => <<>>,
+                    offset => 0
+                };
+            File ->
+                File
+        end,
+    {
+        hb_converge:set(
+            M,
+            <<"vfs/", Path/binary>>,
+            #{
+                index => File#fd.index,
+                data => File#fd.data,
+                offset => File#fd.offset
+            },
+            Opts
         ),
-    {S#{vfs => maps:put(File#fd.index, File, FDs)}, [0, File#fd.index]}.
+        [0, hb_converge:get(<<"Index">>, File)]
+    }.
 
 fd_write(S, Port, [FD, Ptr, Vecs, RetPtr]) ->
     fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0);
