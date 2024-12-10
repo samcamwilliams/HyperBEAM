@@ -944,7 +944,8 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_bundle_map/0},
         {timeout, 30, fun test_basic_member_id/0},
         {timeout, 30, fun test_deep_member/0},
-        {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
+        {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0},
+        {timeout, 30, fun test_extremely_large_bundle/0}
     ].
 
 test_no_tags() ->
@@ -1080,7 +1081,7 @@ test_bundle_map() ->
     ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
     ?assert(verify_item(BundleItem)).
 
-extremely_large_bundle_test() ->
+test_extremely_large_bundle() ->
     W = ar_wallet:new(),
     Data = crypto:strong_rand_bytes(100_000_000),
     Norm = normalize(#tx { data = #{ <<"key">> => #tx { data = Data } } }),
