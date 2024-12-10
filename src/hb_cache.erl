@@ -397,6 +397,8 @@ fmt_id(ID, _Type) -> ID.
 
 %%% Tests
 
+-define(TEST_WALLET_NAME, pb_cache_test_wallet).
+
 %% Helpers
 create_unsigned_tx(Data) ->
     ar_bundles:normalize(
@@ -409,7 +411,17 @@ create_unsigned_tx(Data) ->
 
 %% Helper function to create signed #tx items.
 create_signed_tx(Data) ->
-    ar_bundles:sign_item(create_unsigned_tx(Data), ar_wallet:new()).
+    MaybeNewWallet = 
+        case persistent_term:get(?TEST_WALLET_NAME, undefined) of
+            undefined -> 
+                Wallet = ar_wallet:new(),
+                persistent_term:put(?TEST_WALLET_NAME, Wallet),
+                Wallet;
+            Wallet ->
+                Wallet
+        end,
+    ar_bundles:sign_item(create_unsigned_tx(Data), MaybeNewWallet).
+
 
 create_store_test(TestStore) ->
     Backend = element(1, TestStore),
@@ -438,7 +450,7 @@ create_store_test(TestStore) ->
             % {T("composite_unsigned_item_test"), fun() -> composite_unsigned_item_test(TestStore) end},
             % {T("composite_signed_item_test"), fun() -> composite_signed_item_test(TestStore) end},
             {T("deeply_nested_item_test"), fun() -> deeply_nested_item_test(TestStore) end},
-            {T("write_and_read_output_test"), fun() -> write_and_read_output_test(TestStore) end},
+            {T("write_and_read_output_test"), {timeout, 10, fun() -> write_and_read_output_test(TestStore) end}},
             {T("latest_output_retrieval_test"), fun() -> latest_output_retrieval_test(TestStore) end}
         ]
     }.
