@@ -53,7 +53,7 @@ start_link(Opts) ->
 
 % -spec start(#{dir := term()}) -> ignore | {ok, pid()}.
 start(Opts) ->
-    start_link(Opts).
+    start_link([{hb_store_rocksdb, Opts}]).
 
 -spec stop(any()) -> ok.
 stop(_Opts) ->
@@ -211,7 +211,6 @@ add_path(_Opts, Path1, Path2) ->
 %%% Gen server callbacks
 %%%=============================================================================
 init(Dir) ->
-    logger:error("Starting the process"),
     {ok, DBHandle, [DefaultH, MetaH]} = open_rockdb(Dir),
     State = #{
         db_handle => DBHandle,
