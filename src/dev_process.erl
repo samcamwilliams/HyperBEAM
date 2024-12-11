@@ -1,19 +1,17 @@
--module(dev_process).
--export([info/2, scheduler/3, compute/3]).
-
-%%% @moduledoc This module contains notes for the implmenetation of AO processes
+%%% @doc This module contains notes for the implmenetation of AO processes
 %%% in Converge.
 %%% 
 %%% The ideal API for an AO process would be:
-%%% 
+%%% ```
 %%% GET /ID/scheduler <- Returns the messages in the schedule
 %%% POST /ID/scheduler <- Adds a message to the schedule
 %%% 
 %%% GET /ID/Computed/[IDorSlotNum]/Result <- Returns the state of the process
 %%%                                         after applying a message
-%%% POST /ID/Computed/ <- Compute and cache a message on the process.
+%%% POST /ID/Computed/ <- Compute and cache a message on the process.'''
 %%% 
 %%% Process definition:
+%%% ```
 %%%     Device: Process/1.0
 %%%     Scheduler: [Message]
 %%%         Device: Scheduler/1.0
@@ -28,8 +26,10 @@
 %%%         Authority: B
 %%%         Authority: C
 %%%         Quorum: 2
-%%%     Stack: Scheduler, Cron, WASM, PoDA
+%%%     Stack: Scheduler, Cron, WASM, PoDA'''
 %%%     
+-module(dev_process).
+-export([info/2, scheduler/3, compute/3]).
 
 %% @doc When the info key is called, we should return the process definition.
 info(_Msg1, _Opts) ->

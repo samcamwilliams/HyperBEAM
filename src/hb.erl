@@ -1,28 +1,19 @@
--module(hb).
-%%% Configuration and environment:
--export([init/0, now/0, build/0]).
-%%% Debugging tools:
--export([event/1, event/2, event/4, no_prod/3]).
--export([read/1, read/2, debug_wait/4, profile/1]).
-%%% Node wallet and address management:
--export([address/0, wallet/0, wallet/1]).
--include("include/hb.hrl").
-
-%%% Hyperbeam is a decentralized node implementation implementing a protocol built
-%%% on top of the Arweave protocol. This protocol offers a computation layer for
+%%% @doc Hyperbeam is a decentralized node implementation implementing a protocol 
+%%% built on top of the Arweave protocol.
+%%% This protocol offers a computation layer for
 %%% executing arbitrary logic on top of data inside the Arweave network.
 %%% 
 %%% Arweave is built to offer a robust, permanent storage layer for static data
 %%% over time. One can see it essentially as a globally distributed key-value
 %%% store that allows users to lookup IDs to retrieve data at any point in time:
 %%% 
-%%% 	`Arweave(ID) => Message`
+%%% 	`Arweave(ID) => Message'
 %%% 
 %%% Hyperbeam adds another layer of functionality on top of Arweave's protocol:
 %%% Allowing users to store and retrieve not only arbitrary bytes, but also to
 %%% perform execution of computation upon that data:
 %%% 
-%%% 	`Hyperbeam(Message0) => Message1`
+%%% 	`Hyperbeam(Message0) => Message1'
 %%% 
 %%% When Hyperbeam executes a message, it will return a new message containing
 %%% the result of that execution, as well as signed attestations of its
@@ -46,47 +37,64 @@
 %%% 
 %%% The core abstractions of the Hyperbeam node are broadly as follows:
 %%% 
-%%% 1. The `hb` module manages the node's configuration, environment variables,
+%%% 1. The `hb' module manages the node's configuration, environment variables,
 %%%    and debugging tools.
-%%% 2. The `hb_http` and `hb_http_router` modules manage all HTTP-related
-%%%    functionality. `hb_http_router` handles turning received HTTP requests
+%%% 
+%%% 2. The `hb_http' and `hb_http_router' modules manage all HTTP-related
+%%%    functionality. `hb_http_router' handles turning received HTTP requests
 %%%    into messages and applying those messages with the appropriate devices.
-%%%    `hb_http` handles making requests and responding with messages. `cowboy`
+%%%    `hb_http' handles making requests and responding with messages. `cowboy'
 %%%    is used to implement the actual HTTP server.
-%%% 3. `hb_converge` implements the computation logic of the node: A mechanism
+%%% 
+%%% 3. `hb_converge' implements the computation logic of the node: A mechanism
 %%%    for resolving messages to other messages, via the application of logic
-%%%    implemented in devices. `hb_converge` also manages the loading of Erlang
+%%%    implemented in devices. `hb_converge' also manages the loading of Erlang
 %%%    modules for each device into the node's environment. There are many
 %%%    different default devices implemented in the hyperbeam node, using the
-%%%    namespace `dev_*`. Some of the critical components are:
-%%%    - `dev_meta`: The device responsible for managing all requests to the
+%%%    namespace `dev_*'. Some of the critical components are:
+%%% 
+%%%    - `dev_meta': The device responsible for managing all requests to the
 %%%      node. This device takes a message and loads the appropriate devices to
-%%%      execute it. The `hb_http_router` uses this device to resolve incoming
+%%%      execute it. The `hb_http_router' uses this device to resolve incoming
 %%%      HTTP requests.
-%%%    - `dev_stack`: The device responsible for creating and executing stacks
+%%% 
+%%%    - `dev_stack': The device responsible for creating and executing stacks
 %%%      of other devices on messages that request it. There are many uses for
 %%%      this device, one of which is the resolution of AO processes, which
 %%%      typically require it.
-%%%    - `dev_p4`: The device responsible for managing payments for the services
+%%% 
+%%%    - `dev_p4': The device responsible for managing payments for the services
 %%%      provided by the node.
-%%% 4. `hb_store`, `hb_cache` and the store implementations forms a layered
-%%%    system for managing the node's access to persistent storage. `hb_cache`
+%%% 
+%%% 4. `hb_store', `hb_cache' and the store implementations forms a layered
+%%%    system for managing the node's access to persistent storage. `hb_cache'
 %%%    is used as a resolution mechanism for reading and writing messages, while
-%%%    `hb_store` provides an abstraction over the underlying persistent key-value
-%%%    byte storage mechanisms. Example `hb_store` mechanisms can be found in
-%%%    `hb_store_fs` and `hb_store_remote_node`.
-%%% 5. `ar_*` modules implement functionality related to the base-layer Arweave
+%%%    `hb_store' provides an abstraction over the underlying persistent key-value
+%%%    byte storage mechanisms. Example `hb_store' mechanisms can be found in
+%%%    `hb_store_fs' and `hb_store_remote_node'.
+%%% 
+%%% 5. `ar_*' modules implement functionality related to the base-layer Arweave
 %%%    protocol and are largely unchanged from their counterparts in the Arweave
 %%%    node codebase presently maintained by the Digital History Association
 %%%    (@dha-team/Arweave).
 %%% 
 %%% You can find documentation of a similar form to this note in each of the core
 %%% modules of the hyperbeam node.
-
-%%% @doc This module implements the environment and configuration functionality
+%%% This module implements the environment and configuration functionality
 %%% for the hyperbeam node. It manages all global components of the node,
 %%% including the node's wallet, address, configuration, and environment
 %%% variables.
+-module(hb).
+%%% Configuration and environment:
+-export([init/0, now/0, build/0]).
+%%% Debugging tools:
+-export([event/1, event/2, event/4, no_prod/3]).
+-export([read/1, read/2, debug_wait/4, profile/1]).
+%%% Node wallet and address management:
+-export([address/0, wallet/0, wallet/1]).
+-include("include/hb.hrl").
+
+
 
 %% @doc Initialize system-wide settings for the hyperbeam node.
 init() ->
@@ -108,7 +116,7 @@ wallet(Location) ->
     end.
 
 %% @doc Get the address of a wallet. Defaults to the address of the wallet
-%% specified by the `key_location` configuration key. It can also take a
+%% specified by the `key_location' configuration key. It can also take a
 %% wallet tuple as an argument.
 address() -> address(wallet()).
 address(Wallet) when is_tuple(Wallet) ->

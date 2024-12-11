@@ -1,20 +1,20 @@
--module(hb_crypto).
--export([sha256_chain/2, accumulate/2]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
-
-%%% @moduledoc Implements the cryptographic functions and wraps the primitives
+%%% @doc Implements the cryptographic functions and wraps the primitives
 %%% used in HyperBEAM. Abstracted such that this (extremely!) dangerous code 
 %%% can be carefully managed.
 %%% 
 %%% HyperBEAM currently implements two hashpath algorithms:
 %%% 
-%%% * `sha-256-chain`: A simple chained SHA-256 hash.
-%%% * `accumulate-256`: A SHA-256 hash that chains the given IDs and accumulates
+%%% * `sha-256-chain': A simple chained SHA-256 hash.
+%%% 
+%%% * `accumulate-256': A SHA-256 hash that chains the given IDs and accumulates
 %%%   their values into a single commitment.
 %%% 
 %%% The accumulate algorithm is experimental and at this point only exists to
 %%% allow us to test multiple HashPath algorithms in HyperBEAM.
+-module(hb_crypto).
+-export([sha256_chain/2, accumulate/2]).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(IS_ID(ID), (byte_size(ID) == 32)).
 
@@ -34,7 +34,7 @@ accumulate(ID1 = << ID1Int:256 >>, ID2) when ?IS_ID(ID1) and ?IS_ID(ID2) ->
 accumulate(ID1, ID2) ->
     throw({cannot_accumulate_bad_ids, ID1, ID2}).
 
-%% @doc Wrap Erlang's `crypto:hash/2` to provide a standard interface.
+%% @doc Wrap Erlang's `crypto:hash/2' to provide a standard interface.
 %% Under-the-hood, this uses OpenSSL.
 sha256(Data) ->
     crypto:hash(sha256, Data).
@@ -49,7 +49,7 @@ count_zeroes(<<0:1, Rest/bitstring>>) ->
 count_zeroes(<<_:1, Rest/bitstring>>) ->
     count_zeroes(Rest).
 
-%% @doc Check that `sha-256-chain` correctly produces a hash matching
+%% @doc Check that `sha-256-chain' correctly produces a hash matching
 %% the machine's OpenSSL lib's output. Further (in case of a bug in our
 %% or Erlang's usage of OpenSSL), check that the output has at least has
 %% a high level of entropy.

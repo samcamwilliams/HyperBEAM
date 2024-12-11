@@ -1,12 +1,13 @@
+%%% @doc The identity device: Simply return a key from the message as it is found
+%%% in the message's underlying Erlang map. Private keys (`priv[.*]') are 
+%%% not included.
 -module(dev_message).
 -export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
 -export([set/3, remove/2, get/2, get/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% The identity device: Simply return a key from the message as it is found
-%%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
-%%% not included.
+
 
 %% The list of keys that are exported by this device.
 -define(DEVICE_KEYS, [path, id, unsigned_id, signers, keys, get, set, remove]).
@@ -29,7 +30,7 @@ id(M) ->
     ?event({generated_id, {id, ID}, {msg, M}}),
     {ok, ID}.
 
-%% @doc Wrap a call to the `hb_util:id/2` function, which returns the
+%% @doc Wrap a call to the `hb_util:id/2' function, which returns the
 %% unsigned ID of a message.
 unsigned_id(M) ->
     {ok, raw_id(M, unsigned)}.
@@ -141,7 +142,7 @@ get(Key, Msg, _Msg2) ->
 
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 
 %% implement a case-insensitive key lookup rather than delegating to
-%% `maps:get/2`. Encode the key to a binary if it is not already.
+%% `maps:get/2'. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
 	{ok, Keys} = keys(Msg),
 	%?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
