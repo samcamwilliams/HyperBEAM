@@ -1,6 +1,6 @@
 -module(hb_beamr).
--export([start/1, call/3, call/4, call/5, stop/1, test/0]).
--export([serialize/1, deserialize/2, stub_stdlib/6]).
+-export([start/1, call/3, call/4, call/5, call/6, stop/1, test/0]).
+-export([serialize/1, deserialize/2, stub_stdlib/7]).
 % Exports for testing from other modules.
 -export([gen_test_aos_msg/1, gen_test_env/0, test_call/3, test_call/4]).
 
@@ -37,22 +37,24 @@ stop(Port) ->
     ok.
 
 call(Port, FunctionName, Args) ->
-    call(Port, FunctionName, Args, fun stub_stdlib/6).
+    call(Port, FunctionName, Args, fun stub_stdlib/7).
 call(Port, FunctionName, Args, Stdlib) ->
     {ResType, Res, _} = call(#{ stdout => [] }, Port, FunctionName, Args, Stdlib),
     {ResType, Res}.
-call(S, Port, FunctionName, Args, ImportFunc) ->
-    ?event({call_started, Port, FunctionName, Args, ImportFunc}),
+call(S, Port, FunctionName, Args, ImportFuncs) ->
+    call(S, Port, FunctionName, Args, ImportFuncs, #{}).
+call(S, Port, FunctionName, Args, ImportFuncs, Opts) ->
+    ?event({call_started, Port, FunctionName, Args, ImportFuncs}),
     ?event({call, FunctionName, Args}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     ?event({waiting_for_call_result, self(), Port}),
-    exec_call(S, ImportFunc, Port).
+    exec_call(S, ImportFuncs, Port, Opts).
 
-stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature) ->
+stub_stdlib(S, _Port, _Module, _Func, _Args, _Signature, _Opts) ->
     ?event(stub_stdlib_called),
     {S, [0]}.
 
-exec_call(S, ImportFunc, Port) ->
+exec_call(S, ImportFuncs, Port, Opts) ->
     receive
         {execution_result, Result} ->
             ?event({call_result, Result}),
@@ -60,10 +62,10 @@ exec_call(S, ImportFunc, Port) ->
         {import, Module, Func, Args, Signature} ->
             ?event({import_called, Module, Func, Args, Signature}),
             try
-                {S2, ErlRes} = ImportFunc(S, Port, Module, Func, Args, Signature),
+                {S2, ErlRes} = ImportFuncs(S, Port, Module, Func, Args, Signature),
                 ?event({import_returned, Module, Func, Args, ErlRes}),
                 Port ! {self(), {command, term_to_binary({import_response, ErlRes})}},
-                exec_call(S2, ImportFunc, Port)
+                exec_call(S2, ImportFuncs, Port, Opts)
             catch
                 Err:Reason:Stack ->
                     ?event({import_error, Err, Reason, Stack}),

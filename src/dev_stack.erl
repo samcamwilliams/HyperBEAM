@@ -250,7 +250,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 						Message2,
 						DevNum + 1,
 						Opts,
-						{unexpected_pam_result, Unexpected}
+						{unexpected_result, Unexpected}
 					)
 			end;
 		not_found ->

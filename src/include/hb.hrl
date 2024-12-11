@@ -1,7 +1,7 @@
 -include("include/ar.hrl").
 
 %% @doc A macro for checking if a message is empty, ignoring its hashpath.
--define(IS_EMPTY_MESSAGE(Msg), (map_size(Msg) == 1 andalso is_map_key(hashpath, Msg))).
+-define(IS_EMPTY_MESSAGE(Msg), (map_size(Msg) == 0) orelse (map_size(Msg) == 1 andalso is_map_key(hashpath, Msg))).
 
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
@@ -18,7 +18,8 @@
 -define(p(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module.
--define(trace(), hb_util:trace_macro_helper(catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(trace(), hb_util:trace_macro_helper(fun hb_util:print_trace/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(trace_short(), hb_util:trace_macro_helper(fun hb_util:print_trace_short/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 
 -record(result, {
     messages = [],
