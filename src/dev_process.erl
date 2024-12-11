@@ -56,7 +56,7 @@ init(Msg1, Msg2, Opts) ->
 %% result. If it is not present, we should compute the result and cache it.
 compute(Msg1, Msg2, Opts) ->
     {ok, Initialized} =
-        case hb_converge:get_as(dev_message, <<"Initialized">>, Msg1, Opts) of
+        case hb_converge:get(<<"Initialized">>, {as, dev_message, Msg1}, Opts) of
             not_found ->
                 init(Msg1, Msg2, Opts);
             Result ->
@@ -72,24 +72,22 @@ compute(Msg1, Msg2, Opts) ->
 %% the device found at `Key`. After execution, the device is swapped back
 %% to the original device.
 run_as(Key, Msg1, Msg2, Opts) ->
-    BaseDevice = hb_converge:get_as(dev_message, <<"Device">>, Msg1, Opts),
+    BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),
     ?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     PreparedMsg =
         hb_converge:set(
             Msg1,
             #{
                 device => 
-                    DeviceSet = hb_converge:get_as(
-                        dev_message,
+                    DeviceSet = hb_converge:get(
                         Key,
-                        Msg1,
+                        {as, dev_message, Msg1},
                         Opts
                     ),
                 <<"Process">> =>
-                    case hb_converge:get_as(
-                        dev_message,
+                    case hb_converge:get(
                         <<"Process">>,
-                        Msg1,
+                        {as, dev_message, Msg1},
                         Opts#{ hashpath => ignore }
                     ) of
                         not_found ->

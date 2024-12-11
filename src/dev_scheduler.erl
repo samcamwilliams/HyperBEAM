@@ -133,9 +133,13 @@ post_schedule(Msg1, Msg2, Opts) ->
     end.
 
 %% @doc Returns information about the current slot for a process.
-slot(M1, _M2, _Opts) ->
+slot(M1, _M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
-    Proc = hb_converge:get_as(dev_message, process, M1, #{ hashpath => ignore }),
+    Proc = hb_converge:get(
+        process,
+        {as, dev_message, M1},
+        Opts#{ hashpath => ignore }
+    ),
     ProcID = hb_converge:get(id, Proc),
     ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
@@ -151,15 +155,19 @@ slot(M1, _M2, _Opts) ->
     }}.
 
 get_schedule(Msg1, Msg2, Opts) ->
-    Proc = hb_converge:get_as(dev_message, process, Msg1, #{ hashpath => ignore }),
+    Proc = hb_converge:get(
+        process,
+        {as, dev_message, Msg1},
+        Opts#{ hashpath => ignore }
+    ),
     ProcID = hb_converge:get(id, Proc),
     From =
-        case hb_converge:get_default(from, Msg2, not_found, Opts) of
+        case hb_converge:get(from, Msg2, not_found, Opts) of
             not_found -> 0;
             FromRes -> FromRes
         end,
     To =
-        case hb_converge:get_default(to, Msg2, not_found, Opts) of
+        case hb_converge:get(to, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
                 dev_scheduler_server:get_current_slot(
@@ -206,7 +214,8 @@ assignments_message([], Bundle, _Opts) ->
 assignments_message([Assignment | Assignments], Bundle, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     Slot = hb_converge:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
-    MessageID = hb_converge:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
+    MessageID =
+        hb_converge:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
     {ok, MessageTX} = hb_cache:read_message(Store, MessageID),
     Message = hb_message:tx_to_message(MessageTX),
     ?event(

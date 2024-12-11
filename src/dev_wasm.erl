@@ -1,11 +1,35 @@
 -module(dev_wasm).
--export([init/3, execute/3, terminate/3]).
+-export([init/3, computed/3, terminate/3]).
 -export([checkpoint/3, checkpoint_uses/3]).
 -include("include/hb.hrl").
 
-%%% A device that executes a WASM image on messages using the Memory-64 preview
-%%% standard. In the backend, this device uses `beamr`: An Erlang wrapper for
-%%% WAMR, the WebAssembly Micro Runtime.
+%%% @moduledoc A device that executes a WASM image on messages using the Memory-64 
+%%% preview standard. In the backend, this device uses `beamr`: An Erlang wrapper 
+%%% for WAMR, the WebAssembly Micro Runtime.
+%%% 
+%%% The device has the following requirements and interface:
+%%% 
+%%%     M1/Init ->
+%%%         Assumes:
+%%%             M1/Process
+%%%             M1/Process/Image
+%%%         Generates:
+%%%             /priv/WASM/Port
+%%%             /priv/WASM/Handler
+%%%             /priv/WASM/Invoke-stdlib
+%%%         Side-effects:
+%%%             Creates a WASM executor loaded in memory of the HyperBEAM node.
+%%% 
+%%%     M1/Computed ->
+%%%         Assumes:
+%%%             M1/priv/WASM/Port
+%%%             M1/Process
+%%%             M2/Message
+%%%         Generates:
+%%%             /Results/WASM/Type
+%%%             /Results/WASM/Body
+%%%         Side-effects:
+%%%             Calls the WASM executor with the message and process.
 
 %% @doc Boot a WASM image on the image stated in the `Process/Image` field of
 %% the message.
@@ -42,11 +66,11 @@ init(M1, _M2, Opts) ->
 
 %% @doc Call the WASM executor with a message that has been prepared by a prior
 %% pass.
-execute(M1, _M2, Opts) ->
+computed(M1, _M2, Opts) ->
     case hb_converge:get(pass, M1, Opts) of
         1 ->
-            % Extract the WASM port, func, params, and standard library invokation
-            % from the message and apply them with the WASM executor.
+            % Extract the WASM port, func, params, and standard library
+            % invokation from the message and apply them with the WASM executor.
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
                     M1,
@@ -60,7 +84,7 @@ execute(M1, _M2, Opts) ->
                 hb_converge:set(MsgAfterExecution,
                     #{
                         <<"Results/WASM/Type">> => ResType,
-                        <<"Results/WASM/Value">> => Res
+                        <<"Results/WASM/Body">> => Res
                     }
                 )
             };
@@ -100,27 +124,44 @@ terminate(M1, _M2, Opts) ->
     )}.
 
 %% @doc Handle standard library calls by looking up the function in the
-%% message and calling it.
+%% message and calling it. Calls the stub function if the function is not
+%% found in the message.
 invoke_stdlib(M1, Port, ModName, FuncName, Args, Sig, Opts) ->
-    Library =
+    MaybeFunc =
         hb_converge:get(
             <<"priv/WASM/stdlib/", ModName/bitstring, "/", FuncName/bitstring>>,
             M1,
-            hb_converge:get(<<"priv/WASM/Opts">>, M1, #{ hashpath => ignore })
+            Opts
         ),
-    case maps:get({ModName, FuncName}, Library, undefined) of
-        undefined ->
+    case MaybeFunc of
+        not_found ->
             lib(M1, Port, Args, ModName, FuncName, Sig, Opts);
         Func ->
             {arity, Arity} = erlang:fun_info(Func, arity),
             ApplicationTerms =
                 lists:sublist(
-                    [S, Port, Args, ModName, FuncName, Sig, Opts],
+                    [M1, Port, Args, ModName, FuncName, Sig, Opts],
                     Arity
                 ),
             erlang:apply(Func, ApplicationTerms)
     end.
 
+%% @doc Log the call to the standard library as an event, and write the
+%% call details into the message.
 lib(M1, _Port, Args, Module, Func, Signature, _Opts) ->
     ?event({unimplemented_dev_wasm_call, Module, Func, Args, Signature}),
+    M3 = hb_converge:set(
+        M1,
+        #{<<"Results/WASM/Unimplemented-Calls">> =>
+            [
+                #{
+                    <<"Module">> => Module,
+                    <<"Func">> => Func,
+                    <<"Args">> => Args,
+                    <<"Signature">> => Signature
+                }
+            | hb_converge:get(<<"Results/WASM/Unimplemented-Calls">>, M1, Opts)
+            ]
+        }
+    ),
     {M1, [0]}.

@@ -1,50 +1,85 @@
 -module(hb_converge).
-%%% Main device API:
+%%% Main Converge API:
 -export([resolve/2, resolve/3, load_device/2]).
 -export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
-%%% Shortcuts:
+%%% Shortcuts and tools:
 -export([keys/1, keys/2]).
--export([get/2, get/3, get_default/3, get_default/4, get_as/3, get_as/4]).
--export([set/2, set/3, set/4, remove/2, remove/3]).
+-export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc This module is the root of the device call logic of the 
 %%% Converge Protocol in HyperBEAM.
 %%% 
-%%% At the Converge layer, every device is simply a collection of keys that can be
-%%% resolved in order to yield their values. Each key may return another 
-%%% message or a binary:
+%%% At the implementation level, every message is simply a collection of keys,
+%%% dictated by its `Device`, that can be resolved in order to yield their
+%%% values. Each key may return another message or a raw value:
 %%% 
-%%% 	resolve(Message1, Message2) -> {Status, Message3}
+%%% 	Message1:Device(Message1, Message2) -> {Status, Message3}
 %%% 
-%%% See `docs/converge-protocol.md` for more information about Converge.
+%%% After each output, the `HashPath` is updated to include the `Message2`
+%%% that was executed upon it.
 %%% 
-%%% When a device key is called, it is passed the `Message1` (likely its state),
-%%% as well as the message to 'apply' to it. It must return a tuple of the
-%%% form {Status, NewMessage}, where Status is either ok or error, and 
-%%% NewMessage is either a new message or a binary.
+%%% Because each message contains implies a device that can resolve its keys,
+%%% you can see Converge Protocol as a system for cryptographically chaining 
+%%% the execution of `combinators`. See `docs/converge-protocol.md` for more 
+%%% information about Converge.
 %%% 
-%%% The key to resolve is typically specified by the `Path` field of the 
-%%% message.
+%%% You will see this pattern repeated throughout the HyperBEAM codebase,
+%%% sometimes with `MessageX` replaced with `MX` or `MsgX` for brevity.
 %%% 
-%%% In the HyperBEAM implementation (this module), `Message1` can be replaced
-%%% a function name to execute for ease of development with Converge. In this 
-%%% case, the function name is cast to an unsigned message with the `Path` set
-%%% to the given name.
+%%% To resolve a key, the device is called with `Message1` (likely its 
+%%% state), as well as the message to 'apply' to it. It must return a tuple of
+%%% the form {Status, Message3}, where Status is either ok or error, and 
+%%% Message3 is either a new message or a raw output value (a binary, integer,
+%%% float, atom, or list of such values). The key to resolve is specified by 
+%%% the `Path` field of the message.
 %%% 
 %%% Devices can be expressed as either modules or maps. They can also be 
 %%% referenced by an Arweave ID, which can be used to load a device from 
 %%% the network (depending on the value of the `load_remote_devices` and 
 %%% `trusted_device_signers` environment settings).
 %%% 
-%%% Resolution options:
+%%% Device interface:
+%%%     DevMod:ExportedFunc : Key resolution functions. All are assumed to be
+%%%                           device keys (thus, present in every message that
+%%%                           uses it) unless specified by `DevMod:info()`.
+%%%                           Each function takes a set of parameters
+%%%                           of the form `DevMod:KeyHandler(Msg1, Msg2, Opts)`.
+%%%                           Each of these arguments can be ommitted if not
+%%%                           needed. Non-exported functions are not assumed
+%%%                           to be device keys.
+%%%
+%%%     DevMod:info : Optional. Returns a map of options for the device. All 
+%%%                   options are optional and assumed to be the defaults if 
+%%%                   not specified. This function can accept a `Message1` as 
+%%%                   an argument, allowing it to specify its functionality 
+%%%                   based on a specific message if appropriate.
 %%% 
-%%% `update_hashpath`: Whether to add the `Msg2` to `HashPath` for the `Msg3`.
+%%%     info/exports : Overrides the export list of the Erlang module, such that
+%%%                   only the functions in this list are assumed to be device
+%%%                   keys. Defaults to all of the functions that DevMod 
+%%%                   exports in the Erlang environment.
+%%% 
+%%%     info/handler : A function that should be used to handle _all_ keys for 
+%%%                    messages using the device.
+%%% 
+%%%     info/default : A function that should be used to handle all keys that
+%%%                    are not explicitly implemented by the device. Defaults to
+%%%                    the `dev_message` device, which contains general keys for 
+%%%                    interacting with messages.
+%%% 
+%%%     info/default_mod : A different device module that should be used to
+%%%                        handle all keys that are not explicitly implemented
+%%%                        by the device. Defaults to the `dev_message` device.
+%%% 
+%%% Runtime resolution options:
+%%% 
+%%% `update_hashpath`:  Whether to add the `Msg2` to `HashPath` for the `Msg3`.
 %%% 					Default: true.
-%%% `cache_results`:   Whether to cache the resolved `Msg3`.
+%%% `cache_results`:    Whether to cache the resolved `Msg3`.
 %%% 					Default: true.
-%%% `add_key`:         Whether to add the key to the start of the arguments.
+%%% `add_key`:          Whether to add the key to the start of the arguments.
 %%% 					Default: <not set>.
 %%% 
 %%% In general, all of these options are dangerous. Don't use them unless you
@@ -195,35 +230,28 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 			resolve(Msg3, NextMsg, Opts)
 	end.
 
-%% @doc Shortcut for resolving a key in a message without its
-%% status if it is `ok`. This makes it easier to write complex
-%% logic on top of messages while maintaining a functional style.
+%% @doc Shortcut for resolving a key in a message without its status if it is
+%% `ok`. This makes it easier to write complex logic on top of messages while
+%% maintaining a functional style.
+%% 
+%% Additionally, this function supports the `{as, Device, Msg}` syntax, which
+%% allows the key to be resolved using another device to resolve the key,
+%% while maintaining the tracability of the `HashPath` of the output message.
+%% 
+%% Returns the value of the key if it is found, otherwise returns the default
+%% provided by the user, or `not_found` if no default is provided.
 get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->
+    get(Path, Msg, not_found, Opts).
+get(Path, {as, Device, Msg}, Default, Opts) ->
+    get(Path, set(Msg, #{ device => Device }), Default, Opts);
+get(Path, Msg, Default, Opts) ->
 	%?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
 	case resolve(Msg, #{ path => Path }, Opts) of
 		{ok, Value} -> Value;
-		{error, _} -> not_found
+		{error, _} -> Default
 	end.
-
-%% @doc Get the value of a key from a message, using another device to resolve
-%% the key. Makes sure to set the device using `set/3` so that the `HashPath`
-%% tracability is correctly maintained.
-get_as(Device, Path, Msg) ->
-    get_as(Device, Path, Msg, #{}).
-get_as(Device, Path, Msg, Opts) ->
-    get(Path, set(Msg, #{ device => Device }), Opts).
-
-%% @doc Get the value of a key from a message, returning a default value if the
-%% key is not found.
-get_default(Key, Msg, Default) ->
-    get_default(Msg, Key, Default, #{}).
-get_default(Key, Msg, Default, Opts) ->
-    case resolve(Msg, Key, Opts) of
-        {ok, Value} -> Value;
-        {error, _} -> Default
-    end.
 
 %% @doc Shortcut to get the list of keys from a message.
 keys(Msg) -> keys(Msg, #{}).
@@ -460,7 +488,15 @@ find_exported_function(Mod, Key, Arity, Opts) ->
 					not_found
 			end;
 		false ->
-			%?event({find_exported_function_result, {mod, Mod}, {key, Key}, {arity, Arity}, {result, false}}),
+			%?event(
+            %     {
+            %         find_exported_function_result,
+            %         {mod, Mod},
+            %         {key, Key},
+            %         {arity, Arity},
+            %         {result, false}
+            %     }
+            % ),
 			find_exported_function(Mod, Key, Arity - 1, Opts)
 	end.
 
@@ -526,7 +562,11 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 					case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
 						<<"BEAM/", RelBin/bitstring>> ->
 							{_, ModNameBin} =
-								lists:keyfind(<<"Module-Name">>, 1, Msg#tx.tags),
+								lists:keyfind(
+                                    <<"Module-Name">>,
+                                    1,
+                                    Msg#tx.tags
+                                ),
 							ModName = list_to_atom(binary_to_list(ModNameBin)),
 							case erlang:load_module(ModName, Msg#tx.data) of
 								{module, _} -> {ok, ModName};
@@ -581,11 +621,20 @@ key_from_id_device_test() ->
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a)).
 
 keys_from_id_device_test() ->
-    ?assertEqual({ok, [a]}, hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys)).
+    ?assertEqual(
+        {ok, [a]},
+        hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys)
+    ).
 
 path_test() ->
-    ?assertEqual({ok, [test_path]}, hb_converge:resolve(#{ path => [test_path] }, path)),
-    ?assertEqual({ok, [a]}, hb_converge:resolve(#{ <<"Path">> => [a] }, <<"Path">>)).
+    ?assertEqual(
+        {ok, [test_path]},
+        hb_converge:resolve(#{ path => [test_path] }, path)
+    ),
+    ?assertEqual(
+        {ok, [a]},
+        hb_converge:resolve(#{ <<"Path">> => [a] }, <<"Path">>)
+    ).
 
 key_to_binary_test() ->
     ?assertEqual(<<"a">>, hb_converge:key_to_binary(a)),
@@ -593,8 +642,14 @@ key_to_binary_test() ->
     ?assertEqual(<<"a">>, hb_converge:key_to_binary("a")).
 
 resolve_binary_key_test() ->
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, <<"a">>)),
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)).
+    ?assertEqual(
+        {ok, 1},
+        hb_converge:resolve(#{ a => 1 }, <<"a">>)
+    ),
+    ?assertEqual(
+        {ok, 1},
+        hb_converge:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)
+    ).
 
 %% @doc Generates a test device with three keys, each of which uses
 %% progressively more of the arguments that can be passed to a device key.
@@ -762,7 +817,7 @@ get_as_with_device_test() ->
     ),
     ?assertEqual(
         <<"ACTUAL VALUE">>,
-        hb_converge:get_as(dev_message, test_key, Msg)
+        hb_converge:get(test_key, {as, dev_message, Msg})
     ).
 
 set_with_device_test() ->
@@ -851,4 +906,8 @@ denormalized_device_key_test() ->
 	?assertEqual(dev_test, hb_converge:get(device, Msg)),
 	?assertEqual(dev_test, hb_converge:get(<<"Device">>, Msg)),
 	?assertEqual({module, dev_test},
-		erlang:fun_info(element(2, message_to_fun(Msg, test_func, #{})), module)).
+		erlang:fun_info(
+            element(2, message_to_fun(Msg, test_func, #{})),
+            module
+        )
+    ).
