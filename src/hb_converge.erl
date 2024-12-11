@@ -1,3 +1,43 @@
+%%% @doc This module is the root of the device call logic of the 
+%%% Converge Protocol in HyperBEAM.
+%%% 
+%%% At the Converge layer, every device is simply a collection of keys that can be
+%%% resolved in order to yield their values. Each key may return another 
+%%% message or a binary:
+%%% 
+%%% 	resolve(Message1, Message2) -> {Status, Message3}
+%%% 
+%%% See `docs/converge-protocol.md' for more information about Converge.
+%%% 
+%%% When a device key is called, it is passed the `Message1' (likely its state),
+%%% as well as the message to 'apply' to it. It must return a tuple of the
+%%% form {Status, NewMessage}, where Status is either ok or error, and 
+%%% NewMessage is either a new message or a binary.
+%%% 
+%%% The key to resolve is typically specified by the `Path' field of the 
+%%% message.
+%%% 
+%%% In the HyperBEAM implementation (this module), `Message1' can be replaced
+%%% a function name to execute for ease of development with Converge. In this 
+%%% case, the function name is cast to an unsigned message with the `Path' set
+%%% to the given name.
+%%% 
+%%% Devices can be expressed as either modules or maps. They can also be 
+%%% referenced by an Arweave ID, which can be used to load a device from 
+%%% the network (depending on the value of the `load_remote_devices' and 
+%%% `trusted_device_signers' environment settings).
+%%% 
+%%% Resolution options:
+%%% 
+%%% `update_hashpath': Whether to add the `Msg2' to `HashPath' for the `Msg3'.
+%%% 					Default: true.
+%%% `cache_results':   Whether to cache the resolved `Msg3'.
+%%% 					Default: true.
+%%% `add_key':         Whether to add the key to the start of the arguments.
+%%% 					Default: `<not set>'.
+%%% 
+%%% In general, all of these options are dangerous. Don't use them unless you
+%%% know what you are doing.
 -module(hb_converge).
 %%% Main device API:
 -export([resolve/2, resolve/3, load_device/2]).
@@ -9,54 +49,13 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @moduledoc This module is the root of the device call logic of the 
-%%% Converge Protocol in HyperBEAM.
-%%% 
-%%% At the Converge layer, every device is simply a collection of keys that can be
-%%% resolved in order to yield their values. Each key may return another 
-%%% message or a binary:
-%%% 
-%%% 	resolve(Message1, Message2) -> {Status, Message3}
-%%% 
-%%% See `docs/converge-protocol.md` for more information about Converge.
-%%% 
-%%% When a device key is called, it is passed the `Message1` (likely its state),
-%%% as well as the message to 'apply' to it. It must return a tuple of the
-%%% form {Status, NewMessage}, where Status is either ok or error, and 
-%%% NewMessage is either a new message or a binary.
-%%% 
-%%% The key to resolve is typically specified by the `Path` field of the 
-%%% message.
-%%% 
-%%% In the HyperBEAM implementation (this module), `Message1` can be replaced
-%%% a function name to execute for ease of development with Converge. In this 
-%%% case, the function name is cast to an unsigned message with the `Path` set
-%%% to the given name.
-%%% 
-%%% Devices can be expressed as either modules or maps. They can also be 
-%%% referenced by an Arweave ID, which can be used to load a device from 
-%%% the network (depending on the value of the `load_remote_devices` and 
-%%% `trusted_device_signers` environment settings).
-%%% 
-%%% Resolution options:
-%%% 
-%%% `update_hashpath`: Whether to add the `Msg2` to `HashPath` for the `Msg3`.
-%%% 					Default: true.
-%%% `cache_results`:   Whether to cache the resolved `Msg3`.
-%%% 					Default: true.
-%%% `add_key`:         Whether to add the key to the start of the arguments.
-%%% 					Default: <not set>.
-%%% 
-%%% In general, all of these options are dangerous. Don't use them unless you
-%%% know what you are doing.
-
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, pass a message containing parameters to the call, as
 %% well as options that control the runtime environment. This function returns
-%% the raw result of the device function call: {ok | error, NewMessage}.
+%% the raw result of the device function call: `{ok | error, NewMessage}.'
 %% 
 %% In many cases the device will not implement the key, however, so the default
-%% device is used instead. The default (`dev_message`) simply returns the 
+%% device is used instead. The default (`dev_message') simply returns the 
 %% value associated with the key as it exists in the message's underlying
 %% Erlang map. In this way, devices are able to implement 'special' keys which
 %% do not exist as values in the message's map, while still exposing the 'normal'
@@ -88,7 +87,7 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 			),
 			% Next, add an option to the Opts map to indicate if we should
 			% add the key to the start of the arguments. Note: This option
-			% is used downstream by other devices (like `dev_stack`), so
+			% is used downstream by other devices (like `dev_stack'), so
 			% should be changed with care.
 			{
 				ReturnedFun,
@@ -134,12 +133,12 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 	end.
 
 %% @doc Internal function for handling the result of a device call.
-%% If the result is a binary or something that doesn't have an `ok` status,
+%% If the result is a binary or something that doesn't have an `ok' status,
 %% we return it as is. Otherwise, we need to:
 %% 1. Set the HashPath of the Msg3 we have generated from
 %% the Msg1 we started with.
 %% 2. Pop the first element of the path from Msg2.
-%% 3. Write the result to the cache unless the `cache` option is set to false.
+%% 3. Write the result to the cache unless the `cache' option is set to false.
 %% 4. If there are still elements in the path, we recurse through execution.
 %% If additional elements are included as part of the result, we pass them
 %% through to the caller.
@@ -198,7 +197,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 	end.
 
 %% @doc Shortcut for resolving a key in a message without its
-%% status if it is `ok`. This makes it easier to write complex
+%% status if it is `ok'. This makes it easier to write complex
 %% logic on top of messages while maintaining a functional style.
 get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
@@ -207,7 +206,7 @@ get(Path, Msg, Opts) ->
 	hb_util:ok(resolve(Msg, #{ path => Path }, Opts), Opts).
 
 %% @doc Get the value of a key from a message, using another device to resolve
-%% the key. Makes sure to set the device using `set/3` so that the `HashPath`
+%% the key. Makes sure to set the device using `set/3' so that the `HashPath'
 %% tracability is correctly maintained.
 get_as(Device, Path, Msg) ->
     get_as(Device, Path, Msg, #{}).
@@ -229,9 +228,9 @@ keys(Msg) -> keys(Msg, #{}).
 keys(Msg, Opts) -> get(keys, Msg, Opts).
 
 %% @doc Shortcut for setting a key in the message using its underlying device.
-%% Like the `get/3` function, this function honors the `error_strategy` option.
-%% `set` works with maps and recursive paths while maintaining the appropriate
-%% `HashPath` for each step.
+%% Like the `get/3' function, this function honors the `error_strategy' option.
+%% `set' works with maps and recursive paths while maintaining the appropriate
+%% `HashPath' for each step.
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
 set(Msg1, Msg2, Opts) when is_map(Msg2) ->
@@ -291,10 +290,10 @@ truncate_args(Fun, Args) ->
 %%
 %% This comes in 7 forms:
 %% 1. The message does not specify a device, so we use the default device.
-%% 2. The device has a `handler` key in its `Dev:info()` map, which is a
+%% 2. The device has a `handler' key in its `Dev:info()' map, which is a
 %% function that takes a key and returns a function to handle that key. We pass
 %% the key as an additional argument to this function.
-%% 3. The device has a function of the name `Key`, which should be called
+%% 3. The device has a function of the name `Key', which should be called
 %% directly.
 %% 4. The device does not implement the key, but does have a default handler
 %% for us to call. We pass it the key as an additional argument.
@@ -330,7 +329,7 @@ message_to_fun(Msg, Key, Opts) ->
 			?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
 			case find_exported_function(Dev, Key, 3, Opts) of
 				{ok, Func} ->
-					% Case 3: The device has a function of the name `Key`.
+					% Case 3: The device has a function of the name `Key'.
 					{ok, Func};
 				not_found ->
 					case maps:find(default, Info) of
@@ -363,7 +362,7 @@ message_to_fun(Msg, Key, Opts) ->
 			end
 	end.
 
-%% @doc Parse a handler key given by a device's `info`.
+%% @doc Parse a handler key given by a device's `info'.
 info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
 	{add_key, Handler};
 info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
@@ -439,8 +438,8 @@ find_exported_function(Mod, Key, Arity, Opts) ->
 			find_exported_function(Mod, Key, Arity - 1, Opts)
 	end.
 
-%% @doc Check if a device is guarding a key via its `exports` list. Defaults to
-%% true if the device does not specify an `exports` list. The `info` function is
+%% @doc Check if a device is guarding a key via its `exports' list. Defaults to
+%% true if the device does not specify an `exports' list. The `info' function is
 %% always exported, if it exists.
 is_exported(_, info, _Opts) -> true;
 is_exported(Dev, Key, Opts) ->
@@ -532,7 +531,7 @@ info(DevMod, Msg, Opts) ->
 		not_found -> #{}
 	end.
 
-%% @doc The default runtime options for a message. At the moment the `Message1`
+%% @doc The default runtime options for a message. At the moment the `Message1'
 %% but it is included such that we can modulate the options based on the message
 %% if needed in the future.
 default_runtime_opts(_Msg1) ->
@@ -542,8 +541,8 @@ default_runtime_opts(_Msg1) ->
 
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map. It should also
-%% implement the `set` key, which returns a `Message3` with the values changed
-%% according to the `Message2` passed to it.
+%% implement the `set' key, which returns a `Message3' with the values changed
+%% according to the `Message2' passed to it.
 default_module() -> dev_message.
 
 %%% Tests

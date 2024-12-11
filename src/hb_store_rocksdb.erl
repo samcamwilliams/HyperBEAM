@@ -7,11 +7,11 @@
 %%%      ```
 %%%      local_store =>
 %%%         [{hb_store_rocksdb, #{prefix => "Test2"}}]
-%%%      ```
+%%%      '''
 %%%      The data is stored in two Column Families:
 %%%      1. Default - for raw data (e.g. TX records)
 %%%      2. Meta - for meta information
-%%%         (<<"raw">>/<<"link">>/<<"composite">> or <<"group">>)
+%%%        `(<<"raw">>/<<"link">>/<<"composite">> or <<"group">>)'
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(hb_store_rocksdb).
@@ -185,7 +185,7 @@ type(_Opts, RawKey) ->
 
 %%------------------------------------------------------------------------------
 %% @doc Creates group under the given path
-%%      Creates an entry in the database and stored <<"group">> as a type in
+%%      Creates an entry in the database and stored `<<"group">>' as a type in
 %%      the meta family.
 %% @end
 %%------------------------------------------------------------------------------

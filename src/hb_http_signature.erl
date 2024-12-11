@@ -1,3 +1,13 @@
+%%% @doc This module implements HTTP Message Signatures
+%%% as described in RFC-9421 https://datatracker.ietf.org/doc/html/rfc9421
+%%% TODO: implement the actual signing of the signature-base using the provided key
+
+%%%
+%%% Ideal API
+%%% authority(ComponentIdentifiers, Params) -> Authority
+%%%
+%%% sign(Authority, Req, Res) -> {ok, {SigName, SigInput, Sig}
+%%% verify(Authority, SigName, Msg) -> {ok}
 -module(hb_http_signature).
 
 -export([authority/3, sign/2, sign/3]).
@@ -28,7 +38,7 @@
 	{binary(), integer() | boolean() | {string | token | binary, binary()}}
 }.
 
-%%% @doc a map that contains signature parameters metadata as described
+%%% A map that contains signature parameters metadata as described
 %%% in https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 %%%
 %%% All values are optional, but in our use-case "alg" and "keyid" will
@@ -44,7 +54,7 @@
 %%% }
 -type signature_params() :: #{atom() | binary() | string() => binary() | integer()}.
 
-%%% @doc The state encapsulated as the "Authority".
+%%% The state encapsulated as the "Authority".
 %%% It includes an ordered list of parsed component identifiers, used for extracting values
 %%% from the Request/Response Message Context, as well as the signature parameters
 %%% used when creating the signature and encode in the signature base.
@@ -69,18 +79,6 @@
 	sig_params => signature_params(),
 	key => binary()
 }.
-
-%%% @moduledoc This module implements HTTP Message Signatures
-%%% as described in RFC-9421 https://datatracker.ietf.org/doc/html/rfc9421
-%%% TODO: implement the actual signing of the signature-base using the provided key
-
-%%%
-%%% Ideal API
-%%% authority(ComponentIdentifiers, Params) -> Authority
-%%%
-%%% sign(Authority, Req, Res) -> {ok, {SigName, SigInput, Sig}
-%%% verify(Authority, SigName, Msg) -> {ok}
-%%%
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(

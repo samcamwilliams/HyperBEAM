@@ -1,3 +1,4 @@
+%% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
 -export([id/1, id/2, native_id/1, human_id/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
@@ -13,10 +14,10 @@
 -export([ok/1, ok/2]).
 -include("include/hb.hrl").
 
-%%% @moduledoc A collection of utility functions for building with HyperBEAM.
 
-%% @doc Unwrap a tuple of the form `{ok, Value}`, or throw/return, depending on
-%% the value of the `error_strategy` option.
+
+%% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
+%% the value of the `error_strategy' option.
 ok(Value) -> ok(Value, #{}).
 ok({ok, Value}, _Opts) -> Value;
 ok(Other, Opts) ->
@@ -26,7 +27,7 @@ ok(Other, Opts) ->
 	end.
 
 %% @doc Return the human-readable form of an ID of a message when given either
-%% a message explicitly, raw encoded ID, or an Erlang Arweave `tx` record.
+%% a message explicitly, raw encoded ID, or an Erlang Arweave `tx' record.
 id(Item) -> id(Item, unsigned).
 id(TX, Type) when is_record(TX, tx) ->
     encode(ar_bundles:id(TX, Type));
@@ -122,17 +123,14 @@ message_to_numbered_list(Message, Opts) ->
         ),
     lists:sort(KeyValList).
 
-%% @doc Convert a map of numbered elements to a list. We stop at the first
-%% integer key that is not associated with a value.
-
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
 %% as well as a standard map of HyperBEAM runtime options.
 %% 
-%% If `error_strategy` is `throw`, raise an exception if no integer keys are
-%% found. If `error_strategy` is `any`, return `undefined` if no integer keys
-%% are found. By default, the function does not pass a `throw` execution
-%% strategy to `hb_converge:to_key/2`, such that non-integer keys present in the
+%% If `error_strategy' is `throw', raise an exception if no integer keys are
+%% found. If `error_strategy' is `any', return `undefined' if no integer keys
+%% are found. By default, the function does not pass a `throw' execution
+%% strategy to `hb_converge:to_key/2', such that non-integer keys present in the
 %% message will not lead to an exception.
 hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
@@ -187,8 +185,8 @@ remove_common([X|Rest1], [X|Rest2]) ->
 remove_common([$/|Path], _) -> Path;
 remove_common(Rest, _) -> Rest.
 
-%% @doc Throw an exception if the Opts map has an `error_strategy` key with the
-%% value `throw`. Otherwise, return the value.
+%% @doc Throw an exception if the Opts map has an `error_strategy' key with the
+%% value `throw'. Otherwise, return the value.
 maybe_throw(Val, Opts) ->
     case hb_converge:get(error_strategy, Opts) of
         throw -> throw(Val);
@@ -302,7 +300,7 @@ format_binary(Bin) ->
     ).
 
 %% @doc Format a map as either a single line or a multi-line string depending
-%% on the value of the `debug_print_map_line_threshold` runtime option.
+%% on the value of the `debug_print_map_line_threshold' runtime option.
 format_map(Map) -> format_map(Map, 0).
 format_map(Map, Indent) ->
     MaxLen = hb_opts:get(debug_print_map_line_threshold),
@@ -315,7 +313,7 @@ format_map(Map, Indent) ->
 
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module. Prints each stack frame on a new line, until it finds a frame that
-%% does not start with a prefix in the `stack_print_prefixes` hb_opts.
+%% does not start with a prefix in the `stack_print_prefixes' hb_opts.
 %% Optionally, you may call this function with a custom label and caller info,
 %% which will be used instead of the default.
 print_trace(Stack, CallMod, CallFunc, CallLine) ->
@@ -337,9 +335,9 @@ print_trace(Stack, Label, CallerInfo) ->
         ]).
 
 %% @doc Format a stack trace as a list of strings, one for each stack frame.
-%% Each stack frame is formatted if it matches the `stack_print_prefixes`
+%% Each stack frame is formatted if it matches the `stack_print_prefixes'
 %% option. At the first frame that does not match a prefix in the
-%% `stack_print_prefixes` option, the rest of the stack is not formatted.
+%% `stack_print_prefixes' option, the rest of the stack is not formatted.
 format_trace([], _) -> [];
 format_trace([Item|Rest], Prefixes) ->
     case element(1, Item) of
@@ -379,7 +377,7 @@ format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
         1
     ).
 
-%% @doc Utility function to help macro `?trace/0` remove the first frame of the
+%% @doc Utility function to help macro `?trace/0' remove the first frame of the
 %% stack trace.
 trace_macro_helper({_, {_, [_IgnoredFrame|Stack]}}, Mod, Func, Line) ->
     print_trace(Stack, Mod, Func, Line).

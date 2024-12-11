@@ -24,7 +24,7 @@
     {<<"Map-Format">>, <<"List">>}
 ]).
 
-% How many bytes of a binary to print with `print/1`.
+% How many bytes of a binary to print with `print/1'.
 -define(BIN_PRINT, 20).
 -define(INDENT_SPACES, 2).
 
@@ -582,7 +582,7 @@ parse_manifest(Bin) ->
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 -- but it is is written in
-%% little-endian format which is why we encode to <<1, 0>>.
+%% little-endian format which is why we encode to `<<1, 0>>'.
 encode_signature_type({rsa, 65537}) ->
     <<1, 0>>;
 encode_signature_type(_) ->
@@ -738,7 +738,7 @@ maybe_unbundle_map(Bundle) ->
     end.
 
 %% @doc An internal helper for finding an item in a single-layer of a bundle.
-%% Does not recurse! You probably want `find/2` in most cases.
+%% Does not recurse! You probably want `find/2' in most cases.
 find_single_layer(UnsignedID, TX) when is_record(TX, tx) ->
     find_single_layer(UnsignedID, TX#tx.data);
 find_single_layer(UnsignedID, Items) ->
@@ -862,7 +862,7 @@ json_struct_to_item(RawTXStruct) ->
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
-%% little-endian format which is why we match on <<1, 0>>.
+%% little-endian format which is why we match on `<<1, 0>>'.
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(Other) ->

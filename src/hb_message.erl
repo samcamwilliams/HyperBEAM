@@ -1,3 +1,12 @@
+
+%%% @doc This module acts an adapter between messages, as modeled in the
+%%% Converge Protocol, and their uderlying binary representations.
+%%% See `docs/converge-protocol.md' for details on Converge. Unless you are
+%%% implementing a new message serialization format, you should not need to 
+%%% interact with this module directly. Instead, use the `hb_converge'
+%%% interfaces to interact with all messages. The `dev_message' module
+%%% implements a device interface for handling messages as the default Converge
+%%% device.
 -module(hb_message).
 -export([load/2, sign/2, verify/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
@@ -7,19 +16,10 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @moduledoc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol, and their underlying binary representations.
-%%% See `docs/converge-protocol.md` for details on Converge. Unless you are
-%%% implementing a new message serialization format, you should not need to 
-%%% interact with this module directly. Instead, use the `hb_converge`
-%%% interfaces to interact with all messages. The `dev_message` module
-%%% implements a device interface for handling messages as the default Converge
-%%% device.
-
-%% @doc The size at which a value should be made into a body item, instead of a
+%% The size at which a value should be made into a body item, instead of a
 %% tag.
 -define(MAX_TAG_VAL, 128).
-%% @doc The list of TX fields that users can set directly.
+%% The list of TX fields that users can set directly.
 -define(TX_KEYS,
     [id, unsigned_id, last_tx, owner, target, signature]).
 -define(FILTERED_TAGS,
