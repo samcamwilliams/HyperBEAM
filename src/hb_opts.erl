@@ -100,7 +100,7 @@ config() ->
         client_error_strategy => throw,
         % Dev options
         local_store =>
-            [{hb_store_fs, #{ prefix => "TEST-data" }}],
+            [{hb_store_rocksdb, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
