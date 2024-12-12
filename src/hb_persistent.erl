@@ -1,60 +1,13 @@
--module(hb_process).
+-module(hb_persistent).
 -export([start/1, start/2, result/4]).
 -export([run/1, run/2, run/3]).
 -include("include/hb.hrl").
 -hb_debug(print).
 
-%%% This module implements the core AO process execution logic, built around
-%%% Hyperbeam's devices. It persists messages between executions, keeping
-%%% the state of the process in memory or cached to disk as needed.
-%%%
-%%% An AO process is a specific type of Arweave message executable by
-%%% Hyperbeam, typically containing a stack of devices. Each AO process runs as
-%%% an Erlang process consuming messages from -- and placing items into -- its
-%%% schedule. This schedule is executed sequentially across the stack of
-%%% devices to calculate the process's state and results.
-%%%
-%%% Components in a process's stack may return either `ok` or `pass` as their
-%%% output. In the case of `ok`, the process will continue to the next device
-%%% in its stack, or begin to process the next message in its schedule. In the
-%%% case of `pass`, the process will start again from the first device in its
-%%% stack, with the state transitions from the device executions thus far will
-%%% be persisted and the `pass` count in the state incremented.
-%%%
-%%% The core components of this framework are:
-%%%
-%%% start(ProcMsg, Schedule) -> ErlangProcessID
-%%%
-%%% Device:init(Params, State) -> {ok, State}
-%%%
-%%% DeviceMod:execute(Message, State) ->
-%%% 	{ok, State}
-%%% 		| {break, State}
-%%% 		| {pass, State}
-%%% 		| {stop, Reason, State}
-%%%
-%%% This architecture also allows for parralelization of device execution.
-%%% Each device can expose a `DevMod:uses()` function that returns a list of
-%%% state components that it employs in its execution:
-%%%
-%%% DeviceMod:uses() ->
-%%% 	all |
-%%% 	[StateComponentNameAtom | {StateComponentNameAtom, read | write }]
-%%%
-%%% When no specifier is given, it is assumed that the device will read from
-%%% and write to the given state key. When no `DeviceMod:uses()` function is
-%%% provided, it is assumed that the device will read and write to all state
-%%% components (as with the `all` specifier).
-%%%
-%%% An example process may look something like this:
-%%%     Device: Scheduler
-%%%     Location: [SchedulerAddress]
-%%%     Device: Dedup
-%%%     Variant: 1.0
-%%%     Device: JSON-Interface
-%%%     Variant: wasm64-aos
-%%%     Device: wasm
-%%%     Variant: wasm64-wasi_preview1-unknown
+%%% @moduledoc This module implements an Erlang process structure for
+%%% long-lived executions (like AO processes) in Hyperbeam. It persists
+%%% messages between executions, keeping a message in memory, or caching to
+%%% disk as needed.
 
 %%% The default frequency for checkpointing is 2 slots.
 -define(DEFAULT_FREQ, 10).
@@ -81,7 +34,7 @@ result(RawProcID, RawMsgRef, Store, Wallet) ->
                         hb_util:id(ProcID)
                     ),
                     await_results(
-                        hb_process:run(
+                        run(
                             Proc,
                             #{
                                 to => MsgRef,

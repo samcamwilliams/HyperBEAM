@@ -39,11 +39,11 @@ info(_Msg1, _Opts) ->
         exports => [compute, schedule, slot]
     }.
 
-%% Wraps the schedule function in the Scheduler device.
+%% @doc Wraps the schedule function in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
-%% Wraps the slot function in the Scheduler device.
+%% @doc Wraps the slot function in the Scheduler device.
 slot(Msg1, Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 

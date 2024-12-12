@@ -148,7 +148,7 @@ invoke_stdlib(M1, Port, ModName, FuncName, Args, Sig, Opts) ->
 
 %% @doc Log the call to the standard library as an event, and write the
 %% call details into the message.
-lib(M1, _Port, Args, Module, Func, Signature, _Opts) ->
+lib(M1, _Port, Args, Module, Func, Signature, Opts) ->
     ?event({unimplemented_dev_wasm_call, Module, Func, Args, Signature}),
     M3 = hb_converge:set(
         M1,
@@ -164,4 +164,4 @@ lib(M1, _Port, Args, Module, Func, Signature, _Opts) ->
             ]
         }
     ),
-    {M1, [0]}.
+    {M3, [0]}.

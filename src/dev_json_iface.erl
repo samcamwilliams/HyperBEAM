@@ -1,5 +1,5 @@
 -module(dev_json_iface).
--export([computed/3, stdlib/6, lib/6]).
+-export([computed/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -38,8 +38,8 @@
 %%%             M2/Results
 %%%             M2/Process
 %%%         Generates:
-%%%             /Outbox
-%%%             /Data
+%%%             /Results/Outbox
+%%%             /Results/Data
 
 %% @doc On first pass prepare the call, on second pass get the results.
 computed(M1, M2, Opts) ->
@@ -144,7 +144,7 @@ results(M1, M2, Opts) ->
                                     {MessageNum, Msg} <-
                                         lists:zip(lists:seq(1, length(Messages)), Messages)
                                 ],
-                            <<"Results/Body">> => Data
+                            <<"Results/Data">> => Data
                         },
                         Opts
                     )
@@ -175,13 +175,7 @@ postProcessResultMessages(Msg, Proc) ->
     hb_converge:set(
         FilteredMsg,
         #{
-            <<"Tags">> =>
-                [
-                    #{<<"name">> => <<"From-Process">>, <<"value">> => hb_util:id(Proc, signed)},
-                    #{
-                        <<"name">> => <<"From-Image">>,
-                        <<"value">> => element(2, lists:keyfind(<<"Image">>, 1, Proc#tx.tags))
-                    }
-                ]
+            <<"From-Process">> => hb_util:id(Proc, signed),
+            <<"From-Image">> => element(2, lists:keyfind(<<"Image">>, 1, Proc#tx.tags))
         }
     ).

@@ -5,7 +5,7 @@
 -export([schedule/3]).
 %%% CU-flow functions:
 -export([slot/3, status/3]).
--export([start/0, init/3, end_of_schedule/1, checkpoint/1]).
+-export([start/0, init/3, end_of_schedule/3, checkpoint/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -247,27 +247,37 @@ assignments_message([Assignment | Assignments], Bundle, Opts) ->
 
 %% @doc Initializes the scheduler state.
 init(M1, M2, Opts) ->
-    {ok, M3} = hb_converge:resolve(
-        hb_converge:set(M1, #{ device => dev_message }),
-        M2,
-        Opts
-    ),
-    update_schedule(M3#{su_location => M2}).
+    update_schedule(M1, M2, Opts).
 
 %% @doc Updates the schedule for a process.
-end_of_schedule(State) -> update_schedule(State).
+end_of_schedule(M1, M2, Opts) -> update_schedule(M1, M2, Opts).
 
-%% @doc Abstracted function for updating the schedule for a process.
-update_schedule(State = #{ process := Proc }) ->
-    Store = maps:get(store, State, hb_opts:get(store)),
-    CurrentSlot = maps:get(slot, State, 0),
-    ToSlot = maps:get(to, State),
+%% @doc Abstracted function for updating the schedule for a process the current
+%% schedule is in the `/priv/Scheduler/*` private map.
+update_schedule(M1, M2, Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    Proc = hb_converge:get(process, M1, Opts),
+    CurrentSlot =
+        hb_converge:get(
+            <<"Current-Slot">>,
+            M1,
+            Opts,
+            0
+        ),
+    ToSlot =
+        hb_converge:get(
+            <<"Slot">>,
+            M2,
+            Opts,
+            undefined
+        ),
     ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),
-    Assignments = hb_client:get_assignments(
-        hb_util:id(Proc, signed),
-        CurrentSlot,
-        ToSlot
-    ),
+    Assignments =
+        hb_client:get_assignments(
+            hb_util:id(Proc, signed),
+            CurrentSlot,
+            ToSlot
+        ),
     ?event({got_assignments_from_su,
         [
             {
@@ -275,7 +285,9 @@ update_schedule(State = #{ process := Proc }) ->
                 hb_util:id(A, signed),
                 hb_util:id(A, unsigned)
             }
-        || A <- Assignments ]}),
+        ||
+            A <- Assignments
+        ]}),
     lists:foreach(
         fun(Assignment) ->
             ?event(
@@ -287,7 +299,7 @@ update_schedule(State = #{ process := Proc }) ->
         end,
         Assignments
     ),
-    State#{schedule => Assignments}.
+    {ok, hb_private:set(M1, <<"Schedule">>, Assignments)}.
 
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.
@@ -307,7 +319,7 @@ test_process() ->
             <<"Device-Stack">> => [dev_cron, dev_wasm, dev_poda],
             <<"Image">> => <<"wasm-image-id">>,
             <<"Type">> => <<"Process">>,
-            <<"Exciting-Random-Number">> => rand:uniform(1337)
+            <<"Test-Key-Random-Number">> => rand:uniform(1337)
         }
     }.
 
@@ -354,7 +366,7 @@ schedule_message_and_get_slot_test() ->
         <<"Message">> =>
             #{
                 <<"Type">> => <<"Message">>,
-                <<"Exciting">> => <<"true">>
+                <<"Test-Key">> => <<"true">>
             }
     },
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
@@ -379,7 +391,7 @@ get_schedule_test() ->
         <<"Message">> =>
             #{
                 <<"Type">> => <<"Message">>,
-                <<"Exciting">> => <<"Reasonably">>
+                <<"Test-Key">> => <<"Test-Val">>
             }
     },
     Msg3 = #{
@@ -388,7 +400,7 @@ get_schedule_test() ->
         <<"Message">> =>
             #{
                 <<"Type">> => <<"Message">>,
-                <<"Exciting">> => <<"Getting old.">>
+                <<"Test-Key">> => <<"Test-Val-2">>
             }
     },
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
@@ -400,3 +412,16 @@ get_schedule_test() ->
             path => <<"Schedule">>
         }))
     ).
+
+update_schedule_test() ->
+    start(),
+    Msg1 = test_process(),
+    Msg2 = #{
+        path => <<"Schedule">>,
+        <<"Method">> => <<"POST">>,
+        <<"Message">> =>
+            #{
+                <<"Type">> => <<"Message">>,
+                <<"Test-Key">> => <<"true">>
+            }
+    }.
