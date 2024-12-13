@@ -92,7 +92,10 @@ format(Item, Indent) ->
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
 signers(Msg) ->
-    [ar_bundles:signer(Msg)].
+    case ar_bundles:signer(Msg) of
+        undefined -> [];
+        Signer -> [Signer]
+    end.
 
 %% @doc Sign a message with the given wallet.
 sign(Msg, Wallet) ->

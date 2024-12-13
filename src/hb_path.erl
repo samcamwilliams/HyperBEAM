@@ -1,5 +1,6 @@
 -module(hb_path).
 -export([hd/2, tl/2, push/3, push_hashpath/2, push_request/2]).
+-export([compute_path/3, short_compute_path/3]).
 -export([queue_request/2, pop_request/2]).
 -export([verify_hashpath/3]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
@@ -173,6 +174,22 @@ from_message(request, #{ path := Other }) ->
     term_to_path(Other);
 from_message(request, _) ->
     undefined.
+
+%% @doc Return the appropriate path to refer to the for the computation of
+%% Msg1(Msg2) in the form `/ID1/ID2`.
+compute_path(Msg1, Msg2, _Opts) ->
+    ID1 = dev_message:id(Msg1),
+    ID2 = dev_message:id(Msg2),
+    << "/", ID1/binary, "/", ID2/binary >>.
+
+%% @doc Return the shortest possible reference for a given computation. If the
+%% Msg2 only contains a `path` key and hashpath elements, then we can return
+%% just the path.
+short_compute_path(Msg1, Msg2 = #{ path := Path }, Opts) ->
+    case map_size(maps:without(?CONVERGE_KEYS, Msg2)) of
+        0 -> Path;
+        _ -> compute_path(Msg1, Msg2, Opts)
+    end.
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.

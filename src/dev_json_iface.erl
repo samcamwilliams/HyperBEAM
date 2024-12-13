@@ -135,7 +135,7 @@ results(M1, M2, Opts) ->
                                         list_to_binary(integer_to_list(MessageNum)),
                                         ar_bundles:sign_item(
                                             ar_bundles:json_struct_to_item(
-                                                postProcessResultMessages(Msg, Proc)
+                                                preprocess_results(Msg, Proc, Opts)
                                             ),
                                             Wallet
                                         )
@@ -164,13 +164,14 @@ results(M1, M2, Opts) ->
 %% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
 %% some tags to each message, and spawn to help the target process know these messages are created
 %% by a process.
-postProcessResultMessages(Msg, Proc) ->
+preprocess_results(Msg, Proc, Opts) ->
     {ok, FilteredMsg} =
         hb_converge:resolve(Msg,
             #{
                 path => remove,
                 items => [<<"From-Process">>, <<"From-Image">>, <<"Anchor">>]
-            }
+            },
+            Opts
         ),
     hb_converge:set(
         FilteredMsg,

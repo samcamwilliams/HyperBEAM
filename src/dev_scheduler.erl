@@ -345,7 +345,8 @@ register_new_process_test() ->
                 <<"Method">> => <<"POST">>,
                 path => <<"Schedule">>,
                 <<"Message">> => Proc
-            }
+            },
+            #{}
         )
     ),
     ?assert(
@@ -407,10 +408,11 @@ get_schedule_test() ->
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
     ?assertMatch(
         {ok, _},
-        ?event(hb_converge:resolve(Msg1, #{
+        hb_converge:resolve(Msg1, #{
             <<"Method">> => <<"GET">>,
             path => <<"Schedule">>
-        }))
+        },
+        #{})
     ).
 
 update_schedule_test() ->

@@ -57,8 +57,8 @@ set_private_test() ->
 get_private_key_test() ->
     M1 = #{a => 1, private => #{b => 2}},
     ?assertEqual(undefined, ?MODULE:get(M1, a)),
-    {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>),
+    {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>, #{}),
     ?assertEqual(2, ?MODULE:get(M1, b)),
-    {Res, _} = hb_converge:resolve(M1, <<"Private">>),
+    {Res, _} = hb_converge:resolve(M1, <<"Private">>, #{}),
     ?assertNotEqual(ok, Res),
-    {Res, _} = hb_converge:resolve(M1, private).
+    {Res, _} = hb_converge:resolve(M1, private, #{}).

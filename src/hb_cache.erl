@@ -122,29 +122,67 @@ slots(Store, Path) ->
         {error, _} -> []
     end.
 
-write_output_message(Store, ProcID, Slot, Item) ->
-    write_output(Store, ProcID, Slot, hb_message:message_to_tx(Item)).
-
-%% Write a full message to the cache.
-write_output(Store, ProcID, Slot, Item) ->
-    % Write the message into the main cache
-    ok = write(Store, Item),
-    UnsignedID = fmt_id(Item, unsigned),
-    SignedID = fmt_id(Item, signed),
-    % Create symlinks from the message on the process and the slot on the process
-    % to the underlying data.
-    RawMessagePath = hb_store:path(Store, ["messages", UnsignedID]),
-    ProcMessagePath = hb_store:path(Store, ["computed", fmt_id(ProcID), UnsignedID]),
-    ProcSlotPath = hb_store:path(Store, ["computed", fmt_id(ProcID), "slot", integer_to_list(Slot)]),
-    hb_store:make_link(Store, RawMessagePath, ProcMessagePath),
-    hb_store:make_link(Store, RawMessagePath, ProcSlotPath),
-    case ar_bundles:is_signed(Item) of
-        true ->
-            ok = hb_store:make_link(Store, RawMessagePath,
-                hb_store:path(Store, ["computed", fmt_id(ProcID), SignedID]));
-        false -> already_exists
-    end,
+%% @doc Writes a computation result to the cache.
+%% The process outputs a series of key values in the cache as follows:
+%%
+%%      /RootAddr: Either the Msg3ID alone, or `Msg1ID/Msg2ID` if the keys to
+%%                 store are not complete. A caller may want to cache only some
+%%                 of the keys because serializing the entire state would be 
+%%                 expensive.
+%%      /ShortComputePath: An optional link to the RootAddr, created if Msg2 
+%%                         contains only a path.
+%%      /RootAddr/[Key1, Key2, ...]: The values of the keys that are found in
+%%                     the resulting message.
+%%      /Msg1.signed_id/Msg2.{unsigned_id,signed_id}: Links from the path that
+%%                     led to the creation of the resulting message.
+write_output(Msg1, Msg2, Msg3, Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    % Calculate the 'address' of the resulting message and the list of keys to
+    % cache or `all`.
+    {[RootAddress|SecondaryAddresses], KeysToCache}
+        = output_write_target(Msg1, Msg2, Msg3, Opts),
+    ?event(
+        {output_write_target,
+            {root_address, RootAddress},
+            {keys_to_cache, KeysToCache}
+        }
+    ),
+    % Create a path for the root from the root address.
+    RootPath = hb_store:path(Store, [RootAddress]),
+    % Write the message at the address, with only the keys we are caching.
+    ok = write(RootPath, maps:with(KeysToCache, Msg3), Opts),
+    % Link the secondary addresses to the root address.
+    lists:foreach(
+        fun(SecondaryAddress) ->
+            SecondaryPath = hb_store:path(Store, [SecondaryAddress]),
+            ok = hb_store:make_link(Store, RootPath, SecondaryPath)
+        end,
+        SecondaryAddresses
+    ),
     ok.
+
+%% @doc Given a computation result (Msg1(Msg2) -> Msg3) and a HyperBEAM `Opts` 
+%% map returns a tuple of the 'root' path that the message should be written to,
+%% and a list of the keys to write.
+output_write_target(Msg1, Msg2, Msg3, Opts) ->
+    case hb_opts:get(cache_keys, all, Opts) of
+        all ->
+            {
+                lists:uniq(
+                    [
+                        hb_converge:get(id, Msg3, Opts),
+                        hb_converge:get(unsigned_id, Msg3, Opts),
+                        hb_path:compute_path(Msg1, Msg2, Opts)
+                    ]
+                ),
+                maps:keys(Msg3)
+            };
+        Keys ->
+            {
+                [hb_path:compute_path(Msg1, Msg2, Opts)],
+                Keys
+            }
+    end.
 
 write_assignment_message(Store, Assignment) ->
     write_assignment(Store, hb_message:message_to_tx(Assignment)).
@@ -519,8 +557,8 @@ write_and_read_output_test() ->
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
-    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    {ok, _} = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    {ok, _} = write_output(Store, fmt_id(Proc, signed), 1, Item2),
     ?assertEqual({ok, Item1}, read_message(Store, ar_bundles:id(Item1, unsigned))),
     ?assertEqual({ok, Item2}, read_message(Store, ar_bundles:id(Item2, unsigned))),
     ?assertEqual({ok, Item2}, read_output(Store, fmt_id(Proc, signed), 1)),
@@ -531,7 +569,7 @@ latest_output_retrieval_test() ->
     Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
     Item1 = create_signed_tx(<<"Simple signed output #1">>),
     Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
-    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    {ok, _} = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    {ok, _} = write_output(Store, fmt_id(Proc, signed), 1, Item2),
     ?assertEqual({1, Item2}, latest(Store, fmt_id(Proc, signed))),
     ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 0)).

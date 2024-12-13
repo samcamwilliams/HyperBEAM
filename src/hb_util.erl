@@ -139,7 +139,7 @@ hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    {ok, Keys} = hb_converge:resolve(Message, keys),
+    {ok, Keys} = hb_converge:resolve(Message, keys, #{}),
     hd(Message, Keys, 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
@@ -151,7 +151,7 @@ hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
         Key ->
             case ReturnType of
                 key -> Key;
-                value -> hb_converge:resolve(Message, Key)
+                value -> hb_converge:resolve(Message, Key, #{})
             end
     end.
 

@@ -3,7 +3,7 @@
 -export([resolve/2, resolve/3, load_device/2]).
 -export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
 %%% Shortcuts and tools:
--export([keys/1, keys/2]).
+-export([keys/1, keys/2, keys/3]).
 -export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -85,6 +85,31 @@
 %%% In general, all of these options are dangerous. Don't use them unless you
 %%% know what you are doing.
 
+%% @doc Takes a singleton message and parse the M1 and M2 from it, then invokes
+%% `resolve/3`.
+resolve(Msg, Opts) ->
+    Path =
+        hb_path:term_to_path(
+            hb_converge:get(
+                path,
+                Msg,
+                #{ hashpath => ignore }
+            ),
+            Opts
+        ),
+    case Path of
+        [ Msg1ID | _Rest ] when ?IS_ID(Msg1ID) ->
+            ?event({normalizing_single_message_message_path, Msg}),
+            {ok, Msg1} = hb_cache:read(Msg1ID, Opts),
+            resolve(
+                Msg1,
+                hb_path:tl(Msg, Opts),
+                Opts
+            );
+        SingletonPath ->
+            resolve(Msg, #{ path => SingletonPath }, Opts)
+    end.
+
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, pass a message containing parameters to the call, as
 %% well as options that control the runtime environment. This function returns
@@ -97,10 +122,27 @@
 %% do not exist as values in the message's map, while still exposing the 'normal'
 %% keys of a map. 'Special' keys which do not exist as values in the message's
 %% map are simply ignored.
-resolve(Msg1, Request) ->
-    resolve(Msg1, Request, default_runtime_opts(Msg1)).
 resolve(Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
-    prepare_resolve(Msg1, Msg2, Opts);
+    Key = hb_path:hd(Msg2, Opts),
+    case ?IS_ID(Key) of
+        true ->
+            % The key is an ID (reference call), so we should resolve the
+            % referenced message against Msg1 before recursing if there are 
+            % more keys.
+            ?no_prod("Carefully review that post-call resolution happens "
+                        "correctly in this case."),
+            {ok, Msg2Indirect} = hb_cache:read(Key, Opts),
+            case resolve(Msg1, Msg2Indirect, Opts) of
+                {ok, Msg3Indirect} ->
+                    resolve(Msg3Indirect, hb_path:tl(Msg2, Opts), Opts);
+                {error, _} ->
+                    throw({error, {device_not_loadable, Key}})
+            end;
+        false ->
+            % This is a direct invocation, so just proceed with the normal
+            % resolution process.
+            prepare_resolve(Msg1, Msg2, Opts)
+    end;
 resolve(Msg1, Key, Opts) ->
     prepare_resolve(Msg1, #{ path => Key }, Opts).
 
@@ -136,13 +178,21 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 			}
 		catch
 			Class:Exception:Stacktrace ->
+                % If the device cannot be loaded, we alert the caller.
 				handle_error(
 					loading_device,
 					{Class, Exception, Stacktrace},
 					Opts
 				)
 		end,
+    % After preparing the resolution, we actually execute it.
+    % Note: We don't do this inside the try/catch because we want
+    % `throw`s that result from the downstream `do_resolve` 
+    % environment to reach the caller without being wrapped in an
+    % unnecessary `loading_device` error.
 	do_resolve(Msg1, Fun, Msg2, NewOpts).
+
+%% @doc Actually execute the resolution of a key on a message.
 do_resolve(Msg1, Fun, Msg2, Opts) ->
 	%?event({resolving, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
 	% First, determine the arguments to pass to the function.
@@ -156,9 +206,11 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 	% Then, try to execute the function.
 	try
 		Msg3 = apply(Fun, truncate_args(Fun, Args)),
-		handle_resolved_result(Msg3, Msg2, UserOpts)
+		handle_resolved_result(Msg1, Msg2, Msg3, UserOpts)
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
+            % If the function call fails, we raise an error in the manner
+            % indicated by caller's `#Opts`.
 			handle_error(
 				device_call,
 				{ExecClass, ExecException, ExecStacktrace},
@@ -176,13 +228,13 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 %% 4. If there are still elements in the path, we recurse through execution.
 %% If additional elements are included as part of the result, we pass them
 %% through to the caller.
-handle_resolved_result(Msg3, _Msg2, _UserOpts) when is_binary(Msg3) ->
+handle_resolved_result(_Msg1, _Msg2, Msg3, _UserOpts) when is_binary(Msg3) ->
     Msg3;
-handle_resolved_result(Result, Msg2, Opts) when is_tuple(Result) ->
-	handle_resolved_result(tuple_to_list(Result), Msg2, Opts);
-handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
+handle_resolved_result(Msg1, Msg2, Result, Opts) when is_tuple(Result) ->
+	handle_resolved_result(Msg1, Msg2, tuple_to_list(Result), Opts);
+handle_resolved_result(_Msg1, _Msg2, Msg3List = [Status, _Result|_], _Opts)
 		when Status =/= ok ->
-	Msg3 = list_to_tuple(Msg2List),
+	Msg3 = list_to_tuple(Msg3List),
 	% ?event(
 	% 	{abnormal_result,
 	% 		{result, Result},
@@ -192,10 +244,11 @@ handle_resolved_result(Msg2List = [Status, Result|_], Msg2, Opts)
 	% 	}
 	% ),
 	Msg3;
-handle_resolved_result(Output = [ok, Res|_], _Msg2, _Opts) when not is_map(Res) ->
+handle_resolved_result(_M1, _M2, Output = [ok, Res|_], _Opts)
+        when not is_map(Res) ->
 	% The result is not a map, so we return it as is.
 	list_to_tuple(Output);
-handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
+handle_resolved_result(Msg1, Msg2, [ok, Msg3Raw | Rest], Opts) ->
 	Msg3 =
 		case hb_opts:get(hashpath, update, Opts#{ only => local }) of
 			update ->
@@ -209,15 +262,7 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 				hb_path:push(hashpath, Msg3Raw, Msg2);
 			ignore -> Msg3Raw
 		end,
-	case hb_opts:get(cache_results, true, Opts) of
-		true ->
-			hb_cache:write(
-				hb_opts:get(store, no_valid_store, Opts),
-				hb_message:message_to_tx(Msg3)
-			);
-		false ->
-			ok
-	end,
+    update_cache(Msg1, Msg2, Msg3, Opts),
 	case hb_path:tl(Msg2, Opts) of
 		undefined ->
 			% The path resolved to the last element, so we return
@@ -229,6 +274,43 @@ handle_resolved_result([ok, Msg3Raw | Rest], Msg2, Opts) ->
 			?event({resolution_recursing, {next_msg, NextMsg}}),
 			resolve(Msg3, NextMsg, Opts)
 	end.
+
+%% @doc Write a resulting M3 message to the cache if requested.
+update_cache(Msg1, Msg2, Msg3, Opts) ->
+    ExecCacheSetting = hb_opts:get(cache, always, Opts),
+    M1CacheSetting = get(<<"Cache-Control">>, Msg1, Opts),
+    M2CacheSetting = get(<<"Cache-Control">>, Msg2, Opts),
+    case must_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
+        true ->
+            case hb_opts:get(async_cache, false, Opts) of
+                true ->
+                    spawn(fun() ->
+                        hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
+                    end);
+                false ->
+                    hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
+            end;
+        false -> ok
+    end.
+
+%% @doc Takes the `Opts` cache setting, M1, and M2 `Cache-Control` headers, and
+%% returns true if the message should be cached.
+must_cache(no_cache, _, _) -> false;
+must_cache(_, CC1, CC2) ->
+    CC1List = term_to_cache_control_list(CC1),
+    CC2List = term_to_cache_control_list(CC2),  
+    NoCacheSpecifiers = [no_cache, no_store, no_transform],
+    lists:any(
+        fun(X) -> lists:member(X, NoCacheSpecifiers) end,
+        CC1List ++ CC2List
+    ).
+
+%% @doc Convert cache control specifier(s) to a normalized list.
+term_to_cache_control_list(X) when is_list(X) ->
+    lists:flatten(lists:map(fun term_to_cache_control_list/1, X));
+term_to_cache_control_list(X) when is_binary(X) -> X;
+term_to_cache_control_list(X) ->
+    hb_path:term_to_path(X).
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok`. This makes it easier to write complex logic on top of messages while
@@ -255,7 +337,14 @@ get(Path, Msg, Default, Opts) ->
 
 %% @doc Shortcut to get the list of keys from a message.
 keys(Msg) -> keys(Msg, #{}).
-keys(Msg, Opts) -> get(keys, Msg, Opts).
+keys(Msg, Opts) -> keys(Msg, Opts, keep).
+keys(Msg, Opts, keep) ->
+    get(keys, Msg, Opts);
+keys(Msg, Opts, remove) ->
+    lists:filter(
+        fun(Key) -> not lists:member(Key, ?CONVERGE_KEYS) end,
+        keys(Msg, Opts, keep)
+    ).
 
 %% @doc Shortcut for setting a key in the message using its underlying device.
 %% Like the `get/3` function, this function honors the `error_strategy` option.
@@ -618,22 +707,22 @@ default_module() -> dev_message.
 %%% Tests
 
 key_from_id_device_test() ->
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a)).
+    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
 
 keys_from_id_device_test() ->
     ?assertEqual(
         {ok, [a]},
-        hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys)
+        hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys, #{})
     ).
 
 path_test() ->
     ?assertEqual(
         {ok, [test_path]},
-        hb_converge:resolve(#{ path => [test_path] }, path)
+        hb_converge:resolve(#{ path => [test_path] }, path, #{})
     ),
     ?assertEqual(
         {ok, [a]},
-        hb_converge:resolve(#{ <<"Path">> => [a] }, <<"Path">>)
+        hb_converge:resolve(#{ <<"Path">> => [a] }, <<"Path">>, #{})
     ).
 
 key_to_binary_test() ->
@@ -644,11 +733,16 @@ key_to_binary_test() ->
 resolve_binary_key_test() ->
     ?assertEqual(
         {ok, 1},
-        hb_converge:resolve(#{ a => 1 }, <<"a">>)
+        hb_converge:resolve(#{ a => 1 }, <<"a">>, #{})
     ),
     ?assertEqual(
         {ok, 1},
-        hb_converge:resolve(#{ <<"Test-Header">> => 1 }, <<"Test-Header">>)
+        hb_converge:resolve(
+            #{
+                <<"Test-Header">> => 1 },
+                <<"Test-Header">>,
+            #{}
+        )
     ).
 
 %% @doc Generates a test device with three keys, each of which uses
@@ -767,7 +861,7 @@ device_with_handler_function_test() ->
         },
     ?assertEqual(
         {ok, <<"HANDLER VALUE">>},
-        hb_converge:resolve(Msg, test_key)
+        hb_converge:resolve(Msg, test_key, #{})
     ).
 
 device_with_default_handler_function_test() ->
@@ -777,11 +871,11 @@ device_with_default_handler_function_test() ->
         },
     ?assertEqual(
         {ok, <<"STATE">>},
-        hb_converge:resolve(Msg, state_key)
+        hb_converge:resolve(Msg, state_key, #{})
     ),
     ?assertEqual(
         {ok, <<"DEFAULT">>},
-        hb_converge:resolve(Msg, any_random_key)
+        hb_converge:resolve(Msg, any_random_key, #{})
     ).
 
 basic_get_test() ->
