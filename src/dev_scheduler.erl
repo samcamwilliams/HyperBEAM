@@ -6,6 +6,8 @@
 %%% CU-flow functions:
 -export([slot/3, status/3]).
 -export([start/0, init/3, end_of_schedule/3, checkpoint/1]).
+%%% Cache functions:
+-export([write_assignment/2, assignments/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -14,10 +16,16 @@
 %%%     Process: #{ id, Scheduler: #{ Authority } }
 %%% 
 %%% It exposes the following keys for scheduling:
-%%%     info: Returns information about the scheduler.
-%%%     #{ method: GET, path: <<"/">> } -> get_info()
-%%%     #{ method: POST, path: <<"/">> } -> post_schedule(Msg1, Msg2, Opts)
-%%% 
+%%%     #{ method: GET, path: <<"/info">> } ->
+%%%         Returns information about the scheduler.
+%%%     #{ method: GET, path: <<"/slot">> } -> slot(Msg1, Msg2, Opts)
+%%%         Returns the current slot for a process.
+%%%     #{ method: GET, path: <<"/schedule">> } -> get_schedule(Msg1, Msg2, Opts)
+%%%         Returns the schedule for a process in a cursor-traversable format.
+%%%     #{ method: POST, path: <<"/schedule">> } -> post_schedule(Msg1, Msg2, Opts)
+%%%         Schedules a new message for a process.
+
+-define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
 %% @doc Helper to ensure that the environment is started.
 start() ->
@@ -188,10 +196,11 @@ gen_schedule(ProcID, From, To, Opts) ->
             {to, To}
         }
     ),
-    {Assignments, More} = dev_scheduler_server:get_assignments(
+    {Assignments, More} = get_assignments(
         ProcID,
         From,
-        To
+        To,
+        Opts
     ),
     ?event({got_assignments, {first, hd(Assignments)}, {more, More}}),
     Bundle = #{
@@ -201,22 +210,49 @@ gen_schedule(ProcID, From, To, Opts) ->
         <<"Timestamp">> => list_to_binary(integer_to_list(Timestamp)),
         <<"Block-Height">> => list_to_binary(integer_to_list(Height)),
         <<"Block-Hash">> => Hash,
-        <<"Assignments">> => assignments_message(Assignments, Opts)
+        <<"Assignments">> => assignment_bundle(Assignments, Opts)
     },
     ?event(assignments_bundle_outbound),
     Signed = hb_message:sign(Bundle, hb:wallet()),
     {ok, Signed}.
 
-assignments_message(Assignments, Opts) ->
-    assignments_message(Assignments, Opts, #{}).
-assignments_message([], Bundle, _Opts) ->
+%% @doc Get the assignments for a process, and whether the request was truncated.
+get_assignments(ProcID, From, RequestedTo, Opts) ->
+    ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
+    ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
+        true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
+        false -> RequestedTo
+    end,
+    {do_get_assignments(ProcID, From, ComputedTo, Opts), ComputedTo =/= RequestedTo }.
+
+do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
+    [];
+do_get_assignments(ProcID, From, To, Opts) ->
+    case read_assignment(ProcID, From, Opts) of
+        not_found ->
+            [];
+        {ok, Assignment} ->
+            [
+                Assignment
+                | do_get_assignments(
+                    ProcID,
+                    From + 1,
+                    To,
+                    Opts
+                )
+            ]
+    end.
+
+assignment_bundle(Assignments, Opts) ->
+    assignment_bundle(Assignments, Opts, #{}).
+assignment_bundle([], Bundle, _Opts) ->
     Bundle;
-assignments_message([Assignment | Assignments], Bundle, Opts) ->
+assignment_bundle([Assignment | Assignments], Bundle, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     Slot = hb_converge:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
     MessageID =
         hb_converge:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
-    {ok, MessageTX} = hb_cache:read_message(Store, MessageID),
+    {ok, MessageTX} = hb_cache:read(Store, MessageID),
     Message = hb_message:tx_to_message(MessageTX),
     ?event(
         {adding_assignment_to_bundle,
@@ -226,7 +262,7 @@ assignments_message([Assignment | Assignments], Bundle, Opts) ->
             hb_util:id(Assignment, unsigned)
         }
     ),
-    assignments_message(
+    assignment_bundle(
         Assignments,
         Bundle#{
             Slot =>
@@ -303,6 +339,61 @@ update_schedule(M1, M2, Opts) ->
 
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.
+
+%%% Assignment cache functions
+
+%% @doc Write an assignment message into the cache.
+write_assignment(Assignment, Opts) ->
+    % Write the message into the main cache
+    {_, ProcID} = hb_converge:get(<<"Process">>, Assignment),
+    {_, Slot} = hb_converge:get(<<"Slot">>, Assignment),
+    ?event(
+        {writing_assignment,
+            {proc_id, ProcID},
+            {slot, Slot},
+            {assignment, Assignment}
+        }
+    ),
+    {ok, RootPath} = hb_cache:write(Assignment, Opts),
+    % Create symlinks from the message on the process and the 
+    % slot on the process to the underlying data.
+    hb_store:make_link(
+        RootPath,
+        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
+            "assignments",
+            hb_util:human_id(ProcID),
+            binary_to_list(Slot)
+        ]),
+        Opts
+    ),
+    ok.
+
+%% @doc Get an assignment message from the cache.
+read_assignment(ProcID, Slot, Opts) when is_integer(Slot) ->
+    read_assignment(ProcID, integer_to_list(Slot), Opts);
+read_assignment(ProcID, Slot, Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    ResolvedPath =
+        P2 = hb_store:resolve(
+            Store,
+            P1 = hb_store:path(Store, [
+                "assignments",
+                hb_util:human_id(ProcID),
+                Slot
+            ])
+        ),
+    ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
+    hb_cache:read(ResolvedPath, Opts).
+
+%% @doc Get the assignments for a process.
+assignments(ProcID, Opts) ->
+    hb_cache:list_numbered(
+        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
+            "assignments",
+            hb_util:human_id(ProcID)
+        ]),
+        Opts
+    ).
 
 %%% Tests
 %%% These tests assume that the process message has been transformed by the 
@@ -414,16 +505,3 @@ get_schedule_test() ->
         },
         #{})
     ).
-
-update_schedule_test() ->
-    start(),
-    Msg1 = test_process(),
-    Msg2 = #{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
-            #{
-                <<"Type">> => <<"Message">>,
-                <<"Test-Key">> => <<"true">>
-            }
-    }.
