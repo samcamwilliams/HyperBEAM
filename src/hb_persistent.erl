@@ -1,5 +1,5 @@
 -module(hb_persistent).
--export([start/1, start/2, result/4]).
+-export([start/1, start/2, resolve/2]).
 -export([run/1, run/2, run/3]).
 -include("include/hb.hrl").
 -hb_debug(print).
@@ -12,84 +12,77 @@
 %%% The default frequency for checkpointing is 2 slots.
 -define(DEFAULT_FREQ, 10).
 
-result(RawProcID, RawMsgRef, Store, Wallet) ->
-    ProcID = hb_util:id(RawProcID),
-    MsgRef =
-        case is_binary(RawMsgRef) of
-            true ->
-                case byte_size(RawMsgRef) of
-                    32 -> hb_util:id(RawMsgRef);
-                    _ -> RawMsgRef
-                end;
-            false -> RawMsgRef
+%% @doc Resolve a message to a new state, awaiting if needed.
+resolve(Path, Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    % If the node operator has defined a proxy resolver that will complete
+    % computations for us, we find it here.
+    LookupStore =
+        case hb_opts:get(proxy_store, no_proxy_store, Opts) of
+            no_proxy_store ->
+                % No proxy is set; return the local store.
+                hb_store:scope(Store, local);
+            ProxyStore -> ProxyStore
         end,
-    LocalStore = hb_store:scope(Store, local),
-    case hb_cache:read_output(LocalStore, ProcID, MsgRef) of
+    % Check if the resolution is already in the cache.
+    case hb_cache:read(Path, Opts#{ store => LookupStore }) of
         not_found ->
-            case pg:get_local_members({cu, ProcID}) of
+            {Msg1ID, RestOfPath} = hb_path:pop_request(Path, Opts),
+            case pg:get_local_members({compute, Msg1ID}) of
                 [] ->
-                    ?event({no_cu_for_proc, hb_util:id(ProcID)}),
-                    {ok, Proc} = hb_cache:read_message(
-                        Store,
-                        hb_util:id(ProcID)
-                    ),
-                    await_results(
+                    ?event({no_worker_for_path, Path}),
+                    {ok, Msg1} = hb_cache:read(Msg1ID, Opts),
+                    await_resolution(
                         run(
-                            Proc,
+                            Msg1,
                             #{
-                                to => MsgRef,
+                                to => RestOfPath,
                                 store => Store,
-                                wallet => Wallet,
+                                wallet => hb:wallet(),
                                 on_idle => wait
                             },
-                            create_monitor_for_message(MsgRef)
+                            create_monitor(RestOfPath, Opts)
                         )
                     );
                 [Pid|_] ->
-                    ?event({found_cu_for_proc, hb_util:id(ProcID)}),
+                    ?event({found_worker_for_path, Path}),
                     ?no_prod("The CU process IPC API is poorly named."),
                     Pid !
                         {
                             on_idle,
                             run,
                             add_monitor,
-                            [create_monitor_for_message(MsgRef)]
+                            [create_monitor(RestOfPath, Opts)]
                         },
-                    Pid ! {on_idle, message, MsgRef},
-                    ?event({added_listener_and_message, Pid, MsgRef}),
-                    await_results(Pid)
+                    Pid ! {on_idle, add_message, Msg1ID},
+                    ?event({added_listener_and_message, Pid, Msg1ID}),
+                    await_resolution(Pid)
             end;
         {ok, Result} -> {ok, Result}
     end.
 
-%% Start a new Erlang process for the AO process, optionally giving the
-%% assignments so far.
-start(Process) -> start(Process, #{}).
-start(Process, Opts) ->
-    spawn(fun() -> boot(Process, Opts) end).
+%% @doc Wait for an execution to complete and return a result.
+await_resolution(Pid) ->
+    receive
+        {result, Pid, _Msg, State} ->
+            {ok, maps:get(results, State)}
+    end.
 
+%% @doc Run a new execution synchronously.
 run(Process) -> run(Process, #{ error_strategy => throw }).
 run(Process, Opts) ->
-    run(Process, Opts, create_persistent_monitor()).
+    run(Process, Opts, create_persistent_monitor(Opts)).
 run(Process, Opts, Monitor) when not is_list(Monitor) ->
     run(Process, Opts, [Monitor]);
 run(Process, RawOpts, Monitors) ->
     Opts = RawOpts#{
         post => maps:get(post, RawOpts, []) ++ [{dev_monitor, Monitors}]
     },
-    element(1, spawn_monitor(fun() -> boot(Process, Opts) end)).
+    element(1, spawn_monitor(fun() -> boot(Process, Opts) end, Opts)).
 
-await_results(Pid) ->
-    receive
-        {result, Pid, _Msg, State} ->
-            {ok, maps:get(results, State)}
-    end.
-
-create_monitor_for_message(Msg) when is_record(Msg, tx) ->
-    create_monitor_for_message(ar_bundles:id(Msg, unsigned));
-create_monitor_for_message(MsgID) ->
+create_monitor(MsgID, _Opts) ->
     Listener = self(),
-    fun(S, {message, Inbound}) ->
+    fun(S, {add_message, Inbound}) ->
         % Gather messages
         Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
         Msg = maps:get(<<"Message">>, Inbound#tx.data),
@@ -135,9 +128,9 @@ create_monitor_for_message(MsgID) ->
             ignored
     end.
 
-create_persistent_monitor() ->
+create_persistent_monitor(_Opts) ->
     Listener = self(),
-    fun(S, {message, Msg}) ->
+    fun(S, {add_message, Msg}) ->
         Listener ! {result, self(), Msg, S};
         (_, _) -> ok
     end.
@@ -341,7 +334,7 @@ post_execute(
                     }
                 ),
             ?event({checkpoint_normalized_for_slot, Slot}),
-            hb_cache:write_output(
+            hb_cache:write_result(
                 Store,
                 hb_util:id(Process, signed),
                 Slot,
@@ -351,7 +344,7 @@ post_execute(
         false ->
             NormalizedResult =
                 ar_bundles:deserialize(ar_bundles:serialize(Results)),
-            hb_cache:write_output(
+            hb_cache:write_result(
                 Store,
                 hb_util:id(Process, signed),
                 Slot,
@@ -370,29 +363,14 @@ initialize_slot(State = #{slot := Slot}) ->
         message => undefined
     }.
 
-execute_message(Msg, State, Opts = #{ proc_dev := Dev }) ->
-    hb_converge:resolve(
-        Dev,
-        execute,
-        [State#{ message => Msg }, Opts],
-        Opts
-    ).
+execute_message(M2, M1, Opts) ->
+    hb_converge:resolve(M1, M2, Opts).
 
-execute_terminate(S, Opts = #{ proc_dev := Dev }) ->
-    hb_converge:resolve(
-        Dev,
-        terminate,
-        [S#{ message => undefined }, Opts],
-        Opts
-    ).
+execute_terminate(M1, Opts) ->
+    hb_converge:resolve(M1, terminate, Opts).
 
-execute_eos(S, Opts = #{ proc_dev := Dev }) ->
-    hb_converge:resolve(
-        Dev,
-        end_of_schedule,
-        [S#{ message => undefined }, Opts],
-        Opts
-    ).
+execute_eos(M1, Opts) ->
+    hb_converge:resolve(M1, end_of_schedule, Opts).
 
 is_checkpoint_slot(State, Opts) ->
     (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)
@@ -414,7 +392,7 @@ await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
                 Opts
             ),
             await_command(NewState, Opts);
-        {on_idle, message, MsgRef} ->
+        {on_idle, add_message, MsgRef} ->
             ?event({received_message, MsgRef}),
             % TODO: As with starting from a message, we should avoid the
             % unnecessary SU call if possible here.
