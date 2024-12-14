@@ -1,5 +1,5 @@
 -module(hb_persistent).
--export([start/1, start/2, resolve/2]).
+-export([resolve/2]).
 -export([run/1, run/2, run/3]).
 -include("include/hb.hrl").
 -hb_debug(print).

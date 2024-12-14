@@ -273,7 +273,7 @@ resolve_stage(8, Mod, Msg1, Msg2, Msg3, Opts) ->
     % Notify waiters.
     notify_waiting(Msg1, Msg2, Msg3, Opts),
     resolve_stage(9, Mod, Msg1, Msg2, Msg3, Opts);
-resolve_stage(9, Mod, Msg1, Msg2, Msg3, Opts) ->
+resolve_stage(9, Mod, _Msg1, Msg2, Msg3, Opts) ->
     % Recurse, fork, or terminate.
 	case hb_path:tl(Msg2, Opts) of
 		NextMsg when NextMsg =/= undefined ->
@@ -303,9 +303,9 @@ resolve_stage(9, Mod, Msg1, Msg2, Msg3, Opts) ->
                                 ),
                             % Call the worker function, unsetting the option
                             % to avoid recursive spawns.
-                            WorkerFun(
-                                Msg3,
-                                Opts#{ spawn_worker := false }
+                            apply(
+                                WorkerFun,
+                                truncate_args(WorkerFun, [Msg3, Opts])
                             )
                         end
                     ),

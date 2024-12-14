@@ -66,12 +66,11 @@ latest(ProcID, Limit, Opts) ->
                     {all_output_slots, AllOutputSlots}
                 }
             ),
-            case first_slot_with_path(
+            case highest_assignment_with_state(
                     Store,
                     hb_util:human_id(ProcID),
                     lists:reverse(lists:sort(AllOutputSlots)),
-                    Limit,
-                    Path
+                    Limit
                 ) of
                 not_found -> not_found;
                 Slot ->
@@ -95,17 +94,17 @@ latest(ProcID, Limit, Opts) ->
             end
     end.
 
-%% @doc Find the first slot with a given sub-path element.
-first_slot_with_path(_Store, _ProcID, [], _Limit, _Path) ->
+%% @doc Find the latest assignment with a full state.
+highest_assignment_with_state(_Store, _ProcID, [], _Limit) ->
     not_found;
-first_slot_with_path(Store, ProcID, [AfterLimit | Rest], Limit, Path) 
+highest_assignment_with_state(Store, ProcID, [AfterLimit | Rest], Limit) 
         when AfterLimit > Limit ->
-    first_slot_with_path(Store, ProcID, Rest, Limit, Path);
-first_slot_with_path(Store, ProcID, [LatestSlot | Rest], Limit, Path) ->
-    ?event({trying_slot, LatestSlot, Path}),
+            highest_assignment_with_state(Store, ProcID, Rest, Limit);
+        highest_assignment_with_state(Store, ProcID, [LatestSlot | Rest], Limit) ->
+    ?event({trying_assignment, LatestSlot}),
     RawPath =
         build_path(
-            ["computed", process, "slot", slot] ++ Path,
+            ["computed", process, "slot", slot, "Process"],
             #{
                 slot => integer_to_list(LatestSlot),
                 process => hb_util:human_id(ProcID)
@@ -113,7 +112,7 @@ first_slot_with_path(Store, ProcID, [LatestSlot | Rest], Limit, Path) ->
         ),
     ResolvedPath = hb_store:resolve(Store, RawPath),
     case hb_store:type(Store, ResolvedPath) of
-        not_found -> first_slot_with_path(Store, ProcID, Rest, Limit, Path);
+        not_found -> highest_assignment_with_state(Store, ProcID, Rest, Limit);
         _ -> LatestSlot
     end.
 

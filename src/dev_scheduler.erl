@@ -4,7 +4,7 @@
 %%% Local scheduling functions:
 -export([schedule/3]).
 %%% CU-flow functions:
--export([slot/3, status/3]).
+-export([slot/3, status/3, next/3]).
 -export([start/0, init/3, end_of_schedule/3, checkpoint/1]).
 %%% Cache functions:
 -export([write_assignment/2, assignments/2]).
@@ -291,26 +291,16 @@ end_of_schedule(M1, M2, Opts) -> update_schedule(M1, M2, Opts).
 %% @doc Abstracted function for updating the schedule for a process the current
 %% schedule is in the `/priv/Scheduler/*` private map.
 update_schedule(M1, M2, Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
     Proc = hb_converge:get(process, M1, Opts),
+    ProcID = hb_util:id(Proc),
     CurrentSlot =
-        hb_converge:get(
-            <<"Current-Slot">>,
-            M1,
-            Opts,
-            0
-        ),
+        hb_converge:get(<<"Current-Slot">>, M1, Opts, 0),
     ToSlot =
-        hb_converge:get(
-            <<"Slot">>,
-            M2,
-            Opts,
-            undefined
-        ),
+        hb_converge:get(<<"Slot">>, M2, Opts, undefined),
     ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),
     Assignments =
         hb_client:get_assignments(
-            hb_util:id(Proc, signed),
+            ProcID,
             CurrentSlot,
             ToSlot
         ),
@@ -331,11 +321,11 @@ update_schedule(M1, M2, Opts) ->
                     hb_util:id(Assignment, unsigned)
                 }
             ),
-            hb_cache:write(Store, Assignment)
+            hb_cache:write(Assignment, Opts)
         end,
         Assignments
     ),
-    {ok, hb_private:set(M1, <<"Schedule">>, Assignments)}.
+    {ok, hb_private:set(M1, <<"priv/Schedule">>, Assignments)}.
 
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.

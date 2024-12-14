@@ -3,10 +3,22 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
-%%% @moduledoc This module contains notes for the implmenetation of AO processes
-%%% in Converge.
+%%% @moduledoc This module contains the device implementation of AO processes
+%%% in Converge. The core functionality of the module is in 'routing' requests
+%%% for different functionality (scheduling, computing, and pushing messages)
+%%% to the appropriate device. This is achieved by swapping out the device 
+%%% of the process message with the necessary component in order to run the 
+%%% execution, then swapping it back before returning. Computation is supported
+%%% as a stack of devices, customizable by the user, while the scheduling
+%%% device is (by default) a single device.
 %%% 
-%%% The ideal API for an AO process would be:
+%%% This allows the devices to share state as needed. Additionally, after each
+%%% computation step the device caches the result at a path relative to the
+%%% process definition itself, such that the process message's ID can act as an
+%%% immutable reference to the process's growing list of interactions. See 
+%%% `dev_process_cache` for details.
+%%% 
+%%% The external API of the device is as follows:
 %%% 
 %%% GET /ID/scheduler <- Returns the messages in the schedule
 %%% POST /ID/scheduler <- Adds a message to the schedule
@@ -15,7 +27,7 @@
 %%%                                         after applying a message
 %%% POST /ID/Computed/ <- Compute and cache a message on the process.
 %%% 
-%%% Process definition:
+%%% Process definition example:
 %%%     Device: Process/1.0
 %%%     Scheduler: [Message]
 %%%         Device: Scheduler/1.0
@@ -31,42 +43,90 @@
 %%%         Authority: C
 %%%         Quorum: 2
 %%%     Execution-Stack: Scheduler, Cron, WASM, PoDA
-%%%     
+%%%
+%%% Runtime options:
+%%%     Cache-Frequency: The number of assignments that can pass before
+%%%                      the full state should be cached.
+%%%     Cache-Keys:      A list of the keys that should be cached, in
+%%%                      addition to `/Results`.
+
+-define(DEFAULT_CACHE_FREQ, 10).
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1, _Opts) ->
     #{
-        exports => [compute, schedule, slot]
+        exports => [compute, schedule, slot],
+        worker => fun dev_process_worker:server/3,
+        group => fun dev_process_worker:group/3
     }.
 
-%% @doc Wraps the schedule function in the Scheduler device.
+%% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
-
-%% @doc Wraps the slot function in the Scheduler device.
+end_of_schedule(Msg1, Msg2, Opts) ->
+    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 slot(Msg1, Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
+next(Msg1, _Msg2, Opts) ->
+    run_as(<<"Scheduler">>, Msg1, next, Opts).
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves.
 init(Msg1, Msg2, Opts) ->
-    run_as(<<"Execution-Stack">>, Msg1, Msg2, Opts).
+    {ok, Res} = run_as(<<"Execution-Stack">>, Msg1, init, Opts),
+    compute(Res, Msg2, Opts).
 
-%% @doc When a computed result is requested, we should check the cache for the
-%% result. If it is not present, we should compute the result and cache it.
+%% @doc Compute the result of an assignment applied to the process state, if it 
+%% is the next message.
 compute(Msg1, Msg2, Opts) ->
-    {ok, Initialized} =
-        case hb_converge:get(<<"Initialized">>, {as, dev_message, Msg1}, Opts) of
-            not_found ->
-                init(Msg1, Msg2, Opts);
-            Result ->
-                Result
+    ProcID =
+        hb_converge:get(<<"Process/id">>, Msg1, Opts#{ hashpath := ignore }),
+    % Get the nonce we are currently on and the inbound nonce.
+    {ok, CurrentNonce} = hb_converge:get(<<"Nonce">>, Msg2, Opts, -1),
+    {ok, TargetNonce} = hb_converge:get(<<"Assignment/Nonce">>, Msg2, Opts),
+    % If we do not have a live state, load or initialize one.
+    {ok, Loaded} =
+        case CurrentNonce of
+            -1 ->
+                % Try to load the latest complete state from disk.
+                case dev_process_cache:latest(ProcID, NewNonce, Opts) of
+                    {LoadedNonce, MsgFromCache} ->
+                        ?event({proc_loaded_state, ProcID, LoadedNonce}),
+                        run_as(<<"Executor">>, MsgFromCache, boot, Opts);
+                    not_found ->
+                        init(Msg1, Msg2, Opts)
+                end;
+            _ -> {ok, Msg1}
         end,
-    hb_converge:resolve(
-        hb_converge:set(Initialized, #{ device => <<"Stack/1.0">> }),
-        Msg2,
-        Opts
-    ).
+    do_compute(Loaded, Msg2, TargetNonce, Opts).
+
+%% @doc Continually get the next assignment from the scheduler until we
+%% are up-to-date.
+do_compute(Msg1, Msg2, Target, Opts) ->
+    case hb_converge:get(<<"Nonce">>, Msg2, Opts) of
+        CurrentNonce when CurrentNonce == Target ->
+            % We reached the target height so we return.
+            {ok, Msg1};
+        CurrentNonce ->
+            % Get the next input from the scheduler device.
+            {ok, Next} = next(Msg1, Msg2, Opts),
+            % Calculate how much of the state should be cached.
+            Freq = hb_opts:get(cache_frequency, Opts, ?DEFAULT_CACHE_FREQ),
+            CacheKeys =
+                case CurrentNonce rem Freq of
+                    0 -> all;
+                    _ -> [<<"Results">>]
+                end,
+            {ok, Msg3} =
+                run_as(
+                    <<"Executor">>,
+                    Msg1,
+                    Next,
+                    Opts#{ cache_keys := CacheKeys }
+                ),
+            do_compute(Msg3, Msg2, Target, Opts)
+    end.
+    
 
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key`. After execution, the device is swapped back

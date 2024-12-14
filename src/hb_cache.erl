@@ -51,7 +51,7 @@ write_result(Msg1, Msg2, Msg3, Opts) ->
     % Calculate the 'address' of the resulting message and the list of keys to
     % cache or `all`.
     {[RootAddress|SecondaryAddresses], KeysToCache}
-        = result_root_path(Msg1, Msg2, Msg3, Opts),
+        = result_root_paths(Msg1, Msg2, Msg3, Opts),
     ?event(
         {writing_result,
             {root_address, RootAddress},
@@ -75,7 +75,7 @@ write_result(Msg1, Msg2, Msg3, Opts) ->
 %% @doc Given a computation result (Msg2 applied to Msg1) and a HyperBEAM `Opts` 
 %% map returns a tuple of the 'root' path that the message should be written to,
 %% and a list of the keys to write.
-result_root_path(Msg1, Msg2, Msg3, Opts) ->
+result_root_paths(Msg1, Msg2, Msg3, Opts) ->
     case hb_opts:get(cache_keys, all, Opts) of
         all ->
             % Get the 'id' and the 'unsigned_id' of the resulting message, and
