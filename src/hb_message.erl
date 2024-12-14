@@ -108,7 +108,7 @@ verify(Msg) ->
 %% @doc Load a message from the cache.
 load(Store, ID) when is_binary(ID)
         andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
-    tx_to_message(hb_cache:read_message(Store, ID));
+    tx_to_message(hb_cache:read(Store, ID));
 load(Store, Path) ->
     tx_to_message(hb_cache:read(Store, Path)).
 

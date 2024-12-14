@@ -147,7 +147,7 @@ read(ID) -> read(ID, local).
 read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
     read(ID, hb_store:scope(hb_opts:get(store), ScopeAtom));
 read(ID, Store) ->
-    hb_cache:read_message(Store, hb_util:id(ID)).
+    hb_cache:read(Store, hb_util:id(ID)).
 
 %% @doc Utility function to throw an error if the current mode is prod and
 %% non-prod ready code is being executed. You can find these in the codebase

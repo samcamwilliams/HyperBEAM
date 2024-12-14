@@ -36,7 +36,7 @@
 init(M1, _M2, Opts) ->
     ImageID = hb_converge:get(<<"Process/Image">>, M1, Opts),
     {ok, Image} =
-        hb_cache:read_message(
+        hb_cache:read(
             hb_opts:get(store, no_viable_store, Opts),
             ImageID
         ),

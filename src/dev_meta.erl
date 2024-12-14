@@ -79,7 +79,7 @@ load_path(Store, PathParts, Unresolved) ->
         {ok, Msg} -> {Msg, Unresolved};
         not_found ->
             % If that fails, try to read it as a message.
-            case hb_cache:read_message(Store, PathParts) of
+            case hb_cache:read(Store, PathParts) of
                 {ok, Msg} -> {Msg, Unresolved};
                 not_found ->
                     load_path(
