@@ -15,32 +15,35 @@
 %%% dictated by its `Device`, that can be resolved in order to yield their
 %%% values. Each key may return another message or a raw value:
 %%% 
-%%% 	Message1:Device(Message1, Message2) -> {Status, Message3}
+%%% 	converge(Message1, Message2) -> {Status, Message3}
+%%% 
+%%% Under-the-hood, `Converge(Message1, Message2)` leads to the evaluation of
+%%% `DeviceMod:PathPart(Message1, Message2)`, which defines the user compute
+%%% to be performed. If `Message1` does not specify a device, `dev_message` is
+%%% assumed. The key to resolve is specified by the `Path` field of the message.
 %%% 
 %%% After each output, the `HashPath` is updated to include the `Message2`
 %%% that was executed upon it.
 %%% 
-%%% Because each message contains implies a device that can resolve its keys,
+%%% Because each message implies a device that can resolve its keys, as well
+%%% as generating a merkle tree of the computation that led to the result,
 %%% you can see Converge Protocol as a system for cryptographically chaining 
 %%% the execution of `combinators`. See `docs/converge-protocol.md` for more 
 %%% information about Converge.
 %%% 
-%%% You will see this pattern repeated throughout the HyperBEAM codebase,
-%%% sometimes with `MessageX` replaced with `MX` or `MsgX` for brevity.
+%%% The `Fun(Message1, Message2)` pattern is repeated throughout the HyperBEAM 
+%%% codebase, sometimes with `MessageX` replaced with `MX` or `MsgX` for brevity.
 %%% 
-%%% To resolve a key, the device is called with `Message1` (likely its 
-%%% state), as well as the message to 'apply' to it. It must return a tuple of
-%%% the form {Status, Message3}, where Status is either ok or error, and 
-%%% Message3 is either a new message or a raw output value (a binary, integer,
-%%% float, atom, or list of such values). The key to resolve is specified by 
-%%% the `Path` field of the message.
+%%% Message3 can be either a new message or a raw output value (a binary, integer,
+%%% float, atom, or list of such values).
 %%% 
 %%% Devices can be expressed as either modules or maps. They can also be 
 %%% referenced by an Arweave ID, which can be used to load a device from 
 %%% the network (depending on the value of the `load_remote_devices` and 
 %%% `trusted_device_signers` environment settings).
 %%% 
-%%% Device interface:
+%%% HyperBEAM device implementations are defined as follows:
+%%% 
 %%%     DevMod:ExportedFunc : Key resolution functions. All are assumed to be
 %%%                           device keys (thus, present in every message that
 %%%                           uses it) unless specified by `DevMod:info()`.
@@ -73,7 +76,8 @@
 %%%                        handle all keys that are not explicitly implemented
 %%%                        by the device. Defaults to the `dev_message` device.
 %%% 
-%%% Runtime resolution options:
+%%% The HyperBEAM resolver also takes a number of runtime options that change
+%%% the way that the environment operates:
 %%% 
 %%% `update_hashpath`:  Whether to add the `Msg2` to `HashPath` for the `Msg3`.
 %%% 					Default: true.
@@ -81,12 +85,9 @@
 %%% 					Default: true.
 %%% `add_key`:          Whether to add the key to the start of the arguments.
 %%% 					Default: <not set>.
-%%% 
-%%% In general, all of these options are dangerous. Don't use them unless you
-%%% know what you are doing.
 
-%% @doc Takes a singleton message and parse the M1 and M2 from it, then invokes
-%% `resolve/3`.
+%% @doc Takes a singleton message and parse Msg1 and Msg2 from it, then invoke
+%% `resolve`.
 resolve(Msg, Opts) ->
     Path =
         hb_path:term_to_path(
@@ -111,26 +112,29 @@ resolve(Msg, Opts) ->
     end.
 
 %% @doc Get the value of a message's key by running its associated device
-%% function. Optionally, pass a message containing parameters to the call, as
-%% well as options that control the runtime environment. This function returns
-%% the raw result of the device function call: {ok | error, NewMessage}.
-%% 
-%% In many cases the device will not implement the key, however, so the default
-%% device is used instead. The default (`dev_message`) simply returns the 
-%% value associated with the key as it exists in the message's underlying
-%% Erlang map. In this way, devices are able to implement 'special' keys which
-%% do not exist as values in the message's map, while still exposing the 'normal'
-%% keys of a map. 'Special' keys which do not exist as values in the message's
-%% map are simply ignored.
-resolve(Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
+%% function. Optionally, takes options that control the runtime environment. 
+%% This function returns the raw result of the device function call:
+%% {ok | error, NewMessage}.
+resolve(Msg1, Msg2, Opts) ->
+    resolve_stage(1, Msg1, Msg2, Opts).
+
+%% @doc Internal function for handling request resolution.
+%% The resolver is composed of a series of discrete phases:
+%%      1: Request normalization.
+%%      2: Cache lookup.
+%%      3: Device lookup.
+%%      4: Concurrent-resolver lookup.
+%%      5: Execution.
+%%      6: Cryptographic linking.
+%%      7: Result caching.
+%%      8: Notify waiters.
+%%      9: Recurse, fork, or terminate.
+resolve_stage(1, Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
     Key = hb_path:hd(Msg2, Opts),
     case ?IS_ID(Key) of
         true ->
             % The key is an ID (reference call), so we should resolve the
-            % referenced message against Msg1 before recursing if there are 
-            % more keys.
-            ?no_prod("Carefully review that post-call resolution happens "
-                        "correctly in this case."),
+            % referenced message against Msg1. 
             {ok, Msg2Indirect} = hb_cache:read(Key, Opts),
             case resolve(Msg1, Msg2Indirect, Opts) of
                 {ok, Msg3Indirect} ->
@@ -141,33 +145,40 @@ resolve(Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
         false ->
             % This is a direct invocation, so just proceed with the normal
             % resolution process.
-            prepare_resolve(Msg1, Msg2, Opts)
+            resolve_stage(2, Msg1, Msg2, Opts)
     end;
-resolve(Msg1, Key, Opts) ->
-    prepare_resolve(Msg1, #{ path => Key }, Opts).
-
-%% @doc Internal function for resolving the path from a message and loading
-%% the function to call.
-prepare_resolve(Msg1, Msg2, Opts) ->
-	{Fun, NewOpts} =
+resolve_stage(1, Msg1, Path, Opts) ->
+    % If we have been given a Path rather than a full message, construct the
+    % message around it and recurse.
+    resolve_stage(1, Msg1, #{ path => Path }, Opts);
+resolve_stage(2, Msg1, Msg2 = #{ path := Path }, Opts) ->
+    %% Cache lookup: Check if we already have the result of `resolve(Msg1, Msg2)`
+    %% in the appropriate caches.
+    case hb_cache:read(Path, Opts) of
+        {ok, Msg3} -> {ok, Msg3};
+        not_found -> resolve_stage(3, Msg1, Msg2, Opts)
+    end;
+resolve_stage(3, Msg1, Msg2, Opts) ->
+    %% Device lookup: Find the Erlang function that should be utilized to 
+    %% execute Msg2 on Msg1.
+	{ResolvedMod, ResolvedFunc, NewOpts} =
 		try
 			Key = hb_path:hd(Msg2, Opts),
 			% Try to load the device and get the function to call.
-			{Status, ReturnedFun} = message_to_fun(Msg1, Key, Opts),
+			{Status, Mod, Func} = message_to_fun(Msg1, Key, Opts),
 			?event(
 				{resolving, Key,
-					{func, ReturnedFun},
+					{func, Func},
 					{msg1, Msg1},
 					{msg2, Msg2},
 					{opts, Opts}
 				}
 			),
 			% Next, add an option to the Opts map to indicate if we should
-			% add the key to the start of the arguments. Note: This option
-			% is used downstream by other devices (like `dev_stack`), so
-			% should be changed with care.
+			% add the key to the start of the arguments.
 			{
-				ReturnedFun,
+                Mod,
+				Func,
 				Opts#{
 					add_key =>
 						case Status of
@@ -185,16 +196,36 @@ prepare_resolve(Msg1, Msg2, Opts) ->
 					Opts
 				)
 		end,
-    % After preparing the resolution, we actually execute it.
-    % Note: We don't do this inside the try/catch because we want
-    % `throw`s that result from the downstream `do_resolve` 
-    % environment to reach the caller without being wrapped in an
-    % unnecessary `loading_device` error.
-	do_resolve(Msg1, Fun, Msg2, NewOpts).
-
-%% @doc Actually execute the resolution of a key on a message.
-do_resolve(Msg1, Fun, Msg2, Opts) ->
-	%?event({resolving, Fun, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+	resolve_stage(4, ResolvedMod, ResolvedFunc, Msg1, Msg2, NewOpts).
+resolve_stage(4, Mod, Func, Msg1, Msg2, Opts) ->
+    % Concurrent-resolver lookup: Search for local (or Distributed
+    % Erlang cluster) processes that are already performing the execution.
+    % Before we search for a live executor, we check if the device specifies 
+    % a function that tailors the 'group' name of the execution. For example, 
+    % the `dev_process` device 'groups' all calls to the same process onto
+    % calls to a single executor. By default, `{Msg1, Msg2}` is used as the
+    % group name.
+    Group =
+        case info(Mod, Msg2, Opts) of
+            #{ group := GroupFunc } ->
+                apply(GroupFunc, truncate_args(Func, [Msg1, Msg2, Opts]));
+            _ -> {Msg1, Msg2}
+        end,
+    case pg:get_local_members(Group) of
+        not_found ->
+            % Register ourselves as members of the group
+            pg:join(Group, self()),
+            % Remember the group we joined for the post-execution steps.
+            resolve_stage(5, Mod, Func, Msg1, Msg2,
+                Opts#{ groups => maps:get(groups, Opts, []) });
+        [Leader|_] ->
+            % There is another executor of this resolution in-flight.
+            % Bail execution, register to receive the response, then
+            % wait.
+            await_resolution(Leader, Msg1, Msg2, Opts)
+    end;
+resolve_stage(5, Mod, Func, Msg1, Msg2, Opts) ->
+	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
 	UserOpts = maps:remove(add_key, Opts),
@@ -203,10 +234,17 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 			false -> [Msg1, Msg2, UserOpts];
 			Key -> [Key, Msg1, Msg2, UserOpts]
 		end,
-	% Then, try to execute the function.
 	try
-		Msg3 = apply(Fun, truncate_args(Fun, Args)),
-		handle_resolved_result(Msg1, Msg2, Msg3, UserOpts)
+        % Try to execute the function.
+        case apply(Func, truncate_args(Func, Args)) of
+            {ok, Msg3} ->
+                % Result is normal. Continue to the next stage.
+                resolve_stage(6, Mod, Msg1, Msg2, Msg3, UserOpts);
+            AbnormalRes ->
+                % Result is abnormal. Skip cryptographic linking, such
+                % that we do not attest to false results.
+                resolve_stage(7, Mod, Msg1, Msg2, AbnormalRes, UserOpts)
+        end
 	catch
 		ExecClass:ExecException:ExecStacktrace ->
             % If the function call fails, we raise an error in the manner
@@ -216,64 +254,123 @@ do_resolve(Msg1, Fun, Msg2, Opts) ->
 				{ExecClass, ExecException, ExecStacktrace},
 				Opts
 			)
-	end.
-
-%% @doc Internal function for handling the result of a device call.
-%% If the result is a binary or something that doesn't have an `ok` status,
-%% we return it as is. Otherwise, we need to:
-%% 1. Set the HashPath of the Msg3 we have generated from
-%% the Msg1 we started with.
-%% 2. Pop the first element of the path from Msg2.
-%% 3. Write the result to the cache unless the `cache` option is set to false.
-%% 4. If there are still elements in the path, we recurse through execution.
-%% If additional elements are included as part of the result, we pass them
-%% through to the caller.
-handle_resolved_result(_Msg1, _Msg2, Msg3, _UserOpts) when is_binary(Msg3) ->
-    Msg3;
-handle_resolved_result(Msg1, Msg2, Result, Opts) when is_tuple(Result) ->
-	handle_resolved_result(Msg1, Msg2, tuple_to_list(Result), Opts);
-handle_resolved_result(_Msg1, _Msg2, Msg3List = [Status, _Result|_], _Opts)
-		when Status =/= ok ->
-	Msg3 = list_to_tuple(Msg3List),
-	% ?event(
-	% 	{abnormal_result,
-	% 		{result, Result},
-	% 		{msg2, Msg2},
-	% 		{msg3, Msg3},
-	% 		{opts, Opts}
-	% 	}
-	% ),
-	Msg3;
-handle_resolved_result(_M1, _M2, Output = [ok, Res|_], _Opts)
-        when not is_map(Res) ->
-	% The result is not a map, so we return it as is.
-	list_to_tuple(Output);
-handle_resolved_result(Msg1, Msg2, [ok, Msg3Raw | Rest], Opts) ->
-	Msg3 =
-		case hb_opts:get(hashpath, update, Opts#{ only => local }) of
-			update ->
-				% ?event(
-				% 	{pushing_hashpath_onto,
-				% 		{msg3, {explicit, Msg3Raw}},
-				% 		{msg2, Msg2},
-				% 		{opts, Opts}
-				% 	}
-				% ),
-				hb_path:push(hashpath, Msg3Raw, Msg2);
-			ignore -> Msg3Raw
-		end,
+	end;
+resolve_stage(6, Mod, Msg1, Msg2, Msg3, Opts) ->
+    % Cryptographic linking. Now that we have generated the result, we
+    % need to cryptographically link the output to its input via a hashpath.
+    resolve_stage(7, Mod, Msg1, Msg2,
+        case hb_opts:get(hashpath, update, Opts#{ only => local }) of
+            update -> hb_path:push(hashpath, Msg3, Msg2);
+            ignore -> Msg3
+        end,
+        Opts
+    );
+resolve_stage(7, Mod, Msg1, Msg2, Msg3, Opts) ->
+    % Result caching: Optionally, cache the result of the computation locally.
     update_cache(Msg1, Msg2, Msg3, Opts),
+    resolve_stage(8, Mod, Msg1, Msg2, Msg3, Opts);
+resolve_stage(8, Mod, Msg1, Msg2, Msg3, Opts) ->
+    % Notify waiters.
+    notify_waiting(Msg1, Msg2, Msg3, Opts),
+    resolve_stage(9, Mod, Msg1, Msg2, Msg3, Opts);
+resolve_stage(9, Mod, Msg1, Msg2, Msg3, Opts) ->
+    % Recurse, fork, or terminate.
 	case hb_path:tl(Msg2, Opts) of
-		undefined ->
-			% The path resolved to the last element, so we return
-			% to the caller.
-			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
-			list_to_tuple([ok, Msg3 | Rest]);
-		NextMsg ->
+		NextMsg when NextMsg =/= undefined ->
 			% There are more elements in the path, so we recurse.
 			?event({resolution_recursing, {next_msg, NextMsg}}),
-			resolve(Msg3, NextMsg, Opts)
+			resolve(Msg3, NextMsg, Opts);
+		undefined ->
+			% The path resolved to the last element, so we check whether
+            % we should fork a new process with Msg3 waiting for messages,
+            % or simply return to the caller. We prefer the global option, such
+            % that node operators can control whether devices are able to 
+            % generate long-running executions.
+            case hb_opts:get(spawn_worker, false, Opts#{ prefer := global }) of
+                false -> ok;
+                true ->
+                    % We should spin up a process that will hold `Msg3` 
+                    % in memory for future executions.
+                    WorkerPID = spawn(
+                        fun() ->
+                            % If the device's info contains a `worker` key we
+                            % use that instead of the default worker function.
+                            WorkerFun =
+                                maps:get(
+                                    worker,
+                                    info(Mod, Msg3, Opts),
+                                    fun worker/2
+                                ),
+                            % Call the worker function, unsetting the option
+                            % to avoid recursive spawns.
+                            WorkerFun(
+                                Msg3,
+                                Opts#{ spawn_worker := false }
+                            )
+                        end
+                    ),
+                    % Unregister ourselves from the group and register the
+                    % forked process instead. The `groups` option in `Opts`
+                    % acts as a stack, ensuring that recursive executions 
+                    % (un)register to the correct group.
+                    [ExecGroup|_] = hb_opts:get(groups, Opts),
+                    pg:leave(ExecGroup, [self()]),
+                    pg:join(ExecGroup, [WorkerPID])
+            end,
+            % Resolution has finished successfully, return to the
+            % caller.
+			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
+            {ok, Msg3}
 	end.
+
+%% @doc A server function for handling persistent executions. These can be
+%% useful for situations where a message is large and expensive to serialize
+%% and deserialize, or when executions should be deliberately serialized
+%% to avoid paralell executions of the same computation.
+worker(Msg1, Opts) ->
+    Timeout = hb_opts:get(worker_timeout, infinity, Opts),
+    receive
+        {resolve, Listener, Msg1, Msg2, _ListenerOpts} ->
+            Msg3 = resolve(Msg1, Msg2, Opts),
+            Listener ! {resolved, self(), Msg1, Msg2, Msg3},
+            % In this (default) worker implementation we do not advance the
+            % process to monitor resolution of `Msg3`, staying instead with
+            % Msg1 indefinitely.
+            worker(Msg1, Opts)
+    after Timeout ->
+        % We have hit the in-memory persistence timeout. Check whether the
+        % device has shutdown procedures (for example, writing in-memory
+        % state to the cache).
+        resolve(Msg1, terminate, Opts#{ hashpath := ignore })
+    end.
+
+%% @doc If there was already an Erlang process handling this execution,
+%% we should register with them and wait for them to notify us of
+%% completion.
+await_resolution(Leader, Msg1, Msg2, Opts) ->
+    % Calculate the compute path that we will wait upon resolution of.
+    % Register with the process.
+    ?no_prod("We should find a more efficient way to represent the "
+        "requested execution. This may cause memory issues."),
+    Leader ! {resolve, self(), Msg1, Msg2, Opts},
+    % Wait for the result.
+    receive
+        {resolved, Leader, Msg1, Msg2, Result} ->
+            ?no_prod("Should we handle response matching in a more "
+            " fine-grained manner?"),
+            Result
+    end.
+
+%% @doc Check our inbox for processes that are waiting for the resolution
+%% of this execution.
+notify_waiting(Msg1, Msg2, Msg3, Opts) ->
+    receive
+        {resolve, Listener, Msg1, Msg2, _ListenerOpts} ->
+            Listener ! {resolved, self(), Msg1, Msg2, Msg3},
+            notify_waiting(Msg1, Msg2, Msg3, Opts)
+    after 0 ->
+        ok
+    end.
 
 %% @doc Write a resulting M3 message to the cache if requested.
 update_cache(Msg1, Msg2, Msg3, Opts) ->
@@ -285,10 +382,10 @@ update_cache(Msg1, Msg2, Msg3, Opts) ->
             case hb_opts:get(async_cache, false, Opts) of
                 true ->
                     spawn(fun() ->
-                        hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
+                        hb_cache:write_result(Msg1, Msg2, Msg3, Opts)
                     end);
                 false ->
-                    hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
+                    hb_cache:write_result(Msg1, Msg2, Msg3, Opts)
             end;
         false -> ok
     end.
@@ -296,6 +393,8 @@ update_cache(Msg1, Msg2, Msg3, Opts) ->
 %% @doc Takes the `Opts` cache setting, M1, and M2 `Cache-Control` headers, and
 %% returns true if the message should be cached.
 must_cache(no_cache, _, _) -> false;
+must_cache(no_store, _, _) -> false;
+must_cache(none, _, _) -> false;
 must_cache(_, CC1, CC2) ->
     CC1List = term_to_cache_control_list(CC1),
     CC2List = term_to_cache_control_list(CC2),  
@@ -457,19 +556,20 @@ message_to_fun(Msg, Key, Opts) ->
 		{ok, Handler} ->
 			% Case 2: The device has an explicit handler function.
 			?event({info_handler_found, {dev, Dev}, {key, Key}, {handler, Handler}}),
-			info_handler_to_fun(Handler, Msg, Key, Opts);
+			{Status, Func} = info_handler_to_fun(Handler, Msg, Key, Opts),
+            {Status, Dev, Func};
 		error ->
 			%?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
 			case find_exported_function(Dev, Key, 3, Opts) of
 				{ok, Func} ->
 					% Case 3: The device has a function of the name `Key`.
-					{ok, Func};
+					{ok, Dev, Func};
 				not_found ->
 					case maps:find(default, Info) of
 						{ok, DefaultFunc} when is_function(DefaultFunc) ->
 							% Case 4: The device has a default handler.
                             %?event({default_handler_func, DefaultFunc}),
-							{add_key, DefaultFunc};
+							{add_key, Dev, DefaultFunc};
                         {ok, DefaultMod} when is_atom(DefaultMod) ->
                             % ?event(
                             %     {
@@ -478,7 +578,11 @@ message_to_fun(Msg, Key, Opts) ->
                             %         {key, Key}
                             %     }
                             % ),
-                            message_to_fun(Msg#{ device => DefaultMod }, Key, Opts);
+                            {Status, Func} =
+                                message_to_fun(
+                                    Msg#{ device => DefaultMod }, Key, Opts
+                                ),
+                            {Status, Dev, Func};
 						error ->
 							% Case 5: The device has no default handler.
 							% We use the default device to handle the key.
@@ -495,11 +599,13 @@ message_to_fun(Msg, Key, Opts) ->
 										{key, Key}
 									});
 								DefaultDev ->
-									message_to_fun(
-										Msg#{ device => DefaultDev },
-										Key,
-										Opts
-									)
+									{Status, Func} = 
+                                        message_to_fun(
+                                            Msg#{ device => DefaultDev },
+                                            Key,
+                                            Opts
+                                        ),
+                                    {Status, DefaultDev, Func}
 							end
 					end
 			end
@@ -637,7 +743,7 @@ load_device(ID, _Opts) when is_atom(ID) ->
 load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 	case hb_opts:get(load_remote_devices) of
 		true ->
-			{ok, Msg} = hb_cache:read_message(maps:get(store, Opts), ID),
+			{ok, Msg} = hb_cache:read(maps:get(store, Opts), ID),
 			Trusted =
 				lists:any(
 					fun(Signer) ->
