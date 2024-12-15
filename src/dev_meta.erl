@@ -19,7 +19,8 @@
 %%% POST /id/Push <- Push a new message on a process.
 %%% POST /Push <- Push a new message on the referenced message.
 %%% GET /Execute <- Execute an assignment on the referenced process?
-%%% GET /Thing/in/cache <- Get a thing from the cache by its path.'''
+%%% GET /Thing/in/cache <- Get a thing from the cache by its path.
+%%% '''
 
 %% @doc Execute a message on hyperbeam.
 execute(CarrierMsg, S) ->

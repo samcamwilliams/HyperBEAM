@@ -1,7 +1,6 @@
 -module(ar_wallet).
 -export([sign/2, sign/3, hmac/1, hmac/2, verify/3, verify/4, to_address/1, to_address/2, new/0, new/1]).
 -export([new_keyfile/2, load_keyfile/1, load_key/1]).
-
 -include("include/ar.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
@@ -9,9 +8,7 @@
 
 -define(WALLET_DIR, ".").
 
-%%%===================================================================
 %%% Public interface.
-%%%===================================================================
 
 new() ->
     new({rsa, 65537}).
