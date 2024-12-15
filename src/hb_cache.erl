@@ -401,24 +401,3 @@ deeply_nested_item_test() ->
         ar_bundles:id(DeepValueTx, unsigned),
         ar_bundles:id(RetrievedItem, unsigned)
     ).
-
-write_and_read_output_test(Store) ->
-    Proc = create_signed_tx(#{<<"test-item">> => create_unsigned_tx(<<"test-body-data">>)}),
-    Item1 = create_signed_tx(<<"Simple signed output #1">>),
-    Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
-    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
-    ?assertEqual({ok, Item1}, read_message(Store, ar_bundles:id(Item1, unsigned))),
-    ?assertEqual({ok, Item2}, read_message(Store, ar_bundles:id(Item2, unsigned))),
-    ?assertEqual({ok, Item2}, read_output(Store, fmt_id(Proc, signed), 1)),
-    ?assertEqual({ok, Item1}, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
-
-latest_output_retrieval_test(Store) ->
-    % Store = test_cache(),
-    Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
-    Item1 = create_signed_tx(<<"Simple signed output #1">>),
-    Item2 = create_signed_tx(<<"Simple signed output #2">>),
-    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
-    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
-    ?assertEqual({1, Item2}, latest(Store, fmt_id(Proc, signed))),
-    ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 0)).

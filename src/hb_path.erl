@@ -36,13 +36,6 @@
 %%% which allows for custom logic to be used for representing the history of a
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
--module(hb_path).
--export([hd/2, tl/2, push/3, push_hashpath/2, push_request/2]).
--export([queue_request/2, pop_request/2]).
--export([verify_hashpath/3]).
--export([term_to_path/1, term_to_path/2, from_message/2]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %% @doc Extract the first key from a `Message2''s `Path' field.
 %% Note: This function uses the `dev_message:get/3' function, rather than 
