@@ -1,5 +1,5 @@
 -module(dev_process).
--export([info/2, compute/3, schedule/3, slot/3]).
+-export([info/2, compute/3, schedule/3, slot/3, now/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -20,29 +20,26 @@
 %%% 
 %%% The external API of the device is as follows:
 %%% 
-%%% GET /ID/scheduler <- Returns the messages in the schedule
-%%% POST /ID/scheduler <- Adds a message to the schedule
+%%% GET /ID/Scheduler/Schedule <- Returns the messages in the schedule
+%%% POST /ID/Scheduler/Schedule <- Adds a message to the schedule
 %%% 
 %%% GET /ID/Computed/[IDorSlotNum]/Result <- Returns the state of the process
 %%%                                         after applying a message
-%%% POST /ID/Computed/ <- Compute and cache a message on the process.
+%%% GET /ID/Now <- Returns the `/Results` key of the latest computed message
 %%% 
 %%% Process definition example:
 %%%     Device: Process/1.0
-%%%     Scheduler: [Message]
-%%%         Device: Scheduler/1.0
-%%%         Authority: SchedulerID
-%%%     Cron: Cron/1.0
-%%%     WASM:
-%%%         Device: WASM/1.0
-%%%         Image: WASMImageID
+%%%     Scheduler-Device: Scheduler/1.0
+%%%     Execution-Device: Stack/1.0
+%%%     Execution-Stack: "Scheduler/1.0", "Cron/1.0", "WASM/1.0", "PoDA/1.0"
+%%%     Cron-Frequency: 10-Minutes
+%%%     WASM-Image: WASMImageID
 %%%     PoDA:
 %%%         Device: PoDA/1.0
 %%%         Authority: A
 %%%         Authority: B
 %%%         Authority: C
 %%%         Quorum: 2
-%%%     Execution-Stack: Scheduler, Cron, WASM, PoDA
 %%%
 %%% Runtime options:
 %%%     Cache-Frequency: The number of assignments that can pass before
@@ -50,6 +47,8 @@
 %%%     Cache-Keys:      A list of the keys that should be cached, in
 %%%                      addition to `/Results`.
 
+%% The frequency at which the process state should be cached. Can be overridden
+%% with the `cache_frequency` option.
 -define(DEFAULT_CACHE_FREQ, 10).
 
 %% @doc When the info key is called, we should return the process exports.
@@ -62,13 +61,13 @@ info(_Msg1, _Opts) ->
 
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
-    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
-end_of_schedule(Msg1, Msg2, Opts) ->
-    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
+    run_as(<<"Scheduler-Device">>, Msg1, Msg2, Opts).
+
 slot(Msg1, Msg2, Opts) ->
-    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
+    run_as(<<"Scheduler-Device">>, Msg1, Msg2, Opts).
+
 next(Msg1, _Msg2, Opts) ->
-    run_as(<<"Scheduler">>, Msg1, next, Opts).
+    run_as(<<"Scheduler-Device">>, Msg1, next, Opts).
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves.
@@ -82,51 +81,63 @@ compute(Msg1, Msg2, Opts) ->
     ProcID =
         hb_converge:get(<<"Process/id">>, Msg1, Opts#{ hashpath := ignore }),
     % Get the nonce we are currently on and the inbound nonce.
-    {ok, CurrentNonce} = hb_converge:get(<<"Nonce">>, Msg2, Opts, -1),
-    {ok, TargetNonce} = hb_converge:get(<<"Assignment/Nonce">>, Msg2, Opts),
+    {ok, CurrentSlot} = hb_converge:get(<<"Current-Slot">>, Msg2, Opts, -1),
+    {ok, TargetSlot} = hb_converge:get(<<"Assignment/Slot">>, Msg2, Opts),
     % If we do not have a live state, load or initialize one.
     {ok, Loaded} =
-        case CurrentNonce of
+        case CurrentSlot of
             -1 ->
                 % Try to load the latest complete state from disk.
-                case dev_process_cache:latest(ProcID, NewNonce, Opts) of
-                    {LoadedNonce, MsgFromCache} ->
-                        ?event({proc_loaded_state, ProcID, LoadedNonce}),
+                case dev_process_cache:latest(ProcID, TargetSlot, Opts) of
+                    {LoadedSlot, MsgFromCache} ->
+                        % Boot the devices in the executor stack with the
+                        % loaded state.
+                        ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
                         run_as(<<"Executor">>, MsgFromCache, boot, Opts);
                     not_found ->
+                        % If we do not have a checkpoint, initialize the
+                        % process from scratch.
                         init(Msg1, Msg2, Opts)
                 end;
             _ -> {ok, Msg1}
         end,
-    do_compute(Loaded, Msg2, TargetNonce, Opts).
+    do_compute(Loaded, Msg2, TargetSlot, Opts).
 
 %% @doc Continually get the next assignment from the scheduler until we
 %% are up-to-date.
-do_compute(Msg1, Msg2, Target, Opts) ->
-    case hb_converge:get(<<"Nonce">>, Msg2, Opts) of
-        CurrentNonce when CurrentNonce == Target ->
+do_compute(Msg1, Msg2, TargetSlot, Opts) ->
+    case hb_converge:get(<<"Slot">>, Msg2, Opts) of
+        CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             {ok, Msg1};
-        CurrentNonce ->
+        CurrentSlot ->
             % Get the next input from the scheduler device.
-            {ok, Next} = next(Msg1, Msg2, Opts),
+            {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
+                next(Msg1, Msg2, Opts),
             % Calculate how much of the state should be cached.
             Freq = hb_opts:get(cache_frequency, Opts, ?DEFAULT_CACHE_FREQ),
             CacheKeys =
-                case CurrentNonce rem Freq of
+                case CurrentSlot rem Freq of
                     0 -> all;
                     _ -> [<<"Results">>]
                 end,
             {ok, Msg3} =
                 run_as(
                     <<"Executor">>,
-                    Msg1,
-                    Next,
+                    State,
+                    ToProcess,
                     Opts#{ cache_keys := CacheKeys }
                 ),
-            do_compute(Msg3, Msg2, Target, Opts)
+            do_compute(Msg3, Msg2, TargetSlot, Opts)
     end.
-    
+
+%% @doc Returns the `/Results` key of the latest computed message.
+now(Msg1, _Msg2, Opts) ->
+    CurrentSlot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+    ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
+    ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
+    {ok, Msg3} = dev_process_cache:read(ProcessID, CurrentSlot, Opts),
+    {ok, hb_converge:get(<<"Results">>, Msg3, Opts)}.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key`. After execution, the device is swapped back
