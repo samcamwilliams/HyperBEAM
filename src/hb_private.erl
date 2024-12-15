@@ -10,25 +10,44 @@
 %%% element to store a cache of values that are expensive to recompute. They
 %%% should _not_ be used for encoding state that makes the execution of a
 %%% device non-deterministic (unless you are sure you know what you are doing).
-%%% 
+%%%
+%%% The `set` and `get` functions of this module allow you to run those keys
+%%% as converge paths if you would like to have private `devices` in the
+%%% messages non-public zone.
+%%%
 %%% See `docs/converge-protocol.md` for more information about the Converge
 %%% Protocol and private elements of messages.
 
 %% @doc Return the `private` key from a message. If the key does not exist, an
 %% empty map is returned.
-from_message(Msg) -> maps:get(private, Msg, #{}).
+from_message(Msg) -> maps:get(priv, Msg, #{}).
 
 %% @doc Helper for getting a value from the private element of a message.
-get(Msg, Key) -> 
+get(Msg, Key) ->
     get(Msg, Key, undefined).
-get(Msg, Key, Default) -> 
-    maps:get(Key, from_message(Msg), Default).
+
+get(Msg, InputPath, Default) ->
+    Path = remove_private_specifier(InputPath),
+    % Resolve the path against the private element of the message.
+    Resolve =
+        hb_converge:resolve(
+            Path,
+            from_message(Msg),
+            converge_opts()
+        ),
+    case Resolve of
+        {ok, Value} -> Value;
+        not_found -> Default
+    end.
 
 %% @doc Helper function for setting a key in the private element of a message.
-set(Msg, Key, Value) ->
+set(Msg, InputPath, Value) ->
+    Path = remove_private_specifier(InputPath),
+    Priv = from_message(Msg),
+    NewPriv = hb_converge:set(Priv, Path, Value, converge_opts()),
     maps:put(
-        private,
-        maps:put(Key, Value, from_message(Msg)),
+        priv,
+        NewPriv,
         Msg
     ).
 
@@ -38,6 +57,18 @@ is_private(Key) ->
 		<<"priv", _/binary>> -> true;
 		_ -> false
 	end.
+
+%% @doc Remove the first key from the path if it is a private specifier.
+remove_private_specifier(InputPath) ->
+    case is_private(hd(Path = hb_path:term_to_path(InputPath))) of
+        true -> tl(Path);
+        false -> Path
+    end.
+
+%% @doc The opts map that should be used when resolving paths against the
+%% private element of a message.
+converge_opts() ->
+    #{ hashpath => ignore, cache_control => false }.
 
 %% @doc Unset all of the private keys in a message.
 reset(Msg) ->
