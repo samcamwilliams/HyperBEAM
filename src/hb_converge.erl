@@ -212,7 +212,7 @@ resolve_stage(4, Mod, Func, Msg1, Msg2, Opts) ->
             _ -> {Msg1, Msg2}
         end,
     case pg:get_local_members(Group) of
-        not_found ->
+        [] ->
             % Register ourselves as members of the group
             pg:join(Group, self()),
             % Remember the group we joined for the post-execution steps.
@@ -255,6 +255,9 @@ resolve_stage(5, Mod, Func, Msg1, Msg2, Opts) ->
 				Opts
 			)
 	end;
+resolve_stage(6, Mod, Msg1, Msg2, Result, Opts) when not is_map(Result) ->
+    % Skip cryptographic linking if the result is not a map.
+    resolve_stage(7, Mod, Msg1, Msg2, Result, Opts);
 resolve_stage(6, Mod, Msg1, Msg2, Msg3, Opts) ->
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.

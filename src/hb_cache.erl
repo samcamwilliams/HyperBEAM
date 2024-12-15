@@ -208,7 +208,12 @@ read(Path, Opts) ->
             P1 =
                 hb_store:path(
                     Store,
-                    lists:map(fun hb_util:human_id/1, Path)
+                    lists:map(
+                        fun(ID) when ?IS_ID(ID) -> hb_util:human_id(ID);
+                           (ID) -> ID
+                        end,
+                        Path
+                    )
                 )
         ),
     % Attempt to resolve the path and return to the caller.
