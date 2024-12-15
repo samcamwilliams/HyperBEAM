@@ -291,29 +291,6 @@ test_unsigned(Data) ->
 test_signed(Data) ->
     hb_message:sign(test_unsigned(Data), ar_wallet:new()).
 
-%% @doc Test path resolution dynamics.
-simple_path_resolution_test() ->
-    Opts = test_opts(),
-    hb_store:write("test-file", <<"test-data">>, Opts),
-    hb_store:make_link("test-file", "test-link", Opts),
-    ?assertEqual({ok, <<"test-data">>}, hb_store:read("test-link", Opts)).
-
-%% @doc Ensure that we can resolve links recursively.
-resursive_path_resolution_test() ->
-    Opts = test_opts(),
-    hb_store:write("test-file", <<"test-data">>, Opts),
-    hb_store:make_link("test-file", "test-link", Opts),
-    hb_store:make_link("test-link", "test-link2", Opts),
-    ?assertEqual({ok, <<"test-data">>}, hb_store:read("test-link2", Opts)).
-
-%% @doc Ensure that we can resolve links through a directory.
-hierarchical_path_resolution_test() ->
-    Opts = test_opts(),
-    hb_store:make_group("test-dir1", Opts),
-    hb_store:write(["test-dir1", "test-file"], <<"test-data">>, Opts),
-    hb_store:make_link(["test-dir1"], "test-link", Opts),
-    ?assertEqual({ok, <<"test-data">>}, hb_store:read(["test-link", "test-file"], Opts)).
-
 %% @doc Test storing and retrieving a simple unsigned item
 store_simple_unsigned_item_test() ->
     Opts = test_opts(),

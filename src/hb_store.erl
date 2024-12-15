@@ -6,6 +6,7 @@
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store
@@ -181,3 +182,31 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
             ok
     end,
     call_all(Rest, Function, Args).
+
+%%% Tests
+
+%% @doc Test path resolution dynamics.
+simple_path_resolution_test() ->
+    Opts = hb_cache:test_opts(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:write(Store, "test-file", <<"test-data">>),
+    hb_store:make_link(Store, "test-file", "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, "test-link")).
+
+%% @doc Ensure that we can resolve links recursively.
+resursive_path_resolution_test() ->
+    Opts = hb_cache:test_opts(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:write(Store, "test-file", <<"test-data">>),
+    hb_store:make_link(Store, "test-file", "test-link"),
+    hb_store:make_link(Store, "test-link", "test-link2"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, "test-link2")).
+
+%% @doc Ensure that we can resolve links through a directory.
+hierarchical_path_resolution_test() ->
+    Opts = hb_cache:test_opts(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:make_group(Store, "test-dir1"),
+    hb_store:write(Store, ["test-dir1", "test-file"], <<"test-data">>),
+    hb_store:make_link(Store, ["test-dir1"], "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, ["test-link", "test-file"])).

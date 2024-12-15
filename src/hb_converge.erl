@@ -812,16 +812,16 @@ default_module() -> dev_message.
 
 %%% Tests
 
-key_from_id_device_test() ->
+resolve_simple_test() ->
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
 
-keys_from_id_device_test() ->
+resolve_from_multiple_keys_test() ->
     ?assertEqual(
         {ok, [a]},
         hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys, #{})
     ).
 
-path_test() ->
+resolve_path_element_test() ->
     ?assertEqual(
         {ok, [test_path]},
         hb_converge:resolve(#{ path => [test_path] }, path, #{})
