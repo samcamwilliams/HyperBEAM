@@ -1,29 +1,27 @@
-%% The mapping between Erlang and structured headers types is as follow:
-%%
-%% List: list()
-%% Inner list: {list, [item()], params()}
-%% Dictionary: [{binary(), item()}]
-%%   There is no distinction between empty list and empty dictionary.
-%% Item with parameters: {item, bare_item(), params()}
-%% Parameters: [{binary(), bare_item()}]
-%% Bare item: one bare_item() that can be of type:
-%% Integer: integer()
-%% Decimal: {decimal, {integer(), integer()}}
-%% String: {string, binary()}
-%% Token: {token, binary()}
-%% Byte sequence: {binary, binary()}
-%% Boolean: boolean()
-
 -module(hb_http_structured_fields).
-
 -export([parse_dictionary/1]).
 -export([parse_item/1]).
 -export([parse_list/1]).
 -export([dictionary/1]).
 -export([item/1]).
 -export([list/1]).
-
 -include("include/hb_http.hrl").
+
+%%% The mapping between Erlang and structured headers types is as follow:
+%%%
+%%% List: list()
+%%% Inner list: {list, [item()], params()}
+%%% Dictionary: [{binary(), item()}]
+%%%   There is no distinction between empty list and empty dictionary.
+%%% Item with parameters: {item, bare_item(), params()}
+%%% Parameters: [{binary(), bare_item()}]
+%%% Bare item: one bare_item() that can be of type:
+%%% Integer: integer()
+%%% Decimal: {decimal, {integer(), integer()}}
+%%% String: {string, binary()}
+%%% Token: {token, binary()}
+%%% Byte sequence: {binary, binary()}
+%%% Boolean: boolean()
 
 -type sh_list() :: [sh_item() | sh_inner_list()].
 -type sh_inner_list() :: {list, [sh_item()], sh_params()}.

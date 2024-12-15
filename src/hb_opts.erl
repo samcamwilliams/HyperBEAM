@@ -2,13 +2,13 @@
 -export([get/1, get/2, get/3]).
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @moduledoc A module for interacting with local and global options inside
+%%% @doc A module for interacting with local and global options inside
 %%% HyperBEAM. Options are set globally, but can also be overridden using an
-%%% an optional local `Opts` map argument. Many functions across the HyperBEAM 
-%%% environment accept an `Opts` argument, which can be used to customize 
+%%% an optional local `Opts' map argument. Many functions across the HyperBEAM 
+%%% environment accept an `Opts' argument, which can be used to customize 
 %%% behavior.
 %%% 
-%%% Options set in an `Opts` map must _never_ change the behavior of a function
+%%% Options set in an `Opts' map must _never_ change the behavior of a function
 %%% that should otherwise be deterministic. Doing so may lead to loss of funds
 %%% by the HyperBEAM node operator, as the results of their executions will be
 %%% different than those of other node operators. If they are economically 
@@ -35,7 +35,7 @@ config() ->
         bundler => "https://up.arweave.net",
         %% Choice of nodes for remote tasks, in the form of a map between
         %% node addresses and HTTP URLs.
-        %% `_` is a wildcard for any other address that is not specified.
+        %% `_' is a wildcard for any other address that is not specified.
         nodes => #{
             compute =>
                 #{
@@ -100,7 +100,7 @@ config() ->
         client_error_strategy => throw,
         % Dev options
         local_store =>
-            [{hb_store_fs, #{ prefix => "TEST-data" }}],
+            [{hb_store_rocksdb, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
@@ -114,12 +114,12 @@ config() ->
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
-%% local `Opts` map if `prefer` or `only` is set to `local`. If the `only` 
-%% option is provided in the `local` map, only keys found in the corresponding
-%% (`local` or `global`) map will be returned. This function also offers users
+%% local `Opts' map if `prefer' or `only' is set to `local'. If the `only' 
+%% option is provided in the `local' map, only keys found in the corresponding
+%% (`local' or `global') map will be returned. This function also offers users
 %% a way to specify a default value to return if the option is not set.
 %% 
-%% `prefer` defaults to `local`.
+%% `prefer' defaults to `local'.
 get(Key) -> ?MODULE:get(Key, undefined).
 get(Key, Default) -> ?MODULE:get(Key, Default, #{}).
 get(Key, Default, Opts = #{ only := local }) ->

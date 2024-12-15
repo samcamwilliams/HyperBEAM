@@ -2,25 +2,25 @@
 -export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @moduledoc A device that contains a stack of other devices, which it runs
+%%% @doc A device that contains a stack of other devices, which it runs
 %%% upon input messages in the order of their keys. A stack maintains and passes
 %%% forward a state (expressed as a message) as it progresses through devices,
-%%% in a similar manner to a `fold` operation.
+%%% in a similar manner to a `fold' operation.
 %%%
 %%% For example, a stack of devices as follows:
-%%%
-%%%  	Device -> Stack
-%%%  	Device-Stack/1/Name -> Add-One-Device
-%%%		Device-Stack/2/Name -> Add-Two-Device
-%%%
+%%% ```
+%%% Device -> Stack
+%%% Device-Stack/1/Name -> Add-One-Device
+%%% Device-Stack/2/Name -> Add-Two-Device'''
+%%% 
 %%% When called with the message:
-%%%
-%%% 	#{ Path = "FuncName", binary => <<"0">> }
-%%%
+%%% ```
+%%% #{ Path = "FuncName", binary => <<"0">> }'''
+%%% 
 %%% Will produce the output:
-%%%
-%%% 	#{ Path = "FuncName", binary => <<"3">> }
-%%% 	{ok, #{ bin => <<"3">> }}
+%%%  ```
+%%% #{ Path = "FuncName", binary => <<"3">> }
+%%% {ok, #{ bin => <<"3">> }}'''
 %%%
 %%% The key that is called upon the device stack is the same key that is used
 %%% upon the devices that are contained within it. For example, in the above
@@ -29,10 +29,11 @@
 %%%
 %%% A device stack responds to special tags upon responses as follows:
 %%%
-%%% 	`skip`: Skips the rest of the device stack for the current pass.
-%%% 	`pass`: Causes the stack to increment its pass number and re-execute
-%%% 	the stack from the first device, maintaining the state accumulated so
-%%% 	far.
+%%% `skip': Skips the rest of the device stack for the current pass.
+%%% 
+%%% `pass': Causes the stack to increment its pass number and re-execute
+%%%  the stack from the first device, maintaining the state accumulated so
+%%%  far.
 %%%
 %%% In all cases, the device stack will return the accumulated state to the
 %%% caller as the result of the call to the stack.
@@ -41,10 +42,11 @@
 %%% the state of its execution as it progresses through devices. These keys
 %%% are as follows:
 %%%
-%%% 	`slot`: The number of times the stack has been executed upon different
-%%% 	messages.
-%%% 	`pass`: The number of times the stack has reset and re-executed from the
-%%% 	first device for the current message.
+%%% `slot': The number of times the stack has been executed upon different
+%%% messages.
+%%% 
+%%% `pass': The number of times the stack has reset and re-executed from the
+%%% first device for the current message.
 %%%
 %%% All counters used by the stack are initialized to 1.
 %%%
@@ -53,19 +55,20 @@
 %%% these options is also passed through to the devices contained within the
 %%% stack during execution. These options include:
 %%%
-%%% 	Error-Strategy: Determines how the stack handles errors from devices.
-%%% 	See `maybe_error/5` for more information.
-%%% 	Allow-Multipass: Determines whether the stack is allowed to automatically
-%%% 	re-execute from the first device when the `pass` tag is returned. See
-%%% 	`maybe_pass/3` for more information.
+%%% Error-Strategy: Determines how the stack handles errors from devices.
+%%% See `maybe_error/5' for more information.
+%%% 
+%%% Allow-Multipass: Determines whether the stack is allowed to automatically
+%%% re-execute from the first device when the `pass' tag is returned. See
+%%% `maybe_pass/3' for more information.
 %%%
-%%% Under-the-hood, dev_stack uses a `default` handler to resolve all calls to
-%%% devices, aside `set/2` which it calls itself to mutate the message's `device`
+%%% Under-the-hood, dev_stack uses a `default' handler to resolve all calls to
+%%% devices, aside `set/2' which it calls itself to mutate the message's `device'
 %%% key in order to change which device is currently being executed. This method
 %%% allows dev_stack to ensure that the message's HashPath is always correct,
-%%% even as it delegates calls to other devices. An example flow for a `dev_stack`
+%%% even as it delegates calls to other devices. An example flow for a `dev_stack'
 %%% execution is as follows:
-%%%
+%%%```
 %%% 	/Msg1/AlicesExcitingKey ->
 %%% 		dev_stack:execute ->
 %%% 			/Msg1/Set?device=/Device-Stack/1 ->
@@ -75,9 +78,9 @@
 %%% 			... ->
 %%% 			/MsgN/Set?device=[This-Device] ->
 %%% 		returns {ok, /MsgN+1} ->
-%%% 	/MsgN+1
+%%% 	/MsgN+1'''
 %%%
-%%% In this example, the `device` key is mutated a number of times, but the
+%%% In this example, the `device' key is mutated a number of times, but the
 %%% resulting HashPath remains correct and verifiable.
 
 -include("include/hb.hrl").
@@ -87,9 +90,9 @@ info(_) ->
 		handler => fun router/4
 	}.
 
-%% @doc The device stack key router. Sends the request to `resolve_stack`,
-%% except for `set/2` which is handled by the default implementation in
-%% `dev_message`.
+%% @doc The device stack key router. Sends the request to `resolve_stack',
+%% except for `set/2' which is handled by the default implementation in
+%% `dev_message'.
 router(keys, Message1, Message2, _Opts) ->
 	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
 	dev_message:keys(Message1);
@@ -113,8 +116,8 @@ router(Key, Message1, Message2, Opts) ->
 
 
 %% @doc Return a message which, when given a key, will transform the message
-%% such that the device named `Key` from the `Device-Stack` key in the message
-%% takes the place of the original `Device` key. This allows users to call
+%% such that the device named `Key' from the `Device-Stack' key in the message
+%% takes the place of the original `Device' key. This allows users to call
 %% a single device from the stack:
 %%
 %% 	/Msg1/AlicesExcitingStack/Transform/DeviceName/keyInDevice ->
@@ -138,8 +141,8 @@ transformer_message(Msg1, Opts) ->
 		}
 	}.
 
-%% @doc Return Message1, transformed such that the device named `Key` from the
-%% `Device-Stack` key in the message takes the place of the original `Device`
+%% @doc Return Message1, transformed such that the device named `Key' from the
+%% `Device-Stack' key in the message takes the place of the original `Device'
 %% key. This transformation allows dev_stack to correctly track the HashPath
 %% of the message as it delegates execution to devices contained within it.
 transform(Msg1, Key, Opts) ->
@@ -151,7 +154,7 @@ transform(Msg1, Key, Opts) ->
 				{ok, DevMsg} ->
 					% Set the:
 					% - Device key to the device we found.
-					% - `/Device-Stack/Previous` key to the device we are
+					% - `/Device-Stack/Previous' key to the device we are
 					%   replacing.
 					?event({activating_device, DevMsg}),
 					dev_message:set(
@@ -178,7 +181,7 @@ transform(Msg1, Key, Opts) ->
 		_ -> throw({error, no_valid_device_stack})
 	end.
 
-%% @doc The main device stack execution engine. See the `moduledoc` for more
+%% @doc The main device stack execution engine. See the moduledoc for more
 %% information.
 resolve_stack(Message1, Key, Message2, Opts) ->
     resolve_stack(Message1, Key, Message2, 1, Opts).

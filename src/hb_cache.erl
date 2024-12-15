@@ -271,6 +271,8 @@ opts_to_store(Opts) ->
 
 %%% Tests
 
+-define(TEST_WALLET_NAME, pb_cache_test_wallet).
+
 %% Helpers
 
 test_opts() ->
@@ -322,51 +324,49 @@ simple_signed_item_test() ->
     ?assertEqual(Item, RetrievedItemSigned),
     ?assertEqual(true, ar_bundles:verify_item(RetrievedItemSigned)).
 
-%% @doc Test storing and retrieving a composite unsigned item
-composite_unsigned_item_test_ignore() ->
-    Opts = test_opts(),
-    ItemData = #{
-        <<"key1">> => test_unsigned(<<"value1">>),
-        <<"key2">> => test_unsigned(<<"value2">>)
-    },
-    Item = ar_bundles:deserialize(test_unsigned(ItemData)),
-    ok = write(Item, Opts),
-    {ok, RetrievedItem} = ?event(read(hb_converge:get(id, Item), Opts)),
-    ?assertEqual(
-        hb_converge:get(unsigned_id, (maps:get(<<"key1">>, Item#tx.data)), unsigned),
-        hb_converge:get(unsigned_id, (maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
-    ),
-    ?assertEqual(
-        hb_converge:get(unsigned_id, (maps:get(<<"key2">>, Item#tx.data)), unsigned),
-        hb_converge:get(unsigned_id, (maps:get(<<"key2">>, RetrievedItem#tx.data)), unsigned)
-    ),
-    ?assertEqual(
-        ar_bundles:id(Item, unsigned),
-        ar_bundles:id(RetrievedItem, unsigned)
-    ).
+% %% Test storing and retrieving a composite unsigned item
+% composite_unsigned_item_test_ignore() ->
+%     ItemData = #{
+%         <<"key1">> => create_unsigned_tx(<<"value1">>),
+%         <<"key2">> => create_unsigned_tx(<<"value2">>)
+%     },
+%     Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
+%     ok = write(TestStore = test_cache(), Item),
+%     {ok, RetrievedItem} = ?event(read_message(TestStore, ar_bundles:id(Item))),
+%     ?assertEqual(
+%         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
+%         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
+%     ),
+%     ?assertEqual(
+%         ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), unsigned),
+%         ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), unsigned)
+%     ),
+%     ?assertEqual(
+%         ar_bundles:id(Item, unsigned),
+%         ar_bundles:id(RetrievedItem, unsigned)
+%     ).
 
-%% @doc Test storing and retrieving a composite signed item
-composite_signed_item_test_ignore() ->
-    Opts = test_opts(),
-    ItemData = #{
-        <<"key1">> => test_signed(<<"value1">>),
-        <<"key2">> => test_signed(<<"value2">>)
-    },
-    Item = ar_bundles:deserialize(test_signed(ItemData)),
-    ok = write(Item, Opts),
-    {ok, RetrievedItem} = ?event(read(ar_bundles:id(Item, signed), Opts)),
-    ?assertEqual(
-        ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
-        ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
-    ),
-    ?assertEqual(
-        ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), signed),
-        ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), signed)
-    ),
-    ?assertEqual(ar_bundles:id(Item, unsigned), ar_bundles:id(RetrievedItem, unsigned)),
-    ?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
-    ?assertEqual(true, ar_bundles:verify_item(Item)),
-    ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
+%% Test storing and retrieving a composite signed item
+% composite_signed_item_test_ignore() ->
+%     ItemData = #{
+%         <<"key1">> => create_signed_tx(<<"value1">>),
+%         <<"key2">> => create_signed_tx(<<"value2">>)
+%     },
+%     Item = ar_bundles:deserialize(create_signed_tx(ItemData)),
+%     ok = write(TestStore = test_cache(), Item),
+%     {ok, RetrievedItem} = ?event(read_message(TestStore, ar_bundles:id(Item, signed))),
+%     ?assertEqual(
+%         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
+%         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
+%     ),
+%     ?assertEqual(
+%         ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), signed),
+%         ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), signed)
+%     ),
+%     ?assertEqual(ar_bundles:id(Item, unsigned), ar_bundles:id(RetrievedItem, unsigned)),
+%     ?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
+%     ?assertEqual(true, ar_bundles:verify_item(Item)),
+%     ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
 
 %% @doc Test deeply nested item storage and retrieval
 deeply_nested_item_test() ->
@@ -401,3 +401,24 @@ deeply_nested_item_test() ->
         ar_bundles:id(DeepValueTx, unsigned),
         ar_bundles:id(RetrievedItem, unsigned)
     ).
+
+write_and_read_output_test(Store) ->
+    Proc = create_signed_tx(#{<<"test-item">> => create_unsigned_tx(<<"test-body-data">>)}),
+    Item1 = create_signed_tx(<<"Simple signed output #1">>),
+    Item2 = create_signed_tx(<<"Simple signed output #2">>),
+    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    ?assertEqual({ok, Item1}, read_message(Store, ar_bundles:id(Item1, unsigned))),
+    ?assertEqual({ok, Item2}, read_message(Store, ar_bundles:id(Item2, unsigned))),
+    ?assertEqual({ok, Item2}, read_output(Store, fmt_id(Proc, signed), 1)),
+    ?assertEqual({ok, Item1}, read_output(Store, fmt_id(Proc, signed), ar_bundles:id(Item1, unsigned))).
+
+latest_output_retrieval_test(Store) ->
+    % Store = test_cache(),
+    Proc = create_signed_tx(#{ <<"test-item">> => create_unsigned_tx(<<"test-body-data">>) }),
+    Item1 = create_signed_tx(<<"Simple signed output #1">>),
+    Item2 = create_signed_tx(<<"Simple signed output #2">>),
+    ok = write_output(Store, fmt_id(Proc, signed), 0, Item1),
+    ok = write_output(Store, fmt_id(Proc, signed), 1, Item2),
+    ?assertEqual({1, Item2}, latest(Store, fmt_id(Proc, signed))),
+    ?assertEqual({0, Item1}, latest(Store, fmt_id(Proc, signed), 0)).

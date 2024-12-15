@@ -1,4 +1,3 @@
-%%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
 -export([id/1, id/2, reset_ids/1, type/1, map/1, hd/1, member/2, find/2]).
@@ -10,10 +9,10 @@
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
 -export([print/1, format/1, format/2]).
-
 -include("include/hb.hrl").
-
 -include_lib("eunit/include/eunit.hrl").
+
+%%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 
 -define(BUNDLE_TAGS, [
     {<<"Bundle-Format">>, <<"Binary">>},
@@ -24,7 +23,7 @@
     {<<"Map-Format">>, <<"List">>}
 ]).
 
-% How many bytes of a binary to print with `print/1`.
+% How many bytes of a binary to print with `print/1'.
 -define(BIN_PRINT, 20).
 -define(INDENT_SPACES, 2).
 
@@ -582,7 +581,7 @@ parse_manifest(Bin) ->
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 -- but it is is written in
-%% little-endian format which is why we encode to <<1, 0>>.
+%% little-endian format which is why we encode to `<<1, 0>>'.
 encode_signature_type({rsa, 65537}) ->
     <<1, 0>>;
 encode_signature_type(_) ->
@@ -738,7 +737,7 @@ maybe_unbundle_map(Bundle) ->
     end.
 
 %% @doc An internal helper for finding an item in a single-layer of a bundle.
-%% Does not recurse! You probably want `find/2` in most cases.
+%% Does not recurse! You probably want `find/2' in most cases.
 find_single_layer(UnsignedID, TX) when is_record(TX, tx) ->
     find_single_layer(UnsignedID, TX#tx.data);
 find_single_layer(UnsignedID, Items) ->
@@ -862,7 +861,7 @@ json_struct_to_item(RawTXStruct) ->
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
-%% little-endian format which is why we match on <<1, 0>>.
+%% little-endian format which is why we match on `<<1, 0>>'.
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(Other) ->
@@ -944,8 +943,23 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_bundle_map/0},
         {timeout, 30, fun test_basic_member_id/0},
         {timeout, 30, fun test_deep_member/0},
-        {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
+        {timeout, 30, fun test_extremely_large_bundle/0}
     ].
+
+ar_bundles_with_hb_store_test_() ->
+    {foreach,
+        fun() ->
+            Opts = hb_opts:get(local_store),
+            hb_store:start(Opts)
+        end,
+        fun(_) ->
+            Opts = hb_opts:get(local_store),
+            hb_store:stop(Opts)
+        end,
+        [
+            {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
+        ]
+    }.
 
 test_no_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -1080,7 +1094,7 @@ test_bundle_map() ->
     ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
     ?assert(verify_item(BundleItem)).
 
-extremely_large_bundle_test() ->
+test_extremely_large_bundle() ->
     W = ar_wallet:new(),
     Data = crypto:strong_rand_bytes(100_000_000),
     Norm = normalize(#tx { data = #{ <<"key">> => #tx { data = Data } } }),

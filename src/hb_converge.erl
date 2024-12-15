@@ -39,8 +39,8 @@
 %%% 
 %%% Devices can be expressed as either modules or maps. They can also be 
 %%% referenced by an Arweave ID, which can be used to load a device from 
-%%% the network (depending on the value of the `load_remote_devices` and 
-%%% `trusted_device_signers` environment settings).
+%%% the network (depending on the value of the `load_remote_devices' and 
+%%% `trusted_device_signers' environment settings).
 %%% 
 %%% HyperBEAM device implementations are defined as follows:
 %%% 
@@ -446,9 +446,9 @@ keys(Msg, Opts, remove) ->
     ).
 
 %% @doc Shortcut for setting a key in the message using its underlying device.
-%% Like the `get/3` function, this function honors the `error_strategy` option.
-%% `set` works with maps and recursive paths while maintaining the appropriate
-%% `HashPath` for each step.
+%% Like the `get/3' function, this function honors the `error_strategy' option.
+%% `set' works with maps and recursive paths while maintaining the appropriate
+%% `HashPath' for each step.
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
 set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
@@ -522,10 +522,10 @@ truncate_args(Fun, Args) ->
 %%
 %% This comes in 7 forms:
 %% 1. The message does not specify a device, so we use the default device.
-%% 2. The device has a `handler` key in its `Dev:info()` map, which is a
+%% 2. The device has a `handler' key in its `Dev:info()' map, which is a
 %% function that takes a key and returns a function to handle that key. We pass
 %% the key as an additional argument to this function.
-%% 3. The device has a function of the name `Key`, which should be called
+%% 3. The device has a function of the name `Key', which should be called
 %% directly.
 %% 4. The device does not implement the key, but does have a default handler
 %% for us to call. We pass it the key as an additional argument.
@@ -611,7 +611,7 @@ message_to_fun(Msg, Key, Opts) ->
 			end
 	end.
 
-%% @doc Parse a handler key given by a device's `info`.
+%% @doc Parse a handler key given by a device's `info'.
 info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
 	{add_key, Handler};
 info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
@@ -695,8 +695,8 @@ find_exported_function(Mod, Key, Arity, Opts) ->
 			find_exported_function(Mod, Key, Arity - 1, Opts)
 	end.
 
-%% @doc Check if a device is guarding a key via its `exports` list. Defaults to
-%% true if the device does not specify an `exports` list. The `info` function is
+%% @doc Check if a device is guarding a key via its `exports' list. Defaults to
+%% true if the device does not specify an `exports' list. The `info' function is
 %% always exported, if it exists.
 is_exported(_, info, _Opts) -> true;
 is_exported(Dev, Key, Opts) ->
@@ -796,7 +796,7 @@ info(DevMod, Msg, Opts) ->
 		not_found -> #{}
 	end.
 
-%% @doc The default runtime options for a message. At the moment the `Message1`
+%% @doc The default runtime options for a message. At the moment the `Message1'
 %% but it is included such that we can modulate the options based on the message
 %% if needed in the future.
 default_runtime_opts(_Msg1) ->
@@ -806,8 +806,8 @@ default_runtime_opts(_Msg1) ->
 
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map. It should also
-%% implement the `set` key, which returns a `Message3` with the values changed
-%% according to the `Message2` passed to it.
+%% implement the `set' key, which returns a `Message3' with the values changed
+%% according to the `Message2' passed to it.
 default_module() -> dev_message.
 
 %%% Tests

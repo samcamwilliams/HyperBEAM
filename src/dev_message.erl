@@ -29,7 +29,7 @@ id(M) ->
     ?event({generated_id, {id, ID}, {msg, M}}),
     {ok, ID}.
 
-%% @doc Wrap a call to the `hb_util:id/2` function, which returns the
+%% @doc Wrap a call to the `hb_util:id/2' function, which returns the
 %% unsigned ID of a message.
 unsigned_id(M) ->
     {ok, raw_id(M, unsigned)}.
@@ -141,7 +141,7 @@ get(Key, Msg, _Msg2) ->
 
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 
 %% implement a case-insensitive key lookup rather than delegating to
-%% `maps:get/2`. Encode the key to a binary if it is not already.
+%% `maps:get/2'. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
 	{ok, Keys} = keys(Msg),
 	%?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
