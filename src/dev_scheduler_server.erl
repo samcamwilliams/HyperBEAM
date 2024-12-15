@@ -1,43 +1,33 @@
 -module(dev_scheduler_server).
 -export([start/2, schedule/2]).
--export([get_current_slot/1]).
+-export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @moduledoc A long-lived server that schedules messages for a process.
 %%% It acts as a deliberate 'bottleneck' to prevent the server accidentally
 %%% assigning multiple messages to the same slot.
 
--record(state,
-    {
-        id,
-        current,
-        wallet,
-        hash_chain = <<>>,
-        opts = #{}
-    }
-).
-
 -include("include/hb.hrl").
 
 %% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
-    {Current, HashChain} = slot_from_cache(ProcID, Opts),
+    {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
     spawn(
         fun() ->
             ?event(
                 {starting_scheduling_server,
                     {proc_id, ProcID},
-                    {current, Current},
+                    {current, CurrentSlot},
                     {hash_chain, HashChain}
                 }
             ),
             server(
-                #state{
-                    id = ProcID,
-                    current = Current,
-                    hash_chain = HashChain,
-                    wallet = hb_opts:get(wallet, hb:wallet(), Opts),
-                    opts = Opts
+                #{
+                    id => ProcID,
+                    current => CurrentSlot,
+                    wallet => hb_opts:get(wallet, hb:wallet(), Opts),
+                    hash_chain => HashChain,
+                    opts => Opts
                 }
             )
         end
@@ -45,7 +35,7 @@ start(ProcID, Opts) ->
 
 %% @doc Get the current slot from the cache.
 slot_from_cache(ProcID, Opts) ->
-    case dev_scheduler:assignments(ProcID, Opts) of
+    case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
             ?event({no_assignments_in_cache, {proc_id, ProcID}}),
             {-1, <<>>};
@@ -57,10 +47,10 @@ slot_from_cache(ProcID, Opts) ->
                     {assignment_num, AssignmentNum}
                 }
             ),
-            {ok, Assignment} = hb_cache:read_assignment_message(
-                hb_opts:get(store, no_viable_store, Opts),
+            {ok, Assignment} = dev_scheduler_cache:read(
                 ProcID,
-                AssignmentNum
+                AssignmentNum,
+                Opts
             ),
             {
                 AssignmentNum,
@@ -68,7 +58,6 @@ slot_from_cache(ProcID, Opts) ->
                     <<"Hash-Chain">>, Assignment, #{ hashpath => ignore })
             }
     end.
-
 
 %% @doc Call the appropriate scheduling server to assign a message.
 schedule(ProcID, Message) when is_binary(ProcID) ->
@@ -81,12 +70,12 @@ schedule(ProcID, Message) ->
     end.
 
 %% @doc Get the current slot from the scheduling server.
-get_current_slot(ProcID) ->
-    ?event({getting_current_slot, {proc_id, ProcID}}),
-    ProcID ! {get_current_slot, self()},
+info(ProcID) ->
+    ?event({getting_info, {proc_id, ProcID}}),
+    ProcID ! {info, self()},
     receive
-        {current_slot, CurrentSlot} ->
-            CurrentSlot
+        {info, Info} ->
+            Info
     end.
 
 %% @doc The main loop of the server. Simply waits for messages to assign and
@@ -95,8 +84,8 @@ server(State) ->
     receive
         {schedule, Message, Reply} ->
             server(assign(State, Message, Reply));
-        {get_current_slot, Reply} ->
-            Reply ! {current_slot, State#state.current},
+        {info, Reply} ->
+            Reply ! {info, State},
             server(State)
     end.
 
@@ -118,8 +107,8 @@ do_assign(State, Message, ReplyPID) ->
             {message, Message}
         }
     ),
-    HashChain = next_hashchain(State#state.hash_chain, Message),
-    NextNonce = State#state.current + 1,
+    HashChain = next_hashchain(maps:get(hash_chain, State), Message),
+    NextSlot = maps:get(current, State) + 1,
     % Run the signing of the assignment and writes to the disk in a separate process
     spawn(
         fun() ->
@@ -127,25 +116,21 @@ do_assign(State, Message, ReplyPID) ->
             Assignment = hb_message:sign(#{
                 <<"Data-Protocol">> => <<"ao">>,
                 <<"Variant">> => <<"ao.TN.2">>,
-                <<"Process">> => hb_util:id(State#state.id),
+                <<"Process">> => hb_util:id(maps:get(id, State)),
                 <<"Epoch">> => <<"0">>,
-                <<"Slot">> => NextNonce,
-                % This was causing an error during tag encoding,
-                % due to badarg on byte_length. Not sure that accessing
-                % Message as a record (like process id from State above)
-                % is the correct solution.
+                <<"Slot">> => NextSlot,
                 <<"Message">> => hb_converge:get(id, Message),
                 <<"Block-Height">> => Height,
                 <<"Block-Hash">> => Hash,
                 <<"Block-Timestamp">> => Timestamp,
-                % Local time on the SU, not Arweave
+                % Note: Local time on the SU, not Arweave
                 <<"Timestamp">> => erlang:system_time(millisecond),
                 <<"Hash-Chain">> => hb_util:id(HashChain)
-            }, State#state.wallet),
+            }, maps:get(wallet, State)),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ?event(starting_message_write),
-            dev_scheduler:write_assignment(Assignment, State#state.opts),
-            hb_cache:write(Message, State#state.opts),
+            dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
+            hb_cache:write(Message, maps:get(opts, State)),
             maybe_inform_recipient(
                 local_confirmation,
                 ReplyPID,
@@ -162,7 +147,10 @@ do_assign(State, Message, ReplyPID) ->
             )
         end
     ),
-    State#state{current = NextNonce, hash_chain = HashChain}.
+    State#{
+        current := NextSlot,
+        hash_chain := HashChain
+    }.
 
 maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
     case hb_opts:get(scheduling_mode, remote_confirmation) of
@@ -197,5 +185,7 @@ new_proc_test() ->
     schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
     schedule(ID, SignedItem2),
     schedule(ID, SignedItem3),
-    ?assertEqual(2, dev_scheduler_server:get_current_slot(
-        dev_scheduler_registry:find(ID))).
+    ?assertEqual(
+        #{ current_slot => 2 },
+        dev_scheduler_server:info(dev_scheduler_registry:find(ID))
+    ).

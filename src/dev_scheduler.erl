@@ -6,8 +6,6 @@
 %%% CU-flow functions:
 -export([slot/3, status/3, next/3]).
 -export([start/0, init/3, end_of_schedule/3, checkpoint/1]).
-%%% Cache functions:
--export([write_assignment/2, assignments/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -44,6 +42,7 @@ info() ->
             [
                 set,
                 status,
+                next,
                 schedule,
                 slot,
                 init,
@@ -52,12 +51,50 @@ info() ->
             ]
     }.
 
+%%% Default Converge handlers.
+
 set(Msg1, Msg2, Opts) ->
     ?event({scheduler_set_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     dev_message:set(Msg1, Msg2, Opts).
 
 keys(Msg) ->
+    ?event({scheduler_keys_called, {msg, Msg}}),
     dev_message:keys(Msg).
+
+%% @doc Load the schedule for a process into the cache, then return the next
+%% assignment. Assumes that Msg1 is a `dev_process` or similar message, having
+%% a `Current-Slot` key. It stores a local cache of the schedule in the
+%% `priv/To-Process` key.
+next(Msg1, Msg2, Opts) ->
+    ?event({scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    Schedule = hb_private:get(<<"priv/Scheduler/Assignments">>, Msg1, Opts),
+    LastProcessed = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+    ?event({local_schedule_cache, {schedule, Schedule}}),
+    Assignments =
+        case map_size(Schedule) of
+            0 ->
+                {ok, RecvdAssignments} = hb_converge:resolve(
+                    Msg1,
+                    #{
+                        <<"Method">> => <<"GET">>,
+                        path => <<"Schedule/Assignments">>,
+                        <<"From">> => LastProcessed
+                    },
+                    Opts
+                ),
+                RecvdAssignments;
+            _ -> Schedule
+        end,
+    NextSlot = lists:min(Assignments),
+    {ok, #{
+        <<"Message">> => hb_converge:get(NextSlot, Schedule, Opts),
+        <<"State">> =>
+            hb_private:set(
+                Msg1,
+                <<"Schedule/Assignments">>,
+                hb_converge:remove(NextSlot, Assignments)
+            )
+    }}.
 
 %% @doc Returns information about the entire scheduler.
 status(_M1, _M2, _Opts) ->
@@ -78,7 +115,6 @@ status(_M1, _M2, _Opts) ->
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
-    ?no_prod("SU must check it is the correct authority before scheduling."),
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
     case hb_converge:get(<<"Method">>, Msg2) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
@@ -91,7 +127,14 @@ post_schedule(Msg1, Msg2, Opts) ->
     ToSched = hb_converge:get(message, Msg2, Opts#{ hashpath => ignore }),
     ToSchedID = hb_converge:get(id, ToSched),
     Proc = hb_converge:get(process, Msg1, Opts#{ hashpath => ignore }),
+    ?no_prod("Once we have GQL, get the scheduler location record. "
+        "For now, we'll just use the address of the wallet."),
+    SchedulerLocation =
+        hb_converge:get(<<"Scheduler-Location">>, Msg1, Opts#{ hashpath => ignore }),
     ProcID = hb_converge:get(id, Proc),
+    PID = dev_scheduler_registry:find(ProcID, true),
+    #{ wallet := Wallet } = dev_scheduler_server:info(PID),
+    WalletAddress = hb_util:id(ar_wallet:to_address(Wallet)),
     ?event(
         {post_schedule,
             {process_id, ProcID},
@@ -103,19 +146,25 @@ post_schedule(Msg1, Msg2, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     ?no_prod("SU does not validate item before writing into stream."),
     %case {ar_bundles:verify_item(ToSched), hb_converge:get(type, ToSched)} of
-    case {true, hb_converge:get(type, ToSched)} of
-        {false, _} ->
+    case {WalletAddress == SchedulerLocation, true, hb_converge:get(type, ToSched)} of
+        {false, _, _} ->
+            {ok,
+                #{
+                    <<"Status">> => <<"Failed">>,
+                    <<"Body">> => <<"Scheduler location does not match wallet address.">>
+                }
+            };
+        {true, false, _} ->
             {ok,
                 #{
                     <<"Status">> => <<"Failed">>,
                     <<"Body">> => <<"Data item is not valid.">>
                 }
             };
-        {_, <<"Process">>} ->
+        {true, true, <<"Process">>} ->
             ?no_prod("SU does not write to cache or upload to bundler."),
             hb_cache:write(Store, ToSched),
             hb_client:upload(ToSched),
-            PID = dev_scheduler_registry:find(ProcID, true),
             ?event(
                 {registering_new_process,
                     {proc_id, ProcID},
@@ -130,7 +179,7 @@ post_schedule(Msg1, Msg2, Opts) ->
                     <<"Process">> => ProcID
                 }
             };
-        {_, _} ->
+        {true, true, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
             {ok,
                 dev_scheduler_server:schedule(
@@ -151,15 +200,18 @@ slot(M1, _M2, Opts) ->
     ProcID = hb_converge:get(id, Proc),
     ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
+    #{ current_slot := CurrentSlot, wallet := Wallet } =
+        dev_scheduler_server:info(
+            dev_scheduler_registry:find(ProcID)
+        ),
     {ok, #{
         <<"Process">> => ProcID,
-        <<"Current-Slot">> =>
-            dev_scheduler_server:get_current_slot(
-                dev_scheduler_registry:find(ProcID)),
+        <<"Current-Slot">> => CurrentSlot,
         <<"Timestamp">> => Timestamp,
         <<"Block-Height">> => Height,
         <<"Block-Hash">> => Hash,
-        <<"Cache-Control">> => <<"no-store">>
+        <<"Cache-Control">> => <<"no-store">>,
+        <<"Wallet-Address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
     }}.
 
 get_schedule(Msg1, Msg2, Opts) ->
@@ -178,8 +230,10 @@ get_schedule(Msg1, Msg2, Opts) ->
         case hb_converge:get(to, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
-                dev_scheduler_server:get_current_slot(
-                    dev_scheduler_registry:find(ProcID)
+                maps:get(current_slot,
+                    dev_scheduler_server:info(
+                        dev_scheduler_registry:find(ProcID)
+                    )
                 );
             ToRes -> ToRes
         end,
@@ -228,7 +282,7 @@ get_assignments(ProcID, From, RequestedTo, Opts) ->
 do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
     [];
 do_get_assignments(ProcID, From, To, Opts) ->
-    case read_assignment(ProcID, From, Opts) of
+    case dev_scheduler_cache:read(ProcID, From, Opts) of
         not_found ->
             [];
         {ok, Assignment} ->
@@ -329,61 +383,6 @@ update_schedule(M1, M2, Opts) ->
 
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.
-
-%%% Assignment cache functions
-
-%% @doc Write an assignment message into the cache.
-write_assignment(Assignment, Opts) ->
-    % Write the message into the main cache
-    {_, ProcID} = hb_converge:get(<<"Process">>, Assignment),
-    {_, Slot} = hb_converge:get(<<"Slot">>, Assignment),
-    ?event(
-        {writing_assignment,
-            {proc_id, ProcID},
-            {slot, Slot},
-            {assignment, Assignment}
-        }
-    ),
-    {ok, RootPath} = hb_cache:write(Assignment, Opts),
-    % Create symlinks from the message on the process and the 
-    % slot on the process to the underlying data.
-    hb_store:make_link(
-        RootPath,
-        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
-            "assignments",
-            hb_util:human_id(ProcID),
-            binary_to_list(Slot)
-        ]),
-        Opts
-    ),
-    ok.
-
-%% @doc Get an assignment message from the cache.
-read_assignment(ProcID, Slot, Opts) when is_integer(Slot) ->
-    read_assignment(ProcID, integer_to_list(Slot), Opts);
-read_assignment(ProcID, Slot, Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
-    ResolvedPath =
-        P2 = hb_store:resolve(
-            Store,
-            P1 = hb_store:path(Store, [
-                "assignments",
-                hb_util:human_id(ProcID),
-                Slot
-            ])
-        ),
-    ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
-    hb_cache:read(ResolvedPath, Opts).
-
-%% @doc Get the assignments for a process.
-assignments(ProcID, Opts) ->
-    hb_cache:list_numbered(
-        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
-            "assignments",
-            hb_util:human_id(ProcID)
-        ]),
-        Opts
-    ).
 
 %%% Tests
 %%% These tests assume that the process message has been transformed by the 
