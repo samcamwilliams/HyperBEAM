@@ -1,407 +1,212 @@
 -module(hb_persistent).
--export([resolve/2]).
--export([run/1, run/2, run/3]).
+-export([find_or_register/3, unregister_notify/4]).
+-export([notify/4, await/4, start_worker/2]).
+-export([find/2, find/3]).
+-export([register/2, register/3, unregister/2, unregister/3]).
 -include("include/hb.hrl").
--hb_debug(print).
+-include_lib("eunit/include/eunit.hrl").
 
-%%% @moduledoc This module implements an Erlang process structure for
-%%% long-lived executions (like AO processes) in Hyperbeam. It persists
-%%% messages between executions, keeping a message in memory, or caching to
-%%% disk as needed.
+%%% @doc Creates and manages long-lived Converge resolution processes.
+%%% These can be useful for situations where a message is large and expensive
+%%% to serialize and deserialize, or when executions should be deliberately
+%%% serialized to avoid parallel executions of the same computation. This 
+%%% module is called during the core `hb_converge` execution process, so care
+%%% must be taken to avoid recursive spawns/loops.
+%%% 
+%%% Built using the `pg` module, which is a distributed Erlang process group
+%%% manager.
 
-%%% The default frequency for checkpointing is 2 slots.
--define(DEFAULT_FREQ, 10).
+%% @doc Ensure that the `pg` module is started.
+start() -> pg:start(pg).
 
-%% @doc Resolve a message to a new state, awaiting if needed.
-resolve(Path, Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
-    % If the node operator has defined a proxy resolver that will complete
-    % computations for us, we find it here.
-    LookupStore =
-        case hb_opts:get(proxy_store, no_proxy_store, Opts) of
-            no_proxy_store ->
-                % No proxy is set; return the local store.
-                hb_store:scope(Store, local);
-            ProxyStore -> ProxyStore
-        end,
-    % Check if the resolution is already in the cache.
-    case hb_cache:read(Path, Opts#{ store => LookupStore }) of
+%% @doc Register the process to lead an execution if none is found, otherwise
+%% signal that we should await resolution.
+find_or_register(Msg1, Msg2, Opts) ->
+    GroupName = group(Msg1, Msg2, Opts),
+    case find_groupname(GroupName, Opts) of
         not_found ->
-            {Msg1ID, RestOfPath} = hb_path:pop_request(Path, Opts),
-            case pg:get_local_members({compute, Msg1ID}) of
-                [] ->
-                    ?event({no_worker_for_path, Path}),
-                    {ok, Msg1} = hb_cache:read(Msg1ID, Opts),
-                    await_resolution(
-                        run(
-                            Msg1,
-                            #{
-                                to => RestOfPath,
-                                store => Store,
-                                wallet => hb:wallet(),
-                                on_idle => wait
-                            },
-                            create_monitor(RestOfPath, Opts)
-                        )
-                    );
-                [Pid|_] ->
-                    ?event({found_worker_for_path, Path}),
-                    ?no_prod("The CU process IPC API is poorly named."),
-                    Pid !
-                        {
-                            on_idle,
-                            run,
-                            add_monitor,
-                            [create_monitor(RestOfPath, Opts)]
-                        },
-                    Pid ! {on_idle, add_message, Msg1ID},
-                    ?event({added_listener_and_message, Pid, Msg1ID}),
-                    await_resolution(Pid)
-            end;
-        {ok, Result} -> {ok, Result}
+            register_groupname(GroupName, Opts),
+            leader;
+        {ok, [Leader|_]} -> {wait, Leader}
     end.
 
-%% @doc Wait for an execution to complete and return a result.
-await_resolution(Pid) ->
+%% @doc Unregister as the leader for an execution and notify waiting processes.
+unregister_notify(Msg1, Msg2, Msg3, Opts) ->
+    GroupName = group(Msg1, Msg2, Opts),
+    unregister_groupname(GroupName, Opts),
+    notify(Msg1, Msg2, Msg3, Opts).
+
+%% @doc Find a process that is already managing a specific Converge resolution.
+find(Msg1, Opts) -> find(Msg1, undefined, Opts).
+find(Msg1, Msg2, Opts) ->
+    case find_groupname(group(Msg1, Msg2, Opts), Opts) of
+        [] -> not_found;
+        Procs -> {ok, Procs}
+    end.
+
+%% @doc Find a group with the given name.
+find_groupname(Groupname, _Opts) ->
+    start(),
+    case pg:get_local_members(Groupname) of
+        [] -> not_found;
+        Procs -> {ok, Procs}
+    end.
+
+%% @doc Calculate the group name for a Msg1 and Msg2 pair. Uses the Msg1's
+%% `group' function if it is found in the `info', otherwise uses the default.
+group(Msg1, Msg2, Opts) ->
+    Grouper = maps:get(group, hb_converge:info(Msg1, Opts), fun default_group/2),
+    apply(Grouper, hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])).
+
+%% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
+default_group(Msg1, Msg2) ->
+    {Msg1, Msg2}.
+
+%% @doc Register for performing a Converge resolution.
+register(Msg1, Opts) -> register(Msg1, undefined, Opts).
+register(Msg1, Msg2, Opts) ->
+    ?event({register_resolver, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    register_groupname(group(Msg1, Msg2, Opts), Opts).
+register_groupname(Groupname, _Opts) ->
+    pg:join(Groupname, self()).
+
+%% @doc Unregister for being the leader on a Converge resolution.
+unregister(Msg1, Opts) -> unregister(Msg1, undefined, Opts).
+unregister(Msg1, Msg2, Opts) ->
+    start(),
+    ?event({unregister_resolver, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    unregister_groupname(group(Msg1, Msg2, Opts), Opts).
+unregister_groupname(Groupname, _Opts) ->
+    pg:leave(Groupname, self()).
+
+%% @doc If there was already an Erlang process handling this execution,
+%% we should register with them and wait for them to notify us of
+%% completion.
+await(Worker, Msg1, Msg2, Opts) ->
+    % Calculate the compute path that we will wait upon resolution of.
+    % Register with the process.
+    ?no_prod("We should find a more effective way to represent the "
+        "requested execution. This may cause memory issues."),
+    Worker ! {resolve, self(), Msg1, Msg2, Opts},
+    ?event({await_resolution, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    % Wait for the result.
     receive
-        {result, Pid, _Msg, State} ->
-            {ok, maps:get(results, State)}
+        {resolved, Worker, Msg1, Msg2, Msg3} ->
+            ?event({await_resolution_received, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+            ?no_prod("Should we handle response matching in a more "
+            " fine-grained manner?"),
+            Msg3
     end.
 
-%% @doc Run a new execution synchronously.
-run(Process) -> run(Process, #{ error_strategy => throw }).
-run(Process, Opts) ->
-    run(Process, Opts, create_persistent_monitor(Opts)).
-run(Process, Opts, Monitor) when not is_list(Monitor) ->
-    run(Process, Opts, [Monitor]);
-run(Process, RawOpts, Monitors) ->
-    Opts = RawOpts#{
-        post => maps:get(post, RawOpts, []) ++ [{dev_monitor, Monitors}]
-    },
-    element(1, spawn_monitor(fun() -> boot(Process, Opts) end, Opts)).
-
-create_monitor(MsgID, _Opts) ->
-    Listener = self(),
-    fun(S, {add_message, Inbound}) ->
-        % Gather messages
-        Assignment = maps:get(<<"Assignment">>, Inbound#tx.data),
-        Msg = maps:get(<<"Message">>, Inbound#tx.data),
-        % Gather IDs
-        AssignmentID = hb_util:id(Assignment, signed),
-        AssignmentUnsignedID = hb_util:id(Assignment, unsigned),
-        ScheduledMsgID = hb_util:id(Msg, signed),
-        ScheduledMsgUnsignedID = hb_util:id(Msg, unsigned),
-        % Gather slot
-        Slot =
-            case lists:keyfind(<<"Slot">>, 1, Assignment#tx.tags) of
-                {<<"Slot">>, RawSlot} ->
-                    list_to_integer(binary_to_list(RawSlot));
-                false -> no_slot
-            end,
-        % Check if the message is relevant
-        IsRelevant =
-            (Slot == MsgID) or
-            (ScheduledMsgID == MsgID) or
-            (AssignmentID == MsgID) or
-            (ScheduledMsgUnsignedID == MsgID) or
-            (AssignmentUnsignedID == MsgID),
-        % Send the result if the message is relevant.
-        % Continue waiting otherwise.
-        case IsRelevant of
-            true ->
-                Listener ! {result, self(), Inbound, S}, done;
-            false ->
-                ?event({monitor_got_message_for_wrong_slot, Slot, MsgID}),
-                %ar_bundles:print(Inbound),
-                ignored
-        end;
-        (S, end_of_schedule) ->
-            ?event(
-                {monitor_got_eos,
-                    {waiting_for_slot, maps:get(slot, S, no_slot)},
-                    {to, maps:get(to, S, no_to)}
-                }
-            ),
-            ignored;
-        (_, Signal) ->
-            ?event({monitor_got_unknown_signal, Signal}),
-            ignored
+%% @doc Check our inbox for processes that are waiting for the resolution
+%% of this execution.
+notify(Msg1, Msg2, Msg3, Opts) ->
+    ?event({notify_waiting, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+    receive
+        {resolve, Listener, Msg1, Msg2, _ListenerOpts} ->
+            send_response(Listener, Msg1, Msg2, Msg3),
+            notify(Msg1, Msg2, Msg3, Opts)
+    after 0 ->
+        ?event(finished_notify),
+        ok
     end.
 
-create_persistent_monitor(_Opts) ->
-    Listener = self(),
-    fun(S, {add_message, Msg}) ->
-        Listener ! {result, self(), Msg, S};
-        (_, _) -> ok
-    end.
+%% @doc Helper function that wraps responding with a new Msg3.
+send_response(Listener, Msg1, Msg2, Msg3) ->
+    ?event({send_response, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+    Listener ! {resolved, self(), Msg1, Msg2, Msg3}.
 
-%% Process execution flow =>
-%% Boot:    Check which devices need checkpoints and which they require
-%%          Read the checkpoint data from the cache if available
-%%          Build init state, mixing checkpoint data with baseline state
-%%          Run init() on all devices
-%% Execute: Run execute_schedule for the slot.
-%%          Run execute_message for each device.
-%%          Run checkpoint on all devices if the current slot is a checkpoint
-%%          slot. Cache the result of the computation if the caller requested
-%%          it. Repeat for the next slot.
-%% EOS:     Check if we are in aggressive/lazy execution mode.
-%%          Run end_of_schedule() on all devices to see if there is more work
-%%          in aggressive mode, or move to await_command() in lazy mode.
-%% Waiting: Either wait for a new message to arrive, or exit as requested.
-boot(Process, Opts) ->
-    % Register the process so that it can be found by its ID.
-    ?event(
-        {booting_process,
-            {signed, hb_util:id(Process, signed)},
-            {unsigned, hb_util:id(Process, unsigned)}
-        }
+%% @doc Start a worker process that will hold a message in memory for
+%% future executions.
+start_worker(Msg, Opts) ->
+    WorkerPID = spawn(
+        fun() ->
+            % If the device's info contains a `worker` function we
+            % use that instead of the default implementation.
+            WorkerFun =
+                maps:get(
+                    worker,
+                    hb_converge:info(Msg, Opts),
+                    fun default_worker/2
+                ),
+            % Call the worker function, unsetting the option
+            % to avoid recursive spawns.
+            apply(
+                WorkerFun,
+                hb_converge:truncate_args(
+                    WorkerFun,
+                    [Msg, Opts#{ spawn_worker := false }])
+            )
+        end
     ),
-    pg:join({cu, hb_util:id(Process, signed)}, self()),
-    % Build the device stack.
-    ?event({registered_process, hb_util:id(Process, signed)}),
-    {ok, Dev} = hb_converge:load_device(Process, Opts),
-    ?event({booting_device, Dev}),
-    {ok, BootState = #{ devices := Devs }}
-        = hb_converge:resolve(Dev, boot, [Process, Opts], Opts),
-    ?event(booted_device),
-    % Get the store we are using for this execution.
-    Store = maps:get(store, Opts, hb_opts:get(store)),
-    % Get checkpoint key names from all devices.
-    % TODO: Assumes that the device is a stack or another device that uses maps
-    % for state.
-    {ok, #{keys := [Key|_]}} =
-        hb_converge:resolve(Dev, checkpoint_uses, [BootState], Opts),
-    % We don't support partial checkpoints (perhaps we never will?), so just
-    % take one key and use that to find the latest full checkpoint.
-    CheckpointOption =
-        hb_cache:latest(
-            Store,
-            ar_bundles:id(Process, signed),
-            maps:get(to, Opts, inf),
-            [Key]
-        ),
-    {Slot, Checkpoint} =
-        case CheckpointOption of
-            not_found ->
-                ?event({wasm_no_checkpoint, maps:get(to, Opts, inf)}),
-                {-1, #{}};
-            {LatestSlot, State} ->
-                ?event(wasm_checkpoint),
-                {LatestSlot, State#tx.data}
-    end,
-    InitState =
-        (Checkpoint)#{
-            process => Process,
-            slot => Slot + 1,
-            to => maps:get(to, Opts, inf),
-            wallet => maps:get(wallet, Opts, hb:wallet()),
-            store => maps:get(store, Opts, hb_opts:get(store)),
-            schedule => maps:get(schedule, Opts, []),
-            devices => Devs
-        },
-    ?event(
-        {running_init_on_slot,
-            Slot + 1,
-            maps:get(to, Opts, inf),
-            maps:keys(Checkpoint)
-        }
-    ),
-    RuntimeOpts =
-        Opts#{
-            proc_dev => Dev,
-            return => all,
-            % If no compute mode is already set, use the global default.
-            compute_mode => maps:get(compute_mode, Opts, hb_opts:get(compute_mode))
-        },
-    case hb_converge:resolve(Dev, init, [InitState, RuntimeOpts]) of
-        {ok, StateAfterInit} ->
-            execute_schedule(StateAfterInit, RuntimeOpts);
-        {error, N, DevMod, Info} ->
-            throw({error, boot, N, DevMod, Info})
+    ?MODULE:register(Msg, WorkerPID).
+
+%% @doc A server function for handling persistent executions. 
+default_worker(Msg1, Opts) ->
+    Timeout = hb_opts:get(worker_timeout, infinity, Opts),
+    receive
+        {resolve, Listener, Msg1, Msg2, _ListenerOpts} ->
+            Msg3 = hb_converge:resolve(Msg1, Msg2, Opts),
+            send_response(Listener, Msg1, Msg2, Msg3),
+            notify(Msg1, Msg2, Msg3, Opts),
+            % In this (default) worker implementation we do not advance the
+            % process to monitor resolution of `Msg3`, staying instead with
+            % Msg1 indefinitely.
+            default_worker(Msg1, Opts)
+    after Timeout ->
+        % We have hit the in-memory persistence timeout. Check whether the
+        % device has shutdown procedures (for example, writing in-memory
+        % state to the cache).
+        unregister(Msg1, undefined, Opts),
+        hb_converge:resolve(Msg1, terminate, Opts#{ hashpath := ignore })
     end.
 
-execute_schedule(State, Opts) ->
-    ?event(
-        {
-            process_executing_slot,
-            maps:get(slot, State),
-            {proc_id, hb_util:id(maps:get(process, State))},
-            {to, maps:get(to, State)}
-        }
-    ),
-    case State of
-        #{schedule := []} ->
-            ?event(
-                {process_finished_schedule,
-                    {final_slot, maps:get(slot, State)}
-                }
-            ),
-            case maps:get(compute_mode, Opts) of
-                aggressive ->
-                    case execute_eos(State, Opts) of
-                        {ok, #{schedule := []}} ->
-                            ?event(eos_did_not_yield_more_work),
-                            await_command(State, Opts);
-                        {ok, NS} ->
-                            execute_schedule(NS, Opts);
-                        {error, DevNum, DevMod, Info} ->
-                            ?event({error, {DevNum, DevMod, Info}}),
-                            execute_terminate(
-                                State#{
-                                    errors :=
-                                        maps:get(errors, State, [])
-                                        ++ [{DevNum, DevMod, Info}]
-                                },
-                                Opts
-                            )
-                    end;
-                lazy ->
-                    ?event({lazy_compute_mode, moving_to_await_state}),
-                    await_command(State, Opts)
-            end;
-        #{schedule := [Msg | NextSched]} ->
-            case execute_message(Msg, State, Opts) of
-                {ok, NewState = #{schedule := [Msg | NextSched]}} ->
-                    post_execute(
-                        Msg,
-                        NewState#{schedule := NextSched},
-                        Opts
-                    );
-                {ok, NewState} ->
-                    ?event({schedule_updated, not_popping}),
-                    post_execute(
-                        Msg,
-                        NewState#{schedule := NextSched},
-                        Opts
-                    );
-                {error, DevNum, DevMod, Info} ->
-                    ?event({error, {DevNum, DevMod, Info}}),
-                    execute_terminate(
-                        State#{
-                            errors :=
-                                maps:get(errors, State, [])
-                                ++ [{DevNum, DevMod, Info}]
-                        },
-                        Opts
-                    )
-            end
-    end.
+%%% Tests
 
-post_execute(
-    _Msg,
-    State =
+%% @doc Test merging and returning a value with a persistent worker.
+merged_execution_test() ->
+    Device =
         #{
-            store := Store,
-            results := Results,
-            process := Process,
-            slot := Slot,
-            wallet := Wallet
-        },
-    Opts = #{ proc_dev := Dev }
-) ->
-    ?event({handling_post_execute_for_slot, Slot}),
-    case is_checkpoint_slot(State, Opts) of
-        true ->
-            % Run checkpoint on the device stack, but we do not propagate the
-            % result.
-            ?event({checkpointing_for_slot, Slot}),
-            {ok, CheckpointState} =
-                hb_converge:resolve(
-                    Dev,
-                    checkpoint,
-                    [State#{ save_keys => [], message => undefined }],
-                    Opts#{ message => undefined }
-                ),
-            Checkpoint =
-                ar_bundles:normalize(
-                    #tx {
-                        data =
-                            maps:merge(
-                                Results,
-                                maps:from_list(lists:map(
-                                    fun(Key) ->
-                                        Item = maps:get(Key, CheckpointState),
-                                        case is_record(Item, tx) of
-                                            true -> {Key, Item};
-                                            false -> 
-                                                throw({error, checkpoint_result_not_tx, Key})
-                                        end
-                                    end,
-                                    maps:get(save_keys, CheckpointState, [])
-                                ))
-                            )
+            info =>
+                fun() ->
+                    #{
+                        group => fun(Msg) -> Msg end
                     }
-                ),
-            ?event({checkpoint_normalized_for_slot, Slot}),
-            hb_cache:write_result(
-                Store,
-                hb_util:id(Process, signed),
-                Slot,
-                ar_bundles:sign_item(Checkpoint, Wallet)
-            ),
-            ?event({checkpoint_written_for_slot, Slot});
-        false ->
-            NormalizedResult =
-                ar_bundles:deserialize(ar_bundles:serialize(Results)),
-            hb_cache:write_result(
-                Store,
-                hb_util:id(Process, signed),
-                Slot,
-                NormalizedResult
-            ),
-            ?event({result_written_for_slot, Slot})
-    end,
-    execute_schedule(initialize_slot(State), Opts).
-
-initialize_slot(State = #{slot := Slot}) ->
-    ?event({preparing_for_next_slot, Slot + 1}),
-    State#{
-        slot := Slot + 1,
-        pass := 0,
-        results := undefined,
-        message => undefined
-    }.
-
-execute_message(M2, M1, Opts) ->
-    hb_converge:resolve(M1, M2, Opts).
-
-execute_terminate(M1, Opts) ->
-    hb_converge:resolve(M1, terminate, Opts).
-
-execute_eos(M1, Opts) ->
-    hb_converge:resolve(M1, end_of_schedule, Opts).
-
-is_checkpoint_slot(State, Opts) ->
-    (maps:get(is_checkpoint, Opts, fun(_) -> false end))(State)
-        orelse maps:get(slot, State) rem maps:get(freq, Opts, ?DEFAULT_FREQ) == 0.
-
-%% After execution of the current schedule has finished the Erlang process
-%% should enter a hibernation state, waiting for either more work or
-%% termination.
-await_command(State, Opts = #{ on_idle := terminate }) ->
-    execute_terminate(State, Opts);
-await_command(State, Opts = #{ on_idle := wait, proc_dev := Dev }) ->
-    receive
-        {on_idle, run, Function, Args} ->
-            ?event({running_command, Function, Args}),
-            {ok, NewState} = hb_converge:resolve(
-                Dev,
-                Function,
-                [State#{ message => hd(Args) }, Opts],
-                Opts
-            ),
-            await_command(NewState, Opts);
-        {on_idle, add_message, MsgRef} ->
-            ?event({received_message, MsgRef}),
-            % TODO: As with starting from a message, we should avoid the
-            % unnecessary SU call if possible here.
-            {ok, NewState} = execute_eos(State#{ to => MsgRef }, Opts),
-            execute_schedule(NewState, Opts);
-        {on_idle, stop} ->
-            ?event({received_stop_command}),
-            execute_terminate(State, Opts);
-        Other ->
-            ?event({received_unknown_message, Other}),
-            await_command(State, Opts)
-    end.
+                end,
+            slow_key =>
+                fun(_, #{ wait := Wait }) ->
+                    receive after Wait ->
+                        {ok,
+                            #{
+                                waited => Wait,
+                                pid => self(),
+                                random_bytes =>
+                                    hb_util:encode(crypto:strong_rand_bytes(4))
+                            }
+                        }
+                    end
+                end
+        },
+    TestTime = 200,
+    Msg1 = #{ device => Device },
+    Msg2 = #{ path => [slow_key], wait => TestTime },
+    TestParent = self(),
+    ParalellTestFun =
+        fun() ->
+            ?event({starting_test_worker, {time, TestTime}}),
+            Res = hb_converge:resolve(Msg1, Msg2, #{}),
+            ?event({test_worker_got_result, {time, TestTime}, {result, Res}}),
+            TestParent ! Res
+        end,
+    GatherResult = fun() -> receive X -> X end end,
+    T0 = hb:now(),
+    spawn_link(ParalellTestFun),
+    receive after 100 -> ok end,
+    spawn_link(ParalellTestFun),
+    Res1 = GatherResult(),
+    Res2 = GatherResult(),
+    T1 = hb:now(),
+    % Check the result is the same.
+    ?assertEqual(Res1, Res2),
+    % Check the time it took is less than the sum of the two test times.
+    ?assert(T1 - T0 < (2*TestTime)).
