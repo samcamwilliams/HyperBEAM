@@ -1,5 +1,5 @@
 -module(hb_cache).
--export([read/2, write/3, write_result/4]).
+-export([read/2, write/2, write/3, write_result/4]).
 -export([list/2, list_numbered/2]).
 %%% Exports for modules that utilize hb_cache.
 -export([test_opts/0, test_unsigned/1, test_signed/1]).

@@ -238,39 +238,33 @@ resolve_stage(5, Func, Msg1, Msg2, Opts) ->
                     Opts
                 )
         end,
-    % Handle the result of the function call.
-    case Res of
-        {ok, Msg3} ->
-            % Result is normal. Continue to the next stage.
-            resolve_stage(6, Msg1, Msg2, Msg3, UserOpts);
-        AbnormalRes ->
-            % Result is abnormal. Skip cryptographic linking, such
-            % that we do not attest to false results.
-            resolve_stage(7, Msg1, Msg2, AbnormalRes, UserOpts)
-    end;
-resolve_stage(6, Msg1, Msg2, Result, Opts) when not is_map(Result) ->
-    % Skip cryptographic linking if the result is not a map.
-    resolve_stage(7, Msg1, Msg2, Result, Opts);
-resolve_stage(6, Msg1, Msg2, Msg3, Opts) ->
+    resolve_stage(6, Msg1, Msg2, Res, Opts);
+resolve_stage(6, Msg1, Msg2, {ok, Msg3}, Opts) when is_map(Msg3) ->
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.
     resolve_stage(7, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
-            update -> hb_path:push(hashpath, Msg3, Msg2);
-            ignore -> Msg3
+            update -> {ok, hb_path:push(hashpath, Msg3, Msg2)};
+            ignore -> {ok, Msg3}
         end,
         Opts
     );
-resolve_stage(7, Msg1, Msg2, Msg3, Opts) ->
+resolve_stage(6, Msg1, Msg2, Res, Opts) ->
+    % Skip cryptographic linking if the result is abnormal.
+    resolve_stage(7, Msg1, Msg2, Res, Opts);
+resolve_stage(7, Msg1, Msg2, {ok, Msg3}, Opts) ->
     % Result caching: Optionally, cache the result of the computation locally.
     update_cache(Msg1, Msg2, Msg3, Opts),
-    resolve_stage(8, Msg1, Msg2, Msg3, Opts);
-resolve_stage(8, Msg1, Msg2, Msg3, Opts) ->
+    resolve_stage(8, Msg1, Msg2, {ok, Msg3}, Opts);
+resolve_stage(7, Msg1, Msg2, Res, Opts) ->
+    % Skip result caching if the result is abnormal.
+    resolve_stage(8, Msg1, Msg2, Res, Opts);
+resolve_stage(8, Msg1, Msg2, Res, Opts) ->
     % Notify processes that requested the resolution while we were executing and
     % unregister ourselves from the group.
-    hb_persistent:unregister_notify(Msg1, Msg2, {ok, Msg3}, Opts),
-    resolve_stage(9, Msg1, Msg2, Msg3, Opts);
-resolve_stage(9, _Msg1, Msg2, Msg3, Opts) ->
+    hb_persistent:unregister_notify(Msg1, Msg2, Res, Opts),
+    resolve_stage(9, Msg1, Msg2, Res, Opts);
+resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, Opts) ->
     % Recurse, fork, or terminate.
 	case hb_path:tl(Msg2, Opts) of
 		NextMsg when NextMsg =/= undefined ->
@@ -294,10 +288,12 @@ resolve_stage(9, _Msg1, Msg2, Msg3, Opts) ->
             % caller.
 			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
             {ok, Msg3}
-	end.
+	end;
+resolve_stage(9, _Msg1, _Msg2, OtherRes, _Opts) ->
+    OtherRes.
 
 %% @doc Write a resulting M3 message to the cache if requested.
-update_cache(Msg1, Msg2, Msg3, Opts) ->
+update_cache(Msg1, Msg2, {ok, Msg3}, Opts) ->
     ExecCacheSetting = hb_opts:get(cache, always, Opts),
     M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1, Opts),
     M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2, Opts),
@@ -312,7 +308,8 @@ update_cache(Msg1, Msg2, Msg3, Opts) ->
                     hb_cache:write_result(Msg1, Msg2, Msg3, Opts)
             end;
         false -> ok
-    end.
+    end;
+update_cache(_, _, _, _) -> ok.
 
 %% @doc Takes the `Opts` cache setting, M1, and M2 `Cache-Control` headers, and
 %% returns true if the message should be cached.
