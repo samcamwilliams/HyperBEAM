@@ -234,27 +234,29 @@ resolve_stage(5, Mod, Func, Msg1, Msg2, Opts) ->
 			false -> [Msg1, Msg2, UserOpts];
 			Key -> [Key, Msg1, Msg2, UserOpts]
 		end,
-	try
-        % Try to execute the function.
-        case apply(Func, truncate_args(Func, Args)) of
-            {ok, Msg3} ->
-                % Result is normal. Continue to the next stage.
-                resolve_stage(6, Mod, Msg1, Msg2, Msg3, UserOpts);
-            AbnormalRes ->
-                % Result is abnormal. Skip cryptographic linking, such
-                % that we do not attest to false results.
-                resolve_stage(7, Mod, Msg1, Msg2, AbnormalRes, UserOpts)
-        end
-	catch
-		ExecClass:ExecException:ExecStacktrace ->
-            % If the function call fails, we raise an error in the manner
-            % indicated by caller's `#Opts`.
-			handle_error(
-				device_call,
-				{ExecClass, ExecException, ExecStacktrace},
-				Opts
-			)
-	end;
+    % Try to execute the function.
+    Res = 
+        try apply(Func, truncate_args(Func, Args))
+        catch
+            ExecClass:ExecException:ExecStacktrace ->
+                % If the function call fails, we raise an error in the manner
+                % indicated by caller's `#Opts`.
+                handle_error(
+                    device_call,
+                    {ExecClass, ExecException, ExecStacktrace},
+                    Opts
+                )
+        end,
+    % Handle the result of the function call.
+    case Res of
+        {ok, Msg3} ->
+            % Result is normal. Continue to the next stage.
+            resolve_stage(6, Mod, Msg1, Msg2, Msg3, UserOpts);
+        AbnormalRes ->
+            % Result is abnormal. Skip cryptographic linking, such
+            % that we do not attest to false results.
+            resolve_stage(7, Mod, Msg1, Msg2, AbnormalRes, UserOpts)
+    end;
 resolve_stage(6, Mod, Msg1, Msg2, Result, Opts) when not is_map(Result) ->
     % Skip cryptographic linking if the result is not a map.
     resolve_stage(7, Mod, Msg1, Msg2, Result, Opts);
@@ -289,7 +291,7 @@ resolve_stage(9, Mod, _Msg1, Msg2, Msg3, Opts) ->
             % or simply return to the caller. We prefer the global option, such
             % that node operators can control whether devices are able to 
             % generate long-running executions.
-            case hb_opts:get(spawn_worker, false, Opts#{ prefer := global }) of
+            case hb_opts:get(spawn_worker, false, Opts#{ prefer => global }) of
                 false -> ok;
                 true ->
                     % We should spin up a process that will hold `Msg3` 
@@ -378,8 +380,8 @@ notify_waiting(Msg1, Msg2, Msg3, Opts) ->
 %% @doc Write a resulting M3 message to the cache if requested.
 update_cache(Msg1, Msg2, Msg3, Opts) ->
     ExecCacheSetting = hb_opts:get(cache, always, Opts),
-    M1CacheSetting = get(<<"Cache-Control">>, Msg1, Opts),
-    M2CacheSetting = get(<<"Cache-Control">>, Msg2, Opts),
+    M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1, Opts),
+    M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2, Opts),
     case must_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
         true ->
             case hb_opts:get(async_cache, false, Opts) of
@@ -408,6 +410,8 @@ must_cache(_, CC1, CC2) ->
     ).
 
 %% @doc Convert cache control specifier(s) to a normalized list.
+term_to_cache_control_list({error, not_found}) -> [];
+term_to_cache_control_list({ok, CC}) -> term_to_cache_control_list(CC);
 term_to_cache_control_list(X) when is_list(X) ->
     lists:flatten(lists:map(fun term_to_cache_control_list/1, X));
 term_to_cache_control_list(X) when is_binary(X) -> X;
@@ -602,13 +606,11 @@ message_to_fun(Msg, Key, Opts) ->
 										{key, Key}
 									});
 								DefaultDev ->
-									{Status, Func} = 
-                                        message_to_fun(
-                                            Msg#{ device => DefaultDev },
-                                            Key,
-                                            Opts
-                                        ),
-                                    {Status, DefaultDev, Func}
+                                    message_to_fun(
+                                        Msg#{ device => DefaultDev },
+                                        Key,
+                                        Opts
+                                    )
 							end
 					end
 			end
@@ -816,6 +818,7 @@ default_module() -> dev_message.
 %%% Tests
 
 resolve_simple_test() ->
+    pg:start(pg),
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
 
 resolve_from_multiple_keys_test() ->
@@ -935,7 +938,8 @@ key_from_id_device_with_args_test() ->
             #{
                 path => key_using_only_state,
                 msg_key => <<"2">> % Param message, which is ignored
-            }
+            },
+            #{}
         )
     ),
     ?assertEqual(
@@ -945,7 +949,8 @@ key_from_id_device_with_args_test() ->
             #{
                 path => key_using_state_and_msg,
                 msg_key => <<"3">> % Param message, with value to add
-            }
+            },
+            #{}
         )
     ),
     ?assertEqual(
@@ -1110,7 +1115,7 @@ denormalized_device_key_test() ->
 	?assertEqual(dev_test, hb_converge:get(<<"Device">>, Msg)),
 	?assertEqual({module, dev_test},
 		erlang:fun_info(
-            element(2, message_to_fun(Msg, test_func, #{})),
+            element(3, message_to_fun(Msg, test_func, #{})),
             module
         )
     ).
