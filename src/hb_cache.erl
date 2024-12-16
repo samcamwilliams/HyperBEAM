@@ -286,8 +286,6 @@ opts_to_store(Opts) ->
 
 %%% Tests
 
--define(TEST_WALLET_NAME, pb_cache_test_wallet).
-
 %% Helpers
 
 test_opts() ->

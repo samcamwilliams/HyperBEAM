@@ -130,7 +130,7 @@ post_schedule(Msg1, Msg2, Opts) ->
     ?no_prod("Once we have GQL, get the scheduler location record. "
         "For now, we'll just use the address of the wallet."),
     SchedulerLocation =
-        hb_converge:get(<<"Scheduler-Location">>, Msg1, Opts#{ hashpath => ignore }),
+        hb_converge:get(<<"Process/Scheduler-Location">>, Msg1, Opts#{ hashpath => ignore }),
     ProcID = hb_converge:get(id, Proc),
     PID = dev_scheduler_registry:find(ProcID, true),
     #{ wallet := Wallet } = dev_scheduler_server:info(PID),
@@ -200,7 +200,7 @@ slot(M1, _M2, Opts) ->
     ProcID = hb_converge:get(id, Proc),
     ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
-    #{ current_slot := CurrentSlot, wallet := Wallet } =
+    #{ current := CurrentSlot, wallet := Wallet } =
         dev_scheduler_server:info(
             dev_scheduler_registry:find(ProcID)
         ),
@@ -393,12 +393,15 @@ checkpoint(State) -> {ok, State}.
 %% @doc Generate a _transformed_ process message, not as they are generated 
 %% by users. See `dev_process` for examples of AO process messages.
 test_process() ->
+    Wallet = hb:wallet(),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
         device => ?MODULE,
         process => #{
             <<"Device-Stack">> => [dev_cron, dev_wasm, dev_poda],
             <<"Image">> => <<"wasm-image-id">>,
             <<"Type">> => <<"Process">>,
+            <<"Scheduler-Location">> => Address,
             <<"Test-Key-Random-Number">> => rand:uniform(1337)
         }
     }.
