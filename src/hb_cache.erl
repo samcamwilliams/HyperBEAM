@@ -102,10 +102,10 @@ result_root_paths(Msg1, Msg2, Msg3, Opts) ->
 %% @doc Writes a message to the cache. Optionally, the message is written to a
 %% path given by the caller. If it is not given, the message is written to the
 %% ID of the message.
-write(Item, Opts) ->
+write(Message, Opts) ->
     write(
-        hb_store:path(hb_opts:get(store, no_viable_store, Opts), ["messages"]),
-        Item,
+        [],
+        Message,
         Opts
     ).
 write(Path, Message, Opts) when is_map(Message) ->
@@ -121,7 +121,7 @@ write(Path, Item = #tx{ unsigned_id = ?DEFAULT_ID }, Opts) ->
     ?event(write_of_default_id_tx_requested),
     write(Path, ar_bundles:normalize(Item), Opts);
 write(Path, Item, Opts) ->
-    ?event({writing_item, {path, Path}, {item, Item}}),
+    ?event({writing_message, {path, Path}, {item, Item}}),
     Store = hb_opts:get(store, no_viable_store, Opts),
     case ar_bundles:type(Item) of
         binary ->
@@ -130,21 +130,21 @@ write(Path, Item, Opts) ->
             UnsignedID = ar_bundles:id(Item, unsigned),
             SignedID = ar_bundles:id(Item, signed),
             UnsignedPath = hb_store:path(Store, [Path, hb_util:human_id(UnsignedID)]),
-            ?event({writing_item, UnsignedPath}),
+            ?event({writing_single_layer_message, UnsignedPath}),
             ok = hb_store:write(Store, UnsignedPath, ar_bundles:serialize(Item)),
             if SignedID =/= not_signed ->
                 SignedPath = hb_store:path(Store, [Path, hb_util:human_id(SignedID)]),
-                ?event({linking_item, SignedPath}),
+                ?event({linking_single_layer_message, SignedPath}),
                 hb_store:make_link(Store, UnsignedPath, SignedPath);
             true -> link_unnecessary
             end;
         CompositeType ->
-            ?event({writing_composite_item, {path, Path}, {item, Item}}),
+            ?event({writing_composite_message, {path, Path}, {item, Item}}),
             write_raw_composite(Store, Path, CompositeType, Item)
     end,
     ok.
 
-write_raw_composite(Store, Path, map, Item) ->
+write_raw_composite(Store, Path, map, Msg) ->
     % The item contains other messages. We should:
     % 1. Write the header item into the store without its children.
     %    The header item is the normal item, but with the manifest placed
@@ -152,14 +152,23 @@ write_raw_composite(Store, Path, map, Item) ->
     % 2. Write each child into the store.
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
-    UnsignedHeaderID = ar_bundles:id(Item, unsigned),
+    UnsignedHeaderID = hb_converge:get(unsigned_id, Msg),
     ?event({starting_composite_write, hb_util:human_id(UnsignedHeaderID)}),
     ok =
         hb_store:make_group(
             Store,
             Dir = hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID)])
         ),
-    SignedHeaderID = ar_bundles:id(Item, signed),
+    hb_store:write(
+        Store,
+        hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID), "item"]),
+        ar_bundles:serialize(
+            Msg#tx{
+                data = #{ <<"manifest">> => ar_bundles:manifest_item(Msg) }
+            }
+        )
+    ),
+    SignedHeaderID = ar_bundles:id(Msg, signed),
     ?event(
         {writing_composite_header,
             {unsigned, hb_util:human_id(UnsignedHeaderID)},
@@ -171,15 +180,6 @@ write_raw_composite(Store, Path, map, Item) ->
         hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID)]),
         hb_store:path(Store, [Path, hb_util:human_id(SignedHeaderID)])
     ),
-    hb_store:write(
-        Store,
-        hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID), "item"]),
-        ar_bundles:serialize(
-            Item#tx{
-                data = #{ <<"manifest">> => ar_bundles:manifest_item(Item) }
-            }
-        )
-    ),
     maps:map(fun(Key, Subitem) ->
         % Note: _Not_ relative to the Path! All messages are stored at the
         % same root of the store.
@@ -189,7 +189,7 @@ write_raw_composite(Store, Path, map, Item) ->
             hb_store:path(Store, [Path, hb_util:human_id(Subitem)]),
             hb_store:path(Store, [Dir, Key])
         )
-    end, ar_bundles:map(Item)),
+    end, ar_bundles:map(Msg)),
     ok;
 write_raw_composite(Store, Path, list, Item) ->
     write_raw_composite(Store, Path, map, ar_bundles:normalize(Item)).
@@ -241,8 +241,9 @@ read_raw(Store, RawPath) ->
             %% separate the bundle items from the main object in storage, but if ar_bundles
             %% exposed a function to rebuild the TX object's manifest we could avoid this.
             {ok,
-                ar_bundles:deserialize(ar_bundles:normalize(Root#tx {
-                    data = maps:map(
+                maps:merge(
+                    Root,
+                    maps:map(
                         fun(_, Key) ->
                             {ok, Child} =
                                 read_raw(Store, ["messages", hb_util:human_id(Key)]),
@@ -252,7 +253,7 @@ read_raw(Store, RawPath) ->
                             maps:get(<<"manifest">>, Root#tx.data)
                         )
                     )
-                }))
+                )
             };
         simple -> read_raw_simple_message(Store, MessagePath);
         not_found -> not_found
@@ -260,7 +261,7 @@ read_raw(Store, RawPath) ->
 
 read_raw_simple_message(Store, Path) ->
     {ok, Bin} = hb_store:read(Store, Path),
-    {ok, ar_bundles:deserialize(Bin)}.
+    {ok, hb_message:tx_to_message(ar_bundles:deserialize(Bin))}.
 
 %% @doc Calculate the `hb_store`s that should be used during
 %% cache operation resolution.
@@ -300,34 +301,33 @@ test_signed(Data) ->
 
 %% @doc Test storing and retrieving a simple unsigned item
 store_simple_unsigned_item_test() ->
+    hb:init(),
     Opts = test_opts(),
     Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
     ok = write(Item, Opts),
     %% Read the item back
-    {ok, RetrievedItem} =
-        read(
-            [
-                "messages",
-                hb_util:human_id(hb_converge:get(id, Item))
-            ],
-            Opts
-        ),
-    ?assertEqual(Item, RetrievedItem).
+    {ok, RetrievedItem} = read(hb_util:human_id(hb_converge:get(id, Item)), Opts),
+    ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple signed item
 simple_signed_item_test() ->
+    hb:init(),
     Opts = test_opts(),
-    Item = test_signed(<<"Simple signed data item">>),
+    Msg = test_signed(<<"Simple signed data item">>),
     %% Write the simple signed item
-    ok = write(Item, Opts),
+    ok = write(Msg, Opts),
     %% Read the item back
-    {ok, RetrievedItemUnsigned} = read(hb_converge:get(unsigned_id, Item), Opts),
-    {ok, RetrievedItemSigned} = read(hb_converge:get(id, Item), Opts),
+    UnsignedID = hb_converge:get(unsigned_id, Msg),
+    SignedID = hb_converge:get(id, Msg),
+    ?event({reading_by_unsigned, UnsignedID}),
+    {ok, RetrievedItemUnsigned} = read(UnsignedID, Opts),
+    ?event({reading_by_signed, SignedID}),
+    {ok, RetrievedItemSigned} = read(SignedID, Opts),
     %% Assert that the retrieved item matches the original and verifies
-    ?assertEqual(Item, RetrievedItemUnsigned),
-    ?assertEqual(Item, RetrievedItemSigned),
-    ?assertEqual(true, ar_bundles:verify_item(RetrievedItemSigned)).
+    ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
+    ?assert(hb_message:match(Msg, RetrievedItemSigned)),
+    ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
 
 % %% Test storing and retrieving a composite unsigned item
 % composite_unsigned_item_test_ignore() ->
@@ -377,23 +377,23 @@ simple_signed_item_test() ->
 deeply_nested_item_test() ->
     Opts = test_opts(),
     %% Create nested data
-    DeepValueTx = test_signed(<<"deep_value">>),
-    Level3Tx = test_unsigned(#{
-        <<"level3_key">> => DeepValueTx
+    DeepValueMsg = test_signed(<<"deep_value">>),
+    Level3Msg = test_unsigned(#{
+        <<"level3_key">> => DeepValueMsg
     }),
-    Level2Tx = test_signed(#{
-        <<"level2_key">> => Level3Tx
+    Level2Msg = test_signed(#{
+        <<"level2_key">> => Level3Msg
     }),
-    Level1Tx = test_unsigned(#{
-        <<"level1_key">> => Level2Tx
+    Level1Msg = test_unsigned(#{
+        <<"level1_key">> => Level2Msg
     }),
     %% Write the nested item
-    ok = write(Level1Tx, Opts),
+    ok = write(Level1Msg, Opts),
     %% Read the deep value back using subpath
     {ok, RetrievedItem} =
         read(
             [
-                hb_util:human_id(Level1Tx),
+                hb_util:human_id(hb_converge:get(id, Level1Msg)),
                 "level1_key",
                 "level2_key",
                 "level3_key"
@@ -403,6 +403,6 @@ deeply_nested_item_test() ->
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual(<<"deep_value">>, RetrievedItem#tx.data),
     ?assertEqual(
-        ar_bundles:id(DeepValueTx, unsigned),
-        ar_bundles:id(RetrievedItem, unsigned)
+        hb_converge:get(unsigned_id, DeepValueMsg),
+        hb_converge:get(unsigned_id, RetrievedItem)
     ).

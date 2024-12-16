@@ -1,5 +1,5 @@
 -module(hb_message).
--export([load/2, sign/2, verify/1]).
+-export([load/2, sign/2, verify/1, match/2, type/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
 -export([message_to_tx/1, tx_to_message/1]).
 %%% Debugging tools:
@@ -104,6 +104,21 @@ sign(Msg, Wallet) ->
 %% @doc Verify a message.
 verify(Msg) ->
     ar_bundles:verify_item(message_to_tx(Msg)).
+
+%% @doc Return the type of a message.
+type(Msg) when not is_map(Msg) -> value;
+type(Msg) when is_map(Msg) ->
+    IsDeep = lists:any(
+        fun({_, Value}) -> is_map(Value) end,
+        lists:filter(
+            fun({Key, _}) -> not hb_private:is_private(Key) end,
+            maps:to_list(Msg)
+        )
+    ),
+    case IsDeep of
+        true -> complex;
+        false -> simple
+    end.
 
 %% @doc Load a message from the cache.
 load(Store, ID) when is_binary(ID)
@@ -462,6 +477,7 @@ do_tx_to_message(RawTX) ->
 %%% Tests
 
 basic_map_to_tx_test() ->
+    hb:init(),
     Msg = #{ normal_key => <<"NORMAL_VALUE">> },
     TX = message_to_tx(Msg),
     ?assertEqual([{<<"normal_key">>, <<"NORMAL_VALUE">>}], TX#tx.tags).
