@@ -1,7 +1,7 @@
 -module(hb_message).
 -export([load/2, sign/2, verify/1, match/2, type/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
--export([message_to_tx/1, tx_to_message/1]).
+-export([message_to_tx/1, tx_to_message/1, minimize/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
@@ -92,7 +92,7 @@ format(Item, Indent) ->
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
 signers(Msg) ->
-    case ar_bundles:signer(Msg) of
+    case ar_bundles:signer(message_to_tx(Msg)) of
         undefined -> [];
         Signer -> [Signer]
     end.
@@ -106,7 +106,8 @@ verify(Msg) ->
     ar_bundles:verify_item(message_to_tx(Msg)).
 
 %% @doc Return the type of a message.
-type(Msg) when not is_map(Msg) -> value;
+type(TX) when is_record(TX, tx) -> tx;
+type(Binary) when is_binary(Binary) -> binary;
 type(Msg) when is_map(Msg) ->
     IsDeep = lists:any(
         fun({_, Value}) -> is_map(Value) end,
@@ -116,8 +117,8 @@ type(Msg) when is_map(Msg) ->
         )
     ),
     case IsDeep of
-        true -> complex;
-        false -> simple
+        true -> deep;
+        false -> shallow
     end.
 
 %% @doc Load a message from the cache.
@@ -238,10 +239,10 @@ deserialize(B, binary) ->
 %% a binary, which we return as is.
 message_to_tx(Binary) when is_binary(Binary) ->
     % ar_bundles cannot serialize just a simple binary or get an ID for it, so
-    % so we turn it into a TX record with a special tag, tx_to_message will
+    % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
     #tx{
-        tags= [{<<"Converge-Large-Binary">>, integer_to_binary(byte_size(Binary))}],
+        tags= [{<<"Converge-Form">>, <<"Value">>}],
         data = Binary
     };
 message_to_tx(TX) when is_record(TX, tx) -> TX;
@@ -394,10 +395,10 @@ encode_value(Value) ->
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
 tx_to_message(TX) when is_record(TX, tx) ->
-    case lists:keyfind(<<"Converge-Large-Binary">>, 1, TX#tx.tags) of
+    case lists:keyfind(<<"Converge-Form">>, 1, TX#tx.tags) of
         false ->
             do_tx_to_message(TX);
-        {_, _Size} ->
+        {<<"Converge-Form">>, <<"Value">>} ->
             TX#tx.data
     end.
 do_tx_to_message(RawTX) ->

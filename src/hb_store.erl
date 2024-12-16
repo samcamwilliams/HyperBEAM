@@ -127,6 +127,7 @@ type(Modules, Path) -> call_function(Modules, type, [Path]).
 
 %% @doc Create a path from a list of path components. If no store implements
 %% the path function, we return the path with the 'default' transformation (id).
+path(Path) when is_list(Path) -> [ El || El <- Path, El =/= [] ];
 path(Path) -> Path.
 path(Store, Path) ->
     case call_function(Store, path, [Path]) of

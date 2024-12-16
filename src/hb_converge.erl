@@ -741,14 +741,12 @@ default_module() -> dev_message.
 %%% Tests
 
 resolve_simple_test() ->
-    hb:init(),
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
 
 resolve_key_twice_test() ->
     % Ensure that the same message can be resolved again.
     % This is not as trivial as it may seem, because resolutions are cached and
     % de-duplicated.
-    hb:init(),
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})),
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
 
