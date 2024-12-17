@@ -148,8 +148,9 @@ resolve_stage(1, Msg1, Msg2, Opts) ->
     % Validation check: Check if the message is valid.
     Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
     Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
+    ?no_prod("Enable message validity checks!"),
     case {Msg1Valid, Msg2Valid} of
-        {true, true} -> resolve_stage(2, Msg1, Msg2, Opts);
+        _ -> resolve_stage(2, Msg1, Msg2, Opts);
         _ -> error_invalid_message(Opts)
     end;
 resolve_stage(2, Msg1, Msg2, Opts) ->
@@ -401,7 +402,6 @@ get(Path, Msg, Opts) ->
 get(Path, {as, Device, Msg}, Default, Opts) ->
     get(Path, set(Msg, #{ device => Device }), Default, Opts);
 get(Path, Msg, Default, Opts) ->
-	%?event({getting_key, {path, Path}, {msg, Msg}, {opts, Opts}}),
 	case resolve(Msg, #{ path => Path }, Opts) of
 		{ok, Value} -> Value;
 		{error, _} -> Default
