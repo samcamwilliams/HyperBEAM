@@ -1,5 +1,5 @@
 -module(hb_cache).
--export([read/2, write/2, write/3, write_result/4]).
+-export([read/2, read_output/3, write/2, write/3, write_output/4]).
 -export([list/2, list_numbered/2, link/3]).
 %%% Exports for modules that utilize hb_cache.
 -export([test_opts/0, test_unsigned/1, test_signed/1]).
@@ -55,7 +55,7 @@ link(Existing, New, Opts) ->
 %%                     the resulting message.
 %%      /Msg1.signed_id/Msg2.{unsigned_id,signed_id}: Links from the path that
 %%                     led to the creation of the resulting message.
-write_result(Msg1, Msg2, Msg3, Opts) ->
+write_output(Msg1, Msg2, Msg3, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Calculate the 'address' of the resulting message and the list of keys to
     % cache or `all`.
@@ -293,6 +293,33 @@ read_raw_simple_message(Store, Path) ->
             hb_message:tx_to_message(ar_bundles:deserialize(Bin))
         )
     }.
+
+%% @doc Read the output of a computation, given Msg1, Msg2, and some options.
+read_output(MsgID1, MsgID2, Opts) when ?IS_ID(MsgID1) and ?IS_ID(MsgID2) ->
+    ?event({cache_lookup, {msg1, MsgID1}, {msg2, MsgID2}, {opts, Opts}}),
+    read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
+read_output(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
+    {ok, MsgID2} = dev_message:id(Msg2),
+    read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
+read_output(Msg1, Msg2, Opts) when is_map(Msg1) ->
+    % Check if Msg1 already has an ID generated in its loaded state.
+    % Note: We do not generate the ID here because it may be expensive,
+    % unless the caller has explicitly requested it.
+    case maps:get(id, Msg1, not_signed) of
+        not_signed ->
+            % If Msg1 does not have an ID, check if the caller has requested
+            % that we generate it. If so, generate it and try again.
+            case hb_opts:get(generate_msg1_id, false, Opts) of
+                true ->
+                    {ok, MsgID1} = dev_message:id(Msg1),
+                    read_output(MsgID1, Msg2, Opts);
+                false ->
+                    not_found
+            end;
+        MsgID1 ->
+            % If Msg1 already has an ID, use it to look up the result.
+            read_output(MsgID1, Msg2, Opts)
+    end.
 
 %% @doc Calculate the `hb_store`s that should be used during
 %% cache operation resolution.

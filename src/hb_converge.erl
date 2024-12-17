@@ -117,12 +117,13 @@ resolve(Msg, Opts) ->
 %% This function returns the raw result of the device function call:
 %% {ok | error, NewMessage}.
 resolve(Msg1, Msg2, Opts) ->
-    resolve_stage(1, Msg1, Msg2, Opts).
+    resolve_stage(0, Msg1, Msg2, Opts).
 
 %% @doc Internal function for handling request resolution.
 %% The resolver is composed of a series of discrete phases:
-%%      1: Request normalization.
-%%      2: Cache lookup.
+%%      0: Cache lookup.
+%%      1: Validation check.
+%%      2: Path normalization.
 %%      3: Device lookup.
 %%      4: Persistent-resolver lookup.
 %%      5: Execution.
@@ -130,35 +131,53 @@ resolve(Msg1, Msg2, Opts) ->
 %%      7: Result caching.
 %%      8: Notify waiters.
 %%      9: Recurse, fork, or terminate.
-resolve_stage(1, Msg1, Msg2, Opts) when is_map(Msg2) and is_map(Opts) ->
-    Key = hb_path:hd(Msg2, Opts),
-    case ?IS_ID(Key) of
-        true ->
-            % The key is an ID (reference call), so we should resolve the
-            % referenced message against Msg1. 
-            {ok, Msg2Indirect} = hb_cache:read(Key, Opts),
-            case resolve(Msg1, Msg2Indirect, Opts) of
-                {ok, Msg3Indirect} ->
-                    resolve(Msg3Indirect, hb_path:tl(Msg2, Opts), Opts);
-                {error, _} ->
-                    throw({error, {device_not_loadable, Key}})
-            end;
-        false ->
-            % This is a direct invocation, so just proceed with the normal
-            % resolution process.
-            resolve_stage(2, Msg1, Msg2, Opts)
-    end;
-resolve_stage(1, Msg1, Path, Opts) ->
-    % If we have been given a Path rather than a full message, construct the
+
+resolve_stage(0, Msg1, Path, Opts) when not is_map(Path) ->
+    % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.
-    resolve_stage(1, Msg1, #{ path => Path }, Opts);
-resolve_stage(2, Msg1, Msg2 = #{ path := Path }, Opts) ->
-    %% Cache lookup: Check if we already have the result of `resolve(Msg1, Msg2)`
-    %% in the appropriate caches.
-    case hb_cache:read(Path, Opts) of
-        {ok, Msg3} -> {ok, Msg3};
-        not_found -> resolve_stage(3, Msg1, Msg2, Opts)
+    resolve_stage(0, Msg1, #{ path => Path }, Opts);
+resolve_stage(0, Msg1, Msg2, Opts) ->
+    case hb_cache:read_output(Msg1, Msg2, Opts) of
+        {ok, Msg3} ->
+            ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+            {ok, Msg3};
+        not_found ->
+            resolve_stage(1, Msg1, Msg2, Opts)
     end;
+resolve_stage(1, Msg1, Msg2, Opts) ->
+    % Validation check: Check if the message is valid.
+    Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
+    Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
+    case {Msg1Valid, Msg2Valid} of
+        {true, true} -> resolve_stage(2, Msg1, Msg2, Opts);
+        _ -> error_invalid_message(Opts)
+    end;
+resolve_stage(2, Msg1, Msg2, Opts) ->
+    % Path normalization: Ensure that the path is requesting a single key.
+    % Stash remaining path elements in `priv/Converge/Remaining-Path`.
+    % Stash the original path in `priv/Converge/Original-Path`, if it
+    % is not already there from a previous resolution.
+    InitialPriv = hb_private:from_message(Msg1),
+    OriginalPath =
+        case InitialPriv of
+            #{ <<"Converge">> := #{ <<"Original-Path">> := XPath } } ->
+                XPath;
+            _ -> hb_path:from_message(request, Msg2)
+        end,
+    Head = hb_path:hd(Msg2, Opts),
+    RemainingPath = hb_path:tl(hb_path:from_message(request, Msg2), Opts),
+    Msg2UpdatedPriv =
+        hb_private:set(
+            Msg2,
+            InitialPriv#{
+                <<"Converge">> =>
+                    #{
+                        <<"Original-Path">> => OriginalPath,
+                        <<"Remaining-Path">> => RemainingPath
+                    }
+            }
+        ),
+    resolve_stage(3, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
 resolve_stage(3, Msg1, Msg2, Opts) ->
     %% Device lookup: Find the Erlang function that should be utilized to 
     %% execute Msg2 on Msg1.
@@ -166,6 +185,15 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
 		try
 			Key = hb_path:hd(Msg2, Opts),
 			% Try to load the device and get the function to call.
+            ?event(
+                {
+                    resolving_key,
+                    {key, Key},
+                    {msg1, Msg1},
+                    {msg2, Msg2},
+                    {opts, Opts}
+                }
+            ),
 			{Status, _Mod, Func} = message_to_fun(Msg1, Key, Opts),
 			?event(
 				{resolving, Key,
@@ -266,11 +294,13 @@ resolve_stage(8, Msg1, Msg2, Res, Opts) ->
     resolve_stage(9, Msg1, Msg2, Res, Opts);
 resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, Opts) ->
     % Recurse, fork, or terminate.
-	case hb_path:tl(Msg2, Opts) of
-		NextMsg when NextMsg =/= undefined ->
+    #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
+        = hb_private:from_message(Msg2),
+	case RemainingPath of
+		RecursivePath when RecursivePath =/= undefined ->
 			% There are more elements in the path, so we recurse.
-			?event({resolution_recursing, {next_msg, NextMsg}}),
-			resolve(Msg3, NextMsg, Opts);
+			?event({resolution_recursing, {remaining_path, RemainingPath}}),
+			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
 		undefined ->
 			% The path resolved to the last element, so we check whether
             % we should fork a new process with Msg3 waiting for messages,
@@ -292,6 +322,26 @@ resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, Opts) ->
 resolve_stage(9, _Msg1, _Msg2, OtherRes, _Opts) ->
     OtherRes.
 
+%% @doc Catch all return if we don't have the necessary messages in the cache.
+error_not_found(_Opts) ->
+    {
+        error,
+        #{
+            <<"Status">> => <<"Not Found">>,
+            <<"body">> => <<"Necessary messages not found in cache">>
+        }
+    }.
+
+%% @doc Catch all return if the message is invalid.
+error_invalid_message(_Opts) ->
+    {
+        error,
+        #{
+            <<"Status">> => <<"Forbidden">>,
+            <<"body">> => <<"Request contains non-verifiable message.">>
+        }
+    }.
+
 %% @doc Write a resulting M3 message to the cache if requested.
 update_cache(Msg1, Msg2, {ok, Msg3}, Opts) ->
     ExecCacheSetting = hb_opts:get(cache, always, Opts),
@@ -302,10 +352,10 @@ update_cache(Msg1, Msg2, {ok, Msg3}, Opts) ->
             case hb_opts:get(async_cache, false, Opts) of
                 true ->
                     spawn(fun() ->
-                        hb_cache:write_result(Msg1, Msg2, Msg3, Opts)
+                        hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
                     end);
                 false ->
-                    hb_cache:write_result(Msg1, Msg2, Msg3, Opts)
+                    hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
             end;
         false -> ok
     end;
@@ -375,16 +425,16 @@ keys(Msg, Opts, remove) ->
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
 set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
-    Msg2 = maps:without([hashpath], RawMsg2),
+    Msg2 = maps:without([hashpath, priv], RawMsg2),
     ?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
     case map_size(Msg2) of
         0 -> Msg1;
         _ ->
-            % First, get the first key and value to set.
+            % Get the first key and value to set.
             Key = hd(keys(Msg2, Opts#{ hashpath => ignore })),
             Val = get(Key, Msg2, Opts),
             ?event({got_val_to_set, {key, Key}, {val, Val}}),
-            % Then, set the key and recurse, removing the key from the Msg2.
+            % Next, set the key and recurse, removing the key from the Msg2.
             set(
                 set(Msg1, Key, Val, Opts),
                 remove(Msg2, Key, Opts),
@@ -413,7 +463,13 @@ deep_set(Msg, [Key], Value, Opts) ->
     device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     {ok, SubMsg} = resolve(Msg, Key, Opts),
-    ?event({traversing_deeper_to_set, {current_key, Key}, {current_value, SubMsg}, {rest, Rest}}),
+    ?event(
+        {traversing_deeper_to_set,
+            {current_key, Key},
+            {current_value, SubMsg},
+            {rest, Rest}
+        }
+    ),
     device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
 
 device_set(Msg, Key, Value, Opts) ->
@@ -744,7 +800,8 @@ default_module() -> dev_message.
 %%% Tests
 
 resolve_simple_test() ->
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
+    Res = hb_converge:resolve(#{ a => 1 }, a, #{}),
+    ?assertEqual({ok, 1}, Res).
 
 resolve_key_twice_test() ->
     % Ensure that the same message can be resolved again.
@@ -927,7 +984,23 @@ device_with_default_handler_function_test() ->
 basic_get_test() ->
     Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
     ?assertEqual(<<"value1">>, hb_converge:get(key1, Msg)),
-    ?assertEqual(<<"value2">>, hb_converge:get(key2, Msg)).
+    ?assertEqual(<<"value2">>, hb_converge:get(key2, Msg)),
+    ?assertEqual(<<"value2">>, hb_converge:get(<<"key2">>, Msg)),
+    ?assertEqual(<<"value2">>, hb_converge:get([<<"key2">>], Msg)).
+
+recursive_get_test() ->
+    Msg = #{ key1 => <<"value1">>, key2 => #{ key3 => <<"value3">> } },
+    ?assertEqual(
+        {ok, <<"value1">>},
+        hb_converge:resolve(Msg, #{ path => key1 }, #{})
+    ),
+    ?assertEqual(<<"value1">>, hb_converge:get(key1, Msg)),
+    ?assertEqual(
+        {ok, <<"value3">>},
+        hb_converge:resolve(Msg, #{ path => [key2, key3] }, #{})
+    ),
+    ?assertEqual(<<"value3">>, hb_converge:get([key2, key3], Msg)),
+    ?assertEqual(<<"value3">>, hb_converge:get(<<"key2/key3">>, Msg)).
 
 basic_set_test() ->
     Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
@@ -1000,7 +1073,8 @@ deep_set_with_device_test() ->
             fun(Msg1, Msg2) ->
                 % A device where the set function modifies the key
                 % and adds a modified flag.
-                {Key, Val} = hd(maps:to_list(maps:remove(path, Msg2))),
+                {Key, Val} =
+                    hd(maps:to_list(maps:without([path, priv], Msg2))),
                 {ok, Msg1#{ Key => Val, modified => true }}
             end
     },
