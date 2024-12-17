@@ -28,7 +28,7 @@
         <<"Bundle-Format">>,
         <<"Bundle-Map">>,
         <<"Bundle-Version">>,
-        <<"Type:">>
+        <<"Converge-Type:">>
     ]
 ).
 -define(REGEN_KEYS, [id, unsigned_id]).
@@ -242,7 +242,7 @@ message_to_tx(Binary) when is_binary(Binary) ->
     % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
     #tx{
-        tags= [{<<"Converge-Form">>, <<"Value">>}],
+        tags= [{<<"Converge-Type">>, <<"Binary">>}],
         data = Binary
     };
 message_to_tx(TX) when is_record(TX, tx) -> TX;
@@ -265,11 +265,13 @@ message_to_tx(M) when is_map(M) ->
                             {Key, message_to_tx(Map)};
                         {ok, Value} when is_binary(Value) ->
                             {Key, Value};
-                        {ok, Value} when is_atom(Value) or is_integer(Value) ->
+                        {ok, Value} when
+                                is_atom(Value) or is_integer(Value)
+                                or is_list(Value) ->
                             ItemKey = hb_converge:key_to_binary(Key),
                             {Type, BinaryValue} = encode_value(Value),
                             [
-                                {<<"Type:", ItemKey/binary>>, Type},
+                                {<<"Converge-Type:", ItemKey/binary>>, Type},
                                 {ItemKey, BinaryValue}
                             ];
                         {ok, _} ->
@@ -357,48 +359,72 @@ decode_value(atom, Value) ->
     {item, {string, AtomString}, _} =
         hb_http_structured_fields:parse_item(Value),
     binary_to_existing_atom(AtomString, latin1);
+decode_value(list, Value) ->
+    lists:map(
+        fun({item, {string, <<"(Converge-Type: ", Rest/binary>>}, _}) ->
+            [Type, Item] = binary:split(Rest, <<") ">>),
+            decode_value(
+                list_to_existing_atom(
+                    string:to_lower(binary_to_list(Type))
+                ),
+                Item
+            );
+           ({item, {string, Binary}, _}) -> Binary
+        end,
+        hb_http_structured_fields:parse_list(iolist_to_binary(Value))
+    );
 decode_value(OtherType, Value) ->
     ?event({unexpected_type, OtherType, Value}),
     throw({unexpected_type, OtherType, Value}).
-
-%% @doc Convert a term to a typed key.
-to_typed_keys({Key, Value}) ->
-    to_typed_keys(Key, Value).
-to_typed_keys(Key, Value) when is_binary(Value) ->
-    [{Key, Value}];
-to_typed_keys(Key, Value) when is_map(Value) ->
-    [{Key, message_to_tx(Value)}];
-to_typed_keys(Key, Value) ->
-    ItemKey = hb_converge:key_to_binary(Key),
-    {Type, BinaryValue} = encode_value(Value),
-    [
-        {<<"Type:", ItemKey/binary>>, Type},
-        {ItemKey, BinaryValue}
-    ].
 
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
     ?no_prod("Non-standardized type conversion invoked."),
     [Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
-    {<<"decimal">>, Encoded};
+    {<<"Decimal">>, Encoded};
 encode_value(Value) when is_atom(Value) ->
     ?no_prod("Non-standardized type conversion invoked."),
     [EncodedIOList, _] =
         hb_http_structured_fields:item(
             {item, {string, atom_to_binary(Value, latin1)}, []}),
     Encoded = list_to_binary(EncodedIOList),
-    {<<"atom">>, Encoded};
+    {<<"Atom">>, Encoded};
+encode_value(Values) when is_list(Values) ->
+    ?no_prod("Non-standardized type conversion invoked."),
+    EncodedValues =
+        lists:map(
+            fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
+               (Item) ->
+                {Type, Encoded} = encode_value(Item),
+                {
+                    item,
+                    {
+                        string,
+                        <<
+                            "(Converge-Type: ", Type/binary, ") ",
+                            Encoded/binary
+                        >>
+                    },
+                    []
+                }
+            end,
+            Values
+        ),
+    EncodedList = hb_http_structured_fields:list(EncodedValues),
+    {<<"List">>, iolist_to_binary(EncodedList)};
+encode_value(Value) when is_binary(Value) ->
+    {<<"Binary">>, Value};
 encode_value(Value) ->
     Value.
 
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
 tx_to_message(TX) when is_record(TX, tx) ->
-    case lists:keyfind(<<"Converge-Form">>, 1, TX#tx.tags) of
+    case lists:keyfind(<<"Converge-Type">>, 1, TX#tx.tags) of
         false ->
             do_tx_to_message(TX);
-        {<<"Converge-Form">>, <<"Value">>} ->
+        {<<"Converge-Type">>, <<"Binary">>} ->
             TX#tx.data
     end.
 do_tx_to_message(RawTX) ->
@@ -432,9 +458,11 @@ do_tx_to_message(RawTX) ->
     % Parse tags that have a "Type:" prefix.
     TagTypes =
         [
-            {Name, binary_to_existing_atom(Value, latin1)}
+            {Name, list_to_existing_atom(
+                string:to_lower(binary_to_list(Value))
+            )}
         ||
-            {<<"Type:", Name/binary>>, Value} <- FilteredTags
+            {<<"Converge-Type:", Name/binary>>, Value} <- FilteredTags
         ],
     TXTags =
         lists:map(
@@ -752,3 +780,19 @@ signed_id_test_disabled() ->
         hb_util:encode(ar_bundles:id(SignedTX, signed)),
         hb_util:id(SignedMsg, signed)
     ).
+
+list_encoding_test() ->
+    % Test that we can encode and decode a list of integers.
+    {<<"List">>, Encoded} = encode_value(List1 = [1, 2, 3]),
+    Decoded = decode_value(list, Encoded),
+    ?assertEqual(List1, Decoded),
+    % Test that we can encode and decode a list of binaries.
+    {<<"List">>, Encoded2} = encode_value(List2 = [<<"1">>, <<"2">>, <<"3">>]),
+    ?assertEqual(List2, decode_value(list, Encoded2)),
+    % Test that we can encode and decode a mixed list.
+    {<<"List">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
+    ?assertEqual(List3, decode_value(list, Encoded3)).
+
+message_with_list_test() ->
+    Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
+    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
