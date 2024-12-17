@@ -23,5 +23,5 @@ device_with_function_key_module_test() ->
 		},
 	?assertEqual(
 		{ok, <<"GOOD_FUNCTION">>},
-		hb_converge:resolve(Msg, test_func)
+		hb_converge:resolve(Msg, test_func, #{})
 	).
