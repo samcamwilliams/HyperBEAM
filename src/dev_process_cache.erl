@@ -190,10 +190,10 @@ latest_output_retrieval_test() ->
     ?event(read_latest_slot_without_qualifiers),
     {ok, 1, ReadMsg1Required} = latest(ProcID, <<"Process">>, Opts),
     ?event({read_latest_with_process, ReadMsg1Required}),
-    %?assert(hb_message:match(Msg1, ReadMsg1Required)),
+    ?assert(hb_message:match(Msg1, ReadMsg1Required)),
     ?event(read_latest_slot_with_shallow_key),
     {ok, 2, ReadMsg2Required} = latest(ProcID, <<"Deep/Process">>, Opts),
-    %?assert(hb_message:match(Msg2, ReadMsg2Required)),
+    ?assert(hb_message:match(Msg2, ReadMsg2Required)),
     ?event(read_latest_slot_with_deep_key),
-    {ok, 1, ReadMsg1} = latest(ProcID, <<"">>, 1, Opts).
-    %?assert(hb_message:match(Msg1, ReadMsg1)).
+    {ok, 1, ReadMsg1} = latest(ProcID, <<"">>, 1, Opts),
+    ?assert(hb_message:match(Msg1, ReadMsg1)).
