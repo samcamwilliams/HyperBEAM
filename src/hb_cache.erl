@@ -1,6 +1,6 @@
 -module(hb_cache).
 -export([read/2, write/2, write/3, write_result/4]).
--export([list/2, list_numbered/2]).
+-export([list/2, list_numbered/2, link/3]).
 %%% Exports for modules that utilize hb_cache.
 -export([test_opts/0, test_unsigned/1, test_signed/1]).
 -include("src/include/hb.hrl").
@@ -32,6 +32,15 @@ list(Path, Opts) ->
         {ok, Names} -> Names;
         {error, _} -> []
     end.
+
+%% @doc Make a link from one path to another in the store.
+%% Note: Argument order is `link(Src, Dst, Opts)`.
+link(Existing, New, Opts) ->
+    hb_store:make_link(
+        hb_opts:get(store, no_viable_store, Opts),
+        Existing,
+        New
+    ).
 
 %% @doc Writes a computation result to the cache.
 %% The process outputs a series of key values in the cache as follows:
@@ -105,7 +114,7 @@ result_root_paths(Msg1, Msg2, Msg3, Opts) ->
 write(Message, Opts) ->
     write([], Message, Opts).
 write(Path, Message, Opts) ->
-    %?event({writing_message, {path, Path}}),
+    ?event({writing_message, {path, Path}}),
     case hb_message:type(Message) of
         binary ->
             % The item is a raw binary. Write it into the store and make a
@@ -124,6 +133,7 @@ write(Path, Message, Opts) ->
             UnsignedPath = hb_store:path(Store, [Path, hb_util:human_id(UnsignedID)]),
             %?event({writing_single_layer_message, UnsignedPath}),
             TX = hb_message:message_to_tx(Message),
+            ?event({writing_shallow_message, {path, UnsignedPath}, {store, Store}, {tx, TX}}),
             ok = hb_store:write(Store, UnsignedPath, ar_bundles:serialize(TX)),
             if SignedID =/= not_signed ->
                 SignedPath = hb_store:path(Store, [Path, hb_util:human_id(SignedID)]),
@@ -149,11 +159,9 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
     UnsignedHeaderID = ar_bundles:id(FullTX, unsigned),
     %?event({starting_composite_write, hb_util:human_id(UnsignedHeaderID)}),
     Store = hb_opts:get(store, no_viable_store, Opts),
-    ok =
-        hb_store:make_group(
-            Store,
-            Group = hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID)])
-        ),
+    Group = hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID)]),
+    ?event({creating_group, {path, Group}, {store, Store}}),
+    ok = hb_store:make_group(Store, Group),
     {DeepKeyVals, FlatKeyVals} = 
         lists:partition(
             fun({_, Value}) -> is_map(Value) end,
@@ -401,7 +409,6 @@ deeply_nested_item_test() ->
         },
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
-
     %% Read the deep value back using subpath
     {ok, DeepMsg} =
         read(
@@ -421,3 +428,11 @@ deeply_nested_item_test() ->
     ),
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assertEqual(OuterID, hb_converge:get(unsigned_id, OuterMsg)).
+
+message_with_list_test() ->
+    Opts = test_opts(),
+    Msg = test_unsigned([<<"a">>, <<"b">>, <<"c">>]),
+    ?event({writing_message, Msg}),
+    {ok, Path} = write(Msg, Opts),
+    {ok, RetrievedItem} = read(Path, Opts),
+    ?assert(hb_message:match(Msg, RetrievedItem)).
