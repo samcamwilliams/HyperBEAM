@@ -185,7 +185,7 @@ new_proc_test() ->
     schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
     schedule(ID, SignedItem2),
     schedule(ID, SignedItem3),
-    ?assertEqual(
-        #{ current_slot => 2 },
+    ?assertMatch(
+        #{ current := 2 },
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))
     ).

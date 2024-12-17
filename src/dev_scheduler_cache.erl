@@ -6,9 +6,10 @@
 
 %% @doc Write an assignment message into the cache.
 write(Assignment, Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
-    {_, ProcID} = hb_converge:get(<<"Process">>, Assignment),
-    {_, Slot} = hb_converge:get(<<"Slot">>, Assignment),
+    ProcID = hb_converge:get(<<"Process">>, Assignment),
+    Slot = hb_converge:get(<<"Slot">>, Assignment),
     ?event(
         {writing_assignment,
             {proc_id, ProcID},
@@ -20,13 +21,16 @@ write(Assignment, Opts) ->
     % Create symlinks from the message on the process and the 
     % slot on the process to the underlying data.
     hb_store:make_link(
+        Store,
         RootPath,
-        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
-            "assignments",
-            hb_util:human_id(ProcID),
-            binary_to_list(Slot)
-        ]),
-        Opts
+        hb_store:path(
+            Store,
+            [
+                <<"assignments">>,
+                hb_util:human_id(ProcID),
+                hb_converge:key_to_binary(Slot)
+            ]
+        )
     ),
     ok.
 
