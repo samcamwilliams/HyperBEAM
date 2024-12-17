@@ -208,7 +208,12 @@ term_to_path(Binary, Opts) when is_binary(Binary) ->
     end;
 term_to_path([], _Opts) -> undefined;
 term_to_path(List, Opts) when is_list(List) ->
-    lists:map(fun(Part) -> hb_converge:to_key(Part, Opts) end, List);
+    lists:map(
+        fun(Part) ->
+            hb_converge:to_key(Part, Opts)
+        end,
+        List
+    );
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
 
 %%% TESTS

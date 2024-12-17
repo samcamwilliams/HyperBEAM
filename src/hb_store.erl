@@ -60,7 +60,7 @@ scope(Store, Scope) ->
 %% default scope (local).
 get_store_scope(Store) ->
     case call_function(Store, scope, []) of
-        not_found -> ?DEFAULT_SCOPE;
+        no_viable_store -> ?DEFAULT_SCOPE;
         Scope -> Scope
     end.
 
@@ -131,7 +131,7 @@ path(Path) when is_list(Path) -> [ El || El <- Path, El =/= [] ];
 path(Path) -> Path.
 path(Store, Path) ->
     case call_function(Store, path, [Path]) of
-        not_found -> path(Path);
+        no_viable_store -> path(Path);
         Result -> Result
     end.
 
@@ -157,7 +157,7 @@ list(Modules, Path) -> call_function(Modules, list, [Path]).
 call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
-    not_found;
+    no_viable_store;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
     ?event({calling, Mod, Function}),
     try apply(Mod, Function, [Opts | Args]) of

@@ -634,9 +634,15 @@ is_exported(Dev, Key, Opts) ->
 to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
 to_key(Key, _Opts) when byte_size(Key) == 43 -> Key;
 to_key(Key, Opts) ->
-	try to_atom_unsafe(Key)
-	catch _Type:_:_Trace -> key_to_binary(Key, Opts)
-	end.
+    % If the `atom_keys' option is set, we try to convert the key to an atom.
+    % If this fails, we fall back to using the binary representation.
+    AtomKeys = hb_opts:get(atom_keys, true, Opts),
+    if AtomKeys ->
+        try to_atom_unsafe(Key)
+        catch _Type:_:_Trace -> key_to_binary(Key, Opts)
+        end;
+        true -> key_to_binary(Key, Opts)
+    end.
 
 %% @doc Convert a key to its binary representation.
 key_to_binary(Key) -> key_to_binary(Key, #{}).
