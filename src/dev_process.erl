@@ -1,5 +1,8 @@
 -module(dev_process).
+%%% Public API
 -export([info/2, compute/3, schedule/3, slot/3, now/3]).
+%%% Test helpers
+-export([test_process/0, test_wasm_process/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -72,7 +75,7 @@ next(Msg1, _Msg2, Opts) ->
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves.
 init(Msg1, Msg2, Opts) ->
-    {ok, Res} = run_as(<<"Execution-Stack">>, Msg1, init, Opts),
+    {ok, Res} = run_as(<<"Execution-Device">>, Msg1, init, Opts),
     compute(Res, Msg2, Opts).
 
 %% @doc Compute the result of an assignment applied to the process state, if it 
@@ -89,11 +92,11 @@ compute(Msg1, Msg2, Opts) ->
             -1 ->
                 % Try to load the latest complete state from disk.
                 case dev_process_cache:latest(ProcID, TargetSlot, Opts) of
-                    {LoadedSlot, MsgFromCache} ->
+                    {ok, LoadedSlot, MsgFromCache} ->
                         % Boot the devices in the executor stack with the
                         % loaded state.
                         ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
-                        run_as(<<"Executor">>, MsgFromCache, boot, Opts);
+                        run_as(<<"Execution-Device">>, MsgFromCache, boot, Opts);
                     not_found ->
                         % If we do not have a checkpoint, initialize the
                         % process from scratch.
@@ -123,7 +126,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                 end,
             {ok, Msg3} =
                 run_as(
-                    <<"Executor">>,
+                    <<"Execution-Device">>,
                     State,
                     ToProcess,
                     Opts#{ cache_keys := CacheKeys }
@@ -180,6 +183,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
         #{ device := DeviceSet } ->
             {ok, hb_converge:set(BaseResult, #{ device => BaseDevice })};
         _ ->
+            ?event({returning_base_result, BaseResult}),
             {ok, BaseResult}
     end.
 
@@ -189,11 +193,14 @@ init() ->
     application:ensure_all_started(hb),
     ok.
 
-basic_test_process() ->
+test_process() ->
+    Wallet = hb:wallet(),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
         device => ?MODULE,
-        <<"Executor">> => <<"Stack/1.0">>,
-        <<"Scheduler">> => <<"Scheduler/1.0">>,
+        <<"Execution-Device">> => <<"Stack/1.0">>,
+        <<"Scheduler-Device">> => <<"Scheduler/1.0">>,
+        <<"Scheduler-Location">> => Address,
         <<"Device-Stack">> => [dev_wasm],
         <<"WASM-Image">> => <<"wasm-image-id">>,
         <<"Type">> => <<"Process">>,
@@ -216,7 +223,7 @@ schedule_test_message(Msg1, Text) ->
 
 schedule_on_process_test() ->
     init(),
-    Msg1 = basic_test_process(),
+    Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?event(messages_scheduled),
@@ -236,7 +243,7 @@ schedule_on_process_test() ->
 
 get_scheduler_slot_test() ->
     init(),
-    Msg1 = basic_test_process(),
+    Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     Msg2 = #{
@@ -248,20 +255,20 @@ get_scheduler_slot_test() ->
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
 
-basic_wasm_test_process() ->
-    maps:merge(basic_test_process(), #{
+test_wasm_process() ->
+    maps:merge(test_process(), #{
         <<"Device-Stack">> => [dev_vfs, dev_wasm],
         <<"WASM-Image">> => <<"test/test-standalone-wex-aos.wasm">>
     }).
 
-basic_wasm_process_test() ->
+recursive_resolve_test() ->
     init(),
-    Msg1 = basic_wasm_test_process(),
+    Msg1 = test_wasm_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
-    schedule_test_message(Msg1, <<"TEST TEXT 2">>),
-    schedule_test_message(Msg1, <<"TEST TEXT 3">>),
+    CurrentSlot = hb_converge:resolve(Msg1, #{ path => [<<"Slot">>, <<"Current-Slot">>] }, #{}),
+    ?event({resolved_current_slot, CurrentSlot}),
     ?assertMatch(
         CurrentSlot when CurrentSlot > 0,
-        hb_converge:get(<<"Slot/Current-Slot">>, Msg1)
+        CurrentSlot
     ),
     ok.
