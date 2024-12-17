@@ -7,8 +7,6 @@
 %%% convenient interface for reading the result of a process at a given slot or
 %%% message ID.
 
--define(COMPUTE_CACHE_KEY, "computed").
-
 %% @doc Read the result of a process at a given slot.
 read(ProcID, Opts) ->
     hb_util:ok(latest(ProcID, Opts)).

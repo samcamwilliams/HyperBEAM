@@ -130,14 +130,21 @@ write(Path, Message, Opts) ->
             Store = hb_opts:get(store, no_viable_store, Opts),
             UnsignedID = hb_converge:get(unsigned_id, Message),
             SignedID = hb_converge:get(id, Message),
-            UnsignedPath = hb_store:path(Store, [Path, hb_util:human_id(UnsignedID)]),
+            UnsignedPath =
+                hb_store:path(Store, [Path, hb_util:human_id(UnsignedID)]),
             %?event({writing_single_layer_message, UnsignedPath}),
             TX = hb_message:message_to_tx(Message),
-            ?event({writing_shallow_message, {path, UnsignedPath}, {store, Store}, {tx, TX}}),
+            ?event(
+                {writing_shallow_message,
+                    {path, UnsignedPath},
+                    {store, Store},
+                    {tx, TX}
+                }
+            ),
             ok = hb_store:write(Store, UnsignedPath, ar_bundles:serialize(TX)),
             if SignedID =/= not_signed ->
-                SignedPath = hb_store:path(Store, [Path, hb_util:human_id(SignedID)]),
-                %?event({linking_single_layer_message, SignedPath, UnsignedPath}),
+                SignedPath =
+                    hb_store:path(Store, [Path, hb_util:human_id(SignedID)]),
                 hb_store:make_link(Store, UnsignedPath, SignedPath);
             true -> link_unnecessary
             end,
@@ -198,7 +205,8 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
     FlatTX = hb_message:message_to_tx(FlatMsg),
     hb_store:write(
         Store,
-        hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID), "header"]),
+        hb_store:path(
+            Store, [Path, hb_util:human_id(UnsignedHeaderID), "header"]),
         ar_bundles:serialize(FlatTX)
     ),
     case hb_message:signers(Msg) of
@@ -207,8 +215,14 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
             SignedHeaderID = ar_bundles:id(FullTX, signed),
             hb_store:make_link(
                 Store,
-                hb_store:path(Store, [Path, hb_util:human_id(UnsignedHeaderID)]),
-                hb_store:path(Store, [Path, hb_util:human_id(SignedHeaderID)])
+                hb_store:path(
+                    Store,
+                    [Path, hb_util:human_id(UnsignedHeaderID)]
+                ),
+                hb_store:path(
+                    Store,
+                    [Path, hb_util:human_id(SignedHeaderID)]
+                )
             )
     end,
     {ok, Group};
@@ -321,7 +335,8 @@ store_simple_unsigned_item_test() ->
     %% Write the simple unsigned item
     {ok, _} = write(Item, Opts),
     %% Read the item back
-    {ok, RetrievedItem} = read(hb_util:human_id(hb_converge:get(id, Item)), Opts),
+    {ok, RetrievedItem} =
+        read(hb_util:human_id(hb_converge:get(id, Item)), Opts),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple signed item
@@ -341,50 +356,6 @@ simple_signed_item_test() ->
     ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
     ?assert(hb_message:match(Msg, RetrievedItemSigned)),
     ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
-
-% %% Test storing and retrieving a composite unsigned item
-% composite_unsigned_item_test_ignore() ->
-%     ItemData = #{
-%         <<"key1">> => create_unsigned_tx(<<"value1">>),
-%         <<"key2">> => create_unsigned_tx(<<"value2">>)
-%     },
-%     Item = ar_bundles:deserialize(create_unsigned_tx(ItemData)),
-%     ok = write(TestStore = test_cache(), Item),
-%     {ok, RetrievedItem} = ?event(read_message(TestStore, ar_bundles:id(Item))),
-%     ?assertEqual(
-%         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
-%         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
-%     ),
-%     ?assertEqual(
-%         ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), unsigned),
-%         ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), unsigned)
-%     ),
-%     ?assertEqual(
-%         ar_bundles:id(Item, unsigned),
-%         ar_bundles:id(RetrievedItem, unsigned)
-%     ).
-
-%% Test storing and retrieving a composite signed item
-% composite_signed_item_test_ignore() ->
-%     ItemData = #{
-%         <<"key1">> => create_signed_tx(<<"value1">>),
-%         <<"key2">> => create_signed_tx(<<"value2">>)
-%     },
-%     Item = ar_bundles:deserialize(create_signed_tx(ItemData)),
-%     ok = write(TestStore = test_cache(), Item),
-%     {ok, RetrievedItem} = ?event(read_message(TestStore, ar_bundles:id(Item, signed))),
-%     ?assertEqual(
-%         ar_bundles:id((maps:get(<<"key1">>, Item#tx.data)), unsigned),
-%         ar_bundles:id((maps:get(<<"key1">>, RetrievedItem#tx.data)), unsigned)
-%     ),
-%     ?assertEqual(
-%         ar_bundles:id((maps:get(<<"key2">>, Item#tx.data)), signed),
-%         ar_bundles:id((maps:get(<<"key2">>, RetrievedItem#tx.data)), signed)
-%     ),
-%     ?assertEqual(ar_bundles:id(Item, unsigned), ar_bundles:id(RetrievedItem, unsigned)),
-%     ?assertEqual(ar_bundles:id(Item, signed), ar_bundles:id(RetrievedItem, signed)),
-%     ?assertEqual(true, ar_bundles:verify_item(Item)),
-%     ?assertEqual(true, ar_bundles:verify_item(RetrievedItem)).
 
 %% @doc Test deeply nested item storage and retrieval
 deeply_nested_item_test() ->
