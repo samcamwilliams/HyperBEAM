@@ -163,7 +163,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             };
         {true, true, <<"Process">>} ->
             ?no_prod("SU does not write to cache or upload to bundler."),
-            hb_cache:write(Store, ToSched),
+            hb_cache:write(ToSched, Opts),
             hb_client:upload(ToSched),
             ?event(
                 {registering_new_process,
@@ -230,7 +230,7 @@ get_schedule(Msg1, Msg2, Opts) ->
         case hb_converge:get(to, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
-                maps:get(current_slot,
+                maps:get(current,
                     dev_scheduler_server:info(
                         dev_scheduler_registry:find(ProcID)
                     )
@@ -302,12 +302,10 @@ assignment_bundle(Assignments, Opts) ->
 assignment_bundle([], Bundle, _Opts) ->
     Bundle;
 assignment_bundle([Assignment | Assignments], Bundle, Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
     Slot = hb_converge:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
     MessageID =
         hb_converge:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
-    {ok, MessageTX} = hb_cache:read(Store, MessageID),
-    Message = hb_message:tx_to_message(MessageTX),
+    {ok, Message} = hb_cache:read(MessageID, Opts),
     ?event(
         {adding_assignment_to_bundle,
             Slot,
