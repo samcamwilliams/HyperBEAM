@@ -1,5 +1,5 @@
 -module(hb_private).
--export([from_message/1, get/2, get/3, set/3, reset/1, is_private/1]).
+-export([from_message/1, get/2, get/3, set/2, set/3, reset/1, is_private/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -47,6 +47,8 @@ set(Msg, InputPath, Value) ->
     Path = remove_private_specifier(InputPath),
     Priv = from_message(Msg),
     NewPriv = hb_converge:set(Priv, Path, Value, converge_opts()),
+    set(Msg, NewPriv).
+set(Msg, NewPriv) ->
     maps:put(
         priv,
         NewPriv,
