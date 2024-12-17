@@ -91,11 +91,14 @@ format(Item, Indent) ->
 
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
-signers(Msg) ->
+signers(Msg) when is_map(Msg) ->
     case ar_bundles:signer(message_to_tx(Msg)) of
         undefined -> [];
         Signer -> [Signer]
-    end.
+    end;
+signers(TX) when is_record(TX, tx) ->
+    ar_bundles:signer(TX);
+signers(_) -> [].
 
 %% @doc Sign a message with the given wallet.
 sign(Msg, Wallet) ->
@@ -246,10 +249,22 @@ message_to_tx(Binary) when is_binary(Binary) ->
         data = Binary
     };
 message_to_tx(TX) when is_record(TX, tx) -> TX;
-message_to_tx(M) when is_map(M) ->
+message_to_tx(RawM) when is_map(RawM) ->
+    % The path is a special case so we normalized it first. It may have been
+    % modified by `hb_converge` in order to set it to the current key that is
+    % being executed. We should check whether the path is in the
+    % `priv/Converge/Original-Path` field, and if so, use that instead of the
+    % stated path. This normalizes the path, such that the signed message will
+    % continue to validate correctly.
+    M =
+        case {maps:find(path, RawM), hb_private:from_message(RawM)} of
+            {{ok, _}, #{ <<"Converge">> := #{ <<"Original-Path">> := Path } }} ->
+                maps:put(path, Path, RawM);
+            _ -> RawM
+        end,
     % Get the keys that will be serialized, excluding private keys. Note that
-    % we do not call hb_converge:resolve here because we want to include all keys
-    % in the underlying map, except the private ones.
+    % we do not call hb_converge:resolve here because we want to include the 'raw'
+    % data from the message, not the computable values.
     Keys = maps:keys(M),
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
