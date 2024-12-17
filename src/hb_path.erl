@@ -55,13 +55,19 @@ hd(Msg2, Opts) ->
 %% transformation. Subsequently, the message's IDs will not be verifiable 
 %% after executing this transformation.
 %% This may or may not be the mainnet behavior we want.
-tl(Msg2, Opts) ->
+tl(Msg2, Opts) when is_map(Msg2) ->
     case pop_request(Msg2, Opts) of
         undefined -> undefined;
         {_, Rest} ->
             ?no_prod("We need to show the state transformation of the path"
                 " in the message somehow."),
             Rest
+    end;
+tl(Path, Opts) when is_list(Path) ->
+    case tl(#{ path => Path }, Opts) of
+        [] -> undefined;
+        undefined -> undefined;
+        #{ path := Rest } -> Rest
     end.
 
 %% @doc Add a path element to a message, according to the type given.
@@ -265,4 +271,7 @@ tl_test() ->
     ?assertMatch([b, c], maps:get(path, tl(#{ path => [a, b, c] }, #{}))),
     ?assertEqual(undefined, tl(#{ path => [] }, #{})),
     ?assertEqual(undefined, tl(#{ path => a }, #{})),
-    ?assertEqual(undefined, tl(#{ path => undefined }, #{})).
+    ?assertEqual(undefined, tl(#{ path => undefined }, #{})),
+
+    ?assertEqual([b, c], tl([a, b, c], #{ })),
+    ?assertEqual(undefined, tl([c], #{ })).
