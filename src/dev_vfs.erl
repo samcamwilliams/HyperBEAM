@@ -206,7 +206,8 @@ fd_read(S, Port, Args) ->
     fd_read(S, Port, Args, 0).
 fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
     ?event({{completed_read, FD, BytesRead}}),
-    hb_beamr_io:write(Port, RetPtr, <<BytesRead:64/little-unsigned-integer>>),
+    hb_beamr_io:write(Port, RetPtr,
+        <<BytesRead:64/little-unsigned-integer>>),
     {S, [0]};
 fd_read(S, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
     ?event({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
@@ -241,5 +242,8 @@ get_bytes(FileMsg, Size) ->
 %% @doc Parse an iovec in WASI-preview-1 format.
 parse_iovec(Port, Ptr) ->
     {ok, VecStruct} = hb_beamr_io:read(Port, Ptr, 16),
-    <<BinPtr:64/little-unsigned-integer, Len:64/little-unsigned-integer>> = VecStruct,
+    <<
+        BinPtr:64/little-unsigned-integer,
+        Len:64/little-unsigned-integer
+    >> = VecStruct,
     {BinPtr, Len}.
