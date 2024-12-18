@@ -65,7 +65,7 @@ init_wasm_state(M1, Port, Opts) ->
             #{
                 <<"WASM/Port">> => Port,
                 <<"WASM/Handler">> => <<"handle">>,
-                <<"WASM/Invoke-stdlib">> => fun invoke_stdlib/7
+                <<"WASM/Invoke-stdlib">> => fun invoke_stdlib/3
             },
             Opts
         )
@@ -134,7 +134,12 @@ terminate(M1, _M2, Opts) ->
 %% @doc Handle standard library calls by looking up the function in the
 %% message and calling it. Calls the stub function if the function is not
 %% found in the message.
-invoke_stdlib(M1, Port, ModName, FuncName, Args, Sig, Opts) ->
+invoke_stdlib(M1, M2, Opts) ->
+    Port = hb_converge:get(port, M2, Opts#{ hashpath => ignore }),
+    ModName = hb_converge:get(module, M2, Opts#{ hashpath => ignore }),
+    FuncName = hb_converge:get(func, M2, Opts#{ hashpath => ignore }),
+    Args = hb_converge:get(args, M2, Opts#{ hashpath => ignore }),
+    Sig = hb_converge:get(signature, M2, Opts#{ hashpath => ignore }),
     MaybeFunc =
         hb_private:get(
             <<"priv/WASM/stdlib/", ModName/bitstring, "/", FuncName/bitstring>>,

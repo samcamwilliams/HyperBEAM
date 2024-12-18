@@ -11,18 +11,9 @@
 -define(INIT_VFS,
     #{
         <<"dev">> => #{
-            <<"stdin">> => #{
-                data => <<>>,
-                offset => 0
-            },
-            <<"stdout">> => #{
-                data => <<>>,
-                offset => 0
-            },
-            <<"stderr">> => #{
-                data => <<>>,
-                offset => 0
-            }
+            <<"stdin">> => <<>>,
+            <<"stdout">> => <<>>,
+            <<"stderr">> => <<>>
         }
     }
 ).
@@ -90,7 +81,7 @@ execute(M1 = #{ pass := 1 }, M2, Opts) ->
     {ok,
         hb_converge:set(
             M1,
-            <<"vfs/dev/stdin/data">>,
+            <<"vfs/dev/stdin">>,
             JSON,
             Opts
         )
@@ -118,7 +109,7 @@ execute(M1, _M2, _Opts) ->
 
 %% @doc Return the stdout buffer from a state message.
 stdout(M) ->
-    hb_converge:get(<<"vfs/1/data">>, M).
+    hb_converge:get(<<"vfs/1">>, M).
 
 %% @doc Adds a file descriptor to the state message.
 path_open(M, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
@@ -170,14 +161,14 @@ fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten) ->
     {S, [0]};
 fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], BytesWritten) ->
     FD = hb_converge:get(<<"File-Descriptors/", FD/binary>>, S),
-    Filename = hb_converge:get(<<"filename">>, FD),
+    Filename = hb_converge:get(<<"Filename">>, FD),
     {VecPtr, Len} = parse_iovec(Port, Ptr),
     {ok, Data} = hb_beamr_io:read(Port, VecPtr, Len),
     Before =
         binary:part(
-            OrigData = hb_converge:get(<<"data">>, FD),
+            OrigData = hb_converge:get(<<"Data">>, FD),
             0,
-            hb_converge:get(<<"offset">>, FD)
+            hb_converge:get(<<"Offset">>, FD)
         ),
     After =
         binary:part(
@@ -212,7 +203,7 @@ fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead) ->
 fd_read(S, Port, [FD, VecsPtr, NumVecs, RetPtr], BytesRead) ->
     ?event({fd_read, FD, VecsPtr, NumVecs, RetPtr}),
     FD = hb_converge:get(<<"File-Descriptors/", FD/binary>>, S),
-    Filename = hb_converge:get(<<"filename">>, FD),
+    Filename = hb_converge:get(<<"Filename">>, FD),
     {VecPtr, Len} = parse_iovec(Port, VecsPtr),
     {FileBytes, NewFile} = get_bytes(FD, Len),
     ok = hb_beamr_io:write(Port, VecPtr, FileBytes),
