@@ -210,6 +210,17 @@ test_process(WASMImage) ->
         <<"Scheduler-Authority">> => <<"scheduler-id">>
     }.
 
+test_wasm_process() ->
+    maps:merge(test_process(), #{
+        <<"Device-Stack">> => [dev_vfs, dev_wasm],
+        <<"WASM-Image">> => <<"test/test-standalone-wex-aos.wasm">>
+    }).
+
+test_device_process() ->
+    maps:merge(test_process(), #{
+        <<"Device-Stack">> => [dev_test, dev_test]
+    }).
+
 schedule_test_message(Msg1, Text) ->
     Msg2 = #{
         path => <<"Schedule">>,
@@ -257,17 +268,16 @@ get_scheduler_slot_test() ->
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
 
-test_wasm_process() ->
-    maps:merge(test_process(), #{
-        <<"Device-Stack">> => [dev_vfs, dev_wasm],
-        <<"WASM-Image">> => <<"test/test-standalone-wex-aos.wasm">>
-    }).
-
 recursive_resolve_test() ->
     init(),
     Msg1 = test_wasm_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
-    CurrentSlot = hb_converge:resolve(Msg1, #{ path => [<<"Slot">>, <<"Current-Slot">>] }, #{}),
+    CurrentSlot =
+        hb_converge:resolve(
+            Msg1,
+            #{ path => [<<"Slot">>, <<"Current-Slot">>] },
+            #{ hashpath => ignore }
+        ),
     ?event({resolved_current_slot, CurrentSlot}),
     ?assertMatch(
         CurrentSlot when CurrentSlot > 0,
