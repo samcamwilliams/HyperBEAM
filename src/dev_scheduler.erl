@@ -27,7 +27,6 @@
 
 %% @doc Helper to ensure that the environment is started.
 start() ->
-    application:ensure_all_started(hb),
     <<I1:32/unsigned-integer, I2:32/unsigned-integer, I3:32/unsigned-integer>>
         = crypto:strong_rand_bytes(12),
     rand:seed(exsplus, {I1, I2, I3}),
@@ -144,7 +143,6 @@ post_schedule(Msg1, Msg2, Opts) ->
             {message, ToSched}
         }
     ),
-    Store = hb_opts:get(store, no_viable_store, Opts),
     ?no_prod("SU does not validate item before writing into stream."),
     %case {ar_bundles:verify_item(ToSched), hb_converge:get(type, ToSched)} of
     case {WalletAddress == SchedulerLocation, true, hb_converge:get(type, ToSched)} of

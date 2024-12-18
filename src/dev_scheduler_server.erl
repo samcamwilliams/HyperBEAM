@@ -170,7 +170,6 @@ next_hashchain(HashChain, Message) ->
 
 %% @doc Test the basic functionality of the server.
 new_proc_test() ->
-    application:ensure_all_started(hb),
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
         #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },

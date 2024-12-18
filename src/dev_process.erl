@@ -190,7 +190,6 @@ run_as(Key, Msg1, Msg2, Opts) ->
 %%% Tests
 
 init() ->
-    application:ensure_all_started(hb),
     ok.
 
 test_process() ->
