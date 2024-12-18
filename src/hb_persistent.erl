@@ -192,19 +192,21 @@ merged_execution_test() ->
     Msg2 = #{ path => [slow_key], wait => TestTime },
     TestParent = self(),
     ParalellTestFun =
-        fun() ->
+        fun(Ref) ->
             ?event({starting_test_worker, {time, TestTime}}),
             Res = hb_converge:resolve(Msg1, Msg2, #{}),
             ?event({test_worker_got_result, {time, TestTime}, {result, Res}}),
-            TestParent ! Res
+            TestParent ! {result, Ref, Res}
         end,
-    GatherResult = fun() -> receive X -> X end end,
+    GatherResult = fun(Ref) -> receive {result, Ref, Res} -> Res end end,
     T0 = hb:now(),
-    spawn_link(ParalellTestFun),
+    Ref1 = make_ref(),
+    Ref2 = make_ref(),
+    spawn_link(fun() -> ParalellTestFun(Ref1) end),
     receive after 100 -> ok end,
-    spawn_link(ParalellTestFun),
-    Res1 = GatherResult(),
-    Res2 = GatherResult(),
+    spawn_link(fun() -> ParalellTestFun(Ref2) end),
+    Res1 = GatherResult(Ref1),
+    Res2 = GatherResult(Ref2),
     T1 = hb:now(),
     % Check the result is the same.
     ?assertEqual(Res1, Res2),
