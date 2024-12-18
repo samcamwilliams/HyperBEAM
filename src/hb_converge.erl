@@ -178,7 +178,8 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
             _ -> hb_path:from_message(request, Msg2)
         end,
     Head = hb_path:hd(Msg2, Opts),
-    RemainingPath = hb_path:tl(hb_path:from_message(request, Msg2), Opts),
+    FullPath = hb_path:from_message(request, Msg2),
+    RemainingPath = hb_path:tl(FullPath, Opts),
     Msg2UpdatedPriv =
         Msg2#{
             priv =>

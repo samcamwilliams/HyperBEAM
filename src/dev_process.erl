@@ -105,7 +105,7 @@ compute(Msg1, Msg2, Opts) ->
     do_compute(
         Loaded,
         Msg2,
-        hb_converge:get(<<"Assignment/Slot">>, Msg2, Opts),
+        hb_converge:get(<<"Slot">>, Msg2, Opts),
         Opts
     ).
 
@@ -113,28 +113,29 @@ compute(Msg1, Msg2, Opts) ->
 %% we reach the target slot that the user has requested.
 do_compute(Msg1, Msg2, TargetSlot, Opts) ->
     ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
-    case hb_converge:get(<<"Current-Slot">>, Msg2, Opts) of
+    case hb_converge:get(<<"Current-Slot">>, {as, dev_message, Msg1}, Opts) of
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             ?event({reached_target_slot_returning_state, TargetSlot}),
             {ok, Msg1};
         CurrentSlot ->
             % Get the next input from the scheduler device.
-            {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
-                next(Msg1, Msg2, Opts),
+            {ok, #{ <<"Message">> := ToProcess, <<"State">> := SchedState }} =
+                next(Msg1, Msg2, Opts#{ hashpath => ignore }),
             % Calculate how much of the state should be cached.
-            Freq = hb_opts:get(cache_frequency, Opts, ?DEFAULT_CACHE_FREQ),
+            Freq = hb_opts:get(cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
             CacheKeys =
                 case CurrentSlot rem Freq of
                     0 -> all;
                     _ -> [<<"Results">>]
                 end,
+            ?event({processing_message, {msg2, ToProcess}, {caching, CacheKeys}}),
             {ok, Msg3} =
                 run_as(
                     <<"Execution-Device">>,
-                    State,
+                    SchedState,
                     ToProcess,
-                    Opts#{ cache_keys := CacheKeys }
+                    Opts#{ cache_keys => CacheKeys }
                 ),
             do_compute(
                 hb_converge:set(
@@ -226,6 +227,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
             Msg2,
             Opts
         ),
+    ?event({base_result, BaseResult}),
     ?event({base_result_before_device_swap_back, BaseResult}),
     case BaseResult of
         #{ device := DeviceSet } ->
@@ -342,10 +344,25 @@ recursive_resolve_test() ->
     ok.
 
 test_device_compute_test() ->
+    hb:init(),
     Msg1 = test_device_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
-    Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 2 },
+    {ok, SchedulerRes} =
+        hb_converge:resolve(Msg1, #{
+            <<"Method">> => <<"GET">>,
+            path => <<"Schedule">>
+        }, #{}),
+    ?event({scheduler_res, SchedulerRes}),
+    ?assertMatch(
+        <<"TEST TEXT 2">>,
+        hb_converge:get(
+            <<"Assignments/1/Message/Test-Key">>,
+            SchedulerRes,
+            #{ hashpath => ignore }
+        )
+    ),
+    Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
     Msg3 = hb_converge:resolve(Msg1, Msg2, #{}),
     ?event({computed_message, {msg3, Msg3}}),
     ok.

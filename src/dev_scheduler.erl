@@ -53,7 +53,7 @@ info() ->
 %%% Default Converge handlers.
 
 set(Msg1, Msg2, Opts) ->
-    ?event({scheduler_set_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event({scheduler_set_called, {msg2, Msg2}}),
     dev_message:set(Msg1, Msg2, Opts).
 
 keys(Msg) ->
@@ -66,35 +66,66 @@ keys(Msg) ->
 %% `priv/To-Process` key.
 next(Msg1, Msg2, Opts) ->
     ?event({scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    Schedule = hb_private:get(<<"priv/Scheduler/Assignments">>, Msg1, Opts),
+    Schedule =
+        hb_private:get(
+            <<"priv/Scheduler/Assignments">>,
+            Msg1,
+            Opts
+        ),
     LastProcessed = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
     ?event({local_schedule_cache, {schedule, Schedule}}),
     Assignments =
-        case map_size(Schedule) of
-            0 ->
-                {ok, RecvdAssignments} = hb_converge:resolve(
-                    Msg1,
-                    #{
-                        <<"Method">> => <<"GET">>,
-                        path => <<"Schedule/Assignments">>,
-                        <<"From">> => LastProcessed
-                    },
-                    Opts
-                ),
-                RecvdAssignments;
-            _ -> Schedule
+        case Schedule of
+            X when is_map(X) and map_size(X) > 0 -> X;
+            _ ->
+                {ok, RecvdAssignments} =
+                    hb_converge:resolve(
+                        Msg1,
+                        #{
+                            <<"Method">> => <<"GET">>,
+                            path => <<"Schedule/Assignments">>,
+                            <<"From">> => LastProcessed
+                        },
+                        Opts
+                    ),
+                ?event({next_assignments, {assignments, RecvdAssignments}}),
+                RecvdAssignments
         end,
-    NextSlot = lists:min(Assignments),
-    {ok, #{
-        <<"Message">> => hb_converge:get(NextSlot, Schedule, Opts),
-        <<"State">> =>
-            hb_private:set(
-                Msg1,
-                <<"Schedule/Assignments">>,
-                hb_converge:remove(NextSlot, Assignments),
-                Opts
-            )
-    }}.
+    ?event({assignments, Assignments}),
+    ValidKeys =
+        lists:filter(
+            fun(Slot) ->
+                try 
+                    binary_to_integer(Slot) >= LastProcessed
+                catch
+                    _:_ -> false
+                end
+            end,
+            maps:keys(Assignments)
+        ),
+    % Remove assignments that are below the last processed slot.
+    FilteredAssignments = maps:with(ValidKeys, Assignments),
+    ?event({filtered_assignments, FilteredAssignments}),
+    NextSlot = lists:min([ binary_to_integer(Slot) || Slot <- ValidKeys ]),
+    ?event({next_slot, NextSlot}),
+    NextMessage =
+        hb_converge:get(
+            integer_to_binary(NextSlot),
+            FilteredAssignments,
+            Opts
+        ),
+    ?event({next_message, NextMessage}),
+    StateCache =
+        hb_private:set(
+            Msg1,
+            <<"Schedule/Assignments">>,
+            hb_converge:remove(FilteredAssignments, NextSlot),
+            Opts
+        ),
+    NextState =
+        hb_converge:set(StateCache, <<"Current-Slot">>, LastProcessed+1, Opts),
+    ?event({next_state, NextState}),
+    {ok, #{ <<"Message">> => NextMessage, <<"State">> => NextState }}.
 
 %% @doc Returns information about the entire scheduler.
 status(_M1, _M2, _Opts) ->
@@ -223,6 +254,7 @@ get_schedule(Msg1, Msg2, Opts) ->
     From =
         case hb_converge:get(from, Msg2, not_found, Opts) of
             not_found -> 0;
+            X when X < 0 -> 0;
             FromRes -> FromRes
         end,
     To =
@@ -255,7 +287,7 @@ gen_schedule(ProcID, From, To, Opts) ->
         To,
         Opts
     ),
-    ?event({got_assignments, {first, hd(Assignments)}, {more, More}}),
+    ?event({got_assignments, length(Assignments), {more, More}}),
     Bundle = #{
         <<"Type">> => <<"Schedule">>,
         <<"Process">> => ProcID,
@@ -272,10 +304,11 @@ gen_schedule(ProcID, From, To, Opts) ->
 %% @doc Get the assignments for a process, and whether the request was truncated.
 get_assignments(ProcID, From, RequestedTo, Opts) ->
     ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
-    ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
-        true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
-        false -> RequestedTo
-    end,
+    ComputedTo =
+        case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
+            true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
+            false -> RequestedTo
+        end,
     {do_get_assignments(ProcID, From, ComputedTo, Opts), ComputedTo =/= RequestedTo }.
 
 do_get_assignments(_ProcID, From, To, _Opts) when From > To ->

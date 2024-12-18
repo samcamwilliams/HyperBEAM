@@ -183,17 +183,17 @@ transform(Msg1, Key, Opts) ->
 resolve_stack(Message1, Key, Message2, Opts) ->
     resolve_stack(Message1, Key, Message2, 1, Opts).
 resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
-	?event(
-		{stack_transform,
-			DevNum,
-			{key, Key},
-			{message1, Message1},
-			{message2, Message2}
-		}
-	),
+	% ?event(
+	% 	{stack_transform,
+	% 		DevNum,
+	% 		{key, Key},
+	% 		{message1, Message1},
+	% 		{message2, Message2}
+	% 	}
+	% ),
 	case transform(Message1, integer_to_binary(DevNum), Opts) of
 		{ok, Message3} ->
-			?event({stack_execute, DevNum, Message3}),
+			?event({stack_execute, DevNum, {msg1, Message3}, {msg2, Message2}}),
 			case hb_converge:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),

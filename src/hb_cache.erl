@@ -283,7 +283,7 @@ read_raw(Store, RawPath) ->
                 )
             };
         simple -> read_raw_simple_message(Store, MessagePath);
-        not_found -> not_found
+        no_viable_store -> not_found
     end.
 
 read_raw_simple_message(Store, Path) ->

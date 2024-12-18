@@ -220,7 +220,9 @@ term_to_path(List, Opts) when is_list(List) ->
         end,
         List
     );
-term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
+term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom];
+term_to_path(Integer, _Opts) when is_integer(Integer) ->
+    [integer_to_binary(Integer)].
 
 %%% TESTS
 
