@@ -70,6 +70,7 @@ config() ->
                 <<"Test/1.0">> => dev_test,
                 <<"Stack/1.0">> => dev_stack,
                 <<"Scheduler/1.0">> => dev_scheduler,
+                <<"Process/1.0">> => dev_process,
                 <<"VFS/1.0">> => dev_vfs,
                 <<"WASM64/1.0">> => dev_wasm,
                 <<"Cron">> => dev_cron,

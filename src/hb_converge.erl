@@ -132,6 +132,18 @@ resolve(Msg1, Msg2, Opts) ->
 %%      8: Notify waiters.
 %%      9: Recurse, fork, or terminate.
 
+resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
+    % Normalize lists to numbered maps (base=1) if necessary.
+    resolve_stage(0,
+        maps:from_list(
+            lists:zip(
+                lists:seq(1, length(Msg1)),
+                Msg1
+            )
+        ),
+        Msg2,
+        Opts
+    );
 resolve_stage(0, Msg1, Path, Opts) when not is_map(Path) ->
     % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.

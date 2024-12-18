@@ -147,8 +147,10 @@ transformer_message(Msg1, Opts) ->
 %% of the message as it delegates execution to devices contained within it.
 transform(Msg1, Key, Opts) ->
 	% Get the device stack message from Msg1.
-	case dev_message:get(<<"Device-Stack">>, Msg1, Opts) of
-		{ok, StackMsg} ->
+    ?event({transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
+	case hb_converge:get(<<"Device-Stack">>, {as, dev_message, Msg1}, Opts) of
+        not_found -> throw({error, no_valid_device_stack});
+        StackMsg ->
 			% Find the requested key in the device stack.
 			case hb_converge:resolve(StackMsg, #{ path => Key }, Opts) of
 				{ok, DevMsg} ->
@@ -161,24 +163,19 @@ transform(Msg1, Key, Opts) ->
 						Msg1,
 						#{
 							<<"Device">> => DevMsg,
-							<<"Device-Stack">> =>
-								StackMsg#{ <<"Previous">> =>
-									hb_util:ok(
-										dev_message:get(
-											<<"Device">>,
-											Msg1,
-											Opts
-										)
-									)
-								}
+							<<"Device-Stack-Previous">> =>
+                                hb_util:ok(dev_message:get(
+                                    <<"Device">>,
+                                    Msg1,
+                                    Opts
+                                ))
 						},
 						Opts
 					);
 				_ ->
 					?event({no_device_key, Key}),
 					not_found
-			end;
-		_ -> throw({error, no_valid_device_stack})
+			end
 	end.
 
 %% @doc The main device stack execution engine. See the moduledoc for more

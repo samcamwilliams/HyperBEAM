@@ -35,6 +35,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Example `init/3' handler. Sets the `Already-Seen' key to an empty list.
 init(Msg, _Msg2, Opts) ->
+    ?event({init_called_on_dev_test, Msg}),
     {ok, hb_converge:set(Msg, #{ <<"Already-Seen">> => [] }, Opts)}.
 
 %% @doc Example `restore/3' handler. Sets the hidden key `Test/Started` to the

@@ -1,5 +1,5 @@
 -module(dev_process_cache).
--export([latest/2, read/2, read/3, write/4]).
+-export([latest/2, latest/3, latest/4, read/2, read/3, write/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
