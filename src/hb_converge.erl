@@ -168,16 +168,16 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
     Head = hb_path:hd(Msg2, Opts),
     RemainingPath = hb_path:tl(hb_path:from_message(request, Msg2), Opts),
     Msg2UpdatedPriv =
-        hb_private:set(
-            Msg2,
-            InitialPriv#{
-                <<"Converge">> =>
-                    #{
-                        <<"Original-Path">> => OriginalPath,
-                        <<"Remaining-Path">> => RemainingPath
-                    }
-            }
-        ),
+        Msg2#{
+            priv =>
+                InitialPriv#{
+                    <<"Converge">> =>
+                        #{
+                            <<"Original-Path">> => OriginalPath,
+                            <<"Remaining-Path">> => RemainingPath
+                        }
+                }
+        },
     resolve_stage(3, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
 resolve_stage(3, Msg1, Msg2, Opts) ->
     %% Device lookup: Find the Erlang function that should be utilized to 
@@ -427,11 +427,10 @@ set(Msg1, Msg2) ->
 set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg2 = maps:without([hashpath, priv], RawMsg2),
     ?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
-    case map_size(Msg2) of
-        0 -> Msg1;
-        _ ->
+    case keys(Msg2, Opts#{ hashpath => ignore }) of
+        [] -> Msg1;
+        [Key|_] ->
             % Get the first key and value to set.
-            Key = hd(keys(Msg2, Opts#{ hashpath => ignore })),
             Val = get(Key, Msg2, Opts),
             ?event({got_val_to_set, {key, Key}, {val, Val}}),
             % Next, set the key and recurse, removing the key from the Msg2.
@@ -462,15 +461,25 @@ deep_set(Msg, [Key], Value, Opts) ->
     %?event({setting_last_key, {key, Key}, {value, Value}}),
     device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
-    {ok, SubMsg} = resolve(Msg, Key, Opts),
-    ?event(
-        {traversing_deeper_to_set,
-            {current_key, Key},
-            {current_value, SubMsg},
-            {rest, Rest}
-        }
-    ),
-    device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts).
+    case resolve(Msg, Key, Opts) of 
+        {ok, SubMsg} ->
+            ?event(
+                {traversing_deeper_to_set,
+                    {current_key, Key},
+                    {current_value, SubMsg},
+                    {rest, Rest}
+                }
+            ),
+            device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), Opts);
+        _ ->
+            ?event(
+                {creating_new_map,
+                    {current_key, Key},
+                    {rest, Rest}
+                }
+            ),
+            Msg#{ Key => deep_set(#{}, Rest, Value, Opts) }
+    end.
 
 device_set(Msg, Key, Value, Opts) ->
 	?event({calling_device_set, {msg, Msg}, {applying_path, #{ path => set, Key => Value }}}),

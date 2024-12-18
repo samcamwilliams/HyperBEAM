@@ -102,14 +102,23 @@ simple_wasm_test() ->
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
-generate_test_vfs() ->
-    dev_vfs:init(#{}).
+%% @doc Generate a test minimal state for the WASM executor.
+generate_test_state(Port) ->
+    {ok, S0} = dev_wasm:init_wasm_state(Port),
+    {ok, S1} = dev_vfs:init(S0, #{}, #{}),
+    {ok, S1}.
 
 test_call(Port, Func, Args) ->
-    {ok, VFSState0} = generate_test_vfs(),
-    test_call(VFSState0, Port, Func, Args).
-test_call(VFSState, Port, Func, Args) ->
-    call(VFSState, Port, Func, Args, fun dev_json_iface:stdlib/6).
+    {ok, TestState} = generate_test_state(Port),
+    test_call(TestState, Port, Func, Args).
+test_call(TestState, Port, Func, Args) ->
+    call(
+        TestState,
+        Port,
+        Func,
+        Args,
+        hb_private:get(<<"priv/WASM/Invoke-stdlib">>, TestState, #{})
+    ).
 
 simple_wasm_calling_test() ->
     {ok, File} = file:read_file("test/test-calling.wasm"),

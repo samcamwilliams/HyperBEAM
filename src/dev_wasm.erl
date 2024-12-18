@@ -1,6 +1,7 @@
 -module(dev_wasm).
 -export([init/3, computed/3, terminate/3]).
 -export([checkpoint/3, checkpoint_uses/3]).
+-export([init_wasm_state/1]).
 -include("include/hb.hrl").
 
 %%% @moduledoc A device that executes a WASM image on messages using the Memory-64 
@@ -34,7 +35,7 @@
 %% @doc Boot a WASM image on the image stated in the `Process/Image` field of
 %% the message.
 init(M1, _M2, Opts) ->
-    ImageID = hb_converge:get(<<"Process/Image">>, M1, Opts),
+    ImageID = hb_converge:get(<<"Process/WASM-Image">>, M1, Opts),
     {ok, Image} =
         hb_cache:read(
             hb_opts:get(store, no_viable_store, Opts),
@@ -44,7 +45,7 @@ init(M1, _M2, Opts) ->
     {ok, Port, _ImportMap, _Exports} = hb_beamr:start(Image#tx.data),
     % Apply the checkpoint if it is in the initial state.
     case hb_converge:get(<<"WASM/State">>, M1, Opts) of
-        undefined ->
+        not_found ->
             M1;
         Checkpoint ->
             ?event(wasm_checkpoint_found),
@@ -53,14 +54,20 @@ init(M1, _M2, Opts) ->
             hb_beamr:deserialize(Port, Checkpoint#tx.data),
             ?event(wasm_deserialized)
     end,
+    init_wasm_state(M1, Port, Opts).
+
+init_wasm_state(Port) ->
+    init_wasm_state(#{}, Port, #{}).
+init_wasm_state(M1, Port, Opts) ->
     % Set the WASM port, handler, and standard library invokation function.
     {ok,
-        hb_converge:set(M1,
+        hb_private:set(M1,
             #{
-                <<"priv/WASM/Port">> => Port,
-                <<"priv/WASM/Handler">> => <<"handle">>,
-                <<"priv/WASM/Invoke-stdlib">> => fun invoke_stdlib/7
-            }
+                <<"WASM/Port">> => Port,
+                <<"WASM/Handler">> => <<"handle">>,
+                <<"WASM/Invoke-stdlib">> => fun invoke_stdlib/7
+            },
+            Opts
         )
     }.
 
@@ -74,10 +81,10 @@ computed(M1, _M2, Opts) ->
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
                     M1,
-                    hb_converge:get(<<"priv/WASM/Port">>, M1, Opts),
+                    hb_private:get(<<"WASM/Port">>, M1, Opts),
                     hb_converge:get(<<"WASM/Handler">>, M1, Opts),
                     hb_converge:get(<<"WASM/Params">>, M1, Opts),
-                    hb_converge:get(<<"priv/WASM/Invoke-stdlib">>, M1, Opts),
+                    hb_private:get(<<"WASM/Invoke-stdlib">>, M1, Opts),
                     Opts
                 ),
             {ok,
@@ -93,7 +100,7 @@ computed(M1, _M2, Opts) ->
 
 %% @doc Serialize the WASM state to a message.
 checkpoint(M1, _M2, Opts) ->
-    Port = hb_converge:get(<<"priv/WASM/Port">>, M1, Opts),
+    Port = hb_private:get(<<"priv/WASM/Port">>, M1, Opts),
     SaveKeys = hb_converge:get(<<"Checkpoint-Keys">>, M1, Opts),
     {ok, Serialized} = hb_beamr:serialize(Port),
     {ok, hb_converge:set(M1,
@@ -115,12 +122,13 @@ checkpoint_uses(M1, _M2, Opts) ->
 %% @doc Tear down the WASM executor.
 terminate(M1, _M2, Opts) ->
     ?event(terminate_called_on_dev_wasm),
-    Port = hb_converge:get(<<"priv/WASM/Port">>, M1, Opts),
+    Port = hb_private:get(<<"priv/WASM/Port">>, M1, Opts),
     hb_beamr:stop(Port),
-    {ok, hb_converge:set(M1,
+    {ok, hb_private:set(M1,
         #{
-            <<"priv/WASM/Port">> => undefined
-        }
+            <<"WASM/Port">> => undefined
+        },
+        Opts
     )}.
 
 %% @doc Handle standard library calls by looking up the function in the
@@ -128,7 +136,7 @@ terminate(M1, _M2, Opts) ->
 %% found in the message.
 invoke_stdlib(M1, Port, ModName, FuncName, Args, Sig, Opts) ->
     MaybeFunc =
-        hb_converge:get(
+        hb_private:get(
             <<"priv/WASM/stdlib/", ModName/bitstring, "/", FuncName/bitstring>>,
             M1,
             Opts

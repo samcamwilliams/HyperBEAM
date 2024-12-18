@@ -92,7 +92,8 @@ next(Msg1, Msg2, Opts) ->
             hb_private:set(
                 Msg1,
                 <<"Schedule/Assignments">>,
-                hb_converge:remove(NextSlot, Assignments)
+                hb_converge:remove(NextSlot, Assignments),
+                Opts
             )
     }}.
 
@@ -377,7 +378,7 @@ update_schedule(M1, M2, Opts) ->
         end,
         Assignments
     ),
-    {ok, hb_private:set(M1, <<"priv/Schedule">>, Assignments)}.
+    {ok, hb_private:set(M1, <<"priv/Schedule">>, Assignments, Opts)}.
 
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.

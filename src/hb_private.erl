@@ -1,5 +1,6 @@
 -module(hb_private).
--export([from_message/1, get/2, get/3, set/2, set/3, reset/1, is_private/1]).
+-export([from_message/1, reset/1, is_private/1]).
+-export([get/3, get/4, set/4, set/3, set_priv/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -23,11 +24,12 @@
 %% empty map is returned.
 from_message(Msg) -> maps:get(priv, Msg, #{}).
 
-%% @doc Helper for getting a value from the private element of a message.
-get(Msg, Key) ->
-    get(Msg, Key, undefined).
-
-get(Msg, InputPath, Default) ->
+%% @doc Helper for getting a value from the private element of a message. Uses
+%% Converge resolve under-the-hood, removing the private specifier from the
+%% path if it exists.
+get(Key, Msg, Opts) ->
+    get(Key, Msg, undefined, Opts).
+get(InputPath, Msg, Default, Opts) ->
     Path = remove_private_specifier(InputPath),
     ?event({get_private, {in, InputPath}, {out, Path}}),
     % Resolve the path against the private element of the message.
@@ -35,7 +37,7 @@ get(Msg, InputPath, Default) ->
         hb_converge:resolve(
             from_message(Msg),
             #{ path => Path },
-            converge_opts()
+            converge_opts(Opts)
         ),
     case Resolve of
         {error, not_found} -> Default;
@@ -43,17 +45,19 @@ get(Msg, InputPath, Default) ->
     end.
 
 %% @doc Helper function for setting a key in the private element of a message.
-set(Msg, InputPath, Value) ->
+set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath),
     Priv = from_message(Msg),
-    NewPriv = hb_converge:set(Priv, Path, Value, converge_opts()),
-    set(Msg, NewPriv).
-set(Msg, NewPriv) ->
-    maps:put(
-        priv,
-        NewPriv,
-        Msg
-    ).
+    NewPriv = hb_converge:set(Priv, Path, Value, converge_opts(Opts)),
+    set(Msg, NewPriv, Opts).
+set(Msg, PrivMap, Opts) ->
+    CurrentPriv = from_message(Msg),
+    NewPriv = hb_converge:set(CurrentPriv, PrivMap, converge_opts(Opts)),
+    set_priv(Msg, NewPriv).
+
+%% @doc Helper function for setting the complete private element of a message.
+set_priv(Msg, PrivMap) ->
+    Msg#{ priv => PrivMap }.
 
 %% @doc Check if a key is private.
 is_private(Key) ->
@@ -71,8 +75,8 @@ remove_private_specifier(InputPath) ->
 
 %% @doc The opts map that should be used when resolving paths against the
 %% private element of a message.
-converge_opts() ->
-    #{ hashpath => ignore, cache_control => false }.
+converge_opts(Opts) ->
+    Opts#{ hashpath => ignore, cache_control => false }.
 
 %% @doc Unset all of the private keys in a message.
 reset(Msg) ->
@@ -84,15 +88,15 @@ reset(Msg) ->
 %%% Tests
 
 set_private_test() ->
-    ?assertEqual(#{a => 1, priv => #{b => 2}}, ?MODULE:set(#{a => 1}, b, 2)),
-    Res = ?MODULE:set(#{a => 1}, a, 1),
+    ?assertEqual(#{a => 1, priv => #{b => 2}}, set(#{a => 1}, b, 2, #{})),
+    Res = set(#{a => 1}, a, 1, #{}),
     ?assertEqual(#{a => 1, priv => #{a => 1}}, Res),
-    ?assertEqual(#{a => 1, priv => #{a => 1}}, ?MODULE:set(Res, a, 1)).
+    ?assertEqual(#{a => 1, priv => #{a => 1}}, set(Res, a, 1, #{})).
 
 get_private_key_test() ->
     M1 = #{a => 1, priv => #{b => 2}},
-    ?assertEqual(undefined, ?MODULE:get(M1, a)),
+    ?assertEqual(undefined, get(a, M1, #{})),
     {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>, #{}),
-    ?assertEqual(2, ?MODULE:get(M1, b)),
-    {error, not_found} = hb_converge:resolve(M1, <<"Private">>, #{}),
+    ?assertEqual(2, get(b, M1, #{})),
+    {error, not_found} = hb_converge:resolve(M1, <<"priv/a">>, #{}),
     {error, not_found} = hb_converge:resolve(M1, priv, #{}).

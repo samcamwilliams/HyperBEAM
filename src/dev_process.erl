@@ -2,7 +2,7 @@
 %%% Public API
 -export([info/2, compute/3, schedule/3, slot/3, now/3]).
 %%% Test helpers
--export([test_process/0, test_wasm_process/0]).
+-export([test_process/0, test_process/1, test_wasm_process/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -194,6 +194,9 @@ init() ->
     ok.
 
 test_process() ->
+    test_process(<<"test/aos-2-pure.wasm">>).
+
+test_process(WASMImage) ->
     Wallet = hb:wallet(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
@@ -202,7 +205,7 @@ test_process() ->
         <<"Scheduler-Device">> => <<"Scheduler/1.0">>,
         <<"Scheduler-Location">> => Address,
         <<"Device-Stack">> => [dev_wasm],
-        <<"WASM-Image">> => <<"wasm-image-id">>,
+        <<"WASM-Image">> => WASMImage,
         <<"Type">> => <<"Process">>,
         <<"Test-Key-Random-Number">> => rand:uniform(1337),
         <<"Scheduler-Authority">> => <<"scheduler-id">>
