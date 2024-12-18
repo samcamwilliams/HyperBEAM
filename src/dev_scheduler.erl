@@ -319,6 +319,7 @@ assignment_bundle([Assignment | Assignments], Bundle, Opts) ->
             Slot =>
                 hb_message:sign(
                     #{
+                        <<"Path">> => <<"Compute">>,
                         <<"Assignment">> => Assignment,
                         <<"Message">> => Message
                     },

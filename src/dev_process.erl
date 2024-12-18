@@ -52,7 +52,7 @@
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency` option.
--define(DEFAULT_CACHE_FREQ, 10).
+-define(DEFAULT_CACHE_FREQ, 2).
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1, _Opts) ->
@@ -73,45 +73,39 @@ next(Msg1, _Msg2, Opts) ->
     run_as(<<"Scheduler-Device">>, Msg1, next, Opts).
 
 %% @doc Before computation begins, a boot phase is required. This phase
-%% allows devices on the execution stack to initialize themselves.
-init(Msg1, Msg2, Opts) ->
-    {ok, Res} = run_as(<<"Execution-Device">>, Msg1, init, Opts),
-    compute(Res, Msg2, Opts).
+%% allows devices on the execution stack to initialize themselves. We set the
+%% `Initialized' key to `True' to indicate that the process has been
+%% initialized.
+init(Msg1, _Msg2, Opts) ->
+    {ok, Initialized} = run_as(<<"Execution-Device">>, Msg1, init, Opts),
+    {
+        ok,
+        hb_converge:set(
+            Initialized,
+            #{ <<"Initialized">> => <<"True">> },
+            Opts
+        )
+    }.
 
 %% @doc Compute the result of an assignment applied to the process state, if it 
 %% is the next message.
 compute(Msg1, Msg2, Opts) ->
-    ProcID =
-        hb_converge:get(<<"Process/id">>, Msg1, Opts#{ hashpath := ignore }),
-    % Get the nonce we are currently on and the inbound nonce.
-    {ok, CurrentSlot} = hb_converge:get(<<"Current-Slot">>, Msg2, Opts, -1),
-    {ok, TargetSlot} = hb_converge:get(<<"Assignment/Slot">>, Msg2, Opts),
-    % If we do not have a live state, load or initialize one.
-    {ok, Loaded} =
-        case CurrentSlot of
-            -1 ->
-                % Try to load the latest complete state from disk.
-                case dev_process_cache:latest(ProcID, TargetSlot, Opts) of
-                    {ok, LoadedSlot, MsgFromCache} ->
-                        % Boot the devices in the executor stack with the
-                        % loaded state.
-                        ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
-                        run_as(<<"Execution-Device">>, MsgFromCache, boot, Opts);
-                    not_found ->
-                        % If we do not have a checkpoint, initialize the
-                        % process from scratch.
-                        init(Msg1, Msg2, Opts)
-                end;
-            _ -> {ok, Msg1}
-        end,
-    do_compute(Loaded, Msg2, TargetSlot, Opts).
+    % If we do not have a live state, restore or initialize one.
+    {ok, Loaded} = ensure_loaded(Msg1, Msg2, Opts),
+    do_compute(
+        Loaded,
+        Msg2,
+        hb_converge:get(<<"Assignment/Slot">>, Msg2, Opts),
+        Opts
+    ).
 
-%% @doc Continually get the next assignment from the scheduler until we
-%% are up-to-date.
+%% @doc Continually get and apply the next assignment from the scheduler until
+%% we reach the target slot that the user has requested.
 do_compute(Msg1, Msg2, TargetSlot, Opts) ->
     case hb_converge:get(<<"Slot">>, Msg2, Opts) of
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
+            ?event({reached_target_slot_returning_state, TargetSlot}),
             {ok, Msg1};
         CurrentSlot ->
             % Get the next input from the scheduler device.
@@ -141,6 +135,48 @@ now(Msg1, _Msg2, Opts) ->
     ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
     {ok, Msg3} = dev_process_cache:read(ProcessID, CurrentSlot, Opts),
     {ok, hb_converge:get(<<"Results">>, Msg3, Opts)}.
+
+%% @doc Ensure that the process message we have in memory is live and
+%% up-to-date.
+ensure_loaded(Msg1, Msg2, Opts) ->
+    % Get the nonce we are currently on and the inbound nonce.
+    {ok, TargetSlot} = hb_converge:get(<<"Assignment/Slot">>, Msg2, Opts),
+    ProcID =
+        hb_converge:get(
+            <<"Process/id">>,
+            Msg1,
+            Opts#{ hashpath := ignore }
+        ),
+    case hb_converge:get(<<"Initialized">>, Msg1, <<"False">>, Opts) of
+        <<"False">> ->
+            % Try to load the latest complete state from disk.
+            LoadRes =
+                dev_process_cache:latest(
+                    ProcID,
+                    [<<"Initialized">>],
+                    TargetSlot,
+                    Opts
+                ),
+            case LoadRes of
+                {ok, LoadedSlot, MsgFromCache} ->
+                    % Restore the devices in the executor stack with the
+                    % loaded state. This allows the devices to load any
+                    % necessary 'shadow' state (state not represented in
+                    % the public component of a message) into memory.
+                    ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    run_as(
+                        <<"Execution-Device">>,
+                        MsgFromCache,
+                        restore,
+                        Opts
+                    );
+                not_found ->
+                    % If we do not have a checkpoint, initialize the
+                    % process from scratch.
+                    init(Msg1, Msg2, Opts)
+            end;
+        <<"True">> -> {ok, Msg1}
+    end.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key`. After execution, the device is swapped back
@@ -189,9 +225,6 @@ run_as(Key, Msg1, Msg2, Opts) ->
 
 %%% Tests
 
-init() ->
-    ok.
-
 test_process() ->
     test_process(<<"test/aos-2-pure.wasm">>).
 
@@ -216,6 +249,9 @@ test_wasm_process() ->
         <<"WASM-Image">> => <<"test/test-standalone-wex-aos.wasm">>
     }).
 
+%% @doc Generate a device that has a stack of two `dev_test's for 
+%% execution. This should generate a message state has doubled 
+%% `Already-Seen' elements for each assigned slot.
 test_device_process() ->
     maps:merge(test_process(), #{
         <<"Device-Stack">> => [dev_test, dev_test]
@@ -235,7 +271,6 @@ schedule_test_message(Msg1, Text) ->
     ok.
 
 schedule_on_process_test() ->
-    init(),
     Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
@@ -255,7 +290,6 @@ schedule_on_process_test() ->
     ).
 
 get_scheduler_slot_test() ->
-    init(),
     Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
@@ -269,7 +303,6 @@ get_scheduler_slot_test() ->
     ).
 
 recursive_resolve_test() ->
-    init(),
     Msg1 = test_wasm_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     CurrentSlot =
