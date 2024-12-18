@@ -3,7 +3,7 @@
 -export([get/1, get/2, get_binary/1]).
 -export([post/2, post/3, post_binary/2]).
 -export([reply/2, reply/3]).
--export([tx_to_status/1, req_to_tx/1]).
+-export([message_to_status/1, req_to_message/1]).
 -include("include/hb.hrl").
 -hb_debug(print).
 
@@ -28,7 +28,8 @@ get(URL) ->
 %% we can easily swap out the HTTP client library later.
 get_binary(URL) ->
     ?event({http_getting, URL}),
-    case httpc:request(get, {iolist_to_binary(URL), []}, [], [{body_format, binary}]) of
+    NormURL = iolist_to_binary(URL),
+    case httpc:request(get, {NormURL, []}, [], [{body_format, binary}]) of
         {ok, {{_, 500, _}, _, Body}} ->
             ?event({http_got_server_error, URL}),
             {error, Body};
@@ -41,7 +42,14 @@ get_binary(URL) ->
 %% resulting message in deserialized form.
 post(Host, Path, Message) -> post(Host ++ Path, Message).
 post(URL, Message) when not is_binary(Message) ->
-    ?event({http_post, hb_util:id(Message, unsigned), hb_util:id(Message, signed), URL}),
+    ?event(
+        {
+            http_post,
+            hb_util:id(Message, unsigned),
+            hb_util:id(Message, signed),
+            URL
+        }
+    ),
     post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
 post(URL, Message) ->
     case post_binary(URL, Message) of
@@ -73,7 +81,7 @@ post_binary(URL, Message) ->
 
 %% @doc Reply to the client's HTTP request with a message.
 reply(Req, Message) ->
-    reply(Req, tx_to_status(Message), Message).
+    reply(Req, message_to_status(Message), Message).
 reply(Req, Status, Message) ->
     ?event(
         {
@@ -89,13 +97,13 @@ reply(Req, Status, Message) ->
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
-        ar_bundles:serialize(Message),
+        hb_message:serialize(Message),
         Req
     ),
     {ok, Req2, no_state}.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
-tx_to_status(Item) ->
+message_to_status(Item) ->
     case lists:keyfind(<<"Status">>, 1, Item#tx.tags) of
         {_, RawStatus} ->
             case is_integer(RawStatus) of
@@ -105,23 +113,20 @@ tx_to_status(Item) ->
         false -> 200
     end.
 
-%% @doc Convert a cowboy request to a normalized transaction.
-req_to_tx(Req) ->
+%% @doc Convert a cowboy request to a normalized message.
+req_to_message(Req) ->
     Method = cowboy_req:method(Req),
     Path = cowboy_req:path(Req),
     {ok, Body} = read_body(Req),
     QueryTags = cowboy_req:parse_qs(Req),
-    #tx {
-        tags = [
-            {<<"Method">>, Method},
-            {<<"Path">>, Path}
-        ] ++ QueryTags,
-        data =
-            case Body of
-                <<>> -> <<>>;
-                Body -> #{ <<"1">> => ar_bundles:deserialize(Body) }
-            end
-    }.
+    hb_converge:set(
+        #{
+            <<"Method">> => Method,
+            <<"Path">> => Path,
+            <<"Body">> => Body
+        },
+        maps:from_list(QueryTags)
+    ).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).

@@ -21,7 +21,9 @@ stop(#{ prefix := _DataDir }) ->
 scope(_) -> local.
 
 reset(#{ prefix := DataDir }) ->
-    os:cmd("rm -Rf " ++ DataDir).
+    os:cmd("rm -Rf " ++ DataDir),
+    ok = filelib:ensure_dir(DataDir),
+    ?event({reset_store, {path, DataDir}}).
 
 %% @doc Read a key from the store, following symlinks as needed.
 read(Opts, Key) ->

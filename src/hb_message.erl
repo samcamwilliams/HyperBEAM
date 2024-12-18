@@ -1,25 +1,25 @@
 -module(hb_message).
--export([load/2, sign/2, verify/1]).
+-export([load/2, sign/2, verify/1, match/2, type/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
--export([message_to_tx/1, tx_to_message/1]).
+-export([message_to_tx/1, tx_to_message/1, minimize/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @moduledoc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol, and their underlying binary representations.
-%%% See `docs/converge-protocol.md` for details on Converge. Unless you are
+%%% @doc This module acts an adapter between messages, as modeled in the
+%%% Converge Protocol, and their uderlying binary representations.
+%%% See `docs/converge-protocol.md' for details on Converge. Unless you are
 %%% implementing a new message serialization format, you should not need to 
-%%% interact with this module directly. Instead, use the `hb_converge`
-%%% interfaces to interact with all messages. The `dev_message` module
+%%% interact with this module directly. Instead, use the `hb_converge'
+%%% interfaces to interact with all messages. The `dev_message' module
 %%% implements a device interface for handling messages as the default Converge
 %%% device.
 
-%% @doc The size at which a value should be made into a body item, instead of a
+%% The size at which a value should be made into a body item, instead of a
 %% tag.
 -define(MAX_TAG_VAL, 128).
-%% @doc The list of TX fields that users can set directly.
+%% The list of TX fields that users can set directly.
 -define(TX_KEYS,
     [id, unsigned_id, last_tx, owner, target, signature]).
 -define(FILTERED_TAGS,
@@ -28,7 +28,7 @@
         <<"Bundle-Format">>,
         <<"Bundle-Map">>,
         <<"Bundle-Version">>,
-        <<"Type:">>
+        <<"Converge-Type:">>
     ]
 ).
 -define(REGEN_KEYS, [id, unsigned_id]).
@@ -91,8 +91,14 @@ format(Item, Indent) ->
 
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
-signers(Msg) ->
-    [ar_bundles:signer(Msg)].
+signers(Msg) when is_map(Msg) ->
+    case ar_bundles:signer(message_to_tx(Msg)) of
+        undefined -> [];
+        Signer -> [Signer]
+    end;
+signers(TX) when is_record(TX, tx) ->
+    ar_bundles:signer(TX);
+signers(_) -> [].
 
 %% @doc Sign a message with the given wallet.
 sign(Msg, Wallet) ->
@@ -102,10 +108,26 @@ sign(Msg, Wallet) ->
 verify(Msg) ->
     ar_bundles:verify_item(message_to_tx(Msg)).
 
+%% @doc Return the type of a message.
+type(TX) when is_record(TX, tx) -> tx;
+type(Binary) when is_binary(Binary) -> binary;
+type(Msg) when is_map(Msg) ->
+    IsDeep = lists:any(
+        fun({_, Value}) -> is_map(Value) end,
+        lists:filter(
+            fun({Key, _}) -> not hb_private:is_private(Key) end,
+            maps:to_list(Msg)
+        )
+    ),
+    case IsDeep of
+        true -> deep;
+        false -> shallow
+    end.
+
 %% @doc Load a message from the cache.
 load(Store, ID) when is_binary(ID)
         andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
-    tx_to_message(hb_cache:read_message(Store, ID));
+    tx_to_message(hb_cache:read(Store, ID));
 load(Store, Path) ->
     tx_to_message(hb_cache:read(Store, Path)).
 
@@ -220,17 +242,29 @@ deserialize(B, binary) ->
 %% a binary, which we return as is.
 message_to_tx(Binary) when is_binary(Binary) ->
     % ar_bundles cannot serialize just a simple binary or get an ID for it, so
-    % so we turn it into a TX record with a special tag, tx_to_message will
+    % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
     #tx{
-        tags= [{<<"Converge-Large-Binary">>, integer_to_binary(byte_size(Binary))}],
+        tags= [{<<"Converge-Type">>, <<"Binary">>}],
         data = Binary
     };
 message_to_tx(TX) when is_record(TX, tx) -> TX;
-message_to_tx(M) when is_map(M) ->
+message_to_tx(RawM) when is_map(RawM) ->
+    % The path is a special case so we normalized it first. It may have been
+    % modified by `hb_converge` in order to set it to the current key that is
+    % being executed. We should check whether the path is in the
+    % `priv/Converge/Original-Path` field, and if so, use that instead of the
+    % stated path. This normalizes the path, such that the signed message will
+    % continue to validate correctly.
+    M =
+        case {maps:find(path, RawM), hb_private:from_message(RawM)} of
+            {{ok, _}, #{ <<"Converge">> := #{ <<"Original-Path">> := Path } }} ->
+                maps:put(path, Path, RawM);
+            _ -> RawM
+        end,
     % Get the keys that will be serialized, excluding private keys. Note that
-    % we do not call hb_converge:resolve here because we want to include all keys
-    % in the underlying map, except the private ones.
+    % we do not call hb_converge:resolve here because we want to include the 'raw'
+    % data from the message, not the computable values.
     Keys = maps:keys(M),
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
@@ -246,11 +280,13 @@ message_to_tx(M) when is_map(M) ->
                             {Key, message_to_tx(Map)};
                         {ok, Value} when is_binary(Value) ->
                             {Key, Value};
-                        {ok, Value} when is_atom(Value) or is_integer(Value) ->
+                        {ok, Value} when
+                                is_atom(Value) or is_integer(Value)
+                                or is_list(Value) ->
                             ItemKey = hb_converge:key_to_binary(Key),
                             {Type, BinaryValue} = encode_value(Value),
                             [
-                                {<<"Type:", ItemKey/binary>>, Type},
+                                {<<"Converge-Type:", ItemKey/binary>>, Type},
                                 {ItemKey, BinaryValue}
                             ];
                         {ok, _} ->
@@ -338,48 +374,72 @@ decode_value(atom, Value) ->
     {item, {string, AtomString}, _} =
         hb_http_structured_fields:parse_item(Value),
     binary_to_existing_atom(AtomString, latin1);
+decode_value(list, Value) ->
+    lists:map(
+        fun({item, {string, <<"(Converge-Type: ", Rest/binary>>}, _}) ->
+            [Type, Item] = binary:split(Rest, <<") ">>),
+            decode_value(
+                list_to_existing_atom(
+                    string:to_lower(binary_to_list(Type))
+                ),
+                Item
+            );
+           ({item, {string, Binary}, _}) -> Binary
+        end,
+        hb_http_structured_fields:parse_list(iolist_to_binary(Value))
+    );
 decode_value(OtherType, Value) ->
     ?event({unexpected_type, OtherType, Value}),
     throw({unexpected_type, OtherType, Value}).
-
-%% @doc Convert a term to a typed key.
-to_typed_keys({Key, Value}) ->
-    to_typed_keys(Key, Value).
-to_typed_keys(Key, Value) when is_binary(Value) ->
-    [{Key, Value}];
-to_typed_keys(Key, Value) when is_map(Value) ->
-    [{Key, message_to_tx(Value)}];
-to_typed_keys(Key, Value) ->
-    ItemKey = hb_converge:key_to_binary(Key),
-    {Type, BinaryValue} = encode_value(Value),
-    [
-        {<<"Type:", ItemKey/binary>>, Type},
-        {ItemKey, BinaryValue}
-    ].
 
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
     ?no_prod("Non-standardized type conversion invoked."),
     [Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
-    {<<"decimal">>, Encoded};
+    {<<"Decimal">>, Encoded};
 encode_value(Value) when is_atom(Value) ->
     ?no_prod("Non-standardized type conversion invoked."),
     [EncodedIOList, _] =
         hb_http_structured_fields:item(
             {item, {string, atom_to_binary(Value, latin1)}, []}),
     Encoded = list_to_binary(EncodedIOList),
-    {<<"atom">>, Encoded};
+    {<<"Atom">>, Encoded};
+encode_value(Values) when is_list(Values) ->
+    ?no_prod("Non-standardized type conversion invoked."),
+    EncodedValues =
+        lists:map(
+            fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
+               (Item) ->
+                {Type, Encoded} = encode_value(Item),
+                {
+                    item,
+                    {
+                        string,
+                        <<
+                            "(Converge-Type: ", Type/binary, ") ",
+                            Encoded/binary
+                        >>
+                    },
+                    []
+                }
+            end,
+            Values
+        ),
+    EncodedList = hb_http_structured_fields:list(EncodedValues),
+    {<<"List">>, iolist_to_binary(EncodedList)};
+encode_value(Value) when is_binary(Value) ->
+    {<<"Binary">>, Value};
 encode_value(Value) ->
     Value.
 
 %% @doc Convert a #tx record into a message map recursively.
 tx_to_message(Binary) when is_binary(Binary) -> Binary;
 tx_to_message(TX) when is_record(TX, tx) ->
-    case lists:keyfind(<<"Converge-Large-Binary">>, 1, TX#tx.tags) of
+    case lists:keyfind(<<"Converge-Type">>, 1, TX#tx.tags) of
         false ->
             do_tx_to_message(TX);
-        {_, _Size} ->
+        {<<"Converge-Type">>, <<"Binary">>} ->
             TX#tx.data
     end.
 do_tx_to_message(RawTX) ->
@@ -413,9 +473,11 @@ do_tx_to_message(RawTX) ->
     % Parse tags that have a "Type:" prefix.
     TagTypes =
         [
-            {Name, binary_to_existing_atom(Value, latin1)}
+            {Name, list_to_existing_atom(
+                string:to_lower(binary_to_list(Value))
+            )}
         ||
-            {<<"Type:", Name/binary>>, Value} <- FilteredTags
+            {<<"Converge-Type:", Name/binary>>, Value} <- FilteredTags
         ],
     TXTags =
         lists:map(
@@ -459,6 +521,7 @@ do_tx_to_message(RawTX) ->
 %%% Tests
 
 basic_map_to_tx_test() ->
+    hb:init(),
     Msg = #{ normal_key => <<"NORMAL_VALUE">> },
     TX = message_to_tx(Msg),
     ?assertEqual([{<<"normal_key">>, <<"NORMAL_VALUE">>}], TX#tx.tags).
@@ -732,3 +795,19 @@ signed_id_test_disabled() ->
         hb_util:encode(ar_bundles:id(SignedTX, signed)),
         hb_util:id(SignedMsg, signed)
     ).
+
+list_encoding_test() ->
+    % Test that we can encode and decode a list of integers.
+    {<<"List">>, Encoded} = encode_value(List1 = [1, 2, 3]),
+    Decoded = decode_value(list, Encoded),
+    ?assertEqual(List1, Decoded),
+    % Test that we can encode and decode a list of binaries.
+    {<<"List">>, Encoded2} = encode_value(List2 = [<<"1">>, <<"2">>, <<"3">>]),
+    ?assertEqual(List2, decode_value(list, Encoded2)),
+    % Test that we can encode and decode a mixed list.
+    {<<"List">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
+    ?assertEqual(List3, decode_value(list, Encoded3)).
+
+message_with_list_test() ->
+    Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
+    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).

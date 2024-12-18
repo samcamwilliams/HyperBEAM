@@ -2,12 +2,13 @@
 -export([execute/2]).
 -include("include/hb.hrl").
 
-%%% The hyperbeam meta device, which is the default entry point
+%%% @doc The hyperbeam meta device, which is the default entry point
 %%% for all messages processed by the machine. This device executes a 'path' of
 %%% functions upon a message, sequentially, returning the message resulting
 %%% from the last function.
 
 %%% The ideal API should support:
+%%% ```
 %%% GET /id/Execute/Report?1.Mode=Fast&2.Mode=Terse <- Edge case?
 %%% GET /id/Outbox/1/Target <- Getting results from a process. Common case.
 %%% GET /id/Execute/Output?Action=Transfer <- 'Normal' dry-run request.
@@ -19,6 +20,7 @@
 %%% POST /Push <- Push a new message on the referenced message.
 %%% GET /Execute <- Execute an assignment on the referenced process?
 %%% GET /Thing/in/cache <- Get a thing from the cache by its path.
+%%% '''
 
 %% @doc Execute a message on hyperbeam.
 execute(CarrierMsg, S) ->
@@ -57,8 +59,8 @@ parse_carrier_msg(CarrierMsg, S) ->
 
 %% @doc The carrier message itself does not contain a device, so we try to
 %% load the message from the first element of the path, then apply the carrier
-%% message that. For example, GET /id/Schedule?From=0&To=1 will result in
-%% MessageWithID.Schedule(#{From => 0, To => 1}).
+%% message that. For example, `GET /id/Schedule?From=0&To=1' will result in
+%% `MessageWithID.Schedule(#{From => 0, To => 1}).'
 load_executable_message_from_carrier(CarrierMsg, #{ store := RawStore }) ->
     Path = path_from_carrier_message(CarrierMsg),
     Store =
@@ -79,7 +81,7 @@ load_path(Store, PathParts, Unresolved) ->
         {ok, Msg} -> {Msg, Unresolved};
         not_found ->
             % If that fails, try to read it as a message.
-            case hb_cache:read_message(Store, PathParts) of
+            case hb_cache:read(Store, PathParts) of
                 {ok, Msg} -> {Msg, Unresolved};
                 not_found ->
                     load_path(
