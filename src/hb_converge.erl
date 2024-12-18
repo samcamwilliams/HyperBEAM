@@ -427,12 +427,18 @@ set(Msg1, Msg2) ->
 set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg2 = maps:without([hashpath, priv], RawMsg2),
     ?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
+    % Get the next key to set. 
     case keys(Msg2, Opts#{ hashpath => ignore }) of
         [] -> Msg1;
         [Key|_] ->
-            % Get the first key and value to set.
-            Val = get(Key, Msg2, Opts),
-            ?event({got_val_to_set, {key, Key}, {val, Val}}),
+            % Get the value to set. Use Converge by default, but fall back to
+            % getting via `maps` if it is not found.
+            Val =
+                case get(Key, Msg2, Opts) of
+                    not_found -> maps:get(Key, Msg2);
+                    Body -> Body
+                end,
+            ?event({got_val_to_set, {key, Key}, {val, Val}, {msg2, Msg2}}),
             % Next, set the key and recurse, removing the key from the Msg2.
             set(
                 set(Msg1, Key, Val, Opts),
@@ -1075,6 +1081,30 @@ deep_set_test() ->
     Msg = #{ a => #{ b => #{ c => 1 } } },
     ?assertMatch(#{ a := #{ b := #{ c := 2 } } },
         hb_converge:set(Msg, [a, b, c], 2, #{})).
+
+deep_set_new_messages_test() ->
+    % Test that new messages are created when the path does not exist.
+    Msg0 = #{ a => #{ b => #{ c => 1 } } },
+    Msg1 = hb_converge:set(Msg0, <<"d/e">>, 3, #{ hashpath => ignore }),
+    Msg2 = hb_converge:set(Msg1, <<"d/f">>, 4, #{ hashpath => ignore }),
+    ?assertMatch(
+        #{ a := #{ b := #{ c := 1 } }, d := #{ e := 3, f := 4 } }, Msg2),
+    Msg3 = hb_converge:set(
+        Msg2,
+        #{ 
+            <<"z/a">> => 0,
+            <<"z/b">> => 1,
+            <<"z/y/x">> => 2
+         },
+        #{ hashpath => ignore }
+    ),
+    ?assertMatch(
+        #{
+            a := #{ b := #{ c := 1 } }, d := #{ e := 3, f := 4 },
+            z := #{ a := 0, b := 1, y := #{ x := 2 } }
+        },
+        Msg3
+    ).
 
 deep_set_with_device_test() ->
     Device = #{
