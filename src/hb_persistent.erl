@@ -22,8 +22,11 @@ start() -> pg:start(pg).
 %% signal that we should await resolution.
 find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
+    Self = self(),
     case find_groupname(GroupName, Opts) of
-        not_found ->
+        {ok, [Leader|_]} when Leader =/= Self ->
+            {wait, Leader};
+        _ ->
             ?event(
                 {register_resolver,
                     {group, GroupName},
@@ -32,9 +35,7 @@ find_or_register(Msg1, Msg2, Opts) ->
                 }
             ),
             register_groupname(GroupName, Opts),
-            {leader, GroupName};
-        {ok, [Leader|_]} ->
-            {wait, Leader}
+            {leader, GroupName}
     end.
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
