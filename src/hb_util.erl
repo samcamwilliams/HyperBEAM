@@ -432,7 +432,7 @@ format_trace_short(_, _Latch, {Mod, _, _, [{file, _}, {line, Line}|_]}, _) ->
 format_trace_short(_, _Latch, {Mod, Func, _ArityOrTerm, _Extras}, _Prefixes) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Func])).
 
-%% @doc Utility function to help macro `?trace/0` remove the first frame of the
+%% @doc Utility function to help macro `?trace/0' remove the first frame of the
 %% stack trace.
 trace_macro_helper(Fun, {_, {_, Stack}}, Mod, Func, Line) ->
     Fun(Stack, Mod, Func, Line).

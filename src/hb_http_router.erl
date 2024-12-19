@@ -65,7 +65,7 @@ init(Req, Opts) ->
         Signed
     ).
 
-%% @doc Ensure that a `hb_converge:resolve` result is normalized
+%% @doc Ensure that a `hb_converge:resolve' result is normalized
 %% into a HTTP message.
 normalize_response(RawRes) when not is_tuple(RawRes) ->
     #{ body => RawRes };

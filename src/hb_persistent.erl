@@ -1,3 +1,13 @@
+%%% @doc Creates and manages long-lived Converge resolution processes.
+%%% These can be useful for situations where a message is large and expensive
+%%% to serialize and deserialize, or when executions should be deliberately
+%%% serialized to avoid parallel executions of the same computation. This 
+%%% module is called during the core `hb_converge' execution process, so care
+%%% must be taken to avoid recursive spawns/loops.
+%%% 
+%%% Built using the `pg' module, which is a distributed Erlang process group
+%%% manager.
+
 -module(hb_persistent).
 -export([find_or_register/3, unregister_notify/4]).
 -export([notify/4, await/4, start_worker/2]).
@@ -6,17 +16,7 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% @doc Creates and manages long-lived Converge resolution processes.
-%%% These can be useful for situations where a message is large and expensive
-%%% to serialize and deserialize, or when executions should be deliberately
-%%% serialized to avoid parallel executions of the same computation. This 
-%%% module is called during the core `hb_converge` execution process, so care
-%%% must be taken to avoid recursive spawns/loops.
-%%% 
-%%% Built using the `pg` module, which is a distributed Erlang process group
-%%% manager.
-
-%% @doc Ensure that the `pg` module is started.
+%% @doc Ensure that the `pg' module is started.
 start() -> pg:start(pg).
 
 %% @doc Register the process to lead an execution if none is found, otherwise

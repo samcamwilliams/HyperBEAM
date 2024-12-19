@@ -1,15 +1,9 @@
--module(dev_wasm).
--export([init/3, computed/3, terminate/3]).
--export([checkpoint/3, checkpoint_uses/3]).
--export([init_wasm_state/1]).
--include("include/hb.hrl").
-
-%%% @moduledoc A device that executes a WASM image on messages using the Memory-64 
+%%% @doc A device that executes a WASM image on messages using the Memory-64 
 %%% preview standard. In the backend, this device uses `beamr`: An Erlang wrapper 
 %%% for WAMR, the WebAssembly Micro Runtime.
 %%% 
 %%% The device has the following requirements and interface:
-%%% 
+%%% ```
 %%%     M1/Init ->
 %%%         Assumes:
 %%%             M1/Process
@@ -30,9 +24,14 @@
 %%%             /Results/WASM/Type
 %%%             /Results/WASM/Body
 %%%         Side-effects:
-%%%             Calls the WASM executor with the message and process.
+%%%             Calls the WASM executor with the message and process.'''
+-module(dev_wasm).
+-export([init/3, computed/3, terminate/3]).
+-export([checkpoint/3, checkpoint_uses/3]).
+-export([init_wasm_state/1]).
+-include("include/hb.hrl").
 
-%% @doc Boot a WASM image on the image stated in the `Process/Image` field of
+%% @doc Boot a WASM image on the image stated in the `Process/Image' field of
 %% the message.
 init(M1, _M2, Opts) ->
     ImageID = hb_converge:get(<<"Process/WASM-Image">>, M1, Opts),

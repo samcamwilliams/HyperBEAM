@@ -1,8 +1,5 @@
--module(hb_beamr).
--export([start/1, call/3, call/4, call/5, call/6, stop/1]).
--export([serialize/1, deserialize/2, stub/3]).
 
-%%% BEAMR: A WAMR wrapper for BEAM.
+%%% @doc BEAMR: A WAMR wrapper for BEAM.
 %%% 
 %%% Beamr is a library that allows you to run WASM modules in BEAM, using the
 %%% Webassembly Micro Runtime (WAMR) as its engine. Each WASM module is 
@@ -16,6 +13,7 @@
 %%% Erlang manuals).
 %%% 
 %%% The core API is simple:
+%%%     ```
 %%%     start(WasmBinary) -> {ok, Port, Imports, Exports}
 %%%         Where:
 %%%             WasmBinary is the WASM binary to load.
@@ -45,11 +43,15 @@
 %%%     deserialize(Port, Mem) -> ok
 %%%         Where:
 %%%             Port is the port to the LID.
-%%%             Mem is a binary output of a previous `serialize/1` call.
+%%%             Mem is a binary output of a previous `serialize/1' call.'''
 %%% 
 %%% BEAMR was designed for use in the HyperBEAM project, but is suitable for
 %%% deployment in other Erlang applications that need to run WASM modules. PRs
 %%% are welcome.
+-module(hb_beamr).
+-export([start/1, call/3, call/4, call/5, call/6, stop/1]).
+-export([serialize/1, deserialize/2, stub/3]).
+
 
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -163,7 +165,7 @@ deserialize(Port, Bin) ->
 driver_loads_test() ->
     ?assertEqual(ok, load_driver()).
 
-%% @doc Test standalone `hb_beamr` correctly after loading a WASM module.
+%% @doc Test standalone `hb_beamr' correctly after loading a WASM module.
 simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),
@@ -192,58 +194,3 @@ wasm64_test() ->
     {ok, Port, _ImportMap, _Exports} = start(File),
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
-
-gen_test_env() ->
-    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":["
-        "{\"name\":\"Name\",\"value\":\"Thomas\"},"
-        "{\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
-
-gen_test_aos_msg(Command) ->
-    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\","
-        "\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\","
-        "\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"",
-        (list_to_binary(Command))/binary, "\"}\0">>.
-
-aos64_standalone_wex_test() ->
-    Msg = gen_test_aos_msg("return 1+1"),
-    Env = gen_test_env(),
-    {ok, File} = file:read_file("test/aos-2-pure.wasm"),
-    {ok, Port, _ImportMap, _Exports} = start(File),
-    {ok, Ptr1} = hb_beamr_io:write_string(Port, Msg),
-    {ok, Ptr2} = hb_beamr_io:write_string(Port, Env),
-    % Read the strings to validate they are correctly passed
-    {ok, MsgBin} = hb_beamr_io:read(Port, Ptr1, byte_size(Msg)),
-    {ok, EnvBin} = hb_beamr_io:read(Port, Ptr2, byte_size(Env)),
-    ?assertEqual(Env, EnvBin),
-    ?assertEqual(Msg, MsgBin),
-    {ok, [Ptr3], _} = test_call(Port, "handle", [Ptr1, Ptr2]),
-    {ok, ResBin} = hb_beamr_io:read_string(Port, Ptr3),
-    #{<<"ok">> := true, <<"response">> := Resp} = jiffy:decode(ResBin, [return_maps]),
-    #{<<"Output">> := #{ <<"data">> := Data }} = Resp,
-    ?assertEqual(<<"2">>, Data).
-
-slow_test_() ->
-    [ {timeout, 30, fun test_checkpoint_and_resume/0}].
-
-test_checkpoint_and_resume() ->
-    Env = gen_test_env(),
-    Msg1 = gen_test_aos_msg("TestVar = 0"),
-    Msg2 = gen_test_aos_msg("TestVar = 1"),
-    Msg3 = gen_test_aos_msg("return TestVar"),
-    {ok, File} = file:read_file("test/aos-2-pure.wasm"),
-    {ok, Port1, _ImportMap, _Exports} = start(File),
-    {ok, EnvPtr} = hb_beamr_io:write_string(Port1, Env),
-    {ok, Msg1Ptr} = hb_beamr_io:write_string(Port1, Msg1),
-    {ok, Msg2Ptr} = hb_beamr_io:write_string(Port1, Msg2),
-    {ok, Msg3Ptr} = hb_beamr_io:write_string(Port1, Msg3),
-    {ok, [_], S0} = test_call(Port1, "main", [0, 0]),
-    {ok, [_], S1} = test_call(S0, Port1, "handle", [Msg1Ptr, EnvPtr]),
-    {ok, MemCheckpoint} = serialize(Port1),
-    {ok, [_], S2} = test_call(S1, Port1, "handle", [Msg2Ptr, EnvPtr]),
-    {ok, [OutPtr1], S3} = test_call(S2, Port1, "handle", [Msg3Ptr, EnvPtr]),
-    {ok, Port2, _, _} = start(File),
-    deserialize(Port2, MemCheckpoint),
-    {ok, [OutPtr2], _S4} = test_call(S3, Port2, "handle", [Msg3Ptr, EnvPtr]),
-    Str1 = hb_beamr_io:read_string(Port1, OutPtr1),
-    Str2 = hb_beamr_io:read_string(Port2, OutPtr2),
-    ?assertNotEqual(Str1, Str2).

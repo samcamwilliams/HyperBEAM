@@ -9,10 +9,6 @@
 
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 
--include("include/hb.hrl").
-
--include_lib("eunit/include/eunit.hrl").
-
 -type fields() :: #{
 	binary() | atom() | string() => binary() | atom() | string()
 }.

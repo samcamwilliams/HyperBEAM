@@ -11,7 +11,7 @@
 %%% cache on disk. The cache is a simple wrapper that allows us to look up either
 %%% the direct key (a message's ID -- either signed or unsigned) or a 'subpath'.
 %%% We also store 'links' in this cache between messages. In the backend, we use
-%%% the given `hb_store` to persist the actual data.
+%%% the given `hb_store' to persist the actual data.
 -module(hb_cache).
 -export([read/2, read_output/3, write/2, write/3, write_output/4]).
 -export([list/2, list_numbered/2, link/3]).
@@ -33,7 +33,7 @@ list(Path, Opts) ->
     end.
 
 %% @doc Make a link from one path to another in the store.
-%% Note: Argument order is `link(Src, Dst, Opts)`.
+%% Note: Argument order is `link(Src, Dst, Opts)'.
 link(Existing, New, Opts) ->
     hb_store:make_link(
         hb_opts:get(store, no_viable_store, Opts),
@@ -44,7 +44,7 @@ link(Existing, New, Opts) ->
 %% @doc Writes a computation result to the cache.
 %% The process outputs a series of key values in the cache as follows:
 %%
-%%      /RootAddr: Either the Msg3ID alone, or `Msg1ID/Msg2ID` if the keys to
+%%      /RootAddr: Either the Msg3ID alone, or `Msg1ID/Msg2ID' if the keys to
 %%                 store are not complete. A caller may want to cache only some
 %%                 of the keys because serializing the entire state would be 
 %%                 expensive.
@@ -320,7 +320,7 @@ read_output(Msg1, Msg2, Opts) when is_map(Msg1) ->
             read_output(MsgID1, Msg2, Opts)
     end.
 
-%% @doc Calculate the `hb_store`s that should be used during
+%% @doc Calculate the `hb_store's that should be used during
 %% cache operation resolution.
 opts_to_store(Opts) ->
     case hb_opts:get(cache_lookup, {only, local}, Opts) of
@@ -453,21 +453,21 @@ store_simple_unsigned_item_test() ->
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% Test storing and retrieving a simple signed item
-simple_signed_item_test(TestStore) ->
-    Item = create_signed_tx(<<"Simple signed data item">>),
-    %% Write the simple signed item
-    {ok, _} = write(TestStore, Item),
-    %% Read the item back
-    UnsignedID = hb_converge:get(unsigned_id, Msg),
-    SignedID = hb_converge:get(id, Msg),
-    ?event({reading_by_unsigned, UnsignedID}),
-    {ok, RetrievedItemUnsigned} = read(UnsignedID, Opts),
-    ?event({reading_by_signed, SignedID}),
-    {ok, RetrievedItemSigned} = read(SignedID, Opts),
-    %% Assert that the retrieved item matches the original and verifies
-    ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
-    ?assert(hb_message:match(Msg, RetrievedItemSigned)),
-    ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
+% simple_signed_item_test(TestStore) ->
+%     Item = create_signed_tx(<<"Simple signed data item">>),
+%     %% Write the simple signed item
+%     {ok, _} = write(TestStore, Item),
+%     %% Read the item back
+%     UnsignedID = hb_converge:get(unsigned_id, Msg),
+%     SignedID = hb_converge:get(id, Msg),
+%     ?event({reading_by_unsigned, UnsignedID}),
+%     {ok, RetrievedItemUnsigned} = read(UnsignedID, Opts),
+%     ?event({reading_by_signed, SignedID}),
+%     {ok, RetrievedItemSigned} = read(SignedID, Opts),
+%     %% Assert that the retrieved item matches the original and verifies
+%     ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
+%     ?assert(hb_message:match(Msg, RetrievedItemSigned)),
+%     ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
 
 %% @doc Test deeply nested item storage and retrieval
 deeply_nested_item_test() ->

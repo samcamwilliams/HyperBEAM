@@ -15,8 +15,10 @@
 %%% and private elements of messages.
 
 -module(hb_private).
--export([from_message/1, get/2, get/3, set/3, reset/1, is_private/1]).
+-export([from_message/1, reset/1, is_private/1]).
+-export([get/3, get/4, set/4, set/3, set_priv/2]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.

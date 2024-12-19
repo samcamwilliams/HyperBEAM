@@ -1,3 +1,17 @@
+%%% @doc A simple scheduler scheme for AO.
+%%% This device expects a message of the form:
+%%%     Process: #{ id, Scheduler: #{ Authority } }
+%%% ```
+%%% It exposes the following keys for scheduling:
+%%%     #{ method: GET, path: <<"/info">> } ->
+%%%         Returns information about the scheduler.
+%%%     #{ method: GET, path: <<"/slot">> } -> slot(Msg1, Msg2, Opts)
+%%%         Returns the current slot for a process.
+%%%     #{ method: GET, path: <<"/schedule">> } -> get_schedule(Msg1, Msg2, Opts)
+%%%         Returns the schedule for a process in a cursor-traversable format.
+%%%     #{ method: POST, path: <<"/schedule">> } -> post_schedule(Msg1, Msg2, Opts)
+%%%         Schedules a new message for a process.'''
+
 -module(dev_scheduler).
 %%% Converge API functions:
 -export([set/3, keys/1, info/0]).
@@ -9,19 +23,6 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%%% A simple scheduler scheme for AO.
-%%% This device expects a message of the form:
-%%%     Process: #{ id, Scheduler: #{ Authority } }
-%%% 
-%%% It exposes the following keys for scheduling:
-%%%     #{ method: GET, path: <<"/info">> } ->
-%%%         Returns information about the scheduler.
-%%%     #{ method: GET, path: <<"/slot">> } -> slot(Msg1, Msg2, Opts)
-%%%         Returns the current slot for a process.
-%%%     #{ method: GET, path: <<"/schedule">> } -> get_schedule(Msg1, Msg2, Opts)
-%%%         Returns the schedule for a process in a cursor-traversable format.
-%%%     #{ method: POST, path: <<"/schedule">> } -> post_schedule(Msg1, Msg2, Opts)
-%%%         Schedules a new message for a process.
 
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
@@ -62,8 +63,8 @@ keys(Msg) ->
 
 %% @doc Load the schedule for a process into the cache, then return the next
 %% assignment. Assumes that Msg1 is a `dev_process` or similar message, having
-%% a `Current-Slot` key. It stores a local cache of the schedule in the
-%% `priv/To-Process` key.
+%% a `Current-Slot' key. It stores a local cache of the schedule in the
+%% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
     ?event({scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     Schedule = hb_private:get(<<"priv/Scheduler/Assignments">>, Msg1, Opts),
@@ -340,7 +341,7 @@ init(M1, M2, Opts) ->
 end_of_schedule(M1, M2, Opts) -> update_schedule(M1, M2, Opts).
 
 %% @doc Abstracted function for updating the schedule for a process the current
-%% schedule is in the `/priv/Scheduler/*` private map.
+%% schedule is in the `/priv/Scheduler/*' private map.
 update_schedule(M1, M2, Opts) ->
     Proc = hb_converge:get(process, M1, Opts),
     ProcID = hb_util:id(Proc),
@@ -383,12 +384,12 @@ checkpoint(State) -> {ok, State}.
 
 %%% Tests
 %%% These tests assume that the process message has been transformed by the 
-%%% dev_process, such that the full process is found in `/process`, but the
+%%% dev_process, such that the full process is found in `/process', but the
 %%% scheduler is the device of the primary message.
 
 
 %% @doc Generate a _transformed_ process message, not as they are generated 
-%% by users. See `dev_process` for examples of AO process messages.
+%% by users. See `dev_process' for examples of AO process messages.
 test_process() ->
     Wallet = hb:wallet(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),

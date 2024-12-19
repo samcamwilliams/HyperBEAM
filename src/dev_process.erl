@@ -134,7 +134,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             do_compute(Msg3, Msg2, TargetSlot, Opts)
     end.
 
-%% @doc Returns the `/Results` key of the latest computed message.
+%% @doc Returns the `/Results' key of the latest computed message.
 now(Msg1, _Msg2, Opts) ->
     CurrentSlot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
     ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
@@ -143,7 +143,7 @@ now(Msg1, _Msg2, Opts) ->
     {ok, hb_converge:get(<<"Results">>, Msg3, Opts)}.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
-%% the device found at `Key`. After execution, the device is swapped back
+%% the device found at `Key'. After execution, the device is swapped back
 %% to the original device.
 run_as(Key, Msg1, Msg2, Opts) ->
     BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),

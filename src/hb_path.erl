@@ -180,14 +180,14 @@ from_message(request, _) ->
     undefined.
 
 %% @doc Return the appropriate path to refer to the for the computation of
-%% Msg1(Msg2) in the form `/ID1/ID2`.
+%% Msg1(Msg2) in the form `/ID1/ID2'.
 compute_path(Msg1, Msg2, _Opts) ->
     ID1 = dev_message:id(Msg1),
     ID2 = dev_message:id(Msg2),
     << "/", ID1/binary, "/", ID2/binary >>.
 
 %% @doc Return the shortest possible reference for a given computation. If the
-%% Msg2 only contains a `path` key and hashpath elements, then we can return
+%% Msg2 only contains a `path' key and hashpath elements, then we can return
 %% just the path.
 short_compute_path(Msg1, Msg2 = #{ path := Path }, Opts) ->
     case map_size(maps:without(?CONVERGE_KEYS, Msg2)) of

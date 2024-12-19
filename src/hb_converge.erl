@@ -361,7 +361,7 @@ update_cache(Msg1, Msg2, {ok, Msg3}, Opts) ->
     end;
 update_cache(_, _, _, _) -> ok.
 
-%% @doc Takes the `Opts` cache setting, M1, and M2 `Cache-Control` headers, and
+%% @doc Takes the `Opts' cache setting, M1, and M2 `Cache-Control' headers, and
 %% returns true if the message should be cached.
 must_cache(no_cache, _, _) -> false;
 must_cache(no_store, _, _) -> false;
@@ -385,15 +385,15 @@ term_to_cache_control_list(X) ->
     hb_path:term_to_path(X).
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
-%% `ok`. This makes it easier to write complex logic on top of messages while
+%% `ok'. This makes it easier to write complex logic on top of messages while
 %% maintaining a functional style.
 %% 
-%% Additionally, this function supports the `{as, Device, Msg}` syntax, which
+%% Additionally, this function supports the `{as, Device, Msg}' syntax, which
 %% allows the key to be resolved using another device to resolve the key,
 %% while maintaining the tracability of the `HashPath` of the output message.
 %% 
 %% Returns the value of the key if it is found, otherwise returns the default
-%% provided by the user, or `not_found` if no default is provided.
+%% provided by the user, or `not_found' if no default is provided.
 get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->

@@ -1,22 +1,17 @@
--module(dev_json_iface).
--export([computed/3]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
-
-%%% @moduledoc A device that provides a way for WASM execution to interact with
+%%% @doc A device that provides a way for WASM execution to interact with
 %%% the HyperBEAM (and AO) systems, using JSON as a shared data representation.
 %%% 
 %%% The interface is extremely basic. It works as follows:
 %%% 
 %%% 1. The device is given a message that contains a process definition, WASM
 %%%    environment, and a message that contains the data to be processed,
-%%%    including the image to be used in part of `execute{pass=1}`.
-%%% 2. The device is called with `execute{pass=2}`, which reads the result of
+%%%    including the image to be used in part of `execute{pass=1}'.
+%%% 2. The device is called with `execute{pass=2}', which reads the result of
 %%%    the process execution from the WASM environment and returns it as a
 %%%    message.
 %%%
 %%% The device has the following requirements and interface:
-%%% 
+%%%     ```
 %%%     M1/Computed when M2/Pass == 1 ->
 %%%         Assumes:
 %%%             M1/priv/WASM/Port
@@ -39,7 +34,12 @@
 %%%             M2/Process
 %%%         Generates:
 %%%             /Results/Outbox
-%%%             /Results/Data
+%%%             /Results/Data'''
+
+-module(dev_json_iface).
+-export([computed/3]).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc On first pass prepare the call, on second pass get the results.
 computed(M1, M2, Opts) ->
@@ -94,8 +94,8 @@ prep_call(M1, M2, Opts) ->
     }.
 
 %% @doc Read the computed results out of the WASM environment, assuming that
-%% the environment has been set up by `prep_call/3` and that the WASM executor
-%% has been called with `computed{pass=1}`.
+%% the environment has been set up by `prep_call/3' and that the WASM executor
+%% has been called with `computed{pass=1}'.
 results(M1, M2, Opts) ->
     Port = hb_converge:get(<<"priv/WASM/Port">>, M1, Opts),
     Type = hb_converge:get(<<"Results/WASM/Type">>, M2, Opts),

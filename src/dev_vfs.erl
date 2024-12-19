@@ -1,12 +1,13 @@
--module(dev_vfs).
--export([init/3, execute/3, stdout/1]).
--include("include/hb.hrl").
 
-%%% @moduledoc A virtual filesystem device.
+%%% @doc A virtual filesystem device.
 %%% Implements a file-system-as-map structure, which is traversible externally.
 %%% Each file is a binary, and each directory is a Converge message.
 %%% Additionally, this module adds a series of WASI-preview-1 combatible 
 %%% functions for accessing the filesystem.
+
+-module(dev_vfs).
+-export([init/3, execute/3, stdout/1]).
+-include("include/hb.hrl").
 
 -define(INIT_VFS,
     #{
@@ -145,7 +146,7 @@ path_open(M, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
         [0, Index]
     }.
 
-%% @doc WASM stdlib implementation of `fd_write`, using the WASI-p1 standard
+%% @doc WASM stdlib implementation of `fd_write', using the WASI-p1 standard
 %% interface.
 fd_write(S, Port, [FD, Ptr, Vecs, RetPtr]) ->
     fd_write(S, Port, [FD, Ptr, Vecs, RetPtr], 0);
