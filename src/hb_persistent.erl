@@ -1,8 +1,7 @@
 -module(hb_persistent).
--export([find_or_register/3, unregister_notify/4]).
--export([notify/4, await/4, start_worker/2]).
--export([find/2, find/3]).
--export([register/2, register/3, unregister/2, unregister/3]).
+-export([find_or_register/3, unregister_notify/3, await/4, start_worker/2]).
+%-export([find/2, find/3]).
+%-export([notify/4, register/2, register/3, unregister/2, unregister/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -25,16 +24,30 @@ find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
     case find_groupname(GroupName, Opts) of
         not_found ->
+            ?event(
+                {register_resolver,
+                    {group, GroupName},
+                    {msg1, Msg1},
+                    {msg2, Msg2}
+                }
+            ),
             register_groupname(GroupName, Opts),
-            leader;
-        {ok, [Leader|_]} -> {wait, Leader}
+            {leader, GroupName};
+        {ok, [Leader|_]} ->
+            {wait, Leader}
     end.
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
-unregister_notify(Msg1, Msg2, Msg3, Opts) ->
-    GroupName = group(Msg1, Msg2, Opts),
+unregister_notify(GroupName, Msg3, Opts) ->
+    ?event(
+        {unregister_notify,
+            {group, GroupName},
+            {msg3, Msg3},
+            {opts, Opts}
+        }
+    ),
     unregister_groupname(GroupName, Opts),
-    notify(Msg1, Msg2, Msg3, Opts).
+    notify(GroupName, Msg3, Opts).
 
 %% @doc Find a process that is already managing a specific Converge resolution.
 find(Msg1, Opts) -> find(Msg1, undefined, Opts).
@@ -56,27 +69,21 @@ find_groupname(Groupname, _Opts) ->
 %% `group' function if it is found in the `info', otherwise uses the default.
 group(Msg1, Msg2, Opts) ->
     Grouper = maps:get(group, hb_converge:info(Msg1, Opts), fun default_group/2),
-    apply(Grouper, hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])).
-
-%% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
-default_group(Msg1, Msg2) ->
-    {Msg1, Msg2}.
+    apply(
+        Grouper,
+        hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])
+    ).
 
 %% @doc Register for performing a Converge resolution.
-register(Msg1, Opts) -> register(Msg1, undefined, Opts).
-register(Msg1, Msg2, Opts) ->
-    ?event({register_resolver, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    register_groupname(group(Msg1, Msg2, Opts), Opts).
 register_groupname(Groupname, _Opts) ->
     pg:join(Groupname, self()).
 
 %% @doc Unregister for being the leader on a Converge resolution.
-unregister(Msg1, Opts) -> unregister(Msg1, undefined, Opts).
 unregister(Msg1, Msg2, Opts) ->
     start(),
-    ?event({unregister_resolver, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     unregister_groupname(group(Msg1, Msg2, Opts), Opts).
 unregister_groupname(Groupname, _Opts) ->
+    ?event({unregister_resolver, {group, Groupname}}),
     pg:leave(Groupname, self()).
 
 %% @doc If there was already an Erlang process handling this execution,
@@ -85,36 +92,56 @@ unregister_groupname(Groupname, _Opts) ->
 await(Worker, Msg1, Msg2, Opts) ->
     % Calculate the compute path that we will wait upon resolution of.
     % Register with the process.
-    ?no_prod("We should find a more effective way to represent the "
-        "requested execution. This may cause memory issues."),
-    Worker ! {resolve, self(), Msg1, Msg2, Opts},
-    ?event({await_resolution, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    GroupName = group(Msg1, Msg2, Opts),
+    Worker ! {resolve, self(), GroupName, Msg2, Opts},
+    ?event(
+        {await_resolution,
+            {group, GroupName},
+            {msg1, Msg1},
+            {msg2, Msg2},
+            {opts, Opts}
+        }
+    ),
     % Wait for the result.
     receive
-        {resolved, Worker, Msg1, Msg2, Msg3} ->
-            ?event({await_resolution_received, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-            ?no_prod("Should we handle response matching in a more "
-            " fine-grained manner?"),
+        {resolved, Worker, GroupName, Msg2, Msg3} ->
+            ?event(
+                {finished_await,
+                    {group, GroupName},
+                    {msg2, Msg2},
+                    {msg3, Msg3}
+                }
+            ),
             Msg3
     end.
 
 %% @doc Check our inbox for processes that are waiting for the resolution
-%% of this execution.
-notify(Msg1, Msg2, Msg3, Opts) ->
-    ?event({notify_waiting, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+%% of this execution. Comes in two forms:
+%% 1. Notify on group name alone.
+%% 2. Notify on group name and Msg2.
+notify(GroupName, Msg3, Opts) ->
     receive
-        {resolve, Listener, Msg1, Msg2, _ListenerOpts} ->
-            send_response(Listener, Msg1, Msg2, Msg3),
-            notify(Msg1, Msg2, Msg3, Opts)
+        {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
+            send_response(Listener, GroupName, Msg2, Msg3),
+            notify(GroupName, Msg3, Opts)
+    after 0 ->
+        ?event(finished_notify),
+        ok
+    end.
+notify(GroupName, Msg2, Msg3, Opts) ->
+    receive
+        {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
+            send_response(Listener, GroupName, Msg2, Msg3),
+            notify(GroupName, Msg2, Msg3, Opts)
     after 0 ->
         ?event(finished_notify),
         ok
     end.
 
 %% @doc Helper function that wraps responding with a new Msg3.
-send_response(Listener, Msg1, Msg2, Msg3) ->
-    ?event({send_response, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
-    Listener ! {resolved, self(), Msg1, Msg2, Msg3}.
+send_response(Listener, GroupName, Msg2, Msg3) ->
+    ?event({send_response, {group, GroupName}, {msg2, Msg2}, {msg3, Msg3}}),
+    Listener ! {resolved, self(), GroupName, Msg2, Msg3}.
 
 %% @doc Start a worker process that will hold a message in memory for
 %% future executions.
@@ -144,10 +171,11 @@ start_worker(Msg, Opts) ->
 %% @doc A server function for handling persistent executions. 
 default_worker(Msg1, Opts) ->
     Timeout = hb_opts:get(worker_timeout, infinity, Opts),
+    GroupName = default_group(Msg1),
     receive
-        {resolve, Listener, Msg1, Msg2, _ListenerOpts} ->
+        {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
             Msg3 = hb_converge:resolve(Msg1, Msg2, Opts),
-            send_response(Listener, Msg1, Msg2, Msg3),
+            send_response(Listener, GroupName, Msg2, Msg3),
             notify(Msg1, Msg2, Msg3, Opts),
             % In this (default) worker implementation we do not advance the
             % process to monitor resolution of `Msg3`, staying instead with
@@ -160,6 +188,18 @@ default_worker(Msg1, Opts) ->
         unregister(Msg1, undefined, Opts),
         hb_converge:resolve(Msg1, terminate, Opts#{ hashpath := ignore })
     end.
+
+%% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
+default_group(Msg1) ->
+    default_group(Msg1, undefined).
+default_group(Msg1, Msg2) ->
+    %?event({calculating_default_group_name, {msg1, Msg1}, {msg2, Msg2}}),
+    % Use Erlang's `phash2` to hash the result of the Grouper function.
+    % `phash2` is relatively fast and ensures that the group name is short for
+    % storage in `pg`. In production we should only use a hash with a larger
+    % output range to avoid collisions.
+    ?no_prod("Using a hash for group names is not secure."),
+    erlang:phash2({Msg1, Msg2}).
 
 %%% Tests
 

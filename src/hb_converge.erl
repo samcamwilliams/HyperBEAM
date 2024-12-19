@@ -124,8 +124,8 @@ resolve(Msg1, Msg2, Opts) ->
 %%      0: Cache lookup.
 %%      1: Validation check.
 %%      2: Path normalization.
-%%      3: Device lookup.
-%%      4: Persistent-resolver lookup.
+%%      3: Persistent-resolver lookup.
+%%      4: Device lookup.
 %%      5: Execution.
 %%      6: Cryptographic linking.
 %%      7: Result caching.
@@ -133,6 +133,7 @@ resolve(Msg1, Msg2, Opts) ->
 %%      9: Recurse, fork, or terminate.
 
 resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
+    ?event(converge_core, {stage, 0, list_normalize}),
     % Normalize lists to numbered maps (base=1) if necessary.
     resolve_stage(0,
         maps:from_list(
@@ -145,10 +146,12 @@ resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
         Opts
     );
 resolve_stage(0, Msg1, Path, Opts) when not is_map(Path) ->
+    ?event(converge_core, {stage, 0, path_to_message_normalize}),
     % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.
     resolve_stage(0, Msg1, #{ path => Path }, Opts);
 resolve_stage(0, Msg1, Msg2, Opts) ->
+    ?event(converge_core, {stage, 0, cache_lookup}),
     case hb_cache:read_output(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
             ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
@@ -157,6 +160,7 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
             resolve_stage(1, Msg1, Msg2, Opts)
     end;
 resolve_stage(1, Msg1, Msg2, Opts) ->
+    ?event(converge_core, {stage, 1, validation_check}),
     % Validation check: Check if the message is valid.
     Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
     Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
@@ -166,6 +170,7 @@ resolve_stage(1, Msg1, Msg2, Opts) ->
         _ -> error_invalid_message(Opts)
     end;
 resolve_stage(2, Msg1, Msg2, Opts) ->
+    ?event(converge_core, {stage, 2, path_normalization}),
     % Path normalization: Ensure that the path is requesting a single key.
     % Stash remaining path elements in `priv/Converge/Remaining-Path`.
     % Stash the original path in `priv/Converge/Original-Path`, if it
@@ -193,6 +198,26 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
         },
     resolve_stage(3, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
 resolve_stage(3, Msg1, Msg2, Opts) ->
+    ?event(converge_core, {stage, 3}),
+    % Persistent-resolver lookup: Search for local (or Distributed
+    % Erlang cluster) processes that are already performing the execution.
+    % Before we search for a live executor, we check if the device specifies 
+    % a function that tailors the 'group' name of the execution. For example, 
+    % the `dev_process` device 'groups' all calls to the same process onto
+    % calls to a single executor. By default, `{Msg1, Msg2}` is used as the
+    % group name.
+    case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
+        {leader, ExecName} ->
+            % We are the leader for this resolution. Continue to the next stage.
+            resolve_stage(4, Msg1, Msg2, ExecName, Opts);
+        {wait, Leader} ->
+            % There is another executor of this resolution in-flight.
+            % Bail execution, register to receive the response, then
+            % wait.
+            hb_persistent:await(Leader, Msg1, Msg2, Opts)
+    end.
+resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
+    ?event(converge_core, {stage, 4, ExecName}),
     %% Device lookup: Find the Erlang function that should be utilized to 
     %% execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
@@ -238,26 +263,9 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
 					Opts
 				)
 		end,
-	resolve_stage(4, ResolvedFunc, Msg1, Msg2, NewOpts).
-resolve_stage(4, Func, Msg1, Msg2, Opts) ->
-    % Persistent-resolver lookup: Search for local (or Distributed
-    % Erlang cluster) processes that are already performing the execution.
-    % Before we search for a live executor, we check if the device specifies 
-    % a function that tailors the 'group' name of the execution. For example, 
-    % the `dev_process` device 'groups' all calls to the same process onto
-    % calls to a single executor. By default, `{Msg1, Msg2}` is used as the
-    % group name.
-    case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
-        leader ->
-            % We are the leader for this resolution. Continue to the next stage.
-            resolve_stage(5, Func, Msg1, Msg2, Opts);
-        {wait, Leader} ->
-            % There is another executor of this resolution in-flight.
-            % Bail execution, register to receive the response, then
-            % wait.
-            hb_persistent:await(Leader, Msg1, Msg2, Opts)
-    end;
-resolve_stage(5, Func, Msg1, Msg2, Opts) ->
+	resolve_stage(5, ResolvedFunc, Msg1, Msg2, ExecName, NewOpts).
+resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
+    ?event(converge_core, {stage, 5, ExecName}),
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
@@ -268,10 +276,15 @@ resolve_stage(5, Func, Msg1, Msg2, Opts) ->
 			Key -> [Key, Msg1, Msg2, UserOpts]
 		end,
     % Try to execute the function.
+    ?event(converge_core, {exec_start, ExecName, {func, Func}}),
     Res = 
-        try apply(Func, truncate_args(Func, Args))
+        try
+            MsgRes = apply(Func, truncate_args(Func, Args)),
+            ?event(converge_core, {exec_success, ExecName, {msg_res, MsgRes}}),
+            MsgRes
         catch
             ExecClass:ExecException:ExecStacktrace ->
+                ?event(converge_core, {device_call_failed, ExecName, {func, Func}}),
                 % If the function call fails, we raise an error in the manner
                 % indicated by caller's `#Opts`.
                 handle_error(
@@ -280,8 +293,9 @@ resolve_stage(5, Func, Msg1, Msg2, Opts) ->
                     Opts
                 )
         end,
-    resolve_stage(6, Msg1, Msg2, Res, Opts);
-resolve_stage(6, Msg1, Msg2, {ok, Msg3}, Opts) when is_map(Msg3) ->
+    resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(6, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
+    ?event(converge_core, {stage, ExecName, 6, cryptographic_linking}),
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.
     resolve_stage(7, Msg1, Msg2,
@@ -289,24 +303,30 @@ resolve_stage(6, Msg1, Msg2, {ok, Msg3}, Opts) when is_map(Msg3) ->
             update -> {ok, hb_path:push(hashpath, Msg3, Msg2)};
             ignore -> {ok, Msg3}
         end,
+        ExecName,
         Opts
     );
-resolve_stage(6, Msg1, Msg2, Res, Opts) ->
+resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts) ->
+    ?event(converge_core, {stage, 6, ExecName, abnormal_result_skip_linking}),
     % Skip cryptographic linking if the result is abnormal.
-    resolve_stage(7, Msg1, Msg2, Res, Opts);
-resolve_stage(7, Msg1, Msg2, {ok, Msg3}, Opts) ->
+    resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
+    ?event(converge_core, {stage, 7, ExecName, result_caching}),
     % Result caching: Optionally, cache the result of the computation locally.
     update_cache(Msg1, Msg2, Msg3, Opts),
-    resolve_stage(8, Msg1, Msg2, {ok, Msg3}, Opts);
-resolve_stage(7, Msg1, Msg2, Res, Opts) ->
+    resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts);
+resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
+    ?event(converge_core, {stage, 7, ExecName, skip_result_caching}),
     % Skip result caching if the result is abnormal.
-    resolve_stage(8, Msg1, Msg2, Res, Opts);
-resolve_stage(8, Msg1, Msg2, Res, Opts) ->
+    resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
+    ?event(converge_core, {stage, 8, ExecName}),
     % Notify processes that requested the resolution while we were executing and
     % unregister ourselves from the group.
-    hb_persistent:unregister_notify(Msg1, Msg2, Res, Opts),
-    resolve_stage(9, Msg1, Msg2, Res, Opts);
-resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, Opts) ->
+    hb_persistent:unregister_notify(ExecName, Res, Opts),
+    resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
+    ?event(converge_core, {stage, 9, ExecName}),
     % Recurse, fork, or terminate.
     #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
         = hb_private:from_message(Msg2),
@@ -333,7 +353,8 @@ resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, Opts) ->
 			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
             {ok, Msg3}
 	end;
-resolve_stage(9, _Msg1, _Msg2, OtherRes, _Opts) ->
+resolve_stage(9, _Msg1, _Msg2, OtherRes, ExecName, _Opts) ->
+    ?event(converge_core, {stage, 9, ExecName, abnormal_result_return}),
     OtherRes.
 
 %% @doc Catch all return if we don't have the necessary messages in the cache.
