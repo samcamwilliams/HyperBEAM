@@ -53,12 +53,19 @@ hd(Msg2, Opts) ->
 %% transformation. Subsequently, the message's IDs will not be verifiable 
 %% after executing this transformation.
 %% This may or may not be the mainnet behavior we want.
-tl(Msg2, Opts) ->
+tl(Msg2, Opts) when is_map(Msg2) ->
     case pop_request(Msg2, Opts) of
         undefined -> undefined;
-        {_, Rest} when is_map(Rest) ->
-            maps:get(path, Rest, undefined);
-        {_, Rest} -> Rest
+        {_, Rest} ->
+            ?no_prod("We need to show the state transformation of the path"
+                " in the message somehow."),
+            Rest
+    end;
+tl(Path, Opts) when is_list(Path) ->
+    case tl(#{ path => Path }, Opts) of
+        [] -> undefined;
+        undefined -> undefined;
+        #{ path := Rest } -> Rest
     end.
 
 %% @doc Add a path element to a message, according to the type given.
@@ -105,12 +112,11 @@ push_request(Msg, Path) ->
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
 pop_request(Msg, Opts) when is_map(Msg) ->
+    %?event({popping_request, {msg, Msg}, {opts, Opts}}),
     case pop_request(from_message(request, Msg), Opts) of
-        undefined ->
-            ?event(popped_undefined),
-            undefined;
-        {undefined, _} ->
-            undefined;
+        undefined -> undefined;
+        {undefined, _} -> undefined;
+        {Head, []} -> {Head, undefined};
         {Head, Rest} ->
             ?event({popped_request, Head, Rest}),
             {Head, maps:put(path, Rest, Msg)}
@@ -173,6 +179,22 @@ from_message(request, #{ path := Other }) ->
 from_message(request, _) ->
     undefined.
 
+%% @doc Return the appropriate path to refer to the for the computation of
+%% Msg1(Msg2) in the form `/ID1/ID2`.
+compute_path(Msg1, Msg2, _Opts) ->
+    ID1 = dev_message:id(Msg1),
+    ID2 = dev_message:id(Msg2),
+    << "/", ID1/binary, "/", ID2/binary >>.
+
+%% @doc Return the shortest possible reference for a given computation. If the
+%% Msg2 only contains a `path` key and hashpath elements, then we can return
+%% just the path.
+short_compute_path(Msg1, Msg2 = #{ path := Path }, Opts) ->
+    case map_size(maps:without(?CONVERGE_KEYS, Msg2)) of
+        0 -> Path;
+        _ -> compute_path(Msg1, Msg2, Opts)
+    end.
+
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
 term_to_path(Path) -> term_to_path(Path, #{ error_strategy => throw }).
@@ -190,7 +212,12 @@ term_to_path(Binary, Opts) when is_binary(Binary) ->
     end;
 term_to_path([], _Opts) -> undefined;
 term_to_path(List, Opts) when is_list(List) ->
-    lists:map(fun(Part) -> hb_converge:to_key(Part, Opts) end, List);
+    lists:map(
+        fun(Part) ->
+            hb_converge:to_key(Part, Opts)
+        end,
+        List
+    );
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom].
 
 %%% TESTS
@@ -239,6 +266,10 @@ hd_test() ->
     ?assertEqual(undefined, hd(#{ path => undefined }, #{})).
 
 tl_test() ->
-    ?assertMatch([b, c], tl(#{ path => [a, b, c] }, #{})),
+    ?assertMatch([b, c], maps:get(path, tl(#{ path => [a, b, c] }, #{}))),
     ?assertEqual(undefined, tl(#{ path => [] }, #{})),
-    ?assertEqual(undefined, tl(#{ path => undefined }, #{})).
+    ?assertEqual(undefined, tl(#{ path => a }, #{})),
+    ?assertEqual(undefined, tl(#{ path => undefined }, #{})),
+
+    ?assertEqual([b, c], tl([a, b, c], #{ })),
+    ?assertEqual(undefined, tl([c], #{ })).

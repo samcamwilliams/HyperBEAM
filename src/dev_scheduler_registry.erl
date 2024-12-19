@@ -44,25 +44,21 @@ maybe_new_proc(ProcID, _) ->
 
 %%% Tests
 
-setup() ->
-    application:ensure_all_started(hb),
-    start().
-
 -define(TEST_PROC_ID1, <<0:256>>).
 -define(TEST_PROC_ID2, <<1:256>>).
 
 find_non_existent_process_test() ->
-    setup(),
+    start(),
     ?assertEqual(not_found, ?MODULE:find(?TEST_PROC_ID1)).
 
 create_and_find_process_test() ->
-    setup(),
+    start(),
     Pid1 = ?MODULE:find(?TEST_PROC_ID1, true),
     ?assert(is_pid(Pid1)),
     ?assertEqual(Pid1, ?MODULE:find(?TEST_PROC_ID1)).
 
 create_multiple_processes_test() ->
-    setup(),
+    start(),
     Pid1 = ?MODULE:find(?TEST_PROC_ID1, true),
     Pid2 = ?MODULE:find(?TEST_PROC_ID2, true),
     ?assert(is_pid(Pid1)),
@@ -72,7 +68,7 @@ create_multiple_processes_test() ->
     ?assertEqual(Pid2, ?MODULE:find(?TEST_PROC_ID2)).
 
 get_all_processes_test() ->
-    setup(),
+    start(),
     ?MODULE:find(?TEST_PROC_ID1, true),
     ?MODULE:find(?TEST_PROC_ID2, true),
     Processes = ?MODULE:get_processes(),

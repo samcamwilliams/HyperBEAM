@@ -1,4 +1,3 @@
-%%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 -module(ar_bundles).
 -export([signer/1, is_signed/1]).
 -export([id/1, id/2, reset_ids/1, type/1, map/1, hd/1, member/2, find/2]).
@@ -10,10 +9,10 @@
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
 -export([print/1, format/1, format/2]).
-
 -include("include/hb.hrl").
-
 -include_lib("eunit/include/eunit.hrl").
+
+%%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 
 -define(BUNDLE_TAGS, [
     {<<"Bundle-Format">>, <<"Binary">>},
@@ -1162,8 +1161,9 @@ test_serialize_deserialize_deep_signed_bundle() ->
     ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
     ?assert(verify_item(Item3)),
     % Test that we can write to disk and read back the same ID.
-    hb_cache:write(hb_opts:get(local_store), Item2),
-    {ok, FromDisk} = hb_cache:read_message(hb_opts:get(local_store), hb_util:encode(id(Item2, unsigned))),
+    hb_cache:write(hb_message:tx_to_message(Item2), #{}),
+    {ok, MsgFromDisk} = hb_cache:read(hb_util:encode(id(Item2, unsigned)), #{}),
+    FromDisk = hb_message:message_to_tx(MsgFromDisk),
     format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.

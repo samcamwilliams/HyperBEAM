@@ -10,11 +10,10 @@
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2]).
 -export([debug_print/4, debug_fmt/1]).
--export([print_trace/4, trace_macro_helper/4]).
+-export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
+-export([format_trace_short/1]).
 -include("include/hb.hrl").
-
-
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
 %% the value of the `error_strategy' option.
@@ -136,7 +135,7 @@ hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    {ok, Keys} = hb_converge:resolve(Message, keys),
+    {ok, Keys} = hb_converge:resolve(Message, keys, #{}),
     hd(Message, Keys, 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
@@ -148,7 +147,7 @@ hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
         Key ->
             case ReturnType of
                 key -> Key;
-                value -> hb_converge:resolve(Message, Key)
+                value -> hb_converge:resolve(Message, Key, #{})
             end
     end.
 
@@ -199,12 +198,22 @@ debug_print(X, Mod, Func, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s:~w ~p]==> ~s~n",
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s]==> ~s~n",
         [
-            TSDiff, self(), Mod, LineNum, Func,
+            TSDiff, self(),
+            format_debug_trace(Mod, Func, LineNum),
             lists:flatten(debug_fmt(X, 0))
         ]),
     X.
+
+%% @doc Generate the appropriate level of trace for a given call.
+format_debug_trace(Mod, Func, Line) ->
+    case hb_opts:get(debug_print_trace, false, #{}) of
+        short ->
+            format_trace_short(get_trace());
+        false ->
+            lists:flatten(io_lib:format("~p:~w ~p", [Mod, Line, Func]))
+    end.
 
 %% @doc Convert a term to a string for debugging print purposes.
 debug_fmt(X) -> debug_fmt(X, 0).
@@ -342,20 +351,13 @@ format_trace([], _) -> [];
 format_trace([Item|Rest], Prefixes) ->
     case element(1, Item) of
         Atom when is_atom(Atom) ->
-            case string:tokens(atom_to_list(Atom), "_") of
-                [Prefix, _] ->
-                    case lists:member(
-                        Prefix,
-                        Prefixes
-                    ) of
-                        true ->
-                            [
-                                format_trace(Item, Prefixes) |
-                                format_trace(Rest, Prefixes)
-                            ];
-                        false -> []
-                    end;
-                _ -> []
+            case trace_is_relevant(Atom, Prefixes) of
+                true ->
+                    [
+                        format_trace(Item, Prefixes) |
+                        format_trace(Rest, Prefixes)
+                    ];
+                false -> []
             end;
         _ -> []
     end;
@@ -377,7 +379,74 @@ format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
         1
     ).
 
-%% @doc Utility function to help macro `?trace/0' remove the first frame of the
+%% @doc Is the trace formatted string relevant to HyperBEAM?
+trace_is_relevant(Atom, Prefixes) when is_atom(Atom) ->
+    trace_is_relevant(atom_to_list(Atom), Prefixes);
+trace_is_relevant(Str, Prefixes) ->
+    case string:tokens(Str, "_") of
+        [Pre|_] ->
+            lists:member(Pre, Prefixes);
+        _ ->
+            false
+    end.
+
+%% @doc Print a trace to the standard error stream.
+print_trace_short(Trace, Mod, Func, Line) ->
+    io:format(standard_error, "=== [ HB SHORT TRACE ~p:~w ~p ] ==> ~s~n",
+        [
+            Mod, Line, Func,
+            format_trace_short(Trace)
+        ]
+    ).
+
+%% @doc Format a trace to a short string.
+format_trace_short(Trace) -> 
+    lists:join(
+        " / ",
+        lists:reverse(format_trace_short(
+            hb_opts:get(short_trace_len, 3, #{}),
+            false,
+            Trace,
+            hb_opts:get(stack_print_prefixes, [], #{})
+        ))
+    ).
+format_trace_short(_Max, _Latch, [], _Prefixes) -> [];
+format_trace_short(0, _Latch, _Trace, _Prefixes) -> [];
+format_trace_short(Max, Latch, [Item|Rest], Prefixes) ->
+    Formatted = format_trace_short(Max, Latch, Item, Prefixes),
+    case {Latch, trace_is_relevant(Formatted, Prefixes)} of
+        {false, true} ->
+            [Formatted | format_trace_short(Max - 1, true, Rest, Prefixes)];
+        {false, false} ->
+            format_trace_short(Max, false, Rest, Prefixes);
+        {true, true} ->
+            [Formatted | format_trace_short(Max - 1, true, Rest, Prefixes)];
+        {true, false} -> []
+    end;
+format_trace_short(Max, Latch, {Func, ArityOrTerm, Extras}, Prefixes) ->
+    format_trace_short(
+        Max, Latch, {no_module, Func, ArityOrTerm, Extras}, Prefixes
+    );
+format_trace_short(_, _Latch, {Mod, _, _, [{file, _}, {line, Line}|_]}, _) ->
+    lists:flatten(io_lib:format("~p:~p", [Mod, Line]));
+format_trace_short(_, _Latch, {Mod, Func, _ArityOrTerm, _Extras}, _Prefixes) ->
+    lists:flatten(io_lib:format("~p:~p", [Mod, Func])).
+
+%% @doc Utility function to help macro `?trace/0` remove the first frame of the
 %% stack trace.
-trace_macro_helper({_, {_, [_IgnoredFrame|Stack]}}, Mod, Func, Line) ->
-    print_trace(Stack, Mod, Func, Line).
+trace_macro_helper(Fun, {_, {_, Stack}}, Mod, Func, Line) ->
+    Fun(Stack, Mod, Func, Line).
+
+%% @doc Get the trace of the current process.
+get_trace() ->
+    case catch error(debugging_print) of
+        {_, {_, Stack}} ->
+            normalize_trace(Stack);
+        _ -> []
+    end.
+
+%% @doc Remove all calls from this module from the top of a trace.
+normalize_trace([]) -> [];
+normalize_trace([{Mod, _, _, _}|Rest]) when Mod == ?MODULE ->
+    normalize_trace(Rest);
+normalize_trace(Trace) -> Trace.

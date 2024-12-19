@@ -6,6 +6,7 @@
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %%% A simple abstraction layer for AO key value store operations.
 %%% This interface allows us to swap out the underlying store
@@ -59,7 +60,7 @@ scope(Store, Scope) ->
 %% default scope (local).
 get_store_scope(Store) ->
     case call_function(Store, scope, []) of
-        not_found -> ?DEFAULT_SCOPE;
+        no_viable_store -> ?DEFAULT_SCOPE;
         Scope -> Scope
     end.
 
@@ -126,10 +127,11 @@ type(Modules, Path) -> call_function(Modules, type, [Path]).
 
 %% @doc Create a path from a list of path components. If no store implements
 %% the path function, we return the path with the 'default' transformation (id).
+path(Path) when is_list(Path) -> [ El || El <- Path, El =/= [] ];
 path(Path) -> Path.
 path(Store, Path) ->
     case call_function(Store, path, [Path]) of
-        not_found -> path(Path);
+        no_viable_store -> path(Path);
         Result -> Result
     end.
 
@@ -155,7 +157,7 @@ list(Modules, Path) -> call_function(Modules, list, [Path]).
 call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
-    not_found;
+    no_viable_store;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
     ?event({calling, Mod, Function}),
     try apply(Mod, Function, [Opts | Args]) of
@@ -181,3 +183,31 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
             ok
     end,
     call_all(Rest, Function, Args).
+
+%%% Tests
+
+%% @doc Test path resolution dynamics.
+simple_path_resolution_test() ->
+    Opts = hb_cache:test_opts(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:write(Store, "test-file", <<"test-data">>),
+    hb_store:make_link(Store, "test-file", "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, "test-link")).
+
+%% @doc Ensure that we can resolve links recursively.
+resursive_path_resolution_test() ->
+    Opts = hb_cache:test_opts(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:write(Store, "test-file", <<"test-data">>),
+    hb_store:make_link(Store, "test-file", "test-link"),
+    hb_store:make_link(Store, "test-link", "test-link2"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, "test-link2")).
+
+%% @doc Ensure that we can resolve links through a directory.
+hierarchical_path_resolution_test() ->
+    Opts = hb_cache:test_opts(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:make_group(Store, "test-dir1"),
+    hb_store:write(Store, ["test-dir1", "test-file"], <<"test-data">>),
+    hb_store:make_link(Store, ["test-dir1"], "test-link"),
+    ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, ["test-link", "test-file"])).

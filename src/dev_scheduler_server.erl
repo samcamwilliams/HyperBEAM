@@ -1,59 +1,65 @@
 -module(dev_scheduler_server).
 -export([start/2, schedule/2]).
--export([get_current_slot/1, get_assignments/3]).
+-export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
 
--record(state,
-    {
-        id,
-        current,
-        wallet,
-        hash_chain = <<>>,
-        store = hb_opts:get(store)
-    }
-).
+%%% @moduledoc A long-lived server that schedules messages for a process.
+%%% It acts as a deliberate 'bottleneck' to prevent the server accidentally
+%%% assigning multiple messages to the same slot.
 
 -include("include/hb.hrl").
--define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
+%% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
-    {Current, HashChain} = slot_from_cache(ProcID),
+    {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
     spawn(
         fun() ->
             ?event(
                 {starting_scheduling_server,
                     {proc_id, ProcID},
-                    {current, Current},
+                    {current, CurrentSlot},
                     {hash_chain, HashChain}
                 }
             ),
             server(
-                #state{
-                    id = ProcID,
-                    current = Current,
-                    hash_chain = HashChain,
-                    wallet = hb_opts:get(wallet, hb:wallet(), Opts),
-                    store = hb_opts:get(store, no_viable_store, Opts)
+                #{
+                    id => ProcID,
+                    current => CurrentSlot,
+                    wallet => hb_opts:get(wallet, hb:wallet(), Opts),
+                    hash_chain => HashChain,
+                    opts => Opts
                 }
             )
         end
     ).
 
-slot_from_cache(ProcID) ->
-    case hb_cache:assignments(hb_opts:get(store), ProcID) of
+%% @doc Get the current slot from the cache.
+slot_from_cache(ProcID, Opts) ->
+    case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
             ?event({no_assignments_in_cache, {proc_id, ProcID}}),
             {-1, <<>>};
         Assignments ->
             AssignmentNum = lists:max(Assignments),
-            ?event({found_assignment_from_cache, {proc_id, ProcID}, {assignment_num, AssignmentNum}}),
-            {ok, Assignment} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, AssignmentNum),
+            ?event(
+                {found_assignment_from_cache,
+                    {proc_id, ProcID},
+                    {assignment_num, AssignmentNum}
+                }
+            ),
+            {ok, Assignment} = dev_scheduler_cache:read(
+                ProcID,
+                AssignmentNum,
+                Opts
+            ),
             {
                 AssignmentNum,
-                hb_converge:get(<<"Hash-Chain">>, Assignment, #{ hashpath => ignore })
+                hb_converge:get(
+                    <<"Hash-Chain">>, Assignment, #{ hashpath => ignore })
             }
     end.
 
+%% @doc Call the appropriate scheduling server to assign a message.
 schedule(ProcID, Message) when is_binary(ProcID) ->
     schedule(dev_scheduler_registry:find(ProcID), Message);
 schedule(ProcID, Message) ->
@@ -63,62 +69,27 @@ schedule(ProcID, Message) ->
             Assignment
     end.
 
-get_current_slot(ProcID) ->
-    ?event({getting_current_slot, {proc_id, ProcID}}),
-    ProcID ! {get_current_slot, self()},
+%% @doc Get the current slot from the scheduling server.
+info(ProcID) ->
+    ?event({getting_info, {proc_id, ProcID}}),
+    ProcID ! {info, self()},
     receive
-        {current_slot, CurrentSlot} ->
-            CurrentSlot
+        {info, Info} ->
+            Info
     end.
 
-get_assignments(ProcID, From, undefined) ->
-    get_assignments(ProcID, From, get_current_slot(ProcID));
-get_assignments(ProcID, From, RequestedTo) when is_binary(From) andalso byte_size(From) == 43 ->
-    {ok, From} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, From),
-    {_, Slot} = hb_converge:get(<<"Slot">>, From, #{ hashpath => ignore }),
-    get_assignments(ProcID, binary_to_integer(Slot), RequestedTo);
-get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) andalso byte_size(RequestedTo) == 43 ->
-    {ok, Assignment} = hb_cache:read_assignment_message(hb_opts:get(store), ProcID, RequestedTo),
-    {_, Slot} = hb_converge:get(<<"Slot">>, Assignment, #{ hashpath => ignore }),
-    get_assignments(ProcID, From, binary_to_integer(Slot));
-get_assignments(ProcID, From, RequestedTo) when is_binary(From) ->
-    get_assignments(ProcID, binary_to_integer(From), RequestedTo);
-get_assignments(ProcID, From, RequestedTo) when is_binary(RequestedTo) ->
-    get_assignments(ProcID, From, binary_to_integer(RequestedTo));
-get_assignments(ProcID, From, RequestedTo) ->
-    ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
-    ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
-        true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
-        false -> RequestedTo
-    end,
-    {do_get_assignments(ProcID, From, ComputedTo), ComputedTo =/= RequestedTo }.
-
-do_get_assignments(_ProcID, From, To) when From > To ->
-    [];
-do_get_assignments(ProcID, From, To) ->
-    case hb_cache:read_assignment_message(hb_opts:get(store), ProcID, From) of
-        not_found ->
-            [];
-        {ok, Assignment} ->
-            [
-                Assignment
-                | do_get_assignments(
-                    ProcID,
-                    From + 1,
-                    To
-                )
-            ]
-    end.
-
+%% @doc The main loop of the server. Simply waits for messages to assign and
+%% returns the current slot.
 server(State) ->
     receive
         {schedule, Message, Reply} ->
             server(assign(State, Message, Reply));
-        {get_current_slot, Reply} ->
-            Reply ! {current_slot, State#state.current},
+        {info, Reply} ->
+            Reply ! {info, State},
             server(State)
     end.
 
+%% @doc Assign a message to the next slot.
 assign(State, Message, ReplyPID) ->
     try
         do_assign(State, Message, ReplyPID)
@@ -128,10 +99,16 @@ assign(State, Message, ReplyPID) ->
             {error, State}
     end.
 
+%% @doc Generate and store the actual assignment message.
 do_assign(State, Message, ReplyPID) ->
-    ?event({assigning_message, {id, hb_converge:get(id, Message)}, {message, Message}}),
-    HashChain = next_hashchain(State#state.hash_chain, Message),
-    NextNonce = State#state.current + 1,
+    ?event(
+        {assigning_message,
+            {id, hb_converge:get(id, Message)},
+            {message, Message}
+        }
+    ),
+    HashChain = next_hashchain(maps:get(hash_chain, State), Message),
+    NextSlot = maps:get(current, State) + 1,
     % Run the signing of the assignment and writes to the disk in a separate process
     spawn(
         fun() ->
@@ -139,39 +116,41 @@ do_assign(State, Message, ReplyPID) ->
             Assignment = hb_message:sign(#{
                 <<"Data-Protocol">> => <<"ao">>,
                 <<"Variant">> => <<"ao.TN.2">>,
-                <<"Process">> => hb_util:id(State#state.id),
+                <<"Process">> => hb_util:id(maps:get(id, State)),
                 <<"Epoch">> => <<"0">>,
-                <<"Slot">> => NextNonce,
-                % This was causing an error during tag encoding,
-                % due to badarg on byte_length. Not sure that accessing
-                % Message as a record (like process id from State above)
-                % is the correct solution.
+                <<"Slot">> => NextSlot,
                 <<"Message">> => hb_converge:get(id, Message),
                 <<"Block-Height">> => Height,
                 <<"Block-Hash">> => Hash,
                 <<"Block-Timestamp">> => Timestamp,
-                % Local time on the SU, not Arweave
+                % Note: Local time on the SU, not Arweave
                 <<"Timestamp">> => erlang:system_time(millisecond),
                 <<"Hash-Chain">> => hb_util:id(HashChain)
-            }, State#state.wallet),
+            }, maps:get(wallet, State)),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ?event(starting_message_write),
-            hb_cache:write_assignment_message(State#state.store, Assignment),
-            hb_cache:write(State#state.store, Message),
-            % ?event(message_written),
-            % ?event(assignment_after_write),
-            % ar_bundles:print(Assignment),
-            % ?event(message_after_assignment_written),
-            % ar_bundles:print(Message),
-            % ?event(read_from_disk),
-            % ar_bundles:print(hb_cache:read(hb_store:scope(State#state.store, local), hb_util:id(Message, unsigned))),
-            maybe_inform_recipient(local_confirmation, ReplyPID, Message, Assignment),
+            dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
+            hb_cache:write(Message, maps:get(opts, State)),
+            maybe_inform_recipient(
+                local_confirmation,
+                ReplyPID,
+                Message,
+                Assignment
+            ),
             hb_client:upload(Assignment),
             hb_client:upload(Message),
-            maybe_inform_recipient(remote_confirmation, ReplyPID, Message, Assignment)
+            maybe_inform_recipient(
+                remote_confirmation,
+                ReplyPID,
+                Message,
+                Assignment
+            )
         end
     ),
-    State#state{current = NextNonce, hash_chain = HashChain}.
+    State#{
+        current := NextSlot,
+        hash_chain := HashChain
+    }.
 
 maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
     case hb_opts:get(scheduling_mode, remote_confirmation) of
@@ -179,13 +158,18 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
         _ -> ok
     end.
 
+%% @doc Create the next element in a chain of hashes that links this and prior
+%% assignments.
 next_hashchain(HashChain, Message) ->
-    crypto:hash(sha256, << HashChain/binary, (hb_util:id(Message, signed))/binary >>).
+    crypto:hash(
+        sha256,
+        << HashChain/binary, (hb_util:id(Message, signed))/binary >>
+    ).
 
 %% TESTS
 
+%% @doc Test the basic functionality of the server.
 new_proc_test() ->
-    application:ensure_all_started(hb),
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
         #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
@@ -200,5 +184,7 @@ new_proc_test() ->
     schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
     schedule(ID, SignedItem2),
     schedule(ID, SignedItem3),
-    ?assertEqual(2, dev_scheduler_server:get_current_slot(
-        dev_scheduler_registry:find(ID))).
+    ?assertMatch(
+        #{ current := 2 },
+        dev_scheduler_server:info(dev_scheduler_registry:find(ID))
+    ).

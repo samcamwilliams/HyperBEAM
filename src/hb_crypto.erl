@@ -16,8 +16,6 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(IS_ID(ID), (byte_size(ID) == 32)).
-
 %% @doc Add a new ID to the end of a SHA-256 hash chain.
 sha256_chain(ID1, ID2) when ?IS_ID(ID1) and ?IS_ID(ID2) ->
     ?no_prod("CAUTION: Unaudited cryptographic function invoked."),
