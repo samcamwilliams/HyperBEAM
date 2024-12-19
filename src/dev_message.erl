@@ -175,7 +175,7 @@ is_private_mod_test() ->
 %%% Device functionality tests:
 
 keys_from_device_test() ->
-    ?assertEqual({ok, [a]}, hb_converge:resolve(#{a => 1}, keys)).
+    ?assertEqual({ok, [a]}, hb_converge:resolve(#{a => 1}, keys, #{})).
 
 case_insensitive_get_test() ->
 	?assertEqual({ok, 1}, case_insensitive_get(a, #{a => 1})),
@@ -189,31 +189,36 @@ case_insensitive_get_test() ->
 private_keys_are_filtered_test() ->
     ?assertEqual(
         {ok, [a]},
-        hb_converge:resolve(#{a => 1, private => 2}, keys)
+        hb_converge:resolve(#{a => 1, private => 2}, keys, #{})
     ),
     ?assertEqual(
         {ok, [a]},
-        hb_converge:resolve(#{a => 1, "priv_foo" => 4}, keys)
+        hb_converge:resolve(#{a => 1, "priv_foo" => 4}, keys, #{})
     ).
 
 cannot_get_private_keys_test() ->
     ?assertEqual(
         {error, not_found},
-        hb_converge:resolve(#{ a => 1, private_key => 2 }, private_key)
+        hb_converge:resolve(#{ a => 1, private_key => 2 }, private_key, #{})
     ).
 
 key_from_device_test() ->
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{a => 1}, a)).
+    ?assertEqual({ok, 1}, hb_converge:resolve(#{a => 1}, a, #{})).
 
 remove_test() ->
 	Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
 	?assertMatch({ok, #{ <<"Key2">> := <<"Value2">> }},
-		hb_converge:resolve(Msg, #{ path => remove, item => <<"Key1">> })),
+		hb_converge:resolve(Msg, #{ path => remove, item => <<"Key1">> }, #{})),
 	?assertMatch({ok, #{}},
-		hb_converge:resolve(Msg, #{ path => remove, items => [<<"Key1">>, <<"Key2">>] })).
+		hb_converge:resolve(
+            Msg,
+            #{ path => remove, items => [<<"Key1">>, <<"Key2">>] },
+            #{}
+        )
+    ).
 
 set_conflicting_keys_test() ->
 	Msg1 = #{ <<"Dangerous">> => <<"Value1">> },
 	Msg2 = #{ path => set, dangerous => <<"Value2">> },
 	?assertMatch({ok, #{ dangerous := <<"Value2">> }},
-		hb_converge:resolve(Msg1, Msg2)).
+		hb_converge:resolve(Msg1, Msg2, #{})).

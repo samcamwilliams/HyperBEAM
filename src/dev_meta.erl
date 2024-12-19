@@ -1,3 +1,4 @@
+
 %%% @doc The hyperbeam meta device, which is the default entry point
 %%% for all messages processed by the machine. This device executes a 'path' of
 %%% functions upon a message, sequentially, returning the message resulting
@@ -16,7 +17,6 @@
 %%% POST /Push <- Push a new message on the referenced message.
 %%% GET /Execute <- Execute an assignment on the referenced process?
 %%% GET /Thing/in/cache <- Get a thing from the cache by its path.'''
-
 -module(dev_meta).
 -export([execute/2]).
 -include("include/hb.hrl").
@@ -80,7 +80,7 @@ load_path(Store, PathParts, Unresolved) ->
         {ok, Msg} -> {Msg, Unresolved};
         not_found ->
             % If that fails, try to read it as a message.
-            case hb_cache:read_message(Store, PathParts) of
+            case hb_cache:read(Store, PathParts) of
                 {ok, Msg} -> {Msg, Unresolved};
                 not_found ->
                     load_path(

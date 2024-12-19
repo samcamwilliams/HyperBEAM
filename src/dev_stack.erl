@@ -252,7 +252,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 						Message2,
 						DevNum + 1,
 						Opts,
-						{unexpected_pam_result, Unexpected}
+						{unexpected_result, Unexpected}
 					)
 			end;
 		not_found ->
@@ -368,7 +368,7 @@ transform_external_call_device_test() ->
 		{ok, #{ value := <<"Super-Cool">> }},
 		hb_converge:resolve(Msg1, #{
 			path => <<"/Transform/Make-Cool/Value">>
-		})
+		}, #{})
 	).
 
 example_device_for_stack_test() ->
@@ -397,7 +397,7 @@ simple_stack_execute_test() ->
 	?event({stack_executing, test, {explicit, Msg}}),
 	?assertMatch(
 		{ok, #{ result := <<"INIT!D1!2_D2_2">> }},
-		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> })
+		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{})
 	).
 
 many_devices_test() ->
@@ -423,7 +423,7 @@ many_devices_test() ->
 					<<"INIT+D12+D22+D32+D42+D52+D62+D72+D82">>
 			}
 		},
-		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> })
+		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{})
 	).
 
 reinvocation_test() ->
@@ -436,13 +436,13 @@ reinvocation_test() ->
 			},
 		result => <<"INIT">>
 	},
-	Res1 = hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }),
+	Res1 = hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{}),
 	?assertMatch(
 		{ok, #{ result := <<"INIT+D12+D22">> }},
 		Res1
 	),
 	{ok, Msg2} = Res1,
-	Res2 = hb_converge:resolve(Msg2, #{ path => append, bin => <<"3">> }),
+	Res2 = hb_converge:resolve(Msg2, #{ path => append, bin => <<"3">> }, #{}),
 	?assertMatch(
 		{ok, #{ result := <<"INIT+D12+D22+D13+D23">> }},
 		Res2
@@ -462,6 +462,7 @@ skip_test() ->
 		{ok, #{ result := <<"INIT+D12">> }},
 		hb_converge:resolve(
 			Msg1,
-			#{ path => append, bin => <<"2">> }
+			#{ path => append, bin => <<"2">> },
+            #{}
 		)
 	).

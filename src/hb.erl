@@ -98,6 +98,7 @@
 
 %% @doc Initialize system-wide settings for the hyperbeam node.
 init() ->
+    pg:start(pg),
     ?event({setting_debug_stack_depth, hb_opts:get(debug_stack_depth)}),
     Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
     ?event({old_system_stack_depth, Old}),
@@ -155,7 +156,7 @@ read(ID) -> read(ID, local).
 read(ID, ScopeAtom) when is_atom(ScopeAtom) ->
     read(ID, hb_store:scope(hb_opts:get(store), ScopeAtom));
 read(ID, Store) ->
-    hb_cache:read_message(Store, hb_util:id(ID)).
+    hb_cache:read(Store, hb_util:id(ID)).
 
 %% @doc Utility function to throw an error if the current mode is prod and
 %% non-prod ready code is being executed. You can find these in the codebase

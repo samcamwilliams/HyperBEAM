@@ -2,15 +2,12 @@
 %%% as described in RFC-9421 https://datatracker.ietf.org/doc/html/rfc9421
 
 -module(hb_http_signature).
-
 -export([authority/3, sign/2, sign/3, verify/2, verify/3]).
+-define(EMPTY_QUERY_PARAMS, $?).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
--define(EMPTY_QUERY_PARAMS, $?).
-
--include("include/hb.hrl").
-
--include_lib("eunit/include/eunit.hrl").
 
 -type fields() :: #{
 	binary() | atom() | string() => binary() | atom() | string()
