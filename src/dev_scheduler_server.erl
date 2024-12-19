@@ -60,10 +60,10 @@ slot_from_cache(ProcID, Opts) ->
     end.
 
 %% @doc Call the appropriate scheduling server to assign a message.
-schedule(ProcID, Message) when is_binary(ProcID) ->
-    schedule(dev_scheduler_registry:find(ProcID), Message);
-schedule(ProcID, Message) ->
-    ProcID ! {schedule, Message, self()},
+schedule(AOProcID, Message) when is_binary(AOProcID) ->
+    schedule(dev_scheduler_registry:find(AOProcID), Message);
+schedule(ErlangProcID, Message) ->
+    ErlangProcID ! {schedule, Message, self()},
     receive
         {scheduled, Message, Assignment} ->
             Assignment
