@@ -26,6 +26,8 @@ find_or_register(Msg1, Msg2, Opts) ->
     case find_groupname(GroupName, Opts) of
         {ok, [Leader|_]} when Leader =/= Self ->
             {wait, Leader};
+        {ok, [Leader|_]} when Leader =:= Self ->
+            {infinite_recursion, GroupName};
         _ ->
             ?event(
                 {register_resolver,

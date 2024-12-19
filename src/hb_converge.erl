@@ -133,7 +133,7 @@ resolve(Msg1, Msg2, Opts) ->
 %%      9: Recurse, fork, or terminate.
 
 resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
-    ?event(converge_core, {stage, 0, list_normalize}),
+    ?event(converge_core, {stage, 0, list_normalize}, Opts),
     % Normalize lists to numbered maps (base=1) if necessary.
     resolve_stage(0,
         maps:from_list(
@@ -146,12 +146,12 @@ resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
         Opts
     );
 resolve_stage(0, Msg1, Path, Opts) when not is_map(Path) ->
-    ?event(converge_core, {stage, 0, path_to_message_normalize}),
+    ?event(converge_core, {stage, 0, path_to_message_normalize}, Opts),
     % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.
     resolve_stage(0, Msg1, #{ path => Path }, Opts);
 resolve_stage(0, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 0, cache_lookup}),
+    ?event(converge_core, {stage, 0, cache_lookup}, Opts),
     case hb_cache:read_output(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
             ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
@@ -160,17 +160,17 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
             resolve_stage(1, Msg1, Msg2, Opts)
     end;
 resolve_stage(1, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 1, validation_check}),
+    ?event(converge_core, {stage, 1, validation_check}, Opts),
     % Validation check: Check if the message is valid.
     Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
     Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
     ?no_prod("Enable message validity checks!"),
     case {Msg1Valid, Msg2Valid} of
         _ -> resolve_stage(2, Msg1, Msg2, Opts);
-        _ -> error_invalid_message(Opts)
+        _ -> error_invalid_message(Msg1, Msg2, Opts)
     end;
 resolve_stage(2, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 2, path_normalization}),
+    ?event(converge_core, {stage, 2, path_normalization}, Opts),
     % Path normalization: Ensure that the path is requesting a single key.
     % Stash remaining path elements in `priv/Converge/Remaining-Path`.
     % Stash the original path in `priv/Converge/Original-Path`, if it
@@ -198,7 +198,7 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
         },
     resolve_stage(3, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
 resolve_stage(3, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 3}),
+    ?event(converge_core, {stage, 3}, Opts),
     % Persistent-resolver lookup: Search for local (or Distributed
     % Erlang cluster) processes that are already performing the execution.
     % Before we search for a live executor, we check if the device specifies 
@@ -214,10 +214,23 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
             % There is another executor of this resolution in-flight.
             % Bail execution, register to receive the response, then
             % wait.
-            hb_persistent:await(Leader, Msg1, Msg2, Opts)
+            hb_persistent:await(Leader, Msg1, Msg2, Opts);
+        {infinite_recursion, GroupName} ->
+            % We are the leader for this resolution, but we executing the 
+            % computation again. This may plausibly be OK in _some_ cases,
+            % but in general it is the sign of a bug.
+            ?event(converge_core, {infinite_recursion, {msg1, Msg1}, {msg2, Msg2}}, Opts),
+            case hb_opts:get(allow_infinite, false, Opts) of
+                true ->
+                    % We are OK with infinite loops, so we just continue.
+                    resolve_stage(4, Msg1, Msg2, GroupName, Opts);
+                false ->
+                    % We are not OK with infinite loops, so we raise an error.
+                    error_infinite(Msg1, Msg2, Opts)
+            end
     end.
 resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
-    ?event(converge_core, {stage, 4, ExecName}),
+    ?event(converge_core, {stage, 4, ExecName}, Opts),
     %% Device lookup: Find the Erlang function that should be utilized to 
     %% execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
@@ -265,7 +278,7 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
 		end,
 	resolve_stage(5, ResolvedFunc, Msg1, Msg2, ExecName, NewOpts).
 resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
-    ?event(converge_core, {stage, 5, ExecName}),
+    ?event(converge_core, {stage, 5, ExecName}, Opts),
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
@@ -295,7 +308,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
         end,
     resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(6, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
-    ?event(converge_core, {stage, ExecName, 6, cryptographic_linking}),
+    ?event(converge_core, {stage, 6, ExecName, cryptographic_linking}, Opts),
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.
     resolve_stage(7, Msg1, Msg2,
@@ -307,26 +320,26 @@ resolve_stage(6, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
         Opts
     );
 resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 6, ExecName, abnormal_result_skip_linking}),
+    ?event(converge_core, {stage, 6, ExecName, abnormal_skip_link}, Opts),
     % Skip cryptographic linking if the result is abnormal.
     resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 7, ExecName, result_caching}),
+    ?event(converge_core, {stage, 7, ExecName, result_caching}, Opts),
     % Result caching: Optionally, cache the result of the computation locally.
     update_cache(Msg1, Msg2, Msg3, Opts),
     resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 7, ExecName, skip_result_caching}),
+    ?event(converge_core, {stage, 7, ExecName, skip_caching}, Opts),
     % Skip result caching if the result is abnormal.
     resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 8, ExecName}),
+    ?event(converge_core, {stage, 8, ExecName}, Opts),
     % Notify processes that requested the resolution while we were executing and
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Res, Opts),
     resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 9, ExecName}),
+    ?event(converge_core, {stage, 9, ExecName}, Opts),
     % Recurse, fork, or terminate.
     #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
         = hb_private:from_message(Msg2),
@@ -353,12 +366,13 @@ resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
 			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
             {ok, Msg3}
 	end;
-resolve_stage(9, _Msg1, _Msg2, OtherRes, ExecName, _Opts) ->
-    ?event(converge_core, {stage, 9, ExecName, abnormal_result_return}),
+resolve_stage(9, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
+    ?event(converge_core, {stage, 9, ExecName, abnormal_return}, Opts),
     OtherRes.
 
 %% @doc Catch all return if we don't have the necessary messages in the cache.
-error_not_found(_Opts) ->
+error_not_found(Msg1, Msg2, Opts) ->
+    ?event(converge_core, {not_found, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     {
         error,
         #{
@@ -368,12 +382,23 @@ error_not_found(_Opts) ->
     }.
 
 %% @doc Catch all return if the message is invalid.
-error_invalid_message(_Opts) ->
+error_invalid_message(Msg1, Msg2, Opts) ->
+    ?event(converge_core, {invalid_message, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     {
         error,
         #{
             <<"Status">> => <<"Forbidden">>,
             <<"body">> => <<"Request contains non-verifiable message.">>
+        }
+    }.
+
+%% @doc Catch all return if we are in an infinite loop.
+error_infinite(_Msg1, _Msg2, _Opts) ->
+    {
+        error,
+        #{
+            <<"Status">> => <<"Malformed Request">>,
+            <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
 
