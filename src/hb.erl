@@ -2,7 +2,7 @@
 %%% Configuration and environment:
 -export([init/0, now/0, build/0]).
 %%% Debugging tools:
--export([event/1, event/2, event/4, no_prod/3]).
+-export([event/2, event/3, event/4, event/5, event/6, no_prod/3]).
 -export([read/1, read/2, debug_wait/4, profile/1]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
@@ -125,25 +125,28 @@ address(Location) -> address(wallet(Location)).
 
 %% @doc Debugging event logging function. For now, it just prints to standard
 %% error.
-event(X) -> event(X, "").
-event(X, Mod) -> event(X, Mod, undefined).
-event(X, Mod, Func) -> event(X, Mod, Func, undefined).
-event(X, Mod, undefined, Line) -> event(X, Mod, "", Line);
-event(X, Mod, Func, undefined) -> event(X, Mod, Func, "");
-event(X, ModAtom, Func, Line) when is_atom(ModAtom) ->
+event(X) -> event(global, X).
+event(Topic, X) -> event(Topic, X, "").
+event(Topic, X, Mod) -> event(Topic, X, Mod, undefined).
+event(Topic, X, Mod, Func) -> event(Topic, X, Mod, Func, undefined).
+event(Topic, X, Mod, Func, Line) -> event(Topic, X, Mod, Func, Line, #{}).
+event(Topic, X, Mod, undefined, Line, Opts) -> event(Topic, X, Mod, "", Line, Opts);
+event(Topic, X, Mod, Func, undefined, Opts) -> event(Topic, X, Mod, Func, "", Opts);
+event(Topic, X, ModAtom, Func, Line, Opts) when is_atom(ModAtom) ->
     case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
         true -> hb_util:debug_print(X, atom_to_list(ModAtom), Func, Line);
         false -> 
             case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
                 {hb_debug, [no_print]} -> X;
-                _ -> event(X, atom_to_list(ModAtom), Func, Line)
+                _ -> event(Topic, X, atom_to_list(ModAtom), Func, Line, Opts)
             end
     end;
-event(X, ModStr, Func, Line) ->
-    case hb_opts:get(debug_print) of
+event(Topic, X, ModStr, Func, Line, Opts) ->
+    case hb_opts:get(debug_print, false, Opts) of
         ModList when is_list(ModList) ->
-            lists:member(ModStr, ModList) andalso
-                hb_util:debug_print(X, ModStr, Func, Line);
+            (lists:member(ModStr, ModList)
+                orelse lists:member(atom_to_list(Topic), ModList))
+                andalso hb_util:debug_print(X, ModStr, Func, Line);
         true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
     end.
