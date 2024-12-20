@@ -178,6 +178,8 @@ from_message(request, #{ path := Path }) when is_list(Path) ->
     term_to_path(Path);
 from_message(request, #{ path := Other }) ->
     term_to_path(Other);
+from_message(request, #{ <<"path">> := Path }) -> term_to_path(Path);
+from_message(request, #{ <<"Path">> := Path }) -> term_to_path(Path);
 from_message(request, _) ->
     undefined.
 
