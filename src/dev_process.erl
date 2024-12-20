@@ -137,16 +137,11 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     {caching, CacheKeys}
                 }
             ),
-            ToProcessWithoutInts =
-                maps:without(
-                    [<<"Block-Height">>, <<"Slot">>, <<"Block-Timestamp">>],
-                    ToProcess
-                ),
             {ok, Msg3} =
                 run_as(
                     <<"Execution-Device">>,
                     State,
-                    ToProcessWithoutInts,
+                    ToProcess,
                     Opts#{ cache_keys => CacheKeys }
                 ),
             ?event({do_compute_result, {msg3, Msg3}}),
