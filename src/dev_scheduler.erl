@@ -14,7 +14,7 @@
 
 -module(dev_scheduler).
 %%% Converge API functions:
--export([set/3, keys/1, info/0]).
+-export([info/0]).
 %%% Local scheduling functions:
 -export([schedule/3]).
 %%% CU-flow functions:
@@ -42,7 +42,6 @@ info() ->
     #{
         exports =>
             [
-                set,
                 status,
                 next,
                 schedule,
@@ -50,18 +49,9 @@ info() ->
                 init,
                 end_of_schedule,
                 checkpoint
-            ]
+            ],
+        excludes => [set, keys]
     }.
-
-%%% Default Converge handlers.
-
-set(Msg1, Msg2, Opts) ->
-    ?event({scheduler_set_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    dev_message:set(Msg1, Msg2, Opts).
-
-keys(Msg) ->
-    ?event({scheduler_keys_called, {msg, Msg}}),
-    dev_message:keys(Msg).
 
 %% @doc Load the schedule for a process into the cache, then return the next
 %% assignment. Assumes that Msg1 is a `dev_process` or similar message, having
@@ -69,35 +59,72 @@ keys(Msg) ->
 %% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
     ?event({scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    Schedule = hb_private:get(<<"priv/Scheduler/Assignments">>, Msg1, Opts),
+    Schedule =
+        hb_private:get(
+            <<"priv/Scheduler/Assignments">>,
+            Msg1,
+            Opts
+        ),
     LastProcessed = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
     ?event({local_schedule_cache, {schedule, Schedule}}),
     Assignments =
-        case map_size(Schedule) of
-            0 ->
-                {ok, RecvdAssignments} = hb_converge:resolve(
-                    Msg1,
-                    #{
-                        <<"Method">> => <<"GET">>,
-                        path => <<"Schedule/Assignments">>,
-                        <<"From">> => LastProcessed
-                    },
+        case Schedule of
+            X when is_map(X) and map_size(X) > 0 -> X;
+            _ ->
+                {ok, RecvdAssignments} =
+                    hb_converge:resolve(
+                        Msg1,
+                        #{
+                            <<"Method">> => <<"GET">>,
+                            path => <<"Schedule/Assignments">>,
+                            <<"From">> => LastProcessed
+                        },
+                        Opts
+                    ),
+                RecvdAssignments
+        end,
+    ValidKeys =
+        lists:filter(
+            fun(Slot) ->
+                try 
+                    binary_to_integer(Slot) > LastProcessed
+                catch
+                    _:_ -> false
+                end
+            end,
+            maps:keys(Assignments)
+        ),
+    % Remove assignments that are below the last processed slot.
+    FilteredAssignments = maps:with(ValidKeys, Assignments),
+    ?event({filtered_assignments, FilteredAssignments}),
+    Slot = lists:min([ binary_to_integer(S) || S <- ValidKeys ]),
+    ?event({next_slot_to_process, Slot, {last_processed, LastProcessed}}),
+    case (LastProcessed + 1) == Slot of
+        true ->
+            NextMessage =
+                hb_converge:get(
+                    integer_to_binary(Slot),
+                    FilteredAssignments,
                     Opts
                 ),
-                RecvdAssignments;
-            _ -> Schedule
-        end,
-    NextSlot = lists:min(Assignments),
-    {ok, #{
-        <<"Message">> => hb_converge:get(NextSlot, Schedule, Opts),
-        <<"State">> =>
-            hb_private:set(
-                Msg1,
-                <<"Schedule/Assignments">>,
-                hb_converge:remove(NextSlot, Assignments),
-                Opts
-            )
-    }}.
+            NextState =
+                hb_private:set(
+                    Msg1,
+                    <<"Schedule/Assignments">>,
+                    hb_converge:remove(FilteredAssignments, Slot),
+                    Opts
+                ),
+            ?event(
+                {next_returning, {slot, Slot}, {message, NextMessage}}),
+            {ok, #{ <<"Message">> => NextMessage, <<"State">> => NextState }};
+        false ->
+            {error,
+                #{
+                    <<"Status">> => <<"Service Unavailable">>,
+                    <<"Body">> => <<"No assignment found for next slot.">>
+                }
+            }
+    end.
 
 %% @doc Returns information about the entire scheduler.
 status(_M1, _M2, _Opts) ->
@@ -119,7 +146,7 @@ status(_M1, _M2, _Opts) ->
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
-    case hb_converge:get(<<"Method">>, Msg2) of
+    case hb_converge:get(<<"Method">>, Msg2, <<"GET">>, Opts) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
@@ -226,6 +253,7 @@ get_schedule(Msg1, Msg2, Opts) ->
     From =
         case hb_converge:get(from, Msg2, not_found, Opts) of
             not_found -> 0;
+            X when X < 0 -> 0;
             FromRes -> FromRes
         end,
     To =
@@ -258,7 +286,7 @@ gen_schedule(ProcID, From, To, Opts) ->
         To,
         Opts
     ),
-    ?event({got_assignments, {first, hd(Assignments)}, {more, More}}),
+    ?event({got_assignments, length(Assignments), {more, More}}),
     Bundle = #{
         <<"Type">> => <<"Schedule">>,
         <<"Process">> => ProcID,
@@ -275,10 +303,11 @@ gen_schedule(ProcID, From, To, Opts) ->
 %% @doc Get the assignments for a process, and whether the request was truncated.
 get_assignments(ProcID, From, RequestedTo, Opts) ->
     ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
-    ComputedTo = case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
-        true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
-        false -> RequestedTo
-    end,
+    ComputedTo =
+        case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
+            true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
+            false -> RequestedTo
+        end,
     {do_get_assignments(ProcID, From, ComputedTo, Opts), ComputedTo =/= RequestedTo }.
 
 do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
@@ -322,6 +351,7 @@ assignment_bundle([Assignment | Assignments], Bundle, Opts) ->
             Slot =>
                 hb_message:sign(
                     #{
+                        path => <<"Compute">>,
                         <<"Assignment">> => Assignment,
                         <<"Message">> => Message
                     },
@@ -402,7 +432,7 @@ test_process() ->
             <<"Image">> => <<"wasm-image-id">>,
             <<"Type">> => <<"Process">>,
             <<"Scheduler-Location">> => Address,
-            <<"Test-Key-Random-Number">> => rand:uniform(1337)
+            <<"Test-Random-Seed">> => rand:uniform(1337)
         }
     }.
 
@@ -465,6 +495,43 @@ schedule_message_and_get_slot_test() ->
     ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
+
+benchmark_test() ->
+    start(),
+    BenchTime = 4000,
+    Msg1 = test_process(),
+    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
+    ProcID = hb_util:id(Proc),
+    ?event({benchmark_start, ?MODULE}),
+    Iterations = hb:benchmark(
+        fun(X) ->
+            MsgX = #{
+                path => <<"Schedule">>,
+                <<"Method">> => <<"POST">>,
+                <<"Message">> =>
+                    #{
+                        <<"Type">> => <<"Message">>,
+                        <<"Test-Val">> => X
+                    }
+            },
+            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, #{}))
+        end,
+        BenchTime
+    ),
+    ?event(benchmark, {scheduled, Iterations}),
+    Msg3 = #{
+        path => <<"Slot">>,
+        <<"Method">> => <<"GET">>,
+        <<"Process">> => ProcID
+    },
+    ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
+            when CurrentSlot == Iterations - 1,
+        hb_converge:resolve(Msg1, Msg3, #{})),
+    hb_util:eunit_print(
+        "Scheduled ~p messages through Converge in ~p ms (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / (BenchTime / 1000)]
+    ),
+    ?assert(Iterations > 100).
 
 get_schedule_test() ->
     start(),

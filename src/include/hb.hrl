@@ -20,7 +20,9 @@
 
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
--define(event(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(event(X), hb:event(?MODULE, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(event(Topic, X), hb:event(Topic, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(event(Topic, X, Opts), hb:event(maps:get(topic, Opts, Topic), X, ?MODULE, ?FUNCTION_NAME, ?LINE), Opts).
 -define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(no_prod(X), hb:no_prod(X, ?MODULE, ?LINE)).
 
@@ -35,3 +37,9 @@
 %% module.
 -define(trace(), hb_util:trace_macro_helper(fun hb_util:print_trace/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(trace_short(), hb_util:trace_macro_helper(fun hb_util:print_trace_short/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
+
+%%% Test helper macros
+-define(ROCKSDB_STORE, [{hb_store_rocksdb, #{ prefix => "test-cache" }}]).
+-define(FS_STORE, [{hb_store_fs, #{ prefix => "test-cache" }}]).
+-define(FS_OPTS, #{ cache_control => no_cache, store => ?FS_STORE }).
+-define(ROCKDB_OPTS, #{ cache_control => no_cache, store => ?ROCKSDB_STORE }).

@@ -84,10 +84,18 @@
 
 -include("include/hb.hrl").
 
-info(_) ->
-    #{
-		handler => fun router/4
-	}.
+info(Msg) ->
+    ?event({info_called, {msg, Msg}}),
+    maps:merge(
+        #{
+            handler => fun router/4,
+            excludes => [set]
+        },
+        case maps:get(<<"Stack-Keys">>, Msg, not_found) of
+            not_found -> #{};
+            StackKeys -> #{ exports => StackKeys }
+        end
+    ).
 
 %% @doc The device stack key router. Sends the request to `resolve_stack',
 %% except for `set/2' which is handled by the default implementation in
@@ -95,16 +103,14 @@ info(_) ->
 router(keys, Message1, Message2, _Opts) ->
 	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
 	dev_message:keys(Message1);
-router(set, Message1, Message2, Opts) ->
-	?event({set_called, {msg1, Message1}, {msg2, Message2}}),
-	dev_message:set(Message1, Message2, Opts);
 router(transform, Message1, _Message2, Opts) ->
 	transformer_message(Message1, Opts);
 router(Key, Message1, Message2, Opts) ->
 	?event({router_called, {key, Key}, {msg1, Message1}, {msg2, Message2}}),
 	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
+    PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),
 	?event({got_device_key, InitDevMsg}),
-	case resolve_stack(Message1, Key, Message2, Opts) of
+	case resolve_stack(PreparedMessage, Key, Message2, Opts) of
 		{ok, Result} when is_map(Result) ->
 			?event({router_result, ok, Result}),
 			dev_message:set(Result, #{<<"Device">> => InitDevMsg}, Opts);
@@ -112,7 +118,6 @@ router(Key, Message1, Message2, Opts) ->
 			?event({router_result, unexpected, Else}),
 			Else
 	end.
-
 
 %% @doc Return a message which, when given a key, will transform the message
 %% such that the device named `Key' from the `Device-Stack' key in the message
@@ -123,17 +128,21 @@ router(Key, Message1, Message2, Opts) ->
 %% 		keyInDevice executed on DeviceName against Msg1.
 transformer_message(Msg1, Opts) ->
 	?event({creating_transformer, {for, Msg1}}),
+    BaseInfo = info(Msg1),
 	{ok, 
 		Msg1#{
 			device => #{
 				info =>
 					fun() ->
-						#{
-							handler =>
-								fun(Key, MsgX1) ->
-									transform(MsgX1, Key, Opts)
-								end
-						}
+                        maps:merge(
+                            BaseInfo,
+                            #{
+                                handler =>
+                                    fun(Key, MsgX1) ->
+                                        transform(MsgX1, Key, Opts)
+                                    end
+                            }
+                        )
 					end,
 				type => <<"Stack-Transformer">>
 			}
@@ -146,8 +155,10 @@ transformer_message(Msg1, Opts) ->
 %% of the message as it delegates execution to devices contained within it.
 transform(Msg1, Key, Opts) ->
 	% Get the device stack message from Msg1.
-	case dev_message:get(<<"Device-Stack">>, Msg1, Opts) of
-		{ok, StackMsg} ->
+    ?event({transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
+	case hb_converge:get(<<"Device-Stack">>, {as, dev_message, Msg1}, Opts) of
+        not_found -> throw({error, no_valid_device_stack});
+        StackMsg ->
 			% Find the requested key in the device stack.
 			case hb_converge:resolve(StackMsg, #{ path => Key }, Opts) of
 				{ok, DevMsg} ->
@@ -160,24 +171,19 @@ transform(Msg1, Key, Opts) ->
 						Msg1,
 						#{
 							<<"Device">> => DevMsg,
-							<<"Device-Stack">> =>
-								StackMsg#{ <<"Previous">> =>
-									hb_util:ok(
-										dev_message:get(
-											<<"Device">>,
-											Msg1,
-											Opts
-										)
-									)
-								}
+							<<"Device-Stack-Previous">> =>
+                                hb_util:ok(dev_message:get(
+                                    <<"Device">>,
+                                    Msg1,
+                                    Opts
+                                ))
 						},
 						Opts
 					);
 				_ ->
 					?event({no_device_key, Key}),
 					not_found
-			end;
-		_ -> throw({error, no_valid_device_stack})
+			end
 	end.
 
 %% @doc The main device stack execution engine. See the moduledoc for more
@@ -185,32 +191,36 @@ transform(Msg1, Key, Opts) ->
 resolve_stack(Message1, Key, Message2, Opts) ->
     resolve_stack(Message1, Key, Message2, 1, Opts).
 resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
-	?event(
-		{stack_transform,
-			DevNum,
-			{key, Key},
-			{message1, Message1},
-			{message2, Message2}
-		}
-	),
 	case transform(Message1, integer_to_binary(DevNum), Opts) of
 		{ok, Message3} ->
-			?event({stack_execute, DevNum, Message3}),
+			?event({stack_execute, DevNum, {msg1, Message3}, {msg2, Message2}}),
 			case hb_converge:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
 					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
+                {ok, RawResult} ->
+                    ?event({returning_raw_result, RawResult}),
+                    {ok, RawResult};
 				{skip, Message4} when is_map(Message4) ->
 					?event({result, skip, DevNum, Message4}),
 					{ok, Message4};
 				{pass, Message4} when is_map(Message4) ->
-					case hb_converge:resolve(Message4, pass, Opts) of
-						{ok, <<"Allow">>} ->
+					case hb_opts:get(allow_multipass, true, Opts) of
+						true ->
 							?event({result, pass, allowed, DevNum, Message4}),
-							?no_prod("Must update the pass number."),
 							resolve_stack(
-								dev_message:set(Message4, #{ pass =>
-									1 }, Opts),
+								hb_converge:set(
+									Message4,
+									#{
+										pass =>
+                                            hb_converge:get(
+                                                pass,
+                                                Message4,
+                                                Opts
+                                            ) + 1
+									},
+									Opts
+								),
 								Key,
 								Message2,
 								1,
@@ -302,7 +312,10 @@ generate_append_device(Separator) ->
 generate_append_device(Separator, Status) ->
 	#{
 		append =>
-			fun(M1 = #{ result := Existing }, #{ bin := New }) ->
+			fun(M1 = #{ pass := 3 }, _) ->
+                % Stop after 3 passes.
+                {ok, M1};
+			   (M1 = #{ result := Existing }, #{ bin := New }) ->
 				?event({appending, {existing, Existing}, {new, New}}),
 				{Status, M1#{ result =>
 					<< Existing/binary, Separator/binary, New/binary>>
@@ -465,4 +478,21 @@ skip_test() ->
 			#{ path => append, bin => <<"2">> },
             #{}
 		)
+	).
+
+pass_test() ->
+    % The append device will return `ok` after 2 passes, so this test
+    % recursively calls the device by forcing its response to be `pass`
+    % until that happens.
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device(<<"+D1">>, pass)
+			},
+		result => <<"INIT">>
+	},
+	?assertMatch(
+		{ok, #{ result := <<"INIT+D1_+D1_">> }},
+		hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{})
 	).

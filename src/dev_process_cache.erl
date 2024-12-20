@@ -3,7 +3,7 @@
 %%% convenient interface for reading the result of a process at a given slot or
 %%% message ID.
 -module(dev_process_cache).
--export([latest/2, read/2, read/3, write/4]).
+-export([latest/2, latest/3, latest/4, read/2, read/3, write/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -128,10 +128,15 @@ first_with_path(ProcID, RequiredPath, [Slot | Rest], Opts, Store) ->
 
 %%% Tests
 
+process_cache_suite_test_() ->
+    hb_store:generate_test_suite([
+        {"write and read process outputs", fun test_write_and_read_output/1},
+        {"find latest output (with path)", fun find_latest_output_test/1}
+    ]).
+
 %% @doc Test for writing multiple computed outputs, then getting them by
 %% their slot number and by their signed and unsigned IDs.
-write_and_read_output_test() ->
-    Opts = hb_cache:test_opts(),
+test_write_and_read_output(Opts) ->
     Proc = hb_cache:test_signed(
         #{ <<"test-item">> => hb_cache:test_unsigned(<<"test-body-data">>) }),
     ProcID = hb_util:human_id(hb_converge:get(id, Proc)),
@@ -155,9 +160,8 @@ write_and_read_output_test() ->
     ?assert(hb_message:match(Item2, ReadItem2ByID)).
 
 %% @doc Test for retrieving the latest computed output for a process.
-latest_output_retrieval_test() ->
+find_latest_output_test(Opts) ->
     % Create test environment.
-    Opts = hb_cache:test_opts(),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),

@@ -15,8 +15,8 @@
 %% @doc Return the info for the identity device.
 info() ->
     #{
-        default => fun get/3,
-        exports => ?DEVICE_KEYS
+        default => fun get/3
+        %exports => ?DEVICE_KEYS
     }.
 
 %% @doc Return the ID of a message. If the message already has an ID, return
@@ -63,7 +63,7 @@ set(Message1, NewValuesMsg, Opts) ->
 			fun(Key) ->
 				not lists:member(Key, ?DEVICE_KEYS)
 			end,
-			hb_converge:keys(NewValuesMsg, Opts)
+			hb_converge:keys(NewValuesMsg, Opts#{ topic => ?MODULE })
 		),
 	% Find keys in the message that are already set (case-insensitive), and 
 	% note them for removal.

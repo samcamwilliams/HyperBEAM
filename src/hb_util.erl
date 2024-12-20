@@ -9,7 +9,7 @@
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2]).
--export([debug_print/4, debug_fmt/1]).
+-export([debug_print/4, debug_fmt/1, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
 -export([format_trace_short/1]).
@@ -319,6 +319,10 @@ format_map(Map, Indent) ->
             "\n" ++ lists:flatten(hb_message:format(Map, Indent));
         _ -> SimpleFmt
     end.
+
+%% @doc Format and print an indented string to standard error.
+eunit_print(Str, Fmt) ->
+    io:format(standard_error, "~n~s~n", [hb_util:format_indented(Str, Fmt, 4)]).
 
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module. Prints each stack frame on a new line, until it finds a frame that

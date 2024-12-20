@@ -35,24 +35,7 @@ config() ->
         %% Choice of nodes for remote tasks, in the form of a map between
         %% node addresses and HTTP URLs.
         %% `_' is a wildcard for any other address that is not specified.
-        nodes => #{
-            compute =>
-                #{
-                    <<"ggltHF0Cnv9ylH3vM1p7amR2vXLMoPLQIUQmAEwLP-k">> =>
-                        "http://localhost:8734",
-                    <<"J-j0jyZ1YWhMBXtJMWHz-dl-mDcksoJSQo_Fq5loHUs">> =>
-                        "http://localhost:8736",
-                    '_' => "http://localhost:8734"
-                },
-            message => #{
-                hb:address() => "http://localhost:8734",
-                '_' => "http://localhost:8734"
-            },
-            schedule => #{
-                hb:address() => "http://localhost:8734",
-                '_' => "http://localhost:8734"
-            }
-        },
+        nodes => #{ },
         %% Location of the wallet keyfile on disk that this node will use.
         key_location => "hyperbeam-key.json",
         %% Default page limit for pagination of results from the APIs.
@@ -65,10 +48,11 @@ config() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
+                <<"Test-Device/1.0">> => dev_test,
                 <<"Message/1.0">> => dev_message,
-                <<"Test/1.0">> => dev_test,
                 <<"Stack/1.0">> => dev_stack,
                 <<"Scheduler/1.0">> => dev_scheduler,
+                <<"Process/1.0">> => dev_process,
                 <<"VFS/1.0">> => dev_vfs,
                 <<"WASM64/1.0">> => dev_wasm,
                 <<"Cron">> => dev_cron,
@@ -104,12 +88,12 @@ config() ->
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 15,
-        debug_print_indent => 4,
+        debug_print_indent => 2,
         debug_print => false,
         cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 5
+        short_trace_len => 2
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

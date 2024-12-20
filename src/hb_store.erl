@@ -5,6 +5,7 @@
 -export([type/2, read/2, write/3, list/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
+-export([test_store_setup/1, test_store_teardown/1, generate_test_suite/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -186,19 +187,53 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
     end,
     call_all(Rest, Function, Args).
 
+%%% Test helpers
+
+test_stores() ->
+    [{"RocksDB", rocksdb, ?ROCKSDB_STORE}, {"FS", fs, ?FS_STORE}].
+
+test_store_setup(rocksdb) ->
+    hb_store:start(?ROCKSDB_STORE),
+    ?ROCKDB_OPTS;
+test_store_setup(fs) ->
+    hb_store:start(?FS_STORE),
+    ?FS_OPTS.
+
+test_store_teardown(rocksdb) ->
+    hb_store:reset(?ROCKSDB_STORE);
+test_store_teardown(fs) ->
+    hb_store:reset(?FS_STORE).
+
+generate_test_suite(Suite) ->
+    lists:map(
+        fun({Name, StoreAtom, Store}) ->
+            {foreach,
+                fun() -> test_store_setup(StoreAtom) end,
+                fun(#{store := _ }) ->
+                    test_store_teardown(StoreAtom)
+                end,
+                [
+                    {Name ++ ": " ++ Desc,
+                        fun() -> Test(#{ store => Store }) end}
+                ||
+                    {Desc, Test} <- Suite
+                ]
+            }
+        end,
+        test_stores()
+    ).
+
 %%% Tests
 
 %% @doc Test path resolution dynamics.
-simple_path_resolution_test() ->
-    Opts = hb_cache:test_opts(),
+simple_path_resolution_test(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:write(Store, "test-file", <<"test-data">>),
     hb_store:make_link(Store, "test-file", "test-link"),
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, "test-link")).
 
 %% @doc Ensure that we can resolve links recursively.
-resursive_path_resolution_test() ->
-    Opts = hb_cache:test_opts(),
+resursive_path_resolution_test(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:write(Store, "test-file", <<"test-data">>),
     hb_store:make_link(Store, "test-file", "test-link"),
@@ -206,10 +241,16 @@ resursive_path_resolution_test() ->
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, "test-link2")).
 
 %% @doc Ensure that we can resolve links through a directory.
-hierarchical_path_resolution_test() ->
-    Opts = hb_cache:test_opts(),
+hierarchical_path_resolution_test(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:make_group(Store, "test-dir1"),
     hb_store:write(Store, ["test-dir1", "test-file"], <<"test-data">>),
     hb_store:make_link(Store, ["test-dir1"], "test-link"),
     ?assertEqual({ok, <<"test-data">>}, hb_store:read(Store, ["test-link", "test-file"])).
+
+store_suite_test_() ->
+    hb_store:generate_test_suite([
+        {"simple path resolution", fun simple_path_resolution_test/1},
+        {"resursive path resolution", fun resursive_path_resolution_test/1},
+        {"hierarchical path resolution", fun hierarchical_path_resolution_test/1}
+    ]).

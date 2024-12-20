@@ -59,10 +59,10 @@ slot_from_cache(ProcID, Opts) ->
     end.
 
 %% @doc Call the appropriate scheduling server to assign a message.
-schedule(ProcID, Message) when is_binary(ProcID) ->
-    schedule(dev_scheduler_registry:find(ProcID), Message);
-schedule(ProcID, Message) ->
-    ProcID ! {schedule, Message, self()},
+schedule(AOProcID, Message) when is_binary(AOProcID) ->
+    schedule(dev_scheduler_registry:find(AOProcID), Message);
+schedule(ErlangProcID, Message) ->
+    ErlangProcID ! {schedule, Message, self()},
     receive
         {scheduled, Message, Assignment} ->
             Assignment
@@ -136,8 +136,12 @@ do_assign(State, Message, ReplyPID) ->
                 Message,
                 Assignment
             ),
+            ?event(writes_complete),
+            ?event(uploading_assignment),
             hb_client:upload(Assignment),
+            ?event(uploading_message),
             hb_client:upload(Message),
+            ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
                 ReplyPID,
@@ -185,5 +189,39 @@ new_proc_test() ->
     schedule(ID, SignedItem3),
     ?assertMatch(
         #{ current := 2 },
+        dev_scheduler_server:info(dev_scheduler_registry:find(ID))
+    ).
+
+benchmark_test() ->
+    BenchTime = 2500,
+    Wallet = ar_wallet:new(),
+    SignedItem = hb_message:sign(
+        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        Wallet
+    ),
+    dev_scheduler_registry:find(ID = hb_converge:get(id, SignedItem), true),
+    ?event({benchmark_start, ?MODULE}),
+    Iterations = hb:benchmark(
+        fun(X) ->
+            MsgX = #{
+                path => <<"Schedule">>,
+                <<"Method">> => <<"POST">>,
+                <<"Message">> =>
+                    #{
+                        <<"Type">> => <<"Message">>,
+                        <<"Test-Val">> => X
+                    }
+            },
+            schedule(ID, MsgX)
+        end,
+        BenchTime
+    ),
+    ?assert(Iterations > 150),
+    hb_util:eunit_print(
+        "Scheduled ~p messages in ~p ms (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / (BenchTime / 1000)]
+    ),
+    ?assertMatch(
+        #{ current := X } when X == Iterations - 1,
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))
     ).
