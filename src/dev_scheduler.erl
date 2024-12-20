@@ -1,6 +1,6 @@
 -module(dev_scheduler).
 %%% Converge API functions:
--export([set/3, keys/1, info/0]).
+-export([info/0]).
 %%% Local scheduling functions:
 -export([schedule/3]).
 %%% CU-flow functions:
@@ -39,7 +39,6 @@ info() ->
     #{
         exports =>
             [
-                set,
                 status,
                 next,
                 schedule,
@@ -47,18 +46,9 @@ info() ->
                 init,
                 end_of_schedule,
                 checkpoint
-            ]
+            ],
+        excludes => [set, keys]
     }.
-
-%%% Default Converge handlers.
-
-set(Msg1, Msg2, Opts) ->
-    ?event({scheduler_set_called, {msg2, Msg2}}),
-    dev_message:set(Msg1, Msg2, Opts).
-
-keys(Msg) ->
-    ?event({scheduler_keys_called, {msg, Msg}}),
-    dev_message:keys(Msg).
 
 %% @doc Load the schedule for a process into the cache, then return the next
 %% assignment. Assumes that Msg1 is a `dev_process` or similar message, having
@@ -88,15 +78,13 @@ next(Msg1, Msg2, Opts) ->
                         },
                         Opts
                     ),
-                ?event({next_assignments, {assignments, RecvdAssignments}}),
                 RecvdAssignments
         end,
-    ?event({assignments, Assignments}),
     ValidKeys =
         lists:filter(
             fun(Slot) ->
                 try 
-                    binary_to_integer(Slot) >= LastProcessed
+                    binary_to_integer(Slot) > LastProcessed
                 catch
                     _:_ -> false
                 end
@@ -106,26 +94,34 @@ next(Msg1, Msg2, Opts) ->
     % Remove assignments that are below the last processed slot.
     FilteredAssignments = maps:with(ValidKeys, Assignments),
     ?event({filtered_assignments, FilteredAssignments}),
-    NextSlot = lists:min([ binary_to_integer(Slot) || Slot <- ValidKeys ]),
-    ?event({next_slot, NextSlot}),
-    NextMessage =
-        hb_converge:get(
-            integer_to_binary(NextSlot),
-            FilteredAssignments,
-            Opts
-        ),
-    ?event({next_message, NextMessage}),
-    StateCache =
-        hb_private:set(
-            Msg1,
-            <<"Schedule/Assignments">>,
-            hb_converge:remove(FilteredAssignments, NextSlot),
-            Opts
-        ),
-    NextState =
-        hb_converge:set(StateCache, <<"Current-Slot">>, LastProcessed+1, Opts),
-    ?event({next_state, NextState}),
-    {ok, #{ <<"Message">> => NextMessage, <<"State">> => NextState }}.
+    Slot = lists:min([ binary_to_integer(S) || S <- ValidKeys ]),
+    ?event({next_slot_to_process, Slot, {last_processed, LastProcessed}}),
+    case (LastProcessed + 1) == Slot of
+        true ->
+            NextMessage =
+                hb_converge:get(
+                    integer_to_binary(Slot),
+                    FilteredAssignments,
+                    Opts
+                ),
+            NextState =
+                hb_private:set(
+                    Msg1,
+                    <<"Schedule/Assignments">>,
+                    hb_converge:remove(FilteredAssignments, Slot),
+                    Opts
+                ),
+            ?event(
+                {next_returning, {slot, Slot}, {message, NextMessage}}),
+            {ok, #{ <<"Message">> => NextMessage, <<"State">> => NextState }};
+        false ->
+            {error,
+                #{
+                    <<"Status">> => <<"Service Unavailable">>,
+                    <<"Body">> => <<"No assignment found for next slot.">>
+                }
+            }
+    end.
 
 %% @doc Returns information about the entire scheduler.
 status(_M1, _M2, _Opts) ->
@@ -352,7 +348,7 @@ assignment_bundle([Assignment | Assignments], Bundle, Opts) ->
             Slot =>
                 hb_message:sign(
                     #{
-                        <<"Path">> => <<"Compute">>,
+                        path => <<"Compute">>,
                         <<"Assignment">> => Assignment,
                         <<"Message">> => Message
                     },

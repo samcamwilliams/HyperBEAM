@@ -113,14 +113,14 @@ compute(Msg1, Msg2, Opts) ->
 %% we reach the target slot that the user has requested.
 do_compute(Msg1, Msg2, TargetSlot, Opts) ->
     ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
-    case hb_converge:get(<<"Current-Slot">>, {as, dev_message, Msg1}, Opts) of
+    case hb_converge:get(<<"Current-Slot">>, Msg1, Opts) of
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             ?event({reached_target_slot_returning_state, TargetSlot}),
-            {ok, Msg1};
+            {ok, process(Msg1, Opts)};
         CurrentSlot ->
             % Get the next input from the scheduler device.
-            {ok, #{ <<"Message">> := ToProcess, <<"State">> := SchedState }} =
+            {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
                 next(Msg1, Msg2, Opts#{ hashpath => ignore }),
             % Calculate how much of the state should be cached.
             Freq = hb_opts:get(cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
@@ -129,14 +129,27 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     0 -> all;
                     _ -> [<<"Results">>]
                 end,
-            ?event({processing_message, {msg2, ToProcess}, {caching, CacheKeys}}),
+            ?event(process_compute,
+                {
+                    executing,
+                    {msg1, Msg1},
+                    {msg2, ToProcess},
+                    {caching, CacheKeys}
+                }
+            ),
+            ToProcessWithoutInts =
+                maps:without(
+                    [<<"Block-Height">>, <<"Slot">>, <<"Block-Timestamp">>],
+                    ToProcess
+                ),
             {ok, Msg3} =
                 run_as(
                     <<"Execution-Device">>,
-                    SchedState,
-                    ToProcess,
+                    State,
+                    ToProcessWithoutInts,
                     Opts#{ cache_keys => CacheKeys }
                 ),
+            ?event({do_compute_result, {msg3, Msg3}}),
             do_compute(
                 hb_converge:set(
                     Msg3,
@@ -236,6 +249,13 @@ run_as(Key, Msg1, Msg2, Opts) ->
             ?event({returning_base_result, BaseResult}),
             {ok, BaseResult}
     end.
+
+%% @doc Change the message to for that has the device set as this module.
+%% In situations where the key that is `run_as` returns a message with a 
+%% transformed device, this is useful.
+process(Msg1, Opts) ->
+    {ok, Proc} = dev_message:set(Msg1, #{ device => <<"Process/1.0">> }, Opts),
+    Proc.
 
 %% @doc Helper function to store a copy of the `process` key in the message.
 ensure_process_key(Msg1, Opts) ->
@@ -348,25 +368,16 @@ test_device_compute_test() ->
     Msg1 = test_device_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
-    {ok, SchedulerRes} =
-        hb_converge:resolve(Msg1, #{
-            <<"Method">> => <<"GET">>,
-            path => <<"Schedule">>
-        }, #{}),
-    ?event({scheduler_res, SchedulerRes}),
     ?assertMatch(
         <<"TEST TEXT 2">>,
         hb_converge:get(
-            <<"Assignments/1/Message/Test-Key">>,
-            SchedulerRes,
+            <<"Schedule/Assignments/1/Message/Test-Key">>,
+            Msg1,
             #{ hashpath => ignore }
         )
     ),
     Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
-    Msg3 = hb_converge:resolve(Msg1, Msg2, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
     ?event({computed_message, {msg3, Msg3}}),
-    ok.
-    % ?assertEqual(
-    %     {ok, 2},
-    %     hb_converge:get(<<"Results/Assignment-Slot">>, Msg3, #{})
-    % ).
+    ?assertEqual(1, hb_converge:get(<<"Results/Assignment-Slot">>, Msg3, #{})),
+    ?assertEqual([1,1,0,0], hb_converge:get(<<"Already-Seen">>, Msg3, #{})).
