@@ -193,6 +193,7 @@ new_proc_test() ->
     ).
 
 benchmark_test() ->
+    BenchTime = 2500,
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
         #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
@@ -213,9 +214,13 @@ benchmark_test() ->
             },
             schedule(ID, MsgX)
         end,
-        2500
+        BenchTime
     ),
     ?assert(Iterations > 150),
+    hb_util:eunit_print(
+        "Scheduled ~p messages in ~p ms (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / (BenchTime / 1000)]
+    ),
     ?assertMatch(
         #{ current := X } when X == Iterations - 1,
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))

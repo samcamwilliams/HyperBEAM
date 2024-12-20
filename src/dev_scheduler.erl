@@ -496,6 +496,7 @@ schedule_message_and_get_slot_test() ->
 
 benchmark_test() ->
     start(),
+    BenchTime = 4000,
     Msg1 = test_process(),
     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
@@ -513,7 +514,7 @@ benchmark_test() ->
             },
             ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, #{}))
         end,
-        4000
+        BenchTime
     ),
     ?event(benchmark, {scheduled, Iterations}),
     Msg3 = #{
@@ -524,6 +525,10 @@ benchmark_test() ->
     ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
         hb_converge:resolve(Msg1, Msg3, #{})),
+    hb_util:eunit_print(
+        "Scheduled ~p messages through Converge in ~p ms (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / (BenchTime / 1000)]
+    ),
     ?assert(Iterations > 100).
 
 get_schedule_test() ->
