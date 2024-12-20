@@ -5,6 +5,10 @@
 
 %%% A simple test device for Converge, so that we can test the functionality that
 %%% depends on using Erlang's module system.
+%%% 
+%%% NOTE: This device is labelled `Test-Device/1.0' to avoid conflicts with
+%%% other testing functionality -- care should equally be taken to avoid
+%%% using the `test' key in other settings.
 
 %% @doc Exports a default_handler function that can be used to test the
 %% handler resolution mechanism.
@@ -41,16 +45,19 @@ init(Msg, _Msg2, Opts) ->
 %% @doc Example `restore/3' handler. Sets the hidden key `Test/Started` to the
 %% value of `Current-Slot` and checks whether the `Already-Seen` key is valid.
 restore(Msg, _Msg2, Opts) ->
+    ?event({restore_called_on_dev_test, Msg}),
     case hb_converge:get(<<"Already-Seen">>, Msg, Opts) of
         not_found ->
+            ?event({restore_not_found, Msg}),
             {error, <<"No viable state to restore.">>};
         AlreadySeen ->
+            ?event({restore_found, AlreadySeen}),
             {ok,
-                hb_private:set(
+                ?event(hb_private:set(
                     Msg,
-                    #{ <<"Test/Started-State">> => AlreadySeen },
+                    #{ <<"Test-Key/Started-State">> => AlreadySeen },
                     Opts
-                )
+                ))
             }
     end.
 
@@ -60,7 +67,7 @@ restore(Msg, _Msg2, Opts) ->
 device_with_function_key_module_test() ->
 	Msg =
 		#{
-			device => <<"Test/1.0">>
+			device => <<"Test-Device/1.0">>
 		},
 	?assertEqual(
 		{ok, <<"GOOD_FUNCTION">>},
@@ -97,4 +104,4 @@ compute_test() ->
 restore_test() ->
     Msg1 = #{ device => <<"Test/1.0">>, <<"Already-Seen">> => [1] },
     {ok, Msg3} = hb_converge:resolve(Msg1, restore, #{}),
-    ?assertEqual([1], hb_private:get(<<"Test/Started-State">>, Msg3, #{})).
+    ?assertEqual([1], hb_private:get(<<"Test-Key/Started-State">>, Msg3, #{})).
