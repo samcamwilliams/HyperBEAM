@@ -1277,6 +1277,26 @@ device_exports_test() ->
     ),
     ?assertEqual(not_found, hb_converge:get(test5, Msg3)).
 
+device_excludes_test() ->
+    % Create a device that returns an identifiable message for any key, but also
+    % sets excludes to [set], such that the message can be modified using the 
+    % default handler.
+    Dev = #{
+        info =>
+            fun() ->
+                #{
+                    excludes => [set],
+                    handler => fun() -> {ok, <<"Handler-Value">>} end
+                }
+            end
+    },
+    Msg = #{ device => Dev, <<"Test-Key">> => <<"Test-Value">> },
+    ?assert(is_exported(Msg, Dev, <<"Test-Key2">>, #{})),
+    ?assert(not is_exported(Msg, Dev, set, #{})),
+    ?assertEqual(<<"Handler-Value">>, hb_converge:get(<<"Test-Key2">>, Msg)),
+    ?assertMatch(#{ <<"Test-Key2">> := 2 },
+        hb_converge:set(Msg, <<"Test-Key2">>, 2, #{})).
+
 denormalized_device_key_test() ->
 	Msg = #{ <<"Device">> => dev_test },
 	?assertEqual(dev_test, hb_converge:get(device, Msg)),
