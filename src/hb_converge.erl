@@ -768,23 +768,22 @@ find_exported_function(Msg, Mod, Key, Arity, Opts) ->
 
 %% @doc Check if a device is guarding a key via its `exports' list. Defaults to
 %% true if the device does not specify an `exports' list. The `info' function is
-%% always exported, if it exists.
+%% always exported, if it exists. Elements of the `exludes` list are not
+%% exported.
 is_exported(_, _, info, _Opts) -> true;
 is_exported(Msg, Dev, Key, Opts) ->
-	case info(Dev, Msg, Opts) of
-		#{ exports := Exports } ->
-            ?event(
-                converge_devices,
-                {is_exported, {dev, Dev}, {key, Key}, {exports, Exports}}
-            ),
-			lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
-		_ ->
-            ?event(
-                converge_devices,
-                {is_exported, {dev, Dev}, {key, Key}, {exports, not_found}}
-            ),
-            true
-	end.
+	process_exports(info(Dev, Msg, Opts), Key).
+
+%% @doc Internal helper function to process the `exports' and `excludes' keys
+%% in a device's info map.
+process_exports(Info = #{ excludes := Excludes }, Key) ->
+    case lists:member(to_key(Key), Excludes) of
+        true -> false;
+        false -> process_exports(maps:remove(excludes, Info), Key)
+    end;
+process_exports(#{ exports := Exports }, Key) ->
+    lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
+process_exports(_Info, _Key) -> true.
 
 %% @doc Convert a key to an atom if it already exists in the Erlang atom table,
 %% or to a binary otherwise.
