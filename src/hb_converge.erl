@@ -571,6 +571,7 @@ remove(Msg, Key, Opts) ->
 handle_error(ExecGroup, Whence, {Class, Exception, Stacktrace}, Opts) ->
     Error = {error, Whence, {Class, Exception, Stacktrace}},
     hb_persistent:unregister_notify(ExecGroup, Error, Opts),
+    ?event(converge_core, {handle_error, Error, {opts, Opts}}),
     case maps:get(error_strategy, Opts, throw) of
         throw -> erlang:raise(Class, Exception, Stacktrace);
         _ -> Error
@@ -1238,7 +1239,7 @@ device_exports_test() ->
                     exports => [test1, <<"Test2">>],
                     handler =>
                         fun() ->
-                            % {ok, <<"Handler-Value">>}
+                            {ok, <<"Handler-Value">>}
                         end
                 }
             end
