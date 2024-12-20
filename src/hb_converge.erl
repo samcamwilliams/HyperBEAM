@@ -607,7 +607,7 @@ message_to_fun(Msg, Key, Opts) ->
 	?event(converge_devices, {message_to_fun, {dev, Dev}, {key, Key}, {opts, Opts}}),
     Info = info(Dev, Msg, Opts),
     % Is the key exported by the device?
-    Exported = is_exported(Dev, Key, Opts),
+    Exported = is_exported(Msg, Dev, Key, Opts),
     % Does the device have an explicit handler function?
     case {maps:find(handler, Info), Exported} of
         {{ok, Handler}, true} ->
@@ -617,7 +617,7 @@ message_to_fun(Msg, Key, Opts) ->
             {Status, Dev, Func};
 		_ ->
 			%?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
-			case {find_exported_function(Dev, Key, 3, Opts), Exported} of
+			case {find_exported_function(Msg, Dev, Key, 3, Opts), Exported} of
 				{{ok, Func}, true} ->
 					% Case 3: The device has a function of the name `Key`.
 					{ok, Dev, Func};
@@ -709,7 +709,7 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 %% If the device is a map, we look for a key in the map. First we try to find
 %% the key using its literal value. If that fails, we cast the key to an atom
 %% and try again.
-find_exported_function(Dev, Key, MaxArity, Opts) when is_map(Dev) ->
+find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
 	case maps:get(Key, Dev, not_found) of
 		not_found ->
 			case to_key(Key) of
@@ -719,32 +719,33 @@ find_exported_function(Dev, Key, MaxArity, Opts) when is_map(Dev) ->
 					not_found;
 				KeyAtom ->
 					% The key was cast to an atom, so we try again.
-					find_exported_function(Dev, KeyAtom, MaxArity, Opts)
+					find_exported_function(Msg, Dev, KeyAtom, MaxArity, Opts)
 			end;
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
 				{arity, Arity} when Arity =< MaxArity ->
-					case is_exported(Dev, Key, Opts) of
+					case is_exported(Msg, Dev, Key, Opts) of
 						true -> {ok, Fun};
 						false -> not_found
 					end;
 				_ -> not_found
 			end
 	end;
-find_exported_function(_Mod, _Key, Arity, _Opts) when Arity < 0 -> not_found;
-find_exported_function(Mod, Key, Arity, Opts) when not is_atom(Key) ->
+find_exported_function(_Msg, _Mod, _Key, Arity, _Opts) when Arity < 0 ->
+    not_found;
+find_exported_function(Msg, Mod, Key, Arity, Opts) when not is_atom(Key) ->
 	case to_key(Key, Opts) of
 		ConvertedKey when is_atom(ConvertedKey) ->
-			find_exported_function(Mod, ConvertedKey, Arity, Opts);
+			find_exported_function(Msg, Mod, ConvertedKey, Arity, Opts);
 		undefined -> not_found;
 		BinaryKey when is_binary(BinaryKey) ->
 			not_found
 	end;
-find_exported_function(Mod, Key, Arity, Opts) ->
+find_exported_function(Msg, Mod, Key, Arity, Opts) ->
 	%?event({finding, {mod, Mod}, {key, Key}, {arity, Arity}}),
 	case erlang:function_exported(Mod, Key, Arity) of
 		true ->
-			case is_exported(Mod, Key, Opts) of
+			case is_exported(Msg, Mod, Key, Opts) of
 				true ->
 					%?event({found, {ok, fun Mod:Key/Arity}}),
 					{ok, fun Mod:Key/Arity};
@@ -762,20 +763,26 @@ find_exported_function(Mod, Key, Arity, Opts) ->
             %         {result, false}
             %     }
             % ),
-			find_exported_function(Mod, Key, Arity - 1, Opts)
+			find_exported_function(Msg, Mod, Key, Arity - 1, Opts)
 	end.
 
 %% @doc Check if a device is guarding a key via its `exports' list. Defaults to
 %% true if the device does not specify an `exports' list. The `info' function is
 %% always exported, if it exists.
-is_exported(_, info, _Opts) -> true;
-is_exported(Dev, Key, Opts) ->
-	case info(Dev, Key, Opts) of
+is_exported(_, _, info, _Opts) -> true;
+is_exported(Msg, Dev, Key, Opts) ->
+	case info(Dev, Msg, Opts) of
 		#{ exports := Exports } ->
-            ?event(converge_devices, {is_exported, {dev, Dev}, {key, Key}, {exports, Exports}}),
+            ?event(
+                converge_devices,
+                {is_exported, {dev, Dev}, {key, Key}, {exports, Exports}}
+            ),
 			lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
 		_ ->
-            ?event(converge_devices, {is_exported, {dev, Dev}, {key, Key}, {exports, not_found}}),
+            ?event(
+                converge_devices,
+                {is_exported, {dev, Dev}, {key, Key}, {exports, not_found}}
+            ),
             true
 	end.
 
@@ -864,7 +871,7 @@ info(Msg, Opts) ->
     info(message_to_device(Msg, Opts), Msg, Opts).
 info(DevMod, Msg, Opts) ->
 	%?event({calculating_info, {dev, DevMod}, {msg, Msg}}),
-	case find_exported_function(DevMod, info, 1, Opts) of
+	case find_exported_function(Msg, DevMod, info, 1, Opts) of
 		{ok, Fun} ->
 			Res = apply(Fun, truncate_args(Fun, [Msg, Opts])),
 			% ?event({
@@ -1222,16 +1229,18 @@ deep_set_with_device_test() ->
     ?assertEqual(true, hb_converge:get(modified, B)).
 
 device_exports_test() ->
-	?assert(is_exported(dev_message, info, #{})),
-	?assert(is_exported(dev_message, set, #{})),
-	?assert(is_exported(dev_message, not_explicitly_exported, #{})),
+	Msg = #{ device => dev_message },
+	?assert(is_exported(Msg, dev_message, info, #{})),
+	?assert(is_exported(Msg, dev_message, set, #{})),
+	?assert(is_exported(Msg, dev_message, not_explicitly_exported, #{})),
 	Dev = #{
 		info => fun() -> #{ exports => [set] } end,
 		set => fun(_, _) -> {ok, <<"SET">>} end
 	},
-	?assert(is_exported(Dev, info, #{})),
-	?assert(is_exported(Dev, set, #{})),
-	?assert(not is_exported(Dev, not_exported, #{})),
+	Msg2 = #{ device => Dev },
+	?assert(is_exported(Msg2, Dev, info, #{})),
+	?assert(is_exported(Msg2, Dev, set, #{})),
+	?assert(not is_exported(Msg2, Dev, not_exported, #{})),
     Dev2 = #{
         info =>
             fun() ->
@@ -1244,17 +1253,17 @@ device_exports_test() ->
                 }
             end
     },
-    Msg = #{ device => Dev2, <<"Test1">> => <<"BAD1">>, test3 => <<"GOOD3">> },
-    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test1, Msg)),
-    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test2, Msg)),
-    ?assertEqual(<<"GOOD3">>, hb_converge:get(test3, Msg)),
+    Msg3 = #{ device => Dev2, <<"Test1">> => <<"BAD1">>, test3 => <<"GOOD3">> },
+    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test1, Msg3)),
+    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test2, Msg3)),
+    ?assertEqual(<<"GOOD3">>, hb_converge:get(test3, Msg3)),
     ?assertEqual(<<"GOOD4">>,
         hb_converge:get(
             <<"Test4">>,
-            hb_converge:set(Msg, <<"Test4">>, <<"GOOD4">>, #{})
+            hb_converge:set(Msg3, <<"Test4">>, <<"GOOD4">>, #{})
         )
     ),
-    ?assertEqual(not_found, hb_converge:get(test5, Msg)).
+    ?assertEqual(not_found, hb_converge:get(test5, Msg3)).
 
 denormalized_device_key_test() ->
 	Msg = #{ <<"Device">> => dev_test },
