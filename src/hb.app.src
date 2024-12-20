@@ -12,7 +12,8 @@
         cowboy,
         prometheus,
         prometheus_cowboy,
-        os_mon
+        os_mon,
+        rocksdb
     ]},
     {env, []},
     {modules, []},
