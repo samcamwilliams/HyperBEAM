@@ -433,7 +433,7 @@ test_process() ->
             <<"Image">> => <<"wasm-image-id">>,
             <<"Type">> => <<"Process">>,
             <<"Scheduler-Location">> => Address,
-            <<"Test-Key-Random-Number">> => rand:uniform(1337)
+            <<"Test-Random-Seed">> => rand:uniform(1337)
         }
     }.
 

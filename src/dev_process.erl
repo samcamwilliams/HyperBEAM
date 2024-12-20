@@ -266,7 +266,7 @@ test_wasm_process(WASMImage) ->
 test_device_process() ->
     maps:merge(test_base_process(), #{
         <<"Execution-Device">> => <<"Stack/1.0">>,
-        <<"Device-Stack">> => [<<"Test/1.0">>, <<"Test/1.0">>]
+        <<"Device-Stack">> => [<<"Test-Device/1.0">>, <<"Test-Device/1.0">>]
     }).
 
 %% @doc Generate a process message with a random number, and no 
@@ -279,7 +279,7 @@ test_base_process() ->
         <<"Scheduler-Device">> => <<"Scheduler/1.0">>,
         <<"Scheduler-Location">> => Address,
         <<"Type">> => <<"Process">>,
-        <<"Test-Key-Random-Number">> => rand:uniform(1337)
+        <<"Test-Random-Seed">> => rand:uniform(1337)
     }.
 
 schedule_test_message(Msg1, Text) ->
