@@ -591,26 +591,30 @@ truncate_args(Fun, Args) ->
 message_to_fun(Msg, Key, Opts) ->
     % Get the device module from the message.
 	Dev = message_to_device(Msg, Opts),
-	%?event({message_to_fun, {dev, DevMod}, {key, Key}, {opts, Opts}}),
-	case maps:find(handler, Info = info(Dev, Msg, Opts)) of
-		{ok, Handler} ->
+	?event(converge_devices, {message_to_fun, {dev, Dev}, {key, Key}, {opts, Opts}}),
+    Info = info(Dev, Msg, Opts),
+    % Is the key exported by the device?
+    Exported = is_exported(Dev, Key, Opts),
+    % Does the device have an explicit handler function?
+    case {maps:find(handler, Info), Exported} of
+        {{ok, Handler}, true} ->
 			% Case 2: The device has an explicit handler function.
 			?event({info_handler_found, {dev, Dev}, {key, Key}, {handler, Handler}}),
 			{Status, Func} = info_handler_to_fun(Handler, Msg, Key, Opts),
             {Status, Dev, Func};
-		error ->
+		_ ->
 			%?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
-			case find_exported_function(Dev, Key, 3, Opts) of
-				{ok, Func} ->
+			case {find_exported_function(Dev, Key, 3, Opts), Exported} of
+				{{ok, Func}, true} ->
 					% Case 3: The device has a function of the name `Key`.
 					{ok, Dev, Func};
-				not_found ->
-					case maps:find(default, Info) of
-						{ok, DefaultFunc} when is_function(DefaultFunc) ->
+				_ ->
+					case {maps:find(default, Info), Exported} of
+						{{ok, DefaultFunc}, true} when is_function(DefaultFunc) ->
 							% Case 4: The device has a default handler.
                             %?event({default_handler_func, DefaultFunc}),
 							{add_key, Dev, DefaultFunc};
-                        {ok, DefaultMod} when is_atom(DefaultMod) ->
+                        {{ok, DefaultMod}, true} when is_atom(DefaultMod) ->
                             % ?event(
                             %     {
                             %         default_handler_mod,
@@ -623,7 +627,7 @@ message_to_fun(Msg, Key, Opts) ->
                                     Msg#{ device => DefaultMod }, Key, Opts
                                 ),
                             {Status, Dev, Func};
-						error ->
+						_ ->
 							% Case 5: The device has no default handler.
 							% We use the default device to handle the key.
 							case default_module() of
@@ -755,8 +759,11 @@ is_exported(_, info, _Opts) -> true;
 is_exported(Dev, Key, Opts) ->
 	case info(Dev, Key, Opts) of
 		#{ exports := Exports } ->
-			lists:member(Key, Exports);
-		_ -> true
+            ?event(converge_devices, {is_exported, {dev, Dev}, {key, Key}, {exports, Exports}}),
+			lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
+		_ ->
+            ?event(converge_devices, {is_exported, {dev, Dev}, {key, Key}, {exports, not_found}}),
+            true
 	end.
 
 %% @doc Convert a key to an atom if it already exists in the Erlang atom table,
@@ -1204,14 +1211,37 @@ deep_set_with_device_test() ->
 device_exports_test() ->
 	?assert(is_exported(dev_message, info, #{})),
 	?assert(is_exported(dev_message, set, #{})),
-	?assert(not is_exported(dev_message, not_exported, #{})),
+	?assert(is_exported(dev_message, not_explicitly_exported, #{})),
 	Dev = #{
 		info => fun() -> #{ exports => [set] } end,
 		set => fun(_, _) -> {ok, <<"SET">>} end
 	},
 	?assert(is_exported(Dev, info, #{})),
 	?assert(is_exported(Dev, set, #{})),
-	?assert(not is_exported(Dev, not_exported, #{})).
+	?assert(not is_exported(Dev, not_exported, #{})),
+    Dev2 = #{
+        info =>
+            fun() ->
+                #{
+                    exports => [test1, <<"Test2">>],
+                    handler =>
+                        fun() ->
+                            {ok, <<"Handler-Value">>}
+                        end
+                }
+            end
+    },
+    Msg = #{ device => Dev2, <<"Test1">> => <<"BAD1">>, test3 => <<"GOOD3">> },
+    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test1, Msg)),
+    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test2, Msg)),
+    ?assertEqual(<<"GOOD3">>, hb_converge:get(test3, Msg)),
+    ?assertEqual(<<"GOOD4">>,
+        hb_converge:get(
+            <<"Test4">>,
+            hb_converge:set(Msg, <<"Test4">>, <<"GOOD4">>, #{})
+        )
+    ),
+    ?assertEqual(not_found, hb_converge:get(test5, Msg)).
 
 denormalized_device_key_test() ->
 	Msg = #{ <<"Device">> => dev_test },

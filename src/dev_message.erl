@@ -14,8 +14,8 @@
 %% @doc Return the info for the identity device.
 info() ->
     #{
-        default => fun get/3,
-        exports => ?DEVICE_KEYS
+        default => fun get/3
+        %exports => ?DEVICE_KEYS
     }.
 
 %% @doc Return the ID of a message. If the message already has an ID, return
