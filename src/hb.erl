@@ -224,7 +224,11 @@ until(Condition, Fun, ReportEvery, Count) ->
     end,
     case Condition() of
         false ->
-            apply(Fun, hb_converge:truncate_args(Fun, [Count])),
-            until(Condition, Fun, ReportEvery, Count + 1);
+            case apply(Fun, hb_converge:truncate_args(Fun, [Count])) of
+                {count, AddToCount} ->
+                    until(Condition, Fun, ReportEvery, Count + AddToCount);
+                _ ->
+                    until(Condition, Fun, ReportEvery, Count + 1)
+            end;
         true -> Count
     end.
