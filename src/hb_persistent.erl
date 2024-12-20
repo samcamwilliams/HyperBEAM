@@ -22,19 +22,24 @@ start() -> pg:start(pg).
 %% signal that we should await resolution.
 find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
+    find_or_register(GroupName, Msg1, Msg2, Opts).
+find_or_register(GroupName, Msg1, Msg2, Opts) ->
     Self = self(),
-    case find_groupname(GroupName, Opts) of
+    case find_execution(GroupName, Opts) of
         {ok, [Leader|_]} when Leader =/= Self ->
             {wait, Leader};
         {ok, [Leader|_]} when Leader =:= Self ->
             {infinite_recursion, GroupName};
         _ ->
             ?event(
-                {register_resolver,
+                converge_core,
+                {
+                    register_resolver,
                     {group, GroupName},
                     {msg1, Msg1},
                     {msg2, Msg2}
-                }
+                },
+                Opts
             ),
             register_groupname(GroupName, Opts),
             {leader, GroupName}
@@ -55,13 +60,13 @@ unregister_notify(GroupName, Msg3, Opts) ->
 %% @doc Find a process that is already managing a specific Converge resolution.
 find(Msg1, Opts) -> find(Msg1, undefined, Opts).
 find(Msg1, Msg2, Opts) ->
-    case find_groupname(group(Msg1, Msg2, Opts), Opts) of
+    case find_execution(group(Msg1, Msg2, Opts), Opts) of
         [] -> not_found;
         Procs -> {ok, Procs}
     end.
 
 %% @doc Find a group with the given name.
-find_groupname(Groupname, _Opts) ->
+find_execution(Groupname, _Opts) ->
     start(),
     case pg:get_local_members(Groupname) of
         [] -> not_found;
