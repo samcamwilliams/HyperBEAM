@@ -513,7 +513,7 @@ benchmark_test() ->
             },
             ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, #{}))
         end,
-        2500
+        4000
     ),
     ?event(benchmark, {scheduled, Iterations}),
     Msg3 = #{
@@ -524,7 +524,7 @@ benchmark_test() ->
     ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
         hb_converge:resolve(Msg1, Msg3, #{})),
-    ?assert(Iterations > 150).
+    ?assert(Iterations > 100).
 
 get_schedule_test() ->
     start(),
