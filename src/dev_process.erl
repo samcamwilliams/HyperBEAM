@@ -190,6 +190,8 @@ run_as(Key, Msg1, Msg2, Opts) ->
 %%% Tests
 
 init() ->
+    % We need the rocksdb backend to run for hb_cache module to work
+    application:ensure_all_started(hb),
     ok.
 
 test_process() ->

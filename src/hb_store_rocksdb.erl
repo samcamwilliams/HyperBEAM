@@ -33,6 +33,7 @@
 -export([type/2]).
 -export([add_path/3, path/2]).
 -export([resolve/2]).
+-export([scope/1]).
 
 % Starting process
 -export([start_link/1]).
@@ -44,14 +45,12 @@
 -type key() :: binary() | list().
 -type value() :: binary() | list().
 
-% -spec start_link() -> ignore | {ok, pid()}.
 start_link([{hb_store_rocksdb, #{ prefix := Dir}}]) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Dir, []);
 start_link(Opts) ->
     logger:error("Rocksdb store server is not configured.: ~p", [Opts]),
     ignore.
 
-% -spec start(#{dir := term()}) -> ignore | {ok, pid()}.
 start(Opts) ->
     start_link([{hb_store_rocksdb, Opts}]).
 
@@ -63,21 +62,15 @@ stop(_Opts) ->
 reset(_Opts) ->
     gen_server:call(?MODULE, reset, ?TIMEOUT).
 
-%%------------------------------------------------------------------------------
-%% @doc Return path
-%%
-%% Recursively follows link messages
-%% @end
-%%------------------------------------------------------------------------------
-path(_Opts, Path) ->
-    Path.
+%% @doc Return scope (local)
+scope(_) -> local.
 
-%%------------------------------------------------------------------------------
-%% @doc Read data by the key
-%%
+%% @doc Return path
+path(_Opts, Path) ->
+    hb_store:path(Path).
+
+%% @doc Read data by the key.
 %% Recursively follows link messages
-%% @end
-%%------------------------------------------------------------------------------
 -spec read(Opts, Key) -> Result when
     Opts :: map(),
     Key :: key() | list(),
@@ -96,11 +89,7 @@ read(Opts, RawKey) ->
             gen_server:call(?MODULE, {read, Key}, ?TIMEOUT)
     end.
 
-%%------------------------------------------------------------------------------
 %% @doc Write given Key and Value to the database
-%%
-%% @end
-%%------------------------------------------------------------------------------
 -spec write(Opts, Key, Value) -> Result when
     Opts :: map(),
     Key :: key(),
@@ -110,23 +99,17 @@ write(_Opts, RawKey, Value) ->
     Key = join(RawKey),
     gen_server:call(?MODULE, {write, Key, Value}, ?TIMEOUT).
 
-%%------------------------------------------------------------------------------
 %% @doc Return meta information about the given Key
-%% @end
-%%------------------------------------------------------------------------------
 -spec meta(key()) -> {ok, binary()} | not_found.
 meta(Key) ->
     gen_server:call(?MODULE, {meta, join(Key)}, ?TIMEOUT).
 
-%%------------------------------------------------------------------------------
 %% @doc List key/values stored in the storage so far.
 %%      *Note*: This function is slow, and probably should not be used on
 %%      production. Right now it's used for debugging purposes.
 %%
 %%      This can't work as it works for FS store, especially for large sets
 %%      of data.
-%% @end
-%%------------------------------------------------------------------------------
 -spec list(Opts, Path) -> Result when
     Opts :: any(),
     Path :: any(),
@@ -147,29 +130,24 @@ resolve(_Opts, RawKey) ->
     case do_resolve("", Path) of
         not_found -> not_found;
         <<"">> -> "";
+        Result when is_list(Result) -> Result;
         % converting back to list, so hb_cache can remove common prefix
         BinResult -> binary_to_list(BinResult)
     end.
 
-%%------------------------------------------------------------------------------
 %% @doc Helper function that is useful when it's required to get a direct data
 %%      under the given key, as it is, without following links
-%% @end
-%%------------------------------------------------------------------------------
 read_no_follow(Key) ->
     gen_server:call(?MODULE, {read_no_follow, join(Key)}, ?TIMEOUT).
 
-%%------------------------------------------------------------------------------
 %% @doc Get type of the current item
-%% @end
-%%------------------------------------------------------------------------------
 -spec type(Opts, Key) -> Result when
     Opts :: map(),
     Key :: binary(),
     Result :: composite | simple | not_found.
 
 type(_Opts, RawKey) ->
-    Key = join(RawKey),
+    Key = hb_store:join(RawKey),
     case meta(Key) of
         not_found ->
             not_found;
@@ -183,12 +161,9 @@ type(_Opts, RawKey) ->
             simple
     end.
 
-%%------------------------------------------------------------------------------
-%% @doc Creates group under the given path
-%%      Creates an entry in the database and stored `<<"group">>' as a type in
+%% @doc Creates group under the given path.
+%%      Creates an entry in the database and store `<<"group">>' as a type in
 %%      the meta family.
-%% @end
-%%------------------------------------------------------------------------------
 make_group(_Opts, Path) ->
     BinPath = join(Path),
     gen_server:call(?MODULE, {make_group, BinPath}, ?TIMEOUT).
@@ -196,12 +171,11 @@ make_group(_Opts, Path) ->
 -spec make_link(any(), key(), key()) -> ok.
 make_link(_, Key1, Key1) ->
     ok;
-make_link(Opts, Existing, New) when is_list(Existing), is_list(New) ->
-    ExistingBin = join(Existing),
-    NewBin = join(New),
-    make_link(Opts, ExistingBin, NewBin);
+
 make_link(_Opts, Existing, New) ->
-    gen_server:call(?MODULE, {make_link, Existing, New}, ?TIMEOUT).
+    ExistingBin = convert_if_list(Existing),
+    NewBin = convert_if_list(New),
+    gen_server:call(?MODULE, {make_link, ExistingBin, NewBin}, ?TIMEOUT).
 
 %% @doc Add two path components together. // is not used
 add_path(_Opts, Path1, Path2) ->
@@ -276,6 +250,13 @@ code_change(_OldVsn, State, _Extra) ->
 %%%=============================================================================
 %%% Private
 %%%=============================================================================
+
+% Helper function to convert lists to binaries
+convert_if_list(Value) when is_list(Value) ->
+    join(Value);  % Perform the conversion if it's a list
+convert_if_list(Value) ->
+    Value.  % Leave unchanged if it's not a list
+
 open_rockdb(Dir) ->
     ColumnFamilies = [{"default", []}, {"meta", []}],
     Options = [{create_if_missing, true}, {create_missing_column_families, true}],
@@ -314,8 +295,12 @@ get(DBInfo, Key, Opts) ->
     end.
 
 collect(Iterator, Path) ->
-    {ok, Key, _Value} = rocksdb:iterator_move(Iterator, <<>>),
-    collect(Iterator, Path, maybe_add_key(Key, Path, [])).
+    case rocksdb:iterator_move(Iterator, <<>>) of
+        {error, invalid_iterator} -> [];
+        {ok, Key, _Value} -> 
+            collect(Iterator, Path, maybe_add_key(Key, Path, []))
+    end.
+
 
 collect(Iterator, Path, Acc) ->
     case rocksdb:iterator_move(Iterator, next) of
@@ -346,7 +331,7 @@ do_resolve(CurrPath, []) ->
     CurrPath;
 do_resolve(CurrPath, [LookupKey | Rest]) ->
     LookupPath = hb_store:join([CurrPath, LookupKey]),
-    % ?debugFmt("Current lookup path: ~p", [LookupPath]),
+
     NewCurrentPath =
         case meta(LookupPath) of
             {ok, <<"link">>} ->
@@ -435,6 +420,10 @@ api_test_() ->
                 ok = write(#{}, <<"messages/key">>, <<>>),
                 {ok, Items} = list(#{}, ["process", "slot"]),
                 ?assertEqual(["1", "2"], Items)
+            end},
+            {"list/2 when database is empty", fun() ->
+                {ok, Items} = list(#{}, <<"process/slot">>),
+                ?assertEqual([], Items)
             end},
             {"make_link/3 creates a link to actual data", fun() ->
                 ok = write(ignored_options, <<"key1">>, <<"test_value">>),
