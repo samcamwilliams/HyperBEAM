@@ -316,6 +316,7 @@ schedule_test_message(Msg1, Text) ->
     ok.
 
 schedule_on_process_test() ->
+    init(),
     Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
@@ -335,6 +336,7 @@ schedule_on_process_test() ->
     ).
 
 get_scheduler_slot_test() ->
+    init(),
     Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
@@ -348,6 +350,7 @@ get_scheduler_slot_test() ->
     ).
 
 recursive_resolve_test() ->
+    init(),
     Msg1 = test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     CurrentSlot =
@@ -364,7 +367,7 @@ recursive_resolve_test() ->
     ok.
 
 test_device_compute_test() ->
-    hb:init(),
+    init(),
     Msg1 = test_device_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),

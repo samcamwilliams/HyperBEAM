@@ -16,7 +16,7 @@
 -export([read/2, read_output/3, write/2, write/3, write_output/4]).
 -export([list/2, list_numbered/2, link/3]).
 %%% Exports for modules that utilize hb_cache.
--export([test_opts/0, test_unsigned/1, test_signed/1]).
+-export([test_unsigned/1, test_signed/1]).
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -332,14 +332,7 @@ opts_to_store(Opts) ->
         UserStore -> UserStore
     end.
 
-%% Helpers
--define(ROCKSDB_STORE, [{hb_store_rocksdb, #{ prefix => "test-cache" }}]).
--define(FS_STORE, [{hb_store_fs, #{ prefix => "test-cache" }}]).
--define(FS_OPTS, #{ cache_control => no_cache, store => ?FS_STORE }).
--define(ROCKDB_OPTS, #{ cache_control => no_cache, store => ?ROCKSDB_STORE }).
-
-% Use rocksdb backend in other places.
-test_opts() -> ?ROCKDB_OPTS.
+%%% Tests
 
 test_unsigned(Data) ->
     #{
@@ -410,29 +403,9 @@ test_message_with_list(Opts) ->
     {ok, RetrievedItem} = read(Path, Opts),
     ?assert(hb_message:match(Msg, RetrievedItem)).
 
-
-hb_cache_rocksdb_suite_test_() ->
-    {foreach,
-        fun() ->
-            hb_store:start(?ROCKSDB_STORE),
-            ?ROCKDB_OPTS
-        end,
-        fun(#{store := _Store}) -> hb_store:reset(?ROCKSDB_STORE) end,
-        [
-            {"store simple unsigned item", fun() -> test_store_simple_unsigned_item(?ROCKDB_OPTS) end},
-            {"deeply nested item", fun() -> test_deeply_nested_item(?ROCKDB_OPTS) end},
-            {"message with list", fun() -> test_message_with_list(?ROCKDB_OPTS) end}
-
-        ]
-    }.
-
-hb_cache_fs_suite_test_() ->
-    {foreach,
-        fun() -> ?FS_OPTS end,
-        fun(_) -> hb_store:reset(?FS_STORE) end,
-        [
-            {"store simple unsigned item", fun() -> test_store_simple_unsigned_item(?FS_OPTS) end},
-            {"deeply nested item", fun() -> test_deeply_nested_item(?FS_OPTS) end},
-            {"message with list", fun() -> test_message_with_list(?FS_OPTS) end}
-        ]
-    }.
+cache_suite_test_() ->
+    hb_store:generate_test_suite([
+        {"store simple unsigned item", fun test_store_simple_unsigned_item/1},
+        {"deeply nested item", fun test_deeply_nested_item/1},
+        {"message with list", fun test_message_with_list/1}
+    ]).
