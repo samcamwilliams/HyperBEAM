@@ -219,7 +219,16 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
             % We are the leader for this resolution, but we executing the 
             % computation again. This may plausibly be OK in _some_ cases,
             % but in general it is the sign of a bug.
-            ?event(converge_core, {infinite_recursion, {msg1, Msg1}, {msg2, Msg2}}, Opts),
+            ?event(
+                converge_core,
+                {infinite_recursion,
+                    {exec_group, GroupName},
+                    {msg1, Msg1},
+                    {msg2, Msg2},
+                    {opts, Opts}
+                },
+                Opts
+            ),
             case hb_opts:get(allow_infinite, false, Opts) of
                 true ->
                     % We are OK with infinite loops, so we just continue.
@@ -271,6 +280,7 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
 			Class:Exception:Stacktrace ->
                 % If the device cannot be loaded, we alert the caller.
 				handle_error(
+                    ExecName,
 					loading_device,
 					{Class, Exception, Stacktrace},
 					Opts
@@ -289,7 +299,6 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
 			Key -> [Key, Msg1, Msg2, UserOpts]
 		end,
     % Try to execute the function.
-    ?event(converge_core, {exec_start, ExecName, {func, Func}}),
     Res = 
         try
             MsgRes = apply(Func, truncate_args(Func, Args)),
@@ -301,6 +310,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                 % If the function call fails, we raise an error in the manner
                 % indicated by caller's `#Opts`.
                 handle_error(
+                    ExecName,
                     device_call,
                     {ExecClass, ExecException, ExecStacktrace},
                     Opts
@@ -558,10 +568,12 @@ remove(Msg, Key, Opts) ->
 	hb_util:ok(resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
 
 %% @doc Handle an error in a device call.
-handle_error(Whence, {Class, Exception, Stacktrace}, Opts) ->
+handle_error(ExecGroup, Whence, {Class, Exception, Stacktrace}, Opts) ->
+    Error = {error, Whence, {Class, Exception, Stacktrace}},
+    hb_persistent:unregister_notify(ExecGroup, Error, Opts),
     case maps:get(error_strategy, Opts, throw) of
         throw -> erlang:raise(Class, Exception, Stacktrace);
-        _ -> {error, Whence, {Class, Exception, Stacktrace}}
+        _ -> Error
     end.
 
 %% @doc Truncate the arguments of a function to the number of arguments it
@@ -1226,7 +1238,7 @@ device_exports_test() ->
                     exports => [test1, <<"Test2">>],
                     handler =>
                         fun() ->
-                            {ok, <<"Handler-Value">>}
+                            % {ok, <<"Handler-Value">>}
                         end
                 }
             end
