@@ -514,7 +514,12 @@ get(Path, Msg) ->
 get(Path, Msg, Opts) ->
     get(Path, Msg, not_found, Opts).
 get(Path, {as, Device, Msg}, Default, Opts) ->
-    get(Path, set(Msg, #{ device => Device }), Default, Opts);
+    get(
+        Path,
+        set(Msg, #{ device => Device }, Opts#{ topic => converge_internal }),
+        Default,
+        Opts
+    );
 get(Path, Msg, Default, Opts) ->
 	case resolve(Msg, #{ path => Path }, Opts) of
 		{ok, Value} -> Value;
@@ -548,15 +553,15 @@ set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
             % Get the value to set. Use Converge by default, but fall back to
             % getting via `maps` if it is not found.
             Val =
-                case get(Key, Msg2, Opts) of
+                case get(Key, Msg2, Opts#{ topic => converge_internal }) of
                     not_found -> maps:get(Key, Msg2);
                     Body -> Body
                 end,
             ?event({got_val_to_set, {key, Key}, {val, Val}, {msg2, Msg2}}),
             % Next, set the key and recurse, removing the key from the Msg2.
             set(
-                set(Msg1, Key, Val, Opts),
-                remove(Msg2, Key, Opts),
+                set(Msg1, Key, Val, Opts#{ topic => converge_internal }),
+                remove(Msg2, Key, Opts#{ topic => converge_internal }),
                 Opts
             )
     end.
