@@ -35,20 +35,19 @@
 %%%         Authority: B
 %%%         Authority: C
 %%%         Quorum: 2'''
--module(dev_process).
-%%% Public API
--export([info/2, compute/3, schedule/3, slot/3, now/3]).
-%%% Test helpers
--export([test_process/0, test_process/1, test_wasm_process/0]).
--include_lib("eunit/include/eunit.hrl").
--include_lib("include/hb.hrl").
-
 %%%
 %%% Runtime options:
 %%%     Cache-Frequency: The number of assignments that can pass before
 %%%                      the full state should be cached.
 %%%     Cache-Keys:      A list of the keys that should be cached, in
 %%%                      addition to `/Results'.
+-module(dev_process).
+%%% Public API
+-export([info/2, compute/3, schedule/3, slot/3, now/3]).
+%%% Test helpers
+-export([test_process/0, test_device_process/0, test_wasm_process/1]).
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("include/hb.hrl").
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency` option.
