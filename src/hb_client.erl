@@ -18,12 +18,16 @@
 
 %% @doc Grab the latest block information from the Arweave gateway node.
 arweave_timestamp() ->
-    {ok, {{_, 200, _}, _, Body}} = httpc:request(hb_opts:get(gateway) ++ "/block/current"),
-    {Fields} = jiffy:decode(Body),
-    {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
-    {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
-    {_, Height} = lists:keyfind(<<"height">>, 1, Fields),
-    {Timestamp, Height, Hash}.
+    case hb_opts:get(mode) of
+        debug -> {0, 0, <<>>};
+        prod ->
+            {ok, {{_, 200, _}, _, Body}} = httpc:request(hb_opts:get(gateway) ++ "/block/current"),
+            {Fields} = jiffy:decode(Body),
+            {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
+            {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
+            {_, Height} = lists:keyfind(<<"height">>, 1, Fields),
+            {Timestamp, Height, Hash}
+    end.
 
 %%% Bundling and data access API
 
