@@ -332,104 +332,14 @@ opts_to_store(Opts) ->
         UserStore -> UserStore
     end.
 
-%%% Tests
-
-% -define(TEST_WALLET_NAME, pb_cache_test_wallet).
-
-% %% Helpers
-% create_unsigned_tx(Data) ->
-%     ar_bundles:normalize(
-%         #tx{
-%             format = ans104,
-%             tags = [{<<"Example">>, <<"Tag">>}],
-%             data = Data
-%         }
-%     ).
-
-% %% Helper function to create signed #tx items.
-% create_signed_tx(Data) ->
-%     MaybeNewWallet = 
-%         case persistent_term:get(?TEST_WALLET_NAME, undefined) of
-%             undefined -> 
-%                 Wallet = ar_wallet:new(),
-%                 persistent_term:put(?TEST_WALLET_NAME, Wallet),
-%                 Wallet;
-%             Wallet ->
-%                 Wallet
-%         end,
-%     ar_bundles:sign_item(create_unsigned_tx(Data), MaybeNewWallet).
-
-
-% create_store_test(TestStore) ->
-%     Backend = element(1, TestStore),
-%     T =
-%         fun(Title) ->
-%             NewTitle = Title ++ " [backend: ~p]",
-%             TitleWithBackend = io_lib:format(NewTitle, [Backend]),
-%             lists:flatten(TitleWithBackend)
-%         end,
-%     {
-%         foreach,
-%         fun() ->
-%             case Backend of
-%                 hb_store_rocksdb -> hb_store_rocksdb:start_link([TestStore]);
-%                 _ -> hb_store:start([TestStore])
-%             end,
-%             [TestStore]
-%         end,
-%         fun(Store) -> hb_store:reset(Store) end,
-%         [
-%             {T("simple_path_resolution_test"), fun() -> simple_path_resolution_test(TestStore) end},
-%             {T("resursive_path_resolution_test"), fun() -> resursive_path_resolution_test(TestStore) end},
-%             {T("hierarchical_path_resolution_test"), fun() -> hierarchical_path_resolution_test(TestStore) end},
-%             {T("store_simple_unsigned_item_test"), fun() -> store_simple_unsigned_item_test(TestStore) end},
-%             {T("simple_signed_item_test"), fun() -> simple_signed_item_test(TestStore) end},
-%             % {T("composite_unsigned_item_test"), fun() -> composite_unsigned_item_test(TestStore) end},
-%             % {T("composite_signed_item_test"), fun() -> composite_signed_item_test(TestStore) end},
-%             {T("deeply_nested_item_test"), fun() -> deeply_nested_item_test(TestStore) end},
-%             {T("write_and_read_output_test"), {timeout, 10, fun() -> write_and_read_output_test(TestStore) end}},
-%             {T("latest_output_retrieval_test"), fun() -> latest_output_retrieval_test(TestStore) end}
-%         ]
-%     }.
-
-% rocksdb_store_test_() ->
-%     create_store_test({hb_store_rocksdb, #{prefix => "test-cache"}}).
-
-% fs_store_test_() ->
-%     create_store_test({hb_store_fs, #{prefix => "test-cache"}}).
-
-% %% Test path resolution dynamics.
-% simple_path_resolution_test(TestStore) ->
-%     hb_store:write(TestStore, "test-file", <<"test-data">>),
-%     hb_store:make_link(TestStore, "test-file", "test-link"),
-%     ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, "test-link")).
-
-% resursive_path_resolution_test(TestStore) ->
-%     hb_store:write(TestStore, "test-file", <<"test-data">>),
-%     hb_store:make_link(TestStore, "test-file", "test-link"),
-%     hb_store:make_link(TestStore, "test-link", "test-link2"),
-%     ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, "test-link2")).
-
-% hierarchical_path_resolution_test(TestStore) ->
-%     hb_store:make_group(TestStore, "test-dir1"),
-%     hb_store:write(TestStore, ["test-dir1", "test-file"], <<"test-data">>),
-%     hb_store:make_link(TestStore, ["test-dir1"], "test-link"),
-%     ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, ["test-link", "test-file"])).
-
-% %% Test storing and retrieving a simple unsigned item
-% store_simple_unsigned_item_test(TestStore) ->
-%     Item = create_unsigned_tx(<<"Simple unsigned data item">>),
-%     %% Write the simple unsigned item
-%     ok = write(TestStore, Item),
 %% Helpers
+-define(ROCKSDB_STORE, [{hb_store_rocksdb, #{ prefix => "test-cache" }}]).
+-define(FS_STORE, [{hb_store_fs, #{ prefix => "test-cache" }}]).
+-define(FS_OPTS, #{ cache_control => no_cache, store => ?FS_STORE }).
+-define(ROCKDB_OPTS, #{ cache_control => no_cache, store => ?ROCKSDB_STORE }).
 
-test_opts() ->
-    #{ cache_control => no_cache, store => test_cache() }.
-
-test_cache() ->
-    Store = [{hb_store_fs, #{ prefix => "test-cache" }}],
-    hb_store:reset(Store),
-    Store.
+% Use rocksdb backend in other places.
+test_opts() -> ?ROCKDB_OPTS.
 
 test_unsigned(Data) ->
     #{
@@ -442,8 +352,7 @@ test_signed(Data) ->
     hb_message:sign(test_unsigned(Data), ar_wallet:new()).
 
 %% @doc Test storing and retrieving a simple unsigned item
-store_simple_unsigned_item_test() ->
-    Opts = test_opts(),
+test_store_simple_unsigned_item(Opts) ->
     Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
     {ok, _} = write(Item, Opts),
@@ -452,26 +361,8 @@ store_simple_unsigned_item_test() ->
         read(hb_util:human_id(hb_converge:get(id, Item)), Opts),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
-%% Test storing and retrieving a simple signed item
-% simple_signed_item_test(TestStore) ->
-%     Item = create_signed_tx(<<"Simple signed data item">>),
-%     %% Write the simple signed item
-%     {ok, _} = write(TestStore, Item),
-%     %% Read the item back
-%     UnsignedID = hb_converge:get(unsigned_id, Msg),
-%     SignedID = hb_converge:get(id, Msg),
-%     ?event({reading_by_unsigned, UnsignedID}),
-%     {ok, RetrievedItemUnsigned} = read(UnsignedID, Opts),
-%     ?event({reading_by_signed, SignedID}),
-%     {ok, RetrievedItemSigned} = read(SignedID, Opts),
-%     %% Assert that the retrieved item matches the original and verifies
-%     ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
-%     ?assert(hb_message:match(Msg, RetrievedItemSigned)),
-%     ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
-
 %% @doc Test deeply nested item storage and retrieval
-deeply_nested_item_test() ->
-    Opts = test_opts(),
+test_deeply_nested_item(Opts) ->
     %% Create nested data
     DeepValueMsg = test_signed(<<"deep_value">>),
     Outer =
@@ -512,10 +403,36 @@ deeply_nested_item_test() ->
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assertEqual(OuterID, hb_converge:get(unsigned_id, OuterMsg)).
 
-message_with_list_test() ->
-    Opts = test_opts(),
+test_message_with_list(Opts) ->
     Msg = test_unsigned([<<"a">>, <<"b">>, <<"c">>]),
     ?event({writing_message, Msg}),
     {ok, Path} = write(Msg, Opts),
     {ok, RetrievedItem} = read(Path, Opts),
     ?assert(hb_message:match(Msg, RetrievedItem)).
+
+
+hb_cache_rocksdb_suite_test_() ->
+    {foreach,
+        fun() ->
+            hb_store:start(?ROCKSDB_STORE),
+            ?ROCKDB_OPTS
+        end,
+        fun(#{store := _Store}) -> hb_store:reset(?ROCKSDB_STORE) end,
+        [
+            {"store simple unsigned item", fun() -> test_store_simple_unsigned_item(?ROCKDB_OPTS) end},
+            {"deeply nested item", fun() -> test_deeply_nested_item(?ROCKDB_OPTS) end},
+            {"message with list", fun() -> test_message_with_list(?ROCKDB_OPTS) end}
+
+        ]
+    }.
+
+hb_cache_fs_suite_test_() ->
+    {foreach,
+        fun() -> ?FS_OPTS end,
+        fun(_) -> hb_store:reset(?FS_STORE) end,
+        [
+            {"store simple unsigned item", fun() -> test_store_simple_unsigned_item(?FS_OPTS) end},
+            {"deeply nested item", fun() -> test_deeply_nested_item(?FS_OPTS) end},
+            {"message with list", fun() -> test_message_with_list(?FS_OPTS) end}
+        ]
+    }.

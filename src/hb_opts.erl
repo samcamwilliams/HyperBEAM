@@ -140,7 +140,7 @@ get(Key, Default, Opts) ->
                 fun(Dir) ->
                     [
                         {
-                            hb_store_fs,
+                            hb_store_rocksdb,
                             #{ prefix => Dir }
                         }
                     ]

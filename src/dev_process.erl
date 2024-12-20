@@ -263,6 +263,11 @@ ensure_process_key(Msg1, Opts) ->
 
 %%% Tests
 
+init() ->
+    % We need the rocksdb backend to run for hb_cache module to work
+    application:ensure_all_started(hb),
+    ok.
+
 %% @doc Generate a process message with a random number, and the 
 %% `dev_wasm' device for execution.
 test_process() ->

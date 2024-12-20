@@ -28,6 +28,8 @@
 
 %% @doc Helper to ensure that the environment is started.
 start() ->
+    % We need the rocksdb backend to run for hb_cache module to work
+    application:ensure_all_started(hb),
     <<I1:32/unsigned-integer, I2:32/unsigned-integer, I3:32/unsigned-integer>>
         = crypto:strong_rand_bytes(12),
     rand:seed(exsplus, {I1, I2, I3}),
