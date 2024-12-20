@@ -1,6 +1,3 @@
--module(dev_meta).
--export([execute/2]).
--include("include/hb.hrl").
 
 %%% @doc The hyperbeam meta device, which is the default entry point
 %%% for all messages processed by the machine. This device executes a 'path' of
@@ -19,8 +16,10 @@
 %%% POST /id/Push <- Push a new message on a process.
 %%% POST /Push <- Push a new message on the referenced message.
 %%% GET /Execute <- Execute an assignment on the referenced process?
-%%% GET /Thing/in/cache <- Get a thing from the cache by its path.
-%%% '''
+%%% GET /Thing/in/cache <- Get a thing from the cache by its path.'''
+-module(dev_meta).
+-export([execute/2]).
+-include("include/hb.hrl").
 
 %% @doc Execute a message on hyperbeam.
 execute(CarrierMsg, S) ->

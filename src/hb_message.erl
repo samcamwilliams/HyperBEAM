@@ -1,11 +1,3 @@
--module(hb_message).
--export([load/2, sign/2, verify/1, match/2, type/1]).
--export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
--export([message_to_tx/1, tx_to_message/1, minimize/1]).
-%%% Debugging tools:
--export([print/1, format/1, format/2]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %%% @doc This module acts an adapter between messages, as modeled in the
 %%% Converge Protocol, and their uderlying binary representations.
@@ -15,6 +7,14 @@
 %%% interfaces to interact with all messages. The `dev_message' module
 %%% implements a device interface for handling messages as the default Converge
 %%% device.
+-module(hb_message).
+-export([load/2, sign/2, verify/1, match/2, type/1]).
+-export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
+-export([message_to_tx/1, tx_to_message/1, minimize/1]).
+%%% Debugging tools:
+-export([print/1, format/1, format/2]).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
 %% tag.

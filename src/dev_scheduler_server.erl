@@ -1,11 +1,10 @@
+%%% @doc A long-lived server that schedules messages for a process.
+%%% It acts as a deliberate 'bottleneck' to prevent the server accidentally
+%%% assigning multiple messages to the same slot.
 -module(dev_scheduler_server).
 -export([start/2, schedule/2]).
 -export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
-
-%%% @moduledoc A long-lived server that schedules messages for a process.
-%%% It acts as a deliberate 'bottleneck' to prevent the server accidentally
-%%% assigning multiple messages to the same slot.
 
 -include("include/hb.hrl").
 

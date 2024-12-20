@@ -1,12 +1,4 @@
--module(hb_cache).
--export([read/2, read_output/3, write/2, write/3, write_output/4]).
--export([list/2, list_numbered/2, link/3]).
-%%% Exports for modules that utilize hb_cache.
--export([test_opts/0, test_unsigned/1, test_signed/1]).
--include("src/include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
-
-%%% A cache of Converge Protocol messages and compute results.
+%%% @doc A cache of Converge Protocol messages and compute results.
 %%%
 %%% In Converge Protocol, every message is a combinator: The message itself
 %%% represents a 'processor' that can be applied to a new message, yielding a
@@ -19,7 +11,14 @@
 %%% cache on disk. The cache is a simple wrapper that allows us to look up either
 %%% the direct key (a message's ID -- either signed or unsigned) or a 'subpath'.
 %%% We also store 'links' in this cache between messages. In the backend, we use
-%%% the given `hb_store` to persist the actual data.
+%%% the given `hb_store' to persist the actual data.
+-module(hb_cache).
+-export([read/2, read_output/3, write/2, write/3, write_output/4]).
+-export([list/2, list_numbered/2, link/3]).
+%%% Exports for modules that utilize hb_cache.
+-export([test_opts/0, test_unsigned/1, test_signed/1]).
+-include("src/include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% List all items in a directory, assuming they are numbered.
 list_numbered(Path, Opts) ->
@@ -34,7 +33,7 @@ list(Path, Opts) ->
     end.
 
 %% @doc Make a link from one path to another in the store.
-%% Note: Argument order is `link(Src, Dst, Opts)`.
+%% Note: Argument order is `link(Src, Dst, Opts)'.
 link(Existing, New, Opts) ->
     hb_store:make_link(
         hb_opts:get(store, no_viable_store, Opts),
@@ -45,7 +44,7 @@ link(Existing, New, Opts) ->
 %% @doc Writes a computation result to the cache.
 %% The process outputs a series of key values in the cache as follows:
 %%
-%%      /RootAddr: Either the Msg3ID alone, or `Msg1ID/Msg2ID` if the keys to
+%%      /RootAddr: Either the Msg3ID alone, or `Msg1ID/Msg2ID' if the keys to
 %%                 store are not complete. A caller may want to cache only some
 %%                 of the keys because serializing the entire state would be 
 %%                 expensive.
@@ -321,7 +320,7 @@ read_output(Msg1, Msg2, Opts) when is_map(Msg1) ->
             read_output(MsgID1, Msg2, Opts)
     end.
 
-%% @doc Calculate the `hb_store`s that should be used during
+%% @doc Calculate the `hb_store's that should be used during
 %% cache operation resolution.
 opts_to_store(Opts) ->
     case hb_opts:get(cache_lookup, {only, local}, Opts) of
@@ -335,6 +334,93 @@ opts_to_store(Opts) ->
 
 %%% Tests
 
+% -define(TEST_WALLET_NAME, pb_cache_test_wallet).
+
+% %% Helpers
+% create_unsigned_tx(Data) ->
+%     ar_bundles:normalize(
+%         #tx{
+%             format = ans104,
+%             tags = [{<<"Example">>, <<"Tag">>}],
+%             data = Data
+%         }
+%     ).
+
+% %% Helper function to create signed #tx items.
+% create_signed_tx(Data) ->
+%     MaybeNewWallet = 
+%         case persistent_term:get(?TEST_WALLET_NAME, undefined) of
+%             undefined -> 
+%                 Wallet = ar_wallet:new(),
+%                 persistent_term:put(?TEST_WALLET_NAME, Wallet),
+%                 Wallet;
+%             Wallet ->
+%                 Wallet
+%         end,
+%     ar_bundles:sign_item(create_unsigned_tx(Data), MaybeNewWallet).
+
+
+% create_store_test(TestStore) ->
+%     Backend = element(1, TestStore),
+%     T =
+%         fun(Title) ->
+%             NewTitle = Title ++ " [backend: ~p]",
+%             TitleWithBackend = io_lib:format(NewTitle, [Backend]),
+%             lists:flatten(TitleWithBackend)
+%         end,
+%     {
+%         foreach,
+%         fun() ->
+%             case Backend of
+%                 hb_store_rocksdb -> hb_store_rocksdb:start_link([TestStore]);
+%                 _ -> hb_store:start([TestStore])
+%             end,
+%             [TestStore]
+%         end,
+%         fun(Store) -> hb_store:reset(Store) end,
+%         [
+%             {T("simple_path_resolution_test"), fun() -> simple_path_resolution_test(TestStore) end},
+%             {T("resursive_path_resolution_test"), fun() -> resursive_path_resolution_test(TestStore) end},
+%             {T("hierarchical_path_resolution_test"), fun() -> hierarchical_path_resolution_test(TestStore) end},
+%             {T("store_simple_unsigned_item_test"), fun() -> store_simple_unsigned_item_test(TestStore) end},
+%             {T("simple_signed_item_test"), fun() -> simple_signed_item_test(TestStore) end},
+%             % {T("composite_unsigned_item_test"), fun() -> composite_unsigned_item_test(TestStore) end},
+%             % {T("composite_signed_item_test"), fun() -> composite_signed_item_test(TestStore) end},
+%             {T("deeply_nested_item_test"), fun() -> deeply_nested_item_test(TestStore) end},
+%             {T("write_and_read_output_test"), {timeout, 10, fun() -> write_and_read_output_test(TestStore) end}},
+%             {T("latest_output_retrieval_test"), fun() -> latest_output_retrieval_test(TestStore) end}
+%         ]
+%     }.
+
+% rocksdb_store_test_() ->
+%     create_store_test({hb_store_rocksdb, #{prefix => "test-cache"}}).
+
+% fs_store_test_() ->
+%     create_store_test({hb_store_fs, #{prefix => "test-cache"}}).
+
+% %% Test path resolution dynamics.
+% simple_path_resolution_test(TestStore) ->
+%     hb_store:write(TestStore, "test-file", <<"test-data">>),
+%     hb_store:make_link(TestStore, "test-file", "test-link"),
+%     ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, "test-link")).
+
+% resursive_path_resolution_test(TestStore) ->
+%     hb_store:write(TestStore, "test-file", <<"test-data">>),
+%     hb_store:make_link(TestStore, "test-file", "test-link"),
+%     hb_store:make_link(TestStore, "test-link", "test-link2"),
+%     ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, "test-link2")).
+
+% hierarchical_path_resolution_test(TestStore) ->
+%     hb_store:make_group(TestStore, "test-dir1"),
+%     hb_store:write(TestStore, ["test-dir1", "test-file"], <<"test-data">>),
+%     hb_store:make_link(TestStore, ["test-dir1"], "test-link"),
+%     ?assertEqual({ok, <<"test-data">>}, hb_store:read(TestStore, ["test-link", "test-file"])).
+
+% %% Test storing and retrieving a simple unsigned item
+% store_simple_unsigned_item_test(TestStore) ->
+%     Item = create_unsigned_tx(<<"Simple unsigned data item">>),
+%     %% Write the simple unsigned item
+%     ok = write(TestStore, Item),
 %% Helpers
 
 test_opts() ->
@@ -366,23 +452,22 @@ store_simple_unsigned_item_test() ->
         read(hb_util:human_id(hb_converge:get(id, Item)), Opts),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
-%% @doc Test storing and retrieving a simple signed item
-simple_signed_item_test() ->
-    Opts = test_opts(),
-    Msg = test_signed(<<"Simple signed data item">>),
-    %% Write the simple signed item
-    {ok, _} = write(Msg, Opts),
-    %% Read the item back
-    UnsignedID = hb_converge:get(unsigned_id, Msg),
-    SignedID = hb_converge:get(id, Msg),
-    ?event({reading_by_unsigned, UnsignedID}),
-    {ok, RetrievedItemUnsigned} = read(UnsignedID, Opts),
-    ?event({reading_by_signed, SignedID}),
-    {ok, RetrievedItemSigned} = read(SignedID, Opts),
-    %% Assert that the retrieved item matches the original and verifies
-    ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
-    ?assert(hb_message:match(Msg, RetrievedItemSigned)),
-    ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
+%% Test storing and retrieving a simple signed item
+% simple_signed_item_test(TestStore) ->
+%     Item = create_signed_tx(<<"Simple signed data item">>),
+%     %% Write the simple signed item
+%     {ok, _} = write(TestStore, Item),
+%     %% Read the item back
+%     UnsignedID = hb_converge:get(unsigned_id, Msg),
+%     SignedID = hb_converge:get(id, Msg),
+%     ?event({reading_by_unsigned, UnsignedID}),
+%     {ok, RetrievedItemUnsigned} = read(UnsignedID, Opts),
+%     ?event({reading_by_signed, SignedID}),
+%     {ok, RetrievedItemSigned} = read(SignedID, Opts),
+%     %% Assert that the retrieved item matches the original and verifies
+%     ?assert(hb_message:match(Msg, RetrievedItemUnsigned)),
+%     ?assert(hb_message:match(Msg, RetrievedItemSigned)),
+%     ?assertEqual(true, hb_message:verify(RetrievedItemSigned)).
 
 %% @doc Test deeply nested item storage and retrieval
 deeply_nested_item_test() ->

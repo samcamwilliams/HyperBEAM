@@ -1,3 +1,4 @@
+%% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
 -export([id/1, id/2, native_id/1, human_id/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
@@ -13,8 +14,6 @@
 -export([ok/1, ok/2]).
 -export([format_trace_short/1]).
 -include("include/hb.hrl").
-
-%% @doc A collection of utility functions for building with HyperBEAM.
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
 %% the value of the `error_strategy' option.
@@ -433,7 +432,7 @@ format_trace_short(_, _Latch, {Mod, _, _, [{file, _}, {line, Line}|_]}, _) ->
 format_trace_short(_, _Latch, {Mod, Func, _ArityOrTerm, _Extras}, _Prefixes) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Func])).
 
-%% @doc Utility function to help macro `?trace/0` remove the first frame of the
+%% @doc Utility function to help macro `?trace/0' remove the first frame of the
 %% stack trace.
 trace_macro_helper(Fun, {_, {_, Stack}}, Mod, Func, Line) ->
     Fun(Stack, Mod, Func, Line).

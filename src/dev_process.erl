@@ -1,12 +1,4 @@
--module(dev_process).
-%%% Public API
--export([info/2, compute/3, schedule/3, slot/3, now/3]).
-%%% Test helpers
--export([test_process/0, test_wasm_process/1]).
--include_lib("eunit/include/eunit.hrl").
--include_lib("include/hb.hrl").
-
-%%% @moduledoc This module contains the device implementation of AO processes
+%%% @doc This module contains the device implementation of AO processes
 %%% in Converge. The core functionality of the module is in 'routing' requests
 %%% for different functionality (scheduling, computing, and pushing messages)
 %%% to the appropriate device. This is achieved by swapping out the device 
@@ -19,10 +11,10 @@
 %%% computation step the device caches the result at a path relative to the
 %%% process definition itself, such that the process message's ID can act as an
 %%% immutable reference to the process's growing list of interactions. See 
-%%% `dev_process_cache` for details.
+%%% `dev_process_cache' for details.
 %%% 
 %%% The external API of the device is as follows:
-%%% 
+%%% ```
 %%% GET /ID/Scheduler/Schedule <- Returns the messages in the schedule
 %%% POST /ID/Scheduler/Schedule <- Adds a message to the schedule
 %%% 
@@ -42,13 +34,21 @@
 %%%         Authority: A
 %%%         Authority: B
 %%%         Authority: C
-%%%         Quorum: 2
+%%%         Quorum: 2'''
+-module(dev_process).
+%%% Public API
+-export([info/2, compute/3, schedule/3, slot/3, now/3]).
+%%% Test helpers
+-export([test_process/0, test_process/1, test_wasm_process/0]).
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("include/hb.hrl").
+
 %%%
 %%% Runtime options:
 %%%     Cache-Frequency: The number of assignments that can pass before
 %%%                      the full state should be cached.
 %%%     Cache-Keys:      A list of the keys that should be cached, in
-%%%                      addition to `/Results`.
+%%%                      addition to `/Results'.
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency` option.
@@ -162,7 +162,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             )
     end.
 
-%% @doc Returns the `/Results` key of the latest computed message.
+%% @doc Returns the `/Results' key of the latest computed message.
 now(Msg1, _Msg2, Opts) ->
     CurrentSlot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
     ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
@@ -215,7 +215,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
     end.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
-%% the device found at `Key`. After execution, the device is swapped back
+%% the device found at `Key'. After execution, the device is swapped back
 %% to the original device.
 run_as(Key, Msg1, Msg2, Opts) ->
     BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),

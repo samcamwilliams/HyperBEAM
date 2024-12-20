@@ -1,12 +1,13 @@
+%%% @doc The identity device: Simply return a key from the message as it is found
+%%% in the message's underlying Erlang map. Private keys (`priv[.*]') are 
+%%% not included.
 -module(dev_message).
 -export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
 -export([set/3, remove/2, get/2, get/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% The identity device: Simply return a key from the message as it is found
-%%% in the message's underlying Erlang map. Private keys (`priv[.*]`) are 
-%%% not included.
+
 
 %% The list of keys that are exported by this device.
 -define(DEVICE_KEYS, [path, id, unsigned_id, signers, keys, get, set, remove]).

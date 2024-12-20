@@ -1,9 +1,3 @@
--module(hb_private).
--export([from_message/1, reset/1, is_private/1]).
--export([get/3, get/4, set/4, set/3, set_priv/2]).
--include_lib("eunit/include/eunit.hrl").
--include("include/hb.hrl").
-
 %%% @doc This module provides basic helper utilities for managing the
 %%% private element of a message, which can be used to store state that is
 %%% not included in serialized messages, or those granted to users via the
@@ -19,6 +13,12 @@
 %%% 
 %%% See `hb_converge' for more information about the Converge Protocol
 %%% and private elements of messages.
+
+-module(hb_private).
+-export([from_message/1, reset/1, is_private/1]).
+-export([get/3, get/4, set/4, set/3, set_priv/2]).
+-include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.

@@ -1,7 +1,3 @@
--module(dev_stack).
--export([info/1]).
--include_lib("eunit/include/eunit.hrl").
-
 %%% @doc A device that contains a stack of other devices, which it runs
 %%% upon input messages in the order of their keys. A stack maintains and passes
 %%% forward a state (expressed as a message) as it progresses through devices,
@@ -82,6 +78,9 @@
 %%%
 %%% In this example, the `device' key is mutated a number of times, but the
 %%% resulting HashPath remains correct and verifiable.
+-module(dev_stack).
+-export([info/1]).
+-include_lib("eunit/include/eunit.hrl").
 
 -include("include/hb.hrl").
 

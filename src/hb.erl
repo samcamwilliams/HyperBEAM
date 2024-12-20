@@ -1,13 +1,3 @@
--module(hb).
-%%% Configuration and environment:
--export([init/0, now/0, build/0]).
-%%% Debugging tools:
--export([event/2, event/3, event/4, event/5, event/6, no_prod/3]).
--export([read/1, read/2, debug_wait/4, profile/1]).
-%%% Node wallet and address management:
--export([address/0, wallet/0, wallet/1]).
--include("include/hb.hrl").
-
 %%% @doc Hyperbeam is a decentralized node implementation implementing a protocol 
 %%% built on top of the Arweave protocol.
 %%% This protocol offers a computation layer for
@@ -94,6 +84,17 @@
 %%% for the hyperbeam node. It manages all global components of the node,
 %%% including the node's wallet, address, configuration, and environment
 %%% variables.
+-module(hb).
+%%% Configuration and environment:
+-export([init/0, now/0, build/0]).
+%%% Debugging tools:
+-export([event/1, event/2, event/4, no_prod/3]).
+-export([read/1, read/2, debug_wait/4, profile/1]).
+%%% Node wallet and address management:
+-export([address/0, wallet/0, wallet/1]).
+-include("include/hb.hrl").
+
+
 
 %% @doc Initialize system-wide settings for the hyperbeam node.
 init() ->

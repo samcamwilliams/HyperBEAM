@@ -1,39 +1,28 @@
--module(hb_converge).
-%%% Main Converge API:
--export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
--export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
-%%% Shortcuts and tools:
--export([info/2, keys/1, keys/2, keys/3]).
--export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
--export([truncate_args/2]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
-
-%%% @moduledoc This module is the root of the device call logic of the 
+%%% @doc This module is the root of the device call logic of the 
 %%% Converge Protocol in HyperBEAM.
 %%% 
 %%% At the implementation level, every message is simply a collection of keys,
-%%% dictated by its `Device`, that can be resolved in order to yield their
+%%% dictated by its `Device', that can be resolved in order to yield their
 %%% values. Each key may return another message or a raw value:
 %%% 
-%%% 	converge(Message1, Message2) -> {Status, Message3}
+%%% 	`converge(Message1, Message2) -> {Status, Message3}'
 %%% 
-%%% Under-the-hood, `Converge(Message1, Message2)` leads to the evaluation of
-%%% `DeviceMod:PathPart(Message1, Message2)`, which defines the user compute
-%%% to be performed. If `Message1` does not specify a device, `dev_message` is
-%%% assumed. The key to resolve is specified by the `Path` field of the message.
+%%% Under-the-hood, `Converge(Message1, Message2)' leads to the evaluation of
+%%% `DeviceMod:PathPart(Message1, Message2)', which defines the user compute
+%%% to be performed. If `Message1' does not specify a device, `dev_message' is
+%%% assumed. The key to resolve is specified by the `Path' field of the message.
 %%% 
-%%% After each output, the `HashPath` is updated to include the `Message2`
+%%% After each output, the `HashPath' is updated to include the `Message2'
 %%% that was executed upon it.
 %%% 
 %%% Because each message implies a device that can resolve its keys, as well
 %%% as generating a merkle tree of the computation that led to the result,
 %%% you can see Converge Protocol as a system for cryptographically chaining 
-%%% the execution of `combinators`. See `docs/converge-protocol.md` for more 
+%%% the execution of `combinators'. See `docs/converge-protocol.md' for more 
 %%% information about Converge.
 %%% 
-%%% The `Fun(Message1, Message2)` pattern is repeated throughout the HyperBEAM 
-%%% codebase, sometimes with `MessageX` replaced with `MX` or `MsgX` for brevity.
+%%% The `Fun(Message1, Message2)' pattern is repeated throughout the HyperBEAM 
+%%% codebase, sometimes with `MessageX' replaced with `MX' or `MsgX' for brevity.
 %%% 
 %%% Message3 can be either a new message or a raw output value (a binary, integer,
 %%% float, atom, or list of such values).
@@ -44,7 +33,7 @@
 %%% `trusted_device_signers' environment settings).
 %%% 
 %%% HyperBEAM device implementations are defined as follows:
-%%% 
+%%% ```
 %%%     DevMod:ExportedFunc : Key resolution functions. All are assumed to be
 %%%                           device keys (thus, present in every message that
 %%%                           uses it) unless specified by `DevMod:info()`.
@@ -78,20 +67,30 @@
 %%% 
 %%%     info/default_mod : A different device module that should be used to
 %%%                        handle all keys that are not explicitly implemented
-%%%                        by the device. Defaults to the `dev_message` device.
+%%%                        by the device. Defaults to the `dev_message` device.'''
 %%% 
 %%% The HyperBEAM resolver also takes a number of runtime options that change
 %%% the way that the environment operates:
 %%% 
-%%% `update_hashpath`:  Whether to add the `Msg2` to `HashPath` for the `Msg3`.
+%%% `update_hashpath':  Whether to add the `Msg2' to `HashPath' for the `Msg3'.
 %%% 					Default: true.
-%%% `cache_results`:    Whether to cache the resolved `Msg3`.
+%%% `cache_results':    Whether to cache the resolved `Msg3'.
 %%% 					Default: true.
-%%% `add_key`:          Whether to add the key to the start of the arguments.
-%%% 					Default: <not set>.
+%%% `add_key':          Whether to add the key to the start of the arguments.
+%%% 					Default: `<not set>'.
+-module(hb_converge).
+%%% Main Converge API:
+-export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
+-export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
+%%% Shortcuts and tools:
+-export([info/2, keys/1, keys/2, keys/3]).
+-export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
+-export([truncate_args/2]).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc Takes a singleton message and parse Msg1 and Msg2 from it, then invoke
-%% `resolve`.
+%% `resolve'.
 resolve(Msg, Opts) ->
     Path =
         hb_path:term_to_path(
@@ -118,7 +117,7 @@ resolve(Msg, Opts) ->
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, takes options that control the runtime environment. 
 %% This function returns the raw result of the device function call:
-%% {ok | error, NewMessage}.
+%% `{ok | error, NewMessage}.'
 resolve(Msg1, Msg2, Opts) ->
     resolve_stage(0, Msg1, Msg2, Opts).
 
@@ -175,8 +174,8 @@ resolve_stage(1, Msg1, Msg2, Opts) ->
 resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 2, path_normalization}, Opts),
     % Path normalization: Ensure that the path is requesting a single key.
-    % Stash remaining path elements in `priv/Converge/Remaining-Path`.
-    % Stash the original path in `priv/Converge/Original-Path`, if it
+    % Stash remaining path elements in `priv/Converge/Remaining-Path'.
+    % Stash the original path in `priv/Converge/Original-Path', if it
     % is not already there from a previous resolution.
     InitialPriv = hb_private:from_message(Msg1),
     OriginalPath =
@@ -476,7 +475,7 @@ update_cache(Msg1, Msg2, {ok, Msg3}, Opts) ->
     end;
 update_cache(_, _, _, _) -> ok.
 
-%% @doc Takes the `Opts` cache setting, M1, and M2 `Cache-Control` headers, and
+%% @doc Takes the `Opts' cache setting, M1, and M2 `Cache-Control' headers, and
 %% returns true if the message should be cached.
 must_cache(no_cache, _, _) -> false;
 must_cache(no_store, _, _) -> false;
@@ -500,15 +499,15 @@ term_to_cache_control_list(X) ->
     hb_path:term_to_path(X).
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
-%% `ok`. This makes it easier to write complex logic on top of messages while
+%% `ok'. This makes it easier to write complex logic on top of messages while
 %% maintaining a functional style.
 %% 
-%% Additionally, this function supports the `{as, Device, Msg}` syntax, which
+%% Additionally, this function supports the `{as, Device, Msg}' syntax, which
 %% allows the key to be resolved using another device to resolve the key,
 %% while maintaining the tracability of the `HashPath` of the output message.
 %% 
 %% Returns the value of the key if it is found, otherwise returns the default
-%% provided by the user, or `not_found` if no default is provided.
+%% provided by the user, or `not_found' if no default is provided.
 get(Path, Msg) ->
     get(Path, Msg, default_runtime_opts(Msg)).
 get(Path, Msg, Opts) ->

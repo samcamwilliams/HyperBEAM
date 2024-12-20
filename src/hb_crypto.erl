@@ -1,8 +1,3 @@
--module(hb_crypto).
--export([sha256_chain/2, accumulate/2]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
-
 %%% @doc Implements the cryptographic functions and wraps the primitives
 %%% used in HyperBEAM. Abstracted such that this (extremely!) dangerous code 
 %%% can be carefully managed.
@@ -16,6 +11,10 @@
 %%% 
 %%% The accumulate algorithm is experimental and at this point only exists to
 %%% allow us to test multiple HashPath algorithms in HyperBEAM.
+-module(hb_crypto).
+-export([sha256_chain/2, accumulate/2]).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc Add a new ID to the end of a SHA-256 hash chain.
 sha256_chain(ID1, ID2) when ?IS_ID(ID1) and ?IS_ID(ID2) ->

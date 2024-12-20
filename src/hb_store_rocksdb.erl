@@ -1,7 +1,4 @@
-
--module(hb_store_rocksdb).
--behaviour(gen_server).
-
+%%%-----------------------------------------------------------------------------
 %%% @doc A process wrapper over rocksdb storage. Replicates functionality of the
 %%%      hb_fs_store module.
 %%%
@@ -16,6 +13,11 @@
 %%%      2. Meta - for meta information
 %%%        `(<<"raw">>/<<"link">>/<<"composite">> or <<"group">>)'
 %%% @end
+%%%-----------------------------------------------------------------------------
+-module(hb_store_rocksdb).
+-behaviour(gen_server).
+
+-author("Oleg Tarasenko").
 
 -behaviour(hb_store).
 

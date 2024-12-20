@@ -1,14 +1,5 @@
--module(hb_path).
--export([hd/2, tl/2, push/3, push_hashpath/2, push_request/2]).
--export([compute_path/3, short_compute_path/3]).
--export([queue_request/2, pop_request/2]).
--export([verify_hashpath/3]).
--export([term_to_path/1, term_to_path/2, from_message/2]).
--include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
-
-%%% @moduledoc This module provides utilities for manipulating the paths of a
-%%% message: Its request path (referred to in messages as just the `Path`), and
+%%% @doc This module provides utilities for manipulating the paths of a
+%%% message: Its request path (referred to in messages as just the `Path'), and
 %%% its HashPath.
 %%% 
 %%% A HashPath is a rolling Merkle list of the messages that have been applied 
@@ -36,6 +27,13 @@
 %%% which allows for custom logic to be used for representing the history of a
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
+-module(hb_path).
+-export([hd/2, tl/2, push/3, push_hashpath/2, push_request/2]).
+-export([queue_request/2, pop_request/2]).
+-export([verify_hashpath/3]).
+-export([term_to_path/1, term_to_path/2, from_message/2]).
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc Extract the first key from a `Message2''s `Path' field.
 %% Note: This function uses the `dev_message:get/3' function, rather than 
@@ -184,14 +182,14 @@ from_message(request, _) ->
     undefined.
 
 %% @doc Return the appropriate path to refer to the for the computation of
-%% Msg1(Msg2) in the form `/ID1/ID2`.
+%% Msg1(Msg2) in the form `/ID1/ID2'.
 compute_path(Msg1, Msg2, _Opts) ->
     ID1 = dev_message:id(Msg1),
     ID2 = dev_message:id(Msg2),
     << "/", ID1/binary, "/", ID2/binary >>.
 
 %% @doc Return the shortest possible reference for a given computation. If the
-%% Msg2 only contains a `path` key and hashpath elements, then we can return
+%% Msg2 only contains a `path' key and hashpath elements, then we can return
 %% just the path.
 short_compute_path(Msg1, Msg2 = #{ path := Path }, Opts) ->
     case map_size(maps:without(?CONVERGE_KEYS, Msg2)) of

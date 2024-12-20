@@ -1,8 +1,5 @@
--module(hb_beamr).
--export([start/1, call/3, call/4, call/5, call/6, stop/1]).
--export([serialize/1, deserialize/2, stub/3]).
 
-%%% BEAMR: A WAMR wrapper for BEAM.
+%%% @doc BEAMR: A WAMR wrapper for BEAM.
 %%% 
 %%% Beamr is a library that allows you to run WASM modules in BEAM, using the
 %%% Webassembly Micro Runtime (WAMR) as its engine. Each WASM module is 
@@ -16,6 +13,7 @@
 %%% Erlang manuals).
 %%% 
 %%% The core API is simple:
+%%%     ```
 %%%     start(WasmBinary) -> {ok, Port, Imports, Exports}
 %%%         Where:
 %%%             WasmBinary is the WASM binary to load.
@@ -45,11 +43,15 @@
 %%%     deserialize(Port, Mem) -> ok
 %%%         Where:
 %%%             Port is the port to the LID.
-%%%             Mem is a binary output of a previous `serialize/1` call.
+%%%             Mem is a binary output of a previous `serialize/1' call.'''
 %%% 
 %%% BEAMR was designed for use in the HyperBEAM project, but is suitable for
 %%% deployment in other Erlang applications that need to run WASM modules. PRs
 %%% are welcome.
+-module(hb_beamr).
+-export([start/1, call/3, call/4, call/5, call/6, stop/1]).
+-export([serialize/1, deserialize/2, stub/3]).
+
 
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -163,7 +165,7 @@ deserialize(Port, Bin) ->
 driver_loads_test() ->
     ?assertEqual(ok, load_driver()).
 
-%% @doc Test standalone `hb_beamr` correctly after loading a WASM module.
+%% @doc Test standalone `hb_beamr' correctly after loading a WASM module.
 simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),

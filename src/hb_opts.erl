@@ -1,7 +1,3 @@
--module(hb_opts).
--export([get/1, get/2, get/3]).
--include_lib("eunit/include/eunit.hrl").
-
 %%% @doc A module for interacting with local and global options inside
 %%% HyperBEAM. Options are set globally, but can also be overridden using an
 %%% an optional local `Opts' map argument. Many functions across the HyperBEAM 
@@ -16,6 +12,9 @@
 %%% for non-verifiable behavior. Instead, if a local node setting makes 
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
+-module(hb_opts).
+-export([get/1, get/2, get/3]).
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
 config() ->
