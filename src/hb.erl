@@ -133,15 +133,18 @@ event(Topic, X, Mod, Func, Line) -> event(Topic, X, Mod, Func, Line, #{}).
 event(Topic, X, Mod, undefined, Line, Opts) -> event(Topic, X, Mod, "", Line, Opts);
 event(Topic, X, Mod, Func, undefined, Opts) -> event(Topic, X, Mod, Func, "", Opts);
 event(Topic, X, ModAtom, Func, Line, Opts) when is_atom(ModAtom) ->
+    % Check if the module has the `hb_debug` attribute set to `print`.
     case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
         true -> hb_util:debug_print(X, atom_to_list(ModAtom), Func, Line);
         false -> 
+            % Check if the module has the `hb_debug` attribute set to `no_print`.
             case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
                 {hb_debug, [no_print]} -> X;
                 _ -> event(Topic, X, atom_to_list(ModAtom), Func, Line, Opts)
             end
     end;
 event(Topic, X, ModStr, Func, Line, Opts) ->
+    % Check if the debug_print option has the topic in it if set.
     case hb_opts:get(debug_print, false, Opts) of
         ModList when is_list(ModList) ->
             (lists:member(ModStr, ModList)

@@ -62,7 +62,7 @@ set(Message1, NewValuesMsg, Opts) ->
 			fun(Key) ->
 				not lists:member(Key, ?DEVICE_KEYS)
 			end,
-			hb_converge:keys(NewValuesMsg, Opts)
+			hb_converge:keys(NewValuesMsg, Opts#{ topic => ?MODULE })
 		),
 	% Find keys in the message that are already set (case-insensitive), and 
 	% note them for removal.

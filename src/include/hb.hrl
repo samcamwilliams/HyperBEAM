@@ -20,9 +20,9 @@
 
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
--define(event(X), hb:event(global, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(event(X), hb:event(?MODULE, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(event(Topic, X), hb:event(Topic, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
--define(event(Topic, X, Opts), hb:event(Topic, X, ?MODULE, ?FUNCTION_NAME, ?LINE), Opts).
+-define(event(Topic, X, Opts), hb:event(maps:get(topic, Opts, Topic), X, ?MODULE, ?FUNCTION_NAME, ?LINE), Opts).
 -define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(no_prod(X), hb:no_prod(X, ?MODULE, ?LINE)).
 

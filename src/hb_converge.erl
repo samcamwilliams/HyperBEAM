@@ -278,6 +278,19 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
 			}
 		catch
 			Class:Exception:Stacktrace ->
+                ?event(
+                    converge_result,
+                    {
+                        load_device_failed,
+                        {msg1, Msg1},
+                        {msg2, Msg2},
+                        {exec_name, ExecName},
+                        {exec_class, Class},
+                        {exec_exception, Exception},
+                        {exec_stacktrace, Stacktrace},
+                        {opts, Opts}
+                    }
+                ),
                 % If the device cannot be loaded, we alert the caller.
 				handle_error(
                     ExecName,
@@ -302,11 +315,40 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
     Res = 
         try
             MsgRes = apply(Func, truncate_args(Func, Args)),
-            ?event(converge_core, {exec_success, ExecName, {msg_res, MsgRes}}),
+            ?event(
+                converge_result,
+                {
+                    result,
+                    {exec_name, ExecName},
+                    {msg1, Msg1},
+                    {msg2, Msg2},
+                    {msg_res, MsgRes},
+                    {opts, Opts}
+                },
+                Opts
+            ),
             MsgRes
         catch
             ExecClass:ExecException:ExecStacktrace ->
-                ?event(converge_core, {device_call_failed, ExecName, {func, Func}}),
+                ?event(
+                    converge_core,
+                    {device_call_failed, ExecName, {func, Func}},
+                    Opts
+                ),
+                ?event(
+                    converge_result,
+                    {
+                        exec_failed,
+                        {msg1, Msg1},
+                        {msg2, Msg2},
+                        {exec_name, ExecName},
+                        {func, Func},
+                        {exec_class, ExecClass},
+                        {exec_exception, ExecException},
+                        {exec_stacktrace, ExecStacktrace},
+                        {opts, Opts}
+                    }
+                ),
                 % If the function call fails, we raise an error in the manner
                 % indicated by caller's `#Opts`.
                 handle_error(
@@ -495,9 +537,9 @@ set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
 set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg2 = maps:without([hashpath, priv], RawMsg2),
-    ?event({set_called, {msg1, Msg1}, {msg2, Msg2}}),
+    ?event(converge_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
-    case keys(Msg2, Opts#{ hashpath => ignore }) of
+    case keys(Msg2, Opts#{ hashpath => ignore, topic => converge_internal }) of
         [] -> Msg1;
         [Key|_] ->
             % Get the value to set. Use Converge by default, but fall back to
@@ -557,15 +599,32 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
     end.
 
 device_set(Msg, Key, Value, Opts) ->
-	?event({calling_device_set, {msg, Msg}, {applying_path, #{ path => set, Key => Value }}}),
+	?event(
+        converge_internal,
+        {
+            calling_device_set,
+            {msg, Msg},
+            {applying_path, #{ path => set, Key => Value }}
+        }
+    ),
 	Res = hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts),
-	?event({device_set_result, Res}),
+	?event(
+        converge_internal,
+        {device_set_result, Res}
+    ),
 	Res.
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
 remove(Msg, Key, Opts) ->
-	hb_util:ok(resolve(Msg, #{ path => remove, item => Key }, Opts), Opts).
+	hb_util:ok(
+        resolve(
+            Msg,
+            #{ path => remove, item => Key },
+            Opts#{ topic => converge_internal }
+        ),
+        Opts
+    ).
 
 %% @doc Handle an error in a device call.
 handle_error(ExecGroup, Whence, {Class, Exception, Stacktrace}, Opts) ->
