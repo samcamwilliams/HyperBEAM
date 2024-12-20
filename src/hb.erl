@@ -89,7 +89,7 @@
 -export([init/0, now/0, build/0]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, event/4, event/5, event/6, no_prod/3]).
--export([read/1, read/2, debug_wait/4, profile/1]).
+-export([read/1, read/2, debug_wait/4, profile/1, benchmark/2, benchmark/3]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
 -include("include/hb.hrl").
@@ -204,3 +204,27 @@ debug_wait(T, Mod, Func, Line) ->
         lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
         Mod, Func, Line),
     receive after T -> ok end.
+
+%% @doc Run a function as many times as possible in a given amount of time.
+benchmark(Fun, TLen) ->
+    benchmark(Fun, TLen, 1).
+benchmark(Fun, TLen, ReportEvery) ->
+    T0 = erlang:system_time(millisecond),
+    until(
+        fun() -> erlang:system_time(millisecond) - T0 > TLen end,
+        Fun,
+        ReportEvery,
+        0
+    ).
+
+until(Condition, Fun, ReportEvery, Count) ->
+    case Count rem ReportEvery of
+        0 -> ?event(benchmark, {iteration, Count});
+        _ -> ok
+    end,
+    case Condition() of
+        false ->
+            apply(Fun, hb_converge:truncate_args(Fun, [Count])),
+            until(Condition, Fun, ReportEvery, Count + 1);
+        true -> Count
+    end.

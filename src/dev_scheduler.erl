@@ -494,6 +494,38 @@ schedule_message_and_get_slot_test() ->
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
 
+benchmark_test() ->
+    start(),
+    Msg1 = test_process(),
+    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
+    ProcID = hb_util:id(Proc),
+    ?event({benchmark_start, ?MODULE}),
+    Iterations = hb:benchmark(
+        fun(X) ->
+            MsgX = #{
+                path => <<"Schedule">>,
+                <<"Method">> => <<"POST">>,
+                <<"Message">> =>
+                    #{
+                        <<"Type">> => <<"Message">>,
+                        <<"Test-Val">> => X
+                    }
+            },
+            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, #{}))
+        end,
+        2500
+    ),
+    ?event(benchmark, {scheduled, Iterations}),
+    Msg3 = #{
+        path => <<"Slot">>,
+        <<"Method">> => <<"GET">>,
+        <<"Process">> => ProcID
+    },
+    ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
+            when CurrentSlot == Iterations - 1,
+        hb_converge:resolve(Msg1, Msg3, #{})),
+    ?assert(Iterations > 150).
+
 get_schedule_test() ->
     start(),
     Msg1 = test_process(),

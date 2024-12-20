@@ -136,8 +136,12 @@ do_assign(State, Message, ReplyPID) ->
                 Message,
                 Assignment
             ),
+            ?event(writes_complete),
+            ?event(uploading_assignment),
             hb_client:upload(Assignment),
+            ?event(uploading_message),
             hb_client:upload(Message),
+            ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
                 ReplyPID,
@@ -185,5 +189,34 @@ new_proc_test() ->
     schedule(ID, SignedItem3),
     ?assertMatch(
         #{ current := 2 },
+        dev_scheduler_server:info(dev_scheduler_registry:find(ID))
+    ).
+
+benchmark_test() ->
+    Wallet = ar_wallet:new(),
+    SignedItem = hb_message:sign(
+        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        Wallet
+    ),
+    dev_scheduler_registry:find(ID = hb_converge:get(id, SignedItem), true),
+    ?event({benchmark_start, ?MODULE}),
+    Iterations = hb:benchmark(
+        fun(X) ->
+            MsgX = #{
+                path => <<"Schedule">>,
+                <<"Method">> => <<"POST">>,
+                <<"Message">> =>
+                    #{
+                        <<"Type">> => <<"Message">>,
+                        <<"Test-Val">> => X
+                    }
+            },
+            schedule(ID, MsgX)
+        end,
+        2500
+    ),
+    ?assert(Iterations > 150),
+    ?assertMatch(
+        #{ current := X } when X == Iterations - 1,
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))
     ).
