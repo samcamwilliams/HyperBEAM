@@ -119,10 +119,11 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             {ok, process(Msg1, Opts)};
         CurrentSlot ->
             % Get the next input from the scheduler device.
+            ?no_prod("Must update hashpath!"),
             {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
                 next(Msg1, Msg2, Opts#{ hashpath => ignore }),
             % Calculate how much of the state should be cached.
-            Freq = hb_opts:get(cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
+            Freq = hb_opts:get(process_cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
             CacheKeys =
                 case CurrentSlot rem Freq of
                     0 -> all;
