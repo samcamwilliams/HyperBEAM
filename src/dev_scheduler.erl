@@ -147,7 +147,7 @@ status(_M1, _M2, _Opts) ->
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
-    case hb_converge:get(<<"Method">>, Msg2) of
+    case hb_converge:get(<<"Method">>, Msg2, <<"GET">>, Opts) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
