@@ -604,19 +604,30 @@ truncate_args(Fun, Args) ->
 message_to_fun(Msg, Key, Opts) ->
     % Get the device module from the message.
 	Dev = message_to_device(Msg, Opts),
-	?event(converge_devices, {message_to_fun, {dev, Dev}, {key, Key}, {opts, Opts}}),
     Info = info(Dev, Msg, Opts),
     % Is the key exported by the device?
-    Exported = is_exported(Msg, Dev, Key, Opts),
+    Exported = is_exported(Info, Key),
+	?event(
+        converge_devices,
+        {message_to_fun,
+            {dev, Dev},
+            {key, Key},
+            {is_exported, Exported},
+            {opts, Opts}
+        }
+    ),
     % Does the device have an explicit handler function?
     case {maps:find(handler, Info), Exported} of
         {{ok, Handler}, true} ->
 			% Case 2: The device has an explicit handler function.
-			?event({info_handler_found, {dev, Dev}, {key, Key}, {handler, Handler}}),
+			?event(
+                converge_devices,
+                {handler_found, {dev, Dev}, {key, Key}, {handler, Handler}}
+            ),
 			{Status, Func} = info_handler_to_fun(Handler, Msg, Key, Opts),
             {Status, Dev, Func};
 		_ ->
-			%?event({info_handler_not_found, {dev, Dev}, {key, Key}}),
+			?event(converge_devices, {handler_not_found, {dev, Dev}, {key, Key}}),
 			case {find_exported_function(Msg, Dev, Key, 3, Opts), Exported} of
 				{{ok, Func}, true} ->
 					% Case 3: The device has a function of the name `Key`.
@@ -625,16 +636,10 @@ message_to_fun(Msg, Key, Opts) ->
 					case {maps:find(default, Info), Exported} of
 						{{ok, DefaultFunc}, true} when is_function(DefaultFunc) ->
 							% Case 4: The device has a default handler.
-                            %?event({default_handler_func, DefaultFunc}),
+                            ?event({found_default_handler, {func, DefaultFunc}}),
 							{add_key, Dev, DefaultFunc};
                         {{ok, DefaultMod}, true} when is_atom(DefaultMod) ->
-                            % ?event(
-                            %     {
-                            %         default_handler_mod,
-                            %         {dev, DefaultMod},
-                            %         {key, Key}
-                            %     }
-                            % ),
+							?event({found_default_handler, {mod, DefaultMod}}),
                             {Status, Func} =
                                 message_to_fun(
                                     Msg#{ device => DefaultMod }, Key, Opts
@@ -656,6 +661,11 @@ message_to_fun(Msg, Key, Opts) ->
 										{key, Key}
 									});
 								DefaultDev ->
+                                    ?event(
+                                        {
+                                            using_default_device,
+                                            {dev, DefaultDev}
+                                        }),
                                     message_to_fun(
                                         Msg#{ device => DefaultDev },
                                         Key,
@@ -769,21 +779,24 @@ find_exported_function(Msg, Mod, Key, Arity, Opts) ->
 %% @doc Check if a device is guarding a key via its `exports' list. Defaults to
 %% true if the device does not specify an `exports' list. The `info' function is
 %% always exported, if it exists. Elements of the `exludes` list are not
-%% exported.
-is_exported(_, _, info, _Opts) -> true;
+%% exported. Note that we check for info _twice_ -- once when the device is
+%% given but the info result is not, and once when the info result is given.
+%% The reason for this is that `info/3` calls other functions that may need to
+%% check if a key is exported, so we must avoid infinite loops. We must, however,
+%% also return a consistent result in the case that only the info result is
+%% given, so we check for it in both cases.
+is_exported(_Msg, _Dev, info, _Opts) -> true;
 is_exported(Msg, Dev, Key, Opts) ->
-	process_exports(info(Dev, Msg, Opts), Key).
-
-%% @doc Internal helper function to process the `exports' and `excludes' keys
-%% in a device's info map.
-process_exports(Info = #{ excludes := Excludes }, Key) ->
-    case lists:member(to_key(Key), Excludes) of
+	is_exported(info(Dev, Msg, Opts), Key).
+is_exported(_, info) -> true;
+is_exported(Info = #{ excludes := Excludes }, Key) ->
+    case lists:member(to_key(Key), lists:map(fun to_key/1, Excludes)) of
         true -> false;
-        false -> process_exports(maps:remove(excludes, Info), Key)
+        false -> is_exported(maps:remove(excludes, Info), Key)
     end;
-process_exports(#{ exports := Exports }, Key) ->
+is_exported(#{ exports := Exports }, Key) ->
     lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
-process_exports(_Info, _Key) -> true.
+is_exported(_Info, _Key) -> true.
 
 %% @doc Convert a key to an atom if it already exists in the Erlang atom table,
 %% or to a binary otherwise.
