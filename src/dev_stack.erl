@@ -199,6 +199,9 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
 					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
+                {ok, RawResult} ->
+                    ?event({returning_raw_result, RawResult}),
+                    {ok, RawResult};
 				{skip, Message4} when is_map(Message4) ->
 					?event({result, skip, DevNum, Message4}),
 					{ok, Message4};
