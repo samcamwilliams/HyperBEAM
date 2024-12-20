@@ -64,6 +64,9 @@
 %%%                   only the functions in this list are assumed to be device
 %%%                   keys. Defaults to all of the functions that DevMod 
 %%%                   exports in the Erlang environment.
+%%%
+%%%     info/excludes : A list of keys that should not be resolved by the device,
+%%%                     despite being present in the Erlang module exports list.
 %%% 
 %%%     info/handler : A function that should be used to handle _all_ keys for 
 %%%                    messages using the device.
