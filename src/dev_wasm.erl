@@ -200,9 +200,9 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
             )
         ),
     ?event({after_setup, Msg2}),
-    Res = hb_converge:resolve(Msg2, <<"Computed/Results/WASM/Output">>, #{}),
-    ?event({after_resolve, Res}),
-    Res.
+    {ok, StateRes} = hb_converge:resolve(Msg2, <<"Computed">>, #{}),
+    ?event({after_resolve, StateRes}),
+    hb_converge:resolve(StateRes, <<"Results/WASM/Output">>, #{}).
 
 basic_execution_test() ->
     ?assertEqual(
