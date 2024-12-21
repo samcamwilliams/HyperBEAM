@@ -53,8 +53,6 @@
 -export([start/1, call/3, call/4, call/5, call/6, stop/1]).
 %%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
-%%% Test API:
--export([test_pow_import_function/2]).
 
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -185,18 +183,12 @@ simple_wasm_test() ->
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
-test_pow_import_function(Msg1, Msg2) ->
-    %?event({test_pow_import_function, {msg1, Msg1}, {msg2, Msg2}}),
-    State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
-    [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
-    {ok, #{ state => State, wasm_response => [Arg1 * Arg2] }}.
-
 %% @doc Test that imported functions can be called from the WASM module.
 imported_function_test() ->
     {ok, File} = file:read_file("test/pow_calculator.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),
     {ok, [Result], _} =
-        call(Port, <<"pow">>, [2, 5], fun test_pow_import_function/2),
+        call(Port, <<"pow">>, [2, 5], fun dev_test:mul/2),
     ?assertEqual(32, Result).
 
 %% @doc Test that WASM Memory64 modules load and execute correctly.

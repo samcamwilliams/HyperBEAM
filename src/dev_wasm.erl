@@ -210,6 +210,12 @@ basic_execution_test() ->
         test_run_wasm("test/test.wasm", <<"fac">>, [5.0], #{})
     ).
 
+basic_execution_64_test() ->
+    ?assertEqual(
+        {ok, [120.0]},
+        test_run_wasm("test/test-64.wasm", <<"fac">>, [5.0], #{})
+    ).
+
 imported_function_test() ->
     ?assertEqual(
         {ok, [32]},
@@ -219,13 +225,7 @@ imported_function_test() ->
             [2, 5],
             #{
                 <<"WASM/stdlib/my_lib">> =>
-                    #{
-                        device =>
-                            #{
-                                mul =>
-                                    fun hb_beamr:test_pow_import_function/2
-                            }
-                    }
+                    #{ device => <<"Test-Device/1.0">> }
             }
         )
     ).

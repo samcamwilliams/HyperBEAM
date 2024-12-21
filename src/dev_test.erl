@@ -1,5 +1,5 @@
 -module(dev_test).
--export([info/1, test_func/1, compute/3, init/3, restore/3]).
+-export([info/1, test_func/1, compute/3, init/3, restore/3, mul/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -60,6 +60,14 @@ restore(Msg, _Msg2, Opts) ->
                 ))
             }
     end.
+
+%% @doc Example implementation of an `imported` function for a WASM
+%% executor.
+mul(Msg1, Msg2) ->
+    %?event({test_pow_import_function, {msg1, Msg1}, {msg2, Msg2}}),
+    State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
+    [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
+    {ok, #{ state => State, wasm_response => [Arg1 * Arg2] }}.
 
 %%% Tests
 
