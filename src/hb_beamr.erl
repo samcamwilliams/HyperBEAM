@@ -119,24 +119,17 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
         {import, Module, Func, Args, Signature} ->
             ?event({import_called, Module, Func, Args, Signature}),
             try
-                % Call the import function in a similar way to `hb_converge':
-                % Offer Msg1, Msg2, and Opts, but truncate the arguments to
-                % the import function's arity.
-                {ok, Msg3} =
-                    hb_converge:resolve(
-                        StateMsg,
+                {ok, Response, StateMsg2} =
+                    ImportFun(StateMsg,
                         #{
-                            path => import,
-                            priv => #{ wasm => #{ port => Port } },
-                            module => list_to_binary(Module),
-                            func => list_to_binary(Func),
+                            port => Port,
+                            module => Module,
+                            func => Func,
                             args => Args,
-                            func_sig => Signature
+                            signature => Signature
                         },
                         Opts
                     ),
-                NextState = hb_converge:get(state, Msg3, Opts),
-                Response = hb_converge:get(wasm_response, Msg3, Opts),
                 ?event({import_returned, Module, Func, Args, Response}),
                 Port !
                     {self(),
@@ -144,7 +137,7 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                             command,
                             term_to_binary({import_response, Response})
                         }},
-                monitor_call(Port, ImportFun, NextState, Opts)
+                monitor_call(Port, ImportFun, StateMsg2, Opts)
             catch
                 Err:Reason:Stack ->
                     ?event({import_error, Err, Reason, Stack}),
@@ -188,7 +181,10 @@ imported_function_test() ->
     {ok, File} = file:read_file("test/pow_calculator.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),
     {ok, [Result], _} =
-        call(Port, <<"pow">>, [2, 5], fun dev_test:mul/2),
+        call(Port, <<"pow">>, [2, 5],
+            fun(Msg1, #{ args := [Arg1, Arg2] }, _Opts) ->
+                {ok, [Arg1 * Arg2], Msg1}
+            end),
     ?assertEqual(32, Result).
 
 %% @doc Test that WASM Memory64 modules load and execute correctly.

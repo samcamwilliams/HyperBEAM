@@ -11,13 +11,14 @@
 %%%         Generates:
 %%%             /priv/WASM/Port
 %%%             /priv/WASM/Handler
-%%%             /priv/WASM/Invoke-stdlib
+%%%             /priv/WASM/Import-Resolver
 %%%         Side-effects:
 %%%             Creates a WASM executor loaded in memory of the HyperBEAM node.
 %%% 
 %%%     M1/Computed ->
 %%%         Assumes:
 %%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Import-Resolver
 %%%             M1/Process
 %%%             M2/Message
 %%%         Generates:
@@ -59,11 +60,37 @@ init(M1, _M2, Opts) ->
         hb_private:set(M1,
             #{
                 <<"WASM/Port">> => Port,
-                <<"WASM/Invoke-stdlib">> => fun import/3
+                <<"WASM/Import-Resolver">> => fun default_import_resolver/3
             },
             Opts
         )
     }.
+
+%% @doc Take a BEAMR import call and resolve it using `hb_converge`.
+default_import_resolver(Msg1, Msg2, Opts) ->
+    #{
+        port := Port,
+        module := Module,
+        func := Func,
+        args := Args,
+        signature := Signature
+    } = Msg2,
+    {ok, Msg3} =
+        hb_converge:resolve(
+            Msg1,
+            #{
+                path => import,
+                priv => #{ wasm => #{ port => Port } },
+                module => list_to_binary(Module),
+                func => list_to_binary(Func),
+                args => Args,
+                func_sig => Signature
+            },
+            Opts
+        ),
+    NextState = hb_converge:get(state, Msg3, Opts),
+    Response = hb_converge:get(wasm_response, Msg3, Opts),
+    {ok, Response, NextState}.
 
 %% @doc Call the WASM executor with a message that has been prepared by a prior
 %% pass.
@@ -78,7 +105,7 @@ computed(M1, _M2, Opts) ->
                     hb_private:get(<<"WASM/Port">>, M1, Opts),
                     hb_converge:get(<<"WASM-Function">>, M1, Opts),
                     hb_converge:get(<<"WASM-Params">>, M1, Opts),
-                    hb_private:get(<<"WASM/Invoke-stdlib">>, M1, Opts),
+                    hb_private:get(<<"WASM/Import-Resolver">>, M1, Opts),
                     M1,
                     Opts
                 ),
