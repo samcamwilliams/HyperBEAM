@@ -367,9 +367,11 @@ message_to_tx(Other) ->
     throw(invalid_tx).
 
 %% @doc Convert non-binary values to binary for serialization.
-decode_value(decimal, Value) ->
+decode_value(integer, Value) ->
     {item, Number, _} = hb_http_structured_fields:parse_item(Value),
     Number;
+decode_value(float, Value) ->
+    binary_to_float(Value);
 decode_value(atom, Value) ->
     {item, {string, AtomString}, _} =
         hb_http_structured_fields:parse_item(Value),
@@ -395,18 +397,18 @@ decode_value(OtherType, Value) ->
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
-    ?no_prod("Non-standardized type conversion invoked."),
     [Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
-    {<<"Decimal">>, Encoded};
+    {<<"Integer">>, Encoded};
+encode_value(Value) when is_float(Value) ->
+    ?no_prod("Must use structured field representation for floats!"),
+    {<<"Float">>, float_to_binary(Value)};
 encode_value(Value) when is_atom(Value) ->
-    ?no_prod("Non-standardized type conversion invoked."),
     [EncodedIOList, _] =
         hb_http_structured_fields:item(
             {item, {string, atom_to_binary(Value, latin1)}, []}),
     Encoded = list_to_binary(EncodedIOList),
     {<<"Atom">>, Encoded};
 encode_value(Values) when is_list(Values) ->
-    ?no_prod("Non-standardized type conversion invoked."),
     EncodedValues =
         lists:map(
             fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
