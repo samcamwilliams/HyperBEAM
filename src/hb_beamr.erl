@@ -123,9 +123,7 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
             try
                 % Call the import function in a similar way to `hb_converge':
                 % Offer Msg1, Msg2, and Opts, but truncate the arguments to
-                % the import function's arity. Unlike `hb_converge', we expect
-                % a tuple response of two elements: the new state, and the
-                % WASM response.
+                % the import function's arity.
                 {ok, Msg3} =
                     apply(
                         ImportFun,
@@ -196,11 +194,12 @@ simple_wasm_test() ->
     ?assertEqual(120.0, Result).
 
 test_pow_import_function(Msg1, Msg2) ->
-    [ModName, FuncName] = hb_converge:get(path, Msg2, #{ hashpath => ignore }),
+    ?event(import1),
+    %?event({test_pow_import_function, {msg1, Msg1}, {msg2, Msg2}}),
+    State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
-    ?assertEqual(<<"my_lib">>, ModName),
-    ?assertEqual(<<"mul">>, FuncName),
-    {ok, #{ state => Msg1, wasm_response => [Arg1 * Arg2] }}.
+    ?event(import2),
+    {ok, #{ state => State, wasm_response => [Arg1 * Arg2] }}.
 
 %% @doc Test that imported functions can be called from the WASM module.
 imported_function_test() ->
