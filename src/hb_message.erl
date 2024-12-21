@@ -324,7 +324,11 @@ message_to_tx(RawM) when is_map(RawM) ->
     % Calculate which set of the remaining keys will be used as tags.
     {Tags, RawDataItems} =
         lists:partition(
-            fun({_Key, Value}) when byte_size(Value) =< ?MAX_TAG_VAL -> true;
+            fun({_Key, Value}) when is_binary(Value) ->
+                    case unicode:characters_to_binary(Value) of
+                        {error, _, _} -> false;
+                        _ -> byte_size(Value) =< ?MAX_TAG_VAL
+                    end;
                 (_) -> false
             end,
             [ 
