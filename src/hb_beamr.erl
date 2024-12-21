@@ -125,25 +125,17 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                 % Offer Msg1, Msg2, and Opts, but truncate the arguments to
                 % the import function's arity.
                 {ok, Msg3} =
-                    apply(
-                        ImportFun,
-                        hb_converge:truncate_args(
-                            ImportFun,
-                            [
-                                StateMsg,
-                                #{
-                                    priv => #{ wasm => #{ port => Port } },
-                                    path =>
-                                        [
-                                            list_to_binary(Module),
-                                            list_to_binary(Func)
-                                        ],
-                                    args => Args,
-                                    func_sig => Signature
-                                },
-                                Opts
-                            ]
-                        )
+                    hb_converge:resolve(
+                        StateMsg,
+                        #{
+                            path => import,
+                            priv => #{ wasm => #{ port => Port } },
+                            module => list_to_binary(Module),
+                            func => list_to_binary(Func),
+                            args => Args,
+                            func_sig => Signature
+                        },
+                        Opts
                     ),
                 NextState = hb_converge:get(state, Msg3, Opts),
                 Response = hb_converge:get(wasm_response, Msg3, Opts),
@@ -194,11 +186,9 @@ simple_wasm_test() ->
     ?assertEqual(120.0, Result).
 
 test_pow_import_function(Msg1, Msg2) ->
-    ?event(import1),
     %?event({test_pow_import_function, {msg1, Msg1}, {msg2, Msg2}}),
     State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
-    ?event(import2),
     {ok, #{ state => State, wasm_response => [Arg1 * Arg2] }}.
 
 %% @doc Test that imported functions can be called from the WASM module.
