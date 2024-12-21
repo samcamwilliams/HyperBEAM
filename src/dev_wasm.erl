@@ -69,16 +69,16 @@ init(M1, _M2, Opts) ->
 %% pass.
 computed(M1, _M2, Opts) ->
     case hb_converge:get(pass, M1, Opts) of
-        1 ->
+        X when X == 1 orelse X == not_found ->
             % Extract the WASM port, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
-                    M1,
                     hb_private:get(<<"WASM/Port">>, M1, Opts),
                     hb_converge:get(<<"WASM-Function">>, M1, Opts),
                     hb_converge:get(<<"WASM-Params">>, M1, Opts),
                     hb_private:get(<<"WASM/Invoke-stdlib">>, M1, Opts),
+                    M1,
                     Opts
                 ),
             {ok,
@@ -188,4 +188,4 @@ basic_execution_test() ->
     ?event({after_init, Msg1}),
     {ok, Res} = hb_converge:resolve(Msg1, <<"Computed">>, #{}),
     ?event({after_computed, Res}),
-    ?assertEqual(120.0, hb_converge:get(<<"Results/WASM/Output">>, Res)).
+    ?assertEqual([120.0], hb_converge:get(<<"Results/WASM/Output">>, Res)).
