@@ -52,7 +52,6 @@
 -export([start/1, call/3, call/4, call/5, call/6, stop/1]).
 -export([serialize/1, deserialize/2, stub/3]).
 
-
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -94,9 +93,11 @@ call(Port, FunctionName, Args, ImportFun) ->
     call(Port, FunctionName, Args, ImportFun, #{}).
 call(Port, FunctionName, Args, ImportFun, StateMsg) ->
     call(Port, FunctionName, Args, ImportFun, StateMsg, #{}).
+call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
+        when is_binary(FunctionName) ->
+    call(Port, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
 call(Port, FunctionName, Args, ImportFun, StateMsg, Opts) ->
-    ?event({call_started, Port, FunctionName, Args, ImportFun}),
-    ?event({call, FunctionName, Args}),
+    ?event({call_started, Port, FunctionName, Args, ImportFun, StateMsg, Opts}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     ?event({waiting_for_call_result, self(), Port}),
     monitor_call(Port, ImportFun, StateMsg, Opts).
