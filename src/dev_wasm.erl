@@ -27,25 +27,26 @@
 %%%             Calls the WASM executor with the message and process.'''
 -module(dev_wasm).
 -export([init/3, computed/3, terminate/3]).
--export([wasm_state/3, checkpoint_uses/3]).
--export([init_wasm_state/1]).
+-export([wasm_state/3]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc Boot a WASM image on the image stated in the `Process/Image' field of
 %% the message.
 init(M1, _M2, Opts) ->
     ImageID = hb_converge:get(<<"WASM-Image">>, M1, Opts),
-    {ok, Image} =
+    ?event({getting_wasm_image, ImageID}),
+    {ok, ImageMsg} =
         hb_cache:read(
-            hb_opts:get(store, no_viable_store, Opts),
-            ImageID
+            ImageID,
+            Opts
         ),
     % Start the WASM executor.
-    {ok, Port, _ImportMap, _Exports} = hb_beamr:start(Image#tx.data),
+    {ok, Port, _ImportMap, _Exports} =
+        hb_beamr:start(hb_converge:get(<<"Body">>, ImageMsg, Opts)),
     % Apply the checkpoint if it is in the initial state.
     case hb_converge:get(<<"WASM/State">>, M1, Opts) of
-        not_found ->
-            M1;
+        not_found -> do_nothing;
         Checkpoint ->
             ?event(wasm_checkpoint_found),
             ?event({wasm_deserializing, byte_size(Checkpoint)}),
@@ -53,11 +54,6 @@ init(M1, _M2, Opts) ->
             hb_beamr:deserialize(Port, Checkpoint#tx.data),
             ?event(wasm_deserialized)
     end,
-    init_wasm_state(M1, Port, Opts).
-
-init_wasm_state(Port) ->
-    init_wasm_state(#{}, Port, #{}).
-init_wasm_state(M1, Port, Opts) ->
     % Set the WASM port, handler, and standard library invokation function.
     {ok,
         hb_private:set(M1,
@@ -99,7 +95,6 @@ computed(M1, _M2, Opts) ->
 %% @doc Serialize the WASM state to a message.
 wasm_state(M1, _M2, Opts) ->
     Port = hb_private:get(<<"priv/WASM/Port">>, M1, Opts),
-    SaveKeys = hb_converge:get(<<"Checkpoint-Keys">>, M1, Opts),
     {ok, Serialized} = hb_beamr:serialize(Port),
     {ok, Serialized}.
 
