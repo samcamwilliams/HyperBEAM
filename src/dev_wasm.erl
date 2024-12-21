@@ -157,3 +157,35 @@ lib(M1, _Port, Args, Module, Func, Signature, Opts) ->
         }
     ),
     {M3, [0]}.
+
+%%% Tests
+
+init() ->
+    application:ensure_all_started(hb),
+    hb:init().
+
+generate_basic_wasm_message(Image) ->
+    {ok, Bin} = file:read_file(Image),
+    Msg = #{ <<"Body">> => Bin },
+    {ok, ID} = hb_cache:write(Msg, #{}),
+    #{
+        device => <<"WASM-64/1.0">>,
+        <<"WASM-Image">> => ID
+    }.
+
+basic_execution_test() ->
+    init(),
+    Msg0 = generate_basic_wasm_message("test/test.wasm"),
+    {ok, Msg1} =
+        hb_converge:resolve(
+            Msg0#{
+                <<"WASM-Function">> => <<"fac">>,
+                <<"WASM-Params">> => [5.0]
+            },
+            <<"Init">>,
+            #{}
+        ),
+    ?event({after_init, Msg1}),
+    {ok, Res} = hb_converge:resolve(Msg1, <<"Computed">>, #{}),
+    ?event({after_computed, Res}),
+    ?assertEqual(120.0, hb_converge:get(<<"Results/WASM/Output">>, Res)).
