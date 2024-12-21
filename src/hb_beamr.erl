@@ -49,8 +49,12 @@
 %%% deployment in other Erlang applications that need to run WASM modules. PRs
 %%% are welcome.
 -module(hb_beamr).
+%%% Control API:
 -export([start/1, call/3, call/4, call/5, call/6, stop/1]).
+%%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
+%%% Test API:
+-export([test_pow_import_function/2]).
 
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -103,9 +107,9 @@ call(Port, FunctionName, Args, ImportFun, StateMsg, Opts) ->
     monitor_call(Port, ImportFun, StateMsg, Opts).
 
 %% @doc Stub import function for the WASM executor.
-stub(M1, _M2, _Opts) ->
+stub(Msg1, _Msg2, _Opts) ->
     ?event(stub_stdlib_called),
-    {ok, M1, [0]}.
+    {ok, #{ state => Msg1, wasm_response => [0] }}.
 
 %% @doc Synchonously monitor the WASM executor for a call result and any
 %% imports that need to be handled.
@@ -117,16 +121,34 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
         {import, Module, Func, Args, Signature} ->
             ?event({import_called, Module, Func, Args, Signature}),
             try
-                {ok, Response, StateMsg2} =
-                    ImportFun(StateMsg,
-                        #{
-                            port => Port,
-                            module => Module,
-                            func => Func,
-                            args => Args,
-                            signature => Signature,
-                            options => Opts
-                        }),
+                % Call the import function in a similar way to `hb_converge':
+                % Offer Msg1, Msg2, and Opts, but truncate the arguments to
+                % the import function's arity. Unlike `hb_converge', we expect
+                % a tuple response of two elements: the new state, and the
+                % WASM response.
+                {ok, Msg3} =
+                    apply(
+                        ImportFun,
+                        hb_converge:truncate_args(
+                            ImportFun,
+                            [
+                                StateMsg,
+                                #{
+                                    priv => #{ wasm => #{ port => Port } },
+                                    path =>
+                                        [
+                                            list_to_binary(Module),
+                                            list_to_binary(Func)
+                                        ],
+                                    args => Args,
+                                    func_sig => Signature
+                                },
+                                Opts
+                            ]
+                        )
+                    ),
+                NextState = hb_converge:get(state, Msg3, Opts),
+                Response = hb_converge:get(wasm_response, Msg3, Opts),
                 ?event({import_returned, Module, Func, Args, Response}),
                 Port !
                     {self(),
@@ -134,7 +156,7 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                             command,
                             term_to_binary({import_response, Response})
                         }},
-                monitor_call(Port, ImportFun, StateMsg2, Opts)
+                monitor_call(Port, ImportFun, NextState, Opts)
             catch
                 Err:Reason:Stack ->
                     ?event({import_error, Err, Reason, Stack}),
@@ -173,20 +195,19 @@ simple_wasm_test() ->
     {ok, [Result]} = call(Port, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
+test_pow_import_function(Msg1, Msg2) ->
+    [ModName, FuncName] = hb_converge:get(path, Msg2, #{ hashpath => ignore }),
+    [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
+    ?assertEqual(<<"my_lib">>, ModName),
+    ?assertEqual(<<"mul">>, FuncName),
+    {ok, #{ state => Msg1, wasm_response => [Arg1 * Arg2] }}.
+
 %% @doc Test that imported functions can be called from the WASM module.
 imported_function_test() ->
     {ok, File} = file:read_file("test/pow_calculator.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),
-    ImportFunc =
-        fun(State, Request) ->
-            ModName = maps:get(module, Request),
-            FuncName = maps:get(func, Request),
-            [Arg1, Arg2] = maps:get(args, Request),
-            ?assertEqual("my_lib", ModName),
-            ?assertEqual("mul", FuncName),
-            {ok, [Arg1 * Arg2], State}
-        end,
-    {ok, [Result], _} = call(Port, "pow", [2, 5], ImportFunc),
+    {ok, [Result], _} =
+        call(Port, <<"pow">>, [2, 5], fun test_pow_import_function/2),
     ?assertEqual(32, Result).
 
 %% @doc Test that WASM Memory64 modules load and execute correctly.

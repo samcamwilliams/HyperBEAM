@@ -113,50 +113,48 @@ terminate(M1, _M2, Opts) ->
 %% @doc Handle standard library calls by looking up the function in the
 %% message and calling it. Calls the stub function if the function is not
 %% found in the message.
-invoke_stdlib(M1, M2, Opts) ->
-    Port = hb_converge:get(port, M2, Opts#{ hashpath => ignore }),
-    ModName = hb_converge:get(module, M2, Opts#{ hashpath => ignore }),
-    FuncName = hb_converge:get(func, M2, Opts#{ hashpath => ignore }),
-    Args = hb_converge:get(args, M2, Opts#{ hashpath => ignore }),
-    Sig = hb_converge:get(signature, M2, Opts#{ hashpath => ignore }),
+invoke_stdlib(Msg1, Msg2, Opts) ->
+    [ModName, FuncName] =
+        hb_converge:get(path, Msg2, Opts#{ hashpath => ignore }),
     MaybeFunc =
         hb_private:get(
             <<"priv/WASM/stdlib/", ModName/bitstring, "/", FuncName/bitstring>>,
-            M1,
+            Msg1,
             Opts
         ),
     case MaybeFunc of
         not_found ->
-            lib(M1, Port, Args, ModName, FuncName, Sig, Opts);
+            lib(Msg1, Msg2, Opts);
         Func ->
-            {arity, Arity} = erlang:fun_info(Func, arity),
-            ApplicationTerms =
-                lists:sublist(
-                    [M1, Port, Args, ModName, FuncName, Sig, Opts],
-                    Arity
-                ),
-            erlang:apply(Func, ApplicationTerms)
+            erlang:apply(
+                Func,
+                hb_converge:truncate_args(
+                    Func,
+                    [Msg1, Msg2, Opts]
+                )
+            )
     end.
 
 %% @doc Log the call to the standard library as an event, and write the
 %% call details into the message.
-lib(M1, _Port, Args, Module, Func, Signature, Opts) ->
-    ?event({unimplemented_dev_wasm_call, Module, Func, Args, Signature}),
-    M3 = hb_converge:set(
-        M1,
+lib(Msg1, Msg2, Opts) ->
+    ?event({unimplemented_dev_wasm_call, {msg1, Msg1}, {msg2, Msg2}}),
+    Msg3 = hb_converge:set(
+        Msg1,
         #{<<"Results/WASM/Unimplemented-Calls">> =>
             [
-                #{
-                    <<"Module">> => Module,
-                    <<"Func">> => Func,
-                    <<"Args">> => Args,
-                    <<"Signature">> => Signature
-                }
-            | hb_converge:get(<<"Results/WASM/Undefined-Calls">>, M1, Opts)
+                Msg2
+            |
+                hb_converge:get(
+                    <<"Results/WASM/Undefined-Calls">>,
+                    Msg1,
+                    [],
+                    Opts
+                )
             ]
         }
     ),
-    {M3, [0]}.
+    {ok, #{ state => Msg3, wasm_response => [0] }}.
 
 %%% Tests
 
@@ -188,4 +186,37 @@ basic_execution_test() ->
     ?event({after_init, Msg1}),
     {ok, Res} = hb_converge:resolve(Msg1, <<"Computed">>, #{}),
     ?event({after_computed, Res}),
-    ?assertEqual([120.0], hb_converge:get(<<"Results/WASM/Output">>, Res)).
+    ?assertEqual(
+        [120.0],
+        hb_converge:get(<<"Results/WASM/Output">>, Res)
+    ).
+
+imported_function_test() ->
+    init(),
+    % Load the WASM module.
+    Msg0 = generate_basic_wasm_message("test/pow_calculator.wasm"),
+    % Add the import function to the private stdlib.
+    Msg1 =
+        hb_private:set(
+            Msg0,
+            #{
+                <<"WASM/stdlib/my_lib/mul">> =>
+                    fun hb_beamr:test_pow_import_function/2
+            },
+            #{}
+        ),
+    % Resolve the `Init` message.
+    {ok, Msg2} =
+        hb_converge:resolve(
+            Msg1#{
+                <<"WASM-Function">> => <<"pow">>,
+                <<"WASM-Params">> => [2, 5]
+            },
+            <<"Init">>,
+            #{}
+        ),
+    ?event({after_init, Msg2}),
+    % Resolve the `Computed` message.
+    {ok, Res} = hb_converge:resolve(Msg2, <<"Computed">>, #{}),
+    ?event({after_computed, Res}),
+    ?assertEqual([32], hb_converge:get(<<"Results/WASM/Output">>, Res)).
