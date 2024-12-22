@@ -45,7 +45,7 @@
 %%% Public API
 -export([info/2, compute/3, schedule/3, slot/3, now/3]).
 %%% Test helpers
--export([test_process/0, test_device_process/0, test_wasm_process/1]).
+-export([test_aos_process/0, test_device_process/0, test_wasm_process/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -268,27 +268,6 @@ init() ->
     application:ensure_all_started(hb),
     ok.
 
-%% @doc Generate a process message with a random number, and the 
-%% `dev_wasm' device for execution.
-test_process() ->
-    test_wasm_process(<<"test/aos-2-pure.wasm">>).
-
-test_wasm_process(WASMImage) ->
-    maps:merge(test_base_process(), #{
-        <<"Execution-Device">> => <<"Stack/1.0">>,
-        <<"Device-Stack">> => [dev_vfs, dev_wasm],
-        <<"WASM-Image">> => WASMImage
-    }).
-
-%% @doc Generate a device that has a stack of two `dev_test's for 
-%% execution. This should generate a message state has doubled 
-%% `Already-Seen' elements for each assigned slot.
-test_device_process() ->
-    maps:merge(test_base_process(), #{
-        <<"Execution-Device">> => <<"Stack/1.0">>,
-        <<"Device-Stack">> => [<<"Test-Device/1.0">>, <<"Test-Device/1.0">>]
-    }).
-
 %% @doc Generate a process message with a random number, and no 
 %% executor.
 test_base_process() ->
@@ -301,6 +280,28 @@ test_base_process() ->
         <<"Type">> => <<"Process">>,
         <<"Test-Random-Seed">> => rand:uniform(1337)
     }.
+
+test_wasm_process(WASMImage) ->
+    #{ <<"WASM-Image">> := WASMImageID } = dev_wasm:store_wasm_image(WASMImage),
+    maps:merge(test_base_process(), #{
+        <<"Execution-Device">> => <<"Stack/1.0">>,
+        <<"Device-Stack">> => [<<"WASM-64/1.0">>],
+        <<"WASM-Image">> => WASMImageID
+    }).
+
+%% @doc Generate a process message with a random number, and the 
+%% `dev_wasm' device for execution.
+test_aos_process() ->
+    test_wasm_process(<<"test/aos-2-pure.wasm">>).
+
+%% @doc Generate a device that has a stack of two `dev_test's for 
+%% execution. This should generate a message state has doubled 
+%% `Already-Seen' elements for each assigned slot.
+test_device_process() ->
+    maps:merge(test_base_process(), #{
+        <<"Execution-Device">> => <<"Stack/1.0">>,
+        <<"Device-Stack">> => [<<"Test-Device/1.0">>, <<"Test-Device/1.0">>]
+    }).
 
 schedule_test_message(Msg1, Text) ->
     Msg2 = #{
@@ -315,9 +316,22 @@ schedule_test_message(Msg1, Text) ->
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     ok.
 
+schedule_wasm_call(Msg1, FuncName, Params) ->
+    Msg2 = #{
+        path => <<"Schedule">>,
+        <<"Method">> => <<"POST">>,
+        <<"Message">> =>
+            #{
+                <<"Type">> => <<"Message">>,
+                <<"WASM-Function">> => FuncName,
+                <<"WASM-Params">> => Params
+            }
+    },
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})).
+
 schedule_on_process_test() ->
     init(),
-    Msg1 = test_process(),
+    Msg1 = test_aos_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?event(messages_scheduled),
@@ -337,7 +351,7 @@ schedule_on_process_test() ->
 
 get_scheduler_slot_test() ->
     init(),
-    Msg1 = test_process(),
+    Msg1 = test_aos_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     Msg2 = #{
@@ -351,7 +365,7 @@ get_scheduler_slot_test() ->
 
 recursive_resolve_test() ->
     init(),
-    Msg1 = test_process(),
+    Msg1 = test_aos_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     CurrentSlot =
         hb_converge:resolve(
@@ -384,3 +398,25 @@ test_device_compute_test() ->
     ?event({computed_message, {msg3, Msg3}}),
     ?assertEqual(1, hb_converge:get(<<"Results/Assignment-Slot">>, Msg3, #{})),
     ?assertEqual([1,1,0,0], hb_converge:get(<<"Already-Seen">>, Msg3, #{})).
+
+wasm_compute_test() ->
+    init(),
+    Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
+    schedule_wasm_call(Msg1, <<"fac">>, [5.0]),
+    schedule_wasm_call(Msg1, <<"fac">>, [6.0]),
+    {ok, Msg3} = 
+        hb_converge:resolve(
+            Msg1,
+            #{ path => <<"Compute">>, <<"Slot">> => 0 },
+            #{ hashpath => ignore }
+        ),
+    ?event({computed_message, {msg3, Msg3}}),
+    ?assertEqual([120.0], hb_converge:get(<<"Results/WASM/Output">>, Msg3, #{})),
+    {ok, Msg4} = 
+        hb_converge:resolve(
+            Msg1,
+            #{ path => <<"Compute">>, <<"Slot">> => 1 },
+            #{ hashpath => ignore }
+        ),
+    ?event({computed_message, {msg4, Msg4}}),
+    ?assertEqual([720.0], hb_converge:get(<<"Results/WASM/Output">>, Msg4, #{})).

@@ -27,15 +27,22 @@
 %%%         Side-effects:
 %%%             Calls the WASM executor with the message and process.'''
 -module(dev_wasm).
--export([init/3, computed/3, import/3, terminate/3]).
+-export([init/3, compute/3, import/3, terminate/3]).
 -export([wasm_state/3]).
+%%% Test API:
+-export([store_wasm_image/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Boot a WASM image on the image stated in the `Process/Image' field of
 %% the message.
 init(M1, _M2, Opts) ->
-    ImageID = hb_converge:get(<<"WASM-Image">>, M1, Opts),
+    ImageID = 
+        case hb_converge:get(<<"WASM-Image">>, M1, Opts) of
+            not_found ->
+                hb_converge:get(<<"Process/WASM-Image">>, M1, Opts);
+            X -> X
+        end,
     ?event({getting_wasm_image, ImageID}),
     {ok, ImageMsg} =
         hb_cache:read(
@@ -94,17 +101,29 @@ default_import_resolver(Msg1, Msg2, Opts) ->
 
 %% @doc Call the WASM executor with a message that has been prepared by a prior
 %% pass.
-computed(M1, _M2, Opts) ->
+compute(M1, M2, Opts) ->
     case hb_converge:get(pass, M1, Opts) of
         X when X == 1 orelse X == not_found ->
             % Extract the WASM port, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
-            ?event({calling_wasm_executor, M1}),
+            ?event({calling_wasm_executor, {msg1, M1}, {msg2, M2}}),
+            WASMFunction =
+                case hb_converge:get(<<"Message/WASM-Function">>, M2, Opts) of
+                    not_found ->
+                        hb_converge:get(<<"WASM-Function">>, M1, Opts);
+                    Func -> Func
+                end,
+            WASMParams =
+                case hb_converge:get(<<"Message/WASM-Params">>, M2, Opts) of
+                    not_found ->
+                        hb_converge:get(<<"WASM-Params">>, M1, Opts);
+                    Params -> Params
+                end,
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
                     hb_private:get(<<"WASM/Port">>, M1, Opts),
-                    hb_converge:get(<<"WASM-Function">>, M1, Opts),
-                    hb_converge:get(<<"WASM-Params">>, M1, Opts),
+                    WASMFunction,
+                    WASMParams,
                     hb_private:get(<<"WASM/Import-Resolver">>, M1, Opts),
                     M1,
                     Opts
@@ -200,7 +219,7 @@ init() ->
     application:ensure_all_started(hb),
     hb:init().
 
-generate_basic_wasm_message(Image) ->
+store_wasm_image(Image) ->
     {ok, Bin} = file:read_file(Image),
     Msg = #{ <<"Body">> => Bin },
     {ok, ID} = hb_cache:write(Msg, #{}),
@@ -211,7 +230,7 @@ generate_basic_wasm_message(Image) ->
 
 test_run_wasm(File, Func, Params, AdditionalMsg) ->
     init(),
-    Msg0 = generate_basic_wasm_message(File),
+    Msg0 = store_wasm_image(File),
     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
     ?event({after_init, Msg1}),
     Msg2 =
@@ -227,7 +246,7 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
             )
         ),
     ?event({after_setup, Msg2}),
-    {ok, StateRes} = hb_converge:resolve(Msg2, <<"Computed">>, #{}),
+    {ok, StateRes} = hb_converge:resolve(Msg2, <<"Compute">>, #{}),
     ?event({after_resolve, StateRes}),
     hb_converge:resolve(StateRes, <<"Results/WASM/Output">>, #{}).
 

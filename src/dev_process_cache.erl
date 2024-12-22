@@ -165,7 +165,7 @@ find_latest_output_test(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),
-    Proc1 = dev_process:test_process(),
+    Proc1 = dev_process:test_aos_process(),
     ProcID = hb_util:human_id(hb_converge:get(id, Proc1)),
     % Create messages for the slots, with only the middle slot having a
     % `/Process` field, while the top slot has a `/Deep/Process` field.
