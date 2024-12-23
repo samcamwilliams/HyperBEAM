@@ -148,7 +148,7 @@ match(Map1, Map2) ->
                                 true -> true;
                                 false ->
                                     ?event(
-                                        {key_mismatch,
+                                        {value_mismatch,
                                             {explicit, {Key, Val1, Val2}}
                                         }
                                     ),
@@ -181,13 +181,15 @@ normalize_keys(Map) ->
     ).
 
 %% @doc Remove keys from the map that can be regenerated.
+minimize(RawVal) when not is_map(RawVal) -> RawVal;
 minimize(Map) ->
     NormRegenKeys = normalize_keys(?REGEN_KEYS),
     maps:filter(
         fun(Key, _) ->
-            not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys)
+            (not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys))
+                andalso (not hb_private:is_private(Key))
         end,
-        Map
+        maps:map(fun(_K, V) -> minimize(V) end, Map)
     ).
 
 %% @doc Return a map with only the keys that necessary, without those that can
@@ -361,11 +363,17 @@ message_to_tx(RawM) when is_map(RawM) ->
             {Data, _} when is_binary(Data) ->
                 TX#tx { data = DataItems#{ data => message_to_tx(Data) } }
         end,
-    % ?event({prepared_tx_before_ids,
-    % 	{tags, {explicit, TXWithData#tx.tags}},
-    % 	{data, TXWithData#tx.data}
-    % }),
-    ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
+    % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
+    try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
+    catch
+        _:Error ->
+            ?event(debug, {{reset_ids_error, Error}, {tx_without_data, TX}}),
+            ?event(debug, {prepared_tx_before_ids,
+                {tags, {explicit, TXWithData#tx.tags}},
+                {data, TXWithData#tx.data}
+            }),
+            throw(Error)
+    end;
 message_to_tx(Other) ->
     ?event({unexpected_message_form, {explicit, Other}}),
     throw(invalid_tx).
@@ -814,6 +822,6 @@ list_encoding_test() ->
     {<<"List">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
     ?assertEqual(List3, decode_value(list, Encoded3)).
 
-message_with_list_test() ->
+message_with_simple_list_test() ->
     Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
     ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
