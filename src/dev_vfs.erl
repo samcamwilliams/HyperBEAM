@@ -239,16 +239,21 @@ parse_iovec(Port, Ptr) ->
 init() ->
     application:ensure_all_started(hb).
 
-test_run_vfs_stack(File, Func, Params, AdditionalMsg) ->
+generate_vfs_stack(File, Func, Params) ->
     init(),
     Msg0 = dev_wasm:store_wasm_image(File),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"VFS/WASI-1.0">>, <<"WASM-64/1.0">>],
+        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"WASM-Function">> => Func,
         <<"WASM-Params">> => Params
     },
     {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
+    Msg2.
+
+run_vfs_stack(File, Func, Params, AdditionalMsg) ->
+    Msg2 = generate_vfs_stack(File, Func, Params),
     ?event({after_init, Msg2}),
     Msg3 =
         maps:merge(
@@ -267,7 +272,20 @@ test_run_vfs_stack(File, Func, Params, AdditionalMsg) ->
     ?event({after_resolve, StateRes}),
     {ok, StateRes}.
 
+vfs_is_serializable_test() ->
+    StackMsg = generate_vfs_stack("test/test-print.wasm", <<"hello">>, []),
+    VFSMsg = hb_converge:get(<<"VFS">>, StackMsg),
+    VFSMsg2 =
+        hb_message:minimize(
+            hb_message:tx_to_message(
+                hb_message:message_to_tx(VFSMsg))),
+    ?assert(hb_message:match(VFSMsg, VFSMsg2)).
+
+stack_is_serializable_test() ->
+    Msg = generate_vfs_stack("test/test-print.wasm", <<"hello">>, []),
+    Msg2 = hb_message:tx_to_message(hb_message:message_to_tx(Msg)),
+    ?assert(hb_message:match(Msg, Msg2)).
+
 basic_write_test() ->
-    {ok, StateRes} = 
-        test_run_vfs_stack("test/test-print.wasm", <<"hello">>, [], #{}),
+    {ok, StateRes} = run_vfs_stack("test/test-print.wasm", <<"hello">>, [], #{}),
     ?assertEqual(<<"Hello World\nHowdy!\n">>, stdout(StateRes)).
