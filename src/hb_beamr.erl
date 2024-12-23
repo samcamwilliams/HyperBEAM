@@ -49,9 +49,10 @@
 %%% deployment in other Erlang applications that need to run WASM modules. PRs
 %%% are welcome.
 -module(hb_beamr).
+%%% Control API:
 -export([start/1, call/3, call/4, call/5, call/6, stop/1]).
+%%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
-
 
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -94,17 +95,19 @@ call(Port, FunctionName, Args, ImportFun) ->
     call(Port, FunctionName, Args, ImportFun, #{}).
 call(Port, FunctionName, Args, ImportFun, StateMsg) ->
     call(Port, FunctionName, Args, ImportFun, StateMsg, #{}).
+call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
+        when is_binary(FunctionName) ->
+    call(Port, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
 call(Port, FunctionName, Args, ImportFun, StateMsg, Opts) ->
-    ?event({call_started, Port, FunctionName, Args, ImportFun}),
-    ?event({call, FunctionName, Args}),
+    ?event({call_started, Port, FunctionName, Args, ImportFun, StateMsg, Opts}),
     Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
     ?event({waiting_for_call_result, self(), Port}),
     monitor_call(Port, ImportFun, StateMsg, Opts).
 
 %% @doc Stub import function for the WASM executor.
-stub(M1, _M2, _Opts) ->
+stub(Msg1, _Msg2, _Opts) ->
     ?event(stub_stdlib_called),
-    {ok, M1, [0]}.
+    {ok, #{ state => Msg1, wasm_response => [0] }}.
 
 %% @doc Synchonously monitor the WASM executor for a call result and any
 %% imports that need to be handled.
@@ -123,9 +126,10 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                             module => Module,
                             func => Func,
                             args => Args,
-                            signature => Signature,
-                            options => Opts
-                        }),
+                            signature => Signature
+                        },
+                        Opts
+                    ),
                 ?event({import_returned, Module, Func, Args, Response}),
                 Port !
                     {self(),
@@ -176,16 +180,11 @@ simple_wasm_test() ->
 imported_function_test() ->
     {ok, File} = file:read_file("test/pow_calculator.wasm"),
     {ok, Port, _Imports, _Exports} = start(File),
-    ImportFunc =
-        fun(State, Request) ->
-            ModName = maps:get(module, Request),
-            FuncName = maps:get(func, Request),
-            [Arg1, Arg2] = maps:get(args, Request),
-            ?assertEqual("my_lib", ModName),
-            ?assertEqual("mul", FuncName),
-            {ok, [Arg1 * Arg2], State}
-        end,
-    {ok, [Result], _} = call(Port, "pow", [2, 5], ImportFunc),
+    {ok, [Result], _} =
+        call(Port, <<"pow">>, [2, 5],
+            fun(Msg1, #{ args := [Arg1, Arg2] }, _Opts) ->
+                {ok, [Arg1 * Arg2], Msg1}
+            end),
     ?assertEqual(32, Result).
 
 %% @doc Test that WASM Memory64 modules load and execute correctly.
