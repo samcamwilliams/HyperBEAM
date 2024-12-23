@@ -188,26 +188,27 @@ import(Msg1, Msg2, Opts) ->
         {error, not_found} ->
             ?event(stdlib_not_found),
             % 5. Failure. Call the stub handler.
-            lib(Msg1, Msg2, Opts)
+            undefined_import_stub(Msg1, Msg2, Opts)
     end.
 
 %% @doc Log the call to the standard library as an event, and write the
 %% call details into the message.
-lib(Msg1, Msg2, Opts) ->
+undefined_import_stub(Msg1, Msg2, Opts) ->
     ?event({unimplemented_dev_wasm_call, {msg1, Msg1}, {msg2, Msg2}}),
-    State = hb_converge:get(<<"State">>, Msg1, Opts),
     Msg3 = hb_converge:set(
-        State,
+        Msg1,
         #{<<"Results/WASM/Unimplemented-Calls">> =>
             [
                 Msg2
             |
-                hb_converge:get(
+                case hb_converge:get(
                     <<"Results/WASM/Undefined-Calls">>,
-                    State,
-                    [],
+                    Msg1,
                     Opts
-                )
+                ) of
+                    not_found -> [];
+                    X -> X
+                end
             ]
         }
     ),

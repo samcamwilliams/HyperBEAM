@@ -1,14 +1,15 @@
-
 %%% @doc A virtual filesystem device.
 %%% Implements a file-system-as-map structure, which is traversible externally.
-%%% Each file is a binary, and each directory is a Converge message.
-%%% Additionally, this module adds a series of WASI-preview-1 combatible 
-%%% functions for accessing the filesystem.
+%%% Each file is a binary and each directory is a Converge message.
+%%% Additionally, this module adds a series of WASI-preview-1 compatible
+%%% functions for accessing the filesystem as imported functions by WASM
+%%% modules.
 
 -module(dev_vfs).
--export([init/3, execute/3, stdout/1]).
+-export([init/3, compute/1, stdout/1]).
 -export([path_open/3, fd_write/3, fd_read/3]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(INIT_VFS,
     #{
@@ -24,15 +25,15 @@
     #{
         0 => #{
             <<"Filename">> => <<"/dev/stdin">>,
-            <<"offset">> => 0
+            <<"Offset">> => 0
         },
         1 => #{
             <<"Filename">> => <<"/dev/stdout">>,
-            <<"offset">> => 0
+            <<"Offset">> => 0
         },
         2 => #{
             <<"Filename">> => <<"/dev/stderr">>,
-            <<"offset">> => 0
+            <<"Offset">> => 0
         }
     }
 ).
@@ -47,7 +48,7 @@ init(M1, _M2, Opts) ->
             M1,
             #{
                 <<"WASM/stdlib/wasi_snapshot_preview1">> =>
-                    #{ device => <<"WASI-VFS/1.0">>}
+                    #{ device => <<"VFS/WASI-1.0">>}
             },
             Opts
         ),
@@ -67,27 +68,30 @@ init(M1, _M2, Opts) ->
         ),
     {ok, CompleteMsg}.
 
-%% @doc Encode the input message for inclusion in the VFS.
-execute(M1, M2, Opts) ->
-    case hb_converge:get(<<"Pass">>, M1, Opts) of
-        1 ->
-            MsgToProc = hb_converge:get(<<"Message">>, M2, Opts),
-            JSON =
-                ar_bundles:serialize(
-                    hb_message:message_to_tx(MsgToProc),
-                    json
-                ),
-            ?event(setting_message_vfs_key),
-            {ok,
-                hb_converge:set(
-                    M1,
-                    <<"vfs/message">>,
-                    JSON,
-                    Opts
-                )
-            };
-        _ -> {ok, M1}
-    end.
+compute(Msg1) ->
+    {ok, Msg1}.
+
+% %% @doc Encode the input message for inclusion in the VFS.
+% execute(M1, M2, Opts) ->
+%     case hb_converge:get(<<"Pass">>, M1, Opts) of
+%         1 ->
+%             MsgToProc = hb_converge:get(<<"Message">>, M2, Opts),
+%             JSON =
+%                 ar_bundles:serialize(
+%                     hb_message:message_to_tx(MsgToProc),
+%                     json
+%                 ),
+%             ?event(setting_message_vfs_key),
+%             {ok,
+%                 hb_converge:set(
+%                     M1,
+%                     <<"vfs/message">>,
+%                     JSON,
+%                     Opts
+%                 )
+%             };
+%         _ -> {ok, M1}
+%     end.
 
 %% @doc Return the stdout buffer from a state message.
 stdout(M) ->
@@ -229,3 +233,41 @@ parse_iovec(Port, Ptr) ->
         Len:64/little-unsigned-integer
     >> = VecStruct,
     {BinPtr, Len}.
+
+%%% Tests
+
+init() ->
+    application:ensure_all_started(hb).
+
+test_run_vfs_stack(File, Func, Params, AdditionalMsg) ->
+    init(),
+    Msg0 = dev_wasm:store_wasm_image(File),
+    Msg1 = Msg0#{
+        device => <<"Stack/1.0">>,
+        <<"Device-Stack">> => [<<"VFS/WASI-1.0">>, <<"WASM-64/1.0">>],
+        <<"WASM-Function">> => Func,
+        <<"WASM-Params">> => Params
+    },
+    {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
+    ?event({after_init, Msg2}),
+    Msg3 =
+        maps:merge(
+            Msg2,
+            hb_converge:set(
+                #{
+                    <<"WASM-Function">> => Func,
+                    <<"WASM-Params">> => Params
+                },
+                AdditionalMsg,
+                #{ hashpath => ignore }
+            )
+        ),
+    ?event({after_setup, Msg3}),
+    {ok, StateRes} = hb_converge:resolve(Msg3, <<"Compute">>, #{}),
+    ?event({after_resolve, StateRes}),
+    {ok, StateRes}.
+
+basic_write_test() ->
+    {ok, StateRes} = 
+        test_run_vfs_stack("test/test-print.wasm", <<"hello">>, [], #{}),
+    ?assertEqual(<<"Hello World\nHowdy!\n">>, stdout(StateRes)).
