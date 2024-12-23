@@ -608,9 +608,13 @@ encode_tags([]) ->
 encode_tags(Tags) ->
     EncodedBlocks = lists:flatmap(
         fun({Name, Value}) ->
-            EncName = encode_avro_string(Name),
-            EncValue = encode_avro_string(Value),
-            [EncName, EncValue]
+            Res = [encode_avro_string(Name), encode_avro_string(Value)],
+            case lists:member(error, Res) of
+                true ->
+                    throw({cannot_encode_empty_string, Name, Value});
+                false ->
+                    Res
+            end
         end,
         Tags
     ),
@@ -620,7 +624,7 @@ encode_tags(Tags) ->
 
 %% @doc Encode a string for Avro using ZigZag and VInt encoding.
 encode_avro_string(<<>>) ->
-    throw(empty_strings_not_supported);
+    error;
 encode_avro_string(String) ->
     StringBytes = unicode:characters_to_binary(String, utf8),
     Length = byte_size(StringBytes),
@@ -1005,7 +1009,7 @@ test_bundle_with_zero_length_tag() ->
         tags = [{<<"tag1">>, <<"">>}],
         data = <<"data">>
     },
-    ?assertThrow(empty_strings_not_supported, serialize([Item])).
+    ?assertThrow({cannot_encode_empty_string, <<"tag1">>, <<>>}, serialize([Item])).
 
 test_unsigned_data_item_id() ->
     Item1 = deserialize(
