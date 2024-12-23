@@ -164,21 +164,19 @@ terminate(M1, _M2, Opts) ->
 %% 4. If it succeeds, return the new state from the message.
 %% 5. If it fails with `not_found', call the stub handler.
 import(Msg1, Msg2, Opts) ->
+    % 1. Adjust the path to the stdlib.
     ModName = hb_converge:get(<<"Module">>, Msg2, Opts),
     FuncName = hb_converge:get(<<"Func">>, Msg2, Opts),
-    AdjustedPath = [ <<"WASM">>, <<"stdlib">>, ModName, FuncName ],
+    AdjustedPath = <<"WASM/stdlib/", ModName/binary, "/", FuncName/binary>>,
+    StatePath = << "WASM/stdlib/", ModName/binary, "/", "/State">>,
     AdjustedMsg2 = Msg2#{ path => AdjustedPath },
-    %?event({invoking_stdlib, {explicit, Msg1}, {explicit, Msg2}}),
-    % 1. Adjust the path to the stdlib.
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =
         hb_converge:set(
             Msg1,
-            lists:droplast(AdjustedPath) ++ [<<"State">>],
-            Msg1,
-            Opts
+            #{ StatePath => Msg1 },
+            Opts#{ hashpath => ignore }
         ),
-    %?event({path_adjusted, AdjustedMsg2}),
     %?event({state_added_msg1, AdjustedMsg1}),
     % 3. Resolve the adjusted path against the added state.
     case hb_converge:resolve(AdjustedMsg1, AdjustedMsg2, Opts) of
