@@ -281,9 +281,11 @@ message_to_tx(RawM) when is_map(RawM) ->
                         {ok, Map} when is_map(Map) ->
                             {Key, message_to_tx(Map)};
                         {ok, <<>>} ->
-                            {<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>};
+                            BinKey = hb_converge:key_to_binary(Key),
+                            {<<"Converge-Type:", BinKey/binary>>, <<"Empty-Binary">>};
                         {ok, []} ->
-                            {<<"Converge-Type:", Key/binary>>, <<"Empty-List">>};
+                            BinKey = hb_converge:key_to_binary(Key),
+                            {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};
                         {ok, Value} when is_binary(Value) ->
                             {Key, Value};
                         {ok, Value} when
