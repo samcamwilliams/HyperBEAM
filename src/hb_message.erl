@@ -280,6 +280,10 @@ message_to_tx(RawM) when is_map(RawM) ->
                     case maps:find(Key, M) of
                         {ok, Map} when is_map(Map) ->
                             {Key, message_to_tx(Map)};
+                        {ok, <<>>} ->
+                            {<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>};
+                        {ok, []} ->
+                            {<<"Converge-Type:", Key/binary>>, <<"Empty-List">>};
                         {ok, Value} when is_binary(Value) ->
                             {Key, Value};
                         {ok, Value} when
@@ -364,7 +368,7 @@ message_to_tx(RawM) when is_map(RawM) ->
                 TX#tx { data = DataItems#{ data => message_to_tx(Data) } }
         end,
     % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
-    try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
+    Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
     catch
         _:Error ->
             ?event(debug, {{reset_ids_error, Error}, {tx_without_data, TX}}),
@@ -373,7 +377,9 @@ message_to_tx(RawM) when is_map(RawM) ->
                 {data, TXWithData#tx.data}
             }),
             throw(Error)
-    end;
+    end,
+    %?event(debug, {result, {explicit, Res}}),
+    Res;
 message_to_tx(Other) ->
     ?event({unexpected_message_form, {explicit, Other}}),
     throw(invalid_tx).
@@ -458,7 +464,20 @@ tx_to_message(TX) when is_record(TX, tx) ->
     end.
 do_tx_to_message(RawTX) ->
     % Ensure the TX is fully deserialized.
-    TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
+    TX0 = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
+    % Find empty tags and replace them with the empty binary.
+    TX =
+        TX0#tx {
+            tags = lists:map(
+                fun({<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>}) ->
+                    {Key, <<>>};
+                ({<<"Converge-Type:", Key/binary>>, <<"Empty-List">>}) ->
+                    {Key, []};
+                (Tag) -> Tag
+                end,
+                TX0#tx.tags
+            )
+        },
     % We need to generate a map from each field of the tx record.
     % Get the raw fields and values of the tx record and pair them.
     Fields = record_info(fields, tx),
@@ -484,7 +503,7 @@ do_tx_to_message(RawTX) ->
         end,
         TX#tx.tags
     ),
-    % Parse tags that have a "Type:" prefix.
+    % Parse tags that have a "Converge-Type:" prefix.
     TagTypes =
         [
             {Name, list_to_existing_atom(
@@ -825,3 +844,16 @@ list_encoding_test() ->
 message_with_simple_list_test() ->
     Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
     ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+empty_string_in_tag_test() ->
+    Msg =
+        #{
+            dev =>
+                #{
+                    <<"stderr">> => <<"">>,
+                    <<"stdin">> => <<"b">>,
+                    <<"stdout">> => <<"c">>
+                }
+        },
+    Msg2 = minimize(tx_to_message(message_to_tx(Msg))),
+    ?assert(match(Msg, Msg2)).
