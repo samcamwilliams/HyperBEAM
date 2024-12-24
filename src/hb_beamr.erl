@@ -35,7 +35,7 @@
 %%%             ImportFun must have an arity of 2: Taking an arbitrary `state`
 %%%             term, and a map containing the `port`, `module`, `func`, `args`,
 %%%             `signature`, and the `options` map of the import.
-%%%             It must return a tuple of the form {ok, NewState, Response}.
+%%%             It must return a tuple of the form {ok, Response, NewState}.
 %%%     serialize(Port) -> {ok, Mem}
 %%%         Where:
 %%%             Port is the port to the LID.
@@ -92,7 +92,7 @@ stop(Port) when is_port(Port) ->
 
 %% @doc Call a function in the WASM executor (see moduledoc for more details).
 call(Port, FunctionName, Args) ->
-    {ok, Res, #{}} = call(Port, FunctionName, Args, fun stub/3),
+    {ok, Res, _} = call(Port, FunctionName, Args, fun stub/3),
     {ok, Res}.
 call(Port, FunctionName, Args, ImportFun) ->
     call(Port, FunctionName, Args, ImportFun, #{}).
@@ -129,7 +129,7 @@ call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
 %% @doc Stub import function for the WASM executor.
 stub(Msg1, _Msg2, _Opts) ->
     ?event(stub_stdlib_called),
-    {ok, #{ state => Msg1, wasm_response => [0] }}.
+    {ok, [0], Msg1}.
 
 %% @doc Synchonously monitor the WASM executor for a call result and any
 %% imports that need to be handled.
