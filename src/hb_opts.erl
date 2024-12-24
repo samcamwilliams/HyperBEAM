@@ -51,6 +51,7 @@ config() ->
                 <<"Test-Device/1.0">> => dev_test,
                 <<"Message/1.0">> => dev_message,
                 <<"Stack/1.0">> => dev_stack,
+                <<"Multipass/1.0">> => dev_multipass,
                 <<"Scheduler/1.0">> => dev_scheduler,
                 <<"Process/1.0">> => dev_process,
                 <<"WASM-64/1.0">> => dev_wasm,
@@ -60,7 +61,6 @@ config() ->
                 <<"JSON-Interface">> => dev_json_iface,
                 <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
-                <<"Multipass">> => dev_multipass,
                 <<"Push">> => dev_mu,
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
