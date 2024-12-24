@@ -292,6 +292,11 @@ wasm_memory_t* get_memory(Proc* proc) {
     return NULL;
 }
 
+long get_memory_size(Proc* proc) {
+    wasm_memory_t* memory = get_memory(proc);
+    return wasm_memory_size(memory) * 65536;
+}
+
 void send_error(Proc* proc, const char* message_fmt, ...) {
     va_list args;
     va_start(args, message_fmt);
@@ -429,9 +434,11 @@ static void async_init(void* raw) {
     DRV_DEBUG("Module created: %p", proc->module);
     if (!proc->module) {
         DRV_DEBUG("Failed to create module");
+        send_error(proc, "Failed to create module.");
         wasm_byte_vec_delete(&binary);
         wasm_store_delete(proc->store);
         wasm_engine_delete(proc->engine);
+        drv_unlock(proc->is_running);
         return;
     }
     //wasm_byte_vec_delete(&binary);
@@ -486,7 +493,7 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
-        DRV_DEBUG("Creating callback for %s.%s", module_name->data, name->data);
+        DRV_DEBUG("Creating callback for %s.%s [%s]", module_name->data, name->data, type_str);
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;
@@ -514,7 +521,9 @@ static void async_init(void* raw) {
     wasm_trap_t* trap = NULL;
     proc->instance = wasm_instance_new_with_args(proc->store, proc->module, &externs, &trap, 0x10000, 0x10000);
     if (!proc->instance) {
-        DRV_DEBUG("Failed to create WASM proc");
+        DRV_DEBUG("Failed to create WASM instance");
+        send_error(proc, "Failed to create WASM instance (although module was created).");
+        drv_unlock(proc->is_running);
         return;
     }
 
@@ -617,7 +626,7 @@ static void async_call(void* raw) {
         // char* func_name;
 
         // DRV_DEBUG("WASM Exception: [func_index: %d, func_offset: %d] %.*s", func_index, func_offset, trap_msg.size, trap_msg.data);
-        send_error(proc, "WASM Exception: %.*s", trap_msg.size, trap_msg.data);
+        send_error(proc, "%.*s", trap_msg.size, trap_msg.data);
         drv_unlock(proc->is_running);
         return;
     }
@@ -705,7 +714,6 @@ static void wasm_driver_stop(ErlDrvData raw) {
     Proc* proc = (Proc*)raw;
     DRV_DEBUG("Stopping WASM driver");
 
-    // TODO: We should probably lock a mutex here and in the import_response function.
     if(proc->current_import) {
         DRV_DEBUG("Shutting down during import response...");
         proc->current_import->error_message = "WASM driver unloaded during import response";
@@ -822,6 +830,12 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         DRV_DEBUG("Decoded binary. Res: %d. Size (bits): %ld", res, size_l);
         long size_bytes = size_l / 8;
         DRV_DEBUG("Write received. Ptr: %ld. Bytes: %ld", ptr, size_bytes);
+        long memory_size = get_memory_size(proc);
+        if(ptr + size_bytes > memory_size) {
+            DRV_DEBUG("Write request out of bounds.");
+            send_error(proc, "Write request out of bounds");
+            return;
+        }
         byte_t* memory_data = wasm_memory_data(get_memory(proc));
         DRV_DEBUG("Memory location to write to: %p", ptr+memory_data);
 
@@ -840,7 +854,13 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         ei_decode_long(buff, &index, &ptr);
         ei_decode_long(buff, &index, &size);
         long size_l = (long)size;
-        DRV_DEBUG("Read received. Ptr: %ld. Size: %ld", ptr, size_l);
+        long memory_size = get_memory_size(proc);
+        DRV_DEBUG("Read received. Ptr: %ld. Size: %ld. Memory size: %ld", ptr, size_l, memory_size);
+        if(ptr + size_l > memory_size) {
+            DRV_DEBUG("Read request out of bounds.");
+            send_error(proc, "Read request out of bounds");
+            return;
+        }
         byte_t* memory_data = wasm_memory_data(get_memory(proc));
         DRV_DEBUG("Memory location to read from: %p", memory_data + ptr);
         
@@ -872,9 +892,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
     }
     else if (strcmp(command, "size") == 0) {
         DRV_DEBUG("Size received");
-        wasm_memory_t* mem = get_memory(proc);
-        long pages = wasm_memory_size(mem);
-        long size = pages * 65536;
+        long size = get_memory_size(proc);
         DRV_DEBUG("Size: %ld", size);
 
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 6);

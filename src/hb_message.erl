@@ -148,7 +148,7 @@ match(Map1, Map2) ->
                                 true -> true;
                                 false ->
                                     ?event(
-                                        {key_mismatch,
+                                        {value_mismatch,
                                             {explicit, {Key, Val1, Val2}}
                                         }
                                     ),
@@ -181,13 +181,15 @@ normalize_keys(Map) ->
     ).
 
 %% @doc Remove keys from the map that can be regenerated.
+minimize(RawVal) when not is_map(RawVal) -> RawVal;
 minimize(Map) ->
     NormRegenKeys = normalize_keys(?REGEN_KEYS),
     maps:filter(
         fun(Key, _) ->
-            not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys)
+            (not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys))
+                andalso (not hb_private:is_private(Key))
         end,
-        Map
+        maps:map(fun(_K, V) -> minimize(V) end, Map)
     ).
 
 %% @doc Return a map with only the keys that necessary, without those that can
@@ -278,6 +280,12 @@ message_to_tx(RawM) when is_map(RawM) ->
                     case maps:find(Key, M) of
                         {ok, Map} when is_map(Map) ->
                             {Key, message_to_tx(Map)};
+                        {ok, <<>>} ->
+                            BinKey = hb_converge:key_to_binary(Key),
+                            {<<"Converge-Type:", BinKey/binary>>, <<"Empty-Binary">>};
+                        {ok, []} ->
+                            BinKey = hb_converge:key_to_binary(Key),
+                            {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};
                         {ok, Value} when is_binary(Value) ->
                             {Key, Value};
                         {ok, Value} when
@@ -361,11 +369,19 @@ message_to_tx(RawM) when is_map(RawM) ->
             {Data, _} when is_binary(Data) ->
                 TX#tx { data = DataItems#{ data => message_to_tx(Data) } }
         end,
-    % ?event({prepared_tx_before_ids,
-    % 	{tags, {explicit, TXWithData#tx.tags}},
-    % 	{data, TXWithData#tx.data}
-    % }),
-    ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
+    % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
+    Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
+    catch
+        _:Error ->
+            ?event(debug, {{reset_ids_error, Error}, {tx_without_data, TX}}),
+            ?event(debug, {prepared_tx_before_ids,
+                {tags, {explicit, TXWithData#tx.tags}},
+                {data, TXWithData#tx.data}
+            }),
+            throw(Error)
+    end,
+    %?event(debug, {result, {explicit, Res}}),
+    Res;
 message_to_tx(Other) ->
     ?event({unexpected_message_form, {explicit, Other}}),
     throw(invalid_tx).
@@ -450,7 +466,20 @@ tx_to_message(TX) when is_record(TX, tx) ->
     end.
 do_tx_to_message(RawTX) ->
     % Ensure the TX is fully deserialized.
-    TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
+    TX0 = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
+    % Find empty tags and replace them with the empty binary.
+    TX =
+        TX0#tx {
+            tags = lists:map(
+                fun({<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>}) ->
+                    {Key, <<>>};
+                ({<<"Converge-Type:", Key/binary>>, <<"Empty-List">>}) ->
+                    {Key, []};
+                (Tag) -> Tag
+                end,
+                TX0#tx.tags
+            )
+        },
     % We need to generate a map from each field of the tx record.
     % Get the raw fields and values of the tx record and pair them.
     Fields = record_info(fields, tx),
@@ -476,7 +505,7 @@ do_tx_to_message(RawTX) ->
         end,
         TX#tx.tags
     ),
-    % Parse tags that have a "Type:" prefix.
+    % Parse tags that have a "Converge-Type:" prefix.
     TagTypes =
         [
             {Name, list_to_existing_atom(
@@ -814,6 +843,19 @@ list_encoding_test() ->
     {<<"List">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
     ?assertEqual(List3, decode_value(list, Encoded3)).
 
-message_with_list_test() ->
+message_with_simple_list_test() ->
     Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
     ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+
+empty_string_in_tag_test() ->
+    Msg =
+        #{
+            dev =>
+                #{
+                    <<"stderr">> => <<"">>,
+                    <<"stdin">> => <<"b">>,
+                    <<"stdout">> => <<"c">>
+                }
+        },
+    Msg2 = minimize(tx_to_message(message_to_tx(Msg))),
+    ?assert(match(Msg, Msg2)).

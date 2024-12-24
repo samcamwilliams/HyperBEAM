@@ -608,9 +608,13 @@ encode_tags([]) ->
 encode_tags(Tags) ->
     EncodedBlocks = lists:flatmap(
         fun({Name, Value}) ->
-            EncName = encode_avro_string(Name),
-            EncValue = encode_avro_string(Value),
-            [EncName, EncValue]
+            Res = [encode_avro_string(Name), encode_avro_string(Value)],
+            case lists:member(error, Res) of
+                true ->
+                    throw({cannot_encode_empty_string, Name, Value});
+                false ->
+                    Res
+            end
         end,
         Tags
     ),
@@ -619,6 +623,8 @@ encode_tags(Tags) ->
     <<ZigZagCount/binary, (list_to_binary(EncodedBlocks))/binary, 0>>.
 
 %% @doc Encode a string for Avro using ZigZag and VInt encoding.
+encode_avro_string(<<>>) ->
+    error;
 encode_avro_string(String) ->
     StringBytes = unicode:characters_to_binary(String, utf8),
     Length = byte_size(StringBytes),
@@ -934,6 +940,7 @@ ar_bundles_test_() ->
     [
         {timeout, 30, fun test_no_tags/0},
         {timeout, 30, fun test_with_tags/0},
+        {timeout, 30, fun test_bundle_with_zero_length_tag/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
         {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
@@ -995,6 +1002,14 @@ test_with_tags() ->
     ?assertEqual(SignedDataItem, SignedDataItem2),
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
+
+test_bundle_with_zero_length_tag() ->
+    Item = #tx{
+        format = ans104,
+        tags = [{<<"tag1">>, <<"">>}],
+        data = <<"data">>
+    },
+    ?assertThrow({cannot_encode_empty_string, <<"tag1">>, <<>>}, serialize([Item])).
 
 test_unsigned_data_item_id() ->
     Item1 = deserialize(

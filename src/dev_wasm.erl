@@ -30,7 +30,7 @@
 -export([init/3, compute/3, import/3, terminate/3]).
 -export([wasm_state/3]).
 %%% Test API:
--export([store_wasm_image/1]).
+-export([store_wasm_image/1, gen_test_env/0, gen_test_aos_msg/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -80,7 +80,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         module := Module,
         func := Func,
         args := Args,
-        signature := Signature
+        func_sig := Signature
     } = Msg2,
     {ok, Msg3} =
         hb_converge:resolve(
@@ -91,7 +91,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
                 module => list_to_binary(Module),
                 func => list_to_binary(Func),
                 args => Args,
-                func_sig => Signature
+                func_sig => list_to_binary(Signature)
             },
             Opts
         ),
@@ -164,21 +164,19 @@ terminate(M1, _M2, Opts) ->
 %% 4. If it succeeds, return the new state from the message.
 %% 5. If it fails with `not_found', call the stub handler.
 import(Msg1, Msg2, Opts) ->
+    % 1. Adjust the path to the stdlib.
     ModName = hb_converge:get(<<"Module">>, Msg2, Opts),
     FuncName = hb_converge:get(<<"Func">>, Msg2, Opts),
-    AdjustedPath = [ <<"WASM">>, <<"stdlib">>, ModName, FuncName ],
+    AdjustedPath = <<"WASM/stdlib/", ModName/binary, "/", FuncName/binary>>,
+    StatePath = << "WASM/stdlib/", ModName/binary, "/", "State">>,
     AdjustedMsg2 = Msg2#{ path => AdjustedPath },
-    %?event({invoking_stdlib, {explicit, Msg1}, {explicit, Msg2}}),
-    % 1. Adjust the path to the stdlib.
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =
         hb_converge:set(
             Msg1,
-            lists:droplast(AdjustedPath) ++ [<<"State">>],
-            Msg1,
-            Opts
+            #{ StatePath => Msg1 },
+            Opts#{ hashpath => ignore }
         ),
-    %?event({path_adjusted, AdjustedMsg2}),
     %?event({state_added_msg1, AdjustedMsg1}),
     % 3. Resolve the adjusted path against the added state.
     case hb_converge:resolve(AdjustedMsg1, AdjustedMsg2, Opts) of
@@ -188,26 +186,27 @@ import(Msg1, Msg2, Opts) ->
         {error, not_found} ->
             ?event(stdlib_not_found),
             % 5. Failure. Call the stub handler.
-            lib(Msg1, Msg2, Opts)
+            undefined_import_stub(Msg1, Msg2, Opts)
     end.
 
 %% @doc Log the call to the standard library as an event, and write the
 %% call details into the message.
-lib(Msg1, Msg2, Opts) ->
+undefined_import_stub(Msg1, Msg2, Opts) ->
     ?event({unimplemented_dev_wasm_call, {msg1, Msg1}, {msg2, Msg2}}),
-    State = hb_converge:get(<<"State">>, Msg1, Opts),
     Msg3 = hb_converge:set(
-        State,
-        #{<<"Results/WASM/Unimplemented-Calls">> =>
+        Msg1,
+        #{<<"State/Results/WASM/Undefined-Calls">> =>
             [
                 Msg2
             |
-                hb_converge:get(
-                    <<"Results/WASM/Undefined-Calls">>,
-                    State,
-                    [],
+                case hb_converge:get(
+                    <<"State/Results/WASM/Undefined-Calls">>,
+                    Msg1,
                     Opts
-                )
+                ) of
+                    not_found -> [];
+                    X -> X
+                end
             ]
         }
     ),
@@ -275,3 +274,11 @@ imported_function_test() ->
             }
         )
     ).
+
+%%% External AOS Test Helpers
+
+gen_test_env() ->
+    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
+
+gen_test_aos_msg(Command) ->
+    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"", (list_to_binary(Command))/binary, "\"}\0">>.

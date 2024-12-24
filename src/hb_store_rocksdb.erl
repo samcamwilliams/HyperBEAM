@@ -185,14 +185,19 @@ add_path(_Opts, Path1, Path2) ->
 %%% Gen server callbacks
 %%%=============================================================================
 init(Dir) ->
-    {ok, DBHandle, [DefaultH, MetaH]} = open_rockdb(Dir),
-    State = #{
-        db_handle => DBHandle,
-        dir => Dir,
-        data_family => DefaultH,
-        meta_family => MetaH
-    },
-    {ok, State}.
+    filelib:ensure_dir(Dir),
+    case open_rockdb(Dir) of
+        {ok, DBHandle, [DefaultH, MetaH]} ->
+            State = #{
+                db_handle => DBHandle,
+                dir => Dir,
+                data_family => DefaultH,
+                meta_family => MetaH
+            },
+            {ok, State};
+        {error, Reason} ->
+            {stop, Reason}
+    end.
 
 handle_cast(_Request, State) ->
     {noreply, State}.

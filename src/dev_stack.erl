@@ -89,7 +89,7 @@ info(Msg) ->
     maps:merge(
         #{
             handler => fun router/4,
-            excludes => [set]
+            excludes => [set, keys]
         },
         case maps:get(<<"Stack-Keys">>, Msg, not_found) of
             not_found -> #{};
@@ -271,7 +271,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	end.
 
 maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
-    case hb_converge:to_key(hb_converge:get(<<"Error-Strategy">>, Message1, Opts)) of
+    case hb_opts:get(error_strategy, throw, Opts) of
         stop ->
 			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
         throw ->
