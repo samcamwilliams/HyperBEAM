@@ -81,6 +81,7 @@ start(WasmBinary) when is_binary(WasmBinary) ->
             {ok, Port, Imports, Exports};
         {error, Error} ->
             ?event({wasm_init_error, Error}),
+            port_close(Port),
             {error, Error}
     end.
 
