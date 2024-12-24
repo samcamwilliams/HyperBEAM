@@ -434,6 +434,7 @@ static void async_init(void* raw) {
     DRV_DEBUG("Module created: %p", proc->module);
     if (!proc->module) {
         DRV_DEBUG("Failed to create module");
+        send_error(proc, "Failed to create module.");
         wasm_byte_vec_delete(&binary);
         wasm_store_delete(proc->store);
         wasm_engine_delete(proc->engine);
@@ -519,7 +520,8 @@ static void async_init(void* raw) {
     wasm_trap_t* trap = NULL;
     proc->instance = wasm_instance_new_with_args(proc->store, proc->module, &externs, &trap, 0x10000, 0x10000);
     if (!proc->instance) {
-        DRV_DEBUG("Failed to create WASM proc");
+        DRV_DEBUG("Failed to create WASM instance");
+        send_error(proc, "Failed to create WASM instance (although module was created).");
         return;
     }
 
