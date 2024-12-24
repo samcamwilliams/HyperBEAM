@@ -67,7 +67,7 @@ load_driver() ->
 
 %% @doc Start a WASM executor context. Yields a port to the LID, and the
 %% imports and exports of the WASM module.
-start(WasmBinary) ->
+start(WasmBinary) when is_binary(WasmBinary) ->
     ok = load_driver(),
     Port = open_port({spawn, "hb_beamr"}, []),
     Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
@@ -78,11 +78,14 @@ start(WasmBinary) ->
                 {wasm_init_success,
                     {imports, length(Imports)},
                     {exports, length(Exports)}}),
-            {ok, Port, Imports, Exports}
+            {ok, Port, Imports, Exports};
+        {error, Error} ->
+            ?event({wasm_init_error, Error}),
+            {error, Error}
     end.
 
 %% @doc Stop a WASM executor context.
-stop(Port) ->
+stop(Port) when is_port(Port) ->
     ?event({stop_invoked_for_beamr, Port}),
     port_close(Port),
     ok.
@@ -98,11 +101,30 @@ call(Port, FunctionName, Args, ImportFun, StateMsg) ->
 call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
         when is_binary(FunctionName) ->
     call(Port, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
-call(Port, FunctionName, Args, ImportFun, StateMsg, Opts) ->
-    ?event({call_started, Port, FunctionName, Args, ImportFun, StateMsg, Opts}),
-    Port ! {self(), {command, term_to_binary({call, FunctionName, Args})}},
-    ?event({waiting_for_call_result, self(), Port}),
-    monitor_call(Port, ImportFun, StateMsg, Opts).
+call(Port, FunctionName, Args, ImportFun, StateMsg, Opts) 
+        when is_port(Port)
+        andalso is_list(FunctionName)
+        andalso is_list(Args)
+        andalso is_function(ImportFun)
+        andalso is_map(Opts) ->
+    case is_valid_arg_list(Args) of
+        true ->
+            ?event(
+                {call_started,
+                    Port,
+                    FunctionName,
+                    Args,
+                    ImportFun,
+                    StateMsg,
+                    Opts}),
+            Port !
+                {self(),
+                    {command, term_to_binary({call, FunctionName, Args})}},
+            ?event({waiting_for_call_result, self(), Port}),
+            monitor_call(Port, ImportFun, StateMsg, Opts);
+        false ->
+            {error, {invalid_args, Args}}
+    end.
 
 %% @doc Stub import function for the WASM executor.
 stub(Msg1, _Msg2, _Opts) ->
@@ -131,12 +153,7 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                         Opts
                     ),
                 ?event({import_returned, Module, Func, Args, Response}),
-                Port !
-                    {self(),
-                        {
-                            command,
-                            term_to_binary({import_response, Response})
-                        }},
+                dispatch_response(Port, Response),
                 monitor_call(Port, ImportFun, StateMsg2, Opts)
             catch
                 Err:Reason:Stack ->
@@ -149,8 +166,30 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
             {error, Error, StateMsg}
     end.
 
+%% @doc Check the type of an import response and dispatch it to a Beamr port.
+dispatch_response(Port, Term) when is_port(Port) ->
+	case is_valid_arg_list(Term) of
+		true ->
+			Port !
+				{self(),
+					{
+						command,
+						term_to_binary({import_response, Term})
+					}};
+		false ->
+			throw({error, {invalid_response, Term}})
+	end;
+dispatch_response(_Port, Term) ->
+	throw({error, {invalid_response, Term}}).
+
+%% @doc Check that a list of arguments is valid for a WASM function call.
+is_valid_arg_list(Args) when is_list(Args) ->
+    lists:all(fun(Arg) -> is_integer(Arg) or is_float(Arg) end, Args);
+is_valid_arg_list(_) ->
+    false.
+
 %% @doc Serialize the WASM state to a binary.
-serialize(Port) ->
+serialize(Port) when is_port(Port) ->
     ?event(starting_serialize),
     {ok, Size} = hb_beamr_io:size(Port),
     {ok, Mem} = hb_beamr_io:read(Port, 0, Size),
@@ -158,7 +197,7 @@ serialize(Port) ->
     {ok, Mem}.
 
 %% @doc Deserialize a WASM state from a binary.
-deserialize(Port, Bin) ->
+deserialize(Port, Bin) when is_port(Port) andalso is_binary(Bin) ->
     ?event(starting_deserialize),
     Res = hb_beamr_io:write(Port, 0, Bin),
     ?event({finished_deserialize, Res}),
