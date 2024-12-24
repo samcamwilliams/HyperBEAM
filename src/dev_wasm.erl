@@ -30,7 +30,7 @@
 -export([init/3, compute/3, import/3, terminate/3]).
 -export([wasm_state/3]).
 %%% Test API:
--export([store_wasm_image/1, gen_test_env/0, gen_test_aos_msg/1]).
+-export([store_wasm_image/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -274,11 +274,3 @@ imported_function_test() ->
             }
         )
     ).
-
-%%% External AOS Test Helpers
-
-gen_test_env() ->
-    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
-
-gen_test_aos_msg(Command) ->
-    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"", (list_to_binary(Command))/binary, "\"}\0">>.
