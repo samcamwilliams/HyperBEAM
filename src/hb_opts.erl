@@ -54,7 +54,7 @@ config() ->
                 <<"Scheduler/1.0">> => dev_scheduler,
                 <<"Process/1.0">> => dev_process,
                 <<"WASM-64/1.0">> => dev_wasm,
-                <<"VFS/WASI-1.0">> => dev_vfs,
+                <<"WASI/1.0">> => dev_wasi,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"JSON-Interface">> => dev_json_iface,

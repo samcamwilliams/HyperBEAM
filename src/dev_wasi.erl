@@ -4,8 +4,7 @@
 %%% Additionally, this module adds a series of WASI-preview-1 compatible
 %%% functions for accessing the filesystem as imported functions by WASM
 %%% modules.
-
--module(dev_vfs).
+-module(dev_wasi).
 -export([init/3, compute/1, stdout/1]).
 -export([path_open/3, fd_write/3, fd_read/3, clock_time_get/3]).
 -include("include/hb.hrl").
@@ -48,7 +47,7 @@ init(M1, _M2, Opts) ->
             M1,
             #{
                 <<"WASM/stdlib/wasi_snapshot_preview1">> =>
-                    #{ device => <<"VFS/WASI-1.0">>}
+                    #{ device => <<"WASI/1.0">>}
             },
             Opts
         ),
@@ -250,12 +249,12 @@ clock_time_get(Msg1, _Msg2, Opts) ->
 init() ->
     application:ensure_all_started(hb).
 
-generate_vfs_stack(File, Func, Params) ->
+generate_wasi_stack(File, Func, Params) ->
     init(),
     Msg0 = dev_wasm:store_wasm_image(File),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
-        <<"Device-Stack">> => [<<"VFS/WASI-1.0">>, <<"WASM-64/1.0">>],
+        <<"Device-Stack">> => [<<"WASI/1.0">>, <<"WASM-64/1.0">>],
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"WASM-Function">> => Func,
         <<"WASM-Params">> => Params
@@ -263,28 +262,8 @@ generate_vfs_stack(File, Func, Params) ->
     {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
     Msg2.
 
-run_vfs_stack(File, Func, Params, AdditionalMsg) ->
-    Msg2 = generate_vfs_stack(File, Func, Params),
-    ?event({after_init, Msg2}),
-    Msg3 =
-        maps:merge(
-            Msg2,
-            hb_converge:set(
-                #{
-                    <<"WASM-Function">> => Func,
-                    <<"WASM-Params">> => Params
-                },
-                AdditionalMsg,
-                #{ hashpath => ignore }
-            )
-        ),
-    ?event({after_setup, Msg3}),
-    {ok, StateRes} = hb_converge:resolve(Msg3, <<"Compute">>, #{}),
-    ?event({after_resolve, StateRes}),
-    {ok, StateRes}.
-
 vfs_is_serializable_test() ->
-    StackMsg = generate_vfs_stack("test/test-print.wasm", <<"hello">>, []),
+    StackMsg = generate_wasi_stack("test/test-print.wasm", <<"hello">>, []),
     VFSMsg = hb_converge:get(<<"VFS">>, StackMsg),
     VFSMsg2 =
         hb_message:minimize(
@@ -292,13 +271,13 @@ vfs_is_serializable_test() ->
                 hb_message:message_to_tx(VFSMsg))),
     ?assert(hb_message:match(VFSMsg, VFSMsg2)).
 
-stack_is_serializable_test() ->
-    Msg = generate_vfs_stack("test/test-print.wasm", <<"hello">>, []),
+wasi_stack_is_serializable_test() ->
+    Msg = generate_wasi_stack("test/test-print.wasm", <<"hello">>, []),
     Msg2 = hb_message:tx_to_message(hb_message:message_to_tx(Msg)),
     ?assert(hb_message:match(Msg, Msg2)).
 
 basic_aos_exec_test() ->
-    Init = generate_vfs_stack("test/aos-2-pure-xs.wasm", <<"handle">>, []),
+    Init = generate_wasi_stack("test/aos-2-pure-xs.wasm", <<"handle">>, []),
     Msg = dev_wasm:gen_test_aos_msg("return 1+1"),
     Env = dev_wasm:gen_test_env(),
     Port = hb_private:get(<<"WASM/Port">>, Init, #{}),
@@ -316,7 +295,8 @@ basic_aos_exec_test() ->
     Ready = Init#{ <<"WASM-Params">> => [Ptr1, Ptr2] },
     {ok, StateRes} = hb_converge:resolve(Ready, <<"Compute">>, #{}),
     [Ptr] = hb_converge:get(<<"Results/WASM/Output">>, StateRes),
-    ?event({got_output, Ptr}),
     {ok, Output} = hb_beamr_io:read_string(Port, Ptr),
     ?event({got_output, Output}),
-    ?assertEqual(<<"2">>, Output).
+    #{ <<"response">> := #{ <<"Output">> := #{ <<"data">> := Data }} }
+        = jiffy:decode(Output, [return_maps]),
+    ?assertEqual(<<"2">>, Data).
