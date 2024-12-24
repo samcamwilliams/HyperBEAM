@@ -135,15 +135,21 @@ resolve(Msg1, Msg2, Opts) ->
 %%      9: Recurse, fork, or terminate.
 
 resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
-    ?event(converge_core, {stage, 0, list_normalize}, Opts),
     % Normalize lists to numbered maps (base=1) if necessary.
-    resolve_stage(0,
+    ?event(converge_core, {stage, 0, list_normalize}, Opts),
+    NormMsg1 =
         maps:from_list(
             lists:zip(
-                lists:seq(1, length(Msg1)),
+                [
+                    key_to_binary(Key)
+                ||
+                    Key <- lists:seq(1, length(Msg1))
+                ],
                 Msg1
             )
         ),
+    resolve_stage(0,
+        NormMsg1,
         Msg2,
         Opts
     );
@@ -1373,3 +1379,11 @@ denormalized_device_key_test() ->
             module
         )
     ).
+
+list_transform_test() ->
+    Msg = [<<"A">>, <<"B">>, <<"C">>, <<"D">>, <<"E">>],
+    ?assertEqual(<<"A">>, hb_converge:get(1, Msg)),
+    ?assertEqual(<<"B">>, hb_converge:get(2, Msg)),
+    ?assertEqual(<<"C">>, hb_converge:get(3, Msg)),
+    ?assertEqual(<<"D">>, hb_converge:get(4, Msg)),
+    ?assertEqual(<<"E">>, hb_converge:get(5, Msg)).
