@@ -30,7 +30,7 @@
 -export([init/3, compute/3, import/3, terminate/3]).
 -export([wasm_state/3]).
 %%% Test API:
--export([store_wasm_image/1]).
+-export([store_wasm_image/1, gen_test_env/0, gen_test_aos_msg/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -80,7 +80,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         module := Module,
         func := Func,
         args := Args,
-        signature := Signature
+        func_sig := Signature
     } = Msg2,
     {ok, Msg3} =
         hb_converge:resolve(
@@ -91,7 +91,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
                 module => list_to_binary(Module),
                 func => list_to_binary(Func),
                 args => Args,
-                func_sig => Signature
+                func_sig => list_to_binary(Signature)
             },
             Opts
         ),
@@ -168,7 +168,7 @@ import(Msg1, Msg2, Opts) ->
     ModName = hb_converge:get(<<"Module">>, Msg2, Opts),
     FuncName = hb_converge:get(<<"Func">>, Msg2, Opts),
     AdjustedPath = <<"WASM/stdlib/", ModName/binary, "/", FuncName/binary>>,
-    StatePath = << "WASM/stdlib/", ModName/binary, "/", "/State">>,
+    StatePath = << "WASM/stdlib/", ModName/binary, "/", "State">>,
     AdjustedMsg2 = Msg2#{ path => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =
@@ -195,12 +195,12 @@ undefined_import_stub(Msg1, Msg2, Opts) ->
     ?event({unimplemented_dev_wasm_call, {msg1, Msg1}, {msg2, Msg2}}),
     Msg3 = hb_converge:set(
         Msg1,
-        #{<<"Results/WASM/Unimplemented-Calls">> =>
+        #{<<"State/Results/WASM/Undefined-Calls">> =>
             [
                 Msg2
             |
                 case hb_converge:get(
-                    <<"Results/WASM/Undefined-Calls">>,
+                    <<"State/Results/WASM/Undefined-Calls">>,
                     Msg1,
                     Opts
                 ) of
@@ -274,3 +274,11 @@ imported_function_test() ->
             }
         )
     ).
+
+%%% External AOS Test Helpers
+
+gen_test_env() ->
+    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
+
+gen_test_aos_msg(Command) ->
+    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"", (list_to_binary(Command))/binary, "\"}\0">>.

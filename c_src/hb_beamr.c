@@ -493,7 +493,7 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
-        DRV_DEBUG("Creating callback for %s.%s", module_name->data, name->data);
+        DRV_DEBUG("Creating callback for %s.%s [%s]", module_name->data, name->data, type_str);
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;

@@ -89,7 +89,7 @@ info(Msg) ->
     maps:merge(
         #{
             handler => fun router/4,
-            excludes => [set]
+            excludes => [set, keys]
         },
         case maps:get(<<"Stack-Keys">>, Msg, not_found) of
             not_found -> #{};

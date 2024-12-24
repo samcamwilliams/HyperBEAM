@@ -7,7 +7,7 @@
 
 -module(dev_vfs).
 -export([init/3, compute/1, stdout/1]).
--export([path_open/3, fd_write/3, fd_read/3]).
+-export([path_open/3, fd_write/3, fd_read/3, clock_time_get/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -137,6 +137,9 @@ fd_write(Msg1, Msg2, Opts) ->
     State = hb_converge:get(<<"State">>, Msg1, Opts),
     Port = hb_private:get(<<"WASM/Port">>, State, Opts),
     [FD, Ptr, Vecs, RetPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
+    ?event({fd_write, {fd, FD}, {ptr, Ptr}, {vecs, Vecs}, {retptr, RetPtr}}),
+    Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
+    ?event({signature, Signature}),
     fd_write(State, Port, [FD, Ptr, Vecs, RetPtr], 0, Opts).
 
 fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten, _Opts) ->
@@ -188,6 +191,8 @@ fd_read(Msg1, Msg2, Opts) ->
     State = hb_converge:get(<<"State">>, Msg1, Opts),
     Port = hb_private:get(<<"WASM/Port">>, State, Opts),
     [FD, VecsPtr, NumVecs, RetPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
+    Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
+    ?event({signature, Signature}),
     fd_read(State, Port, [FD, VecsPtr, NumVecs, RetPtr], 0, Opts).
 
 fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead, _Opts) ->
@@ -233,6 +238,12 @@ parse_iovec(Port, Ptr) ->
         Len:64/little-unsigned-integer
     >> = VecStruct,
     {BinPtr, Len}.
+
+%%% Misc WASI-preview-1 handlers.
+clock_time_get(Msg1, _Msg2, Opts) ->
+    ?event({clock_time_get, {returning, 1}}),
+    State = hb_converge:get(<<"State">>, Msg1, Opts),
+    {ok, #{ state => State, wasm_response => [1] }}.
 
 %%% Tests
 
@@ -286,6 +297,26 @@ stack_is_serializable_test() ->
     Msg2 = hb_message:tx_to_message(hb_message:message_to_tx(Msg)),
     ?assert(hb_message:match(Msg, Msg2)).
 
-basic_write_test() ->
-    {ok, StateRes} = run_vfs_stack("test/test-print.wasm", <<"hello">>, [], #{}),
-    ?assertEqual(<<"Hello World\nHowdy!\n">>, stdout(StateRes)).
+basic_aos_exec_test() ->
+    Init = generate_vfs_stack("test/aos-2-pure-xs.wasm", <<"handle">>, []),
+    Msg = dev_wasm:gen_test_aos_msg("return 1+1"),
+    Env = dev_wasm:gen_test_env(),
+    Port = hb_private:get(<<"WASM/Port">>, Init, #{}),
+    {ok, Ptr1} = hb_beamr_io:malloc(Port, byte_size(Msg)),
+    ?assertNotEqual(0, Ptr1),
+    hb_beamr_io:write(Port, Ptr1, Msg),
+    {ok, Ptr2} = hb_beamr_io:malloc(Port, byte_size(Env)),
+    ?assertNotEqual(0, Ptr2),
+    hb_beamr_io:write(Port, Ptr2, Env),
+    % Read the strings to validate they are correctly passed
+    {ok, MsgBin} = hb_beamr_io:read(Port, Ptr1, byte_size(Msg)),
+    {ok, EnvBin} = hb_beamr_io:read(Port, Ptr2, byte_size(Env)),
+    ?assertEqual(Env, EnvBin),
+    ?assertEqual(Msg, MsgBin),
+    Ready = Init#{ <<"WASM-Params">> => [Ptr1, Ptr2] },
+    {ok, StateRes} = hb_converge:resolve(Ready, <<"Compute">>, #{}),
+    [Ptr] = hb_converge:get(<<"Results/WASM/Output">>, StateRes),
+    ?event({got_output, Ptr}),
+    {ok, Output} = hb_beamr_io:read_string(Port, Ptr),
+    ?event({got_output, Output}),
+    ?assertEqual(<<"2">>, Output).

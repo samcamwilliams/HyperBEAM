@@ -76,8 +76,8 @@ start(WasmBinary) when is_binary(WasmBinary) ->
         {execution_result, Imports, Exports} ->
             ?event(
                 {wasm_init_success,
-                    {imports, length(Imports)},
-                    {exports, length(Exports)}}),
+                    {imports, Imports},
+                    {exports, Exports}}),
             {ok, Port, Imports, Exports};
         {error, Error} ->
             ?event({wasm_init_error, Error}),
@@ -149,11 +149,11 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                             module => Module,
                             func => Func,
                             args => Args,
-                            signature => Signature
+                            func_sig => Signature
                         },
                         Opts
                     ),
-                ?event({import_returned, Module, Func, Args, Response}),
+                ?event({import_returned, Module, Func, {args, Args}, {response, Response}}),
                 dispatch_response(Port, Response),
                 monitor_call(Port, ImportFun, StateMsg2, Opts)
             catch
