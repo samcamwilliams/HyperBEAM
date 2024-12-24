@@ -42,6 +42,7 @@
 %% - WASI-preview-1 compatible functions for accessing the filesystem
 %% - File descriptors for those files.
 init(M1, _M2, Opts) ->
+    ?event(running_init),
     MsgWithLib =
         hb_converge:set(
             M1,

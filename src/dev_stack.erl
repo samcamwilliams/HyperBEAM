@@ -181,7 +181,7 @@ transform(Msg1, Key, Opts) ->
 						Opts
 					);
 				_ ->
-					?event({no_device_key, Key}),
+					?event({no_device_key, Key, {stack, StackMsg}}),
 					not_found
 			end
 	end.
@@ -191,7 +191,7 @@ transform(Msg1, Key, Opts) ->
 resolve_stack(Message1, Key, Message2, Opts) ->
     resolve_stack(Message1, Key, Message2, 1, Opts).
 resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
-	case transform(Message1, integer_to_binary(DevNum), Opts) of
+	case transform(Message1, DevNum, Opts) of
 		{ok, Message3} ->
 			?event({stack_execute, DevNum, {msg1, Message3}, {msg2, Message2}}),
 			case hb_converge:resolve(Message3, Message2, Opts) of
@@ -205,47 +205,27 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 					?event({result, skip, DevNum, Message4}),
 					{ok, Message4};
 				{pass, Message4} when is_map(Message4) ->
-					case hb_opts:get(allow_multipass, true, Opts) of
-						true ->
-							?event({result, pass, allowed, DevNum, Message4}),
-							resolve_stack(
-								hb_converge:set(
-									Message4,
-									#{
-										pass =>
-                                            hb_converge:get(
-                                                pass,
-                                                Message4,
-                                                Opts
-                                            ) + 1
-									},
-									Opts
-								),
-								Key,
-								Message2,
-								1,
-								Opts
-							);
-						_ ->
-							?event(
-								{result,
-									pass,
-									not_allowed,
-									DevNum,
-									Message4
-								}
-							),
-							maybe_error(
-								Message1,
-								Key,
-								Message2,
-								DevNum + 1,
-								Opts,
-								{pass_not_allowed, Message4}
-							)
-					end;
+                    ?event({result, pass, {dev, DevNum}, Message4}),
+                    resolve_stack(
+                        hb_converge:set(
+                            Message4,
+                            #{
+                                pass =>
+                                    hb_converge:get(
+                                        pass,
+                                        Message4,
+                                        Opts
+                                    ) + 1
+                            },
+                            Opts
+                        ),
+                        Key,
+                        Message2,
+                        1,
+                        Opts
+                    );
 				{error, Info} ->
-					?event({result, error, DevNum, Info}),
+					?event({result, error, {dev, DevNum}, Info}),
 					maybe_error(
 						Message1,
 						Key,
@@ -255,7 +235,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 						Info
 					);
 				Unexpected ->
-					?event({result, unexpected, DevNum, Unexpected}),
+					?event({result, unexpected, {dev, DevNum}, Unexpected}),
 					maybe_error(
 						Message1,
 						Key,
