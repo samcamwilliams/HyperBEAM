@@ -438,6 +438,7 @@ static void async_init(void* raw) {
         wasm_byte_vec_delete(&binary);
         wasm_store_delete(proc->store);
         wasm_engine_delete(proc->engine);
+        drv_unlock(proc->is_running);
         return;
     }
     //wasm_byte_vec_delete(&binary);
@@ -522,6 +523,7 @@ static void async_init(void* raw) {
     if (!proc->instance) {
         DRV_DEBUG("Failed to create WASM instance");
         send_error(proc, "Failed to create WASM instance (although module was created).");
+        drv_unlock(proc->is_running);
         return;
     }
 
