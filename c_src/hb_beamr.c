@@ -624,7 +624,7 @@ static void async_call(void* raw) {
         // char* func_name;
 
         // DRV_DEBUG("WASM Exception: [func_index: %d, func_offset: %d] %.*s", func_index, func_offset, trap_msg.size, trap_msg.data);
-        send_error(proc, "WASM Exception: %.*s", trap_msg.size, trap_msg.data);
+        send_error(proc, "%.*s", trap_msg.size, trap_msg.data);
         drv_unlock(proc->is_running);
         return;
     }
@@ -712,7 +712,6 @@ static void wasm_driver_stop(ErlDrvData raw) {
     Proc* proc = (Proc*)raw;
     DRV_DEBUG("Stopping WASM driver");
 
-    // TODO: We should probably lock a mutex here and in the import_response function.
     if(proc->current_import) {
         DRV_DEBUG("Shutting down during import response...");
         proc->current_import->error_message = "WASM driver unloaded during import response";

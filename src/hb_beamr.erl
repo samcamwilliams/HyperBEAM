@@ -157,8 +157,16 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                 monitor_call(Port, ImportFun, StateMsg2, Opts)
             catch
                 Err:Reason:Stack ->
+                    % Signal the WASM executor to stop.
                     ?event({import_error, Err, Reason, Stack}),
                     stop(Port),
+                    % The driver is going to send us an error message, so we 
+                    % need to clear it from the mailbox, even if we already 
+                    % know that the import failed.
+                    receive
+                        {error, _} -> ok
+                    %after 0 -> ok
+                    end,
                     {error, Err, Reason, Stack, StateMsg}
             end;
         {error, Error} ->
