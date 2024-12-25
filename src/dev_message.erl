@@ -2,15 +2,22 @@
 %%% in the message's underlying Erlang map. Private keys (`priv[.*]') are 
 %%% not included.
 -module(dev_message).
--export([info/0, keys/1, id/1, unsigned_id/1, signers/1]).
+-export([info/0, keys/1, id/1, unsigned_id/1, signed_id/1, signers/1]).
 -export([set/3, remove/2, get/2, get/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-
-
 %% The list of keys that are exported by this device.
--define(DEVICE_KEYS, [path, id, unsigned_id, signers, keys, get, set, remove]).
+-define(DEVICE_KEYS, [
+    path,
+    id,
+    unsigned_id,
+    signed_id,
+    signers,
+    keys, get,
+    set,
+    remove
+]).
 
 %% @doc Return the info for the identity device.
 info() ->
@@ -23,17 +30,20 @@ info() ->
 %% that. Otherwise, return the signed ID.
 id(M) ->
     ID = 
-        case maps:get(signature, M, ?DEFAULT_SIG) of
-            ?DEFAULT_SIG -> raw_id(M, unsigned);
+        case get(signature, M) of
+            {error, not_found} -> raw_id(M, unsigned);
             _ -> raw_id(M, signed)
         end,
-    ?event({generated_id, {id, ID}, {msg, M}}),
     {ok, ID}.
 
 %% @doc Wrap a call to the `hb_util:id/2' function, which returns the
 %% unsigned ID of a message.
 unsigned_id(M) ->
     {ok, raw_id(M, unsigned)}.
+
+%% @doc Return the signed ID of a message.
+signed_id(M) ->
+    {ok, raw_id(M, signed)}.
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 raw_id(Item) -> raw_id(Item, unsigned).
