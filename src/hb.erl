@@ -1,11 +1,12 @@
-%%% @doc Hyperbeam is a decentralized node implementation implementing a protocol 
-%%% built on top of the Arweave protocol.
-%%% This protocol offers a computation layer for
-%%% executing arbitrary logic on top of data inside the Arweave network.
+%%% @doc Hyperbeam is a decentralized node implementating the Converge Protocol
+%%% on top of Arweave.
+%%% 
+%%% This protocol offers a computation layer for executing arbitrary logic on 
+%%% top of the network's data.
 %%% 
 %%% Arweave is built to offer a robust, permanent storage layer for static data
-%%% over time. One can see it essentially as a globally distributed key-value
-%%% store that allows users to lookup IDs to retrieve data at any point in time:
+%%% over time. It can be seen as a globally distributed key-value store that
+%%% allows users to lookup IDs to retrieve data at any point in time:
 %%% 
 %%% 	`Arweave(ID) => Message'
 %%% 
@@ -13,7 +14,7 @@
 %%% Allowing users to store and retrieve not only arbitrary bytes, but also to
 %%% perform execution of computation upon that data:
 %%% 
-%%% 	`Hyperbeam(Message0) => Message1'
+%%% 	`Hyperbeam(Message1, Message2) => Message3'
 %%% 
 %%% When Hyperbeam executes a message, it will return a new message containing
 %%% the result of that execution, as well as signed attestations of its
@@ -37,31 +38,30 @@
 %%% 
 %%% The core abstractions of the Hyperbeam node are broadly as follows:
 %%% 
-%%% 1. The `hb' module manages the node's configuration, environment variables,
-%%%    and debugging tools.
+%%% 1. The `hb' and `hb_opts' modules manage the node's configuration, 
+%%%    environment variables, and debugging tools.
 %%% 
 %%% 2. The `hb_http' and `hb_http_router' modules manage all HTTP-related
 %%%    functionality. `hb_http_router' handles turning received HTTP requests
 %%%    into messages and applying those messages with the appropriate devices.
 %%%    `hb_http' handles making requests and responding with messages. `cowboy'
-%%%    is used to implement the actual HTTP server.
+%%%    is used to implement the underlying HTTP server.
 %%% 
 %%% 3. `hb_converge' implements the computation logic of the node: A mechanism
 %%%    for resolving messages to other messages, via the application of logic
-%%%    implemented in devices. `hb_converge' also manages the loading of Erlang
+%%%    implemented in `devices'. `hb_converge' also manages the loading of Erlang
 %%%    modules for each device into the node's environment. There are many
 %%%    different default devices implemented in the hyperbeam node, using the
 %%%    namespace `dev_*'. Some of the critical components are:
 %%% 
-%%%    - `dev_meta': The device responsible for managing all requests to the
-%%%      node. This device takes a message and loads the appropriate devices to
-%%%      execute it. The `hb_http_router' uses this device to resolve incoming
-%%%      HTTP requests.
+%%%     - `dev_message': The default handler for all messages that do not 
+%%%      specify their own device. The message device is also used to resolve
+%%%      keys that are not implemented by the device specified in a message,
+%%%      unless otherwise signalled.
 %%% 
 %%%    - `dev_stack': The device responsible for creating and executing stacks
 %%%      of other devices on messages that request it. There are many uses for
-%%%      this device, one of which is the resolution of AO processes, which
-%%%      typically require it.
+%%%      this device, one of which is the resolution of AO processes.
 %%% 
 %%%    - `dev_p4': The device responsible for managing payments for the services
 %%%      provided by the node.
@@ -80,10 +80,6 @@
 %%% 
 %%% You can find documentation of a similar form to this note in each of the core
 %%% modules of the hyperbeam node.
-%%% This module implements the environment and configuration functionality
-%%% for the hyperbeam node. It manages all global components of the node,
-%%% including the node's wallet, address, configuration, and environment
-%%% variables.
 -module(hb).
 %%% Configuration and environment:
 -export([init/0, now/0, build/0]).
