@@ -185,7 +185,7 @@ preprocess_results(Msg, Proc, Opts) ->
     maps:merge(
         FilteredMsg,
         Tags#{
-            <<"From-Process">> => hb_util:id(Proc, signed),
+            <<"From-Process">> => hb_converge:get(id, Proc, Opts),
             <<"From-Image">> => hb_converge:get(<<"WASM-Image">>, Proc, Opts)
         }
     ).
