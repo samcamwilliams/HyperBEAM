@@ -43,7 +43,11 @@ unsigned_id(M) ->
 
 %% @doc Return the signed ID of a message.
 signed_id(M) ->
-    {ok, raw_id(M, signed)}.
+    try
+        {ok, raw_id(M, signed)}
+    catch
+        _:_ -> {error, not_signed}
+    end.
 
 %% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
 raw_id(Item) -> raw_id(Item, unsigned).
