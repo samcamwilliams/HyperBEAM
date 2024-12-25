@@ -56,7 +56,7 @@
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1, _Opts) ->
     #{
-        exports => [compute, schedule, slot],
+        exports => [compute, schedule, slot, now],
         worker => fun dev_process_worker:server/3,
         group => fun dev_process_worker:group/3
     }.
@@ -66,6 +66,7 @@ schedule(Msg1, Msg2, Opts) ->
     run_as(<<"Scheduler-Device">>, Msg1, Msg2, Opts).
 
 slot(Msg1, Msg2, Opts) ->
+    ?event(debug, {slot_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     run_as(<<"Scheduler-Device">>, Msg1, Msg2, Opts).
 
 next(Msg1, _Msg2, Opts) ->
@@ -116,7 +117,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             ?event({reached_target_slot_returning_state, TargetSlot}),
-            {ok, process(Msg1, Opts)};
+            {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
             % Get the next input from the scheduler device.
             ?no_prod("Must update hashpath!"),
@@ -158,20 +159,28 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
     end.
 
 %% @doc Returns the `/Results' key of the latest computed message.
-now(Msg1, _Msg2, Opts) ->
-    CurrentSlot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+now(RawMsg1, Msg2, Opts) ->
+    Msg1 = ensure_process_key(RawMsg1, Opts),
+    {ok, CurrentSlot} = hb_converge:resolve(Msg1, #{ path => <<"Slot/Current-Slot">> }, Opts),
     ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
-    ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
-    {ok, Msg3} = dev_process_cache:read(ProcessID, CurrentSlot, Opts),
-    {ok, hb_converge:get(<<"Results">>, Msg3, Opts)}.
+    ?event(debug, {now_called, {process, ProcessID}, {slot, CurrentSlot}}),
+    hb_converge:resolve(
+        Msg1,
+        #{ path => <<"Compute/Results">>, <<"Slot">> => CurrentSlot },
+        Opts
+    ).
 
 %% @doc Ensure that the process message we have in memory is live and
 %% up-to-date.
 ensure_loaded(Msg1, Msg2, Opts) ->
     % Get the nonce we are currently on and the inbound nonce.
-    ?event({ensure_loaded, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     TargetSlot = hb_converge:get(<<"Slot">>, Msg2, undefined, Opts),
-    ProcID = hb_converge:get(<<"Process/id">>, {as, dev_message, Msg1}, Opts),
+    ProcID = 
+        case hb_converge:get(<<"Process/id">>, {as, dev_message, Msg1}, Opts) of
+            not_found ->
+                hb_converge:get(<<"id">>, Msg1, Opts);
+            P -> P
+        end,
     case hb_converge:get(<<"Initialized">>, Msg1, <<"False">>, Opts) of
         <<"False">> ->
             % Try to load the latest complete state from disk.
@@ -211,7 +220,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
 
 %% @doc Run a message against Msg1, with the device being swapped out for
 %% the device found at `Key'. After execution, the device is swapped back
-%% to the original device.
+%% to the original device if the device is the same as we left it.
 run_as(Key, Msg1, Msg2, Opts) ->
     BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),
     ?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
@@ -248,7 +257,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
 %% @doc Change the message to for that has the device set as this module.
 %% In situations where the key that is `run_as` returns a message with a 
 %% transformed device, this is useful.
-process(Msg1, Opts) ->
+as_process(Msg1, Opts) ->
     {ok, Proc} = dev_message:set(Msg1, #{ device => <<"Process/1.0">> }, Opts),
     Proc.
 
@@ -461,4 +470,12 @@ aos_compute_test() ->
     ?assertEqual(<<"2">>, Data),
     Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
     {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
-    ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})).
+    ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})),
+    {ok, Msg5}.
+
+now_test() ->
+    init(),
+    Msg1 = test_aos_process(),
+    schedule_aos_call(Msg1, <<"return 1+1">>),
+    schedule_aos_call(Msg1, <<"return 2+2">>),
+    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})).
