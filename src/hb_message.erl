@@ -345,17 +345,27 @@ message_to_tx(RawM) when is_map(RawM) ->
     NormalizedMsgKeyMap = normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
-    {RemainingMap, BaseTXList} = lists:foldl(
-        fun({Field, Default}, {RemMap, Acc}) ->
-            NormKey = hb_converge:key_to_binary(Field),
-            case maps:find(NormKey, NormalizedMsgKeyMap) of
-                error -> {RemMap, [Default | Acc]};
-                {ok, Value} -> {maps:remove(NormKey, RemMap), [Value | Acc]}
-            end
-        end,
-        {NormalizedMsgKeyMap, []},
-        default_tx_list()
-    ),
+    {RemainingMap, BaseTXList} =
+        lists:foldl(
+            fun({Field, Default}, {RemMap, Acc}) ->
+                NormKey = hb_converge:key_to_binary(Field),
+                case maps:find(NormKey, NormalizedMsgKeyMap) of
+                    error -> {RemMap, [Default | Acc]};
+                    {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
+                        {
+                            maps:remove(NormKey, RemMap),
+                            [hb_util:native_id(Value)|Acc]
+                        };
+                    {ok, Value} ->
+                        {
+                            maps:remove(NormKey, RemMap),
+                            [Value|Acc]
+                        }
+                end
+            end,
+            {NormalizedMsgKeyMap, []},
+            default_tx_list()
+        ),
     % Rebuild the tx record from the new list of fields and values.
     TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
     % Calculate which set of the remaining keys will be used as tags.
