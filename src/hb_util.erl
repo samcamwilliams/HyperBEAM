@@ -1,6 +1,6 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
--export([id/1, id/2, native_id/1, human_id/1]).
+-export([id/1, id/2, native_id/1, human_id/1, short_id/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
@@ -61,6 +61,12 @@ human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
     encode(Bin);
 human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin.
+
+short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
+    short_id(human_id(Bin));
+short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
+    << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
+    << FirstTag/binary, "..", LastTag/binary >>.
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->

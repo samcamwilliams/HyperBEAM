@@ -47,18 +47,41 @@ format(Bin, Indent) when is_binary(Bin) ->
         Indent
     );
 format(Map, Indent) when is_map(Map) ->
-    Header = hb_util:format_indented("Message {~n", Indent),
+    SignedID = hb_converge:get(signed_id, Map),
+    UnsignedID = hb_converge:get(unsigned_id, Map),
+    IDStr =
+        case {SignedID, UnsignedID} of
+            {not_found, not_found} -> "";
+            {_, _} when (SignedID == UnsignedID) or (SignedID == not_found) ->
+                io_lib:format("[ U: ~s ] ",
+                    [hb_util:short_id(UnsignedID)]);
+            {_, not_found} ->
+                io_lib:format("[ ID: ~s ] ", [hb_util:short_id(SignedID)]);
+            {_, _} ->
+                io_lib:format("[ ID: ~s, U: ~s ] ",
+                    [hb_util:short_id(SignedID), hb_util:short_id(UnsignedID)])
+        end,
+    SignerStr =
+        case signers(Map) of
+            [] -> "";
+            [Signer] ->
+                io_lib:format(" [Signer: ~s] ", [hb_util:short_id(Signer)]);
+            Signers ->
+                io_lib:format(" [Signers: ~s] ",
+                    [string:join(lists:map(fun hb_util:short_id/1, Signers), ", ")])
+        end,
+    Header =
+        hb_util:format_indented("Message ~s~s{~n",
+            [lists:flatten(IDStr), SignerStr], Indent),
     Res = lists:map(
         fun({Key, Val}) ->
             NormKey = hb_converge:to_key(Key, #{ error_strategy => ignore }),
             KeyStr = 
                 case NormKey of
-                    Key ->
-                        io_lib:format("~p", [NormKey]);
                     undefined ->
                         io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
                     _ ->
-                        io_lib:format("~p [raw: ~p]", [NormKey, Key])
+                        io_lib:format("~s", [hb_converge:key_to_binary(Key)])
                 end,
             hb_util:format_indented(
                 "~s := ~s~n",
@@ -67,6 +90,9 @@ format(Map, Indent) when is_map(Map) ->
                     case Val of
                         NextMap when is_map(NextMap) ->
                             hb_util:format_map(NextMap, Indent + 2);
+                        _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
+                            Short = hb_util:short_id(Val),
+                            io_lib:format("~s*", [Short]);
                         Bin when is_binary(Bin) ->
                             hb_util:format_binary(Bin);
                         Other ->
@@ -76,7 +102,7 @@ format(Map, Indent) when is_map(Map) ->
                 Indent + 1
             )
         end,
-        maps:to_list(Map)
+        maps:to_list(minimize(Map))
     ),
     case Res of
         [] -> "[Empty map]";
@@ -92,9 +118,10 @@ format(Item, Indent) ->
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
 signers(Msg) when is_map(Msg) ->
-    case ar_bundles:signer(message_to_tx(Msg)) of
-        undefined -> [];
-        Signer -> [Signer]
+    case {maps:find(owner, Msg), maps:find(signature, Msg)} of
+        {_, error} -> [];
+        {error, _} -> [];
+        {{ok, Owner}, {ok, _}} -> [ar_wallet:to_address(Owner)]
     end;
 signers(TX) when is_record(TX, tx) ->
     ar_bundles:signer(TX);
@@ -180,13 +207,15 @@ normalize_keys(Map) ->
         )
     ).
 
-%% @doc Remove keys from the map that can be regenerated.
-minimize(RawVal) when not is_map(RawVal) -> RawVal;
-minimize(Map) ->
-    NormRegenKeys = normalize_keys(?REGEN_KEYS),
+%% @doc Remove keys from the map that can be regenerated. Optionally takes an
+%% additional list of keys to include in the minimization.
+minimize(Msg) -> minimize(Msg, []).
+minimize(RawVal, _) when not is_map(RawVal) -> RawVal;
+minimize(Map, ExtraKeys) ->
+    NormKeys = normalize_keys(?REGEN_KEYS) ++ normalize_keys(ExtraKeys),
     maps:filter(
         fun(Key, _) ->
-            (not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys))
+            (not lists:member(hb_converge:key_to_binary(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
         maps:map(fun(_K, V) -> minimize(V) end, Map)
@@ -316,17 +345,27 @@ message_to_tx(RawM) when is_map(RawM) ->
     NormalizedMsgKeyMap = normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
-    {RemainingMap, BaseTXList} = lists:foldl(
-        fun({Field, Default}, {RemMap, Acc}) ->
-            NormKey = hb_converge:key_to_binary(Field),
-            case maps:find(NormKey, NormalizedMsgKeyMap) of
-                error -> {RemMap, [Default | Acc]};
-                {ok, Value} -> {maps:remove(NormKey, RemMap), [Value | Acc]}
-            end
-        end,
-        {NormalizedMsgKeyMap, []},
-        default_tx_list()
-    ),
+    {RemainingMap, BaseTXList} =
+        lists:foldl(
+            fun({Field, Default}, {RemMap, Acc}) ->
+                NormKey = hb_converge:key_to_binary(Field),
+                case maps:find(NormKey, NormalizedMsgKeyMap) of
+                    error -> {RemMap, [Default | Acc]};
+                    {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
+                        {
+                            maps:remove(NormKey, RemMap),
+                            [hb_util:native_id(Value)|Acc]
+                        };
+                    {ok, Value} ->
+                        {
+                            maps:remove(NormKey, RemMap),
+                            [Value|Acc]
+                        }
+                end
+            end,
+            {NormalizedMsgKeyMap, []},
+            default_tx_list()
+        ),
     % Rebuild the tx record from the new list of fields and values.
     TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
     % Calculate which set of the remaining keys will be used as tags.
@@ -606,6 +645,20 @@ single_layer_message_to_tx_test() ->
     ?assertEqual({<<"Special-Key">>, <<"SPECIAL_VALUE">>},
         lists:keyfind(<<"Special-Key">>, 1, TX#tx.tags)).
 
+% %% @doc Test that different key encodings are converted to their corresponding
+% %% TX fields.
+% key_encodings_to_tx_test() ->
+%     Msg = #{
+%         <<"last_tx">> => << 2:256 >>,
+%         <<"Owner">> => << 3:4096 >>,
+%         <<"Target">> => << 4:256 >>
+%     },
+%     TX = message_to_tx(Msg),
+%     ?event({key_encodings_to_tx, {msg, Msg}, {tx, TX}}),
+%     ?assertEqual(maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
+%     ?assertEqual(maps:get(<<"Owner">>, Msg), TX#tx.owner),
+%     ?assertEqual(maps:get(<<"Target">>, Msg), TX#tx.target).
+
 %% @doc Test that we can convert a #tx record into a message correctly.
 single_layer_tx_to_message_test() ->
     TX = #tx {
@@ -727,7 +780,6 @@ deeply_nested_message_with_data_test() ->
         }
     },
     ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
-
 
 nested_structured_fields_test() ->
     NestedMsg = #{ a => #{ b => 1 } },

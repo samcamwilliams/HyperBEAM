@@ -42,6 +42,7 @@
 %% - WASI-preview-1 compatible functions for accessing the filesystem
 %% - File descriptors for those files.
 init(M1, _M2, Opts) ->
+    ?event(running_init),
     MsgWithLib =
         hb_converge:set(
             M1,
@@ -276,10 +277,11 @@ wasi_stack_is_serializable_test() ->
     Msg2 = hb_message:tx_to_message(hb_message:message_to_tx(Msg)),
     ?assert(hb_message:match(Msg, Msg2)).
 
+
 basic_aos_exec_test() ->
     Init = generate_wasi_stack("test/aos-2-pure-xs.wasm", <<"handle">>, []),
-    Msg = dev_wasm:gen_test_aos_msg("return 1+1"),
-    Env = dev_wasm:gen_test_env(),
+    Msg = gen_test_aos_msg("return 1+1"),
+    Env = gen_test_env(),
     Port = hb_private:get(<<"WASM/Port">>, Init, #{}),
     {ok, Ptr1} = hb_beamr_io:malloc(Port, byte_size(Msg)),
     ?assertNotEqual(0, Ptr1),
@@ -300,3 +302,10 @@ basic_aos_exec_test() ->
     #{ <<"response">> := #{ <<"Output">> := #{ <<"data">> := Data }} }
         = jiffy:decode(Output, [return_maps]),
     ?assertEqual(<<"2">>, Data).
+
+%%% Test Helpers
+gen_test_env() ->
+    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
+
+gen_test_aos_msg(Command) ->
+    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"", (list_to_binary(Command))/binary, "\"}\0">>.

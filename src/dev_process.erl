@@ -45,7 +45,7 @@
 %%% Public API
 -export([info/2, compute/3, schedule/3, slot/3, now/3]).
 %%% Test helpers
--export([test_aos_process/0, test_device_process/0, test_wasm_process/1]).
+-export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -292,29 +292,55 @@ test_wasm_process(WASMImage) ->
 %% @doc Generate a process message with a random number, and the 
 %% `dev_wasm' device for execution.
 test_aos_process() ->
-    test_wasm_process(<<"test/aos-2-pure.wasm">>).
+    Wallet = hb:wallet(),
+    WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>),
+    hb_message:sign(maps:merge(WASMProc, #{
+        <<"Device-Stack">> =>
+            [
+                <<"WASI/1.0">>,
+                <<"JSON-Iface/1.0">>,
+                <<"WASM-64/1.0">>,
+                <<"Multipass/1.0">>
+            ],
+        <<"Passes">> => 2,
+        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
+        <<"Scheduler">> => hb:address(),
+        <<"Authority">> => hb:address()
+    }), Wallet).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
 %% execution. This should generate a message state has doubled 
 %% `Already-Seen' elements for each assigned slot.
-test_device_process() ->
+dev_test_process() ->
     maps:merge(test_base_process(), #{
         <<"Execution-Device">> => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"Test-Device/1.0">>, <<"Test-Device/1.0">>]
     }).
 
 schedule_test_message(Msg1, Text) ->
-    Msg2 = #{
+    schedule_test_message(Msg1, Text, #{}).
+schedule_test_message(Msg1, Text, MsgBase) ->
+    Wallet = hb:wallet(),
+    Msg2 = hb_message:sign(#{
         path => <<"Schedule">>,
         <<"Method">> => <<"POST">>,
         <<"Message">> =>
-            #{
+            MsgBase#{
                 <<"Type">> => <<"Message">>,
                 <<"Test-Key">> => Text
             }
-    },
+    }, Wallet),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     ok.
+
+schedule_aos_call(Msg1, Code) ->
+    ProcID = hb_converge:get(id, Msg1, #{}),
+    Msg2 = #{
+        <<"Action">> => <<"Eval">>,
+        data => Code,
+        target => ProcID
+    },
+    schedule_test_message(Msg1, <<"TEST CALL">>, Msg2).
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
     Msg2 = #{
@@ -351,7 +377,7 @@ schedule_on_process_test() ->
 
 get_scheduler_slot_test() ->
     init(),
-    Msg1 = test_aos_process(),
+    Msg1 = test_base_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     Msg2 = #{
@@ -365,7 +391,7 @@ get_scheduler_slot_test() ->
 
 recursive_resolve_test() ->
     init(),
-    Msg1 = test_aos_process(),
+    Msg1 = test_base_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     CurrentSlot =
         hb_converge:resolve(
@@ -382,7 +408,7 @@ recursive_resolve_test() ->
 
 test_device_compute_test() ->
     init(),
-    Msg1 = test_device_process(),
+    Msg1 = dev_test_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?assertMatch(
@@ -420,3 +446,19 @@ wasm_compute_test() ->
         ),
     ?event({computed_message, {msg4, Msg4}}),
     ?assertEqual([720.0], hb_converge:get(<<"Results/WASM/Output">>, Msg4, #{})).
+
+aos_compute_test() ->
+    init(),
+    Msg1 = test_aos_process(),
+    schedule_aos_call(Msg1, <<"return 1+1">>),
+    schedule_aos_call(Msg1, <<"return 2+2">>),
+    Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 0 },
+    {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
+    {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, #{}),
+    ?event(debug, {computed_message, {msg3, Res}}),
+    {ok, Data} = hb_converge:resolve(Res, <<"Data">>, #{}),
+    ?event(debug, {computed_data, Data}),
+    ?assertEqual(<<"2">>, Data),
+    Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
+    {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
+    ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})).

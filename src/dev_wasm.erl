@@ -7,10 +7,9 @@
 %%%     M1/Init ->
 %%%         Assumes:
 %%%             M1/Process
-%%%             M1/Process/Image
+%%%             M1/Process/WASM-Image
 %%%         Generates:
 %%%             /priv/WASM/Port
-%%%             /priv/WASM/Handler
 %%%             /priv/WASM/Import-Resolver
 %%%         Side-effects:
 %%%             Creates a WASM executor loaded in memory of the HyperBEAM node.
@@ -21,22 +20,26 @@
 %%%             M1/priv/WASM/Import-Resolver
 %%%             M1/Process
 %%%             M2/Message
+%%%             M2/Message/WASM-Function OR M1/WASM-Function
+%%%             M2/Message/WASM-Params OR M1/WASM-Params
 %%%         Generates:
 %%%             /Results/WASM/Type
 %%%             /Results/WASM/Body
 %%%         Side-effects:
-%%%             Calls the WASM executor with the message and process.'''
+%%%             Calls the WASM executor with the message and process.
+%%% '''
 -module(dev_wasm).
 -export([init/3, compute/3, import/3, terminate/3]).
 -export([wasm_state/3]).
 %%% Test API:
--export([store_wasm_image/1, gen_test_env/0, gen_test_aos_msg/1]).
+-export([store_wasm_image/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Boot a WASM image on the image stated in the `Process/Image' field of
 %% the message.
 init(M1, _M2, Opts) ->
+    ?event(running_init),
     ImageID = 
         case hb_converge:get(<<"WASM-Image">>, M1, Opts) of
             not_found ->
@@ -63,6 +66,7 @@ init(M1, _M2, Opts) ->
             ?event(wasm_deserialized)
     end,
     % Set the WASM port, handler, and standard library invokation function.
+    ?event({setting_wasm_port, Port}),
     {ok,
         hb_private:set(M1,
             #{
@@ -102,6 +106,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
 %% @doc Call the WASM executor with a message that has been prepared by a prior
 %% pass.
 compute(M1, M2, Opts) ->
+    ?event(running_compute),
     case hb_converge:get(pass, M1, Opts) of
         X when X == 1 orelse X == not_found ->
             % Extract the WASM port, func, params, and standard library
@@ -274,11 +279,3 @@ imported_function_test() ->
             }
         )
     ).
-
-%%% External AOS Test Helpers
-
-gen_test_env() ->
-    <<"{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":[{\"name\":\"Name\",\"value\":\"Thomas\"}, {\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}\0">>.
-
-gen_test_aos_msg(Command) ->
-    <<"{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"", (list_to_binary(Command))/binary, "\"}\0">>.
