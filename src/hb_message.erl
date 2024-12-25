@@ -47,18 +47,41 @@ format(Bin, Indent) when is_binary(Bin) ->
         Indent
     );
 format(Map, Indent) when is_map(Map) ->
-    Header = hb_util:format_indented("Message {~n", Indent),
+    SignedID = hb_converge:get(signed_id, Map),
+    UnsignedID = hb_converge:get(unsigned_id, Map),
+    IDStr =
+        case {SignedID, UnsignedID} of
+            {not_found, not_found} -> "";
+            {_, _} when (SignedID == UnsignedID) or (SignedID == not_found) ->
+                io_lib:format("[ U: ~s ] ",
+                    [hb_util:short_id(UnsignedID)]);
+            {_, not_found} ->
+                io_lib:format("[ ID: ~s ] ", [hb_util:short_id(SignedID)]);
+            {_, _} ->
+                io_lib:format("[ ID: ~s, U: ~s ] ",
+                    [hb_util:short_id(SignedID), hb_util:short_id(UnsignedID)])
+        end,
+    SignerStr =
+        case signers(Map) of
+            [] -> "";
+            [Signer] ->
+                io_lib:format(" [Signer: ~s] ", [hb_util:short_id(Signer)]);
+            Signers ->
+                io_lib:format(" [Signers: ~s] ",
+                    [string:join(lists:map(fun hb_util:short_id/1, Signers), ", ")])
+        end,
+    Header =
+        hb_util:format_indented("Message ~s~s{~n",
+            [lists:flatten(IDStr), SignerStr], Indent),
     Res = lists:map(
         fun({Key, Val}) ->
             NormKey = hb_converge:to_key(Key, #{ error_strategy => ignore }),
             KeyStr = 
                 case NormKey of
-                    Key ->
-                        io_lib:format("~p", [NormKey]);
                     undefined ->
                         io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
                     _ ->
-                        io_lib:format("~p [raw: ~p]", [NormKey, Key])
+                        io_lib:format("~s", [hb_converge:key_to_binary(Key)])
                 end,
             hb_util:format_indented(
                 "~s := ~s~n",
@@ -67,6 +90,9 @@ format(Map, Indent) when is_map(Map) ->
                     case Val of
                         NextMap when is_map(NextMap) ->
                             hb_util:format_map(NextMap, Indent + 2);
+                        _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
+                            Short = hb_util:short_id(Val),
+                            io_lib:format("~s*", [Short]);
                         Bin when is_binary(Bin) ->
                             hb_util:format_binary(Bin);
                         Other ->
@@ -76,7 +102,7 @@ format(Map, Indent) when is_map(Map) ->
                 Indent + 1
             )
         end,
-        maps:to_list(Map)
+        maps:to_list(minimize(Map))
     ),
     case Res of
         [] -> "[Empty map]";
