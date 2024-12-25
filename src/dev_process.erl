@@ -46,7 +46,6 @@
 -export([info/2, compute/3, schedule/3, slot/3, now/3, push/3]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
--export([test_full_push/1, test_now/1, test_aos_compute/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -507,65 +506,67 @@ wasm_compute_test() ->
     ?event({computed_message, {msg4, Msg4}}),
     ?assertEqual([720.0], hb_converge:get(<<"Results/WASM/Output">>, Msg4, #{})).
 
-test_aos_compute(Opts) ->
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"return 1+1">>),
-    schedule_aos_call(Msg1, <<"return 2+2">>),
-    Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 0 },
-    {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, Opts),
-    {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, Opts),
-    ?event(debug, {computed_message, {msg3, Res}}),
-    {ok, Data} = hb_converge:resolve(Res, <<"Data">>, Opts),
-    ?event(debug, {computed_data, Data}),
-    ?assertEqual(<<"2">>, Data),
-    Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
-    {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, Opts),
-    ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, Opts)),
-    {ok, Msg5}.
+aos_compute_test_() ->
+    {timeout, 30, fun() ->
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1, <<"return 1+1">>),
+        schedule_aos_call(Msg1, <<"return 2+2">>),
+        Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 0 },
+        {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
+        {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, #{}),
+        ?event(debug, {computed_message, {msg3, Res}}),
+        {ok, Data} = hb_converge:resolve(Res, <<"Data">>, #{}),
+        ?event(debug, {computed_data, Data}),
+        ?assertEqual(<<"2">>, Data),
+        Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
+        {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
+        ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})),
+        {ok, Msg5}
+    end}.
 
-test_now(Opts) ->
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"return 1+1">>),
-    schedule_aos_call(Msg1, <<"return 2+2">>),
-    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, Opts)).
+now_results_test_() ->
+    {timeout, 30, fun() ->
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1, <<"return 1+1">>),
+        schedule_aos_call(Msg1, <<"return 2+2">>),
+        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{}))
+    end}.
 
-test_full_push(Opts) ->
-    Msg1 = test_aos_process(),
-    hb_cache:write(Msg1, Opts),
-    Script = ping_ping_script(3),
-    ?event(debug, {script, Script}),
-    {ok, Msg2} = schedule_aos_call(Msg1, Script),
-    ?event(debug, {init_sched_result, Msg2}),
-    {ok, StartingMsgSlot} =
-        hb_converge:resolve(Msg2, #{ path => <<"Slot">> }, Opts),
-    Msg3 =
-        #{
-            path => <<"Push">>,
-            <<"Slot">> => StartingMsgSlot
-        },
-    {ok, PushRes} = hb_converge:resolve(Msg1, Msg3, Opts),
-    ?event(debug, {push_res, PushRes}),
-    {ok, Msg4} = hb_converge:resolve(Msg1, <<"Now/Data">>, Opts),
-    ?event(debug, {now_res, Msg4}),
-    ?assertEqual(<<"Done.">>, hb_converge:get(<<"Data">>, Msg4, Opts)).
-
-aos_process_suite_test_() ->
-    hb_store:generate_test_suite([
-        {"AOS compute test", fun test_aos_compute/1},
-        {"Now results test", fun test_now/1},
-        {"Full push ping-pong test", fun test_full_push/1}
-    ]).
+full_push_test_() ->
+    {timeout, 30, fun() ->
+        Msg1 = test_aos_process(),
+        hb_cache:write(Msg1, #{}),
+        Script = ping_ping_script(3),
+        ?event(debug, {script, Script}),
+        {ok, Msg2} = schedule_aos_call(Msg1, Script),
+        ?event(debug, {init_sched_result, Msg2}),
+        {ok, StartingMsgSlot} =
+            hb_converge:resolve(Msg2, #{ path => <<"Slot">> }, #{}),
+        Msg3 =
+            #{
+                path => <<"Push">>,
+                <<"Slot">> => StartingMsgSlot
+            },
+        {ok, PushRes} = hb_converge:resolve(Msg1, Msg3, #{}),
+        ?event(debug, {push_res, PushRes}),
+        ?assertEqual(
+            {ok, <<"Done.">>},
+            hb_converge:resolve(Msg1, <<"Now/Data">>, #{})
+        )
+    end}.
 
 ping_ping_script(Limit) ->
     <<
         "Handlers.add(\"Ping\",\n"
         "   function(m)\n"
-        "   if m.Count < ", (integer_to_binary(Limit))/binary, " then\n"
-        "       Send({ Target = ao.id, Action = \"Ping\", Count = m.Count + 1 })\n"
-        "       print(\"Ping\", m.Count + 1)\n"
-        "   else\n"
-        "       print(\"Done.\")\n"
+        "       C = tonumber(m.Count)\n"
+        "       if C < ", (integer_to_binary(Limit))/binary, " then\n"
+        "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
+        "           print(\"Ping\", C + 1)\n"
+        "       else\n"
+        "           print(\"Done.\")\n"
+        "       end\n"
         "   end\n"
-        "end)\n"
+        ")\n"
         "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
     >>.

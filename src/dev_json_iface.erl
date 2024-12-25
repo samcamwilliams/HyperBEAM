@@ -151,7 +151,8 @@ results(M1, _M2, Opts) ->
                             M1,
                             #{
                                 <<"Results/Outbox">> => undefined,
-                                <<"Results/Body">> => <<"JSON error parsing WASM result output.">>
+                                <<"Results/Body">> =>
+                                    <<"JSON error parsing WASM result output.">>
                             },
                             Opts
                         )
@@ -183,7 +184,14 @@ preprocess_results(Msg, Proc, Opts) ->
             Msg
         ),
     maps:merge(
-        FilteredMsg,
+        maps:from_list(
+            lists:map(
+                fun({Key, Value}) ->
+                    {hb_converge:to_key(Key), Value}
+                end,
+                maps:to_list(FilteredMsg)
+            )
+        ),
         Tags#{
             <<"From-Process">> => hb_converge:get(id, Proc, Opts),
             <<"From-Image">> => hb_converge:get(<<"WASM-Image">>, Proc, Opts)
