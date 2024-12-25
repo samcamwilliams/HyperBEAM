@@ -180,13 +180,15 @@ normalize_keys(Map) ->
         )
     ).
 
-%% @doc Remove keys from the map that can be regenerated.
-minimize(RawVal) when not is_map(RawVal) -> RawVal;
-minimize(Map) ->
-    NormRegenKeys = normalize_keys(?REGEN_KEYS),
+%% @doc Remove keys from the map that can be regenerated. Optionally takes an
+%% additional list of keys to include in the minimization.
+minimize(Msg) -> minimize(Msg, []).
+minimize(RawVal, _) when not is_map(RawVal) -> RawVal;
+minimize(Map, ExtraKeys) ->
+    NormKeys = normalize_keys(?REGEN_KEYS) ++ normalize_keys(ExtraKeys),
     maps:filter(
         fun(Key, _) ->
-            (not lists:member(hb_converge:key_to_binary(Key), NormRegenKeys))
+            (not lists:member(hb_converge:key_to_binary(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
         maps:map(fun(_K, V) -> minimize(V) end, Map)
