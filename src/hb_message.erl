@@ -118,9 +118,10 @@ format(Item, Indent) ->
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
 signers(Msg) when is_map(Msg) ->
-    case ar_bundles:signer(message_to_tx(Msg)) of
-        undefined -> [];
-        Signer -> [Signer]
+    case {maps:find(owner, Msg), maps:find(signature, Msg)} of
+        {_, error} -> [];
+        {error, _} -> [];
+        {{ok, Owner}, {ok, _}} -> [ar_wallet:to_address(Owner)]
     end;
 signers(TX) when is_record(TX, tx) ->
     ar_bundles:signer(TX);
