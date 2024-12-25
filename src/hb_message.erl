@@ -645,6 +645,20 @@ single_layer_message_to_tx_test() ->
     ?assertEqual({<<"Special-Key">>, <<"SPECIAL_VALUE">>},
         lists:keyfind(<<"Special-Key">>, 1, TX#tx.tags)).
 
+% %% @doc Test that different key encodings are converted to their corresponding
+% %% TX fields.
+% key_encodings_to_tx_test() ->
+%     Msg = #{
+%         <<"last_tx">> => << 2:256 >>,
+%         <<"Owner">> => << 3:4096 >>,
+%         <<"Target">> => << 4:256 >>
+%     },
+%     TX = message_to_tx(Msg),
+%     ?event({key_encodings_to_tx, {msg, Msg}, {tx, TX}}),
+%     ?assertEqual(maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
+%     ?assertEqual(maps:get(<<"Owner">>, Msg), TX#tx.owner),
+%     ?assertEqual(maps:get(<<"Target">>, Msg), TX#tx.target).
+
 %% @doc Test that we can convert a #tx record into a message correctly.
 single_layer_tx_to_message_test() ->
     TX = #tx {
@@ -766,7 +780,6 @@ deeply_nested_message_with_data_test() ->
         }
     },
     ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
-
 
 nested_structured_fields_test() ->
     NestedMsg = #{ a => #{ b => 1 } },
