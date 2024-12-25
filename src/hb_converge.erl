@@ -165,7 +165,17 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
             ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             {ok, Msg3};
         not_found ->
-            resolve_stage(1, Msg1, Msg2, Opts)
+            case ?IS_ID(Msg1) of
+                false ->
+                    resolve_stage(1, Msg1, Msg2, Opts);
+                true ->
+                    case hb_cache:read(Msg1, Opts) of
+                        {ok, FullMsg1} ->
+                            resolve_stage(1, FullMsg1, Msg2, Opts);
+                        not_found ->
+                            error_not_found(Msg1, Msg2, Opts)
+                    end
+            end
     end;
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, validation_check}, Opts),
