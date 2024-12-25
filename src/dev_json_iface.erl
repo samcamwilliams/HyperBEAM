@@ -41,12 +41,10 @@
 
 %% @doc Initialize the device.
 init(M1, _M2, _Opts) ->
-    ?event(running_init),
     {ok, hb_converge:set(M1, #{<<"WASM-Function">> => <<"handle">>})}.
 
 %% @doc On first pass prepare the call, on second pass get the results.
 compute(M1, M2, Opts) ->
-    ?event(running_compute),
     case hb_converge:get(<<"Pass">>, M1, Opts) of
         1 -> prep_call(M1, M2, Opts);
         2 -> results(M1, M2, Opts);
@@ -56,16 +54,16 @@ compute(M1, M2, Opts) ->
 %% @doc Prepare the WASM environment for execution by writing the process string and
 %% the message as JSON representations into the WASM environment.
 prep_call(M1, M2, Opts) ->
-    ?event({prep_call, {msg1, M1}, {msg2, M2}, {opts, Opts}}),
     Port = hb_private:get(<<"priv/WASM/Port">>, M1, Opts),
-    Process = hb_converge:get(<<"Process">>, M1, Opts),
-    Assignment = hb_converge:get(<<"Assignment">>, M2, Opts),
-    Message = hb_converge:get(<<"Message">>, M2, Opts),
-    Image = hb_converge:get(<<"Image">>, Message, Opts),
+    Process = hb_converge:get(<<"Process">>, M1, Opts, #{ hashpath => ignore }),
+    Assignment = hb_converge:get(<<"Assignment">>, M2, Opts#{ hashpath => ignore }),
+    Message = hb_converge:get(<<"Message">>, M2, Opts#{ hashpath => ignore }),
+    Image = hb_converge:get(<<"Process/WASM-Image">>, M1, Opts),
     BlockHeight = hb_converge:get(<<"Block-Height">>, Assignment, Opts),
     RawMsgJson =
-        ar_bundles:item_to_json_struct(hb_message:message_to_tx(Message)),
-    % {Props} = jiffy:decode(RawMsgJson),
+        ar_bundles:item_to_json_struct(
+            hb_message:message_to_tx(Message)
+        ),
     {Props} = RawMsgJson,
     MsgJson = jiffy:encode({
         Props ++
@@ -162,17 +160,22 @@ results(M1, _M2, Opts) ->
             end
     end.
 
-%% NOTE: After the process returns messages from an evaluation, the signing unit needs to add
-%% some tags to each message, and spawn to help the target process know these messages are created
-%% by a process.
+%% @doc After the process returns messages from an evaluation, the
+%% signing node needs to add some tags to each message and spawn such that
+%% the target process knows these messages are created by a process.
 preprocess_results(Msg, Proc, Opts) ->
-    ?event({preprocess_results, {msg, Msg}, {proc, Proc}, {opts, Opts}}),
     RawTags = maps:get(<<"Tags">>, Msg, []),
-    TagList = [ {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)} || Tag <- RawTags ],
+    TagList =
+        [
+            {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
+        ||
+            Tag <- RawTags ],
     Tags = maps:from_list(TagList),
-    ?event({preprocess_results, {tags, Tags}}),
     FilteredMsg =
-        maps:without([<<"From-Process">>, <<"From-Image">>, <<"Anchor">>, <<"Tags">>], Msg),
+        maps:without(
+            [<<"From-Process">>, <<"From-Image">>, <<"Anchor">>, <<"Tags">>],
+            Msg
+        ),
     maps:merge(
         FilteredMsg,
         Tags#{
@@ -190,6 +193,7 @@ generate_stack(File) ->
     test_init(),
     Wallet = hb:wallet(),
     Msg0 = dev_wasm:store_wasm_image(File),
+    Image = maps:get(<<"WASM-Image">>, Msg0),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
         <<"Device-Stack">> =>
@@ -204,24 +208,23 @@ generate_stack(File) ->
         <<"Process">> => 
             hb_message:sign(#{
                 <<"Type">> => <<"Process">>,
-                <<"WASM-Image">> => <<"test/aos-2-pure-xs.wasm">>,
+                <<"WASM-Image">> => Image,
                 <<"Scheduler">> => hb:address(),
                 <<"Authority">> => hb:address()
             }, Wallet)
     },
-    ?event({msg1, Msg1}),
     {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
-    ?event({msg2, Msg2}),
     Msg2.
 
-generate_aos_msg(Code) ->
+generate_aos_msg(ProcID, Code) ->
     Wallet = hb:wallet(),
     #{
         path => <<"Compute">>,
         <<"Message">> => 
             hb_message:sign(#{
                 <<"Action">> => <<"Eval">>,
-                data => Code
+                data => Code,
+                target => ProcID
             }, Wallet),
         <<"Assignment">> =>
             hb_message:sign(#{ <<"Block-Height">> => 1 }, Wallet)
@@ -229,11 +232,13 @@ generate_aos_msg(Code) ->
 
 basic_aos_call_test() ->
     Msg = generate_stack("test/aos-2-pure-xs.wasm"),
+    Proc = hb_converge:get(<<"Process">>, Msg, #{ hashpath => ignore }),
+    ProcID = hb_converge:get(id, Proc, #{}),
     {ok, Msg3} =
         hb_converge:resolve(
             Msg,
-            generate_aos_msg("return 1+1"),
+            generate_aos_msg(ProcID, <<"return 1+1">>),
             #{}
         ),
-    ?event({msg3, hb_converge:get(<<"Results">>, Msg3, #{})}),
-    ?assertEqual(<<"2">>, hb_converge:get(<<"Results/Data">>, Msg3, #{})).
+    Data = hb_converge:get(<<"Results/Data">>, Msg3, #{}),
+    ?assertEqual(<<"2">>, Data).
