@@ -43,9 +43,10 @@
 %%%                      addition to `/Results'.
 -module(dev_process).
 %%% Public API
--export([info/2, compute/3, schedule/3, slot/3, now/3]).
+-export([info/2, compute/3, schedule/3, slot/3, now/3, push/3]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
+-export([test_full_push/1, test_now/1, test_aos_compute/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
@@ -56,7 +57,7 @@
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1, _Opts) ->
     #{
-        exports => [compute, schedule, slot, now],
+        exports => [compute, schedule, slot, now, push],
         worker => fun dev_process_worker:server/3,
         group => fun dev_process_worker:group/3
     }.
@@ -169,6 +170,56 @@ now(RawMsg1, Msg2, Opts) ->
         #{ path => <<"Compute/Results">>, <<"Slot">> => CurrentSlot },
         Opts
     ).
+
+%% @doc Recursively push messages to the scheduler until we find a message
+%% that does not lead to any further messages being scheduled.
+push(RawMsg1, Msg2, Opts) ->
+    Wallet = hb:wallet(),
+    Msg1 = ensure_process_key(RawMsg1, Opts),
+    PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
+    ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
+    ?event(debug, {push_called, {process, ProcessID}, {slot, PushMsgSlot}}),
+    {ok, Outbox} = hb_converge:resolve(
+        Msg1,
+        #{ path => <<"Compute/Results/Outbox">>, <<"Slot">> => PushMsgSlot },
+        Opts#{ hashpath => ignore }
+    ),
+    ?event(debug, {base_outbox_res, Outbox}),
+    {ok, maps:map(
+        fun(Key, MsgToPush) ->
+            case hb_converge:get(<<"Target">>, MsgToPush, Opts) of
+                not_found ->
+                    ?event(debug, {skipping_child_with_no_target, {key, Key}}),
+                    <<"No Target. Did not push.">>;
+                Target ->
+                    ?event(debug, {pushing_child, MsgToPush, {parent, PushMsgSlot}, {key, Key}}),
+                    {ok, Next} = hb_converge:resolve(
+                        Msg1,
+                        #{
+                            method => <<"POST">>,
+                            path => <<"Schedule/Slot">>,
+                            <<"Message">> =>
+                                hb_message:sign(
+                                    MsgToPush,
+                                    Wallet
+                                )
+                        },
+                        Opts
+                    ),
+                    ?event(debug,
+                        {push_scheduled,
+                            {assigned_slot, Next},
+                            {target, Target}
+                        }),
+                    hb_converge:resolve(
+                        Msg1,
+                        #{ path => <<"Push">>, <<"Slot">> => Next },
+                        Opts
+                    )
+            end
+        end,
+        Outbox
+    )}.
 
 %% @doc Ensure that the process message we have in memory is live and
 %% up-to-date.
@@ -339,17 +390,17 @@ schedule_test_message(Msg1, Text, MsgBase) ->
                 <<"Test-Key">> => Text
             }
     }, Wallet),
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
-    ok.
+    {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
 
 schedule_aos_call(Msg1, Code) ->
+    Wallet = hb:wallet(),
     ProcID = hb_converge:get(id, Msg1, #{}),
-    Msg2 = #{
+    Msg2 = hb_message:sign(#{
         <<"Action">> => <<"Eval">>,
         data => Code,
         target => ProcID
-    },
-    schedule_test_message(Msg1, <<"TEST CALL">>, Msg2).
+    }, Wallet),
+    schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
     Msg2 = #{
@@ -398,14 +449,14 @@ get_scheduler_slot_test() ->
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
 
-recursive_resolve_test() ->
+recursive_path_resolution_test() ->
     init(),
     Msg1 = test_base_process(),
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     CurrentSlot =
         hb_converge:resolve(
             Msg1,
-            #{ path => [<<"Slot">>, <<"Current-Slot">>] },
+            #{ path => <<"Slot/Current-Slot">> },
             #{ hashpath => ignore }
         ),
     ?event({resolved_current_slot, CurrentSlot}),
@@ -456,26 +507,65 @@ wasm_compute_test() ->
     ?event({computed_message, {msg4, Msg4}}),
     ?assertEqual([720.0], hb_converge:get(<<"Results/WASM/Output">>, Msg4, #{})).
 
-aos_compute_test() ->
-    init(),
+test_aos_compute(Opts) ->
     Msg1 = test_aos_process(),
     schedule_aos_call(Msg1, <<"return 1+1">>),
     schedule_aos_call(Msg1, <<"return 2+2">>),
     Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 0 },
-    {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
-    {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, Opts),
+    {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, Opts),
     ?event(debug, {computed_message, {msg3, Res}}),
-    {ok, Data} = hb_converge:resolve(Res, <<"Data">>, #{}),
+    {ok, Data} = hb_converge:resolve(Res, <<"Data">>, Opts),
     ?event(debug, {computed_data, Data}),
     ?assertEqual(<<"2">>, Data),
     Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
-    {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
-    ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})),
+    {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, Opts),
+    ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, Opts)),
     {ok, Msg5}.
 
-now_test() ->
-    init(),
+test_now(Opts) ->
     Msg1 = test_aos_process(),
     schedule_aos_call(Msg1, <<"return 1+1">>),
     schedule_aos_call(Msg1, <<"return 2+2">>),
-    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})).
+    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, Opts)).
+
+test_full_push(Opts) ->
+    Msg1 = test_aos_process(),
+    hb_cache:write(Msg1, Opts),
+    Script = ping_ping_script(3),
+    ?event(debug, {script, Script}),
+    {ok, Msg2} = schedule_aos_call(Msg1, Script),
+    ?event(debug, {init_sched_result, Msg2}),
+    {ok, StartingMsgSlot} =
+        hb_converge:resolve(Msg2, #{ path => <<"Slot">> }, Opts),
+    Msg3 =
+        #{
+            path => <<"Push">>,
+            <<"Slot">> => StartingMsgSlot
+        },
+    {ok, PushRes} = hb_converge:resolve(Msg1, Msg3, Opts),
+    ?event(debug, {push_res, PushRes}),
+    {ok, Msg4} = hb_converge:resolve(Msg1, <<"Now/Data">>, Opts),
+    ?event(debug, {now_res, Msg4}),
+    ?assertEqual(<<"Done.">>, hb_converge:get(<<"Data">>, Msg4, Opts)).
+
+aos_process_suite_test_() ->
+    hb_store:generate_test_suite([
+        {"AOS compute test", fun test_aos_compute/1},
+        {"Now results test", fun test_now/1},
+        {"Full push ping-pong test", fun test_full_push/1}
+    ]).
+
+ping_ping_script(Limit) ->
+    <<
+        "Handlers.add(\"Ping\",\n"
+        "   function(m)\n"
+        "   if m.Count < ", (integer_to_binary(Limit))/binary, " then\n"
+        "       Send({ Target = ao.id, Action = \"Ping\", Count = m.Count + 1 })\n"
+        "       print(\"Ping\", m.Count + 1)\n"
+        "   else\n"
+        "       print(\"Done.\")\n"
+        "   end\n"
+        "end)\n"
+        "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
+    >>.
