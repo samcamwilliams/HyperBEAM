@@ -124,12 +124,8 @@ results(M1, _M2, Opts) ->
             {ok, Str} = hb_beamr_io:read_string(Port, Ptr),
             try jiffy:decode(Str, [return_maps]) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
-                    % TODO: Handle all JSON interface output types.
-                    #{
-                        <<"Output">> := #{<<"data">> := Data},
-                        <<"Messages">> := Messages
-                    } = Resp,
-                    Res = 
+                    {ok, Data, Messages} = normalize_results(Resp),
+                    Output = 
                         hb_converge:set(
                             M1,
                             #{
@@ -138,13 +134,16 @@ results(M1, _M2, Opts) ->
                                         {MessageNum, preprocess_results(Msg, Proc, Opts)}
                                     ||
                                         {MessageNum, Msg} <-
-                                            lists:zip(lists:seq(1, length(Messages)), Messages)
+                                            lists:zip(
+                                                lists:seq(1, length(Messages)),
+                                                Messages
+                                            )
                                     ]),
                                 <<"Results/Data">> => Data
                             },
                             Opts
                         ),
-                    {ok, Res}
+                    {ok, Output}
             catch
                 _:_ ->
                     {error,
@@ -159,6 +158,13 @@ results(M1, _M2, Opts) ->
                     }
             end
     end.
+
+%% @doc Normalize the results of an evaluation.
+normalize_results(
+    #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages }) ->
+    {ok, Data, Messages};
+normalize_results(#{ <<"Error">> := Error }) ->
+    {ok, Error, []}.
 
 %% @doc After the process returns messages from an evaluation, the
 %% signing node needs to add some tags to each message and spawn such that
