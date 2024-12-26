@@ -47,19 +47,21 @@ format(Bin, Indent) when is_binary(Bin) ->
         Indent
     );
 format(Map, Indent) when is_map(Map) ->
-    SignedID = hb_converge:get(signed_id, Map),
-    UnsignedID = hb_converge:get(unsigned_id, Map),
+    % We try to get the IDs _if_ they are *already* in the map. We do not force
+    % calculation of the IDs here because that may cause significant overhead.
+    SignedID = dev_message:get(id, Map, #{}),
+    UnsignedID = dev_message:get(unsigned_id, Map, #{}),
     IDStr =
         case {SignedID, UnsignedID} of
-            {not_found, not_found} -> "";
-            {_, _} when (SignedID == UnsignedID) or (SignedID == not_found) ->
+            {{_, not_found}, {_, not_found}} -> "";
+            {{_, SID}, {_, USID}} when (SID == USID) or (SID == not_found) ->
                 io_lib:format("[ U: ~s ] ",
-                    [hb_util:short_id(UnsignedID)]);
-            {_, not_found} ->
-                io_lib:format("[ ID: ~s ] ", [hb_util:short_id(SignedID)]);
-            {_, _} ->
+                    [hb_util:short_id(USID)]);
+            {{_, SID}, {_, _}} ->
+                io_lib:format("[ ID: ~s ] ", [hb_util:short_id(SID)]);
+            {{_, SID}, {_, USID}} ->
                 io_lib:format("[ ID: ~s, U: ~s ] ",
-                    [hb_util:short_id(SignedID), hb_util:short_id(UnsignedID)])
+                    [hb_util:short_id(SID), hb_util:short_id(USID)])
         end,
     SignerStr =
         case signers(Map) of
