@@ -208,7 +208,7 @@ debug_print(X, Mod, Func, LineNum) ->
         [
             TSDiff, self(),
             format_debug_trace(Mod, Func, LineNum),
-            lists:flatten(debug_fmt(X, 0))
+            debug_fmt(X, 0)
         ]),
     X.
 
@@ -218,7 +218,7 @@ format_debug_trace(Mod, Func, Line) ->
         short ->
             format_trace_short(get_trace());
         false ->
-            lists:flatten(io_lib:format("~p:~w ~p", [Mod, Line, Func]))
+            io_lib:format("~p:~w ~p", [Mod, Line, Func])
     end.
 
 %% @doc Convert a term to a string for debugging print purposes.
