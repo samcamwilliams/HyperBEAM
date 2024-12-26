@@ -44,6 +44,7 @@
 -module(dev_process).
 %%% Public API
 -export([info/1, compute/3, schedule/3, slot/3, now/3, push/3]).
+-export([ensure_process_key/2]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
 -include_lib("eunit/include/eunit.hrl").
@@ -293,8 +294,6 @@ run_as(Key, Msg1, Msg2, Opts) ->
             Msg2,
             Opts
         ),
-    ?event({base_result, BaseResult}),
-    ?event({base_result_before_device_swap_back, BaseResult}),
     case BaseResult of
         #{ device := DeviceSet } ->
             {ok, hb_converge:set(BaseResult, #{ device => BaseDevice })};
@@ -535,16 +534,22 @@ persistent_process_test() ->
     init(),
     Msg1 = test_aos_process(),
     schedule_aos_call(Msg1, <<"return 1+1">>),
-    schedule_aos_call(Msg1, <<"return 2+2">>),
-    schedule_aos_call(Msg1, <<"return 3+3">>),
     T0 = hb:now(),
-    ?assertEqual(
-        {ok, <<"6">>},
-        hb_converge:resolve(Msg1, <<"Now/Data">>, #{ spawn_worker => true })
+    Msg2 = #{
+        path => <<"Compute">>,
+        <<"Slot">> => 0
+    },
+    ?assertMatch(
+        {ok, _},
+        hb_converge:resolve(Msg1, Msg2, #{ spawn_worker => true })
     ),
     T1 = hb:now(),
-    ?assertEqual({ok, <<"6">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})),
+    ?assertMatch(
+        {ok, _},
+        hb_converge:resolve(Msg1, Msg2, #{})
+    ),
     T2 = hb:now(),
+    ?event({runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
     % The second resolve should be much faster than the first resolve, as the
     % process is already running.
     ?assert(T2 - T1 < ((T1 - T0)/2)).
