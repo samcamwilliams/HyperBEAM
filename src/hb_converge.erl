@@ -189,6 +189,11 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
                     end
             end
     end;
+resolve_stage(1, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
+    % Validation check: If the messages are not maps, we cannot find a key
+    % in them, so return not_found.
+    ?event(converge_core, {stage, 1, validation_check_type_error}, Opts),
+    {error, not_found};
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, validation_check}, Opts),
     % Validation check: Check if the message is valid.
@@ -446,12 +451,16 @@ resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
             % or simply return to the caller. We prefer the global option, such
             % that node operators can control whether devices are able to 
             % generate long-running executions.
-            case hb_opts:get(spawn_worker, false, Opts#{ prefer => global }) of
-                false -> ok;
-                true ->
+            ?event({resolution_maybe_forking, {msg3, Msg3}, {opts, Opts}}),
+            WorkerOpt = hb_opts:get(spawn_worker, false, Opts#{ prefer => local }),
+            case {is_map(Msg3), WorkerOpt} of
+                {false, _} -> ok;
+                {_, false} -> ok;
+                {_, _} ->
                     % We should spin up a process that will hold `Msg3` 
                     % in memory for future executions.
-                    hb_persistent:start_worker(Msg3, Opts)
+                    WorkerPID = hb_persistent:start_worker(Msg3, Opts),
+                    hb_persistent:forward_work(WorkerPID, Opts)
             end,
             % Resolution has finished successfully, return to the
             % caller.

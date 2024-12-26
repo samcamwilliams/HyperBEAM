@@ -176,9 +176,10 @@ send_response(Listener, GroupName, Msg2, Msg3) ->
 
 %% @doc Start a worker process that will hold a message in memory for
 %% future executions.
-start_worker(NotMsg, _) when not is_map(NotMsg) -> not_started;
+
 start_worker(Msg, Opts) ->
     start_worker(group(Msg, undefined, Opts), Msg, Opts).
+start_worker(_, NotMsg, _) when not is_map(NotMsg) -> not_started;
 start_worker(GroupName, Msg, Opts) ->
     start(),
     WorkerPID = spawn(
