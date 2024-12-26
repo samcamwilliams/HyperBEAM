@@ -66,8 +66,20 @@
 %%%                    interacting with messages.
 %%% 
 %%%     info/default_mod : A different device module that should be used to
-%%%                        handle all keys that are not explicitly implemented
-%%%                        by the device. Defaults to the `dev_message` device.'''
+%%%                    handle all keys that are not explicitly implemented
+%%%                    by the device. Defaults to the `dev_message` device.
+%%% 
+%%%     info/grouper : A function that returns the concurrency 'group' name for
+%%%                    an execution. Executions with the same group name will
+%%%                    be executed by sending a message to the associated process
+%%%                    and waiting for a response. This allows you to control 
+%%%                    concurrency of execution and to allow executions to share
+%%%                    in-memory state as applicable. Default: A derivation of
+%%%                    Msg1+Msg2. This means that concurrent calls for the same
+%%%                    output will lead to only a single execution.
+%%% 
+%%%     info/worker : A function that should be run as the 'server' loop of
+%%%                   the executor for interactions using the device.
 %%% 
 %%% The HyperBEAM resolver also takes a number of runtime options that change
 %%% the way that the environment operates:
