@@ -335,11 +335,19 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts = maps:remove(add_key, Opts),
+	UserOpts1 = maps:remove(add_key, Opts),
+    % Unless the user has explicitly requested recursive spawning, we
+    % unset the spawn_worker option so that we do not spawn a new worker
+    % for every resulting execution.
+    UserOpts2 =
+        case maps:get(spawn_worker, UserOpts1, false) of
+            recursive -> UserOpts1;
+            _ -> maps:remove(spawn_worker, UserOpts1)
+        end,
 	Args =
 		case maps:get(add_key, Opts, false) of
-			false -> [Msg1, Msg2, UserOpts];
-			Key -> [Key, Msg1, Msg2, UserOpts]
+			false -> [Msg1, Msg2, UserOpts1];
+			Key -> [Key, Msg1, Msg2, UserOpts1]
 		end,
     % Try to execute the function.
     Res = 
