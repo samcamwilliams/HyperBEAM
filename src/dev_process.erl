@@ -43,7 +43,7 @@
 %%%                      addition to `/Results'.
 -module(dev_process).
 %%% Public API
--export([info/2, compute/3, schedule/3, slot/3, now/3, push/3]).
+-export([info/1, compute/3, schedule/3, slot/3, now/3, push/3]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
 -include_lib("eunit/include/eunit.hrl").
@@ -54,11 +54,10 @@
 -define(DEFAULT_CACHE_FREQ, 2).
 
 %% @doc When the info key is called, we should return the process exports.
-info(_Msg1, _Opts) ->
+info(_Msg1) ->
     #{
-        exports => [compute, schedule, slot, now, push],
         worker => fun dev_process_worker:server/3,
-        group => fun dev_process_worker:group/3
+        grouper => fun dev_process_worker:group/3
     }.
 
 %% @doc Wraps functions in the Scheduler device.
@@ -508,6 +507,7 @@ wasm_compute_test() ->
 
 aos_compute_test_() ->
     {timeout, 30, fun() ->
+        init(),
         Msg1 = test_aos_process(),
         schedule_aos_call(Msg1, <<"return 1+1">>),
         schedule_aos_call(Msg1, <<"return 2+2">>),
@@ -524,16 +524,34 @@ aos_compute_test_() ->
         {ok, Msg5}
     end}.
 
-now_results_test_() ->
-    {timeout, 30, fun() ->
-        Msg1 = test_aos_process(),
-        schedule_aos_call(Msg1, <<"return 1+1">>),
-        schedule_aos_call(Msg1, <<"return 2+2">>),
-        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{}))
-    end}.
+now_results_test() ->
+    init(),
+    Msg1 = test_aos_process(),
+    schedule_aos_call(Msg1, <<"return 1+1">>),
+    schedule_aos_call(Msg1, <<"return 2+2">>),
+    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})).
+
+persistent_process_test() ->
+    init(),
+    Msg1 = test_aos_process(),
+    schedule_aos_call(Msg1, <<"return 1+1">>),
+    schedule_aos_call(Msg1, <<"return 2+2">>),
+    schedule_aos_call(Msg1, <<"return 3+3">>),
+    T0 = hb:now(),
+    ?assertEqual(
+        {ok, <<"6">>},
+        hb_converge:resolve(Msg1, <<"Now/Data">>, #{ spawn_worker => true })
+    ),
+    T1 = hb:now(),
+    ?assertEqual({ok, <<"6">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})),
+    T2 = hb:now(),
+    % The second resolve should be much faster than the first resolve, as the
+    % process is already running.
+    ?assert(T2 - T1 < ((T1 - T0)/2)).
 
 full_push_test_() ->
     {timeout, 30, fun() ->
+        init(),
         Msg1 = test_aos_process(),
         hb_cache:write(Msg1, #{}),
         Script = ping_ping_script(3),
