@@ -324,6 +324,7 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
                 % If the device cannot be loaded, we alert the caller.
 				handle_error(
                     ExecName,
+                    Msg2,
 					loading_device,
 					{Class, Exception, Stacktrace},
 					Opts
@@ -391,6 +392,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                 % indicated by caller's `#Opts`.
                 handle_error(
                     ExecName,
+                    Msg2,
                     device_call,
                     {ExecClass, ExecException, ExecStacktrace},
                     Opts
@@ -426,7 +428,7 @@ resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 8, ExecName}, Opts),
     % Notify processes that requested the resolution while we were executing and
     % unregister ourselves from the group.
-    hb_persistent:unregister_notify(ExecName, Res, Opts),
+    hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
     resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 9, ExecName}, Opts),
@@ -670,9 +672,9 @@ remove(Msg, Key, Opts) ->
     ).
 
 %% @doc Handle an error in a device call.
-handle_error(ExecGroup, Whence, {Class, Exception, Stacktrace}, Opts) ->
+handle_error(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
     Error = {error, Whence, {Class, Exception, Stacktrace}},
-    hb_persistent:unregister_notify(ExecGroup, Error, Opts),
+    hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
     ?event(converge_core, {handle_error, Error, {opts, Opts}}),
     case maps:get(error_strategy, Opts, throw) of
         throw -> erlang:raise(Class, Exception, Stacktrace);
