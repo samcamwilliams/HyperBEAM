@@ -28,9 +28,9 @@ from_message(Msg) -> maps:get(priv, Msg, #{}).
 %% Converge resolve under-the-hood, removing the private specifier from the
 %% path if it exists.
 get(Key, Msg, Opts) ->
-    get(Key, Msg, undefined, Opts).
+    get(Key, Msg, not_found, Opts).
 get(InputPath, Msg, Default, Opts) ->
-    Path = remove_private_specifier(InputPath),
+    Path = hb_path:term_to_path(remove_private_specifier(InputPath)),
     ?event({get_private, {in, InputPath}, {out, Path}}),
     % Resolve the path against the private element of the message.
     Resolve =
