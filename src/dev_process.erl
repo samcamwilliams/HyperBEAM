@@ -15,14 +15,17 @@
 %%% 
 %%% The external API of the device is as follows:
 %%% ```
-%%% GET /ID/Scheduler/Schedule <- Returns the messages in the schedule
-%%% POST /ID/Scheduler/Schedule <- Adds a message to the schedule
+%%% GET /ID/Schedule:                Returns the messages in the schedule
+%%% POST /ID/Schedule:               Adds a message to the schedule
 %%% 
-%%% GET /ID/Computed/[IDorSlotNum]/Result <- Returns the state of the process
-%%%                                         after applying a message
-%%% GET /ID/Now <- Returns the `/Results` key of the latest computed message
+%%% GET /ID/Compute/[IDorSlotNum]:   Returns the state of the process after 
+%%%                                  applying a message
+%%% GET /ID/Now:                     Returns the `/Results' key of the latest 
+%%%                                  computed message
+%%% '''
 %%% 
-%%% Process definition example:
+%%% An example process definition will look like this:
+%%% ```
 %%%     Device: Process/1.0
 %%%     Scheduler-Device: Scheduler/1.0
 %%%     Execution-Device: Stack/1.0
@@ -34,13 +37,14 @@
 %%%         Authority: A
 %%%         Authority: B
 %%%         Authority: C
-%%%         Quorum: 2'''
+%%%         Quorum: 2
+%%% '''
 %%%
 %%% Runtime options:
-%%%     Cache-Frequency: The number of assignments that can pass before
-%%%                      the full state should be cached.
-%%%     Cache-Keys:      A list of the keys that should be cached, in
-%%%                      addition to `/Results'.
+%%%     Cache-Frequency: The number of assignments that will be computed 
+%%%                      before the full (restorable) state should be cached.
+%%%     Cache-Keys:      A list of the keys that should be cached for all 
+%%%                      assignments, in addition to `/Results'.
 -module(dev_process).
 %%% Public API
 -export([info/1, compute/3, schedule/3, slot/3, now/3, push/3]).
@@ -191,7 +195,11 @@ push(RawMsg1, Msg2, Opts) ->
                     ?event(debug, {skipping_child_with_no_target, {key, Key}}),
                     <<"No Target. Did not push.">>;
                 Target ->
-                    ?event(debug, {pushing_child, MsgToPush, {parent, PushMsgSlot}, {key, Key}}),
+                    ?event(debug,
+                        {pushing_child, MsgToPush,
+                        {originates_from_slot, PushMsgSlot},
+                        {key, Key}
+                    }),
                     {ok, Next} = hb_converge:resolve(
                         Msg1,
                         #{
@@ -384,7 +392,7 @@ schedule_test_message(Msg1, Text, MsgBase) ->
         <<"Message">> =>
             MsgBase#{
                 <<"Type">> => <<"Message">>,
-                <<"Test-Key">> => Text
+                <<"Test-Label">> => Text
             }
     }, Wallet),
     {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
@@ -425,11 +433,11 @@ schedule_on_process_test() ->
         }, #{}),
     ?assertMatch(
         <<"TEST TEXT 1">>,
-        hb_converge:get(<<"Assignments/0/Message/Test-Key">>, SchedulerRes)
+        hb_converge:get(<<"Assignments/0/Message/Test-Label">>, SchedulerRes)
     ),
     ?assertMatch(
         <<"TEST TEXT 2">>,
-        hb_converge:get(<<"Assignments/1/Message/Test-Key">>, SchedulerRes)
+        hb_converge:get(<<"Assignments/1/Message/Test-Label">>, SchedulerRes)
     ).
 
 get_scheduler_slot_test() ->

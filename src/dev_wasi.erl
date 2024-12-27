@@ -127,7 +127,7 @@ path_open(Msg1, Msg2, Opts) ->
                     <<"vfs/", Path/binary>>,
                     FD
                 ),
-            wasm_response => [0, Index]
+            results => [0, Index]
         }
     }.
 
@@ -148,7 +148,7 @@ fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten, _Opts) ->
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
     ),
-    {ok, #{ state => S, wasm_response => [0] }};
+    {ok, #{ state => S, results => [0] }};
 fd_write(S, Port, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
     FDNumStr = integer_to_binary(FDnum),
     FD = hb_converge:get(<<"File-Descriptors/", FDNumStr/binary>>, S, Opts),
@@ -199,7 +199,7 @@ fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead, _Opts) ->
     ?event({{completed_read, FD, BytesRead}}),
     hb_beamr_io:write(Port, RetPtr,
         <<BytesRead:64/little-unsigned-integer>>),
-    {ok, #{ state => S, wasm_response => [0] }};
+    {ok, #{ state => S, results => [0] }};
 fd_read(S, Port, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
     ?event({fd_read, FDNum, VecsPtr, NumVecs, RetPtr}),
     % Parse the request
@@ -243,7 +243,7 @@ parse_iovec(Port, Ptr) ->
 clock_time_get(Msg1, _Msg2, Opts) ->
     ?event({clock_time_get, {returning, 1}}),
     State = hb_converge:get(<<"State">>, Msg1, Opts),
-    {ok, #{ state => State, wasm_response => [1] }}.
+    {ok, #{ state => State, results => [1] }}.
 
 %%% Tests
 

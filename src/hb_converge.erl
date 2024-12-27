@@ -366,7 +366,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                     {exec_name, ExecName},
                     {msg1, Msg1},
                     {msg2, Msg2},
-                    {msg_res, MsgRes},
+                    {msg3, MsgRes},
                     {opts, Opts}
                 },
                 Opts
