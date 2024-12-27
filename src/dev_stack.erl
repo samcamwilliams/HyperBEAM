@@ -210,14 +210,14 @@ transform(Msg1, Key, Opts) ->
                                 hb_converge:get(
                                     [<<"Input-Prefixes">>, Key],
                                     {as, dev_message, Msg1},
-                                    <<"">>,
+                                    undefined,
                                     Opts
                                 ),
                             <<"Output-Prefix">> =>
                                 hb_converge:get(
                                     [<<"Output-Prefixes">>, Key],
                                     {as, dev_message, Msg1},
-                                    <<"">>,
+                                    undefined,
                                     Opts
                                 )
 						},
@@ -294,6 +294,7 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	end.
 
 maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
+    ?event(debug, {stack_error, {msg1, Message1}, {key, Key}, {msg2, Message2}, {dev_num, DevNum}, {info, Info}, {opts, Opts}}),
     case hb_opts:get(error_strategy, throw, Opts) of
         stop ->
 			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
@@ -467,8 +468,8 @@ test_prefix_msg() ->
     Dev = #{
         prefix_set =>
             fun(M1, M2, Opts) ->
-                In = hb_converge:get(<<"Input-Prefix">>, M1, Opts),
-                Out = hb_converge:get(<<"Output-Prefix">>, M1, Opts),
+                In = input_prefix(M1, M2, Opts),
+                Out = output_prefix(M1, M2, Opts),
                 Key = hb_converge:get(<<"Key">>, M2, Opts),
                 Value = hb_converge:get(<<In/binary, "/", Key/binary>>, M2, Opts),
                 ?event(debug, {setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
