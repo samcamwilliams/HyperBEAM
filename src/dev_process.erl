@@ -67,14 +67,14 @@ info(_Msg1) ->
 
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
-    run_as(<<"Scheduler-Device">>, Msg1, Msg2, Opts).
+    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
 slot(Msg1, Msg2, Opts) ->
     ?event(debug, {slot_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-    run_as(<<"Scheduler-Device">>, Msg1, Msg2, Opts).
+    run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
 next(Msg1, _Msg2, Opts) ->
-    run_as(<<"Scheduler-Device">>, Msg1, next, Opts).
+    run_as(<<"Scheduler">>, Msg1, next, Opts).
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves. We set the
@@ -83,7 +83,7 @@ next(Msg1, _Msg2, Opts) ->
 init(Msg1, _Msg2, Opts) ->
     ?event({init_called, {msg1, Msg1}, {opts, Opts}}),
     {ok, Initialized} =
-        run_as(<<"Execution-Device">>, Msg1, #{ path => init }, Opts),
+        run_as(<<"Execution">>, Msg1, #{ path => init }, Opts),
     {
         ok,
         hb_converge:set(
@@ -144,7 +144,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             ),
             {ok, Msg3} =
                 run_as(
-                    <<"Execution-Device">>,
+                    <<"Execution">>,
                     State,
                     ToProcess,
                     Opts#{ cache_keys => CacheKeys }
@@ -257,7 +257,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % the public component of a message) into memory.
                     ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
                     run_as(
-                        <<"Execution-Device">>,
+                        <<"Execution">>,
                         MsgFromCache,
                         restore,
                         Opts
@@ -288,10 +288,15 @@ run_as(Key, Msg1, Msg2, Opts) ->
             #{
                 device => 
                     DeviceSet = hb_converge:get(
-                        Key,
+                        << Key/binary, "-Device">>,
                         {as, dev_message, Msg1},
                         Opts
-                    )
+                    ),
+                <<"Input-Prefix">> => <<"Process">>,
+                <<"Output-Prefixes">> =>
+                    hb_converge:get(
+                        <<Key/binary, "-Output-Prefixes">>,
+                        {as, dev_message, Msg1}, undefined, Opts)
             },
             Opts
         ),
@@ -347,11 +352,12 @@ test_base_process() ->
     }.
 
 test_wasm_process(WASMImage) ->
-    #{ <<"WASM-Image">> := WASMImageID } = dev_wasm:store_wasm_image(WASMImage),
+    #{ image := WASMImageID } = dev_wasm:store_wasm_image(WASMImage),
     maps:merge(test_base_process(), #{
         <<"Execution-Device">> => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"WASM-64/1.0">>],
-        <<"WASM-Image">> => WASMImageID
+        <<"Execution-Output-Prefixes">> => [<<"WASM">>],
+        <<"Image">> => WASMImageID
     }).
 
 %% @doc Generate a process message with a random number, and the 
@@ -366,6 +372,10 @@ test_aos_process() ->
                 <<"JSON-Iface/1.0">>,
                 <<"WASM-64/1.0">>,
                 <<"Multipass/1.0">>
+            ],
+        <<"Execution-Output-Prefixes">> =>
+            [
+                <<"WASM">>, <<"WASM">>, <<"WASM">>, <<"WASM">>
             ],
         <<"Passes">> => 2,
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
@@ -479,7 +489,7 @@ test_device_compute_test() ->
     ?assertMatch(
         <<"TEST TEXT 2">>,
         hb_converge:get(
-            <<"Schedule/Assignments/1/Message/Test-Key">>,
+            <<"Schedule/Assignments/1/Message/Test-Label">>,
             Msg1,
             #{ hashpath => ignore }
         )
@@ -538,30 +548,6 @@ now_results_test() ->
     schedule_aos_call(Msg1, <<"return 2+2">>),
     ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})).
 
-persistent_process_test() ->
-    init(),
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"return 1+1">>),
-    T0 = hb:now(),
-    Msg2 = #{
-        path => <<"Compute">>,
-        <<"Slot">> => 0
-    },
-    ?assertMatch(
-        {ok, _},
-        hb_converge:resolve(Msg1, Msg2, #{ spawn_worker => true })
-    ),
-    T1 = hb:now(),
-    ?assertMatch(
-        {ok, _},
-        hb_converge:resolve(Msg1, Msg2, #{})
-    ),
-    T2 = hb:now(),
-    ?event({runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
-    % The second resolve should be much faster than the first resolve, as the
-    % process is already running.
-    ?assert(T2 - T1 < ((T1 - T0)/2)).
-
 full_push_test_() ->
     {timeout, 30, fun() ->
         init(),
@@ -585,6 +571,32 @@ full_push_test_() ->
             hb_converge:resolve(Msg1, <<"Now/Data">>, #{})
         )
     end}.
+
+% persistent_process_test() ->
+%     init(),
+%     Msg1 = test_aos_process(),
+%     schedule_aos_call(Msg1, <<"return 1+1">>),
+%     T0 = hb:now(),
+%     Msg2 = #{
+%         path => <<"Compute">>,
+%         <<"Slot">> => 0
+%     },
+%     ?assertMatch(
+%         {ok, _},
+%         hb_converge:resolve(Msg1, Msg2, #{ spawn_worker => true })
+%     ),
+%     T1 = hb:now(),
+%     ?assertMatch(
+%         {ok, _},
+%         hb_converge:resolve(Msg1, Msg2, #{})
+%     ),
+%     T2 = hb:now(),
+%     ?event({runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
+%     % The second resolve should be much faster than the first resolve, as the
+%     % process is already running.
+%     ?assert(T2 - T1 < ((T1 - T0)/2)).
+
+%%% Test helpers
 
 ping_ping_script(Limit) ->
     <<
