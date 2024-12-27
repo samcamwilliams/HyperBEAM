@@ -53,11 +53,11 @@ restore(Msg, _Msg2, Opts) ->
         AlreadySeen ->
             ?event({restore_found, AlreadySeen}),
             {ok,
-                ?event(hb_private:set(
+                hb_private:set(
                     Msg,
                     #{ <<"Test-Key/Started-State">> => AlreadySeen },
                     Opts
-                ))
+                )
             }
     end.
 
