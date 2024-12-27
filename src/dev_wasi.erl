@@ -256,6 +256,7 @@ generate_wasi_stack(File, Func, Params) ->
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"WASI/1.0">>, <<"WASM-64/1.0">>],
+        <<"Output-Prefixes">> => [<<"WASM">>, <<"WASM">>],
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"WASM-Function">> => Func,
         <<"WASM-Params">> => Params
