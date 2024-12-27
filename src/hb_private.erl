@@ -95,7 +95,7 @@ set_private_test() ->
 
 get_private_key_test() ->
     M1 = #{a => 1, priv => #{b => 2}},
-    ?assertEqual(undefined, get(a, M1, #{})),
+    ?assertEqual(not_found, get(a, M1, #{})),
     {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>, #{}),
     ?assertEqual(2, get(b, M1, #{})),
     {error, not_found} = hb_converge:resolve(M1, <<"priv/a">>, #{}),
