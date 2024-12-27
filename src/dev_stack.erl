@@ -23,13 +23,13 @@
 %%% scenario we resolve FuncName on the stack, leading FuncName to be called on
 %%% Add-One-Device and Add-Two-Device.
 %%%
-%%% A device stack responds to special tags upon responses as follows:
+%%% A device stack responds to special statuses upon responses as follows:
 %%%
-%%% `skip': Skips the rest of the device stack for the current pass.
+%%%     `skip': Skips the rest of the device stack for the current pass.
 %%% 
-%%% `pass': Causes the stack to increment its pass number and re-execute
-%%%  the stack from the first device, maintaining the state accumulated so
-%%%  far.
+%%%     `pass': Causes the stack to increment its pass number and re-execute
+%%%             the stack from the first device, maintaining the state 
+%%%             accumulated so far.
 %%%
 %%% In all cases, the device stack will return the accumulated state to the
 %%% caller as the result of the call to the stack.
@@ -38,11 +38,13 @@
 %%% the state of its execution as it progresses through devices. These keys
 %%% are as follows:
 %%%
-%%% `slot': The number of times the stack has been executed upon different
-%%% messages.
-%%% 
-%%% `pass': The number of times the stack has reset and re-executed from the
-%%% first device for the current message.
+%%%     `Stack-Pass': The number of times the stack has reset and re-executed
+%%%     from the first device for the current message.
+%%%
+%%%     `Input-Prefix': The prefix that the device should use for its outputs
+%%%     and inputs.
+%%%
+%%%     `Output-Prefix': The device that was previously executed.
 %%%
 %%% All counters used by the stack are initialized to 1.
 %%%
@@ -51,12 +53,12 @@
 %%% these options is also passed through to the devices contained within the
 %%% stack during execution. These options include:
 %%%
-%%% Error-Strategy: Determines how the stack handles errors from devices.
-%%% See `maybe_error/5' for more information.
+%%%     `Error-Strategy': Determines how the stack handles errors from devices.
+%%%     See `maybe_error/5' for more information.
 %%% 
-%%% Allow-Multipass: Determines whether the stack is allowed to automatically
-%%% re-execute from the first device when the `pass' tag is returned. See
-%%% `maybe_pass/3' for more information.
+%%%     `Allow-Multipass': Determines whether the stack is allowed to automatically
+%%%     re-execute from the first device when the `pass' tag is returned. See
+%%%     `maybe_pass/3' for more information.
 %%%
 %%% Under-the-hood, dev_stack uses a `default' handler to resolve all calls to
 %%% devices, aside `set/2' which it calls itself to mutate the message's `device'
@@ -79,7 +81,7 @@
 %%% In this example, the `device' key is mutated a number of times, but the
 %%% resulting HashPath remains correct and verifiable.
 -module(dev_stack).
--export([info/1]).
+-export([info/1, router/4, prefix/3, input_prefix/3, output_prefix/3]).
 -include_lib("eunit/include/eunit.hrl").
 
 -include("include/hb.hrl").
@@ -97,6 +99,18 @@ info(Msg) ->
         end
     ).
 
+%% @doc Return the default prefix for the stack.
+prefix(Msg1, _Msg2, Opts) ->
+    hb_converge:get(<<"Output-Prefix">>, {as, dev_message, Msg1}, <<"">>, Opts).
+
+%% @doc Return the input prefix for the stack.
+input_prefix(Msg1, _Msg2, Opts) ->
+    hb_converge:get(<<"Input-Prefix">>, {as, dev_message, Msg1}, <<"">>, Opts).
+
+%% @doc Return the output prefix for the stack.
+output_prefix(Msg1, _Msg2, Opts) ->
+    hb_converge:get(<<"Output-Prefix">>, {as, dev_message, Msg1}, <<"">>, Opts).
+
 %% @doc The device stack key router. Sends the request to `resolve_stack',
 %% except for `set/2' which is handled by the default implementation in
 %% `dev_message'.
@@ -113,7 +127,22 @@ router(Key, Message1, Message2, Opts) ->
 	case resolve_stack(PreparedMessage, Key, Message2, Opts) of
 		{ok, Result} when is_map(Result) ->
 			?event({router_result, ok, Result}),
-			dev_message:set(Result, #{<<"Device">> => InitDevMsg}, Opts);
+            {ok, ResultWithResetDev} =
+                dev_message:set(
+                    Result,
+                    #{<<"Device">> => InitDevMsg},
+                    Opts
+                ),
+            dev_message:remove(
+                ResultWithResetDev,
+                #{
+                    items => [
+                        <<"Input-Prefix">>,
+                        <<"Output-Prefix">>,
+                        <<"Device-Stack-Previous">>
+                    ]
+                }
+            );
 		Else ->
 			?event({router_result, unexpected, Else}),
 			Else
@@ -176,7 +205,21 @@ transform(Msg1, Key, Opts) ->
                                     <<"Device">>,
                                     Msg1,
                                     Opts
-                                ))
+                                )),
+                            <<"Input-Prefix">> =>
+                                hb_converge:get(
+                                    [<<"Input-Prefixes">>, Key],
+                                    {as, dev_message, Msg1},
+                                    <<"">>,
+                                    Opts
+                                ),
+                            <<"Output-Prefix">> =>
+                                hb_converge:get(
+                                    [<<"Output-Prefixes">>, Key],
+                                    {as, dev_message, Msg1},
+                                    <<"">>,
+                                    Opts
+                                )
 						},
 						Opts
 					);
@@ -418,6 +461,76 @@ many_devices_test() ->
 		},
 		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{})
 	).
+
+
+test_prefix_msg() ->
+    Dev = #{
+        prefix_set =>
+            fun(M1, M2, Opts) ->
+                In = hb_converge:get(<<"Input-Prefix">>, M1, Opts),
+                Out = hb_converge:get(<<"Output-Prefix">>, M1, Opts),
+                Key = hb_converge:get(<<"Key">>, M2, Opts),
+                Value = hb_converge:get(<<In/binary, "/", Key/binary>>, M2, Opts),
+                ?event(debug, {setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
+                {ok, hb_converge:set(
+                    M1,
+                    <<Out/binary, "/", Key/binary>>,
+                    Value,
+                    Opts
+                )}
+            end
+    },
+    #{
+        device => <<"Stack/1.0">>,
+        <<"Device-Stack">> => #{ 1 => Dev, 2 => Dev }
+    }.
+
+no_prefix_test() ->
+    Msg2 =
+        #{
+            path => prefix_set,
+            key => <<"Example">>,
+            <<"Example">> => 1
+        },
+    {ok, Ex1Msg3} = hb_converge:resolve(test_prefix_msg(), Msg2, #{}),
+    ?event(debug, {ex1, Ex1Msg3}),
+    ?assertMatch(1, hb_converge:get(<<"Example">>, Ex1Msg3, #{})).
+
+output_prefix_test() ->
+    Msg1 =
+        (test_prefix_msg())#{
+            <<"Output-Prefixes">> => #{ 1 => <<"Out1/">>, 2 => <<"Out2/">> }
+        },
+    Msg2 =
+        #{
+            path => prefix_set,
+            key => <<"Example">>,
+            <<"Example">> => 1
+        },
+    {ok, Ex2Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
+    ?assertMatch(1,
+        hb_converge:get(<<"Out1/Example">>, {as, dev_message, Ex2Msg3}, #{})),
+    ?assertMatch(1,
+        hb_converge:get(<<"Out2/Example">>, {as, dev_message, Ex2Msg3}, #{})).
+
+all_prefixes_test() ->
+    Msg1 =
+        (test_prefix_msg())#{
+            <<"Input-Prefixes">> => #{ 1 => <<"In1/">>, 2 => <<"In2/">> },
+            <<"Output-Prefixes">> => #{ 1 => <<"Out1/">>, 2 => <<"Out2/">> }
+        },
+    Msg2 =
+        #{
+            path => prefix_set,
+            key => <<"Example">>,
+            <<"In1">> => #{ <<"Example">> => 1 },
+            <<"In2">> => #{ <<"Example">> => 2 }
+        },
+    {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
+    ?assertMatch(1,
+        hb_converge:get(<<"Out1/Example">>, {as, dev_message, Msg3}, #{})),
+    ?assertMatch(2,
+        hb_converge:get(<<"Out2/Example">>, {as, dev_message, Msg3}, #{})).
 
 reinvocation_test() ->
 	Msg = #{
