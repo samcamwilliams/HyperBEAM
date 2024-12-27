@@ -207,7 +207,7 @@ generate_stack(File) ->
     test_init(),
     Wallet = hb:wallet(),
     Msg0 = dev_wasm:store_wasm_image(File),
-    Image = maps:get(<<"WASM-Image">>, Msg0),
+    Image = hb_converge:get(<<"Image">>, Msg0, #{}),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
         <<"Device-Stack">> =>
@@ -217,12 +217,26 @@ generate_stack(File) ->
                 <<"WASM-64/1.0">>,
                 <<"Multipass/1.0">>
             ],
+        <<"Input-Prefixes">> =>
+            [
+                <<"Process">>,
+                <<"Process">>,
+                <<"Process">>,
+                <<"Process">>
+            ],
+        <<"Output-Prefixes">> =>
+            [
+                <<"WASM">>,
+                <<"WASM">>,
+                <<"WASM">>,
+                <<"WASM">>
+            ],
         <<"Passes">> => 2,
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"Process">> => 
             hb_message:sign(#{
                 <<"Type">> => <<"Process">>,
-                <<"WASM-Image">> => Image,
+                <<"Image">> => Image,
                 <<"Scheduler">> => hb:address(),
                 <<"Authority">> => hb:address()
             }, Wallet)
