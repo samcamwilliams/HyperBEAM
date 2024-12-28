@@ -293,3 +293,22 @@ multiclient_test() ->
         {result, Result} ->
             ?assertEqual(120.0, Result)
     end.
+
+benchmark_test() ->
+    BenchTime = 1,
+    {ok, File} = file:read_file("test/test-64.wasm"),
+    {ok, WASM, _ImportMap, _Exports} = start(File),
+    Iterations = hb:benchmark(
+        fun() ->
+            {ok, [Result]} = call(WASM, "fac", [5.0]),
+            ?assertEqual(120.0, Result)
+        end,
+        BenchTime
+    ),
+    ?event(benchmark, {scheduled, Iterations}),
+    ?assert(Iterations > 1000),
+    hb_util:eunit_print(
+        "Executed ~p calls through Beamr in ~p ms (~.2f call/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ok.
