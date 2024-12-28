@@ -144,7 +144,8 @@ resolve(Msg1, Msg2, Opts) ->
 %%      6: Cryptographic linking.
 %%      7: Result caching.
 %%      8: Notify waiters.
-%%      9: Recurse, fork, or terminate.
+%%      9: Fork worker.
+%%     10: Recurse, fork, or terminate.
 
 resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
@@ -253,7 +254,11 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
             % There is another executor of this resolution in-flight.
             % Bail execution, register to receive the response, then
             % wait.
-            hb_persistent:await(Leader, Msg1, Msg2, Opts);
+            Res = hb_persistent:await(Leader, Msg1, Msg2, Opts),
+            % Now that we have the result, we can skip right to potential
+            % recursion (step 10).
+            resolve_stage(10, Msg1, Msg2, Res, Leader,
+                Opts#{ spawn_worker => false });
         {infinite_recursion, GroupName} ->
             % We are the leader for this resolution, but we executing the 
             % computation again. This may plausibly be OK in _some_ cases,
@@ -439,40 +444,37 @@ resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
     resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
-resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
+resolve_stage(9, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 9, ExecName}, Opts),
-    % Recurse, fork, or terminate.
+    % Check if we should spawn a worker for the current execution
+    case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
+        {A, B} when (A == false) or (B == false) ->
+            resolve_stage(10, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false });
+        {_, _} ->
+            % Spawn a worker for the current execution
+            WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
+            hb_persistent:forward_work(WorkerPID, Opts),
+            resolve_stage(10, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false })
+    end;
+resolve_stage(9, Msg1, Msg2, OtherRes, ExecName, Opts) ->
+    ?event(converge_core, {stage, 9, ExecName, skip_spawning_with_abnormal_result}, Opts),
+    resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts);
+resolve_stage(10, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
+    ?event(converge_core, {stage, 10, ExecName}, Opts),
+    % Recurse, or terminate.
     #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
         = hb_private:from_message(Msg2),
 	case RemainingPath of
 		RecursivePath when RecursivePath =/= undefined ->
 			% There are more elements in the path, so we recurse.
-			?event({resolution_recursing, {remaining_path, RemainingPath}}),
+			?event(converge_core, {resolution_recursing, {remaining_path, RemainingPath}}),
 			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
 		undefined ->
-			% The path resolved to the last element, so we check whether
-            % we should fork a new process with Msg3 waiting for messages,
-            % or simply return to the caller. We prefer the global option, such
-            % that node operators can control whether devices are able to 
-            % generate long-running executions.
-            ?event({resolution_maybe_forking, {msg3, Msg3}, {opts, Opts}}),
-            WorkerOpt = hb_opts:get(spawn_worker, false, Opts#{ prefer => local }),
-            case {is_map(Msg3), WorkerOpt} of
-                {false, _} -> ok;
-                {_, false} -> ok;
-                {_, _} ->
-                    % We should spin up a process that will hold `Msg3` 
-                    % in memory for future executions.
-                    WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
-                    hb_persistent:forward_work(WorkerPID, Opts)
-            end,
-            % Resolution has finished successfully, return to the
-            % caller.
-			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
-            {ok, Msg3}
+            % Terminate: We have reached the end of the path.
+			{ok, Msg3}
 	end;
-resolve_stage(9, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
-    ?event(converge_core, {stage, 9, ExecName, abnormal_return}, Opts),
+resolve_stage(10, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
+    ?event(converge_core, {stage, 10, ExecName, abnormal_return}, Opts),
     OtherRes.
 
 %% @doc Catch all return if we don't have the necessary messages in the cache.
