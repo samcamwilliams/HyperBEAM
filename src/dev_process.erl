@@ -181,18 +181,12 @@ now(RawMsg1, _Msg2, Opts) ->
 push(Msg1, Msg2, Opts) ->
     Wallet = hb:wallet(),
     PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
-    {ok, FullState} = hb_converge:resolve(
+    {ok, Outbox} = hb_converge:resolve(
         Msg1,
-        #{ path => <<"Compute">>, <<"Slot">> => PushMsgSlot },
+        #{ path => <<"Compute/Results/Outbox">>, <<"Slot">> => PushMsgSlot },
         Opts#{ spawn_worker => true }
     ),
-    {ok, Outbox} =
-        hb_converge:resolve(
-            FullState,
-            <<"Results/Outbox">>,
-            Opts#{ hashpath => ignore }
-        ),
-    ?event({base_outbox_res, Outbox}),
+    ?event(debug, {base_outbox_res, Outbox}),
     case ?IS_EMPTY_MESSAGE(Outbox) of
         true ->
             {ok, #{}};
@@ -201,8 +195,8 @@ push(Msg1, Msg2, Opts) ->
                 fun(Key, MsgToPush) ->
                     case hb_converge:get(<<"Target">>, MsgToPush, Opts) of
                         not_found ->
-                            ?event({skipping_child_with_no_target, {key, Key}, MsgToPush}),
-                            <<"No Target. Did not push.">>;
+                            ?event({skip_no_target, {key, Key}, MsgToPush}),
+                            {ok, <<"No Target. Did not push.">>};
                         Target ->
                             ?event(
                                 {pushing_child,
@@ -242,7 +236,7 @@ push(Msg1, Msg2, Opts) ->
                             }
                     end
                 end,
-                Outbox
+                maps:without([hashpath], Outbox)
             )}
     end.
 
@@ -586,7 +580,7 @@ full_push_test_() ->
         {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"Now/Results/Data">>, #{})
+            hb_converge:resolve(Msg1, <<"Now/Data">>, #{})
         )
     end}.
 
