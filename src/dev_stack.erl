@@ -480,6 +480,33 @@ many_devices_test() ->
 		hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{})
 	).
 
+benchmark_test() ->
+    BenchTime = 1,
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device(<<"+D1">>),
+				<<"2">> => generate_append_device(<<"+D2">>),
+				<<"3">> => generate_append_device(<<"+D3">>),
+				<<"4">> => generate_append_device(<<"+D4">>),
+				<<"5">> => generate_append_device(<<"+D5">>)
+			},
+		result => <<"INIT">>
+	},
+    Iterations =
+        hb:benchmark(
+            fun() ->
+                hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{})
+            end,
+            BenchTime
+        ),
+    hb_util:eunit_print(
+        "Evaluated ~p stack messages in ~p sec (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 10).
+
 
 test_prefix_msg() ->
     Dev = #{

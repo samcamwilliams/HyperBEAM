@@ -270,3 +270,29 @@ basic_aos_call_test() ->
         ),
     Data = hb_converge:get(<<"Results/Data">>, Msg3, #{}),
     ?assertEqual(<<"2">>, Data).
+
+aos_stack_benchmark_test_() ->
+    {timeout, 20, fun() ->
+        BenchTime = 3,
+        RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm"),
+        Proc = hb_converge:get(<<"Process">>, RawWASMMsg, #{ hashpath => ignore }),
+        ProcID = hb_converge:get(id, Proc, #{}),
+        {ok, Initialized} =
+        hb_converge:resolve(
+            RawWASMMsg,
+            generate_aos_msg(ProcID, <<"return 1">>),
+            #{}
+        ),
+        Msg = generate_aos_msg(ProcID, <<"return 1+1">>),
+        Iterations =
+            hb:benchmark(
+                fun() -> hb_converge:resolve(Initialized, Msg, #{}) end,
+                BenchTime
+            ),
+        hb_util:eunit_print(
+            "Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)",
+            [Iterations, BenchTime, Iterations / BenchTime]
+        ),
+        ?assert(Iterations > 10),
+        ok
+    end}.
