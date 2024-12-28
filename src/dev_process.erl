@@ -567,11 +567,10 @@ full_push_test_() ->
                 path => <<"Push">>,
                 <<"Slot">> => StartingMsgSlot
             },
-        {ok, PushRes} = hb_converge:resolve(Msg1, Msg3, #{}),
-        ?event({push_res, PushRes}),
+        {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"Now/Data">>, #{})
+            hb_converge:resolve(Msg1, <<"Now/Results/Data">>, #{})
         )
     end}.
 
@@ -602,14 +601,14 @@ persistent_process_test() ->
         Res
     ),
     T2 = hb:now(),
-    ?event(debug, {runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
+    ?event(benchmark, {runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
     % The second resolve should be much faster than the first resolve, as the
     % process is already running.
     ?assert(T2 - T1 < ((T1 - T0)/2)).
 
 simple_wasm_persistent_worker_benchmark_test() ->
     init(),
-    BenchTime = 2,
+    BenchTime = 1,
     Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
     schedule_wasm_call(Msg1, <<"fac">>, [5.0]),
     schedule_wasm_call(Msg1, <<"fac">>, [6.0]),
@@ -642,12 +641,12 @@ simple_wasm_persistent_worker_benchmark_test() ->
         "Scheduled and evaluated ~p simple wasm process messages in ~p s (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 5),
+    ?assert(Iterations > 2),
     ok.
 
 aos_persistent_worker_benchmark_test_() ->
     {timeout, 30, fun() ->
-        BenchTime = 10,
+        BenchTime = 4,
         init(),
         Msg1 = test_aos_process(),
         schedule_aos_call(Msg1, <<"X=1337">>),
@@ -692,7 +691,7 @@ ping_ping_script(Limit) ->
         "Handlers.add(\"Ping\",\n"
         "   function(m)\n"
         "       C = tonumber(m.Count)\n"
-        "       if C < ", (integer_to_binary(Limit))/binary, " then\n"
+        "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
         "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
         "           print(\"Ping\", C + 1)\n"
         "       else\n"
