@@ -528,7 +528,7 @@ benchmark_test() ->
             when CurrentSlot == Iterations - 1,
         hb_converge:resolve(Msg1, Msg3, #{})),
     hb_util:eunit_print(
-        "Scheduled ~p messages through Converge in ~p ms (~.2f msg/s)",
+        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 100).

@@ -502,7 +502,7 @@ benchmark_test() ->
             BenchTime
         ),
     hb_util:eunit_print(
-        "Evaluated ~p stack messages in ~p sec (~.2f msg/s)",
+        "Evaluated ~p stack messages in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 10).

@@ -218,7 +218,7 @@ benchmark_test() ->
     ),
     ?assert(Iterations > 150),
     hb_util:eunit_print(
-        "Scheduled ~p messages in ~p ms (~.2f msg/s)",
+        "Scheduled ~p messages in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assertMatch(

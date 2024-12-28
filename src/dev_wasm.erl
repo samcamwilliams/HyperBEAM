@@ -380,7 +380,7 @@ benchmark_test() ->
         ),
     ?event(benchmark, {scheduled, Iterations}),
     hb_util:eunit_print(
-        "Evaluated ~p WASM messages through Converge in ~p ms (~.2f msg/s)",
+        "Evaluated ~p WASM messages through Converge in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 5),
