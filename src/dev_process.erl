@@ -607,6 +607,46 @@ persistent_process_test() ->
     % process is already running.
     ?assert(T2 - T1 < ((T1 - T0)/2)).
 
+persistent_worker_benchmark_test_() ->
+    {timeout, 30, fun() ->
+        BenchTime = 10,
+        init(),
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1, <<"X=1337">>),
+        FirstSlotMsg2 = #{
+            path => <<"Compute">>,
+            <<"Slot">> => 0
+        },
+        ?assertMatch(
+            {ok, _},
+            hb_converge:resolve(Msg1, FirstSlotMsg2, #{ spawn_worker => true })
+        ),
+        Iterations = hb:benchmark(
+            fun(Iteration) ->
+                schedule_aos_call(
+                    Msg1,
+                    <<"return X + ", (integer_to_binary(Iteration))/binary>>
+                ),
+                ?assertMatch(
+                    {ok, _},
+                    hb_converge:resolve(
+                        Msg1,
+                        #{ path => <<"Compute">>, <<"Slot">> => Iteration },
+                        #{ spawn_worker => true }
+                    )
+                )
+            end,
+            BenchTime
+        ),
+        ?event(benchmark, {scheduled, Iterations}),
+        hb_util:eunit_print(
+            "Scheduled and evaluated ~p process messages in ~p ms (~.2f msg/s)",
+            [Iterations, BenchTime, Iterations / BenchTime]
+        ),
+        ?assert(Iterations > 5),
+        ok
+    end}.
+
 %%% Test helpers
 
 ping_ping_script(Limit) ->
