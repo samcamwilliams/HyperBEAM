@@ -11,11 +11,10 @@
 %% computation work on the same process on a single node, so we use the
 %% process ID as the group name.
 group(Msg1, undefined, Opts) ->
-    ?event(compute_group_id_no_msg2),
-    process_to_group_name(Msg1, Opts);
+    hb_persistent:default_grouper(Msg1, undefined, Opts);
 group(Msg1, Msg2, Opts) ->
-    case dev_message:get(path, Msg2, Opts) of
-        {ok, <<"Compute">>} ->
+    case hb_path:hd(Msg2, Opts) of
+        <<"Compute">> ->
             ID = process_to_group_name(Msg1, Opts),
             ?event({compute_group_id, ID}),
             ID;

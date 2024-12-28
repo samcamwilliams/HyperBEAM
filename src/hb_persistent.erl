@@ -10,7 +10,7 @@
 
 -module(hb_persistent).
 -export([find_or_register/3, unregister_notify/4, await/4]).
--export([find/2, find/3, group/3, start_worker/3, start_worker/2, forward_work/2]).
+-export([group/3, start_worker/3, start_worker/2, forward_work/2]).
 -export([default_grouper/3, default_worker/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -21,7 +21,15 @@ start() -> pg:start(pg).
 %% @doc Register the process to lead an execution if none is found, otherwise
 %% signal that we should await resolution.
 find_or_register(Msg1, Msg2, Opts) ->
+    case hb_opts:get(spawn_worker, false, Opts) of
+        true -> ?event(worker_spawns, {calculating_group_name, {msg1, Msg1}, {msg2, Msg2}});
+        _ -> ok
+    end,
     GroupName = group(Msg1, Msg2, Opts),
+    case is_binary(GroupName) of
+        true -> ?event(worker_spawns, {calculated_group_name, GroupName, {msg1, Msg1}, {msg2, Msg2}, Opts});
+        _ -> ok
+    end,
     find_or_register(GroupName, Msg1, Msg2, Opts).
 find_or_register(GroupName, Msg1, Msg2, Opts) ->
     Self = self(),
@@ -56,14 +64,6 @@ unregister_notify(GroupName, Msg2, Msg3, Opts) ->
     unregister_groupname(GroupName, Opts),
     notify(GroupName, Msg2, Msg3, Opts).
 
-%% @doc Find a process that is already managing a specific Converge resolution.
-find(Msg1, Opts) -> find(Msg1, undefined, Opts).
-find(Msg1, Msg2, Opts) ->
-    case find_execution(group(Msg1, Msg2, Opts), Opts) of
-        [] -> not_found;
-        Procs -> {ok, Procs}
-    end.
-
 %% @doc Find a group with the given name.
 find_execution(Groupname, _Opts) ->
     start(),
@@ -82,7 +82,7 @@ group(Msg1, Msg2, Opts) ->
         hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])
     ),
     case hb_opts:get(spawn_worker, false, Opts) of
-        true -> ?event(group_name, {name, Name});
+        true -> ?event(worker_spawns, {name, Name, Grouper});
         _ -> ok
     end,
     Name.
