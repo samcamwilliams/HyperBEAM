@@ -22,7 +22,7 @@ Both of these properties are extremely powerful and can only be offered by decen
 
 Every item on the permaweb is described as a `Message`. Each `Message` is interpretable by Converge as a `map` of named functions, or as a concrete binary term. Each function in a message may be called through the creation of another message, providing a map of arguments to the execution.
 
-Each `message` on the permaweb may optionally state a `Device` which should be used by Converge-compatible systems to interpret its contents. If no `Device` key is explicitly stated by the message, it must be infered as `Map`. The `Map` device should be implemented to simply return the binary or message at a given function name (a `key` in the map). Every `Device` must implement functions with the names `ID` and `Keys`. An `ID` is a function that can be used in order to refer to a message at a later time, while `Keys` should return a binary representation (with `Encoding` optionally specified as a parameter in the argument message) of each key in the message.
+Each `message` on the permaweb may optionally state a `Device` which should be used by Converge-compatible systems to interpret its contents. If no `Device` key is explicitly stated by the message, it must be infered as `Message`. The `Message` device should be implemented to simply return the binary or message at a given function name (a `key` in the map). Every `Device` must implement functions with the names `ID` and `Keys`. An `ID` is a function that can be used in order to refer to a message at a later time, while `Keys` should return a binary representation (with `Encoding` optionally specified as a parameter in the argument message) of each key in the message.
 
 Concretely, these relations can be expressed as follows:
 ```
@@ -31,16 +31,16 @@ Types:
     Message :: Map< Name :: Binary, (Message?) => Message > | Binary
 
 Functions:
-    Message(Key, ParameterMessage?) => Message :: Converge.apply(Message, Key, Parameters) => Message
-    Converge.apply(Message[Device], Message, RuntimeEnv? :: Message) => Message
+    Message1(Message2) => Message3 :: Converge.apply(Message1, Message2) => Message3
+    Converge.apply(Message1[Device], Message2, RuntimeEnv? :: Message) => Message3
 
 Invariants:
     ∀ message ∈ Permaweb, ∃ <<"ID">> ∈ Message
     ∀ message ∈ Permaweb, ∃ <<"Keys">> ∈ Message
-    ∀ message ∈ Permaweb, ∃ (<<"Device">> ∈ Message ∨ Converge.apply(message, <<"Device">>) => <<"Map">>)
+    ∀ message ∈ Permaweb, ∃ (<<"Device">> ∈ Message ∨ Converge.apply(Message, <<"Device">>) => <<"Message">>)
 ```
 
-The Converge intends to be a computer native to the technologies of the internet. More specifically, we have focused its representation on compatibility with the HTTP family of protocols (`HTTP/{1.1,2,3}`). As such, every message in this system can be refered to via `Path`s. A path starts from a given message in the system (whether written to the permaweb yet or not), and applies a series of additional messages on top of it. Each resulting message itself must have an `ID` resolvable via its device -- subsequently enabling additional paths to be described atop the intermediate message.
+The Converge protocol intends to be a computer native to the technologies of the internet. More specifically, we have focused its representation on compatibility with the HTTP family of protocols (`HTTP/{1.1,2,3}`). As such, every message in this system can be refered to via `Path`s. A path starts from a given message in the system (whether written to the permaweb yet or not), and applies a series of additional messages on top of it. Each resulting message itself must have an `ID` resolvable via its device -- subsequently enabling additional paths to be described atop the intermediate message.
 
 For example:
 ```
@@ -56,16 +56,19 @@ For example:
 
 The hyperbeam environment implements Converge through the use of device modules. Each module in the base deployment is namespaced `dev_*`, for example `dev_scheduler`. Devices in hyperbeam can communicate the basic set of keys that they offer using the function exports. Each of these functions is interpreted as yielding the value for a key on a message containing that device, with the key's name being defined by its function name. Each of these functions may take one to three arguments of the following: `function(StateMessage, InputMessage, Environment)`. It must yield a result of the form `{Status, NewMessage}`, where `Status` is typically (but not necessarily) either `ok` or `error`. If a device does not offer one of the required functions (`ID` or `device`), the environment falls back to the underlying `message` device implementations. `tolowercase` is applied to all function names before execution, and `-` characters are replaced with `_` to allow for more readable device implementations.
 
-The special case `info/{0,1,2}` function may be implemented by the device, signalling environment requirements to hyperbeam. The `info` function should can optionally take the `message` in question and the environment variables as arguments. It should return a map of environmental information of the following form:
+The special case `info/{0,1,2}` function may be implemented by the device, signalling environment requirements to hyperbeam. The `info` function can optionally take the `message` in question and the environment variables as arguments. It should return a map of environmental information of the following form:
 
 ```
 	info([Message, [Env]]) -> #{
-		handler => HandleFunc
-		default => DefaultFunc,
+		handler => Function
+		default => Function,
+        exports => [Key]
 		variant => <<"Variant/VersionID">>,
-		uses => UseDefinition | #{ Key => UseDefinition }
+        ...
 	}
 ```
+
+See `hb_converge.erl` for a full overview of supported keys.
 
 If the `default` parameter is provided, the function will be used as the entrypoint all key resolution when a matching function is not found. The key's name is provided as an additional first argument in this case (`defaultFun/{2,3,4}`).
 
@@ -83,3 +86,23 @@ The `uses` info key may be optionally utilized to signal to the environment whic
 In order to allow messages to have more flexibility in their execution, hyperbeam offers an implementation of a Converge `stack`-style device, which combines a series of devices on a message into a single 'stack' of executable transformations. This device allows many complex forms of processors to be built inside the Converge environment -- for example, AO processes -- whiile transferring the architecture's modularity and flexibility to them.
 
 When added as the highest `Device` tag on a message, the stack device scans the remainder of the message's tags looking for (and subsequently loading) any other messages it finds. When a user then calls an execution on top of a message containing a device, the device passes through each of the elements of the stack in turn, 'folding' over it.
+
+## Paths, Hashpaths, and Attestations
+
+As described, all data in HyperBEAM is the result of the application of two messages together. Each piece of data has its own ID, which are 'mixed' cryptographically during execution resulting in a new value. This value is called the `hashpath`, and can be seen as a memoization of the tree of executions that were the source of a given piece of data.
+
+Hashpaths are derived as follows:
+
+```
+    Message3/Hashpath :: Converve.apply(Message3/Hashpath-Alg, Message1/Hashpath, id(Message2))
+```
+
+Due to its Merklized form (each `Hashpath` is the result of cryptographically mixing two prior commitments), a hashpath is extremely short (32 bytes with the standard SHA2-256 `Hashpath-Alg`), yet can be used to reconstruct the entire tree of inputs necessary to generate a given state.
+
+When given together with the message that it resulted from and a cryptographic assurance, a hashpath represents an attestation of correctness of an output: That `Message1(Message)` does in fact give rise to the given collection of keys. This output itself is addressable via a traditional cryptographic hash, or via a signature upon that hash. While Converge provides the framework for these security mechanisms and their mutual compatibility, it does not enforce any single set of choices, such that users and implementors can make design decisions that are appropriate for their context. The AO protocol is an example implementation of this.
+
+Notably, this structure does not require a computor of `Message3` to know the value of every key inside it. This is helpful, for example, in circumstances in which `Message3` may be extremely large, yet the user only wants to know the value of a single given key inside the message, or to compute a new message that only references a small number of its keys. Through this mechanism computation can be effectively 'sharded' among an arbitrarily large set of computation nodes as necessary.
+
+## Redirection
+
+Because messages in the Converge protocol are immutably referenced (both by their message IDs and their hashpaths), immutable 'links' can be made between them. For example, as `Message1.Hashpath(Message2.ID)` will always generate the same `M3`, an attestation of this linkage can be distributed amongst peers and used to 'shortcut' computation. Since many repeated computations typically occur in a distributed compute network, these linkages can be spread amongst peers as necessary in order to optimize computation times. As Converge is expressed as natively using the HTTP Semantics, these linkages are simply expressed as `308 Permanent Redirect`s -- allowing even browsers and other HTTP clients to follow them, without needing any awareness of the mechanics of Converge protocol directly.
