@@ -355,6 +355,37 @@ imported_function_test() ->
         )
     ).
 
+benchmark_test() ->
+    BenchTime = 2,
+    init(),
+    Msg0 = store_wasm_image("test/test-64.wasm"),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+    Msg2 =
+        maps:merge(
+            Msg1,
+            hb_converge:set(
+                #{
+                    <<"WASM-Function">> => <<"fac">>,
+                    <<"WASM-Params">> => [5.0]
+                },
+                #{ hashpath => ignore }
+            )
+        ),
+    Iterations =
+        hb:benchmark(
+            fun() ->
+                hb_converge:resolve(Msg2, <<"Compute">>, #{})
+            end,
+            BenchTime
+        ),
+    ?event(benchmark, {scheduled, Iterations}),
+    hb_util:eunit_print(
+        "Evaluated ~p WASM messages through Converge in ~p ms (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 5),
+    ok.
+
 % state_export_and_restore_test() ->
 %     init(),
 %     % Generate a WASM computation.
