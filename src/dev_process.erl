@@ -70,7 +70,7 @@ schedule(Msg1, Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
 slot(Msg1, Msg2, Opts) ->
-    ?event(debug, {slot_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event({slot_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     run_as(<<"Scheduler">>, Msg1, Msg2, Opts).
 
 next(Msg1, _Msg2, Opts) ->
@@ -124,9 +124,8 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
             % Get the next input from the scheduler device.
-            ?no_prod("Must update hashpath!"),
             {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
-                next(Msg1, Msg2, Opts#{ hashpath => ignore }),
+                next(Msg1, Msg2, Opts),
             % Calculate how much of the state should be cached.
             Freq = hb_opts:get(process_cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
             CacheKeys =
@@ -163,11 +162,11 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
     end.
 
 %% @doc Returns the `/Results' key of the latest computed message.
-now(RawMsg1, Msg2, Opts) ->
+now(RawMsg1, _Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
     {ok, CurrentSlot} = hb_converge:resolve(Msg1, #{ path => <<"Slot/Current-Slot">> }, Opts),
     ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
-    ?event(debug, {now_called, {process, ProcessID}, {slot, CurrentSlot}}),
+    ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
     hb_converge:resolve(
         Msg1,
         #{ path => <<"Compute/Results">>, <<"Slot">> => CurrentSlot },
@@ -181,21 +180,21 @@ push(RawMsg1, Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
     PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
     ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
-    ?event(debug, {push_called, {process, ProcessID}, {slot, PushMsgSlot}}),
+    ?event({push_called, {process, ProcessID}, {slot, PushMsgSlot}}),
     {ok, Outbox} = hb_converge:resolve(
         Msg1,
         #{ path => <<"Compute/Results/Outbox">>, <<"Slot">> => PushMsgSlot },
         Opts#{ hashpath => ignore }
     ),
-    ?event(debug, {base_outbox_res, Outbox}),
+    ?event({base_outbox_res, Outbox}),
     {ok, maps:map(
         fun(Key, MsgToPush) ->
             case hb_converge:get(<<"Target">>, MsgToPush, Opts) of
                 not_found ->
-                    ?event(debug, {skipping_child_with_no_target, {key, Key}}),
+                    ?event({skipping_child_with_no_target, {key, Key}}),
                     <<"No Target. Did not push.">>;
                 Target ->
-                    ?event(debug,
+                    ?event(
                         {pushing_child, MsgToPush,
                         {originates_from_slot, PushMsgSlot},
                         {key, Key}
@@ -213,7 +212,7 @@ push(RawMsg1, Msg2, Opts) ->
                         },
                         Opts
                     ),
-                    ?event(debug,
+                    ?event(
                         {push_scheduled,
                             {assigned_slot, Next},
                             {target, Target}
@@ -531,9 +530,9 @@ aos_compute_test_() ->
         Msg2 = #{ path => <<"Compute">>, <<"Slot">> => 0 },
         {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
         {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, #{}),
-        ?event(debug, {computed_message, {msg3, Res}}),
+        ?event({computed_message, {msg3, Res}}),
         {ok, Data} = hb_converge:resolve(Res, <<"Data">>, #{}),
-        ?event(debug, {computed_data, Data}),
+        ?event({computed_data, Data}),
         ?assertEqual(<<"2">>, Data),
         Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
         {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
@@ -554,9 +553,9 @@ full_push_test_() ->
         Msg1 = test_aos_process(),
         hb_cache:write(Msg1, #{}),
         Script = ping_ping_script(3),
-        ?event(debug, {script, Script}),
+        ?event({script, Script}),
         {ok, Msg2} = schedule_aos_call(Msg1, Script),
-        ?event(debug, {init_sched_result, Msg2}),
+        ?event({init_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_converge:resolve(Msg2, #{ path => <<"Slot">> }, #{}),
         Msg3 =
@@ -565,36 +564,36 @@ full_push_test_() ->
                 <<"Slot">> => StartingMsgSlot
             },
         {ok, PushRes} = hb_converge:resolve(Msg1, Msg3, #{}),
-        ?event(debug, {push_res, PushRes}),
+        ?event({push_res, PushRes}),
         ?assertEqual(
             {ok, <<"Done.">>},
             hb_converge:resolve(Msg1, <<"Now/Data">>, #{})
         )
     end}.
 
-% persistent_process_test() ->
-%     init(),
-%     Msg1 = test_aos_process(),
-%     schedule_aos_call(Msg1, <<"return 1+1">>),
-%     T0 = hb:now(),
-%     Msg2 = #{
-%         path => <<"Compute">>,
-%         <<"Slot">> => 0
-%     },
-%     ?assertMatch(
-%         {ok, _},
-%         hb_converge:resolve(Msg1, Msg2, #{ spawn_worker => true })
-%     ),
-%     T1 = hb:now(),
-%     ?assertMatch(
-%         {ok, _},
-%         hb_converge:resolve(Msg1, Msg2, #{})
-%     ),
-%     T2 = hb:now(),
-%     ?event({runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
-%     % The second resolve should be much faster than the first resolve, as the
-%     % process is already running.
-%     ?assert(T2 - T1 < ((T1 - T0)/2)).
+persistent_process_test() ->
+    init(),
+    Msg1 = test_aos_process(),
+    schedule_aos_call(Msg1, <<"return 1+1">>),
+    T0 = hb:now(),
+    Msg2 = #{
+        path => <<"Compute">>,
+        <<"Slot">> => 0
+    },
+    ?assertMatch(
+        {ok, _},
+        hb_converge:resolve(Msg1, Msg2, #{})
+    ),
+    T1 = hb:now(),
+    ?assertMatch(
+        {ok, _},
+        hb_converge:resolve(Msg1, Msg2, #{})
+    ),
+    T2 = hb:now(),
+    ?event(debug, {runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
+    % The second resolve should be much faster than the first resolve, as the
+    % process is already running.
+    ?assert(T2 - T1 < ((T1 - T0)/2)).
 
 %%% Test helpers
 

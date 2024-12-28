@@ -49,7 +49,7 @@ init(M1, M2, Opts) ->
     InPrefix = dev_stack:input_prefix(M1, M2, Opts),
     % Where we should read/write our own state to.
     Prefix = dev_stack:prefix(M1, M2, Opts),
-    ?event(debug, {in_prefix, InPrefix}),
+    ?event({in_prefix, InPrefix}),
     ImageBin =
         case hb_converge:get(<<InPrefix/binary, "/Image">>, M1, Opts) of
             not_found ->
