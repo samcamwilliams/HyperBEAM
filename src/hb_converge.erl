@@ -669,7 +669,14 @@ device_set(Msg, Key, Value, Opts) ->
             {applying_path, #{ path => set, Key => Value }}
         }
     ),
-	Res = hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts),
+	Res = hb_util:ok(
+        resolve(
+            Msg,
+            #{ path => set, Key => Value },
+            Opts#{ spawn_worker => false }
+        ),
+        Opts#{ spawn_worker => false }
+    ),
 	?event(
         converge_internal,
         {device_set_result, Res}
@@ -683,7 +690,7 @@ remove(Msg, Key, Opts) ->
         resolve(
             Msg,
             #{ path => remove, item => Key },
-            Opts#{ topic => converge_internal }
+            Opts#{ topic => converge_internal, spawn_worker => false }
         ),
         Opts
     ).
