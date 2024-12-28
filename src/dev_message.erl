@@ -89,23 +89,36 @@ set(Message1, NewValuesMsg, Opts) ->
 			end,
 			maps:keys(Message1)
 		),
+    UnsetKeys =
+        lists:filter(
+            fun(Key) ->
+                case maps:get(Key, NewValuesMsg, not_found) of
+                    unset -> true;
+                    _ -> false
+                end
+            end,
+            maps:keys(Message1)
+        ),
 	?event(
 		{keys_to_set,
 			{keys, KeysToSet},
 			{removing_due_to_conflict, ConflictingKeys},
+            {removing_due_to_unset, UnsetKeys},
 			{normalised_msg1_keys, maps:keys(Message1)}
 		}
 	),
 	{
 		ok,
 		maps:merge(
-			maps:without(ConflictingKeys, Message1),
+			maps:without(ConflictingKeys ++ UnsetKeys, Message1),
 			maps:from_list(
-				lists:map(
+				lists:filtermap(
 					fun(Key) ->
-						?no_prod("Are we sure that the default device should "
-							"not resolve values during set?"),
-						{Key, maps:get(Key, NewValuesMsg)}
+                        case maps:get(Key, NewValuesMsg, undefined) of
+                            undefined -> false;
+                            unset -> false;
+                            Value -> {true, {Key, Value}}
+                        end
 					end,
 					KeysToSet
 				)

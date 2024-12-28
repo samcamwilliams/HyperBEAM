@@ -66,8 +66,20 @@
 %%%                    interacting with messages.
 %%% 
 %%%     info/default_mod : A different device module that should be used to
-%%%                        handle all keys that are not explicitly implemented
-%%%                        by the device. Defaults to the `dev_message` device.'''
+%%%                    handle all keys that are not explicitly implemented
+%%%                    by the device. Defaults to the `dev_message` device.
+%%% 
+%%%     info/grouper : A function that returns the concurrency 'group' name for
+%%%                    an execution. Executions with the same group name will
+%%%                    be executed by sending a message to the associated process
+%%%                    and waiting for a response. This allows you to control 
+%%%                    concurrency of execution and to allow executions to share
+%%%                    in-memory state as applicable. Default: A derivation of
+%%%                    Msg1+Msg2. This means that concurrent calls for the same
+%%%                    output will lead to only a single execution.
+%%% 
+%%%     info/worker : A function that should be run as the 'server' loop of
+%%%                   the executor for interactions using the device.
 %%% 
 %%% The HyperBEAM resolver also takes a number of runtime options that change
 %%% the way that the environment operates:
@@ -165,8 +177,23 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
             ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             {ok, Msg3};
         not_found ->
-            resolve_stage(1, Msg1, Msg2, Opts)
+            case ?IS_ID(Msg1) of
+                false ->
+                    resolve_stage(1, Msg1, Msg2, Opts);
+                true ->
+                    case hb_cache:read(Msg1, Opts) of
+                        {ok, FullMsg1} ->
+                            resolve_stage(1, FullMsg1, Msg2, Opts);
+                        not_found ->
+                            error_not_found(Msg1, Msg2, Opts)
+                    end
+            end
     end;
+resolve_stage(1, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
+    % Validation check: If the messages are not maps, we cannot find a key
+    % in them, so return not_found.
+    ?event(converge_core, {stage, 1, validation_check_type_error}, Opts),
+    {error, not_found};
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, validation_check}, Opts),
     % Validation check: Check if the message is valid.
@@ -217,6 +244,10 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
     case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
         {leader, ExecName} ->
             % We are the leader for this resolution. Continue to the next stage.
+            case hb_opts:get(spawn_worker, false, Opts) of
+                true -> ?event(worker_spawns, {will_become, ExecName});
+                _ -> ok
+            end,
             resolve_stage(4, Msg1, Msg2, ExecName, Opts);
         {wait, Leader} ->
             % There is another executor of this resolution in-flight.
@@ -302,6 +333,7 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
                 % If the device cannot be loaded, we alert the caller.
 				handle_error(
                     ExecName,
+                    Msg2,
 					loading_device,
 					{Class, Exception, Stacktrace},
 					Opts
@@ -313,11 +345,19 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts = maps:remove(add_key, Opts),
+	UserOpts1 = maps:remove(add_key, Opts),
+    % Unless the user has explicitly requested recursive spawning, we
+    % unset the spawn_worker option so that we do not spawn a new worker
+    % for every resulting execution.
+    UserOpts2 =
+        case maps:get(spawn_worker, UserOpts1, false) of
+            recursive -> UserOpts1;
+            _ -> maps:remove(spawn_worker, UserOpts1)
+        end,
 	Args =
 		case maps:get(add_key, Opts, false) of
-			false -> [Msg1, Msg2, UserOpts];
-			Key -> [Key, Msg1, Msg2, UserOpts]
+			false -> [Msg1, Msg2, UserOpts2];
+			Key -> [Key, Msg1, Msg2, UserOpts2]
 		end,
     % Try to execute the function.
     Res = 
@@ -330,7 +370,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                     {exec_name, ExecName},
                     {msg1, Msg1},
                     {msg2, Msg2},
-                    {msg_res, MsgRes},
+                    {msg3, MsgRes},
                     {opts, Opts}
                 },
                 Opts
@@ -353,7 +393,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                         {func, Func},
                         {exec_class, ExecClass},
                         {exec_exception, ExecException},
-                        {exec_stacktrace, ExecStacktrace},
+                        {exec_stacktrace, erlang:process_info(self(), backtrace)},
                         {opts, Opts}
                     }
                 ),
@@ -361,6 +401,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                 % indicated by caller's `#Opts`.
                 handle_error(
                     ExecName,
+                    Msg2,
                     device_call,
                     {ExecClass, ExecException, ExecStacktrace},
                     Opts
@@ -396,7 +437,7 @@ resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 8, ExecName}, Opts),
     % Notify processes that requested the resolution while we were executing and
     % unregister ourselves from the group.
-    hb_persistent:unregister_notify(ExecName, Res, Opts),
+    hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
     resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 9, ExecName}, Opts),
@@ -414,12 +455,16 @@ resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
             % or simply return to the caller. We prefer the global option, such
             % that node operators can control whether devices are able to 
             % generate long-running executions.
-            case hb_opts:get(spawn_worker, false, Opts#{ prefer => global }) of
-                false -> ok;
-                true ->
+            ?event({resolution_maybe_forking, {msg3, Msg3}, {opts, Opts}}),
+            WorkerOpt = hb_opts:get(spawn_worker, false, Opts#{ prefer => local }),
+            case {is_map(Msg3), WorkerOpt} of
+                {false, _} -> ok;
+                {_, false} -> ok;
+                {_, _} ->
                     % We should spin up a process that will hold `Msg3` 
                     % in memory for future executions.
-                    hb_persistent:start_worker(Msg3, Opts)
+                    WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
+                    hb_persistent:forward_work(WorkerPID, Opts)
             end,
             % Resolution has finished successfully, return to the
             % caller.
@@ -521,12 +566,16 @@ get(Path, Msg, Opts) ->
 get(Path, {as, Device, Msg}, Default, Opts) ->
     get(
         Path,
-        set(Msg, #{ device => Device }, Opts#{ topic => converge_internal }),
+        set(
+            Msg,
+            #{ device => Device },
+            Opts#{ topic => converge_internal, spawn_worker => false }
+        ),
         Default,
         Opts
     );
 get(Path, Msg, Default, Opts) ->
-	case resolve(Msg, #{ path => Path }, Opts) of
+	case resolve(Msg, #{ path => Path }, Opts#{ spawn_worker => false }) of
 		{ok, Value} -> Value;
 		{error, _} -> Default
 	end.
@@ -620,7 +669,14 @@ device_set(Msg, Key, Value, Opts) ->
             {applying_path, #{ path => set, Key => Value }}
         }
     ),
-	Res = hb_util:ok(resolve(Msg, #{ path => set, Key => Value }, Opts), Opts),
+	Res = hb_util:ok(
+        resolve(
+            Msg,
+            #{ path => set, Key => Value },
+            Opts#{ spawn_worker => false }
+        ),
+        Opts#{ spawn_worker => false }
+    ),
 	?event(
         converge_internal,
         {device_set_result, Res}
@@ -634,15 +690,15 @@ remove(Msg, Key, Opts) ->
         resolve(
             Msg,
             #{ path => remove, item => Key },
-            Opts#{ topic => converge_internal }
+            Opts#{ topic => converge_internal, spawn_worker => false }
         ),
         Opts
     ).
 
 %% @doc Handle an error in a device call.
-handle_error(ExecGroup, Whence, {Class, Exception, Stacktrace}, Opts) ->
+handle_error(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
     Error = {error, Whence, {Class, Exception, Stacktrace}},
-    hb_persistent:unregister_notify(ExecGroup, Error, Opts),
+    hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
     ?event(converge_core, {handle_error, Error, {opts, Opts}}),
     case maps:get(error_strategy, Opts, throw) of
         throw -> erlang:raise(Class, Exception, Stacktrace);

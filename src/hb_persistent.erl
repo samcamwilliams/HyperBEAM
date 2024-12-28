@@ -9,9 +9,9 @@
 %%% manager.
 
 -module(hb_persistent).
--export([find_or_register/3, unregister_notify/3, await/4, start_worker/2]).
-%-export([find/2, find/3]).
-%-export([notify/4, register/2, register/3, unregister/2, unregister/3]).
+-export([find_or_register/3, unregister_notify/4, await/4]).
+-export([group/3, start_worker/3, start_worker/2, forward_work/2]).
+-export([default_grouper/3, default_worker/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -27,17 +27,16 @@ find_or_register(GroupName, Msg1, Msg2, Opts) ->
     Self = self(),
     case find_execution(GroupName, Opts) of
         {ok, [Leader|_]} when Leader =/= Self ->
+            ?event({found_leader, GroupName, {leader, Leader}}),
             {wait, Leader};
         {ok, [Leader|_]} when Leader =:= Self ->
             {infinite_recursion, GroupName};
         _ ->
             ?event(
-                converge_core,
+                worker,
                 {
                     register_resolver,
-                    {group, GroupName},
-                    {msg1, Msg1},
-                    {msg2, Msg2}
+                    {group, GroupName}
                 },
                 Opts
             ),
@@ -46,24 +45,16 @@ find_or_register(GroupName, Msg1, Msg2, Opts) ->
     end.
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
-unregister_notify(GroupName, Msg3, Opts) ->
-    ?event(
-        {unregister_notify,
-            {group, GroupName},
-            {msg3, Msg3},
-            {opts, Opts}
-        }
-    ),
+unregister_notify(GroupName, Msg2, Msg3, Opts) ->
+    % ?event(
+    %     {unregister_notify,
+    %         {group, GroupName},
+    %         {msg3, Msg3},
+    %         {opts, Opts}
+    %     }
+    % ),
     unregister_groupname(GroupName, Opts),
-    notify(GroupName, Msg3, Opts).
-
-%% @doc Find a process that is already managing a specific Converge resolution.
-find(Msg1, Opts) -> find(Msg1, undefined, Opts).
-find(Msg1, Msg2, Opts) ->
-    case find_execution(group(Msg1, Msg2, Opts), Opts) of
-        [] -> not_found;
-        Procs -> {ok, Procs}
-    end.
+    notify(GroupName, Msg2, Msg3, Opts).
 
 %% @doc Find a group with the given name.
 find_execution(Groupname, _Opts) ->
@@ -76,7 +67,8 @@ find_execution(Groupname, _Opts) ->
 %% @doc Calculate the group name for a Msg1 and Msg2 pair. Uses the Msg1's
 %% `group' function if it is found in the `info', otherwise uses the default.
 group(Msg1, Msg2, Opts) ->
-    Grouper = maps:get(group, hb_converge:info(Msg1, Opts), fun default_group/2),
+    Grouper =
+        maps:get(grouper, hb_converge:info(Msg1, Opts), fun default_grouper/3),
     apply(
         Grouper,
         hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])
@@ -84,6 +76,7 @@ group(Msg1, Msg2, Opts) ->
 
 %% @doc Register for performing a Converge resolution.
 register_groupname(Groupname, _Opts) ->
+    ?event({registering_as, Groupname}),
     pg:join(Groupname, self()).
 
 %% @doc Unregister for being the leader on a Converge resolution.
@@ -91,7 +84,7 @@ unregister(Msg1, Msg2, Opts) ->
     start(),
     unregister_groupname(group(Msg1, Msg2, Opts), Opts).
 unregister_groupname(Groupname, _Opts) ->
-    ?event({unregister_resolver, {group, Groupname}}),
+    ?event({unregister_resolver, {explicit, Groupname}}),
     pg:leave(Groupname, self()).
 
 %% @doc If there was already an Erlang process handling this execution,
@@ -102,9 +95,10 @@ await(Worker, Msg1, Msg2, Opts) ->
     % Register with the process.
     GroupName = group(Msg1, Msg2, Opts),
     Worker ! {resolve, self(), GroupName, Msg2, Opts},
-    ?event(
+    ?event(worker,
         {await_resolution,
             {group, GroupName},
+            {worker, Worker},
             {msg1, Msg1},
             {msg2, Msg2},
             {opts, Opts}
@@ -112,9 +106,9 @@ await(Worker, Msg1, Msg2, Opts) ->
     ),
     % Wait for the result.
     receive
-        {resolved, Worker, GroupName, Msg2, Msg3} ->
-            ?event(
-                {finished_await,
+        {resolved, _, GroupName, Msg2, Msg3} ->
+            ?event(worker,
+                {resolved_await,
                     {group, GroupName},
                     {msg2, Msg2},
                     {msg3, Msg3}
@@ -127,15 +121,6 @@ await(Worker, Msg1, Msg2, Opts) ->
 %% of this execution. Comes in two forms:
 %% 1. Notify on group name alone.
 %% 2. Notify on group name and Msg2.
-notify(GroupName, Msg3, Opts) ->
-    receive
-        {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
-            send_response(Listener, GroupName, Msg2, Msg3),
-            notify(GroupName, Msg3, Opts)
-    after 0 ->
-        ?event(finished_notify),
-        ok
-    end.
 notify(GroupName, Msg2, Msg3, Opts) ->
     receive
         {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
@@ -146,14 +131,53 @@ notify(GroupName, Msg2, Msg3, Opts) ->
         ok
     end.
 
+%% @doc Forward requests to a newly delegated execution process.
+forward_work(NewPID, _Opts) ->
+    Gather =
+        fun Gather() ->
+            receive
+                Req = {resolve, _, _, _, _} -> [Req | Gather()]
+            after 0 -> []
+            end
+        end,
+    ToForward = Gather(),
+    lists:foreach(
+        fun(Req) ->
+            NewPID ! Req
+        end,
+        ToForward
+    ),
+    case length(ToForward) > 0 of
+        true ->
+            ?event(
+                worker,
+                {fwded, {requests, length(ToForward)}, {pid, NewPID}}
+            );
+        false -> ok
+    end,
+    ok.
+
 %% @doc Helper function that wraps responding with a new Msg3.
 send_response(Listener, GroupName, Msg2, Msg3) ->
-    ?event({send_response, {group, GroupName}, {msg2, Msg2}, {msg3, Msg3}}),
+    ?event(worker,
+        {send_response,
+            {listener, Listener},
+            {group, GroupName}
+        }
+    ),
     Listener ! {resolved, self(), GroupName, Msg2, Msg3}.
 
 %% @doc Start a worker process that will hold a message in memory for
 %% future executions.
+
 start_worker(Msg, Opts) ->
+    start_worker(group(Msg, undefined, Opts), Msg, Opts).
+start_worker(_, NotMsg, _) when not is_map(NotMsg) -> not_started;
+start_worker(GroupName, Msg, Opts) ->
+    start(),
+    ?event(worker_spawns,
+        {starting_worker, {group, GroupName}, {msg, Msg}, {opts, Opts}}
+    ),
     WorkerPID = spawn(
         fun() ->
             % If the device's info contains a `worker` function we
@@ -162,45 +186,99 @@ start_worker(Msg, Opts) ->
                 maps:get(
                     worker,
                     hb_converge:info(Msg, Opts),
-                    fun default_worker/2
+                    Def = fun default_worker/3
                 ),
+            ?event(worker,
+                {new_worker,
+                    {group, GroupName},
+                    {default_server, WorkerFun == Def},
+                    {default_group,
+                        default_grouper(Msg, undefined, Opts) == GroupName
+                    }
+                }
+            ),
             % Call the worker function, unsetting the option
             % to avoid recursive spawns.
+            register_groupname(GroupName, Opts),
             apply(
                 WorkerFun,
                 hb_converge:truncate_args(
                     WorkerFun,
-                    [Msg, Opts#{ spawn_worker := false }])
+                    [
+                        GroupName,
+                        Msg,
+                        maps:merge(Opts, #{
+                            is_worker => true,
+                            spawn_worker => false,
+                            allow_infinite => true
+                        })
+                    ]
+                )
             )
         end
     ),
-    ?MODULE:register(Msg, WorkerPID).
+    WorkerPID.
 
 %% @doc A server function for handling persistent executions. 
-default_worker(Msg1, Opts) ->
-    Timeout = hb_opts:get(worker_timeout, infinity, Opts),
-    GroupName = default_group(Msg1),
+default_worker(GroupName, Msg1, Opts) ->
+    Timeout = hb_opts:get(worker_timeout, 10000, Opts),
+    ?event(worker,
+        {
+            default_worker_waiting_for_req,
+            {group, GroupName},
+            {msg1, Msg1},
+            {opts, Opts}
+        }
+    ),
     receive
-        {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
-            Msg3 = hb_converge:resolve(Msg1, Msg2, Opts),
-            send_response(Listener, GroupName, Msg2, Msg3),
-            notify(Msg1, Msg2, Msg3, Opts),
-            % In this (default) worker implementation we do not advance the
-            % process to monitor resolution of `Msg3`, staying instead with
-            % Msg1 indefinitely.
-            default_worker(Msg1, Opts)
+        {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
+            ?event(worker,
+                {work_received,
+                    {listener, Listener},
+                    {group, GroupName}
+                }
+            ),
+            Res =
+                hb_converge:resolve(
+                    Msg1,
+                    Msg2,
+                    maps:merge(ListenerOpts, Opts)
+                ),
+            send_response(Listener, GroupName, Msg2, Res),
+            notify(GroupName, Msg2, Res, Opts),
+            case hb_opts:get(static_worker, false, Opts) of
+                true ->
+                    % Reregister for the existing group name.
+                    register_groupname(GroupName, Opts),
+                    default_worker(GroupName, Msg1, Opts);
+                false ->
+                    % Register for the new (Msg1) group.
+                    case Res of
+                        {ok, Msg3} ->
+                            NewGroupName = group(Msg3, undefined, Opts),
+                            register_groupname(NewGroupName, Opts),
+                            default_worker(NewGroupName, Msg3, Opts);
+                        _ ->
+                            % If the result is not ok, we should either ignore
+                            % the error and stay on the existing group,
+                            % or throw it.
+                            case hb_opts:get(error_strategy, ignore, Opts) of
+                                ignore ->
+                                    register_groupname(GroupName, Opts),
+                                    default_worker(GroupName, Msg1, Opts);
+                                throw -> throw(Res)
+                            end
+                    end
+            end
     after Timeout ->
         % We have hit the in-memory persistence timeout. Check whether the
         % device has shutdown procedures (for example, writing in-memory
         % state to the cache).
-        unregister(Msg1, undefined, Opts),
-        hb_converge:resolve(Msg1, terminate, Opts#{ hashpath := ignore })
+        unregister(Msg1, undefined, Opts)
     end.
 
 %% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
-default_group(Msg1) ->
-    default_group(Msg1, undefined).
-default_group(Msg1, Msg2) ->
+default_grouper(Msg1, Msg2, _Opts) ->
     %?event({calculating_default_group_name, {msg1, Msg1}, {msg2, Msg2}}),
     % Use Erlang's `phash2` to hash the result of the Grouper function.
     % `phash2` is relatively fast and ensures that the group name is short for
@@ -211,52 +289,124 @@ default_group(Msg1, Msg2) ->
 
 %%% Tests
 
-%% @doc Test merging and returning a value with a persistent worker.
-merged_execution_test() ->
-    Device =
-        #{
-            info =>
-                fun() ->
+test_device() -> test_device(#{}).
+test_device(Base) ->
+    #{
+        info =>
+            fun() ->
+                maps:merge(
                     #{
-                        group => fun(Msg) -> Msg end
-                    }
-                end,
-            slow_key =>
-                fun(_, #{ wait := Wait }) ->
-                    receive after Wait ->
-                        {ok,
-                            #{
-                                waited => Wait,
-                                pid => self(),
-                                random_bytes =>
-                                    hb_util:encode(crypto:strong_rand_bytes(4))
-                            }
+                        grouper =>
+                            fun(M1, _M2, _Opts) ->
+                                erlang:phash2(M1)
+                            end
+                    },
+                    Base
+                )
+            end,
+        slow_key =>
+            fun(_, #{ wait := Wait }) ->
+                ?event({slow_key_wait_started, Wait}),
+                receive after Wait ->
+                    {ok,
+                        #{
+                            waited => Wait,
+                            pid => self(),
+                            random_bytes =>
+                                hb_util:encode(crypto:strong_rand_bytes(4))
                         }
-                    end
+                    }
                 end
-        },
-    TestTime = 200,
-    Msg1 = #{ device => Device },
-    Msg2 = #{ path => [slow_key], wait => TestTime },
+            end,
+        self =>
+            fun(M1, #{ wait := Wait }) ->
+                ?event({self_waiting, {wait, Wait}}),
+                receive after Wait ->
+                    ?event({self_returning, M1, {wait, Wait}}),
+                    {ok, M1}
+                end
+            end
+    }.
+
+spawn_test_client(Msg1, Msg2) ->
+    spawn_test_client(Msg1, Msg2, #{}).
+spawn_test_client(Msg1, Msg2, Opts) ->
+    Ref = make_ref(),
     TestParent = self(),
-    ParalellTestFun =
-        fun(Ref) ->
-            ?event({starting_test_worker, {time, TestTime}}),
-            Res = hb_converge:resolve(Msg1, Msg2, #{}),
-            ?event({test_worker_got_result, {time, TestTime}, {result, Res}}),
-            TestParent ! {result, Ref, Res}
-        end,
-    GatherResult = fun(Ref) -> receive {result, Ref, Res} -> Res end end,
+    spawn_link(fun() ->
+        ?event({new_concurrent_test_resolver, Ref, {executing, Msg2}}),
+        Res = hb_converge:resolve(Msg1, Msg2, Opts),
+        ?event({test_worker_got_result, Ref, {result, Res}}),
+        TestParent ! {result, Ref, Res}
+    end),
+    Ref.
+
+wait_for_test_result(Ref) ->
+    receive {result, Ref, Res} -> Res end.
+
+%% @doc Test merging and returning a value with a persistent worker.
+deduplicated_execution_test() ->
+    TestTime = 200,
+    Msg1 = #{ device => test_device() },
+    Msg2 = #{ path => [slow_key], wait => TestTime },
     T0 = hb:now(),
-    Ref1 = make_ref(),
-    Ref2 = make_ref(),
-    spawn_link(fun() -> ParalellTestFun(Ref1) end),
+    Ref1 = spawn_test_client(Msg1, Msg2),
     receive after 100 -> ok end,
-    spawn_link(fun() -> ParalellTestFun(Ref2) end),
-    Res1 = GatherResult(Ref1),
-    Res2 = GatherResult(Ref2),
+    Ref2 = spawn_test_client(Msg1, Msg2),
+    Res1 = wait_for_test_result(Ref1),
+    Res2 = wait_for_test_result(Ref2),
     T1 = hb:now(),
     % Check the result is the same.
     ?assertEqual(Res1, Res2),
     % Check the time it took is less than the sum of the two test times.
     ?assert(T1 - T0 < (2*TestTime)).
+
+%% @doc Test spawning a default persistent worker.
+persistent_worker_test() ->
+    TestTime = 200,
+    Msg1 = #{ device => test_device() },
+    link(start_worker(Msg1, #{ static_worker => true })),
+    receive after 10 -> ok end,
+    Msg2 = #{ path => [slow_key], wait => TestTime },
+    Msg3 = #{ path => [slow_key], wait => trunc(TestTime*1.1) },
+    Msg4 = #{ path => [slow_key], wait => trunc(TestTime*1.2) },
+    T0 = hb:now(),
+    Ref1 = spawn_test_client(Msg1, Msg2),
+    Ref2 = spawn_test_client(Msg1, Msg3),
+    Ref3 = spawn_test_client(Msg1, Msg4),
+    Res1 = wait_for_test_result(Ref1),
+    Res2 = wait_for_test_result(Ref2),
+    Res3 = wait_for_test_result(Ref3),
+    T1 = hb:now(),
+    ?assertNotEqual(Res1, Res2),
+    ?assertNotEqual(Res2, Res3),
+    ?assert(T1 - T0 >= (3*TestTime)).
+
+spawn_after_execution_test() ->
+    ?event(<<"">>),
+    TestTime = 500,
+    Msg1 = #{ device => test_device() },
+    Msg2 = #{ path => [self], wait => TestTime },
+    Msg3 = #{ path => [slow_key], wait => trunc(TestTime*1.1) },
+    Msg4 = #{ path => [slow_key], wait => trunc(TestTime*1.2) },
+    T0 = hb:now(),
+    Ref1 =
+        spawn_test_client(
+            Msg1,
+            Msg2,
+            #{
+                spawn_worker => true,
+                static_worker => true,
+                hashpath => ignore
+            }
+        ),
+    receive after 10 -> ok end,
+    Ref2 = spawn_test_client(Msg1, Msg3),
+    Ref3 = spawn_test_client(Msg1, Msg4),
+    Res1 = wait_for_test_result(Ref1),
+    Res2 = wait_for_test_result(Ref2),
+    Res3 = wait_for_test_result(Ref3),
+    T1 = hb:now(),
+    ?assertNotEqual(Res1, Res2),
+    ?assertNotEqual(Res2, Res3),
+    ?assert(T1 - T0 >= (3*TestTime)).

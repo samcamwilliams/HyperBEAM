@@ -53,11 +53,11 @@ restore(Msg, _Msg2, Opts) ->
         AlreadySeen ->
             ?event({restore_found, AlreadySeen}),
             {ok,
-                ?event(hb_private:set(
+                hb_private:set(
                     Msg,
                     #{ <<"Test-Key/Started-State">> => AlreadySeen },
                     Opts
-                ))
+                )
             }
     end.
 
@@ -66,7 +66,7 @@ restore(Msg, _Msg2, Opts) ->
 mul(Msg1, Msg2) ->
     State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
-    {ok, #{ state => State, wasm_response => [Arg1 * Arg2] }}.
+    {ok, #{ state => State, results => [Arg1 * Arg2] }}.
 
 %%% Tests
 

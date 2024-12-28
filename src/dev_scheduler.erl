@@ -204,7 +204,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             {ok,
                 #{
                     <<"Status">> => <<"OK">>,
-                    <<"Initial-Assignment">> => <<"0">>,
+                    <<"Assignment">> => <<"0">>,
                     <<"Process">> => ProcID
                 }
             };

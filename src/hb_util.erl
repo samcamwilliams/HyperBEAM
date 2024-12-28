@@ -208,7 +208,7 @@ debug_print(X, Mod, Func, LineNum) ->
         [
             TSDiff, self(),
             format_debug_trace(Mod, Func, LineNum),
-            lists:flatten(debug_fmt(X, 0))
+            debug_fmt(X, 0)
         ]),
     X.
 
@@ -218,7 +218,7 @@ format_debug_trace(Mod, Func, Line) ->
         short ->
             format_trace_short(get_trace());
         false ->
-            lists:flatten(io_lib:format("~p:~w ~p", [Mod, Line, Func]))
+            io_lib:format("~p:~w ~p", [Mod, Line, Func])
     end.
 
 %% @doc Convert a term to a string for debugging print purposes.
@@ -253,8 +253,10 @@ debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
 debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     format_indented("~s", [Str], Indent);
+debug_fmt(X, Indent) when is_binary(X) ->
+    format_indented("~s", [format_binary(X)], Indent);
 debug_fmt(X, Indent) ->
-    format_indented("~120p", [X], Indent).
+    format_indented("~80p", [X], Indent).
 
 %% @doc Helper function to format tuples with arity greater than 2.
 format_tuple(Tuple, Indent) ->

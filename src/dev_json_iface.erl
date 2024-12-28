@@ -124,12 +124,8 @@ results(M1, _M2, Opts) ->
             {ok, Str} = hb_beamr_io:read_string(Port, Ptr),
             try jiffy:decode(Str, [return_maps]) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
-                    % TODO: Handle all JSON interface output types.
-                    #{
-                        <<"Output">> := #{<<"data">> := Data},
-                        <<"Messages">> := Messages
-                    } = Resp,
-                    Res = 
+                    {ok, Data, Messages} = normalize_results(Resp),
+                    Output = 
                         hb_converge:set(
                             M1,
                             #{
@@ -138,13 +134,16 @@ results(M1, _M2, Opts) ->
                                         {MessageNum, preprocess_results(Msg, Proc, Opts)}
                                     ||
                                         {MessageNum, Msg} <-
-                                            lists:zip(lists:seq(1, length(Messages)), Messages)
+                                            lists:zip(
+                                                lists:seq(1, length(Messages)),
+                                                Messages
+                                            )
                                     ]),
                                 <<"Results/Data">> => Data
                             },
                             Opts
                         ),
-                    {ok, Res}
+                    {ok, Output}
             catch
                 _:_ ->
                     {error,
@@ -152,13 +151,21 @@ results(M1, _M2, Opts) ->
                             M1,
                             #{
                                 <<"Results/Outbox">> => undefined,
-                                <<"Results/Body">> => <<"JSON error parsing WASM result output.">>
+                                <<"Results/Body">> =>
+                                    <<"JSON error parsing WASM result output.">>
                             },
                             Opts
                         )
                     }
             end
     end.
+
+%% @doc Normalize the results of an evaluation.
+normalize_results(
+    #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages }) ->
+    {ok, Data, Messages};
+normalize_results(#{ <<"Error">> := Error }) ->
+    {ok, Error, []}.
 
 %% @doc After the process returns messages from an evaluation, the
 %% signing node needs to add some tags to each message and spawn such that
@@ -177,9 +184,16 @@ preprocess_results(Msg, Proc, Opts) ->
             Msg
         ),
     maps:merge(
-        FilteredMsg,
+        maps:from_list(
+            lists:map(
+                fun({Key, Value}) ->
+                    {hb_converge:to_key(Key), Value}
+                end,
+                maps:to_list(FilteredMsg)
+            )
+        ),
         Tags#{
-            <<"From-Process">> => hb_util:id(Proc, signed),
+            <<"From-Process">> => hb_converge:get(id, Proc, Opts),
             <<"From-Image">> => hb_converge:get(<<"WASM-Image">>, Proc, Opts)
         }
     ).
@@ -193,7 +207,7 @@ generate_stack(File) ->
     test_init(),
     Wallet = hb:wallet(),
     Msg0 = dev_wasm:store_wasm_image(File),
-    Image = maps:get(<<"WASM-Image">>, Msg0),
+    Image = hb_converge:get(<<"Image">>, Msg0, #{}),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
         <<"Device-Stack">> =>
@@ -203,12 +217,26 @@ generate_stack(File) ->
                 <<"WASM-64/1.0">>,
                 <<"Multipass/1.0">>
             ],
+        <<"Input-Prefixes">> =>
+            [
+                <<"Process">>,
+                <<"Process">>,
+                <<"Process">>,
+                <<"Process">>
+            ],
+        <<"Output-Prefixes">> =>
+            [
+                <<"WASM">>,
+                <<"WASM">>,
+                <<"WASM">>,
+                <<"WASM">>
+            ],
         <<"Passes">> => 2,
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"Process">> => 
             hb_message:sign(#{
                 <<"Type">> => <<"Process">>,
-                <<"WASM-Image">> => Image,
+                <<"Image">> => Image,
                 <<"Scheduler">> => hb:address(),
                 <<"Authority">> => hb:address()
             }, Wallet)

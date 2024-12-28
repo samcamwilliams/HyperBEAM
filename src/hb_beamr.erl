@@ -13,7 +13,7 @@
 %%% Erlang manuals).
 %%% 
 %%% The core API is simple:
-%%%     ```
+%%% ```
 %%%     start(WasmBinary) -> {ok, Port, Imports, Exports}
 %%%         Where:
 %%%             WasmBinary is the WASM binary to load.
@@ -43,14 +43,15 @@
 %%%     deserialize(Port, Mem) -> ok
 %%%         Where:
 %%%             Port is the port to the LID.
-%%%             Mem is a binary output of a previous `serialize/1' call.'''
+%%%             Mem is a binary output of a previous `serialize/1' call.
+%%% '''
 %%% 
 %%% BEAMR was designed for use in the HyperBEAM project, but is suitable for
 %%% deployment in other Erlang applications that need to run WASM modules. PRs
 %%% are welcome.
 -module(hb_beamr).
 %%% Control API:
--export([start/1, call/3, call/4, call/5, call/6, stop/1]).
+-export([start/1, call/3, call/4, call/5, call/6, stop/1, wasm_send/2]).
 %%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
 
@@ -68,27 +69,63 @@ load_driver() ->
 %% @doc Start a WASM executor context. Yields a port to the LID, and the
 %% imports and exports of the WASM module.
 start(WasmBinary) when is_binary(WasmBinary) ->
-    ok = load_driver(),
-    Port = open_port({spawn, "hb_beamr"}, []),
-    Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
-    ?event({waiting_for_init_from, Port}),
+    Self = self(),
+    WASM = spawn(
+        fun() ->
+            ok = load_driver(),
+            Port = open_port({spawn, "hb_beamr"}, []),
+            Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
+            ?event({waiting_for_init_from, Port}),
+            worker(Port, Self)
+        end
+    ),
     receive
         {execution_result, Imports, Exports} ->
             ?event(
                 {wasm_init_success,
                     {imports, Imports},
                     {exports, Exports}}),
-            {ok, Port, Imports, Exports};
+            {ok, WASM, Imports, Exports};
         {error, Error} ->
             ?event({wasm_init_error, Error}),
-            port_close(Port),
+            stop(WASM),
             {error, Error}
     end.
 
+%% @doc A worker process that is responsible for handling a WASM instance.
+%% It wraps the WASM port, handling inputs and outputs from the WASM module.
+%% The last sender to the port is always the recipient of its messages, so
+%% be careful to ensure that there is only one active sender to the port at 
+%% any time.
+worker(Port, Listener) ->
+    receive
+        stop ->
+            ?event({stop_invoked_for_beamr, self()}),
+            case erlang:port_info(Port, id) of
+                undefined ->
+                    ok;
+                _ ->
+                    port_close(Port),
+                    ok
+            end,
+            ok;
+        {wasm_send, NewListener, Message} ->
+            ?event({wasm_send, {listener, NewListener}, {message, Message}}),
+            Port ! {self(), Message},
+            worker(Port, NewListener);
+        WASMResult ->
+            ?event({wasm_result, {listener, Listener}, {result, WASMResult}}),
+            Listener ! WASMResult,
+            worker(Port, Listener)
+    end.
+
+wasm_send(WASM, Message) when is_pid(WASM) ->
+    WASM ! {wasm_send, self(), Message},
+    ok.
+
 %% @doc Stop a WASM executor context.
-stop(Port) when is_port(Port) ->
-    ?event({stop_invoked_for_beamr, Port}),
-    port_close(Port),
+stop(WASM) when is_pid(WASM) ->
+    WASM ! stop,
     ok.
 
 %% @doc Call a function in the WASM executor (see moduledoc for more details).
@@ -102,8 +139,8 @@ call(Port, FunctionName, Args, ImportFun, StateMsg) ->
 call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
         when is_binary(FunctionName) ->
     call(Port, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
-call(Port, FunctionName, Args, ImportFun, StateMsg, Opts) 
-        when is_port(Port)
+call(WASM, FunctionName, Args, ImportFun, StateMsg, Opts) 
+        when is_pid(WASM)
         andalso is_list(FunctionName)
         andalso is_list(Args)
         andalso is_function(ImportFun)
@@ -112,17 +149,16 @@ call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
         true ->
             ?event(
                 {call_started,
-                    Port,
+                    WASM,
                     FunctionName,
                     Args,
                     ImportFun,
                     StateMsg,
                     Opts}),
-            Port !
-                {self(),
-                    {command, term_to_binary({call, FunctionName, Args})}},
-            ?event({waiting_for_call_result, self(), Port}),
-            monitor_call(Port, ImportFun, StateMsg, Opts);
+            wasm_send(WASM,
+                {command, term_to_binary({call, FunctionName, Args})}),
+            ?event({waiting_for_call_result, self(), WASM}),
+            monitor_call(WASM, ImportFun, StateMsg, Opts);
         false ->
             {error, {invalid_args, Args}}
     end.
@@ -134,7 +170,7 @@ stub(Msg1, _Msg2, _Opts) ->
 
 %% @doc Synchonously monitor the WASM executor for a call result and any
 %% imports that need to be handled.
-monitor_call(Port, ImportFun, StateMsg, Opts) ->
+monitor_call(WASM, ImportFun, StateMsg, Opts) ->
     receive
         {execution_result, Result} ->
             ?event({call_result, Result}),
@@ -142,10 +178,10 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
         {import, Module, Func, Args, Signature} ->
             ?event({import_called, Module, Func, Args, Signature}),
             try
-                {ok, Response, StateMsg2} =
+                {ok, Res, StateMsg2} =
                     ImportFun(StateMsg,
                         #{
-                            port => Port,
+                            instance => WASM,
                             module => Module,
                             func => Func,
                             args => Args,
@@ -153,14 +189,14 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
                         },
                         Opts
                     ),
-                ?event({import_returned, Module, Func, {args, Args}, {response, Response}}),
-                dispatch_response(Port, Response),
-                monitor_call(Port, ImportFun, StateMsg2, Opts)
+                ?event({import_ret, Module, Func, {args, Args}, {params, Res}}),
+                dispatch_response(WASM, Res),
+                monitor_call(WASM, ImportFun, StateMsg2, Opts)
             catch
                 Err:Reason:Stack ->
                     % Signal the WASM executor to stop.
                     ?event({import_error, Err, Reason, Stack}),
-                    stop(Port),
+                    stop(WASM),
                     % The driver is going to send us an error message, so we 
                     % need to clear it from the mailbox, even if we already 
                     % know that the import failed.
@@ -176,19 +212,15 @@ monitor_call(Port, ImportFun, StateMsg, Opts) ->
     end.
 
 %% @doc Check the type of an import response and dispatch it to a Beamr port.
-dispatch_response(Port, Term) when is_port(Port) ->
+dispatch_response(WASM, Term) when is_pid(WASM) ->
 	case is_valid_arg_list(Term) of
 		true ->
-			Port !
-				{self(),
-					{
-						command,
-						term_to_binary({import_response, Term})
-					}};
+			wasm_send(WASM,
+				{command, term_to_binary({import_response, Term})});
 		false ->
 			throw({error, {invalid_response, Term}})
 	end;
-dispatch_response(_Port, Term) ->
+dispatch_response(_WASM, Term) ->
 	throw({error, {invalid_response, Term}}).
 
 %% @doc Check that a list of arguments is valid for a WASM function call.
@@ -198,17 +230,17 @@ is_valid_arg_list(_) ->
     false.
 
 %% @doc Serialize the WASM state to a binary.
-serialize(Port) when is_port(Port) ->
+serialize(WASM) when is_pid(WASM) ->
     ?event(starting_serialize),
-    {ok, Size} = hb_beamr_io:size(Port),
-    {ok, Mem} = hb_beamr_io:read(Port, 0, Size),
+    {ok, Size} = hb_beamr_io:size(WASM),
+    {ok, Mem} = hb_beamr_io:read(WASM, 0, Size),
     ?event({finished_serialize, byte_size(Mem)}),
     {ok, Mem}.
 
 %% @doc Deserialize a WASM state from a binary.
-deserialize(Port, Bin) when is_port(Port) andalso is_binary(Bin) ->
+deserialize(WASM, Bin) when is_pid(WASM) andalso is_binary(Bin) ->
     ?event(starting_deserialize),
-    Res = hb_beamr_io:write(Port, 0, Bin),
+    Res = hb_beamr_io:write(WASM, 0, Bin),
     ?event({finished_deserialize, Res}),
     ok.
 
@@ -220,16 +252,16 @@ driver_loads_test() ->
 %% @doc Test standalone `hb_beamr' correctly after loading a WASM module.
 simple_wasm_test() ->
     {ok, File} = file:read_file("test/test.wasm"),
-    {ok, Port, _Imports, _Exports} = start(File),
-    {ok, [Result]} = call(Port, "fac", [5.0]),
+    {ok, WASM, _Imports, _Exports} = start(File),
+    {ok, [Result]} = call(WASM, "fac", [5.0]),
     ?assertEqual(120.0, Result).
 
 %% @doc Test that imported functions can be called from the WASM module.
 imported_function_test() ->
     {ok, File} = file:read_file("test/pow_calculator.wasm"),
-    {ok, Port, _Imports, _Exports} = start(File),
+    {ok, WASM, _Imports, _Exports} = start(File),
     {ok, [Result], _} =
-        call(Port, <<"pow">>, [2, 5],
+        call(WASM, <<"pow">>, [2, 5],
             fun(Msg1, #{ args := [Arg1, Arg2] }, _Opts) ->
                 {ok, [Arg1 * Arg2], Msg1}
             end),
@@ -238,6 +270,26 @@ imported_function_test() ->
 %% @doc Test that WASM Memory64 modules load and execute correctly.
 wasm64_test() ->
     {ok, File} = file:read_file("test/test-64.wasm"),
-    {ok, Port, _ImportMap, _Exports} = start(File),
-    {ok, [Result]} = call(Port, "fac", [5.0]),
+    {ok, WASM, _ImportMap, _Exports} = start(File),
+    {ok, [Result]} = call(WASM, "fac", [5.0]),
     ?assertEqual(120.0, Result).
+
+%% @doc Ensure that processes outside of the initial one can interact with
+%% the WASM executor.
+multiclient_test() ->
+    Self = self(),
+    ExecPID = spawn(fun() ->
+        receive {wasm, WASM} ->
+            {ok, [Result]} = call(WASM, "fac", [5.0]),
+            Self ! {result, Result}
+        end
+    end),
+    _StartPID = spawn(fun() ->
+        {ok, File} = file:read_file("test/test.wasm"),
+        {ok, WASM, _ImportMap, _Exports} = start(File),
+        ExecPID ! {wasm, WASM}
+    end),
+    receive
+        {result, Result} ->
+            ?assertEqual(120.0, Result)
+    end.
