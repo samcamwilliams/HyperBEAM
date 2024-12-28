@@ -13,11 +13,9 @@
 group(Msg1, undefined, Opts) ->
     hb_persistent:default_grouper(Msg1, undefined, Opts);
 group(Msg1, Msg2, Opts) ->
-    case hb_path:hd(Msg2, Opts) of
-        <<"Compute">> ->
-            ID = process_to_group_name(Msg1, Opts),
-            ?event({compute_group_id, ID}),
-            ID;
+    case hb_path:matches(<<"Compute">>, hb_path:hd(Msg2, Opts)) of
+        true ->
+            process_to_group_name(Msg1, Opts);
         _ ->
             hb_persistent:default_grouper(Msg1, Msg2, Opts)
     end.
@@ -38,7 +36,6 @@ process_to_group_name(Msg1, Opts) ->
 %% execution of `hb_converge:resolve/3', so the state we are given is the
 %% already current.
 server(GroupName, Msg1, Opts) ->
-    ?event(worker_spawns, {proc_starting_default_resolver, GroupName}),
     hb_persistent:default_worker(GroupName, Msg1, Opts#{ static_worker => true }).
 
 %% @doc Stop a worker process.
