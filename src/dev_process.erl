@@ -178,57 +178,73 @@ now(RawMsg1, _Msg2, Opts) ->
 
 %% @doc Recursively push messages to the scheduler until we find a message
 %% that does not lead to any further messages being scheduled.
-push(RawMsg1, Msg2, Opts) ->
+push(Msg1, Msg2, Opts) ->
     Wallet = hb:wallet(),
-    Msg1 = ensure_process_key(RawMsg1, Opts),
     PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
-    ProcessID = hb_converge:get(<<"Process/id">>, Msg1, Opts),
-    ?event({push_called, {process, ProcessID}, {slot, PushMsgSlot}}),
-    {ok, Outbox} = hb_converge:resolve(
+    {ok, FullState} = hb_converge:resolve(
         Msg1,
-        #{ path => <<"Compute/Results/Outbox">>, <<"Slot">> => PushMsgSlot },
-        Opts#{ hashpath => ignore }
+        #{ path => <<"Compute">>, <<"Slot">> => PushMsgSlot },
+        Opts#{ spawn_worker => true }
     ),
+    {ok, Outbox} =
+        hb_converge:resolve(
+            FullState,
+            <<"Results/Outbox">>,
+            Opts#{ hashpath => ignore }
+        ),
     ?event({base_outbox_res, Outbox}),
-    {ok, maps:map(
-        fun(Key, MsgToPush) ->
-            case hb_converge:get(<<"Target">>, MsgToPush, Opts) of
-                not_found ->
-                    ?event({skipping_child_with_no_target, {key, Key}}),
-                    <<"No Target. Did not push.">>;
-                Target ->
-                    ?event(
-                        {pushing_child, MsgToPush,
-                        {originates_from_slot, PushMsgSlot},
-                        {key, Key}
-                    }),
-                    {ok, Next} = hb_converge:resolve(
-                        Msg1,
-                        #{
-                            method => <<"POST">>,
-                            path => <<"Schedule/Slot">>,
-                            <<"Message">> =>
-                                hb_message:sign(
-                                    MsgToPush,
-                                    Wallet
-                                )
-                        },
-                        Opts
-                    ),
-                    ?event(
-                        {push_scheduled,
-                            {assigned_slot, Next},
-                            {target, Target}
-                        }),
-                    hb_converge:resolve(
-                        Msg1,
-                        #{ path => <<"Push">>, <<"Slot">> => Next },
-                        Opts
-                    )
-            end
-        end,
-        Outbox
-    )}.
+    case ?IS_EMPTY_MESSAGE(Outbox) of
+        true ->
+            {ok, #{}};
+        false ->
+            {ok, maps:map(
+                fun(Key, MsgToPush) ->
+                    case hb_converge:get(<<"Target">>, MsgToPush, Opts) of
+                        not_found ->
+                            ?event({skipping_child_with_no_target, {key, Key}, MsgToPush}),
+                            <<"No Target. Did not push.">>;
+                        Target ->
+                            ?event(
+                                {pushing_child,
+                                    {originates_from_slot, PushMsgSlot},
+                                    {outbox_key, Key}
+                                }
+                            ),
+                            {ok, NextSlotOnProc} = hb_converge:resolve(
+                                Msg1,
+                                #{
+                                    method => <<"POST">>,
+                                    path => <<"Schedule/Slot">>,
+                                    <<"Message">> =>
+                                        PushedMsg = hb_message:sign(
+                                            MsgToPush,
+                                            Wallet
+                                        )
+                                },
+                                Opts
+                            ),
+                            PushedMsgID = hb_converge:get(<<"id">>, PushedMsg, Opts),
+                            ?event(
+                                {push_scheduled,
+                                    {assigned_slot, NextSlotOnProc},
+                                    {target, Target}
+                                }),
+                            {ok, Downstream} = hb_converge:resolve(
+                                Msg1,
+                                #{ path => <<"Push">>, <<"Slot">> => NextSlotOnProc },
+                                Opts
+                            ),
+                            #{
+                                <<"id">> => PushedMsgID,
+                                <<"Target">> => Target,
+                                <<"Slot">> => NextSlotOnProc,
+                                <<"Resulted-In">> => Downstream
+                            }
+                    end
+                end,
+                Outbox
+            )}
+    end.
 
 %% @doc Ensure that the process message we have in memory is live and
 %% up-to-date.
