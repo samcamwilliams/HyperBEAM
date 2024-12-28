@@ -498,7 +498,7 @@ schedule_message_and_get_slot_test() ->
 
 benchmark_test() ->
     start(),
-    BenchTime = 4000,
+    BenchTime = 4,
     Msg1 = test_process(),
     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
@@ -529,7 +529,7 @@ benchmark_test() ->
         hb_converge:resolve(Msg1, Msg3, #{})),
     hb_util:eunit_print(
         "Scheduled ~p messages through Converge in ~p ms (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / (BenchTime / 1000)]
+        [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 100).
 
