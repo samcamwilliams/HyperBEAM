@@ -21,15 +21,7 @@ start() -> pg:start(pg).
 %% @doc Register the process to lead an execution if none is found, otherwise
 %% signal that we should await resolution.
 find_or_register(Msg1, Msg2, Opts) ->
-    case hb_opts:get(spawn_worker, false, Opts) of
-        true -> ?event(worker_spawns, {calculating_group_name, {msg1, Msg1}, {msg2, Msg2}});
-        _ -> ok
-    end,
     GroupName = group(Msg1, Msg2, Opts),
-    case is_binary(GroupName) of
-        true -> ?event(worker_spawns, {calculated_group_name, GroupName, {msg1, Msg1}, {msg2, Msg2}, Opts});
-        _ -> ok
-    end,
     find_or_register(GroupName, Msg1, Msg2, Opts).
 find_or_register(GroupName, Msg1, Msg2, Opts) ->
     Self = self(),
@@ -77,15 +69,10 @@ find_execution(Groupname, _Opts) ->
 group(Msg1, Msg2, Opts) ->
     Grouper =
         maps:get(grouper, hb_converge:info(Msg1, Opts), fun default_grouper/3),
-    Name = apply(
+    apply(
         Grouper,
         hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])
-    ),
-    case hb_opts:get(spawn_worker, false, Opts) of
-        true -> ?event(worker_spawns, {name, Name, Grouper});
-        _ -> ok
-    end,
-    Name.
+    ).
 
 %% @doc Register for performing a Converge resolution.
 register_groupname(Groupname, _Opts) ->

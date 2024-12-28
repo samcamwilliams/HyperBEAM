@@ -38,13 +38,8 @@ process_to_group_name(Msg1, Opts) ->
 %% execution of `hb_converge:resolve/3', so the state we are given is the
 %% already current.
 server(GroupName, Msg1, Opts) ->
-    %hb_persistent:default_worker(GroupName, Msg1, Opts#{ static_worker => true }).
-    ?event({waiting_for_work, GroupName}),
-    receive
-        Req ->
-            ?event({received_work, Req}),
-            ok
-    end.
+    ?event(worker_spawns, {proc_starting_default_resolver, GroupName}),
+    hb_persistent:default_worker(GroupName, Msg1, Opts#{ static_worker => true }).
 
 %% @doc Stop a worker process.
 stop(Worker) ->

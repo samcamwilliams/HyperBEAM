@@ -147,8 +147,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     <<"Execution">>,
                     State,
                     ToProcess,
-                    Opts#{ cache_keys => CacheKeys },
-                    #{ spawn_worker => true }
+                    Opts#{ cache_keys => CacheKeys }
                 ),
             ?event({do_compute_result, {msg3, Msg3}}),
             do_compute(
@@ -586,7 +585,7 @@ persistent_process_test() ->
     },
     ?assertMatch(
         {ok, _},
-        hb_converge:resolve(Msg1, Msg2, #{})
+        hb_converge:resolve(Msg1, Msg2, #{ spawn_worker => true })
     ),
     T1 = hb:now(),
     ?assertMatch(
