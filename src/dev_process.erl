@@ -186,7 +186,6 @@ push(Msg1, Msg2, Opts) ->
         #{ path => <<"Compute/Results/Outbox">>, <<"Slot">> => PushMsgSlot },
         Opts#{ spawn_worker => true }
     ),
-    ?event(debug, {base_outbox_res, Outbox}),
     case ?IS_EMPTY_MESSAGE(Outbox) of
         true ->
             {ok, #{}};
