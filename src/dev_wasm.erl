@@ -96,7 +96,7 @@ init(M1, M2, Opts) ->
 %% @doc Take a BEAMR import call and resolve it using `hb_converge`.
 default_import_resolver(Msg1, Msg2, Opts) ->
     #{
-        port := Port,
+        instance := WASM,
         module := Module,
         func := Func,
         args := Args,
@@ -107,7 +107,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         hb_converge:resolve(
             hb_private:set(
                 Msg1,
-                #{ <<Prefix/binary, "/Port">> => Port },
+                #{ <<Prefix/binary, "/Port">> => WASM },
                 Opts
             ),
             #{
@@ -276,7 +276,7 @@ init_test() ->
     ?event({after_init, Msg1}),
     Priv = hb_private:from_message(Msg1),
     ?assertMatch(
-        {ok, Port} when is_port(Port),
+        {ok, Port} when is_pid(Port),
         hb_converge:resolve(Priv, <<"WASM/Port">>, #{})
     ),
     ?assertMatch(
@@ -297,7 +297,7 @@ input_prefix_test() ->
     ?event({after_init, Msg2}),
     Priv = hb_private:from_message(Msg2),
     ?assertMatch(
-        {ok, Port} when is_port(Port),
+        {ok, Port} when is_pid(Port),
         hb_converge:resolve(Priv, <<"Port">>, #{})
     ),
     ?assertMatch(
@@ -321,7 +321,7 @@ process_prefixes_test() ->
     ?event({after_init, Msg3}),
     Priv = hb_private:from_message(Msg3),
     ?assertMatch(
-        {ok, Port} when is_port(Port),
+        {ok, Port} when is_pid(Port),
         hb_converge:resolve(Priv, <<"WASM/Port">>, #{})
     ),
     ?assertMatch(

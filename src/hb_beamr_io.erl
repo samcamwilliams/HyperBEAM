@@ -19,20 +19,20 @@
 %% instance. Note that WASM memory can never be reduced once granted to an
 %% instance (although it can, of course, be reallocated _inside_ the 
 %% environment).
-size(Port) when is_port(Port) ->
-    Port ! {self(), {command, term_to_binary({size})}},
+size(WASM) when is_pid(WASM) ->
+    hb_beamr:wasm_send(WASM, {command, term_to_binary({size})}),
     receive
         {execution_result, Size} ->
             {ok, Size}
     end.
 
 %% @doc Write a binary to the Beamr instance's native memory at a given offset.
-write(Port, Offset, Data)
-        when is_port(Port)
+write(WASM, Offset, Data)
+        when is_pid(WASM)
         andalso is_binary(Data)
         andalso is_integer(Offset) ->
     ?event(writing_to_mem),
-    Port ! {self(), {command, term_to_binary({write, Offset, Data})}},
+    hb_beamr:wasm_send(WASM, {command, term_to_binary({write, Offset, Data})}),
     ?event(mem_written),
     receive
         ok -> ok;
@@ -45,14 +45,14 @@ write(Port, Offset, Data)
 %% passed to exported functions from the instance.
 %% Assumes that the input is either an iolist or a binary, adding a null byte
 %% to the end of the string.
-write_string(Port, Data) when is_list(Data) ->
-    write_string(Port, iolist_to_binary(Data));
-write_string(Port, Data) when is_port(Port) andalso is_binary(Data) ->
+write_string(WASM, Data) when is_pid(WASM) andalso is_list(Data) ->
+    write_string(WASM, iolist_to_binary(Data));
+write_string(WASM, Data) when is_pid(WASM) andalso is_binary(Data) ->
     DataSize = byte_size(Data) + 1,
     String = <<Data/bitstring, 0:8>>,
-    case malloc(Port, DataSize) of
+    case malloc(WASM, DataSize) of
         {ok, Ptr} ->
-            case write(Port, Ptr, String) of
+            case write(WASM, Ptr, String) of
                 ok -> {ok, Ptr};
                 {error, Error} -> {error, Error}
             end;
@@ -61,18 +61,18 @@ write_string(Port, Data) when is_port(Port) andalso is_binary(Data) ->
 
 %% @doc Read a binary from the Beamr instance's native memory at a given offset
 %% and of a given size.
-read(Port, Offset, Size)
-        when is_port(Port)
+read(WASM, Offset, Size)
+        when is_pid(WASM)
         andalso is_integer(Offset)
         andalso is_integer(Size) ->
-    ?event({read_request, {port, Port}, {location, Offset}, {size, Size}}),
-    Port ! {self(), {command, term_to_binary({read, Offset, Size})}},
+    ?event({read_request, {port, WASM}, {location, Offset}, {size, Size}}),
+    hb_beamr:wasm_send(WASM, {command, term_to_binary({read, Offset, Size})}),
     ?event(read_req_sent),
     receive
         {execution_result, Result} ->
             ?event(
                 {read_result,
-                    {port, Port},
+                    {wasm, WASM},
                     {location, Offset},
                     {size, Size},
                     {result, Result}}),
@@ -86,23 +86,23 @@ read(Port, Offset, Size)
 %% but this can be overridden by passing a different chunk size. Strings are 
 %% assumed to be null-terminated.
 read_string(Port, Offset) -> read_string(Port, Offset, 8).
-read_string(Port, Offset, ChunkSize)
-        when is_port(Port)
+read_string(WASM, Offset, ChunkSize)
+        when is_pid(WASM)
         andalso is_integer(Offset)
         andalso is_integer(ChunkSize) ->
-    {ok, iolist_to_binary(do_read_string(Port, Offset, ChunkSize))}.
+    {ok, iolist_to_binary(do_read_string(WASM, Offset, ChunkSize))}.
 
-do_read_string(Port, Offset, ChunkSize) ->
-    {ok, Data} = read(Port, Offset, ChunkSize),
+do_read_string(WASM, Offset, ChunkSize) ->
+    {ok, Data} = read(WASM, Offset, ChunkSize),
     case binary:split(Data, [<<0>>]) of
-        [Data|[]] -> [Data|do_read_string(Port, Offset + ChunkSize, ChunkSize)];
+        [Data|[]] -> [Data|do_read_string(WASM, Offset + ChunkSize, ChunkSize)];
         [FinalData|_Remainder] -> [FinalData]
     end.
 
 %% @doc Allocate space for (via an exported malloc function from the WASM) in 
 %% the Beamr instance's native memory.
-malloc(Port, Size) when is_port(Port) andalso is_integer(Size) ->
-    case hb_beamr:call(Port, "malloc", [Size]) of
+malloc(WASM, Size) when is_pid(WASM) andalso is_integer(Size) ->
+    case hb_beamr:call(WASM, "malloc", [Size]) of
         {ok, [0]} ->
             ?event({malloc_failed, Size}),
             {error, malloc_failed};
@@ -115,8 +115,8 @@ malloc(Port, Size) when is_port(Port) andalso is_integer(Size) ->
 
 %% @doc Free space allocated in the Beamr instance's native memory via a
 %% call to the exported free function from the WASM.
-free(Port, Ptr) when is_port(Port) andalso is_integer(Ptr) ->
-    case hb_beamr:call(Port, "free", [Ptr]) of
+free(WASM, Ptr) when is_pid(WASM) andalso is_integer(Ptr) ->
+    case hb_beamr:call(WASM, "free", [Ptr]) of
         {ok, Res} ->
             ?event({free_result, Res}),
             ok;
