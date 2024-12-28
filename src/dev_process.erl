@@ -607,7 +607,45 @@ persistent_process_test() ->
     % process is already running.
     ?assert(T2 - T1 < ((T1 - T0)/2)).
 
-persistent_worker_benchmark_test_() ->
+simple_wasm_persistent_worker_benchmark_test() ->
+    init(),
+    BenchTime = 2,
+    Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
+    schedule_wasm_call(Msg1, <<"fac">>, [5.0]),
+    schedule_wasm_call(Msg1, <<"fac">>, [6.0]),
+    {ok, Initialized} = 
+        hb_converge:resolve(
+            Msg1,
+            #{ path => <<"Compute">>, <<"Slot">> => 1 },
+            #{ spawn_worker => true }
+        ),
+    Iterations = hb:benchmark(
+        fun(Iteration) ->
+            schedule_wasm_call(
+                Initialized,
+                <<"fac">>,
+                [5.0]
+            ),
+            ?assertMatch(
+                {ok, _},
+                hb_converge:resolve(
+                    Initialized,
+                    #{ path => <<"Compute">>, <<"Slot">> => Iteration + 1 },
+                    #{}
+                )
+            )
+        end,
+        BenchTime
+    ),
+    ?event(benchmark, {scheduled, Iterations}),
+    hb_util:eunit_print(
+        "Scheduled and evaluated ~p simple wasm process messages in ~p s (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 5),
+    ok.
+
+aos_persistent_worker_benchmark_test_() ->
     {timeout, 30, fun() ->
         BenchTime = 10,
         init(),
@@ -632,7 +670,7 @@ persistent_worker_benchmark_test_() ->
                     hb_converge:resolve(
                         Msg1,
                         #{ path => <<"Compute">>, <<"Slot">> => Iteration },
-                        #{ spawn_worker => true }
+                        #{}
                     )
                 )
             end,
@@ -640,7 +678,7 @@ persistent_worker_benchmark_test_() ->
         ),
         ?event(benchmark, {scheduled, Iterations}),
         hb_util:eunit_print(
-            "Scheduled and evaluated ~p process messages in ~p ms (~.2f msg/s)",
+            "Scheduled and evaluated ~p AOS process messages in ~p s (~.2f msg/s)",
             [Iterations, BenchTime, Iterations / BenchTime]
         ),
         ?assert(Iterations > 5),
