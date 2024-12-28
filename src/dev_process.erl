@@ -106,6 +106,7 @@ compute(Msg1, Msg2, Opts) ->
             Msg2,
             Opts
         ),
+    ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     do_compute(
         Loaded,
         Msg2,
@@ -146,7 +147,8 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     <<"Execution">>,
                     State,
                     ToProcess,
-                    Opts#{ cache_keys => CacheKeys }
+                    Opts#{ cache_keys => CacheKeys },
+                    #{ spawn_worker => true }
                 ),
             ?event({do_compute_result, {msg3, Msg3}}),
             do_compute(
@@ -279,6 +281,8 @@ ensure_loaded(Msg1, Msg2, Opts) ->
 %% the device found at `Key'. After execution, the device is swapped back
 %% to the original device if the device is the same as we left it.
 run_as(Key, Msg1, Msg2, Opts) ->
+    run_as(Key, Msg1, Msg2, Opts, #{}).
+run_as(Key, Msg1, Msg2, Opts, ExtraOpts) ->
     BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),
     ?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok, PreparedMsg} =
@@ -304,7 +308,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
         hb_converge:resolve(
             PreparedMsg,
             Msg2,
-            Opts
+            maps:merge(Opts, ExtraOpts)
         ),
     case BaseResult of
         #{ device := DeviceSet } ->

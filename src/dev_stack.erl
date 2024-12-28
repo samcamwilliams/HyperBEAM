@@ -241,6 +241,10 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
 					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
+                % {error, not_found} ->
+                %     ?event({skipping_device, not_found, DevNum, Message3}),
+                %     %resolve_stack(Message3, Key, Message2, DevNum + 1, Opts);
+                %     throw({error, not_found});
                 {ok, RawResult} ->
                     ?event({returning_raw_result, RawResult}),
                     {ok, RawResult};
@@ -273,9 +277,9 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 						Message1,
 						Key,
 						Message2,
-						DevNum + 1,
-						Opts,
-						Info
+						DevNum,
+						Info,
+						Opts
 					);
 				Unexpected ->
 					?event({result, unexpected, {dev, DevNum}, Unexpected}),
@@ -283,9 +287,9 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 						Message1,
 						Key,
 						Message2,
-						DevNum + 1,
-						Opts,
-						{unexpected_result, Unexpected}
+						DevNum,
+						{unexpected_result, Unexpected},
+						Opts
 					)
 			end;
 		not_found ->
@@ -294,13 +298,24 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 	end.
 
 maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
-    ?event(debug, {stack_error, {msg1, Message1}, {key, Key}, {msg2, Message2}, {dev_num, DevNum}, {info, Info}, {opts, Opts}}),
     case hb_opts:get(error_strategy, throw, Opts) of
         stop ->
 			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
         throw ->
-			throw({error_running_dev, Message1, Key, Message2, DevNum, Info});
+			erlang:raise(
+                error,
+                {device_failed,
+                    {key, Key},
+                    {dev_num, DevNum},
+                    {msg1, Message1},
+                    {msg2, Message2},
+                    {info, Info}
+                },
+                []
+            );
         continue ->
+            ?no_prod(
+                "This could cause non-deterministic behavior as a result of Opts!"),
 			?event({continue_stack_execution_after_error, Message1, Key, Info}),
             resolve_stack(
                 hb_converge:set(Message1,
@@ -319,6 +334,8 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
                 Opts
             );
         ignore ->
+            ?no_prod(
+                "This could cause non-deterministic behavior as a result of Opts!"),
 			?event({ignoring_stack_error, Message1, Key, Info}),
             resolve_stack(
                 Message1,
@@ -472,7 +489,7 @@ test_prefix_msg() ->
                 Out = output_prefix(M1, M2, Opts),
                 Key = hb_converge:get(<<"Key">>, M2, Opts),
                 Value = hb_converge:get(<<In/binary, "/", Key/binary>>, M2, Opts),
-                ?event(debug, {setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
+                ?event({setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
                 {ok, hb_converge:set(
                     M1,
                     <<Out/binary, "/", Key/binary>>,
@@ -494,7 +511,7 @@ no_prefix_test() ->
             <<"Example">> => 1
         },
     {ok, Ex1Msg3} = hb_converge:resolve(test_prefix_msg(), Msg2, #{}),
-    ?event(debug, {ex1, Ex1Msg3}),
+    ?event({ex1, Ex1Msg3}),
     ?assertMatch(1, hb_converge:get(<<"Example">>, Ex1Msg3, #{})).
 
 output_prefix_test() ->

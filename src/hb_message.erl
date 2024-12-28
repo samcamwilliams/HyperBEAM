@@ -414,14 +414,14 @@ message_to_tx(RawM) when is_map(RawM) ->
     Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
     catch
         _:Error ->
-            ?event(debug, {{reset_ids_error, Error}, {tx_without_data, TX}}),
-            ?event(debug, {prepared_tx_before_ids,
+            ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
+            ?event({prepared_tx_before_ids,
                 {tags, {explicit, TXWithData#tx.tags}},
                 {data, TXWithData#tx.data}
             }),
             throw(Error)
     end,
-    %?event(debug, {result, {explicit, Res}}),
+    %?event({result, {explicit, Res}}),
     Res;
 message_to_tx(Other) ->
     ?event({unexpected_message_form, {explicit, Other}}),

@@ -11,26 +11,27 @@
 %% computation work on the same process on a single node, so we use the
 %% process ID as the group name.
 group(Msg1, undefined, Opts) ->
-    hb_persistent:default_grouper(Msg1, undefined, Opts);
+    ?event(compute_group_id_no_msg2),
+    process_to_group_name(Msg1, Opts);
 group(Msg1, Msg2, Opts) ->
     case dev_message:get(path, Msg2, Opts) of
         {ok, <<"Compute">>} ->
             ID = process_to_group_name(Msg1, Opts),
-            ?event({id, ID}),
+            ?event({compute_group_id, ID}),
             ID;
-        {_, OtherRes} ->
+        _ ->
             hb_persistent:default_grouper(Msg1, Msg2, Opts)
     end.
 
 process_to_group_name(Msg1, Opts) ->
     hb_util:human_id(
         hb_converge:get(
-            id,
+            <<"Process/id">>,
             {as,
                 dev_message,
                 dev_process:ensure_process_key(Msg1, Opts)
             },
-            Opts#{ hashpath => ignore}
+            Opts#{ hashpath => ignore }
         )
     ).
 
@@ -39,9 +40,10 @@ process_to_group_name(Msg1, Opts) ->
 %% already current.
 server(GroupName, Msg1, Opts) ->
     %hb_persistent:default_worker(GroupName, Msg1, Opts#{ static_worker => true }).
+    ?event({waiting_for_work, GroupName}),
     receive
         Req ->
-            ?event({req, Req}),
+            ?event({received_work, Req}),
             ok
     end.
 

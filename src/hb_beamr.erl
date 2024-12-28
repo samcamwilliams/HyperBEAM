@@ -88,7 +88,13 @@ start(WasmBinary) when is_binary(WasmBinary) ->
 %% @doc Stop a WASM executor context.
 stop(Port) when is_port(Port) ->
     ?event({stop_invoked_for_beamr, Port}),
-    port_close(Port),
+    case erlang:port_info(Port, id) of
+        undefined ->
+            ok;
+        _ ->
+            port_close(Port),
+            ok
+    end,
     ok.
 
 %% @doc Call a function in the WASM executor (see moduledoc for more details).

@@ -10,7 +10,7 @@
 
 -module(hb_persistent).
 -export([find_or_register/3, unregister_notify/4, await/4]).
--export([find/2, find/3, group/3, start_worker/2, forward_work/2]).
+-export([find/2, find/3, group/3, start_worker/3, start_worker/2, forward_work/2]).
 -export([default_grouper/3, default_worker/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -27,12 +27,13 @@ find_or_register(GroupName, Msg1, Msg2, Opts) ->
     Self = self(),
     case find_execution(GroupName, Opts) of
         {ok, [Leader|_]} when Leader =/= Self ->
+            ?event({found_leader, GroupName, {leader, Leader}}),
             {wait, Leader};
         {ok, [Leader|_]} when Leader =:= Self ->
             {infinite_recursion, GroupName};
         _ ->
             ?event(
-                converge_core,
+                worker,
                 {
                     register_resolver,
                     {group, GroupName}
@@ -76,10 +77,15 @@ find_execution(Groupname, _Opts) ->
 group(Msg1, Msg2, Opts) ->
     Grouper =
         maps:get(grouper, hb_converge:info(Msg1, Opts), fun default_grouper/3),
-    apply(
+    Name = apply(
         Grouper,
         hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])
-    ).
+    ),
+    case hb_opts:get(spawn_worker, false, Opts) of
+        true -> ?event(group_name, {name, Name});
+        _ -> ok
+    end,
+    Name.
 
 %% @doc Register for performing a Converge resolution.
 register_groupname(Groupname, _Opts) ->
@@ -182,6 +188,9 @@ start_worker(Msg, Opts) ->
 start_worker(_, NotMsg, _) when not is_map(NotMsg) -> not_started;
 start_worker(GroupName, Msg, Opts) ->
     start(),
+    ?event(worker_spawns,
+        {starting_worker, {group, GroupName}, {msg, Msg}, {opts, Opts}}
+    ),
     WorkerPID = spawn(
         fun() ->
             % If the device's info contains a `worker` function we
@@ -278,8 +287,7 @@ default_worker(GroupName, Msg1, Opts) ->
         % We have hit the in-memory persistence timeout. Check whether the
         % device has shutdown procedures (for example, writing in-memory
         % state to the cache).
-        unregister(Msg1, undefined, Opts),
-        hb_converge:resolve(Msg1, terminate, Opts#{ hashpath := ignore })
+        unregister(Msg1, undefined, Opts)
     end.
 
 %% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.

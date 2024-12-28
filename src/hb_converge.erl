@@ -244,6 +244,10 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
     case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
         {leader, ExecName} ->
             % We are the leader for this resolution. Continue to the next stage.
+            case hb_opts:get(spawn_worker, false, Opts) of
+                true -> ?event(worker_spawns, {will_become, ExecName});
+                _ -> ok
+            end,
             resolve_stage(4, Msg1, Msg2, ExecName, Opts);
         {wait, Leader} ->
             % There is another executor of this resolution in-flight.
@@ -352,8 +356,8 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
         end,
 	Args =
 		case maps:get(add_key, Opts, false) of
-			false -> [Msg1, Msg2, UserOpts1];
-			Key -> [Key, Msg1, Msg2, UserOpts1]
+			false -> [Msg1, Msg2, UserOpts2];
+			Key -> [Key, Msg1, Msg2, UserOpts2]
 		end,
     % Try to execute the function.
     Res = 
@@ -389,7 +393,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                         {func, Func},
                         {exec_class, ExecClass},
                         {exec_exception, ExecException},
-                        {exec_stacktrace, ExecStacktrace},
+                        {exec_stacktrace, erlang:process_info(self(), backtrace)},
                         {opts, Opts}
                     }
                 ),
@@ -459,7 +463,7 @@ resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
                 {_, _} ->
                     % We should spin up a process that will hold `Msg3` 
                     % in memory for future executions.
-                    WorkerPID = hb_persistent:start_worker(Msg3, Opts),
+                    WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
                     hb_persistent:forward_work(WorkerPID, Opts)
             end,
             % Resolution has finished successfully, return to the
@@ -562,12 +566,16 @@ get(Path, Msg, Opts) ->
 get(Path, {as, Device, Msg}, Default, Opts) ->
     get(
         Path,
-        set(Msg, #{ device => Device }, Opts#{ topic => converge_internal }),
+        set(
+            Msg,
+            #{ device => Device },
+            Opts#{ topic => converge_internal, spawn_worker => false }
+        ),
         Default,
         Opts
     );
 get(Path, Msg, Default, Opts) ->
-	case resolve(Msg, #{ path => Path }, Opts) of
+	case resolve(Msg, #{ path => Path }, Opts#{ spawn_worker => false }) of
 		{ok, Value} -> Value;
 		{error, _} -> Default
 	end.

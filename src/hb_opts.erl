@@ -93,7 +93,7 @@ config() ->
         cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 2
+        short_trace_len => 8
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
