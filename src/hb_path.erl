@@ -32,6 +32,7 @@
 -export([queue_request/2, pop_request/2]).
 -export([verify_hashpath/3]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
+-export([matches/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -223,6 +224,11 @@ term_to_path(List, Opts) when is_list(List) ->
 term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom];
 term_to_path(Integer, _Opts) when is_integer(Integer) ->
     [integer_to_binary(Integer)].
+
+%% @doc Check if two keys match.
+matches(Key1, Key2) ->
+    hb_util:to_lower(hb_converge:key_to_binary(Key1)) ==
+        hb_util:to_lower(hb_converge:key_to_binary(Key2)).
 
 %%% TESTS
 
