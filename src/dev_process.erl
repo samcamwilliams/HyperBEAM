@@ -119,6 +119,8 @@ compute(Msg1, Msg2, Opts) ->
 do_compute(Msg1, Msg2, TargetSlot, Opts) ->
     ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
     case hb_converge:get(<<"Current-Slot">>, Msg1, Opts) of
+        CurrentSlot when CurrentSlot > TargetSlot ->
+            throw({error, {already_calculated_slot, TargetSlot}});
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             ?event({reached_target_slot_returning_state, TargetSlot}),
@@ -302,7 +304,6 @@ run_as(Key, Msg1, Msg2, Opts, ExtraOpts) ->
             },
             Opts
         ),
-    ?event({prepared_msg, {msg1, PreparedMsg}, {msg2, Msg2}}),
     {ok, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,
@@ -577,20 +578,28 @@ full_push_test_() ->
 persistent_process_test() ->
     init(),
     Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"return 1+1">>),
+    schedule_aos_call(Msg1, <<"X=1">>),
+    schedule_aos_call(Msg1, <<"return 2">>),
+    schedule_aos_call(Msg1, <<"return X">>),
     T0 = hb:now(),
-    Msg2 = #{
+    FirstSlotMsg2 = #{
         path => <<"Compute">>,
         <<"Slot">> => 0
     },
     ?assertMatch(
         {ok, _},
-        hb_converge:resolve(Msg1, Msg2, #{ spawn_worker => true })
+        hb_converge:resolve(Msg1, FirstSlotMsg2, #{ spawn_worker => true })
     ),
     T1 = hb:now(),
+    ThirdSlotMsg2 = #{
+        path => <<"Compute">>,
+        <<"Slot">> => 2
+    },
+    Res = hb_converge:resolve(Msg1, ThirdSlotMsg2, #{}),
+    ?event({computed_message, {msg3, Res}}),
     ?assertMatch(
         {ok, _},
-        hb_converge:resolve(Msg1, Msg2, #{})
+        Res
     ),
     T2 = hb:now(),
     ?event(debug, {runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
