@@ -385,10 +385,8 @@ test_aos_process() ->
                 <<"WASM-64/1.0">>,
                 <<"Multipass/1.0">>
             ],
-        <<"Execution-Output-Prefixes">> =>
-            [
-                <<"WASM">>, <<"WASM">>, <<"WASM">>, <<"WASM">>
-            ],
+        <<"Output-Prefix">> => <<"WASM">>,
+        <<"Input-Prefix">> => <<"WASM">>,
         <<"Passes">> => 2,
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"Scheduler">> => hb:address(),

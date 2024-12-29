@@ -558,7 +558,7 @@ output_prefix_test() ->
     ?assertMatch(1,
         hb_converge:get(<<"Out2/Example">>, {as, dev_message, Ex2Msg3}, #{})).
 
-all_prefixes_test() ->
+input_and_output_prefixes_test() ->
     Msg1 =
         (test_prefix_msg())#{
             <<"Input-Prefixes">> => #{ 1 => <<"In1/">>, 2 => <<"In2/">> },
@@ -576,6 +576,27 @@ all_prefixes_test() ->
         hb_converge:get(<<"Out1/Example">>, {as, dev_message, Msg3}, #{})),
     ?assertMatch(2,
         hb_converge:get(<<"Out2/Example">>, {as, dev_message, Msg3}, #{})).
+
+input_output_prefixes_passthrough_test() ->
+    Msg1 =
+        (test_prefix_msg())#{
+            <<"Output-Prefix">> => <<"Combined-Out/">>,
+            <<"Input-Prefix">> => <<"Combined-In/">>
+        },
+    Msg2 =
+        #{
+            path => prefix_set,
+            key => <<"Example">>,
+            <<"Combined-In">> => #{ <<"Example">> => 1 }
+        },
+    {ok, Ex2Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
+    ?assertMatch(1,
+        hb_converge:get(
+            <<"Combined-Out/Example">>,
+            {as, dev_message, Ex2Msg3},
+            #{}
+        )
+    ).
 
 reinvocation_test() ->
 	Msg = #{
