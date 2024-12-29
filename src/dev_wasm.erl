@@ -175,8 +175,8 @@ compute(M1, M2, Opts) ->
     end.
 
 %% @doc Serialize the WASM state to a binary.
-state(M1, _M2, Opts) ->
-    Prefix = dev_stack:prefix(M1, _M2, Opts),
+state(M1, M2, Opts) ->
+    Prefix = dev_stack:prefix(M1, M2, Opts),
     Port = hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
     {ok, Serialized} = hb_beamr:serialize(Port),
     {ok, Serialized}.
@@ -386,28 +386,32 @@ benchmark_test() ->
     ?assert(Iterations > 5),
     ok.
 
-% state_export_and_restore_test() ->
-%     init(),
-%     % Generate a WASM computation.
-%     Msg0 = store_wasm_image("test/test-64.wasm"),
-%     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
-%     Msg2 =
-%         maps:merge(
-%             Msg1,
-%             #{
-%                 <<"WASM-Function">> => <<"fac">>,
-%                 <<"WASM-Params">> => [5.0]
-%             }
-%         ),
-%     ?event({after_setup, Msg2}),
-%     % Compute a computation and export the state.
-%     {ok, StateRes} = hb_converge:resolve(Msg2, <<"Compute/State">>, #{}),
-%     ?event({state_res, StateRes}),
-%     % Restore the state without calling Init.
-%     NewMsg0 = maps:merge(Msg0, #{ <<"WASM/State">> => StateRes }),
-%     {ok, NewMsg1} = hb_converge:resolve(NewMsg0, <<"Compute">>, #{}),
-%     ?event({after_compute, NewMsg1}),
-%     hb_converge:resolve(NewMsg1, <<"Results/WASM/Output">>, #{}).
+state_export_and_restore_test() ->
+    init(),
+    % Generate a WASM computation.
+    Msg0 =
+        maps:without(
+            [<<"Output-Prefix">>],
+            store_wasm_image("test/test-64.wasm")
+        ),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+    Msg2 =
+        maps:merge(
+            Msg1,
+            #{
+                <<"WASM-Function">> => <<"fac">>,
+                <<"WASM-Params">> => [5.0]
+            }
+        ),
+    ?event({after_setup, Msg2}),
+    % Compute a computation and export the state.
+    {ok, StateRes} = hb_converge:resolve(Msg2, <<"Compute/State">>, #{}),
+    ?event({state_res, StateRes}),
+    % Restore the state without calling Init.
+    NewMsg0 = maps:merge(Msg0, #{ <<"State">> => StateRes }),
+    {ok, NewMsg1} = hb_converge:resolve(NewMsg0, <<"Compute">>, #{}),
+    ?event({after_compute, NewMsg1}),
+    hb_converge:resolve(NewMsg1, <<"Results/WASM/Output">>, #{}).
 
 %%% Test helpers
 
