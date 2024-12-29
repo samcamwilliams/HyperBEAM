@@ -496,7 +496,7 @@ many_devices_test() ->
 	).
 
 benchmark_test() ->
-    BenchTime = 1,
+    BenchTime = 0.5,
 	Msg = #{
 		device => <<"Stack/1.0">>,
 		<<"Device-Stack">> =>
