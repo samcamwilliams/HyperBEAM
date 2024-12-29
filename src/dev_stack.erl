@@ -248,7 +248,8 @@ transform(Msg1, Key, Opts) ->
 %% information.
 resolve_fold(Message1, Message2, Opts) ->
 	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
-    StartingPassValue = hb_converge:get(<<"Pass">>, Message1, unset, Opts),
+    StartingPassValue =
+        hb_converge:get(<<"Pass">>, {as, dev_message, Message1}, unset, Opts),
     PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),
     case resolve_fold(PreparedMessage, Message2, 1, Opts) of
         {ok, Raw} when not is_map(Raw) ->
