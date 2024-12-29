@@ -130,7 +130,12 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
                 next(Msg1, Msg2, Opts),
             % Calculate how much of the state should be cached.
-            Freq = hb_opts:get(process_cache_frequency, ?DEFAULT_CACHE_FREQ, Opts),
+            Freq =
+                hb_opts:get(
+                    process_cache_frequency,
+                    ?DEFAULT_CACHE_FREQ,
+                    Opts
+                ),
             CacheKeys =
                 case CurrentSlot rem Freq of
                     0 -> all;
@@ -305,7 +310,11 @@ run_as(Key, Msg1, Msg2, Opts, ExtraOpts) ->
                         {as, dev_message, Msg1},
                         Opts
                     ),
-                <<"Input-Prefix">> => <<"Process">>,
+                <<"Input-Prefix">> =>
+                    case hb_converge:get(<<"Input-Prefix">>, Msg1, Opts) of
+                        not_found -> <<"Process">>;
+                        Prefix -> Prefix
+                    end,
                 <<"Output-Prefixes">> =>
                     hb_converge:get(
                         <<Key/binary, "-Output-Prefixes">>,
@@ -368,7 +377,6 @@ test_wasm_process(WASMImage) ->
     maps:merge(test_base_process(), #{
         <<"Execution-Device">> => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"WASM-64/1.0">>],
-        <<"Execution-Output-Prefixes">> => [<<"WASM">>],
         <<"Image">> => WASMImageID
     }).
 
@@ -386,7 +394,6 @@ test_aos_process() ->
                 <<"Multipass/1.0">>
             ],
         <<"Output-Prefix">> => <<"WASM">>,
-        <<"Input-Prefix">> => <<"WASM">>,
         <<"Passes">> => 2,
         <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
         <<"Scheduler">> => hb:address(),
@@ -522,7 +529,7 @@ wasm_compute_test() ->
             #{ hashpath => ignore }
         ),
     ?event({computed_message, {msg3, Msg3}}),
-    ?assertEqual([120.0], hb_converge:get(<<"Results/WASM/Output">>, Msg3, #{})),
+    ?assertEqual([120.0], hb_converge:get(<<"Results/Output">>, Msg3, #{})),
     {ok, Msg4} = 
         hb_converge:resolve(
             Msg1,
@@ -530,7 +537,7 @@ wasm_compute_test() ->
             #{ hashpath => ignore }
         ),
     ?event({computed_message, {msg4, Msg4}}),
-    ?assertEqual([720.0], hb_converge:get(<<"Results/WASM/Output">>, Msg4, #{})).
+    ?assertEqual([720.0], hb_converge:get(<<"Results/Output">>, Msg4, #{})).
 
 aos_compute_test_() ->
     {timeout, 30, fun() ->
