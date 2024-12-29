@@ -304,11 +304,11 @@ init_test() ->
     Priv = hb_private:from_message(Msg1),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
-        hb_converge:resolve(Priv, <<"WASM/Instance">>, #{})
+        hb_converge:resolve(Priv, <<"Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"WASM/Import-Resolver">>, #{})
+        hb_converge:resolve(Priv, <<"Import-Resolver">>, #{})
     ).
 
 input_prefix_test() ->
@@ -376,7 +376,7 @@ imported_function_test() ->
             <<"pow">>,
             [2, 5],
             #{
-                <<"WASM/stdlib/my_lib">> =>
+                <<"stdlib/my_lib">> =>
                     #{ device => <<"Test-Device/1.0">> }
             }
         )
