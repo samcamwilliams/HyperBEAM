@@ -34,12 +34,19 @@
 %%%             Raw binary WASM state
 %%% '''
 -module(dev_wasm).
--export([init/3, compute/3, import/3, terminate/3]).
--export([state/3]).
+-export([info/2, init/3, compute/3, import/3, terminate/3, memory/3, normalize/3]).
+%%% API for other devices:
+-export([instance/3]).
 %%% Test API:
 -export([cache_wasm_image/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Export all functions aside the `instance/3' function.
+info(_Msg1, _Opts) ->
+    #{
+        exclude => [instance]
+    }.
 
 %% @doc Boot a WASM image on the image stated in the `Process/Image' field of
 %% the message.
@@ -56,7 +63,11 @@ init(M1, M2, Opts) ->
                 throw(
                     {
                         wasm_init_error,
-                        <<"No viable image found in ", InPrefix/binary, "/Image.">>,
+                        <<
+                            "No viable image found in ",
+                            InPrefix/binary,
+                            "/Image."
+                        >>,
                         {msg1, M1}
                     }
                 );
@@ -73,16 +84,6 @@ init(M1, M2, Opts) ->
         end,
     % Start the WASM executor.
     {ok, Instance, _Imports, _Exports} = hb_beamr:start(ImageBin),
-    % Apply the checkpoint if it is in the initial state.
-    case hb_converge:get(<<Prefix/binary, "/State">>, {as, dev_message, M1}, Opts) of
-        not_found -> do_nothing;
-        MemoryState ->
-            ?event(wasm_checkpoint_found),
-            ?event({wasm_deserializing, byte_size(MemoryState)}),
-            % Apply the checkpoint to the WASM state.
-            hb_beamr:deserialize(Instance, MemoryState),
-            ?event(wasm_deserialized)
-    end,
     % Set the WASM Instance, handler, and standard library invokation function.
     ?event({setting_wasm_instance, Instance, {prefix, Prefix}}),
     {ok,
@@ -134,7 +135,7 @@ compute(RawM1, M2, Opts) ->
     % two different messages and get the same result:
     % - A message with a `State' key but no WASM instance in `priv/`.
     % - A message with a WASM instance in `priv/` but no `State' key.
-    {ok, M1} = normalize_state(RawM1, M2, Opts),
+    {ok, M1} = normalize(RawM1, M2, Opts),
     ?event(running_compute),
     Prefix = dev_stack:prefix(M1, M2, Opts),
     case hb_converge:get(pass, M1, Opts) of
@@ -164,7 +165,7 @@ compute(RawM1, M2, Opts) ->
             ),
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
-                    hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts),
+                    instance(M1, M2, Opts),
                     WASMFunction,
                     WASMParams,
                     hb_private:get(<<Prefix/binary, "/Import-Resolver">>, M1, Opts),
@@ -184,42 +185,49 @@ compute(RawM1, M2, Opts) ->
 
 %% @doc Normalize the message to have an open WASM instance, but no literal
 %% `State' key. Ensure that we do not change the hashpath during this process.
-normalize_state(RawM1, M2, Opts) ->
-    Prefix = dev_stack:prefix(RawM1, M2, Opts),
+normalize(RawM1, M2, Opts) ->
     M3 = 
-        case hb_private:get(<<Prefix/binary, "/Instance">>, RawM1, Opts) of
+        case instance(RawM1, M2, Opts) of
             not_found ->
-                case hb_converge:get(<<"State">>, {as, dev_message, RawM1}, Opts) of
+                ?event(debug, {no_wasm_instance_or_state, {msg1, RawM1}}),
+                case hb_converge:get(<<"Memory">>, {as, dev_message, RawM1}, Opts) of
                     not_found -> throw({error, no_wasm_instance_or_state});
                     State ->
-                        case init(RawM1, State, Opts) of
-                            {ok, M1} -> M1;
-                            {error, Reason} -> throw({error, Reason})
-                        end
+                        ?event(debug, {state_found, {state, State}}),
+                        {ok, M1} = init(RawM1, State, Opts),
+                        Res = hb_beamr:deserialize(instance(M1, M2, Opts), State),
+                        ?event(debug, {wasm_deserialized, {result, Res}}),
+                        M1
                 end;
             _ -> RawM1
         end,
-    dev_message:set(M3, #{ <<"State">> => unset }, Opts).
+    dev_message:set(M3, #{ <<"Memory">> => unset }, Opts).
 
 %% @doc Serialize the WASM state to a binary.
-state(M1, M2, Opts) ->
-    Prefix = dev_stack:prefix(M1, M2, Opts),
-    Instance = hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts),
+memory(M1, M2, Opts) ->
+    Instance = instance(M1, M2, Opts),
     {ok, Serialized} = hb_beamr:serialize(Instance),
     {ok, Serialized}.
 
 %% @doc Tear down the WASM executor.
-terminate(M1, _M2, Opts) ->
+terminate(M1, M2, Opts) ->
     ?event(terminate_called_on_dev_wasm),
-    Prefix = dev_stack:prefix(M1, _M2, Opts),
-    Instance = hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts),
+    Prefix = dev_stack:prefix(M1, M2, Opts),
+    Instance = instance(M1, M2, Opts),
     hb_beamr:stop(Instance),
     {ok, hb_private:set(M1,
         #{
-            <<Prefix/binary, "/Instance">> => undefined
+            <<Prefix/binary, "/Instance">> => unset
         },
         Opts
     )}.
+
+%% @doc Get the WASM instance from the message. Note that this function is exported
+%% such that other devices can use it, but it is excluded from calls from Converge
+%% resolution directly.
+instance(M1, M2, Opts) ->
+    Prefix = dev_stack:prefix(M1, M2, Opts),
+    hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts#{ hashpath => ignore }).
 
 %% @doc Handle standard library calls by:
 %% 1. Adding the right prefix to the path from BEAMR.
@@ -436,10 +444,10 @@ state_export_and_restore_test() ->
     % Compute a computation and export the state.
     {ok, Msg3a} = hb_converge:resolve(Msg2, <<"Compute">>, #{}),
     ?assertEqual([4], hb_converge:get(<<"Results/Output">>, Msg3a, #{})),
-    {ok, State} = hb_converge:resolve(Msg3a, <<"State">>, #{}),
+    {ok, State} = hb_converge:resolve(Msg3a, <<"Memory">>, #{}),
     ?event({state_res, State}),
     % Restore the state without calling Init.
-    NewMsg1 = maps:merge(Msg0, Extras#{ <<"State">> => State }),
+    NewMsg1 = maps:merge(Msg0, Extras#{ <<"Memory">> => State }),
     ?assertEqual(
         {ok, [4]},
         hb_converge:resolve(NewMsg1, <<"Compute/Results/Output">>, #{})
