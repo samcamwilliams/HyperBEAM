@@ -9,14 +9,14 @@
 %%%             M1/Process
 %%%             M1/[Prefix]/Image
 %%%         Generates:
-%%%             /priv/WASM/Port
+%%%             /priv/WASM/Instance
 %%%             /priv/WASM/Import-Resolver
 %%%         Side-effects:
 %%%             Creates a WASM executor loaded in memory of the HyperBEAM node.
 %%% 
 %%%     M1/Compute ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Instance
 %%%             M1/priv/WASM/Import-Resolver
 %%%             M1/Process
 %%%             M2/Message
@@ -29,7 +29,7 @@
 %%%             Calls the WASM executor with the message and process.
 %%%     M1/WASM/State ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Instance
 %%%         Generates:
 %%%             Raw binary WASM state
 %%% '''
@@ -69,7 +69,7 @@ init(M1, M2, Opts) ->
                 hb_converge:get(<<"Body">>, Image, Opts)
         end,
     % Start the WASM executor.
-    {ok, Port, _ImportMap, _Exports} = hb_beamr:start(ImageBin),
+    {ok, Instance, _Imports, _Exports} = hb_beamr:start(ImageBin),
     % Apply the checkpoint if it is in the initial state.
     case hb_converge:get(<<Prefix/binary, "/State">>, {as, dev_message, M1}, Opts) of
         not_found -> do_nothing;
@@ -77,15 +77,15 @@ init(M1, M2, Opts) ->
             ?event(wasm_checkpoint_found),
             ?event({wasm_deserializing, byte_size(Checkpoint)}),
             % Apply the checkpoint to the WASM state.
-            hb_beamr:deserialize(Port, Checkpoint#tx.data),
+            hb_beamr:deserialize(Instance, Checkpoint#tx.data),
             ?event(wasm_deserialized)
     end,
-    % Set the WASM port, handler, and standard library invokation function.
-    ?event({setting_wasm_port, Port, {prefix, Prefix}}),
+    % Set the WASM Instance, handler, and standard library invokation function.
+    ?event({setting_wasm_instance, Instance, {prefix, Prefix}}),
     {ok,
         hb_private:set(M1,
             #{
-                <<Prefix/binary, "/Port">> => Port,
+                <<Prefix/binary, "/Instance">> => Instance,
                 <<Prefix/binary, "/Import-Resolver">> =>
                     fun default_import_resolver/3
             },
@@ -107,7 +107,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         hb_converge:resolve(
             hb_private:set(
                 Msg1,
-                #{ <<Prefix/binary, "/Port">> => WASM },
+                #{ <<Prefix/binary, "/Instance">> => WASM },
                 Opts
             ),
             #{
@@ -130,7 +130,7 @@ compute(M1, M2, Opts) ->
     Prefix = dev_stack:prefix(M1, M2, Opts),
     case hb_converge:get(pass, M1, Opts) of
         X when X == 1 orelse X == not_found ->
-            % Extract the WASM port, func, params, and standard library
+            % Extract the WASM Instance, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             WASMFunction =
                 case hb_converge:get(<<"Message/WASM-Function">>, M2, Opts) of
@@ -155,7 +155,7 @@ compute(M1, M2, Opts) ->
             ),
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
-                    hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
+                    hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts),
                     WASMFunction,
                     WASMParams,
                     hb_private:get(<<Prefix/binary, "/Import-Resolver">>, M1, Opts),
@@ -177,19 +177,19 @@ compute(M1, M2, Opts) ->
 %% @doc Serialize the WASM state to a binary.
 state(M1, M2, Opts) ->
     Prefix = dev_stack:prefix(M1, M2, Opts),
-    Port = hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
-    {ok, Serialized} = hb_beamr:serialize(Port),
+    Instance = hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts),
+    {ok, Serialized} = hb_beamr:serialize(Instance),
     {ok, Serialized}.
 
 %% @doc Tear down the WASM executor.
 terminate(M1, _M2, Opts) ->
     ?event(terminate_called_on_dev_wasm),
     Prefix = dev_stack:prefix(M1, _M2, Opts),
-    Port = hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
-    hb_beamr:stop(Port),
+    Instance = hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts),
+    hb_beamr:stop(Instance),
     {ok, hb_private:set(M1,
         #{
-            <<Prefix/binary, "/Port">> => undefined
+            <<Prefix/binary, "/Instance">> => undefined
         },
         Opts
     )}.
@@ -276,8 +276,8 @@ init_test() ->
     ?event({after_init, Msg1}),
     Priv = hb_private:from_message(Msg1),
     ?assertMatch(
-        {ok, Port} when is_pid(Port),
-        hb_converge:resolve(Priv, <<"WASM/Port">>, #{})
+        {ok, Instance} when is_pid(Instance),
+        hb_converge:resolve(Priv, <<"WASM/Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
@@ -297,8 +297,8 @@ input_prefix_test() ->
     ?event({after_init, Msg2}),
     Priv = hb_private:from_message(Msg2),
     ?assertMatch(
-        {ok, Port} when is_pid(Port),
-        hb_converge:resolve(Priv, <<"Port">>, #{})
+        {ok, Instance} when is_pid(Instance),
+        hb_converge:resolve(Priv, <<"Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
@@ -321,8 +321,8 @@ process_prefixes_test() ->
     ?event({after_init, Msg3}),
     Priv = hb_private:from_message(Msg3),
     ?assertMatch(
-        {ok, Port} when is_pid(Port),
-        hb_converge:resolve(Priv, <<"WASM/Port">>, #{})
+        {ok, Instance} when is_pid(Instance),
+        hb_converge:resolve(Priv, <<"WASM/Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),

@@ -14,7 +14,7 @@
 %%%     ```
 %%%     M1/Computed when /Pass == 1 ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Instance
 %%%             M1/Process
 %%%             M2/Message
 %%%             M2/Assignment/Block-Height
@@ -27,7 +27,7 @@
 %%% 
 %%%     M1/Computed when M2/Pass == 2 ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Instance
 %%%             M2/Results
 %%%             M2/Process
 %%%         Generates:
@@ -54,7 +54,7 @@ compute(M1, M2, Opts) ->
 %% @doc Prepare the WASM environment for execution by writing the process string and
 %% the message as JSON representations into the WASM environment.
 prep_call(M1, M2, Opts) ->
-    Port = hb_private:get(<<"priv/WASM/Port">>, M1, Opts),
+    Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
     Process = hb_converge:get(<<"Process">>, M1, Opts, #{ hashpath => ignore }),
     Assignment = hb_converge:get(<<"Assignment">>, M2, Opts#{ hashpath => ignore }),
     Message = hb_converge:get(<<"Message">>, M2, Opts#{ hashpath => ignore }),
@@ -72,7 +72,7 @@ prep_call(M1, M2, Opts) ->
                 {<<"Block-Height">>, BlockHeight}
             ]
     }),
-    {ok, MsgJsonPtr} = hb_beamr_io:write_string(Port, MsgJson),
+    {ok, MsgJsonPtr} = hb_beamr_io:write_string(Instance, MsgJson),
     ProcessJson =
         jiffy:encode(
             {
@@ -85,7 +85,7 @@ prep_call(M1, M2, Opts) ->
                 ]
             }
         ),
-    {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Port, ProcessJson),
+    {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Instance, ProcessJson),
     {ok,
         hb_converge:set(
             M1,
@@ -101,7 +101,7 @@ prep_call(M1, M2, Opts) ->
 %% the environment has been set up by `prep_call/3' and that the WASM executor
 %% has been called with `computed{pass=1}'.
 results(M1, _M2, Opts) ->
-    Port = hb_private:get(<<"priv/WASM/Port">>, M1, Opts),
+    Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
     Type = hb_converge:get(<<"Results/WASM/Type">>, M1, Opts),
     Proc = hb_converge:get(<<"Process">>, M1, Opts),
     case hb_converge:to_key(Type) of
@@ -121,7 +121,7 @@ results(M1, _M2, Opts) ->
             };
         ok ->
             [Ptr] = hb_converge:get(<<"Results/WASM/Output">>, M1, Opts),
-            {ok, Str} = hb_beamr_io:read_string(Port, Ptr),
+            {ok, Str} = hb_beamr_io:read_string(Instance, Ptr),
             try jiffy:decode(Str, [return_maps]) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     {ok, Data, Messages} = normalize_results(Resp),

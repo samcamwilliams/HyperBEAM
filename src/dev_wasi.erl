@@ -98,13 +98,13 @@ stdout(M) ->
     hb_converge:get(<<"vfs/dev/stdout">>, M).
 
 %% @doc Adds a file descriptor to the state message.
-%path_open(M, Port, [FDPtr, LookupFlag, PathPtr|_]) ->
+%path_open(M, Instance, [FDPtr, LookupFlag, PathPtr|_]) ->
 path_open(Msg1, Msg2, Opts) ->
     FDs = hb_converge:get(<<"File-Descriptors">>, Msg1, Opts),
-    Port = hb_private:get(<<"Port">>, Msg1, Opts),
+    Instance = hb_private:get(<<"Instance">>, Msg1, Opts),
     [FDPtr, LookupFlag, PathPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
     ?event({path_open, FDPtr, LookupFlag, PathPtr}),
-    Path = hb_beamr_io:read_string(Port, PathPtr),
+    Path = hb_beamr_io:read_string(Instance, PathPtr),
     ?event({path_open, Path}),
     FD = #{
         index := Index
@@ -135,27 +135,27 @@ path_open(Msg1, Msg2, Opts) ->
 %% interface.
 fd_write(Msg1, Msg2, Opts) ->
     State = hb_converge:get(<<"State">>, Msg1, Opts),
-    Port = hb_private:get(<<"WASM/Port">>, State, Opts),
+    Instance = hb_private:get(<<"WASM/Instance">>, State, Opts),
     [FD, Ptr, Vecs, RetPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
     ?event({fd_write, {fd, FD}, {ptr, Ptr}, {vecs, Vecs}, {retptr, RetPtr}}),
     Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
     ?event({signature, Signature}),
-    fd_write(State, Port, [FD, Ptr, Vecs, RetPtr], 0, Opts).
+    fd_write(State, Instance, [FD, Ptr, Vecs, RetPtr], 0, Opts).
 
-fd_write(S, Port, [_, _Ptr, 0, RetPtr], BytesWritten, _Opts) ->
+fd_write(S, Instance, [_, _Ptr, 0, RetPtr], BytesWritten, _Opts) ->
     hb_beamr_io:write(
-        Port,
+        Instance,
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
     ),
     {ok, #{ state => S, results => [0] }};
-fd_write(S, Port, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
+fd_write(S, Instance, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
     FDNumStr = integer_to_binary(FDnum),
     FD = hb_converge:get(<<"File-Descriptors/", FDNumStr/binary>>, S, Opts),
     Filename = hb_converge:get(<<"Filename">>, FD, Opts),
     StartOffset = hb_converge:get(<<"Offset">>, FD, Opts),
-    {VecPtr, Len} = parse_iovec(Port, Ptr),
-    {ok, Data} = hb_beamr_io:read(Port, VecPtr, Len),
+    {VecPtr, Len} = parse_iovec(Instance, Ptr),
+    {ok, Data} = hb_beamr_io:read(Instance, VecPtr, Len),
     Before =
         binary:part(
             OrigData = hb_converge:get(<<"Data">>, FD, Opts),
@@ -180,7 +180,7 @@ fd_write(S, Port, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
         ),
     fd_write(
         S2,
-        Port,
+        Instance,
         [FD, Ptr + 16, Vecs - 1, RetPtr],
         BytesWritten + byte_size(Data),
         Opts
@@ -189,25 +189,25 @@ fd_write(S, Port, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
 %% @doc Read from a file using the WASI-p1 standard interface.
 fd_read(Msg1, Msg2, Opts) ->
     State = hb_converge:get(<<"State">>, Msg1, Opts),
-    Port = hb_private:get(<<"WASM/Port">>, State, Opts),
+    Instance = hb_private:get(<<"WASM/Instance">>, State, Opts),
     [FD, VecsPtr, NumVecs, RetPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
     Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
     ?event({signature, Signature}),
-    fd_read(State, Port, [FD, VecsPtr, NumVecs, RetPtr], 0, Opts).
+    fd_read(State, Instance, [FD, VecsPtr, NumVecs, RetPtr], 0, Opts).
 
-fd_read(S, Port, [FD, _VecsPtr, 0, RetPtr], BytesRead, _Opts) ->
+fd_read(S, Instance, [FD, _VecsPtr, 0, RetPtr], BytesRead, _Opts) ->
     ?event({{completed_read, FD, BytesRead}}),
-    hb_beamr_io:write(Port, RetPtr,
+    hb_beamr_io:write(Instance, RetPtr,
         <<BytesRead:64/little-unsigned-integer>>),
     {ok, #{ state => S, results => [0] }};
-fd_read(S, Port, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
+fd_read(S, Instance, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
     ?event({fd_read, FDNum, VecsPtr, NumVecs, RetPtr}),
     % Parse the request
     FDNumStr = integer_to_binary(FDNum),
     Filename =
         hb_converge:get(
             <<"File-Descriptors/", FDNumStr/binary, "/Filename">>, S, Opts),
-    {VecPtr, Len} = parse_iovec(Port, VecsPtr),
+    {VecPtr, Len} = parse_iovec(Instance, VecsPtr),
     % Read the bytes from the file
     Data = hb_converge:get(<<"vfs/", Filename/binary>>, S, Opts),
     Offset =
@@ -215,8 +215,8 @@ fd_read(S, Port, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
             <<"File-Descriptors/", FDNumStr/binary, "/Offset">>, S, Opts),
     ReadSize = min(Len, byte_size(Data) - Offset),
     Bin = binary:part(Data, Offset, ReadSize),
-    % Write the bytes to the WASM port
-    ok = hb_beamr_io:write(Port, VecPtr, Bin),
+    % Write the bytes to the WASM Instance
+    ok = hb_beamr_io:write(Instance, VecPtr, Bin),
     fd_read(
         hb_converge:set(
             S,
@@ -224,15 +224,15 @@ fd_read(S, Port, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
             Offset + ReadSize,
             Opts
         ),
-        Port,
+        Instance,
         [FDNum, VecsPtr + 16, NumVecs - 1, RetPtr],
         BytesRead + ReadSize,
         Opts
     ).
 
 %% @doc Parse an iovec in WASI-preview-1 format.
-parse_iovec(Port, Ptr) ->
-    {ok, VecStruct} = hb_beamr_io:read(Port, Ptr, 16),
+parse_iovec(Instance, Ptr) ->
+    {ok, VecStruct} = hb_beamr_io:read(Instance, Ptr, 16),
     <<
         BinPtr:64/little-unsigned-integer,
         Len:64/little-unsigned-integer
@@ -283,22 +283,22 @@ basic_aos_exec_test() ->
     Init = generate_wasi_stack("test/aos-2-pure-xs.wasm", <<"handle">>, []),
     Msg = gen_test_aos_msg("return 1+1"),
     Env = gen_test_env(),
-    Port = hb_private:get(<<"WASM/Port">>, Init, #{}),
-    {ok, Ptr1} = hb_beamr_io:malloc(Port, byte_size(Msg)),
+    Instance = hb_private:get(<<"WASM/Instance">>, Init, #{}),
+    {ok, Ptr1} = hb_beamr_io:malloc(Instance, byte_size(Msg)),
     ?assertNotEqual(0, Ptr1),
-    hb_beamr_io:write(Port, Ptr1, Msg),
-    {ok, Ptr2} = hb_beamr_io:malloc(Port, byte_size(Env)),
+    hb_beamr_io:write(Instance, Ptr1, Msg),
+    {ok, Ptr2} = hb_beamr_io:malloc(Instance, byte_size(Env)),
     ?assertNotEqual(0, Ptr2),
-    hb_beamr_io:write(Port, Ptr2, Env),
+    hb_beamr_io:write(Instance, Ptr2, Env),
     % Read the strings to validate they are correctly passed
-    {ok, MsgBin} = hb_beamr_io:read(Port, Ptr1, byte_size(Msg)),
-    {ok, EnvBin} = hb_beamr_io:read(Port, Ptr2, byte_size(Env)),
+    {ok, MsgBin} = hb_beamr_io:read(Instance, Ptr1, byte_size(Msg)),
+    {ok, EnvBin} = hb_beamr_io:read(Instance, Ptr2, byte_size(Env)),
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
     Ready = Init#{ <<"WASM-Params">> => [Ptr1, Ptr2] },
     {ok, StateRes} = hb_converge:resolve(Ready, <<"Compute">>, #{}),
     [Ptr] = hb_converge:get(<<"Results/WASM/Output">>, StateRes),
-    {ok, Output} = hb_beamr_io:read_string(Port, Ptr),
+    {ok, Output} = hb_beamr_io:read_string(Instance, Ptr),
     ?event({got_output, Output}),
     #{ <<"response">> := #{ <<"Output">> := #{ <<"data">> := Data }} }
         = jiffy:decode(Output, [return_maps]),
