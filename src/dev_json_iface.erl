@@ -206,7 +206,7 @@ test_init() ->
 generate_stack(File) ->
     test_init(),
     Wallet = hb:wallet(),
-    Msg0 = dev_wasm:store_wasm_image(File),
+    Msg0 = dev_wasm:cache_wasm_image(File),
     Image = hb_converge:get(<<"Image">>, Msg0, #{}),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,

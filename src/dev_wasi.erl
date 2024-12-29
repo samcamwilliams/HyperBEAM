@@ -252,7 +252,7 @@ init() ->
 
 generate_wasi_stack(File, Func, Params) ->
     init(),
-    Msg0 = dev_wasm:store_wasm_image(File),
+    Msg0 = dev_wasm:cache_wasm_image(File),
     Msg1 = Msg0#{
         device => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"WASI/1.0">>, <<"WASM-64/1.0">>],

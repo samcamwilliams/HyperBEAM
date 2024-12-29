@@ -373,7 +373,7 @@ test_base_process() ->
     }.
 
 test_wasm_process(WASMImage) ->
-    #{ image := WASMImageID } = dev_wasm:store_wasm_image(WASMImage),
+    #{ image := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
     maps:merge(test_base_process(), #{
         <<"Execution-Device">> => <<"Stack/1.0">>,
         <<"Device-Stack">> => [<<"WASM-64/1.0">>],
@@ -395,7 +395,7 @@ test_aos_process() ->
             ],
         <<"Output-Prefix">> => <<"WASM">>,
         <<"Passes">> => 2,
-        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
+        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>, <<"State">>],
         <<"Scheduler">> => hb:address(),
         <<"Authority">> => hb:address()
     }), Wallet).

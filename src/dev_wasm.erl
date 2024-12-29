@@ -37,7 +37,7 @@
 -export([init/3, compute/3, import/3, terminate/3]).
 -export([state/3]).
 %%% Test API:
--export([store_wasm_image/1]).
+-export([cache_wasm_image/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -298,7 +298,7 @@ init() ->
 
 init_test() ->
     init(),
-    Msg = store_wasm_image("test/test.wasm"),
+    Msg = cache_wasm_image("test/test.wasm"),
     {ok, Msg1} = hb_converge:resolve(Msg, <<"Init">>, #{}),
     ?event({after_init, Msg1}),
     Priv = hb_private:from_message(Msg1),
@@ -313,7 +313,7 @@ init_test() ->
 
 input_prefix_test() ->
     init(),
-    #{ image := ImageID } = store_wasm_image("test/test.wasm"),
+    #{ image := ImageID } = cache_wasm_image("test/test.wasm"),
     Msg1 =
         #{
             <<"Device">> => <<"WASM-64/1.0">>,
@@ -342,7 +342,7 @@ process_prefixes_test() ->
             <<"Device">> => <<"WASM-64/1.0">>,
             <<"Output-Prefix">> => <<"WASM">>,
             <<"Input-Prefix">> => <<"Process">>,
-            <<"Process">> => store_wasm_image("test/test.wasm")
+            <<"Process">> => cache_wasm_image("test/test.wasm")
         },
     {ok, Msg3} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
     ?event({after_init, Msg3}),
@@ -385,7 +385,7 @@ imported_function_test() ->
 benchmark_test() ->
     BenchTime = 0.5,
     init(),
-    Msg0 = store_wasm_image("test/test-64.wasm"),
+    Msg0 = cache_wasm_image("test/test-64.wasm"),
     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
     Msg2 =
         maps:merge(
@@ -417,7 +417,7 @@ state_export_and_restore_test() ->
     init(),
     % Generate a WASM message. We use the pow_calculator because it has a 
     % reasonable amount of memory to work with.
-    Msg0 = store_wasm_image("test/pow_calculator.wasm"),
+    Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
     Msg2 =
         maps:merge(
@@ -447,7 +447,7 @@ state_export_and_restore_test() ->
 
 %%% Test helpers
 
-store_wasm_image(Image) ->
+cache_wasm_image(Image) ->
     {ok, Bin} = file:read_file(Image),
     Msg = #{ <<"Body">> => Bin },
     {ok, ID} = hb_cache:write(Msg, #{}),
@@ -458,7 +458,7 @@ store_wasm_image(Image) ->
 
 test_run_wasm(File, Func, Params, AdditionalMsg) ->
     init(),
-    Msg0 = store_wasm_image(File),
+    Msg0 = cache_wasm_image(File),
     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
     ?event({after_init, Msg1}),
     Msg2 =
