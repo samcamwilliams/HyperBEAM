@@ -93,29 +93,29 @@ is_human_binary(_) -> false.
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
-  b64fast:encode(Bin).
+    b64fast:encode(Bin).
 
 %% @doc Try to decode a URL safe base64 into a binary or throw an error when
 %% invalid.
 decode(Input) ->
-  b64fast:decode(Input).
+    b64fast:decode(Input).
 
 %% @doc Safely encode a binary to URL safe base64.
 safe_encode(Bin) when is_binary(Bin) ->
-  encode(Bin);
+    encode(Bin);
 safe_encode(Bin) ->
-  Bin.
+    Bin.
 
 %% @doc Safely decode a URL safe base64 into a binary returning an ok or error
 %% tuple.
 safe_decode(E) ->
-  try
-    D = decode(E),
-    {ok, D}
-  catch
-    _:_ ->
-    {error, invalid}
-  end.
+    try
+        D = decode(E),
+        {ok, D}
+    catch
+        _:_ ->
+        {error, invalid}
+    end.
 
 %% @doc Label a list of elements with a number.
 number(List) ->
@@ -126,7 +126,7 @@ number(List) ->
 
 %% @doc Convert a list of elements to a map with numbered keys.
 list_to_numbered_map(List) ->
-  maps:from_list(number(List)).
+    maps:from_list(number(List)).
 
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer and a value. Optionally, it takes a
@@ -182,22 +182,18 @@ hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
 
 %% @doc Find the value associated with a key in parsed a JSON structure list.
 find_value(Key, List) ->
-  hb_util:find_value(Key, List, undefined).
+    find_value(Key, List, undefined).
 
 find_value(Key, Map, Default) when is_map(Map) ->
-  case maps:find(Key, Map) of
-    {ok, Value} ->
-    Value;
-    error ->
-    Default
-  end;
+    case maps:find(Key, Map) of
+        {ok, Value} -> Value;
+        error -> Default
+    end;
 find_value(Key, List, Default) ->
-  case lists:keyfind(Key, 1, List) of
-    {Key, Val} ->
-    Val;
-    false ->
-    Default
-  end.
+    case lists:keyfind(Key, 1, List) of
+        {Key, Val} -> Val;
+        false -> Default
+    end.
 
 %% @doc Remove the common prefix from two strings, returning the remainder of the
 %% first string. This function also coerces lists to binaries where appropriate,
