@@ -47,7 +47,7 @@
 %%%                      assignments, in addition to `/Results'.
 -module(dev_process).
 %%% Public API
--export([info/1, compute/3, schedule/3, slot/3, now/3, push/3]).
+-export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, memory/3]).
 -export([ensure_process_key/2]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
@@ -75,6 +75,10 @@ slot(Msg1, Msg2, Opts) ->
 
 next(Msg1, _Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, next, Opts).
+
+memory(RawMsg1, _Msg2, Opts) ->
+    Msg1 = ensure_process_key(RawMsg1, Opts),
+    run_as(<<"Execution">>, Msg1, #{ path => <<"Memory">> }, Opts).
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves. We set the
@@ -126,9 +130,17 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             ?event({reached_target_slot_returning_state, TargetSlot}),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
+            ?event(debug, {normalizing, {msg1, Msg1}, {opts, Opts}}),
+            {ok, Normalized} = 
+                run_as(
+                    <<"Execution">>,
+                    Msg1,
+                    #{ <<"Path">> => <<"Normalize">> },
+                    Opts#{ hashpath => ignore }
+                ),
             % Get the next input from the scheduler device.
             {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
-                next(Msg1, Msg2, Opts),
+                next(Normalized, Msg2, Opts),
             % Calculate how much of the state should be cached.
             Freq =
                 hb_opts:get(
@@ -271,7 +283,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % loaded state. This allows the devices to load any
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
-                    ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    ?event(debug, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     run_as(
                         <<"Execution">>,
                         MsgFromCache,
@@ -296,8 +308,6 @@ ensure_loaded(Msg1, Msg2, Opts) ->
 %% the device found at `Key'. After execution, the device is swapped back
 %% to the original device if the device is the same as we left it.
 run_as(Key, Msg1, Msg2, Opts) ->
-    run_as(Key, Msg1, Msg2, Opts, #{}).
-run_as(Key, Msg1, Msg2, Opts, ExtraOpts) ->
     BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),
     ?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok, PreparedMsg} =
@@ -322,11 +332,12 @@ run_as(Key, Msg1, Msg2, Opts, ExtraOpts) ->
             },
             Opts
         ),
+    %?event(debug, {resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
     {ok, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,
             Msg2,
-            maps:merge(Opts, ExtraOpts)
+            Opts
         ),
     case BaseResult of
         #{ device := DeviceSet } ->
@@ -395,7 +406,13 @@ test_aos_process() ->
             ],
         <<"Output-Prefix">> => <<"WASM">>,
         <<"Passes">> => 2,
-        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>, <<"State">>],
+        <<"Stack-Keys">> =>
+            [
+                <<"Init">>,
+                <<"Compute">>,
+                <<"Memory">>,
+                <<"Normalize">>
+            ],
         <<"Scheduler">> => hb:address(),
         <<"Authority">> => hb:address()
     }), Wallet).
@@ -557,6 +574,51 @@ aos_compute_test_() ->
         ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})),
         {ok, Msg5}
     end}.
+
+%% @doc Manually test state restoration without using the cache.
+manually_restore_state_test() ->
+    % Init the process and schedule 2 messages:
+    % 1. Set a variable in Lua.
+    % 2. Return the variable.
+    init(),
+    Msg1 = test_aos_process(),
+    schedule_aos_call(Msg1, <<"X = 1337">>),
+    schedule_aos_call(Msg1, <<"return X">>),
+    % Compute the first message.
+    {ok, ForkState} =
+        hb_converge:resolve(
+            Msg1,
+            #{ path => <<"Compute">>, <<"Slot">> => 0 },
+            #{}
+        ),
+    % Get the state after the first message.
+    {ok, State} = hb_converge:resolve(ForkState, <<"Memory">>, #{}),
+    % % Calculate the second message to ensure it functions correctly.
+    % {ok, ResultA} =
+    %     hb_converge:resolve(
+    %         ForkState,
+    %         #{ path => <<"Compute">>, <<"Slot">> => 1 },
+    %         #{}
+    %     ),
+    % ?event(debug, {result_a, ResultA}),
+    % ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultA, #{})),
+    % Destroy the private state of the message after the first state, 
+    % as will happen when it is serialized.
+    Priv = hb_private:from_message(ForkState),
+    ?event(debug, {destroying_private_state, Priv}),
+    NewState = hb_private:reset(ForkState),
+    % Compute the second message on the process without its private state.
+    {ok, ResultB} =
+        hb_converge:resolve(
+            NewState#{
+                <<"Memory">> => State,
+                <<"Results">> => #{}
+            },
+            #{ path => <<"Compute">>, <<"Slot">> => 1 },
+            #{}
+        ),
+    ?event(debug, {result_b, ResultB}),
+    ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).
 
 now_results_test() ->
     init(),
