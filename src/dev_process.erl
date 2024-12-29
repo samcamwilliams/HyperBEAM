@@ -282,7 +282,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % loaded state. This allows the devices to load any
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
-                    ?event(debug, {loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
                     run_as(
                         <<"Execution">>,
                         MsgFromCache,
@@ -331,7 +331,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
             },
             Opts
         ),
-    %?event(debug, {resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
+    %?event({resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
     {ok, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,
@@ -599,12 +599,12 @@ manually_restore_state_test() ->
     %         #{ path => <<"Compute">>, <<"Slot">> => 1 },
     %         #{}
     %     ),
-    % ?event(debug, {result_a, ResultA}),
+    % ?event({result_a, ResultA}),
     % ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultA, #{})),
     % Destroy the private state of the message after the first state, 
     % as will happen when it is serialized.
     Priv = hb_private:from_message(ForkState),
-    ?event(debug, {destroying_private_state, Priv}),
+    ?event({destroying_private_state, Priv}),
     NewState = hb_private:reset(ForkState),
     % Compute the second message on the process without its private state.
     {ok, ResultB} =
@@ -616,7 +616,7 @@ manually_restore_state_test() ->
             #{ path => <<"Compute">>, <<"Slot">> => 1 },
             #{}
         ),
-    ?event(debug, {result_b, ResultB}),
+    ?event({result_b, ResultB}),
     ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).
 
 now_results_test() ->

@@ -189,14 +189,14 @@ normalize(RawM1, M2, Opts) ->
     M3 = 
         case instance(RawM1, M2, Opts) of
             not_found ->
-                ?event(debug, {no_wasm_instance_or_state, {msg1, RawM1}}),
+                ?event({no_wasm_instance_or_state, {msg1, RawM1}}),
                 case hb_converge:get(<<"Memory">>, {as, dev_message, RawM1}, Opts) of
                     not_found -> throw({error, no_wasm_instance_or_state});
                     State ->
-                        ?event(debug, {state_found, {state, State}}),
+                        ?event({state_found, {state, State}}),
                         {ok, M1} = init(RawM1, State, Opts),
                         Res = hb_beamr:deserialize(instance(M1, M2, Opts), State),
-                        ?event(debug, {wasm_deserialized, {result, Res}}),
+                        ?event({wasm_deserialized, {result, Res}}),
                         M1
                 end;
             _ -> RawM1

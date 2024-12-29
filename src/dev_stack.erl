@@ -723,6 +723,5 @@ simple_map_test() ->
             #{ path => append, <<"Mode">> => <<"Map">>, bin => <<"/">> },
             #{}
         ),
-    ?event(debug, {map, Msg3}),
     ?assertMatch(<<"INIT+D1/">>, hb_converge:get(<<"1/Result">>, Msg3, #{})),
     ?assertMatch(<<"INIT+D2/">>, hb_converge:get(<<"2/Result">>, Msg3, #{})).
