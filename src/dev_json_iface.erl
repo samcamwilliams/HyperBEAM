@@ -194,7 +194,7 @@ preprocess_results(Msg, Proc, Opts) ->
         ),
         Tags#{
             <<"From-Process">> => hb_converge:get(id, Proc, Opts),
-            <<"From-Image">> => hb_converge:get(<<"WASM-Image">>, Proc, Opts)
+            <<"From-Image">> => hb_converge:get(<<"Image">>, Proc, Opts)
         }
     ).
 
