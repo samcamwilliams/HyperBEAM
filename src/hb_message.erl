@@ -104,6 +104,11 @@ format(Map, Indent) when is_map(Map) ->
         ),
     % Put the path and device rows into the output at the _top_ of the map.
     PriorityKeys = [{<<"Path">>, ValOrUndef(path)}, {<<"Device">>, ValOrUndef(device)}],
+    FooterKeys =
+        case hb_private:from_message(Map) of
+            PrivMap when map_size(PrivMap) == 0 -> [];
+            PrivMap -> [{<<"!Private!">>, PrivMap}]
+        end,
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
         FilterUndef(PriorityKeys) ++
@@ -112,7 +117,7 @@ format(Map, Indent) when is_map(Map) ->
                 [owner, signature, id, unsigned_id, hashpath, path, device]
                 ++ [<<"Device">>, <<"Path">>] % Hack: Until key capitalization is fixed.
             )
-        ),
+        ) ++ FooterKeys,
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
         fun({Key, Val}) ->
@@ -148,7 +153,7 @@ format(Map, Indent) when is_map(Map) ->
         KeyVals
     ),
     case Res of
-        [] -> lists:flatten(Header ++ hb_util:format_indented(" [Empty] }", Indent));
+        [] -> lists:flatten(Header ++ " [Empty] }");
         _ ->
             lists:flatten(
                 Header ++ ["\n"] ++ Res ++ hb_util:format_indented("}", Indent)
