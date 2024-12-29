@@ -328,13 +328,21 @@ format_binary(Bin) ->
     lists:flatten(
         [
             "\"",
-            PrintSegment,
+            [PrintSegment],
             case Printable == Bin of
-                true -> ["\""];
-                false -> io_lib:format("\"... <~p bytes>", [byte_size(Bin)])
+                true -> "\"";
+                false ->
+                    io_lib:format("...\" <~s bytes>", [human_int(byte_size(Bin))])
             end
         ]
     ).
+
+%% @doc Add `,` characters to a number every 3 digits to make it human readable.
+human_int(Int) ->
+    lists:reverse(add_commas(lists:reverse(integer_to_list(Int)))).
+
+add_commas([A,B,C,Z|Rest]) -> [A,B,C,$,|add_commas([Z|Rest])];
+add_commas(List) -> List.
 
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
