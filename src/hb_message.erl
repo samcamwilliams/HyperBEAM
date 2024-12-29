@@ -47,34 +47,70 @@ format(Bin, Indent) when is_binary(Bin) ->
         Indent
     );
 format(Map, Indent) when is_map(Map) ->
-    % We try to get the IDs _if_ they are *already* in the map. We do not force
-    % calculation of the IDs here because that may cause significant overhead.
-    SignedID = dev_message:get(id, Map, #{}),
-    UnsignedID = dev_message:get(unsigned_id, Map, #{}),
-    IDStr =
-        case {SignedID, UnsignedID} of
-            {{_, not_found}, {_, not_found}} -> "";
-            {{_, SID}, {_, USID}} when (SID == USID) or (SID == not_found) ->
-                io_lib:format("[ U: ~s ] ",
-                    [hb_util:short_id(USID)]);
-            {{_, SID}, {_, _}} ->
-                io_lib:format("[ ID: ~s ] ", [hb_util:short_id(SID)]);
-            {{_, SID}, {_, USID}} ->
-                io_lib:format("[ ID: ~s, U: ~s ] ",
-                    [hb_util:short_id(SID), hb_util:short_id(USID)])
+    % Define helper functions for formatting elements of the map.
+    ValOrUndef =
+        fun(Key) ->
+            case dev_message:get(Key, Map, #{}) of
+                {ok, Val} ->
+                    case hb_util:short_id(Val) of
+                        undefined -> Val;
+                        ShortID -> ShortID
+                    end;
+                {error, _} -> undefined
+            end
         end,
-    SignerStr =
+    FilterUndef = 
+        fun(List) ->
+            lists:filter(fun({_, undefined}) -> false; (_) -> true end, List)
+        end,
+    % Prepare the metadata row for formatting.
+    % Note: We try to get the IDs _if_ they are *already* in the map. We do not
+    % force calculation of the IDs here because that may cause significant
+    % overhead.
+    IDMetadata =
+        [
+            {<<"#P">>, ValOrUndef(hashpath)},
+            {<<"*U">>, ValOrUndef(unsigned_id)},
+            {<<"*S">>, ValOrUndef(id)}
+        ],
+    SignerMetadata =
         case signers(Map) of
-            [] -> "";
+            [] -> [];
             [Signer] ->
-                io_lib:format(" [Signer: ~s] ", [hb_util:short_id(Signer)]);
+                [{<<"Sig">>, hb_util:short_id(Signer)}];
             Signers ->
-                io_lib:format(" [Signers: ~s] ",
-                    [string:join(lists:map(fun hb_util:short_id/1, Signers), ", ")])
+                [
+                    {
+                        <<"Sigs">>,
+                        string:join(lists:map(fun hb_util:short_id/1, Signers), ", ")
+                    }
+                ]
         end,
+    % Concatenate the present metadata rows.
+    Metadata = FilterUndef(lists:flatten([IDMetadata, SignerMetadata])),
+    % Format the metadata row.
     Header =
-        hb_util:format_indented("Message ~s~s{~n",
-            [lists:flatten(IDStr), SignerStr], Indent),
+        hb_util:format_indented("Message [~s] {",
+            [
+                string:join(
+                    [
+                        io_lib:format("~s: ~s", [Lbl, Val])
+                        || {Lbl, Val} <- Metadata
+                    ],
+                    ", "
+                )
+            ],
+            Indent
+        ),
+    % Put the path and device rows into the output at the _top_ of the map.
+    PriorityKeys = [{<<"Path">>, ValOrUndef(path)}, {<<"Device">>, ValOrUndef(device)}],
+    % Concatenate the path and device rows with the rest of the key values.
+    KeyVals =
+        FilterUndef(PriorityKeys) ++
+        maps:to_list(
+            minimize(Map, [owner, signature, id, unsigned_id, hashpath, path, device])
+        ),
+    % Format the remaining 'normal' keys and values.
     Res = lists:map(
         fun({Key, Val}) ->
             NormKey = hb_converge:to_key(Key, #{ error_strategy => ignore }),
@@ -83,18 +119,20 @@ format(Map, Indent) when is_map(Map) ->
                     undefined ->
                         io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
                     _ ->
-                        io_lib:format("~s", [hb_converge:key_to_binary(Key)])
+                        hb_converge:key_to_binary(Key)
                 end,
             hb_util:format_indented(
-                "~s := ~s~n",
+                "~s => ~s~n",
                 [
-                    lists:flatten(KeyStr),
+                    lists:flatten([KeyStr]),
                     case Val of
                         NextMap when is_map(NextMap) ->
                             hb_util:format_map(NextMap, Indent + 2);
                         _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
                             Short = hb_util:short_id(Val),
-                            io_lib:format("~s*", [Short]);
+                            io_lib:format("~s [*]", [Short]);
+                        _ when byte_size(Val) == 88 ->
+                            io_lib:format("~s [#p]", [hb_util:short_id(Val)]);
                         Bin when is_binary(Bin) ->
                             hb_util:format_binary(Bin);
                         Other ->
@@ -104,13 +142,13 @@ format(Map, Indent) when is_map(Map) ->
                 Indent + 1
             )
         end,
-        maps:to_list(minimize(Map))
+        KeyVals
     ),
     case Res of
-        [] -> "[Empty map]";
+        [] -> lists:flatten(Header ++ hb_util:format_indented(" [Empty] }", Indent));
         _ ->
             lists:flatten(
-                Header ++ Res ++ hb_util:format_indented("}", Indent)
+                Header ++ ["\n"] ++ Res ++ hb_util:format_indented("}", Indent)
             )
     end;
 format(Item, Indent) ->

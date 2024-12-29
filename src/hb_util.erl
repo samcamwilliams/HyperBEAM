@@ -62,11 +62,34 @@ human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin.
 
+%% @doc Return a short ID for the different types of IDs used in Converge.
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
     short_id(human_id(Bin));
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
-    << FirstTag/binary, "..", LastTag/binary >>.
+    << FirstTag/binary, "..", LastTag/binary >>;
+short_id(<<"/", SingleElemHashpath>>) ->
+    << "/", (short_id(SingleElemHashpath))/binary >>;
+short_id(Bin) when byte_size(Bin) == 88 ->
+    case binary:split(Bin, <<"/">>, [trim_all, global]) of
+        [First, Last] ->
+            << "/", (short_id(First))/binary, "/", (short_id(Last))/binary >>;
+        _ ->
+            ?event({explicit, byte_size(Bin)}),
+            Bin
+    end;
+short_id(Bin) when is_binary(Bin) ->
+    ?event({explicit, byte_size(Bin)}),
+    undefined;
+short_id(_) -> undefined.
+
+%% @doc Determine whether a binary is human-readable.
+is_human_binary(Bin) when is_binary(Bin) ->
+    case unicode:characters_to_binary(Bin) of
+        {error, _, _} -> false;
+        _ -> true
+    end;
+is_human_binary(_) -> false.
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
@@ -301,19 +324,20 @@ format_binary(Bin) ->
                 _ -> MaxBinPrint
             end
         ),
-    PrintSegment = lists:flatten(io_lib:format("~p", [Printable])),
+    PrintSegment =
+        case is_human_binary(Printable) of
+            true -> Printable;
+            false -> encode(Printable)
+        end,
     lists:flatten(
-        io_lib:format(
-            "~s~s <~p bytes>",
-            [
-                PrintSegment,
-                case Bin == Printable of
-                    true -> "";
-                    false -> "..."
-                end,
-                byte_size(Bin)
-            ]
-        )
+        [
+            "\"",
+            PrintSegment,
+            case Printable == Bin of
+                true -> ["\""];
+                false -> io_lib:format("\"... <~p bytes>", [byte_size(Bin)])
+            end
+        ]
     ).
 
 %% @doc Format a map as either a single line or a multi-line string depending
