@@ -357,8 +357,12 @@ format_map(Map, Indent) ->
     end.
 
 %% @doc Format and print an indented string to standard error.
-eunit_print(Str, Fmt) ->
-    io:format(standard_error, "~n~s~n", [hb_util:format_indented(Str, Fmt, 4)]).
+eunit_print(FmtStr, FmtArgs) ->
+    io:format(
+        standard_error,
+        "~n~s ",
+        [hb_util:format_indented(FmtStr ++ "...", FmtArgs, 4)]
+    ).
 
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module. Prints each stack frame on a new line, until it finds a frame that
