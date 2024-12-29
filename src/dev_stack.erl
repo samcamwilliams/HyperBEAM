@@ -1,7 +1,9 @@
-%%% @doc A device that contains a stack of other devices, which it runs
-%%% upon input messages in the order of their keys. A stack maintains and passes
-%%% forward a state (expressed as a message) as it progresses through devices,
-%%% in a similar manner to a `fold' operation.
+%%% @doc A device that contains a stack of other devices, and manages their
+%%% execution. It can run in two modes: fold (the default), and map.
+%%% 
+%%% In fold mode, it runs upon input messages in the order of their keys. A
+%%% stack maintains and passes forward a state (expressed as a message) as it
+%%% progresses through devices.
 %%%
 %%% For example, a stack of devices as follows:
 %%% ```
@@ -17,6 +19,16 @@
 %%%  ```
 %%% #{ Path = "FuncName", binary => <<"3">> }
 %%% {ok, #{ bin => <<"3">> }}'''
+%%% 
+%%% In map mode, the stack will run over all the devices in the stack, and
+%%% combine their results into a single message. Each of the devices'
+%%% output values have a key that is the device's name in the `Device-Stack`
+%%% (its number if the stack is a list).
+%%% 
+%%% You can switch between fold and map modes by setting the `Mode` key in the
+%%% `Msg2` to either `Fold` or `Map`, or set it globally for the stack by
+%%% setting the `Mode` key in the `Msg1` message. The key in `Msg2` takes
+%%% precedence over the key in `Msg1`.
 %%%
 %%% The key that is called upon the device stack is the same key that is used
 %%% upon the devices that are contained within it. For example, in the above
@@ -29,7 +41,7 @@
 %%% 
 %%%     `pass': Causes the stack to increment its pass number and re-execute
 %%%             the stack from the first device, maintaining the state 
-%%%             accumulated so far.
+%%%             accumulated so far. Only available in fold mode.
 %%%
 %%% In all cases, the device stack will return the accumulated state to the
 %%% caller as the result of the call to the stack.
@@ -120,39 +132,22 @@ router(transform, Message1, _Message2, Opts) ->
 	transformer_message(Message1, Opts);
 router(_Key, Message1, Message2, Opts) ->
 	?event({router_called, {msg1, Message1}, {msg2, Message2}}),
-	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
     PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),
-	?event({got_device_key, InitDevMsg}),
-	case resolve_stack(PreparedMessage, Message2, Opts) of
-		{ok, Result} when is_map(Result) ->
-			?event({router_result, ok, Result}),
-            % Reset the Stack-specific keys.
-            dev_message:set(
-                    Result,
-                #{
-                    device => InitDevMsg,
-                    <<"Input-Prefix">> =>
-                        hb_converge:get(
-                            <<"Previous-Input-Prefix">>,
-                            {as, dev_message, Result},
-                            undefined,
-                            Opts
-                        ),
-                    <<"Output-Prefix">> =>
-                        hb_converge:get(
-                            <<"Previous-Output-Prefix">>,
-                            {as, dev_message, Result},
-                            undefined,
-                            Opts
-                        ),
-                    <<"Device-Stack-Previous">> => unset
-                },
-                Opts
-            );
-		Else ->
-			?event({router_result, unexpected, Else}),
-			Else
-	end.
+    Mode =
+        case hb_converge:get(<<"Mode">>, Message2, not_found, Opts) of
+            not_found ->
+                hb_converge:get(
+                    <<"Mode">>,
+                    {as, dev_message, Message1},
+                    <<"Fold">>,
+                    Opts
+                );
+            Msg2Mode -> Msg2Mode
+        end,
+    case Mode of
+        <<"Fold">> -> resolve_fold(PreparedMessage, Message2, Opts);
+        <<"Map">> -> resolve_map(PreparedMessage, Message2, Opts)
+    end.
 
 %% @doc Return a message which, when given a key, will transform the message
 %% such that the device named `Key' from the `Device-Stack' key in the message
@@ -252,19 +247,48 @@ transform(Msg1, Key, Opts) ->
 
 %% @doc The main device stack execution engine. See the moduledoc for more
 %% information.
-resolve_stack(Message1, Message2, Opts) ->
-    resolve_stack(Message1, Message2, 1, Opts).
-resolve_stack(Message1, Message2, DevNum, Opts) ->
+resolve_fold(Message1, Message2, Opts) ->
+	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
+    case resolve_fold(Message1, Message2, 1, Opts) of
+        {ok, Raw} when not is_map(Raw) ->
+            {ok, Raw};
+        {ok, Result} ->
+            dev_message:set(
+                Result,
+                #{
+                    device => InitDevMsg,
+                    <<"Input-Prefix">> =>
+                        hb_converge:get(
+                            <<"Previous-Input-Prefix">>,
+                            {as, dev_message, Result},
+                            undefined,
+                            Opts
+                        ),
+                    <<"Output-Prefix">> =>
+                        hb_converge:get(
+                            <<"Previous-Output-Prefix">>,
+                            {as, dev_message, Result},
+                            undefined,
+                            Opts
+                        ),
+                    <<"Device-Stack-Previous">> => unset
+                },
+                Opts
+            );
+        Else ->
+            Else
+    end.
+resolve_fold(Message1, Message2, DevNum, Opts) ->
 	case transform(Message1, DevNum, Opts) of
 		{ok, Message3} ->
 			?event({stack_execute, DevNum, {msg1, Message3}, {msg2, Message2}}),
 			case hb_converge:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
-					resolve_stack(Message4, Message2, DevNum + 1, Opts);
+					resolve_fold(Message4, Message2, DevNum + 1, Opts);
                 {error, not_found} ->
                     ?event({skipping_device, not_found, DevNum, Message3}),
-                    resolve_stack(Message3, Message2, DevNum + 1, Opts);
+                    resolve_fold(Message3, Message2, DevNum + 1, Opts);
                 {ok, RawResult} ->
                     ?event({returning_raw_result, RawResult}),
                     {ok, RawResult};
@@ -273,32 +297,15 @@ resolve_stack(Message1, Message2, DevNum, Opts) ->
 					{ok, Message4};
 				{pass, Message4} when is_map(Message4) ->
                     ?event({result, pass, {dev, DevNum}, Message4}),
-                    resolve_stack(
-                        hb_converge:set(
-                            Message4,
-                            #{
-                                pass =>
-                                    hb_converge:get(
-                                        pass,
-                                        Message4,
-                                        Opts
-                                    ) + 1
-                            },
-                            Opts
-                        ),
+                    resolve_fold(
+                        increment_pass(Message4, Opts),
                         Message2,
                         1,
                         Opts
                     );
 				{error, Info} ->
 					?event({result, error, {dev, DevNum}, Info}),
-					maybe_error(
-						Message1,
-						Message2,
-						DevNum,
-						Info,
-						Opts
-					);
+					maybe_error(Message1, Message2, DevNum, Info, Opts);
 				Unexpected ->
 					?event({result, unexpected, {dev, DevNum}, Unexpected}),
 					maybe_error(
@@ -314,6 +321,38 @@ resolve_stack(Message1, Message2, DevNum, Opts) ->
 			{ok, Message1}
 	end.
 
+%% @doc Map over the devices in the stack, accumulating the output in a single
+%% message of keys and values, where keys are the same as the keys in the
+%% original message (typically a number).
+resolve_map(Message1, Message2, Opts) ->
+    ?event({resolving_map, {msg1, Message1}, {msg2, Message2}}),
+    DevKeys =
+        hb_converge:get(
+            <<"Device-Stack">>,
+            {as, dev_message, Message1},
+            Opts#{ hashpath => ignore }
+        ),
+    {ok,
+        maps:filtermap(
+            fun(Key, _Dev) ->
+                {ok, OrigWithDev} = transform(Message1, Key, Opts),
+                case hb_converge:resolve(OrigWithDev, Message2, Opts) of
+                    {ok, Value} -> {true, Value};
+                    _ -> false
+                end
+            end,
+            maps:without([hashpath], DevKeys)
+        )
+    }.
+
+%% @doc Helper to increment the pass number.
+increment_pass(Message, Opts) ->
+    hb_converge:set(
+        Message,
+        #{ pass => hb_converge:get(pass, Message, 1, Opts) + 1 },
+        Opts
+    ).
+
 maybe_error(Message1, Message2, DevNum, Info, Opts) ->
     case hb_opts:get(error_strategy, throw, Opts) of
         stop ->
@@ -328,35 +367,6 @@ maybe_error(Message1, Message2, DevNum, Info, Opts) ->
                     {info, Info}
                 },
                 []
-            );
-        continue ->
-            ?no_prod(
-                "This could cause non-deterministic behavior as a result of Opts!"),
-			?event({continue_stack_execution_after_error, Message1, Info}),
-            resolve_stack(
-                hb_converge:set(Message1,
-                    [
-                        <<"Errors">>,
-                        hb_converge:get(id, Message1, Opts),
-                        hb_converge:get(pass, Message1, Opts),
-                        DevNum,
-                        hb_util:debug_fmt(Info)
-                    ],
-                    Opts
-                ),
-                Message2,
-                DevNum + 1,
-                Opts
-            );
-        ignore ->
-            ?no_prod(
-                "This could cause non-deterministic behavior as a result of Opts!"),
-			?event({ignoring_stack_error, Message1, Info}),
-            resolve_stack(
-                Message1,
-                Message2,
-                DevNum + 1,
-                Opts
             )
     end.
 
@@ -495,7 +505,7 @@ many_devices_test() ->
 	).
 
 benchmark_test() ->
-    BenchTime = 0.5,
+    BenchTime = 0.3,
 	Msg = #{
 		device => <<"Stack/1.0">>,
 		<<"Device-Stack">> =>
@@ -567,7 +577,6 @@ output_prefix_test() ->
             <<"Example">> => 1
         },
     {ok, Ex2Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
-    ?event(debug, {ex2, Ex2Msg3}),
     ?assertMatch(1,
         hb_converge:get(<<"Out1/Example">>, {as, dev_message, Ex2Msg3}, #{})),
     ?assertMatch(1,
@@ -694,3 +703,23 @@ not_found_test() ->
 		Msg3
 	),
     ?assertEqual(1337, hb_converge:get(<<"Special/Output">>, Msg3, #{})).
+
+simple_map_test() ->
+    Msg = #{
+        device => <<"Stack/1.0">>,
+        <<"Device-Stack">> =>
+            #{
+                <<"1">> => generate_append_device(<<"+D1">>),
+                <<"2">> => generate_append_device(<<"+D2">>)
+            },
+        result => <<"INIT">>
+    },
+    {ok, Msg3} =
+        hb_converge:resolve(
+            Msg,
+            #{ path => append, <<"Mode">> => <<"Map">>, bin => <<"/">> },
+            #{}
+        ),
+    ?event(debug, {map, Msg3}),
+    ?assertMatch(<<"INIT+D1/">>, hb_converge:get(<<"1/Result">>, Msg3, #{})),
+    ?assertMatch(<<"INIT+D2/">>, hb_converge:get(<<"2/Result">>, Msg3, #{})).
