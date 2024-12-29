@@ -108,7 +108,10 @@ format(Map, Indent) when is_map(Map) ->
     KeyVals =
         FilterUndef(PriorityKeys) ++
         maps:to_list(
-            minimize(Map, [owner, signature, id, unsigned_id, hashpath, path, device])
+            minimize(Map,
+                [owner, signature, id, unsigned_id, hashpath, path, device]
+                ++ [<<"Device">>, <<"Path">>] % Hack: Until key capitalization is fixed.
+            )
         ),
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
