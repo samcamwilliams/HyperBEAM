@@ -132,7 +132,6 @@ router(transform, Message1, _Message2, Opts) ->
 	transformer_message(Message1, Opts);
 router(_Key, Message1, Message2, Opts) ->
 	?event({router_called, {msg1, Message1}, {msg2, Message2}}),
-    PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),
     Mode =
         case hb_converge:get(<<"Mode">>, Message2, not_found, Opts) of
             not_found ->
@@ -145,8 +144,8 @@ router(_Key, Message1, Message2, Opts) ->
             Msg2Mode -> Msg2Mode
         end,
     case Mode of
-        <<"Fold">> -> resolve_fold(PreparedMessage, Message2, Opts);
-        <<"Map">> -> resolve_map(PreparedMessage, Message2, Opts)
+        <<"Fold">> -> resolve_fold(Message1, Message2, Opts);
+        <<"Map">> -> resolve_map(Message1, Message2, Opts)
     end.
 
 %% @doc Return a message which, when given a key, will transform the message
@@ -249,7 +248,9 @@ transform(Msg1, Key, Opts) ->
 %% information.
 resolve_fold(Message1, Message2, Opts) ->
 	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
-    case resolve_fold(Message1, Message2, 1, Opts) of
+    StartingPassValue = hb_converge:get(<<"Pass">>, Message1, unset, Opts),
+    PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),
+    case resolve_fold(PreparedMessage, Message2, 1, Opts) of
         {ok, Raw} when not is_map(Raw) ->
             {ok, Raw};
         {ok, Result} ->
@@ -271,7 +272,8 @@ resolve_fold(Message1, Message2, Opts) ->
                             undefined,
                             Opts
                         ),
-                    <<"Device-Stack-Previous">> => unset
+                    <<"Device-Stack-Previous">> => unset,
+                    <<"Pass">> => StartingPassValue
                 },
                 Opts
             );
