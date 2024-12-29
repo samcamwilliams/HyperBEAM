@@ -118,12 +118,12 @@ router(keys, Message1, Message2, _Opts) ->
 	dev_message:keys(Message1);
 router(transform, Message1, _Message2, Opts) ->
 	transformer_message(Message1, Opts);
-router(Key, Message1, Message2, Opts) ->
-	?event({router_called, {key, Key}, {msg1, Message1}, {msg2, Message2}}),
+router(_Key, Message1, Message2, Opts) ->
+	?event({router_called, {msg1, Message1}, {msg2, Message2}}),
 	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
     PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),
 	?event({got_device_key, InitDevMsg}),
-	case resolve_stack(PreparedMessage, Key, Message2, Opts) of
+	case resolve_stack(PreparedMessage, Message2, Opts) of
 		{ok, Result} when is_map(Result) ->
 			?event({router_result, ok, Result}),
             % Reset the Stack-specific keys.
@@ -252,19 +252,19 @@ transform(Msg1, Key, Opts) ->
 
 %% @doc The main device stack execution engine. See the moduledoc for more
 %% information.
-resolve_stack(Message1, Key, Message2, Opts) ->
-    resolve_stack(Message1, Key, Message2, 1, Opts).
-resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
+resolve_stack(Message1, Message2, Opts) ->
+    resolve_stack(Message1, Message2, 1, Opts).
+resolve_stack(Message1, Message2, DevNum, Opts) ->
 	case transform(Message1, DevNum, Opts) of
 		{ok, Message3} ->
 			?event({stack_execute, DevNum, {msg1, Message3}, {msg2, Message2}}),
 			case hb_converge:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
-					resolve_stack(Message4, Key, Message2, DevNum + 1, Opts);
+					resolve_stack(Message4, Message2, DevNum + 1, Opts);
                 % {error, not_found} ->
                 %     ?event({skipping_device, not_found, DevNum, Message3}),
-                %     %resolve_stack(Message3, Key, Message2, DevNum + 1, Opts);
+                %     %resolve_stack(Message3, Message2, DevNum + 1, Opts);
                 %     throw({error, not_found});
                 {ok, RawResult} ->
                     ?event({returning_raw_result, RawResult}),
@@ -287,7 +287,6 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
                             },
                             Opts
                         ),
-                        Key,
                         Message2,
                         1,
                         Opts
@@ -296,7 +295,6 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 					?event({result, error, {dev, DevNum}, Info}),
 					maybe_error(
 						Message1,
-						Key,
 						Message2,
 						DevNum,
 						Info,
@@ -306,7 +304,6 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 					?event({result, unexpected, {dev, DevNum}, Unexpected}),
 					maybe_error(
 						Message1,
-						Key,
 						Message2,
 						DevNum,
 						{unexpected_result, Unexpected},
@@ -318,15 +315,14 @@ resolve_stack(Message1, Key, Message2, DevNum, Opts) ->
 			{ok, Message1}
 	end.
 
-maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
+maybe_error(Message1, Message2, DevNum, Info, Opts) ->
     case hb_opts:get(error_strategy, throw, Opts) of
         stop ->
-			{error, {stack_call_failed, Message1, Key, Message2, DevNum, Info}};
+			{error, {stack_call_failed, Message1, Message2, DevNum, Info}};
         throw ->
 			erlang:raise(
                 error,
                 {device_failed,
-                    {key, Key},
                     {dev_num, DevNum},
                     {msg1, Message1},
                     {msg2, Message2},
@@ -337,7 +333,7 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
         continue ->
             ?no_prod(
                 "This could cause non-deterministic behavior as a result of Opts!"),
-			?event({continue_stack_execution_after_error, Message1, Key, Info}),
+			?event({continue_stack_execution_after_error, Message1, Info}),
             resolve_stack(
                 hb_converge:set(Message1,
                     [
@@ -349,7 +345,6 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
                     ],
                     Opts
                 ),
-                Key,
                 Message2,
                 DevNum + 1,
                 Opts
@@ -357,10 +352,9 @@ maybe_error(Message1, Key, Message2, DevNum, Info, Opts) ->
         ignore ->
             ?no_prod(
                 "This could cause non-deterministic behavior as a result of Opts!"),
-			?event({ignoring_stack_error, Message1, Key, Info}),
+			?event({ignoring_stack_error, Message1, Info}),
             resolve_stack(
                 Message1,
-                Key,
                 Message2,
                 DevNum + 1,
                 Opts
