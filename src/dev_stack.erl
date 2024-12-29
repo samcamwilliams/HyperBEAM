@@ -87,7 +87,6 @@
 -include("include/hb.hrl").
 
 info(Msg) ->
-    ?event({info_called, {msg, Msg}}),
     maps:merge(
         #{
             handler => fun router/4,
@@ -127,21 +126,28 @@ router(Key, Message1, Message2, Opts) ->
 	case resolve_stack(PreparedMessage, Key, Message2, Opts) of
 		{ok, Result} when is_map(Result) ->
 			?event({router_result, ok, Result}),
-            {ok, ResultWithResetDev} =
-                dev_message:set(
+            % Reset the Stack-specific keys.
+            dev_message:set(
                     Result,
-                    #{<<"Device">> => InitDevMsg},
-                    Opts
-                ),
-            dev_message:remove(
-                ResultWithResetDev,
                 #{
-                    items => [
-                        <<"Input-Prefix">>,
-                        <<"Output-Prefix">>,
-                        <<"Device-Stack-Previous">>
-                    ]
-                }
+                    device => InitDevMsg,
+                    <<"Input-Prefix">> =>
+                        hb_converge:get(
+                            <<"Previous-Input-Prefix">>,
+                            {as, dev_message, Result},
+                            undefined,
+                            Opts
+                        ),
+                    <<"Output-Prefix">> =>
+                        hb_converge:get(
+                            <<"Previous-Output-Prefix">>,
+                            {as, dev_message, Result},
+                            undefined,
+                            Opts
+                        ),
+                    <<"Device-Stack-Previous">> => unset
+                },
+                Opts
             );
 		Else ->
 			?event({router_result, unexpected, Else}),
@@ -193,19 +199,14 @@ transform(Msg1, Key, Opts) ->
 				{ok, DevMsg} ->
 					% Set the:
 					% - Device key to the device we found.
-					% - `/Device-Stack/Previous' key to the device we are
-					%   replacing.
+					% - Device-Stack-Previous key to the device we are replacing.
+                    % - The prefixes for the device.
+                    % - The prior prefixes for later restoration.
 					?event({activating_device, DevMsg}),
 					dev_message:set(
-						Msg1,
+                        Msg1,
 						#{
 							<<"Device">> => DevMsg,
-							<<"Device-Stack-Previous">> =>
-                                hb_util:ok(dev_message:get(
-                                    <<"Device">>,
-                                    Msg1,
-                                    Opts
-                                )),
                             <<"Input-Prefix">> =>
                                 hb_converge:get(
                                     [<<"Input-Prefixes">>, Key],
@@ -219,10 +220,30 @@ transform(Msg1, Key, Opts) ->
                                     {as, dev_message, Msg1},
                                     undefined,
                                     Opts
+                                ),
+                            <<"Previous-Device">> =>
+                                hb_converge:get(
+                                    <<"Device">>,
+                                    {as, dev_message, Msg1},
+                                    Opts
+                                ),
+                            <<"Previous-Input-Prefix">> =>
+                                hb_converge:get(
+                                    <<"Input-Prefix">>,
+                                    {as, dev_message, Msg1},
+                                    undefined,
+                                    Opts
+                                ),
+                            <<"Previous-Output-Prefix">> =>
+                                hb_converge:get(
+                                    <<"Output-Prefix">>,
+                                    {as, dev_message, Msg1},
+                                    undefined,
+                                    Opts
                                 )
 						},
-						Opts
-					);
+                        Opts
+                    );
 				_ ->
 					?event({no_device_key, Key, {stack, StackMsg}}),
 					not_found
@@ -553,6 +574,7 @@ output_prefix_test() ->
             <<"Example">> => 1
         },
     {ok, Ex2Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
+    ?event(debug, {ex2, Ex2Msg3}),
     ?assertMatch(1,
         hb_converge:get(<<"Out1/Example">>, {as, dev_message, Ex2Msg3}, #{})),
     ?assertMatch(1,
