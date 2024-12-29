@@ -110,9 +110,16 @@ compute(Msg1, Msg2, Opts) ->
             Msg2,
             Opts
         ),
+    {ok, Normalized} = 
+        run_as(
+            <<"Execution">>,
+            Loaded,
+            normalize,
+            Opts#{ hashpath => ignore }
+        ),
     ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     do_compute(
-        Loaded,
+        Normalized,
         Msg2,
         hb_converge:get(<<"Slot">>, Msg2, Opts),
         Opts
@@ -130,17 +137,9 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             ?event({reached_target_slot_returning_state, TargetSlot}),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
-            ?event(debug, {normalizing, {msg1, Msg1}, {opts, Opts}}),
-            {ok, Normalized} = 
-                run_as(
-                    <<"Execution">>,
-                    Msg1,
-                    #{ <<"Path">> => <<"Normalize">> },
-                    Opts#{ hashpath => ignore }
-                ),
             % Get the next input from the scheduler device.
             {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
-                next(Normalized, Msg2, Opts),
+                next(Msg1, Msg2, Opts),
             % Calculate how much of the state should be cached.
             Freq =
                 hb_opts:get(
