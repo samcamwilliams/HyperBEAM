@@ -233,6 +233,7 @@ is_valid_arg_list(_) ->
 serialize(WASM) when is_pid(WASM) ->
     ?event(starting_serialize),
     {ok, Size} = hb_beamr_io:size(WASM),
+    ?event({image_size, Size}),
     {ok, Mem} = hb_beamr_io:read(WASM, 0, Size),
     ?event({finished_serialize, byte_size(Mem)}),
     {ok, Mem}.
