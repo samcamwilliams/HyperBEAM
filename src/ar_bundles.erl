@@ -950,23 +950,9 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_bundle_map/0},
         {timeout, 30, fun test_basic_member_id/0},
         {timeout, 30, fun test_deep_member/0},
-        {timeout, 30, fun test_extremely_large_bundle/0}
+        {timeout, 30, fun test_extremely_large_bundle/0},
+        {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
     ].
-
-ar_bundles_with_hb_store_test_() ->
-    {foreach,
-        fun() ->
-            Opts = hb_opts:get(local_store),
-            hb_store:start(Opts)
-        end,
-        fun(_) ->
-            Opts = hb_opts:get(local_store),
-            hb_store:stop(Opts)
-        end,
-        [
-            {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
-        ]
-    }.
 
 test_no_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -1158,6 +1144,7 @@ test_deep_member() ->
     ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item2)).
 
 test_serialize_deserialize_deep_signed_bundle() ->
+    application:ensure_all_started(hb),
     W = ar_wallet:new(),
     % Test that we can serialize, deserialize, and get the same IDs back.
     Item1 = sign_item(#tx{data = <<"item1_data">>}, W),

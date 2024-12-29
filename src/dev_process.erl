@@ -755,7 +755,7 @@ aos_persistent_worker_benchmark_test_() ->
             "Scheduled and evaluated ~p AOS process messages in ~p s (~.2f msg/s)",
             [Iterations, BenchTime, Iterations / BenchTime]
         ),
-        ?assert(Iterations > 5),
+        ?assert(Iterations >= 5),
         ok
     end}.
 

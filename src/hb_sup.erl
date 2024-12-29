@@ -2,6 +2,7 @@
 -behaviour(supervisor).
 -export([start_link/0, init/1]).
 -define(SERVER, ?MODULE).
+-include("src/include/hb.hrl").
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
@@ -19,8 +20,14 @@ init([]) ->
     SupFlags = #{strategy => one_for_all,
                 intensity => 0,
                 period => 1},
-    RocksDBOptions = hb_opts:get(local_store),
-    ChildSpecs = [
-        #{id => hb_store_rocksdb, start => {hb_store_rocksdb, start_link, [RocksDBOptions]}}
-    ],
-    {ok, {SupFlags, ChildSpecs}}.
+    case hb_opts:get(store) of
+        [RocksDBOpts = {hb_store_rocksdb, _}] ->
+            ChildSpecs = [
+                #{
+                    id => hb_store_rocksdb,
+                    start => {hb_store_rocksdb, start_link, [RocksDBOpts]}
+                }
+            ],
+            {ok, {SupFlags, ChildSpecs}};
+        _ -> {ok, {SupFlags, []}}
+    end.

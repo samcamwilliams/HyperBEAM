@@ -5,7 +5,7 @@
 -export([type/2, read/2, write/3, list/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
--export([test_store_setup/1, test_store_teardown/1, generate_test_suite/1]).
+-export([generate_test_suite/1, test_stores/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -36,6 +36,8 @@ stop(Modules) -> call_function(Modules, stop, []).
 %% new store object with only the modules that match the filter. The filter
 %% function takes 2 arguments: the scope and the options. It calls the store's
 %% scope function to get the scope of the module.
+filter(Module, Filter) when not is_list(Module) ->
+    filter([Module], Filter);
 filter(Modules, Filter) ->
     lists:filter(
         fun(Store) ->
@@ -190,30 +192,19 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
 %%% Test helpers
 
 test_stores() ->
-    [{"RocksDB", rocksdb, ?ROCKSDB_STORE}, {"FS", fs, ?FS_STORE}].
-
-test_store_setup(rocksdb) ->
-    hb_store:start(?ROCKSDB_STORE),
-    ?ROCKDB_OPTS;
-test_store_setup(fs) ->
-    hb_store:start(?FS_STORE),
-    ?FS_OPTS.
-
-test_store_teardown(rocksdb) ->
-    hb_store:reset(?ROCKSDB_STORE);
-test_store_teardown(fs) ->
-    hb_store:reset(?FS_STORE).
+    [
+        {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }},
+        {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+    ].
 
 generate_test_suite(Suite) ->
     lists:map(
-        fun({Name, StoreAtom, Store}) ->
+        fun(Store = {Mod, _Opts}) ->
             {foreach,
-                fun() -> test_store_setup(StoreAtom) end,
-                fun(#{store := _ }) ->
-                    test_store_teardown(StoreAtom)
-                end,
+                fun() -> hb_store:start(Store) end,
+                fun(_) -> hb_store:reset(Store) end,
                 [
-                    {Name ++ ": " ++ Desc,
+                    {atom_to_list(Mod) ++ ": " ++ Desc,
                         fun() -> Test(#{ store => Store }) end}
                 ||
                     {Desc, Test} <- Suite

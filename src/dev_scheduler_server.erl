@@ -216,7 +216,6 @@ benchmark_test() ->
         end,
         BenchTime
     ),
-    ?assert(Iterations > 150),
     hb_util:eunit_print(
         "Scheduled ~p messages in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
@@ -224,4 +223,5 @@ benchmark_test() ->
     ?assertMatch(
         #{ current := X } when X == Iterations - 1,
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))
-    ).
+    ),
+    ?assert(Iterations > 150).

@@ -82,8 +82,6 @@ config() ->
         %% What should the node do if a client error occurs?
         client_error_strategy => throw,
         % Dev options
-        local_store =>
-            [{hb_store_rocksdb, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
@@ -140,12 +138,12 @@ get(Key, Default, Opts) ->
                 fun(Dir) ->
                     [
                         {
-                            hb_store_rocksdb,
+                            hb_store_fs,
                             #{ prefix => Dir }
                         }
                     ]
                 end,
-                "TEST-data"
+                "TEST-cache-rocks"
             },
         mode =>
             {"HB_MODE", fun list_to_existing_atom/1},
