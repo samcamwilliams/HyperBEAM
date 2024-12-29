@@ -262,10 +262,9 @@ resolve_stack(Message1, Message2, DevNum, Opts) ->
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
 					resolve_stack(Message4, Message2, DevNum + 1, Opts);
-                % {error, not_found} ->
-                %     ?event({skipping_device, not_found, DevNum, Message3}),
-                %     %resolve_stack(Message3, Message2, DevNum + 1, Opts);
-                %     throw({error, not_found});
+                {error, not_found} ->
+                    ?event({skipping_device, not_found, DevNum, Message3}),
+                    resolve_stack(Message3, Message2, DevNum + 1, Opts);
                 {ok, RawResult} ->
                     ?event({returning_raw_result, RawResult}),
                     {ok, RawResult};
@@ -671,3 +670,27 @@ pass_test() ->
 		{ok, #{ result := <<"INIT+D1_+D1_">> }},
 		hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{})
 	).
+
+not_found_test() ->
+    % Ensure that devices not exposing a key are safely skipped.
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => generate_append_device(<<"+D1">>),
+				<<"2">> =>
+                    (generate_append_device(<<"+D2">>))#{
+                        special =>
+                            fun(M1) ->
+                                {ok, M1#{ <<"Output">> => 1337 }}
+                            end
+                    }
+			},
+		result => <<"INIT">>
+	},
+    {ok, Msg3} = hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{}),
+    ?assertMatch(
+		#{ result := <<"INIT+D1_+D2_">> },
+		Msg3
+	),
+    ?assertEqual(1337, hb_converge:get(<<"Special/Output">>, Msg3, #{})).
