@@ -296,6 +296,11 @@ wasm_memory_t* get_memory(Proc* proc) {
     return NULL;
 }
 
+long get_memory_size(Proc* proc) {
+    wasm_memory_t* memory = get_memory(proc);
+    return wasm_memory_size(memory) * 65536;
+}
+
 void send_error(Proc* proc, const char* message_fmt, ...) {
     va_list args;
     va_start(args, message_fmt);
@@ -360,17 +365,7 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     msg[msg_index++] = ERL_DRV_TUPLE;
     msg[msg_index++] = 5;
 
-    DRV_DEBUG("Sending %d terms...", msg_index);
-
-    // Send the message to the caller process
-    int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
-    DRV_PRINT("alloc5 - free");
-    driver_free(msg);
-
-    DRV_DEBUG("Send res: %d", msg_res);
-    DRV_DEBUG("Results size: %d", results->size);
-
-    // Initialize the result vector and set the required result types 
+    // Initialize the result vector and set the required result types
     DRV_PRINT("alloc6 %d", sizeof(ImportResponse));
     proc->current_import = driver_alloc(sizeof(ImportResponse));
 
@@ -379,8 +374,13 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     proc->current_import->cond = erl_drv_cond_create("response_cond");
     proc->current_import->ready = 0;
 
-    DRV_DEBUG("Mutex and cond created");
-    // Wait for the response
+    DRV_DEBUG("Sending %d terms...", msg_index);
+    // Send the message to the caller process
+    int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+    DRV_PRINT("alloc5 - free");
+    driver_free(msg);
+    // Wait for the response (we set this directly after the message was sent
+    // so we have the lock, before Erlang sends us data back)
     drv_wait(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
 
     DRV_DEBUG("Response ready");
@@ -414,16 +414,16 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
 
     // Clean up
     DRV_DEBUG("Cleaning up import response");
-    erl_drv_mutex_destroy(proc->current_import->response_ready);
     erl_drv_cond_destroy(proc->current_import->cond);
+    erl_drv_mutex_destroy(proc->current_import->response_ready);
     if (proc->current_import->result_terms) {
         DRV_PRINT("alloc1 - free2");
         driver_free(proc->current_import->result_terms);
     }
     DRV_PRINT("alloc6 - free");
     driver_free(proc->current_import);
-    proc->current_import = NULL;
 
+    proc->current_import = NULL;
     return NULL;
 }
 
@@ -456,9 +456,11 @@ static void async_init(void* raw) {
     DRV_DEBUG("Module created: %p", proc->module);
     if (!proc->module) {
         DRV_DEBUG("Failed to create module");
+        send_error(proc, "Failed to create module.");
         wasm_byte_vec_delete(&binary);
         wasm_store_delete(proc->store);
         wasm_engine_delete(proc->engine);
+        drv_unlock(proc->is_running);
         return;
     }
     //wasm_byte_vec_delete(&binary);
@@ -495,6 +497,7 @@ static void async_init(void* raw) {
 
     DRV_PRINT("alloc8 %d", 256);
         char* type_str = driver_alloc(256);
+        // TODO: What happpens here?
         if(!get_function_sig(type, type_str)) {
             // TODO: Handle other types of imports?
             continue;
@@ -514,7 +517,7 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = ERL_DRV_TUPLE;
         init_msg[msg_i++] = 4;
 
-        DRV_DEBUG("Creating callback for %s.%s", module_name->data, name->data);
+        DRV_DEBUG("Creating callback for %s.%s [%s]", module_name->data, name->data, type_str);
         DRV_PRINT("alloc9 %d", sizeof(ImportHook));
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
@@ -543,7 +546,9 @@ static void async_init(void* raw) {
     wasm_trap_t* trap = NULL;
     proc->instance = wasm_instance_new_with_args(proc->store, proc->module, &externs, &trap, 0x10000, 0x10000);
     if (!proc->instance) {
-        DRV_DEBUG("Failed to create WASM proc");
+        DRV_DEBUG("Failed to create WASM instance");
+        send_error(proc, "Failed to create WASM instance (although module was created).");
+        drv_unlock(proc->is_running);
         return;
     }
 
@@ -649,7 +654,7 @@ static void async_call(void* raw) {
         // char* func_name;
 
         // DRV_DEBUG("WASM Exception: [func_index: %d, func_offset: %d] %.*s", func_index, func_offset, trap_msg.size, trap_msg.data);
-        send_error(proc, "WASM Exception: %.*s", trap_msg.size, trap_msg.data);
+        send_error(proc, "%.*s", trap_msg.size, trap_msg.data);
         drv_unlock(proc->is_running);
         return;
     }
@@ -693,11 +698,11 @@ static void async_call(void* raw) {
     msg[msg_index++] = 2;
     DRV_DEBUG("Sending %d terms", msg_index);
     int response_msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+    DRV_PRINT("alloc11 - free");
+    driver_free(msg);
 
     DRV_DEBUG("Msg: %d", response_msg_res);
 
-    DRV_PRINT("alloc11 - free");
-    driver_free(msg);
     DRV_PRINT("alloc1 - free1");
     DRV_PRINT("free current_args: %p", proc->current_args);
     driver_free(proc->current_args);
@@ -847,8 +852,12 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
             proc->current_import->error_message = NULL;
 
             // Signal that the response is ready
-            drv_signal(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
+            drv_signal(
+                proc->current_import->response_ready,
+                proc->current_import->cond,
+                &proc->current_import->ready);
         } else {
+            DRV_DEBUG("[error] No pending import response waiting");
             send_error(proc, "No pending import response waiting");
         }
     } else if (strcmp(command, "write") == 0) {
@@ -864,6 +873,12 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         DRV_DEBUG("Decoded binary. Res: %d. Size (bits): %ld", res, size_l);
         long size_bytes = size_l / 8;
         DRV_DEBUG("Write received. Ptr: %ld. Bytes: %ld", ptr, size_bytes);
+        long memory_size = get_memory_size(proc);
+        if(ptr + size_bytes > memory_size) {
+            DRV_DEBUG("Write request out of bounds.");
+            send_error(proc, "Write request out of bounds");
+            return;
+        }
         byte_t* memory_data = wasm_memory_data(get_memory(proc));
         DRV_DEBUG("Memory location to write to: %p", ptr+memory_data);
 
@@ -885,6 +900,13 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         ei_decode_long(buff, &index, &ptr);
         ei_decode_long(buff, &index, &size);
         long size_l = (long)size;
+        long memory_size = get_memory_size(proc);
+        DRV_DEBUG("Read received. Ptr: %ld. Size: %ld. Memory size: %ld", ptr, size_l, memory_size);
+        if(ptr + size_l > memory_size) {
+            DRV_DEBUG("Read request out of bounds.");
+            send_error(proc, "Read request out of bounds");
+            return;
+        }
         DRV_DEBUG("Read received. Ptr: %ld. Size: %ld", ptr, size_l);
         byte_t* memory_data = wasm_memory_data(get_memory(proc));
         DRV_DEBUG("Memory location to read from: %p", memory_data + ptr);
@@ -923,9 +945,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
     }
     else if (strcmp(command, "size") == 0) {
         DRV_DEBUG("Size received");
-        wasm_memory_t* mem = get_memory(proc);
-        long pages = wasm_memory_size(mem);
-        long size = pages * 65536;
+        long size = get_memory_size(proc);
         DRV_DEBUG("Size: %ld", size);
 
         DRV_PRINT("alloc19 %d", sizeof(ErlDrvTermData) * 6);
@@ -975,6 +995,6 @@ DRIVER_INIT(wasm_driver) {
     atom_ok = driver_mk_atom("ok");
     atom_error = driver_mk_atom("error");
     atom_import = driver_mk_atom("import");
-	atom_execution_result = driver_mk_atom("execution_result");
+    atom_execution_result = driver_mk_atom("execution_result");
     return &wasm_driver_entry;
 }
