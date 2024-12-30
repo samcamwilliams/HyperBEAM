@@ -356,7 +356,7 @@ test_store_simple_unsigned_item(Opts) ->
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test deeply nested item storage and retrieval
-test_deeply_nested_item(Opts) ->
+test_deeply_nested_complex_item(Opts) ->
     %% Create nested data
     DeepValueMsg = test_signed(<<"deep_value">>),
     Outer =
@@ -367,9 +367,12 @@ test_deeply_nested_item(Opts) ->
                         <<"Level2">> =>
                             #{
                                 <<"Level3">> => DeepValueMsg,
-                                <<"E">> => <<"F">>
+                                <<"E">> => <<"F">>,
+                                <<"Z">> => [1,2,3]
                             },
-                        <<"C">> => <<"D">>
+                        <<"C">> => <<"D">>,
+                        <<"G">> => [<<"H">>, <<"I">>],
+                        <<"J">> => 1337
                     },
                     ar_wallet:new()
                 ),
@@ -407,6 +410,6 @@ test_message_with_list(Opts) ->
 cache_suite_test_() ->
     hb_store:generate_test_suite([
         {"store simple unsigned item", fun test_store_simple_unsigned_item/1},
-        {"deeply nested item", fun test_deeply_nested_item/1},
+        {"deeply nested complex item", fun test_deeply_nested_complex_item/1},
         {"message with list", fun test_message_with_list/1}
     ]).
