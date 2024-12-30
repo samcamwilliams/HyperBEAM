@@ -522,12 +522,8 @@ update_cache(Msg1, Msg2, Msg3, Opts) when is_map(Msg3) ->
         true ->
             ?event(debug, {caching_result, {msg2, Msg2}, {msg3, Msg3}}),
             case hb_opts:get(async_cache, false, Opts) of
-                true ->
-                    spawn(fun() ->
-                        hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
-                    end);
-                false ->
-                    hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
+                true -> spawn(fun() -> hb_cache:write(Msg3, Opts) end);
+                false -> hb_cache:write(Msg3, Opts)
             end;
         false ->
             ok

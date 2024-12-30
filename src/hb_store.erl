@@ -170,7 +170,7 @@ call_function([{Mod, Opts} | Rest], Function, Args) ->
             Result
     catch
         Class:Reason:Stacktrace ->
-            logger:info("Could not execute call_function in hb_store: ~p ~p ~p \n", [Class, Reason, Stacktrace]),
+            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
             call_function(Rest, Function, Args)
     end.
 
@@ -184,7 +184,7 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
         apply(Mod, Function, [Opts | Args])
     catch
         Class:Reason:Stacktrace ->
-            logger:error("Could not execute call_all in hb_store: ~p ~p ~p \n", [Class, Reason, Stacktrace]),
+            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
             ok
     end,
     call_all(Rest, Function, Args).

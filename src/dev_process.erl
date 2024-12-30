@@ -140,13 +140,6 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
             % Get the next input from the scheduler device.
             {ok, #{ <<"Message">> := ToProcess, <<"State">> := State }} =
                 next(Msg1, Msg2, Opts),
-            % Calculate how much of the state should be cached.
-            Freq =
-                hb_opts:get(
-                    process_cache_frequency,
-                    ?DEFAULT_CACHE_FREQ,
-                    Opts
-                ),
             ?event(process_compute,
                 {
                     executing,
@@ -161,6 +154,23 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     ToProcess,
                     Opts
                 ),
+            % Cache the `Memory` key every `Cache-Frequency` slots.
+            Freq =
+                hb_opts:get(
+                    process_cache_frequency,
+                    ?DEFAULT_CACHE_FREQ,
+                    Opts
+                ),
+            case CurrentSlot rem Freq of
+                0 ->
+                    run_as(
+                        <<"Execution">>,
+                        State,
+                        <<"Memory">>,
+                        Opts#{ cache => always }
+                    );
+                _ -> nothing_to_do
+            end,
             ?event({do_compute_result, {msg3, Msg3}}),
             do_compute(
                 hb_converge:set(

@@ -36,7 +36,6 @@
 
 -module(dev_json_iface).
 -export([init/3, compute/3]).
--include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Initialize the device.
@@ -100,7 +99,7 @@ prep_call(M1, M2, Opts) ->
 %% @doc Read the computed results out of the WASM environment, assuming that
 %% the environment has been set up by `prep_call/3' and that the WASM executor
 %% has been called with `computed{pass=1}'.
-results(M1, M2, Opts) ->
+results(M1, _M2, Opts) ->
     Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
     Type = hb_converge:get(<<"Results/WASM/Type">>, M1, Opts),
     Proc = hb_converge:get(<<"Process">>, M1, Opts),

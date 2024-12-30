@@ -70,7 +70,7 @@ tl(Path, Opts) when is_list(Path) ->
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     Hash = hb_crypto:sha256(Bin),
-    << "/", Hash/binary >>.
+    << "/", Hash/binary >>;
 hashpath(Msg1, Opts) when is_map(Msg1) ->
     case dev_message:get(hashpath, Msg1, Opts) of
         {ok, Hashpath} -> Hashpath;

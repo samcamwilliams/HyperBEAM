@@ -37,6 +37,7 @@
 -module(hb_codec_http).
 -export([to/1, from/1]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -define(MAX_HEADER_LENGTH, 256).
 
@@ -205,7 +206,7 @@ field_to_http(Http, {Name, Value}, Opts) ->
 from(#{ headers := Headers, body := Body }) ->
     ContentType = lists:keyfind(<<"Content-Type">>, 1, Headers),
     {item, _, Params} = hb_http_structured_fields:item(ContentType),
-    Parts = case lists:keyfind(<<"boundary">>, 1, Params) of
+    _Parts = case lists:keyfind(<<"boundary">>, 1, Params) of
         false -> [Body];
         {_, Boundary} ->
             % The first part will always be empty (since the boundary is always placed first
@@ -215,7 +216,7 @@ from(#{ headers := Headers, body := Body }) ->
             %
             % So we need to check and potentially trim off the last
             % element
-            TrimmedParts = case lists:last(P) of
+            _TrimmedParts = case lists:last(P) of
                 <<"--">> ->
                     lists:sublist(P, length(P) - 1);
                 _ -> P
@@ -231,3 +232,19 @@ from(#{ headers := Headers, body := Body }) ->
 
     not_implemented.
 
+%%% Tests
+
+simple_message_to_http_test() ->
+    Msg = #{ a => 1, b => 2, priv_c => 3, id => <<"regen_ignore">> },
+    Http = hb_codec_http:to(Msg),
+    ?assertEqual(
+        #{ headers => [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}], body => <<>> },
+        Http
+    ),
+    ok.
+
+simple_body_message_to_http_test() ->
+    Html = <<"<html><body>Hello</body></html>">>,
+    _Msg = #{ "Content-Type" => <<"text/html">>, body => Html },
+    %Http = hb_codec_http:to(Msg),
+    ok.
