@@ -420,7 +420,10 @@ resolve_stage(6, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     % need to cryptographically link the output to its input via a hashpath.
     resolve_stage(7, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
-            update -> {ok, Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2) }};
+            update ->
+                {ok,
+                    Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
+                };
             ignore -> {ok, Msg3}
         end,
         ExecName,

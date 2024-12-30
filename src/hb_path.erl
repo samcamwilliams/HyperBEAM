@@ -28,9 +28,9 @@
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
 -module(hb_path).
--export([hd/2, tl/2, hashpath/2, push_request/2]).
+-export([hd/2, tl/2, hashpath/3, push_request/2]).
 -export([queue_request/2, pop_request/2]).
--export([verify_hashpath/1]).
+-export([verify_hashpath/2]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
 -export([matches/2]).
 -include("include/hb.hrl").
@@ -67,10 +67,10 @@ tl(Path, Opts) when is_list(Path) ->
     end.
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
-hashpath(Msg1, Msg2) when is_map(Msg2) ->
+hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
     {ok, Msg2ID} = dev_message:id(Msg2),
-    hashpath(Msg1, Msg2ID);
-hashpath(Msg1, Msg2ID) ->
+    hashpath(Msg1, Msg2ID, Opts);
+hashpath(Msg1, Msg2ID, Opts) ->
     Msg1Hashpath = from_message(hashpath, Msg1),
     case term_to_path(Msg1Hashpath) of
         [_] -> 
@@ -124,13 +124,13 @@ queue_request(Msg, Path) ->
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
-verify_hashpath([Msg1, Msg2, Msg3|Rest]) ->
-    CorrectHashpath = hashpath(Msg1, Msg2),
+verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
+    CorrectHashpath = hashpath(Msg1, Msg2, Opts),
     FromMsg3 = from_message(hashpath, Msg3),
     CorrectHashpath == FromMsg3 andalso
         case Rest of
             [] -> true;
-            _ -> verify_hashpath([Msg2, Msg3|Rest])
+            _ -> verify_hashpath([Msg2, Msg3|Rest], Opts)
         end.
 
 %% @doc Extract the request path or hashpath from a message. We do not use
@@ -207,25 +207,25 @@ matches(Key1, Key2) ->
 push_hashpath_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Hashpath = hashpath(Msg1, Msg2),
+    Hashpath = hashpath(Msg1, Msg2, #{}),
     ?assert(is_binary(Hashpath)).
 
 push_multiple_hashpaths_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ hashpath => hashpath(Msg1, Msg2) },
+    Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
-    Msg5 = hashpath(Msg3, Msg4),
+    Msg5 = hashpath(Msg3, Msg4, #{}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->
     Msg1 = #{ <<"TEST">> => <<"INITIAL">> },
     Msg2 = #{ <<"FirstApplied">> => <<"Msg2">> },
-    Msg3 = #{ hashpath => hashpath(Msg1, Msg2) },
-    Msg4 = #{ hashpath => hashpath(Msg2, Msg3) },
-    Msg3Fake = #{ hashpath => hashpath(Msg4, Msg2) },
-    ?assert(verify_hashpath([Msg1, Msg2, Msg3, Msg4])),
-    ?assertNot(verify_hashpath([Msg1, Msg2, Msg3Fake, Msg4])).
+    Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
+    Msg4 = #{ hashpath => hashpath(Msg2, Msg3, #{}) },
+    Msg3Fake = #{ hashpath => hashpath(Msg4, Msg2, #{}) },
+    ?assert(verify_hashpath([Msg1, Msg2, Msg3, Msg4], #{})),
+    ?assertNot(verify_hashpath([Msg1, Msg2, Msg3Fake, Msg4], #{})).
 
 validate_path_transitions(X, Opts) ->
     {Head, X2} = pop_request(X, Opts),
