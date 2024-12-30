@@ -67,11 +67,24 @@ tl(Path, Opts) when is_list(Path) ->
     end.
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
+hashpath(Msg1, _Opts) when is_map(Msg1) ->
+    case Msg1 of
+        #{ hashpath := HashPath } ->
+            HashPath;
+        _ ->
+            {ok, Msg1ID} = dev_message:id(Msg1),
+            hd(term_to_path(Msg1ID))
+    end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
-    {ok, Msg2ID} = dev_message:id(Msg2),
-    hashpath(Msg1, Msg2ID, Opts);
+    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
+    case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
+        {0, Key} when is_binary(Key) -> hashpath(Msg1, Key, Opts);
+        _ ->
+            {ok, Msg2ID} = dev_message:id(Msg2),
+            hashpath(Msg1, Msg2ID, Opts)
+    end;
 hashpath(Msg1, Msg2ID, Opts) ->
-    Msg1Hashpath = from_message(hashpath, Msg1),
+    Msg1Hashpath = hashpath(Msg1, Opts),
     case term_to_path(Msg1Hashpath) of
         [_] -> 
             << "/", Msg1Hashpath/binary, "/", Msg2ID/binary >>;
@@ -139,11 +152,7 @@ verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
 %% viable hashpath and path in its Erlang map at all times, unless the message
 %% is directly from a user (in which case paths and hashpaths will not have 
 %% been assigned yet).
-from_message(hashpath, #{ hashpath := HashPath }) ->
-    HashPath;
-from_message(hashpath, Msg) ->
-    {ok, Path} = dev_message:id(Msg),
-    hd(term_to_path(Path));
+from_message(hashpath, Msg) -> hashpath(Msg, #{});
 from_message(request, #{ path := [] }) -> undefined;
 from_message(request, #{ path := Path }) when is_list(Path) ->
     term_to_path(Path);
@@ -153,22 +162,6 @@ from_message(request, #{ <<"path">> := Path }) -> term_to_path(Path);
 from_message(request, #{ <<"Path">> := Path }) -> term_to_path(Path);
 from_message(request, _) ->
     undefined.
-
-%% @doc Return the appropriate path to refer to the for the computation of
-%% Msg1(Msg2) in the form `/ID1/ID2'.
-compute_path(Msg1, Msg2, _Opts) ->
-    ID1 = from_message(hashpath, Msg1),
-    ID2 = dev_message:id(Msg2),
-    << "/", ID1/binary, "/", ID2/binary >>.
-
-%% @doc Return the shortest possible reference for a given computation. If the
-%% Msg2 only contains a `path' key and hashpath elements, then we can return
-%% just the path.
-short_compute_path(Msg1, Msg2 = #{ path := Path }, Opts) ->
-    case map_size(maps:without(?CONVERGE_KEYS, Msg2)) of
-        0 -> Path;
-        _ -> compute_path(Msg1, Msg2, Opts)
-    end.
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
@@ -204,13 +197,20 @@ matches(Key1, Key2) ->
 
 %%% TESTS
 
-push_hashpath_test() ->
+hashpath_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
     Hashpath = hashpath(Msg1, Msg2, #{}),
-    ?assert(is_binary(Hashpath)).
+    ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 88).
 
-push_multiple_hashpaths_test() ->
+hashpath_direct_msg2_test() ->
+    Msg1 = #{ <<"Base">> => <<"Message">> },
+    Msg2 = #{ path => <<"Base">> },
+    Hashpath = hashpath(Msg1, Msg2, #{}),
+    [_, KeyName] = term_to_path(Hashpath),
+    ?assert(matches(KeyName, <<"Base">>)).
+
+multiple_hashpaths_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
     Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
