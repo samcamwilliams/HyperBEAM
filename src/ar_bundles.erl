@@ -1163,9 +1163,9 @@ test_serialize_deserialize_deep_signed_bundle() ->
     ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
     ?assert(verify_item(Item3)),
     % Test that we can write to disk and read back the same ID.
-    hb_cache:write(hb_message:tx_to_message(Item2), #{}),
+    hb_cache:write(hb_message:from_tx(Item2), #{}),
     {ok, MsgFromDisk} = hb_cache:read(hb_util:encode(id(Item2, unsigned)), #{}),
-    FromDisk = hb_message:message_to_tx(MsgFromDisk),
+    FromDisk = hb_message:to_tx(MsgFromDisk),
     format(FromDisk),
     ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
     % Test that normalizing the item and signing it again yields the same unsigned ID.

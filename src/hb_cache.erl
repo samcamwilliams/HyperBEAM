@@ -132,7 +132,7 @@ write(Path, Message, Opts) ->
             UnsignedPath =
                 hb_store:path(Store, [Path, hb_util:human_id(UnsignedID)]),
             %?event({writing_single_layer_message, UnsignedPath}),
-            TX = hb_message:message_to_tx(Message),
+            TX = hb_message:to_tx(Message),
             ?event(
                 {writing_shallow_message,
                     {path, UnsignedPath},
@@ -161,7 +161,7 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
     % 2. Write each child into the store.
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
-    FullTX = hb_message:message_to_tx(hb_message:minimize(Msg)),
+    FullTX = hb_message:to_tx(hb_message:minimize(Msg)),
     UnsignedHeaderID = ar_bundles:id(FullTX, unsigned),
     %?event({starting_composite_write, hb_util:human_id(UnsignedHeaderID)}),
     Store = hb_opts:get(store, no_viable_store, Opts),
@@ -202,7 +202,7 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
                 )
             )
         ),
-    FlatTX = hb_message:message_to_tx(FlatMsg),
+    FlatTX = hb_message:to_tx(FlatMsg),
     hb_store:write(
         Store,
         hb_store:path(
@@ -290,7 +290,7 @@ read_raw_simple_message(Store, Path) ->
     {ok, Bin} = hb_store:read(Store, Path),
     {ok,
         hb_message:minimize(
-            hb_message:tx_to_message(ar_bundles:deserialize(Bin))
+            hb_message:from_tx(ar_bundles:deserialize(Bin))
         )
     }.
 

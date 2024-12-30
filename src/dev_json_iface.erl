@@ -62,7 +62,7 @@ prep_call(M1, M2, Opts) ->
     BlockHeight = hb_converge:get(<<"Block-Height">>, Assignment, Opts),
     RawMsgJson =
         ar_bundles:item_to_json_struct(
-            hb_message:message_to_tx(Message)
+            hb_message:to_tx(Message)
         ),
     {Props} = RawMsgJson,
     MsgJson = jiffy:encode({
@@ -79,7 +79,7 @@ prep_call(M1, M2, Opts) ->
                 [
                     {<<"Process">>,
                         ar_bundles:item_to_json_struct(
-                            hb_message:message_to_tx(Process)
+                            hb_message:to_tx(Process)
                         )
                     }
                 ]

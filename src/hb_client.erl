@@ -41,7 +41,7 @@ download(ID) ->
 
 %% @doc Upload a data item to the bundler node.
 upload(Message) when is_map(Message) ->
-    upload(hb_message:message_to_tx(Message));
+    upload(hb_message:to_tx(Message));
 upload(Item) ->
     ?event({uploading_item, Item}),
     case

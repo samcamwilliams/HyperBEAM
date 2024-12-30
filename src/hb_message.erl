@@ -10,8 +10,8 @@
 -module(hb_message).
 -export([load/2, sign/2, verify/1, match/2, type/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
--export([message_to_tx/1, tx_to_message/1, minimize/1]).
--export([message_to_http/1]).
+-export([to_tx/1, from_tx/1, minimize/1]).
+-export([to_http/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
@@ -176,11 +176,11 @@ signers(_) -> [].
 
 %% @doc Sign a message with the given wallet.
 sign(Msg, Wallet) ->
-    tx_to_message(ar_bundles:sign_item(message_to_tx(Msg), Wallet)).
+    from_tx(ar_bundles:sign_item(to_tx(Msg), Wallet)).
 
 %% @doc Verify a message.
 verify(Msg) ->
-    ar_bundles:verify_item(message_to_tx(Msg)).
+    ar_bundles:verify_item(to_tx(Msg)).
 
 %% @doc Return the type of a message.
 type(TX) when is_record(TX, tx) -> tx;
@@ -201,9 +201,9 @@ type(Msg) when is_map(Msg) ->
 %% @doc Load a message from the cache.
 load(Store, ID) when is_binary(ID)
         andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
-    tx_to_message(hb_cache:read(Store, ID));
+    from_tx(hb_cache:read(Store, ID));
 load(Store, Path) ->
-    tx_to_message(hb_cache:read(Store, Path)).
+    from_tx(hb_cache:read(Store, Path)).
 
 %% @doc Check if two maps match, including recursively checking nested maps.
 match(Map1, Map2) ->
@@ -303,7 +303,7 @@ serialize(M) -> serialize(M, binary).
 serialize(M, json) ->
     jiffy:encode(ar_bundles:item_to_json_struct(M));
 serialize(M, binary) ->
-    ar_bundles:serialize(message_to_tx(M)).
+    ar_bundles:serialize(to_tx(M)).
 
 %% @doc Deserialize a message from a binary representation.
 deserialize(B) -> deserialize(B, binary).
@@ -311,14 +311,14 @@ deserialize(J, json) ->
     {JSONStruct} = jiffy:decode(J),
     ar_bundles:json_struct_to_item(JSONStruct);
 deserialize(B, binary) ->
-    tx_to_message(ar_bundles:deserialize(B)).
+    from_tx(ar_bundles:deserialize(B)).
 
 %% @doc Internal helper to translate a message to its #tx record representation,
 %% which can then be used by ar_bundles to serialize the message. We call the 
 %% message's device in order to get the keys that we will be checkpointing. We 
 %% do this recursively to handle nested messages. The base case is that we hit
 %% a binary, which we return as is.
-message_to_tx(Binary) when is_binary(Binary) ->
+to_tx(Binary) when is_binary(Binary) ->
     % ar_bundles cannot serialize just a simple binary or get an ID for it, so
     % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
@@ -326,8 +326,8 @@ message_to_tx(Binary) when is_binary(Binary) ->
         tags= [{<<"Converge-Type">>, <<"Binary">>}],
         data = Binary
     };
-message_to_tx(TX) when is_record(TX, tx) -> TX;
-message_to_tx(RawM) when is_map(RawM) ->
+to_tx(TX) when is_record(TX, tx) -> TX;
+to_tx(RawM) when is_map(RawM) ->
     % The path is a special case so we normalized it first. It may have been
     % modified by `hb_converge` in order to set it to the current key that is
     % being executed. We should check whether the path is in the
@@ -348,7 +348,7 @@ message_to_tx(RawM) when is_map(RawM) ->
     TABM = to_type_annotated(M),
     MsgKeyMap =
         maps:map(
-            fun(_Key, Msg) when is_map(Msg) -> message_to_tx(Msg);
+            fun(_Key, Msg) when is_map(Msg) -> to_tx(Msg);
             (_Key, Value) -> Value
             end,
             TABM
@@ -401,7 +401,7 @@ message_to_tx(RawM) when is_map(RawM) ->
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
-            {Key, message_to_tx(Value)}
+            {Key, to_tx(Value)}
         end,
         RawDataItems
     )),
@@ -417,7 +417,7 @@ message_to_tx(RawM) when is_map(RawM) ->
             {Data, _} when is_record(Data, tx) ->
                 TX#tx { data = DataItems#{ data => Data } };
             {Data, _} when is_binary(Data) ->
-                TX#tx { data = DataItems#{ data => message_to_tx(Data) } }
+                TX#tx { data = DataItems#{ data => to_tx(Data) } }
         end,
     % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
     Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
@@ -432,7 +432,7 @@ message_to_tx(RawM) when is_map(RawM) ->
     end,
     %?event({result, {explicit, Res}}),
     Res;
-message_to_tx(Other) ->
+to_tx(Other) ->
     ?event({unexpected_message_form, {explicit, Other}}),
     throw(invalid_tx).
 
@@ -480,7 +480,6 @@ to_type_annotated(Msg) ->
 
 %% @doc Turns a TABM into a native HyperBEAM message.
 from_type_annotated(TABM0) ->
-    ?event(debug, {tabm0, TABM0}),
     % First, handle special cases of empty items, which `ar_bundles` cannot
     % handle. Needs to be transformed into a list (unfortunately) so that we
     % can also remove the "Converge-Type:" prefix from the key.
@@ -519,8 +518,9 @@ from_type_annotated(TABM0) ->
             end;
         (_Key, ChildTABM) when is_map(ChildTABM) ->
             {true, from_type_annotated(ChildTABM)};
-        (Key, Value) ->
-            ?event(debug, {key, Key, Value}),
+        (_Key, Value) ->
+            % We encountered a key that already has a converted type.
+            % We can just return it as is.
             {true, Value}
         end,
         TABM2
@@ -559,7 +559,7 @@ from_type_annotated(TABM0) ->
 %%%         also attempting to encode as a structured field
 %%%         - Otherwise encode the value as a part in the multipart response
 %%% 
-message_to_http(Msg) ->
+to_http(Msg) ->
     PublicMsg = hb_private:reset(Msg),
     MinimizedMsg = minimize(PublicMsg),
     NormalizedMsg = normalize_keys(MinimizedMsg),
@@ -628,7 +628,7 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
             NextName = hb_converge:key_to_binary(SigName),
             {
                 [{NextName, NextSigInput} | SfSigInputs],
-                [{NextName, NextSig} | SfSigs] 
+                [{NextName, NextSig} | SfSigs]
             }
         end,
         % Start with empty Structured Field Dictionaries
@@ -643,7 +643,7 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
 
 body_to_http(Http, Body) when is_map(Body) ->
     Disposition = <<"Content-Disposition: inline">>,
-    SubHttp = message_to_http(Body),
+    SubHttp = to_http(Body),
     EncodedBody = encode_http_msg(SubHttp),
     field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
 body_to_http(Http, Body) when is_binary(Body) ->
@@ -675,7 +675,7 @@ field_to_http(Http, {Name, MapOrList}, Opts) when is_map(MapOrList) orelse is_li
         Bin when is_binary(Bin) ->
             field_to_http(Http, {NormalizedName, Bin}, Opts);
         undefined when is_map(MapOrList) ->
-            SubHttp = message_to_http(MapOrList),
+            SubHttp = to_http(MapOrList),
             EncodedHttpMap = encode_http_msg(SubHttp),
             % Append to the serialized field to the parent body, as a part
             field_to_http(Http, {Name, EncodedHttpMap}, Opts);
@@ -718,7 +718,7 @@ field_to_http(Http, {Name, Value}, Opts) ->
             maps:put(body, NewBody, Http)
     end.
 
-http_to_msg (#{ headers := Headers, body := Body }) ->
+from_http(#{ headers := Headers, body := Body }) ->
     ContentType = lists:keyfind(<<"Content-Type">>, 1, Headers),
     {item, _, Params} = hb_http_structured_fields:item(ContentType),
     Parts = case lists:keyfind(<<"boundary">>, 1, Params) of
@@ -817,8 +817,8 @@ encode_value(Value) ->
     Value.
 
 %% @doc Convert a #tx record into a message map recursively.
-tx_to_message(Binary) when is_binary(Binary) -> Binary;
-tx_to_message(TX) when is_record(TX, tx) ->
+from_tx(Binary) when is_binary(Binary) -> Binary;
+from_tx(TX) when is_record(TX, tx) ->
     case lists:keyfind(<<"Converge-Type">>, 1, TX#tx.tags) of
         false ->
             do_tx_to_message(TX);
@@ -871,7 +871,7 @@ do_tx_to_message(RawTX) ->
 basic_map_to_tx_test() ->
     hb:init(),
     Msg = #{ normal_key => <<"NORMAL_VALUE">> },
-    TX = message_to_tx(Msg),
+    TX = to_tx(Msg),
     ?assertEqual([{<<"normal_key">>, <<"NORMAL_VALUE">>}], TX#tx.tags).
 
 %% @doc Test that the filter_default_tx_keys/1 function removes TX fields
@@ -910,7 +910,7 @@ single_layer_message_to_tx_test() ->
         data => <<"DATA">>,
         <<"Special-Key">> => <<"SPECIAL_VALUE">>
     },
-    TX = message_to_tx(Msg),
+    TX = to_tx(Msg),
     ?event({tx_to_message, {msg, Msg}, {tx, TX}}),
     ?assertEqual(maps:get(last_tx, Msg), TX#tx.last_tx),
     ?assertEqual(maps:get(owner, Msg), TX#tx.owner),
@@ -943,7 +943,7 @@ single_layer_tx_to_message_test() ->
         data = <<"DATA">>,
         tags = [{<<"special_key">>, <<"SPECIAL_KEY">>}]
     },
-    Msg = tx_to_message(TX),
+    Msg = from_tx(TX),
     ?assertEqual(maps:get(<<"special_key">>, Msg), <<"SPECIAL_KEY">>),
     ?assertEqual(<< "DATA">>, maps:get(<<"data">>, Msg)),
     ?assertEqual(<< 2:256 >>, maps:get(<<"last_tx">>, Msg)),
@@ -953,32 +953,31 @@ single_layer_tx_to_message_test() ->
 %% @doc Test that the message matching function works.
 match_test() ->
     Msg = #{ a => 1, b => 2 },
-    TX = message_to_tx(Msg),
-    Msg2 = tx_to_message(TX),
-    ?event(debug, {result_msg, Msg2}),
+    TX = to_tx(Msg),
+    Msg2 = from_tx(TX),
     ?assert(match(Msg, Msg2)).
 
 %% @doc Test that two txs match. Note: This function uses tx_to_message/1
 %% underneath, which (depending on the test) could potentially lead to false
 %% positives.
 txs_match(TX1, TX2) ->
-    match(tx_to_message(TX1), tx_to_message(TX2)).
+    match(from_tx(TX1), from_tx(TX2)).
 
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test() ->
     Msg = #{ highly_unusual_http_header => highly_unusual_value },
-    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+    ?assert(match(Msg, from_tx(to_tx(Msg)))).
 
 structured_field_decimal_parsing_test() ->
     Msg = #{ integer_field => 1234567890 },
-    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+    ?assert(match(Msg, from_tx(to_tx(Msg)))).
 
 binary_to_binary_test() ->
     % Serialization must be able to turn a raw binary into a TX, then turn
     % that TX back into a binary and have the result match the original.
     Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Msg = message_to_tx(Bin),
-    ?assertEqual(Bin, tx_to_message(Msg)).
+    Msg = to_tx(Bin),
+    ?assertEqual(Bin, from_tx(Msg)).
 
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
@@ -990,7 +989,7 @@ message_with_large_keys_test() ->
         <<"another_large_key">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
         <<"another_normal_key">> => <<"another_normal_value">>
     },
-    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+    ?assert(match(Msg, from_tx(to_tx(Msg)))).
 
 %% @doc Check that large keys and data fields are correctly handled together.
 nested_message_with_large_keys_and_data_test() ->
@@ -1001,8 +1000,8 @@ nested_message_with_large_keys_and_data_test() ->
         <<"another_normal_key">> => <<"another_normal_value">>,
         data => <<"Hey from the data field!">>
     },
-    TX = message_to_tx(Msg),
-    Msg2 = tx_to_message(TX),
+    TX = to_tx(Msg),
+    Msg2 = from_tx(TX),
     ?event({matching, {input, Msg}, {tx, TX}, {output, Msg2}}),
     ?assert(match(Msg, Msg2)).
 
@@ -1012,8 +1011,8 @@ simple_nested_message_test() ->
         nested => #{ <<"b">> => <<"1">> },
         c => <<"3">>
     },
-    TX = message_to_tx(Msg),
-    Msg2 = tx_to_message(TX),
+    TX = to_tx(Msg),
+    Msg2 = from_tx(TX),
     ?event({matching, {input, Msg}, {output, Msg2}}),
     ?assert(
         match(
@@ -1037,7 +1036,7 @@ nested_message_with_large_data_test() ->
             <<"large_data_outer">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>
         }
     },
-    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+    ?assert(match(Msg, from_tx(to_tx(Msg)))).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
 deeply_nested_message_with_data_test() ->
@@ -1054,14 +1053,14 @@ deeply_nested_message_with_data_test() ->
                 }
         }
     },
-    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+    ?assert(match(Msg, from_tx(to_tx(Msg)))).
 
 nested_structured_fields_test() ->
     NestedMsg = #{ a => #{ b => 1 } },
     ?assert(
         match(
             NestedMsg,
-            tx_to_message(message_to_tx(NestedMsg))
+            from_tx(to_tx(NestedMsg))
         )
     ).
 
@@ -1072,7 +1071,7 @@ nested_message_with_large_keys_test() ->
         nested => #{ <<"b">> => <<"1">> },
         c => <<"3">>
     },
-    ResMsg = tx_to_message(message_to_tx(Msg)),
+    ResMsg = from_tx(to_tx(Msg)),
     ?event({matching, {input, Msg}, {output, ResMsg}}),
     ?assert(match(Msg, ResMsg)).
 
@@ -1084,8 +1083,8 @@ signed_tx_to_message_and_back_test() ->
     },
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?assert(ar_bundles:verify_item(SignedTX)),
-    SignedMsg = tx_to_message(SignedTX),
-    SignedTX2 = message_to_tx(SignedMsg),
+    SignedMsg = from_tx(SignedTX),
+    SignedTX2 = to_tx(SignedMsg),
     ?assert(ar_bundles:verify_item(SignedTX2)).
 
 signed_deep_tx_serialize_and_deserialize_test() ->
@@ -1107,14 +1106,14 @@ signed_deep_tx_serialize_and_deserialize_test() ->
     DeserializedTX = deserialize(SerializedTX),
     ?assert(
         match(
-            tx_to_message(SignedTX),
+            from_tx(SignedTX),
             DeserializedTX
         )
     ).
 
 simple_message_to_http_test() ->
     Msg = #{ a => 1, b => 2, priv_c => 3, id => <<"regen_ignore">> },
-    Http = message_to_http(Msg),
+    Http = to_http(Msg),
     ?assertEqual(
         #{ headers => [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}], body => <<>> },
         Http    
@@ -1124,7 +1123,7 @@ simple_message_to_http_test() ->
 simple_body_message_to_http_test() ->
     Html = <<"<html><body>Hello</body></html>">>,
     Msg = #{ "Content-Type" => <<"text/html">>, body => Html },
-    Http = message_to_http(Msg),
+    Http = to_http(Msg),
     ok.
 
 calculate_unsigned_message_id_test() ->
@@ -1132,8 +1131,8 @@ calculate_unsigned_message_id_test() ->
         data => <<"DATA">>,
         <<"special_key">> => <<"SPECIAL_KEY">>
     },
-    UnsignedTX = message_to_tx(Msg),
-    UnsignedMessage = tx_to_message(UnsignedTX),
+    UnsignedTX = to_tx(Msg),
+    UnsignedMessage = from_tx(UnsignedTX),
     ?assertEqual(
         hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
         hb_util:id(UnsignedMessage, unsigned)
@@ -1144,17 +1143,17 @@ sign_serialize_deserialize_verify_test() ->
         data => <<"DATA">>,
         <<"special_key">> => <<"SPECIAL_KEY">>
     },
-    TX = message_to_tx(Msg),
+    TX = to_tx(Msg),
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?assert(ar_bundles:verify_item(SignedTX)),
     SerializedMsg = serialize(SignedTX),
     DeserializedMsg = deserialize(SerializedMsg),
-    DeserializedTX = message_to_tx(DeserializedMsg),
+    DeserializedTX = to_tx(DeserializedMsg),
     ?assert(ar_bundles:verify_item(DeserializedTX)).
 
 unsigned_id_test() ->
     UnsignedTX = ar_bundles:normalize(#tx { data = <<"TEST_DATA">> }),
-    UnsignedMessage = tx_to_message(UnsignedTX),
+    UnsignedMessage = from_tx(UnsignedTX),
     ?assertEqual(
         hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
         hb_util:id(UnsignedMessage, unsigned)
@@ -1167,7 +1166,7 @@ signed_id_test_disabled() ->
     },
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?assert(ar_bundles:verify_item(SignedTX)),
-    SignedMsg = tx_to_message(SignedTX),
+    SignedMsg = from_tx(SignedTX),
     ?assertEqual(
         hb_util:encode(ar_bundles:id(SignedTX, signed)),
         hb_util:id(SignedMsg, signed)
@@ -1187,7 +1186,7 @@ list_encoding_test() ->
 
 message_with_simple_list_test() ->
     Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
-    ?assert(match(Msg, tx_to_message(message_to_tx(Msg)))).
+    ?assert(match(Msg, from_tx(to_tx(Msg)))).
 
 empty_string_in_tag_test() ->
     Msg =
@@ -1199,5 +1198,5 @@ empty_string_in_tag_test() ->
                     <<"stdout">> => <<"c">>
                 }
         },
-    Msg2 = minimize(tx_to_message(message_to_tx(Msg))),
+    Msg2 = minimize(from_tx(to_tx(Msg))),
     ?assert(match(Msg, Msg2)).
