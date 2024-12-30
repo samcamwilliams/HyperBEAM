@@ -1,22 +1,22 @@
 %%% @doc A cache of Converge Protocol messages and compute results.
 %%%
-%%% In Converge Protocol, every message is a combinator: The message itself
-%%% represents a 'processor' that can be applied to a new message, yielding a
-%%% result. As a consequence, a simple way to understand its data model is to
-%%% think of it as a dictionary: The keys in the dictionary are pairs of messages
-%%% (Msg1, Msg2), which can be combined in order to yield a result -- the
-%%% associated value.
+%%% HyperBEAM stores each of the messages in a path-value store on disk,
+%%% according to the hashpath of the data. Each individual binary is stored at
+%%% a path corresponding to the hash of the data. Messages are stored simply as
+%%% collections of links to underlying data. See `hb_path` for more details on
+%%% the hashpath structure.
 %%% 
-%%% Given this structure, HyperBEAM stores each of the messages in a key-value
-%%% cache on disk. The cache is a simple wrapper that allows us to look up either
-%%% the direct key (a message's ID -- either signed or unsigned) or a 'subpath'.
-%%% We also store 'links' in this cache between messages. In the backend, we use
-%%% the given `hb_store' to persist the actual data.
+%%% The cache is a simple wrapper on stores, that allows us to read either a 
+%%% direct key (a binary), a set of keys (a message) or any subpath of the
+%%% hashpath space.
+%%% 
+%%% We also store signed messages in this space by creating a link for each of
+%%% the keys in the message to its corresponding underlying data.
 -module(hb_cache).
 -export([read/2, read_output/3, write/2, write/3, write_output/4]).
 -export([list/2, list_numbered/2, link/3]).
 %%% Exports for modules that utilize hb_cache.
--export([test_unsigned/1, test_signed/1]).
+-export([test_unsigned/1, test_signed/1, test_deeply_nested_complex_item/1]).
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -25,12 +25,67 @@ list_numbered(Path, Opts) ->
     SlotDir = hb_store:path(hb_opts:get(store, no_viable_store, Opts), Path),
     [ list_to_integer(Name) || Name <- list(SlotDir, Opts) ].
 
-%% @doc List all items in a directory.
+%% @doc List all items under a given path.
 list(Path, Opts) ->
     case hb_store:list(hb_opts:get(store, no_viable_store, Opts), Path) of
         {ok, Names} -> Names;
         {error, _} -> []
     end.
+
+%% @doc Write a message to the cache. For raw binaries, we write the 
+write(Msg, Opts) -> store_write(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
+store_write(Bin, Store, Opts) when is_binary(Bin) ->
+    hb_store:write(Store, Path = hb_path:hashpath(Bin, Opts), Bin),
+    {ok, Path};
+store_write(Msg, Store, Opts) when is_map(Msg) ->
+    KeyPathMap =
+        maps:map(
+            fun(Key, Value) ->
+                {ok, Path} = store_write(Value, Store, Opts),
+                hb_store:make_link(Store, Path, [hb_path:hashpath(Msg, Key, Opts)]),
+                Path
+            end,
+            Msg
+        ),
+    {ok, UnsignedID} = dev_message:unsigned_id(Msg),
+    store_link_message(UnsignedID, KeyPathMap, Store, Opts),
+    case dev_message:signed_id(Msg) of
+        {error, not_found} -> ok;
+        {ok, SignedID} -> 
+            store_link_message(SignedID, KeyPathMap, Store, Opts)
+    end,
+    {ok, KeyPathMap}.
+
+%% @doc Recursively make links to underlying data, in the form of a pathmap.
+%% This allows us to have the hashpath compute space be shared across all signed 
+%% messages from users, while also allowing us to delimit where the signature/
+%% message ends. For example, if we had the following hashpath-space:
+%% 
+%% Hashpath1/Compute/Results/1
+%% Hashpath1/Compute/Results/2/Compute/Results/1
+%% Hashpath1/Compute/Results/3
+%% 
+%% But a message that only contains the first layer of Compute results, we would
+%% create the following linked structure:
+%% 
+%% ID1/Compute/Results/1 -> Hashpath1/Compute/Results/1
+%% ID1/Compute/Results/2 -> Hashpath1/Compute/Results/2
+%% ID1/Compute/Results/3 -> Hashpath1/Compute/Results/3
+store_link_message(Root, PathMap, Store, _Opts) ->
+    maps:map(
+        fun(Key, Path) ->
+            hb_store:make_link(Store, Path, [hb_util:human_id(Root), Key])
+        end,
+        PathMap
+    ).
+
+
+read(Path, Opts) -> store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts).
+store_read(Path, Store, Opts) ->
+    
+
+
+%%------------------------------------------------------------------------------
 
 %% @doc Make a link from one path to another in the store.
 %% Note: Argument order is `link(Src, Dst, Opts)'.
