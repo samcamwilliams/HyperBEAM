@@ -79,12 +79,31 @@ store_link_message(Root, PathMap, Store, _Opts) ->
         PathMap
     ).
 
-
+%% @doc List all of the subpaths of a given path, read each in turn, then use the
+%% flat map codec to convert the result into a Converge message.
 read(Path, Opts) -> store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts).
 store_read(Path, Store, Opts) ->
+    case hb_store:list(Store, Path) of
+        {ok, []} -> not_found;
+        {ok, Subpaths} ->
+            FlatMap =
+                maps:from_list(
+                    lists:map(
+                        fun(Subpath) ->
+                            {
+                                Subpath,
+                                hb_store:read(
+                                    Store, 
+                                    hb_store:path(Store, [Path, Subpath])
+                                )
+                            }
+                    end,
+                    Subpaths
+                )
+            ),
+            {ok, hb_message:convert(FlatMap, converge, flat, Opts)}
+    end.
     
-
-
 %%------------------------------------------------------------------------------
 
 %% @doc Make a link from one path to another in the store.
@@ -187,7 +206,7 @@ write(Path, Message, Opts) ->
             UnsignedPath =
                 hb_store:path(Store, [Path, hb_util:human_id(UnsignedID)]),
             %?event({writing_single_layer_message, UnsignedPath}),
-            TX = hb_message:to_tx(Message),
+            TX = hb_message:convert(Message, tx, converge, #{}),
             ?event(
                 {writing_shallow_message,
                     {path, UnsignedPath},
@@ -216,7 +235,11 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
     % 2. Write each child into the store.
     % 3. Make links from the keys in the map to the corresponding messages.
     % This process will recurse as necessary to write grandchild messages.
-    FullTX = hb_message:to_tx(hb_message:minimize(Msg)),
+    FullTX = hb_message:convert(
+        hb_message:minimize(Msg),
+        tx,
+        converge,
+        #{}),
     UnsignedHeaderID = ar_bundles:id(FullTX, unsigned),
     %?event({starting_composite_write, hb_util:human_id(UnsignedHeaderID)}),
     Store = hb_opts:get(store, no_viable_store, Opts),
@@ -257,7 +280,7 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
                 )
             )
         ),
-    FlatTX = hb_message:to_tx(FlatMsg),
+    FlatTX = hb_message:convert(FlatMsg, tx, converge, #{}),
     hb_store:write(
         Store,
         hb_store:path(
@@ -344,9 +367,7 @@ read_raw(Store, RawPath) ->
 read_raw_simple_message(Store, Path) ->
     {ok, Bin} = hb_store:read(Store, Path),
     {ok,
-        hb_message:minimize(
-            hb_message:from_tx(ar_bundles:deserialize(Bin))
-        )
+        hb_message:convert(ar_bundles:deserialize(Bin), converge, tx, #{})
     }.
 
 %% @doc Read the output of a computation, given Msg1, Msg2, and some options.
