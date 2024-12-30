@@ -69,7 +69,7 @@ write_output(Msg1, Msg2, Msg3, Opts) ->
     % Create a path for the root from the root address.
     RootPath = hb_store:path(Store, [RootAddress]),
     % Write the message at the address, with only the keys we are caching.
-    ok = write(RootPath, maps:with(KeysToCache, Msg3), Opts),
+    {ok, _} = write(RootPath, maps:with(KeysToCache, Msg3), Opts),
     % Link the secondary addresses to the root address.
     lists:foreach(
         fun(SecondaryAddress) ->
@@ -95,14 +95,14 @@ result_root_paths(Msg1, Msg2, Msg3, Opts) ->
                     [
                         hb_converge:get(id, Msg3, Opts),
                         hb_converge:get(unsigned_id, Msg3, Opts),
-                        hb_path:compute_path(Msg1, Msg2, Opts)
+                        hb_path:hashpath(Msg1, Msg2, Opts)
                     ]
                 ),
                 maps:keys(Msg3)
             };
         Keys ->
             {
-                [hb_path:compute_path(Msg1, Msg2, Opts)],
+                [hb_path:hashpath(Msg1, Msg2, Opts)],
                 Keys
             }
     end.
@@ -140,7 +140,7 @@ write(Path, Message, Opts) ->
                     {tx, TX}
                 }
             ),
-            ok = hb_store:write(Store, UnsignedPath, ar_bundles:serialize(TX)),
+            hb_store:write(Store, UnsignedPath, ar_bundles:serialize(TX)),
             if SignedID =/= not_signed ->
                 SignedPath =
                     hb_store:path(Store, [Path, hb_util:human_id(SignedID)]),
@@ -189,6 +189,7 @@ write_raw_composite(Path, Msg, Opts) when is_map(Msg) ->
             %?event({linked, {key, KeyPath}, {file, SubitemPath}}),
             {Key, hb_path:hd(hb_path:term_to_path(SubitemPath), Opts)}
         end, DeepKeyVals),
+    ?event(debug, {subkeys, Subkeys}),
     FlatMsg =
         maps:merge(
             maps:from_list(FlatKeyVals),
