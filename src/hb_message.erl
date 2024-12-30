@@ -435,12 +435,7 @@ single_layer_message_to_encoding_test(Codec) ->
     },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assertEqual(maps:get(last_tx, Msg), maps:get(last_tx, Decoded)),
-    ?assertEqual(maps:get(owner, Msg), maps:get(owner, Decoded)),
-    ?assertEqual(maps:get(target, Msg), maps:get(target, Decoded)),
-    ?assertEqual(maps:get(data, Msg), maps:get(data, Decoded)),
-    ?assertEqual(<<"SPECIAL_VALUE">>,
-        maps:get(<<"Special-Key">>, Decoded)).
+    ?assert(hb_message:match(Msg, Decoded)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
@@ -620,29 +615,6 @@ signed_deep_tx_serialize_and_deserialize_test(Codec) ->
         )
     ).
 
-calculate_unsigned_message_id_test(Codec) ->
-    Msg = #{
-        data => <<"DATA">>,
-        <<"special_key">> => <<"SPECIAL_KEY">>
-    },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assertEqual(
-        dev_message:unsigned_id(Decoded),
-        dev_message:unsigned_id(Msg)
-    ).
-
-sign_serialize_deserialize_verify_test(Codec) ->
-    Msg = #{
-        data => <<"DATA">>,
-        <<"special_key">> => <<"SPECIAL_KEY">>
-    },
-    SignedMsg = sign(Msg, hb:wallet()),
-    ?assert(verify(SignedMsg)),
-    Encoded = convert(SignedMsg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(verify(Decoded)).
-
 unsigned_id_test(Codec) ->
     Msg = #{ data => <<"TEST_DATA">> },
     Encoded = convert(Msg, Codec, converge, #{}),
@@ -689,7 +661,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [converge, tx].
+    [converge, tx, flat].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -727,12 +699,10 @@ message_suite_test_() ->
         {"nested message with large keys test", fun nested_message_with_large_keys_test/1},
         {"message with simple list test", fun message_with_simple_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
-        {"signed tx to message and back test", fun signed_encode_decode_verify_test/1},
-        {"signed deep tx serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
-        {"calculate unsigned message id test", fun calculate_unsigned_message_id_test/1},
-        {"sign serialize deserialize verify test", fun sign_serialize_deserialize_verify_test/1},
+        {"signed item to message and back test", fun signed_encode_decode_verify_test/1},
+        {"signed deep serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    sign_serialize_deserialize_verify_test(tx).
+    signed_encode_decode_verify_test(flat).

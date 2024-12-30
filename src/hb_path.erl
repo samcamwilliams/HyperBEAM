@@ -32,7 +32,7 @@
 -export([queue_request/2, pop_request/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
--export([matches/2]).
+-export([matches/2, to_binary/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -193,6 +193,23 @@ term_to_path(Atom, _Opts) when is_atom(Atom) -> [Atom];
 term_to_path(Integer, _Opts) when is_integer(Integer) ->
     [integer_to_binary(Integer)].
 
+%% @doc Convert a path of any form to a binary.
+to_binary(Path) when is_list(Path) ->
+    iolist_to_binary(
+        lists:join(
+            "/",
+            lists:map(
+                fun(Part) ->
+                    hb_converge:key_to_binary(Part)
+                end,
+                lists:flatten(Path)
+            )
+        )
+    );
+to_binary(Path) when is_binary(Path) -> Path;
+to_binary(Other) ->
+    hb_converge:key_to_binary(Other).
+
 %% @doc Check if two keys match.
 matches(Key1, Key2) ->
     hb_util:to_lower(hb_converge:key_to_binary(Key1)) ==
@@ -257,3 +274,8 @@ tl_test() ->
 
     ?assertEqual([b, c], tl([a, b, c], #{ })),
     ?assertEqual(undefined, tl([c], #{ })).
+
+to_binary_test() ->
+    ?assertEqual(<<"a/b/c">>, to_binary([a, b, c])),
+    ?assertEqual(<<"a/b/c">>, to_binary(<<"a/b/c">>)),
+    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, b, [<<"c">>]])).

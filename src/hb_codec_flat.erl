@@ -25,7 +25,6 @@ inject_at_path([Key|Rest], Value, Map) ->
 %% @doc Convert a TABM to a flat map.
 to(Bin) when is_binary(Bin) -> Bin;
 to(Map) when is_map(Map) ->
-    Opts = #{ atom_keys => false },
     maps:fold(
         fun(Key, Value, Acc) ->
             case to(Value) of
@@ -33,8 +32,7 @@ to(Map) when is_map(Map) ->
                     maps:fold(
                         fun(SubKey, SubValue, InnerAcc) ->
                             maps:put(
-                                hb_path:term_to_path(Key, Opts)
-                                    ++ hb_path:term_to_path(SubKey, Opts),
+                                hb_path:to_binary([Key, SubKey]),
                                 SubValue,
                                 InnerAcc
                             )
@@ -43,7 +41,7 @@ to(Map) when is_map(Map) ->
                         SubMap
                     );
                 SimpleValue ->
-                    maps:put(hb_path:term_to_path(Key, Opts), SimpleValue, Acc)
+                    maps:put(hb_path:to_binary([Key]), SimpleValue, Acc)
             end
         end,
         #{},
