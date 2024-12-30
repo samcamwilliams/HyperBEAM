@@ -12,7 +12,7 @@
 %%% The accumulate algorithm is experimental and at this point only exists to
 %%% allow us to test multiple HashPath algorithms in HyperBEAM.
 -module(hb_crypto).
--export([sha256_chain/2, accumulate/2]).
+-export([sha256/1, sha256_chain/2, accumulate/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 

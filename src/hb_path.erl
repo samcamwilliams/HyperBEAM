@@ -67,10 +67,13 @@ tl(Path, Opts) when is_list(Path) ->
     end.
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
-hashpath(Msg1, _Opts) when is_map(Msg1) ->
-    case Msg1 of
-        #{ hashpath := HashPath } ->
-            HashPath;
+hashpath(Bin, _Opts) when is_binary(Bin) ->
+    % Default hashpath for a binary message is its SHA2-256 hash.
+    Hash = hb_crypto:sha256(Bin),
+    << "/", Hash/binary >>.
+hashpath(Msg1, Opts) when is_map(Msg1) ->
+    case dev_message:get(hashpath, Msg1, Opts) of
+        {ok, Hashpath} -> Hashpath;
         _ ->
             {ok, Msg1ID} = dev_message:id(Msg1),
             hd(term_to_path(Msg1ID))
