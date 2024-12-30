@@ -25,11 +25,9 @@
     [id, unsigned_id, last_tx, owner, target, signature]).
 -define(FILTERED_TAGS,
     [
-        <<"Converge-Large-Binary">>,
         <<"Bundle-Format">>,
         <<"Bundle-Map">>,
-        <<"Bundle-Version">>,
-        <<"Converge-Type:">>
+        <<"Bundle-Version">>
     ]
 ).
 -define(REGEN_KEYS, [id, unsigned_id]).
@@ -342,55 +340,19 @@ message_to_tx(RawM) when is_map(RawM) ->
                 maps:put(path, Path, RawM);
             _ -> RawM
         end,
-    % Get the keys that will be serialized, excluding private keys. Note that
-    % we do not call hb_converge:resolve here because we want to include the 'raw'
-    % data from the message, not the computable values.
-    Keys = maps:keys(M),
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
     % call message_to_tx/1 on the inner map because that would lead to adding
     % an extra layer of nesting to the data.
     %?event({message_to_tx, {keys, Keys}, {map, M}}),
+    TABM = to_type_annotated(M),
     MsgKeyMap =
-        maps:from_list(lists:flatten(
-            lists:map(
-                fun(Key) ->
-                    case maps:find(Key, M) of
-                        {ok, Map} when is_map(Map) ->
-                            {Key, message_to_tx(Map)};
-                        {ok, <<>>} ->
-                            BinKey = hb_converge:key_to_binary(Key),
-                            {<<"Converge-Type:", BinKey/binary>>, <<"Empty-Binary">>};
-                        {ok, []} ->
-                            BinKey = hb_converge:key_to_binary(Key),
-                            {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};
-                        {ok, Value} when is_binary(Value) ->
-                            {Key, Value};
-                        {ok, Value} when
-                                is_atom(Value) or is_integer(Value)
-                                or is_list(Value) ->
-                            ItemKey = hb_converge:key_to_binary(Key),
-                            {Type, BinaryValue} = encode_value(Value),
-                            [
-                                {<<"Converge-Type:", ItemKey/binary>>, Type},
-                                {ItemKey, BinaryValue}
-                            ];
-                        {ok, _} ->
-                            []
-                    end
-                end,
-                lists:filter(
-                    fun(Key) ->
-                        % Filter keys that the user could set directly, but
-                        % should be regenerated when moving msg -> TX, as well
-                        % as private keys.
-                        not lists:member(Key, ?REGEN_KEYS) andalso
-                            not hb_private:is_private(Key)
-                    end,
-                    Keys
-                )
-            )
-        )),
+        maps:map(
+            fun(_Key, Msg) when is_map(Msg) -> message_to_tx(Msg);
+            (_Key, Value) -> Value
+            end,
+            TABM
+        ),
     NormalizedMsgKeyMap = normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
@@ -474,6 +436,85 @@ message_to_tx(Other) ->
     ?event({unexpected_message_form, {explicit, Other}}),
     throw(invalid_tx).
 
+%% @doc Convert a message into a 'Type-Annotated-Binary-Message' (TABM): A message where
+%% each key is a simple binary (or another TABM).
+to_type_annotated(Msg) ->
+    maps:from_list(lists:flatten(
+        lists:map(
+            fun(Key) ->
+                case maps:find(Key, Msg) of
+                    {ok, <<>>} ->
+                        BinKey = hb_converge:key_to_binary(Key),
+                        {<<"Converge-Type:", BinKey/binary>>, <<"Empty-Binary">>};
+                    {ok, Value} when is_binary(Value) ->
+                        {Key, Value};
+                    {ok, Map} when is_map(Map) ->
+                        {Key, to_type_annotated(Map)};
+                    {ok, []} ->
+                        BinKey = hb_converge:key_to_binary(Key),
+                        {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};
+                    {ok, Value} when
+                            is_atom(Value) or is_integer(Value)
+                            or is_list(Value) ->
+                        ItemKey = hb_converge:key_to_binary(Key),
+                        {Type, BinaryValue} = encode_value(Value),
+                        [
+                            {<<"Converge-Type:", ItemKey/binary>>, Type},
+                            {ItemKey, BinaryValue}
+                        ];
+                    {ok, _} -> []
+                end
+            end,
+            lists:filter(
+                fun(Key) ->
+                    % Filter keys that the user could set directly, but
+                    % should be regenerated when moving msg -> TX, as well
+                    % as private keys.
+                    not lists:member(Key, ?REGEN_KEYS) andalso
+                        not hb_private:is_private(Key)
+                end,
+                maps:keys(Msg)
+            )
+        )
+    )).
+
+%% @doc Turns a TABM into a native HyperBEAM message.
+from_type_annotated(TABM1) ->
+    % First, handle special cases of empty items, which `ar_bundles` cannot
+    % handle.
+    TABM2 =
+        maps:map(
+            fun(<<"Converge-Type:", _/binary>>, <<"Empty-Binary">>) -> <<>>;
+            (<<"Converge-Type:", _/binary>>, <<"Empty-List">>) -> [];
+            (_Key, Value) -> Value
+            end,
+            TABM1
+        ),
+    % Remove any `ar_bundles` meta tags, which are not part of the message.
+    TABM3 = maps:without(?FILTERED_TAGS, TABM2),
+    % Parse tags that have a "Converge-Type:" prefix.
+    TypeKeys =
+        #{
+            Key =>
+                list_to_existing_atom(
+                    string:to_lower(binary_to_list(Value))
+                )
+        ||
+            <<"Converge-Type:", Key/binary>> := Value <- TABM3
+        },
+    NonTypeKeys = maps:without(maps:keys(TypeKeys), TABM3),
+    maps:map(
+        fun(Key, BinaryValue) when is_binary(BinaryValue) ->
+            case maps:find(Key, TypeKeys) of
+                false -> BinaryValue;
+                {ok, Type} -> decode_value(Type, BinaryValue)
+            end;
+        (_Key, ChildTABM) when is_map(ChildTABM) ->
+            from_type_annotated(ChildTABM)
+        end,
+        NonTypeKeys
+    ).
+
 %%% @doc Maps the native HyperBEAM Message 
 %%% to an "HTTP" message. Every HyperBEAM Message is mapped to
 %%% an HTTP multipart message. The HTTP Message data structure 
@@ -528,7 +569,7 @@ message_to_http(Msg) ->
         0 -> maps:put(body, <<>>, Http);
         _ ->
             ?no_prod("What should the Boundary be?"),
-            Boundary = base64:encode(crypto:strong_rand_bytes(32)),
+            Boundary = base64:encode(crypto:strong_rand_bytes(8)),
             % Transform body into a binary, delimiting each part,
             % with the Boundary
             Bin = maps:fold(
@@ -591,7 +632,7 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
 
 body_to_http(Http, Body) when is_map(Body) ->
     Disposition = <<"Content-Disposition: inline">>,
-    SubHttp = message_to_http(Body),
+    SubHttp = messageto_http(Body),
     EncodedBody = encode_http_msg(SubHttp),
     field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
 body_to_http(Http, Body) when is_binary(Body) ->
@@ -775,20 +816,9 @@ tx_to_message(TX) when is_record(TX, tx) ->
     end.
 do_tx_to_message(RawTX) ->
     % Ensure the TX is fully deserialized.
-    TX0 = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
-    % Find empty tags and replace them with the empty binary.
-    TX =
-        TX0#tx {
-            tags = lists:map(
-                fun({<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>}) ->
-                    {Key, <<>>};
-                ({<<"Converge-Type:", Key/binary>>, <<"Empty-List">>}) ->
-                    {Key, []};
-                (Tag) -> Tag
-                end,
-                TX0#tx.tags
-            )
-        },
+    Map0 = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
+    % Turn the TABM into a normal HyperBEAM message.
+    Map1 = from_type_annotated(Map0),
     % We need to generate a map from each field of the tx record.
     % Get the raw fields and values of the tx record and pair them.
     Fields = record_info(fields, tx),
