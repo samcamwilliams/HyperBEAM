@@ -76,23 +76,14 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, converge, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
-    ?event(debug,
-        {conversion_req,
-            {msg, Msg},
-            {target, TargetFormat},
-            {source, SourceFormat},
-            {opts, Opts}
-        }
-    ),
     TABM = convert_to_tabm(Msg, SourceFormat, Opts),
-    ?event(debug, {generated_tabm, TABM}),
-    Res = convert_to_target(TABM, TargetFormat, Opts),
-    ?event(debug, {converted_to_target, Res}),
-    Res.
+    case TargetFormat of
+        tabm -> TABM;
+        _ -> convert_to_target(TABM, TargetFormat, Opts)
+    end.
 
 convert_to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
-    ?event(debug, {{source_codec, SourceCodecMod}, {msg, Msg}}),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
             minimize(filter_default_keys(TypicalMsg));
@@ -588,7 +579,6 @@ signed_encode_decode_verify_test(Codec) ->
     Encoded = convert(SignedTX, Codec, tx, #{}),
     ?assert(ar_bundles:verify_item(SignedTX)),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
     ?assert(verify(Decoded)).
 
 signed_deep_tx_serialize_and_deserialize_test(Codec) ->
