@@ -78,7 +78,7 @@ compute(Msg1) ->
 %             MsgToProc = hb_converge:get(<<"Message">>, M2, Opts),
 %             JSON =
 %                 ar_bundles:serialize(
-%                     hb_message:to_tx(MsgToProc),
+%                     hb_message:convert(MsgToProc, tx, converge, #{}),
 %                     json
 %                 ),
 %             ?event(setting_message_vfs_key),
@@ -269,13 +269,21 @@ vfs_is_serializable_test() ->
     VFSMsg = hb_converge:get(<<"VFS">>, StackMsg),
     VFSMsg2 =
         hb_message:minimize(
-            hb_message:from_tx(
-                hb_message:to_tx(VFSMsg))),
+            hb_message:convert(
+                hb_message:convert(VFSMsg, tx, converge, #{}),
+                converge,
+                tx,
+                #{})
+        ),
     ?assert(hb_message:match(VFSMsg, VFSMsg2)).
 
 wasi_stack_is_serializable_test() ->
     Msg = generate_wasi_stack("test/test-print.wasm", <<"hello">>, []),
-    Msg2 = hb_message:from_tx(hb_message:to_tx(Msg)),
+    Msg2 = hb_message:convert(
+        hb_message:convert(Msg, tx, converge, #{}),
+        converge,
+        tx,
+        #{}),
     ?assert(hb_message:match(Msg, Msg2)).
 
 

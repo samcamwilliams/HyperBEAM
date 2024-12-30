@@ -50,7 +50,7 @@ init(Req, Opts) ->
     % Normalize the response.
     NormMsg = normalize_response(RawRes),
     % Transform the message into an ANS-104 transaction.
-    ResTX = hb_message:to_tx(NormMsg),
+    ResTX = hb_message:convert(NormMsg, tx, converge, #{}),
     NormTX = ar_bundles:normalize(ResTX),
     % Sign the transaction if it's not already signed.
     Signed =

@@ -107,7 +107,7 @@ to(TABM) when is_map(TABM) ->
             end,
             M
         ),
-    NormalizedMsgKeyMap = normalize_keys(MsgKeyMap),
+    NormalizedMsgKeyMap = hb_message:normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
     {RemainingMap, BaseTXList} =
@@ -129,7 +129,7 @@ to(TABM) when is_map(TABM) ->
                 end
             end,
             {NormalizedMsgKeyMap, []},
-            default_tx_list()
+            hb_message:default_tx_list()
         ),
     % Rebuild the tx record from the new list of fields and values.
     TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),

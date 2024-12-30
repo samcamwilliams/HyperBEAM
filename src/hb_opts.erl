@@ -65,6 +65,13 @@ config() ->
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
             },
+        codecs => 
+            #{
+                converge => hb_codec_converge,
+                tx => hb_codec_tx,
+                flat => hb_codec_flat,
+                http => hb_codec_http
+            },
         %% The stacks of devices that the node should expose by default.
         %% These represent the core flows of functionality of the node.
         default_device_stacks => [

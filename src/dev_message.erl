@@ -54,8 +54,8 @@ raw_id(Item) -> raw_id(Item, unsigned).
 raw_id(TX, Type) when is_record(TX, tx) ->
     hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Map, Type) when is_map(Map) ->
-    Msg = hb_message:to_tx(Map),
-    hb_util:encode(ar_bundles:id(Msg, Type));
+    TX = hb_message:convert(Map, tx, converge, #{}),
+    hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin;
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->

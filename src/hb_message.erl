@@ -2,18 +2,20 @@
 %%% @doc This module acts an adapter between messages, as modeled in the
 %%% Converge Protocol, and their uderlying binary representations and formats.
 %%% 
-%%% See `docs/converge-protocol.md' for details on Converge. Unless you are
-%%% implementing a new message serialization format, you should not need to 
-%%% interact with this module directly. Instead, use the `hb_converge'
-%%% interfaces to interact with all messages. The `dev_message' module
-%%% implements a device interface for handling messages as the default Converge
-%%% device.
+%%% Unless you are implementing a new message serialization codec, you should
+%%% not need to interact with this module directly. Instead, use the
+%%% `hb_converge' interfaces to interact with all messages. The `dev_message'
+%%% module implements a device interface for abstracting over the different
+%%% message formats.
 %%% 
 %%% `hb_message' and the HyperBEAM caches can interact with multiple different
 %%% types of message formats:
-%%% - Arweave transations.
-%%% - ANS-104 data items.
-%%% - HTTP Signed Messages.
+%%% 
+%%%     - Richly typed Converge messages.
+%%%     - Arweave transations.
+%%%     - ANS-104 data items.
+%%%     - HTTP Signed Messages.
+%%%     - Flat Maps.
 %%% 
 %%% This module is responsible for converting between these formats. It does so
 %%% by normalizing messages to a common format: `Type Annotated Binary Messages`
@@ -24,21 +26,70 @@
 %%% also a simple format from a computational perspective (only binary literals
 %%% and O(1) access maps), such that operations upon them are efficient.
 %%% 
+%%% The structure of the conversions is as follows:
+%%% 
+%%% ```
+%%%     Arweave TX/ANS-104 ==> hb_codec_tx:from/1 ==> TABM
+%%%     HTTP Signed Message ==> hb_codec_http:from/1 ==> TABM
+%%%     Flat Maps ==> hb_codec_flat:from/1 ==> TABM
+%%% 
+%%%     TABM ==> hb_codec_converge:to/1 ==> Converge Message
+%%%     Converge Message ==> hb_codec_converge:from/1 ==> TABM
+%%% 
+%%%     TABM ==> hb_codec_tx:to/1 ==> Arweave TX/ANS-104
+%%%     TABM ==> hb_codec_http:to/1 ==> HTTP Signed Message
+%%%     TABM ==> hb_codec_flat:to/1 ==> Flat Maps
+%%% '''
+%%% 
+%%% Additionally, this module provides a number of utility functions for
+%%% manipulating messages. For example, `hb_message:sign/2' to sign a message of
+%%% arbitrary type, or `hb_message:format/1' to print a Converge/TABM message in
+%%% a human-readable format.
+%%% 
 %%% The `hb_cache' module is responsible for storing and retrieving messages in
 %%% the HyperBEAM stores configured on the node. Each store has its own storage
 %%% backend, but each works with simple key-value pairs. Subsequently, the 
-%%% `hb_cache` module uses TABMs as the internal format for storing and 
+%%% `hb_cache' module uses TABMs as the internal format for storing and 
 %%% retrieving messages.
 -module(hb_message).
--export([load/2, sign/2, verify/1, match/2, type/1, minimize/1]).
--export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
--export([to_tx/1, from_tx/1]).
--export([to_flat/1, from_flat/1]).
--export([to_http/1]).
+-export([convert/3, convert/4]).
+-export([sign/2, verify/1, match/2, type/1, minimize/1, normalize_keys/1]). 
+-export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
+%%% Helpers:
+-export([default_tx_list/0]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Convert a message from one format to another. Taking a message in the
+%% source format, a target format, and a set of opts. If not given, the source
+%% is assumed to be `converge`. Additional codecs can be added by ensuring they
+%% are part of the `Opts` map -- either globally, or locally for a computation.
+%% 
+%% The encoding happens in two phases:
+%% 1. Convert the message to a TABM.
+%% 2. Convert the TABM to the target format.
+%% 
+%% The conversion to a TABM is done by the `converge' codec, which is always
+%% available. The conversion from a TABM is done by the target codec.
+convert(Msg, TargetFormat, Opts) ->
+    convert(Msg, TargetFormat, converge, Opts).
+convert(Msg, TargetFormat, converge, Opts) ->
+    % No need to convert to TABM, just convert to the target format.
+    convert(Msg, TargetFormat, Opts);
+convert(Msg, TargetFormat, SourceFormat, Opts) ->
+    SourceCodecMod = get_codec(SourceFormat, Opts),
+    TABM = SourceCodecMod:from(Msg),
+    TargetCodecMod = get_codec(TargetFormat, Opts),
+    TargetCodecMod:to(TABM).
+
+%% @doc Get a codec from the options.
+get_codec(TargetFormat, Opts) ->
+    case hb_opts:get(codecs, #{}, Opts) of
+        #{ TargetFormat := CodecMod } -> CodecMod;
+        _ -> throw({message_codec_not_found, TargetFormat})
+    end.
 
 %% @doc Pretty-print a message.
 print(Msg) -> print(Msg, 0).
@@ -182,13 +233,18 @@ signers(TX) when is_record(TX, tx) ->
     ar_bundles:signer(TX);
 signers(_) -> [].
 
-%% @doc Sign a message with the given wallet.
+%% @doc Sign a message with the given wallet. Only supports the `tx' format
+%% at the moment.
 sign(Msg, Wallet) ->
-    from_tx(ar_bundles:sign_item(to_tx(Msg), Wallet)).
+    TX = convert(Msg, tx, #{}),
+    ar_bundles:sign_item(TX, Wallet),
+    convert(TX, converge, tx, #{}).
 
 %% @doc Verify a message.
 verify(Msg) ->
-    ar_bundles:verify_item(to_tx(Msg)).
+    TX = convert(Msg, tx, #{}),
+    ar_bundles:verify_item(TX),
+    convert(TX, converge, tx, #{}).
 
 %% @doc Return the type of a message.
 type(TX) when is_record(TX, tx) -> tx;
@@ -205,13 +261,6 @@ type(Msg) when is_map(Msg) ->
         true -> deep;
         false -> shallow
     end.
-
-%% @doc Load a message from the cache.
-load(Store, ID) when is_binary(ID)
-        andalso (byte_size(ID) == 43 orelse byte_size(ID) == 32) ->
-    from_tx(hb_cache:read(Store, ID));
-load(Store, Path) ->
-    from_tx(hb_cache:read(Store, Path)).
 
 %% @doc Check if two maps match, including recursively checking nested maps.
 match(Map1, Map2) ->
@@ -311,7 +360,7 @@ serialize(M) -> serialize(M, binary).
 serialize(M, json) ->
     jiffy:encode(ar_bundles:item_to_json_struct(M));
 serialize(M, binary) ->
-    ar_bundles:serialize(to_tx(M)).
+    ar_bundles:serialize(convert(M, tx, #{})).
 
 %% @doc Deserialize a message from a binary representation.
 deserialize(B) -> deserialize(B, binary).
@@ -319,304 +368,14 @@ deserialize(J, json) ->
     {JSONStruct} = jiffy:decode(J),
     ar_bundles:json_struct_to_item(JSONStruct);
 deserialize(B, binary) ->
-    from_tx(ar_bundles:deserialize(B)).
-
-%%% @doc Maps the native HyperBEAM Message 
-%%% to an "HTTP" message. Every HyperBEAM Message is mapped to
-%%% an HTTP multipart message. The HTTP Message data structure 
-%%% has the following shape:
-%%% 
-%%% #{ 
-%%%     headers => [
-%%%         {<<"Example-Header">>, <<"Value">>}
-%%%     ],
-%%%     body: <<"Some body">>
-%%% }
-%%% 
-%%% 
-%%% For each HyperBEAM Message Key:
-%%% 
-%%% The Key will be ignored if:
-%%% - The field is private (according to hb_private:is_private/1)
-%%% - The field is one of ?REGEN_KEYS
-%%%
-%%% The Key/Value Pair will be encoded according to the following rules:
-%%%     "signatures" -> {SignatureInput, Signature} header Tuples, each encoded as a Structured Field Dictionary
-%%%     "body" ->
-%%%         - if a map, then recursively encode as its own HyperBEAM message
-%%%         - otherwise encode as a normal field
-%%%     _ -> encode as a normal field
-%%% 
-%%% Each field will be mapped to the HTTP Message according to the following rules:
-%%%     "body" -> always encoded as part of the body as with Content-Disposition type of "inline"
-%%%     _ ->
-%%%         - If the byte size of the value is less than the ?MAX_TAG_VALUE, then encode as a header,
-%%%         also attempting to encode as a structured field
-%%%         - Otherwise encode the value as a part in the multipart response
-%%% 
-to_http(Msg) ->
-    PublicMsg = hb_private:reset(Msg),
-    MinimizedMsg = minimize(PublicMsg),
-    NormalizedMsg = normalize_keys(MinimizedMsg),
-    Http = lists:foldl(
-        fun
-            ({<<"signatures">>, Signatures}, Http) -> signatures_to_http(Http, Signatures);
-            ({<<"body">>, Body}, Http) -> body_to_http(Http, Body);
-            ({Name, Value}, Http) -> field_to_http(Http, {Name, Value}, #{})
-        end,
-        #{
-            headers => [],
-            body => #{}
-        },
-        maps:to_list(NormalizedMsg)    
-    ),
-    Body = maps:get(body, Http),
-    NewHttp = case maps:size(Body) of
-        0 -> maps:put(body, <<>>, Http);
-        _ ->
-            ?no_prod("What should the Boundary be?"),
-            Boundary = base64:encode(crypto:strong_rand_bytes(8)),
-            % Transform body into a binary, delimiting each part,
-            % with the Boundary
-            Bin = maps:fold(
-                fun (_, BodyPart, Acc) ->
-                    <<Acc/binary, "--", Boundary/binary, "\n", BodyPart/binary, "\n">>
-                end,
-                <<>>,
-                Body
-            ),
-            % TODO: I _think_ this is needed, according to spec
-            % End the body with a final terminating Boundary
-            EncodedBody = <<Bin/binary, "--", Boundary/binary, "--">>,
-            #{ 
-                headers => [
-                    {<<"Content-Type">>, <<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>}
-                    | maps:get(headers, Http)
-                ],
-                body => EncodedBody
-            }
-    end,
-    NewHttp.
-
-encode_http_msg (#{ headers := SubHeaders, body := SubBody }) ->
-    % Serialize the headers, to be included in the part of the multipart response
-    EncodedHeaders = lists:foldl(
-        fun ({HeaderName, HeaderValue}, Acc) ->
-            <<Acc/binary, "\n", HeaderName/binary, ": ", HeaderValue/binary>>
-        end,
-        <<>>,
-        SubHeaders
-    ),
-    % Some-Headers: some-value
-    % Content-Type: image/png
-    % 
-    % <body>
-    <<EncodedHeaders/binary, <<"\n\n">>, SubBody/binary>>.
-
-signatures_to_http(Http, Signatures) when is_map(Signatures) ->
-    signatures_to_http(Http, maps:to_list(Signatures));
-signatures_to_http(Http, Signatures) when is_list(Signatures) ->
-    {SfSigInputs, SfSigs} = lists:foldl(
-        fun ({SigName, SignatureMap = #{ inputs := Inputs, signature := Signature }}, {SfSigInputs, SfSigs}) ->
-            NextSigInput = hb_http_signature:sf_signature_params(Inputs, SignatureMap),
-            NextSig = hb_http_signature:sf_signature(Signature),
-            NextName = hb_converge:key_to_binary(SigName),
-            {
-                [{NextName, NextSigInput} | SfSigInputs],
-                [{NextName, NextSig} | SfSigs]
-            }
-        end,
-        % Start with empty Structured Field Dictionaries
-        {[], []},
-        Signatures
-    ),
-    % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
-    % each transmitted either as a header, or as a part in the multi-part body
-    WithSig = field_to_http(Http, {<<"Signature">>, hb_http_structured_fields:dictionary(SfSigs)}, #{}),
-    WithSigAndInput = field_to_http(WithSig, {<<"Signature-Input">>, hb_http_structured_fields:dictionary(SfSigInputs)}, #{}),
-    WithSigAndInput.
-
-body_to_http(Http, Body) when is_map(Body) ->
-    Disposition = <<"Content-Disposition: inline">>,
-    SubHttp = to_http(Body),
-    EncodedBody = encode_http_msg(SubHttp),
-    field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
-body_to_http(Http, Body) when is_binary(Body) ->
-    Disposition = <<"Content-Disposition: inline">>,
-    field_to_http(Http, {<<"body">>, Body}, #{ disposition => Disposition, where => body }).
-
-field_to_http(Http, {Name, MapOrList}, Opts) when is_map(MapOrList) orelse is_list(MapOrList) ->
-    {Mapper, Parser} = case MapOrList of
-        Map when is_map(Map) -> {fun hb_http_structured_fields:to_dictionary/1, fun hb_http_structured_fields:dictionary/1};
-        List when is_list(List) -> {fun hb_http_structured_fields:to_list/1, fun hb_http_structured_fields:list/1}
-    end,
-    MaybeBin = case Mapper(MapOrList) of
-        {ok, Sf} ->
-            % Check the size of the encoded dictionary, and signal to store
-            % the map as an Structured Field encoded dictionary in the header
-            %
-            % Otherwise, we will need to convert the Map into its own HTTP message
-            % and append as a part of the body in the parent multi-part msg
-            EncodedSf = Parser(Sf),
-            case byte_size(EncodedSf) of
-                Fits when Fits =< ?MAX_TAG_VAL -> EncodedSf;
-                _ -> undefined
-            end;
-        _ -> undefined
-    end,
-    ?no_prod("What should the name be?"),
-    NormalizedName = hb_converge:key_to_binary(Name),
-    case MaybeBin of
-        Bin when is_binary(Bin) ->
-            field_to_http(Http, {NormalizedName, Bin}, Opts);
-        undefined when is_map(MapOrList) ->
-            SubHttp = to_http(MapOrList),
-            EncodedHttpMap = encode_http_msg(SubHttp),
-            % Append to the serialized field to the parent body, as a part
-            field_to_http(Http, {Name, EncodedHttpMap}, Opts);
-        undefined when is_list(MapOrList) ->
-            ?no_prod("how do we further encode a list?"),
-            not_implemented
-    end;
-% field_to_http(Http, {Name, List}, Opts) when is_list(List) ->
-%     {not_implemented, List};
-field_to_http(Http, {Name, Value}, Opts) ->
-    NormalizedName = hb_converge:key_to_binary(Name),
-    NormalizedValue = hb_converge:key_to_binary(Value),
-
-    % Depending on the size of the value, we may need to force
-    % the value to be encoded into the body.
-    %
-    % Otherwise, we place the value according to Opts,
-    % defaulting to header
-    DefaultWhere = case byte_size(NormalizedValue) of
-        Fits when Fits =< ?MAX_TAG_VAL -> headers;
-        _ -> maps:get(where, Opts, headers)
-    end,
-
-    case maps:get(where, Opts, DefaultWhere) of
-        headers ->
-            Headers = maps:get(headers, Http),
-            NewHeaders = lists:append(Headers, [{NormalizedName, NormalizedValue}]),
-            maps:put(headers, NewHeaders, Http);
-        % Append the value as a part of the multipart body
-        %
-        % We'll need to prepend a Content-Disposition header to the part, using
-        % the field name as the form part name. (see https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
-        % We allow the caller to provide a Content-Disposition in Opts, but default
-        % to appending as a field on the form-data
-        body ->
-            Body = maps:get(body, Http),
-            Disposition = maps:get(disposition, Opts, <<"Content-Disposition: form-data; name=", NormalizedName/binary>>),
-            BodyPart = <<Disposition/binary, "\n\n", NormalizedValue/binary>>,
-            NewBody = maps:put(NormalizedName, BodyPart, Body),
-            maps:put(body, NewBody, Http)
-    end.
-
-from_http(#{ headers := Headers, body := Body }) ->
-    ContentType = lists:keyfind(<<"Content-Type">>, 1, Headers),
-    {item, _, Params} = hb_http_structured_fields:item(ContentType),
-    Parts = case lists:keyfind(<<"boundary">>, 1, Params) of
-        false -> [Body];
-        {_, Boundary} ->
-            % The first part will always be empty (since the boundary is always placed first
-            % in the body
-            [_, P] = binary:split(Body, <<"--", Boundary/binary>>),
-            % The last part MIGHT be "--" for the terminating boundary.
-            %
-            % So we need to check and potentially trim off the last
-            % element
-            TrimmedParts = case lists:last(P) of
-                <<"--">> ->
-                    lists:sublist(P, length(P) - 1);
-                _ -> P
-            end
-    end,
-    % TODO: WIP NOT DONE
-    % Take each part and convert into a HB message
-    %   - headers become fields
-    %       - maybe parse as structured fields?
-    %   - parts become fields (recursively parsed)
-    %       - "inline" part becomes top level "body" field
-    %   - "Signature" & "Signature-Input" are parsed as SF dictionaries and become "Signatures" on HB message
-
-    not_implemented.
-
-%% @doc Convert non-binary values to binary for serialization.
-decode_value(integer, Value) ->
-    {item, Number, _} = hb_http_structured_fields:parse_item(Value),
-    Number;
-decode_value(float, Value) ->
-    binary_to_float(Value);
-decode_value(atom, Value) ->
-    {item, {string, AtomString}, _} =
-        hb_http_structured_fields:parse_item(Value),
-    binary_to_existing_atom(AtomString, latin1);
-decode_value(list, Value) ->
-    lists:map(
-        fun({item, {string, <<"(Converge-Type: ", Rest/binary>>}, _}) ->
-            [Type, Item] = binary:split(Rest, <<") ">>),
-            decode_value(
-                list_to_existing_atom(
-                    string:to_lower(binary_to_list(Type))
-                ),
-                Item
-            );
-           ({item, {string, Binary}, _}) -> Binary
-        end,
-        hb_http_structured_fields:parse_list(iolist_to_binary(Value))
-    );
-decode_value(OtherType, Value) ->
-    ?event({unexpected_type, OtherType, Value}),
-    throw({unexpected_type, OtherType, Value}).
-
-%% @doc Convert a term to a binary representation, emitting its type for
-%% serialization as a separate tag.
-encode_value(Value) when is_integer(Value) ->
-    [Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
-    {<<"Integer">>, Encoded};
-encode_value(Value) when is_float(Value) ->
-    ?no_prod("Must use structured field representation for floats!"),
-    {<<"Float">>, float_to_binary(Value)};
-encode_value(Value) when is_atom(Value) ->
-    [EncodedIOList, _] =
-        hb_http_structured_fields:item(
-            {item, {string, atom_to_binary(Value, latin1)}, []}),
-    Encoded = list_to_binary(EncodedIOList),
-    {<<"Atom">>, Encoded};
-encode_value(Values) when is_list(Values) ->
-    EncodedValues =
-        lists:map(
-            fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
-               (Item) ->
-                {Type, Encoded} = encode_value(Item),
-                {
-                    item,
-                    {
-                        string,
-                        <<
-                            "(Converge-Type: ", Type/binary, ") ",
-                            Encoded/binary
-                        >>
-                    },
-                    []
-                }
-            end,
-            Values
-        ),
-    EncodedList = hb_http_structured_fields:list(EncodedValues),
-    {<<"List">>, iolist_to_binary(EncodedList)};
-encode_value(Value) when is_binary(Value) ->
-    {<<"Binary">>, Value};
-encode_value(Value) ->
-    Value.
+    convert(ar_bundles:deserialize(B), converge, tx, #{}).
 
 %%% Tests
 
 basic_map_to_tx_test() ->
     hb:init(),
     Msg = #{ normal_key => <<"NORMAL_VALUE">> },
-    TX = to_tx(Msg),
+    TX = hb_codec_tx:to(Msg),
     ?assertEqual([{<<"normal_key">>, <<"NORMAL_VALUE">>}], TX#tx.tags).
 
 %% @doc Test that the filter_default_tx_keys/1 function removes TX fields
@@ -655,7 +414,7 @@ single_layer_message_to_tx_test() ->
         data => <<"DATA">>,
         <<"Special-Key">> => <<"SPECIAL_VALUE">>
     },
-    TX = to_tx(Msg),
+    TX = hb_codec_tx:to(Msg),
     ?event({tx_to_message, {msg, Msg}, {tx, TX}}),
     ?assertEqual(maps:get(last_tx, Msg), TX#tx.last_tx),
     ?assertEqual(maps:get(owner, Msg), TX#tx.owner),
@@ -688,7 +447,7 @@ single_layer_tx_to_message_test() ->
         data = <<"DATA">>,
         tags = [{<<"special_key">>, <<"SPECIAL_KEY">>}]
     },
-    Msg = from_tx(TX),
+    Msg = hb_codec_tx:from(TX),
     ?assertEqual(maps:get(<<"special_key">>, Msg), <<"SPECIAL_KEY">>),
     ?assertEqual(<< "DATA">>, maps:get(<<"data">>, Msg)),
     ?assertEqual(<< 2:256 >>, maps:get(<<"last_tx">>, Msg)),
@@ -698,31 +457,31 @@ single_layer_tx_to_message_test() ->
 %% @doc Test that the message matching function works.
 match_test() ->
     Msg = #{ a => 1, b => 2 },
-    TX = to_tx(Msg),
-    Msg2 = from_tx(TX),
+    TX = hb_codec_tx:to(Msg),
+    Msg2 = hb_codec_tx:from(TX),
     ?assert(match(Msg, Msg2)).
 
 %% @doc Test that two txs match. Note: This function uses tx_to_message/1
 %% underneath, which (depending on the test) could potentially lead to false
 %% positives.
 txs_match(TX1, TX2) ->
-    match(from_tx(TX1), from_tx(TX2)).
+    match(hb_codec_tx:from(TX1), hb_codec_tx:from(TX2)).
 
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test() ->
     Msg = #{ highly_unusual_http_header => highly_unusual_value },
-    ?assert(match(Msg, from_tx(to_tx(Msg)))).
+    ?assert(match(Msg, hb_codec_tx:from(hb_codec_tx:to(Msg)))).
 
 structured_field_decimal_parsing_test() ->
     Msg = #{ integer_field => 1234567890 },
-    ?assert(match(Msg, from_tx(to_tx(Msg)))).
+    ?assert(match(Msg, hb_codec_tx:from(hb_codec_tx:to(Msg)))).
 
 binary_to_binary_test() ->
     % Serialization must be able to turn a raw binary into a TX, then turn
     % that TX back into a binary and have the result match the original.
     Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Msg = to_tx(Bin),
-    ?assertEqual(Bin, from_tx(Msg)).
+    Msg = hb_codec_tx:to(Bin),
+    ?assertEqual(Bin, hb_codec_tx:from(Msg)).
 
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
@@ -730,23 +489,23 @@ binary_to_binary_test() ->
 message_with_large_keys_test() ->
     Msg = #{
         <<"normal_key">> => <<"normal_value">>,
-        <<"large_key">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
-        <<"another_large_key">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
+        <<"large_key">> => << 0:((1 + 1024) * 8) >>,
+        <<"another_large_key">> => << 0:((1 + 1024) * 8) >>,
         <<"another_normal_key">> => <<"another_normal_value">>
     },
-    ?assert(match(Msg, from_tx(to_tx(Msg)))).
+    ?assert(match(Msg, hb_codec_tx:from(hb_codec_tx:to(Msg)))).
 
 %% @doc Check that large keys and data fields are correctly handled together.
 nested_message_with_large_keys_and_data_test() ->
     Msg = #{
         <<"normal_key">> => <<"normal_value">>,
-        <<"large_key">> => << 0:(?MAX_TAG_VAL * 16) >>,
-        <<"another_large_key">> => << 0:(?MAX_TAG_VAL * 16) >>,
+        <<"large_key">> => << 0:(1024 * 16) >>,
+        <<"another_large_key">> => << 0:(1024 * 16) >>,
         <<"another_normal_key">> => <<"another_normal_value">>,
         data => <<"Hey from the data field!">>
     },
-    TX = to_tx(Msg),
-    Msg2 = from_tx(TX),
+    TX = hb_codec_tx:to(Msg),
+    Msg2 = hb_codec_tx:from(TX),
     ?event({matching, {input, Msg}, {tx, TX}, {output, Msg2}}),
     ?assert(match(Msg, Msg2)).
 
@@ -756,8 +515,8 @@ simple_nested_message_test() ->
         nested => #{ <<"b">> => <<"1">> },
         c => <<"3">>
     },
-    TX = to_tx(Msg),
-    Msg2 = from_tx(TX),
+    TX = hb_codec_tx:to(Msg),
+    Msg2 = hb_codec_tx:from(TX),
     ?event({matching, {input, Msg}, {output, Msg2}}),
     ?assert(
         match(
@@ -776,12 +535,12 @@ nested_message_with_large_data_test() ->
             <<"tx_map_item">> =>
                 #{
                     <<"tx_depth">> => <<"inner">>,
-                    <<"large_data_inner">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>
+                    <<"large_data_inner">> => << 0:((1 + 1024) * 8) >>
                 },
-            <<"large_data_outer">> => << 0:((1 + ?MAX_TAG_VAL) * 8) >>
+            <<"large_data_outer">> => << 0:((1 + 1024) * 8) >>
         }
     },
-    ?assert(match(Msg, from_tx(to_tx(Msg)))).
+    ?assert(match(Msg, hb_codec_tx:from(hb_codec_tx:to(Msg)))).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
 deeply_nested_message_with_data_test() ->
@@ -798,25 +557,25 @@ deeply_nested_message_with_data_test() ->
                 }
         }
     },
-    ?assert(match(Msg, from_tx(to_tx(Msg)))).
+    ?assert(match(Msg, hb_codec_tx:from(hb_codec_tx:to(Msg)))).
 
 nested_structured_fields_test() ->
     NestedMsg = #{ a => #{ b => 1 } },
     ?assert(
         match(
             NestedMsg,
-            from_tx(to_tx(NestedMsg))
+            hb_codec_tx:from(hb_codec_tx:to(NestedMsg))
         )
     ).
 
 nested_message_with_large_keys_test() ->
     Msg = #{
         a => <<"1">>,
-        long_data => << 0:((1 + ?MAX_TAG_VAL) * 8) >>,
+        long_data => << 0:((1 + 1024) * 8) >>,
         nested => #{ <<"b">> => <<"1">> },
         c => <<"3">>
     },
-    ResMsg = from_tx(to_tx(Msg)),
+    ResMsg = hb_codec_tx:from(hb_codec_tx:to(Msg)),
     ?event({matching, {input, Msg}, {output, ResMsg}}),
     ?assert(match(Msg, ResMsg)).
 
@@ -828,8 +587,8 @@ signed_tx_to_message_and_back_test() ->
     },
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?assert(ar_bundles:verify_item(SignedTX)),
-    SignedMsg = from_tx(SignedTX),
-    SignedTX2 = to_tx(SignedMsg),
+    SignedMsg = hb_codec_tx:from(SignedTX),
+    SignedTX2 = hb_codec_tx:to(SignedMsg),
     ?assert(ar_bundles:verify_item(SignedTX2)).
 
 signed_deep_tx_serialize_and_deserialize_test() ->
@@ -851,14 +610,14 @@ signed_deep_tx_serialize_and_deserialize_test() ->
     DeserializedTX = deserialize(SerializedTX),
     ?assert(
         match(
-            from_tx(SignedTX),
+            hb_codec_tx:from(SignedTX),
             DeserializedTX
         )
     ).
 
 simple_message_to_http_test() ->
     Msg = #{ a => 1, b => 2, priv_c => 3, id => <<"regen_ignore">> },
-    Http = to_http(Msg),
+    Http = hb_codec_http:to(Msg),
     ?assertEqual(
         #{ headers => [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}], body => <<>> },
         Http    
@@ -868,7 +627,7 @@ simple_message_to_http_test() ->
 simple_body_message_to_http_test() ->
     Html = <<"<html><body>Hello</body></html>">>,
     Msg = #{ "Content-Type" => <<"text/html">>, body => Html },
-    Http = to_http(Msg),
+    Http = hb_codec_http:to(Msg),
     ok.
 
 calculate_unsigned_message_id_test() ->
@@ -876,8 +635,8 @@ calculate_unsigned_message_id_test() ->
         data => <<"DATA">>,
         <<"special_key">> => <<"SPECIAL_KEY">>
     },
-    UnsignedTX = to_tx(Msg),
-    UnsignedMessage = from_tx(UnsignedTX),
+    UnsignedTX = hb_codec_tx:to(Msg),
+    UnsignedMessage = hb_codec_tx:from(UnsignedTX),
     ?assertEqual(
         hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
         hb_util:id(UnsignedMessage, unsigned)
@@ -888,17 +647,17 @@ sign_serialize_deserialize_verify_test() ->
         data => <<"DATA">>,
         <<"special_key">> => <<"SPECIAL_KEY">>
     },
-    TX = to_tx(Msg),
+    TX = hb_codec_tx:to(Msg),
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?assert(ar_bundles:verify_item(SignedTX)),
     SerializedMsg = serialize(SignedTX),
     DeserializedMsg = deserialize(SerializedMsg),
-    DeserializedTX = to_tx(DeserializedMsg),
+    DeserializedTX = hb_codec_tx:to(DeserializedMsg),
     ?assert(ar_bundles:verify_item(DeserializedTX)).
 
 unsigned_id_test() ->
     UnsignedTX = ar_bundles:normalize(#tx { data = <<"TEST_DATA">> }),
-    UnsignedMessage = from_tx(UnsignedTX),
+    UnsignedMessage = hb_codec_tx:from(UnsignedTX),
     ?assertEqual(
         hb_util:encode(ar_bundles:id(UnsignedTX, unsigned)),
         hb_util:id(UnsignedMessage, unsigned)
@@ -911,27 +670,15 @@ signed_id_test_disabled() ->
     },
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?assert(ar_bundles:verify_item(SignedTX)),
-    SignedMsg = from_tx(SignedTX),
+    SignedMsg = hb_codec_tx:from(SignedTX),
     ?assertEqual(
         hb_util:encode(ar_bundles:id(SignedTX, signed)),
         hb_util:id(SignedMsg, signed)
     ).
 
-list_encoding_test() ->
-    % Test that we can encode and decode a list of integers.
-    {<<"List">>, Encoded} = encode_value(List1 = [1, 2, 3]),
-    Decoded = decode_value(list, Encoded),
-    ?assertEqual(List1, Decoded),
-    % Test that we can encode and decode a list of binaries.
-    {<<"List">>, Encoded2} = encode_value(List2 = [<<"1">>, <<"2">>, <<"3">>]),
-    ?assertEqual(List2, decode_value(list, Encoded2)),
-    % Test that we can encode and decode a mixed list.
-    {<<"List">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
-    ?assertEqual(List3, decode_value(list, Encoded3)).
-
 message_with_simple_list_test() ->
     Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
-    ?assert(match(Msg, from_tx(to_tx(Msg)))).
+    ?assert(match(Msg, hb_codec_tx:from(hb_codec_tx:to(Msg)))).
 
 empty_string_in_tag_test() ->
     Msg =
@@ -943,5 +690,5 @@ empty_string_in_tag_test() ->
                     <<"stdout">> => <<"c">>
                 }
         },
-    Msg2 = minimize(from_tx(to_tx(Msg))),
+    Msg2 = minimize(hb_codec_tx:from(hb_codec_tx:to(Msg))),
     ?assert(match(Msg, Msg2)).

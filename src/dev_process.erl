@@ -147,17 +147,11 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     ?DEFAULT_CACHE_FREQ,
                     Opts
                 ),
-            CacheKeys =
-                case CurrentSlot rem Freq of
-                    0 -> all;
-                    _ -> [<<"Results">>]
-                end,
             ?event(process_compute,
                 {
                     executing,
                     {msg1, Msg1},
-                    {msg2, ToProcess},
-                    {caching, CacheKeys}
+                    {msg2, ToProcess}
                 }
             ),
             {ok, Msg3} =
@@ -165,7 +159,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     <<"Execution">>,
                     State,
                     ToProcess,
-                    Opts#{ cache_keys => CacheKeys }
+                    Opts
                 ),
             ?event({do_compute_result, {msg3, Msg3}}),
             do_compute(
