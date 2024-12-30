@@ -28,7 +28,7 @@
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
 -module(hb_path).
--export([hd/2, tl/2, hashpath/3, push_request/2]).
+-export([hd/2, tl/2, hashpath/2, hashpath/3, push_request/2]).
 -export([queue_request/2, pop_request/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path/1, term_to_path/2, from_message/2]).
@@ -69,14 +69,14 @@ tl(Path, Opts) when is_list(Path) ->
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
-    Hash = hb_crypto:sha256(Bin),
+    Hash = hb_util:human_id(hb_crypto:sha256(Bin)),
     << "/", Hash/binary >>;
 hashpath(Msg1, Opts) when is_map(Msg1) ->
     case dev_message:get(hashpath, Msg1, Opts) of
         {ok, Hashpath} -> Hashpath;
         _ ->
             {ok, Msg1ID} = dev_message:id(Msg1),
-            hd(term_to_path(Msg1ID))
+            << "/", (hb_util:human_id(hd(term_to_path(Msg1ID))))/binary >>
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
     {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
