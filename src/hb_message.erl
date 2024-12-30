@@ -821,11 +821,11 @@ from_tx(Binary) when is_binary(Binary) -> Binary;
 from_tx(TX) when is_record(TX, tx) ->
     case lists:keyfind(<<"Converge-Type">>, 1, TX#tx.tags) of
         false ->
-            do_tx_to_message(TX);
+            do_from_tx(TX);
         {<<"Converge-Type">>, <<"Binary">>} ->
             TX#tx.data
     end.
-do_tx_to_message(RawTX) ->
+do_from_tx(RawTX) ->
     % Ensure the TX is fully deserialized.
     TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)), % <- Is norm necessary?
     % Get the raw fields and values of the tx record and pair them. Then convert 
@@ -846,11 +846,10 @@ do_tx_to_message(RawTX) ->
             Data when is_map(Data) ->
                 % If the data is a map, we need to recursively turn its children
                 % into messages from their tx representations.
-                ?event({merging_map_and_data, MapWithoutData, Data}),
                 maps:merge(
                     MapWithoutData,
                     maps:map(
-                        fun(_, InnerValue) -> tx_to_message(InnerValue) end,
+                        fun(_, InnerValue) -> from_tx(InnerValue) end,
                         Data
                     )
                 );
