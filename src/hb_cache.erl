@@ -31,11 +31,14 @@ list(Path, Opts) ->
     end.
 
 %% @doc Write a message to the cache. For raw binaries, we write the 
-write(Msg, Opts) ->
+write(RawMsg, Opts) ->
+    Msg = hb_message:convert(RawMsg, tabm, converge, Opts),
     store_write(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
 store_write(Bin, Store, Opts) when is_binary(Bin) ->
-    hb_store:write(Store, Path = hb_path:hashpath(Bin, Opts), Bin),
-    {ok, Path};
+    Hashpath = hb_path:hashpath(Bin, Opts),
+    PathParts = hb_path:term_to_path(Hashpath, Opts),
+    hb_store:write(Store, PathParts, Bin),
+    {ok, PathParts};
 store_write(Msg, Store, Opts) when is_map(Msg) ->
     KeyPathMap =
         maps:map(
@@ -49,7 +52,7 @@ store_write(Msg, Store, Opts) when is_map(Msg) ->
     {ok, UnsignedID} = dev_message:unsigned_id(Msg),
     store_link_message(UnsignedID, KeyPathMap, Store, Opts),
     case dev_message:signed_id(Msg) of
-        {error, not_found} -> ok;
+        {error, not_signed} -> ok;
         {ok, SignedID} -> 
             store_link_message(SignedID, KeyPathMap, Store, Opts)
     end,
@@ -90,17 +93,19 @@ store_read(Path, Store, Opts) ->
                     lists:map(
                         fun(Subpath) ->
                             {
-                                Subpath,
-                                hb_store:read(
+                                list_to_binary(Subpath),
+                                hb_util:ok(hb_store:read(
                                     Store, 
                                     hb_store:path(Store, [Path, Subpath])
-                                )
+                                ))
                             }
                     end,
                     Subpaths
                 )
             ),
-            {ok, hb_message:convert(FlatMap, converge, flat, Opts)}
+            ?event(debug, {explicit, FlatMap}),
+            {ok, hb_message:convert(FlatMap, converge, flat, Opts)};
+        {error, _} -> not_found
     end.
 
 %% @doc Read the output of a computation, given Msg1, Msg2, and some options.
