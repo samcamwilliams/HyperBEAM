@@ -308,7 +308,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
 %% to the original device if the device is the same as we left it.
 run_as(Key, Msg1, Msg2, Opts) ->
     BaseDevice = hb_converge:get(<<"Device">>, {as, dev_message, Msg1}, Opts),
-    ?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    %?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok, PreparedMsg} =
         dev_message:set(
             ensure_process_key(Msg1, Opts),
