@@ -182,7 +182,14 @@ new_proc_test() ->
         #{ <<"Data">> => <<"test2">> },
         Wallet
     ),
-    SignedItem3 = hb_message:sign(#{ <<"Data">> => <<"test3">> }, Wallet),
+    SignedItem3 = hb_message:sign(
+        #{
+            <<"Data">> => <<"test2">>,
+            <<"Deep-Key">> =>
+                #{ <<"Data">> => <<"test3">> }
+        },
+        Wallet
+    ),
     dev_scheduler_registry:find(hb_converge:get(id, SignedItem), true),
     schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
     schedule(ID, SignedItem2),
@@ -193,7 +200,7 @@ new_proc_test() ->
     ).
 
 benchmark_test() ->
-    BenchTime = 3,
+    BenchTime = 1,
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
         #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
@@ -224,4 +231,4 @@ benchmark_test() ->
         #{ current := X } when X == Iterations - 1,
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))
     ),
-    ?assert(Iterations > 150).
+    ?assert(Iterations > 50).

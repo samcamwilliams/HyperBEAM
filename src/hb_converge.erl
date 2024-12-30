@@ -515,10 +515,9 @@ error_infinite(_Msg1, _Msg2, _Opts) ->
 
 %% @doc Write a resulting M3 message to the cache if requested.
 update_cache(Msg1, Msg2, Msg3, Opts) when is_map(Msg3) ->
-    ExecCacheSetting = hb_opts:get(cache, always, Opts),
+    ExecCacheSetting = hb_opts:get(cache, none, Opts),
     M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1, Opts),
     M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2, Opts),
-    ?event(debug, {checking_should_cache, {opts, Opts}, {opts_res, ExecCacheSetting}, {m1, M1CacheSetting}, {m2, M2CacheSetting}}),
     case should_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
         true ->
             ?event(debug, {caching_result, {msg2, Msg2}, {msg3, Msg3}}),
