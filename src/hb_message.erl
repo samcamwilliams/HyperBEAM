@@ -479,40 +479,51 @@ to_type_annotated(Msg) ->
     )).
 
 %% @doc Turns a TABM into a native HyperBEAM message.
-from_type_annotated(TABM1) ->
+from_type_annotated(TABM0) ->
+    ?event(debug, {tabm0, TABM0}),
     % First, handle special cases of empty items, which `ar_bundles` cannot
-    % handle.
-    TABM2 =
-        maps:map(
-            fun(<<"Converge-Type:", _/binary>>, <<"Empty-Binary">>) -> <<>>;
-            (<<"Converge-Type:", _/binary>>, <<"Empty-List">>) -> [];
-            (_Key, Value) -> Value
-            end,
-            TABM1
+    % handle. Needs to be transformed into a list (unfortunately) so that we
+    % can also remove the "Converge-Type:" prefix from the key.
+    TABM1 =
+        maps:from_list(
+            lists:map(
+                fun({<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>}) ->
+                    {Key, <<>>};
+                ({<<"Converge-Type:", Key/binary>>, <<"Empty-List">>}) ->
+                    {Key, []};
+                ({Key, Value}) ->
+                    {Key, Value}
+                end,
+                maps:to_list(TABM0)
+            )
         ),
-    % Remove any `ar_bundles` meta tags, which are not part of the message.
-    TABM3 = maps:without(?FILTERED_TAGS, TABM2),
-    % Parse tags that have a "Converge-Type:" prefix.
-    TypeKeys =
-        #{
-            Key =>
-                list_to_existing_atom(
-                    string:to_lower(binary_to_list(Value))
-                )
-        ||
-            <<"Converge-Type:", Key/binary>> := Value <- TABM3
-        },
-    NonTypeKeys = maps:without(maps:keys(TypeKeys), TABM3),
-    maps:map(
-        fun(Key, BinaryValue) when is_binary(BinaryValue) ->
-            case maps:find(Key, TypeKeys) of
-                false -> BinaryValue;
-                {ok, Type} -> decode_value(Type, BinaryValue)
+    % 1. Remove any `ar_bundles` meta tags, which are not part of the message;
+    % 2. Remove any keys from output that have a "Converge-Type:" prefix;
+    % 3. Decode any binary values that have a "Converge-Type:" prefix;
+    % 4. Recursively decode any maps that we encounter;
+    % 5. Return the remaining keys and values as a map.
+    TABM2 = maps:without(?FILTERED_TAGS, TABM1),
+    maps:filtermap(
+        fun(<<"Converge-Type:", _/binary>>, _) ->
+            % Remove any keys from output that have a "Converge-Type:" prefix.
+            false;
+        (RawKey, BinaryValue) when is_binary(BinaryValue) ->
+            Key = hb_converge:key_to_binary(RawKey),
+            case maps:find(<<"Converge-Type:", Key/binary>>, TABM2) of
+                error -> {true, BinaryValue};
+                {ok, RawType} ->
+                    NormType = list_to_existing_atom(
+                        string:to_lower(binary_to_list(RawType))
+                    ),
+                    {true, decode_value(NormType, BinaryValue)}
             end;
         (_Key, ChildTABM) when is_map(ChildTABM) ->
-            from_type_annotated(ChildTABM)
+            {true, from_type_annotated(ChildTABM)};
+        (Key, Value) ->
+            ?event(debug, {key, Key, Value}),
+            {true, Value}
         end,
-        NonTypeKeys
+        TABM2
     ).
 
 %%% @doc Maps the native HyperBEAM Message 
@@ -626,13 +637,13 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
     ),
     % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
     % each transmitted either as a header, or as a part in the multi-part body
-    WithSig = field_to_http(Http, {<<"Signature">>, hb_structured_fields:dictionary(SfSigs)}, #{}),
+    WithSig = field_to_http(Http, {<<"Signature">>, hb_http_structured_fields:dictionary(SfSigs)}, #{}),
     WithSigAndInput = field_to_http(WithSig, {<<"Signature-Input">>, hb_http_structured_fields:dictionary(SfSigInputs)}, #{}),
     WithSigAndInput.
 
 body_to_http(Http, Body) when is_map(Body) ->
     Disposition = <<"Content-Disposition: inline">>,
-    SubHttp = messageto_http(Body),
+    SubHttp = message_to_http(Body),
     EncodedBody = encode_http_msg(SubHttp),
     field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
 body_to_http(Http, Body) when is_binary(Body) ->
@@ -816,57 +827,21 @@ tx_to_message(TX) when is_record(TX, tx) ->
     end.
 do_tx_to_message(RawTX) ->
     % Ensure the TX is fully deserialized.
-    Map0 = ar_bundles:deserialize(ar_bundles:normalize(RawTX)),
-    % Turn the TABM into a normal HyperBEAM message.
-    Map1 = from_type_annotated(Map0),
-    % We need to generate a map from each field of the tx record.
-    % Get the raw fields and values of the tx record and pair them.
-    Fields = record_info(fields, tx),
-    Values = tl(tuple_to_list(TX)),
-    TXKeyVals = lists:zip(Fields, Values),
-    % Convert the list of key-value pairs into a map.
-    UnfilteredTXMap = maps:from_list(TXKeyVals),
-    TXMap = maps:with(?TX_KEYS, UnfilteredTXMap),
-    {TXTagsUnparsed, FilteredTags} = lists:partition(
-        fun({Key, _}) ->
-            not lists:any(
-                fun(FilterKey) ->
-                    case binary:longest_common_prefix([Key, FilterKey]) of
-                        Length when Length == byte_size(FilterKey) ->
-                            true;
-                        _ ->
-                            false
-                    end
-                end,
-                ?FILTERED_TAGS
-            );
-            (_) -> true
-        end,
-        TX#tx.tags
-    ),
-    % Parse tags that have a "Converge-Type:" prefix.
-    TagTypes =
-        [
-            {Name, list_to_existing_atom(
-                string:to_lower(binary_to_list(Value))
-            )}
-        ||
-            {<<"Converge-Type:", Name/binary>>, Value} <- FilteredTags
-        ],
-    TXTags =
-        lists:map(
-            fun({Name, BinaryValue}) ->
-                case lists:keyfind(Name, 1, TagTypes) of
-                    false -> {Name, BinaryValue};
-                    {_, Type} -> {Name, decode_value(Type, BinaryValue)}
-                end
-            end,
-            TXTagsUnparsed
+    TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)), % <- Is norm necessary?
+    % Get the raw fields and values of the tx record and pair them. Then convert 
+    % the list of key-value pairs into a map, removing irrelevant fields.
+    TXKeysMap =
+        maps:with(?TX_KEYS,
+            maps:from_list(
+                lists:zip(
+                    record_info(fields, tx),
+                    tl(tuple_to_list(TX))
+                )
+            )
         ),
-    % Next, merge the tags into the map.
-    MapWithoutData = maps:merge(TXMap, maps:from_list(TXTags)),
-    % Finally, merge the data into the map.
-    normalize(
+    % Generate a TABM from the tags.
+    MapWithoutData = maps:merge(TXKeysMap, maps:from_list(TX#tx.tags)),
+    DataMap =
         case TX#tx.data of
             Data when is_map(Data) ->
                 % If the data is a map, we need to recursively turn its children
@@ -875,9 +850,7 @@ do_tx_to_message(RawTX) ->
                 maps:merge(
                     MapWithoutData,
                     maps:map(
-                        fun(_, InnerValue) ->
-                            tx_to_message(InnerValue)
-                        end,
+                        fun(_, InnerValue) -> tx_to_message(InnerValue) end,
                         Data
                     )
                 );
@@ -889,8 +862,9 @@ do_tx_to_message(RawTX) ->
                 ?event({unexpected_data_type, {explicit, Data}}),
                 ?event({was_processing, {explicit, TX}}),
                 throw(invalid_tx)
-        end
-    ).
+        end,
+    % Merge the data map with the rest of the TX map and turn it into a normal HyperBEAM message.
+    normalize(from_type_annotated(maps:merge(DataMap, MapWithoutData))).
 
 %%% Tests
 
@@ -981,6 +955,7 @@ match_test() ->
     Msg = #{ a => 1, b => 2 },
     TX = message_to_tx(Msg),
     Msg2 = tx_to_message(TX),
+    ?event(debug, {result_msg, Msg2}),
     ?assert(match(Msg, Msg2)).
 
 %% @doc Test that two txs match. Note: This function uses tx_to_message/1
