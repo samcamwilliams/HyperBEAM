@@ -1,16 +1,38 @@
 
 %%% @doc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol, and their uderlying binary representations.
+%%% Converge Protocol, and their uderlying binary representations and formats.
+%%% 
 %%% See `docs/converge-protocol.md' for details on Converge. Unless you are
 %%% implementing a new message serialization format, you should not need to 
 %%% interact with this module directly. Instead, use the `hb_converge'
 %%% interfaces to interact with all messages. The `dev_message' module
 %%% implements a device interface for handling messages as the default Converge
 %%% device.
+%%% 
+%%% `hb_message' and the HyperBEAM caches can interact with multiple different
+%%% types of message formats:
+%%% - Arweave transations.
+%%% - ANS-104 data items.
+%%% - HTTP Signed Messages.
+%%% 
+%%% This module is responsible for converting between these formats. It does so
+%%% by normalizing messages to a common format: `Type Annotated Binary Messages`
+%%% (TABM). TABMs are deep Erlang maps with keys than only contain either other
+%%% TABMs or binary values. By marshalling all messages into this format, they
+%%% can easily be coerced into other output formats. For example, generating a
+%%% `HTTP Signed Message` format output from an Arweave transaction. TABM is
+%%% also a simple format from a computational perspective (only binary literals
+%%% and O(1) access maps), such that operations upon them are efficient.
+%%% 
+%%% The `hb_cache' module is responsible for storing and retrieving messages in
+%%% the HyperBEAM stores configured on the node. Each store has its own storage
+%%% backend, but each works with simple key-value pairs. Subsequently, the 
+%%% `hb_cache` module uses TABMs as the internal format for storing and 
+%%% retrieving messages.
 -module(hb_message).
--export([load/2, sign/2, verify/1, match/2, type/1]).
+-export([load/2, sign/2, verify/1, match/2, type/1, minimize/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2, signers/1]).
--export([to_tx/1, from_tx/1, minimize/1]).
+-export([to_tx/1, from_tx/1]).
 -export([to_http/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
