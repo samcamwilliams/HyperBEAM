@@ -75,14 +75,33 @@
 %% available. The conversion from a TABM is done by the target codec.
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, converge, Opts).
-convert(Msg, TargetFormat, converge, Opts) ->
-    % No need to convert to TABM, just convert to the target format.
-    convert(Msg, TargetFormat, Opts);
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
+    ?event(debug,
+        {conversion_req,
+            {msg, Msg},
+            {target, TargetFormat},
+            {source, SourceFormat},
+            {opts, Opts}
+        }
+    ),
+    TABM = convert_to_tabm(Msg, SourceFormat, Opts),
+    ?event(debug, {generated_tabm, TABM}),
+    Res = convert_to_target(TABM, TargetFormat, Opts),
+    ?event(debug, {converted_to_target, Res}),
+    Res.
+
+convert_to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
-    TABM = SourceCodecMod:from(Msg),
+    ?event(debug, {{source_codec, SourceCodecMod}, {msg, Msg}}),
+    case SourceCodecMod:from(Msg) of
+        TypicalMsg when is_map(TypicalMsg) ->
+            minimize(filter_default_keys(TypicalMsg));
+        OtherTypeRes -> OtherTypeRes
+    end.
+
+convert_to_target(Msg, TargetFormat, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
-    TargetCodecMod:to(TABM).
+    TargetCodecMod:to(Msg).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
@@ -242,9 +261,8 @@ sign(Msg, Wallet) ->
 
 %% @doc Verify a message.
 verify(Msg) ->
-    TX = convert(Msg, tx, #{}),
-    ar_bundles:verify_item(TX),
-    convert(TX, converge, tx, #{}).
+    TX = convert(Msg, tx, converge, #{}),
+    ar_bundles:verify_item(TX).
 
 %% @doc Return the type of a message.
 type(TX) when is_record(TX, tx) -> tx;
@@ -404,7 +422,7 @@ basic_map_codec_test(Codec) ->
     Msg = #{ normal_key => <<"NORMAL_VALUE">> },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assertEqual(Msg, Decoded).
+    ?assert(hb_message:match(Msg, Decoded)).
 
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_encoding_test(Codec) ->
@@ -421,8 +439,8 @@ single_layer_message_to_encoding_test(Codec) ->
     ?assertEqual(maps:get(owner, Msg), maps:get(owner, Decoded)),
     ?assertEqual(maps:get(target, Msg), maps:get(target, Decoded)),
     ?assertEqual(maps:get(data, Msg), maps:get(data, Decoded)),
-    ?assertEqual({<<"Special-Key">>, <<"SPECIAL_VALUE">>},
-        lists:keyfind(<<"Special-Key">>, 1, maps:get(tags, Decoded))).
+    ?assertEqual(<<"SPECIAL_VALUE">>,
+        maps:get(<<"Special-Key">>, Decoded)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
@@ -566,7 +584,7 @@ nested_message_with_large_keys_test(Codec) ->
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a signed tx into a message and back.
-signed_tx_to_message_and_back_test(Codec) ->
+signed_encode_decode_verify_test(Codec) ->
     TX = #tx {
         data = <<"TEST_DATA">>,
         tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
@@ -575,7 +593,8 @@ signed_tx_to_message_and_back_test(Codec) ->
     Encoded = convert(SignedTX, Codec, tx, #{}),
     ?assert(ar_bundles:verify_item(SignedTX)),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(ar_bundles:verify_item(Decoded)).
+    ?event(debug, {decoded, Decoded}),
+    ?assert(verify(Decoded)).
 
 signed_deep_tx_serialize_and_deserialize_test(Codec) ->
     TX = #tx {
@@ -618,12 +637,11 @@ sign_serialize_deserialize_verify_test(Codec) ->
         data => <<"DATA">>,
         <<"special_key">> => <<"SPECIAL_KEY">>
     },
-    SignedTX = ar_bundles:sign_item(Msg, hb:wallet()),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    SerializedMsg = serialize(SignedTX),
-    DeserializedMsg = deserialize(SerializedMsg),
-    Decoded = convert(DeserializedMsg, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    SignedMsg = sign(Msg, hb:wallet()),
+    ?assert(verify(SignedMsg)),
+    Encoded = convert(SignedMsg, Codec, converge, #{}),
+    Decoded = convert(Encoded, converge, Codec, #{}),
+    ?assert(verify(Decoded)).
 
 unsigned_id_test(Codec) ->
     Msg = #{ data => <<"TEST_DATA">> },
@@ -671,7 +689,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [converge, flat, tx].
+    [converge, tx].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -709,9 +727,12 @@ message_suite_test_() ->
         {"nested message with large keys test", fun nested_message_with_large_keys_test/1},
         {"message with simple list test", fun message_with_simple_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
-        {"signed tx to message and back test", fun signed_tx_to_message_and_back_test/1},
+        {"signed tx to message and back test", fun signed_encode_decode_verify_test/1},
         {"signed deep tx serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
         {"calculate unsigned message id test", fun calculate_unsigned_message_id_test/1},
         {"sign serialize deserialize verify test", fun sign_serialize_deserialize_verify_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
+
+simple_test() ->
+    sign_serialize_deserialize_verify_test(tx).

@@ -187,5 +187,5 @@ to(TABM) when is_map(TABM) ->
     %?event({result, {explicit, Res}}),
     Res;
 to(Other) ->
-    ?event({unexpected_message_form, {explicit, Other}}),
+    ?event(debug, {unexpected_message_form, {explicit, Other}}),
     throw(invalid_tx).

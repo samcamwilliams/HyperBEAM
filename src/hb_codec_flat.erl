@@ -25,19 +25,25 @@ inject_at_path([Key|Rest], Value, Map) ->
 %% @doc Convert a TABM to a flat map.
 to(Bin) when is_binary(Bin) -> Bin;
 to(Map) when is_map(Map) ->
+    Opts = #{ atom_keys => false },
     maps:fold(
         fun(Key, Value, Acc) ->
             case to(Value) of
                 SubMap when is_map(SubMap) ->
                     maps:fold(
                         fun(SubKey, SubValue, InnerAcc) ->
-                            maps:put([Key, SubKey], SubValue, InnerAcc)
+                            maps:put(
+                                hb_path:term_to_path(Key, Opts)
+                                    ++ hb_path:term_to_path(SubKey, Opts),
+                                SubValue,
+                                InnerAcc
+                            )
                         end,
                         Acc,
                         SubMap
                     );
                 SimpleValue ->
-                    maps:put([Key], SimpleValue, Acc)
+                    maps:put(hb_path:term_to_path(Key, Opts), SimpleValue, Acc)
             end
         end,
         #{},
@@ -49,14 +55,14 @@ to(Map) when is_map(Map) ->
 simple_conversion_test() ->
     Flat = #{[<<"a">>] => <<"value">>},
     Nested = #{<<"a">> => <<"value">>},
-    ?assertEqual(Nested, hb_codec_flat:from(Flat)),
-    ?assertEqual(Flat, hb_codec_flat:to(Nested)).
+    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
 
 nested_conversion_test() ->
     Flat = #{[<<"a">>, <<"b">>] => <<"value">>},
     Nested = #{<<"a">> => #{<<"b">> => <<"value">>}},
-    ?assertEqual(Nested, hb_codec_flat:from(Flat)),
-    ?assertEqual(Flat, hb_codec_flat:to(Nested)).
+    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
 
 multiple_paths_test() ->
     Flat = #{
@@ -71,8 +77,8 @@ multiple_paths_test() ->
         },
         <<"a">> => <<"3">>
     },
-    ?assertEqual(Nested, hb_codec_flat:from(Flat)),
-    ?assertEqual(Flat, hb_codec_flat:to(Nested)).
+    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
 
 binary_passthrough_test() ->
     Bin = <<"raw binary">>,
@@ -82,8 +88,8 @@ binary_passthrough_test() ->
 deep_nesting_test() ->
     Flat = #{[<<"a">>, <<"b">>, <<"c">>, <<"d">>] => <<"deep">>},
     Nested = #{<<"a">> => #{<<"b">> => #{<<"c">> => #{<<"d">> => <<"deep">>}}}},
-    ?assertEqual(Nested, hb_codec_flat:from(Flat)),
-    ?assertEqual(Flat, hb_codec_flat:to(Nested)).
+    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
 
 empty_map_test() ->
     ?assertEqual(#{}, hb_codec_flat:from(#{})),

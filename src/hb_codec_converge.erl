@@ -7,7 +7,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
-to(Msg) ->
+from(Bin) when is_binary(Bin) -> Bin;
+from(Msg) ->
     maps:from_list(lists:flatten(
         lists:map(
             fun(Key) ->
@@ -18,7 +19,7 @@ to(Msg) ->
                     {ok, Value} when is_binary(Value) ->
                         {Key, Value};
                     {ok, Map} when is_map(Map) ->
-                        {Key, to(Map)};
+                        {Key, from(Map)};
                     {ok, []} ->
                         BinKey = hb_converge:key_to_binary(Key),
                         {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};
@@ -48,7 +49,8 @@ to(Msg) ->
     )).
 
 %% @doc Convert a TABM into a native HyperBEAM message.
-from(TABM0) ->
+to(Bin) when is_binary(Bin) -> Bin;
+to(TABM0) ->
     % First, handle special cases of empty items, which `ar_bundles` cannot
     % handle. Needs to be transformed into a list (unfortunately) so that we
     % can also remove the "Converge-Type:" prefix from the key.
@@ -84,7 +86,7 @@ from(TABM0) ->
                     {true, decode_value(NormType, BinaryValue)}
             end;
         (_Key, ChildTABM) when is_map(ChildTABM) ->
-            {true, from(ChildTABM)};
+            {true, to(ChildTABM)};
         (_Key, Value) ->
             % We encountered a key that already has a converted type.
             % We can just return it as is.
