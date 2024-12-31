@@ -52,7 +52,7 @@
 %%% `hb_cache' module uses TABMs as the internal format for storing and 
 %%% retrieving messages.
 -module(hb_message).
--export([convert/3, convert/4]).
+-export([convert/3, convert/4, unsigned/1, attestations/1]).
 -export([sign/2, verify/1, match/2, type/1, minimize/1, normalize_keys/1]). 
 -export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
 %%% Helpers:
@@ -93,6 +93,15 @@ convert_to_tabm(Msg, SourceFormat, Opts) ->
 convert_to_target(Msg, TargetFormat, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
     TargetCodecMod:to(Msg).
+
+%% @doc Return the unsigned version of a message in Converge format.
+unsigned(Bin) when is_binary(Bin) -> Bin;
+unsigned(Msg) ->
+    maps:remove([signed_id, signature, owner], Msg).
+
+%% @doc Return a sub-map of the attestation-related keys in a message.
+attestations(Msg) ->
+    maps:with([signed_id, signature, owner], Msg).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
@@ -570,7 +579,7 @@ nested_message_with_large_keys_test(Codec) ->
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a signed tx into a message and back.
-signed_encode_decode_verify_test(Codec) ->
+signed_tx_encode_decode_verify_test(Codec) ->
     TX = #tx {
         data = <<"TEST_DATA">>,
         tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
@@ -580,6 +589,30 @@ signed_encode_decode_verify_test(Codec) ->
     ?assert(ar_bundles:verify_item(SignedTX)),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(verify(Decoded)).
+
+signed_message_encode_decode_verify_test(Codec) ->
+    Msg = #{
+        data => <<"TEST_DATA">>,
+        tags => [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
+    },
+    SignedMsg = hb_message:sign(Msg, hb:wallet()),
+    Encoded = convert(SignedMsg, Codec, converge, #{}),
+    Decoded = convert(Encoded, converge, Codec, #{}),
+    ?assert(match(SignedMsg, Decoded)).
+
+tabm_converge_ids_equal_test() ->
+    Msg = #{
+        data => <<"TEST_DATA">>,
+        deep_data => #{
+            data => <<"DEEP_DATA">>,
+            complex_key => 1337,
+            list => [1,2,3]
+        }
+    },
+    ?assertEqual(
+        dev_message:unsigned_id(Msg),
+        dev_message:unsigned_id(convert(Msg, tabm, converge, #{}))
+    ).
 
 signed_deep_tx_serialize_and_deserialize_test(Codec) ->
     TX = #tx {
@@ -689,10 +722,11 @@ message_suite_test_() ->
         {"nested message with large keys test", fun nested_message_with_large_keys_test/1},
         {"message with simple list test", fun message_with_simple_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
-        {"signed item to message and back test", fun signed_encode_decode_verify_test/1},
+        {"signed item to message and back test", fun signed_message_encode_decode_verify_test/1},
+        {"signed item to tx and back test", fun signed_tx_encode_decode_verify_test/1},
         {"signed deep serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    signed_encode_decode_verify_test(flat).
+    signed_message_encode_decode_verify_test(tx).

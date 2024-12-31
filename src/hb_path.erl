@@ -28,8 +28,8 @@
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
 -module(hb_path).
--export([hd/2, tl/2, hashpath/2, hashpath/3, push_request/2]).
--export([queue_request/2, pop_request/2]).
+-export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/1]).
+-export([hd/2, tl/2, push_request/2, queue_request/2, pop_request/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
 -export([matches/2, to_binary/1]).
@@ -73,7 +73,7 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
 hashpath(Msg1, Opts) when is_map(Msg1) ->
     case dev_message:get(hashpath, Msg1) of
         {ok, ignore} ->
-            throw({hashpath_returned_ignore, {msg1, Msg1}, {opts, Opts}});
+            throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
         {ok, Hashpath} -> Hashpath;
         _ ->
             try hb_util:ok(dev_message:id(Msg1))
@@ -90,25 +90,27 @@ hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
             {ok, Msg2ID} = dev_message:id(Msg2),
             hashpath(Msg1, Msg2ID, Opts)
     end;
-hashpath(Msg1, Msg2ID, Opts) when is_binary(Msg2ID) ->
+hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
+    HashpathAlg = hashpath_alg(Msg1),
+    hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, Opts);
+hashpath(Msg1, Msg2, Opts) ->
+    throw({hashpath_not_viable, Msg1, Msg2, Opts}).
+hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
     case term_to_path_parts(Msg1Hashpath) of
         [_] -> 
             << Msg1Hashpath/binary, "/", Msg2ID/binary >>;
         [Prev1, Prev2] ->
-            HashpathFun = hashpath_function(Msg1),
             NativeNewBase =
-                HashpathFun(hb_util:native_id(Prev1), hb_util:native_id(Prev2)),
+                HashpathAlg(hb_util:native_id(Prev1), hb_util:native_id(Prev2)),
             HumanNewBase = hb_util:human_id(NativeNewBase),
             << HumanNewBase/binary, "/", Msg2ID/binary >>
-    end;
-hashpath(Msg1, Msg2, Opts) ->
-    throw({hashpath_not_viable, Msg2}).
+    end.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
 %%% If no hashpath algorithm is specified, the protocol defaults to
 %%% `sha-256-chain'.
-hashpath_function(Msg) ->
+hashpath_alg(Msg) ->
     case dev_message:get(<<"Hashpath-Alg">>, Msg) of
         {ok, <<"sha-256-chain">>} ->
             fun hb_crypto:sha256_chain/2;

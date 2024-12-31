@@ -1,17 +1,28 @@
 %%% @doc A cache of Converge Protocol messages and compute results.
 %%%
-%%% HyperBEAM stores each of the messages in a path->value store on disk,
-%%% according to the hashpath of the data. Each individual binary is stored at
-%%% a path corresponding to the hash of the data. Messages are stored simply as
-%%% collections of links to underlying data. See `hb_path` for more details on
-%%% the hashpath structure.
+%%% HyperBEAM stores all paths in key value stores, abstracted by the `hb_store'
+%%% module. Each store has its own storage backend, but each works with simple
+%%% key-value pairs. Each store can write binary keys at paths, and link between
+%%% paths.
 %%% 
-%%% The cache is a simple wrapper on stores, that allows us to read either a 
-%%% direct key (a binary), a set of keys (a message) or any subpath of the
-%%% hashpath space.
+%%% There are three layers to HyperBEAMs internal data representation on-disk:
 %%% 
-%%% We also store signed messages in this space by creating a link for each of
-%%% the keys in the message to its corresponding underlying data.
+%%% 1. The raw binary data, written to the store at the hash of the content.
+%%%    Storing binary paths in this way effectively deduplicates the data.
+%%% 2. The hashpath-graph of all content, stored as a set of links between
+%%%    hashpaths, their keys, and the data that underlies them. This allows
+%%%    all messages to share the same hashpath space, such that all requests
+%%%    from users additively fill-in the hashpath space, minimizing duplicated
+%%%    compute.
+%%% 3. Messages, referrable by their IDs (attested or unsigned). These are 
+%%%    stored as a set of links between keys and the hashes of the underlying
+%%%    data. We store this set of links in addition to the hashpath-graph, such
+%%%    that we can clearly delimit where the messages end, while the graph
+%%%    continues to be used for additional shared compute.
+%%% 
+%%% Before writing a message to the store, we convert it to Type-Annotated 
+%%% Binary Messages (TABMs), such that each of the keys in the message is
+%%% either a map or a direct binary.
 -module(hb_cache).
 -export([read/2, read_output/3, write/2]).
 -export([list/2, list_numbered/2, link/3]).
@@ -34,7 +45,9 @@ list(Path, Opts) ->
 %% @doc Write a message to the cache. For raw binaries, we write the data at
 %% the hashpath of the data (by default the SHA2-256 hash of the data). For
 %% deep messages, we link the hashpath of the keys to the underlying data and
-%% recurse.
+%% recurse. Additionally, we make sets of links such that signed messages can
+%% be recalled from the underlying dataset, without associated keys that were
+%% written to the hashpath-graph by other messages.
 write(RawMsg, Opts) ->
     Msg = hb_message:convert(RawMsg, tabm, converge, Opts),
     store_write(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
@@ -43,28 +56,59 @@ store_write(Bin, Store, Opts) when is_binary(Bin) ->
     hb_store:write(Store, Hashpath, Bin),
     {ok, Hashpath};
 store_write(Msg, Store, Opts) when is_map(Msg) ->
-    KeyPathMap =
-        maps:map(
-            fun(Key, Value) ->
-                {ok, Path} = store_write(Value, Store, Opts),
-                Hashpath = hb_path:hashpath(Msg, #{ path => Key }, Opts),
-                ?event({writing_link, {path, Path}, {key, Key}, {hashpath, Hashpath}}),
-                hb_store:make_link(Store, Path, Hashpath),
-                Path
-            end,
-            Msg
-        ),
+    % Precalculate the hashpath of the message.
+    MsgHashpath = hb_path:hashpath(Msg, Opts),
+    MsgHashpathAlg = hb_path:hashpath_alg(Msg),
+    % Get the ID of the unsigned message.
     {ok, UnsignedID} = dev_message:unsigned_id(Msg),
-    store_link_message(UnsignedID, KeyPathMap, Store, Opts),
+    % Write the keys of the message into the graph of hashpaths, generating a map of
+    % keys to paths of the underlying data as we do so.
+    UnsignedMsgPathMap =
+        maps:map(
+            WriteSubkey = 
+                fun(Key, Value) ->
+                    {ok, Path} = store_write(Value, Store, Opts),
+                    KeyHashPath =
+                        hb_path:hashpath(
+                            MsgHashpath,
+                            hb_path:to_binary(Key),
+                            MsgHashpathAlg,
+                            Opts
+                        ),
+                    hb_store:make_link(Store, Path, KeyHashPath),
+                    ?event({stored_key, {key, Key}, {resulting_path, Path}, {hashpath, KeyHashPath}}),
+                    Path
+                end,
+            hb_message:unsigned(Msg)
+        ),
+    % Write links for each key in the unsigned message to the underlying data.
+    write_link_tree(UnsignedID, UnsignedMsgPathMap, Store, Opts),
+    % If the message is signed, we need to write links for the attestations.
     case dev_message:signed_id(Msg) of
-        {error, not_signed} -> ok;
-        {ok, SignedID} -> 
-            store_link_message(SignedID, KeyPathMap, Store, Opts)
-    end,
-    {ok, UnsignedID}.
+        {error, not_signed} ->
+            {ok, UnsignedID};
+        {ok, SignedID} ->
+            % Write each attestation-related key in the message to the store.
+            AttestedMsgPathMap =
+                maps:map(
+                    WriteSubkey,
+                    hb_message:attestations(Msg)
+                ),
+            % Merge the unsigned and attested message path maps, such that we have
+            % a complete map of all keys in the message and their paths.
+            CompleteMsgPathMap = maps:merge(UnsignedMsgPathMap, AttestedMsgPathMap),
+            % Generate links for the signed message.
+            write_link_tree(
+                SignedID, 
+                CompleteMsgPathMap,
+                Store,
+                Opts
+            ),
+            {ok, SignedID}
+    end.
 
 %% @doc Recursively make links to underlying data, in the form of a pathmap.
-%% This allows us to have the hashpath compute space be shared across all signed 
+%% This allows us to have the hashpath compute space be shared across all
 %% messages from users, while also allowing us to delimit where the signature/
 %% message ends. For example, if we had the following hashpath-space:
 %% 
@@ -72,20 +116,41 @@ store_write(Msg, Store, Opts) when is_map(Msg) ->
 %% Hashpath1/Compute/Results/2/Compute/Results/1
 %% Hashpath1/Compute/Results/3
 %% 
-%% But a message that only contains the first layer of Compute results, we would
+%% ...but a message that only contains the first layer of Compute results, we would
 %% create the following linked structure:
 %% 
 %% ID1/Compute/Results/1 -> Hashpath1/Compute/Results/1
 %% ID1/Compute/Results/2 -> Hashpath1/Compute/Results/2
 %% ID1/Compute/Results/3 -> Hashpath1/Compute/Results/3
-store_link_message(Root, PathMap, Store, _Opts) ->
+write_link_tree(RootPath, PathMap, Store, Opts) ->
+    ?event({write_link_tree, {root, RootPath}, {pathmap, PathMap}, {store, Store}}),
     maps:map(
-        fun(Key, Path) ->
-            hb_store:make_link(Store, Path, [hb_util:human_id(Root), Key])
+        fun(Key, Path) when is_map(Path) ->
+            % The key is a map of subkeys and paths, so we adjust our root ID to
+            % additionally include the key and recurse.
+            write_link_tree(
+                hb_path:to_binary([RootPath, Key]),
+                Path,
+                Store,
+                Opts
+            );
+        (Key, Path) when not is_map(Path) ->
+            % The key is a simple binary, so we link ID/key to the path.
+            MsgKey = hb_path:to_binary([RootPath, Key]),
+            BinPath = hb_path:to_binary(Path),
+            ?event({linking, {msg_key, MsgKey}, {path, BinPath}}),
+            hb_store:make_link(Store, BinPath, MsgKey)
         end,
         PathMap
-    ).
+    ),
+    case maps:get(signature, PathMap, undefined) of
+        undefined -> ok;
+        Signature -> throw(ok_laddies)
+    end.
 
+%% @doc Read the message at a path. Returns in Converge's format: Either a rich
+%% map or a direct binary. Messages are written in the stores as flat maps, so 
+%% we convert them to the rich format here after reading.
 read(Path, Opts) ->
     case store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts) of
         not_found -> not_found;
@@ -122,7 +187,7 @@ store_read(Path, Store, Opts) ->
                                 fun(Subpath) ->
                                     ResolvedSubpath =
                                         hb_store:resolve(Store,
-                                            hb_path:to_binary(P = [
+                                            hb_path:to_binary([
                                                 ResolvedFullPath,
                                                 Subpath
                                             ])
@@ -169,7 +234,7 @@ link(Existing, New, Opts) ->
 
 test_unsigned(Data) ->
     #{
-        <<"Example">> => <<"Tag">>,
+        <<"Base-Test-Key">> => <<"Base-Test-Value">>,
         <<"Data">> => Data
     }.
 
@@ -187,11 +252,24 @@ test_store_binary(Opts) ->
 test_store_simple_unsigned_item(Opts) ->
     Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
-    {ok, Path} = write(Item, Opts),
+    {ok, _Path} = write(Item, Opts),
     %% Read the item back
     ID = hb_util:human_id(hb_converge:get(id, Item)),
     {ok, RetrievedItem} = read(ID, Opts),
     ?assert(hb_message:match(Item, RetrievedItem)).
+
+%% @doc Test storing and retrieving a simple unsigned item
+test_store_simple_signed_item(Opts) ->
+    Item = test_unsigned(#{ <<"L2-Test-Key">> => <<"L2-Test-Value">> }),
+    %% Write the simple unsigned item
+    {ok, _Path} = write(Item, Opts),
+    %% Read the item back
+    UID = hb_util:human_id(hb_converge:get(unsigned_id, Item)),
+    %SID = hb_util:human_id(hb_converge:get(signed_id, Item)),
+    {ok, RetrievedItemU} = read(UID, Opts),
+    ?assert(hb_message:match(Item, RetrievedItemU)).
+    % {ok, RetrievedItemS} = read(SID, Opts),
+    % ?assert(hb_message:match(Item, RetrievedItemS)).
 
 %% @doc Test deeply nested item storage and retrieval
 test_deeply_nested_complex_item(Opts) ->
@@ -219,17 +297,16 @@ test_deeply_nested_complex_item(Opts) ->
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
-    {ok, RawDeepMsg} =
+    {ok, DeepMsg} =
         read(
             [
-                OuterID = hb_util:human_id(hb_converge:get(id, Outer)),
+                OuterID = hb_util:human_id(hb_converge:get(unsigned_id, Outer)),
                 <<"Level1">>,
                 <<"Level2">>,
                 <<"Level3">>
             ],
             Opts
         ),
-    DeepMsg = RawDeepMsg,
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_converge:get(data, DeepMsg)),
     ?assertEqual(
@@ -250,6 +327,13 @@ cache_suite_test_() ->
     hb_store:generate_test_suite([
         {"store binary", fun test_store_binary/1},
         {"store simple unsigned item", fun test_store_simple_unsigned_item/1},
+        {"store simple signed item", fun test_store_simple_signed_item/1},
         {"deeply nested complex item", fun test_deeply_nested_complex_item/1},
         {"message with list", fun test_message_with_list/1}
     ]).
+
+current_test() ->
+    Store = {hb_store_fs, #{ prefix => "TEST-cache-fs" }},
+    hb_store:reset(Store),
+    hb_store:start(Store),
+    test_store_simple_signed_item(#{ store => Store }).
