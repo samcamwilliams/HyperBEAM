@@ -424,7 +424,8 @@ resolve_stage(6, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 {ok,
                     Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
                 };
-            ignore -> {ok, Msg3}
+            _ ->
+                {ok, Msg3}
         end,
         ExecName,
         Opts
@@ -471,7 +472,13 @@ resolve_stage(10, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
 	case RemainingPath of
 		RecursivePath when RecursivePath =/= undefined ->
 			% There are more elements in the path, so we recurse.
-			?event(converge_core, {resolution_recursing, {remaining_path, RemainingPath}}),
+			?event(
+                converge_core,
+                {resolution_recursing,
+                    {remaining_path, RemainingPath},
+                    {current_hp, hb_path:hashpath(Msg3, Opts)},
+                }
+            ),
 			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
 		undefined ->
             % Terminate: We have reached the end of the path.
@@ -642,7 +649,6 @@ set(Msg1, Key, Value, Opts) ->
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [Key], Value, Opts) ->
-    %?event({setting_last_key, {key, Key}, {value, Value}}),
     device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     case resolve(Msg, Key, Opts) of 

@@ -35,7 +35,6 @@ start() ->
     rand:seed(exsplus, {I1, I2, I3}),
     ok.
 
-
 %% @doc This device uses a default_handler to route requests to the correct
 %% function.
 info() -> 
@@ -329,7 +328,7 @@ do_get_assignments(ProcID, From, To, Opts) ->
     end.
 
 assignment_bundle(Assignments, Opts) ->
-    assignment_bundle(Assignments, Opts, #{}).
+    assignment_bundle(Assignments, #{}, Opts).
 assignment_bundle([], Bundle, _Opts) ->
     Bundle;
 assignment_bundle([Assignment | Assignments], Bundle, Opts) ->

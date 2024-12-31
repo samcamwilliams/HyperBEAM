@@ -68,21 +68,18 @@ short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
     << FirstTag/binary, "..", LastTag/binary >>;
-short_id(Bin) when byte_size(Bin) == 87 ->
+short_id(Bin) when byte_size(Bin) > 43 ->
     case binary:split(Bin, <<"/">>, [trim_all, global]) of
-        [First, Last] ->
+        [First, Last] when byte_size(Last) == 43 ->
             << (short_id(First))/binary, "/", (short_id(Last))/binary >>;
+        [First, Key] ->
+            << (short_id(First))/binary, "/", Key/binary >>;
         _ ->
-            ?event({explicit, byte_size(Bin)}),
             Bin
     end;
-short_id(Bin) when is_binary(Bin) ->
-    ?event({explicit, byte_size(Bin)}),
-    undefined;
 short_id(<< "/", SingleElemHashpath/binary >>) ->
     << "/", (short_id(SingleElemHashpath))/binary >>;
-short_id(SingleElemHashpath) ->
-    << (short_id(SingleElemHashpath))/binary >>;
+short_id(X) -> X.
 short_id(_) -> undefined.
 
 %% @doc Determine whether a binary is human-readable.
