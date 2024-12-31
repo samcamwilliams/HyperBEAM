@@ -23,6 +23,20 @@
 %%% Before writing a message to the store, we convert it to Type-Annotated 
 %%% Binary Messages (TABMs), such that each of the keys in the message is
 %%% either a map or a direct binary.
+%%% 
+%%% For example, imagine we have a computation result (`Msg3') which contains
+%%% the following keys:
+%%% ```
+%%%     /Result/Signature
+%%%     /Result/Owner
+%%%     /Result/WASM-Output
+%%%     /Usage-Report/CPU-Time
+%%%     /Usage-Report/Memory-Usage
+%%% '''
+%%% 
+%%% This module will first write raw binaries to the store using their hashes
+%%% as keys, then right link trees for the hash path ('hashpath([Msg1, Msg2, Result,
+%%% ...])', then write link trees for each of the unsigned and signed messages.
 -module(hb_cache).
 -export([read/2, read_output/3, write/2]).
 -export([list/2, list_numbered/2, link/3]).
@@ -53,8 +67,8 @@ write(RawMsg, Opts) ->
     store_write(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
 store_write(Bin, Store, Opts) when is_binary(Bin) ->
     Hashpath = hb_path:hashpath(Bin, Opts),
-    hb_store:write(Store, Hashpath, Bin),
-    {ok, Hashpath};
+    hb_store:write(Store, Path = <<"Data/", Hashpath/binary>>, Bin),
+    {ok, Path};
 store_write(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.
     MsgHashpath = hb_path:hashpath(Msg, Opts),
@@ -76,7 +90,13 @@ store_write(Msg, Store, Opts) when is_map(Msg) ->
                             Opts
                         ),
                     hb_store:make_link(Store, Path, KeyHashPath),
-                    ?event({stored_key, {key, Key}, {resulting_path, Path}, {hashpath, KeyHashPath}}),
+                    ?event(
+                        {stored_key,
+                            {key, Key},
+                            {resulting_path, Path},
+                            {hashpath, KeyHashPath}
+                        }
+                    ),
                     Path
                 end,
             hb_message:unsigned(Msg)
@@ -142,11 +162,7 @@ write_link_tree(RootPath, PathMap, Store, Opts) ->
             hb_store:make_link(Store, BinPath, MsgKey)
         end,
         PathMap
-    ),
-    case maps:get(signature, PathMap, undefined) of
-        undefined -> ok;
-        Signature -> throw(ok_laddies)
-    end.
+    ).
 
 %% @doc Read the message at a path. Returns in Converge's format: Either a rich
 %% map or a direct binary. Messages are written in the stores as flat maps, so 
@@ -260,16 +276,16 @@ test_store_simple_unsigned_item(Opts) ->
 
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_signed_item(Opts) ->
-    Item = test_unsigned(#{ <<"L2-Test-Key">> => <<"L2-Test-Value">> }),
+    Item = test_signed(#{ <<"L2-Test-Key">> => <<"L2-Test-Value">> }),
     %% Write the simple unsigned item
     {ok, _Path} = write(Item, Opts),
     %% Read the item back
     UID = hb_util:human_id(hb_converge:get(unsigned_id, Item)),
-    %SID = hb_util:human_id(hb_converge:get(signed_id, Item)),
+    SID = hb_util:human_id(hb_converge:get(signed_id, Item)),
     {ok, RetrievedItemU} = read(UID, Opts),
-    ?assert(hb_message:match(Item, RetrievedItemU)).
-    % {ok, RetrievedItemS} = read(SID, Opts),
-    % ?assert(hb_message:match(Item, RetrievedItemS)).
+    ?assert(hb_message:match(Item, RetrievedItemU)),
+    {ok, RetrievedItemS} = read(SID, Opts),
+    ?assert(hb_message:match(Item, RetrievedItemS)).
 
 %% @doc Test deeply nested item storage and retrieval
 test_deeply_nested_complex_item(Opts) ->
@@ -331,9 +347,3 @@ cache_suite_test_() ->
         {"deeply nested complex item", fun test_deeply_nested_complex_item/1},
         {"message with list", fun test_message_with_list/1}
     ]).
-
-current_test() ->
-    Store = {hb_store_fs, #{ prefix => "TEST-cache-fs" }},
-    hb_store:reset(Store),
-    hb_store:start(Store),
-    test_store_simple_signed_item(#{ store => Store }).

@@ -199,10 +199,10 @@ resolve_stage(1, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, validation_check}, Opts),
     % Validation check: Check if the message is valid.
-    Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
-    Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
+    %Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
+    %Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
     ?no_prod("Enable message validity checks!"),
-    case {Msg1Valid, Msg2Valid} of
+    case {true, true} of
         _ -> resolve_stage(2, Msg1, Msg2, Opts);
         _ -> error_invalid_message(Msg1, Msg2, Opts)
     end;
@@ -475,8 +475,7 @@ resolve_stage(10, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
 			?event(
                 converge_core,
                 {resolution_recursing,
-                    {remaining_path, RemainingPath},
-                    {current_hashpath, hb_path:hashpath(Msg3, Opts)}
+                    {remaining_path, RemainingPath}
                 }
             ),
 			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
