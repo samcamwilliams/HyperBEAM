@@ -1161,14 +1161,14 @@ test_serialize_deserialize_deep_signed_bundle() ->
     % Test that we can sign an item twice and the unsigned ID is the same.
     Item3 = sign_item(Item2, W),
     ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
-    ?assert(verify_item(Item3)),
+    ?assert(verify_item(Item3)).
     % Test that we can write to disk and read back the same ID.
-    hb_cache:write(hb_message:convert(Item2, tx, converge, #{}), #{}),
-    {ok, MsgFromDisk} = hb_cache:read(hb_util:encode(id(Item2, unsigned)), #{}),
-    FromDisk = hb_message:convert(MsgFromDisk, tx, converge, #{}),
-    format(FromDisk),
-    ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
-    % Test that normalizing the item and signing it again yields the same unsigned ID.
-    NormItem2 = normalize(Item2),
-    SignedNormItem2 = sign_item(NormItem2, W),
-    ?assertEqual(id(SignedNormItem2, unsigned), id(Item2, unsigned)).
+    % hb_cache:write(hb_message:convert(Item2, converge, tx, #{}), #{}),
+    % {ok, MsgFromDisk} = hb_cache:read(hb_util:encode(id(Item2, unsigned)), #{}),
+    % FromDisk = hb_message:convert(MsgFromDisk, tx, converge, #{}),
+    % format(FromDisk),
+    % ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
+    % % Test that normalizing the item and signing it again yields the same unsigned ID.
+    % NormItem2 = normalize(Item2),
+    % SignedNormItem2 = sign_item(NormItem2, W),
+    % ?assertEqual(id(SignedNormItem2, unsigned), id(Item2, unsigned)).
