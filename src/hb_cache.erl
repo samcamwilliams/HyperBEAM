@@ -38,7 +38,7 @@
 %%% as keys, then right link trees for the hash path ('hashpath([Msg1, Msg2, Result,
 %%% ...])', then write link trees for each of the unsigned and signed messages.
 -module(hb_cache).
--export([read/2, read_output/3, write/2]).
+-export([read/2, read_output/3, write/2, write_binary/3]).
 -export([list/2, list_numbered/2, link/3]).
 -export([test_unsigned/1, test_signed/1]).
 -include("src/include/hb.hrl").
@@ -64,12 +64,17 @@ list(Path, Opts) ->
 %% written to the hashpath-graph by other messages.
 write(RawMsg, Opts) ->
     Msg = hb_message:convert(RawMsg, tabm, converge, Opts),
-    store_write(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
-store_write(Bin, Store, Opts) when is_binary(Bin) ->
+    write_message(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
+write_message(Bin, Store, Opts) when is_binary(Bin) ->
+    % Write the binary in the store at its given hash. Return the path.
+    % We add the `Data/` prefix for a weird reason: Arweave data items have 
+    % their signed ID based on the hash of the signature. Subsequently, if
+    % we store the data items at just their sha256 hash, we get a hash
+    % collision between the signed ID of a message, and its signature data.
     Hashpath = hb_path:hashpath(Bin, Opts),
     hb_store:write(Store, Path = <<"Data/", Hashpath/binary>>, Bin),
     {ok, Path};
-store_write(Msg, Store, Opts) when is_map(Msg) ->
+write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.
     MsgHashpath = hb_path:hashpath(Msg, Opts),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
@@ -81,7 +86,7 @@ store_write(Msg, Store, Opts) when is_map(Msg) ->
         maps:map(
             WriteSubkey = 
                 fun(Key, Value) ->
-                    {ok, Path} = store_write(Value, Store, Opts),
+                    {ok, Path} = write_message(Value, Store, Opts),
                     KeyHashPath =
                         hb_path:hashpath(
                             MsgHashpath,
@@ -164,6 +169,14 @@ write_link_tree(RootPath, PathMap, Store, Opts) ->
         PathMap
     ).
 
+%% @doc Write a raw binary keys into the store and link it at a given hashpath.
+write_binary(Hashpath, Bin, Opts) ->
+    write_binary(Hashpath, Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
+write_binary(Hashpath, Bin, Store, Opts) ->
+    {ok, Path} = write_message(Bin, Store, Opts),
+    hb_store:make_link(Store, Path, Hashpath),
+    {ok, Path}.
+
 %% @doc Read the message at a path. Returns in Converge's format: Either a rich
 %% map or a direct binary. Messages are written in the stores as flat maps, so 
 %% we convert them to the rich format here after reading.
@@ -233,7 +246,8 @@ read_output(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
     {ok, MsgID2} = dev_message:id(Msg2),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
 read_output(Msg1, Msg2, Opts) when is_map(Msg1) and is_map(Msg2) ->
-    read(hb_path:hashpath(Msg1, Msg2, Opts), Opts).
+    read(hb_path:hashpath(Msg1, Msg2, Opts), Opts);
+read_output(_, _, _) -> not_found.
     
 %%------------------------------------------------------------------------------
 

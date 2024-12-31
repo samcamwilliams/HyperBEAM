@@ -176,7 +176,7 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 0, cache_lookup}, Opts),
     case hb_cache:read_output(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+            ?event({cache_hit_computed, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             {ok, Msg3};
         not_found ->
             case ?IS_ID(Msg1) of
@@ -185,6 +185,13 @@ resolve_stage(0, Msg1, Msg2, Opts) ->
                 true ->
                     case hb_cache:read(Msg1, Opts) of
                         {ok, FullMsg1} ->
+                            ?event(
+                                {cache_hit_data_available,
+                                    {msg1, Msg1},
+                                    {msg2, Msg2},
+                                    {msg3, FullMsg1}
+                                }
+                            ),
                             resolve_stage(1, FullMsg1, Msg2, Opts);
                         not_found ->
                             error_not_found(Msg1, Msg2, Opts)
@@ -520,28 +527,26 @@ error_infinite(_Msg1, _Msg2, _Opts) ->
     }.
 
 %% @doc Write a resulting M3 message to the cache if requested.
-update_cache(Msg1, Msg2, Msg3, Opts) when is_map(Msg3) ->
+update_cache(Msg1, Msg2, Msg3, Opts) ->
+    HPUpdate = hb_opts:get(hashpath, ignore, Opts),
     ExecCacheSetting = hb_opts:get(cache, none, Opts),
     M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1),
     M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2),
-    case should_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
+    case should_cache(HPUpdate, ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
         true ->
             ?event({caching_result, {msg2, Msg2}, {msg3, Msg3}}),
-            case hb_opts:get(async_cache, false, Opts) of
-                true -> spawn(fun() -> hb_cache:write(Msg3, Opts) end);
-                false -> hb_cache:write(Msg3, Opts)
-            end;
+            dispatch_cache_write(Msg1, Msg2, Msg3, Opts);
         false ->
             ok
-    end;
-update_cache(_, _, _, _) -> ok.
+    end.
 
 %% @doc Takes the `Opts' cache setting, M1, and M2 `Cache-Control' headers, and
 %% returns true if the message should be cached.
-should_cache(no_cache, _, _) -> false;
-should_cache(no_store, _, _) -> false;
-should_cache(none, _, _) -> false;
-should_cache(_, CC1, CC2) ->
+should_cache(ignore, _, _, _) -> false;
+should_cache(_, no_cache, _, _) -> false;
+should_cache(_, no_store, _, _) -> false;
+should_cache(_, none, _, _) -> false;
+should_cache(_, _, CC1, CC2) ->
     CC1List = term_to_cache_control_list(CC1),
     CC2List = term_to_cache_control_list(CC2),  
     NoCacheSpecifiers = [no_cache, no_store, no_transform],
@@ -559,6 +564,26 @@ term_to_cache_control_list(X) when is_list(X) ->
 term_to_cache_control_list(X) when is_binary(X) -> [X];
 term_to_cache_control_list(X) ->
     hb_path:term_to_path_parts(X).
+
+%% @doc Dispatch the cache write to a worker process if requested.
+%% Invoke the appropriate cache write function based on the type of the message.
+dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
+    Dispatch =
+        fun() ->
+            case is_binary(Msg3) of
+                true ->
+                    hb_cache:write_binary(
+                        hb_path:hashpath(Msg1, Msg2, Opts),
+                        Msg3,
+                        Opts
+                    );
+                false -> hb_cache:write(Msg3, Opts)
+            end
+        end,
+    case hb_opts:get(async_cache, false, Opts) of
+        true -> spawn(Dispatch);
+        false -> Dispatch()
+    end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
