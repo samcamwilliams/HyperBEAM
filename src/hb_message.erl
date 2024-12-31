@@ -247,8 +247,8 @@ signers(_) -> [].
 %% at the moment.
 sign(Msg, Wallet) ->
     TX = convert(Msg, tx, #{}),
-    ar_bundles:sign_item(TX, Wallet),
-    convert(TX, converge, tx, #{}).
+    SignedTX = ar_bundles:sign_item(TX, Wallet),
+    convert(SignedTX, converge, tx, #{}).
 
 %% @doc Verify a message.
 verify(Msg) ->
