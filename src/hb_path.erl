@@ -37,7 +37,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Extract the first key from a `Message2''s `Path' field.
-%% Note: This function uses the `dev_message:get/3' function, rather than 
+%% Note: This function uses the `dev_message:get/2' function, rather than 
 %% a generic call as the path should always be an explicit key in the message.
 hd(Msg2, Opts) ->
     %?event({key_from_path, Msg2, Opts}),
@@ -71,7 +71,7 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(Msg1, Opts) when is_map(Msg1) ->
-    case dev_message:get(hashpath, Msg1, Opts) of
+    case dev_message:get(hashpath, Msg1) of
         {ok, Hashpath} -> Hashpath;
         _ ->
             try hb_util:ok(dev_message:id(Msg1))
@@ -82,12 +82,13 @@ hashpath(Msg1, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
     {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
     case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
-        {0, Key} when is_binary(Key) -> hashpath(Msg1, Key, Opts);
+        {0, Key} when Key =/= undefined ->
+            hashpath(Msg1, to_binary(Key), Opts);
         _ ->
             {ok, Msg2ID} = dev_message:id(Msg2),
             hashpath(Msg1, Msg2ID, Opts)
     end;
-hashpath(Msg1, Msg2ID, Opts) ->
+hashpath(Msg1, Msg2ID, Opts) when is_binary(Msg2ID) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
     case term_to_path_parts(Msg1Hashpath) of
         [_] -> 
@@ -98,7 +99,9 @@ hashpath(Msg1, Msg2ID, Opts) ->
                 HashpathFun(hb_util:native_id(Prev1), hb_util:native_id(Prev2)),
             HumanNewBase = hb_util:human_id(NativeNewBase),
             << HumanNewBase/binary, "/", Msg2ID/binary >>
-    end.
+    end;
+hashpath(Msg1, Msg2, Opts) ->
+    throw({hashpath_not_viable, Msg2}).
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
 %%% If no hashpath algorithm is specified, the protocol defaults to

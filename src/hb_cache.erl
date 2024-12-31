@@ -100,12 +100,9 @@ store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
     ?event(
         {reading,
-            {path,
-                {path, PathToBin},
-                {resolved, {explicit, ResolvedFullPath}}
-            }
-        },
-        Opts
+            {path, {explicit, PathToBin}},
+            {resolved, {explicit, ResolvedFullPath}}
+        }
     ),
     case hb_store:type(Store, ResolvedFullPath) of
         simple ->
@@ -117,8 +114,7 @@ store_read(Path, Store, Opts) ->
                         {listed,
                             {original_path, Path},
                             {subpaths, Subpaths}
-                        },
-                        Opts
+                        }
                     ),
                     FlatMap =
                         maps:from_list(
@@ -132,8 +128,7 @@ store_read(Path, Store, Opts) ->
                                             ])
                                         ),
                                     ?event(
-                                        {reading_subpath, Subpath, {resolved, ResolvedSubpath}},
-                                        Opts
+                                        {reading_subpath, Subpath, {resolved, ResolvedSubpath}}
                                     ),
                                     {
                                         Subpath,

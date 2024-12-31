@@ -15,6 +15,12 @@ resolve_simple_test() ->
     Res = hb_converge:resolve(#{ a => 1 }, a, test_opts()),
     ?assertEqual({ok, 1}, Res).
 
+resolve_id_test() ->
+    ?assertMatch(
+        ID when byte_size(ID) == 43,
+        hb_converge:get(id, #{ test_key => <<"1">> })
+    ).
+
 resolve_key_twice_test() ->
     % Ensure that the same message can be resolved again.
     % This is not as trivial as it may seem, because resolutions are cached and
@@ -434,7 +440,6 @@ cache_execution_test() ->
     Msg1 = #{ device => <<"Message/1.0">>, <<"A">> => #{ <<"B">> => <<"C">> } },
     Msg2 = #{ path => <<"A/B">> },
     {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache => always }),
-    ?assertEqual(<<"B">>, Res),
+    ?assertEqual(<<"C">>, Res),
     {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache => always }),
-    ?assertEqual(<<"B">>, Res2).
-
+    ?assertEqual(<<"C">>, Res2).

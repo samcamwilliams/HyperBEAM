@@ -37,6 +37,7 @@
 -module(dev_json_iface).
 -export([init/3, compute/3]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Initialize the device.
 init(M1, _M2, _Opts) ->
@@ -54,7 +55,7 @@ compute(M1, M2, Opts) ->
 %% the message as JSON representations into the WASM environment.
 prep_call(M1, M2, Opts) ->
     Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
-    Process = hb_converge:get(<<"Process">>, M1, Opts, #{ hashpath => ignore }),
+    Process = hb_converge:get(<<"Process">>, M1, Opts#{ hashpath => ignore }),
     Assignment = hb_converge:get(<<"Assignment">>, M2, Opts#{ hashpath => ignore }),
     Message = hb_converge:get(<<"Message">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_converge:get(<<"Process/WASM-Image">>, M1, Opts),
@@ -64,6 +65,7 @@ prep_call(M1, M2, Opts) ->
             hb_message:convert(Message, tx, converge, #{})
         ),
     {Props} = RawMsgJson,
+    ?event(debug, {props, Props}),
     MsgJson = jiffy:encode({
         Props ++
             [

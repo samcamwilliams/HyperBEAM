@@ -118,7 +118,7 @@ format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
         fun(Key) ->
-            case dev_message:get(Key, Map, #{}) of
+            case dev_message:get(Key, Map) of
                 {ok, Val} ->
                     case hb_util:short_id(Val) of
                         undefined -> Val;

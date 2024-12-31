@@ -247,7 +247,7 @@ transform(Msg1, Key, Opts) ->
 %% @doc The main device stack execution engine. See the moduledoc for more
 %% information.
 resolve_fold(Message1, Message2, Opts) ->
-	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1, Opts),
+	{ok, InitDevMsg} = dev_message:get(<<"Device">>, Message1),
     StartingPassValue =
         hb_converge:get(<<"Pass">>, {as, dev_message, Message1}, unset, Opts),
     PreparedMessage = hb_converge:set(Message1, <<"Pass">>, 1, Opts),

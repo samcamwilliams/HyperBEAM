@@ -516,8 +516,8 @@ error_infinite(_Msg1, _Msg2, _Opts) ->
 %% @doc Write a resulting M3 message to the cache if requested.
 update_cache(Msg1, Msg2, Msg3, Opts) when is_map(Msg3) ->
     ExecCacheSetting = hb_opts:get(cache, none, Opts),
-    M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1, Opts),
-    M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2, Opts),
+    M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1),
+    M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2),
     case should_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
         true ->
             ?event({caching_result, {msg2, Msg2}, {msg3, Msg3}}),
@@ -811,7 +811,7 @@ message_to_fun(Msg, Key, Opts) ->
 
 %% @doc Extract the device module from a message.
 message_to_device(Msg, Opts) ->
-    case dev_message:get(device, Msg, Opts) of
+    case dev_message:get(device, Msg) of
         {error, not_found} ->
             % The message does not specify a device, so we use the default device.
             default_module();
