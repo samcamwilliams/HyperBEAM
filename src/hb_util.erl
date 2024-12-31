@@ -79,7 +79,6 @@ short_id(Bin) when byte_size(Bin) > 43 ->
     end;
 short_id(<< "/", SingleElemHashpath/binary >>) ->
     << "/", (short_id(SingleElemHashpath))/binary >>;
-short_id(X) -> X.
 short_id(_) -> undefined.
 
 %% @doc Determine whether a binary is human-readable.

@@ -72,6 +72,8 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(Msg1, Opts) when is_map(Msg1) ->
     case dev_message:get(hashpath, Msg1) of
+        {ok, ignore} ->
+            throw({hashpath_returned_ignore, {msg1, Msg1}, {opts, Opts}});
         {ok, Hashpath} -> Hashpath;
         _ ->
             try hb_util:ok(dev_message:id(Msg1))

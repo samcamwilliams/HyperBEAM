@@ -476,7 +476,7 @@ resolve_stage(10, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
                 converge_core,
                 {resolution_recursing,
                     {remaining_path, RemainingPath},
-                    {current_hp, hb_path:hashpath(Msg3, Opts)},
+                    {current_hashpath, hb_path:hashpath(Msg3, Opts)}
                 }
             ),
 			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
