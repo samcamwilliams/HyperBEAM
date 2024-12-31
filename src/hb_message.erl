@@ -56,7 +56,7 @@
 -export([sign/2, verify/1, match/2, type/1, minimize/1, normalize_keys/1]). 
 -export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
 %%% Helpers:
--export([default_tx_list/0]).
+-export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
 -export([print/1, format/1, format/2]).
 -include("include/hb.hrl").
@@ -207,7 +207,7 @@ format(Map, Indent) when is_map(Map) ->
                         _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
                             Short = hb_util:short_id(Val),
                             io_lib:format("~s [*]", [Short]);
-                        _ when byte_size(Val) == 88 ->
+                        _ when byte_size(Val) == 87 ->
                             io_lib:format("~s [#p]", [hb_util:short_id(Val)]);
                         Bin when is_binary(Bin) ->
                             hb_util:format_binary(Bin);
@@ -287,9 +287,9 @@ match(Map1, Map2) ->
                             case Val1 == Val2 of
                                 true -> true;
                                 false ->
-                                    ?event(
+                                    ?event(debug,
                                         {value_mismatch,
-                                            {explicit, {Key, Val1, Val2}}
+                                            {key, Val1, Val2}
                                         }
                                     ),
                                     false
@@ -299,7 +299,7 @@ match(Map1, Map2) ->
                 Keys1
             );
         false ->
-            ?event({keys_mismatch, Keys1, Keys2}),
+            ?event(debug, {keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
             false
     end.
 	

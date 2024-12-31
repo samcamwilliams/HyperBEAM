@@ -106,7 +106,7 @@
 %% `resolve'.
 resolve(Msg, Opts) ->
     Path =
-        hb_path:term_to_path(
+        hb_path:term_to_path_parts(
             hb_converge:get(
                 path,
                 Msg,
@@ -552,7 +552,7 @@ term_to_cache_control_list(X) when is_list(X) ->
     lists:flatten(lists:map(fun term_to_cache_control_list/1, X));
 term_to_cache_control_list(X) when is_binary(X) -> [X];
 term_to_cache_control_list(X) ->
-    hb_path:term_to_path(X).
+    hb_path:term_to_path_parts(X).
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
@@ -628,7 +628,7 @@ set(Msg1, Key, Value, Opts) ->
     % For an individual key, we run deep_set with the key as the path.
     % This handles both the case that the key is a path as well as the case
     % that it is a single key.
-    Path = hb_path:term_to_path(Key),
+    Path = hb_path:term_to_path_parts(Key),
     % ?event(
     %     {setting_individual_key,
     %         {msg1, Msg1},
@@ -950,8 +950,10 @@ to_key(Key, Opts) ->
 key_to_binary(Key) -> key_to_binary(Key, #{}).
 key_to_binary(Key, _Opts) when is_binary(Key) -> Key;
 key_to_binary(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
-key_to_binary(Key, _Opts) when is_list(Key) -> list_to_binary(Key);
-key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key).
+key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
+key_to_binary(Key = [ASCII | _], _Opts) when is_integer(ASCII) -> list_to_binary(Key);
+key_to_binary(Key, _Opts) when is_list(Key) ->
+    iolist_to_binary(lists:join(<<"/">>, lists:map(fun key_to_binary/1, Key))).
 
 %% @doc Helper function for key_to_atom that does not check for errors.
 to_atom_unsafe(Key) when is_integer(Key) ->

@@ -66,7 +66,7 @@ latest(ProcID, RawRequiredPath, Limit, Opts) ->
             undefined -> [];
             [] -> [];
             _ ->
-                hb_path:term_to_path(
+                hb_path:term_to_path_parts(
                     RawRequiredPath,
                     Opts#{ atom_keys => false }
                 )

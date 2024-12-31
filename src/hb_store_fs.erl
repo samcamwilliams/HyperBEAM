@@ -45,7 +45,7 @@ read(Path) ->
 
 write(Opts, PathComponents, Value) ->
     Path = add_prefix(Opts, PathComponents),
-    ?event({writing, Path, byte_size(Value)}),
+    ?event(debug, {writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
@@ -63,7 +63,7 @@ list(Opts, Path) ->
 %%
 %% will resolve "a/b/c" to "Correct data".
 resolve(Opts, RawPath) ->
-    Res = resolve(Opts, "", filename:split(hb_store:join(RawPath))),
+    Res = resolve(Opts, "", hb_path:term_to_path_parts(hb_store:join(RawPath))),
     ?event({resolved, RawPath, Res}),
     Res.
 resolve(_, CurrPath, []) ->
@@ -79,15 +79,15 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
             resolve(Opts, PathPart, Rest)
     end.
 
-type(#{ prefix := DataDir }, Key) ->
-    type(hb_store:join([DataDir, Key])).
+type(Opts, Key) ->
+    type(add_prefix(Opts, Key)).
 type(Path) ->
-    ?event({type, Path}),
-    case file:read_file_info(Joint = hb_store:join(Path)) of
+    ?event(debug, {type, Path}),
+    case file:read_file_info(Path) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;
         _ ->
-            case file:read_link(Joint) of
+            case file:read_link(Path) of
                 {ok, Link} ->
                     type(Link);
                 _ ->

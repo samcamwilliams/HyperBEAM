@@ -97,12 +97,7 @@ sort(Stores, ScoreMap) ->
     ).
 
 %% @doc Join a list of path components together.
-join([]) -> [];
-join(Path) when is_binary(Path) -> Path;
-join([""|Xs]) -> join(Xs);
-join(FN = [X|_Xs]) when is_integer(X) -> FN;
-join([X|Xs]) -> 
-    filename:join(join(X), join(Xs)).
+join(Path) -> hb_path:to_binary(Path).
 
 %%% The store interface that modules should implement.
 
@@ -130,13 +125,8 @@ type(Modules, Path) -> call_function(Modules, type, [Path]).
 
 %% @doc Create a path from a list of path components. If no store implements
 %% the path function, we return the path with the 'default' transformation (id).
-path(Path) when is_list(Path) -> [ El || El <- Path, El =/= [] ];
-path(Path) -> Path.
-path(Store, Path) ->
-    case call_function(Store, path, [Path]) of
-        no_viable_store -> path(Path);
-        Result -> Result
-    end.
+path(Path) -> join(Path).
+path(_, Path) -> path(Path).
 
 %% @doc Add two path components together. If no store implements the add_path
 %% function, we concatenate the paths.
@@ -162,7 +152,7 @@ call_function(X, _Function, _Args) when not is_list(X) ->
 call_function([], _Function, _Args) ->
     no_viable_store;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
-    ?event({calling, Mod, Function}),
+    ?event({calling, Mod, Function, Args}),
     try apply(Mod, Function, [Opts | Args]) of
         not_found ->
             call_function(Rest, Function, Args);

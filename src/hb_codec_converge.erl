@@ -71,7 +71,7 @@ to(TABM0) ->
     % 2. Decode any binary values that have a "Converge-Type:" prefix;
     % 3. Recursively decode any maps that we encounter;
     % 4. Return the remaining keys and values as a map.
-    maps:filtermap(
+    hb_message:filter_default_keys(maps:filtermap(
         fun(<<"Converge-Type:", _/binary>>, _) ->
             % Remove any keys from output that have a "Converge-Type:" prefix.
             false;
@@ -93,7 +93,7 @@ to(TABM0) ->
             {true, Value}
         end,
         TABM1
-    ).
+    )).
 
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.

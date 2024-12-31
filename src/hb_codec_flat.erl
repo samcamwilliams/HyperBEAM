@@ -3,13 +3,14 @@
 -module(hb_codec_flat).
 -export([from/1, to/1]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Convert a flat map to a TABM.
 from(Bin) when is_binary(Bin) -> Bin;
 from(Map) when is_map(Map) ->
     maps:fold(
         fun(Path, Value, Acc) ->
-            inject_at_path(hb_path:term_to_path(Path), from(Value), Acc)
+            inject_at_path(hb_path:term_to_path_parts(Path), from(Value), Acc)
         end,
         #{},
         Map
@@ -53,20 +54,24 @@ to(Map) when is_map(Map) ->
 simple_conversion_test() ->
     Flat = #{[<<"a">>] => <<"value">>},
     Nested = #{<<"a">> => <<"value">>},
+    ?event(debug, {converted, {flattened, Flat}, {unflattened, hb_codec_flat:from(Flat)}}),
     ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
     ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
 
 nested_conversion_test() ->
-    Flat = #{[<<"a">>, <<"b">>] => <<"value">>},
+    Flat = #{<<"a/b">> => <<"value">>},
     Nested = #{<<"a">> => #{<<"b">> => <<"value">>}},
-    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
-    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
+    Unflattened = hb_codec_flat:from(Flat),
+    Flattened = hb_codec_flat:to(Nested),
+    ?event(debug, {converted, {flattened, Flattened}, {unflattened, Unflattened}}),
+    ?assert(hb_message:match(Nested, Unflattened)),
+    ?assert(hb_message:match(Flat, Flattened)).
 
 multiple_paths_test() ->
     Flat = #{
-        [<<"x">>, <<"y">>] => <<"1">>,
-        [<<"x">>, <<"z">>] => <<"2">>,
-        [<<"a">>] => <<"3">>
+        <<"x/y">> => <<"1">>,
+        <<"x/z">> => <<"2">>,
+        <<"a">> => <<"3">>
     },
     Nested = #{
         <<"x">> => #{
@@ -84,10 +89,13 @@ binary_passthrough_test() ->
     ?assertEqual(Bin, hb_codec_flat:to(Bin)).
 
 deep_nesting_test() ->
-    Flat = #{[<<"a">>, <<"b">>, <<"c">>, <<"d">>] => <<"deep">>},
+    Flat = #{<<"a/b/c/d">> => <<"deep">>},
     Nested = #{<<"a">> => #{<<"b">> => #{<<"c">> => #{<<"d">> => <<"deep">>}}}},
-    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
-    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
+    Unflattened = hb_codec_flat:from(Flat),
+    Flattened = hb_codec_flat:to(Nested),
+    ?event(debug, {converted, {flattened, Flattened}, {unflattened, Unflattened}}),
+    ?assert(hb_message:match(Nested, Unflattened)),
+    ?assert(hb_message:match(Flat, Flattened)).
 
 empty_map_test() ->
     ?assertEqual(#{}, hb_codec_flat:from(#{})),

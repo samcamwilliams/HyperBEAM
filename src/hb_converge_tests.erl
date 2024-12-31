@@ -285,8 +285,12 @@ deep_set_new_messages_test() ->
     Msg0 = #{ a => #{ b => #{ c => 1 } } },
     Msg1 = hb_converge:set(Msg0, <<"d/e">>, 3, test_opts()),
     Msg2 = hb_converge:set(Msg1, <<"d/f">>, 4, test_opts()),
-    ?assertMatch(
-        #{ a := #{ b := #{ c := 1 } }, d := #{ e := 3, f := 4 } }, Msg2),
+    ?assert(
+        hb_message:match(
+            Msg2,
+            #{ a => #{ b => #{ c => 1 } }, d => #{ e => 3, f => 4 } }
+        )
+    ),
     Msg3 = hb_converge:set(
         Msg2,
         #{ 
@@ -296,12 +300,15 @@ deep_set_new_messages_test() ->
          },
          test_opts()
     ),
-    ?assertMatch(
-        #{
-            a := #{ b := #{ c := 1 } }, d := #{ e := 3, f := 4 },
-            z := #{ a := 0, b := 1, y := #{ x := 2 } }
-        },
-        Msg3
+    ?assert(
+        hb_message:match(
+            Msg3,
+            #{
+                a => #{ b => #{ c => 1 } },
+                d => #{ e => 3, f => 4 },
+                z => #{ a => 0, b => 1, y => #{ x => 2 } }
+            }
+        )
     ).
 
 deep_set_with_device_test() ->

@@ -32,6 +32,7 @@ id(M) ->
     ID = 
         case get(signature, M) of
             {error, not_found} -> raw_id(M, unsigned);
+            {ok, ?DEFAULT_SIG} -> raw_id(M, unsigned);
             _ -> raw_id(M, signed)
         end,
     {ok, ID}.

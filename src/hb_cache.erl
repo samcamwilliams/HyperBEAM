@@ -30,21 +30,25 @@ list(Path, Opts) ->
         {error, _} -> []
     end.
 
-%% @doc Write a message to the cache. For raw binaries, we write the 
+%% @doc Write a message to the cache. For raw binaries, we write the data at
+%% the hashpath of the data (by default the SHA2-256 hash of the data). For
+%% deep messages, we link the hashpath of the keys to the underlying data and
+%% recurse.
 write(RawMsg, Opts) ->
     Msg = hb_message:convert(RawMsg, tabm, converge, Opts),
     store_write(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
 store_write(Bin, Store, Opts) when is_binary(Bin) ->
     Hashpath = hb_path:hashpath(Bin, Opts),
-    PathParts = hb_path:term_to_path(Hashpath, Opts),
-    hb_store:write(Store, PathParts, Bin),
-    {ok, PathParts};
+    hb_store:write(Store, Hashpath, Bin),
+    {ok, Hashpath};
 store_write(Msg, Store, Opts) when is_map(Msg) ->
     KeyPathMap =
         maps:map(
             fun(Key, Value) ->
                 {ok, Path} = store_write(Value, Store, Opts),
-                hb_store:make_link(Store, Path, [hb_path:hashpath(Msg, Key, Opts)]),
+                Hashpath = hb_path:hashpath(Msg, #{ path => Key }, Opts),
+                ?event(debug, {writing_link, {path, Path}, {key, Key}, {hashpath, Hashpath}}),
+                hb_store:make_link(Store, Path, Hashpath),
                 Path
             end,
             Msg
@@ -56,7 +60,7 @@ store_write(Msg, Store, Opts) when is_map(Msg) ->
         {ok, SignedID} -> 
             store_link_message(SignedID, KeyPathMap, Store, Opts)
     end,
-    {ok, KeyPathMap}.
+    {ok, UnsignedID}.
 
 %% @doc Recursively make links to underlying data, in the form of a pathmap.
 %% This allows us to have the hashpath compute space be shared across all signed 
@@ -81,31 +85,50 @@ store_link_message(Root, PathMap, Store, _Opts) ->
         PathMap
     ).
 
-%% @doc List all of the subpaths of a given path, read each in turn, then use the
-%% flat map codec to convert the result into a Converge message.
-read(Path, Opts) -> store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts).
+read(Path, Opts) ->
+    case store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts) of
+        not_found -> not_found;
+        {ok, Bin} when is_binary(Bin) -> {ok, Bin};
+        {ok, FlatMsg} when is_map(FlatMsg) ->
+            {ok, hb_message:convert(FlatMsg, converge, flat, Opts)}
+    end.
+        
+%% @doc List all of the subpaths of a given path, read each in turn, returning a 
+%% flat map.
 store_read(Path, Store, Opts) ->
-    case hb_store:list(Store, Path) of
-        {ok, []} -> not_found;
-        {ok, Subpaths} ->
-            FlatMap =
-                maps:from_list(
-                    lists:map(
-                        fun(Subpath) ->
-                            {
-                                list_to_binary(Subpath),
-                                hb_util:ok(hb_store:read(
-                                    Store, 
-                                    hb_store:path(Store, [Path, Subpath])
-                                ))
-                            }
-                    end,
-                    Subpaths
-                )
-            ),
-            ?event(debug, {explicit, FlatMap}),
-            {ok, hb_message:convert(FlatMap, converge, flat, Opts)};
-        {error, _} -> not_found
+    ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
+    ?event(debug, {reading, {path, {explicit, Path}}, {bin_path, PathToBin}, {resolved, {explicit, ResolvedFullPath}}, {opts, Opts}}),
+    case hb_store:type(Store, ResolvedFullPath) of
+        simple ->
+            hb_store:read(Store, ResolvedFullPath);
+        _ ->
+            case hb_store:list(Store, ResolvedFullPath) of
+                {ok, Subpaths} ->
+                    ?event(debug, {listed, {original_path, Path}, {read_path, ResolvedFullPath}, {subpaths, Subpaths}}),
+                    FlatMap =
+                        maps:from_list(
+                            lists:map(
+                                fun(Subpath) ->
+                                    ResolvedSubpath =
+                                        hb_store:resolve(Store,
+                                            hb_path:to_binary(P = [
+                                                ResolvedFullPath,
+                                                Subpath
+                                            ])
+                                        ),
+                                    ?event(debug, {reading_subpath, {raw, P}, {resolved, ResolvedSubpath}}),
+                                    {
+                                        Subpath,
+                                        hb_util:ok(store_read(ResolvedSubpath, Store, Opts))
+                                    }
+                            end,
+                            Subpaths
+                        )
+                    ),
+                    ?event(debug, {explicit, FlatMap}),
+                    {ok, FlatMap};
+                _ -> not_found
+            end
     end.
 
 %% @doc Read the output of a computation, given Msg1, Msg2, and some options.
@@ -141,20 +164,29 @@ test_unsigned(Data) ->
 test_signed(Data) ->
     hb_message:sign(test_unsigned(Data), ar_wallet:new()).
 
+test_store_binary(Opts) ->
+    Bin = <<"Simple unsigned data item">>,
+    {ok, ID} = write(Bin, Opts),
+    {ok, RetrievedBin} = read(ID, Opts),
+    ?assertEqual(Bin, RetrievedBin).
+
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_unsigned_item(Opts) ->
     Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
-    {ok, _} = write(Item, Opts),
+    {ok, Path} = write(Item, Opts),
+    ?event(debug, {wrote_item, {path, Path}, {item, Item}}),
     %% Read the item back
-    {ok, RetrievedItem} =
-        read(hb_util:human_id(hb_converge:get(id, Item)), Opts),
+    ID = hb_util:human_id(hb_converge:get(id, Item)),
+    ?event(debug, {reading_item, {id, ID}}),
+    {ok, RetrievedItem} = read(ID, Opts),
+    ?event(debug, {retrieved_item, {got, RetrievedItem}, {expected, Item}}),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test deeply nested item storage and retrieval
 test_deeply_nested_complex_item(Opts) ->
     %% Create nested data
-    DeepValueMsg = test_signed(<<"deep_value">>),
+    DeepValueMsg = test_signed([1,2,3]),
     Outer =
         #{
             <<"Level1">> =>
@@ -177,18 +209,20 @@ test_deeply_nested_complex_item(Opts) ->
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
-    {ok, DeepMsg} =
+    {ok, RawDeepMsg} =
         read(
             [
                 OuterID = hb_util:human_id(hb_converge:get(id, Outer)),
-                "Level1",
-                "Level2",
-                "Level3"
+                <<"Level1">>,
+                <<"Level2">>,
+                <<"Level3">>
             ],
             Opts
         ),
+    DeepMsg = RawDeepMsg,
+    ?event(debug, started_second_read),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual(<<"deep_value">>, hb_converge:get(data, DeepMsg)),
+    ?assertEqual([1,2,3], hb_converge:get(data, DeepMsg)),
     ?assertEqual(
         hb_converge:get(unsigned_id, DeepValueMsg),
         hb_converge:get(unsigned_id, DeepMsg)
@@ -205,6 +239,7 @@ test_message_with_list(Opts) ->
 
 cache_suite_test_() ->
     hb_store:generate_test_suite([
+        {"store binary", fun test_store_binary/1},
         {"store simple unsigned item", fun test_store_simple_unsigned_item/1},
         {"deeply nested complex item", fun test_deeply_nested_complex_item/1},
         {"message with list", fun test_message_with_list/1}
