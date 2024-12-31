@@ -15,6 +15,7 @@
 -module(hb_cache).
 -export([read/2, read_output/3, write/2]).
 -export([list/2, list_numbered/2, link/3]).
+-export([test_unsigned/1, test_signed/1]).
 -include("src/include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -47,7 +48,7 @@ store_write(Msg, Store, Opts) when is_map(Msg) ->
             fun(Key, Value) ->
                 {ok, Path} = store_write(Value, Store, Opts),
                 Hashpath = hb_path:hashpath(Msg, #{ path => Key }, Opts),
-                ?event(debug, {writing_link, {path, Path}, {key, Key}, {hashpath, Hashpath}}),
+                ?event({writing_link, {path, Path}, {key, Key}, {hashpath, Hashpath}}),
                 hb_store:make_link(Store, Path, Hashpath),
                 Path
             end,
@@ -97,14 +98,28 @@ read(Path, Opts) ->
 %% flat map.
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event(debug, {reading, {path, {explicit, Path}}, {bin_path, PathToBin}, {resolved, {explicit, ResolvedFullPath}}, {opts, Opts}}),
+    ?event(
+        {reading,
+            {path,
+                {path, PathToBin},
+                {resolved, {explicit, ResolvedFullPath}}
+            }
+        },
+        Opts
+    ),
     case hb_store:type(Store, ResolvedFullPath) of
         simple ->
             hb_store:read(Store, ResolvedFullPath);
         _ ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, Subpaths} ->
-                    ?event(debug, {listed, {original_path, Path}, {read_path, ResolvedFullPath}, {subpaths, Subpaths}}),
+                    ?event(
+                        {listed,
+                            {original_path, Path},
+                            {subpaths, Subpaths}
+                        },
+                        Opts
+                    ),
                     FlatMap =
                         maps:from_list(
                             lists:map(
@@ -116,7 +131,10 @@ store_read(Path, Store, Opts) ->
                                                 Subpath
                                             ])
                                         ),
-                                    ?event(debug, {reading_subpath, {raw, P}, {resolved, ResolvedSubpath}}),
+                                    ?event(
+                                        {reading_subpath, Subpath, {resolved, ResolvedSubpath}},
+                                        Opts
+                                    ),
                                     {
                                         Subpath,
                                         hb_util:ok(store_read(ResolvedSubpath, Store, Opts))
@@ -125,7 +143,7 @@ store_read(Path, Store, Opts) ->
                             Subpaths
                         )
                     ),
-                    ?event(debug, {explicit, FlatMap}),
+                    ?event({explicit, FlatMap}),
                     {ok, FlatMap};
                 _ -> not_found
             end
@@ -175,12 +193,9 @@ test_store_simple_unsigned_item(Opts) ->
     Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
     {ok, Path} = write(Item, Opts),
-    ?event(debug, {wrote_item, {path, Path}, {item, Item}}),
     %% Read the item back
     ID = hb_util:human_id(hb_converge:get(id, Item)),
-    ?event(debug, {reading_item, {id, ID}}),
     {ok, RetrievedItem} = read(ID, Opts),
-    ?event(debug, {retrieved_item, {got, RetrievedItem}, {expected, Item}}),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test deeply nested item storage and retrieval
@@ -220,7 +235,6 @@ test_deeply_nested_complex_item(Opts) ->
             Opts
         ),
     DeepMsg = RawDeepMsg,
-    ?event(debug, started_second_read),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_converge:get(data, DeepMsg)),
     ?assertEqual(

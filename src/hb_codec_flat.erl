@@ -54,7 +54,6 @@ to(Map) when is_map(Map) ->
 simple_conversion_test() ->
     Flat = #{[<<"a">>] => <<"value">>},
     Nested = #{<<"a">> => <<"value">>},
-    ?event(debug, {converted, {flattened, Flat}, {unflattened, hb_codec_flat:from(Flat)}}),
     ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
     ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
 
@@ -63,7 +62,6 @@ nested_conversion_test() ->
     Nested = #{<<"a">> => #{<<"b">> => <<"value">>}},
     Unflattened = hb_codec_flat:from(Flat),
     Flattened = hb_codec_flat:to(Nested),
-    ?event(debug, {converted, {flattened, Flattened}, {unflattened, Unflattened}}),
     ?assert(hb_message:match(Nested, Unflattened)),
     ?assert(hb_message:match(Flat, Flattened)).
 
@@ -93,7 +91,6 @@ deep_nesting_test() ->
     Nested = #{<<"a">> => #{<<"b">> => #{<<"c">> => #{<<"d">> => <<"deep">>}}}},
     Unflattened = hb_codec_flat:from(Flat),
     Flattened = hb_codec_flat:to(Nested),
-    ?event(debug, {converted, {flattened, Flattened}, {unflattened, Unflattened}}),
     ?assert(hb_message:match(Nested, Unflattened)),
     ?assert(hb_message:match(Flat, Flattened)).
 

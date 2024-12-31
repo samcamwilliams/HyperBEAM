@@ -45,7 +45,7 @@ read(Path) ->
 
 write(Opts, PathComponents, Value) ->
     Path = add_prefix(Opts, PathComponents),
-    ?event(debug, {writing, Path, byte_size(Value)}),
+    ?event({writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
@@ -82,7 +82,7 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
 type(Opts, Key) ->
     type(add_prefix(Opts, Key)).
 type(Path) ->
-    ?event(debug, {type, Path}),
+    ?event({type, Path}),
     case file:read_file_info(Path) of
         {ok, #file_info{type = directory}} -> composite;
         {ok, #file_info{type = regular}} -> simple;

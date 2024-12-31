@@ -443,10 +443,10 @@ transform_external_call_device_test() ->
 						suffix => <<"-Cool">>
 					}
 			},
-		value => <<"Super">>
+		<<"Value">> => <<"Super">>
 	},
 	?assertMatch(
-		{ok, #{ value := <<"Super-Cool">> }},
+		{ok, #{ <<"Value">> := <<"Super-Cool">> }},
 		hb_converge:resolve(Msg1, #{
 			path => <<"/Transform/Make-Cool/Value">>
 		}, #{})
@@ -524,7 +524,8 @@ benchmark_test() ->
     Iterations =
         hb:benchmark(
             fun() ->
-                hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{})
+                hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{}),
+                {count, 5}
             end,
             BenchTime
         ),

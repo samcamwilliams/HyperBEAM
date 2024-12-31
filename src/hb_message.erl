@@ -287,7 +287,7 @@ match(Map1, Map2) ->
                             case Val1 == Val2 of
                                 true -> true;
                                 false ->
-                                    ?event(debug,
+                                    ?event(
                                         {value_mismatch,
                                             {key, Val1, Val2}
                                         }
@@ -299,7 +299,7 @@ match(Map1, Map2) ->
                 Keys1
             );
         false ->
-            ?event(debug, {keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
+            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
             false
     end.
 	

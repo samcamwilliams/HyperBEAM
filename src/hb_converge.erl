@@ -520,7 +520,7 @@ update_cache(Msg1, Msg2, Msg3, Opts) when is_map(Msg3) ->
     M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2, Opts),
     case should_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
         true ->
-            ?event(debug, {caching_result, {msg2, Msg2}, {msg3, Msg3}}),
+            ?event({caching_result, {msg2, Msg2}, {msg3, Msg3}}),
             case hb_opts:get(async_cache, false, Opts) of
                 true -> spawn(fun() -> hb_cache:write(Msg3, Opts) end);
                 false -> hb_cache:write(Msg3, Opts)
@@ -539,7 +539,7 @@ should_cache(_, CC1, CC2) ->
     CC1List = term_to_cache_control_list(CC1),
     CC2List = term_to_cache_control_list(CC2),  
     NoCacheSpecifiers = [no_cache, no_store, no_transform],
-    ?event(debug, {should_cache, {cc1, CC1List}, {cc2, CC2List}}),
+    ?event({should_cache, {cc1, CC1List}, {cc2, CC2List}}),
     not lists:any(
         fun(X) -> lists:member(X, NoCacheSpecifiers) end,
         CC1List ++ CC2List

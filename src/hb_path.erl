@@ -76,9 +76,7 @@ hashpath(Msg1, Opts) when is_map(Msg1) ->
         _ ->
             try hb_util:ok(dev_message:id(Msg1))
             catch
-                A:B:ST ->
-                    ?event(debug, {hashpath_error, {msg, Msg1}, {opts, Opts}, {error, {A, B, ST}}}),
-                    throw({badarg, {unsupported_type, Msg1}})
+                _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
             end
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
@@ -236,14 +234,12 @@ hashpath_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
     Hashpath = hashpath(Msg1, Msg2, #{}),
-    ?event(debug, {hashpath, {path, Hashpath}, {opts, #{}}}),
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
 hashpath_direct_msg2_test() ->
     Msg1 = #{ <<"Base">> => <<"Message">> },
     Msg2 = #{ path => <<"Base">> },
     Hashpath = hashpath(Msg1, Msg2, #{}),
-    ?event(debug, {hashpath, {path, Hashpath}}),
     [_, KeyName] = term_to_path_parts(Hashpath),
     ?assert(matches(KeyName, <<"Base">>)).
 
@@ -253,7 +249,6 @@ multiple_hashpaths_test() ->
     Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Msg3, Msg4, #{}),
-    ?event(debug, {hashpath, {path, Msg5}}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->

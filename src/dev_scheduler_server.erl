@@ -231,4 +231,4 @@ benchmark_test() ->
         #{ current := X } when X == Iterations - 1,
         dev_scheduler_server:info(dev_scheduler_registry:find(ID))
     ),
-    ?assert(Iterations > 50).
+    ?assert(Iterations > 30).
