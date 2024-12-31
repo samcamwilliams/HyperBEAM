@@ -128,9 +128,12 @@ output_prefix(Msg1, _Msg2, Opts) ->
 router(keys, Message1, Message2, _Opts) ->
 	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
 	dev_message:keys(Message1);
-router(transform, Message1, _Message2, Opts) ->
-	transformer_message(Message1, Opts);
-router(_Key, Message1, Message2, Opts) ->
+router(Key, Message1, Message2, Opts) ->
+    case hb_path:matches(Key, <<"Transform">>) of
+        true -> transformer_message(Message1, Opts);
+        false -> router(Message1, Message2, Opts)
+    end.
+router(Message1, Message2, Opts) ->
 	?event({router_called, {msg1, Message1}, {msg2, Message2}}),
     Mode =
         case hb_converge:get(<<"Mode">>, Message2, not_found, Opts) of
@@ -153,7 +156,7 @@ router(_Key, Message1, Message2, Opts) ->
 %% takes the place of the original `Device' key. This allows users to call
 %% a single device from the stack:
 %%
-%% 	/Msg1/AlicesExcitingStack/Transform/DeviceName/keyInDevice ->
+%% 	/Msg1/Transform/DeviceName/keyInDevice ->
 %% 		keyInDevice executed on DeviceName against Msg1.
 transformer_message(Msg1, Opts) ->
 	?event({creating_transformer, {for, Msg1}}),
@@ -184,7 +187,7 @@ transformer_message(Msg1, Opts) ->
 %% of the message as it delegates execution to devices contained within it.
 transform(Msg1, Key, Opts) ->
 	% Get the device stack message from Msg1.
-    ?event({transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
+    ?event(debug, {transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
 	case hb_converge:get(<<"Device-Stack">>, {as, dev_message, Msg1}, Opts) of
         not_found -> throw({error, no_valid_device_stack});
         StackMsg ->
@@ -239,7 +242,7 @@ transform(Msg1, Key, Opts) ->
                         Opts
                     );
 				_ ->
-					?event({no_device_key, Key, {stack, StackMsg}}),
+					?event(debug, {no_device_key, Key, {stack, StackMsg}}),
 					not_found
 			end
 	end.
