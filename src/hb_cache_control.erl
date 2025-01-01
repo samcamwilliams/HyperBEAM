@@ -44,45 +44,69 @@ maybe_lookup(Msg1, Msg2, Opts) ->
                     ),
                     {ok, Msg3};
                 not_found ->
-            case Settings of
-                    #{ only_if_cached := true } ->
-                        {error,
-                            #{
-                                <<"Status">> => <<"Gateway Timeout">>,
-                                <<"Status-Code">> => 504,
-                                <<"Cache-Status">> => <<"miss">>,
-                                <<"body">> =>
-                                    <<"Computed result not available in cache">>
-                            }
-                        };
-                    _ ->
-                        case ?IS_ID(Msg1) of
-                            false -> {continue, Msg1, Msg2};
-                            true ->
-                                case hb_cache:read(Msg1, Opts) of
-                                    {ok, FullMsg1} ->
-                                        ?event(
-                                            {message_cache_hit,
-                                                {msg1, Msg1},
-                                                {msg2, Msg2},
-                                                {msg3, FullMsg1}
-                                            }
-                                        ),
-                                        {continue, FullMsg1, Msg2};
-                                    not_found ->
-                                        {error,
-                                            #{
-                                                <<"Status">> => <<"Not Found">>,
-                                                <<"Status-Code">> => 404,
-                                                <<"body">> =>
-                                                    <<"Necessary messages not found in cache">>
-                                            }
-                                        }
+                    case Settings of
+                            #{ only_if_cached := true } ->
+                                only_if_cached_not_found_error(Msg1, Msg2, Opts);
+                            _ ->
+                                case ?IS_ID(Msg1) of
+                                    false -> {continue, Msg1, Msg2};
+                                    true ->
+                                        case hb_cache:read(Msg1, Opts) of
+                                            {ok, FullMsg1} ->
+                                                ?event(
+                                                    {message_cache_hit,
+                                                        {msg1, Msg1},
+                                                        {msg2, Msg2},
+                                                        {msg3, FullMsg1}
+                                                    }
+                                                ),
+                                                {continue, FullMsg1, Msg2};
+                                            not_found ->
+                                                necessary_messages_not_found_error(
+                                                    Msg1,
+                                                    Msg2,
+                                                    Opts
+                                                )
+                                        end
                                 end
                         end
-                end
             end
     end.
+
+%% @doc Generate a message to return when `only_if_cached` was specified, and
+%% we don't have a cached result.
+only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
+    ?event(
+        cache,
+        {only_if_cached_execution_failed, {msg1, Msg1}, {msg2, Msg2}},
+        Opts
+    ),
+    {error,
+        #{
+            <<"Status">> => <<"Gateway Timeout">>,
+            <<"Status-Code">> => 504,
+            <<"Cache-Status">> => <<"miss">>,
+            <<"body">> =>
+                <<"Computed result not available in cache.">>
+        }
+    }.
+
+%% @doc Generate a message to return when the necessary messages to execute a 
+%% cache lookup are not found in the cache.
+necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
+    ?event(
+        cache,
+        {necessary_messages_not_found, {msg1, Msg1}, {msg2, Msg2}},
+        Opts
+    ),
+    {error,
+        #{
+            <<"Status">> => <<"Not Found">>,
+            <<"Status-Code">> => 404,
+            <<"body">> =>
+                <<"Necessary messages not found in cache.">>
+        }
+    }.
 
 %% @doc Derive cache settings from a series of option sources and the opts,
 %% honoring precidence order. The Opts is used as the first source. Returns a
@@ -94,7 +118,6 @@ maybe_lookup(Msg1, Msg2, Opts) ->
 derive_cache_settings(SourceList, Opts) ->
     lists:foldr(
         fun(Source, Acc) ->
-            ?event(debug, {current_acc, Acc}),
             maybe_set(Acc, cache_source_to_cache_settings(Source))
         end,
         #{ store => true, lookup => true },
@@ -267,3 +290,31 @@ message_source_cache_control_test() ->
         lookup => false,
         only_if_cached => undefined
     }, Result).
+
+%%% Basic cached Converge resolution tests
+
+cache_message_result_test() ->
+    CachedMsg = #{ <<"Purpose">> => <<"Test-Message">> },
+    Msg1 = #{ <<"Test-Key">> => CachedMsg },
+    Msg2 = <<"Test-Key">>,
+    {ok, Res} =
+        hb_converge:resolve(
+            Msg1,
+            Msg2,
+            #{
+                cache_control => [<<"always">>]
+            }
+        ),
+    ?event(debug, {res1, Res}),
+    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    ?event(debug, {res2, Res2}),
+    ?assertMatch(#{ <<"Purpose">> := <<"Test-Message">> }, Res2).
+
+cache_binary_result_test() ->
+    CachedMsg = <<"Test-Message">>,
+    Msg1 = #{ <<"Test-Key">> => CachedMsg },
+    Msg2 = <<"Test-Key">>,
+    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
+    ?assertEqual(CachedMsg, Res),
+    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    ?assertEqual(CachedMsg, Res2).

@@ -435,11 +435,3 @@ list_transform_test() ->
     ?assertEqual(<<"C">>, hb_converge:get(3, Msg)),
     ?assertEqual(<<"D">>, hb_converge:get(4, Msg)),
     ?assertEqual(<<"E">>, hb_converge:get(5, Msg)).
-
-cache_execution_test() ->
-    Msg1 = #{ device => <<"Message/1.0">>, <<"A">> => #{ <<"B">> => <<"C">> } },
-    Msg2 = #{ path => <<"A/B">> },
-    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
-    ?assertEqual(<<"C">>, Res),
-    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    ?assertEqual(<<"C">>, Res2).
