@@ -11,7 +11,7 @@
 %% Comment/uncomment out as necessary.
 
 run_test() ->
-    run_single(only_if_cached, recursive_get).
+    run_single(no_cache, resolve_simple).
 
 %% @doc Run a single test with a given set of opts.
 run_single(OptsName, TestName) ->
@@ -28,8 +28,7 @@ run_all_test_() ->
             {foreach,
                 fun() -> hb_store:start(Store) end,
                 fun(_) ->
-                    %hb_store:reset(Store)
-                    ok
+                    hb_store:reset(Store)
                 end,
                 [
                     {ODesc ++ ": " ++ TestDesc, fun() -> Test(Opts) end}
@@ -92,23 +91,21 @@ test_opts() ->
     [
         #{
             name => no_cache,
-            desc => "no-cache, no hashpath, no workers",
+            desc => "No cache read or write",
             opts => #{
-                topic => converge_internal,
                 hashpath => ignore,
-                cache_control => ["no-cache", "no-store"],
+                cache_control => [<<"no-cache">>, <<"no-store">>],
                 spawn_worker => false,
                 store => {hb_store_fs, #{ prefix => "test_cache" }}
             },
             skip => []
         },
         #{
-            name => always_cache,
-            desc => "always cache",
+            name => only_store,
+            desc => "Store, don't read",
             opts => #{
-                topic => converge_internal,
                 hashpath => update,
-                cache_control => [<<"always">>],
+                cache_control => [<<"no-cache">>],
                 spawn_worker => false,
                 store => {hb_store_fs, #{ prefix => "test_cache" }}
             },
@@ -116,9 +113,8 @@ test_opts() ->
         },
         #{
             name => only_if_cached,
-            desc => "only if cached",
+            desc => "Only read, don't exec",
             opts => #{
-                topic => converge_internal,
                 hashpath => ignore,
                 cache_control => [<<"only-if-cached">>],
                 spawn_worker => false,
