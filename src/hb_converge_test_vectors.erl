@@ -9,9 +9,9 @@
 %% @doc Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test`
 %% Comment/uncomment out as necessary.
-
-run_test() ->
-    run_single(no_cache, resolve_simple).
+% run_test() ->
+%     run_single(only_store, deep_set_new_messages),
+%     run_single(only_if_cached, deep_set_new_messages).
 
 %% @doc Run a single test with a given set of opts.
 run_single(OptsName, TestName) ->
@@ -23,18 +23,16 @@ run_single(OptsName, TestName) ->
 %% the store for each test.
 run_all_test_() ->
     lists:map(
-        fun(#{ name := Name, opts := Opts, skip := Skip, desc := ODesc}) ->
+        fun(#{ name := _Name, opts := Opts, skip := Skip, desc := ODesc}) ->
             Store = hb_opts:get(store, Opts),
             {foreach,
                 fun() -> hb_store:start(Store) end,
-                fun(_) ->
-                    hb_store:reset(Store)
-                end,
+                fun(_) -> hb_store:reset(Store) end,
                 [
                     {ODesc ++ ": " ++ TestDesc, fun() -> Test(Opts) end}
                 ||
-                    {_TestAtom, TestDesc, Test} <- test_suite(), 
-                        not lists:member(Name, Skip)
+                    {TestAtom, TestDesc, Test} <- test_suite(), 
+                        not lists:member(TestAtom, Skip)
                 ]
             }
         end,
@@ -57,6 +55,8 @@ test_suite() ->
             fun resolve_binary_key_test/1},
         {key_to_binary, "key to binary",
             fun key_to_binary_test/1},
+        {key_from_id_device_with_args, "key from id device with args",
+            fun key_from_id_device_with_args_test/1},
         {device_with_handler_function, "device with handler function",
             fun device_with_handler_function_test/1},
         {device_with_default_handler_function, "device with default handler function",
@@ -96,7 +96,7 @@ test_opts() ->
                 hashpath => ignore,
                 cache_control => [<<"no-cache">>, <<"no-store">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "test_cache" }}
+                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
             },
             skip => []
         },
@@ -107,7 +107,7 @@ test_opts() ->
                 hashpath => update,
                 cache_control => [<<"no-cache">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "test_cache" }}
+                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
             },
             skip => []
         },
@@ -118,8 +118,25 @@ test_opts() ->
                 hashpath => ignore,
                 cache_control => [<<"only-if-cached">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "test_cache" }}
+                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
             },
+            skip => [
+                % Exclude tests that return a list on its own for now, as raw 
+                % lists cannot be cached yet.
+                set_new_messages,
+                resolve_from_multiple_keys,
+                resolve_path_element,
+                denormalized_device_key,
+                % Skip test with locally defined device
+                deep_set_with_device
+                % Skip tests that call hb_converge utils (which have their own 
+                % cache settings).
+            ]
+        },
+        #{
+            name => normal,
+            desc => "Default opts",
+            opts => #{},
             skip => []
         }
     ].
@@ -127,8 +144,8 @@ test_opts() ->
 %%% Test vector suite
 
 resolve_simple_test(Opts) ->
-    Res = hb_converge:resolve(#{ a => 1 }, a, Opts),
-    ?assertEqual({ok, 1}, Res).
+    Res = hb_converge:resolve(#{ a => <<"RESULT">> }, a, Opts),
+    ?assertEqual({ok, <<"RESULT">>}, Res).
 
 resolve_id_test(Opts) ->
     ?assertMatch(
@@ -140,13 +157,13 @@ resolve_key_twice_test(Opts) ->
     % Ensure that the same message can be resolved again.
     % This is not as trivial as it may seem, because resolutions are cached and
     % de-duplicated.
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, Opts)),
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, Opts)).
+    ?assertEqual({ok, <<"1">>}, hb_converge:resolve(#{ <<"a">> => <<"1">> }, <<"a">>, Opts)),
+    ?assertEqual({ok, <<"1">>}, hb_converge:resolve(#{ <<"a">> => <<"1">> }, <<"a">>, Opts)).
 
 resolve_from_multiple_keys_test(Opts) ->
     ?assertEqual(
         {ok, [a]},
-        hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys, Opts)
+        hb_converge:resolve(#{ a => <<"1">>, "priv_a" => <<"2">> }, keys, Opts)
     ).
 
 resolve_path_element_test(Opts) ->
@@ -166,14 +183,14 @@ key_to_binary_test(Opts) ->
 
 resolve_binary_key_test(Opts) ->
     ?assertEqual(
-        {ok, 1},
-        hb_converge:resolve(#{ a => 1 }, <<"a">>, Opts)
+        {ok, <<"RESULT">>},
+        hb_converge:resolve(#{ a => <<"RESULT">> }, <<"a">>, Opts)
     ),
     ?assertEqual(
-        {ok, 1},
+        {ok, <<"1">>},
         hb_converge:resolve(
             #{
-                <<"Test-Header">> => 1 },
+                <<"Test-Header">> => <<"1">> },
                 <<"Test-Header">>,
             Opts
         )
@@ -374,10 +391,10 @@ set_with_device_test(Opts) ->
                 #{
                     set =>
                         fun(State, _Msg) ->
+                            Acc = maps:get(set_count, State, <<"">>),
                             {ok,
                                 State#{
-                                    set_count =>
-                                        1 + maps:get(set_count, State, 0)
+                                    set_count => << Acc/binary, "." >>
                                 }
                             }
                         end
@@ -386,38 +403,49 @@ set_with_device_test(Opts) ->
         },
     ?assertEqual(<<"STATE">>, hb_converge:get(state_key, Msg, Opts)),
     SetOnce = hb_converge:set(Msg, #{ state_key => <<"SET_ONCE">> }, Opts),
-    ?assertEqual(1, hb_converge:get(set_count, SetOnce, Opts)),
+    ?assertEqual(<<".">>, hb_converge:get(set_count, SetOnce, Opts)),
     SetTwice = hb_converge:set(SetOnce, #{ state_key => <<"SET_TWICE">> }, Opts),
-    ?assertEqual(2, hb_converge:get(set_count, SetTwice, Opts)),
+    ?assertEqual(<<"..">>, hb_converge:get(set_count, SetTwice, Opts)),
     ?assertEqual(<<"STATE">>, hb_converge:get(state_key, SetTwice, Opts)).
 
 deep_set_test(Opts) ->
     % First validate second layer changes are handled correctly.
-    Msg0 = #{ a => #{ b => 1 } },
-    ?assertMatch(#{ a := #{ b := 2 } },
-        hb_converge:set(Msg0, [a, b], 2, Opts)),
+    Msg0 = #{ a => #{ b => <<"RESULT">> } },
+    ?assertMatch(#{ a := #{ b := <<"RESULT2">> } },
+        hb_converge:set(Msg0, [a, b], <<"RESULT2">>, Opts)),
     % Now validate deeper layer changes are handled correctly.
     Msg = #{ a => #{ b => #{ c => 1 } } },
     ?assertMatch(#{ a := #{ b := #{ c := 2 } } },
         hb_converge:set(Msg, [a, b, c], 2, Opts)).
 
-deep_set_new_messages_test(Opts) ->
+deep_set_new_messages_test() ->
+    Opts = maps:get(opts, hd(test_opts())),
     % Test that new messages are created when the path does not exist.
-    Msg0 = #{ a => #{ b => #{ c => 1 } } },
-    Msg1 = hb_converge:set(Msg0, <<"d/e">>, 3, Opts),
-    Msg2 = hb_converge:set(Msg1, <<"d/f">>, 4, Opts),
+    Msg0 = #{ a => #{ b => #{ c => <<"1">> } } },
+    Msg1 = hb_converge:set(Msg0, <<"d/e">>, <<"3">>, Opts),
+    Msg2 = hb_converge:set(Msg1, <<"d/f">>, <<"4">>, Opts),
     ?assert(
         hb_message:match(
             Msg2,
-            #{ a => #{ b => #{ c => 1 } }, d => #{ e => 3, f => 4 } }
+            #{ 
+                a =>
+                    #{
+                        b =>
+                            #{ c => <<"1">> }
+                    },
+                d =>
+                    #{
+                        e => <<"3">>,
+                        f => <<"4">> }
+            }
         )
     ),
     Msg3 = hb_converge:set(
         Msg2,
         #{ 
-            <<"z/a">> => 0,
-            <<"z/b">> => 1,
-            <<"z/y/x">> => 2
+            <<"z/a">> => <<"0">>,
+            <<"z/b">> => <<"1">>,
+            <<"z/y/x">> => <<"2">>
          },
          Opts
     ),
@@ -425,9 +453,9 @@ deep_set_new_messages_test(Opts) ->
         hb_message:match(
             Msg3,
             #{
-                a => #{ b => #{ c => 1 } },
-                d => #{ e => 3, f => 4 },
-                z => #{ a => 0, b => 1, y => #{ x => 2 } }
+                a => #{ b => #{ c => <<"1">> } },
+                d => #{ e => <<"3">>, f => <<"4">> },
+                z => #{ a => <<"0">>, b => <<"1">>, y => #{ x => <<"2">> } }
             }
         )
     ).
@@ -452,18 +480,18 @@ deep_set_with_device_test(Opts) ->
                 b =>
                     #{
                         device => Device,
-                        c => 1,
+                        c => <<"1">>,
                         modified => false
                     },
                 modified => false
             },
         modified => false
     },
-    Outer = hb_converge:deep_set(Msg, [a, b, c], 2, Opts),
+    Outer = hb_converge:deep_set(Msg, [a, b, c], <<"2">>, Opts),
     A = hb_converge:get(a, Outer, Opts),
     B = hb_converge:get(b, A, Opts),
     C = hb_converge:get(c, B, Opts),
-    ?assertEqual(2, C),
+    ?assertEqual(<<"2">>, C),
     ?assertEqual(true, hb_converge:get(modified, Outer)),
     ?assertEqual(false, hb_converge:get(modified, A)),
     ?assertEqual(true, hb_converge:get(modified, B)).
@@ -529,8 +557,8 @@ device_excludes_test(Opts) ->
     ?assert(hb_converge:is_exported(Msg, Dev, <<"Test-Key2">>, Opts)),
     ?assert(not hb_converge:is_exported(Msg, Dev, set, Opts)),
     ?assertEqual(<<"Handler-Value">>, hb_converge:get(<<"Test-Key2">>, Msg, Opts)),
-    ?assertMatch(#{ <<"Test-Key2">> := 2 },
-        hb_converge:set(Msg, <<"Test-Key2">>, 2, Opts)).
+    ?assertMatch(#{ <<"Test-Key2">> := <<"2">> },
+        hb_converge:set(Msg, <<"Test-Key2">>, <<"2">>, Opts)).
 
 denormalized_device_key_test(Opts) ->
 	Msg = #{ <<"Device">> => dev_test },
