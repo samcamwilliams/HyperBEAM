@@ -88,6 +88,8 @@ config() ->
         trusted_device_signers => [],
         %% What should the node do if a client error occurs?
         client_error_strategy => throw,
+        %% Default execution cache control options
+        cache_control => [<<"no-cache">>, <<"no-store">>],
         % Dev options
         mode => debug,
         debug_stack_depth => 40,
@@ -99,7 +101,7 @@ config() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        cache_control => [<<"no-cache">>, <<"no-store">>]
+        debug_ids => true
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

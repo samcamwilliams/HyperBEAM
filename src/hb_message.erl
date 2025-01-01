@@ -136,20 +136,34 @@ format(Map, Indent) when is_map(Map) ->
                 {error, _} -> undefined
             end
         end,
-    FilterUndef = 
+    FilterUndef =
         fun(List) ->
             lists:filter(fun({_, undefined}) -> false; (_) -> true end, List)
         end,
     % Prepare the metadata row for formatting.
     % Note: We try to get the IDs _if_ they are *already* in the map. We do not
     % force calculation of the IDs here because that may cause significant
-    % overhead.
+    % overhead unless the `debug_ids` option is set.
     IDMetadata =
-        [
-            {<<"#P">>, ValOrUndef(hashpath)},
-            {<<"*U">>, ValOrUndef(unsigned_id)},
-            {<<"*S">>, ValOrUndef(id)}
-        ],
+        case hb_opts:get(debug_ids, false, #{}) of
+            false ->
+                [
+                    {<<"#P">>, ValOrUndef(hashpath)},
+                    {<<"*U">>, ValOrUndef(unsigned_id)},
+                    {<<"*S">>, ValOrUndef(id)}
+                ];
+            true ->
+                {ok, UID} = dev_message:unsigned_id(Map),
+                {ok, ID} = dev_message:id(Map),
+                [
+                    {<<"#P">>, hb_util:short_id(ValOrUndef(hashpath))},
+                    {<<"*U">>, hb_util:short_id(UID)}
+                ] ++
+                case ID of
+                    UID -> [];
+                    _ -> [{<<"*S">>, hb_util:short_id(ID)}]
+                end
+        end,
     SignerMetadata =
         case signers(Map) of
             [] -> [];
