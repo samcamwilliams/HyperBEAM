@@ -309,7 +309,7 @@ benchmark_test() ->
     ?event(benchmark, {scheduled, Iterations}),
     ?assert(Iterations > 1000),
     hb_util:eunit_print(
-        "Executed ~p calls through Beamr in ~p seconds (~.2f call/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
+        "Executed ~s calls through Beamr in ~p seconds (~.2f call/s)",
+        [hb_util:human_int(Iterations), BenchTime, Iterations / BenchTime]
     ),
     ok.
