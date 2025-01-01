@@ -7,6 +7,8 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%%% Public API
+
 %% @doc Write a resulting M3 message to the cache if requested. The precidence
 %% order of cache control sources is as follows:
 %% 1. The `Opts` map (letting the node operator have the final say).
@@ -71,6 +73,28 @@ maybe_lookup(Msg1, Msg2, Opts) ->
                                 end
                         end
             end
+    end.
+
+%%% Internal functions
+
+%% @doc Dispatch the cache write to a worker process if requested.
+%% Invoke the appropriate cache write function based on the type of the message.
+dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
+    Dispatch =
+        fun() ->
+            case is_binary(Msg3) of
+                true ->
+                    hb_cache:write_binary(
+                        hb_path:hashpath(Msg1, Msg2, Opts),
+                        Msg3,
+                        Opts
+                    );
+                false -> hb_cache:write(Msg3, Opts)
+            end
+        end,
+    case hb_opts:get(async_cache, false, Opts) of
+        true -> spawn(Dispatch);
+        false -> Dispatch()
     end.
 
 %% @doc Generate a message to return when `only_if_cached` was specified, and
@@ -187,26 +211,6 @@ specifiers_to_cache_settings(CCList) ->
             end
     }.
 
-%% @doc Dispatch the cache write to a worker process if requested.
-%% Invoke the appropriate cache write function based on the type of the message.
-dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
-    Dispatch =
-        fun() ->
-            case is_binary(Msg3) of
-                true ->
-                    hb_cache:write_binary(
-                        hb_path:hashpath(Msg1, Msg2, Opts),
-                        Msg3,
-                        Opts
-                    );
-                false -> hb_cache:write(Msg3, Opts)
-            end
-        end,
-    case hb_opts:get(async_cache, false, Opts) of
-        true -> spawn(Dispatch);
-        false -> Dispatch()
-    end.
-
 %%% Tests
 
 %% Helpers to create a message with Cache-Control header
@@ -293,9 +297,25 @@ message_source_cache_control_test() ->
 
 %%% Basic cached Converge resolution tests
 
-cache_message_result_test() ->
-    CachedMsg = #{ <<"Purpose">> => <<"Test-Message">> },
+cache_binary_result_test() ->
+    CachedMsg = <<"Test-Message">>,
     Msg1 = #{ <<"Test-Key">> => CachedMsg },
+    Msg2 = <<"Test-Key">>,
+    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
+    ?assertEqual(CachedMsg, Res),
+    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    {ok, Res3} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    ?assertEqual(CachedMsg, Res2),
+    ?assertEqual(Res2, Res3).
+
+cache_message_result_test() ->
+    hb_store:reset(hb_opts:get(store)),
+    CachedMsg =
+        #{
+            <<"Purpose">> => <<"Test-Message">>,
+            <<"Aux">> => #{ <<"Aux-Message">> => <<"Aux-Message-Value">> }
+        },
+    Msg1 = #{ <<"Test-Key">> => CachedMsg, <<"Local">> => <<"Binary">> },
     Msg2 = <<"Test-Key">>,
     {ok, Res} =
         hb_converge:resolve(
@@ -306,15 +326,10 @@ cache_message_result_test() ->
             }
         ),
     ?event(debug, {res1, Res}),
+    ?event(debug, reading_from_cache),
     {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    ?event(debug, reading_from_cache_again),
+    {ok, Res3} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
     ?event(debug, {res2, Res2}),
-    ?assertMatch(#{ <<"Purpose">> := <<"Test-Message">> }, Res2).
-
-cache_binary_result_test() ->
-    CachedMsg = <<"Test-Message">>,
-    Msg1 = #{ <<"Test-Key">> => CachedMsg },
-    Msg2 = <<"Test-Key">>,
-    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
-    ?assertEqual(CachedMsg, Res),
-    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    ?assertEqual(CachedMsg, Res2).
+    ?event(debug, {res3, Res3}),
+    ?assertEqual(Res2, Res3).

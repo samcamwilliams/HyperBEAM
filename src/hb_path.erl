@@ -66,6 +66,12 @@ tl(Path, Opts) when is_list(Path) ->
         #{ path := Rest } -> Rest
     end.
 
+%% @doc Return the internal ID of a binary as it will be written to our
+%% stores.
+data_id(Bin, _Opts) when is_binary(Bin) ->
+    % Default hashpath for a binary message is its SHA2-256 hash.
+    hb_util:human_id(hb_crypto:sha256(Bin)).
+
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
@@ -83,6 +89,7 @@ hashpath(Msg1, Opts) when is_map(Msg1) ->
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
     {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
+    ?event(debug, {generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
     case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
         {0, Key} when Key =/= undefined ->
             hashpath(Msg1, to_binary(Key), Opts);
@@ -97,15 +104,27 @@ hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
-    case term_to_path_parts(Msg1Hashpath) of
-        [_] -> 
-            << Msg1Hashpath/binary, "/", Msg2ID/binary >>;
-        [Prev1, Prev2] ->
-            NativeNewBase =
-                HashpathAlg(hb_util:native_id(Prev1), hb_util:native_id(Prev2)),
-            HumanNewBase = hb_util:human_id(NativeNewBase),
-            << HumanNewBase/binary, "/", Msg2ID/binary >>
-    end.
+    HP = 
+        case term_to_path_parts(Msg1Hashpath) of
+            [_] -> 
+                << Msg1Hashpath/binary, "/", Msg2ID/binary >>;
+            [Prev1, Prev2] ->
+                % Calculate the new base of the hashpath. We check whether the key is
+                % a human-readable binary ID, or a path part, and convert or pass
+                % through accordingly.
+                NativeNewBase =
+                    HashpathAlg(
+                        hb_util:native_id(Prev1),
+                        case byte_size(Prev2) of
+                            43 -> hb_util:native_id(Prev2);
+                            _ -> Prev2
+                        end
+                    ),
+                HumanNewBase = hb_util:human_id(NativeNewBase),
+                << HumanNewBase/binary, "/", Msg2ID/binary >>
+        end,
+    ?event(debug, {generated_hashpath, HP, {msg1hp, Msg1Hashpath}, {msg2id, Msg2ID}}),
+    HP.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
 %%% If no hashpath algorithm is specified, the protocol defaults to

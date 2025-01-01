@@ -72,12 +72,13 @@ write_message(Bin, Store, Opts) when is_binary(Bin) ->
     % we store the data items at just their sha256 hash, we get a hash
     % collision between the signed ID of a message, and its signature data.
     Hashpath = hb_path:hashpath(Bin, Opts),
-    hb_store:write(Store, Path = <<"Data/", Hashpath/binary>>, Bin),
+    hb_store:write(Store, Path = <<"Messages/", Hashpath/binary>>, Bin),
     {ok, Path};
 write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.
     MsgHashpath = hb_path:hashpath(Msg, Opts),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
+    ?event(debug, {storing_msg_with_hashpath, MsgHashpath}),
     % Get the ID of the unsigned message.
     {ok, UnsignedID} = dev_message:unsigned_id(Msg),
     % Write the keys of the message into the graph of hashpaths, generating a map of
@@ -96,10 +97,9 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
                         ),
                     hb_store:make_link(Store, Path, KeyHashPath),
                     ?event(
-                        {stored_key,
-                            {key, Key},
-                            {resulting_path, Path},
-                            {hashpath, KeyHashPath}
+                        {
+                            {link, KeyHashPath},
+                            {data_path, Path}
                         }
                     ),
                     Path
@@ -194,8 +194,8 @@ store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
     ?event(
         {reading,
-            {path, {explicit, PathToBin}},
-            {resolved, {explicit, ResolvedFullPath}}
+            {path, PathToBin},
+            {resolved, ResolvedFullPath}
         }
     ),
     case hb_store:type(Store, ResolvedFullPath) of
