@@ -19,7 +19,7 @@
 maybe_store(Msg1, Msg2, Msg3, Opts) ->
     case derive_cache_settings([Msg3, Msg2], Opts) of
         #{ store := true } ->
-            ?event({caching_result, {msg2, Msg2}, {msg3, Msg3}}),
+            ?event({caching_result, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             dispatch_cache_write(Msg1, Msg2, Msg3, Opts);
         _ -> not_caching
     end.
