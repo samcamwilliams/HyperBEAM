@@ -96,10 +96,17 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
                             Opts
                         ),
                     hb_store:make_link(Store, Path, KeyHashPath),
+                    MessageLink =
+                        case hb_path:term_to_path_parts(KeyHashPath) of
+                            [MsgHashpath, _] -> unnecessary;
+                            [NewRoot|_] ->
+                                hb_store:make_link(Store, NewRoot, MsgHashpath)
+                        end,
                     ?event(
                         {
                             {link, KeyHashPath},
-                            {data_path, Path}
+                            {data_path, Path},
+                            {message_link, MessageLink}
                         }
                     ),
                     Path
