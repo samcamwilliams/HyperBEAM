@@ -289,12 +289,21 @@ format_tuple(Tuple, Indent) ->
         tuple_to_list(Tuple)
     )).
 
-to_lines([]) -> [];
-to_lines(In =[RawElem | Rest]) ->
+to_lines(Elems) ->
+    remove_trailing_noise(do_to_lines(Elems)).
+do_to_lines([]) -> [];
+do_to_lines(In =[RawElem | Rest]) ->
     Elem = lists:flatten(RawElem),
     case lists:member($\n, Elem) of
         true -> lists:flatten(lists:join("\n", In));
-        false -> Elem ++ ", " ++ to_lines(Rest)
+        false -> Elem ++ ", " ++ do_to_lines(Rest)
+    end.
+
+remove_trailing_noise(Str) ->
+    case lists:member(lists:last(Str), ", \n") of
+        true ->
+            remove_trailing_noise(lists:droplast(Str));
+        false -> Str
     end.
 
 %% @doc Format a string with an indentation level.
