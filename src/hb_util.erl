@@ -226,7 +226,7 @@ debug_print(X, Mod, Func, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s]==> ~s~n",
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s]==>~n~s~n",
         [
             TSDiff, self(),
             format_debug_trace(Mod, Func, LineNum),
@@ -273,10 +273,10 @@ debug_fmt(Map, Indent) when is_map(Map) ->
     hb_util:format_map(Map, Indent);
 debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
-debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
-    format_indented("~s", [Str], Indent);
 debug_fmt(X, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Indent);
+debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
+    format_indented("~s", [Str], Indent);
 debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
 
@@ -313,32 +313,37 @@ format_indented(RawStr, Fmt, Ind) ->
 
 %% @doc Format a binary as a short string suitable for printing.
 format_binary(Bin) ->
-    MaxBinPrint = hb_opts:get(debug_print_binary_max),
-    Printable =
-        binary:part(
-            Bin,
-            0,
-            case byte_size(Bin) of
-                X when X < MaxBinPrint -> X;
-                _ -> MaxBinPrint
-            end
-        ),
-    PrintSegment =
-        case is_human_binary(Printable) of
-            true -> Printable;
-            false -> encode(Printable)
-        end,
-    lists:flatten(
-        [
-            "\"",
-            [PrintSegment],
-            case Printable == Bin of
-                true -> "\"";
-                false ->
-                    io_lib:format("...\" <~s bytes>", [human_int(byte_size(Bin))])
-            end
-        ]
-    ).
+    case short_id(Bin) of
+        undefined ->
+            MaxBinPrint = hb_opts:get(debug_print_binary_max),
+            Printable =
+                binary:part(
+                    Bin,
+                    0,
+                    case byte_size(Bin) of
+                        X when X < MaxBinPrint -> X;
+                        _ -> MaxBinPrint
+                    end
+                ),
+            PrintSegment =
+                case is_human_binary(Printable) of
+                    true -> Printable;
+                    false -> encode(Printable)
+                end,
+            lists:flatten(
+                [
+                    "\"",
+                    [PrintSegment],
+                    case Printable == Bin of
+                        true -> "\"";
+                        false ->
+                            io_lib:format("...\" <~s bytes>", [human_int(byte_size(Bin))])
+                    end
+                ]
+            );
+        ShortID ->
+            lists:flatten(io_lib:format("~s", [ShortID]))
+    end.
 
 %% @doc Add `,` characters to a number every 3 digits to make it human readable.
 human_int(Int) ->
