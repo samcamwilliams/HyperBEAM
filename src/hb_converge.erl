@@ -203,7 +203,7 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
     % only return a result if it is already in the cache).
     case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            resolve_stage(11, Msg1, Msg2, {ok, Msg3}, cache_hit, Opts);
+            resolve_stage(11, Msg1, Msg2, {ok, Msg3}, no_exec_cache_hit, Opts);
         {continue, NewMsg1, NewMsg2} ->
             resolve_stage(3, NewMsg1, NewMsg2, Opts);
         {error, CacheResp} -> {error, CacheResp}
@@ -290,7 +290,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
                 }
             ),
 			{Status, _Mod, Func} = message_to_fun(Msg1, Key, Opts),
-			?event(debug,
+			?event(
 				{found_func_for_exec,
                     {key, Key},
 					{func, Func},
