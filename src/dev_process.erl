@@ -168,7 +168,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                         State,
                         <<"Memory">>,
                         Opts#{
-                            cache => always,
+                            cache_control => [<<"always">>],
                             hashpath => update
                         }
                     ),

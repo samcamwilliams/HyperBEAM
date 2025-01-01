@@ -172,29 +172,16 @@ resolve_stage(0, Msg1, Path, Opts) when not is_map(Path) ->
     resolve_stage(0, Msg1, #{ path => Path }, Opts);
 resolve_stage(0, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 0, cache_lookup}, Opts),
-    case hb_cache:read_output(Msg1, Msg2, Opts) of
+    % Lookup request in the cache. If we find a result, return it.
+    % If we do not find a result, we continue to the next stage,
+    % unless the cache lookup returns `halt` (the user has requested that we 
+    % only return a result if it is already in the cache).
+    case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            ?event({cache_hit_computed, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             {ok, Msg3};
-        not_found ->
-            case ?IS_ID(Msg1) of
-                false ->
-                    resolve_stage(1, Msg1, Msg2, Opts);
-                true ->
-                    case hb_cache:read(Msg1, Opts) of
-                        {ok, FullMsg1} ->
-                            ?event(
-                                {cache_hit_data_available,
-                                    {msg1, Msg1},
-                                    {msg2, Msg2},
-                                    {msg3, FullMsg1}
-                                }
-                            ),
-                            resolve_stage(1, FullMsg1, Msg2, Opts);
-                        not_found ->
-                            error_not_found(Msg1, Msg2, Opts)
-                    end
-            end
+        {continue, NewMsg1, NewMsg2} ->
+            resolve_stage(1, NewMsg1, NewMsg2, Opts);
+        {error, CacheResp} -> {error, CacheResp}
     end;
 resolve_stage(1, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
     % Validation check: If the messages are not maps, we cannot find a key
@@ -442,7 +429,7 @@ resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts) ->
 resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, result_caching}, Opts),
     % Result caching: Optionally, cache the result of the computation locally.
-    update_cache(Msg1, Msg2, Msg3, Opts),
+    hb_cache_control:maybe_store(Msg1, Msg2, Msg3, Opts),
     resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, skip_caching}, Opts),
@@ -492,17 +479,6 @@ resolve_stage(10, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_return}, Opts),
     OtherRes.
 
-%% @doc Catch all return if we don't have the necessary messages in the cache.
-error_not_found(Msg1, Msg2, Opts) ->
-    ?event(converge_core, {not_found, {msg1, Msg1}, {msg2, Msg2}}, Opts),
-    {
-        error,
-        #{
-            <<"Status">> => <<"Not Found">>,
-            <<"body">> => <<"Necessary messages not found in cache">>
-        }
-    }.
-
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
     ?event(converge_core, {invalid_message, {msg1, Msg1}, {msg2, Msg2}}, Opts),
@@ -523,65 +499,6 @@ error_infinite(_Msg1, _Msg2, _Opts) ->
             <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
-
-%% @doc Write a resulting M3 message to the cache if requested.
-update_cache(Msg1, Msg2, Msg3, Opts) ->
-    HPUpdate = hb_opts:get(hashpath, ignore, Opts),
-    ExecCacheSetting = hb_opts:get(cache, none, Opts),
-    M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1),
-    M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2),
-    case should_cache(HPUpdate, ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
-        true ->
-            ?event({caching_result, {msg2, Msg2}, {msg3, Msg3}}),
-            dispatch_cache_write(Msg1, Msg2, Msg3, Opts);
-        false ->
-            ok
-    end.
-
-%% @doc Takes the `Opts' cache setting, M1, and M2 `Cache-Control' headers, and
-%% returns true if the message should be cached.
-should_cache(ignore, _, _, _) -> false;
-should_cache(_, no_cache, _, _) -> false;
-should_cache(_, no_store, _, _) -> false;
-should_cache(_, none, _, _) -> false;
-should_cache(_, _, CC1, CC2) ->
-    CC1List = term_to_cache_control_list(CC1),
-    CC2List = term_to_cache_control_list(CC2),  
-    NoCacheSpecifiers = [no_cache, no_store, no_transform],
-    ?event({should_cache, {cc1, CC1List}, {cc2, CC2List}}),
-    not lists:any(
-        fun(X) -> lists:member(X, NoCacheSpecifiers) end,
-        CC1List ++ CC2List
-    ).
-
-%% @doc Convert cache control specifier(s) to a normalized list.
-term_to_cache_control_list({error, not_found}) -> [];
-term_to_cache_control_list({ok, CC}) -> term_to_cache_control_list(CC);
-term_to_cache_control_list(X) when is_list(X) ->
-    lists:flatten(lists:map(fun term_to_cache_control_list/1, X));
-term_to_cache_control_list(X) when is_binary(X) -> [X];
-term_to_cache_control_list(X) ->
-    hb_path:term_to_path_parts(X).
-
-%% @doc Dispatch the cache write to a worker process if requested.
-%% Invoke the appropriate cache write function based on the type of the message.
-dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
-    Dispatch =
-        fun() ->
-            case is_binary(Msg3) of
-                true ->
-                    hb_cache:write_binary(
-                        hb_path:hashpath(Msg1, Msg2, Opts),
-                        Msg3,
-                        Opts
-                    );
-                false -> hb_cache:write(Msg3, Opts)
-            end
-        end,
-    case hb_opts:get(async_cache, false, Opts) of
-        true -> spawn(Dispatch);
-        false -> Dispatch()
-    end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
@@ -1071,6 +988,6 @@ internal_opts(Opts) ->
     maps:merge(Opts, #{
         topic => converge_internal,
         hashpath => ignore,
-        cache => none,
+        cache_control => [<<"no-cache">>, <<"no-store">>],
         spawn_worker => false
     }).

@@ -98,7 +98,8 @@ config() ->
         cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 5
+        short_trace_len => 5,
+        cache_control => [<<"no-cache">>, <<"no-store">>]
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

@@ -439,7 +439,7 @@ list_transform_test() ->
 cache_execution_test() ->
     Msg1 = #{ device => <<"Message/1.0">>, <<"A">> => #{ <<"B">> => <<"C">> } },
     Msg2 = #{ path => <<"A/B">> },
-    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache => always }),
+    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
     ?assertEqual(<<"C">>, Res),
-    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache => always }),
+    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
     ?assertEqual(<<"C">>, Res2).
