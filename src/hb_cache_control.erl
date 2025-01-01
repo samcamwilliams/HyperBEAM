@@ -38,7 +38,11 @@ maybe_lookup(Msg1, Msg2, Opts) ->
             case hb_cache:read_output(Msg1, Msg2, Opts) of
                 {ok, Msg3} ->
                     ?event(
-                        {compute_cache_hit,
+                        {cache_hit,
+                            case is_binary(Msg3) of
+                                true -> hb_path:hashpath(Msg1, Msg2, Opts);
+                                false -> hb_path:hashpath(Msg3, Opts)
+                            end,
                             {msg1, Msg1},
                             {msg2, Msg2},
                             {msg3, Msg3}
@@ -46,6 +50,7 @@ maybe_lookup(Msg1, Msg2, Opts) ->
                     ),
                     {ok, Msg3};
                 not_found ->
+                    ?event({cache_miss, Msg1, Msg2}),
                     case Settings of
                             #{ only_if_cached := true } ->
                                 only_if_cached_not_found_error(Msg1, Msg2, Opts);
