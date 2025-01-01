@@ -70,15 +70,20 @@ short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     << FirstTag/binary, "..", LastTag/binary >>;
 short_id(Bin) when byte_size(Bin) > 43 ->
     case binary:split(Bin, <<"/">>, [trim_all, global]) of
-        [First, Last] when byte_size(Last) == 43 ->
-            << (short_id(First))/binary, "/", (short_id(Last))/binary >>;
+        [First, Second] when byte_size(Second) == 43 ->
+            FirstEnc = short_id(First),
+            SecondEnc = short_id(Second),
+            << FirstEnc/binary, "/", SecondEnc/binary >>;
         [First, Key] ->
-            << (short_id(First))/binary, "/", Key/binary >>;
+            FirstEnc = short_id(First),
+            << FirstEnc/binary, "/", Key/binary >>;
         _ ->
             Bin
     end;
 short_id(<< "/", SingleElemHashpath/binary >>) ->
-    << "/", (short_id(SingleElemHashpath))/binary >>;
+    Enc = short_id(SingleElemHashpath),
+    << "/", Enc/binary >>;
+short_id(Key) when byte_size(Key) < 43 -> Key;
 short_id(_) -> undefined.
 
 %% @doc Determine whether a binary is human-readable.
