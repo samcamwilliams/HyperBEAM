@@ -608,8 +608,20 @@ manually_restore_state_test() ->
             #{ path => <<"Compute">>, <<"Slot">> => 0 },
             #{}
         ),
-    % Get the state after the first message.
-    {ok, State} = hb_converge:resolve(ForkState, <<"Memory">>, #{}),
+    % Get the state after the first message, forcing HyperBEAM to cache the
+    % output.
+    {ok, Memory} =
+        hb_converge:resolve(ForkState, <<"Memory">>,
+            #{cache_control => [<<"always">>]}
+        ),
+    % Read the Memory key back out, this time only using the cached state.
+    {ok, Memory2} =
+        hb_converge:resolve(
+            ForkState,
+            <<"Memory">>,
+            #{ cache_control => [<<"only-if-cached">>] }
+        ),
+    ?assertEqual(Memory, Memory2),
     % % Calculate the second message to ensure it functions correctly.
     % {ok, ResultA} =
     %     hb_converge:resolve(
@@ -628,7 +640,7 @@ manually_restore_state_test() ->
     {ok, ResultB} =
         hb_converge:resolve(
             NewState#{
-                <<"Memory">> => State,
+                <<"Memory">> => Memory,
                 <<"Results">> => #{}
             },
             #{ path => <<"Compute">>, <<"Slot">> => 1 },
