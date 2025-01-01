@@ -1,5 +1,5 @@
 %%% @doc Tests for the core Converge resolution engine.
--module(hb_converge_tests).
+-module(hb_converge_test_vectors).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 

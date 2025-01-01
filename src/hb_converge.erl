@@ -100,7 +100,6 @@
 %%% Exports for tests in hb_converge_tests.erl:
 -export([deep_set/4, is_exported/4, message_to_fun/3]).
 -include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %% @doc Takes a singleton message and parse Msg1 and Msg2 from it, then invoke
 %% `resolve'.
