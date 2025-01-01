@@ -8,7 +8,7 @@
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;
-from(Msg) ->
+from(Msg) when is_map(Msg) ->
     maps:from_list(lists:flatten(
         lists:map(
             fun(Key) ->
@@ -46,7 +46,8 @@ from(Msg) ->
                 maps:keys(Msg)
             )
         )
-    )).
+    ));
+from(Other) -> hb_path:to_binary(Other).
 
 %% @doc Convert a TABM into a native HyperBEAM message.
 to(Bin) when is_binary(Bin) -> Bin;

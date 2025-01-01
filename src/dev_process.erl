@@ -163,11 +163,26 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                 ),
             case CurrentSlot rem Freq of
                 0 ->
-                    run_as(
+                    Res = run_as(
                         <<"Execution">>,
                         State,
                         <<"Memory">>,
-                        Opts#{ cache => always }
+                        Opts#{
+                            cache => always,
+                            hashpath => update
+                        }
+                    ),
+                    Memory = hb_cache:read(
+                        ReadAddr = hb_path:hashpath(Msg3, <<"Memory">>, Opts),
+                        Opts
+                    ),
+                    ?event(debug, 
+                        {stored, 
+                            {msg3, Msg3}, 
+                            {key_resolved_to, Res},
+                            {read_from_addr, ReadAddr},
+                            {memory, Memory}
+                        }
                     );
                 _ -> nothing_to_do
             end,
@@ -633,7 +648,6 @@ full_push_test_() ->
     {timeout, 30, fun() ->
         init(),
         Msg1 = test_aos_process(),
-        hb_cache:write(Msg1, #{}),
         Script = ping_ping_script(3),
         ?event({script, Script}),
         {ok, Msg2} = schedule_aos_call(Msg1, Script),

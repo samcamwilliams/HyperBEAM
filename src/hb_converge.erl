@@ -147,7 +147,6 @@ resolve(Msg1, Msg2, Opts) ->
 %%      8: Notify waiters.
 %%      9: Fork worker.
 %%     10: Recurse, fork, or terminate.
-
 resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 0, list_normalize}, Opts),

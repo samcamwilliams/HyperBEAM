@@ -187,7 +187,7 @@ transformer_message(Msg1, Opts) ->
 %% of the message as it delegates execution to devices contained within it.
 transform(Msg1, Key, Opts) ->
 	% Get the device stack message from Msg1.
-    ?event(debug, {transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
+    ?event({transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
 	case hb_converge:get(<<"Device-Stack">>, {as, dev_message, Msg1}, Opts) of
         not_found -> throw({error, no_valid_device_stack});
         StackMsg ->
@@ -242,7 +242,7 @@ transform(Msg1, Key, Opts) ->
                         Opts
                     );
 				_ ->
-					?event(debug, {no_device_key, Key, {stack, StackMsg}}),
+					?event({no_device_key, Key, {stack, StackMsg}}),
 					not_found
 			end
 	end.

@@ -65,7 +65,6 @@ prep_call(M1, M2, Opts) ->
             hb_message:convert(Message, tx, converge, #{})
         ),
     {Props} = RawMsgJson,
-    ?event(debug, {props, Props}),
     MsgJson = jiffy:encode({
         Props ++
             [
