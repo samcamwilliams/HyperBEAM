@@ -155,7 +155,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
 %% ID1/Compute/Results/2 -> Hashpath1/Compute/Results/2
 %% ID1/Compute/Results/3 -> Hashpath1/Compute/Results/3
 write_link_tree(RootPath, PathMap, Store, Opts) ->
-    ?event({write_link_tree, {root, RootPath}, {pathmap, PathMap}, {store, Store}}),
+    ?event({write_link_tree, {root, RootPath}, {store, Store}}),
     maps:map(
         fun(Key, Path) when is_map(Path) ->
             % The key is a map of subkeys and paths, so we adjust our root ID to
@@ -239,7 +239,6 @@ store_read(Path, Store, Opts) ->
                             Subpaths
                         )
                     ),
-                    ?event({explicit, FlatMap}),
                     {ok, FlatMap};
                 _ -> not_found
             end
