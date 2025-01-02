@@ -87,16 +87,16 @@ hashpath(Msg1, Opts) when is_map(Msg1) ->
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
             end
     end.
-hashpath(Msg1, Msgs, Opts) when is_list(Msgs) ->
-    HashpathAlg = hashpath_alg(Msg1),
-    lists:foldl(
-        fun(Msg, Acc) ->
-            ?event({generating_hashpath, {current, Acc}, {msg, Msg}}),
-            hashpath(Acc, hashpath(Msg, Opts), HashpathAlg, Opts)
-        end,
-        hashpath(Msg1, Opts),
-        Msgs
-    );
+% hashpath(Msg1, Msgs, Opts) when is_list(Msgs) ->
+%     HashpathAlg = hashpath_alg(Msg1),
+%     lists:foldl(
+%         fun(Msg, Acc) ->
+%             ?event({generating_hashpath, {current, Acc}, {msg, Msg}}),
+%             hashpath(Acc, hashpath(Msg, Opts), HashpathAlg, Opts)
+%         end,
+%         hashpath(Msg1, Opts),
+%         Msgs
+%     );
 hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
     HashpathAlg = hashpath_alg(Msg1),
