@@ -19,9 +19,10 @@
 maybe_store(Msg1, Msg2, Msg3, Opts) ->
     case derive_cache_settings([Msg3, Msg2], Opts) of
         #{ store := true } ->
-            ?event({caching_result, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+            ?event(caching, {caching_result, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             dispatch_cache_write(Msg1, Msg2, Msg3, Opts);
-        _ -> not_caching
+        _ -> 
+            not_caching
     end.
 
 %% @doc Handles cache lookup, modulated by the caching options requested by
@@ -37,7 +38,7 @@ maybe_lookup(Msg1, Msg2, Opts) ->
         Settings = #{ lookup := true } ->
             case hb_cache:read_output(Msg1, Msg2, Opts) of
                 {ok, Msg3} ->
-                    ?event(
+                    ?event(caching,
                         {cache_hit,
                             case is_binary(Msg3) of
                                 true -> hb_path:hashpath(Msg1, Msg2, Opts);
@@ -50,7 +51,7 @@ maybe_lookup(Msg1, Msg2, Opts) ->
                     ),
                     {ok, Msg3};
                 not_found ->
-                    ?event({cache_miss, Msg1, Msg2}),
+                    ?event(caching, {cache_miss, Msg1, Msg2}),
                     case Settings of
                             #{ only_if_cached := true } ->
                                 only_if_cached_not_found_error(Msg1, Msg2, Opts);
@@ -106,7 +107,7 @@ dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
 %% we don't have a cached result.
 only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
     ?event(
-        cache,
+        caching,
         {only_if_cached_execution_failed, {msg1, Msg1}, {msg2, Msg2}},
         Opts
     ),
@@ -124,7 +125,7 @@ only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
 %% cache lookup are not found in the cache.
 necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
     ?event(
-        cache,
+        caching,
         {necessary_messages_not_found, {msg1, Msg1}, {msg2, Msg2}},
         Opts
     ),
@@ -197,7 +198,11 @@ specifiers_to_cache_settings(CCList) ->
                 false ->
                     case lists:member(<<"no-store">>, CCList) of
                         true -> false;
-                        false -> undefined
+                        false ->
+                            case lists:member(<<"store">>, CCList) of
+                                true -> true;
+                                false -> undefined
+                            end
                     end
             end,
         lookup =>
@@ -206,7 +211,11 @@ specifiers_to_cache_settings(CCList) ->
                 false ->
                     case lists:member(<<"no-cache">>, CCList) of
                         true -> false;
-                        false -> undefined
+                    false ->
+                        case lists:member(<<"cache">>, CCList) of
+                            true -> true;
+                            false -> undefined
+                        end
                     end
             end,
         only_if_cached =>
