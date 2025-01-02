@@ -186,7 +186,7 @@ compute(RawM1, M2, Opts) ->
 %% @doc Normalize the message to have an open WASM instance, but no literal
 %% `State' key. Ensure that we do not change the hashpath during this process.
 normalize(RawM1, M2, Opts) ->
-    ?event(debug, {normalize_raw_m1, RawM1}),
+    ?event({normalize_raw_m1, RawM1}),
     M3 = 
         case instance(RawM1, M2, Opts) of
             not_found ->
@@ -196,7 +196,7 @@ normalize(RawM1, M2, Opts) ->
                         Key -> [Key]
                     end,
                 ?event(debug,
-                    {no_wasm_instance_or_state,
+                    {no_instance_attempting_to_get_snapshot,
                         {msg1, RawM1}, {device_key, DeviceKey}
                     }
                 ),
@@ -207,7 +207,7 @@ normalize(RawM1, M2, Opts) ->
                         Opts
                     ),
                 case Memory of
-                    not_found -> throw({error, no_wasm_instance_or_state});
+                    not_found -> throw({error, no_wasm_instance_or_});
                     State ->
                         ?event(debug, {state_found, {state, State}}),
                         {ok, M1} = init(RawM1, State, Opts),
@@ -216,20 +216,19 @@ normalize(RawM1, M2, Opts) ->
                         M1
                 end;
             _ ->
-                ?event(debug, {wasm_instance_found, {msg1, RawM1}}),
+                ?event(debug, wasm_instance_found_not_deserializing),
                 RawM1
         end,
     dev_message:set(M3, #{ <<"Snapshot">> => unset }, Opts).
 
 %% @doc Serialize the WASM state to a binary.
 snapshot(M1, M2, Opts) ->
-    ?event(debug, asked_to_get_snapshot),
+    ?event(debug, generating_snapshot),
     Instance = instance(M1, M2, Opts),
     {ok, Serialized} = hb_beamr:serialize(Instance),
     {ok,
         #{
-            body => Serialized,
-            <<"Cache-Control">> => [<<"store">>]
+            body => Serialized
         }
     }.
 

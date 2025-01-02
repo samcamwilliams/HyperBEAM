@@ -79,12 +79,30 @@ next(Msg1, _Msg2, Opts) ->
 
 snapshot(RawMsg1, _Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
-    run_as(
+    {ok, SnapshotMsg} = run_as(
         <<"Execution">>,
         Msg1,
         #{ path => <<"Snapshot">>, <<"Mode">> => <<"Map">> },
-        Opts#{ cache_control_ => [] }
-    ).
+        Opts#{ cache_control => [] }
+    ),
+    ProcID = hb_converge:get(<<"id">>, Msg1, Opts),
+    Slot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+    {ok,
+        hb_private:set(
+            hb_converge:set(
+                SnapshotMsg,
+                #{ <<"Cache-Control">> => [<<"store">>] },
+                Opts
+            ),
+            #{ <<"priv/Additional-Hashpaths">> =>
+                    [
+                        hb_path:to_binary([ProcID, <<"Snapshot">>, Slot])
+                    ]
+            },
+            Opts
+        )
+    }.
+
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves. We set the
@@ -121,7 +139,7 @@ compute(Msg1, Msg2, Opts) ->
             <<"Execution">>,
             Loaded,
             normalize,
-            Opts#{ hashpath => ignore }
+            Opts
         ),
     ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     do_compute(
