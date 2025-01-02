@@ -93,7 +93,7 @@
 -module(hb_converge).
 %%% Main Converge API:
 -export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
--export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
+-export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2, ensure_message/1]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
@@ -146,19 +146,8 @@ resolve(Msg1, Msg2, Opts) -> resolve_stage(1, Msg1, Msg2, Opts).
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 1, list_normalize}, Opts),
-    NormMsg1 =
-        maps:from_list(
-            lists:zip(
-                [
-                    key_to_binary(Key)
-                ||
-                    Key <- lists:seq(1, length(Msg1))
-                ],
-                Msg1
-            )
-        ),
     resolve_stage(1,
-        NormMsg1,
+        ensure_message(Msg1),
         Msg2,
         Opts
     );
@@ -273,7 +262,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
             end
     end.
 resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
-    ?event(converge_core, {stage, 5, ExecName, device_lookup}, Opts),
+    ?event(converge_core, {stage, 5, device_lookup}),
     % Device lookup: Find the Erlang function that should be utilized to 
     % execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
@@ -446,7 +435,7 @@ resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts) ->
     hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
     resolve_stage(10, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 10, ExecName}, Opts),
+    ?event(converge_core, {stage, 10, ExecName, maybe_spawn_worker}, Opts),
     % Check if we should spawn a worker for the current execution
     case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
         {A, B} when (A == false) or (B == false) ->
@@ -461,7 +450,7 @@ resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
     resolve_stage(11, Msg1, Msg2, OtherRes, ExecName, Opts);
 resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 11, ExecName}, Opts),
+    ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
     % Recurse, or terminate.
     #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
         = hb_private:from_message(Msg2),
@@ -953,6 +942,20 @@ to_atom_unsafe(Key) when is_list(Key) ->
     FlattenedKey = lists:flatten(Key),
     list_to_existing_atom(FlattenedKey);
 to_atom_unsafe(Key) when is_atom(Key) -> Key.
+
+%% @doc Ensure that a message is processable by the Converge resolver: No lists.
+ensure_message(Msg1) when is_list(Msg1) ->
+    maps:from_list(
+        lists:zip(
+            [
+                key_to_binary(Key)
+            ||
+                Key <- lists:seq(1, length(Msg1))
+            ],
+            Msg1
+        )
+    );
+ensure_message(Msg) -> Msg.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
