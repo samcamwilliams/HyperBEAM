@@ -72,7 +72,7 @@ write_message(Bin, Store, Opts) when is_binary(Bin) ->
     % we store the data items at just their sha256 hash, we get a hash
     % collision between the signed ID of a message, and its signature data.
     Hashpath = hb_path:hashpath(Bin, Opts),
-    hb_store:write(Store, Path = <<"Messages/", Hashpath/binary>>, Bin),
+    ok = hb_store:write(Store, Path = <<"Messages/", Hashpath/binary>>, Bin),
     {ok, Path};
 write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.

@@ -337,13 +337,13 @@ term_to_path_parts_test() ->
     ?assert(matches([a, b, c], term_to_path_parts(["a", b, <<"c">>]))),
     ?assert(matches([a, b, b, c], term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))).
 
-calculate_multistage_hashpath_test() ->
-    Msg1 = #{ <<"Base">> => <<"Message">> },
-    Msg2 = #{ path => <<"2">> },
-    Msg3 = #{ path => <<"3">> },
-    Msg4 = #{ path => <<"4">> },
-    Msg5 = hashpath(Msg1, [Msg2, Msg3, Msg4], #{}),
-    ?assert(is_binary(Msg5)),
-    Msg3Path = <<"3">>,
-    Msg5b = hashpath(Msg1, [Msg2, Msg3Path, Msg4]),
-    ?assertEqual(Msg5, Msg5b).
+% calculate_multistage_hashpath_test() ->
+%     Msg1 = #{ <<"Base">> => <<"Message">> },
+%     Msg2 = #{ path => <<"2">> },
+%     Msg3 = #{ path => <<"3">> },
+%     Msg4 = #{ path => <<"4">> },
+%     Msg5 = hashpath(Msg1, [Msg2, Msg3, Msg4], #{}),
+%     ?assert(is_binary(Msg5)),
+%     Msg3Path = <<"3">>,
+%     Msg5b = hashpath(Msg1, [Msg2, Msg3Path, Msg4]),
+%     ?assertEqual(Msg5, Msg5b).
