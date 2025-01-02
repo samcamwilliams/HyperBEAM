@@ -87,22 +87,32 @@ hashpath(Msg1, Opts) when is_map(Msg1) ->
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
             end
     end.
-hashpath(Msg1, Msg2, Opts) when is_map(Msg2) ->
-    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
-    ?event(debug, {generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
-    case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
-        {0, Key} when Key =/= undefined ->
-            hashpath(Msg1, to_binary(Key), Opts);
-        _ ->
-            {ok, Msg2ID} = dev_message:id(Msg2),
-            hashpath(Msg1, Msg2ID, Opts)
-    end;
+hashpath(Msg1, Msgs, Opts) when is_list(Msgs) ->
+    HashpathAlg = hashpath_alg(Msg1),
+    lists:foldl(
+        fun(Msg, Acc) ->
+            ?event(debug, {generating_hashpath, {current, Acc}, {msg, Msg}}),
+            hashpath(Acc, hashpath(Msg, Opts), HashpathAlg, Opts)
+        end,
+        hashpath(Msg1, Opts),
+        Msgs
+    );
 hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
     HashpathAlg = hashpath_alg(Msg1),
     hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, Opts);
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
+hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
+    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
+    ?event(debug, {generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
+    case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
+        {0, Key} when Key =/= undefined ->
+            hashpath(Msg1, to_binary(Key), HashpathAlg, Opts);
+        _ ->
+            {ok, Msg2ID} = dev_message:id(Msg2),
+            hashpath(Msg1, Msg2ID, HashpathAlg, Opts)
+    end;
 hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
     HP = 
         case term_to_path_parts(Msg1Hashpath) of
@@ -326,3 +336,14 @@ term_to_path_parts_test() ->
     ?assert(matches([a, b, c], term_to_path_parts([<<"a">>, <<"b">>, <<"c">>]))),
     ?assert(matches([a, b, c], term_to_path_parts(["a", b, <<"c">>]))),
     ?assert(matches([a, b, b, c], term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))).
+
+calculate_multistage_hashpath_test() ->
+    Msg1 = #{ <<"Base">> => <<"Message">> },
+    Msg2 = #{ path => <<"2">> },
+    Msg3 = #{ path => <<"3">> },
+    Msg4 = #{ path => <<"4">> },
+    Msg5 = hashpath(Msg1, [Msg2, Msg3, Msg4], #{}),
+    ?assert(is_binary(Msg5)),
+    Msg3Path = <<"3">>,
+    Msg5b = hashpath(Msg1, [Msg2, Msg3Path, Msg4]),
+    ?assertEqual(Msg5, Msg5b).
