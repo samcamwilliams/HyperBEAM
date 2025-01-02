@@ -6,7 +6,9 @@
 %% human-readable ID encoding.
 -define(IS_ID(X), (is_binary(X) andalso (byte_size(X) == 43 orelse byte_size(X) == 32))).
 %% @doc List of special keys that are used in the Converge Protocol.
--define(CONVERGE_KEYS, [path, hashpath]).
+-define(CONVERGE_KEYS, [path, hashpath, priv]).
+%% @doc Keys that can be regenerated losslessly.
+-define(REGEN_KEYS, [id, unsigned_id]).
 
 %% @doc Record used for parsing relevant components of a cursor-browsable
 %% response.
@@ -37,9 +39,3 @@
 %% module.
 -define(trace(), hb_util:trace_macro_helper(fun hb_util:print_trace/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(trace_short(), hb_util:trace_macro_helper(fun hb_util:print_trace_short/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
-
-%%% Test helper macros
--define(ROCKSDB_STORE, [{hb_store_rocksdb, #{ prefix => "test-cache" }}]).
--define(FS_STORE, [{hb_store_fs, #{ prefix => "test-cache" }}]).
--define(FS_OPTS, #{ cache_control => no_cache, store => ?FS_STORE }).
--define(ROCKDB_OPTS, #{ cache_control => no_cache, store => ?ROCKSDB_STORE }).

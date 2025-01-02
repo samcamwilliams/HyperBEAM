@@ -1,6 +1,6 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
--export([id/1, id/2, native_id/1, human_id/1, short_id/1]).
+-export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
@@ -62,37 +62,63 @@ human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin.
 
+%% @doc Return a short ID for the different types of IDs used in Converge.
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
     short_id(human_id(Bin));
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
-    << FirstTag/binary, "..", LastTag/binary >>.
+    << FirstTag/binary, "..", LastTag/binary >>;
+short_id(Bin) when byte_size(Bin) > 43 ->
+    case binary:split(Bin, <<"/">>, [trim_all, global]) of
+        [First, Second] when byte_size(Second) == 43 ->
+            FirstEnc = short_id(First),
+            SecondEnc = short_id(Second),
+            << FirstEnc/binary, "/", SecondEnc/binary >>;
+        [First, Key] ->
+            FirstEnc = short_id(First),
+            << FirstEnc/binary, "/", Key/binary >>;
+        _ ->
+            Bin
+    end;
+short_id(<< "/", SingleElemHashpath/binary >>) ->
+    Enc = short_id(SingleElemHashpath),
+    << "/", Enc/binary >>;
+short_id(Key) when byte_size(Key) < 43 -> Key;
+short_id(_) -> undefined.
+
+%% @doc Determine whether a binary is human-readable.
+is_human_binary(Bin) when is_binary(Bin) ->
+    case unicode:characters_to_binary(Bin) of
+        {error, _, _} -> false;
+        _ -> true
+    end;
+is_human_binary(_) -> false.
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
-  b64fast:encode(Bin).
+    b64fast:encode(Bin).
 
 %% @doc Try to decode a URL safe base64 into a binary or throw an error when
 %% invalid.
 decode(Input) ->
-  b64fast:decode(Input).
+    b64fast:decode(Input).
 
 %% @doc Safely encode a binary to URL safe base64.
 safe_encode(Bin) when is_binary(Bin) ->
-  encode(Bin);
+    encode(Bin);
 safe_encode(Bin) ->
-  Bin.
+    Bin.
 
 %% @doc Safely decode a URL safe base64 into a binary returning an ok or error
 %% tuple.
 safe_decode(E) ->
-  try
-    D = decode(E),
-    {ok, D}
-  catch
-    _:_ ->
-    {error, invalid}
-  end.
+    try
+        D = decode(E),
+        {ok, D}
+    catch
+        _:_ ->
+        {error, invalid}
+    end.
 
 %% @doc Label a list of elements with a number.
 number(List) ->
@@ -103,7 +129,7 @@ number(List) ->
 
 %% @doc Convert a list of elements to a map with numbered keys.
 list_to_numbered_map(List) ->
-  maps:from_list(number(List)).
+    maps:from_list(number(List)).
 
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer and a value. Optionally, it takes a
@@ -159,22 +185,18 @@ hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
 
 %% @doc Find the value associated with a key in parsed a JSON structure list.
 find_value(Key, List) ->
-  hb_util:find_value(Key, List, undefined).
+    find_value(Key, List, undefined).
 
 find_value(Key, Map, Default) when is_map(Map) ->
-  case maps:find(Key, Map) of
-    {ok, Value} ->
-    Value;
-    error ->
-    Default
-  end;
+    case maps:find(Key, Map) of
+        {ok, Value} -> Value;
+        error -> Default
+    end;
 find_value(Key, List, Default) ->
-  case lists:keyfind(Key, 1, List) of
-    {Key, Val} ->
-    Val;
-    false ->
-    Default
-  end.
+    case lists:keyfind(Key, 1, List) of
+        {Key, Val} -> Val;
+        false -> Default
+    end.
 
 %% @doc Remove the common prefix from two strings, returning the remainder of the
 %% first string. This function also coerces lists to binaries where appropriate,
@@ -204,7 +226,7 @@ debug_print(X, Mod, Func, LineNum) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
     TSDiff = case Last of undefined -> 0; _ -> Now - Last end,
-    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s]==> ~s~n",
+    io:format(standard_error, "=== HB DEBUG ===[~pms in ~p @ ~s]==>~n~s~n",
         [
             TSDiff, self(),
             format_debug_trace(Mod, Func, LineNum),
@@ -251,10 +273,10 @@ debug_fmt(Map, Indent) when is_map(Map) ->
     hb_util:format_map(Map, Indent);
 debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
-debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
-    format_indented("~s", [Str], Indent);
 debug_fmt(X, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Indent);
+debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
+    format_indented("~s", [Str], Indent);
 debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
 
@@ -267,12 +289,21 @@ format_tuple(Tuple, Indent) ->
         tuple_to_list(Tuple)
     )).
 
-to_lines([]) -> [];
-to_lines(In =[RawElem | Rest]) ->
+to_lines(Elems) ->
+    remove_trailing_noise(do_to_lines(Elems)).
+do_to_lines([]) -> [];
+do_to_lines(In =[RawElem | Rest]) ->
     Elem = lists:flatten(RawElem),
     case lists:member($\n, Elem) of
         true -> lists:flatten(lists:join("\n", In));
-        false -> Elem ++ ", " ++ to_lines(Rest)
+        false -> Elem ++ ", " ++ do_to_lines(Rest)
+    end.
+
+remove_trailing_noise(Str) ->
+    case lists:member(lists:last(Str), ", \n") of
+        true ->
+            remove_trailing_noise(lists:droplast(Str));
+        false -> Str
     end.
 
 %% @doc Format a string with an indentation level.
@@ -291,30 +322,44 @@ format_indented(RawStr, Fmt, Ind) ->
 
 %% @doc Format a binary as a short string suitable for printing.
 format_binary(Bin) ->
-    MaxBinPrint = hb_opts:get(debug_print_binary_max),
-    Printable =
-        binary:part(
-            Bin,
-            0,
-            case byte_size(Bin) of
-                X when X < MaxBinPrint -> X;
-                _ -> MaxBinPrint
-            end
-        ),
-    PrintSegment = lists:flatten(io_lib:format("~p", [Printable])),
-    lists:flatten(
-        io_lib:format(
-            "~s~s <~p bytes>",
-            [
-                PrintSegment,
-                case Bin == Printable of
-                    true -> "";
-                    false -> "..."
+    case short_id(Bin) of
+        undefined ->
+            MaxBinPrint = hb_opts:get(debug_print_binary_max),
+            Printable =
+                binary:part(
+                    Bin,
+                    0,
+                    case byte_size(Bin) of
+                        X when X < MaxBinPrint -> X;
+                        _ -> MaxBinPrint
+                    end
+                ),
+            PrintSegment =
+                case is_human_binary(Printable) of
+                    true -> Printable;
+                    false -> encode(Printable)
                 end,
-                byte_size(Bin)
-            ]
-        )
-    ).
+            lists:flatten(
+                [
+                    "\"",
+                    [PrintSegment],
+                    case Printable == Bin of
+                        true -> "\"";
+                        false ->
+                            io_lib:format("...\" <~s bytes>", [human_int(byte_size(Bin))])
+                    end
+                ]
+            );
+        ShortID ->
+            lists:flatten(io_lib:format("~s", [ShortID]))
+    end.
+
+%% @doc Add `,` characters to a number every 3 digits to make it human readable.
+human_int(Int) ->
+    lists:reverse(add_commas(lists:reverse(integer_to_list(Int)))).
+
+add_commas([A,B,C,Z|Rest]) -> [A,B,C,$,|add_commas([Z|Rest])];
+add_commas(List) -> List.
 
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
@@ -329,8 +374,12 @@ format_map(Map, Indent) ->
     end.
 
 %% @doc Format and print an indented string to standard error.
-eunit_print(Str, Fmt) ->
-    io:format(standard_error, "~n~s~n", [hb_util:format_indented(Str, Fmt, 4)]).
+eunit_print(FmtStr, FmtArgs) ->
+    io:format(
+        standard_error,
+        "~n~s ",
+        [hb_util:format_indented(FmtStr ++ "...", FmtArgs, 4)]
+    ).
 
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module. Prints each stack frame on a new line, until it finds a frame that

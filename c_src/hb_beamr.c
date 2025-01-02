@@ -868,14 +868,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         memcpy(out_binary, memory_data + ptr, size_l);
 
         DRV_DEBUG("Read complete. Binary: %p", out_binary);
-        if(size_l % 16 == 0) {
-            long* test = (long*)out_binary;
-            DRV_DEBUG("First as long: %ld", *test);
-            DRV_DEBUG("Second as long: %ld", test[1]);
-        }
-        else {
-            DRV_DEBUG("First bytes as string: %.10s", out_binary);
-        }
 
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
         int msg_index = 0;

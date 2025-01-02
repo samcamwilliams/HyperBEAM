@@ -48,12 +48,21 @@ You can control the information that is displayed in the command-line log
 by either setting `debug_print` in `hb_opts` globally, or passing the 
 `HB_PRINT=[setting]` environment variable when you start HyperBEAM. Your 
 `[setting]` can be either `true` (or `1` via the CLI), or a list of module
-names that you would like to see the prints for. For example, if you would like
-to analyze would HB's path management `dev_message` modules are doing while you
-run your tests, just execute:
+names or topics that you would like to see the prints for. For example, if you 
+would like to analyze would HB's path management `dev_message` modules are doing
+while you run your tests, just execute:
 
 ```
-	HB_PRINT=hb_path,hb_converge rebar3 eunit --module=your_mod
+	HB_PRINT=hb_path,hb_converge,converge_result rebar3 eunit --module=your_mod
+```
+
+Some useful logging events are:
+
+```
+    converge_result: Outputs every Converge computation result (M1, M2, and M3).
+    worker: Information about spawns and registrations of worker processes.
+    converge_core: Output information about progression through the core 
+    computation loop of Converge. Produces a large volume of output.
 ```
 
 The HB printing system is reasonably intelligent. It has a custom
@@ -66,7 +75,10 @@ environment:
 - Binary IDs
 
 These terms will be printed along with other basic debugging info (modules,
-functions, line numbers).
+functions, line numbers). For message prints `#P` is used as short-hand for 
+'hashpath', and `*S/U` refer to signed and unsigned IDs respectively. All 
+binaries are printed in human-readable base64url format, suffixed with `[*]`
+if they are of ID length.
 
 Additionally, HyperBEAM has a custom pretty-printer for stacktraces that is 
 aware of the boundaries of the machine. It will print traces until the first

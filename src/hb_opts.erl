@@ -65,6 +65,13 @@ config() ->
                 <<"Compute">> => dev_cu,
                 <<"P4">> => dev_p4
             },
+        codecs => 
+            #{
+                converge => hb_codec_converge,
+                tx => hb_codec_tx,
+                flat => hb_codec_flat,
+                http => hb_codec_http
+            },
         %% The stacks of devices that the node should expose by default.
         %% These represent the core flows of functionality of the node.
         default_device_stacks => [
@@ -81,19 +88,20 @@ config() ->
         trusted_device_signers => [],
         %% What should the node do if a client error occurs?
         client_error_strategy => throw,
+        %% Default execution cache control options
+        cache_control => [<<"no-cache">>, <<"no-store">>],
         % Dev options
-        local_store =>
-            [{hb_store_rocksdb, #{ prefix => "TEST-data" }}],
         mode => debug,
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
-        debug_print_binary_max => 15,
+        debug_print_binary_max => 60,
         debug_print_indent => 2,
         debug_print => false,
         cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 8
+        short_trace_len => 5,
+        debug_ids => true
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
@@ -140,12 +148,12 @@ get(Key, Default, Opts) ->
                 fun(Dir) ->
                     [
                         {
-                            hb_store_rocksdb,
+                            hb_store_fs,
                             #{ prefix => Dir }
                         }
                     ]
                 end,
-                "TEST-data"
+                "TEST-cache"
             },
         mode =>
             {"HB_MODE", fun list_to_existing_atom/1},

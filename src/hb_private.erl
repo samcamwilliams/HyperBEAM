@@ -22,7 +22,8 @@
 
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.
-from_message(Msg) -> maps:get(priv, Msg, #{}).
+from_message(Msg) when is_map(Msg) -> maps:get(priv, Msg, #{});
+from_message(_NonMapMessage) -> #{}.
 
 %% @doc Helper for getting a value from the private element of a message. Uses
 %% Converge resolve under-the-hood, removing the private specifier from the
@@ -30,7 +31,7 @@ from_message(Msg) -> maps:get(priv, Msg, #{}).
 get(Key, Msg, Opts) ->
     get(Key, Msg, not_found, Opts).
 get(InputPath, Msg, Default, Opts) ->
-    Path = hb_path:term_to_path(remove_private_specifier(InputPath)),
+    Path = hb_path:term_to_path_parts(remove_private_specifier(InputPath)),
     ?event({get_private, {in, InputPath}, {out, Path}}),
     % Resolve the path against the private element of the message.
     Resolve =
@@ -40,7 +41,7 @@ get(InputPath, Msg, Default, Opts) ->
             converge_opts(Opts)
         ),
     case Resolve of
-        {error, not_found} -> Default;
+        {error, _} -> Default;
         {ok, Value} -> Value
     end.
 
@@ -68,7 +69,7 @@ is_private(Key) ->
 
 %% @doc Remove the first key from the path if it is a private specifier.
 remove_private_specifier(InputPath) ->
-    case is_private(hd(Path = hb_path:term_to_path(InputPath))) of
+    case is_private(hd(Path = hb_path:term_to_path_parts(InputPath))) of
         true -> tl(Path);
         false -> Path
     end.
@@ -98,5 +99,5 @@ get_private_key_test() ->
     ?assertEqual(not_found, get(a, M1, #{})),
     {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>, #{}),
     ?assertEqual(2, get(b, M1, #{})),
-    {error, not_found} = hb_converge:resolve(M1, <<"priv/a">>, #{}),
-    {error, not_found} = hb_converge:resolve(M1, priv, #{}).
+    {error, _} = hb_converge:resolve(M1, <<"priv/a">>, #{}),
+    {error, _} = hb_converge:resolve(M1, priv, #{}).

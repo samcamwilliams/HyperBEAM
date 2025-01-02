@@ -32,6 +32,7 @@ id(M) ->
     ID = 
         case get(signature, M) of
             {error, not_found} -> raw_id(M, unsigned);
+            {ok, ?DEFAULT_SIG} -> raw_id(M, unsigned);
             _ -> raw_id(M, signed)
         end,
     {ok, ID}.
@@ -54,8 +55,8 @@ raw_id(Item) -> raw_id(Item, unsigned).
 raw_id(TX, Type) when is_record(TX, tx) ->
     hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Map, Type) when is_map(Map) ->
-    Msg = hb_message:message_to_tx(Map),
-    hb_util:encode(ar_bundles:id(Msg, Type));
+    TX = hb_message:convert(Map, tx, converge, #{}),
+    hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin;
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
@@ -70,12 +71,12 @@ signers(M) ->
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
-	?event({setting_keys, {msg1, Message1}, {msg2, NewValuesMsg}, {opts, Opts}}),
 	% Filter keys that are in the default device (this one).
 	KeysToSet =
 		lists:filter(
 			fun(Key) ->
-				not lists:member(Key, ?DEVICE_KEYS)
+				not lists:member(Key, ?DEVICE_KEYS) andalso
+					(maps:get(Key, NewValuesMsg, undefined) =/= undefined)
 			end,
 			hb_converge:keys(NewValuesMsg, Opts#{ topic => ?MODULE })
 		),
@@ -99,14 +100,6 @@ set(Message1, NewValuesMsg, Opts) ->
             end,
             maps:keys(Message1)
         ),
-	?event(
-		{keys_to_set,
-			{keys, KeysToSet},
-			{removing_due_to_conflict, ConflictingKeys},
-            {removing_due_to_unset, UnsetKeys},
-			{normalised_msg1_keys, maps:keys(Message1)}
-		}
-	),
 	{
 		ok,
 		maps:merge(
@@ -249,3 +242,16 @@ set_conflicting_keys_test() ->
 	Msg2 = #{ path => set, dangerous => <<"Value2">> },
 	?assertMatch({ok, #{ dangerous := <<"Value2">> }},
 		hb_converge:resolve(Msg1, Msg2, #{})).
+
+unset_with_set_test() ->
+	Msg1 = #{ <<"Dangerous">> => <<"Value1">> },
+	Msg2 = #{ path => set, dangerous => unset },
+	?assertMatch({ok, Msg3} when map_size(Msg3) == 0,
+		hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore })).
+
+set_ignore_undefined_test() ->
+	Msg1 = #{ <<"Test-Key">> => <<"Value1">> },
+	Msg2 = #{ path => set, <<"Test-Key">> => undefined },
+	?assertEqual({ok, #{ <<"Test-Key">> => <<"Value1">> }},
+		set(Msg1, Msg2, #{ hashpath => ignore })).
+

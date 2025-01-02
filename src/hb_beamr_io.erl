@@ -126,43 +126,56 @@ free(WASM, Ptr) when is_pid(WASM) andalso is_integer(Ptr) ->
 
 %%% Tests
 
+size_test() ->
+    WASMPageSize = 65536,
+    File1Pages = 1,
+    File2Pages = 193,
+    {ok, File} = file:read_file("test/test-print.wasm"),
+    {ok, WASM, _Imports, _Exports} = hb_beamr:start(File),
+    ?assertEqual({ok, WASMPageSize * File1Pages}, hb_beamr_io:size(WASM)),
+    hb_beamr:stop(WASM),
+    {ok, File2} = file:read_file("test/aos-2-pure-xs.wasm"),
+    {ok, WASM2, _Imports2, _Exports2} = hb_beamr:start(File2),
+    ?assertEqual({ok, WASMPageSize * File2Pages}, hb_beamr_io:size(WASM2)),
+    hb_beamr:stop(WASM2).
+
 %% @doc Test writing memory in and out of bounds.
 write_test() ->
     % Load the `test-print` WASM module, which has a simple print function.
     % We do not call the function here, but instead check that we can write
     % to its memory. It has a single page (65,536 bytes) of memory.
     {ok, File} = file:read_file("test/test-print.wasm"),
-    {ok, Port, _Imports, _Exports} = hb_beamr:start(File),
+    {ok, WASM, _Imports, _Exports} = hb_beamr:start(File),
     % Check that we can write memory inside the bounds of the WASM module.
-    ?assertEqual(ok, write(Port, 0, <<"Hello, World!">>)),
+    ?assertEqual(ok, write(WASM, 0, <<"Hello, World!">>)),
     % Check that we can safely handle out-of-bounds writes.
-    ?assertMatch({error, _}, write(Port, 1000000, <<"Bad hello world!">>)).
+    ?assertMatch({error, _}, write(WASM, 1000000, <<"Bad hello world!">>)).
 
 %% @doc Test reading memory in and out of bounds.
 read_test() ->
     % Our `test-print` module is hand-written in WASM, so we know that it
     % has a `Hello, World!` string at precisely offset 66.
     {ok, File} = file:read_file("test/test-print.wasm"),
-    {ok, Port, _Imports, _Exports} = hb_beamr:start(File),
+    {ok, WASM, _Imports, _Exports} = hb_beamr:start(File),
     % Check that we can read memory inside the bounds of the WASM module.
-    ?assertEqual({ok, <<"Hello, World!">>}, read(Port, 66, 13)),
+    ?assertEqual({ok, <<"Hello, World!">>}, read(WASM, 66, 13)),
     % Check that we can safely handle out-of-bounds reads.
-    ?assertMatch({error, _}, read(Port, 1000000, 13)).
+    ?assertMatch({error, _}, read(WASM, 1000000, 13)).
 
 %% @doc Test allocating and freeing memory.
 malloc_test() ->
     {ok, File} = file:read_file("test/test-calling.wasm"),
-    {ok, Port, _Imports, _Exports} = hb_beamr:start(File),
+    {ok, WASM, _Imports, _Exports} = hb_beamr:start(File),
     % Check that we can allocate memory inside the bounds of the WASM module.
-    ?assertMatch({ok, _}, malloc(Port, 100)),
+    ?assertMatch({ok, _}, malloc(WASM, 100)),
     % Check that we can safely handle out-of-bounds allocations.
     % The WASM module has a maximum of 259 pages (16MB) of memory, so we
     % should not be able to allocate more than that.
-    ?assertMatch({error, _}, malloc(Port, 128 * 1024 * 1024)).
+    ?assertMatch({error, _}, malloc(WASM, 128 * 1024 * 1024)).
 
 %% @doc Write and read strings to memory.
 string_write_and_read_test() ->
     {ok, File} = file:read_file("test/test-calling.wasm"),
-    {ok, Port, _Imports, _Exports} = hb_beamr:start(File),
-    {ok, Ptr} = write_string(Port, <<"Hello, World!">>),
-    ?assertEqual({ok, <<"Hello, World!">>}, read_string(Port, Ptr)).
+    {ok, WASM, _Imports, _Exports} = hb_beamr:start(File),
+    {ok, Ptr} = write_string(WASM, <<"Hello, World!">>),
+    ?assertEqual({ok, <<"Hello, World!">>}, read_string(WASM, Ptr)).

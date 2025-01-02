@@ -9,14 +9,14 @@
 %%%             M1/Process
 %%%             M1/[Prefix]/Image
 %%%         Generates:
-%%%             /priv/WASM/Port
+%%%             /priv/WASM/Instance
 %%%             /priv/WASM/Import-Resolver
 %%%         Side-effects:
 %%%             Creates a WASM executor loaded in memory of the HyperBEAM node.
 %%% 
 %%%     M1/Compute ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Instance
 %%%             M1/priv/WASM/Import-Resolver
 %%%             M1/Process
 %%%             M2/Message
@@ -29,17 +29,24 @@
 %%%             Calls the WASM executor with the message and process.
 %%%     M1/WASM/State ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Port
+%%%             M1/priv/WASM/Instance
 %%%         Generates:
 %%%             Raw binary WASM state
 %%% '''
 -module(dev_wasm).
--export([init/3, compute/3, import/3, terminate/3]).
--export([state/3]).
+-export([info/2, init/3, compute/3, import/3, terminate/3, memory/3, normalize/3]).
+%%% API for other devices:
+-export([instance/3]).
 %%% Test API:
--export([store_wasm_image/1]).
+-export([cache_wasm_image/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Export all functions aside the `instance/3' function.
+info(_Msg1, _Opts) ->
+    #{
+        exclude => [instance]
+    }.
 
 %% @doc Boot a WASM image on the image stated in the `Process/Image' field of
 %% the message.
@@ -56,7 +63,11 @@ init(M1, M2, Opts) ->
                 throw(
                     {
                         wasm_init_error,
-                        <<"No viable image found in ", InPrefix/binary, "/Image.">>,
+                        <<
+                            "No viable image found in ",
+                            InPrefix/binary,
+                            "/Image."
+                        >>,
                         {msg1, M1}
                     }
                 );
@@ -64,28 +75,21 @@ init(M1, M2, Opts) ->
                 ?event({getting_wasm_image, ImageID}),
                 {ok, ImageMsg} = hb_cache:read(ImageID, Opts),
                 hb_converge:get(<<"Body">>, ImageMsg, Opts);
-            Image when is_binary(Image) ->
+            ImageMsg when is_map(ImageMsg) ->
                 ?event(wasm_image_message_directly_provided),
-                hb_converge:get(<<"Body">>, Image, Opts)
+                hb_converge:get(<<"Body">>, ImageMsg, Opts);
+            Image when is_binary(Image) ->
+                ?event(wasm_image_binary_directly_provided),
+                Image
         end,
     % Start the WASM executor.
-    {ok, Port, _ImportMap, _Exports} = hb_beamr:start(ImageBin),
-    % Apply the checkpoint if it is in the initial state.
-    case hb_converge:get(<<Prefix/binary, "/State">>, {as, dev_message, M1}, Opts) of
-        not_found -> do_nothing;
-        Checkpoint ->
-            ?event(wasm_checkpoint_found),
-            ?event({wasm_deserializing, byte_size(Checkpoint)}),
-            % Apply the checkpoint to the WASM state.
-            hb_beamr:deserialize(Port, Checkpoint#tx.data),
-            ?event(wasm_deserialized)
-    end,
-    % Set the WASM port, handler, and standard library invokation function.
-    ?event({setting_wasm_port, Port, {prefix, Prefix}}),
+    {ok, Instance, _Imports, _Exports} = hb_beamr:start(ImageBin),
+    % Set the WASM Instance, handler, and standard library invokation function.
+    ?event({setting_wasm_instance, Instance, {prefix, Prefix}}),
     {ok,
         hb_private:set(M1,
             #{
-                <<Prefix/binary, "/Port">> => Port,
+                <<Prefix/binary, "/Instance">> => Instance,
                 <<Prefix/binary, "/Import-Resolver">> =>
                     fun default_import_resolver/3
             },
@@ -107,7 +111,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         hb_converge:resolve(
             hb_private:set(
                 Msg1,
-                #{ <<Prefix/binary, "/Port">> => WASM },
+                #{ <<Prefix/binary, "/Instance">> => WASM },
                 Opts
             ),
             #{
@@ -125,12 +129,18 @@ default_import_resolver(Msg1, Msg2, Opts) ->
 
 %% @doc Call the WASM executor with a message that has been prepared by a prior
 %% pass.
-compute(M1, M2, Opts) ->
+compute(RawM1, M2, Opts) ->
+    % Normalize the message to have an open WASM instance, but no literal `State`.
+    % The hashpath is not updated during this process. This allows us to take
+    % two different messages and get the same result:
+    % - A message with a `State' key but no WASM instance in `priv/`.
+    % - A message with a WASM instance in `priv/` but no `State' key.
+    {ok, M1} = normalize(RawM1, M2, Opts),
     ?event(running_compute),
     Prefix = dev_stack:prefix(M1, M2, Opts),
     case hb_converge:get(pass, M1, Opts) of
         X when X == 1 orelse X == not_found ->
-            % Extract the WASM port, func, params, and standard library
+            % Extract the WASM Instance, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             WASMFunction =
                 case hb_converge:get(<<"Message/WASM-Function">>, M2, Opts) of
@@ -155,7 +165,7 @@ compute(M1, M2, Opts) ->
             ),
             {ResType, Res, MsgAfterExecution} =
                 hb_beamr:call(
-                    hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
+                    instance(M1, M2, Opts),
                     WASMFunction,
                     WASMParams,
                     hb_private:get(<<Prefix/binary, "/Import-Resolver">>, M1, Opts),
@@ -165,8 +175,7 @@ compute(M1, M2, Opts) ->
             {ok,
                 hb_converge:set(MsgAfterExecution,
                     #{
-                        <<"Results/", Prefix/binary, "/Type">> =>
-                            ResType,
+                        <<"Results/", Prefix/binary, "/Type">> => ResType,
                         <<"Results/", Prefix/binary, "/Output">> => Res
                     }
                 )
@@ -174,25 +183,51 @@ compute(M1, M2, Opts) ->
         _ -> {ok, M1}
     end.
 
+%% @doc Normalize the message to have an open WASM instance, but no literal
+%% `State' key. Ensure that we do not change the hashpath during this process.
+normalize(RawM1, M2, Opts) ->
+    M3 = 
+        case instance(RawM1, M2, Opts) of
+            not_found ->
+                ?event({no_wasm_instance_or_state, {msg1, RawM1}}),
+                case hb_converge:get(<<"Memory">>, {as, dev_message, RawM1}, Opts) of
+                    not_found -> throw({error, no_wasm_instance_or_state});
+                    State ->
+                        ?event({state_found, {state, State}}),
+                        {ok, M1} = init(RawM1, State, Opts),
+                        Res = hb_beamr:deserialize(instance(M1, M2, Opts), State),
+                        ?event({wasm_deserialized, {result, Res}}),
+                        M1
+                end;
+            _ -> RawM1
+        end,
+    dev_message:set(M3, #{ <<"Memory">> => unset }, Opts).
+
 %% @doc Serialize the WASM state to a binary.
-state(M1, _M2, Opts) ->
-    Prefix = dev_stack:prefix(M1, _M2, Opts),
-    Port = hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
-    {ok, Serialized} = hb_beamr:serialize(Port),
+memory(M1, M2, Opts) ->
+    Instance = instance(M1, M2, Opts),
+    {ok, Serialized} = hb_beamr:serialize(Instance),
     {ok, Serialized}.
 
 %% @doc Tear down the WASM executor.
-terminate(M1, _M2, Opts) ->
+terminate(M1, M2, Opts) ->
     ?event(terminate_called_on_dev_wasm),
-    Prefix = dev_stack:prefix(M1, _M2, Opts),
-    Port = hb_private:get(<<Prefix/binary, "/Port">>, M1, Opts),
-    hb_beamr:stop(Port),
+    Prefix = dev_stack:prefix(M1, M2, Opts),
+    Instance = instance(M1, M2, Opts),
+    hb_beamr:stop(Instance),
     {ok, hb_private:set(M1,
         #{
-            <<Prefix/binary, "/Port">> => undefined
+            <<Prefix/binary, "/Instance">> => unset
         },
         Opts
     )}.
+
+%% @doc Get the WASM instance from the message. Note that this function is exported
+%% such that other devices can use it, but it is excluded from calls from Converge
+%% resolution directly.
+instance(M1, M2, Opts) ->
+    Prefix = dev_stack:prefix(M1, M2, Opts),
+    hb_private:get(<<Prefix/binary, "/Instance">>, M1, Opts#{ hashpath => ignore }).
 
 %% @doc Handle standard library calls by:
 %% 1. Adding the right prefix to the path from BEAMR.
@@ -271,22 +306,22 @@ init() ->
 
 init_test() ->
     init(),
-    Msg = store_wasm_image("test/test.wasm"),
+    Msg = cache_wasm_image("test/test.wasm"),
     {ok, Msg1} = hb_converge:resolve(Msg, <<"Init">>, #{}),
     ?event({after_init, Msg1}),
     Priv = hb_private:from_message(Msg1),
     ?assertMatch(
-        {ok, Port} when is_pid(Port),
-        hb_converge:resolve(Priv, <<"WASM/Port">>, #{})
+        {ok, Instance} when is_pid(Instance),
+        hb_converge:resolve(Priv, <<"Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"WASM/Import-Resolver">>, #{})
+        hb_converge:resolve(Priv, <<"Import-Resolver">>, #{})
     ).
 
 input_prefix_test() ->
     init(),
-    #{ image := ImageID } = store_wasm_image("test/test.wasm"),
+    #{ image := ImageID } = cache_wasm_image("test/test.wasm"),
     Msg1 =
         #{
             <<"Device">> => <<"WASM-64/1.0">>,
@@ -297,8 +332,8 @@ input_prefix_test() ->
     ?event({after_init, Msg2}),
     Priv = hb_private:from_message(Msg2),
     ?assertMatch(
-        {ok, Port} when is_pid(Port),
-        hb_converge:resolve(Priv, <<"Port">>, #{})
+        {ok, Instance} when is_pid(Instance),
+        hb_converge:resolve(Priv, <<"Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
@@ -315,14 +350,14 @@ process_prefixes_test() ->
             <<"Device">> => <<"WASM-64/1.0">>,
             <<"Output-Prefix">> => <<"WASM">>,
             <<"Input-Prefix">> => <<"Process">>,
-            <<"Process">> => store_wasm_image("test/test.wasm")
+            <<"Process">> => cache_wasm_image("test/test.wasm")
         },
     {ok, Msg3} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
     ?event({after_init, Msg3}),
     Priv = hb_private:from_message(Msg3),
     ?assertMatch(
-        {ok, Port} when is_pid(Port),
-        hb_converge:resolve(Priv, <<"WASM/Port">>, #{})
+        {ok, Instance} when is_pid(Instance),
+        hb_converge:resolve(Priv, <<"WASM/Instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
@@ -349,50 +384,89 @@ imported_function_test() ->
             <<"pow">>,
             [2, 5],
             #{
-                <<"WASM/stdlib/my_lib">> =>
+                <<"stdlib/my_lib">> =>
                     #{ device => <<"Test-Device/1.0">> }
             }
         )
     ).
 
-% state_export_and_restore_test() ->
-%     init(),
-%     % Generate a WASM computation.
-%     Msg0 = store_wasm_image("test/test-64.wasm"),
-%     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
-%     Msg2 =
-%         maps:merge(
-%             Msg1,
-%             #{
-%                 <<"WASM-Function">> => <<"fac">>,
-%                 <<"WASM-Params">> => [5.0]
-%             }
-%         ),
-%     ?event({after_setup, Msg2}),
-%     % Compute a computation and export the state.
-%     {ok, StateRes} = hb_converge:resolve(Msg2, <<"Compute/State">>, #{}),
-%     ?event({state_res, StateRes}),
-%     % Restore the state without calling Init.
-%     NewMsg0 = maps:merge(Msg0, #{ <<"WASM/State">> => StateRes }),
-%     {ok, NewMsg1} = hb_converge:resolve(NewMsg0, <<"Compute">>, #{}),
-%     ?event({after_compute, NewMsg1}),
-%     hb_converge:resolve(NewMsg1, <<"Results/WASM/Output">>, #{}).
+benchmark_test() ->
+    BenchTime = 0.5,
+    init(),
+    Msg0 = cache_wasm_image("test/test-64.wasm"),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+    Msg2 =
+        maps:merge(
+            Msg1,
+            hb_converge:set(
+                #{
+                    <<"WASM-Function">> => <<"fac">>,
+                    <<"WASM-Params">> => [5.0]
+                },
+                #{ hashpath => ignore }
+            )
+        ),
+    Iterations =
+        hb:benchmark(
+            fun() ->
+                hb_converge:resolve(Msg2, <<"Compute">>, #{})
+            end,
+            BenchTime
+        ),
+    ?event(benchmark, {scheduled, Iterations}),
+    hb_util:eunit_print(
+        "Evaluated ~p WASM messages through Converge in ~p seconds (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 5),
+    ok.
+
+state_export_and_restore_test() ->
+    init(),
+    % Generate a WASM message. We use the pow_calculator because it has a 
+    % reasonable amount of memory to work with.
+    Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+    Msg2 =
+        maps:merge(
+            Msg1,
+            Extras = #{
+                <<"WASM-Function">> => <<"pow">>,
+                <<"WASM-Params">> => [2, 2],
+                <<"stdlib">> =>
+                    #{
+                        <<"my_lib">> =>
+                            #{ device => <<"Test-Device/1.0">> }
+                    }
+            }
+        ),
+    ?event({after_setup, Msg2}),
+    % Compute a computation and export the state.
+    {ok, Msg3a} = hb_converge:resolve(Msg2, <<"Compute">>, #{}),
+    ?assertEqual([4], hb_converge:get(<<"Results/Output">>, Msg3a, #{})),
+    {ok, State} = hb_converge:resolve(Msg3a, <<"Memory">>, #{}),
+    ?event({state_res, State}),
+    % Restore the state without calling Init.
+    NewMsg1 = maps:merge(Msg0, Extras#{ <<"Memory">> => State }),
+    ?assertEqual(
+        {ok, [4]},
+        hb_converge:resolve(NewMsg1, <<"Compute/Results/Output">>, #{})
+    ).
 
 %%% Test helpers
 
-store_wasm_image(Image) ->
+cache_wasm_image(Image) ->
     {ok, Bin} = file:read_file(Image),
     Msg = #{ <<"Body">> => Bin },
     {ok, ID} = hb_cache:write(Msg, #{}),
     #{
         device => <<"WASM-64/1.0">>,
-        <<"Output-Prefix">> => <<"WASM">>,
         image => ID
     }.
 
 test_run_wasm(File, Func, Params, AdditionalMsg) ->
     init(),
-    Msg0 = store_wasm_image(File),
+    Msg0 = cache_wasm_image(File),
     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
     ?event({after_init, Msg1}),
     Msg2 =
@@ -410,4 +484,4 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
     ?event({after_setup, Msg2}),
     {ok, StateRes} = hb_converge:resolve(Msg2, <<"Compute">>, #{}),
     ?event({after_resolve, StateRes}),
-    hb_converge:resolve(StateRes, <<"Results/WASM/Output">>, #{}).
+    hb_converge:resolve(StateRes, <<"Results/Output">>, #{}).

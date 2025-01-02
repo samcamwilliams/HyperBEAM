@@ -207,7 +207,7 @@ benchmark(Fun, TLen) ->
 benchmark(Fun, TLen, ReportEvery) ->
     T0 = erlang:system_time(millisecond),
     until(
-        fun() -> erlang:system_time(millisecond) - T0 > TLen end,
+        fun() -> erlang:system_time(millisecond) - T0 > (TLen * 1000) end,
         Fun,
         ReportEvery,
         0

@@ -5,7 +5,7 @@
 -export([type/2, read/2, write/3, list/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
--export([test_store_setup/1, test_store_teardown/1, generate_test_suite/1]).
+-export([generate_test_suite/1, test_stores/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -36,6 +36,8 @@ stop(Modules) -> call_function(Modules, stop, []).
 %% new store object with only the modules that match the filter. The filter
 %% function takes 2 arguments: the scope and the options. It calls the store's
 %% scope function to get the scope of the module.
+filter(Module, Filter) when not is_list(Module) ->
+    filter([Module], Filter);
 filter(Modules, Filter) ->
     lists:filter(
         fun(Store) ->
@@ -95,12 +97,7 @@ sort(Stores, ScoreMap) ->
     ).
 
 %% @doc Join a list of path components together.
-join([]) -> [];
-join(Path) when is_binary(Path) -> Path;
-join([""|Xs]) -> join(Xs);
-join(FN = [X|_Xs]) when is_integer(X) -> FN;
-join([X|Xs]) -> 
-    filename:join(join(X), join(Xs)).
+join(Path) -> hb_path:to_binary(Path).
 
 %%% The store interface that modules should implement.
 
@@ -128,13 +125,8 @@ type(Modules, Path) -> call_function(Modules, type, [Path]).
 
 %% @doc Create a path from a list of path components. If no store implements
 %% the path function, we return the path with the 'default' transformation (id).
-path(Path) when is_list(Path) -> [ El || El <- Path, El =/= [] ];
-path(Path) -> Path.
-path(Store, Path) ->
-    case call_function(Store, path, [Path]) of
-        no_viable_store -> path(Path);
-        Result -> Result
-    end.
+path(Path) -> join(Path).
+path(_, Path) -> path(Path).
 
 %% @doc Add two path components together. If no store implements the add_path
 %% function, we concatenate the paths.
@@ -160,7 +152,7 @@ call_function(X, _Function, _Args) when not is_list(X) ->
 call_function([], _Function, _Args) ->
     no_viable_store;
 call_function([{Mod, Opts} | Rest], Function, Args) ->
-    ?event({calling, Mod, Function}),
+    ?event({calling, Mod, Function, Args}),
     try apply(Mod, Function, [Opts | Args]) of
         not_found ->
             call_function(Rest, Function, Args);
@@ -168,7 +160,7 @@ call_function([{Mod, Opts} | Rest], Function, Args) ->
             Result
     catch
         Class:Reason:Stacktrace ->
-            logger:info("Could not execute call_function in hb_store: ~p ~p ~p \n", [Class, Reason, Stacktrace]),
+            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
             call_function(Rest, Function, Args)
     end.
 
@@ -182,7 +174,7 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
         apply(Mod, Function, [Opts | Args])
     catch
         Class:Reason:Stacktrace ->
-            logger:error("Could not execute call_all in hb_store: ~p ~p ~p \n", [Class, Reason, Stacktrace]),
+            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
             ok
     end,
     call_all(Rest, Function, Args).
@@ -190,30 +182,19 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
 %%% Test helpers
 
 test_stores() ->
-    [{"RocksDB", rocksdb, ?ROCKSDB_STORE}, {"FS", fs, ?FS_STORE}].
-
-test_store_setup(rocksdb) ->
-    hb_store:start(?ROCKSDB_STORE),
-    ?ROCKDB_OPTS;
-test_store_setup(fs) ->
-    hb_store:start(?FS_STORE),
-    ?FS_OPTS.
-
-test_store_teardown(rocksdb) ->
-    hb_store:reset(?ROCKSDB_STORE);
-test_store_teardown(fs) ->
-    hb_store:reset(?FS_STORE).
+    [
+        {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }},
+        {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+    ].
 
 generate_test_suite(Suite) ->
     lists:map(
-        fun({Name, StoreAtom, Store}) ->
+        fun(Store = {Mod, _Opts}) ->
             {foreach,
-                fun() -> test_store_setup(StoreAtom) end,
-                fun(#{store := _ }) ->
-                    test_store_teardown(StoreAtom)
-                end,
+                fun() -> hb_store:start(Store) end,
+                fun(_) -> hb_store:reset(Store) end,
                 [
-                    {Name ++ ": " ++ Desc,
+                    {atom_to_list(Mod) ++ ": " ++ Desc,
                         fun() -> Test(#{ store => Store }) end}
                 ||
                     {Desc, Test} <- Suite

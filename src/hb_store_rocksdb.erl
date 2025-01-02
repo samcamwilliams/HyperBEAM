@@ -2,53 +2,37 @@
 %%% @doc A process wrapper over rocksdb storage. Replicates functionality of the
 %%%      hb_fs_store module.
 %%%
-%%%      The process is only started (and supervised) when the following
-%%%      configuration option is supplied (hb_opts):
-%%%      ```
-%%%      local_store =>
-%%%         [{hb_store_rocksdb, #{prefix => "Test2"}}]
-%%%      '''
 %%%      The data is stored in two Column Families:
-%%%      1. Default - for raw data (e.g. TX records)
+%%%      1. Default - for raw data (e.g. message records)
 %%%      2. Meta - for meta information
 %%%        `(<<"raw">>/<<"link">>/<<"composite">> or <<"group">>)'
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(hb_store_rocksdb).
 -behaviour(gen_server).
-
--author("Oleg Tarasenko").
-
 -behaviour(hb_store).
+-export([start/1, start_link/1, stop/1, scope/1]).
+-export([read/2, write/3, list/2, reset/1]).
+-export([make_link/3, make_group/2, type/2, add_path/3, path/2, resolve/2]).
+-export([init/1, terminate/2, handle_cast/2, handle_info/2, handle_call/3]).
+-export([code_change/3]).
+-include("src/include/hb.hrl").
 
 -define(TIMEOUT, 5000).
-
-% Behaviour based callbacks
--export([start/1, stop/1]).
--export([read/2, write/3]).
--export([list/2]).
--export([reset/1]).
--export([make_link/3]).
--export([make_group/2]).
--export([type/2]).
--export([add_path/3, path/2]).
--export([resolve/2]).
--export([scope/1]).
-
-% Starting process
--export([start_link/1]).
-% Gen server callbacks
--export([init/1, terminate/2]).
--export([handle_cast/2, handle_info/2, handle_call/3]).
--export([code_change/3]).
 
 -type key() :: binary() | list().
 -type value() :: binary() | list().
 
-start_link([{hb_store_rocksdb, #{ prefix := Dir}}]) ->
+start_link({hb_store_rocksdb, #{ prefix := Dir}}) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Dir, []);
-start_link(Opts) ->
-    logger:error("Rocksdb store server is not configured.: ~p", [Opts]),
+start_link(Stores) when is_list(Stores) ->
+    case lists:keyfind(hb_store_rocksdb, 1, Stores) of
+        Store = {hb_store_rocksdb, _} ->
+            start_link(Store);
+        _ -> ignore
+    end;
+start_link(Store) ->
+    ?event(error, {invalid_store_config, Store}),
     ignore.
 
 start(Opts) ->
@@ -370,8 +354,8 @@ join(Key) when is_binary(Key) -> Key.
 -include_lib("eunit/include/eunit.hrl").
 
 get_or_start_server() ->
-    Opts = [{hb_store_rocksdb, #{prefix => "TEST-data/rocksdb"}}],
-    case start_link(Opts) of
+    Store = lists:keyfind(hb_store_rocksdb, 1, hb_store:test_stores()),
+    case start_link(Store) of
         {ok, Pid} ->
             Pid;
         {error, {already_started, Pid}} ->

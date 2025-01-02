@@ -95,17 +95,17 @@
 -export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
 -export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2]).
 %%% Shortcuts and tools:
--export([info/2, keys/1, keys/2, keys/3]).
+-export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
--export([truncate_args/2]).
+%%% Exports for tests in hb_converge_tests.erl:
+-export([deep_set/4, is_exported/4, message_to_fun/3]).
 -include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %% @doc Takes a singleton message and parse Msg1 and Msg2 from it, then invoke
 %% `resolve'.
 resolve(Msg, Opts) ->
     Path =
-        hb_path:term_to_path(
+        hb_path:term_to_path_parts(
             hb_converge:get(
                 path,
                 Msg,
@@ -130,25 +130,22 @@ resolve(Msg, Opts) ->
 %% function. Optionally, takes options that control the runtime environment. 
 %% This function returns the raw result of the device function call:
 %% `{ok | error, NewMessage}.'
-resolve(Msg1, Msg2, Opts) ->
-    resolve_stage(0, Msg1, Msg2, Opts).
-
-%% @doc Internal function for handling request resolution.
 %% The resolver is composed of a series of discrete phases:
-%%      0: Cache lookup.
-%%      1: Validation check.
-%%      2: Path normalization.
-%%      3: Persistent-resolver lookup.
-%%      4: Device lookup.
-%%      5: Execution.
-%%      6: Cryptographic linking.
-%%      7: Result caching.
-%%      8: Notify waiters.
-%%      9: Recurse, fork, or terminate.
-
-resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
+%%      1: Normalization.
+%%      2: Cache lookup.
+%%      3: Validation check.
+%%      4: Persistent-resolver lookup.
+%%      5: Device lookup.
+%%      6: Execution.
+%%      7: Cryptographic linking.
+%%      8: Result caching.
+%%      9: Notify waiters.
+%%     10: Fork worker.
+%%     11: Recurse, fork, or terminate.
+resolve(Msg1, Msg2, Opts) -> resolve_stage(1, Msg1, Msg2, Opts).
+resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
-    ?event(converge_core, {stage, 0, list_normalize}, Opts),
+    ?event(converge_core, {stage, 1, list_normalize}, Opts),
     NormMsg1 =
         maps:from_list(
             lists:zip(
@@ -160,52 +157,18 @@ resolve_stage(0, Msg1, Msg2, Opts) when is_list(Msg1) ->
                 Msg1
             )
         ),
-    resolve_stage(0,
+    resolve_stage(1,
         NormMsg1,
         Msg2,
         Opts
     );
-resolve_stage(0, Msg1, Path, Opts) when not is_map(Path) ->
-    ?event(converge_core, {stage, 0, path_to_message_normalize}, Opts),
+resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
+    ?event(converge_core, {stage, 1, normalize_raw_path_to_message}, Opts),
     % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.
-    resolve_stage(0, Msg1, #{ path => Path }, Opts);
-resolve_stage(0, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 0, cache_lookup}, Opts),
-    case hb_cache:read_output(Msg1, Msg2, Opts) of
-        {ok, Msg3} ->
-            ?event({cache_hit, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
-            {ok, Msg3};
-        not_found ->
-            case ?IS_ID(Msg1) of
-                false ->
-                    resolve_stage(1, Msg1, Msg2, Opts);
-                true ->
-                    case hb_cache:read(Msg1, Opts) of
-                        {ok, FullMsg1} ->
-                            resolve_stage(1, FullMsg1, Msg2, Opts);
-                        not_found ->
-                            error_not_found(Msg1, Msg2, Opts)
-                    end
-            end
-    end;
-resolve_stage(1, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
-    % Validation check: If the messages are not maps, we cannot find a key
-    % in them, so return not_found.
-    ?event(converge_core, {stage, 1, validation_check_type_error}, Opts),
-    {error, not_found};
+    resolve_stage(1, Msg1, #{ path => Path }, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 1, validation_check}, Opts),
-    % Validation check: Check if the message is valid.
-    Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
-    Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
-    ?no_prod("Enable message validity checks!"),
-    case {Msg1Valid, Msg2Valid} of
-        _ -> resolve_stage(2, Msg1, Msg2, Opts);
-        _ -> error_invalid_message(Msg1, Msg2, Opts)
-    end;
-resolve_stage(2, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 2, path_normalization}, Opts),
+    ?event(converge_core, {stage, 1, normalize_path}, Opts),
     % Path normalization: Ensure that the path is requesting a single key.
     % Stash remaining path elements in `priv/Converge/Remaining-Path'.
     % Stash the original path in `priv/Converge/Original-Path', if it
@@ -231,9 +194,37 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
                         }
                 }
         },
-    resolve_stage(3, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
+    resolve_stage(2, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
+resolve_stage(2, Msg1, Msg2, Opts) ->
+    ?event(converge_core, {stage, 2, cache_lookup}, Opts),
+    % Lookup request in the cache. If we find a result, return it.
+    % If we do not find a result, we continue to the next stage,
+    % unless the cache lookup returns `halt` (the user has requested that we 
+    % only return a result if it is already in the cache).
+    case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
+        {ok, Msg3} ->
+            resolve_stage(11, Msg1, Msg2, {ok, Msg3}, no_exec_cache_hit, Opts);
+        {continue, NewMsg1, NewMsg2} ->
+            resolve_stage(3, NewMsg1, NewMsg2, Opts);
+        {error, CacheResp} -> {error, CacheResp}
+    end;
+resolve_stage(3, Msg1, Msg2, Opts) when not is_map(Msg1) or not is_map(Msg2) ->
+    % Validation check: If the messages are not maps, we cannot find a key
+    % in them, so return not_found.
+    ?event(converge_core, {stage, 3, validation_check_type_error}, Opts),
+    {error, not_found};
 resolve_stage(3, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 3}, Opts),
+    ?event(converge_core, {stage, 3, validation_check}, Opts),
+    % Validation check: Check if the message is valid.
+    %Msg1Valid = (hb_message:signers(Msg1) == []) orelse hb_message:verify(Msg1),
+    %Msg2Valid = (hb_message:signers(Msg2) == []) orelse hb_message:verify(Msg2),
+    ?no_prod("Enable message validity checks!"),
+    case {true, true} of
+        _ -> resolve_stage(4, Msg1, Msg2, Opts);
+        _ -> error_invalid_message(Msg1, Msg2, Opts)
+    end;
+resolve_stage(4, Msg1, Msg2, Opts) ->
+    ?event(converge_core, {stage, 4, persistent_resolver_lookup}, Opts),
     % Persistent-resolver lookup: Search for local (or Distributed
     % Erlang cluster) processes that are already performing the execution.
     % Before we search for a live executor, we check if the device specifies 
@@ -248,12 +239,16 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
                 true -> ?event(worker_spawns, {will_become, ExecName});
                 _ -> ok
             end,
-            resolve_stage(4, Msg1, Msg2, ExecName, Opts);
+            resolve_stage(5, Msg1, Msg2, ExecName, Opts);
         {wait, Leader} ->
             % There is another executor of this resolution in-flight.
             % Bail execution, register to receive the response, then
             % wait.
-            hb_persistent:await(Leader, Msg1, Msg2, Opts);
+            Res = hb_persistent:await(Leader, Msg1, Msg2, Opts),
+            % Now that we have the result, we can skip right to potential
+            % recursion (step 11).
+            resolve_stage(11, Msg1, Msg2, Res, Leader,
+                Opts#{ spawn_worker => false });
         {infinite_recursion, GroupName} ->
             % We are the leader for this resolution, but we executing the 
             % computation again. This may plausibly be OK in _some_ cases,
@@ -271,16 +266,16 @@ resolve_stage(3, Msg1, Msg2, Opts) ->
             case hb_opts:get(allow_infinite, false, Opts) of
                 true ->
                     % We are OK with infinite loops, so we just continue.
-                    resolve_stage(4, Msg1, Msg2, GroupName, Opts);
+                    resolve_stage(5, Msg1, Msg2, GroupName, Opts);
                 false ->
                     % We are not OK with infinite loops, so we raise an error.
                     error_infinite(Msg1, Msg2, Opts)
             end
     end.
-resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
-    ?event(converge_core, {stage, 4, ExecName}, Opts),
-    %% Device lookup: Find the Erlang function that should be utilized to 
-    %% execute Msg2 on Msg1.
+resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
+    ?event(converge_core, {stage, 5, ExecName, device_lookup}, Opts),
+    % Device lookup: Find the Erlang function that should be utilized to 
+    % execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
 		try
 			Key = hb_path:hd(Msg2, Opts),
@@ -296,7 +291,8 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
             ),
 			{Status, _Mod, Func} = message_to_fun(Msg1, Key, Opts),
 			?event(
-				{resolving, Key,
+				{found_func_for_exec,
+                    {key, Key},
 					{func, Func},
 					{msg1, Msg1},
 					{msg2, Msg2},
@@ -331,7 +327,7 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
                     }
                 ),
                 % If the device cannot be loaded, we alert the caller.
-				handle_error(
+				error_execution(
                     ExecName,
                     Msg2,
 					loading_device,
@@ -339,9 +335,9 @@ resolve_stage(4, Msg1, Msg2, ExecName, Opts) ->
 					Opts
 				)
 		end,
-	resolve_stage(5, ResolvedFunc, Msg1, Msg2, ExecName, NewOpts).
-resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
-    ?event(converge_core, {stage, 5, ExecName}, Opts),
+	resolve_stage(6, ResolvedFunc, Msg1, Msg2, ExecName, NewOpts).
+resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
+    ?event(converge_core, {stage, 6, ExecName, execution}, Opts),
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
@@ -399,7 +395,7 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                 ),
                 % If the function call fails, we raise an error in the manner
                 % indicated by caller's `#Opts`.
-                handle_error(
+                error_execution(
                     ExecName,
                     Msg2,
                     device_call,
@@ -407,88 +403,97 @@ resolve_stage(5, Func, Msg1, Msg2, ExecName, Opts) ->
                     Opts
                 )
         end,
-    resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts);
-resolve_stage(6, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
-    ?event(converge_core, {stage, 6, ExecName, cryptographic_linking}, Opts),
+    resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
+    ?event(converge_core, {stage, 7, ExecName, generate_hashpath}, Opts),
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.
-    resolve_stage(7, Msg1, Msg2,
+    resolve_stage(8, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
-            update -> {ok, hb_path:push(hashpath, Msg3, Msg2)};
-            ignore -> {ok, Msg3}
+            update ->
+                ?event(debug, {setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+                {ok,
+                    Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
+                };
+            ignore ->
+                {ok, maps:without([hashpath], Msg3)}
         end,
         ExecName,
         Opts
     );
-resolve_stage(6, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 6, ExecName, abnormal_skip_link}, Opts),
-    % Skip cryptographic linking if the result is abnormal.
-    resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts);
-resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 7, ExecName, result_caching}, Opts),
-    % Result caching: Optionally, cache the result of the computation locally.
-    update_cache(Msg1, Msg2, Msg3, Opts),
-    resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts);
+resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
+    ?event(converge_core, {stage, 7, ExecName, abnormal_status_reset_hashpath}, Opts),
+    % Skip cryptographic linking and reset the hashpath if the result is abnormal.
+    resolve_stage(8, Msg1, Msg2, {Status, maps:without([hashpath], Msg3)}, ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 7, ExecName, skip_caching}, Opts),
-    % Skip result caching if the result is abnormal.
+    ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
+    % Skip cryptographic linking and continue if we don't have a map that can have
+    % a hashpath at all.
     resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
+    ?event(converge_core, {stage, 8, ExecName, result_caching}, Opts),
+    % Result caching: Optionally, cache the result of the computation locally.
+    hb_cache_control:maybe_store(Msg1, Msg2, Msg3, Opts),
+    resolve_stage(9, Msg1, Msg2, {ok, Msg3}, ExecName, Opts);
 resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 8, ExecName}, Opts),
+    ?event(converge_core, {stage, 8, ExecName, abnormal_status_skip_caching}, Opts),
+    % Skip result caching if the result is abnormal.
+    resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts) ->
+    ?event(converge_core, {stage, 9, ExecName}, Opts),
     % Notify processes that requested the resolution while we were executing and
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
-    resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
-resolve_stage(9, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 9, ExecName}, Opts),
-    % Recurse, fork, or terminate.
+    resolve_stage(10, Msg1, Msg2, Res, ExecName, Opts);
+resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
+    ?event(converge_core, {stage, 10, ExecName}, Opts),
+    % Check if we should spawn a worker for the current execution
+    case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
+        {A, B} when (A == false) or (B == false) ->
+            resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false });
+        {_, _} ->
+            % Spawn a worker for the current execution
+            WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
+            hb_persistent:forward_work(WorkerPID, Opts),
+            resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false })
+    end;
+resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
+    ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
+    resolve_stage(11, Msg1, Msg2, OtherRes, ExecName, Opts);
+resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
+    ?event(converge_core, {stage, 11, ExecName}, Opts),
+    % Recurse, or terminate.
     #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
         = hb_private:from_message(Msg2),
 	case RemainingPath of
-		RecursivePath when RecursivePath =/= undefined ->
-			% There are more elements in the path, so we recurse.
-			?event({resolution_recursing, {remaining_path, RemainingPath}}),
-			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
 		undefined ->
-			% The path resolved to the last element, so we check whether
-            % we should fork a new process with Msg3 waiting for messages,
-            % or simply return to the caller. We prefer the global option, such
-            % that node operators can control whether devices are able to 
-            % generate long-running executions.
-            ?event({resolution_maybe_forking, {msg3, Msg3}, {opts, Opts}}),
-            WorkerOpt = hb_opts:get(spawn_worker, false, Opts#{ prefer => local }),
-            case {is_map(Msg3), WorkerOpt} of
-                {false, _} -> ok;
-                {_, false} -> ok;
-                {_, _} ->
-                    % We should spin up a process that will hold `Msg3` 
-                    % in memory for future executions.
-                    WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
-                    hb_persistent:forward_work(WorkerPID, Opts)
-            end,
-            % Resolution has finished successfully, return to the
-            % caller.
-			?event({resolution_complete, {result, Msg3}, {request, Msg2}}),
-            {ok, Msg3}
-	end;
-resolve_stage(9, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
-    ?event(converge_core, {stage, 9, ExecName, abnormal_return}, Opts),
-    OtherRes.
-
-%% @doc Catch all return if we don't have the necessary messages in the cache.
-error_not_found(Msg1, Msg2, Opts) ->
-    ?event(converge_core, {not_found, {msg1, Msg1}, {msg2, Msg2}}, Opts),
-    {
-        error,
-        #{
-            <<"Status">> => <<"Not Found">>,
-            <<"body">> => <<"Necessary messages not found in cache">>
-        }
-    }.
+            % Terminate: We have reached the end of the path.
+			{Status, Msg3};
+		_ when Status == ok ->
+			% There are more elements in the path, so we recurse.
+			?event(
+                converge_core,
+                {resolution_recursing,
+                    {remaining_path, RemainingPath}
+                }
+            ),
+			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
+        _ ->
+            error_invalid_intermediate_status(
+                Msg1, Msg2, Msg3, RemainingPath, Opts)
+	end.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
-    ?event(converge_core, {invalid_message, {msg1, Msg1}, {msg2, Msg2}}, Opts),
+    ?event(
+        converge_core,
+        {error, {type, invalid_message},
+            {msg1, Msg1},
+            {msg2, Msg2},
+            {opts, Opts}
+        },
+        Opts
+    ),
     {
         error,
         #{
@@ -498,56 +503,56 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     }.
 
 %% @doc Catch all return if we are in an infinite loop.
-error_infinite(_Msg1, _Msg2, _Opts) ->
+error_infinite(Msg1, Msg2, Opts) ->
+    ?event(
+        converge_core,
+        {error, {type, infinite_recursion},
+            {msg1, Msg1},
+            {msg2, Msg2},
+            {opts, Opts}
+        },
+        Opts
+    ),
     {
         error,
         #{
-            <<"Status">> => <<"Malformed Request">>,
+            <<"Status">> => <<"Loop Detected">>,
+            <<"Status-Code">> => 508,
             <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
 
-%% @doc Write a resulting M3 message to the cache if requested.
-update_cache(Msg1, Msg2, {ok, Msg3}, Opts) ->
-    ExecCacheSetting = hb_opts:get(cache, always, Opts),
-    M1CacheSetting = dev_message:get(<<"Cache-Control">>, Msg1, Opts),
-    M2CacheSetting = dev_message:get(<<"Cache-Control">>, Msg2, Opts),
-    case must_cache(ExecCacheSetting, M1CacheSetting, M2CacheSetting) of
-        true ->
-            case hb_opts:get(async_cache, false, Opts) of
-                true ->
-                    spawn(fun() ->
-                        hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
-                    end);
-                false ->
-                    hb_cache:write_output(Msg1, Msg2, Msg3, Opts)
-            end;
-        false -> ok
-    end;
-update_cache(_, _, _, _) -> ok.
+error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
+    ?event(
+        converge_core,
+        {error, {type, invalid_intermediate_status},
+            {msg2, Msg2},
+            {msg3, Msg3},
+            {remaining_path, RemainingPath},
+            {opts, Opts}
+        },
+        Opts
+    ),
+    {
+        error,
+        #{
+            <<"Status">> => <<"Unprocessable Content">>,
+            <<"Status-Code">> => 422,
+            <<"body">> => Msg3,
+            <<"Key">> => maps:get(path, Msg2, <<"Key unknown.">>),
+            <<"Remaining-Path">> => RemainingPath
+        }
+    }.
 
-%% @doc Takes the `Opts' cache setting, M1, and M2 `Cache-Control' headers, and
-%% returns true if the message should be cached.
-must_cache(no_cache, _, _) -> false;
-must_cache(no_store, _, _) -> false;
-must_cache(none, _, _) -> false;
-must_cache(_, CC1, CC2) ->
-    CC1List = term_to_cache_control_list(CC1),
-    CC2List = term_to_cache_control_list(CC2),  
-    NoCacheSpecifiers = [no_cache, no_store, no_transform],
-    lists:any(
-        fun(X) -> lists:member(X, NoCacheSpecifiers) end,
-        CC1List ++ CC2List
-    ).
-
-%% @doc Convert cache control specifier(s) to a normalized list.
-term_to_cache_control_list({error, not_found}) -> [];
-term_to_cache_control_list({ok, CC}) -> term_to_cache_control_list(CC);
-term_to_cache_control_list(X) when is_list(X) ->
-    lists:flatten(lists:map(fun term_to_cache_control_list/1, X));
-term_to_cache_control_list(X) when is_binary(X) -> X;
-term_to_cache_control_list(X) ->
-    hb_path:term_to_path(X).
+%% @doc Handle an error in a device call.
+error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
+    Error = {error, Whence, {Class, Exception, Stacktrace}},
+    hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
+    ?event(converge_core, {handle_error, Error, {opts, Opts}}),
+    case hb_opts:get(error_strategy, throw, Opts) of
+        throw -> erlang:raise(Class, Exception, Stacktrace);
+        _ -> Error
+    end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
@@ -560,7 +565,7 @@ term_to_cache_control_list(X) ->
 %% Returns the value of the key if it is found, otherwise returns the default
 %% provided by the user, or `not_found' if no default is provided.
 get(Path, Msg) ->
-    get(Path, Msg, default_runtime_opts(Msg)).
+    get(Path, Msg, #{}).
 get(Path, Msg, Opts) ->
     get(Path, Msg, not_found, Opts).
 get(Path, {as, Device, Msg}, Default, Opts) ->
@@ -569,7 +574,7 @@ get(Path, {as, Device, Msg}, Default, Opts) ->
         set(
             Msg,
             #{ device => Device },
-            Opts#{ topic => converge_internal, spawn_worker => false }
+            internal_opts(Opts)
         ),
         Default,
         Opts
@@ -601,21 +606,21 @@ set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg2 = maps:without([hashpath, priv], RawMsg2),
     ?event(converge_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
-    case keys(Msg2, Opts#{ hashpath => ignore, topic => converge_internal }) of
+    case keys(Msg2, internal_opts(Opts)) of
         [] -> Msg1;
         [Key|_] ->
             % Get the value to set. Use Converge by default, but fall back to
             % getting via `maps` if it is not found.
             Val =
-                case get(Key, Msg2, Opts#{ topic => converge_internal }) of
+                case get(Key, Msg2, internal_opts(Opts)) of
                     not_found -> maps:get(Key, Msg2);
                     Body -> Body
                 end,
             ?event({got_val_to_set, {key, Key}, {val, Val}, {msg2, Msg2}}),
             % Next, set the key and recurse, removing the key from the Msg2.
             set(
-                set(Msg1, Key, Val, Opts#{ topic => converge_internal }),
-                remove(Msg2, Key, Opts#{ topic => converge_internal }),
+                set(Msg1, Key, Val, internal_opts(Opts)),
+                remove(Msg2, Key, internal_opts(Opts)),
                 Opts
             )
     end.
@@ -623,7 +628,7 @@ set(Msg1, Key, Value, Opts) ->
     % For an individual key, we run deep_set with the key as the path.
     % This handles both the case that the key is a path as well as the case
     % that it is a single key.
-    Path = hb_path:term_to_path(Key),
+    Path = hb_path:term_to_path_parts(Key),
     % ?event(
     %     {setting_individual_key,
     %         {msg1, Msg1},
@@ -637,7 +642,6 @@ set(Msg1, Key, Value, Opts) ->
 %% @doc Recursively search a map, resolving keys, and set the value of the key
 %% at the given path.
 deep_set(Msg, [Key], Value, Opts) ->
-    %?event({setting_last_key, {key, Key}, {value, Value}}),
     device_set(Msg, Key, Value, Opts);
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     case resolve(Msg, Key, Opts) of 
@@ -673,9 +677,9 @@ device_set(Msg, Key, Value, Opts) ->
         resolve(
             Msg,
             #{ path => set, Key => Value },
-            Opts#{ spawn_worker => false }
+            internal_opts(Opts)
         ),
-        Opts#{ spawn_worker => false }
+        internal_opts(Opts)
     ),
 	?event(
         converge_internal,
@@ -690,20 +694,10 @@ remove(Msg, Key, Opts) ->
         resolve(
             Msg,
             #{ path => remove, item => Key },
-            Opts#{ topic => converge_internal, spawn_worker => false }
+            internal_opts(Opts)
         ),
         Opts
     ).
-
-%% @doc Handle an error in a device call.
-handle_error(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
-    Error = {error, Whence, {Class, Exception, Stacktrace}},
-    hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
-    ?event(converge_core, {handle_error, Error, {opts, Opts}}),
-    case maps:get(error_strategy, Opts, throw) of
-        throw -> erlang:raise(Class, Exception, Stacktrace);
-        _ -> Error
-    end.
 
 %% @doc Truncate the arguments of a function to the number of arguments it
 %% actually takes.
@@ -806,7 +800,7 @@ message_to_fun(Msg, Key, Opts) ->
 
 %% @doc Extract the device module from a message.
 message_to_device(Msg, Opts) ->
-    case dev_message:get(device, Msg, Opts) of
+    case dev_message:get(device, Msg) of
         {error, not_found} ->
             % The message does not specify a device, so we use the default device.
             default_module();
@@ -945,8 +939,10 @@ to_key(Key, Opts) ->
 key_to_binary(Key) -> key_to_binary(Key, #{}).
 key_to_binary(Key, _Opts) when is_binary(Key) -> Key;
 key_to_binary(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
-key_to_binary(Key, _Opts) when is_list(Key) -> list_to_binary(Key);
-key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key).
+key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
+key_to_binary(Key = [ASCII | _], _Opts) when is_integer(ASCII) -> list_to_binary(Key);
+key_to_binary(Key, _Opts) when is_list(Key) ->
+    iolist_to_binary(lists:join(<<"/">>, lists:map(fun key_to_binary/1, Key))).
 
 %% @doc Helper function for key_to_atom that does not check for errors.
 to_atom_unsafe(Key) when is_integer(Key) ->
@@ -1024,422 +1020,18 @@ info(DevMod, Msg, Opts) ->
 		not_found -> #{}
 	end.
 
-%% @doc The default runtime options for a message. At the moment the `Message1'
-%% but it is included such that we can modulate the options based on the message
-%% if needed in the future.
-default_runtime_opts(_Msg1) ->
-    #{
-        error_strategy => throw
-    }.
-
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map. It should also
 %% implement the `set' key, which returns a `Message3' with the values changed
 %% according to the `Message2' passed to it.
 default_module() -> dev_message.
 
-%%% Tests
-
-resolve_simple_test() ->
-    Res = hb_converge:resolve(#{ a => 1 }, a, #{}),
-    ?assertEqual({ok, 1}, Res).
-
-resolve_key_twice_test() ->
-    % Ensure that the same message can be resolved again.
-    % This is not as trivial as it may seem, because resolutions are cached and
-    % de-duplicated.
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})),
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ a => 1 }, a, #{})).
-
-resolve_from_multiple_keys_test() ->
-    ?assertEqual(
-        {ok, [a]},
-        hb_converge:resolve(#{ a => 1, "priv_a" => 2 }, keys, #{})
-    ).
-
-resolve_path_element_test() ->
-    ?assertEqual(
-        {ok, [test_path]},
-        hb_converge:resolve(#{ path => [test_path] }, path, #{})
-    ),
-    ?assertEqual(
-        {ok, [a]},
-        hb_converge:resolve(#{ <<"Path">> => [a] }, <<"Path">>, #{})
-    ).
-
-key_to_binary_test() ->
-    ?assertEqual(<<"a">>, hb_converge:key_to_binary(a)),
-    ?assertEqual(<<"a">>, hb_converge:key_to_binary(<<"a">>)),
-    ?assertEqual(<<"a">>, hb_converge:key_to_binary("a")).
-
-resolve_binary_key_test() ->
-    ?assertEqual(
-        {ok, 1},
-        hb_converge:resolve(#{ a => 1 }, <<"a">>, #{})
-    ),
-    ?assertEqual(
-        {ok, 1},
-        hb_converge:resolve(
-            #{
-                <<"Test-Header">> => 1 },
-                <<"Test-Header">>,
-            #{}
-        )
-    ).
-
-%% @doc Generates a test device with three keys, each of which uses
-%% progressively more of the arguments that can be passed to a device key.
-generate_device_with_keys_using_args() ->
-    #{
-        key_using_only_state =>
-            fun(State) ->
-                {ok,
-                    <<(maps:get(state_key, State))/binary>>
-                }
-            end,
-        key_using_state_and_msg =>
-            fun(State, Msg) ->
-                {ok,
-                    <<
-                        (maps:get(state_key, State))/binary,
-                        (maps:get(msg_key, Msg))/binary
-                    >>
-                }
-            end,
-        key_using_all =>
-            fun(State, Msg, Opts) ->
-                {ok,
-                    <<
-                        (maps:get(state_key, State))/binary,
-                        (maps:get(msg_key, Msg))/binary,
-                        (maps:get(opts_key, Opts))/binary
-                    >>
-                }
-            end
-    }.
-
-%% @doc Create a simple test device that implements the default handler.
-gen_default_device() ->
-    #{
-        info =>
-            fun() ->
-                #{
-                    default =>
-                        fun(_, _State) ->
-                            {ok, <<"DEFAULT">>}
-                        end
-                }
-            end,
-        state_key =>
-            fun(_) ->
-                {ok, <<"STATE">>}
-            end
-    }.
-
-%% @doc Create a simple test device that implements the handler key.
-gen_handler_device() ->
-    #{
-        info =>
-            fun() ->
-                #{
-                    handler =>
-                        fun(set, M1, M2, Opts) ->
-                            dev_message:set(M1, M2, Opts);
-                        (_, _, _, _) ->
-                            {ok, <<"HANDLER VALUE">>}
-                        end
-                }
-            end
-    }.
-
-%% @doc Test that arguments are passed to a device key as expected.
-%% Particularly, we need to ensure that the key function in the device can
-%% specify any arity (1 through 3) and the call is handled correctly.
-key_from_id_device_with_args_test() ->
-    Msg =
-        #{
-            device => generate_device_with_keys_using_args(),
-            state_key => <<"1">>
-        },
-    ?assertEqual(
-        {ok, <<"1">>},
-        hb_converge:resolve(
-            Msg,
-            #{
-                path => key_using_only_state,
-                msg_key => <<"2">> % Param message, which is ignored
-            },
-            #{}
-        )
-    ),
-    ?assertEqual(
-        {ok, <<"13">>},
-        hb_converge:resolve(
-            Msg,
-            #{
-                path => key_using_state_and_msg,
-                msg_key => <<"3">> % Param message, with value to add
-            },
-            #{}
-        )
-    ),
-    ?assertEqual(
-        {ok, <<"1337">>},
-        hb_converge:resolve(
-            Msg,
-            #{
-                path => key_using_all,
-                msg_key => <<"3">> % Param message
-            },
-            #{
-                opts_key => <<"37">> % Opts
-            }
-        )
-    ).
-
-device_with_handler_function_test() ->
-    Msg =
-        #{
-            device => gen_handler_device(),
-            test_key => <<"BAD">>
-        },
-    ?assertEqual(
-        {ok, <<"HANDLER VALUE">>},
-        hb_converge:resolve(Msg, test_key, #{})
-    ).
-
-device_with_default_handler_function_test() ->
-    Msg =
-        #{
-            device => gen_default_device()
-        },
-    ?assertEqual(
-        {ok, <<"STATE">>},
-        hb_converge:resolve(Msg, state_key, #{})
-    ),
-    ?assertEqual(
-        {ok, <<"DEFAULT">>},
-        hb_converge:resolve(Msg, any_random_key, #{})
-    ).
-
-basic_get_test() ->
-    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-    ?assertEqual(<<"value1">>, hb_converge:get(key1, Msg)),
-    ?assertEqual(<<"value2">>, hb_converge:get(key2, Msg)),
-    ?assertEqual(<<"value2">>, hb_converge:get(<<"key2">>, Msg)),
-    ?assertEqual(<<"value2">>, hb_converge:get([<<"key2">>], Msg)).
-
-recursive_get_test() ->
-    Msg = #{ key1 => <<"value1">>, key2 => #{ key3 => <<"value3">> } },
-    ?assertEqual(
-        {ok, <<"value1">>},
-        hb_converge:resolve(Msg, #{ path => key1 }, #{})
-    ),
-    ?assertEqual(<<"value1">>, hb_converge:get(key1, Msg)),
-    ?assertEqual(
-        {ok, <<"value3">>},
-        hb_converge:resolve(Msg, #{ path => [key2, key3] }, #{})
-    ),
-    ?assertEqual(<<"value3">>, hb_converge:get([key2, key3], Msg)),
-    ?assertEqual(<<"value3">>, hb_converge:get(<<"key2/key3">>, Msg)).
-
-basic_set_test() ->
-    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-    UpdatedMsg = hb_converge:set(Msg, #{ key1 => <<"new_value1">> }),
-    ?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
-    ?assertEqual(<<"new_value1">>, hb_converge:get(key1, UpdatedMsg)),
-    ?assertEqual(<<"value2">>, hb_converge:get(key2, UpdatedMsg)).
-
-get_with_device_test() ->
-    Msg =
-        #{
-            device => generate_device_with_keys_using_args(),
-            state_key => <<"STATE">>
-        },
-    ?assertEqual(<<"STATE">>, hb_converge:get(state_key, Msg)),
-    ?assertEqual(<<"STATE">>, hb_converge:get(key_using_only_state, Msg)).
-
-get_as_with_device_test() ->
-    Msg =
-        #{
-            device => gen_handler_device(),
-            test_key => <<"ACTUAL VALUE">>
-        },
-    ?assertEqual(
-        <<"HANDLER VALUE">>,
-        hb_converge:get(test_key, Msg)
-    ),
-    ?assertEqual(
-        <<"ACTUAL VALUE">>,
-        hb_converge:get(test_key, {as, dev_message, Msg})
-    ).
-
-set_with_device_test() ->
-    Msg =
-        #{
-            device =>
-                #{
-                    set =>
-                        fun(State, _Msg) ->
-                            {ok,
-                                State#{
-                                    set_count =>
-                                        1 + maps:get(set_count, State, 0)
-                                }
-                            }
-                        end
-                },
-            state_key => <<"STATE">>
-        },
-    ?assertEqual(<<"STATE">>, hb_converge:get(state_key, Msg)),
-    SetOnce = hb_converge:set(Msg, #{ state_key => <<"SET_ONCE">> }),
-    ?assertEqual(1, hb_converge:get(set_count, SetOnce)),
-    SetTwice = hb_converge:set(SetOnce, #{ state_key => <<"SET_TWICE">> }),
-    ?assertEqual(2, hb_converge:get(set_count, SetTwice)),
-    ?assertEqual(<<"STATE">>, hb_converge:get(state_key, SetTwice)).
-
-deep_set_test() ->
-    % First validate second layer changes are handled correctly.
-    Msg0 = #{ a => #{ b => 1 } },
-    ?assertMatch(#{ a := #{ b := 2 } },
-        hb_converge:set(Msg0, [a, b], 2, #{})),
-    % Now validate deeper layer changes are handled correctly.
-    Msg = #{ a => #{ b => #{ c => 1 } } },
-    ?assertMatch(#{ a := #{ b := #{ c := 2 } } },
-        hb_converge:set(Msg, [a, b, c], 2, #{})).
-
-deep_set_new_messages_test() ->
-    % Test that new messages are created when the path does not exist.
-    Msg0 = #{ a => #{ b => #{ c => 1 } } },
-    Msg1 = hb_converge:set(Msg0, <<"d/e">>, 3, #{ hashpath => ignore }),
-    Msg2 = hb_converge:set(Msg1, <<"d/f">>, 4, #{ hashpath => ignore }),
-    ?assertMatch(
-        #{ a := #{ b := #{ c := 1 } }, d := #{ e := 3, f := 4 } }, Msg2),
-    Msg3 = hb_converge:set(
-        Msg2,
-        #{ 
-            <<"z/a">> => 0,
-            <<"z/b">> => 1,
-            <<"z/y/x">> => 2
-         },
-        #{ hashpath => ignore }
-    ),
-    ?assertMatch(
-        #{
-            a := #{ b := #{ c := 1 } }, d := #{ e := 3, f := 4 },
-            z := #{ a := 0, b := 1, y := #{ x := 2 } }
-        },
-        Msg3
-    ).
-
-deep_set_with_device_test() ->
-    Device = #{
-        set =>
-            fun(Msg1, Msg2) ->
-                % A device where the set function modifies the key
-                % and adds a modified flag.
-                {Key, Val} =
-                    hd(maps:to_list(maps:without([path, priv], Msg2))),
-                {ok, Msg1#{ Key => Val, modified => true }}
-            end
-    },
-    % A message with an interspersed custom device: A and C have it,
-    % B does not. A and C will have the modified flag set to true.
-    Msg = #{
-        device => Device,
-        a =>
-            #{
-                b =>
-                    #{
-                        device => Device,
-                        c => 1,
-                        modified => false
-                    },
-                modified => false
-            },
-        modified => false
-    },
-    Outer = deep_set(Msg, [a, b, c], 2, #{}),
-    A = hb_converge:get(a, Outer),
-    B = hb_converge:get(b, A),
-    C = hb_converge:get(c, B),
-    ?assertEqual(2, C),
-    ?assertEqual(true, hb_converge:get(modified, Outer)),
-    ?assertEqual(false, hb_converge:get(modified, A)),
-    ?assertEqual(true, hb_converge:get(modified, B)).
-
-device_exports_test() ->
-	Msg = #{ device => dev_message },
-	?assert(is_exported(Msg, dev_message, info, #{})),
-	?assert(is_exported(Msg, dev_message, set, #{})),
-	?assert(is_exported(Msg, dev_message, not_explicitly_exported, #{})),
-	Dev = #{
-		info => fun() -> #{ exports => [set] } end,
-		set => fun(_, _) -> {ok, <<"SET">>} end
-	},
-	Msg2 = #{ device => Dev },
-	?assert(is_exported(Msg2, Dev, info, #{})),
-	?assert(is_exported(Msg2, Dev, set, #{})),
-	?assert(not is_exported(Msg2, Dev, not_exported, #{})),
-    Dev2 = #{
-        info =>
-            fun() ->
-                #{
-                    exports => [test1, <<"Test2">>],
-                    handler =>
-                        fun() ->
-                            {ok, <<"Handler-Value">>}
-                        end
-                }
-            end
-    },
-    Msg3 = #{ device => Dev2, <<"Test1">> => <<"BAD1">>, test3 => <<"GOOD3">> },
-    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test1, Msg3)),
-    ?assertEqual(<<"Handler-Value">>, hb_converge:get(test2, Msg3)),
-    ?assertEqual(<<"GOOD3">>, hb_converge:get(test3, Msg3)),
-    ?assertEqual(<<"GOOD4">>,
-        hb_converge:get(
-            <<"Test4">>,
-            hb_converge:set(Msg3, <<"Test4">>, <<"GOOD4">>, #{})
-        )
-    ),
-    ?assertEqual(not_found, hb_converge:get(test5, Msg3)).
-
-device_excludes_test() ->
-    % Create a device that returns an identifiable message for any key, but also
-    % sets excludes to [set], such that the message can be modified using the 
-    % default handler.
-    Dev = #{
-        info =>
-            fun() ->
-                #{
-                    excludes => [set],
-                    handler => fun() -> {ok, <<"Handler-Value">>} end
-                }
-            end
-    },
-    Msg = #{ device => Dev, <<"Test-Key">> => <<"Test-Value">> },
-    ?assert(is_exported(Msg, Dev, <<"Test-Key2">>, #{})),
-    ?assert(not is_exported(Msg, Dev, set, #{})),
-    ?assertEqual(<<"Handler-Value">>, hb_converge:get(<<"Test-Key2">>, Msg)),
-    ?assertMatch(#{ <<"Test-Key2">> := 2 },
-        hb_converge:set(Msg, <<"Test-Key2">>, 2, #{})).
-
-denormalized_device_key_test() ->
-	Msg = #{ <<"Device">> => dev_test },
-	?assertEqual(dev_test, hb_converge:get(device, Msg)),
-	?assertEqual(dev_test, hb_converge:get(<<"Device">>, Msg)),
-	?assertEqual({module, dev_test},
-		erlang:fun_info(
-            element(3, message_to_fun(Msg, test_func, #{})),
-            module
-        )
-    ).
-
-list_transform_test() ->
-    Msg = [<<"A">>, <<"B">>, <<"C">>, <<"D">>, <<"E">>],
-    ?assertEqual(<<"A">>, hb_converge:get(1, Msg)),
-    ?assertEqual(<<"B">>, hb_converge:get(2, Msg)),
-    ?assertEqual(<<"C">>, hb_converge:get(3, Msg)),
-    ?assertEqual(<<"D">>, hb_converge:get(4, Msg)),
-    ?assertEqual(<<"E">>, hb_converge:get(5, Msg)).
+%% @doc The execution options that are used internally by the converge module
+%% when calling itself.
+internal_opts(Opts) ->
+    maps:merge(Opts, #{
+        topic => converge_internal,
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        spawn_worker => false
+    }).
