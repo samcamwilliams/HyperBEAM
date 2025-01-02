@@ -327,7 +327,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
                     }
                 ),
                 % If the device cannot be loaded, we alert the caller.
-				handle_error(
+				error_execution(
                     ExecName,
                     Msg2,
 					loading_device,
@@ -395,7 +395,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                 ),
                 % If the function call fails, we raise an error in the manner
                 % indicated by caller's `#Opts`.
-                handle_error(
+                error_execution(
                     ExecName,
                     Msg2,
                     device_call,
@@ -405,7 +405,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
         end,
     resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
-    ?event(converge_core, {stage, 7, ExecName, cryptographic_linking}, Opts),
+    ?event(converge_core, {stage, 7, ExecName, generate_hashpath}, Opts),
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.
     resolve_stage(8, Msg1, Msg2,
@@ -415,15 +415,20 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 {ok,
                     Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
                 };
-            _ ->
-                {ok, Msg3}
+            ignore ->
+                {ok, maps:without([hashpath], Msg3)}
         end,
         ExecName,
         Opts
     );
+resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
+    ?event(converge_core, {stage, 7, ExecName, abnormal_status_reset_hashpath}, Opts),
+    % Skip cryptographic linking and reset the hashpath if the result is abnormal.
+    resolve_stage(8, Msg1, Msg2, {Status, maps:without([hashpath], Msg3)}, ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 7, ExecName, abnormal_skip_link}, Opts),
-    % Skip cryptographic linking if the result is abnormal.
+    ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
+    % Skip cryptographic linking and continue if we don't have a map that can have
+    % a hashpath at all.
     resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 8, ExecName, result_caching}, Opts),
@@ -431,7 +436,7 @@ resolve_stage(8, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
     hb_cache_control:maybe_store(Msg1, Msg2, Msg3, Opts),
     resolve_stage(9, Msg1, Msg2, {ok, Msg3}, ExecName, Opts);
 resolve_stage(8, Msg1, Msg2, Res, ExecName, Opts) ->
-    ?event(converge_core, {stage, 8, ExecName, skip_caching}, Opts),
+    ?event(converge_core, {stage, 8, ExecName, abnormal_status_skip_caching}, Opts),
     % Skip result caching if the result is abnormal.
     resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts);
 resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts) ->
@@ -453,15 +458,18 @@ resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
             resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false })
     end;
 resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
-    ?event(converge_core, {stage, 10, ExecName, skip_spawning_with_abnormal_result}, Opts),
+    ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
     resolve_stage(11, Msg1, Msg2, OtherRes, ExecName, Opts);
-resolve_stage(11, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
+resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 11, ExecName}, Opts),
     % Recurse, or terminate.
     #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
         = hb_private:from_message(Msg2),
 	case RemainingPath of
-		RecursivePath when RecursivePath =/= undefined ->
+		undefined ->
+            % Terminate: We have reached the end of the path.
+			{Status, Msg3};
+		_ when Status == ok ->
 			% There are more elements in the path, so we recurse.
 			?event(
                 converge_core,
@@ -470,17 +478,22 @@ resolve_stage(11, _Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
                 }
             ),
 			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
-		undefined ->
-            % Terminate: We have reached the end of the path.
-			{ok, Msg3}
-	end;
-resolve_stage(11, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
-    ?event(converge_core, {stage, 11, ExecName, abnormal_return}, Opts),
-    OtherRes.
+        _ ->
+            error_invalid_intermediate_status(
+                Msg1, Msg2, Msg3, RemainingPath, Opts)
+	end.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
-    ?event(converge_core, {invalid_message, {msg1, Msg1}, {msg2, Msg2}}, Opts),
+    ?event(
+        converge_core,
+        {error, {type, invalid_message},
+            {msg1, Msg1},
+            {msg2, Msg2},
+            {opts, Opts}
+        },
+        Opts
+    ),
     {
         error,
         #{
@@ -490,14 +503,56 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     }.
 
 %% @doc Catch all return if we are in an infinite loop.
-error_infinite(_Msg1, _Msg2, _Opts) ->
+error_infinite(Msg1, Msg2, Opts) ->
+    ?event(
+        converge_core,
+        {error, {type, infinite_recursion},
+            {msg1, Msg1},
+            {msg2, Msg2},
+            {opts, Opts}
+        },
+        Opts
+    ),
     {
         error,
         #{
-            <<"Status">> => <<"Malformed Request">>,
+            <<"Status">> => <<"Loop Detected">>,
+            <<"Status-Code">> => 508,
             <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
+
+error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
+    ?event(
+        converge_core,
+        {error, {type, invalid_intermediate_status},
+            {msg2, Msg2},
+            {msg3, Msg3},
+            {remaining_path, RemainingPath},
+            {opts, Opts}
+        },
+        Opts
+    ),
+    {
+        error,
+        #{
+            <<"Status">> => <<"Unprocessable Content">>,
+            <<"Status-Code">> => 422,
+            <<"body">> => Msg3,
+            <<"Key">> => maps:get(path, Msg2, <<"Key unknown.">>),
+            <<"Remaining-Path">> => RemainingPath
+        }
+    }.
+
+%% @doc Handle an error in a device call.
+error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
+    Error = {error, Whence, {Class, Exception, Stacktrace}},
+    hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
+    ?event(converge_core, {handle_error, Error, {opts, Opts}}),
+    case hb_opts:get(error_strategy, throw, Opts) of
+        throw -> erlang:raise(Class, Exception, Stacktrace);
+        _ -> Error
+    end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
@@ -643,16 +698,6 @@ remove(Msg, Key, Opts) ->
         ),
         Opts
     ).
-
-%% @doc Handle an error in a device call.
-handle_error(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
-    Error = {error, Whence, {Class, Exception, Stacktrace}},
-    hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
-    ?event(converge_core, {handle_error, Error, {opts, Opts}}),
-    case maps:get(error_strategy, Opts, throw) of
-        throw -> erlang:raise(Class, Exception, Stacktrace);
-        _ -> Error
-    end.
 
 %% @doc Truncate the arguments of a function to the number of arguments it
 %% actually takes.
