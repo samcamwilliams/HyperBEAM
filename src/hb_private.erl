@@ -38,7 +38,7 @@ get(InputPath, Msg, Default, Opts) ->
         hb_converge:resolve(
             from_message(Msg),
             #{ path => Path },
-            converge_opts(Opts)
+            priv_converge_opts(Opts)
         ),
     case Resolve of
         {error, _} -> Default;
@@ -49,11 +49,11 @@ get(InputPath, Msg, Default, Opts) ->
 set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath),
     Priv = from_message(Msg),
-    NewPriv = hb_converge:set(Priv, Path, Value, converge_opts(Opts)),
+    NewPriv = hb_converge:set(Priv, Path, Value, priv_converge_opts(Opts)),
     set(Msg, NewPriv, Opts).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
-    NewPriv = hb_converge:set(CurrentPriv, PrivMap, converge_opts(Opts)),
+    NewPriv = hb_converge:set(CurrentPriv, PrivMap, priv_converge_opts(Opts)),
     set_priv(Msg, NewPriv).
 
 %% @doc Helper function for setting the complete private element of a message.
@@ -76,8 +76,8 @@ remove_private_specifier(InputPath) ->
 
 %% @doc The opts map that should be used when resolving paths against the
 %% private element of a message.
-converge_opts(Opts) ->
-    Opts#{ hashpath => ignore, cache_control => false }.
+priv_converge_opts(Opts) ->
+    Opts#{ hashpath => ignore, cache_control => [<<"no-cache">>, <<"no-store">>] }.
 
 %% @doc Unset all of the private keys in a message.
 reset(Msg) ->
