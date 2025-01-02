@@ -22,7 +22,8 @@
 
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.
-from_message(Msg) -> maps:get(priv, Msg, #{}).
+from_message(Msg) when is_map(Msg) -> maps:get(priv, Msg, #{});
+from_message(_NonMapMessage) -> #{}.
 
 %% @doc Helper for getting a value from the private element of a message. Uses
 %% Converge resolve under-the-hood, removing the private specifier from the
@@ -40,7 +41,7 @@ get(InputPath, Msg, Default, Opts) ->
             converge_opts(Opts)
         ),
     case Resolve of
-        {error, not_found} -> Default;
+        {error, _} -> Default;
         {ok, Value} -> Value
     end.
 
