@@ -176,7 +176,7 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     % MemoryPath = hb_path:hashpath(Proc,
                     %     PathIn = [<<"Slot">>, integer_to_binary(CurrentSlot), <<"Memory">>]),
                     % {ok, _} = hb_cache:write_binary(MemoryPath, Memory, Opts),
-                    % ?event(debug, 
+                    % ?event(
                     %     {stored, 
                     %         {msg3, Msg3}, 
                     %         {path, PathIn},

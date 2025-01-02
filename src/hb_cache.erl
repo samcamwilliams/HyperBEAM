@@ -78,7 +78,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.
     MsgHashpath = hb_path:hashpath(Msg, Opts),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
-    ?event(debug, {storing_msg_with_hashpath, MsgHashpath}),
+    ?event({storing_msg_with_hashpath, MsgHashpath}),
     % Get the ID of the unsigned message.
     {ok, UnsignedID} = dev_message:unsigned_id(Msg),
     % Write the keys of the message into the graph of hashpaths, generating a map of

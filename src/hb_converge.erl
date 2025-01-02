@@ -411,7 +411,7 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     resolve_stage(8, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
             update ->
-                ?event(debug, {setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+                ?event({setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
                 {ok,
                     Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
                 };

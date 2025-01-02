@@ -330,11 +330,11 @@ cache_message_result_test() ->
                 cache_control => [<<"always">>]
             }
         ),
-    ?event(debug, {res1, Res}),
-    ?event(debug, reading_from_cache),
+    ?event({res1, Res}),
+    ?event(reading_from_cache),
     {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    ?event(debug, reading_from_cache_again),
+    ?event(reading_from_cache_again),
     {ok, Res3} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    ?event(debug, {res2, Res2}),
-    ?event(debug, {res3, Res3}),
+    ?event({res2, Res2}),
+    ?event({res3, Res3}),
     ?assertEqual(Res2, Res3).
