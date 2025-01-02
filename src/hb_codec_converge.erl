@@ -3,6 +3,7 @@
 %%% built around the HTTP Structured Fields (RFC-9651) specification.
 -module(hb_codec_converge).
 -export([to/1, from/1]).
+-export([decode_value/2, encode_value/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -80,11 +81,8 @@ to(TABM0) ->
             Key = hb_converge:key_to_binary(RawKey),
             case maps:find(<<"Converge-Type:", Key/binary>>, TABM1) of
                 error -> {true, BinaryValue};
-                {ok, RawType} ->
-                    NormType = list_to_existing_atom(
-                        string:to_lower(binary_to_list(RawType))
-                    ),
-                    {true, decode_value(NormType, BinaryValue)}
+                {ok, Type} ->
+                    {true, decode_value(Type, BinaryValue)}
             end;
         (_Key, ChildTABM) when is_map(ChildTABM) ->
             {true, to(ChildTABM)};
@@ -151,15 +149,19 @@ decode_value(list, Value) ->
     lists:map(
         fun({item, {string, <<"(Converge-Type: ", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
-            decode_value(
-                list_to_existing_atom(
-                    string:to_lower(binary_to_list(Type))
-                ),
-                Item
-            );
+            decode_value(Type, Item);
            ({item, {string, Binary}, _}) -> Binary
         end,
         hb_http_structured_fields:parse_list(iolist_to_binary(Value))
+    );
+decode_value(BinType, Value) when is_binary(BinType) ->
+    decode_value(
+        list_to_existing_atom(
+            string:to_lower(
+                binary_to_list(BinType)
+            )
+        ),
+        Value
     );
 decode_value(OtherType, Value) ->
     ?event({unexpected_type, OtherType, Value}),

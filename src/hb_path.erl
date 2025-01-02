@@ -76,7 +76,8 @@ data_id(Bin, _Opts) when is_binary(Bin) ->
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
-hashpath(Msg1, Opts) when is_map(Msg1) ->
+hashpath(RawMsg1, Opts) ->
+    Msg1 = hb_converge:ensure_message(RawMsg1),
     case dev_message:get(hashpath, Msg1) of
         {ok, ignore} ->
             throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
