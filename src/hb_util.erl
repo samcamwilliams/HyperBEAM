@@ -68,7 +68,7 @@ short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     << FirstTag:5/binary, _:33/binary, LastTag:5/binary >> = Bin,
     << FirstTag/binary, "..", LastTag/binary >>;
-short_id(Bin) when byte_size(Bin) > 43 ->
+short_id(Bin) when byte_size(Bin) > 43 andalso byte_size(Bin) < 100 ->
     case binary:split(Bin, <<"/">>, [trim_all, global]) of
         [First, Second] when byte_size(Second) == 43 ->
             FirstEnc = short_id(First),
