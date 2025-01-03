@@ -5,7 +5,7 @@
 -export([type/2, read/2, write/3, list/2]).
 -export([path/1, path/2, add_path/2, add_path/3, join/1]).
 -export([make_group/2, make_link/3, resolve/2]).
--export([generate_test_suite/1, test_stores/0]).
+-export([generate_test_suite/1, generate_test_suite/2, test_stores/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -188,6 +188,8 @@ test_stores() ->
     ].
 
 generate_test_suite(Suite) ->
+    generate_test_suite(Suite, test_stores()).
+generate_test_suite(Suite, Stores) ->
     lists:map(
         fun(Store = {Mod, _Opts}) ->
             {foreach,
@@ -201,7 +203,7 @@ generate_test_suite(Suite) ->
                 ]
             }
         end,
-        test_stores()
+        Stores
     ).
 
 %%% Tests

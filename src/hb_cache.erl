@@ -78,7 +78,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.
     MsgHashpath = hb_path:hashpath(Msg, Opts),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
-    ?event(debug, {storing_msg_with_hashpath, MsgHashpath}),
+    ?event({storing_msg_with_hashpath, MsgHashpath}),
     % Get the ID of the unsigned message.
     {ok, UnsignedID} = dev_message:unsigned_id(Msg),
     % Write the keys of the message into the graph of hashpaths, generating a map of
@@ -155,7 +155,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
 %% ID1/Compute/Results/2 -> Hashpath1/Compute/Results/2
 %% ID1/Compute/Results/3 -> Hashpath1/Compute/Results/3
 write_link_tree(RootPath, PathMap, Store, Opts) ->
-    ?event({write_link_tree, {root, RootPath}, {pathmap, PathMap}, {store, Store}}),
+    ?event({write_link_tree, {root, RootPath}, {store, Store}}),
     maps:map(
         fun(Key, Path) when is_map(Path) ->
             % The key is a map of subkeys and paths, so we adjust our root ID to
@@ -190,9 +190,9 @@ write_binary(Hashpath, Bin, Store, Opts) ->
 read(Path, Opts) ->
     case store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts) of
         not_found -> not_found;
-        {ok, Bin} when is_binary(Bin) -> {ok, Bin};
         {ok, FlatMsg} when is_map(FlatMsg) ->
-            {ok, hb_message:convert(FlatMsg, converge, flat, Opts)}
+            {ok, hb_message:convert(FlatMsg, converge, flat, Opts)};
+        {ok, Res} -> {ok, Res}
     end.
         
 %% @doc List all of the subpaths of a given path, read each in turn, returning a 
@@ -207,7 +207,19 @@ store_read(Path, Store, Opts) ->
     ),
     case hb_store:type(Store, ResolvedFullPath) of
         simple ->
-            hb_store:read(Store, ResolvedFullPath);
+            {ok, Binary} = hb_store:read(Store, ResolvedFullPath),
+            % Try to get the key type, if it exists in the cache.
+            case hb_path:term_to_path_parts(Path) of
+                [BasePath, Key] when not ?IS_ID(Key) and is_binary(Key) ->
+                    case hb_store:read(Store, <<BasePath/binary, "/", "/Converge-Type:", Key/binary>>) of
+                        no_viable_store ->
+                            {ok, Binary};
+                        {ok, Type} ->
+                            {ok, hb_codec_converge:decode_value(Type, Binary)}
+                    end;
+                _ ->
+                    {ok, Binary}
+            end;
         _ ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, Subpaths} ->
@@ -239,7 +251,6 @@ store_read(Path, Store, Opts) ->
                             Subpaths
                         )
                     ),
-                    ?event({explicit, FlatMap}),
                     {ok, FlatMap};
                 _ -> not_found
             end

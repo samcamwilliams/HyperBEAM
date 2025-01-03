@@ -76,7 +76,8 @@ data_id(Bin, _Opts) when is_binary(Bin) ->
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
-hashpath(Msg1, Opts) when is_map(Msg1) ->
+hashpath(RawMsg1, Opts) ->
+    Msg1 = hb_converge:ensure_message(RawMsg1),
     case dev_message:get(hashpath, Msg1) of
         {ok, ignore} ->
             throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
@@ -87,16 +88,16 @@ hashpath(Msg1, Opts) when is_map(Msg1) ->
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
             end
     end.
-hashpath(Msg1, Msgs, Opts) when is_list(Msgs) ->
-    HashpathAlg = hashpath_alg(Msg1),
-    lists:foldl(
-        fun(Msg, Acc) ->
-            ?event(debug, {generating_hashpath, {current, Acc}, {msg, Msg}}),
-            hashpath(Acc, hashpath(Msg, Opts), HashpathAlg, Opts)
-        end,
-        hashpath(Msg1, Opts),
-        Msgs
-    );
+% hashpath(Msg1, Msgs, Opts) when is_list(Msgs) ->
+%     HashpathAlg = hashpath_alg(Msg1),
+%     lists:foldl(
+%         fun(Msg, Acc) ->
+%             ?event({generating_hashpath, {current, Acc}, {msg, Msg}}),
+%             hashpath(Acc, hashpath(Msg, Opts), HashpathAlg, Opts)
+%         end,
+%         hashpath(Msg1, Opts),
+%         Msgs
+%     );
 hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
     HashpathAlg = hashpath_alg(Msg1),
@@ -105,7 +106,7 @@ hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
     {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
-    ?event(debug, {generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
+    ?event({generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
     case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
         {0, Key} when Key =/= undefined ->
             hashpath(Msg1, to_binary(Key), HashpathAlg, Opts);
@@ -133,7 +134,7 @@ hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
                 HumanNewBase = hb_util:human_id(NativeNewBase),
                 << HumanNewBase/binary, "/", Msg2ID/binary >>
         end,
-    ?event(debug, {generated_hashpath, HP, {msg1hp, Msg1Hashpath}, {msg2id, Msg2ID}}),
+    ?event({generated_hashpath, HP, {msg1hp, Msg1Hashpath}, {msg2id, Msg2ID}}),
     HP.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.

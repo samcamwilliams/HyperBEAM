@@ -23,7 +23,7 @@ config() ->
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => local_confirmation,
+        scheduling_mode => aggressive,
         %% Compute mode: Determines whether the CU should attempt to execute
         %% more messages on a process after it has returned a result.
         %% Options: aggressive, lazy

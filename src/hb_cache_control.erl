@@ -19,9 +19,10 @@
 maybe_store(Msg1, Msg2, Msg3, Opts) ->
     case derive_cache_settings([Msg3, Msg2], Opts) of
         #{ store := true } ->
-            ?event({caching_result, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+            ?event(caching, {caching_result, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             dispatch_cache_write(Msg1, Msg2, Msg3, Opts);
-        _ -> not_caching
+        _ -> 
+            not_caching
     end.
 
 %% @doc Handles cache lookup, modulated by the caching options requested by
@@ -32,12 +33,20 @@ maybe_store(Msg1, Msg2, Msg3, Opts) ->
 %%      `no_cache`:       If set, the cached values are never used. Returns
 %%                        `continue` to the caller.
 maybe_lookup(Msg1, Msg2, Opts) ->
+    case exec_likely_faster_heuristic(Msg1, Msg2, Opts) of
+        true ->
+            ?event(caching, {skip_cache_check, exec_likely_faster_heuristic}),
+            {continue, Msg1, Msg2};
+        false -> lookup(Msg1, Msg2, Opts)
+    end.
+
+lookup(Msg1, Msg2, Opts) ->
     case derive_cache_settings([Msg1, Msg2], Opts) of
         #{ lookup := false } -> {continue, Msg1, Msg2};
         Settings = #{ lookup := true } ->
             case hb_cache:read_output(Msg1, Msg2, Opts) of
                 {ok, Msg3} ->
-                    ?event(
+                    ?event(caching,
                         {cache_hit,
                             case is_binary(Msg3) of
                                 true -> hb_path:hashpath(Msg1, Msg2, Opts);
@@ -50,7 +59,7 @@ maybe_lookup(Msg1, Msg2, Opts) ->
                     ),
                     {ok, Msg3};
                 not_found ->
-                    ?event({cache_miss, Msg1, Msg2}),
+                    ?event(caching, {cache_miss, Msg1, Msg2}),
                     case Settings of
                             #{ only_if_cached := true } ->
                                 only_if_cached_not_found_error(Msg1, Msg2, Opts);
@@ -106,7 +115,7 @@ dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
 %% we don't have a cached result.
 only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
     ?event(
-        cache,
+        caching,
         {only_if_cached_execution_failed, {msg1, Msg1}, {msg2, Msg2}},
         Opts
     ),
@@ -124,7 +133,7 @@ only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
 %% cache lookup are not found in the cache.
 necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
     ?event(
-        cache,
+        caching,
         {necessary_messages_not_found, {msg1, Msg1}, {msg2, Msg2}},
         Opts
     ),
@@ -136,6 +145,17 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
                 <<"Necessary messages not found in cache.">>
         }
     }.
+
+%% @doc Determine whether we are likely to be faster looking up the result in
+%% our cache (hoping we have it), or executing it directly.
+exec_likely_faster_heuristic(Msg1, #{ path := Key }, Opts) ->
+    % For now, just check whether the key is explicitly in the map. That is 
+    % a good signal that we will likely be asked by the device to grab it.
+    % If we have `only-if-cached` in the opts, we always force lookup, too.
+    case specifiers_to_cache_settings(maps:get(cache_control, Opts, [])) of
+        #{ only_if_cached := true } -> false;
+        _ -> maps:is_key(Key, Msg1)
+    end.
 
 %% @doc Derive cache settings from a series of option sources and the opts,
 %% honoring precidence order. The Opts is used as the first source. Returns a
@@ -197,7 +217,11 @@ specifiers_to_cache_settings(CCList) ->
                 false ->
                     case lists:member(<<"no-store">>, CCList) of
                         true -> false;
-                        false -> undefined
+                        false ->
+                            case lists:member(<<"store">>, CCList) of
+                                true -> true;
+                                false -> undefined
+                            end
                     end
             end,
         lookup =>
@@ -206,7 +230,11 @@ specifiers_to_cache_settings(CCList) ->
                 false ->
                     case lists:member(<<"no-cache">>, CCList) of
                         true -> false;
-                        false -> undefined
+                    false ->
+                        case lists:member(<<"cache">>, CCList) of
+                            true -> true;
+                            false -> undefined
+                        end
                     end
             end,
         only_if_cached =>
@@ -330,11 +358,11 @@ cache_message_result_test() ->
                 cache_control => [<<"always">>]
             }
         ),
-    ?event(debug, {res1, Res}),
-    ?event(debug, reading_from_cache),
+    ?event({res1, Res}),
+    ?event(reading_from_cache),
     {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    ?event(debug, reading_from_cache_again),
+    ?event(reading_from_cache_again),
     {ok, Res3} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    ?event(debug, {res2, Res2}),
-    ?event(debug, {res3, Res3}),
+    ?event({res2, Res2}),
+    ?event({res3, Res3}),
     ?assertEqual(Res2, Res3).

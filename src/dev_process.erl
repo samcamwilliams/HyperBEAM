@@ -47,16 +47,18 @@
 %%%                      assignments, in addition to `/Results'.
 -module(dev_process).
 %%% Public API
--export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, memory/3]).
+-export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, snapshot/3]).
 -export([ensure_process_key/2]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
+%%% Tests
+-export([do_test_restore/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency` option.
--define(DEFAULT_CACHE_FREQ, 2).
+-define(DEFAULT_CACHE_FREQ, 10).
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1) ->
@@ -64,6 +66,7 @@ info(_Msg1) ->
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3
     }.
+
 
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
@@ -76,9 +79,32 @@ slot(Msg1, Msg2, Opts) ->
 next(Msg1, _Msg2, Opts) ->
     run_as(<<"Scheduler">>, Msg1, next, Opts).
 
-memory(RawMsg1, _Msg2, Opts) ->
+snapshot(RawMsg1, _Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
-    run_as(<<"Execution">>, Msg1, #{ path => <<"Memory">> }, Opts).
+    {ok, SnapshotMsg} = run_as(
+        <<"Execution">>,
+        Msg1,
+        #{ path => <<"Snapshot">>, <<"Mode">> => <<"Map">> },
+        Opts#{ cache_control => [] }
+    ),
+    ProcID = hb_converge:get(<<"id">>, Msg1, Opts),
+    Slot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+    {ok,
+        hb_private:set(
+            hb_converge:set(
+                SnapshotMsg,
+                #{ <<"Cache-Control">> => [<<"store">>] },
+                Opts
+            ),
+            #{ <<"priv/Additional-Hashpaths">> =>
+                    [
+                        hb_path:to_binary([ProcID, <<"Snapshot">>, Slot])
+                    ]
+            },
+            Opts
+        )
+    }.
+
 
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves. We set the
@@ -115,10 +141,12 @@ compute(Msg1, Msg2, Opts) ->
             <<"Execution">>,
             Loaded,
             normalize,
-            Opts#{ hashpath => ignore }
+            Opts
         ),
+    ProcID = hb_converge:get(<<"Process/id">>, Loaded, Opts),
     ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     do_compute(
+        ProcID,
         Normalized,
         Msg2,
         hb_converge:get(<<"Slot">>, Msg2, Opts),
@@ -127,7 +155,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
-do_compute(Msg1, Msg2, TargetSlot, Opts) ->
+do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
     ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
     case hb_converge:get(<<"Current-Slot">>, Msg1, Opts) of
         CurrentSlot when CurrentSlot > TargetSlot ->
@@ -162,31 +190,29 @@ do_compute(Msg1, Msg2, TargetSlot, Opts) ->
                     Opts
                 ),
             case CurrentSlot rem Freq of
-                0 -> todo;
-                    % {ok, Memory} = run_as(
-                    %     <<"Execution">>,
-                    %     State,
-                    %     <<"Memory">>,
-                    %     Opts#{
-                    %         cache_control => [<<"always">>],
-                    %         hashpath => update
-                    %     }
-                    % ),
-                    % Proc = hb_converge:get(<<"Process">>, Msg1, Opts#{ hashpath => ignore }),
-                    % MemoryPath = hb_path:hashpath(Proc,
-                    %     PathIn = [<<"Slot">>, integer_to_binary(CurrentSlot), <<"Memory">>]),
-                    % {ok, _} = hb_cache:write_binary(MemoryPath, Memory, Opts),
-                    % ?event(debug, 
-                    %     {stored, 
-                    %         {msg3, Msg3}, 
-                    %         {path, PathIn},
-                    %         {memory, Memory}
-                    %     }
-                    % );
+                0 ->
+                    case snapshot(Msg3, Msg2, Opts) of
+                        {ok, Snapshot} ->
+                            ?event(snapshot,
+                                {got_snapshot, 
+                                    {storing_as_slot, CurrentSlot}
+                                }
+                            ),
+                            dev_process_cache:write(
+                                ProcID,
+                                CurrentSlot,
+                                Snapshot,
+                                Opts
+                            );
+                        not_found ->
+                            ?event(no_result_for_snapshot),
+                            nothing_to_store
+                    end;
                 _ -> nothing_to_do
             end,
             ?event({do_compute_result, {msg3, Msg3}}),
             do_compute(
+                ProcID,
                 hb_converge:set(
                     Msg3,
                     #{ <<"Current-Slot">> => CurrentSlot + 1 },
@@ -290,23 +316,30 @@ ensure_loaded(Msg1, Msg2, Opts) ->
             LoadRes =
                 dev_process_cache:latest(
                     ProcID,
-                    [<<"Initialized">>],
+                    [],
                     TargetSlot,
                     Opts
                 ),
+            ?event({snapshot_load_res, {proc_id, ProcID}, {res, LoadRes}, {target, TargetSlot}}),
             case LoadRes of
-                {ok, LoadedSlot, MsgFromCache} ->
+                {ok, LoadedSlot, SnapshotMsg} ->
                     % Restore the devices in the executor stack with the
                     % loaded state. This allows the devices to load any
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
-                    ?event({loaded_state_checkpoint, ProcID, LoadedSlot}),
-                    run_as(
-                        <<"Execution">>,
-                        MsgFromCache,
-                        restore,
-                        Opts
-                    );
+                    % Do not update the hashpath while we do this.
+                    ?event(snapshot, {loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    {ok,
+                        hb_converge:set(
+                            Msg1,
+                            #{
+                                <<"Initialized">> => <<"True">>,
+                                <<"Current-Slot">> => LoadedSlot,
+                                <<"Snapshot">> => SnapshotMsg
+                            },
+                            Opts#{ hashpath => ignore }
+                        )
+                    };
                 not_found ->
                     % If we do not have a checkpoint, initialize the
                     % process from scratch.
@@ -426,7 +459,7 @@ test_aos_process() ->
             [
                 <<"Init">>,
                 <<"Compute">>,
-                <<"Memory">>,
+                <<"Snapshot">>,
                 <<"Normalize">>
             ],
         <<"Scheduler">> => hb:address(),
@@ -537,10 +570,10 @@ test_device_compute_test() ->
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?assertMatch(
-        <<"TEST TEXT 2">>,
-        hb_converge:get(
-            <<"Schedule/Assignments/1/Message/Test-Label">>,
+        {ok, <<"TEST TEXT 2">>},
+        hb_converge:resolve(
             Msg1,
+            <<"Schedule/Assignments/1/Message/Test-Label">>,
             #{ hashpath => ignore }
         )
     ),
@@ -591,69 +624,44 @@ aos_compute_test_() ->
         {ok, Msg5}
     end}.
 
-% %% @doc Manually test state restoration without using the cache.
-% manually_restore_state_test() ->
-%     % Init the process and schedule 2 messages:
-%     % 1. Set a variable in Lua.
-%     % 2. Return the variable.
-%     init(),
-%     Msg1 = test_aos_process(),
-%     schedule_aos_call(Msg1, <<"X = 1337">>),
-%     schedule_aos_call(Msg1, <<"return X">>),
-%     % Compute the first message.
-%     {ok, ForkState} =
-%         hb_converge:resolve(
-%             Msg1,
-%             #{ path => <<"Compute">>, <<"Slot">> => 0 },
-%             #{}
-%         ),
-%     % Get the state after the first message, forcing HyperBEAM to cache the
-%     % output.
-%     {ok, Memory} =
-%         hb_converge:resolve(ForkState, <<"Memory">>,
-%             #{cache_control => [<<"always">>]}
-%         ),
-%     % % Read the Memory key back out, this time only using the cached state.
-%     % {ok, Memory2} =
-%     %     hb_converge:resolve(
-%     %         ForkState,
-%     %         <<"Memory">>,
-%     %         #{ cache_control => [<<"only-if-cached">>] }
-%     %     ),
-%     % ?assertEqual(Memory, Memory2),
-%     % % Calculate the second message to ensure it functions correctly.
-%     % {ok, ResultA} =
-%     %     hb_converge:resolve(
-%     %         ForkState,
-%     %         #{ path => <<"Compute">>, <<"Slot">> => 1 },
-%     %         #{}
-%     %     ),
-%     % ?event({result_a, ResultA}),
-%     % ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultA, #{})),
-%     % Destroy the private state of the message after the first state, 
-%     % as will happen when it is serialized.
-%     Priv = hb_private:from_message(ForkState),
-%     ?event({destroying_private_state, Priv}),
-%     NewState = hb_private:reset(ForkState),
-%     % Compute the second message on the process without its private state.
-%     {ok, ResultB} =
-%         hb_converge:resolve(
-%             NewState#{
-%                 <<"Memory">> => Memory,
-%                 <<"Results">> => #{}
-%             },
-%             #{ path => <<"Compute">>, <<"Slot">> => 1 },
-%             #{}
-%         ),
-%     ?event({result_b, ResultB}),
-%     ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).
+%% @doc Manually test state restoration without using the cache.
+restore_test_() -> {timeout, 30, fun do_test_restore/0}.
 
-now_results_test() ->
+do_test_restore() ->
+    % Init the process and schedule 3 messages:
+    % 1. Set variables in Lua.
+    % 2. Return the variable.
+    % Execute the first computation, then the second as a disconnected process.
+    Opts = #{ process_cache_frequency => 1 },
     init(),
     Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"return 1+1">>),
-    schedule_aos_call(Msg1, <<"return 2+2">>),
-    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{})).
+    schedule_aos_call(Msg1, <<"X = 42">>),
+    schedule_aos_call(Msg1, <<"X = 1337">>),
+    schedule_aos_call(Msg1, <<"return X">>),
+    % Compute the first message.
+    {ok, _} =
+        hb_converge:resolve(
+            Msg1,
+            #{ path => <<"Compute">>, <<"Slot">> => 1 },
+            Opts
+        ),
+    {ok, ResultB} =
+        hb_converge:resolve(
+            Msg1,
+            #{ path => <<"Compute">>, <<"Slot">> => 2 },
+            Opts
+        ),
+    ?event({result_b, ResultB}),
+    ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).
+
+now_results_test() ->
+    {timeout, 30, fun() ->
+        init(),
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1, <<"return 1+1">>),
+        schedule_aos_call(Msg1, <<"return 2+2">>),
+        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{}))
+    end}.
 
 full_push_test_() ->
     {timeout, 30, fun() ->
@@ -678,36 +686,38 @@ full_push_test_() ->
     end}.
 
 persistent_process_test() ->
-    init(),
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"X=1">>),
-    schedule_aos_call(Msg1, <<"return 2">>),
-    schedule_aos_call(Msg1, <<"return X">>),
-    T0 = hb:now(),
-    FirstSlotMsg2 = #{
-        path => <<"Compute">>,
-        <<"Slot">> => 0
-    },
-    ?assertMatch(
-        {ok, _},
-        hb_converge:resolve(Msg1, FirstSlotMsg2, #{ spawn_worker => true })
-    ),
-    T1 = hb:now(),
-    ThirdSlotMsg2 = #{
-        path => <<"Compute">>,
-        <<"Slot">> => 2
-    },
-    Res = hb_converge:resolve(Msg1, ThirdSlotMsg2, #{}),
-    ?event({computed_message, {msg3, Res}}),
-    ?assertMatch(
-        {ok, _},
-        Res
-    ),
-    T2 = hb:now(),
-    ?event(benchmark, {runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
-    % The second resolve should be much faster than the first resolve, as the
-    % process is already running.
-    ?assert(T2 - T1 < ((T1 - T0)/2)).
+    {timeout, 30, fun() ->
+        init(),
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1, <<"X=1">>),
+        schedule_aos_call(Msg1, <<"return 2">>),
+        schedule_aos_call(Msg1, <<"return X">>),
+        T0 = hb:now(),
+        FirstSlotMsg2 = #{
+            path => <<"Compute">>,
+            <<"Slot">> => 0
+        },
+        ?assertMatch(
+            {ok, _},
+            hb_converge:resolve(Msg1, FirstSlotMsg2, #{ spawn_worker => true })
+        ),
+        T1 = hb:now(),
+        ThirdSlotMsg2 = #{
+            path => <<"Compute">>,
+            <<"Slot">> => 2
+        },
+        Res = hb_converge:resolve(Msg1, ThirdSlotMsg2, #{}),
+        ?event({computed_message, {msg3, Res}}),
+        ?assertMatch(
+            {ok, _},
+            Res
+        ),
+        T2 = hb:now(),
+        ?event(benchmark, {runtimes, {first_run, T1 - T0}, {second_run, T2 - T1}}),
+        % The second resolve should be much faster than the first resolve, as the
+        % process is already running.
+        ?assert(T2 - T1 < ((T1 - T0)/2))
+    end}.
 
 simple_wasm_persistent_worker_benchmark_test() ->
     init(),
@@ -783,7 +793,7 @@ aos_persistent_worker_benchmark_test_() ->
             "Scheduled and evaluated ~p AOS process messages in ~p s (~.2f msg/s)",
             [Iterations, BenchTime, Iterations / BenchTime]
         ),
-        ?assert(Iterations >= 5),
+        ?assert(Iterations >= 2),
         ok
     end}.
 

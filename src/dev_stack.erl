@@ -204,6 +204,7 @@ transform(Msg1, Key, Opts) ->
                         Msg1,
 						#{
 							<<"Device">> => DevMsg,
+                            <<"Device-Key">> => Key,
                             <<"Input-Prefix">> =>
                                 hb_converge:get(
                                     [<<"Input-Prefixes">>, Key],
@@ -276,6 +277,7 @@ resolve_fold(Message1, Message2, Opts) ->
                             undefined,
                             Opts
                         ),
+                    <<"Device-Key">> => unset,
                     <<"Device-Stack-Previous">> => unset,
                     <<"Pass">> => StartingPassValue
                 },
@@ -336,9 +338,9 @@ resolve_map(Message1, Message2, Opts) ->
         hb_converge:get(
             <<"Device-Stack">>,
             {as, dev_message, Message1},
-            Opts#{ hashpath => ignore }
+            Opts
         ),
-    {ok,
+    Res = {ok,
         maps:filtermap(
             fun(Key, _Dev) ->
                 {ok, OrigWithDev} = transform(Message1, Key, Opts),
@@ -347,9 +349,10 @@ resolve_map(Message1, Message2, Opts) ->
                     _ -> false
                 end
             end,
-            maps:without([hashpath], DevKeys)
+            maps:without(?CONVERGE_KEYS, hb_converge:ensure_message(DevKeys))
         )
-    }.
+    },
+    Res.
 
 %% @doc Helper to increment the pass number.
 increment_pass(Message, Opts) ->
