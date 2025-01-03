@@ -58,7 +58,7 @@
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency` option.
--define(DEFAULT_CACHE_FREQ, 1).
+-define(DEFAULT_CACHE_FREQ, 10).
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1) ->
@@ -193,9 +193,8 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 0 ->
                     case snapshot(Msg3, Msg2, Opts) of
                         {ok, Snapshot} ->
-                            ?event(debug,
+                            ?event(snapshot,
                                 {got_snapshot, 
-                                    {snapshot, Snapshot},
                                     {storing_as_slot, CurrentSlot}
                                 }
                             ),
@@ -206,7 +205,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                                 Opts
                             );
                         not_found ->
-                            ?event(debug, no_result_for_memory),
+                            ?event(no_result_for_snapshot),
                             nothing_to_store
                     end;
                 _ -> nothing_to_do
@@ -321,7 +320,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     TargetSlot,
                     Opts
                 ),
-            ?event(debug, {snapshot_load_res, {proc_id, ProcID}, {res, LoadRes}, {target, TargetSlot}}),
+            ?event({snapshot_load_res, {proc_id, ProcID}, {res, LoadRes}, {target, TargetSlot}}),
             case LoadRes of
                 {ok, LoadedSlot, SnapshotMsg} ->
                     % Restore the devices in the executor stack with the
@@ -329,7 +328,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this.
-                    ?event(debug, {loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    ?event(snapshot, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     {ok,
                         hb_converge:set(
                             Msg1,
@@ -571,8 +570,8 @@ test_device_compute_test() ->
     schedule_test_message(Msg1, <<"TEST TEXT 1">>),
     schedule_test_message(Msg1, <<"TEST TEXT 2">>),
     ?assertMatch(
-        <<"TEST TEXT 2">>,
-        hb_converge:get(
+        {ok, <<"TEST TEXT 2">>},
+        hb_converge:resolve(
             <<"Schedule/Assignments/1/Message/Test-Label">>,
             Msg1,
             #{ hashpath => ignore }
@@ -633,23 +632,24 @@ do_test_restore() ->
     % 1. Set variables in Lua.
     % 2. Return the variable.
     % Execute the first computation, then the second as a disconnected process.
+    Opts = #{ process_cache_frequency => 1 },
     init(),
     Msg1 = test_aos_process(),
     schedule_aos_call(Msg1, <<"X = 42">>),
     schedule_aos_call(Msg1, <<"X = 1337">>),
     schedule_aos_call(Msg1, <<"return X">>),
     % Compute the first message.
-    {ok, ForkState} =
+    {ok, _} =
         hb_converge:resolve(
             Msg1,
             #{ path => <<"Compute">>, <<"Slot">> => 1 },
-            #{}
+            Opts
         ),
     {ok, ResultB} =
         hb_converge:resolve(
             Msg1,
             #{ path => <<"Compute">>, <<"Slot">> => 2 },
-            #{}
+            Opts
         ),
     ?event({result_b, ResultB}),
     ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).

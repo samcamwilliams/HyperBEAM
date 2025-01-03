@@ -215,7 +215,6 @@ store_read(Path, Store, Opts) ->
                         no_viable_store ->
                             {ok, Binary};
                         {ok, Type} ->
-                            ?event(debug, {decoding, {key, Key}, {type, Type}, {binary, Binary}}),
                             {ok, hb_codec_converge:decode_value(Type, Binary)}
                     end;
                 _ ->

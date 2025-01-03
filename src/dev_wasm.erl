@@ -195,7 +195,7 @@ normalize(RawM1, M2, Opts) ->
                         not_found -> [];
                         Key -> [Key]
                     end,
-                ?event(debug,
+                ?event(snapshot,
                     {no_instance_attempting_to_get_snapshot,
                         {msg1, RawM1}, {device_key, DeviceKey}
                     }
@@ -209,21 +209,20 @@ normalize(RawM1, M2, Opts) ->
                 case Memory of
                     not_found -> throw({error, no_wasm_instance_or_});
                     State ->
-                        ?event(debug, {state_found, {state, State}}),
                         {ok, M1} = init(RawM1, State, Opts),
                         Res = hb_beamr:deserialize(instance(M1, M2, Opts), State),
-                        ?event(debug, {wasm_deserialized, {result, Res}}),
+                        ?event(snapshot, {wasm_deserialized, {result, Res}}),
                         M1
                 end;
             _ ->
-                ?event(debug, wasm_instance_found_not_deserializing),
+                ?event(wasm_instance_found_not_deserializing),
                 RawM1
         end,
     dev_message:set(M3, #{ <<"Snapshot">> => unset }, Opts).
 
 %% @doc Serialize the WASM state to a binary.
 snapshot(M1, M2, Opts) ->
-    ?event(debug, generating_snapshot),
+    ?event(snapshot, generating_snapshot),
     Instance = instance(M1, M2, Opts),
     {ok, Serialized} = hb_beamr:serialize(Instance),
     {ok,
