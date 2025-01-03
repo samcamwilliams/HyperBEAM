@@ -1,5 +1,5 @@
 -module(dev_test).
--export([info/1, test_func/1, compute/3, init/3, restore/3, mul/2]).
+-export([info/1, test_func/1, compute/3, init/3, restore/3, snapshot/3, mul/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -67,6 +67,10 @@ mul(Msg1, Msg2) ->
     State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
     {ok, #{ state => State, results => [Arg1 * Arg2] }}.
+
+%% @doc Do nothing when asked to snapshot.
+snapshot(_Msg1, _Msg2, _Opts) ->
+    {ok, #{}}.
 
 %%% Tests
 
