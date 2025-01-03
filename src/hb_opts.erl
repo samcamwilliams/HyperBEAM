@@ -57,6 +57,7 @@ config() ->
                 <<"WASM-64/1.0">> => dev_wasm,
                 <<"WASI/1.0">> => dev_wasi,
                 <<"JSON-Iface/1.0">> => dev_json_iface,
+                <<"Emscripten/1.0">> => dev_emscripten,
                 <<"Cron">> => dev_cron,
                 <<"Deduplicate">> => dev_dedup,
                 <<"PODA">> => dev_poda,

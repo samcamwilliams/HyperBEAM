@@ -129,16 +129,16 @@ stop(WASM) when is_pid(WASM) ->
     ok.
 
 %% @doc Call a function in the WASM executor (see moduledoc for more details).
-call(Port, FunctionName, Args) ->
-    {ok, Res, _} = call(Port, FunctionName, Args, fun stub/3),
+call(PID, FunctionName, Args) ->
+    {ok, Res, _} = call(PID, FunctionName, Args, fun stub/3),
     {ok, Res}.
-call(Port, FunctionName, Args, ImportFun) ->
-    call(Port, FunctionName, Args, ImportFun, #{}).
-call(Port, FunctionName, Args, ImportFun, StateMsg) ->
-    call(Port, FunctionName, Args, ImportFun, StateMsg, #{}).
-call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
+call(PID, FunctionName, Args, ImportFun) ->
+    call(PID, FunctionName, Args, ImportFun, #{}).
+call(PID, FunctionName, Args, ImportFun, StateMsg) ->
+    call(PID, FunctionName, Args, ImportFun, StateMsg, #{}).
+call(PID, FunctionName, Args, ImportFun, StateMsg, Opts)
         when is_binary(FunctionName) ->
-    call(Port, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
+    call(PID, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
 call(WASM, FunctionName, Args, ImportFun, StateMsg, Opts) 
         when is_pid(WASM)
         andalso is_list(FunctionName)
