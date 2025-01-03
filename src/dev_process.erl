@@ -196,12 +196,12 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                             ?event(debug,
                                 {got_snapshot, 
                                     {snapshot, Snapshot},
-                                    {storing_as_slot, CurrentSlot + 1}
+                                    {storing_as_slot, CurrentSlot}
                                 }
                             ),
                             dev_process_cache:write(
                                 ProcID,
-                                CurrentSlot + 1,
+                                CurrentSlot,
                                 Snapshot,
                                 Opts
                             );

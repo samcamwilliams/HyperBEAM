@@ -21,7 +21,7 @@ write(ProcID, Slot, Msg, Opts) ->
     {ok, Root} = hb_cache:write(Msg, Opts),
     % Link the item to the path in the store by slot number.
     SlotNumPath = path(ProcID, Slot, Opts),
-    ok = hb_cache:link(Root, SlotNumPath, Opts),
+    hb_cache:link(Root, SlotNumPath, Opts),
     % Link the item to the message ID path in the store.
     MsgIDPath =
         path(

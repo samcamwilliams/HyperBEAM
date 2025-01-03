@@ -352,7 +352,6 @@ resolve_map(Message1, Message2, Opts) ->
             maps:without(?CONVERGE_KEYS, hb_converge:ensure_message(DevKeys))
         )
     },
-    ?event(debug, {map_res, Res}, Opts),
     Res.
 
 %% @doc Helper to increment the pass number.
