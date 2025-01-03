@@ -19,7 +19,7 @@
 %%% 
 %%% Where '_vjj' represents the type spec of the function.
 -module(dev_emscripten).
--export([info/1, init/1]).
+-export([info/1, init/3]).
 
 info(_) ->
     #{

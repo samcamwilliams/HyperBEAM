@@ -3,7 +3,7 @@
 compile:
 	rebar3 compile
 
-WAMR_VERSION = 2.1.2
+WAMR_VERSION = 2.2.0
 WAMR_DIR = _build/wamr
 
 # commented out to remove NFR blocking commits
@@ -51,6 +51,7 @@ $(WAMR_DIR):
 		--single-branch
 
 $(WAMR_DIR)/lib/libvmlib.a: $(WAMR_DIR)
+	sed -i '742a tbl_inst->is_table64 = 1;' ./_build/wamr/core/iwasm/aot/aot_runtime.c; \
 	cmake \
 		$(WAMR_FLAGS) \
 		-S $(WAMR_DIR) \
@@ -62,11 +63,11 @@ $(WAMR_DIR)/lib/libvmlib.a: $(WAMR_DIR)
 		-DWAMR_DISABLE_HW_BOUND_CHECK=1 \
 		-DWAMR_BUILD_EXCE_HANDLING=1 \
 		-DWAMR_BUILD_SHARED_MEMORY=0 \
-		-DWAMR_BUILD_AOT=0 \
+		-DWAMR_BUILD_AOT=1 \
 		-DWAMR_BUILD_FAST_INTERP=0 \
 		-DWAMR_BUILD_INTERP=1 \
 		-DWAMR_BUILD_JIT=0
-	make -C $(WAMR_DIR)/lib
+	make -C $(WAMR_DIR)/lib -j8
 
 # $(GITHOOKS_DIR)/_/setup:
 #	@sh ./$(GITHOOKS_DIR)/_/install.sh
