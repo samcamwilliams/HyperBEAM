@@ -572,8 +572,8 @@ test_device_compute_test() ->
     ?assertMatch(
         {ok, <<"TEST TEXT 2">>},
         hb_converge:resolve(
-            <<"Schedule/Assignments/1/Message/Test-Label">>,
             Msg1,
+            <<"Schedule/Assignments/1/Message/Test-Label">>,
             #{ hashpath => ignore }
         )
     ),
