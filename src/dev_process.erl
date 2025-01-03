@@ -608,59 +608,61 @@ aos_compute_test_() ->
     end}.
 
 %% @doc Manually test state restoration without using the cache.
-manually_restore_state_test() ->
-    % Init the process and schedule 2 messages:
-    % 1. Set a variable in Lua.
-    % 2. Return the variable.
-    init(),
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"X = 1337">>),
-    schedule_aos_call(Msg1, <<"return X">>),
-    % Compute the first message.
-    {ok, ForkState} =
-        hb_converge:resolve(
-            Msg1,
-            #{ path => <<"Compute">>, <<"Slot">> => 0 },
-            #{}
-        ),
-    % Get the state after the first message, forcing HyperBEAM to cache the
-    % output.
-    {ok, Snapshot} = hb_converge:resolve(ForkState, <<"Snapshot">>, #{}),
-    ?event(debug, {memory_after_first_message, Snapshot}),
-    % % Read the Memory key back out, this time only using the cached state.
-    % {ok, Memory2} =
-    %     hb_converge:resolve(
-    %         ForkState,
-    %         <<"Snapshot">>,
-    %         #{ cache_control => [<<"only-if-cached">>] }
-    %     ),
-    % ?assertEqual(Memory, Memory2),
-    % % Calculate the second message to ensure it functions correctly.
-    % {ok, ResultA} =
-    %     hb_converge:resolve(
-    %         ForkState,
-    %         #{ path => <<"Compute">>, <<"Slot">> => 1 },
-    %         #{}
-    %     ),
-    % ?event({result_a, ResultA}),
-    % ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultA, #{})),
-    % Destroy the private state of the message after the first state, 
-    % as will happen when it is serialized.
-    Priv = hb_private:from_message(ForkState),
-    ?event({destroying_private_state, Priv}),
-    NewState = hb_private:reset(ForkState),
-    % Compute the second message on the process without its private state.
-    {ok, ResultB} =
-        hb_converge:resolve(
-            NewState#{
-                <<"Snapshot">> => Snapshot,
-                <<"Results">> => #{}
-            },
-            #{ path => <<"Compute">>, <<"Slot">> => 1 },
-            #{}
-        ),
-    ?event({result_b, ResultB}),
-    ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).
+manually_restore_state_test_() ->
+    {timeout, 30, fun() ->
+        % Init the process and schedule 2 messages:
+        % 1. Set a variable in Lua.
+        % 2. Return the variable.
+        init(),
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1, <<"X = 1337">>),
+        schedule_aos_call(Msg1, <<"return X">>),
+        % Compute the first message.
+        {ok, ForkState} =
+            hb_converge:resolve(
+                Msg1,
+                #{ path => <<"Compute">>, <<"Slot">> => 0 },
+                #{}
+            ),
+        % Get the state after the first message, forcing HyperBEAM to cache the
+        % output.
+        {ok, Snapshot} = hb_converge:resolve(ForkState, <<"Snapshot">>, #{}),
+        ?event(debug, {memory_after_first_message, Snapshot}),
+        % % Read the Memory key back out, this time only using the cached state.
+        % {ok, Memory2} =
+        %     hb_converge:resolve(
+        %         ForkState,
+        %         <<"Snapshot">>,
+        %         #{ cache_control => [<<"only-if-cached">>] }
+        %     ),
+        % ?assertEqual(Memory, Memory2),
+        % % Calculate the second message to ensure it functions correctly.
+        % {ok, ResultA} =
+        %     hb_converge:resolve(
+        %         ForkState,
+        %         #{ path => <<"Compute">>, <<"Slot">> => 1 },
+        %         #{}
+        %     ),
+        % ?event({result_a, ResultA}),
+        % ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultA, #{})),
+        % Destroy the private state of the message after the first state, 
+        % as will happen when it is serialized.
+        Priv = hb_private:from_message(ForkState),
+        ?event({destroying_private_state, Priv}),
+        NewState = hb_private:reset(ForkState),
+        % Compute the second message on the process without its private state.
+        {ok, ResultB} =
+            hb_converge:resolve(
+                NewState#{
+                    <<"Snapshot">> => Snapshot,
+                    <<"Results">> => #{}
+                },
+                #{ path => <<"Compute">>, <<"Slot">> => 1 },
+                #{}
+            ),
+        ?event({result_b, ResultB}),
+        ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{}))
+        end}.
 
 now_results_test() ->
     init(),

@@ -33,6 +33,14 @@ maybe_store(Msg1, Msg2, Msg3, Opts) ->
 %%      `no_cache`:       If set, the cached values are never used. Returns
 %%                        `continue` to the caller.
 maybe_lookup(Msg1, Msg2, Opts) ->
+    case exec_likely_faster_heuristic(Msg1, Msg2, Opts) of
+        true ->
+            ?event(caching, {skip_cache_check, exec_likely_faster_heuristic}),
+            {continue, Msg1, Msg2};
+        false -> lookup(Msg1, Msg2, Opts)
+    end.
+
+lookup(Msg1, Msg2, Opts) ->
     case derive_cache_settings([Msg1, Msg2], Opts) of
         #{ lookup := false } -> {continue, Msg1, Msg2};
         Settings = #{ lookup := true } ->
@@ -137,6 +145,17 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
                 <<"Necessary messages not found in cache.">>
         }
     }.
+
+%% @doc Determine whether we are likely to be faster looking up the result in
+%% our cache (hoping we have it), or executing it directly.
+exec_likely_faster_heuristic(Msg1, #{ path := Key }, Opts) ->
+    % For now, just check whether the key is explicitly in the map. That is 
+    % a good signal that we will likely be asked by the device to grab it.
+    % If we have `only-if-cached` in the opts, we always force lookup, too.
+    case specifiers_to_cache_settings(maps:get(cache_control, Opts, [])) of
+        #{ only_if_cached := true } -> false;
+        _ -> maps:is_key(Key, Msg1)
+    end.
 
 %% @doc Derive cache settings from a series of option sources and the opts,
 %% honoring precidence order. The Opts is used as the first source. Returns a
