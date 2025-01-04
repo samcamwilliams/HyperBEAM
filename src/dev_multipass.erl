@@ -2,20 +2,26 @@
 %%% reached. This is useful for certain types of stacks that need various
 %%% execution passes to be completed in sequence across devices.
 -module(dev_multipass).
--export([init/3, compute/3]).
+-export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
 
-init(M1, _M2, _Opts) ->
-    {ok, M1}.
+info(_M1) ->
+    #{
+        handler => fun handle/4
+    }.
 
-compute(Msg1, _Msg2, Opts) ->
-    Passes = hb_converge:get(<<"Passes">>, Msg1, 1, Opts),
-    Pass = hb_converge:get(<<"Pass">>, Msg1, 1, Opts),
+%% @doc Forward the keys function to the message device, handle all others
+%% with deduplication. We only act on the first pass.
+handle(keys, M1, _M2, _Opts) ->
+    dev_message:keys(M1);
+handle(set, M1, M2, Opts) ->
+    dev_message:set(M1, M2, Opts);
+handle(_Key, M1, _M2, Opts) ->
+    Passes = hb_converge:get(<<"Passes">>, {as, dev_message, M1}, 1, Opts),
+    Pass = hb_converge:get(<<"Pass">>, {as, dev_message, M1}, 1, Opts),
     case Pass < Passes of
-        true ->
-            {pass, Msg1};
-        false ->
-            {ok, Msg1}
+        true -> {pass, M1};
+        false -> {ok, M1}
     end.
 
 %%% Tests

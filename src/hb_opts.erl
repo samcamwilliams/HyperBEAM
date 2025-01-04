@@ -23,7 +23,7 @@ config() ->
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => aggressive,
+        scheduling_mode => local_confirmation,
         %% Compute mode: Determines whether the CU should attempt to execute
         %% more messages on a process after it has returned a result.
         %% Options: aggressive, lazy
@@ -57,8 +57,8 @@ config() ->
                 <<"WASM-64/1.0">> => dev_wasm,
                 <<"WASI/1.0">> => dev_wasi,
                 <<"JSON-Iface/1.0">> => dev_json_iface,
+                <<"Dedup/1.0">> => dev_dedup,
                 <<"Cron">> => dev_cron,
-                <<"Deduplicate">> => dev_dedup,
                 <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
                 <<"Push">> => dev_mu,

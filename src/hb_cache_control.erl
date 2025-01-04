@@ -154,7 +154,7 @@ exec_likely_faster_heuristic(Msg1, #{ path := Key }, Opts) ->
     % If we have `only-if-cached` in the opts, we always force lookup, too.
     case specifiers_to_cache_settings(maps:get(cache_control, Opts, [])) of
         #{ only_if_cached := true } -> false;
-        _ -> maps:is_key(Key, Msg1)
+        _ -> is_map(Msg1) andalso maps:is_key(Key, Msg1)
     end.
 
 %% @doc Derive cache settings from a series of option sources and the opts,

@@ -94,6 +94,8 @@
 %%% resulting HashPath remains correct and verifiable.
 -module(dev_stack).
 -export([info/1, router/4, prefix/3, input_prefix/3, output_prefix/3]).
+%%% Test exports
+-export([generate_append_device/1]).
 -include_lib("eunit/include/eunit.hrl").
 
 -include("include/hb.hrl").
@@ -192,6 +194,9 @@ transform(Msg1, Key, Opts) ->
         not_found -> throw({error, no_valid_device_stack});
         StackMsg ->
 			% Find the requested key in the device stack.
+            % TODO: Should we use `as dev_message` here? After the first transform
+            % of a fold (for example), the message is no longer a stack, so its 
+            % `GET` behavior may be different.
 			case hb_converge:resolve(StackMsg, #{ path => Key }, Opts) of
 				{ok, DevMsg} ->
 					% Set the:
@@ -358,7 +363,7 @@ resolve_map(Message1, Message2, Opts) ->
 increment_pass(Message, Opts) ->
     hb_converge:set(
         Message,
-        #{ pass => hb_converge:get(pass, Message, 1, Opts) + 1 },
+        #{ pass => hb_converge:get(<<"Pass">>, {as, dev_message, Message}, 1, Opts) + 1 },
         Opts
     ).
 
