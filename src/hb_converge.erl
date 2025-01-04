@@ -171,18 +171,17 @@ resolve_stage(1, Msg1, Msg2, Opts) ->
         end,
     Head = hb_path:hd(Msg2, Opts),
     FullPath = hb_path:from_message(request, Msg2),
-    RemainingPath = hb_path:tl(FullPath, Opts),
+    case FullPath of
+        undefined ->
+            throw({error, {invalid_path, FullPath, Msg2}});
+        _ -> ok
+    end,
     Msg2UpdatedPriv =
-        Msg2#{
-            priv =>
-                InitialPriv#{
-                    <<"Converge">> =>
-                        #{
-                            <<"Original-Path">> => OriginalPath,
-                            <<"Remaining-Path">> => RemainingPath
-                        }
-                }
-        },
+        hb_path:priv_store_original(
+            Msg2,
+            OriginalPath,
+            hb_path:tl(FullPath, Opts)
+        ),
     resolve_stage(2, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
 resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 2, cache_lookup}, Opts),
@@ -457,8 +456,7 @@ resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
 resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
     % Recurse, or terminate.
-    #{ <<"Converge">> := #{ <<"Remaining-Path">> := RemainingPath } }
-        = hb_private:from_message(Msg2),
+    RemainingPath = hb_path:priv_remaining(Msg2, Opts),
 	case RemainingPath of
 		undefined ->
             % Terminate: We have reached the end of the path.
