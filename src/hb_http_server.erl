@@ -11,6 +11,7 @@
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
 -export([start/0, start/1, allowed_methods/2, init/2]).
+-export([start_test_node/0, start_test_node/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -50,7 +51,7 @@ start(Opts) ->
             ]
         ),
     Res = cowboy:start_clear(
-        ?MODULE,
+        {?MODULE, Port}, 
         [{port, Port}],
         #{
             env => #{dispatch => Dispatcher},
@@ -71,7 +72,7 @@ init(Req, Opts) ->
     ?event({http_result_generated, RawRes}),
     % Sign the transaction if it's not already signed.
     Signed =
-        case hb_message:signers(RawRes) of
+        case hb_opts:get(force_signed, false, Opts) andalso hb_message:signers(RawRes) of
             [] ->
                 hb_message:sign(RawRes, hb_opts:get(wallet, no_wallet, Opts));
             _ -> RawRes
@@ -88,14 +89,13 @@ allowed_methods(Req, State) ->
 
 %%% Tests
 
-test_opts() ->
+test_opts(Opts) ->
     rand:seed(default),
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
     Port = 42000 + rand:uniform(20000),
     Wallet = ar_wallet:new(),
-    ID = ar_wallet:to_address(Wallet),
-    #{
+    Opts#{
         % Generate a random port number between 8000 and 9000.
         port => Port,
         store =>
@@ -108,12 +108,28 @@ test_opts() ->
     }.
 
 %% @doc Test that we can start the server, send a message, and get a response.
-simple_resolve_test() ->
-    application:ensure_all_started(ranch),
-    ServerOpts = test_opts(),
-    Port = hb_opts:get(port, no_port, ServerOpts),
+start_test_node() ->
+    start_test_node(#{}).
+start_test_node(Opts) ->
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        debugger,
+        cowboy,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    ServerOpts = test_opts(Opts),
     start(ServerOpts),
-    URL = <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>,
+    Port = hb_opts:get(port, no_port, ServerOpts),
+    <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
+
+raw_http_access_test() ->
+    URL = start_test_node(),
     TX =
         ar_bundles:serialize(
             hb_message:convert(

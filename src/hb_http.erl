@@ -10,7 +10,7 @@
 -export([reply/2, reply/3]).
 -export([message_to_status/1, req_to_message/2]).
 -include("include/hb.hrl").
--hb_debug(print).
+-include_lib("eunit/include/eunit.hrl").
 
 start() ->
     httpc:set_options([{max_keep_alive_length, 0}]).
@@ -85,7 +85,6 @@ post_binary(URL, Message) ->
 reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, Message) ->
-    ?event(debug, {replying, Status, Message}),
     TX = hb_message:convert(Message, tx, converge, #{}),
     ?event(
         {replying,
@@ -125,3 +124,39 @@ read_body(Req0, Acc) ->
         {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
         {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
+
+%%% Tests
+
+simple_converge_resolve_test() ->
+    URL = hb_http_server:start_test_node(),
+    {ok, Res} =
+        post(
+            URL,
+            #{
+                path => <<"Key1">>,
+                <<"Key1">> =>
+                    #{<<"Key2">> =>
+                        #{
+                            <<"Key3">> => <<"Value2">>
+                        }
+                    }
+            }
+        ),
+    ?event(debug, {res, Res}),
+    ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
+
+unsigned_resolve_benchmark_test() ->
+    BenchTime = 3,
+    URL = hb_http_server:start_test_node(#{force_signed => false}),
+    Iterations = hb:benchmark(
+        fun() ->
+            post(URL,
+                #{path => <<"Key1">>, <<"Key1">> => #{<<"Key2">> => <<"Value1">>}})
+        end,
+        BenchTime
+    ),
+    hb_util:eunit_print(
+        "Resolved ~p messages through Converge via HTTP in ~p seconds (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 1000).
