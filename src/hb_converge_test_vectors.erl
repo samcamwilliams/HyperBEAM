@@ -585,4 +585,4 @@ singleton_resolve_test() ->
         path => <<"Key1">>,
         <<"Key1">> => <<"Value1">>
     },
-    ?assertEqual(<<"Value1">>, hb_converge:resolve(Msg1, #{})).
+    ?assertEqual({ok, <<"Value1">>}, hb_converge:resolve(Msg1, #{})).

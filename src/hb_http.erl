@@ -85,13 +85,13 @@ post_binary(URL, Message) ->
 reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, Message) ->
+    ?event(debug, {replying, Status, Message}),
     TX = hb_message:convert(Message, tx, converge, #{}),
     ?event(
-        {
-            replying,
-            Status,
-            maps:get(path, Req, undefined_path),
-            TX
+        {replying,
+            {status, Status},
+            {path, maps:get(path, Req, undefined_path)},
+            {tx, TX}
         }
     ),
     Req2 = cowboy_req:reply(
@@ -104,13 +104,13 @@ reply(Req, Status, Message) ->
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(Item) ->
-    case lists:keyfind(<<"Status">>, 1, Item#tx.tags) of
-        {_, RawStatus} ->
+    case dev_message:get(<<"Status">>, Item) of
+        {ok, RawStatus} ->
             case is_integer(RawStatus) of
                 true -> RawStatus;
                 false -> binary_to_integer(RawStatus)
             end;
-        false -> 200
+        _ -> 200
     end.
 
 %% @doc Convert a cowboy request to a normalized message.

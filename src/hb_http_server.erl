@@ -10,7 +10,7 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, allowed_methods/2, init/2]).
+-export([start/0, start/1, allowed_methods/2, init/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -21,12 +21,12 @@ start() ->
     start(#{
         store => hb_opts:get(store),
         wallet => hb_opts:get(wallet),
-        port => hb_opts:get(port)
+        port => 8734
     }).
 
 start(Opts) ->
     hb_http:start(),
-    Port = hb_opts:get(port, 8734, Opts),
+    Port = hb_opts:get(port, no_port, Opts),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -67,18 +67,14 @@ init(Req, Opts) ->
     MsgSingleton = hb_http:req_to_message(Req, Opts),
     ?event({executing_msg_from_http, MsgSingleton}),
     % Execute the message through Converge Protocol.
-    RawRes = hb_converge:resolve(MsgSingleton, Opts),
+    {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
     ?event({http_result_generated, RawRes}),
-    % Normalize the response.
-    NormMsg = normalize_response(RawRes),
-    % Transform the message into an ANS-104 transaction.
-    ResTX = hb_message:convert(NormMsg, tx, converge, #{}),
-    NormTX = ar_bundles:normalize(ResTX),
     % Sign the transaction if it's not already signed.
     Signed =
-        case ar_bundles:is_signed(NormTX) of
-            true -> NormTX;
-            false -> ar_bundles:sign_item(NormTX, hb:wallet())
+        case hb_message:signers(RawRes) of
+            [] ->
+                hb_message:sign(RawRes, hb_opts:get(wallet, no_wallet, Opts));
+            _ -> RawRes
         end,
     % Respond to the client.
     hb_http:reply(
@@ -87,26 +83,13 @@ init(Req, Opts) ->
         Signed
     ).
 
-%% @doc Ensure that a `hb_converge:resolve' result is normalized
-%% into a HTTP message.
-normalize_response(RawRes) when not is_tuple(RawRes) ->
-    #{ body => RawRes };
-normalize_response({ok, Message}) ->
-    Message;
-normalize_response(Tuple) when is_tuple(Tuple) ->
-    normalize_response(tuple_to_list(Tuple));
-normalize_response([Status, Body]) ->
-    #{ status => Status, body => Body };
-normalize_response([Status, Body | Details]) ->
-    (normalize_response([Status, Body]))#{ details => Details }.
-
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
 
 %%% Tests
 
 test_opts() ->
-    rand:seed(os:timestamp()),
+    rand:seed(default),
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
     Port = 42000 + rand:uniform(20000),
@@ -126,10 +109,11 @@ test_opts() ->
 
 %% @doc Test that we can start the server, send a message, and get a response.
 simple_resolve_test() ->
+    application:ensure_all_started(ranch),
     ServerOpts = test_opts(),
-    Port = hb_opts:get(port, ServerOpts),
-    hb_http_server:start(ServerOpts),
-    URL = <<"http://localhost:", Port/binary>>,
+    Port = hb_opts:get(port, no_port, ServerOpts),
+    start(ServerOpts),
+    URL = <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>,
     TX =
         ar_bundles:serialize(
             hb_message:convert(
@@ -137,8 +121,8 @@ simple_resolve_test() ->
                     path => <<"Key1">>,
                     <<"Key1">> => #{ <<"Key2">> => <<"Value1">> }
                 },
-                converge,
                 tx,
+                converge,
                 #{}
             )
         ),
