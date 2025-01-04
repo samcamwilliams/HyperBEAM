@@ -41,8 +41,8 @@
 %%% 1. The `hb' and `hb_opts' modules manage the node's configuration, 
 %%%    environment variables, and debugging tools.
 %%% 
-%%% 2. The `hb_http' and `hb_http_router' modules manage all HTTP-related
-%%%    functionality. `hb_http_router' handles turning received HTTP requests
+%%% 2. The `hb_http' and `hb_http_server' modules manage all HTTP-related
+%%%    functionality. `hb_http_server' handles turning received HTTP requests
 %%%    into messages and applying those messages with the appropriate devices.
 %%%    `hb_http' handles making requests and responding with messages. `cowboy'
 %%%    is used to implement the underlying HTTP server.

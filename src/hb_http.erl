@@ -1,16 +1,16 @@
+%%% Hyperbeam's core HTTP request/reply functionality. The functions in this
+%%% module generally take a message request from their caller and return a
+%%% response in message form, as granted by the peer. This module is mostly
+%%% used by hb_client, but can also be used by other modules that need to make
+%%% HTTP requests.
 -module(hb_http).
 -export([start/0]).
 -export([get/1, get/2, get_binary/1]).
 -export([post/2, post/3, post_binary/2]).
 -export([reply/2, reply/3]).
--export([message_to_status/1, req_to_message/1]).
+-export([message_to_status/1, req_to_message/2]).
 -include("include/hb.hrl").
 -hb_debug(print).
-
-%%% Hyperbeam's core HTTP request/reply functionality. The functions in this
-%%% module generally take a message in request and return a response in message
-%%% form. This module is mostly used by hb_client, but can also be used by other
-%%% modules that need to make HTTP requests.
 
 start() ->
     httpc:set_options([{max_keep_alive_length, 0}]).
@@ -20,7 +20,8 @@ start() ->
 get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
     case get_binary(URL) of
-        {ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+        {ok, Res} ->
+            {ok, hb_message:convert(ar_bundles:deserialize(Res), converge, tx, #{})};
         Error -> Error
     end.
 
@@ -50,10 +51,11 @@ post(URL, Message) when not is_binary(Message) ->
             URL
         }
     ),
-    post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
+    post(URL, ar_bundles:serialize(hb_message:convert(Message, tx, #{})));
 post(URL, Message) ->
     case post_binary(URL, Message) of
-        {ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+        {ok, Res} ->
+            {ok, hb_message:convert(ar_bundles:deserialize(Res), converge, tx, #{})};
         Error -> Error
     end.
 
@@ -83,21 +85,19 @@ post_binary(URL, Message) ->
 reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, Message) ->
+    TX = hb_message:convert(Message, tx, converge, #{}),
     ?event(
         {
             replying,
             Status,
             maps:get(path, Req, undefined_path),
-            case is_record(Message, tx) of
-                true -> hb_util:id(Message);
-                false -> data_body
-            end
+            TX
         }
     ),
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
-        hb_message:serialize(Message),
+        ar_bundles:serialize(TX),
         Req
     ),
     {ok, Req2, no_state}.
@@ -114,19 +114,9 @@ message_to_status(Item) ->
     end.
 
 %% @doc Convert a cowboy request to a normalized message.
-req_to_message(Req) ->
-    Method = cowboy_req:method(Req),
-    Path = cowboy_req:path(Req),
+req_to_message(Req, Opts) ->
     {ok, Body} = read_body(Req),
-    QueryTags = cowboy_req:parse_qs(Req),
-    hb_converge:set(
-        #{
-            <<"Method">> => Method,
-            <<"Path">> => Path,
-            <<"Body">> => Body
-        },
-        maps:from_list(QueryTags)
-    ).
+    hb_message:convert(ar_bundles:deserialize(Body), converge, tx, Opts).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
