@@ -66,7 +66,7 @@ post_binary(URL, Message) ->
     case httpc:request(
         post,
         {iolist_to_binary(URL), [], "application/octet-stream", Message},
-        [{timeout, 300}, {connect_timeout, 300}],
+        [{timeout, 100}, {connect_timeout, 100}],
         [{body_format, binary}]
     ) of
         {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->

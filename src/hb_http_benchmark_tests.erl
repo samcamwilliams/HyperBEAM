@@ -113,7 +113,7 @@ parallel_wasm_signed_benchmark_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     Iterations = hb:benchmark(
-        fun(X) ->
+        fun(_) ->
             case hb_http:post(URL, Msg) of
                 {ok, ResMsg} -> 
                     receive after 1 -> ok end,
