@@ -1,26 +1,28 @@
+%%% Hyperbeam's core HTTP request/reply functionality. The functions in this
+%%% module generally take a message request from their caller and return a
+%%% response in message form, as granted by the peer. This module is mostly
+%%% used by hb_client, but can also be used by other modules that need to make
+%%% HTTP requests.
 -module(hb_http).
 -export([start/0]).
 -export([get/1, get/2, get_binary/1]).
 -export([post/2, post/3, post_binary/2]).
 -export([reply/2, reply/3]).
--export([message_to_status/1, req_to_message/1]).
+-export([message_to_status/1, req_to_message/2]).
 -include("include/hb.hrl").
--hb_debug(print).
-
-%%% Hyperbeam's core HTTP request/reply functionality. The functions in this
-%%% module generally take a message in request and return a response in message
-%%% form. This module is mostly used by hb_client, but can also be used by other
-%%% modules that need to make HTTP requests.
+-include_lib("eunit/include/eunit.hrl").
 
 start() ->
-    httpc:set_options([{max_keep_alive_length, 0}]).
+    httpc:set_options([{max_keep_alive_length, 0}]),
+    ok.
 
 %% @doc Gets a URL via HTTP and returns the resulting message in deserialized
 %% form.
 get(Host, Path) -> ?MODULE:get(Host ++ Path).
 get(URL) ->
     case get_binary(URL) of
-        {ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+        {ok, Res} ->
+            {ok, hb_message:convert(ar_bundles:deserialize(Res), converge, tx, #{})};
         Error -> Error
     end.
 
@@ -50,10 +52,11 @@ post(URL, Message) when not is_binary(Message) ->
             URL
         }
     ),
-    post(URL, ar_bundles:serialize(ar_bundles:normalize(Message)));
+    post(URL, ar_bundles:serialize(hb_message:convert(Message, tx, #{})));
 post(URL, Message) ->
     case post_binary(URL, Message) of
-        {ok, Res} -> {ok, ar_bundles:deserialize(Res)};
+        {ok, Res} ->
+            {ok, hb_message:convert(ar_bundles:deserialize(Res), converge, tx, #{})};
         Error -> Error
     end.
 
@@ -63,7 +66,7 @@ post_binary(URL, Message) ->
     case httpc:request(
         post,
         {iolist_to_binary(URL), [], "application/octet-stream", Message},
-        [],
+        [{timeout, 100}, {connect_timeout, 100}],
         [{body_format, binary}]
     ) of
         {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->
@@ -83,50 +86,37 @@ post_binary(URL, Message) ->
 reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, Message) ->
+    TX = hb_message:convert(Message, tx, converge, #{}),
     ?event(
-        {
-            replying,
-            Status,
-            maps:get(path, Req, undefined_path),
-            case is_record(Message, tx) of
-                true -> hb_util:id(Message);
-                false -> data_body
-            end
+        {replying,
+            {status, Status},
+            {path, maps:get(path, Req, undefined_path)},
+            {tx, TX}
         }
     ),
     Req2 = cowboy_req:reply(
         Status,
         #{<<"Content-Type">> => <<"application/octet-stream">>},
-        hb_message:serialize(Message),
+        ar_bundles:serialize(TX),
         Req
     ),
     {ok, Req2, no_state}.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(Item) ->
-    case lists:keyfind(<<"Status">>, 1, Item#tx.tags) of
-        {_, RawStatus} ->
+    case dev_message:get(<<"Status">>, Item) of
+        {ok, RawStatus} ->
             case is_integer(RawStatus) of
                 true -> RawStatus;
                 false -> binary_to_integer(RawStatus)
             end;
-        false -> 200
+        _ -> 200
     end.
 
 %% @doc Convert a cowboy request to a normalized message.
-req_to_message(Req) ->
-    Method = cowboy_req:method(Req),
-    Path = cowboy_req:path(Req),
+req_to_message(Req, Opts) ->
     {ok, Body} = read_body(Req),
-    QueryTags = cowboy_req:parse_qs(Req),
-    hb_converge:set(
-        #{
-            <<"Method">> => Method,
-            <<"Path">> => Path,
-            <<"Body">> => Body
-        },
-        maps:from_list(QueryTags)
-    ).
+    hb_message:convert(ar_bundles:deserialize(Body), converge, tx, Opts).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -135,3 +125,86 @@ read_body(Req0, Acc) ->
         {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
         {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
+
+%%% Tests
+
+simple_converge_resolve_test() ->
+    URL = hb_http_server:start_test_node(),
+    {ok, Res} =
+        post(
+            URL,
+            #{
+                path => <<"Key1">>,
+                <<"Key1">> =>
+                    #{<<"Key2">> =>
+                        #{
+                            <<"Key3">> => <<"Value2">>
+                        }
+                    }
+            }
+        ),
+    ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
+
+wasm_compute_request(ImageFile, Func, Params) ->
+    {ok, Bin} = file:read_file(ImageFile),
+    #{
+        path => <<"Init/Compute/Results">>,
+        device => <<"WASM-64/1.0">>,
+        <<"WASM-Function">> => Func,
+        <<"WASM-Params">> => Params,
+        <<"Image">> => Bin
+    }.
+
+run_wasm_unsigned_test() ->
+    URL = hb_http_server:start_test_node(#{force_signed => false}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
+    {ok, Res} = post(URL, Msg),
+    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+
+run_wasm_signed_test() ->
+    URL = hb_http_server:start_test_node(#{force_signed => true}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
+    {ok, Res} = post(URL, Msg),
+    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+
+% http_scheduling_test() ->
+%     % We need the rocksdb backend to run for hb_cache module to work
+%     application:ensure_all_started(hb),
+%     pg:start(pg),
+%     <<I1:32/unsigned-integer, I2:32/unsigned-integer, I3:32/unsigned-integer>>
+%         = crypto:strong_rand_bytes(12),
+%     rand:seed(exsplus, {I1, I2, I3}),
+%     URL = hb_http_server:start_test_node(#{force_signed => true}),
+%     Msg1 = dev_scheduler:test_process(),
+%     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
+%     ProcID = hb_util:id(Proc),
+%     {ok, Res} =
+%         hb_converge:resolve(
+%             Msg1,
+%             #{
+%                 path => <<"Append">>,
+%                 <<"Method">> => <<"POST">>,
+%                 <<"Message">> => Proc
+%             },
+%             #{}
+%         ),
+%     MsgX = #{
+%         device => <<"Scheduler/1.0">>,
+%         path => <<"Append">>,
+%         <<"Process">> => Proc,
+%         <<"Message">> =>
+%             #{
+%                 <<"Target">> => ProcID,
+%                 <<"Type">> => <<"Message">>,
+%                 <<"Test-Val">> => 1
+%             }
+%     },
+%     Res = post(URL, MsgX),
+%     ?event(debug, {post_result, Res}),
+%     Msg3 = #{
+%         path => <<"Slot">>,
+%         <<"Method">> => <<"GET">>,
+%         <<"Process">> => ProcID
+%     },
+%     SlotRes = post(URL, Msg3),
+%     ?event(debug, {slot_result, SlotRes}).

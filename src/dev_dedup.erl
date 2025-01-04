@@ -20,18 +20,18 @@ handle(keys, M1, _M2, _Opts) ->
 handle(set, M1, M2, Opts) ->
     dev_message:set(M1, M2, Opts);
 handle(Key, M1, M2, Opts) ->
-    ?event(debug, {dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
+    ?event({dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
     case hb_converge:get(<<"Pass">>, {as, dev_message, M1}, 1, Opts) of
         1 ->
             Msg2ID = hb_converge:get(<<"id">>, M2, Opts),
             Dedup = hb_converge:get(<<"Dedup">>, {as, dev_message, M1}, [], Opts),
-            ?event(debug, {dedup_checking, {existing, Dedup}}),
+            ?event({dedup_checking, {existing, Dedup}}),
             case lists:member(Msg2ID, Dedup) of
                 true ->
-                    ?event(debug, {already_seen, Msg2ID}),
+                    ?event({already_seen, Msg2ID}),
                     {skip, M1};
                 false ->
-                    ?event(debug, {not_seen, Msg2ID}),
+                    ?event({not_seen, Msg2ID}),
                     M3 = hb_converge:set(
                         M1,
                         #{ <<"Dedup">> => [Msg2ID|Dedup] }
@@ -40,7 +40,7 @@ handle(Key, M1, M2, Opts) ->
                     {ok, M3}
             end;
         Pass ->
-            ?event(debug, {multipass_detected, skipping_dedup, {pass, Pass}}),
+            ?event({multipass_detected, skipping_dedup, {pass, Pass}}),
             {ok, M1}
     end.
 

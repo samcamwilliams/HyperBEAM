@@ -578,3 +578,11 @@ list_transform_test(Opts) ->
     ?assertEqual(<<"C">>, hb_converge:get(3, Msg, Opts)),
     ?assertEqual(<<"D">>, hb_converge:get(4, Msg, Opts)),
     ?assertEqual(<<"E">>, hb_converge:get(5, Msg, Opts)).
+
+singleton_resolve_test() ->
+    Msg1 = #{
+        % Should be parsed out and used alone as Msg2:
+        path => <<"Key1">>,
+        <<"Key1">> => <<"Value1">>
+    },
+    ?assertEqual({ok, <<"Value1">>}, hb_converge:resolve(Msg1, #{})).

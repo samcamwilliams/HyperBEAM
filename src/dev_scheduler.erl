@@ -16,10 +16,12 @@
 %%% Converge API functions:
 -export([info/0]).
 %%% Local scheduling functions:
--export([schedule/3]).
+-export([schedule/3, append/3]).
 %%% CU-flow functions:
 -export([slot/3, status/3, next/3]).
 -export([start/0, init/3, end_of_schedule/3, checkpoint/1]).
+%%% Test helper exports:
+-export([test_process/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -44,6 +46,7 @@ info() ->
                 status,
                 next,
                 schedule,
+                append,
                 slot,
                 init,
                 end_of_schedule,
@@ -150,6 +153,11 @@ schedule(Msg1, Msg2, Opts) ->
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
 
+%% @doc Alternate access path for scheduling a message, for situations in which
+%% the user cannot modify the `Method`.
+append(Msg1, Msg2, Opts) ->
+    post_schedule(Msg1, Msg2, Opts).
+
 %% @doc Schedules a new message on the SU.
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
@@ -159,7 +167,8 @@ post_schedule(Msg1, Msg2, Opts) ->
     ?no_prod("Once we have GQL, get the scheduler location record. "
         "For now, we'll just use the address of the wallet."),
     SchedulerLocation =
-        hb_converge:get(<<"Process/Scheduler-Location">>, Msg1, Opts#{ hashpath => ignore }),
+        hb_converge:get(<<"Process/Scheduler-Location">>,
+            Msg1, Opts#{ hashpath => ignore }),
     ProcID = hb_converge:get(id, Proc),
     PID = dev_scheduler_registry:find(ProcID, true),
     #{ wallet := Wallet } = dev_scheduler_server:info(PID),
