@@ -116,7 +116,7 @@ resolve(Msg, Opts) ->
     case Path of
         [ Msg1ID | _Rest ] when ?IS_ID(Msg1ID) ->
             ?event({normalizing_single_message_message_path, Msg}),
-            {ok, Msg1} = hb_cache:read(Msg1ID, Opts),
+            {ok, Msg1} = hb_cache:read(<<"Messages/", Msg1ID/binary>>, Opts),
             resolve(
                 Msg1,
                 hb_path:tl(Msg, Opts),
