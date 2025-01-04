@@ -4,26 +4,34 @@
 %%% items in memory, but at some point it will likely make sense to 
 %%% drop them in the cache.
 -module(dev_dedup).
--export([init/1, compute/3]).
+-export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-init(Msg1) ->
-    {ok, Msg1#{ dedup => [] }}.
+info(M1) ->
+    #{
+        handler => fun handle/4
+    }.
 
-%% @doc On first pass prepare the call, on second pass get the results.
-compute(M1, M2, Opts) ->
-    case hb_converge:get(<<"Pass">>, M1, 1, Opts) of
+%% @doc Forward the keys function to the message device, handle all others
+%% with deduplication. We only act on the first pass.
+handle(keys, M1, _M2, _Opts) ->
+    dev_message:keys(M1);
+handle(set, M1, M2, Opts) ->
+    dev_message:set(M1, M2, Opts);
+handle(Key, M1, M2, Opts) ->
+    ?event(debug, {dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
+    case hb_converge:get(<<"Pass">>, {as, dev_message, M1}, 1, Opts) of
         1 ->
             Msg2ID = hb_converge:get(<<"id">>, M2, Opts),
-            Dedup = hb_converge:get(<<"Dedup">>, M2, [], Opts),
-            ?event({dedup_checking, {existing, Dedup}}),
+            Dedup = hb_converge:get(<<"Dedup">>, {as, dev_message, M1}, [], Opts),
+            ?event(debug, {dedup_checking, {existing, Dedup}}),
             case lists:member(Msg2ID, Dedup) of
                 true ->
-                    ?event({already_seen, Msg2ID}),
+                    ?event(debug, {already_seen, Msg2ID}),
                     {skip, M1};
                 false ->
-                    ?event({not_seen, Msg2ID}),
+                    ?event(debug, {not_seen, Msg2ID}),
                     M3 = hb_converge:set(
                         M1,
                         #{ <<"Dedup">> => [Msg2ID|Dedup] }
@@ -31,68 +39,63 @@ compute(M1, M2, Opts) ->
                     ?event({dedup_updated, M3}),
                     {ok, M3}
             end;
-        _ -> {ok, M1}
+        Pass ->
+            ?event(debug, {multipass_detected, skipping_dedup, {pass, Pass}}),
+            {ok, M1}
     end.
 
 %%% Tests
 
-%% @doc Create a device that uses a stack with an instance of this module,
-%% and a `Test-Device' that is a simple device that just maintains a list
-%% of the `Current-Slot` values it has already seen.
-test_stack() ->
-    #{
-        <<"Device">> => <<"Stack/1.0">>,
-        <<"Device-Stack">> =>
-            [
-                <<"Dedup/1.0">>,
-                #{
-                    <<"Compute">> =>
-                        fun(Msg1, #{ <<"Message">> := Msg2 }, Opts) ->
-                            {ok,
-                                Msg1#{
-                                    <<"Processed">> =>
-                                        [
-                                            Msg2
-                                        |
-                                            hb_converge:get(
-                                                <<"Processed">>,
-                                                Msg1,
-                                                [],
-                                                Opts
-                                            )
-                                        ]
-                                }
-                            }
-                        end
-                }
-            ]
-    }.
-
-assignment_dedup_test() ->
-    % Create a stack with a dedup device and a device that will log the
-    % messages that it has been called upon.
-    Msg1 = test_stack(),
-    % Create 2 messages that will be processed by the stack.
-    Msg2 = #{ 
-        path => <<"Compute">>,
-        <<"Assignment">> => #{ <<"Slot">> => 1 },
-        <<"Message">> => <<"Test-Message-1">> 
-    },
-    Msg3 = #{ 
-        path => <<"Compute">>,
-        <<"Assignment">> => #{ <<"Slot">> => 2 },
-        <<"Message">> => <<"Test-Message-2">> 
-    },
-    % Process each of the message twice through the stack. Ignore hashpath 
-    % due to the explicit device being stored in the list, making a normal
-    % ID generation impossible.
-    {ok, Out1} = hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore }),
-    {ok, Out2} = hb_converge:resolve(Out1, Msg2, #{ hashpath => ignore }),
-    {ok, Out3} = hb_converge:resolve(Out2, Msg3, #{ hashpath => ignore }),
-    {ok, Out4} = hb_converge:resolve(Out3, Msg3, #{ hashpath => ignore }),
-    % Check that each message was seen only once.
+dedup_test() ->
+    % Create a stack with a dedup device and 2 devices that will append to a
+    % `Result` key.
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => <<"Dedup/1.0">>,
+				<<"2">> => dev_stack:generate_append_device(<<"+D2">>),
+				<<"3">> => dev_stack:generate_append_device(<<"+D3">>)
+			},
+		result => <<"INIT">>
+	},
+    % Send the same message twice, with the same binary.
+    {ok, Msg2} = hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg2, #{ path => append, bin => <<"_">> }, #{}),
+    % Send the same message twice, with another binary.
+    {ok, Msg4} = hb_converge:resolve(Msg3, #{ path => append, bin => <<"/">> }, #{}),
+    {ok, Msg5} = hb_converge:resolve(Msg4, #{ path => append, bin => <<"/">> }, #{}),
+    % Ensure that downstream devices have only seen each message once.
     ?assertMatch(
-        {ok, [<<"Test-Message-2">>, <<"Test-Message-1">>]},
-        hb_converge:resolve(Out4, <<"Processed">>, #{})
-    ).
+		#{ result := <<"INIT+D2_+D3_+D2/+D3/">> },
+		Msg5
+	).
 
+dedup_with_multipass_test() ->
+    % Create a stack with a dedup device and 2 devices that will append to a
+    % `Result` key and a `Multipass` device that will repeat the message for 
+    % an additional pass. We want to ensure that Multipass is not hindered by
+    % the dedup device.
+	Msg = #{
+		device => <<"Stack/1.0">>,
+		<<"Device-Stack">> =>
+			#{
+				<<"1">> => <<"Dedup/1.0">>,
+				<<"2">> => dev_stack:generate_append_device(<<"+D2">>),
+				<<"3">> => dev_stack:generate_append_device(<<"+D3">>),
+                <<"4">> => <<"Multipass/1.0">>
+			},
+		result => <<"INIT">>,
+        <<"Passes">> => 2
+	},
+    % Send the same message twice, with the same binary.
+    {ok, Msg2} = hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg2, #{ path => append, bin => <<"_">> }, #{}),
+    % Send the same message twice, with another binary.
+    {ok, Msg4} = hb_converge:resolve(Msg3, #{ path => append, bin => <<"/">> }, #{}),
+    {ok, Msg5} = hb_converge:resolve(Msg4, #{ path => append, bin => <<"/">> }, #{}),
+    % Ensure that downstream devices have only seen each message once.
+    ?assertMatch(
+		#{ result := <<"INIT+D2_+D3_+D2_+D3_+D2/+D3/+D2/+D3/">> },
+		Msg5
+	).
