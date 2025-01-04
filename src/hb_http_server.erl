@@ -60,16 +60,13 @@ start(Opts) ->
             stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
         }
     ),
-    ?event(debug, {cowboy_start_clear, {port, Port}, {res, Res}}),
     Res.
 
 init(Req, Opts) ->
     % Parse the HTTP request into HyerBEAM's message format.
     MsgSingleton = hb_http:req_to_message(Req, Opts),
-    ?event({executing_msg_from_http, MsgSingleton}),
     % Execute the message through Converge Protocol.
     {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
-    ?event({http_result_generated, RawRes}),
     % Sign the transaction if it's not already signed.
     Signed =
         case hb_opts:get(force_signed, false, Opts) andalso hb_message:signers(RawRes) of

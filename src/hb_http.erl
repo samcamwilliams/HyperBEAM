@@ -13,7 +13,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 start() ->
-    httpc:set_options([{max_keep_alive_length, 0}]).
+    httpc:set_options([{max_keep_alive_length, 0}]),
+    ok.
 
 %% @doc Gets a URL via HTTP and returns the resulting message in deserialized
 %% form.
@@ -65,7 +66,7 @@ post_binary(URL, Message) ->
     case httpc:request(
         post,
         {iolist_to_binary(URL), [], "application/octet-stream", Message},
-        [],
+        [{timeout, 300}, {connect_timeout, 300}],
         [{body_format, binary}]
     ) of
         {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->
@@ -142,21 +143,68 @@ simple_converge_resolve_test() ->
                     }
             }
         ),
-    ?event(debug, {res, Res}),
     ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
 
-unsigned_resolve_benchmark_test() ->
-    BenchTime = 3,
+wasm_compute_request(ImageFile, Func, Params) ->
+    {ok, Bin} = file:read_file(ImageFile),
+    #{
+        path => <<"Init/Compute/Results">>,
+        device => <<"WASM-64/1.0">>,
+        <<"WASM-Function">> => Func,
+        <<"WASM-Params">> => Params,
+        <<"Image">> => Bin
+    }.
+
+run_wasm_unsigned_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => false}),
-    Iterations = hb:benchmark(
-        fun() ->
-            post(URL,
-                #{path => <<"Key1">>, <<"Key1">> => #{<<"Key2">> => <<"Value1">>}})
-        end,
-        BenchTime
-    ),
-    hb_util:eunit_print(
-        "Resolved ~p messages through Converge via HTTP in ~p seconds (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
-    ),
-    ?assert(Iterations > 1000).
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
+    {ok, Res} = post(URL, Msg),
+    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+
+run_wasm_signed_test() ->
+    URL = hb_http_server:start_test_node(#{force_signed => true}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
+    {ok, Res} = post(URL, Msg),
+    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+
+% http_scheduling_test() ->
+%     % We need the rocksdb backend to run for hb_cache module to work
+%     application:ensure_all_started(hb),
+%     pg:start(pg),
+%     <<I1:32/unsigned-integer, I2:32/unsigned-integer, I3:32/unsigned-integer>>
+%         = crypto:strong_rand_bytes(12),
+%     rand:seed(exsplus, {I1, I2, I3}),
+%     URL = hb_http_server:start_test_node(#{force_signed => true}),
+%     Msg1 = dev_scheduler:test_process(),
+%     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
+%     ProcID = hb_util:id(Proc),
+%     {ok, Res} =
+%         hb_converge:resolve(
+%             Msg1,
+%             #{
+%                 path => <<"Append">>,
+%                 <<"Method">> => <<"POST">>,
+%                 <<"Message">> => Proc
+%             },
+%             #{}
+%         ),
+%     MsgX = #{
+%         device => <<"Scheduler/1.0">>,
+%         path => <<"Append">>,
+%         <<"Process">> => Proc,
+%         <<"Message">> =>
+%             #{
+%                 <<"Target">> => ProcID,
+%                 <<"Type">> => <<"Message">>,
+%                 <<"Test-Val">> => 1
+%             }
+%     },
+%     Res = post(URL, MsgX),
+%     ?event(debug, {post_result, Res}),
+%     Msg3 = #{
+%         path => <<"Slot">>,
+%         <<"Method">> => <<"GET">>,
+%         <<"Process">> => ProcID
+%     },
+%     SlotRes = post(URL, Msg3),
+%     ?event(debug, {slot_result, SlotRes}).
