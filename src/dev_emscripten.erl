@@ -19,7 +19,14 @@
 %%% 
 %%% Where '_vjj' represents the type spec of the function.
 -module(dev_emscripten).
--export([info/1, init/3]).
+-export([info/1, init/3, router/4]).
+
+
+-include("src/include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+-hb_debug(print).
+
 
 info(_) ->
     #{

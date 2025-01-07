@@ -7,32 +7,49 @@
 #include <time.h>
 #include <pthread.h>
 
+// Structure to represent the response for an import operation
 typedef struct {
-    ErlDrvMutex* response_ready;
-    ErlDrvCond* cond;
-    int ready;
-    char* error_message;
-    ei_term* result_terms;
-    int result_length;
+    ErlDrvMutex* response_ready;    // Mutex to synchronize response readiness
+    ErlDrvCond* cond;               // Condition variable to signal readiness
+    int ready;                       // Flag indicating if the response is ready
+    char* error_message;            // Error message (if any)
+    ei_term* result_terms;          // List of result terms from the import
+    int result_length;              // Length of the result_terms
 } ImportResponse;
 
+// Structure to represent a WASM process instance
 typedef struct {
-    wasm_engine_t* engine;
-    wasm_instance_t* instance;
-    wasm_module_t* module;
-    wasm_store_t* store;
-    ErlDrvPort port;
-    ErlDrvTermData port_term;
-    ErlDrvMutex* is_running;
-    char* current_function;
-    ei_term* current_args;
-    int current_args_length;
-    ImportResponse* current_import;
-    ErlDrvTermData pid;
-    int is_initialized;
-    time_t start_time;
+    wasm_engine_t* engine;          // WASM engine instance
+    wasm_instance_t* instance;      // WASM instance
+    wasm_module_t* module;          // WASM module
+    wasm_store_t* store;            // WASM store
+    ErlDrvPort port;                // Erlang port associated with this process
+    ErlDrvTermData port_term;       // Erlang term representation of the port
+    ErlDrvMutex* is_running;        // Mutex to track if the process is running
+    char* current_function;        // Current function being executed
+    ei_term* current_args;         // Arguments for the current function
+    int current_args_length;       // Length of the current arguments
+    ImportResponse* current_import; // Import response structure
+    ErlDrvTermData pid;            // PID of the Erlang process
+    int is_initialized;            // Flag to check if the process is initialized
+    time_t start_time;             // Start time of the process
 } Proc;
 
+// Structure to represent an import hook
+typedef struct {
+    char* module_name;             // Name of the module
+    char* field_name;              // Name of the field (function)
+    char* signature;               // Function signature
+    Proc* proc;                    // The associated process
+    wasm_func_t* stub_func;        // WASM function pointer for the import
+} ImportHook;
+
+// Structure to represent the request for loading a WASM binary
+typedef struct {
+    void* binary;                  // Binary data for the WASM module
+    long size;                     // Size of the binary
+    Proc* proc;                    // The associated process
+} LoadWasmReq;
 
 // Structure for a common WASM module instance
 typedef struct WASMModuleInstanceCommon {
@@ -70,20 +87,7 @@ struct wasm_func_t {
     WASMFunctionInstanceCommon *func_comm_rt; // Function instance data
 };
 
-typedef struct {
-    char* module_name;
-    char* field_name;
-    char* signature;
-    Proc* proc;
-    wasm_func_t* stub_func;
-} ImportHook;
-
-typedef struct {
-    void* binary;
-    long size;
-    Proc* proc;
-} LoadWasmReq;
-
+// Declare the atoms used in Erlang driver communication
 static ErlDrvTermData atom_ok;
 static ErlDrvTermData atom_error;
 static ErlDrvTermData atom_import;
@@ -399,6 +403,19 @@ static int handle_wasm_function_call(wasm_exec_env_t exec_env, int function_inde
 
     return 0;
 }
+
+
+// Returns the string name corresponding to the wasm type
+const char* get_wasm_type_name(wasm_valkind_t kind) {
+    switch (kind) {
+        case WASM_I32: return "i32";
+        case WASM_I64: return "i64";
+        case WASM_F32: return "f32";
+        case WASM_F64: return "f64";
+        default: return "unknown";
+    }
+}
+
 
 // Main function to invoke an exported function from the WASM instance
 static int invoke_exported_function(Proc* proc, const char *field_name, const wasm_val_vec_t* input_args, wasm_val_vec_t* output_results) {
