@@ -9,7 +9,7 @@
 %%% manager.
 
 -module(hb_persistent).
--export([find_or_register/3, unregister_notify/4, await/4]).
+-export([find_or_register/3, unregister_notify/4, await/4, notify/4]).
 -export([group/3, start_worker/3, start_worker/2, forward_work/2]).
 -export([default_grouper/3, default_worker/3]).
 -include("include/hb.hrl").
