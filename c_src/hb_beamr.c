@@ -979,15 +979,15 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         // Start async initialization
         proc->pid = driver_caller(proc->port);
         //DRV_DEBUG("Caller PID: %d", proc->pid);
-        int size, type;
+        int size, type, mode_size;
         char* mode;
         ei_get_type(buff, &index, &type, &size);
         //DRV_DEBUG("WASM binary size: %d bytes. Type: %c", size, type);
         void* wasm_binary = driver_alloc(size);
         long size_l = (long)size;
         ei_decode_binary(buff, &index, wasm_binary, &size_l);
-        ei_get_type(buff, &index, &type, &size);
-        mode = driver_alloc(size);
+        ei_get_type(buff, &index, &type, &mode_size);
+        mode = driver_alloc(mode_size);
         ei_decode_atom(buff, &index, mode);
         LoadWasmReq* mod_bin = driver_alloc(sizeof(LoadWasmReq));
         mod_bin->proc = proc;
