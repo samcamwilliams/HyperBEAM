@@ -46,14 +46,15 @@ worker(GroupName, Msg1, _Opts) ->
 % sam node, minimizing work duplication, while `Random` ensures a more even
 % distribution of the requests.
 match(M1, M2, Opts) ->
-    case first_match(hb_converge:get(<<"Routes">>, M1, Opts), M2, Opts) of
+    Match = first_match(M2, hb_converge:get(<<"Routes">>, M1, Opts), Opts),
+    case Match andalso  of
         Node when is_binary(Node) ->
             {send, Node};
-        not_found -> throw(no_viable_route_known);
+        no_matches -> throw(no_viable_route_known);
         Msg ->
             Nodes = hb_converge:get(<<"Nodes">>, Msg, Opts),
             case hb_converge:get(<<"Strategy">>, Msg, Opts) of
-                <<"random">> ->
+                <<"Random">> ->
                     {send, choose(random, Nodes, Opts)};
                 <<"By-Base">> ->
                     {send,
@@ -67,7 +68,20 @@ match(M1, M2, Opts) ->
     end.
 
 %% @doc Find the first matching template in a list of known routes.
-
+first_match(ToMatch, Routes, Opts) ->
+    first_match(
+        ToMatch,
+        Routes,
+        hb_converge:keys(hb_converge:ensure_message(Routes)),
+        Opts
+    ).
+first_match(_, _, [], _) -> no_matches;
+first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
+    XM = hb_converge:get(XKey, Routes, Opts),
+    case hb_message:match(ToMatch, hb_converge:get(<<"Template">>, XM, Opts)) of
+        true -> XM;
+        false -> first_match(ToMatch, Routes, Keys, Opts)
+    end.
 
 %% @doc Implements the load distribution strategies if given a cluster.
 choose(random, Nodes, _Opts) ->
