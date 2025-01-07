@@ -82,8 +82,14 @@ init(M1, M2, Opts) ->
                 ?event(wasm_image_binary_directly_provided),
                 Image
         end,
+    Mode =
+        case hb_converge:get(<<InPrefix/binary, "/Mode">>, M1, Opts) of
+            not_found -> wasm;
+            <<"WASM">> -> wasm;
+            <<"AOT">> -> aot
+        end,
     % Start the WASM executor.
-    {ok, Instance, _Imports, _Exports} = hb_beamr:start(ImageBin),
+    {ok, Instance, _Imports, _Exports} = hb_beamr:start(ImageBin, Mode),
     % Set the WASM Instance, handler, and standard library invokation function.
     ?event({setting_wasm_instance, Instance, {prefix, Prefix}}),
     {ok,

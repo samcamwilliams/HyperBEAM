@@ -27,7 +27,6 @@
 
 -hb_debug(print).
 
-
 info(_) ->
     #{
         handler => fun router/4
@@ -47,17 +46,43 @@ init(M1, _M2, Opts) ->
         ),
     {ok, MsgWithLib}.
 
-router(<<"invoke_v", _/binary>>, Msg1, Msg2, Opts) ->
+router(<<"invoke_", _/binary>>, Msg1, Msg2, Opts) ->
+    ?event(debug, invoke_emscripten),
     State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     WASM = dev_wasm:instance(State, Msg2, Opts),
     [Index|Args] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
+    ?event(debug, invoke_emscripten_stack_get_current),
     {ok, SP, _} = hb_beamr:call(WASM, <<"emscripten_stack_get_current">>, []),
+    ?event(debug, invoke_emscripten_stack_get_current_done),
     ImportResolver = hb_private:get(<<"WASM/Import-Resolver">>, State, Opts),
     try 
-        hb_beamr:call(WASM, <<"_indirect:", Index/binary>>, Args, ImportResolver, State, Opts)
+        ?event(debug, trying_indirect_call),
+        Res = hb_beamr:call(WASM, Index, Args, ImportResolver, State, Opts),
+        ?event(debug, try_succeeded),
+        Res
     catch
         _:Error ->
+            ?event(debug, calling_emscripten_stack_restore),
             hb_beamr:call(WASM, <<"_emscripten_stack_restore">>, [SP]),
+            ?event(debug, calling_set_threw),
             hb_beamr:call(WASM, <<"setThrew">>, [1, 0]),
+            ?event(debug, calling_set_threw_done),
             {error, Error}
     end.
+
+%%% Tests
+
+%% @doc Ensure that an AOS Emscripten-style WASM AOT module can be invoked
+%% with a function reference.
+emscripten_aot_test() ->
+    Msg = dev_json_iface:generate_stack("test/test-aos-2-pure-xs.aot", <<"AOT">>),
+    Proc = hb_converge:get(<<"Process">>, Msg, #{ hashpath => ignore }),
+    ProcID = hb_converge:get(id, Proc, #{}),
+    {ok, Msg3} =
+        hb_converge:resolve(
+            Msg,
+            dev_json_iface:generate_aos_msg(ProcID, <<"return 1+1">>),
+            #{}
+        ),
+    Data = hb_converge:get(<<"Results/Data">>, Msg3, #{}),
+    ?assertEqual(<<"2">>, Data).

@@ -36,6 +36,8 @@
 
 -module(dev_json_iface).
 -export([init/3, compute/3]).
+%%% Test helper exports:
+-export([generate_stack/1, generate_stack/2, generate_aos_msg/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -204,6 +206,8 @@ test_init() ->
     application:ensure_all_started(hb).
 
 generate_stack(File) ->
+    generate_stack(File, <<"WASM">>).
+generate_stack(File, Mode) ->
     test_init(),
     Wallet = hb:wallet(),
     Msg0 = dev_wasm:cache_wasm_image(File),
@@ -225,6 +229,7 @@ generate_stack(File) ->
             hb_message:sign(#{
                 <<"Type">> => <<"Process">>,
                 <<"Image">> => Image,
+                <<"Mode">> => Mode,
                 <<"Scheduler">> => hb:address(),
                 <<"Authority">> => hb:address()
             }, Wallet)
