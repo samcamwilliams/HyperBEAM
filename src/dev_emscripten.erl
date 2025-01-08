@@ -72,6 +72,36 @@ router(<<"invoke_", _/binary>>, Msg1, Msg2, Opts) ->
 
 %%% Tests
 
+generate_stack(File) ->
+    Wallet = hb:wallet(),
+    Msg0 = dev_wasm:cache_wasm_image(File),
+    Image = hb_converge:get(<<"Image">>, Msg0, #{}),
+    Msg1 = Msg0#{
+        device => <<"Stack/1.0">>,
+        <<"Device-Stack">> =>
+            [
+                <<"WASI/1.0">>,
+                <<"JSON-Iface/1.0">>,
+                <<"Emscripten/1.0">>,
+                <<"WASM-64/1.0">>,
+                <<"Multipass/1.0">>
+            ],
+        <<"Input-Prefix">> => <<"Process">>,
+        <<"Output-Prefix">> => <<"WASM">>,
+        <<"Passes">> => 2,
+        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
+        <<"Process">> =>
+            hb_message:sign(#{
+                <<"Type">> => <<"Process">>,
+                <<"Image">> => Image,
+                <<"Mode">> => <<"AOT">>,
+                <<"Scheduler">> => hb:address(),
+                <<"Authority">> => hb:address()
+            }, Wallet)
+    },
+    {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
+    Msg2.
+
 %% @doc Ensure that an AOS Emscripten-style WASM AOT module can be invoked
 %% with a function reference.
 emscripten_aot_test() ->
