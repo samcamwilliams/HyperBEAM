@@ -23,7 +23,7 @@ start() -> pg:start(pg).
 find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
     find_or_register(GroupName, Msg1, Msg2, Opts).
-find_or_register(GroupName, Msg1, Msg2, Opts) ->
+find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
     Self = self(),
     case find_execution(GroupName, Opts) of
         {ok, [Leader|_]} when Leader =/= Self ->
@@ -94,6 +94,8 @@ await(Worker, Msg1, Msg2, Opts) ->
     % Calculate the compute path that we will wait upon resolution of.
     % Register with the process.
     GroupName = group(Msg1, Msg2, Opts),
+    % set monitor to a worker, so we know if it exits
+    _Ref = erlang:monitor(process, Worker),
     Worker ! {resolve, self(), GroupName, Msg2, Opts},
     ?event(worker,
         {await_resolution,
@@ -106,6 +108,14 @@ await(Worker, Msg1, Msg2, Opts) ->
     ),
     % Wait for the result.
     receive
+        {'DOWN', _R, process, Worker, _Reason} ->
+            ?event(worker,
+                {leader_died,
+                    {group, GroupName},
+                    {leader, Worker}
+                }
+        ),
+            {error, leader_died};
         {resolved, _, GroupName, Msg2, Msg3} ->
             ?event(worker,
                 {resolved_await,

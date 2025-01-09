@@ -1,6 +1,11 @@
 -module(hb_http_benchmark_tests).
 -include_lib("eunit/include/eunit.hrl").
--include_lib("include/hb.hrl").
+
+% Allows to decrease or increase expected performance based on the current machine specification
+% the smaller number implies more operations expected to be performed.
+% 1 - sam's machine
+% 4 - oleg's machine
+-define(PERFORMANCE_DIVIDER, 1).
 
 unsigned_resolve_benchmark_test() ->
     BenchTime = 1,
@@ -16,14 +21,14 @@ unsigned_resolve_benchmark_test() ->
         "Resolved ~p messages through Converge via HTTP in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 400).
+    ?assert(Iterations > 400 / ?PERFORMANCE_DIVIDER).
 
 parallel_unsigned_resolve_benchmark_test() ->
     BenchTime = 1,
     BenchWorkers = 16,
     URL = hb_http_server:start_test_node(#{force_signed => false}),
     Iterations = hb:benchmark(
-        fun(Count) ->
+        fun(_Count) ->
             hb_http:post(URL, #{path => <<"Key1">>, <<"Key1">> => #{<<"Key2">> => <<"Value1">>}})
         end,
         BenchTime,
@@ -33,7 +38,7 @@ parallel_unsigned_resolve_benchmark_test() ->
         "Resolved ~p messages via HTTP (~p workers) in ~p seconds (~.2f msg/s)",
         [Iterations, BenchWorkers, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 1000).
+    ?assert(Iterations > 1000 / ?PERFORMANCE_DIVIDER).
 
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
@@ -62,7 +67,7 @@ run_wasm_unsigned_benchmark_test() ->
         "Resolved ~p WASM invocations via HTTP in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 100).
+    ?assert(Iterations > 100 / ?PERFORMANCE_DIVIDER).
 
 
 run_wasm_signed_benchmark_test() ->
@@ -82,7 +87,7 @@ run_wasm_signed_benchmark_test() ->
         "Resolved ~p WASM invocations via HTTP in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 50).
+    ?assert(Iterations > 50 / ?PERFORMANCE_DIVIDER).
 
 parallel_wasm_unsigned_benchmark_test() ->
     BenchTime = 1,
@@ -105,7 +110,7 @@ parallel_wasm_unsigned_benchmark_test() ->
         "Resolved ~p WASM invocations via HTTP (~p workers) in ~p seconds (~.2f msg/s)",
         [Iterations, BenchWorkers, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 200).
+    ?assert(Iterations > 200 / ?PERFORMANCE_DIVIDER).
 
 parallel_wasm_signed_benchmark_test() ->
     BenchTime = 1,
@@ -115,7 +120,7 @@ parallel_wasm_signed_benchmark_test() ->
     Iterations = hb:benchmark(
         fun(_) ->
             case hb_http:post(URL, Msg) of
-                {ok, ResMsg} -> 
+                {ok, _ResMsg} ->
                     receive after 1 -> ok end,
                     1;
                 _ -> 0
@@ -128,7 +133,7 @@ parallel_wasm_signed_benchmark_test() ->
         "Resolved ~p WASM invocations via HTTP (~p workers) in ~p seconds (~.2f msg/s)",
         [Iterations, BenchWorkers, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 100).
+    ?assert(Iterations > 100 / ?PERFORMANCE_DIVIDER).
 
 % parallel_http_scheduling_benchmark_test() ->
 %     application:ensure_all_started(hb),
