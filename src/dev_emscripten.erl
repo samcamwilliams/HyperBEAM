@@ -19,7 +19,7 @@
 %%% 
 %%% Where '_vjj' represents the type spec of the function.
 -module(dev_emscripten).
--export([info/1, init/3, router/4]).
+-export([info/1, init/3, router/4, invoke_vjj/3]).
 
 
 -include("src/include/hb.hrl").
@@ -29,7 +29,8 @@
 
 info(_) ->
     #{
-        handler => fun router/4
+        default_handler => fun router/4,
+        excludes => [keys, id, unsigned, hashpath]
     }.
 
 %% @doc On-boot, initialize the virtual file system with:
@@ -39,21 +40,25 @@ init(M1, _M2, Opts) ->
         hb_converge:set(
             M1,
             #{
-                <<"WASM/stdlib/_emscripten_system">> =>
+                <<"WASM/stdlib/env">> =>
                     #{ device => <<"Emscripten/1.0">>}
             },
             Opts
         ),
     {ok, MsgWithLib}.
 
+invoke_vjj(Msg1, Msg2, Opts) ->
+	?event(debug, invoke_emscripten_vjj),
+	router(<<"invoke_vjj">>, Msg1, Msg2, Opts).
+
 router(<<"invoke_", _/binary>>, Msg1, Msg2, Opts) ->
     ?event(debug, invoke_emscripten),
     State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     WASM = dev_wasm:instance(State, Msg2, Opts),
     [Index|Args] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
-    ?event(debug, invoke_emscripten_stack_get_current),
-    {ok, SP, _} = hb_beamr:call(WASM, <<"emscripten_stack_get_current">>, []),
-    ?event(debug, invoke_emscripten_stack_get_current_done),
+    %?event(debug, invoke_emscripten_stack_get_current),
+    % {ok, SP, _} = hb_beamr:call(WASM, <<"emscripten_stack_get_current">>, []),
+    % ?event(debug, invoke_emscripten_stack_get_current_done),
     ImportResolver = hb_private:get(<<"WASM/Import-Resolver">>, State, Opts),
     try 
         ?event(debug, trying_indirect_call),
@@ -63,15 +68,14 @@ router(<<"invoke_", _/binary>>, Msg1, Msg2, Opts) ->
     catch
         _:Error ->
             ?event(debug, calling_emscripten_stack_restore),
-            hb_beamr:call(WASM, <<"_emscripten_stack_restore">>, [SP]),
-            ?event(debug, calling_set_threw),
-            hb_beamr:call(WASM, <<"setThrew">>, [1, 0]),
-            ?event(debug, calling_set_threw_done),
+            % hb_beamr:call(WASM, <<"_emscripten_stack_restore">>, [SP]),
+            % ?event(debug, calling_set_threw),
+            % hb_beamr:call(WASM, <<"setThrew">>, [1, 0]),
+            % ?event(debug, calling_set_threw_done),
             {error, Error}
     end.
 
 %%% Tests
-
 generate_stack(File) ->
     Wallet = hb:wallet(),
     Msg0 = dev_wasm:cache_wasm_image(File),
@@ -105,7 +109,7 @@ generate_stack(File) ->
 %% @doc Ensure that an AOS Emscripten-style WASM AOT module can be invoked
 %% with a function reference.
 emscripten_aot_test() ->
-    Msg = dev_json_iface:generate_stack("test/test-aos-2-pure-xs.aot", <<"AOT">>),
+    Msg = generate_stack("test/process.aot"),
     Proc = hb_converge:get(<<"Process">>, Msg, #{ hashpath => ignore }),
     ProcID = hb_converge:get(id, Proc, #{}),
     {ok, Msg3} =

@@ -26,6 +26,7 @@ node_modules
 
 *.bin
 !.vscode/*
+.vscode/c_cpp_properties.json
 
 c_src/*.o
 c_src/*.d
@@ -33,6 +34,6 @@ priv/*
 .DS_STORE
 TEST-data*
 test-cache/*
-TEST-cache-**
+TEST-cache**/**
 
 .githooks/_/.setup
