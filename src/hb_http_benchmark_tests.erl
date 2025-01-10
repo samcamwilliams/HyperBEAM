@@ -1,10 +1,10 @@
 -module(hb_http_benchmark_tests).
 -include_lib("eunit/include/eunit.hrl").
 
-% Allows to decrease or increase expected performance based on the current machine specification
-% the smaller number implies more operations expected to be performed.
-% 1 - sam's machine
-% 4 - oleg's machine
+%% Allows to decrease or increase expected performance based on the current
+%% machine specification. A smaller number implies more operations expected
+%% to be performed.
+%% 1: 50% performance of Macbook Pro M2 Max
 -define(PERFORMANCE_DIVIDER, 1).
 
 unsigned_resolve_benchmark_test() ->
@@ -98,7 +98,6 @@ parallel_wasm_unsigned_benchmark_test() ->
         fun(_) ->
             case hb_http:post(URL, Msg) of
                 {ok, _} ->
-                    receive after 1 -> ok end,
                     1;
                 _ -> 0
             end
@@ -121,7 +120,6 @@ parallel_wasm_signed_benchmark_test() ->
         fun(_) ->
             case hb_http:post(URL, Msg) of
                 {ok, _ResMsg} ->
-                    receive after 1 -> ok end,
                     1;
                 _ -> 0
             end
