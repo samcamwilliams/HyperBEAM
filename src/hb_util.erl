@@ -13,6 +13,7 @@
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
 -export([format_trace_short/1]).
+-export([count/2, mean/1, stddev/1, variance/1]).
 -include("include/hb.hrl").
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
@@ -511,3 +512,18 @@ normalize_trace([]) -> [];
 normalize_trace([{Mod, _, _, _}|Rest]) when Mod == ?MODULE ->
     normalize_trace(Rest);
 normalize_trace(Trace) -> Trace.
+
+%%% Statistics
+
+count(Item, List) ->
+    length(lists:filter(fun(X) -> X == Item end, List)).
+
+mean(List) ->
+    lists:sum(List) / length(List).
+
+stddev(List) ->
+    math:sqrt(variance(List)).
+
+variance(List) ->
+    Mean = mean(List),
+    lists:sum([ math:pow(X - Mean, 2) || X <- List ]) / length(List).

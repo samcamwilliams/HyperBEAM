@@ -4,6 +4,8 @@
 %%% between downstream workers that perform the actual requests.
 -module(dev_router).
 -export([find_route/2, find_route/3]).
+-include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc If we have a route that has multiple resolving nodes in a bundle, check
 %% the load distribution strategy and choose a node. Supported strategies:
@@ -62,9 +64,9 @@ choose(N, <<"Random">>, _, Nodes, _Opts) ->
     Node = lists:nth(rand:uniform(length(Nodes)), Nodes),
     [Node | choose(N - 1, <<"Random">>, nop, lists:delete(Node, Nodes), _Opts)];
 choose(N, <<"By-Base">>, Hashpath, Nodes, Opts) when is_binary(Hashpath) ->
-    choose(N, <<"By-Base">>, binary_to_integer(Hashpath), Nodes, Opts);
+    choose(N, <<"By-Base">>, binary_to_bignum(Hashpath), Nodes, Opts);
 choose(N, <<"By-Base">>, HashInt, Nodes, Opts) ->
-    Node = lists:nth(HashInt rem length(Nodes), Nodes),
+    Node = lists:nth((HashInt rem length(Nodes)) + 1, Nodes),
     [
         Node
     |
@@ -77,34 +79,178 @@ choose(N, <<"By-Base">>, HashInt, Nodes, Opts) ->
         )
     ];
 choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
-    HashInt = binary_to_integer(HashPath),
+    BareHashPath = hb_util:native_id(HashPath),
     NodesWithDistances =
         lists:map(
             fun(Node) ->
-                NodeMsg = hb_converge:get(<<"Host">>, Node, Opts),
-                WalletNum =
-                    binary_to_integer(
-                        hb_converge:get(<<"Wallet">>, NodeMsg, Opts)),
-                {Node, (WalletNum - HashInt) rem math:pow(2, 256)}
+                Wallet = hb_converge:get(<<"Wallet">>, Node, Opts),
+                DistanceScore =
+                    hb_crypto:sha256(
+                        <<
+                            Wallet/binary,
+                            BareHashPath/binary
+                        >>
+                    ),
+                {Node, binary_to_bignum(DistanceScore)}
             end,
             Nodes
         ),
     lists:reverse(
-        lists:foldl(
-            fun(_, {Current, Remaining}) ->
-                {Lowest, _} = lowest_distance(Remaining),
-                {[Lowest|Current], lists:delete(Lowest, Remaining)}
-            end,
-            {[], NodesWithDistances},
-            lists:seq(1, N)
+        element(1,
+            lists:foldl(
+                fun(_, {Current, Remaining}) ->
+                    Res = {Lowest, _} = lowest_distance(Remaining),
+                    {[Lowest|Current], lists:delete(Res, Remaining)}
+                end,
+                {[], NodesWithDistances},
+                lists:seq(1, N)
+            )
         )
     ).
 
-lowest_distance(Nodes) -> lowest_distance(Nodes, infinity).
+%% @doc Find the node with the lowest distance to the given hashpath.
+lowest_distance(Nodes) -> lowest_distance(Nodes, {undefined, infinity}).
 lowest_distance([], X) -> X;
 lowest_distance([{Node, Distance}|Nodes], {CurrentNode, CurrentDistance}) ->
     case Distance of
-        infinity -> lowest_distance(Nodes, Node);
-        _ when Distance < CurrentDistance -> lowest_distance(Nodes, Node);
-        _ -> lowest_distance(Nodes, CurrentNode)
+        infinity -> lowest_distance(Nodes, {Node, Distance});
+        _ when Distance < CurrentDistance ->
+            lowest_distance(Nodes, {Node, Distance});
+        _ -> lowest_distance(Nodes, {CurrentNode, CurrentDistance})
     end.
+
+%% @doc Cast a human-readable or native-encoded ID to a big integer.
+binary_to_bignum(Bin) when ?IS_ID(Bin) ->
+    << Num:256/unsigned-integer >> = hb_util:native_id(Bin),
+    Num.
+
+%%% Tests
+
+strategy_suite_test_() ->
+    lists:map(
+        fun(Strategy) ->
+            {foreach,
+                fun() -> ok end,
+                fun(_) -> ok end,
+                [
+                    {
+                        binary_to_list(Strategy) ++ ": " ++ Desc,
+                        fun() -> Test(Strategy) end
+                    }
+                ||
+                    {Desc, Test} <- [
+                        {"unique", fun unique_test/1},
+                        {"choose 1", fun choose_1_test/1},
+                        {"choose n", fun choose_n_test/1}
+                    ]
+                ]
+            }
+        end,
+        [<<"Random">>, <<"By-Base">>, <<"Nearest">>]
+    ).
+
+%% @doc Ensure that `By-Base` always chooses the same node for the same
+%% hashpath.
+by_base_determinism_test() ->
+    FirstN = 5,
+    Nodes = generate_nodes(5),
+    HashPaths = generate_hashpaths(100),
+    Simulation = simulate(HashPaths, FirstN, Nodes, <<"By-Base">>),
+    Simulation2 = simulate(HashPaths, FirstN, Nodes, <<"By-Base">>),
+    ?assertEqual(Simulation, Simulation2).
+
+unique_test(Strategy) ->
+    TestSize = 1,
+    FirstN = 5,
+    Nodes = generate_nodes(5),
+    Simulation = simulate(TestSize, FirstN, Nodes, Strategy),
+    unique_nodes(Simulation).
+
+choose_1_test(Strategy) ->
+    TestSize = 500,
+    Nodes = generate_nodes(20),
+    Simulation = simulate(TestSize, 1, Nodes, Strategy),
+    within_norms(Simulation, Nodes, TestSize).
+
+choose_n_test(Strategy) ->
+    TestSize = 200,
+    FirstN = 5,
+    Nodes = generate_nodes(20),
+    Simulation = simulate(TestSize, FirstN, Nodes, Strategy),
+    within_norms(Simulation, Nodes, TestSize * 5),
+    unique_nodes(Simulation).
+
+unique_nodes(Simulation) ->
+    lists:foreach(
+        fun(SelectedNodes) ->
+            lists:foreach(
+                fun(Node) ->
+                    ?assertEqual(1, hb_util:count(Node, SelectedNodes))
+                end,
+                SelectedNodes
+            )
+        end,
+        Simulation
+    ).
+
+%%% Test utilities
+
+generate_nodes(N) ->
+    [
+        #{
+            <<"Host">> =>
+                <<"http://localhost:", (integer_to_binary(Port))/binary>>,
+            <<"Wallet">> => hb_util:encode(crypto:strong_rand_bytes(32))
+        }
+    ||
+        Port <- lists:seq(1, N)
+    ].
+
+generate_hashpaths(Runs) ->
+    [
+        hb_util:encode(crypto:strong_rand_bytes(32))
+    ||
+        _ <- lists:seq(1, Runs)
+    ].
+
+simulate(Runs, ChooseN, Nodes, Strategy) when is_integer(Runs) ->
+    simulate(
+        generate_hashpaths(Runs),
+        ChooseN,
+        Nodes,
+        Strategy
+    );
+simulate(HashPaths, ChooseN, Nodes, Strategy) ->
+    [
+        choose(ChooseN, Strategy, HashPath, Nodes, #{})
+    ||
+        HashPath <- HashPaths
+    ].
+
+simulation_occurences(SimRes, Nodes) ->
+    lists:foldl(
+        fun(NearestNodes, Acc) ->
+            lists:foldl(
+                fun(Node, Acc2) ->
+                    Acc2#{ Node => maps:get(Node, Acc2) + 1 }
+                end,
+                Acc,
+                NearestNodes
+            )
+        end,
+        #{ Node => 0 || Node <- Nodes },
+        SimRes
+    ).
+
+simulation_distribution(SimRes, Nodes) ->
+    maps:values(simulation_occurences(SimRes, Nodes)).
+
+within_norms(SimRes, Nodes, TestSize) ->
+    Distribution = simulation_distribution(SimRes, Nodes),
+    % Check that the mean is `TestSize/length(Nodes)`
+    Mean = hb_util:mean(Distribution),
+    ?assert(Mean == (TestSize / length(Nodes))),
+    % Check that the highest count is not more than 3 standard deviations
+    % away from the mean.
+    StdDev3 = Mean + 3 * hb_util:stddev(Distribution),
+    ?assert(lists:max(Distribution) < StdDev3).
