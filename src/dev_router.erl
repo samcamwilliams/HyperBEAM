@@ -25,7 +25,7 @@ worker(GroupName, Msg1, _Opts) ->
             Parent = self(),
             spawn(
                 fun() ->
-                    case match(Msg1, Msg2, ListenerOpts) of
+                    case find_route(Msg1, Msg2, ListenerOpts) of
                         {add_route, Prio, Template} ->
                             Parent ! {add, Prio, Template};
                         {send, Node} ->
@@ -45,21 +45,19 @@ worker(GroupName, Msg1, _Opts) ->
 % `By-Base` will ensure that all traffic for the same hashpath is routed to the
 % sam node, minimizing work duplication, while `Random` ensures a more even
 % distribution of the requests.
-match(M1, M2, Opts) ->
-    Match = first_match(M2, hb_converge:get(<<"Routes">>, M1, Opts), Opts),
-    case Match andalso  of
-        Node when is_binary(Node) ->
-            {send, Node};
-        no_matches -> throw(no_viable_route_known);
-        Msg ->
-            Nodes = hb_converge:get(<<"Nodes">>, Msg, Opts),
-            case hb_converge:get(<<"Strategy">>, Msg, Opts) of
+find_route(M1, M2, Opts) ->
+    Routes = hb_converge:get(<<"Routes">>, M1, Opts),
+    case hb_converge:get(<<"Node">>, R = first_match(M2, Routes, Opts), Opts) of
+        Node when is_binary(Node) -> {send, Node};
+        not_found ->
+            Nodes = hb_converge:get(<<"Nodes">>, R, Opts),
+            case hb_converge:get(<<"Strategy">>, R, Opts) of
                 <<"Random">> ->
                     {send, choose(random, Nodes, Opts)};
                 <<"By-Base">> ->
                     {send,
                         choose(
-                            {base, hb_path:from_message(hashpath, Msg)},
+                            {base, hb_path:from_message(hashpath, R)},
                             Nodes,
                             Opts
                         )

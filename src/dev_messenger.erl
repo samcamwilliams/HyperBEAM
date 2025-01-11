@@ -64,70 +64,51 @@ relay(_, M1, M2, Opts) ->
         ),
     ShouldReport =
         hb_converge:get(<< Prefix/binary, "/Report">>, M1, false, Opts),
-    Outbox =
-        hb_converge:get(<< Prefix/binary, "/Outbox">>, M1, [], Opts),
     case ShouldReport of
         false ->
             % We do not need to report our progress, so we can spawn a new
             % Erlang process to handle pushing for us.
-            spawn(fun() -> dispatch(M1, Outbox, Opts) end),
+            spawn(fun() -> dispatch(M1, Opts) end),
             {ok, M1};
         Subpath ->
             % Synchronously push messages, taking the returned value and
             % placing it into the BaseMsg at `Subpath`.
             hb_converge:set(
                 M1,
-                #{ Subpath => dispatch(M1, Outbox, Opts) },
+                #{ Subpath => dispatch(M1, Opts) },
                 Opts
             )
     end.
 
-dispatch(M1, Outbox, Opts) ->
-    Hashpath = hb_path:from_message(hashpath, M1),
-    maps:map(
-        fun(Key, MsgToPush) ->
-            case hb_converge:get(<<"Target">>, MsgToPush, Opts) of
-                not_found ->
-                    ?event({skip_no_target, {key, Key}, MsgToPush}),
-                    {ok, <<"No Target. Did not push.">>};
-                Target ->
-                    ?event(
-                        {pushing_child,
-                            {originates_from, Hashpath},
-                            {outbox_key, Key}
-                        }
-                    ),
-                    {ok, NextSlotOnProc} = hb_converge:resolve(
-                        M1,
-                        #{
-                            method => <<"POST">>,
-                            path => <<"Schedule/Slot">>,
-                            <<"Message">> =>
-                                PushedMsg = hb_message:sign(
-                                    MsgToPush,
-                                    hb_opts:get(wallet, Opts)
-                                )
-                        },
-                        Opts
-                    ),
-                    PushedMsgID = hb_converge:get(<<"id">>, PushedMsg, Opts),
-                    ?event(
-                        {push_scheduled,
-                            {assigned_slot, NextSlotOnProc},
-                            {target, Target}
-                        }),
-                    {ok, Downstream} = hb_converge:resolve(
-                        M1,
-                        #{ path => <<"Push">>, <<"Slot">> => NextSlotOnProc },
-                        Opts
-                    ),
-                    #{
-                        <<"id">> => PushedMsgID,
-                        <<"Target">> => Target,
-                        <<"Slot">> => NextSlotOnProc,
-                        <<"Resulted-In">> => Downstream
-                    }
-            end
-        end,
-        hb_converge:ensure_message(Outbox)
-    ).
+dispatch(Msg1, Msg2, Opts) ->
+    case hb_converge:get(<<"Target">>, Msg, Opts) of
+        not_found ->
+            ?event({uploading_to_arweave_as_no_target_set, Msg}),
+            hb_client:upload(Msg);
+        Target = << "http", _/binary >> ->
+            ?event({posting_to_http, Target, Msg}),
+            M1Allowed = hb_converge:get(<<"Allow-URLs">>, Msg1, Opts),
+            OptsAllowed = hb_opts:get(allow_urls, false, Opts),
+            case {M1Allowed, OptsAllowed} of
+                {A1, A2} when (not A1) or (A2 == false) ->
+                    throw(settings_disallow_http_post);
+                {_, }
+                
+            hb_http:post(Target, Msg);
+        Target ->
+            ?event(
+                {posting_to_converge,
+                    {originates_from, hb_path:from_message(hashpath, Msg)},
+                    {outbox_key, hb_util:id(Msg, unsigned)}
+                }
+            ),
+            {ok, Downstream} = hb_converge:resolve(
+                Msg,
+                #{ path => <<"Push">> },
+                Opts
+            ),
+            #{
+                <<"Target">> => Target,
+                <<"Resulted-In">> => Downstream
+            }
+    end.
