@@ -34,7 +34,7 @@
 -export([priv_store_original/3, priv_store_remaining/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
--export([matches/2, to_binary/1, regex_matches/2]).
+-export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -327,8 +327,8 @@ regex_matches(Path1, Path2) ->
 %% @doc Normalize a path to a binary, removing the leading slash if present.
 normalize(Path) ->
     case hb_converge:key_to_binary(Path) of
-        <<"/", Rest/binary>> -> Rest;
-        Binary -> Binary
+        BinPath = <<"/", _/binary>> -> BinPath;
+        Binary -> <<"/", Binary/binary>>
     end.
 
 %%% TESTS

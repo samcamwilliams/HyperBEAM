@@ -68,14 +68,17 @@ request(Method, Node, Path) ->
 request(Method, Config, Path, Message) when is_map(Config) ->
     multirequest(Config, Method, Path, Message);
 request(Method, Node, Path, Message) ->
+    BinNode = if is_binary(Node) -> Node; true -> list_to_binary(Node) end,
+    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
+    FullPath = <<BinNode/binary, BinPath/binary>>,
     Req =
         case Method of
-            post -> {Node ++ Path, [], "application/octet-stream", Message};
-            get -> {Node ++ Path, []}
+            post -> {FullPath, [], "application/octet-stream", Message};
+            get -> {FullPath, []}
         end,
     case httpc:request(Method, Req, [], [{body_format, binary}]) of
         {ok, {{_, Status, _}, _, Body}} when Status >= 200, Status < 300 ->
-            ?event({http_got, Node, Path, Status}),
+            ?event({http_got, BinNode, BinPath, Status}),
             {
                 case Status of
                     201 -> created;
@@ -84,13 +87,13 @@ request(Method, Node, Path, Message) ->
                 Body
             };
         {ok, {{_, Status, _}, _, Body}} when Status == 400 ->
-            ?event({http_got_client_error, Node, Path}),
+            ?event({http_got_client_error, BinNode, BinPath}),
             {error, Body};
         {ok, {{_, Status, _}, _, Body}} when Status > 400 ->
-            ?event({http_got_server_error, Node, Path}),
+            ?event({http_got_server_error, BinNode, BinPath}),
             {unavailable, Body};
         Response ->
-            ?event({http_error, Node, Path, Response}),
+            ?event({http_error, BinNode, BinPath, Response}),
             {error, Response}
     end.
 
