@@ -232,11 +232,26 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
             % There is another executor of this resolution in-flight.
             % Bail execution, register to receive the response, then
             % wait.
-            Res = hb_persistent:await(Leader, Msg1, Msg2, Opts),
-            % Now that we have the result, we can skip right to potential
-            % recursion (step 11).
-            resolve_stage(11, Msg1, Msg2, Res, Leader,
-                Opts#{ spawn_worker => false });
+            case hb_persistent:await(Leader, Msg1, Msg2, Opts) of
+                {error, leader_died} ->
+                    ?event(
+                        converge_core,
+                        {leader_died_during_wait,
+                            {leader, Leader},
+                            {msg1, Msg1},
+                            {msg2, Msg2},
+                            {opts, Opts}
+                        },
+                        Opts
+                    ),
+                    % Re-try again if the group leader already finished it's work
+                    resolve_stage(4, Msg1, Msg2, Opts);
+                Res ->
+                    % Now that we have the result, we can skip right to potential
+                    % recursion (step 11).
+                    resolve_stage(11, Msg1, Msg2, Res, Leader,
+                        Opts#{ spawn_worker => false })
+            end;
         {infinite_recursion, GroupName} ->
             % We are the leader for this resolution, but we executing the 
             % computation again. This may plausibly be OK in _some_ cases,
