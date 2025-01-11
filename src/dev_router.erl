@@ -2,12 +2,33 @@
 %%% appropriate network recipients via HTTP. All messages are initially
 %%% routed to a single process per node, which then load-balances them
 %%% between downstream workers that perform the actual requests.
+%%% 
+%%% The routes for the router are defined in the `routes` key of the `Opts`,
+%%% as a precidence-ordered list of maps. The first map that matches the
+%%% message will be used to determine the route.
+%%% 
+%%% Multiple nodes can be specified as viable for a single route, with the
+%%% `Choose` key determining how many nodes to choose from the list (defaulting
+%%% to 1). The `Strategy` key determines the load distribution strategy,
+%%% which can be one of `Random`, `By-Base`, or `Nearest`. The route may also 
+%%% define additional parallel execution parameters, which are used by the
+%%% `hb_http` module to manage control of requests.
+%%% 
+%%% The structure of the routes should be as follows:
+%%% ```
+%%%     Node?: The node to route the message to.
+%%%     Nodes?: A list of nodes to route the message to.
+%%%     Strategy?: The load distribution strategy to use.
+%%%     Choose?: The number of nodes to choose from the list.
+%%%     Template?: A message template to match the message against, either as a
+%%%                map or a path regex.
+%%% '''
 -module(dev_router).
 -export([find_route/2, find_route/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%% @doc If we have a route that has multiple resolving nodes in a bundle, check
+%% @doc If we have a route that has multiple resolving nodes, check
 %% the load distribution strategy and choose a node. Supported strategies:
 %% ```
 %%       Random: Distribute load evenly across all nodes, non-deterministically.
@@ -18,9 +39,13 @@
 %% `By-Base` will ensure that all traffic for the same hashpath is routed to the
 %% same node, minimizing work duplication, while `Random` ensures a more even
 %% distribution of the requests.
+%% 
+%% Can operate as a `Router/1.0` device, which will ignore the base message,
+%% routing based on the Opts and request message provided, or as a standalone
+%% function, taking only the request message and the `Opts` map.
 find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
 find_route(_, Msg, Opts) ->
-    Routes = hb_opts:get(routes, Opts),
+    Routes = hb_opts:get(routes, [], Opts),
     R = first_match(Msg, Routes, Opts),
     case hb_converge:get(<<"Node">>, R, Opts) of
         Node when is_binary(Node) -> {ok, Node};
@@ -47,15 +72,31 @@ first_match(ToMatch, Routes, Opts) ->
     first_match(
         ToMatch,
         Routes,
-        hb_converge:keys(hb_converge:ensure_message(Routes)),
+        hb_converge:keys(Routes),
         Opts
     ).
 first_match(_, _, [], _) -> no_matches;
 first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
     XM = hb_converge:get(XKey, Routes, Opts),
-    case hb_message:match(ToMatch, hb_converge:get(<<"Template">>, XM, Opts)) of
+    ?event(debug, {template_matches, ToMatch, XM, XKey}),
+    Template = hb_converge:get(<<"Template">>, XM, Opts),
+    case template_matches(ToMatch, Template) of
         true -> XM;
         false -> first_match(ToMatch, Routes, Keys, Opts)
+    end.
+
+%% @doc Check if a message matches a message template or path regex.
+template_matches(ToMatch, Template) when is_map(Template) ->
+    ?event(debug, {template_matches, ToMatch, Template}),
+    case hb_message:match(ToMatch, Template) of
+        true -> true;
+        false -> false
+    end;
+template_matches(ToMatch, Regex) when is_binary(Regex) ->
+    MsgPath = hb_path:to_binary(hb_path:from_message(request, ToMatch)),
+    case re:run(MsgPath, Regex) of
+        {match, _} -> true;
+        nomatch -> false
     end.
 
 %% @doc Implements the load distribution strategies if given a cluster.
@@ -191,6 +232,41 @@ unique_nodes(Simulation) ->
             )
         end,
         Simulation
+    ).
+
+route_template_message_matches_test() ->
+    Routes = [
+        #{
+            <<"Template">> => <<"*">>,
+            <<"Node">> => <<"incorrect">>
+        },
+        #{
+            <<"Template">> => #{ <<"Special-Key">> => <<"Special-Value">> },
+            <<"Node">> => <<"correct">>
+        }
+    ],
+    ?assertEqual(
+        <<"correct">>,
+        find_route(
+            #{ path => <<"/">>, <<"Special-Key">> => <<"Special-Value">> },
+            #{ routes => Routes }
+        )
+    ).
+
+route_regex_message_matches_test() ->
+    Routes = [
+        #{
+            <<"Template">> => <<"/.*/Compute">>,
+            <<"Node">> => <<"incorrect">>
+        },
+        #{
+            <<"Template">> => <<"/.*/Schedule">>,
+            <<"Node">> => <<"correct">>
+        }
+    ],
+    ?assertEqual(
+        <<"correct">>,
+        find_route(#{ path => <<"/a/Schedule">> }, #{ routes => Routes })
     ).
 
 %%% Test utilities
