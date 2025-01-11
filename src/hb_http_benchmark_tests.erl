@@ -7,12 +7,6 @@
 %% 1: 50% performance of Macbook Pro M2 Max
 -define(PERFORMANCE_DIVIDER, 1).
 
-%% Allows to decrease or increase expected performance based on the current
-%% machine specification. A smaller number implies more operations expected
-%% to be performed.
-%% 1: 50% performance of Macbook Pro M2 Max
--define(PERFORMANCE_DIVIDER, 1).
-
 unsigned_resolve_benchmark_test() ->
     BenchTime = 1,
     URL = hb_http_server:start_test_node(#{force_signed => false}),

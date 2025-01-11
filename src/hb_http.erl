@@ -5,8 +5,7 @@
 %%% HTTP requests.
 -module(hb_http).
 -export([start/0]).
--export([get/1, get/2, get_binary/1]).
--export([post/2, post/3, post_binary/2]).
+-export([get/1, get/2, post/2, post/3, request/3, request/4]).
 -export([reply/2, reply/3]).
 -export([message_to_status/1, req_to_message/2]).
 -include("include/hb.hrl").
@@ -18,58 +17,65 @@ start() ->
 
 %% @doc Gets a URL via HTTP and returns the resulting message in deserialized
 %% form.
-get(Host, Path) -> ?MODULE:get(Host ++ Path).
-get(URL) ->
-    case get_binary(URL) of
-        {ok, Res} ->
-            {ok, hb_message:convert(ar_bundles:deserialize(Res), converge, tx, #{})};
+get(Node) -> get(Node, <<"/">>).
+get(Node, Path) ->
+    case request(get, Node, Path, #{}) of
+        {ok, Body} ->
+            {ok,
+                hb_message:convert(
+                    ar_bundles:deserialize(Body),
+                    converge,
+                    tx,
+                    #{}
+                )
+            };
         Error -> Error
-    end.
-
-%% @doc Gets a URL via HTTP and returns the raw binary body. Abstracted such that
-%% we can easily swap out the HTTP client library later.
-get_binary(URL) ->
-    ?event({http_getting, URL}),
-    NormURL = iolist_to_binary(URL),
-    case httpc:request(get, {NormURL, []}, [], [{body_format, binary}]) of
-        {ok, {{_, 500, _}, _, Body}} ->
-            ?event({http_got_server_error, URL}),
-            {error, Body};
-        {ok, {{_, _, _}, _, Body}} ->
-            ?event({http_got, URL}),
-            {ok, Body}
     end.
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
-post(Host, Path, Message) -> post(Host ++ Path, Message).
-post(URL, Message) when not is_binary(Message) ->
+post(Node, Message) ->
+    post(Node, <<"/">>, Message).
+post(Node, Path, Message) when not is_binary(Message) ->
     ?event(
         {
             http_post,
+            Node,
+            Path,
             hb_util:id(Message, unsigned),
-            hb_util:id(Message, signed),
-            URL
+            hb_util:id(Message, signed)
         }
     ),
-    post(URL, ar_bundles:serialize(hb_message:convert(Message, tx, #{})));
-post(URL, Message) ->
-    case post_binary(URL, Message) of
+    post(Node, Path, ar_bundles:serialize(hb_message:convert(Message, tx, #{})));
+post(Node, Path, Message) ->
+    case request(post, Node, Path, Message) of
         {ok, Res} ->
-            {ok, hb_message:convert(ar_bundles:deserialize(Res), converge, tx, #{})};
+            {ok,
+                hb_message:convert(
+                    ar_bundles:deserialize(Res),
+                    converge,
+                    tx,
+                    #{}
+                )
+            };
         Error -> Error
     end.
 
 %% @doc Posts a binary to a URL on a remote peer via HTTP, returning the raw
 %% binary body.
-post_binary(URL, Message) ->
-    case httpc:request(
-        post,
-        {iolist_to_binary(URL), [], "application/octet-stream", Message},
-        [{timeout, 100}, {connect_timeout, 100}],
-        [{body_format, binary}]
-    ) of
+request(Method, Node, Path) ->
+    request(Method, Node, Path, #{}).
+request(Method, Config, Path, Message) when is_map(Config) ->
+    multirequest(Config, Method, Path, Message);
+request(Method, Node, Path, Message) ->
+    Req =
+        case Method of
+            post -> {Node ++ Path, [], "application/octet-stream", Message};
+            get -> {Node ++ Path, []}
+        end,
+    case httpc:request(Method, Req, [], [{body_format, binary}]) of
         {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->
+            ?event({http_got, Node, Path, Status}),
             {
                 case Status of
                     200 -> ok;
@@ -77,9 +83,73 @@ post_binary(URL, Message) ->
                 end,
                 Body
             };
+        {ok, {{_, 500, _}, _, Body}} ->
+            ?event({http_got_server_error, Node, Path}),
+            {error, Body};
         Response ->
-            ?event({http_post_error, URL, Response}),
+            ?event({http_error, Node, Path, Response}),
             {error, Response}
+    end.
+
+%% @doc Dispatch the same HTTP request to many nodes. Can be configured to
+%% await responses from all nodes or just one, and to halt all requests after
+%% after it has received the required number of responses, or to leave all
+%% requests running until they have all completed. Default: Race for first
+%% response.
+multirequest(Config, Method, Path, Message) ->
+    Nodes = hb_converge:get(<<"Nodes">>, Config, #{}),
+    AwaitResponses =
+        hb_converge:get(
+            <<"Await-Responses">>,
+            Config,
+            1
+        ),
+    StopAfter = hb_converge:get(<<"Stop-After">>, Config, true),
+    Ref = make_ref(),
+    Parent = self(),
+    Procs = lists:map(
+        fun(Node) ->
+            spawn(
+                fun() ->
+                    Res = request(Method, Node, Path, Message),
+                    receive no_reply -> stopping
+                    after 0 -> Parent ! {Ref, self(), Res}
+                    end
+                end
+            )
+        end,
+        Nodes
+    ),
+    process_responses([], Procs, Ref, AwaitResponses, StopAfter).
+
+%% @doc Collect the necessary number of responses, and stop workers if
+%% configured to do so.
+process_responses(Res, Procs, Ref, 0, false) ->
+    lists:foreach(fun(P) -> P ! no_reply end, Procs),
+    empty_inbox(Ref),
+    {ok, Res};
+process_responses(Res, Procs, Ref, 0, true) ->
+    lists:foreach(fun(P) -> exit(P, kill) end, Procs),
+    empty_inbox(Ref),
+    Res;
+process_responses(Res, Procs, Ref, Awaiting, StopAfter) ->
+    receive
+        {Ref, Pid, NewRes} ->
+            process_responses(
+                [NewRes | Res],
+                lists:delete(Pid, Procs),
+                Ref,
+                Awaiting - 1,
+                StopAfter
+            )
+    end.
+
+%% @doc Empty the inbox of the current process for all messages with the given
+%% reference.
+empty_inbox(Ref) ->
+    receive
+        {Ref, _} -> empty_inbox(Ref)
+    after 0 -> ok
     end.
 
 %% @doc Reply to the client's HTTP request with a message.
@@ -156,9 +226,9 @@ wasm_compute_request(ImageFile, Func, Params) ->
     }.
 
 run_wasm_unsigned_test() ->
-    URL = hb_http_server:start_test_node(#{force_signed => false}),
+    Node = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
-    {ok, Res} = post(URL, Msg),
+    {ok, Res} = post(Node, Msg),
     ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
 
 run_wasm_signed_test() ->

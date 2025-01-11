@@ -3,59 +3,29 @@
 %%% routed to a single process per node, which then load-balances them
 %%% between downstream workers that perform the actual requests.
 -module(dev_router).
--export([info/0]).
+-export([find_route/2, find_route/3]).
 
-info() ->
-    #{
-        grouper => fun grouper/0,
-        worker => fun worker/3
-    }.
-
-%% @doc Return the same group name for all computations on the router
-%% device, regardless of the request or stated base message.
-grouper() -> {ok, <<"Router/1.0">>}.
-
-%% @doc The worker is a singleton process which directs requests downstream
-%% to an individual Erlang process per request. Before doing so, the singleton
-%% attaches its `Msg1` (routing state), such that all requests (regardless of
-%% origin inside the node) have access to up-to-date redirection information.
-worker(GroupName, Msg1, _Opts) ->
-    receive
-        {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
-            Parent = self(),
-            spawn(
-                fun() ->
-                    case find_route(Msg1, Msg2, ListenerOpts) of
-                        {add_route, Prio, Template} ->
-                            Parent ! {add, Prio, Template};
-                        {send, Node} ->
-                            {ok, Msg3} = hb_http:post(Node, Msg2),
-                            Listener ! {resolved, Parent, GroupName, Msg2, Msg3}
-                    end
-                end
-            )
-    end.
-
-% If we have a route that has multiple resolving nodes in a bundle, check the
-% load distribution strategy and choose a node. Supported strategies:
-% ```
-%       Random: Distribute load evenly across all nodes, non-deterministically.
-%       By-Base: According to the base message's hash.
-% '''
-% `By-Base` will ensure that all traffic for the same hashpath is routed to the
-% sam node, minimizing work duplication, while `Random` ensures a more even
-% distribution of the requests.
-find_route(M1, M2, Opts) ->
-    Routes = hb_converge:get(<<"Routes">>, M1, Opts),
-    case hb_converge:get(<<"Node">>, R = first_match(M2, Routes, Opts), Opts) of
-        Node when is_binary(Node) -> {send, Node};
+%% @doc If we have a route that has multiple resolving nodes in a bundle, check
+%% the load distribution strategy and choose a node. Supported strategies:
+%% ```
+%%       Random: Distribute load evenly across all nodes, non-deterministically.
+%%       By-Base: According to the base message's hash.
+%% '''
+%% `By-Base` will ensure that all traffic for the same hashpath is routed to the
+%% same node, minimizing work duplication, while `Random` ensures a more even
+%% distribution of the requests.
+find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
+find_route(_, Msg, Opts) ->
+    Routes = hb_opts:get(routes, Opts),
+    R = first_match(Msg, Routes, Opts),
+    case hb_converge:get(<<"Node">>, R, Opts) of
+        Node when is_binary(Node) -> {ok, Node};
         not_found ->
             Nodes = hb_converge:get(<<"Nodes">>, R, Opts),
             case hb_converge:get(<<"Strategy">>, R, Opts) of
-                <<"Random">> ->
-                    {send, choose(random, Nodes, Opts)};
-                <<"By-Base">> ->
-                    {send,
+                not_found -> {ok, Nodes};
+                Strategy ->
+                    {ok,
                         choose(
                             {base, hb_path:from_message(hashpath, R)},
                             Nodes,

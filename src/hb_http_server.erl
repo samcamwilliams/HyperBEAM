@@ -10,9 +10,8 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1]).
 -export([start_test_node/0, start_test_node/1]).
--include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Starts the HTTP server. Optionally accepts an `Opts` message, which
@@ -45,7 +44,7 @@ start(Opts) ->
                         % We force a specific store, wallet, and that 
                         % hb_converge should return a regardless of whether 
                         % the result comes wrapped in one or not.
-                        Opts
+                        Port
                     }
                 ]}
             ]
@@ -54,7 +53,7 @@ start(Opts) ->
         {?MODULE, Port}, 
         [{port, Port}],
         #{
-            env => #{dispatch => Dispatcher},
+            env => #{dispatch => Dispatcher, opts => Opts},
             metrics_callback =>
                 fun prometheus_cowboy2_instrumenter:observe/1,
             stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
@@ -62,16 +61,19 @@ start(Opts) ->
     ),
     Res.
 
-init(Req, Opts) ->
+init(Req, Port) ->
+    Opts = cowboy:get_env({?MODULE, Port}, opts, no_opts),
     % Parse the HTTP request into HyerBEAM's message format.
     MsgSingleton = hb_http:req_to_message(Req, Opts),
     % Execute the message through Converge Protocol.
     {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
     % Sign the transaction if it's not already signed.
+    IsForceSigned = hb_opts:get(force_signed, false, Opts),
     Signed =
-        case hb_opts:get(force_signed, false, Opts) andalso hb_message:signers(RawRes) of
+        case IsForceSigned andalso hb_message:signers(RawRes) of
             [] ->
-                hb_message:sign(RawRes, hb_opts:get(wallet, no_wallet, Opts));
+                hb_message:sign(
+                    RawRes, hb_opts:get(wallet, no_wallet, Opts));
             _ -> RawRes
         end,
     % Respond to the client.
@@ -83,6 +85,12 @@ init(Req, Opts) ->
 
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
+
+%% @doc Update the `Opts` map that the HTTP server uses for all future
+%% requests.
+set_opts(Opts) ->
+    Port = hb_opts:get(port, no_port, Opts),
+    cowboy:set_env({?MODULE, Port}, opts, Opts).
 
 %%% Tests
 
@@ -120,6 +128,7 @@ start_test_node(Opts) ->
         os_mon,
         rocksdb
     ]),
+    hb:init(),
     ServerOpts = test_opts(Opts),
     start(ServerOpts),
     Port = hb_opts:get(port, no_port, ServerOpts),

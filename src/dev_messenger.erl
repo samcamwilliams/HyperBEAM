@@ -37,24 +37,11 @@
 %%% '''
 %%% Each parameter is expected to be located in the `BaseMessage`.
 -module(dev_messenger).
--export([info/1]).
+-export([push/3]).
 -include("include/hb.hrl").
 
-info(Msg) ->
-    maps:merge(
-        #{
-            handler => fun relay/4,
-            excludes => [set, keys]
-        },
-        case maps:get(<<"Messenger-Keys">>, Msg, not_found) of
-            not_found -> #{};
-            StackKeys -> #{ exports => StackKeys }
-        end
-    ).
-
 %% @doc Search for messages to `push` in the base message.
-relay(keys, M1, _, _) -> dev_message:keys(M1);
-relay(_, M1, M2, Opts) ->
+push(M1, M2, Opts) ->
     Prefix =
         hb_converge:get(
             <<"Input-Prefix">>,
@@ -68,43 +55,63 @@ relay(_, M1, M2, Opts) ->
         false ->
             % We do not need to report our progress, so we can spawn a new
             % Erlang process to handle pushing for us.
-            spawn(fun() -> dispatch(M1, Opts) end),
+            spawn(fun() -> dispatch(M1, M2, Opts) end),
             {ok, M1};
         Subpath ->
             % Synchronously push messages, taking the returned value and
             % placing it into the BaseMsg at `Subpath`.
             hb_converge:set(
                 M1,
-                #{ Subpath => dispatch(M1, Opts) },
+                #{ Subpath => dispatch(M1, M2, Opts) },
                 Opts
             )
     end.
 
 dispatch(Msg1, Msg2, Opts) ->
-    case hb_converge:get(<<"Target">>, Msg, Opts) of
+    case hb_converge:get(<<"Target">>, Msg2, Opts) of
         not_found ->
-            ?event({uploading_to_arweave_as_no_target_set, Msg}),
-            hb_client:upload(Msg);
+            ?event({uploading_to_arweave_as_no_target_set, Msg2}),
+            hb_client:upload(Msg2);
         Target = << "http", _/binary >> ->
-            ?event({posting_to_http, Target, Msg}),
+            ?event({posting_to_http, Target, Msg2}),
             M1Allowed = hb_converge:get(<<"Allow-URLs">>, Msg1, Opts),
             OptsAllowed = hb_opts:get(allow_urls, false, Opts),
             case {M1Allowed, OptsAllowed} of
                 {A1, A2} when (not A1) or (A2 == false) ->
                     throw(settings_disallow_http_post);
-                {_, }
-                
-            hb_http:post(Target, Msg);
+                {true, RawAllowed} ->
+                    URLSpecs =
+                        case RawAllowed of
+                            true -> [];
+                            _ -> RawAllowed
+                        end,
+                    Admissable =
+                        (RawAllowed == true) orelse
+                            lists:any(
+                                fun(Spec) ->
+                                    case Target of
+                                        <<Spec, _/binary>> -> true;
+                                        _ -> false
+                                    end
+                                end,
+                                URLSpecs
+                            ),
+                    ?event({sending_to_http, Target, Msg2}),
+                    case Admissable of
+                        true ->
+                            case hb_converge:get(<<"Method">>, Msg2, Opts) of
+                                <<"POST">> -> hb_http:post(Target, Msg2);
+                                _ -> hb_http:get(Target, Msg2)
+                            end;
+                        false -> throw(settings_disallow_http_post)
+                    end
+            end;
         Target ->
             ?event(
-                {posting_to_converge,
-                    {originates_from, hb_path:from_message(hashpath, Msg)},
-                    {outbox_key, hb_util:id(Msg, unsigned)}
-                }
+                {pushing_to_target, Target, hb_path:from_message(hashpath, Msg1)}
             ),
             {ok, Downstream} = hb_converge:resolve(
-                Msg,
-                #{ path => <<"Push">> },
+                #{ path => <<Target, "/Push">> },
                 Opts
             ),
             #{
