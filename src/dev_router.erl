@@ -47,7 +47,8 @@ find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
 find_route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
     R = first_match(Msg, Routes, Opts),
-    case hb_converge:get(<<"Node">>, R, Opts) of
+    case (R =/= no_matches) andalso hb_converge:get(<<"Node">>, R, Opts) of
+        false -> no_matches;
         Node when is_binary(Node) -> {ok, Node};
         not_found ->
             Nodes = hb_converge:get(<<"Nodes">>, R, Opts),
@@ -78,8 +79,13 @@ first_match(ToMatch, Routes, Opts) ->
 first_match(_, _, [], _) -> no_matches;
 first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
     XM = hb_converge:get(XKey, Routes, Opts),
-    ?event(debug, {template_matches, ToMatch, XM, XKey}),
-    Template = hb_converge:get(<<"Template">>, XM, Opts),
+    Template =
+        hb_converge:get(
+            <<"Template">>,
+            XM,
+            #{},
+            Opts#{ hashpath => ignore }
+        ),
     case template_matches(ToMatch, Template) of
         true -> XM;
         false -> first_match(ToMatch, Routes, Keys, Opts)
@@ -87,17 +93,10 @@ first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
 
 %% @doc Check if a message matches a message template or path regex.
 template_matches(ToMatch, Template) when is_map(Template) ->
-    ?event(debug, {template_matches, ToMatch, Template}),
-    case hb_message:match(ToMatch, Template) of
-        true -> true;
-        false -> false
-    end;
+    hb_message:match(Template, ToMatch, primary);
 template_matches(ToMatch, Regex) when is_binary(Regex) ->
-    MsgPath = hb_path:to_binary(hb_path:from_message(request, ToMatch)),
-    case re:run(MsgPath, Regex) of
-        {match, _} -> true;
-        nomatch -> false
-    end.
+    MsgPath = (hb_path:from_message(request, ToMatch)),
+    hb_path:regex_matches(MsgPath, Regex).
 
 %% @doc Implements the load distribution strategies if given a cluster.
 choose(0, _, _, _, _) -> [];
@@ -208,13 +207,13 @@ unique_test(Strategy) ->
     unique_nodes(Simulation).
 
 choose_1_test(Strategy) ->
-    TestSize = 500,
+    TestSize = 3750,
     Nodes = generate_nodes(20),
     Simulation = simulate(TestSize, 1, Nodes, Strategy),
     within_norms(Simulation, Nodes, TestSize).
 
 choose_n_test(Strategy) ->
-    TestSize = 200,
+    TestSize = 1500,
     FirstN = 5,
     Nodes = generate_nodes(20),
     Simulation = simulate(TestSize, FirstN, Nodes, Strategy),
@@ -246,14 +245,28 @@ route_template_message_matches_test() ->
         }
     ],
     ?assertEqual(
-        <<"correct">>,
+        {ok, <<"correct">>},
         find_route(
             #{ path => <<"/">>, <<"Special-Key">> => <<"Special-Value">> },
             #{ routes => Routes }
         )
+    ),
+    ?assertEqual(
+        no_matches,
+        find_route(
+            #{ path => <<"/">>, <<"Special-Key">> => <<"Special-Value2">> },
+            #{ routes => Routes }
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"fallback">>},
+        find_route(
+            #{ path => <<"/">> },
+            #{ routes => Routes ++ [#{ <<"Node">> => <<"fallback">> }] }
+        )
     ).
 
-route_regex_message_matches_test() ->
+route_regex_matches_test() ->
     Routes = [
         #{
             <<"Template">> => <<"/.*/Compute">>,
@@ -265,8 +278,16 @@ route_regex_message_matches_test() ->
         }
     ],
     ?assertEqual(
-        <<"correct">>,
-        find_route(#{ path => <<"/a/Schedule">> }, #{ routes => Routes })
+        {ok, <<"correct">>},
+        find_route(#{ path => <<"/abc/Schedule">> }, #{ routes => Routes })
+    ),
+    ?assertEqual(
+        {ok, <<"correct">>},
+        find_route(#{ path => <<"/a/b/c/Schedule">> }, #{ routes => Routes })
+    ),
+    ?assertEqual(
+        no_matches,
+        find_route(#{ path => <<"/a/b/c/BadKey">> }, #{ routes => Routes })
     ).
 
 %%% Test utilities
