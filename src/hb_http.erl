@@ -74,18 +74,21 @@ request(Method, Node, Path, Message) ->
             get -> {Node ++ Path, []}
         end,
     case httpc:request(Method, Req, [], [{body_format, binary}]) of
-        {ok, {{_, Status, _}, _, Body}} when Status == 200; Status == 201 ->
+        {ok, {{_, Status, _}, _, Body}} when Status >= 200, Status < 300 ->
             ?event({http_got, Node, Path, Status}),
             {
                 case Status of
-                    200 -> ok;
-                    201 -> created
+                    201 -> created;
+                    _ -> ok
                 end,
                 Body
             };
-        {ok, {{_, 500, _}, _, Body}} ->
-            ?event({http_got_server_error, Node, Path}),
+        {ok, {{_, Status, _}, _, Body}} when Status == 400 ->
+            ?event({http_got_client_error, Node, Path}),
             {error, Body};
+        {ok, {{_, Status, _}, _, Body}} when Status > 400 ->
+            ?event({http_got_server_error, Node, Path}),
+            {unavailable, Body};
         Response ->
             ?event({http_error, Node, Path, Response}),
             {error, Response}
@@ -96,15 +99,40 @@ request(Method, Node, Path, Message) ->
 %% after it has received the required number of responses, or to leave all
 %% requests running until they have all completed. Default: Race for first
 %% response.
+%%
+%% Expects a config message of the following form:
+%%      /Nodes/1..n: Hostname | #{ hostname => Hostname, address => Address }
+%%      /Responses: Number of responses to gather
+%%      /Stop-After: Should we stop after the required number of responses?
+%%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message) ->
     Nodes = hb_converge:get(<<"Nodes">>, Config, #{}),
-    AwaitResponses =
-        hb_converge:get(
-            <<"Await-Responses">>,
-            Config,
-            1
-        ),
+    Responses = hb_converge:get(<<"Responses">>, Config, 1),
     StopAfter = hb_converge:get(<<"Stop-After">>, Config, true),
+    case hb_converge:get(<<"Parallel">>, Config, false) of
+        false ->
+            serial_multirequest(
+                Nodes, Responses, Method, Path, Message);
+        true ->
+            parallel_multirequest(
+                Nodes, Responses, StopAfter, Method, Path, Message)
+    end.
+
+serial_multirequest(_Nodes, 0, _Method, _Path, _Message) -> [];
+serial_multirequest([Node | Nodes], Remaining, Method, Path, Message) ->
+    case request(Method, Node, Path, Message) of
+        {Status, Res} when Status == ok; Status == error ->
+            [
+                {Status, Res}
+            |
+                serial_multirequest(Nodes, Remaining - 1, Method, Path, Message)
+            ];
+        _ ->
+            serial_multirequest(Nodes, Remaining, Method, Path, Message)
+    end.
+
+%% @doc Dispatch the same HTTP request to many nodes in parallel.
+parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message) ->
     Ref = make_ref(),
     Parent = self(),
     Procs = lists:map(
@@ -120,26 +148,34 @@ multirequest(Config, Method, Path, Message) ->
         end,
         Nodes
     ),
-    process_responses([], Procs, Ref, AwaitResponses, StopAfter).
+    parallel_responses([], Procs, Ref, Responses, StopAfter).
 
 %% @doc Collect the necessary number of responses, and stop workers if
 %% configured to do so.
-process_responses(Res, Procs, Ref, 0, false) ->
+parallel_responses(Res, Procs, Ref, 0, false) ->
     lists:foreach(fun(P) -> P ! no_reply end, Procs),
     empty_inbox(Ref),
     {ok, Res};
-process_responses(Res, Procs, Ref, 0, true) ->
+parallel_responses(Res, Procs, Ref, 0, true) ->
     lists:foreach(fun(P) -> exit(P, kill) end, Procs),
     empty_inbox(Ref),
     Res;
-process_responses(Res, Procs, Ref, Awaiting, StopAfter) ->
+parallel_responses(Res, Procs, Ref, Awaiting, StopAfter) ->
     receive
-        {Ref, Pid, NewRes} ->
-            process_responses(
+        {Ref, Pid, {Status, NewRes}} when Status == ok; Status == error ->
+            parallel_responses(
                 [NewRes | Res],
                 lists:delete(Pid, Procs),
                 Ref,
                 Awaiting - 1,
+                StopAfter
+            );
+        {Ref, Pid, _} ->
+            parallel_responses(
+                Res,
+                lists:delete(Pid, Procs),
+                Ref,
+                Awaiting,
                 StopAfter
             )
     end.

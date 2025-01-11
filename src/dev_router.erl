@@ -9,7 +9,9 @@
 %% the load distribution strategy and choose a node. Supported strategies:
 %% ```
 %%       Random: Distribute load evenly across all nodes, non-deterministically.
-%%       By-Base: According to the base message's hash.
+%%       By-Base: According to the base message's hashpath.
+%%       Nearest: According to the distance of the node's wallet address to the
+%%                base message's hashpath.
 %% '''
 %% `By-Base` will ensure that all traffic for the same hashpath is routed to the
 %% same node, minimizing work duplication, while `Random` ensures a more even
@@ -25,13 +27,16 @@ find_route(_, Msg, Opts) ->
             case hb_converge:get(<<"Strategy">>, R, Opts) of
                 not_found -> {ok, Nodes};
                 Strategy ->
-                    {ok,
-                        choose(
-                            {base, hb_path:from_message(hashpath, R)},
-                            Nodes,
-                            Opts
-                        )
-                    }
+                    ChooseN = hb_converge:get(<<"Choose">>, R, 1, Opts),
+                    Hashpath = hb_path:from_message(hashpath, R),
+                    Chosen = choose(ChooseN, Strategy, Hashpath, Nodes, Opts),
+                    case Chosen of
+                        [X] when is_map(X) ->
+                            {ok, hb_converge:get(<<"Host">>, X, Opts)};
+                        [X] -> {ok, X};
+                        _ ->
+                            {ok, hb_converge:set(<<"Nodes">>, Chosen, Opts)}
+                    end
             end
     end.
 
@@ -52,7 +57,54 @@ first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
     end.
 
 %% @doc Implements the load distribution strategies if given a cluster.
-choose(random, Nodes, _Opts) ->
-    lists:nth(rand:uniform(length(Nodes)), Nodes);
-choose({base, Hashpath}, Nodes, _Opts) ->
-    lists:nth(binary_to_integer(Hashpath) rem length(Nodes), Nodes).
+choose(0, _, _, _, _) -> [];
+choose(N, <<"Random">>, _, Nodes, _Opts) ->
+    Node = lists:nth(rand:uniform(length(Nodes)), Nodes),
+    [Node | choose(N - 1, <<"Random">>, nop, lists:delete(Node, Nodes), _Opts)];
+choose(N, <<"By-Base">>, Hashpath, Nodes, Opts) when is_binary(Hashpath) ->
+    choose(N, <<"By-Base">>, binary_to_integer(Hashpath), Nodes, Opts);
+choose(N, <<"By-Base">>, HashInt, Nodes, Opts) ->
+    Node = lists:nth(HashInt rem length(Nodes), Nodes),
+    [
+        Node
+    |
+        choose(
+            N - 1,
+            <<"By-Base">>,
+            HashInt,
+            lists:delete(Node, Nodes),
+            Opts
+        )
+    ];
+choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
+    HashInt = binary_to_integer(HashPath),
+    NodesWithDistances =
+        lists:map(
+            fun(Node) ->
+                NodeMsg = hb_converge:get(<<"Host">>, Node, Opts),
+                WalletNum =
+                    binary_to_integer(
+                        hb_converge:get(<<"Wallet">>, NodeMsg, Opts)),
+                {Node, (WalletNum - HashInt) rem math:pow(2, 256)}
+            end,
+            Nodes
+        ),
+    lists:reverse(
+        lists:foldl(
+            fun(_, {Current, Remaining}) ->
+                {Lowest, _} = lowest_distance(Remaining),
+                {[Lowest|Current], lists:delete(Lowest, Remaining)}
+            end,
+            {[], NodesWithDistances},
+            lists:seq(1, N)
+        )
+    ).
+
+lowest_distance(Nodes) -> lowest_distance(Nodes, infinity).
+lowest_distance([], X) -> X;
+lowest_distance([{Node, Distance}|Nodes], {CurrentNode, CurrentDistance}) ->
+    case Distance of
+        infinity -> lowest_distance(Nodes, Node);
+        _ when Distance < CurrentDistance -> lowest_distance(Nodes, Node);
+        _ -> lowest_distance(Nodes, CurrentNode)
+    end.
