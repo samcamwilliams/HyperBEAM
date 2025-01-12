@@ -265,7 +265,7 @@ unique_nodes(Simulation) ->
 route_template_message_matches_test() ->
     Routes = [
         #{
-            <<"Template">> => <<"*">>,
+            <<"Template">> => #{ <<"Other-Key">> => <<"Other-Value">> },
             <<"Node">> => <<"incorrect">>
         },
         #{
