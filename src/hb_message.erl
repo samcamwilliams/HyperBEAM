@@ -303,8 +303,14 @@ type(Msg) when is_map(Msg) ->
 match(Map1, Map2) ->
     match(Map1, Map2, strict).
 match(Map1, Map2, Mode) ->
-    Keys1 = maps:keys(NormMap1 = minimize(normalize(Map1))),
-    Keys2 = maps:keys(NormMap2 = minimize(normalize(Map2))),
+    Keys1 =
+        maps:keys(
+            NormMap1 = minimize(normalize(hb_converge:ensure_message(Map1)))
+        ),
+    Keys2 =
+        maps:keys(
+            NormMap2 = minimize(normalize(hb_converge:ensure_message(Map2)))
+        ),
     PrimaryKeysPresent =
         (Mode == primary) andalso
             lists:all(

@@ -24,9 +24,35 @@
 %%%                map or a path regex.
 %%% '''
 -module(dev_router).
--export([find_route/2, find_route/3]).
+-export([find_route/2, find_route/3, routes/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
+
+%% @doc Device function that returns all known routes.
+routes(M1, M2, Opts) ->
+    ?event(debug, {routes_msg, M1, M2}),
+    Routes = hb_opts:get(routes, [], Opts),
+    case hb_converge:get(method, M2, Opts) of
+        <<"POST">> ->
+            Owner = hb_opts:get(owner, undefined, Opts),
+            RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
+            Signers = hb_message:signers(M2),
+            IsTrusted =
+                lists:any(
+                    fun(Signer) -> lists:member(Signer, Signers) end,
+                    RouteOwners
+                ),
+            case IsTrusted of
+                true ->
+                    Priority = hb_converge:get(<<"Priority">>, M2, Opts),
+                    NewRoutes =
+                        lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
+                    hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
+                    {ok, <<"Route added.">>};
+                false -> {error, not_authorized}
+            end;
+        _ -> {ok, Routes}
+    end.
 
 %% @doc If we have a route that has multiple resolving nodes, check
 %% the load distribution strategy and choose a node. Supported strategies:
@@ -290,7 +316,52 @@ route_regex_matches_test() ->
         find_route(#{ path => <<"/a/b/c/BadKey">> }, #{ routes => Routes })
     ).
 
-%%% Test utilities
+get_routes_test() ->
+    Node = hb_http_server:start_test_node(
+        #{
+            force_signed => false,
+            routes => Routes = [
+                #{
+                    <<"Template">> => <<"*">>,
+                    <<"Node">> => <<"our_node">>,
+                    <<"Priority">> => 10
+                }
+            ]
+        }
+    ),
+    Res = hb_client:routes(Node),
+    ?event(debug, {get_routes_test, Res}),
+    {ok, RecvdRoutes} = Res,
+    ?assert(hb_message:match(Routes, RecvdRoutes)).
+
+add_route_test() ->
+    Node = hb_http_server:start_test_node(
+        #{
+            force_signed => false,
+            routes => Routes = [
+                #{
+                    <<"Template">> => <<"/Some/Path">>,
+                    <<"Node">> => <<"old">>,
+                    <<"Priority">> => 10
+                }
+            ]
+        }
+    ),
+    Res = hb_client:add_route(Node,
+        NewRoute = #{
+            <<"Template">> => <<"/Some/New/Path">>,
+            <<"Node">> => <<"new">>,
+            <<"Priority">> => 15
+        }
+    ),
+    ?event(debug, {add_route_test, Res}),
+    ?assertEqual({ok, <<"Route added.">>}, Res),
+    Res2 = hb_client:routes(Node),
+    ?event(debug, {new_routes, Res2}),
+    {ok, RecvdRoutes} = Res2,
+    ?assert(hb_message:match(Routes ++ [NewRoute], RecvdRoutes)).
+
+%%% Statistical test utilities
 
 generate_nodes(N) ->
     [

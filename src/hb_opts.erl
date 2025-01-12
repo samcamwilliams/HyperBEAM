@@ -58,6 +58,7 @@ config() ->
                 <<"WASI/1.0">> => dev_wasi,
                 <<"JSON-Iface/1.0">> => dev_json_iface,
                 <<"Dedup/1.0">> => dev_dedup,
+                <<"Router/1.0">> => dev_router,
                 <<"Cron">> => dev_cron,
                 <<"PODA">> => dev_poda,
                 <<"Monitor">> => dev_monitor,
