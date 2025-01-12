@@ -80,7 +80,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         },
     case ar_http:req(Req, Opts) of
         {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
-            ?event({http_got, BinPeer, BinPath, Status}),
+            ?event({http_got, BinPeer, BinPath, Status, Headers, Body}),
             {
                 case Status of
                     201 -> created;
@@ -201,20 +201,24 @@ reply(Req, Message) ->
 reply(Req, Status, RawMessage) ->
     Message = hb_converge:ensure_message(RawMessage),
     TX = hb_message:convert(Message, tx, converge, #{}),
-    ?event(
+    ?event(http,
         {replying,
             {status, Status},
             {path, maps:get(path, Req, undefined_path)},
             {tx, TX}
         }
     ),
-    Req2 = cowboy_req:reply(
+    Req2 = cowboy_req:stream_reply(
         Status,
-        #{<<"Content-Type">> => <<"application/x-ans-104">>},
-        ar_bundles:serialize(TX),
+        #{<<"content-type">> => <<"application/x-ans-104">>},
         Req
     ),
-    {ok, Req2, no_state}.
+    Req3 = cowboy_req:stream_body(
+        ar_bundles:serialize(TX),
+        nofin,
+        Req2
+    ),
+    {ok, Req3, no_state}.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(Item) ->

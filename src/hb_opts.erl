@@ -20,6 +20,9 @@
 config() ->
     #{
         %%%%%%%% Functional options %%%%%%%%
+        %% What protocol should the node use for HTTP requests?
+        %% Options: http1, http2, http3
+        protocol => http3,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation

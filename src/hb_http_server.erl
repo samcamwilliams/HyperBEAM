@@ -26,8 +26,12 @@ start() ->
     }).
 
 start(Opts) ->
+    {ok, Listener, _Port} = new_server(Opts),
+    {ok, Listener}.
+
+new_server(Opts) ->
     hb_http:start(),
-    Port = hb_opts:get(port, no_port, Opts),
+    ServerID = rand:uniform(1000000000),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -45,38 +49,72 @@ start(Opts) ->
                         % We force a specific store, wallet, and that 
                         % hb_converge should return a regardless of whether 
                         % the result comes wrapped in one or not.
-                        Port
+                        ServerID
                     }
                 ]}
             ]
         ),
+    {ok, Port, Listener} =
+        case Protocol = hb_opts:get(protocol, no_proto, Opts) of
+            http3 -> start_http3(ServerID, Dispatcher, Opts);
+            http2 -> start_http2(ServerID, Dispatcher, Opts)
+        end,
+    ?event(debug,
+        {http_server_started,
+            {listener, Listener},
+            {server_id, ServerID},
+            {port, Port},
+            {protocol, Protocol}
+        }
+    ),
+    {ok, Listener, Port}.
+
+start_http3(ServerID, Dispatcher, Opts) ->
+    ?event(debug, {start_http3, ServerID}),
     {ok, Listener} = cowboy:start_quic(
-        {?MODULE, Port}, 
-        #{
-            port => Port,
+        ServerID, 
+        TransOpts = #{
             socket_opts => [
                 {certfile, "test/test-tls.pem"},
                 {keyfile, "test/test-tls.key"}
             ]
         },
-        #{
+        ProtoOpts = #{
             env => #{dispatch => Dispatcher, opts => Opts},
             metrics_callback =>
                 fun prometheus_cowboy2_instrumenter:observe/1,
-            stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
+            stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
+            verify => verify_none
         }
     ),
     {ok, {_, GivenPort}} = quicer:sockname(Listener),
-    ?event(debug,
-        {http_server_started,
-            {listener, Listener},
-            {port, Port},
-            {given_port, GivenPort}}
+    ranch_server:set_new_listener_opts(
+        ServerID,
+        1024,
+        ranch:normalize_opts(maps:to_list(TransOpts#{ port => GivenPort })),
+        ProtoOpts,
+        []
     ),
-    {ok, GivenPort}.
+    ranch_server:set_addr(ServerID, {<<"localhost">>, GivenPort}),
+    {ok, GivenPort, Listener}.
 
-init(Req, Port) ->
-    Opts = cowboy:get_env({?MODULE, Port}, opts, no_opts),
+start_http2(ServerID, Dispatcher, Opts) ->
+    ?event(debug, {start_http2, ServerID}),
+    {ok, Listener} = cowboy:start_tls(
+        ServerID,
+        [
+            {port, Port = hb_opts:get(port, 8734, Opts)},
+            {alpn_preferred_protocols, [<<"h2">>]},
+            {certfile, "test/test-tls.pem"},
+            {keyfile, "test/test-tls.key"},
+            {verify, verify_none}
+        ],
+        #{env => #{dispatch => Dispatcher, opts => Opts}}
+    ),
+    {ok, Port, Listener}.
+
+init(Req, ServerID) ->
+    Opts = cowboy:get_env(ServerID, opts, no_opts),
     % Parse the HTTP request into HyerBEAM's message format.
     MsgSingleton = hb_http:req_to_message(Req, Opts),
     ?event(http, {http_inbound, MsgSingleton}),
@@ -98,14 +136,21 @@ init(Req, Port) ->
         Signed
     ).
 
+%% @doc Return the complete Ranch ETS table for the node for debugging.
+ranch_ets() ->
+    case ets:info(ranch_server) of
+        undefined -> [];
+        _ -> ets:tab2list(ranch_server)
+    end.
+
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
 
 %% @doc Update the `Opts` map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
-    Port = hb_opts:get(port, no_port, Opts),
-    cowboy:set_env({?MODULE, Port}, opts, Opts).
+    ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
+    cowboy:set_env(ServerRef, opts, Opts).
 
 %%% Tests
 
@@ -137,6 +182,7 @@ start_test_node(Opts) ->
         inets,
         ssl,
         debugger,
+        ranch,
         cowboy,
         gun,
         prometheus,
@@ -147,8 +193,8 @@ start_test_node(Opts) ->
     hb:init(),
     hb_sup:start_link(Opts),
     ServerOpts = test_opts(Opts),
-    {ok, GivenPort} = start(ServerOpts),
-    <<"http://localhost:", (integer_to_binary(GivenPort))/binary, "/">>.
+    {ok, _Listener, Port} = new_server(ServerOpts),
+    <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
 
 raw_http_access_test() ->
     URL = start_test_node(),

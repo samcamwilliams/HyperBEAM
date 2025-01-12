@@ -271,7 +271,7 @@ open_connection(#{ peer := Peer }, Opts) ->
     {Host, Port} = parse_peer(Peer, Opts),
 	ConnectTimeout =
 		hb_opts:get(http_connect_timeout, no_connect_timeout, Opts),
-    GunArgs =
+    BaseGunOpts =
         #{
             http_opts =>
                 #{
@@ -284,11 +284,16 @@ open_connection(#{ peer := Peer }, Opts) ->
                 },
             retry => 0,
             connect_timeout => ConnectTimeout,
-            protocols => [http3],
-            transport => quic
+            tls_opts => [{verify, verify_none}, {cacerts, public_key:cacerts_get()}]
         },
-    ?event(http, {gun_open, {host, Host}, {port, Port}, {args, GunArgs}}),
-	gun:open(Host, Port, GunArgs).
+    GunOpts =
+        case Proto = hb_opts:get(protocol, no_proto, Opts) of
+            http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
+            http2 -> BaseGunOpts#{protocols => [http2], transport => tcp};
+            http1 -> BaseGunOpts#{protocols => [http], transport => tcp}
+        end,
+    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}}),
+	gun:open(Host, Port, GunOpts).
 
 parse_peer(Peer, Opts) ->
     case binary:split(Peer, <<":">>, [global]) of

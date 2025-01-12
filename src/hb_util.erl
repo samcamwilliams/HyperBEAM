@@ -246,16 +246,21 @@ format_debug_trace(Mod, Func, Line) ->
 
 %% @doc Convert a term to a string for debugging print purposes.
 debug_fmt(X) -> debug_fmt(X, 0).
-debug_fmt({explicit, X}, Indent) ->
+debug_fmt(X, Indent) ->
+    try do_debug_fmt(X, Indent)
+    catch _:_ -> format_indented("[PRINT FAIL:] ~80p", [X], Indent)
+    end.
+
+do_debug_fmt({explicit, X}, Indent) ->
     format_indented("~p", [X], Indent);
-debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
+do_debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Indent);
-debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
+do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
     format_indented("~p: [TX item]~n~s",
         [X, ar_bundles:format(Y, Indent + 1)],
         Indent
     );
-debug_fmt({X, Y}, Indent) when is_map(Y) ->
+do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
     Formatted = hb_util:format_map(Y, Indent + 1),
     HasNewline = lists:member($\n, Formatted),
     format_indented("~p~s",
@@ -268,17 +273,17 @@ debug_fmt({X, Y}, Indent) when is_map(Y) ->
         ],
         Indent
     );
-debug_fmt({X, Y}, Indent) ->
+do_debug_fmt({X, Y}, Indent) ->
     format_indented("~s: ~s", [debug_fmt(X, Indent), debug_fmt(Y, Indent)], Indent);
-debug_fmt(Map, Indent) when is_map(Map) ->
+do_debug_fmt(Map, Indent) when is_map(Map) ->
     hb_util:format_map(Map, Indent);
-debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
+do_debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
-debug_fmt(X, Indent) when is_binary(X) ->
+do_debug_fmt(X, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Indent);
-debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
+do_debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     format_indented("~s", [Str], Indent);
-debug_fmt(X, Indent) ->
+do_debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
 
 %% @doc Helper function to format tuples with arity greater than 2.
