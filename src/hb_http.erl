@@ -7,7 +7,7 @@
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/4, request/5]).
 -export([reply/2, reply/3]).
--export([message_to_status/1, req_to_message/2]).
+-export([message_to_status/1, req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -157,11 +157,11 @@ parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message, Opts) 
 
 %% @doc Collect the necessary number of responses, and stop workers if
 %% configured to do so.
-parallel_responses(Res, Procs, Ref, 0, false, Opts) ->
+parallel_responses(Res, Procs, Ref, 0, false, _Opts) ->
     lists:foreach(fun(P) -> P ! no_reply end, Procs),
     empty_inbox(Ref),
     {ok, Res};
-parallel_responses(Res, Procs, Ref, 0, true, Opts) ->
+parallel_responses(Res, Procs, Ref, 0, true, _Opts) ->
     lists:foreach(fun(P) -> exit(P, kill) end, Procs),
     empty_inbox(Ref),
     Res;
@@ -232,10 +232,17 @@ message_to_status(Item) ->
     end.
 
 %% @doc Convert a cowboy request to a normalized message.
-req_to_message(Req, Opts) ->
+req_to_tabm_singleton(Req, Opts) ->
+    case cowboy:get_header(<<"content-type">>, Req) of
+        {ok, <<"application/x-ans-104">>} ->
+            {ok, Body} = read_body(Req),
+            hb_message:convert(ar_bundles:deserialize(Body), converge, tx, Opts);
+        _ ->
+            http_sig_to_tabm_singleton(Req, Opts)
+    end.
 
-    {ok, Body} = read_body(Req),
-    hb_message:convert(ar_bundles:deserialize(Body), converge, tx, Opts).
+http_sig_to_tabm_singleton(Req, Opts) ->
+    
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).

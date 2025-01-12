@@ -1,6 +1,6 @@
 -module(hb_client).
 %% Converge API and HyperBEAM Built-In Devices
--export([resolve/4, routes/1, add_route/2]).
+-export([resolve/4, routes/2, add_route/2]).
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
@@ -24,7 +24,11 @@ resolve(Node, Msg1, Msg2, Opts) ->
         prefix_keys(<<"2.">>, Msg2, Opts),
         Opts#{ hashpath => ignore }
     ),
-    hb_http:post(Node, maps:merge(prefix_keys(<<"1.">>, Msg1, Opts), TABM2)).
+    hb_http:post(
+        Node,
+        maps:merge(prefix_keys(<<"1.">>, Msg1, Opts), TABM2),
+        Opts
+    ).
 
 prefix_keys(Prefix, Message, Opts) ->
     maps:fold(
@@ -35,22 +39,28 @@ prefix_keys(Prefix, Message, Opts) ->
         hb_message:convert(Message, tabm, Opts)
     ).
 
-routes(Node) ->
-    hb_http:post(Node,
+routes(Node, Opts) ->
+    resolve(Node,
         #{
-            device => <<"Router/1.0">>,
+            device => <<"Router/1.0">>
+        },
+        #{
             path => <<"Routes">>,
             method => <<"GET">>
-        }
+        },
+        Opts
     ).
 
-add_route(Node, Route) ->
-    hb_http:post(Node,
+add_route(Node, Route, Opts) ->
+    resolve(Node,
         Route#{
-            device => <<"Router/1.0">>,
+            device => <<"Router/1.0">>
+        },
+        #{
             path => <<"Routes">>,
             method => <<"POST">>
-        }
+        },
+        Opts
     ).
 
 

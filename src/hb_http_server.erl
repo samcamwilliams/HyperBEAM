@@ -125,7 +125,7 @@ start_http2(ServerID, Dispatcher, Opts) ->
 init(Req, ServerID) ->
     Opts = cowboy:get_env(ServerID, opts, no_opts),
     % Parse the HTTP request into HyerBEAM's message format.
-    MsgSingleton = hb_http:req_to_message(Req, Opts),
+    MsgSingleton = hb_http:req_to_tabm_singleton(Req, Opts),
     ?event(http, {http_inbound, MsgSingleton}),
     % Execute the message through Converge Protocol.
     {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
