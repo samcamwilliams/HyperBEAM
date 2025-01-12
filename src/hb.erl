@@ -196,9 +196,7 @@ profile(Fun) ->
 %% @doc Utility function to wait for a given amount of time, printing a debug
 %% message to the console first.
 debug_wait(T, Mod, Func, Line) ->
-    hb_util:debug_print(
-        lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
-        Mod, Func, Line),
+    ?event(wait, {debug_wait, {T, Mod, Func, Line}}),
     receive after T -> ok end.
 
 %% @doc Run a function as many times as possible in a given amount of time.

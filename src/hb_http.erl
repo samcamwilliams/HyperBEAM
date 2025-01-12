@@ -5,7 +5,7 @@
 %%% HTTP requests.
 -module(hb_http).
 -export([start/0]).
--export([get/1, get/2, post/2, post/3, request/3, request/4]).
+-export([get/2, get/3, post/3, post/4, request/4, request/5]).
 -export([reply/2, reply/3]).
 -export([message_to_status/1, req_to_message/2]).
 -include("include/hb.hrl").
@@ -17,9 +17,9 @@ start() ->
 
 %% @doc Gets a URL via HTTP and returns the resulting message in deserialized
 %% form.
-get(Node) -> get(Node, <<"/">>).
-get(Node, Path) ->
-    case request(get, Node, Path, #{}) of
+get(Node, Opts) -> get(Node, <<"/">>, Opts).
+get(Node, Path, Opts) ->
+    case request(get, Node, Path, #{}, Opts) of
         {ok, Body} ->
             {ok,
                 hb_message:convert(
@@ -34,10 +34,14 @@ get(Node, Path) ->
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
-post(Node, Message) ->
-    post(Node, hb_converge:get(<<"Path">>, Message, <<"/">>, #{}), Message).
-post(Node, Path, Message) ->
-    case request(post, Node, Path, Message) of
+post(Node, Message, Opts) ->
+    post(Node,
+        hb_converge:get(<<"Path">>, Message, <<"/">>, #{}),
+        Message,
+        Opts
+    ).
+post(Node, Path, Message, Opts) ->
+    case request(post, Node, Path, Message, Opts) of
         {ok, Res} ->
             {ok,
                 hb_message:convert(
@@ -52,29 +56,32 @@ post(Node, Path, Message) ->
 
 %% @doc Posts a binary to a URL on a remote peer via HTTP, returning the raw
 %% binary body.
-request(Method, Node, Path) ->
-    request(Method, Node, Path, #{}).
-request(Method, Config, Path, Message) when is_map(Config) ->
-    multirequest(Config, Method, Path, Message);
-request(Method, Node, Path, RawMessage) ->
+request(Method, Peer, Path, Opts) ->
+    request(Method, Peer, Path, #{}, Opts).
+request(Method, Config, Path, Message, Opts) when is_map(Config) ->
+    multirequest(Config, Method, Path, Message, Opts);
+request(Method, Peer, Path, RawMessage, Opts) ->
     Message = hb_converge:ensure_message(RawMessage),
-    BinNode = if is_binary(Node) -> Node; true -> list_to_binary(Node) end,
+    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
-    FullPath = <<BinNode/binary, BinPath/binary>>,
-    ?event(debug, {http_outbound, Method, FullPath, Message}),
+    ?event(debug, {http_outbound, Method, BinPeer, BinPath, Message}),
+    receive after infinity -> ok end,
     BinMessage =
         case map_size(Message) of
             0 -> <<>>;
             _ -> ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
         end,
     Req =
-        case Method of
-            post -> {FullPath, [], "application/x-ans-104", BinMessage};
-            get -> {FullPath, []}
-        end,
-    case httpc:request(Method, Req, [], [{body_format, binary}]) of
+        #{
+            peer => BinPeer,
+            path => BinPath,
+            method => Method,
+            headers => [{"Content-Type", "application/x-ans-104"}],
+            body => BinMessage
+        },
+    case ar_http:req(Req, Opts) of
         {ok, {{_, Status, _}, _, Body}} when Status >= 200, Status < 300 ->
-            ?event({http_got, BinNode, BinPath, Status}),
+            ?event({http_got, BinPeer, BinPath, Status}),
             {
                 case Status of
                     201 -> created;
@@ -83,13 +90,13 @@ request(Method, Node, Path, RawMessage) ->
                 Body
             };
         {ok, {{_, Status, _}, _, Body}} when Status == 400 ->
-            ?event({http_got_client_error, BinNode, BinPath}),
+            ?event({http_got_client_error, BinPeer, BinPath}),
             {error, Body};
         {ok, {{_, Status, _}, _, Body}} when Status > 400 ->
-            ?event({http_got_server_error, BinNode, BinPath}),
+            ?event({http_got_server_error, BinPeer, BinPath}),
             {unavailable, Body};
         Response ->
-            ?event({http_error, BinNode, BinPath, Response}),
+            ?event({http_error, BinPeer, BinPath, Response}),
             {error, Response}
     end.
 
@@ -104,41 +111,41 @@ request(Method, Node, Path, RawMessage) ->
 %%      /Responses: Number of responses to gather
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
-multirequest(Config, Method, Path, Message) ->
-    Nodes = hb_converge:get(<<"Nodes">>, Config, #{}),
-    Responses = hb_converge:get(<<"Responses">>, Config, 1),
-    StopAfter = hb_converge:get(<<"Stop-After">>, Config, true),
-    case hb_converge:get(<<"Parallel">>, Config, false) of
+multirequest(Config, Method, Path, Message, Opts) ->
+    Nodes = hb_converge:get(<<"Peers">>, Config, #{}, Opts),
+    Responses = hb_converge:get(<<"Responses">>, Config, 1, Opts),
+    StopAfter = hb_converge:get(<<"Stop-After">>, Config, true, Opts),
+    case hb_converge:get(<<"Parallel">>, Config, false, Opts) of
         false ->
             serial_multirequest(
-                Nodes, Responses, Method, Path, Message);
+                Nodes, Responses, Method, Path, Message, Opts);
         true ->
             parallel_multirequest(
-                Nodes, Responses, StopAfter, Method, Path, Message)
+                Nodes, Responses, StopAfter, Method, Path, Message, Opts)
     end.
 
-serial_multirequest(_Nodes, 0, _Method, _Path, _Message) -> [];
-serial_multirequest([Node | Nodes], Remaining, Method, Path, Message) ->
-    case request(Method, Node, Path, Message) of
+serial_multirequest(_Nodes, 0, _Method, _Path, _Message, _Opts) -> [];
+serial_multirequest([Node | Nodes], Remaining, Method, Path, Message, Opts) ->
+    case request(Method, Node, Path, Message, Opts) of
         {Status, Res} when Status == ok; Status == error ->
             [
                 {Status, Res}
             |
-                serial_multirequest(Nodes, Remaining - 1, Method, Path, Message)
+                serial_multirequest(Nodes, Remaining - 1, Method, Path, Message, Opts)
             ];
         _ ->
-            serial_multirequest(Nodes, Remaining, Method, Path, Message)
+            serial_multirequest(Nodes, Remaining, Method, Path, Message, Opts)
     end.
 
 %% @doc Dispatch the same HTTP request to many nodes in parallel.
-parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message) ->
+parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message, Opts) ->
     Ref = make_ref(),
     Parent = self(),
     Procs = lists:map(
         fun(Node) ->
             spawn(
                 fun() ->
-                    Res = request(Method, Node, Path, Message),
+                    Res = request(Method, Node, Path, Message, Opts),
                     receive no_reply -> stopping
                     after 0 -> Parent ! {Ref, self(), Res}
                     end
@@ -147,19 +154,19 @@ parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message) ->
         end,
         Nodes
     ),
-    parallel_responses([], Procs, Ref, Responses, StopAfter).
+    parallel_responses([], Procs, Ref, Responses, StopAfter, Opts).
 
 %% @doc Collect the necessary number of responses, and stop workers if
 %% configured to do so.
-parallel_responses(Res, Procs, Ref, 0, false) ->
+parallel_responses(Res, Procs, Ref, 0, false, Opts) ->
     lists:foreach(fun(P) -> P ! no_reply end, Procs),
     empty_inbox(Ref),
     {ok, Res};
-parallel_responses(Res, Procs, Ref, 0, true) ->
+parallel_responses(Res, Procs, Ref, 0, true, Opts) ->
     lists:foreach(fun(P) -> exit(P, kill) end, Procs),
     empty_inbox(Ref),
     Res;
-parallel_responses(Res, Procs, Ref, Awaiting, StopAfter) ->
+parallel_responses(Res, Procs, Ref, Awaiting, StopAfter, Opts) ->
     receive
         {Ref, Pid, {Status, NewRes}} when Status == ok; Status == error ->
             parallel_responses(
@@ -167,7 +174,8 @@ parallel_responses(Res, Procs, Ref, Awaiting, StopAfter) ->
                 lists:delete(Pid, Procs),
                 Ref,
                 Awaiting - 1,
-                StopAfter
+                StopAfter,
+                Opts
             );
         {Ref, Pid, _} ->
             parallel_responses(
@@ -175,7 +183,8 @@ parallel_responses(Res, Procs, Ref, Awaiting, StopAfter) ->
                 lists:delete(Pid, Procs),
                 Ref,
                 Awaiting,
-                StopAfter
+                StopAfter,
+                Opts
             )
     end.
 
@@ -248,7 +257,8 @@ simple_converge_resolve_test() ->
                             <<"Key3">> => <<"Value2">>
                         }
                     }
-            }
+            },
+            #{}
         ),
     ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
 
@@ -265,13 +275,13 @@ wasm_compute_request(ImageFile, Func, Params) ->
 run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
-    {ok, Res} = post(Node, Msg),
+    {ok, Res} = post(Node, Msg, #{}),
     ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
-    {ok, Res} = post(URL, Msg),
+    {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
 
 % http_scheduling_test() ->

@@ -8,7 +8,7 @@
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
--export([format_map/1, format_map/2]).
+-export([format_map/1, format_map/2, remove_trailing_noise/2]).
 -export([debug_print/4, debug_fmt/1, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
@@ -301,9 +301,11 @@ do_to_lines(In =[RawElem | Rest]) ->
     end.
 
 remove_trailing_noise(Str) ->
-    case lists:member(lists:last(Str), ", \n") of
+    remove_trailing_noise(Str, " \n,").
+remove_trailing_noise(Str, Noise) ->
+    case lists:member(lists:last(Str), Noise) of
         true ->
-            remove_trailing_noise(lists:droplast(Str));
+            remove_trailing_noise(lists:droplast(Str), Noise);
         false -> Str
     end.
 

@@ -24,7 +24,10 @@
 %%%                map or a path regex.
 %%% '''
 -module(dev_router).
--export([find_route/2, find_route/3, routes/3]).
+%%% Device API:
+-export([routes/3]).
+%%% Public utilities:
+-export([find_route/2, find_route/3, match_routes/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -72,12 +75,12 @@ routes(M1, M2, Opts) ->
 find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
 find_route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
-    R = first_match(Msg, Routes, Opts),
+    R = match_routes(Msg, Routes, Opts),
     case (R =/= no_matches) andalso hb_converge:get(<<"Node">>, R, Opts) of
         false -> no_matches;
         Node when is_binary(Node) -> {ok, Node};
         not_found ->
-            Nodes = hb_converge:get(<<"Nodes">>, R, Opts),
+            Nodes = hb_converge:get(<<"Peers">>, R, Opts),
             case hb_converge:get(<<"Strategy">>, R, Opts) of
                 not_found -> {ok, Nodes};
                 Strategy ->
@@ -89,21 +92,21 @@ find_route(_, Msg, Opts) ->
                             {ok, hb_converge:get(<<"Host">>, X, Opts)};
                         [X] -> {ok, X};
                         _ ->
-                            {ok, hb_converge:set(<<"Nodes">>, Chosen, Opts)}
+                            {ok, hb_converge:set(<<"Peers">>, Chosen, Opts)}
                     end
             end
     end.
 
 %% @doc Find the first matching template in a list of known routes.
-first_match(ToMatch, Routes, Opts) ->
-    first_match(
+match_routes(ToMatch, Routes, Opts) ->
+    match_routes(
         ToMatch,
         Routes,
         hb_converge:keys(Routes),
         Opts
     ).
-first_match(_, _, [], _) -> no_matches;
-first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
+match_routes(_, _, [], _) -> no_matches;
+match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
     XM = hb_converge:get(XKey, Routes, Opts),
     Template =
         hb_converge:get(
@@ -114,7 +117,7 @@ first_match(ToMatch, Routes, [XKey|Keys], Opts) ->
         ),
     case template_matches(ToMatch, Template) of
         true -> XM;
-        false -> first_match(ToMatch, Routes, Keys, Opts)
+        false -> match_routes(ToMatch, Routes, Keys, Opts)
     end.
 
 %% @doc Check if a message matches a message template or path regex.

@@ -32,10 +32,6 @@ config() ->
         http_host => "localhost",
         gateway => "https://arweave.net",
         bundler => "https://up.arweave.net",
-        %% Choice of nodes for remote tasks, in the form of a map between
-        %% node addresses and HTTP URLs.
-        %% `_' is a wildcard for any other address that is not specified.
-        nodes => #{ },
         %% Location of the wallet keyfile on disk that this node will use.
         key_location => "hyperbeam-key.json",
         %% Default page limit for pagination of results from the APIs.
@@ -73,13 +69,6 @@ config() ->
                 flat => hb_codec_flat,
                 http => hb_codec_http
             },
-        %% The stacks of devices that the node should expose by default.
-        %% These represent the core flows of functionality of the node.
-        default_device_stacks => [
-            {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
-            {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
-            {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}}
-        ],
         %% Should the node attempt to access data from remote caches for
         %% client requests?
         access_remote_cache_for_client => false,
@@ -91,7 +80,13 @@ config() ->
         client_error_strategy => throw,
         %% Default execution cache control options
         cache_control => [<<"no-cache">>, <<"no-store">>],
-        % Dev options
+        %% HTTP request options
+        http_connect_timeout => 5000,
+        http_response_timeout => 30000,
+        http_keepalive => 120000,
+        http_request_send_timeout => 60000,
+        http_default_remote_port => 443,
+        %% Dev options
         mode => debug,
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,

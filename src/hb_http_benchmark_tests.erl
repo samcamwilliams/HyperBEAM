@@ -14,7 +14,12 @@ unsigned_resolve_benchmark_test() ->
     Iterations = hb:benchmark(
         fun() ->
             hb_http:post(URL,
-                #{path => <<"Key1">>, <<"Key1">> => #{<<"Key2">> => <<"Value1">>}})
+                #{
+                    path => <<"Key1">>,
+                    <<"Key1">> => #{<<"Key2">> => <<"Value1">>}
+                },
+                #{}
+            )
         end,
         BenchTime
     ),
@@ -30,7 +35,14 @@ parallel_unsigned_resolve_benchmark_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => false}),
     Iterations = hb:benchmark(
         fun(_Count) ->
-            hb_http:post(URL, #{path => <<"Key1">>, <<"Key1">> => #{<<"Key2">> => <<"Value1">>}})
+            hb_http:post(
+                URL,
+                #{
+                    path => <<"Key1">>,
+                    <<"Key1">> => #{<<"Key2">> => <<"Value1">>}
+                },
+                #{}
+            )
         end,
         BenchTime,
         BenchWorkers
@@ -57,7 +69,7 @@ run_wasm_unsigned_benchmark_test() ->
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     Iterations = hb:benchmark(
         fun(_) ->
-            case hb_http:post(URL, Msg) of
+            case hb_http:post(URL, Msg, #{}) of
                 {ok, _} -> 1;
                 _ -> 0
             end
@@ -77,7 +89,7 @@ run_wasm_signed_benchmark_test_disabled() ->
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     Iterations = hb:benchmark(
         fun(_) ->
-            case hb_http:post(URL, Msg) of
+            case hb_http:post(URL, Msg, #{}) of
                 {ok, _} -> 1;
                 _ -> 0
             end
@@ -98,7 +110,7 @@ parallel_wasm_unsigned_benchmark_test_disabled() ->
     Iterations = hb:benchmark(
         fun(X) ->
             ?event(debug, {post_start, X}),
-            case hb_http:post(URL, Msg) of
+            case hb_http:post(URL, Msg, #{}) of
                 {ok, _} ->
                     1;
                 _ -> 0
@@ -120,7 +132,7 @@ parallel_wasm_signed_benchmark_test_disabled() ->
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     Iterations = hb:benchmark(
         fun(_) ->
-            case hb_http:post(URL, Msg) of
+            case hb_http:post(URL, Msg, #{}) of
                 {ok, _ResMsg} ->
                     1;
                 _ -> 0
