@@ -73,7 +73,7 @@ init(Opts) ->
 	]),
 	prometheus_gauge:new([{name, outbound_connections},
 		{help, "The current number of the open outbound network connections"}]),
-	Res = prometheus_histogram:new([
+	prometheus_histogram:new([
 		{name, http_request_duration_seconds},
 		{buckets, [0.01, 0.1, 0.5, 1, 5, 10, 30, 60]},
         {labels, [http_method, route, status_class]},
@@ -93,7 +93,17 @@ init(Opts) ->
 			"The total duration of an HTTP GET chunk request made to a peer."
 		}
 	]),
-    ?event(debug, {init, Res}),
+	prometheus_counter:new([
+		{name, http_client_downloaded_bytes_total},
+		{help, "The total amount of bytes requested via HTTP, per remote endpoint"},
+		{labels, [route]}
+	]),
+	prometheus_counter:new([
+		{name, http_client_uploaded_bytes_total},
+		{help, "The total amount of bytes posted via HTTP, per remote endpoint"},
+		{labels, [route]}
+	]),
+    ?event(debug, started),
 	{ok, #state{ opts = Opts }}.
 
 handle_call({get_connection, Args}, From,
@@ -273,9 +283,11 @@ open_connection(#{ peer := Peer }, Opts) ->
                         )
                 },
             retry => 0,
-            connect_timeout => ConnectTimeout
+            connect_timeout => ConnectTimeout,
+            protocols => [http],
+            transport => tcp
         },
-    ?event(debug, {gun_open, {host, Host}, {port, Port}, {args, GunArgs}}),
+    ?event(http, {gun_open, {host, Host}, {port, Port}, {args, GunArgs}}),
 	gun:open(Host, Port, GunArgs).
 
 parse_peer(Peer, Opts) ->
@@ -344,6 +356,7 @@ request(PID, Args, Opts) ->
 	Path = maps:get(path, Args),
 	Headers = maps:get(headers, Args, []),
 	Body = maps:get(body, Args, <<>>),
+    ?event(http, {gun_request, {method, Method}, {path, Path}, {headers, Headers}, {body, Body}}),
 	Ref = gun:request(PID, Method, Path, Headers, Body),
 	ResponseArgs =
         #{
@@ -394,13 +407,9 @@ await_response(Args, Opts) ->
 			download_metric(FinData, Args),
 			upload_metric(Args),
 			{ok,
-                {
-                    gen_code_rest(maps:get(status, Args)),
-                    maps:get(headers, Args),
-                    FinData,
-					Start,
-                    End
-                }
+                maps:get(status, Args),
+                maps:get(headers, Args),
+                FinData
             };
 		{error, timeout} = Response ->
 			record_response_status(Method, Path, Response),
@@ -447,21 +456,6 @@ upload_metric(#{method := post, path := Path, body := Body}) ->
 	);
 upload_metric(_) ->
 	ok.
-
-gen_code_rest(200) ->
-	{<<"200">>, <<"OK">>};
-gen_code_rest(201) ->
-	{<<"201">>, <<"Created">>};
-gen_code_rest(202) ->
-	{<<"202">>, <<"Accepted">>};
-gen_code_rest(400) ->
-	{<<"400">>, <<"Bad Request">>};
-gen_code_rest(421) ->
-	{<<"421">>, <<"Misdirected Request">>};
-gen_code_rest(429) ->
-	{<<"429">>, <<"Too Many Requests">>};
-gen_code_rest(N) ->
-	{integer_to_binary(N), <<>>}.
 
 % @doc Return the HTTP status class label for cowboy_requests_total and
 % gun_requests_total metrics.

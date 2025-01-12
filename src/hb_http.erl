@@ -19,7 +19,7 @@ start() ->
 %% form.
 get(Node, Opts) -> get(Node, <<"/">>, Opts).
 get(Node, Path, Opts) ->
-    case request(get, Node, Path, #{}, Opts) of
+    case request(<<"GET">>, Node, Path, #{}, Opts) of
         {ok, Body} ->
             {ok,
                 hb_message:convert(
@@ -41,7 +41,7 @@ post(Node, Message, Opts) ->
         Opts
     ).
 post(Node, Path, Message, Opts) ->
-    case request(post, Node, Path, Message, Opts) of
+    case request(<<"POST">>, Node, Path, Message, Opts) of
         {ok, Res} ->
             {ok,
                 hb_message:convert(
@@ -65,7 +65,6 @@ request(Method, Peer, Path, RawMessage, Opts) ->
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ?event(debug, {http_outbound, Method, BinPeer, BinPath, Message}),
-    receive after infinity -> ok end,
     BinMessage =
         case map_size(Message) of
             0 -> <<>>;
@@ -76,11 +75,11 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             peer => BinPeer,
             path => BinPath,
             method => Method,
-            headers => [{"Content-Type", "application/x-ans-104"}],
+            headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
             body => BinMessage
         },
     case ar_http:req(Req, Opts) of
-        {ok, {{_, Status, _}, _, Body}} when Status >= 200, Status < 300 ->
+        {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
             ?event({http_got, BinPeer, BinPath, Status}),
             {
                 case Status of
@@ -89,10 +88,10 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 end,
                 Body
             };
-        {ok, {{_, Status, _}, _, Body}} when Status == 400 ->
+        {ok, Status, _Headers, Body} when Status == 400 ->
             ?event({http_got_client_error, BinPeer, BinPath}),
             {error, Body};
-        {ok, {{_, Status, _}, _, Body}} when Status > 400 ->
+        {ok, Status, _Headers, Body} when Status > 400 ->
             ?event({http_got_server_error, BinPeer, BinPath}),
             {unavailable, Body};
         Response ->

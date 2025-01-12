@@ -50,7 +50,7 @@ start(Opts) ->
                 ]}
             ]
         ),
-    Res = cowboy:start_clear(
+    {ok, Listener} = cowboy:start_clear(
         {?MODULE, Port}, 
         [{port, Port}],
         #{
@@ -60,13 +60,19 @@ start(Opts) ->
             stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
         }
     ),
-    Res.
+    ?event(debug,
+        {http_server_started,
+            {listener, Listener},
+            {port, Port}
+        }
+    ),
+    {ok, Listener}.
 
 init(Req, Port) ->
     Opts = cowboy:get_env({?MODULE, Port}, opts, no_opts),
     % Parse the HTTP request into HyerBEAM's message format.
     MsgSingleton = hb_http:req_to_message(Req, Opts),
-    ?event(debug, {http_inbound, Req, MsgSingleton}),
+    ?event(debug, {http_inbound, MsgSingleton}),
     % Execute the message through Converge Protocol.
     {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
     % Sign the transaction if it's not already signed.
@@ -125,12 +131,14 @@ start_test_node(Opts) ->
         ssl,
         debugger,
         cowboy,
+        gun,
         prometheus,
         prometheus_cowboy,
         os_mon,
         rocksdb
     ]),
     hb:init(),
+    hb_sup:start_link(Opts),
     ServerOpts = test_opts(Opts),
     start(ServerOpts),
     Port = hb_opts:get(port, no_port, ServerOpts),
