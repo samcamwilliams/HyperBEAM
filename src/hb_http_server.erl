@@ -56,8 +56,11 @@ new_server(Opts) ->
         ),
     {ok, Port, Listener} =
         case Protocol = hb_opts:get(protocol, no_proto, Opts) of
-            http3 -> start_http3(ServerID, Dispatcher, Opts);
-            http2 -> start_http2(ServerID, Dispatcher, Opts)
+            http3 ->
+                start_http3(ServerID, Dispatcher, Opts);
+            Pro when Pro =:= http2; Pro =:= http1 ->
+                start_http2(ServerID, Dispatcher, Opts);
+            _ -> {error, {unknown_protocol, Protocol}}
         end,
     ?event(debug,
         {http_server_started,
@@ -71,42 +74,49 @@ new_server(Opts) ->
 
 start_http3(ServerID, Dispatcher, Opts) ->
     ?event(debug, {start_http3, ServerID}),
-    {ok, Listener} = cowboy:start_quic(
-        ServerID, 
-        TransOpts = #{
-            socket_opts => [
-                {certfile, "test/test-tls.pem"},
-                {keyfile, "test/test-tls.key"}
-            ]
-        },
-        ProtoOpts = #{
-            env => #{dispatch => Dispatcher, opts => Opts},
-            metrics_callback =>
-                fun prometheus_cowboy2_instrumenter:observe/1,
-            stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
-        }
-    ),
-    {ok, {_, GivenPort}} = quicer:sockname(Listener),
-    ranch_server:set_new_listener_opts(
-        ServerID,
-        1024,
-        ranch:normalize_opts(maps:to_list(TransOpts#{ port => GivenPort })),
-        ProtoOpts,
-        []
-    ),
-    ranch_server:set_addr(ServerID, {<<"localhost">>, GivenPort}),
-    {ok, GivenPort, Listener}.
+    Parent = self(),
+    ServerPID =
+        spawn(fun() ->
+            {ok, Listener} = cowboy:start_quic(
+                ServerID, 
+                TransOpts = #{
+                    socket_opts => [
+                        {certfile, "test/test-tls.pem"},
+                        {keyfile, "test/test-tls.key"}
+                    ]
+                },
+                ProtoOpts = #{
+                    env => #{dispatch => Dispatcher, opts => Opts},
+                    metrics_callback =>
+                        fun prometheus_cowboy2_instrumenter:observe/1,
+                    stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
+                }
+            ),
+            {ok, {_, GivenPort}} = quicer:sockname(Listener),
+            ranch_server:set_new_listener_opts(
+                ServerID,
+                1024,
+                ranch:normalize_opts(
+                    maps:to_list(TransOpts#{ port => GivenPort })
+                ),
+                ProtoOpts,
+                []
+            ),
+            ranch_server:set_addr(ServerID, {<<"localhost">>, GivenPort}),
+            Parent ! {ok, GivenPort},
+            receive stop -> stopped end
+        end),
+    receive {ok, GivenPort} -> {ok, GivenPort, ServerPID}
+    after 2000 ->
+        {error, {timeout, staring_http3_server, ServerID}}
+    end.
 
 start_http2(ServerID, Dispatcher, Opts) ->
     ?event(debug, {start_http2, ServerID}),
-    {ok, Listener} = cowboy:start_tls(
+    {ok, Listener} = cowboy:start_clear(
         ServerID,
         [
-            {port, Port = hb_opts:get(port, 8734, Opts)},
-            {alpn_preferred_protocols, [<<"h2">>]},
-            {certfile, "test/test-tls.pem"},
-            {keyfile, "test/test-tls.key"},
-            {verify, verify_none}
+            {port, Port = hb_opts:get(port, 8734, Opts)}
         ],
         #{env => #{dispatch => Dispatcher, opts => Opts}}
     ),
