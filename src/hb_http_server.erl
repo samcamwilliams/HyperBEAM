@@ -50,9 +50,15 @@ start(Opts) ->
                 ]}
             ]
         ),
-    {ok, Listener} = cowboy:start_clear(
+    {ok, Listener} = cowboy:start_quic(
         {?MODULE, Port}, 
-        [{port, Port}],
+        #{
+            port => Port,
+            socket_opts => [
+                {certfile, "test/test-tls.pem"},
+                {keyfile, "test/test-tls.key"}
+            ]
+        },
         #{
             env => #{dispatch => Dispatcher, opts => Opts},
             metrics_callback =>
@@ -60,19 +66,20 @@ start(Opts) ->
             stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
         }
     ),
+    {ok, {_, GivenPort}} = quicer:sockname(Listener),
     ?event(debug,
         {http_server_started,
             {listener, Listener},
-            {port, Port}
-        }
+            {port, Port},
+            {given_port, GivenPort}}
     ),
-    {ok, Listener}.
+    {ok, GivenPort}.
 
 init(Req, Port) ->
     Opts = cowboy:get_env({?MODULE, Port}, opts, no_opts),
     % Parse the HTTP request into HyerBEAM's message format.
     MsgSingleton = hb_http:req_to_message(Req, Opts),
-    ?event(debug, {http_inbound, MsgSingleton}),
+    ?event(http, {http_inbound, MsgSingleton}),
     % Execute the message through Converge Protocol.
     {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
     % Sign the transaction if it's not already signed.
@@ -106,7 +113,7 @@ test_opts(Opts) ->
     rand:seed(default),
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
-    Port = 42000 + rand:uniform(20000),
+    Port = 10000 + rand:uniform(20000),
     Wallet = ar_wallet:new(),
     Opts#{
         % Generate a random port number between 8000 and 9000.
@@ -140,9 +147,8 @@ start_test_node(Opts) ->
     hb:init(),
     hb_sup:start_link(Opts),
     ServerOpts = test_opts(Opts),
-    start(ServerOpts),
-    Port = hb_opts:get(port, no_port, ServerOpts),
-    <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
+    {ok, GivenPort} = start(ServerOpts),
+    <<"http://localhost:", (integer_to_binary(GivenPort))/binary, "/">>.
 
 raw_http_access_test() ->
     URL = start_test_node(),

@@ -64,7 +64,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
     Message = hb_converge:ensure_message(RawMessage),
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
-    ?event(debug, {http_outbound, Method, BinPeer, BinPath, Message}),
+    ?event(http, {http_outbound, Method, BinPeer, BinPath, Message}),
     BinMessage =
         case map_size(Message) of
             0 -> <<>>;
@@ -96,7 +96,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             {unavailable, Body};
         Response ->
             ?event({http_error, BinPeer, BinPath, Response}),
-            {error, Response}
+            Response
     end.
 
 %% @doc Dispatch the same HTTP request to many nodes. Can be configured to

@@ -284,8 +284,8 @@ open_connection(#{ peer := Peer }, Opts) ->
                 },
             retry => 0,
             connect_timeout => ConnectTimeout,
-            protocols => [http],
-            transport => tcp
+            protocols => [http3],
+            transport => quic
         },
     ?event(http, {gun_open, {host, Host}, {port, Port}, {args, GunArgs}}),
 	gun:open(Host, Port, GunArgs).
