@@ -35,18 +35,7 @@ get(Node, Path) ->
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
 post(Node, Message) ->
-    post(Node, <<"/">>, Message).
-post(Node, Path, Message) when not is_binary(Message) ->
-    ?event(
-        {
-            http_post,
-            Node,
-            Path,
-            hb_util:id(Message, unsigned),
-            hb_util:id(Message, signed)
-        }
-    ),
-    post(Node, Path, ar_bundles:serialize(hb_message:convert(Message, tx, #{})));
+    post(Node, hb_converge:get(<<"Path">>, Message, <<"/">>, #{}), Message).
 post(Node, Path, Message) ->
     case request(post, Node, Path, Message) of
         {ok, Res} ->
@@ -67,13 +56,20 @@ request(Method, Node, Path) ->
     request(Method, Node, Path, #{}).
 request(Method, Config, Path, Message) when is_map(Config) ->
     multirequest(Config, Method, Path, Message);
-request(Method, Node, Path, Message) ->
+request(Method, Node, Path, RawMessage) ->
+    Message = hb_converge:ensure_message(RawMessage),
     BinNode = if is_binary(Node) -> Node; true -> list_to_binary(Node) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     FullPath = <<BinNode/binary, BinPath/binary>>,
+    ?event(debug, {http_outbound, Method, FullPath, Message}),
+    BinMessage =
+        case map_size(Message) of
+            0 -> <<>>;
+            _ -> ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
+        end,
     Req =
         case Method of
-            post -> {FullPath, [], "application/octet-stream", Message};
+            post -> {FullPath, [], "application/x-ans-104", BinMessage};
             get -> {FullPath, []}
         end,
     case httpc:request(Method, Req, [], [{body_format, binary}]) of
@@ -194,7 +190,8 @@ empty_inbox(Ref) ->
 %% @doc Reply to the client's HTTP request with a message.
 reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
-reply(Req, Status, Message) ->
+reply(Req, Status, RawMessage) ->
+    Message = hb_converge:ensure_message(RawMessage),
     TX = hb_message:convert(Message, tx, converge, #{}),
     ?event(
         {replying,
@@ -205,7 +202,7 @@ reply(Req, Status, Message) ->
     ),
     Req2 = cowboy_req:reply(
         Status,
-        #{<<"Content-Type">> => <<"application/octet-stream">>},
+        #{<<"Content-Type">> => <<"application/x-ans-104">>},
         ar_bundles:serialize(TX),
         Req
     ),
@@ -224,6 +221,7 @@ message_to_status(Item) ->
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_message(Req, Opts) ->
+
     {ok, Body} = read_body(Req),
     hb_message:convert(ar_bundles:deserialize(Body), converge, tx, Opts).
 

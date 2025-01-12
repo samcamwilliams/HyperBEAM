@@ -13,6 +13,7 @@
 -export([start/0, start/1, allowed_methods/2, init/2, set_opts/1]).
 -export([start_test_node/0, start_test_node/1]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc Starts the HTTP server. Optionally accepts an `Opts` message, which
 %% is used as the source for server configuration settings, as well as the
@@ -65,6 +66,7 @@ init(Req, Port) ->
     Opts = cowboy:get_env({?MODULE, Port}, opts, no_opts),
     % Parse the HTTP request into HyerBEAM's message format.
     MsgSingleton = hb_http:req_to_message(Req, Opts),
+    ?event(debug, {http_inbound, Req, MsgSingleton}),
     % Execute the message through Converge Protocol.
     {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
     % Sign the transaction if it's not already signed.

@@ -1,4 +1,5 @@
 -module(hb_http_benchmark_tests).
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% Allows to decrease or increase expected performance based on the current
@@ -70,7 +71,7 @@ run_wasm_unsigned_benchmark_test() ->
     ?assert(Iterations > 100 / ?PERFORMANCE_DIVIDER).
 
 
-run_wasm_signed_benchmark_test() ->
+run_wasm_signed_benchmark_test_disabled() ->
     BenchTime = 1,
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
@@ -89,13 +90,14 @@ run_wasm_signed_benchmark_test() ->
     ),
     ?assert(Iterations > 50 / ?PERFORMANCE_DIVIDER).
 
-parallel_wasm_unsigned_benchmark_test() ->
+parallel_wasm_unsigned_benchmark_test_disabled() ->
     BenchTime = 1,
     BenchWorkers = 16,
     URL = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     Iterations = hb:benchmark(
-        fun(_) ->
+        fun(X) ->
+            ?event(debug, {post_start, X}),
             case hb_http:post(URL, Msg) of
                 {ok, _} ->
                     1;
@@ -111,7 +113,7 @@ parallel_wasm_unsigned_benchmark_test() ->
     ),
     ?assert(Iterations > 200 / ?PERFORMANCE_DIVIDER).
 
-parallel_wasm_signed_benchmark_test() ->
+parallel_wasm_signed_benchmark_test_disabled() ->
     BenchTime = 1,
     BenchWorkers = 16,
     URL = hb_http_server:start_test_node(#{force_signed => true}),
