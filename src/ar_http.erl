@@ -283,8 +283,7 @@ open_connection(#{ peer := Peer }, Opts) ->
                         )
                 },
             retry => 0,
-            connect_timeout => ConnectTimeout,
-            tls_opts => [{verify, verify_none}, {cacerts, public_key:cacerts_get()}]
+            connect_timeout => ConnectTimeout
         },
     GunOpts =
         case Proto = hb_opts:get(protocol, no_proto, Opts) of

@@ -83,8 +83,7 @@ start_http3(ServerID, Dispatcher, Opts) ->
             env => #{dispatch => Dispatcher, opts => Opts},
             metrics_callback =>
                 fun prometheus_cowboy2_instrumenter:observe/1,
-            stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
-            verify => verify_none
+            stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
         }
     ),
     {ok, {_, GivenPort}} = quicer:sockname(Listener),
