@@ -19,19 +19,28 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts` argument to use for all Converge resolution requests downstream.
 start() ->
-    start(#{
-        store => hb_opts:get(store),
-        wallet => hb_opts:get(wallet),
-        port => 8734
-    }).
-
+    start(#{ priv_wallet => hb:wallet(hb_opts:get(key_location)) }).
 start(Opts) ->
     {ok, Listener, _Port} = new_server(Opts),
     {ok, Listener}.
 
-new_server(Opts) ->
+new_server(RawNodeMsg) ->
+    NodeMsg =
+        maps:merge(
+            hb_opts:default_message(),
+            RawNodeMsg#{ only => local }
+        ),
     hb_http:start(),
-    ServerID = rand:uniform(1000000000),
+    ServerID =
+        hb_util:human_id(
+            ar_wallet:to_address(
+                hb_opts:get(
+                    priv_wallet,
+                    no_wallet,
+                    NodeMsg
+                )
+            )
+        ),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -42,24 +51,22 @@ new_server(Opts) ->
                         prometheus_cowboy2_handler,
                         #{}
                     },
-                    {
-                        '_',
-                        ?MODULE,
-                        % The default opts for executions from the HTTP API.
-                        % We force a specific store, wallet, and that 
-                        % hb_converge should return a regardless of whether 
-                        % the result comes wrapped in one or not.
-                        ServerID
-                    }
+                    {'_', ?MODULE, ServerID}
                 ]}
             ]
         ),
+    ProtoOpts = #{
+        env => #{dispatch => Dispatcher, node_msg => NodeMsg},
+        metrics_callback =>
+            fun prometheus_cowboy2_instrumenter:observe/1,
+        stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
+    },
     {ok, Port, Listener} =
-        case Protocol = hb_opts:get(protocol, no_proto, Opts) of
+        case Protocol = hb_opts:get(protocol, no_proto, NodeMsg) of
             http3 ->
-                start_http3(ServerID, Dispatcher, Opts);
+                start_http3(ServerID, ProtoOpts, NodeMsg);
             Pro when Pro =:= http2; Pro =:= http1 ->
-                start_http2(ServerID, Dispatcher, Opts);
+                start_http2(ServerID, ProtoOpts, NodeMsg);
             _ -> {error, {unknown_protocol, Protocol}}
         end,
     ?event(debug,
@@ -72,7 +79,7 @@ new_server(Opts) ->
     ),
     {ok, Listener, Port}.
 
-start_http3(ServerID, Dispatcher, Opts) ->
+start_http3(ServerID, ProtoOpts, _NodeMsg) ->
     ?event(debug, {start_http3, ServerID}),
     Parent = self(),
     ServerPID =
@@ -85,12 +92,7 @@ start_http3(ServerID, Dispatcher, Opts) ->
                         {keyfile, "test/test-tls.key"}
                     ]
                 },
-                ProtoOpts = #{
-                    env => #{dispatch => Dispatcher, opts => Opts},
-                    metrics_callback =>
-                        fun prometheus_cowboy2_instrumenter:observe/1,
-                    stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
-                }
+                ProtoOpts
             ),
             {ok, {_, GivenPort}} = quicer:sockname(Listener),
             ranch_server:set_new_listener_opts(
@@ -111,39 +113,24 @@ start_http3(ServerID, Dispatcher, Opts) ->
         {error, {timeout, staring_http3_server, ServerID}}
     end.
 
-start_http2(ServerID, Dispatcher, Opts) ->
+start_http2(ServerID, ProtoOpts, NodeMsg) ->
     ?event(debug, {start_http2, ServerID}),
     {ok, Listener} = cowboy:start_clear(
         ServerID,
         [
-            {port, Port = hb_opts:get(port, 8734, Opts)}
+            {port, Port = hb_opts:get(port, 8734, NodeMsg)}
         ],
-        #{env => #{dispatch => Dispatcher, opts => Opts}}
+        ProtoOpts
     ),
     {ok, Port, Listener}.
 
 init(Req, ServerID) ->
-    Opts = cowboy:get_env(ServerID, opts, no_opts),
+    NodeMsg = cowboy:get_env(ServerID, node_msg, no_node_msg),
     % Parse the HTTP request into HyerBEAM's message format.
-    MsgSingleton = hb_http:req_to_tabm_singleton(Req, Opts),
-    ?event(http, {http_inbound, MsgSingleton}),
-    % Execute the message through Converge Protocol.
-    {ok, RawRes} = hb_converge:resolve(MsgSingleton, Opts),
-    % Sign the transaction if it's not already signed.
-    IsForceSigned = hb_opts:get(force_signed, false, Opts),
-    Signed =
-        case IsForceSigned andalso hb_message:signers(RawRes) of
-            [] ->
-                hb_message:sign(
-                    RawRes, hb_opts:get(wallet, no_wallet, Opts));
-            _ -> RawRes
-        end,
-    % Respond to the client.
-    hb_http:reply(
-        Req,
-        hb_http:message_to_status(Signed),
-        Signed
-    ).
+    ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
+    ?event(http, {http_inbound, ReqSingleton}),
+    {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
+    hb_http:reply(Req, Res).
 
 %% @doc Return the complete Ranch ETS table for the node for debugging.
 ranch_ets() ->
@@ -173,12 +160,13 @@ test_opts(Opts) ->
         % Generate a random port number between 8000 and 9000.
         port => Port,
         store =>
-            [
-                {hb_store_fs,
-                    #{prefix => "TEST-cache-" ++ integer_to_list(Port)}
+            {hb_store_fs,
+                #{
+                    prefix =>
+                        <<"TEST-cache-", (integer_to_binary(Port))/binary>>
                 }
-            ],
-        wallet => Wallet
+            },
+        priv_wallet => Wallet
     }.
 
 %% @doc Test that we can start the server, send a message, and get a response.

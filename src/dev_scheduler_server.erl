@@ -24,7 +24,7 @@ start(ProcID, Opts) ->
                 #{
                     id => ProcID,
                     current => CurrentSlot,
-                    wallet => hb_opts:get(wallet, hb:wallet(), Opts),
+                    wallet => hb_opts:get(priv_wallet, hb:wallet(), Opts),
                     hash_chain => HashChain,
                     opts => Opts
                 }

@@ -233,16 +233,37 @@ message_to_status(Item) ->
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->
-    case cowboy:get_header(<<"content-type">>, Req) of
+    case cowboy_req:header(<<"content-type">>, Req) of
         {ok, <<"application/x-ans-104">>} ->
             {ok, Body} = read_body(Req),
-            hb_message:convert(ar_bundles:deserialize(Body), converge, tx, Opts);
+            hb_message:convert(ar_bundles:deserialize(Body), tabm, tx, Opts);
         _ ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
 
-http_sig_to_tabm_singleton(Req, Opts) ->
-    
+http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
+    {ok, Body} = read_body(Req),
+    Headers =
+        RawHeaders#{
+            <<"relative-reference">> =>
+                iolist_to_binary(
+                    cowboy_req:uri(
+                        Req,
+                        #{
+                            host => undefined,
+                            port => undefined,
+                            scheme => undefined
+                        }
+                    )
+                ),
+            <<"method">> => cowboy_req:method(Req)
+        },
+    HTTPEncoded =
+        #{
+            headers => maps:to_list(Headers),
+            body => Body
+        },
+    hb_codec_http:from(HTTPEncoded).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).

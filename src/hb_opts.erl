@@ -13,16 +13,16 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3]).
+-export([get/1, get/2, get/3, default_message/0]).
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
-config() ->
+default_message() ->
     #{
         %%%%%%%% Functional options %%%%%%%%
         %% What protocol should the node use for HTTP requests?
         %% Options: http1, http2, http3
-        protocol => http3,
+        protocol => http2,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
@@ -32,11 +32,11 @@ config() ->
         %% Options: aggressive, lazy
         compute_mode => lazy,
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
-        http_host => "localhost",
-        gateway => "https://arweave.net",
-        bundler => "https://up.arweave.net",
+        http_host => <<"localhost">>,
+        gateway => <<"https://arweave.net">>,
+        bundler => <<"https://up.arweave.net">>,
         %% Location of the wallet keyfile on disk that this node will use.
-        key_location => "hyperbeam-key.json",
+        key_location => <<"hyperbeam-key.json">>,
         %% Default page limit for pagination of results from the APIs.
         %% Currently used in the SU devices.
         default_page_limit => 5,
@@ -88,7 +88,8 @@ config() ->
         http_response_timeout => 30000,
         http_keepalive => 120000,
         http_request_send_timeout => 60000,
-        http_default_remote_port => 443,
+        http_default_remote_port => 8734,
+        http_port => 8734,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,
@@ -145,12 +146,10 @@ get(Key, Default, Opts) ->
         store =>
             {"HB_STORE",
                 fun(Dir) ->
-                    [
-                        {
-                            hb_store_fs,
-                            #{ prefix => Dir }
-                        }
-                    ]
+                    {
+                        hb_store_fs,
+                        #{ prefix => Dir }
+                    }
                 end,
                 "TEST-cache"
             },
@@ -185,7 +184,7 @@ global_get(Key, Default) ->
 %% @doc An abstraction for looking up configuration variables. In the future,
 %% this is the function that we will want to change to support a more dynamic
 %% configuration system.
-config_lookup(Key, Default) -> maps:get(Key, config(), Default).
+config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
 
 %%% Tests
 

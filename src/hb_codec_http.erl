@@ -45,8 +45,8 @@
 % The max header length is 4KB
 -define(MAX_HEADER_LENGTH, 4096).
 
-%%% @doc Convert an HTTP Message into a TABM.
-%%% HTTP Structured Field is encoded into it's equivalent TABM encoding.
+%% @doc Convert an HTTP Message into a TABM.
+%% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
 from(#{ headers := Headers, body := Body }) when is_map(Headers) ->
     from(#{ headers => maps:to_list(Headers), body => Body });
@@ -75,75 +75,9 @@ from_headers(Map, [{Name, Value} | Rest], Headers) ->
             {_, SigInput} = find_header(Headers, <<"Signature-Input">>),
             from_signature(Map, Value, SigInput);
         % Decode the header as normal
-        N -> from_pair(Map, {N, Value})
+        N -> maps:put(N, Value, Map)
     end,
     from_headers(NewMap, Rest, Headers).
-
-%%% @doc attempt to parse the value as a structured field
-%%% First as an SF Item,
-%%% then an SF Dictionary,
-%%% then an SF List.
-%%%
-%%% If parsing is unsuccessful, simply use the raw value
-from_pair(Map, {Name, Value}) when is_binary(Value) ->
-    Parsed = case to_sf(Value) of
-        % item()
-        {item, Item} ->
-            % TODO: reserialize back to item?
-            from_sf_item(Item);
-         % [{binary(), item()}]
-        {dict, Pairs} ->
-            % erlang:display({dDict, Pairs}),
-            Map_Pairs = lists:foldl(
-                fun ({MapKey, Item}, Acc) -> [{MapKey, from_sf_item(Item)} | Acc] end,
-                [],
-                Pairs
-            ),
-            maps:from_list(Map_Pairs);
-        % [item()]
-        {list, List} ->
-            ?no_prod("Is this proper way to Map encode a list?"),
-            % erlang:display({dList, List}),
-            lists:map(
-                fun
-                    ({item, BareItem, []}) -> from_sf_bare_item(BareItem);
-                    % Re-encode to preserve original binary
-                    (Item) -> iolist_to_binary( hb_http_structured_fields:item(Item))
-                end,
-                List
-            );
-        % Not able to parse into an SF, so just set the key to the binary
-        _ ->
-            % erlang:display({dBinary, Value}),
-            dequote(Value)
-    end,
-    maps:put(Name, Parsed, Map).
-
-to_sf(Raw) when is_binary(Raw) ->
-	Parsers = [
-		{item, fun hb_http_structured_fields:parse_item/1},
-		{dict, fun hb_http_structured_fields:parse_dictionary/1},
-		{list, fun hb_http_structured_fields:parse_list/1}
-	],
-	to_sf(Parsers, Raw).
-to_sf([], _Raw) ->
-    {error, undefined};
-to_sf([{Type, Parser} | Rest], Raw) ->
-    case catch Parser(Raw) of
-        % skip parsers that fail
-        {'EXIT', _} -> to_sf(Rest, Raw);
-        Parsed -> {Type, Parsed}
-    end.
-    
-
-from_sf_item(Item = {item, _BareItem, _Params}) -> 
-    case Item of
-        {item, BareItem, []} -> from_sf_bare_item(BareItem);
-        {item, _, _} ->
-            ?no_prod("How do we handle SF Params?"),
-            % Re-encode to preserve original binary
-            iolist_to_binary(hb_http_structured_fields:item(Item))
-    end.
 
 from_sf_bare_item (BareItem) ->
     case BareItem of
@@ -223,7 +157,7 @@ from_body(TABM, ContentType, Body) ->
     case lists:keyfind(<<"boundary">>, 1, Params) of
         % The body is not a multipart, so just set as is to the Body key on the TABM
         false ->
-            from_pair(TABM, {<<"Body">>, Body});
+            maps:put(<<"Body">>, Body, TABM);
         % We need to manually parse the multipart body into key/values on the TABM
         {_, {_Type, Boundary}} ->
             % Find the sub-part of the body within the boundary

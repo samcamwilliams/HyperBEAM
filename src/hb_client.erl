@@ -1,6 +1,6 @@
 -module(hb_client).
 %% Converge API and HyperBEAM Built-In Devices
--export([resolve/4, routes/2, add_route/2]).
+-export([resolve/4, routes/2, add_route/3]).
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
@@ -72,7 +72,9 @@ arweave_timestamp() ->
         debug -> {0, 0, <<0:256>>};
         prod ->
             {ok, {{_, 200, _}, _, Body}} =
-                httpc:request(hb_opts:get(gateway) ++ "/block/current"),
+                httpc:request(
+                    <<(hb_opts:get(gateway))/binary, "/block/current">>
+                ),
             {Fields} = jiffy:decode(Body),
             {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
             {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
@@ -99,7 +101,7 @@ upload(Item) ->
         httpc:request(
             post,
             {
-                hb_opts:get(bundler) ++ "/tx",
+                <<(hb_opts:get(bundler))/binary, "/tx">>,
                 [],
                 "application/octet-stream",
                 ar_bundles:serialize(Item)
