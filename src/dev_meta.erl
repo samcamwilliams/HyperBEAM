@@ -14,10 +14,8 @@ handle(NodeMsg, RawRequest) ->
     NormRequest = hb_singleton:from(RawRequest),
     ?event(debug, {norm_request, NormRequest}),
     case is_meta_request(NormRequest) of
-        true ->
-            handle_meta(NormRequest, NodeMsg);
-        false ->
-            handle_converge(NormRequest, NodeMsg)
+        true -> handle_meta(NormRequest, NodeMsg);
+        false -> handle_converge(NormRequest, NodeMsg)
     end.
 
 %% @doc Handle a potential list of messages, checking if the first message
@@ -43,8 +41,7 @@ handle_meta([Request|_], NodeMsg) ->
                     hb_http_server:setops(NodeMsg),
                     {ok, <<"OK">>}
             end;
-        _ ->
-            {error, {unsupported_method, Request}}
+        _ -> {error, {unsupported_method, Request}}
     end.
 
 %% @doc Handle a Converge request, which is a list of messages. We apply

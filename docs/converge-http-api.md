@@ -88,7 +88,7 @@ curl http://host:port/Hashpath/Compute/Results?WASM-Function=fac&WASM-Params=[11
 Load the WASM computation from an existing hashpath:
 ```
 curl -X POST http://host:port/Init/Compute \
-    -H "1.WASM-Image: !/OldHashpath/Snapshot/WASM" \
+    -H "1.WASM-Image|Resolve: /OldHashpath/Snapshot/WASM" \
     -H "2.WASM-Function: fac" -H "2.WASM-Params: [10]"
 ```
 
