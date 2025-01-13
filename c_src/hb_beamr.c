@@ -53,7 +53,7 @@ static ErlDrvTermData atom_import;
 static ErlDrvTermData atom_execution_result;
 
 #ifndef HB_DEBUG
-#define HB_DEBUG 1
+#define HB_DEBUG 0
 #endif
 
 #define DRV_DEBUG(format, ...) beamr_print(HB_DEBUG, __FILE__, __LINE__, format, ##__VA_ARGS__)
@@ -166,7 +166,6 @@ ei_term* decode_list(char* buff, int* index) {
     }
     DRV_DEBUG("Decoded header. Arity: %d", arity);
 
-    DRV_PRINT("alloc1 - alloc %d (%d * %d)", sizeof(ei_term) * arity, sizeof(ei_term), arity);
     ei_term* res = driver_alloc(sizeof(ei_term) * arity);
 
     if(type == ERL_LIST_EXT) {
@@ -180,7 +179,6 @@ ei_term* decode_list(char* buff, int* index) {
     }
     else if(type == ERL_STRING_EXT) {
         //DRV_DEBUG("Decoding list encoded as string");
-        DRV_PRINT("alloc2 %d", arity * sizeof(char) + 1);
         unsigned char* str = driver_alloc(arity * sizeof(char) + 1);
         ei_decode_string(buff, index, str);
         for(int i = 0; i < arity; i++) {
@@ -188,7 +186,6 @@ ei_term* decode_list(char* buff, int* index) {
             res[i].value.i_val = (long) str[i];
             DRV_DEBUG("Decoded term %d: %d", i, res[i].value.i_val);
         }
-        DRV_PRINT("alloc2 - free");
         driver_free(str);
     }
     else {
@@ -196,7 +193,6 @@ ei_term* decode_list(char* buff, int* index) {
         return NULL;
     }
 
-    DRV_PRINT("res %x", *res);
     return res;
 }
 
@@ -304,11 +300,9 @@ long get_memory_size(Proc* proc) {
 void send_error(Proc* proc, const char* message_fmt, ...) {
     va_list args;
     va_start(args, message_fmt);
-    DRV_PRINT("alloc3 %d", 256);
     char* message = driver_alloc(256);
     vsnprintf(message, 256, message_fmt, args);
     DRV_DEBUG("Sending error message: %s", message);
-    DRV_PRINT("alloc4 %d", sizeof(ErlDrvTermData) * 7);
     ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
     int msg_index = 0;
     msg[msg_index++] = ERL_DRV_ATOM;
@@ -321,9 +315,7 @@ void send_error(Proc* proc, const char* message_fmt, ...) {
 
     int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
     DRV_DEBUG("Sent error message. Res: %d", msg_res);
-    DRV_PRINT("alloc3 - free");
     driver_free(message);
-    DRV_PRINT("alloc4 - free");
     driver_free(msg);
     va_end(args);
 }
@@ -336,7 +328,6 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     DRV_DEBUG("Import name: %s.%s [%s]", import_hook->module_name, import_hook->field_name, import_hook->signature);
 
     // Initialize the message object
-    DRV_PRINT("alloc5 %d", sizeof(ErlDrvTermData) * ((2+(2*3)) + ((args->size + 1) * 2) + ((results->size + 1) * 2) + 2));
     ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * ((2+(2*3)) + ((args->size + 1) * 2) + ((results->size + 1) * 2) + 2));
     int msg_index = 0;
     msg[msg_index++] = ERL_DRV_ATOM;
@@ -366,7 +357,6 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     msg[msg_index++] = 5;
 
     // Initialize the result vector and set the required result types
-    DRV_PRINT("alloc6 %d", sizeof(ImportResponse));
     proc->current_import = driver_alloc(sizeof(ImportResponse));
 
     // Create and initialize a is_running and condition variable for the response
@@ -377,7 +367,6 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     DRV_DEBUG("Sending %d terms...", msg_index);
     // Send the message to the caller process
     int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
-    DRV_PRINT("alloc5 - free");
     driver_free(msg);
     // Wait for the response (we set this directly after the message was sent
     // so we have the lock, before Erlang sends us data back)
@@ -391,7 +380,6 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
         wasm_name_t message;
         wasm_name_new_from_string_nt(&message, proc->current_import->error_message);
         wasm_trap_t* trap = wasm_trap_new(proc->store, &message);
-        DRV_PRINT("alloc6 - free");
         // TODO: check where the error_message is allocated
         driver_free(proc->current_import->error_message);
         driver_free(proc->current_import);
@@ -417,10 +405,8 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     erl_drv_cond_destroy(proc->current_import->cond);
     erl_drv_mutex_destroy(proc->current_import->response_ready);
     if (proc->current_import->result_terms) {
-        DRV_PRINT("alloc1 - free2");
         driver_free(proc->current_import->result_terms);
     }
-    DRV_PRINT("alloc6 - free");
     driver_free(proc->current_import);
 
     proc->current_import = NULL;
@@ -478,7 +464,6 @@ static void async_init(void* raw) {
 
     // Create Erlang lists for imports
     //DRV_DEBUG("Exports size: %d", exports.size);
-    DRV_PRINT("alloc7 %d", sizeof(ErlDrvTermData) * (2 + (13 * imports.size) + (11 * exports.size)));
     ErlDrvTermData* init_msg = driver_alloc(sizeof(ErlDrvTermData) * (2 + (13 * imports.size) + (11 * exports.size)));
     //DRV_DEBUG("Allocated init message");
     int msg_i = 0;
@@ -495,7 +480,6 @@ static void async_init(void* raw) {
 
         //DRV_DEBUG("Import: %s.%s", module_name->data, name->data);
 
-    DRV_PRINT("alloc8 %d", 256);
         char* type_str = driver_alloc(256);
         // TODO: What happpens here?
         if(!get_function_sig(type, type_str)) {
@@ -518,7 +502,6 @@ static void async_init(void* raw) {
         init_msg[msg_i++] = 4;
 
         DRV_DEBUG("Creating callback for %s.%s [%s]", module_name->data, name->data, type_str);
-        DRV_PRINT("alloc9 %d", sizeof(ImportHook));
         ImportHook* hook = driver_alloc(sizeof(ImportHook));
         hook->module_name = module_name->data;
         hook->field_name = name->data;
@@ -561,7 +544,6 @@ static void async_init(void* raw) {
         const wasm_externtype_t* type = wasm_exporttype_type(export);
         char* kind_str = (char*) wasm_externtype_to_kind_string(type);
 
-        DRV_PRINT("alloc10 %d", 256);
         char* type_str = driver_alloc(256);
         get_function_sig(type, type_str);
         DRV_DEBUG("Export: %s [%s] -> %s", name->data, kind_str, type_str);
@@ -661,7 +643,6 @@ static void async_call(void* raw) {
 
     // Send the results back to Erlang
     DRV_DEBUG("Results size: %d", results.size);
-    DRV_PRINT("alloc11 %d", sizeof(ErlDrvTermData) * (7 + (results.size * 2)));
     ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * (7 + (results.size * 2)));
     DRV_DEBUG("Allocated msg");
     int msg_index = 0;
@@ -698,15 +679,11 @@ static void async_call(void* raw) {
     msg[msg_index++] = 2;
     DRV_DEBUG("Sending %d terms", msg_index);
     int response_msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
-    DRV_PRINT("alloc11 - free");
     driver_free(msg);
 
     DRV_DEBUG("Msg: %d", response_msg_res);
 
-    DRV_PRINT("alloc1 - free1");
-    DRV_PRINT("free current_args: %p", proc->current_args);
     driver_free(proc->current_args);
-    DRV_PRINT("alloc15 - free %s", proc->current_function);
     driver_free(proc->current_function);
 
     wasm_val_vec_delete(&results);
@@ -736,7 +713,6 @@ static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
     DRV_DEBUG("info.dirty_scheduler_support: %d", info.dirty_scheduler_support);
     DRV_DEBUG("info.erts_version: %s", info.erts_version);
     DRV_DEBUG("info.otp_release: %s", info.otp_release);
-    DRV_PRINT("alloc12 %d", sizeof(Proc));
     Proc* proc = driver_alloc(sizeof(Proc));
     proc->port = port;
     DRV_DEBUG("Port: %p", proc->port);
@@ -813,11 +789,9 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         int size, type;
         ei_get_type(buff, &index, &type, &size);
         //DRV_DEBUG("WASM binary size: %d bytes. Type: %c", size, type);
-        DRV_PRINT("alloc13 %d", size);
         void* wasm_binary = driver_alloc(size);
         long size_l = (long)size;
         ei_decode_binary(buff, &index, wasm_binary, &size_l);
-        DRV_PRINT("alloc14 %d", sizeof(LoadWasmReq));
         LoadWasmReq* mod_bin = driver_alloc(sizeof(LoadWasmReq));
         mod_bin->proc = proc;
         mod_bin->binary = wasm_binary;
@@ -832,7 +806,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         // Extract the function name and the args from the Erlang term and generate the wasm_val_vec_t
         char* function_name = driver_alloc(MAXATOMLEN);
         ei_decode_string(buff, &index, function_name);
-        DRV_PRINT("alloc15 %d %s", MAXATOMLEN, function_name);
         //DRV_DEBUG("Function name: %s", function_name);
         proc->current_function = function_name;
 
@@ -840,7 +813,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         proc->current_args = decode_list(buff, &index);
 
         driver_async(proc->port, NULL, async_call, proc, NULL);
-        //        driver_free(proc->current_args);
     } else if (strcmp(command, "import_response") == 0) {
         // Handle import response
         // TODO: We should probably start a mutex on the current_import object here.
@@ -885,12 +857,10 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         memcpy(memory_data + ptr, wasm_binary, size_bytes);
         DRV_DEBUG("Write complete");
 
-        DRV_PRINT("alloc16 %d", sizeof(ErlDrvTermData) * 2);
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 2);
         msg[0] = ERL_DRV_ATOM;
         msg[1] = atom_ok;
         erl_drv_output_term(proc->port_term, msg, 2);
-        DRV_PRINT("alloc16 - free");
         driver_free(msg);
     }
     else if (strcmp(command, "read") == 0) {
@@ -911,7 +881,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         byte_t* memory_data = wasm_memory_data(get_memory(proc));
         DRV_DEBUG("Memory location to read from: %p", memory_data + ptr);
         
-        DRV_PRINT("alloc17 %d", size_l);
         char* out_binary = driver_alloc(size_l);
         memcpy(out_binary, memory_data + ptr, size_l);
 
@@ -925,7 +894,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
             DRV_DEBUG("First bytes as string: %.10s", out_binary);
         }
 
-        DRV_PRINT("alloc18 %d", sizeof(ErlDrvTermData) * 7);
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 7);
         int msg_index = 0;
         msg[msg_index++] = ERL_DRV_ATOM;
@@ -938,9 +906,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         
         int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
         DRV_DEBUG("Read response sent: %d", msg_res);
-        DRV_PRINT("alloc17 - free");
         driver_free(out_binary);
-        DRV_PRINT("alloc18 - free");
         driver_free(msg);
     }
     else if (strcmp(command, "size") == 0) {
@@ -948,7 +914,6 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         long size = get_memory_size(proc);
         DRV_DEBUG("Size: %ld", size);
 
-        DRV_PRINT("alloc19 %d", sizeof(ErlDrvTermData) * 6);
         ErlDrvTermData* msg = driver_alloc(sizeof(ErlDrvTermData) * 6);
         int msg_index = 0;
         msg[msg_index++] = ERL_DRV_ATOM;
