@@ -248,9 +248,19 @@ format_debug_trace(Mod, Func, Line) ->
 debug_fmt(X) -> debug_fmt(X, 0).
 debug_fmt(X, Indent) ->
     try do_debug_fmt(X, Indent)
-    catch _:_ -> format_indented("[PRINT FAIL:] ~80p", [X], Indent)
+    catch _:_ ->
+        case hb_opts:get(mode, prod) of
+            prod ->
+                format_indented("[!PRINT FAIL!]", Indent);
+            _ ->
+                format_indented("[PRINT FAIL:] ~80p", [X], Indent)
+        end
     end.
 
+do_debug_fmt(Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}, Indent) ->
+    format_address(Wallet, Indent);
+do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
+    format_address(Wallet, Indent);
 do_debug_fmt({explicit, X}, Indent) ->
     format_indented("~p", [X], Indent);
 do_debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
@@ -285,6 +295,10 @@ do_debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X
     format_indented("~s", [Str], Indent);
 do_debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
+
+%% @doc If the user attempts to print a wallet, format it as an address.
+format_address(Wallet, Indent) ->
+    format_indented(human_id(ar_wallet:to_address(Wallet)), Indent).
 
 %% @doc Helper function to format tuples with arity greater than 2.
 format_tuple(Tuple, Indent) ->
