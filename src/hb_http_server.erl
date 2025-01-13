@@ -66,6 +66,7 @@ new_server(RawNodeMsg) ->
             http3 ->
                 start_http3(ServerID, ProtoOpts, NodeMsg);
             Pro when Pro =:= http2; Pro =:= http1 ->
+        		% The HTTP/2 server has fallback mode to 1.1 as necessary.
                 start_http2(ServerID, ProtoOpts, NodeMsg);
             _ -> {error, {unknown_protocol, Protocol}}
         end,
@@ -194,7 +195,7 @@ start_test_node(Opts) ->
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
 
 raw_http_access_test() ->
-    URL = start_test_node(),
+    URL = start_test_node(#{ protocol => http1 }),
     TX =
         ar_bundles:serialize(
             hb_message:convert(
