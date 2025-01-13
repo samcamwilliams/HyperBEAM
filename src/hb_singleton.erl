@@ -44,23 +44,19 @@ from(RawMsg) ->
         parse_rel_ref(
             maps:get(<<"relative-reference">>, RawMsg, <<"/">>)
         ),
-MsgWithoutRef = maps:merge(
+    MsgWithoutRef = maps:merge(
         maps:remove(<<"relative-reference">>, RawMsg),
         Query
     ),
-    
     % 2. Decode, split, and sanitize path segments. Each yields one step message.
     Msgs = lists:flatten(lists:map(fun path_messages/1, Path)),
-
     % 3. Determine if the first segment is a 43-char Hashpath.
     {BaseMsg, ReqMsgs} = extract_base_message(Msgs),
     % 4. Type keys and values
     Typed = apply_types(MsgWithoutRef),
     % 5. Group keys by N-scope and global scope    
     NumSteps = max(1, length(Msgs)),
-
     ScopedModifications = group_scoped(Typed, NumSteps),
-
     BaseMsgModifications = lists:nth(1, ScopedModifications),
     if is_binary(BaseMsg) andalso (map_size(BaseMsgModifications) > 0) ->
         throw(
@@ -88,22 +84,13 @@ parse_rel_ref(RelativeRef) ->
 %% subpath components, such that their own path parts are not dissociated from 
 %% their parent path.
 path_messages(RawBin) when is_binary(RawBin) ->
-    Parts =
-        path_parts(
-            $/,
-            case catch cow_uri:urldecode(RawBin) of
-                DecodedBin when is_binary(DecodedBin) -> DecodedBin;
-                _ -> throw({error, cannot_decode_path, RawBin})
-            end
-        ),
-    lists:map(fun parse_part/1, Parts).
+    lists:map(fun parse_part/1, path_parts($/, decode_string(RawBin))).
 
 %% @doc Parse the path into segments.
 path_parts(Sep, PathBin) when is_binary(PathBin) ->
     path_parts(Sep, PathBin, 0, <<>>, []).
 %%   - Chars: remaining characters to parse
 %%   - Depth: current parentheses depth
-%%   - CurrAcc: reverse-accumulation of the current segment
 %%   - SegsAcc: reversed list of segments we’ve formed so far
 path_parts(_Sep, <<>>, _Depth, CurrAcc, SegsAcc) ->
     %% End of input. Add final segment (if any) and reverse the list
@@ -119,18 +106,17 @@ path_parts(_Sep, <<>>, _Depth, CurrAcc, SegsAcc) ->
             end,
             lists:reverse([CurrAcc | SegsAcc])
         ),
-        Result;
+    Result;
 path_parts(Sep, << Sep, Rest/binary>>, 0, CurrAcc, SegsAcc) ->
     %% We hit the separator at top level => new segment boundary
     path_parts(Sep, Rest, 0, <<>>, [CurrAcc | SegsAcc]);
-path_parts(Sep, << $\(, Rest/binary>>, Depth, CurrAcc, SegsAcc) ->
+path_parts(Sep, << $\(, Rest/binary>>, Depth, _CurrAcc, SegsAcc) ->
     %% Increase depth
     % path_parts(Sep, Rest, Depth + 1, << SegsAcc/binary, $\( >>, CurrAcc);
     path_parts(Sep, Rest, Depth + 1, <<"(">>, SegsAcc);
 path_parts(Sep, << $\), Rest/binary>>, Depth, CurrAcc, SegsAcc) when Depth > 0 ->
     %% Decrease depth
     path_parts(Sep, Rest, Depth - 1, << CurrAcc/binary, ")">>, SegsAcc);
-
 path_parts(Sep, <<C:1/binary, Rest/binary>>, Depth, CurrAcc, SegsAcc) ->
     %% Normal character: keep accumulating
     NewCurrentAcc = 
@@ -416,7 +402,7 @@ subpath_in_key_test() ->
 %%% Advanced path syntax
 subpath_in_path_test() ->
     Req = #{
-        <<"path">> => <<"/a/(x/y/z)/z">>
+        <<"relative-reference">> => <<"/ab/(x/y/z)/z">>
     },
     Msgs = from(Req),
     ?assertEqual(3, length(Msgs)),
@@ -434,10 +420,9 @@ subpath_in_path_test() ->
     ?assertEqual(<<"z">>, maps:get(path, Msg3)).
 
 inlined_keys_test() ->
-    Path = <<"/a/b+K1=V1/c+K2=V2">>,
     Req = #{
         <<"method">> => <<"POST">>,
-        <<"path">> => Path
+        <<"relative-reference">> => <<"/a/b+K1=V1/c+K2=V2">>
     },
     Msgs = from(Req),
     ?assertEqual(3, length(Msgs)),
@@ -452,7 +437,7 @@ multiple_inlined_keys_test() ->
     Path = <<"/a/b+K1=V1&K2=V2">>,
     Req = #{
         <<"method">> => <<"POST">>,
-        <<"path">> => Path
+        <<"relative-reference">> => Path
     },
     Msgs = from(Req),
     ?assertEqual(2, length(Msgs)),
@@ -466,7 +451,7 @@ multiple_inlined_keys_test() ->
 subpath_in_inlined_test() ->
     Path = <<"/A+B=(/x/y)/C">>,
     Req = #{
-        <<"path">> => Path
+        <<"relative-reference">> => Path
     },
     Msgs = from(Req),
     ?assertEqual(2, length(Msgs)),
