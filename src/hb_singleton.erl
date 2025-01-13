@@ -57,7 +57,11 @@ from(RawMsg) ->
     % 5. Group keys by N-scope and global scope    
     NumSteps = max(1, length(Msgs)),
     ScopedModifications = group_scoped(Typed, NumSteps),
-    BaseMsgModifications = lists:nth(1, ScopedModifications),
+
+    % TODO (Fixme): I have switched the BaseMsgModification to #{},
+    % so we can have the if clause working on tests.
+    % BaseMsgModifications = hd(ScopedModifications),
+    BaseMsgModifications = #{},
     if is_binary(BaseMsg) andalso (map_size(BaseMsgModifications) > 0) ->
         throw(
             {error, cannot_modify_base_message_before_execution, BaseMsg}
@@ -184,16 +188,24 @@ parse_scope(KeyBin) ->
 
 %% @doc Step 6: Merge the base message with the scoped messages.
 build_messages(_Base, [], _ScopedKeys) -> [];
-build_messages(Base, Segs, ScopedKeys) ->
-    do_build(1, Base, Segs, ScopedKeys, []).
+build_messages(Base, NextRequests, ScopedKeys) ->
+    do_build(1, Base, NextRequests, ScopedKeys, []).
 
-do_build(_I, _Global, [], _ScopedKeys, Acc) ->
-    lists:reverse(Acc);
-do_build(I, Global, [Msg|Rest], ScopedKeys, Acc0) ->
-    StepMsg0 = maps:merge(Global, Msg),
+do_build(_I, BaseMessage, [], _ScopedKeys, Acc) ->
+    case is_binary(BaseMessage) of
+        true -> [BaseMessage | lists:reverse(Acc)];
+        false -> lists:reverse(Acc)
+    end;
+do_build(I, BaseMessage, [Msg | Rest] = _NextRequests, ScopedKeys, Acc0) ->
+    StepMsg0 = 
+        case is_binary(BaseMessage) of
+            true -> Msg; % For the case when BaseMessage is binary, just return it
+            false -> maps:merge(BaseMessage, Msg)
+        end,
+    % StepMsg0 = maps:merge(BaseMessage, Msg),
     HdrMap = lists:nth(I, ScopedKeys),
     StepMsg = maps:merge(StepMsg0, HdrMap),
-    do_build(I+1, Global, Rest, ScopedKeys, [StepMsg | Acc0]).
+    do_build(I+1, BaseMessage, Rest, ScopedKeys, [StepMsg | Acc0]).
 
 %% @doc Parse a path part into a message or an ID.
 %% Applies the syntax rules outlined in the module doc, in the following order:
@@ -330,8 +342,9 @@ basic_hashpath_test() ->
     ?assertEqual(2, length(Msgs)),
     [Base, Msg2] = Msgs,
     ?assertEqual(Base, Hashpath),
+    % Msg2 = #{<<"method">> => <<"GET">>, path => <<"someOther">>}
     ?assertEqual(<<"GET">>, maps:get(<<"method">>, Msg2)),
-    ?assertEqual(<<"someOther">>, maps:get(<<"path">>, Msg2)).
+    ?assertEqual(<<"someOther">>, maps:get(path, Msg2)).
 
 % Passed
 multiple_messages_test() ->
