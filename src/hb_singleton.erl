@@ -276,7 +276,7 @@ maybe_typed(Key, Value) ->
 %%% Tests
 
 %%% Simple tests
-% Passed
+
 single_message_test() ->
     Req = #{
         <<"relative-reference">> => <<"/a">>,
@@ -298,11 +298,9 @@ basic_hashpath_test() ->
     ?assertEqual(2, length(Msgs)),
     [Base, Msg2] = Msgs,
     ?assertEqual(Base, Hashpath),
-    % Msg2 = #{<<"method">> => <<"GET">>, path => <<"someOther">>}
     ?assertEqual(<<"GET">>, maps:get(<<"method">>, Msg2)),
     ?assertEqual(<<"someOther">>, maps:get(path, Msg2)).
 
-% Passed
 multiple_messages_test() ->
     Req = #{
         <<"relative-reference">> => <<"/a/b/c">>,
@@ -317,7 +315,7 @@ multiple_messages_test() ->
     ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg3)).
 
 %%% Advanced key syntax tests
-% Passed
+
 scoped_key_test() ->
     Req = #{
         <<"relative-reference">> => <<"/a/b/c">>,
@@ -330,7 +328,6 @@ scoped_key_test() ->
     ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg2, not_found)),
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
 
-% Passed
 typed_key_test() ->
     Req = #{
         <<"relative-reference">> => <<"/a/b/c">>,
@@ -343,7 +340,6 @@ typed_key_test() ->
     ?assertEqual(123, maps:get(<<"test-key">>, Msg2, not_found)),
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
 
-% Passed 
 subpath_in_key_test() ->
     Req = #{
         <<"relative-reference">> => <<"/a/b/c">>,
@@ -365,7 +361,8 @@ subpath_in_key_test() ->
     ),
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
 
-%%% Advanced path syntax
+%%% Advanced path syntax tests
+
 subpath_in_path_test() ->
     Req = #{
         <<"relative-reference">> => <<"/a/(x/y/z)/z">>
@@ -414,7 +411,6 @@ multiple_inlined_keys_test() ->
     ?assertEqual(<<"V1">>, maps:get(<<"K1">>, Msg2, not_found)),
     ?assertEqual(<<"V2">>, maps:get(<<"K2">>, Msg2, not_found)).
 
-%% 4) Inlined dictionary with subpath in parentheses
 subpath_in_inlined_test() ->
     Path = <<"/Part1/Part2+Test=1&B=(/x/y)/Part3">>,
     Req = #{
