@@ -50,26 +50,12 @@ from(RawMsg) ->
     ),
     % 2. Decode, split, and sanitize path segments. Each yields one step message.
     Msgs = lists:flatten(lists:map(fun path_messages/1, Path)),
-    % 3. Determine if the first segment is a 43-char Hashpath.
-    {BaseMsg, ReqMsgs} = extract_base_message(Msgs),
-    % 4. Type keys and values
+    % 3. Type keys and values
     Typed = apply_types(MsgWithoutRef),
-    % 5. Group keys by N-scope and global scope    
-    NumSteps = max(1, length(Msgs)),
-    ScopedModifications = group_scoped(Typed, NumSteps),
-
-    % TODO (Fixme): I have switched the BaseMsgModification to #{},
-    % so we can have the if clause working on tests.
-    % BaseMsgModifications = hd(ScopedModifications),
-    BaseMsgModifications = #{},
-    if is_binary(BaseMsg) andalso (map_size(BaseMsgModifications) > 0) ->
-        throw(
-            {error, cannot_modify_base_message_before_execution, BaseMsg}
-        );
-    true ->
-        % 6. Generate the list of step messages (plus-notation, device, typed keys).
-        build_messages(BaseMsg, ReqMsgs, ScopedModifications)
-    end.
+    % 4. Group keys by N-scope and global scope    
+    ScopedModifications = group_scoped(Typed, Msgs),
+    % 5. Generate the list of messages (plus-notation, device, typed keys).
+    build_messages(Msgs, ScopedModifications).
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_rel_ref(RelativeRef) ->
@@ -121,9 +107,9 @@ part(Sep, Bin) when not is_list(Sep) ->
 part(Seps, Bin) ->
     part(Seps, Bin, 0, <<>>).
 part(_Seps, <<>>, _Depth, CurrAcc) -> {no_match, CurrAcc, <<>>};
-part(Seps, << $\(, Rest/binary>>, Depth, _CurrAcc) ->
+part(Seps, << $\(, Rest/binary>>, Depth, CurrAcc) ->
     %% Increase depth
-    part(Seps, Rest, Depth + 1, <<"(">>);
+    part(Seps, Rest, Depth + 1, << CurrAcc/binary, "(" >>);
 part(Seps, << $\), Rest/binary>>, Depth, CurrAcc) when Depth > 0 ->
     %% Decrease depth
     part(Seps, Rest, Depth - 1, << CurrAcc/binary, ")">>);
@@ -134,18 +120,7 @@ part(Seps, <<C:8/integer, Rest/binary>>, Depth, CurrAcc) ->
             part(Seps, Rest, Depth, << CurrAcc/binary, C:8/integer >>)
     end.
 
-%% @doc Step 3: Determine if the first segment is a 43-char base64URL 
-%% and either sets up a base message with hashpath or treats the first 
-%% segment as "base_segment".
-extract_base_message([]) ->
-    {#{}, []};
-extract_base_message([S|Rest] = All) ->
-    case ?IS_ID(S) of
-        true -> {S, Rest};
-        false -> {#{}, All}
-    end.
-
-%% @doc Step 4: Apply types to values and remove specifiers.
+%% @doc Step 3: Apply types to values and remove specifiers.
 apply_types(Msg) ->
     maps:fold(
         fun(Key, Val, Acc) ->
@@ -156,9 +131,9 @@ apply_types(Msg) ->
         Msg
     ).
 
-%% @doc Step 5: Group headers/query by N-scope. 
+%% @doc Step 4: Group headers/query by N-scope. 
 %% `N.Key` => applies to Nth step. Otherwise => global
-group_scoped(Map0, StepsCount) ->
+group_scoped(Map, Msgs) ->
     {NScope, Global} =
         maps:fold(
             fun(KeyBin, Val, {Ns, Gs}) ->
@@ -171,12 +146,12 @@ group_scoped(Map0, StepsCount) ->
                 end
           end,
           {#{}, #{}},
-          Map0
+          Map
         ),
     [
         maps:merge(Global, maps:get(N, NScope, #{})) 
     ||
-        N <- lists:seq(1, StepsCount)
+        N <- lists:seq(1, length(Msgs))
     ].
 
 %% @doc Get the scope of a key.
@@ -190,26 +165,16 @@ parse_scope(KeyBin) ->
         _ -> global
     end.
 
-%% @doc Step 6: Merge the base message with the scoped messages.
-build_messages(_Base, [], _ScopedKeys) -> [];
-build_messages(Base, NextRequests, ScopedKeys) ->
-    do_build(1, Base, NextRequests, ScopedKeys, []).
+%% @doc Step 5: Merge the base message with the scoped messages.
+build_messages(Msgs, ScopedModifications) ->
+    do_build(1, Msgs, ScopedModifications).
 
-do_build(_I, BaseMessage, [], _ScopedKeys, Acc) ->
-    case is_binary(BaseMessage) of
-        true -> [BaseMessage | lists:reverse(Acc)];
-        false -> lists:reverse(Acc)
-    end;
-do_build(I, BaseMessage, [Msg | Rest] = _NextRequests, ScopedKeys, Acc0) ->
-    StepMsg0 = 
-        case is_binary(BaseMessage) of
-            true -> Msg; % For the case when BaseMessage is binary, just return it
-            false -> maps:merge(BaseMessage, Msg)
-        end,
-    % StepMsg0 = maps:merge(BaseMessage, Msg),
-    HdrMap = lists:nth(I, ScopedKeys),
-    StepMsg = maps:merge(StepMsg0, HdrMap),
-    do_build(I+1, BaseMessage, Rest, ScopedKeys, [StepMsg | Acc0]).
+do_build(I, [], _ScopedKeys) -> [];
+do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
+    [Msg | do_build(I+1, Rest, ScopedKeys)];
+do_build(I, [Msg | Rest], ScopedKeys) ->
+    StepMsg = maps:merge(Msg, lists:nth(I, ScopedKeys)),
+    [StepMsg | do_build(I+1, Rest, ScopedKeys)].
 
 %% @doc Parse a path part into a message or an ID.
 %% Applies the syntax rules outlined in the module doc, in the following order:
@@ -219,9 +184,9 @@ do_build(I, BaseMessage, [Msg | Rest] = _NextRequests, ScopedKeys, Acc0) ->
 %% 4. Device specifier
 parse_part(ID) when ?IS_ID(ID) -> ID;
 parse_part(Part) ->
-    case subpath(Part) of
-        {subpath, Subpath} -> Subpath;
-        {ok, Part} ->
+    case maybe_subpath(Part) of
+        {resolve, Subpath} -> {resolve, Subpath};
+        Part ->
             case part([$+, $&, $!, $|], Part) of
                 {no_match, PartKey, <<>>} ->
                     #{ path => PartKey };
@@ -245,10 +210,7 @@ parse_part_mods(<<"!", PartMods/binary>>, Msg) ->
     % Calculate the inlined keys
     MsgWithInlines = parse_part_mods(InlinedMsgBin, Msg),
     % Apply the device specifier
-    case subpath(DeviceBin) of
-        {subpath, Path} -> {as, {resolve, Path}, MsgWithInlines};
-        {ok, Device} -> {as, Device, MsgWithInlines}
-    end;
+    {as, maybe_subpath(DeviceBin), MsgWithInlines};
 parse_part_mods(<< "+", InlinedMsgBin/binary >>, Msg) ->
     InlinedKeys = path_parts($&, InlinedMsgBin),
     MsgWithInlined = 
@@ -266,12 +228,11 @@ parse_part_mods(<< "+", InlinedMsgBin/binary >>, Msg) ->
 %% key has a value, it may provide a type (as with typical keys), but if a
 %% value is not provided, it is assumed to be a boolean `true`.
 parse_inlined_key_val(Bin) ->
-    case path_parts($=, Bin) of
-        [K, V] ->
-            {_, V2} = subpath(V),
-            {_, Key, Val} = maybe_typed(K, V2),
-            {Key, Val};
-        [K] -> {K, true}
+    case part([$=, $&], Bin) of
+        {no_match, K, <<>>} -> {K, true};
+        {$=, K, V} ->
+            {_, Key, Val} = maybe_typed(K, maybe_subpath(V)),
+            {Key, Val}
     end.
 
 %% @doc Attempt Cowboy URL decode, then sanitize the result.
@@ -283,47 +244,33 @@ decode_string(B) ->
 
 %% @doc Check if the string is a subpath, returning it in parsed form,
 %% or the original string with a specifier.
-subpath(Str) when length(Str) >= 3 ->
-    First = binary:first(Str),
-    Last  = binary:last(Str),
-    if
-        First =:= $( andalso Last =:= $) ->
-            Inside = binary:part(Str, 2, length(Str) - 2),
-            {subpath, from(#{ <<"relative-reference">> => Inside })};
-        true ->
-            {ok, Str}
+maybe_subpath(Str) when byte_size(Str) >= 2 ->
+    case {binary:first(Str), binary:last(Str)} of
+        {$(, $)} ->
+            Inside = binary:part(Str, 1, byte_size(Str) - 2),
+            {resolve, from(#{ <<"relative-reference">> => Inside })};
+        _ -> Str
     end;
-subpath(Str) ->
-    {ok, Str}.
+maybe_subpath(Other) -> Other.
 
 %% @doc Parse a key's type (applying it to the value) and device name if present.
 maybe_typed(Key, Value) ->
-    case binary:split(Key, <<"|">>, [global]) of
-        [OnlyKey, T] ->
-            case {T, Value} of
-                {<<"Resolve">>, Submessage} ->
+    case part($|, Key) of
+        {no_match, OnlyKey, <<>>} -> {untyped, OnlyKey, Value};
+        {$|, OnlyKey, Type} ->
+            case {Type, Value} of
+                {<<"Resolve">>, Subpath} ->
                     % If the value needs to be resolved before it is converted,
                     % use the `Codec/1.0` device to resolve it.
                     % For example:
-                    %   `/a/b+k|Int=(/x/y/z)` => /a/b+k=(/x/y/z/body+Type=Int|Codec)
+                    % /a/b+k|Int=(/x/y/z)` => /a/b+k=(/x/y/z/body+Type=Int|Codec)
                     {typed,
                         OnlyKey,
-                        #{path =>
-                            {resolve,
-                                lists:map(
-                                    fun(Item) -> 
-                                        #{path => Item}
-                                    end, 
-                                    path_parts($/, Submessage))
-                                }
-                        }
+                        {resolve, from(#{ <<"relative-reference">> => Subpath })}
                     };
-
                 {_T, Bin} when is_binary(Bin) ->
-                    {typed, OnlyKey, hb_codec_converge:decode_value(T, Bin)}
-            end;
-        _ ->
-            {untyped, Key, Value}
+                    {typed, OnlyKey, hb_codec_converge:decode_value(Type, Bin)}
+            end
     end.
 
 %%% Tests
@@ -407,15 +354,12 @@ subpath_in_key_test() ->
     [Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
     ?assertEqual(
-        #{
-            path =>
-                {resolve,
-                    [
-                        #{ path => <<"x">> },
-                        #{ path => <<"y">> },
-                        #{ path => <<"z">> }
-                    ]
-                }
+        {resolve,
+            [
+                #{ path => <<"x">> },
+                #{ path => <<"y">> },
+                #{ path => <<"z">> }
+            ]
         },
         maps:get(<<"test-key">>, Msg2, not_found)
     ),
@@ -430,14 +374,15 @@ subpath_in_path_test() ->
     ?assertEqual(3, length(Msgs)),
     [Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(<<"a">>, maps:get(path, Msg1)),
-    Msg2Path = maps:get(path, Msg2),
     ?assertEqual(
-        [
-            #{ path => <<"x">> },
-            #{ path => <<"y">> },
-            #{ path => <<"z">> }
-        ],
-        Msg2Path
+        {resolve,
+            [
+                #{ path => <<"x">> },
+                #{ path => <<"y">> },
+                #{ path => <<"z">> }
+            ]
+        },
+        Msg2
     ),
     ?assertEqual(<<"z">>, maps:get(path, Msg3)).
 
@@ -471,29 +416,40 @@ multiple_inlined_keys_test() ->
 
 %% 4) Inlined dictionary with subpath in parentheses
 subpath_in_inlined_test() ->
-    Path = <<"/A+B=(/x/y)/C">>,
+    Path = <<"/Part1/Part2+Test=1&B=(/x/y)/Part3">>,
     Req = #{
         <<"relative-reference">> => Path
     },
     Msgs = from(Req),
-    ?assertEqual(2, length(Msgs)),
-    [First, Second] = Msgs,
-    ?assertEqual(<<"A">>, maps:get(path, First)),
-    ?assertEqual(<<"C">>, maps:get(path, Second)),
+    ?assertEqual(3, length(Msgs)),
+    [First, Second, Third] = Msgs,
+    ?assertEqual(<<"Part1">>, maps:get(path, First)),
+    ?assertEqual(<<"Part3">>, maps:get(path, Third)),
     ?assertEqual(
-        #{ path => [#{ path => <<"x">> }, #{ path => <<"y">> }] },
-        maps:get(<<"B">>, First)
+        {resolve, [#{ path => <<"x">> }, #{ path => <<"y">> }] },
+        maps:get(<<"B">>, Second)
     ).
 
 path_parts_test() ->
+    ?assertEqual(
+        [<<"a">>, <<"b+c=(/d/e)">>, <<"f">>],
+        path_parts($/, <<"/a/b+c=(/d/e)/f">>)
+    ),
     ?assertEqual([<<"a">>], path_parts($/, <<"/a">>)),
     ?assertEqual([<<"a">>, <<"b">>, <<"c">>], path_parts($/, <<"/a/b/c">>)),
-    ?assertEqual([
-        <<"IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q">>,
-        <<"msg2">>
+    ?assertEqual(
+        [
+            <<"IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q">>,
+            <<"msg2">>
         ], 
-    path_parts($/, <<"/IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q/msg2">>)),
-    % ?assertEqual([<<"a">>>], path_parts($/, <<"/a/b+K1=V1&K2=V2">>)),
-    % ?assertEqual([<<"a">>], path_parts($/, <<"/a/b+K1=V1/c+K2=V2">>)),
-    ?assertEqual([<<"a">>, <<"(x/y/z)">>, <<"c">>], path_parts($/, <<"/a/(x/y/z)/c">>)),
+        path_parts($/, <<"/IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q/msg2">>)
+    ),
+    ?assertEqual(
+        [<<"a">>, <<"b+K1=V1">>, <<"c+K2=V2">>],
+        path_parts($/, <<"/a/b+K1=V1/c+K2=V2">>)
+    ),
+    ?assertEqual(
+        [<<"a">>, <<"(x/y/z)">>, <<"c">>],
+        path_parts($/, <<"/a/(x/y/z)/c">>)
+    ),
     ok.
