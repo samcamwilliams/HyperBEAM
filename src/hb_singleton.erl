@@ -88,47 +88,51 @@ parse_rel_ref(RelativeRef) ->
 %% subpath components, such that their own path parts are not dissociated from 
 %% their parent path.
 path_messages(RawBin) when is_binary(RawBin) ->
-    lists:map(fun parse_part/1, path_parts($/, decode_string(RawBin))).
+    lists:map(fun parse_part/1, path_parts([$/], decode_string(RawBin))).
 
-%% @doc Parse the path into segments.
+%% @doc Split the path into segments, filtering out empty segments and
+%% segments that are too long.
 path_parts(Sep, PathBin) when is_binary(PathBin) ->
-    path_parts(Sep, PathBin, 0, <<>>, []).
-%%   - Chars: remaining characters to parse
-%%   - Depth: current parentheses depth
-%%   - SegsAcc: reversed list of segments we’ve formed so far
-path_parts(_Sep, <<>>, _Depth, CurrAcc, SegsAcc) ->
-    %% End of input. Add final segment (if any) and reverse the list
-    Result = 
-        lists:filtermap(
-            fun(Part) ->
-                case byte_size(Part) of
-                    0 -> false;
-                    TooLong when TooLong > ?MAX_SEGMENT_LENGTH ->
-                        throw({error, segment_too_long, Part});
-                    _ -> {true, Part}
-                end
-            end,
-            lists:reverse([CurrAcc | SegsAcc])
-        ),
-    Result;
-path_parts(Sep, << Sep, Rest/binary>>, 0, CurrAcc, SegsAcc) ->
-    %% We hit the separator at top level => new segment boundary
-    path_parts(Sep, Rest, 0, <<>>, [CurrAcc | SegsAcc]);
-path_parts(Sep, << $\(, Rest/binary>>, Depth, _CurrAcc, SegsAcc) ->
-    %% Increase depth
-    % path_parts(Sep, Rest, Depth + 1, << SegsAcc/binary, $\( >>, CurrAcc);
-    path_parts(Sep, Rest, Depth + 1, <<"(">>, SegsAcc);
-path_parts(Sep, << $\), Rest/binary>>, Depth, CurrAcc, SegsAcc) when Depth > 0 ->
-    %% Decrease depth
-    path_parts(Sep, Rest, Depth - 1, << CurrAcc/binary, ")">>, SegsAcc);
-path_parts(Sep, <<C:1/binary, Rest/binary>>, Depth, CurrAcc, SegsAcc) ->
-    %% Normal character: keep accumulating
-    NewCurrentAcc = 
-        case CurrAcc of
-            <<>> -> C;
-            _Other -> <<CurrAcc/binary, C/binary>>
+    Res = lists:filtermap(
+        fun(Part) ->
+            case byte_size(Part) of
+                0 -> false;
+                TooLong when TooLong > ?MAX_SEGMENT_LENGTH ->
+                    throw({error, segment_too_long, Part});
+                _ -> {true, Part}
+            end
         end,
-    path_parts(Sep, Rest, Depth, NewCurrentAcc, SegsAcc).
+        all_path_parts(Sep, PathBin)
+    ),
+    Res.
+
+%% @doc Extract all of the parts from the binary, given (a list of) separators.
+all_path_parts(_Sep, <<>>) -> [];
+all_path_parts(Sep, Bin) ->
+    {_MatchedSep, Part, Rest} = part(Sep, Bin),
+    [Part | all_path_parts(Sep, Rest)].
+
+%% @doc Extract the characters from the binary until a separator is found.
+%% The first argument of the function is an explicit separator character, or
+%% a list of separator characters. Returns a tuple with the separator, the
+%% accumulated characters, and the rest of the binary.
+part(Sep, Bin) when not is_list(Sep) ->
+    part([Sep], Bin);
+part(Seps, Bin) ->
+    part(Seps, Bin, 0, <<>>).
+part(_Seps, <<>>, _Depth, CurrAcc) -> {no_match, CurrAcc, <<>>};
+part(Seps, << $\(, Rest/binary>>, Depth, _CurrAcc) ->
+    %% Increase depth
+    part(Seps, Rest, Depth + 1, <<"(">>);
+part(Seps, << $\), Rest/binary>>, Depth, CurrAcc) when Depth > 0 ->
+    %% Decrease depth
+    part(Seps, Rest, Depth - 1, << CurrAcc/binary, ")">>);
+part(Seps, <<C:8/integer, Rest/binary>>, Depth, CurrAcc) ->
+    case Depth == 0 andalso lists:member(C, Seps) of
+        true -> {C, CurrAcc, Rest};
+        false ->
+            part(Seps, Rest, Depth, << CurrAcc/binary, C:8/integer >>)
+    end.
 
 %% @doc Step 3: Determine if the first segment is a 43-char base64URL 
 %% and either sets up a base message with hashpath or treats the first 
@@ -216,12 +220,17 @@ do_build(I, BaseMessage, [Msg | Rest] = _NextRequests, ScopedKeys, Acc0) ->
 parse_part(ID) when ?IS_ID(ID) -> ID;
 parse_part(Part) ->
     case subpath(Part) of
-        {subpath, Subpath} ->
-            Subpath;
+        {subpath, Subpath} -> Subpath;
         {ok, Part} ->
-            [PartKey|PartModBin] =
-                binary:split(Part, [<<"+">>, <<"&">>, <<"!">>, <<"|">>]),
-            parse_part_mods(PartModBin, #{ path => PartKey })
+            case part([$+, $&, $!, $|], Part) of
+                {no_match, PartKey, <<>>} ->
+                    #{ path => PartKey };
+                {Sep, PartKey, PartModBin} ->
+                    parse_part_mods(
+                        << Sep:8/integer, PartModBin/binary >>,
+                        #{ path => PartKey }
+                    )
+            end
     end.
 
 %% @doc Parse part modifiers: 
@@ -267,7 +276,7 @@ parse_inlined_key_val(Bin) ->
 
 %% @doc Attempt Cowboy URL decode, then sanitize the result.
 decode_string(B) ->
-    case catch cow_uri:urldecode(B) of
+    case catch http_uri:decode(B) of
         DecodedBin when is_binary(DecodedBin) -> DecodedBin;
         _ -> throw({error, cannot_decode, B})
     end.
@@ -415,7 +424,7 @@ subpath_in_key_test() ->
 %%% Advanced path syntax
 subpath_in_path_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/ab/(x/y/z)/z">>
+        <<"relative-reference">> => <<"/a/(x/y/z)/z">>
     },
     Msgs = from(Req),
     ?assertEqual(3, length(Msgs)),
