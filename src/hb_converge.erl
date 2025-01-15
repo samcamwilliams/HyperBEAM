@@ -123,7 +123,7 @@ resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
 resolve(Full = [Msg1, Msg2 | MsgList], Opts) ->
     resolve(
         Msg1,
-        hb_path:priv_store_original(Msg2, Full, MsgList),
+        hb_path:priv_store_remaining(Msg2, MsgList),
         Opts
     ).
 resolve(Msg1, Msg2, Opts) ->
@@ -143,6 +143,7 @@ resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
     resolve_stage(1, Msg1, #{ path => Path }, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, normalize_path}, Opts),
+    ?event(debug, {path_normalizing, {msg1, Msg1}, {msg2, Msg2}}),
     case hb_path:priv_remaining(Msg2, Opts) of
         undefined ->
             % We are executing our first run with no message list to recurse
@@ -448,15 +449,14 @@ resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
 resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
     % Recurse, or terminate.
-    RemainingPath = hb_path:priv_remaining(Msg2, Opts),
-	case RemainingPath of
+	case hb_path:priv_remaining(Msg2, Opts) of
 		[] ->
             % Terminate: We have reached the end of the path.
 			{Status, Msg3};
-		_ when Status == ok ->
+		RemainingPath when Status == ok ->
 			% There are more elements in the path, so we recurse.
 			?event(
-                converge_core,
+                debug,
                 {resolution_recursing,
                     {remaining_path, RemainingPath}
                 }
@@ -465,7 +465,7 @@ resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
                 [LastMsg] -> resolve(Msg3, LastMsg, Opts);
                 _ -> resolve([Msg3|RemainingPath], Opts)
             end;
-        _ ->
+        RemainingPath ->
             error_invalid_intermediate_status(
                 Msg1, Msg2, Msg3, RemainingPath, Opts)
 	end.

@@ -75,13 +75,6 @@ priv_remaining(Msg, _Opts) ->
     Converge = maps:get(<<"Converge">>, Priv, #{}),
     maps:get(<<"Remaining">>, Converge, undefined).
 
-%% @doc Return the `Original-Path' of a message, from its hidden `Converge'
-%% key.
-priv_original(Msg, _Opts) ->
-    Priv = hb_private:from_message(Msg),
-    Converge = maps:get(<<"Converge">>, Priv, #{}),
-    maps:get(<<"Original">>, Converge, undefined).
-
 %% @doc Store the `Original-Path' (and optionally `Remaining-Path') of a message
 %% in its hidden `Converge' key
 priv_store_original(Msg, OriginalPath, RemainingPath) ->
@@ -111,12 +104,6 @@ priv_store_remaining(Msg, RemainingPath) ->
                     }
             }
     }.
-
-%% @doc Return the internal ID of a binary as it will be written to our
-%% stores.
-data_id(Bin, _Opts) when is_binary(Bin) ->
-    % Default hashpath for a binary message is its SHA2-256 hash.
-    hb_util:human_id(hb_crypto:sha256(Bin)).
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
 hashpath(Bin, _Opts) when is_binary(Bin) ->

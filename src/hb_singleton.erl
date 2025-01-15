@@ -41,7 +41,7 @@
 %% messages.
 from(RawMsg) ->
     {ok, Path, Query} = 
-        parse_rel_ref(
+        parse_full_path(
             maps:get(<<"path">>, RawMsg, <<"/">>)
         ),
     MsgWithoutBasePath = maps:merge(
@@ -49,7 +49,8 @@ from(RawMsg) ->
         Query
     ),
     % 2. Decode, split, and sanitize path segments. Each yields one step message.
-    Msgs = lists:flatten(lists:map(fun path_messages/1, Path)),
+    RawMsgs = lists:flatten(lists:map(fun path_messages/1, Path)),
+    Msgs = normalize_base(RawMsgs),
     % 3. Type keys and values
     Typed = apply_types(MsgWithoutBasePath),
     % 4. Group keys by N-scope and global scope    
@@ -58,7 +59,7 @@ from(RawMsg) ->
     build_messages(Msgs, ScopedModifications).
 
 %% @doc Parse the relative reference into path, query, and fragment.
-parse_rel_ref(RelativeRef) ->
+parse_full_path(RelativeRef) ->
     {Path, QMap} =
         case binary:split(RelativeRef, <<"?">>) of
             [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
@@ -75,6 +76,11 @@ parse_rel_ref(RelativeRef) ->
 %% their parent path.
 path_messages(RawBin) when is_binary(RawBin) ->
     lists:map(fun parse_part/1, path_parts([$/], decode_string(RawBin))).
+
+%% @doc Normalize the base path.
+normalize_base([]) -> [];
+normalize_base([First|Rest]) when ?IS_ID(First) -> [First|Rest];
+normalize_base(Rest) -> [#{}|Rest].
 
 %% @doc Split the path into segments, filtering out empty segments and
 %% segments that are too long.

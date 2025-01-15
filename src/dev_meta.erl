@@ -12,10 +12,7 @@
 handle(NodeMsg, RawRequest) ->
     ?event(debug, #{ request => RawRequest }),
     NormRequest = hb_singleton:from(RawRequest),
-    lists:foreach(
-        fun(Msg) -> ?event(debug, {processing_message, Msg}) end,
-        NormRequest
-    ),
+    ?event(debug, {processing_messages, NormRequest}),
     case is_meta_request(NormRequest) of
         true -> handle_meta(NormRequest, NodeMsg);
         false -> handle_converge(NormRequest, NodeMsg)

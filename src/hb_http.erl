@@ -40,7 +40,7 @@ post(Node, Message, Opts) ->
             <<"Path">>,
             Message,
             <<"/">>,
-            #{ topic => converge_internal }
+            Opts#{ topic => converge_internal }
         ),
         Message,
         Opts
@@ -295,7 +295,7 @@ simple_converge_resolve_test() ->
             #{ path => <<"/Key1">>, <<"Key1">> => <<"Value1">> },
             #{}
         ),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"Key1">>, Res, #{})).
+    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
@@ -303,7 +303,7 @@ nested_converge_resolve_test() ->
         post(
             URL,
             #{
-                path => <<"/Key1">>,
+                path => <<"/Key1/Key2/Key3">>,
                 <<"Key1">> =>
                     #{<<"Key2">> =>
                         #{
@@ -313,7 +313,7 @@ nested_converge_resolve_test() ->
             },
             #{}
         ),
-    ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
+    ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
 
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
@@ -322,7 +322,7 @@ wasm_compute_request(ImageFile, Func, Params) ->
         <<"Device">> => <<"WASM-64/1.0">>,
         <<"WASM-Function">> => Func,
         <<"WASM-Params">> => Params,
-        <<"Image">> => Bin
+        <<"body">> => Bin
     }.
 
 run_wasm_unsigned_test() ->
