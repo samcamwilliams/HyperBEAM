@@ -41,9 +41,8 @@
 %% messages.
 from(RawMsg) ->
     {ok, Path, Query} = 
-        parse_full_path(
-            maps:get(<<"path">>, RawMsg, <<"/">>)
-        ),
+        parse_full_path(P = hb_path:to_binary(hb_path:from_message(request, RawMsg))),
+    ?event(debug, {got_path, P}),
     MsgWithoutBasePath = maps:merge(
         maps:remove(<<"path">>, RawMsg),
         Query

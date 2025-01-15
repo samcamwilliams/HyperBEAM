@@ -66,26 +66,30 @@ request(Method, Peer, Path, Opts) ->
 request(Method, Config, Path, Message, Opts) when is_map(Config) ->
     multirequest(Config, Method, Path, Message, Opts);
 request(Method, Peer, Path, RawMessage, Opts) ->
-    Message = hb_converge:ensure_message(RawMessage),
-    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
-    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
-    ?event(http, {http_outbound, Method, BinPeer, BinPath, Message}),
-    BinMessage =
-        case map_size(Message) of
-            0 -> <<>>;
-            _ -> ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
-        end,
     Req =
-        #{
-            peer => BinPeer,
-            path => BinPath,
-            method => Method,
-            headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
-            body => BinMessage
-        },
+        prepare_request(
+            hb_opts:get(format, http, Opts),
+            Method,
+            Peer,
+            Path,
+            RawMessage,
+            Opts
+        ),
     case ar_http:req(Req, Opts) of
         {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
-            ?event({http_got, BinPeer, BinPath, Status, Headers, Body}),
+            ?event(
+                {
+                    http_rcvd,
+                    {req, Req},
+                    {response,
+                        #{
+                            status => Status,
+                            headers => Headers,
+                            body => Body
+                        }
+                    }
+                }
+            ),
             {
                 case Status of
                     201 -> created;
@@ -94,14 +98,44 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 Body
             };
         {ok, Status, _Headers, Body} when Status == 400 ->
-            ?event({http_got_client_error, BinPeer, BinPath}),
+            ?event(
+                {http_got_client_error,
+                    {req, Req},
+                    {response, #{status => Status, body => Body}}
+                }),
             {error, Body};
         {ok, Status, _Headers, Body} when Status > 400 ->
-            ?event({http_got_server_error, BinPeer, BinPath}),
+            ?event(
+                {http_got_server_error,
+                    {req, Req},
+                    {response, #{status => Status, body => Body}}
+                }
+            ),
             {unavailable, Body};
         Response ->
-            ?event({http_error, BinPeer, BinPath, Response}),
+            ?event(
+                {http_error,
+                    {req, Req},
+                    {response, Response}
+                }
+            ),
             Response
+    end.
+
+%% @doc Turn a set of request arguments into a request message, formatted in the
+%% preferred format.
+prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
+    Message = hb_converge:ensure_message(RawMessage),
+    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
+    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
+    ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
+    case Format of
+        http -> maps:merge(ReqBase, hb_message:convert(Message, http, Opts));
+        ans104 ->
+            ReqBase#{
+                headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
+                body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
+            }
     end.
 
 %% @doc Dispatch the same HTTP request to many nodes. Can be configured to
@@ -205,21 +239,33 @@ reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, RawMessage) ->
     Message = hb_converge:ensure_message(RawMessage),
-    TX = hb_message:convert(Message, tx, converge, #{}),
+    Encoded =
+        hb_message:convert(
+            Message,
+            hb_opts:get(format, http, #{}),
+            converge,
+            #{ topic => converge_internal }
+        ),
     ?event(http,
         {replying,
             {status, Status},
             {path, maps:get(path, Req, undefined_path)},
-            {tx, TX}
+            {encoded, Encoded}
         }
     ),
     Req2 = cowboy_req:stream_reply(
         Status,
-        #{<<"content-type">> => <<"application/x-ans-104">>},
+        case Encoded of
+            #{ headers := Headers } -> maps:from_list(Headers);
+            _ -> #{<<"content-type">> => <<"application/octet-stream">>}
+        end,
         Req
     ),
     Req3 = cowboy_req:stream_body(
-        ar_bundles:serialize(TX),
+        case Encoded of
+            #{ body := Body } -> Body;
+            _ -> ar_bundles:serialize(Encoded)
+        end,
         nofin,
         Req2
     ),
@@ -292,7 +338,7 @@ simple_converge_resolve_test() ->
     {ok, Res} =
         post(
             URL,
-            #{ path => <<"/Key1">>, <<"Key1">> => <<"Value1">> },
+            #{ path => <<"/key1">>, <<"key1">> => <<"Value1">> },
             #{}
         ),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
@@ -303,11 +349,11 @@ nested_converge_resolve_test() ->
         post(
             URL,
             #{
-                path => <<"/Key1/Key2/Key3">>,
-                <<"Key1">> =>
-                    #{<<"Key2">> =>
+                path => <<"/key1/key2/key3">>,
+                <<"key1">> =>
+                    #{<<"key2">> =>
                         #{
-                            <<"Key3">> => <<"Value2">>
+                            <<"key3">> => <<"Value2">>
                         }
                     }
             },
