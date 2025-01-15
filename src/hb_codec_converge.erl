@@ -113,7 +113,8 @@ encode_value(Values) when is_list(Values) ->
         lists:map(
             fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
                (Item) ->
-                {Type, Encoded} = encode_value(Item),
+                {RawType, Encoded} = encode_value(Item),
+                Type = hb_converge:key_to_binary(RawType),
                 {
                     item,
                     {
@@ -136,6 +137,16 @@ encode_value(Value) ->
     Value.
 
 %% @doc Convert non-binary values to binary for serialization.
+decode_value(Type, Value) when is_list(Type) ->
+    decode_value(list_to_binary(Type), Value);
+decode_value(Type, Value) when is_binary(Type) ->
+    decode_value(
+        binary_to_existing_atom(
+            list_to_binary(string:to_lower(binary_to_list(Type))),
+            latin1
+        ),
+        Value
+    );
 decode_value(integer, Value) ->
     {item, Number, _} = hb_http_structured_fields:parse_item(Value),
     Number;

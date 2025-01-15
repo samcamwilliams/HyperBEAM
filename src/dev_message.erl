@@ -139,6 +139,11 @@ remove(Message1, #{ items := Keys }) ->
     }.
 
 %% @doc Get the public keys of a message.
+keys(Msg) when not is_map(Msg) ->
+    case hb_converge:ensure_message(Msg) of
+        NormMsg when is_map(NormMsg) -> keys(NormMsg);
+        _ -> throw(badarg)
+    end;
 keys(Msg) ->
     {
         ok,

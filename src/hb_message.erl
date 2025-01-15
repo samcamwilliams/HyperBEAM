@@ -53,8 +53,9 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([convert/3, convert/4, unsigned/1, attestations/1]).
--export([sign/2, verify/1, match/2, type/1, minimize/1, normalize_keys/1]). 
+-export([sign/2, verify/1, type/1, minimize/1, normalize_keys/1]). 
 -export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
+-export([match/2, match/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
@@ -295,27 +296,50 @@ type(Msg) when is_map(Msg) ->
     end.
 
 %% @doc Check if two maps match, including recursively checking nested maps.
+%% Takes an optional mode argument to control the matching behavior:
+%%      `strict': All keys in both maps be present and match.
+%%      `only_present': Only present keys in both maps must match.
+%%      `primary': Only the primary map's keys must be present.
 match(Map1, Map2) ->
-    Keys1 = maps:keys(NormMap1 = minimize(normalize(Map1))),
-    Keys2 = maps:keys(NormMap2 = minimize(normalize(Map2))),
-    case Keys1 == Keys2 of
+    match(Map1, Map2, strict).
+match(Map1, Map2, Mode) ->
+    Keys1 =
+        maps:keys(
+            NormMap1 = minimize(normalize(hb_converge:ensure_message(Map1)))
+        ),
+    Keys2 =
+        maps:keys(
+            NormMap2 = minimize(normalize(hb_converge:ensure_message(Map2)))
+        ),
+    PrimaryKeysPresent =
+        (Mode == primary) andalso
+            lists:all(
+                fun(Key) -> lists:member(Key, Keys1) end,
+                Keys1
+            ),
+    case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
         true ->
             lists:all(
                 fun(Key) ->
                     Val1 = maps:get(Key, NormMap1, not_found),
                     Val2 = maps:get(Key, NormMap2, not_found),
-                    case is_map(Val1) andalso is_map(Val2) of
-                        true -> match(Val1, Val2);
+                    BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
+                    case (not BothPresent) and (Mode == only_present) of
+                        true -> true;
                         false ->
-                            case Val1 == Val2 of
-                                true -> true;
+                            case is_map(Val1) andalso is_map(Val2) of
+                                true -> match(Val1, Val2);
                                 false ->
-                                    ?event(
-                                        {value_mismatch,
-                                            {key, Val1, Val2}
-                                        }
-                                    ),
-                                    false
+                                    case Val1 == Val2 of
+                                        true -> true;
+                                        false ->
+                                            ?event(
+                                                {value_mismatch,
+                                                    {key, Val1, Val2}
+                                                }
+                                            ),
+                                            false
+                                    end
                             end
                     end
                 end,
@@ -471,6 +495,15 @@ match_test(Codec) ->
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
+
+match_modes_test() ->
+    Msg1 = #{ a => 1, b => 2 },
+    Msg2 = #{ a => 1 },
+    Msg3 = #{ a => 1, b => 2, c => 3 },
+    ?assert(match(Msg1, Msg2, only_present)),
+    ?assert(not match(Msg2, Msg1, strict)),
+    ?assert(match(Msg1, Msg3, primary)),
+    ?assert(not match(Msg3, Msg1, primary)).
 
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test(Codec) ->
@@ -698,7 +731,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [converge, tx, flat].
+    [converge, tx, flat, http].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -743,4 +776,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(tx).
+    basic_map_codec_test(http).
