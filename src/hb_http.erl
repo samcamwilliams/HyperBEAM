@@ -36,7 +36,12 @@ get(Node, Path, Opts) ->
 %% resulting message in deserialized form.
 post(Node, Message, Opts) ->
     post(Node,
-        hb_converge:get(<<"Path">>, Message, <<"/">>, #{}),
+        hb_converge:get(
+            <<"Path">>,
+            Message,
+            <<"/">>,
+            #{ topic => converge_internal }
+        ),
         Message,
         Opts
     ).
@@ -241,7 +246,7 @@ status_code(Status) -> Status.
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->
     case cowboy_req:header(<<"content-type">>, Req) of
-        {ok, <<"application/x-ans-104">>} ->
+        <<"application/x-ans-104">> ->
             {ok, Body} = read_body(Req),
             hb_message:convert(ar_bundles:deserialize(Body), tabm, tx, Opts);
         _ ->
@@ -252,7 +257,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
     {ok, Body} = read_body(Req),
     Headers =
         RawHeaders#{
-            <<"relative-reference">> =>
+            <<"path">> =>
                 iolist_to_binary(
                     cowboy_req:uri(
                         Req,
@@ -287,8 +292,18 @@ simple_converge_resolve_test() ->
     {ok, Res} =
         post(
             URL,
+            #{ path => <<"/Key1">>, <<"Key1">> => <<"Value1">> },
+            #{}
+        ),
+    ?assertEqual(<<"Value1">>, hb_converge:get(<<"Key1">>, Res, #{})).
+
+nested_converge_resolve_test() ->
+    URL = hb_http_server:start_test_node(),
+    {ok, Res} =
+        post(
+            URL,
             #{
-                path => <<"Key1">>,
+                path => <<"/Key1">>,
                 <<"Key1">> =>
                     #{<<"Key2">> =>
                         #{
@@ -303,8 +318,8 @@ simple_converge_resolve_test() ->
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
-        path => <<"Init/Compute/Results">>,
-        device => <<"WASM-64/1.0">>,
+        path => <<"/Init/Compute/Results">>,
+        <<"Device">> => <<"WASM-64/1.0">>,
         <<"WASM-Function">> => Func,
         <<"WASM-Params">> => Params,
         <<"Image">> => Bin

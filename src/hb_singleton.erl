@@ -42,16 +42,16 @@
 from(RawMsg) ->
     {ok, Path, Query} = 
         parse_rel_ref(
-            maps:get(<<"relative-reference">>, RawMsg, <<"/">>)
+            maps:get(<<"path">>, RawMsg, <<"/">>)
         ),
-    MsgWithoutRef = maps:merge(
-        maps:remove(<<"relative-reference">>, RawMsg),
+    MsgWithoutBasePath = maps:merge(
+        maps:remove(<<"path">>, RawMsg),
         Query
     ),
     % 2. Decode, split, and sanitize path segments. Each yields one step message.
     Msgs = lists:flatten(lists:map(fun path_messages/1, Path)),
     % 3. Type keys and values
-    Typed = apply_types(MsgWithoutRef),
+    Typed = apply_types(MsgWithoutBasePath),
     % 4. Group keys by N-scope and global scope    
     ScopedModifications = group_scoped(Typed, Msgs),
     % 5. Generate the list of messages (plus-notation, device, typed keys).
@@ -169,11 +169,15 @@ parse_scope(KeyBin) ->
 build_messages(Msgs, ScopedModifications) ->
     do_build(1, Msgs, ScopedModifications).
 
-do_build(I, [], _ScopedKeys) -> [];
+do_build(_, [], _ScopedKeys) -> [];
 do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
     [Msg | do_build(I+1, Rest, ScopedKeys)];
 do_build(I, [Msg | Rest], ScopedKeys) ->
-    StepMsg = maps:merge(Msg, lists:nth(I, ScopedKeys)),
+    StepMsg = hb_message:convert(
+        maps:merge(Msg, lists:nth(I, ScopedKeys)),
+        converge,
+        #{ topic => converge_internal }
+    ),
     [StepMsg | do_build(I+1, Rest, ScopedKeys)].
 
 %% @doc Parse a path part into a message or an ID.
@@ -395,7 +399,6 @@ inlined_keys_test() ->
     ?assertEqual(<<"V2">>, maps:get(<<"K2">>, Msg3)),
     ?assertEqual(not_found, maps:get(<<"K1">>, Msg1, not_found)),
     ?assertEqual(not_found, maps:get(<<"K2">>, Msg2, not_found)).
-
 
 multiple_inlined_keys_test() ->
     Path = <<"/a/b+K1=V1&K2=V2">>,

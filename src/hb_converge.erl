@@ -120,7 +120,7 @@
 
 resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
     resolve(hb_singleton:from(SingletonMsg), Opts);
-resolve(Full = [Msg1, Msg2 | MsgList], Opts) when is_list(Msg1) ->
+resolve(Full = [Msg1, Msg2 | MsgList], Opts) ->
     resolve(
         Msg1,
         hb_path:priv_store_original(Msg2, Full, MsgList),

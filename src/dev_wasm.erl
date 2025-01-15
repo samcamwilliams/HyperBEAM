@@ -207,7 +207,7 @@ normalize(RawM1, M2, Opts) ->
                         Opts
                     ),
                 case Memory of
-                    not_found -> throw({error, no_wasm_instance_or_});
+                    not_found -> throw({error, no_wasm_instance_or_snapshot});
                     State ->
                         {ok, M1} = init(RawM1, State, Opts),
                         Res = hb_beamr:deserialize(instance(M1, M2, Opts), State),
