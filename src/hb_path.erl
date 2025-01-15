@@ -30,8 +30,7 @@
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/1]).
 -export([hd/2, tl/2, push_request/2, queue_request/2, pop_request/2]).
--export([priv_remaining/2, priv_original/2, priv_store_original/2]).
--export([priv_store_original/3, priv_store_remaining/2]).
+-export([priv_remaining/2, priv_store_remaining/2, priv_store_original/3]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
 -export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
@@ -71,22 +70,20 @@ tl(Path, Opts) when is_list(Path) ->
 %% @doc Return the `Remaining-Path' of a message, from its hidden `Converge'
 %% key. Does not use the `get` or set `hb_private` functions, such that it
 %% can be safely used inside the main Converge resolve function.
-priv_remaining(Msg, Opts) ->
+priv_remaining(Msg, _Opts) ->
     Priv = hb_private:from_message(Msg),
     Converge = maps:get(<<"Converge">>, Priv, #{}),
-    maps:get(<<"Remaining-Path">>, Converge, undefined).
+    maps:get(<<"Remaining">>, Converge, undefined).
 
 %% @doc Return the `Original-Path' of a message, from its hidden `Converge'
 %% key.
-priv_original(Msg, Opts) ->
+priv_original(Msg, _Opts) ->
     Priv = hb_private:from_message(Msg),
     Converge = maps:get(<<"Converge">>, Priv, #{}),
-    maps:get(<<"Original-Path">>, Converge, undefined).
+    maps:get(<<"Original">>, Converge, undefined).
 
 %% @doc Store the `Original-Path' (and optionally `Remaining-Path') of a message
-%% in its hidden `Converge' key.
-priv_store_original(Msg, OriginalPath) ->
-    priv_store_original(Msg, OriginalPath, undefined).
+%% in its hidden `Converge' key
 priv_store_original(Msg, OriginalPath, RemainingPath) ->
     Priv = hb_private:from_message(Msg),
     Converge = maps:get(<<"Converge">>, Priv, #{}),
@@ -95,8 +92,8 @@ priv_store_original(Msg, OriginalPath, RemainingPath) ->
             Priv#{
                 <<"Converge">> =>
                     Converge#{
-                        <<"Original-Path">> => OriginalPath,
-                        <<"Remaining-Path">> => RemainingPath
+                        <<"Original">> => OriginalPath,
+                        <<"Remaining">> => RemainingPath
                     }
             }
     }.
@@ -110,7 +107,7 @@ priv_store_remaining(Msg, RemainingPath) ->
             Priv#{
                 <<"Converge">> =>
                     Converge#{
-                        <<"Remaining-Path">> => RemainingPath
+                        <<"Remaining">> => RemainingPath
                     }
             }
     }.
