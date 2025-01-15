@@ -30,18 +30,18 @@ is_meta_request(_) -> false.
 handle_meta([Request|_], NodeMsg) ->
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
-            {ok, hb_private:reset(Request, NodeMsg)};
+            embed_status({ok, hb_private:reset(Request)});
         <<"POST">> ->
-            ReqSigners = hb_message:signers(Request, NodeMsg),
+            ReqSigners = hb_message:signers(Request),
             Owner = hb_opts:get(owner, no_owner_set, NodeMsg),
             case lists:member(Owner, ReqSigners) of
                 false ->
-                    {error, {unauthorized, Request}};
+                    embed_status({error, <<"Unauthorized">>});
                 true ->
-                    hb_http_server:setops(NodeMsg),
-                    {ok, <<"OK">>}
+                    hb_http_server:set_opts(NodeMsg),
+                    embed_status({ok, <<"OK">>})
             end;
-        _ -> {error, {unsupported_method, Request}}
+        _ -> embed_status({error, <<"Unsupported Method">>})
     end.
 
 %% @doc Handle a Converge request, which is a list of messages. We apply
@@ -50,14 +50,26 @@ handle_meta([Request|_], NodeMsg) ->
 %% After execution, we run the node's `postprocessor` message on the result of
 %% the request before returning the result it grants back to the user.
 handle_converge(Request, NodeMsg) ->
+    % Apply the pre-processor to the request.
     case resolve_processor(preprocessor, Request, NodeMsg) of
         {ok, PreProcMsg} ->
-            case hb_converge:resolve(PreProcMsg, NodeMsg) of
-                {ok, ConvergedMsg} ->
-                    resolve_processor(postprocessor, ConvergedMsg, NodeMsg);
-                {error, Error} -> {error, Error}
-            end;
-        {error, Error} -> {error, Error}
+            % Resolve the request message.
+            {ok, Res} =
+                embed_status(
+                    hb_converge:resolve(
+                        PreProcMsg,
+                        NodeMsg#{ force_message => true }
+                    )
+                ),
+            % Apply the post-processor to the result.
+            embed_status(
+                resolve_processor(
+                    postprocessor,
+                    Res,
+                    NodeMsg
+                )
+            );
+        Res -> embed_status(Res)
     end.
 
 %% @doc execute a message from the node message upon the user's request.
@@ -65,5 +77,13 @@ resolve_processor(Processor, Request, NodeMsg) ->
     case hb_opts:get(Processor, undefined, NodeMsg) of
         undefined -> {ok, Request};
         ProcessorMsg ->
-            hb_converge:resolve(ProcessorMsg, Request, NodeMsg)
+            hb_converge:resolve(
+                ProcessorMsg,
+                Request,
+                NodeMsg#{ force_message => true }
+            )
     end.
+
+%% @doc Wrap the result of a device call in a status.
+embed_status({Status, Res}) ->
+    {ok, Res#{ <<"Status-Code">> => hb_http:status_code(Status) }}.

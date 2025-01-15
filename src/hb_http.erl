@@ -7,7 +7,7 @@
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/4, request/5]).
 -export([reply/2, reply/3]).
--export([message_to_status/1, req_to_tabm_singleton/2]).
+-export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -230,6 +230,13 @@ message_to_status(Item) ->
             end;
         _ -> 200
     end.
+
+%% @doc Convert an HTTP status code to an atom.
+status_code(ok) -> 200;
+status_code(error) -> 400;
+status_code(created) -> 201;
+status_code(unavailable) -> 503;
+status_code(Status) -> Status.
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->

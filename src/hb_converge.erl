@@ -344,7 +344,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = maps:remove(add_key, Opts),
+	UserOpts1 = maps:without([add_key, force_message], Opts),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
@@ -361,7 +361,11 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
     % Try to execute the function.
     Res = 
         try
-            MsgRes = apply(Func, truncate_args(Func, Args)),
+            MsgRes =
+                maybe_force_message(
+                    apply(Func, truncate_args(Func, Args)),
+                    Opts
+                ),
             ?event(
                 converge_result,
                 {
@@ -420,8 +424,8 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                         Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
                     )
                 };
-            ignore ->
-                {ok, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)}
+            reset -> {ok, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)};
+            ignore -> {ok, Msg3}
         end,
         ExecName,
         Opts
@@ -504,7 +508,7 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"Status">> => <<"Forbidden">>,
+            <<"Status-Code">> => 400,
             <<"body">> => <<"Request contains non-verifiable message.">>
         }
     }.
@@ -559,6 +563,14 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
     case hb_opts:get(error_strategy, throw, Opts) of
         throw -> erlang:raise(Class, Exception, Stacktrace);
         _ -> Error
+    end.
+
+%% @doc Force the result of a device call into a message if the result is not
+%% requested by the `Opts`.
+maybe_force_message({Status, Res}, Opts) ->
+    case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
+        true -> {Status, #{ <<"body">> => Res }};
+        false -> {Status, Res}
     end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
