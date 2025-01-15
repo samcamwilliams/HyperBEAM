@@ -60,17 +60,21 @@ init(M1, M2, Opts) ->
     ImageBin =
         case hb_converge:get(<<InPrefix/binary, "/Image">>, M1, Opts) of
             not_found ->
-                throw(
-                    {
-                        wasm_init_error,
-                        <<
-                            "No viable image found in ",
-                            InPrefix/binary,
-                            "/Image."
-                        >>,
-                        {msg1, M1}
-                    }
-                );
+                case hb_converge:get(<<"body">>, M1, Opts) of
+                    not_found ->
+                        throw(
+                            {
+                                wasm_init_error,
+                                <<
+                                    "No viable image found in ",
+                                    InPrefix/binary,
+                                    "/Image."
+                                >>,
+                                {msg1, M1}
+                            }
+                        );
+                    Bin when is_binary(Bin) -> Bin
+                end;
             ImageID when ?IS_ID(ImageID) ->
                 ?event({getting_wasm_image, ImageID}),
                 {ok, ImageMsg} = hb_cache:read(ImageID, Opts),
