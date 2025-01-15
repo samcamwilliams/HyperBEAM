@@ -315,6 +315,8 @@ void send_error(Proc* proc, const char* message_fmt, ...) {
 
     int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
     DRV_DEBUG("Sent error message. Res: %d", msg_res);
+    driver_free(message);
+    driver_free(msg);
     va_end(args);
 }
 
@@ -365,6 +367,7 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     DRV_DEBUG("Sending %d terms...", msg_index);
     // Send the message to the caller process
     int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
+    driver_free(msg);
     // Wait for the response (we set this directly after the message was sent
     // so we have the lock, before Erlang sends us data back)
     drv_wait(proc->current_import->response_ready, proc->current_import->cond, &proc->current_import->ready);
@@ -377,6 +380,8 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
         wasm_name_t message;
         wasm_name_new_from_string_nt(&message, proc->current_import->error_message);
         wasm_trap_t* trap = wasm_trap_new(proc->store, &message);
+        // TODO: check where the error_message is allocated
+        driver_free(proc->current_import->error_message);
         driver_free(proc->current_import);
         proc->current_import = NULL;
         return trap;
@@ -399,6 +404,9 @@ wasm_trap_t* generic_import_handler(void* env, const wasm_val_vec_t* args, wasm_
     DRV_DEBUG("Cleaning up import response");
     erl_drv_cond_destroy(proc->current_import->cond);
     erl_drv_mutex_destroy(proc->current_import->response_ready);
+    if (proc->current_import->result_terms) {
+        driver_free(proc->current_import->result_terms);
+    }
     driver_free(proc->current_import);
 
     proc->current_import = NULL;
@@ -562,6 +570,8 @@ static void async_init(void* raw) {
 
     int send_res = erl_drv_output_term(proc->port_term, init_msg, msg_i);
     DRV_DEBUG("Send result: %d", send_res);
+    // TODO: init_msg is not freed up, but probably should live as long as the driver
+    // What happens during stop?
 
     proc->current_import = NULL;
     proc->is_initialized = 1;
@@ -670,7 +680,11 @@ static void async_call(void* raw) {
     DRV_DEBUG("Sending %d terms", msg_index);
     int response_msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
     driver_free(msg);
+
     DRV_DEBUG("Msg: %d", response_msg_res);
+
+    driver_free(proc->current_args);
+    driver_free(proc->current_function);
 
     wasm_val_vec_delete(&results);
     proc->current_import = NULL;
@@ -714,6 +728,7 @@ static void wasm_driver_stop(ErlDrvData raw) {
     Proc* proc = (Proc*)raw;
     DRV_DEBUG("Stopping WASM driver");
 
+    // TODO: We should probably lock a mutex here and in the import_response function.
     if(proc->current_import) {
         DRV_DEBUG("Shutting down during import response...");
         proc->current_import->error_message = "WASM driver unloaded during import response";
@@ -846,6 +861,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         msg[0] = ERL_DRV_ATOM;
         msg[1] = atom_ok;
         erl_drv_output_term(proc->port_term, msg, 2);
+        driver_free(msg);
     }
     else if (strcmp(command, "read") == 0) {
         DRV_DEBUG("Read received");
@@ -861,6 +877,7 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
             send_error(proc, "Read request out of bounds");
             return;
         }
+        DRV_DEBUG("Read received. Ptr: %ld. Size: %ld", ptr, size_l);
         byte_t* memory_data = wasm_memory_data(get_memory(proc));
         DRV_DEBUG("Memory location to read from: %p", memory_data + ptr);
         
@@ -881,6 +898,8 @@ static void wasm_driver_output(ErlDrvData raw, char *buff, ErlDrvSizeT bufflen) 
         
         int msg_res = erl_drv_output_term(proc->port_term, msg, msg_index);
         DRV_DEBUG("Read response sent: %d", msg_res);
+        driver_free(out_binary);
+        driver_free(msg);
     }
     else if (strcmp(command, "size") == 0) {
         DRV_DEBUG("Size received");
