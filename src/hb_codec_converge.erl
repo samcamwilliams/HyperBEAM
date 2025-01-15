@@ -21,6 +21,10 @@ from(Msg) when is_map(Msg) ->
                         {Key, Value};
                     {ok, Map} when is_map(Map) ->
                         {Key, from(Map)};
+                    {ok, Msgs = [Msg1|_]} when is_map(Msg1) ->
+                        % We have a list of maps. Convert to a numbered map and
+                        % recurse.
+                        {Key, from(hb_converge:ensure_message(Msgs))};
                     {ok, []} ->
                         BinKey = hb_converge:key_to_binary(Key),
                         {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};

@@ -124,6 +124,8 @@ format(Bin, Indent) when is_binary(Bin) ->
         hb_util:format_binary(Bin),
         Indent
     );
+format(List, Indent) when is_list(List) ->
+    format(hb_converge:ensure_message(List), Indent);
 format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
