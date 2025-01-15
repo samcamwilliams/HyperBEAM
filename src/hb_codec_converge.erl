@@ -137,9 +137,14 @@ encode_value(Value) ->
     Value.
 
 %% @doc Convert non-binary values to binary for serialization.
+decode_value(Type, Value) when is_list(Type) ->
+    decode_value(list_to_binary(Type), Value);
 decode_value(Type, Value) when is_binary(Type) ->
     decode_value(
-        list_to_existing_atom(string:to_lower(binary_to_list(Type))),
+        binary_to_existing_atom(
+            list_to_binary(string:to_lower(binary_to_list(Type))),
+            latin1
+        ),
         Value
     );
 decode_value(integer, Value) ->

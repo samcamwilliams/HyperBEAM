@@ -731,7 +731,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [converge, tx, flat].
+    [converge, tx, flat, http].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -776,4 +776,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(tx).
+    basic_map_codec_test(http).
