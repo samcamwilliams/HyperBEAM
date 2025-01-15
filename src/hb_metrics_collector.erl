@@ -56,7 +56,7 @@ collect_metrics(process_uptime_seconds, Uptime) ->
     ).
 
 %%====================================================================
-%% Private Parts
+%% Private Functions
 %%====================================================================
 create_gauge(Name, Help, Data) ->
     prometheus_model_helpers:create_mf(Name, Help, gauge, ?MODULE, Data).

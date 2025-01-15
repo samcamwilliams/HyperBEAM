@@ -34,7 +34,7 @@
 -export([priv_store_original/3, priv_store_remaining/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
--export([matches/2, to_binary/1]).
+-export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -255,7 +255,9 @@ from_message(request, _) ->
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
-term_to_path_parts(Path) -> term_to_path_parts(Path, #{ error_strategy => throw }).
+term_to_path_parts(Path) ->
+    term_to_path_parts(Path, #{ error_strategy => throw }).
+term_to_path_parts(<<"/">>, _Opts) -> [];
 term_to_path_parts(Binary, Opts) when is_binary(Binary) ->
     case binary:match(Binary, <<"/">>) of
         nomatch -> [Binary];
@@ -313,6 +315,21 @@ do_to_binary(Other) ->
 matches(Key1, Key2) ->
     hb_util:to_lower(hb_converge:key_to_binary(Key1)) ==
         hb_util:to_lower(hb_converge:key_to_binary(Key2)).
+
+%% @doc Check if two keys match using regex.
+regex_matches(Path1, Path2) ->
+    NormP1 = normalize(Path1),
+    NormP2 = normalize(Path2),
+    try re:run(NormP1, NormP2) =/= nomatch
+    catch _A:_B:_C -> false
+    end.
+
+%% @doc Normalize a path to a binary, removing the leading slash if present.
+normalize(Path) ->
+    case hb_converge:key_to_binary(Path) of
+        BinPath = <<"/", _/binary>> -> BinPath;
+        Binary -> <<"/", Binary/binary>>
+    end.
 
 %%% TESTS
 
@@ -385,7 +402,8 @@ term_to_path_parts_test() ->
     ?assert(matches([a, b, c], term_to_path_parts(<<"a/b/c">>))),
     ?assert(matches([a, b, c], term_to_path_parts([<<"a">>, <<"b">>, <<"c">>]))),
     ?assert(matches([a, b, c], term_to_path_parts(["a", b, <<"c">>]))),
-    ?assert(matches([a, b, b, c], term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))).
+    ?assert(matches([a, b, b, c], term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))),
+    ?assertEqual([], term_to_path_parts(<<"/">>)).
 
 % calculate_multistage_hashpath_test() ->
 %     Msg1 = #{ <<"Base">> => <<"Message">> },
@@ -397,3 +415,11 @@ term_to_path_parts_test() ->
 %     Msg3Path = <<"3">>,
 %     Msg5b = hashpath(Msg1, [Msg2, Msg3Path, Msg4]),
 %     ?assertEqual(Msg5, Msg5b).
+
+regex_matches_test() ->
+    ?assert(regex_matches(<<"a/b/c">>, <<"a/.*/c">>)),
+    ?assertNot(regex_matches(<<"a/b/c">>, <<"a/.*/d">>)),
+    ?assert(regex_matches(<<"a/abcd/c">>, <<"a/abc.*/c">>)),
+    ?assertNot(regex_matches(<<"a/bcd/c">>, <<"a/abc.*/c">>)),
+    ?assert(regex_matches(<<"a/bcd/ignored/c">>, <<"a/.*/c">>)),
+    ?assertNot(regex_matches(<<"a/bcd/ignored/c">>, <<"a/.*/d">>)).
