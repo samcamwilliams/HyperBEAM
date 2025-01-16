@@ -7,7 +7,7 @@
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/4, request/5]).
 -export([reply/2, reply/3]).
--export([message_to_status/1, req_to_tabm_singleton/2]).
+-export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -36,7 +36,12 @@ get(Node, Path, Opts) ->
 %% resulting message in deserialized form.
 post(Node, Message, Opts) ->
     post(Node,
-        hb_converge:get(<<"Path">>, Message, <<"/">>, #{}),
+        hb_converge:get(
+            <<"Path">>,
+            Message,
+            <<"/">>,
+            Opts#{ topic => converge_internal }
+        ),
         Message,
         Opts
     ).
@@ -61,26 +66,30 @@ request(Method, Peer, Path, Opts) ->
 request(Method, Config, Path, Message, Opts) when is_map(Config) ->
     multirequest(Config, Method, Path, Message, Opts);
 request(Method, Peer, Path, RawMessage, Opts) ->
-    Message = hb_converge:ensure_message(RawMessage),
-    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
-    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
-    ?event(http, {http_outbound, Method, BinPeer, BinPath, Message}),
-    BinMessage =
-        case map_size(Message) of
-            0 -> <<>>;
-            _ -> ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
-        end,
     Req =
-        #{
-            peer => BinPeer,
-            path => BinPath,
-            method => Method,
-            headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
-            body => BinMessage
-        },
+        prepare_request(
+            hb_opts:get(format, http, Opts),
+            Method,
+            Peer,
+            Path,
+            RawMessage,
+            Opts
+        ),
     case ar_http:req(Req, Opts) of
         {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
-            ?event({http_got, BinPeer, BinPath, Status, Headers, Body}),
+            ?event(
+                {
+                    http_rcvd,
+                    {req, Req},
+                    {response,
+                        #{
+                            status => Status,
+                            headers => Headers,
+                            body => Body
+                        }
+                    }
+                }
+            ),
             {
                 case Status of
                     201 -> created;
@@ -89,14 +98,44 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 Body
             };
         {ok, Status, _Headers, Body} when Status == 400 ->
-            ?event({http_got_client_error, BinPeer, BinPath}),
+            ?event(
+                {http_got_client_error,
+                    {req, Req},
+                    {response, #{status => Status, body => Body}}
+                }),
             {error, Body};
         {ok, Status, _Headers, Body} when Status > 400 ->
-            ?event({http_got_server_error, BinPeer, BinPath}),
+            ?event(
+                {http_got_server_error,
+                    {req, Req},
+                    {response, #{status => Status, body => Body}}
+                }
+            ),
             {unavailable, Body};
         Response ->
-            ?event({http_error, BinPeer, BinPath, Response}),
+            ?event(
+                {http_error,
+                    {req, Req},
+                    {response, Response}
+                }
+            ),
             Response
+    end.
+
+%% @doc Turn a set of request arguments into a request message, formatted in the
+%% preferred format.
+prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
+    Message = hb_converge:ensure_message(RawMessage),
+    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
+    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
+    ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
+    case Format of
+        http -> maps:merge(ReqBase, hb_message:convert(Message, http, Opts));
+        ans104 ->
+            ReqBase#{
+                headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
+                body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
+            }
     end.
 
 %% @doc Dispatch the same HTTP request to many nodes. Can be configured to
@@ -200,21 +239,33 @@ reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, RawMessage) ->
     Message = hb_converge:ensure_message(RawMessage),
-    TX = hb_message:convert(Message, tx, converge, #{}),
+    Encoded =
+        hb_message:convert(
+            Message,
+            hb_opts:get(format, http, #{}),
+            converge,
+            #{ topic => converge_internal }
+        ),
     ?event(http,
         {replying,
             {status, Status},
             {path, maps:get(path, Req, undefined_path)},
-            {tx, TX}
+            {encoded, Encoded}
         }
     ),
     Req2 = cowboy_req:stream_reply(
         Status,
-        #{<<"content-type">> => <<"application/x-ans-104">>},
+        case Encoded of
+            #{ headers := Headers } -> maps:from_list(Headers);
+            _ -> #{<<"content-type">> => <<"application/octet-stream">>}
+        end,
         Req
     ),
     Req3 = cowboy_req:stream_body(
-        ar_bundles:serialize(TX),
+        case Encoded of
+            #{ body := Body } -> Body;
+            _ -> ar_bundles:serialize(Encoded)
+        end,
         nofin,
         Req2
     ),
@@ -231,10 +282,17 @@ message_to_status(Item) ->
         _ -> 200
     end.
 
+%% @doc Convert an HTTP status code to an atom.
+status_code(ok) -> 200;
+status_code(error) -> 400;
+status_code(created) -> 201;
+status_code(unavailable) -> 503;
+status_code(Status) -> Status.
+
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->
     case cowboy_req:header(<<"content-type">>, Req) of
-        {ok, <<"application/x-ans-104">>} ->
+        <<"application/x-ans-104">> ->
             {ok, Body} = read_body(Req),
             hb_message:convert(ar_bundles:deserialize(Body), tabm, tx, Opts);
         _ ->
@@ -245,7 +303,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
     {ok, Body} = read_body(Req),
     Headers =
         RawHeaders#{
-            <<"relative-reference">> =>
+            <<"path">> =>
                 iolist_to_binary(
                     cowboy_req:uri(
                         Req,
@@ -280,27 +338,37 @@ simple_converge_resolve_test() ->
     {ok, Res} =
         post(
             URL,
+            #{ path => <<"/key1">>, <<"key1">> => <<"Value1">> },
+            #{}
+        ),
+    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+
+nested_converge_resolve_test() ->
+    URL = hb_http_server:start_test_node(),
+    {ok, Res} =
+        post(
+            URL,
             #{
-                path => <<"Key1">>,
-                <<"Key1">> =>
-                    #{<<"Key2">> =>
+                path => <<"/key1/key2/key3">>,
+                <<"key1">> =>
+                    #{<<"key2">> =>
                         #{
-                            <<"Key3">> => <<"Value2">>
+                            <<"key3">> => <<"Value2">>
                         }
                     }
             },
             #{}
         ),
-    ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
+    ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
 
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
-        path => <<"Init/Compute/Results">>,
-        device => <<"WASM-64/1.0">>,
+        path => <<"/Init/Compute/Results">>,
+        <<"Device">> => <<"WASM-64/1.0">>,
         <<"WASM-Function">> => Func,
         <<"WASM-Params">> => Params,
-        <<"Image">> => Bin
+        <<"body">> => Bin
     }.
 
 run_wasm_unsigned_test() ->

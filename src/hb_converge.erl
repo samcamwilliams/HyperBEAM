@@ -101,31 +101,6 @@
 -export([deep_set/4, is_exported/4, message_to_fun/3]).
 -include("include/hb.hrl").
 
-%% @doc Takes a singleton message and parse Msg1 and Msg2 from it, then invoke
-%% `resolve'.
-resolve(Msg, Opts) ->
-    Path =
-        hb_path:term_to_path_parts(
-            hb_converge:get(
-                path,
-                Msg,
-                #{ hashpath => ignore }
-            ),
-            Opts
-        ),
-    case Path of
-        [ Msg1ID | _Rest ] when ?IS_ID(Msg1ID) ->
-            ?event({normalizing_single_message_message_path, Msg}),
-            {ok, Msg1} = hb_cache:read(<<"Messages/", Msg1ID/binary>>, Opts),
-            resolve(
-                Msg1,
-                hb_path:tl(Msg, Opts),
-                Opts
-            );
-        SingletonPath ->
-            resolve(Msg, #{ path => SingletonPath }, Opts)
-    end.
-
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, takes options that control the runtime environment. 
 %% This function returns the raw result of the device function call:
@@ -142,7 +117,17 @@ resolve(Msg, Opts) ->
 %%      9: Notify waiters.
 %%     10: Fork worker.
 %%     11: Recurse, fork, or terminate.
-resolve(Msg1, Msg2, Opts) -> resolve_stage(1, Msg1, Msg2, Opts).
+
+resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
+    resolve(hb_singleton:from(SingletonMsg), Opts);
+resolve([Msg1, Msg2 | MsgList], Opts) ->
+    resolve(
+        Msg1,
+        hb_path:priv_store_remaining(Msg2, MsgList),
+        Opts
+    ).
+resolve(Msg1, Msg2, Opts) ->
+    resolve_stage(1, Msg1, Msg2, Opts).
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 1, list_normalize}, Opts),
@@ -158,31 +143,20 @@ resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
     resolve_stage(1, Msg1, #{ path => Path }, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, normalize_path}, Opts),
-    % Path normalization: Ensure that the path is requesting a single key.
-    % Stash remaining path elements in `priv/Converge/Remaining-Path'.
-    % Stash the original path in `priv/Converge/Original-Path', if it
-    % is not already there from a previous resolution.
-    InitialPriv = hb_private:from_message(Msg1),
-    OriginalPath =
-        case InitialPriv of
-            #{ <<"Converge">> := #{ <<"Original-Path">> := XPath } } ->
-                XPath;
-            _ -> hb_path:from_message(request, Msg2)
-        end,
-    Head = hb_path:hd(Msg2, Opts),
-    FullPath = hb_path:from_message(request, Msg2),
-    case FullPath of
+    ?event(debug, {path_normalizing, {msg1, Msg1}, {msg2, Msg2}}),
+    case hb_path:priv_remaining(Msg2, Opts) of
         undefined ->
-            throw({error, {invalid_path, FullPath, Msg2}});
-        _ -> ok
-    end,
-    Msg2UpdatedPriv =
-        hb_path:priv_store_original(
-            Msg2,
-            OriginalPath,
-            hb_path:tl(FullPath, Opts)
-        ),
-    resolve_stage(2, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
+            % We are executing our first run with no message list to recurse
+            % on set. Parse the path, set the remaining path, and recurse.
+            [Path|Remaining] = hb_path:from_message(request, Msg2),
+            resolve_stage(
+                2,
+                Msg1,
+                hb_path:priv_store_remaining(Msg2#{ path => Path }, Remaining),
+                Opts
+            );
+        _ -> resolve_stage(2, Msg1, Msg2, Opts)
+    end;
 resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 2, cache_lookup}, Opts),
     % Lookup request in the cache. If we find a result, return it.
@@ -344,7 +318,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = maps:remove(add_key, Opts),
+	UserOpts1 = maps:without([add_key, force_message], Opts),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
@@ -361,7 +335,11 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
     % Try to execute the function.
     Res = 
         try
-            MsgRes = apply(Func, truncate_args(Func, Args)),
+            MsgRes =
+                maybe_force_message(
+                    apply(Func, truncate_args(Func, Args)),
+                    Opts
+                ),
             ?event(
                 converge_result,
                 {
@@ -420,8 +398,8 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                         Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
                     )
                 };
-            ignore ->
-                {ok, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)}
+            reset -> {ok, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)};
+            ignore -> {ok, Msg3}
         end,
         ExecName,
         Opts
@@ -471,21 +449,23 @@ resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
 resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
     % Recurse, or terminate.
-    RemainingPath = hb_path:priv_remaining(Msg2, Opts),
-	case RemainingPath of
-		undefined ->
+	case hb_path:priv_remaining(Msg2, Opts) of
+		[] ->
             % Terminate: We have reached the end of the path.
 			{Status, Msg3};
-		_ when Status == ok ->
+		RemainingPath when Status == ok ->
 			% There are more elements in the path, so we recurse.
 			?event(
-                converge_core,
+                debug,
                 {resolution_recursing,
                     {remaining_path, RemainingPath}
                 }
             ),
-			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
-        _ ->
+            case RemainingPath of
+                [LastMsg] -> resolve(Msg3, LastMsg, Opts);
+                _ -> resolve([Msg3|RemainingPath], Opts)
+            end;
+        RemainingPath ->
             error_invalid_intermediate_status(
                 Msg1, Msg2, Msg3, RemainingPath, Opts)
 	end.
@@ -504,7 +484,7 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"Status">> => <<"Forbidden">>,
+            <<"Status-Code">> => 400,
             <<"body">> => <<"Request contains non-verifiable message.">>
         }
     }.
@@ -559,6 +539,14 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
     case hb_opts:get(error_strategy, throw, Opts) of
         throw -> erlang:raise(Class, Exception, Stacktrace);
         _ -> Error
+    end.
+
+%% @doc Force the result of a device call into a message if the result is not
+%% requested by the `Opts`.
+maybe_force_message({Status, Res}, Opts) ->
+    case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
+        true -> {Status, #{ <<"body">> => Res }};
+        false -> {Status, Res}
     end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
