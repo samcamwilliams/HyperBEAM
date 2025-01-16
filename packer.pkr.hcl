@@ -7,99 +7,116 @@ packer {
   }
 }
 
-# Define required variables
+# Variables for customization
 variable "project_id" {
   type    = string
-  default = "hyperbeam-cd"
+  default = "${env("GCI_PROJECT")}" # Using env function for environment variable
 }
 
 variable "region" {
-  type    = string
-  default = "us-east1"
+  description = "GCP region"
+  type        = string
+  default     = "${env("GCI_REGION")}" # Using env function for environment variable
 }
 
 variable "zone" {
-  type    = string
-  default = "us-east1-c"
+  description = "GCP zone"
+  type        = string
+  default     = "${env("GCI_ZONE")}" # Using env function for environment variable
 }
 
 variable "image_name" {
-  type    = string
-  default = "hyperbeam-image"
+  description = "Name of the custom image"
+  type        = string
+  default     = "${env("GCI_IMAGE")}" # Using env function for environment variable
 }
 
-# Source block to define GCP builder
+# GCP Builder
 source "googlecompute" "ubuntu" {
   project_id          = var.project_id
-  source_image_family = "ubuntu-2204-lts"
+  source_image_family = "ubuntu-minimal-2204-lts" # Base image family
   image_name          = var.image_name
   zone                = var.zone
   machine_type        = "n1-standard-1"
   ssh_username        = "packer"
 }
 
+
 # Define the build stage
 build {
   sources = ["source.googlecompute.ubuntu"]
 
-  # Add a provisioner to download and install go-tpm-tools
-  provisioner "shell" {
-    inline = [
-      "sudo apt-get update -y",
-      "sudo apt-get install -y wget tar",
-
-      # Download the go-tpm-tools binary archive
-      "wget https://github.com/google/go-tpm-tools/releases/download/v0.4.4/go-tpm-tools_Linux_x86_64.tar.gz -O /tmp/go-tpm-tools.tar.gz",
-
-      # Extract the binary
-      "tar -xzf /tmp/go-tpm-tools.tar.gz -C /tmp",
-
-      # Move the gotpm binary to /usr/local/bin
-      "sudo mv /tmp/gotpm /usr/local/bin/",
-
-      # Clean up
-      "rm -f /tmp/go-tpm-tools.tar.gz /tmp/LICENSE /tmp/README.md"
-    ]
-  }
-
-
   # Upload the pre-built release (with ERTS included) to the instance
   provisioner "file" {
-    source      = "./_build/default/rel/ao"
-    destination = "/tmp/hyperbeam"
+    source      = "./release.tar.gz"
+    destination = "/tmp/release.tar.gz"
   }
 
   provisioner "shell" {
     inline = [
-      # Move the release to /opt with sudo
-      "sudo mv /tmp/hyperbeam /opt/hyperbeam",
-      "sudo chmod -R 755 /opt/hyperbeam",
+      "echo 'Updating packages...'",
+      "sudo apt-get update -y",
 
-      # Create a symlink to make it easier to run the app
-      "sudo ln -s /opt/hyperbeam/bin/hyperbeam /usr/local/bin/hyperbeam",
+      # Install dependencies
+      "echo 'Installing dependencies...'",
+      "sudo apt-get install -y libglu1-mesa ufw tar",
 
-      # (Optional) If you want to create a systemd service to manage the app
-      "echo '[Unit]' | sudo tee /etc/systemd/system/hyperbeam.service",
-      "echo 'Description=Permaweb Node' | sudo tee -a /etc/systemd/system/hyperbeam.service",
-      "echo '[Service]' | sudo tee -a /etc/systemd/system/hyperbeam.service",
-      "echo 'Type=simple' | sudo tee -a /etc/systemd/system/hyperbeam.service",
-      "echo 'ExecStart=/opt/hyperbeam/bin/hyperbeam foreground' | sudo tee -a /etc/systemd/system/hyperbeam.service",
-      "echo 'Restart=on-failure' | sudo tee -a /etc/systemd/system/hyperbeam.service",
-      "echo '[Install]' | sudo tee -a /etc/systemd/system/hyperbeam.service",
-      "echo 'WantedBy=multi-user.target' | sudo tee -a /etc/systemd/system/hyperbeam.service",
+      # Extract the release
+      "echo 'Extracting the release...'",
+      "tar -xzf /tmp/release.tar.gz -C /tmp",
 
-      # Enable and start the service
-      "sudo systemctl enable hyperbeam",
-      "sudo systemctl start hyperbeam"
+      # Install snpguest
+      "echo 'Installing snpguest...'",
+      "sudo chmod +x /tmp/release/snpguest",
+      "sudo cp /tmp/release/snpguest /usr/local/bin/snpguest",
+
+      # Install Hyperbeam
+      "echo 'Installing Hyperbeam...'",
+      "sudo mv /tmp/release/hb /opt/hb",
+      "sudo chmod -R 755 /opt/hb",
+      "sudo ln -s /opt/hb/bin/hb /usr/local/bin/hb",
+
+      # Create a systemd service to for Hyperbeam
+      "echo '[Unit]' | sudo tee /etc/systemd/system/hb.service",
+      "echo 'Description=Permaweb Node' | sudo tee -a /etc/systemd/system/hb.service",
+      "echo '[Service]' | sudo tee -a /etc/systemd/system/hb.service",
+      "echo 'Type=simple' | sudo tee -a /etc/systemd/system/hb.service",
+      "echo 'ExecStart=/opt/hb/bin/hb foreground' | sudo tee -a /etc/systemd/system/hb.service",
+      "echo 'Restart=on-failure' | sudo tee -a /etc/systemd/system/hb.service",
+      "echo '[Install]' | sudo tee -a /etc/systemd/system/hb.service",
+      "echo 'WantedBy=multi-user.target' | sudo tee -a /etc/systemd/system/hb.service",
+
+      # Enable and start the Hyperbeam service
+      "sudo systemctl enable hb",
+      "sudo systemctl start hb",
+
+      # Uninstall Snap files
+      "sudo snap remove google-cloud-cli",
+      "sudo snap remove core20",
+      "sudo snap remove snapd",
+      "sudo apt-get purge -y snapd",
+
+      # Remove Home directories
+      "sudo rm -rf /home/*",
+
+      #   # Disable and remove ssh
+      #   "sudo systemctl disable ssh",
+      #   "sudo apt-get purge -y openssh",
+
+      # Block all ports except 80, 443, and 8734 this disables SSH access
+      "sudo ufw enable",
+      "sudo ufw default deny incoming",
+      "sudo ufw default allow outgoing",
+      "sudo ufw allow 80",
+      "sudo ufw allow 443",
+      "sudo ufw allow 8734",
+
+      # Clean up
+      "sudo apt-get clean",
+
+      "echo 'Provisioning complete!'"
     ]
   }
 
-  # Disable ssh
-  # provisioner "shell" {
-  #  inline = [
-  #    "sudo systemctl stop ssh",
-  #    "sudo systemctl disable ssh"
-  #  ]
-  # }
 }
 
