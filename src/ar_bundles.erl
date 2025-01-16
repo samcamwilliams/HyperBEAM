@@ -694,7 +694,7 @@ maybe_unbundle(Item) ->
     Format = lists:keyfind(<<"bundle-format">>, 1, Item#tx.tags),
     Version = lists:keyfind(<<"bundle-version">>, 1, Item#tx.tags),
     case {Format, Version} of
-        {{<<"bundle-format">>, <<"Binary">>}, {<<"bundle-version">>, <<"2.0.0">>}} ->
+        {{<<"bundle-format">>, <<"binary">>}, {<<"bundle-version">>, <<"2.0.0">>}} ->
             maybe_map_to_list(maybe_unbundle_map(Item));
         _ ->
             Item
