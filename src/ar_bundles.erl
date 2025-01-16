@@ -1023,7 +1023,7 @@ assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
 test_empty_bundle() ->
     Bundle = serialize([]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual([], BundleItem#tx.data).
+    ?assertEqual(#{}, BundleItem#tx.data).
 
 test_bundle_with_one_item() ->
     Item = new_item(
@@ -1034,7 +1034,7 @@ test_bundle_with_one_item() ->
     ),
     Bundle = serialize([Item]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData, (erlang:hd(BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
     Item1 = new_item(
@@ -1051,8 +1051,8 @@ test_bundle_with_two_items() ->
     ),
     Bundle = serialize([Item1, Item2]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData1, (erlang:hd(BundleItem#tx.data))#tx.data),
-    ?assertEqual(ItemData2, (erlang:hd(tl(BundleItem#tx.data)))#tx.data).
+    ?assertEqual(ItemData1, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (maps:get(<<"2">>, BundleItem#tx.data))#tx.data).
 
 test_recursive_bundle() ->
     W = ar_wallet:new(),
@@ -1073,9 +1073,9 @@ test_recursive_bundle() ->
     }, W),
     Bundle = serialize([Item3]),
     BundleItem = deserialize(Bundle),
-    [UnbundledItem3] = BundleItem#tx.data,
-    [UnbundledItem2] = UnbundledItem3#tx.data,
-    [UnbundledItem1] = UnbundledItem2#tx.data,
+    #{<<"1">> := UnbundledItem3} = BundleItem#tx.data,
+    #{<<"1">> := UnbundledItem2} = UnbundledItem3#tx.data,
+    #{<<"1">> := UnbundledItem1} = UnbundledItem2#tx.data,
     ?assert(verify_item(UnbundledItem1)),
     % TODO: Verify bundled lists...
     ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).
