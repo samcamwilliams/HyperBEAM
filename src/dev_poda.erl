@@ -23,11 +23,11 @@ init(S, Params) ->
 extract_opts(Params) ->
     Authorities =
         lists:filtermap(
-            fun({<<"Authority">>, Addr}) -> {true, Addr};
+            fun({<<"authority">>, Addr}) -> {true, Addr};
                 (_) -> false end,
                 Params
         ),
-    {_, RawQuorum} = lists:keyfind(<<"Quorum">>, 1, Params),
+    {_, RawQuorum} = lists:keyfind(<<"quorum">>, 1, Params),
     Quorum = binary_to_integer(RawQuorum),
     ?event({poda_authorities, Authorities}),
     #{
@@ -37,7 +37,7 @@ extract_opts(Params) ->
 
 %%% Execution flow: Pre-execution validation.
 
-execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
+execute(Outer = #tx { data = #{ <<"message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
     case is_user_signed(Msg) of
         true ->
             {ok, S};
@@ -50,9 +50,9 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
                     Atts =
                         maps:to_list(
                             case Msg of 
-                                #tx { data = #{ <<"Attestations">> := #tx { data = X } }} -> X;
-                                #tx { data = #{ <<"Attestations">> := X }} -> X;
-                                #{ <<"Attestations">> := X } -> X
+                                #tx { data = #{ <<"attestations">> := #tx { data = X } }} -> X;
+                                #tx { data = #{ <<"attestations">> := X }} -> X;
+                                #{ <<"attestations">> := X } -> X
                             end
                         ),
                     VFS1 =
@@ -61,7 +61,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
                                 Id = ar_bundles:signer(Attestation),
                                 Encoded = hb_util:encode(Id),
                                 maps:put(
-                                    <<"/Attestations/", Encoded/binary>>,
+                                    <<"/attestations/", Encoded/binary>>,
                                     Attestation#tx.data,
                                     Acc
                                 )
@@ -76,7 +76,7 @@ execute(Outer = #tx { data = #{ <<"Message">> := Msg } }, S = #{ pass := 1 }, Op
                             % the actual message, then replace `/Message` with it.
                             Outer#tx{
                                 data = (Outer#tx.data)#{
-                                    <<"Message">> => maps:get(<<"Message">>, Msg#tx.data)
+                                    <<"message">> => maps:get(<<"message">>, Msg#tx.data)
                                 }
                             }
                         ]
@@ -94,7 +94,7 @@ validate(Msg, Opts) ->
 
 validate_stage(1, Msg, Opts) when is_record(Msg, tx) ->
     validate_stage(1, Msg#tx.data, Opts);
-validate_stage(1, #{ <<"Attestations">> := Attestations, <<"Message">> := Content }, Opts) ->
+validate_stage(1, #{ <<"attestations">> := Attestations, <<"message">> := Content }, Opts) ->
     validate_stage(2, Attestations, Content, Opts);
 validate_stage(1, _M, _Opts) -> {false, <<"Required PoDA messages missing">>}.
 
@@ -136,8 +136,8 @@ validate_attestation(Msg, Att, Opts) ->
     ?no_prod(use_real_signature_verification),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
-        (lists:keyfind(<<"Attestation-For">>, 1, Att#tx.tags)
-            == {<<"Attestation-For">>, MsgID}) orelse
+        (lists:keyfind(<<"attestation-for">>, 1, Att#tx.tags)
+            == {<<"attestation-for">>, MsgID}) orelse
         ar_bundles:member(ar_bundles:id(Msg, unsigned), Att),
     case ValidSigner and ValidSignature and RelevantMsg of
         false ->
@@ -159,20 +159,20 @@ return_error(S = #{ wallet := Wallet }, Reason) ->
     ?debug_wait(10000),
     {skip, S#{
         results => #{
-            <<"/Outbox">> =>
+            <<"/outbox">> =>
                 ar_bundles:sign_item(
                     #tx{
                         data = Reason,
-                        tags = [{<<"Error">>, <<"PoDA">>}]
+                        tags = [{<<"error">>, <<"PoDA">>}]
                     },
                     Wallet
                 )
         }
     }}.
 
-is_user_signed(#tx { data = #{ <<"Message">> := Msg } }) ->
+is_user_signed(#tx { data = #{ <<"message">> := Msg } }) ->
     ?no_prod(use_real_attestation_detection),
-    lists:keyfind(<<"From-Process">>, 1, Msg#tx.tags) == false;
+    lists:keyfind(<<"from-process">>, 1, Msg#tx.tags) == false;
 is_user_signed(_) -> true.
 
 %%% Attestation flow: Adding attestations to results.
@@ -191,7 +191,7 @@ attest_to_results(Msg, S) ->
                 fun(Key, IndexMsg) ->
                     ?no_prod("Currently we only attest to the outbox and spawn items."
                         "Make it general?"),
-                    case lists:member(Key, [<<"/Outbox">>, <<"/Spawn">>]) of
+                    case lists:member(Key, [<<"/outbox">>, <<"/spawn">>]) of
                         true ->
                             ?event({poda_starting_to_attest_to_result, Key}),
                             maps:map(
@@ -208,7 +208,7 @@ attest_to_results(Msg, S) ->
 
 add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logger := _Logger, wallet := Wallet }) ->
     Process = find_process(NewMsg, S),
-    case is_record(Process, tx) andalso lists:member({<<"Device">>, <<"PODA">>}, Process#tx.tags) of
+    case is_record(Process, tx) andalso lists:member({<<"device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
             #{ authorities := InitAuthorities, quorum := Quorum } =
                 extract_opts(Process#tx.tags),
@@ -221,12 +221,12 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 fun(Address) ->
                     case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
                         {ok, ComputeNode} ->
-                            ?event({poda_asking_peer_for_attestation, ComputeNode, <<"Attest-To">>, MsgID}),
+                            ?event({poda_asking_peer_for_attestation, ComputeNode, <<"attest-to">>, MsgID}),
                             Res = hb_client:compute(
                                 ComputeNode,
                                 ar_bundles:id(Process, signed),
                                 ar_bundles:id(Assignment, signed),
-                                #{ <<"Attest-To">> => MsgID }
+                                #{ <<"attest-to">> => MsgID }
                             ),
                             case Res of
                                 {ok, Att} ->
@@ -240,7 +240,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                 ?event(InitAuthorities -- [hb:address()])
             ),
             LocalAttestation = ar_bundles:sign_item(
-                #tx{ tags = [{<<"Attestation-For">>, MsgID}], data = <<>> },
+                #tx{ tags = [{<<"attestation-for">>, MsgID}], data = <<>> },
                 Wallet
             ),
             CompleteAttestations =
@@ -264,8 +264,8 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                     #tx{
                         target = NewMsg#tx.target,
                         data = #{
-                            <<"Attestations">> => CompleteAttestations,
-                            <<"Message">> => NewMsg
+                            <<"attestations">> => CompleteAttestations,
+                            <<"message">> => NewMsg
                         }
                     }
                 ),
@@ -317,8 +317,8 @@ find_process(Item, #{ logger := _Logger, store := Store }) ->
             {ok, Proc} = hb_cache:read_message(Store, hb_util:id(Item#tx.target)),
             Proc;
         _ ->
-            case lists:keyfind(<<"Type">>, 1, Item#tx.tags) of
-                {<<"Type">>, <<"Process">>} -> Item;
+            case lists:keyfind(<<"type">>, 1, Item#tx.tags) of
+                {<<"type">>, <<"process">>} -> Item;
                 _ -> process_not_specified
             end
     end.

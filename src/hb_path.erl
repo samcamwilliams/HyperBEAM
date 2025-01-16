@@ -72,21 +72,21 @@ tl(Path, Opts) when is_list(Path) ->
 %% can be safely used inside the main Converge resolve function.
 priv_remaining(Msg, _Opts) ->
     Priv = hb_private:from_message(Msg),
-    Converge = maps:get(<<"Converge">>, Priv, #{}),
-    maps:get(<<"Remaining">>, Converge, undefined).
+    Converge = maps:get(<<"converge">>, Priv, #{}),
+    maps:get(<<"remaining">>, Converge, undefined).
 
 %% @doc Store the `Original-Path' (and optionally `Remaining-Path') of a message
 %% in its hidden `Converge' key
 priv_store_original(Msg, OriginalPath, RemainingPath) ->
     Priv = hb_private:from_message(Msg),
-    Converge = maps:get(<<"Converge">>, Priv, #{}),
+    Converge = maps:get(<<"converge">>, Priv, #{}),
     Msg#{
         priv =>
             Priv#{
-                <<"Converge">> =>
+                <<"converge">> =>
                     Converge#{
-                        <<"Original">> => OriginalPath,
-                        <<"Remaining">> => RemainingPath
+                        <<"original">> => OriginalPath,
+                        <<"remaining">> => RemainingPath
                     }
             }
     }.
@@ -94,13 +94,13 @@ priv_store_original(Msg, OriginalPath, RemainingPath) ->
 %% @doc Store the remaining path of a message in its hidden `Converge' key.
 priv_store_remaining(Msg, RemainingPath) ->
     Priv = hb_private:from_message(Msg),
-    Converge = maps:get(<<"Converge">>, Priv, #{}),
+    Converge = maps:get(<<"converge">>, Priv, #{}),
     Msg#{
         priv =>
             Priv#{
-                <<"Converge">> =>
+                <<"converge">> =>
                     Converge#{
-                        <<"Remaining">> => RemainingPath
+                        <<"remaining">> => RemainingPath
                     }
             }
     }.

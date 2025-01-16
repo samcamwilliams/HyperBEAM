@@ -20,7 +20,7 @@ handle(NodeMsg, RawRequest) ->
 
 %% @doc Handle a potential list of messages, checking if the first message
 %% has a path of `Meta`.
-is_meta_request([PrimaryMsg | _]) -> hb_path:hd(PrimaryMsg, #{}) == <<"Meta">>;
+is_meta_request([PrimaryMsg | _]) -> hb_path:hd(PrimaryMsg, #{}) == <<"meta">>;
 is_meta_request(_) -> false.
 
 %% @doc Get/set the node message based on the request method. If the request
