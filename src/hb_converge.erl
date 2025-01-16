@@ -143,7 +143,6 @@ resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
     resolve_stage(1, Msg1, #{ path => Path }, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, normalize_path}, Opts),
-    ?event(debug, {path_normalizing, {msg1, Msg1}, {msg2, Msg2}}),
     case hb_path:priv_remaining(Msg2, Opts) of
         undefined ->
             % We are executing our first run with no message list to recurse

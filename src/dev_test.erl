@@ -64,8 +64,10 @@ restore(Msg, _Msg2, Opts) ->
 %% @doc Example implementation of an `imported` function for a WASM
 %% executor.
 mul(Msg1, Msg2) ->
+    ?event(mul_called),
     State = hb_converge:get(<<"State">>, Msg1, #{ hashpath => ignore }),
     [Arg1, Arg2] = hb_converge:get(args, Msg2, #{ hashpath => ignore }),
+    ?event({mul_called, {state, State}, {args, [Arg1, Arg2]}}),
     {ok, #{ state => State, results => [Arg1 * Arg2] }}.
 
 %% @doc Do nothing when asked to snapshot.

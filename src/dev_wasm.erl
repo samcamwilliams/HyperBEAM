@@ -111,6 +111,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         func_sig := Signature
     } = Msg2,
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
+    ?event({import_func_called, {prefix, Prefix}, {module, Module}, {func, Func}, {args, Args}, {func_sig, Signature}}),
     {ok, Msg3} =
         hb_converge:resolve(
             hb_private:set(
@@ -127,7 +128,10 @@ default_import_resolver(Msg1, Msg2, Opts) ->
             },
             Opts
         ),
+    ?event(import_done),
     NextState = hb_converge:get(state, Msg3, Opts),
+    ?event({done_calculating_response_for, {msg1, Msg1}, {msg2, Msg2}, {next_state, NextState}}),
+    ?event({next_state, NextState}),
     Response = hb_converge:get(results, Msg3, Opts),
     {ok, Response, NextState}.
 
@@ -291,7 +295,7 @@ import(Msg1, Msg2, Opts) ->
             #{ StatePath => Msg1 },
             Opts#{ hashpath => ignore }
         ),
-    %?event({state_added_msg1, AdjustedMsg1}),
+    ?event({state_added_msg1, AdjustedMsg1, AdjustedMsg2}),
     % 3. Resolve the adjusted path against the added state.
     case hb_converge:resolve(AdjustedMsg1, AdjustedMsg2, Opts) of
         {ok, Res} ->
