@@ -22,7 +22,11 @@
 
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.
-from_message(Msg) when is_map(Msg) -> maps:get(priv, Msg, #{});
+from_message(Msg) when is_map(Msg) ->
+    case maps:is_key(<<"priv">>, Msg) of
+        true -> maps:get(<<"priv">>, Msg, #{});
+        false -> maps:get(priv, Msg, #{})
+    end;
 from_message(_NonMapMessage) -> #{}.
 
 %% @doc Helper for getting a value from the private element of a message. Uses
