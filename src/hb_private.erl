@@ -62,7 +62,7 @@ set_priv(Msg, PrivMap) ->
 
 %% @doc Check if a key is private.
 is_private(Key) ->
-	case hb_converge:key_to_binary(Key) of
+	case hb_converge:normalize_key(Key) of
 		<<"priv", _/binary>> -> true;
 		_ -> false
 	end.

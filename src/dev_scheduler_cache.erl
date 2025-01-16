@@ -28,7 +28,7 @@ write(Assignment, Opts) ->
             [
                 <<"assignments">>,
                 hb_util:human_id(ProcID),
-                hb_converge:key_to_binary(Slot)
+                hb_converge:normalize_key(Slot)
             ]
         )
     ),

@@ -93,7 +93,7 @@
 -module(hb_converge).
 %%% Main Converge API:
 -export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
--export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2, ensure_message/1]).
+-export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
@@ -132,7 +132,7 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 1, list_normalize}, Opts),
     resolve_stage(1,
-        ensure_message(Msg1),
+        normalize_keys(Msg1),
         Msg2,
         Opts
     );
@@ -140,9 +140,13 @@ resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
     ?event(converge_core, {stage, 1, normalize_raw_path_to_message}, Opts),
     % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.
-    resolve_stage(1, Msg1, #{ path => Path }, Opts);
-resolve_stage(1, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 1, normalize_path}, Opts),
+    resolve_stage(1, Msg1, #{ <<"path">> => normalize_key(Path) }, Opts);
+resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
+    % Normalize the path to a private key containing the list of remaining
+    % keys to resolve.
+    ?event(converge_core, {stage, 1, normalize}, Opts),
+    Msg1 = normalize_keys(RawMsg1),
+    Msg2 = normalize_keys(RawMsg2),
     case hb_path:priv_remaining(Msg2, Opts) of
         undefined ->
             % We are executing our first run with no message list to recurse
@@ -394,10 +398,10 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 ?event({setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
                 {ok,
                     maps:without(?REGEN_KEYS,
-                        Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
+                        Msg3#{ <<"hashpath">> => hb_path:hashpath(Msg1, Msg2, Opts) }
                     )
                 };
-            reset -> {ok, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)};
+            reset -> {ok, maps:without([<<"hashpath">>] ++ ?REGEN_KEYS, Msg3)};
             ignore -> {ok, Msg3}
         end,
         ExecName,
@@ -455,7 +459,7 @@ resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
 		RemainingPath when Status == ok ->
 			% There are more elements in the path, so we recurse.
 			?event(
-                debug,
+                converge_core,
                 {resolution_recursing,
                     {remaining_path, RemainingPath}
                 }
@@ -670,7 +674,7 @@ device_set(Msg, Key, Value, Opts) ->
 	Res = hb_util:ok(
         resolve(
             Msg,
-            #{ path => set, Key => Value },
+            #{ <<"path">> => set, Key => Value },
             internal_opts(Opts)
         ),
         internal_opts(Opts)
@@ -687,7 +691,7 @@ remove(Msg, Key, Opts) ->
 	hb_util:ok(
         resolve(
             Msg,
-            #{ path => remove, item => Key },
+            #{ <<"path">> => remove, <<"item">> => Key },
             internal_opts(Opts)
         ),
         Opts
@@ -836,17 +840,8 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 %% the key using its literal value. If that fails, we cast the key to an atom
 %% and try again.
 find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
-	case maps:get(Key, Dev, not_found) of
-		not_found ->
-			case to_key(Key) of
-				undefined -> not_found;
-				Key ->
-					% The key is unchanged, so we return not_found.
-					not_found;
-				KeyAtom ->
-					% The key was cast to an atom, so we try again.
-					find_exported_function(Msg, Dev, KeyAtom, MaxArity, Opts)
-			end;
+	case maps:get(normalize_key(Key), normalize_keys(Dev), not_found) of
+		not_found -> not_found;
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
 				{arity, Arity} when Arity =< MaxArity ->
@@ -860,35 +855,18 @@ find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
 find_exported_function(_Msg, _Mod, _Key, Arity, _Opts) when Arity < 0 ->
     not_found;
 find_exported_function(Msg, Mod, Key, Arity, Opts) when not is_atom(Key) ->
-	case to_key(Key, Opts) of
-		ConvertedKey when is_atom(ConvertedKey) ->
-			find_exported_function(Msg, Mod, ConvertedKey, Arity, Opts);
-		undefined -> not_found;
-		BinaryKey when is_binary(BinaryKey) ->
-			not_found
+	try binary_to_existing_atom(normalize_key(Key), latin1) of
+		KeyAtom -> find_exported_function(Msg, Mod, KeyAtom, Arity, Opts)
+	catch _:_ -> not_found
 	end;
 find_exported_function(Msg, Mod, Key, Arity, Opts) ->
-	%?event({finding, {mod, Mod}, {key, Key}, {arity, Arity}}),
 	case erlang:function_exported(Mod, Key, Arity) of
 		true ->
 			case is_exported(Msg, Mod, Key, Opts) of
-				true ->
-					%?event({found, {ok, fun Mod:Key/Arity}}),
-					{ok, fun Mod:Key/Arity};
-				false ->
-					%?event({result, not_found}),
-					not_found
+				true -> {ok, fun Mod:Key/Arity};
+				false -> not_found
 			end;
 		false ->
-			%?event(
-            %     {
-            %         find_exported_function_result,
-            %         {mod, Mod},
-            %         {key, Key},
-            %         {arity, Arity},
-            %         {result, false}
-            %     }
-            % ),
 			find_exported_function(Msg, Mod, Key, Arity - 1, Opts)
 	end.
 
@@ -906,61 +884,44 @@ is_exported(Msg, Dev, Key, Opts) ->
 	is_exported(info(Dev, Msg, Opts), Key).
 is_exported(_, info) -> true;
 is_exported(Info = #{ excludes := Excludes }, Key) ->
-    case lists:member(to_key(Key), lists:map(fun to_key/1, Excludes)) of
+    case lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Excludes)) of
         true -> false;
         false -> is_exported(maps:remove(excludes, Info), Key)
     end;
 is_exported(#{ exports := Exports }, Key) ->
-    lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
+    lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Exports));
 is_exported(_Info, _Key) -> true.
 
-%% @doc Convert a key to an atom if it already exists in the Erlang atom table,
-%% or to a binary otherwise.
-to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
-to_key(Key, _Opts) when byte_size(Key) == 43 -> Key;
-to_key(Key, Opts) ->
-    % If the `atom_keys' option is set, we try to convert the key to an atom.
-    % If this fails, we fall back to using the binary representation.
-    AtomKeys = hb_opts:get(atom_keys, true, Opts),
-    if AtomKeys ->
-        try to_atom_unsafe(Key)
-        catch _Type:_:_Trace -> key_to_binary(Key, Opts)
-        end;
-        true -> key_to_binary(Key, Opts)
-    end.
-
-%% @doc Convert a key to its binary representation.
-key_to_binary(Key) -> key_to_binary(Key, #{}).
-key_to_binary(Key, _Opts) when is_binary(Key) -> Key;
-key_to_binary(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
-key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
-key_to_binary(Key = [ASCII | _], _Opts) when is_integer(ASCII) -> list_to_binary(Key);
-key_to_binary(Key, _Opts) when is_list(Key) ->
-    iolist_to_binary(lists:join(<<"/">>, lists:map(fun key_to_binary/1, Key))).
-
-%% @doc Helper function for key_to_atom that does not check for errors.
-to_atom_unsafe(Key) when is_integer(Key) ->
-    integer_to_binary(Key);
-to_atom_unsafe(Key) when is_binary(Key) ->
-    binary_to_existing_atom(hb_util:to_lower(Key), utf8);
-to_atom_unsafe(Key) when is_list(Key) ->
-    FlattenedKey = lists:flatten(Key),
-    list_to_existing_atom(FlattenedKey);
-to_atom_unsafe(Key) when is_atom(Key) -> Key.
+%% @doc Convert a key to a binary in normalized form.
+normalize_key(Key) -> normalize_key(Key, #{}).
+normalize_key(Key, _Opts) when ?IS_ID(Key) -> Key;
+normalize_key(Key, _Opts) when is_binary(Key) -> hb_util:to_lower(Key);
+normalize_key(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
+normalize_key(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
+normalize_key(Key = [ASCII | _], _Opts) when is_integer(ASCII) -> list_to_binary(Key);
+normalize_key(Key, _Opts) when is_list(Key) ->
+    iolist_to_binary(lists:join(<<"/">>, lists:map(fun normalize_key/1, Key))).
 
 %% @doc Ensure that a message is processable by the Converge resolver: No lists.
-ensure_message(Msg1) when is_list(Msg1) ->
+normalize_keys(Msg1) when is_list(Msg1) ->
     maps:from_list(
         lists:zip(
-            [
-                key_to_binary(Key)
-            ||
-                Key <- lists:seq(1, length(Msg1))
-            ],
+            lists:seq(1, length(Msg1)),
             Msg1
         )
     );
-ensure_message(Msg) -> Msg.
+normalize_keys(Map) when is_map(Map) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, Value}) when is_map(Value) ->
+                {hb_converge:normalize_key(Key), normalize_keys(Value)};
+            ({Key, Value}) ->
+                {hb_converge:normalize_key(Key), Value}
+            end,
+            maps:to_list(Map)
+        )
+    );
+normalize_keys(Other) -> Other.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
@@ -984,15 +945,10 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 			case Trusted of
 				true ->
 					RelBin = erlang:system_info(otp_release),
-					case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
+					case maps:get(<<"content-type">>, Msg, undefined) of
 						<<"BEAM/", RelBin/bitstring>> ->
-							{_, ModNameBin} =
-								lists:keyfind(
-                                    <<"Module-Name">>,
-                                    1,
-                                    Msg#tx.tags
-                                ),
-							ModName = list_to_atom(binary_to_list(ModNameBin)),
+							ModNameBin = maps:get(<<"module-name">>, Msg, undefined),
+							ModName = binary_to_atom(ModNameBin),
 							case erlang:load_module(ModName, Msg#tx.data) of
 								{module, _} -> {ok, ModName};
 								{error, Reason} -> {error, Reason}
@@ -1004,7 +960,7 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 			{error, remote_devices_disabled}
 	end;
 load_device(ID, Opts) ->
-    case maps:get(ID, hb_opts:get(preloaded_devices), unsupported) of
+    case maps:get(ID, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> load_device(Mod, Opts)
     end.

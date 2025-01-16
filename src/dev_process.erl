@@ -615,12 +615,12 @@ aos_compute_test_() ->
         {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
         {ok, Res} = hb_converge:resolve(Msg3, <<"Results">>, #{}),
         ?event({computed_message, {msg3, Res}}),
-        {ok, Data} = hb_converge:resolve(Res, <<"Data">>, #{}),
+        {ok, Data} = hb_converge:resolve(Res, <<"data">>, #{}),
         ?event({computed_data, Data}),
         ?assertEqual(<<"2">>, Data),
         Msg4 = #{ path => <<"Compute">>, <<"Slot">> => 1 },
         {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
-        ?assertEqual(<<"4">>, hb_converge:get(<<"Results/Data">>, Msg5, #{})),
+        ?assertEqual(<<"4">>, hb_converge:get(<<"Results/data">>, Msg5, #{})),
         {ok, Msg5}
     end}.
 
@@ -652,7 +652,7 @@ do_test_restore() ->
             Opts
         ),
     ?event({result_b, ResultB}),
-    ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/Data">>, ResultB, #{})).
+    ?assertEqual(<<"1337">>, hb_converge:get(<<"Results/data">>, ResultB, #{})).
 
 now_results_test() ->
     {timeout, 30, fun() ->
@@ -660,7 +660,7 @@ now_results_test() ->
         Msg1 = test_aos_process(),
         schedule_aos_call(Msg1, <<"return 1+1">>),
         schedule_aos_call(Msg1, <<"return 2+2">>),
-        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/Data">>, #{}))
+        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"Now/data">>, #{}))
     end}.
 
 full_push_test_() ->
@@ -681,7 +681,7 @@ full_push_test_() ->
         {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"Now/Data">>, #{})
+            hb_converge:resolve(Msg1, <<"Now/data">>, #{})
         )
     end}.
 

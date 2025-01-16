@@ -354,7 +354,7 @@ resolve_map(Message1, Message2, Opts) ->
                     _ -> false
                 end
             end,
-            maps:without(?CONVERGE_KEYS, hb_converge:ensure_message(DevKeys))
+            maps:without(?CONVERGE_KEYS, hb_converge:normalize_keys(DevKeys))
         )
     },
     Res.

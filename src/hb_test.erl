@@ -29,7 +29,7 @@ run(Proc, Msg, _Opts) ->
 %     init(),
 %     {Proc, Msg} = generate_test_data(<<"return 42">>),
 %     {ok, Result} = run(Proc, Msg, #{ on_idle => terminate }),
-%     #tx { data = <<"42">> } = maps:get(<<"/Data">>, Result),
+%     #tx { data = <<"42">> } = maps:get(<<"/data">>, Result),
 %     ok.
 
 % full_push_test_() ->

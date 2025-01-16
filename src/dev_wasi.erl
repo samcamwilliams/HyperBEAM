@@ -158,7 +158,7 @@ fd_write(S, Instance, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
     {ok, Data} = hb_beamr_io:read(Instance, VecPtr, Len),
     Before =
         binary:part(
-            OrigData = hb_converge:get(<<"Data">>, FD, Opts),
+            OrigData = hb_converge:get(<<"data">>, FD, Opts),
             0,
             StartOffset
         ),

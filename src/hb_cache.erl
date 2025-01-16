@@ -283,7 +283,7 @@ link(Existing, New, Opts) ->
 test_unsigned(Data) ->
     #{
         <<"Base-Test-Key">> => <<"Base-Test-Value">>,
-        <<"Data">> => Data
+        <<"data">> => Data
     }.
 
 %% Helper function to create signed #tx items.

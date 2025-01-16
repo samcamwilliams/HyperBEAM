@@ -175,18 +175,18 @@ next_hashchain(HashChain, Message) ->
 new_proc_test() ->
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
-        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        #{ <<"data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
         Wallet
     ),
     SignedItem2 = hb_message:sign(
-        #{ <<"Data">> => <<"test2">> },
+        #{ <<"data">> => <<"test2">> },
         Wallet
     ),
     SignedItem3 = hb_message:sign(
         #{
-            <<"Data">> => <<"test2">>,
+            <<"data">> => <<"test2">>,
             <<"Deep-Key">> =>
-                #{ <<"Data">> => <<"test3">> }
+                #{ <<"data">> => <<"test3">> }
         },
         Wallet
     ),
@@ -203,7 +203,7 @@ benchmark_test() ->
     BenchTime = 1,
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
-        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        #{ <<"data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
         Wallet
     ),
     dev_scheduler_registry:find(ID = hb_converge:get(id, SignedItem), true),

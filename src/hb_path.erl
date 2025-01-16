@@ -110,8 +110,8 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(RawMsg1, Opts) ->
-    Msg1 = hb_converge:ensure_message(RawMsg1),
-    case dev_message:get(hashpath, Msg1) of
+    Msg1 = hb_converge:normalize_keys(RawMsg1),
+    case dev_message:get(<<"hashpath">>, Msg1) of
         {ok, ignore} ->
             throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
         {ok, Hashpath} -> Hashpath;
@@ -138,7 +138,7 @@ hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
+    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ <<"items">> => ?CONVERGE_KEYS }),
     ?event({generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
     case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
         {0, Key} when Key =/= undefined ->
@@ -247,16 +247,13 @@ term_to_path_parts(Binary, Opts) when is_binary(Binary) ->
         nomatch -> [Binary];
         _ ->
             term_to_path_parts(
-                lists:filter(
-                    fun(Part) -> byte_size(Part) > 0 end,
-                    binary:split(Binary, <<"/">>, [global])
-                ),
+                binary:split(Binary, <<"/">>, [global, trim_all]),
                 Opts
             )
     end;
 term_to_path_parts([], _Opts) -> undefined;
 term_to_path_parts(Path = [ASCII | _], _Opts) when is_integer(ASCII) ->
-    [list_to_binary(Path)];
+    [hb_converge:normalize_key(Path)];
 term_to_path_parts(List, Opts) when is_list(List) ->
     lists:flatten(lists:map(
         fun(Part) ->
@@ -266,7 +263,7 @@ term_to_path_parts(List, Opts) when is_list(List) ->
     ));
 term_to_path_parts(Atom, _Opts) when is_atom(Atom) -> [Atom];
 term_to_path_parts(Integer, _Opts) when is_integer(Integer) ->
-    [integer_to_binary(Integer)].
+    [hb_converge:normalize_key(Integer)].
 
 %% @doc Convert a path of any form to a binary.
 to_binary(Path) ->
@@ -293,12 +290,12 @@ do_to_binary(Path) when is_list(Path) ->
 do_to_binary(Path) when is_binary(Path) ->
     Path;
 do_to_binary(Other) ->
-    hb_converge:key_to_binary(Other).
+    hb_converge:normalize_key(Other).
 
 %% @doc Check if two keys match.
 matches(Key1, Key2) ->
-    hb_util:to_lower(hb_converge:key_to_binary(Key1)) ==
-        hb_util:to_lower(hb_converge:key_to_binary(Key2)).
+    hb_util:to_lower(hb_converge:normalize_key(Key1)) ==
+        hb_util:to_lower(hb_converge:normalize_key(Key2)).
 
 %% @doc Check if two keys match using regex.
 regex_matches(Path1, Path2) ->
@@ -310,7 +307,7 @@ regex_matches(Path1, Path2) ->
 
 %% @doc Normalize a path to a binary, removing the leading slash if present.
 normalize(Path) ->
-    case hb_converge:key_to_binary(Path) of
+    case hb_converge:normalize_key(Path) of
         BinPath = <<"/", _/binary>> -> BinPath;
         Binary -> <<"/", Binary/binary>>
     end.

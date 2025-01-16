@@ -25,7 +25,7 @@ info(M) ->
         #{
             <<"Unit">> => <<"Scheduler">>,
             <<"Address">> => hb_util:id(ar_wallet:to_address(Wallet)),
-            <<"Data">> =>
+            <<"data">> =>
                 jiffy:encode(
                     lists:map(
                         fun hb_util:id/1,

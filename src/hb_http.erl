@@ -125,7 +125,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
 %% @doc Turn a set of request arguments into a request message, formatted in the
 %% preferred format.
 prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
-    Message = hb_converge:ensure_message(RawMessage),
+    Message = hb_converge:normalize_keys(RawMessage),
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
@@ -238,7 +238,7 @@ empty_inbox(Ref) ->
 reply(Req, Message) ->
     reply(Req, message_to_status(Message), Message).
 reply(Req, Status, RawMessage) ->
-    Message = hb_converge:ensure_message(RawMessage),
+    Message = hb_converge:normalize_keys(RawMessage),
     Encoded =
         hb_message:convert(
             Message,

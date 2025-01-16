@@ -104,7 +104,7 @@ results(M1, _M2, Opts) ->
     Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
     Type = hb_converge:get(<<"Results/WASM/Type">>, M1, Opts),
     Proc = hb_converge:get(<<"Process">>, M1, Opts),
-    case hb_converge:to_key(Type) of
+    case hb_converge:normalize_key(Type) of
         error ->
             {error,
                 hb_converge:set(
@@ -139,7 +139,7 @@ results(M1, _M2, Opts) ->
                                                 Messages
                                             )
                                     ]),
-                                <<"Results/Data">> => Data
+                                <<"Results/data">> => Data
                             },
                             Opts
                         ),
@@ -187,7 +187,7 @@ preprocess_results(Msg, Proc, Opts) ->
         maps:from_list(
             lists:map(
                 fun({Key, Value}) ->
-                    {hb_converge:to_key(Key), Value}
+                    {hb_converge:normalize_key(Key), Value}
                 end,
                 maps:to_list(FilteredMsg)
             )
@@ -256,7 +256,7 @@ basic_aos_call_test() ->
             generate_aos_msg(ProcID, <<"return 1+1">>),
             #{}
         ),
-    Data = hb_converge:get(<<"Results/Data">>, Msg3, #{}),
+    Data = hb_converge:get(<<"Results/data">>, Msg3, #{}),
     ?assertEqual(<<"2">>, Data).
 
 aos_stack_benchmark_test_() ->

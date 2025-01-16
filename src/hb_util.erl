@@ -158,23 +158,16 @@ message_to_numbered_list(Message, Opts) ->
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
 %% as well as a standard map of HyperBEAM runtime options.
-%% 
-%% If `error_strategy' is `throw', raise an exception if no integer keys are
-%% found. If `error_strategy' is `any', return `undefined' if no integer keys
-%% are found. By default, the function does not pass a `throw' execution
-%% strategy to `hb_converge:to_key/2', such that non-integer keys present in the
-%% message will not lead to an exception.
 hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    {ok, Keys} = hb_converge:resolve(Message, keys, #{}),
-    hd(Message, Keys, 1, ReturnType, Opts).
+    hd(Message, hb_converge:keys(Message, Opts), 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
 hd(_Map, [], _Index, _ReturnType, _Opts) -> undefined;
 hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
-    case hb_converge:to_key(Key, Opts#{ error_strategy => return }) of
+    case hb_converge:normalize_key(Key, Opts#{ error_strategy => return }) of
         undefined ->
             hd(Message, Rest, Index + 1, ReturnType, Opts);
         Key ->

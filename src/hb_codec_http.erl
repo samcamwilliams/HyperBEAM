@@ -51,28 +51,24 @@
 %% @doc Convert an HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
-from(#{ headers := Headers, body := Body }) when is_map(Headers) ->
+from(#{ <<"headers">> := Headers, <<"body">> := Body }) when is_map(Headers) ->
     from(#{ headers => maps:to_list(Headers), body => Body });
-from(#{ headers := Headers, body := Body }) ->
+from(#{ <<"headers">> := Headers, <<"body">> := Body }) ->
     % First, parse all headers and add as key-value pairs to the TABM
     Map = from_headers(#{}, Headers),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as additional key-binary value pairs, or as sub-TABMs
-    {_, ContentType} = find_header(Headers, <<"Content-Type">>),
-    maps:remove(<<"Content-Type">>, from_body(Map, ContentType, Body)).
+    {_, ContentType} = find_header(Headers, <<"content-type">>),
+    maps:remove(<<"content-type">>, from_body(Map, ContentType, Body)).
 
 from_headers(Map, Headers) -> from_headers(Map, Headers, Headers).
 from_headers(Map, [], _) -> Map;
 from_headers(Map, [{Name, Value} | Rest], Headers) ->
     NewMap = case Name of
         % Handled as part of "Signature" so simply skip it
-        <<"Signature-Input">> -> Map;
         <<"signature-input">> -> Map;
-        <<"Signature">> ->
-            {_, SigInput} = find_header(Headers, <<"Signature-Input">>),
-            from_signature(Map, Value, SigInput);
         <<"signature">> ->
-            {_, SigInput} = find_header(Headers, <<"Signature-Input">>),
+            {_, SigInput} = find_header(Headers, <<"signature-input">>),
             from_signature(Map, Value, SigInput);
         % Decode the header as normal
         N -> maps:put(N, Value, Map)
@@ -107,18 +103,15 @@ from_signature(Map, RawSig, RawSigInput) ->
         SfSigs
     ),
     % Finally place the Signatures as a top-level Map on the parent Map
-    maps:put(<<"Signatures">>, Signatures, Map).
+    maps:put(<<"signatures">>, Signatures, Map).
 
 find_header(Headers, Name) ->
     find_header(Headers, Name, []).
 find_header(Headers, Name, Opts) when is_list(Headers) ->
-    Matcher = case lists:member(strict, Opts) of
-        true -> fun ({N, _Value}) -> N =:= Name end;
-        _ ->
-            fun ({N, _Value}) ->
-                hb_util:to_lower(N) =:= hb_util:to_lower(Name)
-            end
-    end,
+    Matcher =
+        fun ({N, _Value}) ->
+            hb_converge:normalize_key(N) =:= hb_converge:normalize_key(Name)
+        end,
     case lists:filter(Matcher, Headers) of
         [] -> {undefined, undefined};
         Found -> case lists:member(global, Opts) of
@@ -136,7 +129,7 @@ from_body(TABM, ContentType, Body) ->
     case lists:keyfind(<<"boundary">>, 1, Params) of
         % The body is not a multipart, so just set as is to the Body key on the TABM
         false ->
-            maps:put(<<"Body">>, Body, TABM);
+            maps:put(<<"body">>, Body, TABM);
         % We need to manually parse the multipart body into key/values on the TABM
         {_, {_Type, Boundary}} ->
             % Find the sub-part of the body within the boundary
@@ -201,10 +194,10 @@ append_body_part(TABM, Part) ->
         RawDisposition when is_binary(RawDisposition) ->
             {item, {_, _Disposition}, Params} = hb_http_structured_fields:parse_item(RawDisposition),
             PartName = case lists:keyfind(<<"name">>, 1, Params) of
-                false -> <<"Body">>;
+                false -> <<"body">>;
                 {_, {_type, PN}} -> PN
             end,
-            SubTABM = from(#{ headers => RestHeaders, body => RawBody }),
+            SubTABM = from(#{ <<"headers">> => RestHeaders, <<"body">> => RawBody }),
             {ok, maps:put(PartName, SubTABM, TABM)}
     end.
 
@@ -216,7 +209,7 @@ to(TABM) when is_map(TABM) ->
     % MinimizedMsg = hb_message:minimize(PublicMsg),
     Http = maps:fold(
         fun(RawKey, Value, Http) ->
-            Key = hb_converge:key_to_binary(RawKey),
+            Key = hb_converge:normalize_key(RawKey),
             case hb_util:to_lower(Key) of
                 <<"body">> -> body_to_http(Http, Value);
                 <<"signature">> -> signatures_to_http(Http, [Value]);
@@ -224,12 +217,12 @@ to(TABM) when is_map(TABM) ->
                 _ -> field_to_http(Http, {Key, Value}, #{})
             end
         end,
-        #{ headers => [], body => #{} },
+        #{ <<"headers">> => [], <<"body">> => #{} },
         TABM
     ),
-    Body = maps:get(body, Http),
+    Body = maps:get(<<"body">>, Http),
     NewHttp = case maps:size(Body) of
-        0 -> maps:put(body, <<>>, Http);
+        0 -> maps:put(<<"body">>, <<>>, Http);
         _ ->
             {ok, RawBoundary} = dev_message:id(TABM),
             Boundary = hb_util:encode(RawBoundary),
@@ -243,20 +236,20 @@ to(TABM) when is_map(TABM) ->
             ),
             BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
             #{ 
-                headers => [
+                <<"headers">> => [
                     {
-						<<"Content-Type">>,
+						<<"content-type">>,
 						<<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>
 					}
-                    | maps:get(headers, Http)
+                    | maps:get(<<"headers">>, Http)
                 ],
                 % End the body with a final terminating Boundary
-                body => <<BodyBin/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
+                <<"body">> => <<BodyBin/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
             }
     end,
     NewHttp.
 
-encode_http_msg (_Http = #{ headers := SubHeaders, body := SubBody }) ->
+encode_http_msg (_Http = #{ <<"headers">> := SubHeaders, <<"body">> := SubBody }) ->
     % Serialize the headers, to be included in the part of the multipart response
     HeaderList = lists:foldl(
         fun ({HeaderName, HeaderValue}, Acc) ->
@@ -282,7 +275,7 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
         fun ({SigName, SignatureMap = #{ <<"inputs">> := Inputs, <<"signature">> := Signature }}, {SfSigInputs, SfSigs}) ->
             NextSigInput = hb_http_signature:sf_signature_params(Inputs, SignatureMap),
             NextSig = hb_http_signature:sf_signature(Signature),
-            NextName = hb_converge:key_to_binary(SigName),
+            NextName = hb_converge:normalize_key(SigName),
             {
                 [{NextName, NextSigInput} | SfSigInputs],
                 [{NextName, NextSig} | SfSigs]
@@ -294,17 +287,17 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
     ),
     % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
     % each transmitted either as a header, or as a part in the multi-part body
-    WithSig = field_to_http(Http, {<<"Signature">>, hb_http_structured_fields:dictionary(SfSigs)}, #{}),
-    WithSigAndInput = field_to_http(WithSig, {<<"Signature-Input">>, hb_http_structured_fields:dictionary(SfSigInputs)}, #{}),
+    WithSig = field_to_http(Http, {<<"signature">>, hb_http_structured_fields:dictionary(SfSigs)}, #{}),
+    WithSigAndInput = field_to_http(WithSig, {<<"signature-input">>, hb_http_structured_fields:dictionary(SfSigInputs)}, #{}),
     WithSigAndInput.
 
 body_to_http(Http, Body) when is_map(Body) ->
-    Disposition = <<"Content-Disposition: inline">>,
+    Disposition = <<"content-disposition: inline">>,
     SubHttp = to(Body),
     EncodedBody = encode_http_msg(SubHttp),
     field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
 body_to_http(Http, Body) when is_binary(Body) ->
-    Disposition = <<"Content-Disposition: inline">>,
+    Disposition = <<"content-disposition: inline">>,
     field_to_http(Http, {<<"body">>, Body}, #{ disposition => Disposition, where => body }).
 
 field_to_http(Http, {Name, Value}, Opts) when is_map(Value) ->
@@ -312,7 +305,7 @@ field_to_http(Http, {Name, Value}, Opts) when is_map(Value) ->
     EncodedHttpMap = encode_http_msg(SubHttp),
     field_to_http(Http, {Name, EncodedHttpMap}, maps:put(where, body, Opts));
 field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
-    NormalizedName = hb_converge:key_to_binary(Name),
+    NormalizedName = hb_converge:normalize_key(Name),
     % The default location where the value is encoded within the HTTP
     % message depends on its size.
     % 
@@ -324,7 +317,7 @@ field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
     end,
     case maps:get(where, Opts, DefaultWhere) of
         headers ->
-            Headers = maps:get(headers, Http),
+            Headers = maps:get(<<"headers">>, Http),
             NewHeaders = lists:append(Headers, [{NormalizedName, Value}]),
             maps:put(headers, NewHeaders, Http);
         % Append the value as a part of the multipart body
@@ -334,9 +327,9 @@ field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
         % We allow the caller to provide a Content-Disposition in Opts, but default
         % to appending as a field on the form-data
         body ->
-            Body = maps:get(body, Http),
-            Disposition = maps:get(disposition, Opts, <<"Content-Disposition: form-data;name=", NormalizedName/binary>>),
+            Body = maps:get(<<"body">>, Http),
+            Disposition = maps:get(disposition, Opts, <<"content-disposition: form-data;name=", NormalizedName/binary>>),
             BodyPart = <<Disposition/binary, ?CRLF/binary, Value/binary>>,
             NewBody = maps:put(NormalizedName, BodyPart, Body),
-            maps:put(body, NewBody, Http)
+            maps:put(<<"body">>, NewBody, Http)
     end.

@@ -6,9 +6,9 @@
 %% human-readable ID encoding.
 -define(IS_ID(X), (is_binary(X) andalso (byte_size(X) == 43 orelse byte_size(X) == 32))).
 %% @doc List of special keys that are used in the Converge Protocol.
--define(CONVERGE_KEYS, [path, hashpath, priv]).
+-define(CONVERGE_KEYS, [<<"path">>, <<"hashpath">>, <<"priv">>]).
 %% @doc Keys that can be regenerated losslessly.
--define(REGEN_KEYS, [id, unsigned_id]).
+-define(REGEN_KEYS, [<<"id">>, <<"unsigned_id">>]).
 
 %% @doc Record used for parsing relevant components of a cursor-browsable
 %% response.
