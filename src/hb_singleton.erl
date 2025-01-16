@@ -4,7 +4,7 @@
 %%% 
 %%% Syntax overview:
 %%% ```
-%%%     Singleton: Message containing keys and a `relative-reference` field,
+%%%     Singleton: Message containing keys and a `path` field,
 %%%                which may also contain a query string of key-value pairs.
 %%% 
 %%%     Path:
@@ -42,7 +42,6 @@
 from(RawMsg) ->
     {ok, Path, Query} = 
         parse_full_path(P = hb_path:to_binary(hb_path:from_message(request, RawMsg))),
-    ?event(debug, {got_path, P}),
     MsgWithoutBasePath = maps:merge(
         maps:remove(<<"path">>, RawMsg),
         Query
@@ -159,12 +158,12 @@ group_scoped(Map, Msgs) ->
         N <- lists:seq(1, length(Msgs))
     ].
 
-%% @doc Get the scope of a key.
+%% @doc Get the scope of a key. Adds 1 to account for the base message.
 parse_scope(KeyBin) ->
     case binary:split(KeyBin, <<".">>, [global]) of
         [Front, Remainder] ->
             case catch erlang:binary_to_integer(Front) of
-                NInt when is_integer(NInt) -> {NInt, Remainder};
+                NInt when is_integer(NInt) -> {NInt + 1, Remainder};
                 _ -> throw({error, invalid_scope, KeyBin})
             end;
         _ -> global
@@ -257,7 +256,7 @@ maybe_subpath(Str) when byte_size(Str) >= 2 ->
     case {binary:first(Str), binary:last(Str)} of
         {$(, $)} ->
             Inside = binary:part(Str, 1, byte_size(Str) - 2),
-            {resolve, from(#{ <<"relative-reference">> => Inside })};
+            {resolve, from(#{ <<"path">> => Inside })};
         _ -> Str
     end;
 maybe_subpath(Other) -> Other.
@@ -275,7 +274,7 @@ maybe_typed(Key, Value) ->
                     % /a/b+k|Int=(/x/y/z)` => /a/b+k=(/x/y/z/body+Type=Int|Codec)
                     {typed,
                         OnlyKey,
-                        {resolve, from(#{ <<"relative-reference">> => Subpath })}
+                        {resolve, from(#{ <<"path">> => Subpath })}
                     };
                 {_T, Bin} when is_binary(Bin) ->
                     {typed, OnlyKey, hb_codec_converge:decode_value(Type, Bin)}
@@ -288,11 +287,11 @@ maybe_typed(Key, Value) ->
 
 single_message_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/a">>,
+        <<"path">> => <<"/a">>,
         <<"test-key">> => <<"test-value">>
     },
     Msgs = from(Req),
-    ?assertEqual(1, length(Msgs)),
+    ?assertEqual(2, length(Msgs)),
     ?assert(is_map(hd(Msgs))),
     ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, hd(Msgs))).
 
@@ -300,7 +299,7 @@ basic_hashpath_test() ->
     Hashpath = hb_util:human_id(crypto:strong_rand_bytes(32)),
     Path = <<"/", Hashpath/binary, "/someOther">>,
     Req = #{
-        <<"relative-reference">> => Path,
+        <<"path">> => Path,
         <<"method">> => <<"GET">>
     },
     Msgs = from(Req),
@@ -312,14 +311,14 @@ basic_hashpath_test() ->
 
 multiple_messages_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/a/b/c">>,
+        <<"path">> => <<"/a/b/c">>,
         <<"test-key">> => <<"test-value">>
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [Base, Msg2, Msg3] = Msgs,
+    ?assertEqual(4, length(Msgs)),
+    [_Base, Msg1, Msg2, Msg3] = Msgs,
     ?assert(lists:all(fun is_map/1, Msgs)),
-    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Base)),
+    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg1)),
     ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg2)),
     ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg3)).
 
@@ -327,40 +326,41 @@ multiple_messages_test() ->
 
 scoped_key_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/a/b/c">>,
+        <<"path">> => <<"/a/b/c">>,
         <<"2.test-key">> => <<"test-value">>
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [Msg1, Msg2, Msg3] = Msgs,
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
     ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg2, not_found)),
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
 
 typed_key_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/a/b/c">>,
+        <<"path">> => <<"/a/b/c">>,
         <<"2.test-key|Integer">> => <<"123">>
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [Msg1, Msg2, Msg3] = Msgs,
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
     ?assertEqual(123, maps:get(<<"test-key">>, Msg2, not_found)),
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
 
 subpath_in_key_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/a/b/c">>,
+        <<"path">> => <<"/a/b/c">>,
         <<"2.test-key|Resolve">> => <<"/x/y/z">>
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [Msg1, Msg2, Msg3] = Msgs,
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
     ?assertEqual(
         {resolve,
             [
+                #{},
                 #{ path => <<"x">> },
                 #{ path => <<"y">> },
                 #{ path => <<"z">> }
@@ -374,15 +374,16 @@ subpath_in_key_test() ->
 
 subpath_in_path_test() ->
     Req = #{
-        <<"relative-reference">> => <<"/a/(x/y/z)/z">>
+        <<"path">> => <<"/a/(x/y/z)/z">>
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [Msg1, Msg2, Msg3] = Msgs,
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(<<"a">>, maps:get(path, Msg1)),
     ?assertEqual(
         {resolve,
             [
+                #{},
                 #{ path => <<"x">> },
                 #{ path => <<"y">> },
                 #{ path => <<"z">> }
@@ -395,11 +396,11 @@ subpath_in_path_test() ->
 inlined_keys_test() ->
     Req = #{
         <<"method">> => <<"POST">>,
-        <<"relative-reference">> => <<"/a/b+K1=V1/c+K2=V2">>
+        <<"path">> => <<"/a/b+K1=V1/c+K2=V2">>
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [Msg1, Msg2, Msg3] = Msgs,
+    ?assertEqual(4, length(Msgs)),
+    [_, Msg1, Msg2, Msg3] = Msgs,
     ?assertEqual(<<"V1">>, maps:get(<<"K1">>, Msg2)),
     ?assertEqual(<<"V2">>, maps:get(<<"K2">>, Msg3)),
     ?assertEqual(not_found, maps:get(<<"K1">>, Msg1, not_found)),
@@ -409,11 +410,11 @@ multiple_inlined_keys_test() ->
     Path = <<"/a/b+K1=V1&K2=V2">>,
     Req = #{
         <<"method">> => <<"POST">>,
-        <<"relative-reference">> => Path
+        <<"path">> => Path
     },
     Msgs = from(Req),
-    ?assertEqual(2, length(Msgs)),
-    [Msg1, Msg2] = Msgs,
+    ?assertEqual(3, length(Msgs)),
+    [_, Msg1, Msg2] = Msgs,
     ?assertEqual(not_found, maps:get(<<"K1">>, Msg1, not_found)),
     ?assertEqual(not_found, maps:get(<<"K2">>, Msg1, not_found)),
     ?assertEqual(<<"V1">>, maps:get(<<"K1">>, Msg2, not_found)),
@@ -422,15 +423,16 @@ multiple_inlined_keys_test() ->
 subpath_in_inlined_test() ->
     Path = <<"/Part1/Part2+Test=1&B=(/x/y)/Part3">>,
     Req = #{
-        <<"relative-reference">> => Path
+        <<"path">> => Path
     },
     Msgs = from(Req),
-    ?assertEqual(3, length(Msgs)),
-    [First, Second, Third] = Msgs,
+    ?event(debug, {got_msgs, Msgs}),
+    ?assertEqual(4, length(Msgs)),
+    [_, First, Second, Third] = Msgs,
     ?assertEqual(<<"Part1">>, maps:get(path, First)),
     ?assertEqual(<<"Part3">>, maps:get(path, Third)),
     ?assertEqual(
-        {resolve, [#{ path => <<"x">> }, #{ path => <<"y">> }] },
+        {resolve, [#{}, #{ path => <<"x">> }, #{ path => <<"y">> }] },
         maps:get(<<"B">>, Second)
     ).
 
