@@ -51,7 +51,6 @@ do_from(RawTX) ->
                 )
             )
         ),
-    ?event(debug, {tx_keys_map, {explicit, TXKeysMap}}),
     % Generate a TABM from the tags.
     MapWithoutData = maps:merge(TXKeysMap, maps:from_list(TX#tx.tags)),
     DataMap =
