@@ -48,6 +48,7 @@ post(Node, Message, Opts) ->
 post(Node, Path, Message, Opts) ->
     case request(<<"POST">>, Node, Path, Message, Opts) of
         {ok, Res} ->
+            ?event(debug, {post_response, Res}),
             {ok,
                 hb_message:convert(
                     ar_bundles:deserialize(Res),
@@ -248,7 +249,7 @@ reply(Req, Status, RawMessage, Opts) ->
             {encoded, Encoded}
         }
     ),
-    Req2 = cowboy_req:stream_reply(Status, Headers, Req),
+    Req2 = cowboy_req:stream_reply(Status, maps:from_list(Headers), Req),
     Req3 = cowboy_req:stream_body(Encoded, nofin, Req2),
     {ok, Req3, no_state}.
 

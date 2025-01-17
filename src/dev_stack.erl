@@ -104,7 +104,7 @@ info(Msg) ->
     maps:merge(
         #{
             handler => fun router/4,
-            excludes => [set, keys]
+            excludes => [<<"set">>, <<"keys">>]
         },
         case maps:get(<<"stack-keys">>, Msg, not_found) of
             not_found -> #{};
@@ -197,7 +197,8 @@ transform(Msg1, Key, Opts) ->
             % TODO: Should we use `as dev_message` here? After the first transform
             % of a fold (for example), the message is no longer a stack, so its 
             % `GET` behavior may be different.
-			case hb_converge:resolve(StackMsg, #{ path => Key }, Opts) of
+            NormKey = hb_converge:normalize_key(Key),
+			case hb_converge:resolve(StackMsg, #{ <<"path">> => NormKey }, Opts) of
 				{ok, DevMsg} ->
 					% Set the:
 					% - Device key to the device we found.
@@ -436,7 +437,8 @@ transform_external_call_device_test() ->
 							fun() ->
 								#{
 									handler =>
-										fun(keys, MsgX1) ->
+										fun(<<"keys">>, MsgX1) ->
+                                            ?event({test_dev_keys_called, MsgX1}),
 											{ok, maps:keys(MsgX1)};
 										(Key, MsgX1) ->
 											{ok, Value} =
@@ -451,7 +453,7 @@ transform_external_call_device_test() ->
 										end
 								}
 							end,
-						suffix => <<"-Cool">>
+						<<"suffix">> => <<"-Cool">>
 					}
 			},
 		<<"value">> => <<"Super">>
@@ -459,7 +461,7 @@ transform_external_call_device_test() ->
 	?assertMatch(
 		{ok, #{ <<"value">> := <<"Super-Cool">> }},
 		hb_converge:resolve(Msg1, #{
-			path => <<"/transform/make-cool/value">>
+			<<"path">> => <<"/transform/make-cool/value">>
 		}, #{})
 	).
 
@@ -468,7 +470,7 @@ example_device_for_stack_test() ->
 	% we know that an error later is actually from the stack, and not from
 	% the example device.
 	?assertMatch(
-		{ok, #{ result := <<"1_2">> }},
+		{ok, #{ <<"result">> := <<"1_2">> }},
 		hb_converge:resolve(
 			#{ <<"device">> => generate_append_device(<<"_">>), <<"result">> => <<"1">> },
 			#{ <<"path">> => <<"append">>, <<"bin">> => <<"2">> },
@@ -535,7 +537,13 @@ benchmark_test() ->
     Iterations =
         hb:benchmark(
             fun() ->
-                hb_converge:resolve(Msg, #{ path => append, bin => <<"2">> }, #{}),
+                hb_converge:resolve(Msg,
+                    #{
+                        <<"path">> => <<"append">>,
+                        <<"bin">> => <<"2">>
+                    },
+                    #{}
+                ),
                 {count, 5}
             end,
             BenchTime
@@ -555,7 +563,7 @@ test_prefix_msg() ->
                 Out = output_prefix(M1, M2, Opts),
                 Key = hb_converge:get(<<"key">>, M2, Opts),
                 Value = hb_converge:get(<<In/binary, "/", Key/binary>>, M2, Opts),
-                ?event({setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
+                ?event(debug, {setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
                 {ok, hb_converge:set(
                     M1,
                     <<Out/binary, "/", Key/binary>>,
@@ -566,13 +574,13 @@ test_prefix_msg() ->
     },
     #{
         <<"device">> => <<"Stack/1.0">>,
-        <<"device-stack">> => #{ 1 => Dev, 2 => Dev }
+        <<"device-stack">> => #{ <<"1">> => Dev, <<"2">> => Dev }
     }.
 
 no_prefix_test() ->
     Msg2 =
         #{
-            <<"path">> => <<"prefix-set">>,
+            <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
@@ -583,11 +591,11 @@ no_prefix_test() ->
 output_prefix_test() ->
     Msg1 =
         (test_prefix_msg())#{
-            <<"output-prefixes">> => #{ 1 => <<"out1/">>, 2 => <<"out2/">> }
+            <<"output-prefixes">> => #{ <<"1">> => <<"out1/">>, <<"2">> => <<"out2/">> }
         },
     Msg2 =
         #{
-            <<"path">> => <<"prefix-set">>,
+            <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
@@ -605,7 +613,7 @@ input_and_output_prefixes_test() ->
         },
     Msg2 =
         #{
-            <<"path">> => <<"prefix-set">>,
+            <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"in1">> => #{ <<"example">> => 1 },
             <<"in2">> => #{ <<"example">> => 2 }
@@ -624,7 +632,7 @@ input_output_prefixes_passthrough_test() ->
         },
     Msg2 =
         #{
-            <<"path">> => <<"prefix-set">>,
+            <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"combined-in">> => #{ <<"example">> => 1 }
         },
@@ -704,7 +712,7 @@ not_found_test() ->
 				<<"1">> => generate_append_device(<<"+D1">>),
 				<<"2">> =>
                     (generate_append_device(<<"+D2">>))#{
-                        special =>
+                        <<"special">> =>
                             fun(M1) ->
                                 {ok, M1#{ <<"output">> => 1337 }}
                             end
@@ -717,6 +725,7 @@ not_found_test() ->
 		#{ <<"result">> := <<"INIT+D1_+D2_">> },
 		Msg3
 	),
+    ?event({ex3, Msg3}),
     ?assertEqual(1337, hb_converge:get(<<"special/output">>, Msg3, #{})).
 
 simple_map_test() ->

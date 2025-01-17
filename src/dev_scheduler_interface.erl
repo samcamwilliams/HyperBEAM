@@ -82,7 +82,7 @@ schedule(CarrierM) ->
                 #tx{
                     tags =
                         [
-                            {<<"status">>, <<"OK">>},
+                            {<<"status">>, 200},
                             {<<"initial-assignment">>, <<"0">>},
                             {<<"process">>, hb_util:id(M, signed)}
                         ],

@@ -111,7 +111,6 @@ default_import_resolver(Msg1, Msg2, Opts) ->
         func_sig := Signature
     } = Msg2,
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
-    ?event({import_func_called, {prefix, Prefix}, {module, Module}, {func, Func}, {args, Args}, {func_sig, Signature}}),
     {ok, Msg3} =
         hb_converge:resolve(
             hb_private:set(
@@ -128,10 +127,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
             },
             Opts
         ),
-    ?event(import_done),
     NextState = hb_converge:get(state, Msg3, Opts),
-    ?event({done_calculating_response_for, {msg1, Msg1}, {msg2, Msg2}, {next_state, NextState}}),
-    ?event({next_state, NextState}),
     Response = hb_converge:get(results, Msg3, Opts),
     {ok, Response, NextState}.
 
@@ -203,7 +199,7 @@ normalize(RawM1, M2, Opts) ->
                         not_found -> [];
                         Key -> [Key]
                     end,
-                ?event(snapshot,
+                ?event(debug,
                     {no_instance_attempting_to_get_snapshot,
                         {msg1, RawM1}, {device_key, DeviceKey}
                     }
@@ -336,11 +332,10 @@ init() ->
     application:ensure_all_started(hb),
     hb:init().
 
-
 % Pass
 input_prefix_test() ->
     init(),
-    #{ image := ImageID } = cache_wasm_image("test/test.wasm"),
+    #{ <<"image">> := ImageID } = cache_wasm_image("test/test.wasm"),
     Msg1 =
         #{
             <<"device">> => <<"WASM-64/1.0">>,
@@ -411,24 +406,19 @@ basic_execution_64_test() ->
         test_run_wasm("test/test-64.wasm", <<"fac">>, [5.0], #{})
     ).
 
-% imported_function_test_() ->
-%     % Manages to spoil everything. Looks like the bearm sends import request
-%     % but we never get it
-%     {timout, 10, imported_function_test()}.
-
-% imported_function_test() ->
-%     ?assertEqual(
-%         {ok, [32]},
-%         test_run_wasm(
-%             "test/pow_calculator.wasm",
-%             <<"pow">>,
-%             [2, 5],
-%             #{
-%                 <<"stdlib/my_lib">> =>
-%                     #{ device => <<"Test-Device/1.0">> }
-%             }
-%         )
-%     ).
+imported_function_test() ->
+    ?assertEqual(
+        {ok, [32]},
+        test_run_wasm(
+            "test/pow_calculator.wasm",
+            <<"pow">>,
+            [2, 5],
+            #{
+                <<"stdlib/my_lib">> =>
+                    #{ <<"device">> => <<"Test-Device/1.0">> }
+            }
+        )
+    ).
 
 benchmark_test() ->
     BenchTime = 0.5,
@@ -461,38 +451,37 @@ benchmark_test() ->
     ?assert(Iterations > 5),
     ok.
 
-% FIXME
-% state_export_and_restore_test() ->
-%     init(),
-%     % Generate a WASM message. We use the pow_calculator because it has a 
-%     % reasonable amount of memory to work with.
-%     Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
-%     {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
-%     Msg2 =
-%         maps:merge(
-%             Msg1,
-%             Extras = #{
-%                 <<"wasm-function">> => <<"pow">>,
-%                 <<"wasm-params">> => [2, 2],
-%                 <<"stdlib">> =>
-%                     #{
-%                         <<"my_lib">> =>
-%                             #{ device => <<"Test-Device/1.0">> }
-%                     }
-%             }
-%         ),
-%     ?event({after_setup, Msg2}),
-%     % Compute a computation and export the state.
-%     {ok, Msg3a} = hb_converge:resolve(Msg2, <<"compute">>, #{}),
-%     ?assertEqual([4], hb_converge:get(<<"Results/Output">>, Msg3a, #{})),
-%     {ok, State} = hb_converge:resolve(Msg3a, <<"Snapshot">>, #{}),
-%     ?event({state_res, State}),
-%     % Restore the state without calling Init.
-%     NewMsg1 = maps:merge(Msg0, Extras#{ <<"Snapshot">> => State }),
-%     ?assertEqual(
-%         {ok, [4]},
-%         hb_converge:resolve(NewMsg1, <<"compute/results/output">>, #{})
-%     ).
+state_export_and_restore_test() ->
+    init(),
+    % Generate a WASM message. We use the pow_calculator because it has a 
+    % reasonable amount of memory to work with.
+    Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
+    Msg2 =
+        maps:merge(
+            Msg1,
+            Extras = #{
+                <<"wasm-function">> => <<"pow">>,
+                <<"wasm-params">> => [2, 2],
+                <<"stdlib">> =>
+                    #{
+                        <<"my_lib">> =>
+                            #{ <<"device">> => <<"Test-Device/1.0">> }
+                    }
+            }
+        ),
+    ?event({after_setup, Msg2}),
+    % Compute a computation and export the state.
+    {ok, Msg3a} = hb_converge:resolve(Msg2, <<"compute">>, #{}),
+    ?assertEqual([4], hb_converge:get(<<"results/output">>, Msg3a, #{})),
+    {ok, State} = hb_converge:resolve(Msg3a, <<"snapshot">>, #{}),
+    ?event({state_res, State}),
+    % Restore the state without calling Init.
+    NewMsg1 = maps:merge(Msg0, Extras#{ <<"snapshot">> => State }),
+    ?assertEqual(
+        {ok, [4]},
+        hb_converge:resolve(NewMsg1, <<"compute/results/output">>, #{})
+    ).
 
 %%% Test helpers
 
@@ -501,8 +490,8 @@ cache_wasm_image(Image) ->
     Msg = #{ <<"body">> => Bin },
     {ok, ID} = hb_cache:write(Msg, #{}),
     #{
-        device => <<"WASM-64/1.0">>,
-        image => ID
+        <<"device">> => <<"WASM-64/1.0">>,
+        <<"image">> => ID
     }.
 
 test_run_wasm(File, Func, Params, AdditionalMsg) ->

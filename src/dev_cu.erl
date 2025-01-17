@@ -52,7 +52,7 @@ execute(CarrierMsg, S) ->
                             S#{
                                 results =>
                                     #tx {
-                                        tags = [{<<"status">>, <<"404">>}],
+                                        tags = [{<<"status-code">>, 404}],
                                         data = <<"Requested message to attest to not in results bundle.">>
                                     }
                             }
@@ -63,7 +63,7 @@ execute(CarrierMsg, S) ->
                             results => ar_bundles:sign_item(
                                 #tx {
                                     tags = [
-                                        {<<"status">>, <<"200">>},
+                                        {<<"status-code">>, 200},
                                         {<<"attestation-for">>, RawAttestTo}
                                     ],
                                     data = <<>>

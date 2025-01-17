@@ -36,9 +36,9 @@
 %%% ```
 %%%     DevMod:ExportedFunc : Key resolution functions. All are assumed to be
 %%%                           device keys (thus, present in every message that
-%%%                           uses it) unless specified by `DevMod:info()`.
+%%%                           uses it) unless specified by `DevMod:info()'.
 %%%                           Each function takes a set of parameters
-%%%                           of the form `DevMod:KeyHandler(Msg1, Msg2, Opts)`.
+%%%                           of the form `DevMod:KeyHandler(Msg1, Msg2, Opts)'.
 %%%                           Each of these arguments can be ommitted if not
 %%%                           needed. Non-exported functions are not assumed
 %%%                           to be device keys.
@@ -273,7 +273,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
                 }
             ),
 			{Status, _Mod, Func} = message_to_fun(Msg1, Key, Opts),
-			?event(debug,
+			?event(
 				{found_func_for_exec,
                     {key, Key},
 					{func, Func},
@@ -452,14 +452,14 @@ resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
 resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
     resolve_stage(11, Msg1, Msg2, OtherRes, ExecName, Opts);
-resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
+resolve_stage(11, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
     ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
     % Recurse, or terminate.
 	case hb_path:priv_remaining(Msg2, Opts) of
 		[] ->
             % Terminate: We have reached the end of the path.
-			{Status, Msg3};
-		RemainingPath when Status == ok ->
+			{ok, Msg3};
+		RemainingPath ->
 			% There are more elements in the path, so we recurse.
 			?event(
                 converge_core,
@@ -470,11 +470,13 @@ resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
             case RemainingPath of
                 [LastMsg] -> resolve(Msg3, LastMsg, Opts);
                 _ -> resolve([Msg3|RemainingPath], Opts)
-            end;
-        RemainingPath ->
-            error_invalid_intermediate_status(
-                Msg1, Msg2, Msg3, RemainingPath, Opts)
-	end.
+            end
+	end;
+resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
+    ?event(
+        converge_core,
+        {stage, 11, ExecName, abnormal_status_skip_recursing}, Opts),
+    {Status, Msg3}.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
@@ -490,7 +492,7 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"status-code">> => 400,
+            <<"status">> => 400,
             <<"body">> => <<"Request contains non-verifiable message.">>
         }
     }.
@@ -510,13 +512,12 @@ error_infinite(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"status">> => <<"Loop Detected">>,
-            <<"status-code">> => 508,
+            <<"status">> => 508,
             <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
 
-error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
+error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) ->
     ?event(
         converge_core,
         {error, {type, invalid_intermediate_status},
@@ -527,11 +528,14 @@ error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
         },
         Opts
     ),
+    ?event(converge_result, 
+        {intermediate_failure, {msg1, Msg1},
+            {msg2, Msg2}, {msg3, Msg3},
+            {remaining_path, RemainingPath}, {opts, Opts}}),
     {
         error,
         #{
-            <<"status">> => <<"Unprocessable Content">>,
-            <<"status-code">> => 422,
+            <<"status">> => 422,
             <<"body">> => Msg3,
             <<"key">> => maps:get(<<"path">>, Msg2, <<"Key unknown.">>),
             <<"remaining-path">> => RemainingPath
@@ -913,12 +917,12 @@ normalize_key(Key, _Opts) when is_list(Key) ->
 
 %% @doc Ensure that a message is processable by the Converge resolver: No lists.
 normalize_keys(Msg1) when is_list(Msg1) ->
-    maps:from_list(
+    normalize_keys(maps:from_list(
         lists:zip(
             lists:seq(1, length(Msg1)),
             Msg1
         )
-    );
+    ));
 normalize_keys(Map) when is_map(Map) ->
     maps:from_list(
         lists:map(

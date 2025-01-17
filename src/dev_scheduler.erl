@@ -122,7 +122,7 @@ next(Msg1, Msg2, Opts) ->
         false ->
             {error,
                 #{
-                    <<"status">> => <<"Service Unavailable">>,
+                    <<"status">> => 503,
                     <<"body">> => <<"No assignment found for next slot.">>
                 }
             }
@@ -187,14 +187,14 @@ post_schedule(Msg1, Msg2, Opts) ->
         {false, _, _} ->
             {ok,
                 #{
-                    <<"status">> => <<"Failed">>,
+                    <<"status">> => 500,
                     <<"body">> => <<"Scheduler location does not match wallet address.">>
                 }
             };
         {true, false, _} ->
             {ok,
                 #{
-                    <<"status">> => <<"Failed">>,
+                    <<"status">> => 400,
                     <<"body">> => <<"Data item is not valid.">>
                 }
             };
@@ -211,7 +211,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             ),
             {ok,
                 #{
-                    <<"status">> => <<"OK">>,
+                    <<"status">> => 200,
                     <<"assignment">> => <<"0">>,
                     <<"process">> => ProcID
                 }

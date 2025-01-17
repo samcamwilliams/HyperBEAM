@@ -71,23 +71,23 @@ signers(M) ->
 
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
-set(Message1, NewValuesMsg, Opts) ->
+set(Message1, NewValuesMsg, _Opts) ->
 	% Filter keys that are in the default device (this one).
+    {ok, NewValuesKeys} = keys(NewValuesMsg),
 	KeysToSet =
 		lists:filter(
 			fun(Key) ->
 				not lists:member(Key, ?DEVICE_KEYS) andalso
 					(maps:get(Key, NewValuesMsg, undefined) =/= undefined)
 			end,
-			hb_converge:keys(NewValuesMsg, Opts#{ topic => ?MODULE })
+			NewValuesKeys
 		),
 	% Find keys in the message that are already set (case-insensitive), and 
 	% note them for removal.
-	NormalizedKeysToSet = lists:map(fun hb_converge:normalize_key/1, KeysToSet),
 	ConflictingKeys =
 		lists:filter(
 			fun(Key) ->
-				lists:member(hb_converge:normalize_key(Key), NormalizedKeysToSet)
+				lists:member(Key, KeysToSet)
 			end,
 			maps:keys(Message1)
 		),
@@ -122,22 +122,9 @@ set(Message1, NewValuesMsg, Opts) ->
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ <<"item">> := Key }) ->
-    remove(Message1, #{ <<"items">> => [hb_converge:normalize_key(Key)] });
+    remove(Message1, #{ <<"items">> => [Key] });
 remove(Message1, #{ <<"items">> := Keys }) ->
-    NormalizedKeysToRemove = lists:map(fun hb_converge:normalize_key/1, Keys),
-    {
-        ok,
-        maps:filtermap(
-            fun(KeyN, Val) ->
-                NormalizedKeyN = hb_converge:normalize_key(KeyN),
-                case lists:member(NormalizedKeyN, NormalizedKeysToRemove) of
-                    true -> false;
-                    false -> {true, Val}
-                end
-            end,
-            Message1 
-        )
-    }.
+    { ok, maps:without(Keys, Message1) }.
 
 %% @doc Get the public keys of a message.
 keys(Msg) when not is_map(Msg) ->
@@ -150,14 +137,14 @@ keys(Msg) ->
         ok,
         lists:filter(
             fun(Key) -> not hb_private:is_private(Key) end,
-            lists:map(fun hb_converge:normalize_key/1, maps:keys(Msg))
+            maps:keys(Msg)
         )
     }.
 
 %% @doc Return the value associated with the key as it exists in the message's
 %% underlying Erlang map. First check the public keys, then check case-
 %% insensitively if the key is a binary.
-get(Key, Msg) -> get(Key, Msg, #{ <<"path">> => get }).
+get(Key, Msg) -> get(Key, Msg, #{ <<"path">> => <<"get">> }).
 get(Key, Msg, _Msg2) ->
     case hb_private:is_private(Key) of
         true -> {error, not_found};
@@ -186,12 +173,9 @@ get_keys_mod_test() ->
     ?assertEqual([a], maps:keys(#{a => 1})).
 
 is_private_mod_test() ->
-    ?assertEqual(true, hb_private:is_private(private)),
     ?assertEqual(true, hb_private:is_private(<<"private">>)),
     ?assertEqual(true, hb_private:is_private(<<"private.foo">>)),
-    ?assertEqual(false, hb_private:is_private(a)),
-    % Generate a long list of characters and check it does not match.
-    ?assertEqual(false, hb_private:is_private([ C || C <- lists:seq($a, $z) ])).
+    ?assertEqual(false, hb_private:is_private(<<"a">>)).
 
 %%% Device functionality tests:
 
@@ -224,36 +208,36 @@ key_from_device_test() ->
     ?assertEqual({ok, 1}, hb_converge:resolve(#{ <<"a">> => 1 }, <<"a">>, #{})).
 
 remove_test() ->
-	Msg = #{ <<"Key1">> => <<"Value1">>, <<"Key2">> => <<"Value2">> },
+	Msg = #{ <<"key1">> => <<"Value1">>, <<"key2">> => <<"Value2">> },
 	?assertMatch({ok, #{ <<"key2">> := <<"Value2">> }},
 		hb_converge:resolve(
             Msg,
-            #{ <<"path">> => remove, <<"item">> => <<"Key1">> },
+            #{ <<"path">> => <<"remove">>, <<"item">> => <<"key1">> },
             #{ hashpath => ignore }
         )
     ),
 	?assertMatch({ok, #{}},
 		hb_converge:resolve(
             Msg,
-            #{ <<"path">> => remove, <<"items">> => [<<"Key1">>, <<"Key2">>] },
+            #{ <<"path">> => <<"remove">>, <<"items">> => [<<"key1">>, <<"key2">>] },
             #{ hashpath => ignore }
         )
     ).
 
 set_conflicting_keys_test() ->
-	Msg1 = #{ <<"Dangerous">> => <<"Value1">> },
-	Msg2 = #{ <<"path">> => set, <<"dangerous">> => <<"Value2">> },
+	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
+	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => <<"Value2">> },
 	?assertMatch({ok, #{ <<"dangerous">> := <<"Value2">> }},
 		hb_converge:resolve(Msg1, Msg2, #{})).
 
 unset_with_set_test() ->
-	Msg1 = #{ <<"Dangerous">> => <<"Value1">> },
-	Msg2 = #{ <<"path">> => set, <<"dangerous">> => unset },
+	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
+	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
 	?assertMatch({ok, Msg3} when map_size(Msg3) == 0,
 		hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore })).
 
 set_ignore_undefined_test() ->
-	Msg1 = #{ <<"Test-Key">> => <<"Value1">> },
-	Msg2 = #{ <<"path">> => set, <<"Test-Key">> => undefined },
-	?assertEqual({ok, #{ <<"Test-Key">> => <<"Value1">> }},
+	Msg1 = #{ <<"test-key">> => <<"Value1">> },
+	Msg2 = #{ <<"path">> => <<"set">>, <<"test-key">> => undefined },
+	?assertEqual({ok, #{ <<"test-key">> => <<"Value1">> }},
 		set(Msg1, Msg2, #{ hashpath => ignore })).

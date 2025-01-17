@@ -15,9 +15,9 @@ info(M1) ->
 
 %% @doc Forward the keys function to the message device, handle all others
 %% with deduplication. We only act on the first pass.
-handle(keys, M1, _M2, _Opts) ->
+handle(<<"keys">>, M1, _M2, _Opts) ->
     dev_message:keys(M1);
-handle(set, M1, M2, Opts) ->
+handle(<<"set">>, M1, M2, Opts) ->
     dev_message:set(M1, M2, Opts);
 handle(Key, M1, M2, Opts) ->
     ?event({dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),

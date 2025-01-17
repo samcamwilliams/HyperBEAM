@@ -18,7 +18,7 @@
 %% itself, without affecting its outputs.
 maybe_store(Msg1, Msg2, Msg3, Opts) ->
     case derive_cache_settings([Msg3, Msg2], Opts) of
-        #{ store := true } ->
+        #{ <<"store">> := true } ->
             ?event(caching, {caching_result, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
             dispatch_cache_write(Msg1, Msg2, Msg3, Opts);
         _ -> 
@@ -42,8 +42,8 @@ maybe_lookup(Msg1, Msg2, Opts) ->
 
 lookup(Msg1, Msg2, Opts) ->
     case derive_cache_settings([Msg1, Msg2], Opts) of
-        #{ lookup := false } -> {continue, Msg1, Msg2};
-        Settings = #{ lookup := true } ->
+        #{ <<"lookup">> := false } -> {continue, Msg1, Msg2};
+        Settings = #{ <<"lookup">> := true } ->
             case hb_cache:read_output(Msg1, Msg2, Opts) of
                 {ok, Msg3} ->
                     ?event(caching,
@@ -61,10 +61,10 @@ lookup(Msg1, Msg2, Opts) ->
                 not_found ->
                     ?event(caching, {cache_miss, Msg1, Msg2}),
                     case Settings of
-                            #{ only_if_cached := true } ->
-                                only_if_cached_not_found_error(Msg1, Msg2, Opts);
-                            _ ->
-                                case ?IS_ID(Msg1) of
+                        #{ <<"only-if-cached">> := true } ->
+                            only_if_cached_not_found_error(Msg1, Msg2, Opts);
+                        _ ->
+                            case ?IS_ID(Msg1) of
                                     false -> {continue, Msg1, Msg2};
                                     true ->
                                         case hb_cache:read(Msg1, Opts) of
@@ -121,8 +121,7 @@ only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
     ),
     {error,
         #{
-            <<"status">> => <<"Gateway Timeout">>,
-            <<"status-code">> => 504,
+            <<"status">> => 504,
             <<"cache-status">> => <<"miss">>,
             <<"body">> =>
                 <<"Computed result not available in cache.">>
@@ -139,8 +138,7 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
     ),
     {error,
         #{
-            <<"status">> => <<"Not Found">>,
-            <<"status-code">> => 404,
+            <<"status">> => 404,
             <<"body">> =>
                 <<"Necessary messages not found in cache.">>
         }
@@ -152,7 +150,7 @@ exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.
     % If we have `only-if-cached` in the opts, we always force lookup, too.
-    case specifiers_to_cache_settings(maps:get(cache_control, Opts, [])) of
+    case specifiers_to_cache_settings(hb_opts:get(cache_control, [], Opts)) of
         #{ <<"only-if-cached">> := true } -> false;
         _ -> is_map(Msg1) andalso maps:is_key(Key, Msg1)
     end.
@@ -169,7 +167,7 @@ derive_cache_settings(SourceList, Opts) ->
         fun(Source, Acc) ->
             maybe_set(Acc, cache_source_to_cache_settings(Source))
         end,
-        #{ store => true, lookup => true },
+        #{ <<"store">> => true, <<"lookup">> => true },
         [{opts, Opts}|lists:filter(fun erlang:is_map/1, SourceList)]
     ).
 
@@ -196,7 +194,7 @@ maybe_set(Map1, Map2) ->
 cache_source_to_cache_settings({opts, Opts}) ->
     CCMap = specifiers_to_cache_settings(hb_opts:get(cache_control, [], Opts)),
     case hb_opts:get(hashpath, update, Opts) of
-        ignore -> CCMap#{ store => false };
+        ignore -> CCMap#{ <<"store">> => false };
         _ -> CCMap
     end;
 cache_source_to_cache_settings(Msg) ->
@@ -257,30 +255,30 @@ opts_override_message_settings_test() ->
     Msg3 = msg_with_cc([<<"no-cache">>]),
     Opts = opts_with_cc([<<"always">>]),
     Result = derive_cache_settings([Msg3, Msg2], Opts),
-    ?assertEqual(#{store => true, lookup => true}, Result).
+    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
 
 msg_precidence_overrides_test() ->
     Msg2 = msg_with_cc([<<"always">>]),
     Msg3 = msg_with_cc([<<"no-store">>]),  % No restrictions
     Result = derive_cache_settings([Msg3, Msg2], opts_with_cc([])),
-    ?assertEqual(#{store => false, lookup => true}, Result).
+    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
 
 %% Test specific directives
 no_store_directive_test() ->
     Msg = msg_with_cc([<<"no-store">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
-    ?assertEqual(#{store => false, lookup => true}, Result).
+    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
 
 no_cache_directive_test() ->
     Msg = msg_with_cc([<<"no-cache">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
-    ?assertEqual(#{store => true, lookup => false}, Result).
+    ?assertEqual(#{<<"store">> => true, <<"lookup">> => false}, Result).
 
 only_if_cached_directive_test() ->
     Msg = msg_with_cc([<<"only-if-cached">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
     ?assertEqual(
-        #{store => true, lookup => true, only_if_cached => true},
+        #{<<"store">> => true, <<"lookup">> => true, <<"only-if-cached">> => true},
         Result
     ).
 
@@ -288,25 +286,25 @@ only_if_cached_directive_test() ->
 hashpath_ignore_prevents_storage_test() ->
     Opts = (opts_with_cc([]))#{hashpath => ignore},
     Result = derive_cache_settings([], Opts),
-    ?assertEqual(#{store => false, lookup => true}, Result).
+    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
 
 %% Test multiple directives
 multiple_directives_test() ->
     Msg = msg_with_cc([<<"no-store">>, <<"no-cache">>, <<"only-if-cached">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
     ?assertEqual(
-        #{store => false, lookup => false, only_if_cached => true},
+        #{<<"store">> => false, <<"lookup">> => false, <<"only-if-cached">> => true},
         Result
     ).
 
 %% Test empty/missing cases
 empty_message_list_test() ->
     Result = derive_cache_settings([], opts_with_cc([])),
-    ?assertEqual(#{store => true, lookup => true}, Result).
+    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
 
 message_without_cache_control_test() ->
     Result = derive_cache_settings([#{}], opts_with_cc([])),
-    ?assertEqual(#{store => true, lookup => true}, Result).
+    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
 
 %% Test the cache_source_to_cache_setting function directly
 opts_source_cache_control_test() ->
@@ -315,18 +313,18 @@ opts_source_cache_control_test() ->
             {opts, opts_with_cc([<<"no-store">>])}
         ),
     ?assertEqual(#{
-        store => false,
-        lookup => undefined,
-        only_if_cached => undefined
+        <<"store">> => false,
+        <<"lookup">> => undefined,
+        <<"only-if-cached">> => undefined
     }, Result).
 
 message_source_cache_control_test() ->
     Msg = msg_with_cc([<<"no-cache">>]),
     Result = cache_source_to_cache_settings(Msg),
     ?assertEqual(#{
-        store => undefined,
-        lookup => false,
-        only_if_cached => undefined
+        <<"store">> => undefined,
+        <<"lookup">> => false,
+        <<"only-if-cached">> => undefined
     }, Result).
 
 %%% Basic cached Converge resolution tests

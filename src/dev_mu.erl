@@ -46,7 +46,7 @@ push(CarrierMsg, State) ->
             ),
             % TODO: Implement trace waiting.
             ResTX = ar_bundles:sign_item(
-                #tx{ tags = [{<<"status">>, <<"200">>}]},
+                #tx{ tags = [{<<"status-code">>, <<"200">>}]},
                 hb:wallet()),
             {ok, #{ results => ResTX }}
         %false ->
