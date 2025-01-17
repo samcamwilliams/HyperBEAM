@@ -95,6 +95,10 @@ while true; do
         echo "Using the new GCI_IMAGE: $GCI_IMAGE"
         # Re-run the build with the new GCI_IMAGE (this will go back to the start of the loop)
       fi
+	  elif echo "$OUTPUT" | grep -q "Builds finished but no artifacts were created."; then
+		echo $OUTPUT
+		exit 1
+	  break  # Exit the loop if the build is successful
     else
       echo "Packer build completed successfully."
       break  # Exit the loop if the build is successful
