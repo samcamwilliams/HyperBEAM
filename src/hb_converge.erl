@@ -92,7 +92,7 @@
 %%% 					Default: `<not set>'.
 -module(hb_converge).
 %%% Main Converge API:
--export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
+-export([resolve/2, resolve/3, resolve_many/2, load_device/2, message_to_device/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
@@ -116,18 +116,36 @@
 %%      8: Result caching.
 %%      9: Notify waiters.
 %%     10: Fork worker.
-%%     11: Recurse, fork, or terminate.
+%%     11: Recurse or terminate.
+
 
 resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
-    resolve(hb_singleton:from(SingletonMsg), Opts);
-resolve([Msg1, Msg2 | MsgList], Opts) ->
-    resolve(
-        Msg1,
-        hb_path:priv_store_remaining(Msg2, MsgList),
-        Opts
-    ).
+    resolve_many(hb_singleton:from(SingletonMsg), Opts).
+
+resolve(Msg1, Path, Opts) when not is_map(Path) ->
+    resolve(Msg1, #{ <<"path">> => Path }, Opts);
 resolve(Msg1, Msg2, Opts) ->
-    resolve_stage(1, Msg1, Msg2, Opts).
+    PathParts = hb_path:from_message(request, Msg2),
+    ?event(converge_core, {stage, 1, prepare_multimessage_resolution, {path_parts, PathParts}}),
+    MessagesToExec = [ Msg2#{ <<"path">> => Path } || Path <- PathParts ],
+    ?event(converge_core, {stage, 1, prepare_multimessage_resolution, {messages_to_exec, MessagesToExec}}),
+    resolve_many([Msg1 | MessagesToExec], Opts).
+
+%% @doc Resolve a list of messages in sequence.
+resolve_many([Msg3], _Opts) ->
+    ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
+    {ok, Msg3};
+resolve_many([Msg1, Msg2 | MsgList], Opts) ->
+    ?event(converge_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    case resolve_stage(1, Msg1, Msg2, Opts) of
+        {ok, Msg3} ->
+            ?event(converge_core, {stage, 11, resolve_many, {msg3, Msg3}, {opts, Opts}}),
+            resolve_many([Msg3 | MsgList], Opts);
+        Res ->
+            ?event(converge_core, {stage, 11, resolve_many_terminating_early, Res}),
+            Res
+    end.
+
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 1, list_normalize}, Opts),
@@ -136,33 +154,13 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
         Msg2,
         Opts
     );
-resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
-    ?event(converge_core, {stage, 1, normalize_raw_path_to_message}, Opts),
-    % If we have been given a Path rather than a full Msg2, construct the
-    % message around it and recurse.
-    resolve_stage(1, Msg1, #{ <<"path">> => hb_path:term_to_path_parts(normalize_key(Path)) }, Opts);
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
     ?event(converge_core, {stage, 1, normalize}, Opts),
     Msg1 = normalize_keys(RawMsg1),
     Msg2 = normalize_keys(RawMsg2),
-    case hb_path:priv_remaining(Msg2, Opts) of
-        undefined ->
-            % We are executing our first run with no message list to recurse
-            % on set. Parse the path, set the remaining path, and recurse.
-            [Path|Remaining] = hb_path:from_message(request, Msg2),
-            resolve_stage(
-                2,
-                Msg1,
-                hb_path:priv_store_remaining(
-                    Msg2#{ <<"path">> => Path },
-                    Remaining
-                ),
-                Opts
-            );
-        _ -> resolve_stage(2, Msg1, Msg2, Opts)
-    end;
+    resolve_stage(2, Msg1, Msg2, Opts);
 resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 2, cache_lookup}, Opts),
     % Lookup request in the cache. If we find a result, return it.
@@ -171,7 +169,8 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
     % only return a result if it is already in the cache).
     case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            resolve_stage(11, Msg1, Msg2, {ok, Msg3}, no_exec_cache_hit, Opts);
+            ?event(converge_core, {stage, 2, cache_hit, {msg3, Msg3}, {opts, Opts}}),
+            {ok, Msg3};
         {continue, NewMsg1, NewMsg2} ->
             resolve_stage(3, NewMsg1, NewMsg2, Opts);
         {error, CacheResp} -> {error, CacheResp}
@@ -229,8 +228,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
                 Res ->
                     % Now that we have the result, we can skip right to potential
                     % recursion (step 11).
-                    resolve_stage(11, Msg1, Msg2, Res, Leader,
-                        Opts#{ spawn_worker => false })
+                    {ok, Res}
             end;
         {infinite_recursion, GroupName} ->
             % We are the leader for this resolution, but we executing the 
@@ -442,41 +440,16 @@ resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
     % Check if we should spawn a worker for the current execution
     case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
         {A, B} when (A == false) or (B == false) ->
-            resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false });
+            Res;
         {_, _} ->
             % Spawn a worker for the current execution
             WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
             hb_persistent:forward_work(WorkerPID, Opts),
-            resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false })
+            Res
     end;
-resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
+resolve_stage(10, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
-    resolve_stage(11, Msg1, Msg2, OtherRes, ExecName, Opts);
-resolve_stage(11, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
-    % Recurse, or terminate.
-	case hb_path:priv_remaining(Msg2, Opts) of
-		[] ->
-            % Terminate: We have reached the end of the path.
-			{ok, Msg3};
-		RemainingPath ->
-			% There are more elements in the path, so we recurse.
-			?event(
-                converge_core,
-                {resolution_recursing,
-                    {remaining_path, RemainingPath}
-                }
-            ),
-            case RemainingPath of
-                [LastMsg] -> resolve(Msg3, LastMsg, Opts);
-                _ -> resolve([Msg3|RemainingPath], Opts)
-            end
-	end;
-resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
-    ?event(
-        converge_core,
-        {stage, 11, ExecName, abnormal_status_skip_recursing}, Opts),
-    {Status, Msg3}.
+    OtherRes.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
@@ -927,7 +900,7 @@ normalize_keys(Map) when is_map(Map) ->
     maps:from_list(
         lists:map(
             fun({Key, Value}) when is_map(Value) ->
-                {hb_converge:normalize_key(Key), normalize_keys(Value)};
+                {hb_converge:normalize_key(Key), Value};
             ({Key, Value}) ->
                 {hb_converge:normalize_key(Key), Value}
             end,

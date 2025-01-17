@@ -9,8 +9,8 @@
 %% @doc Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test`
 %% Comment/uncomment out as necessary.
-% run_test() ->
-%     run_single(normal, no_cache).
+run_test() ->
+    run_single(normal, deep_recursive_get).
 
 %% @doc Run a single test with a given set of opts.
 run_single(OptsName, TestName) ->
@@ -64,6 +64,8 @@ test_suite() ->
             fun basic_get_test/1},
         {recursive_get, "recursive get",
             fun recursive_get_test/1},
+        {deep_recursive_get, "deep recursive get",
+            fun deep_recursive_get_test/1},
         {basic_set, "basic set",
             fun basic_set_test/1},
         {get_with_device, "get with device",
@@ -339,7 +341,18 @@ basic_get_test(Opts) ->
     ?assertEqual(<<"value2">>, hb_converge:get([<<"key2">>], Msg, Opts)).
 
 recursive_get_test(Opts) ->
-    Msg = #{ key1 => <<"value1">>, key2 => #{ key3 => <<"value3">> } },
+    Msg = #{
+        key1 => <<"value1">>,
+        key2 => #{
+            key3 => <<"value3">>,
+            key4 => #{
+                key5 => <<"value5">>,
+                key6 => #{
+                    key7 => <<"value7">>
+                }
+            }
+        }
+    },
     ?assertEqual(
         {ok, <<"value1">>},
         hb_converge:resolve(Msg, #{ path => key1 }, Opts)
@@ -351,6 +364,21 @@ recursive_get_test(Opts) ->
     ),
     ?assertEqual(<<"value3">>, hb_converge:get([<<"key2">>, <<"key3">>], Msg, Opts)),
     ?assertEqual(<<"value3">>, hb_converge:get(<<"key2/key3">>, Msg, Opts)).
+
+deep_recursive_get_test(Opts) ->
+    Msg = #{
+        key1 => <<"value1">>,
+        key2 => #{
+            key3 => <<"value3">>,
+            key4 => #{
+                key5 => <<"value5">>,
+                key6 => #{
+                    key7 => <<"value7">>
+                }
+            }
+        }
+    },
+    ?assertEqual(<<"value7">>, hb_converge:get(<<"key2/key4/key6/key7">>, Msg, Opts)).
 
 basic_set_test(Opts) ->
     Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },

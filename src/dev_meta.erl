@@ -56,7 +56,7 @@ handle_converge(Request, NodeMsg) ->
             % Resolve the request message.
             {ok, Res} =
                 embed_status(
-                    hb_converge:resolve(
+                    hb_converge:resolve_many(
                         PreProcMsg,
                         NodeMsg#{ force_message => true }
                     )
