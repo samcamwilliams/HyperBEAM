@@ -43,11 +43,9 @@ id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 id(Data, Type) when is_list(Data) ->
     id(list_to_binary(Data), Type).
 
-%% @doc Convert a string to a lowercase.
-to_lower(Str) when is_list(Str) ->
-    string:to_lower(Str);
-to_lower(Bin) when is_binary(Bin) ->
-    list_to_binary(to_lower(binary_to_list(Bin))).
+%% @doc Convert a binary to a lowercase.
+to_lower(Str) ->
+    string:lowercase(Str).
 
 %% @doc Convert a human readable ID to a native binary ID. If the ID is already
 %% a native binary ID, it is returned as is.
