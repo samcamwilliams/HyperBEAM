@@ -87,4 +87,4 @@ resolve_processor(Processor, Request, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({Status, Res}) ->
-    {ok, Res#{ <<"Status-Code">> => hb_http:status_code(Status) }}.
+    {ok, Res#{ <<"status-code">> => hb_http:status_code(Status) }}.

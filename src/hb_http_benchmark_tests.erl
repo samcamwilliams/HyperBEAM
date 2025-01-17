@@ -15,8 +15,8 @@ unsigned_resolve_benchmark_test() ->
         fun() ->
             hb_http:post(URL,
                 #{
-                    path => <<"Key1">>,
-                    <<"Key1">> => #{<<"Key2">> => <<"Value1">>}
+                    <<"path">> => <<"key1">>,
+                    <<"key1">> => #{<<"key2">> => <<"value1">>}
                 },
                 #{}
             )
@@ -38,8 +38,8 @@ parallel_unsigned_resolve_benchmark_test() ->
             hb_http:post(
                 URL,
                 #{
-                    path => <<"Key1">>,
-                    <<"Key1">> => #{<<"Key2">> => <<"Value1">>}
+                    <<"path">> => <<"key1">>,
+                    <<"key1">> => #{<<"key2">> => <<"value1">>}
                 },
                 #{}
             )
@@ -56,11 +56,11 @@ parallel_unsigned_resolve_benchmark_test() ->
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
-        path => <<"Init/Compute/Results">>,
-        device => <<"WASM-64/1.0">>,
-        <<"WASM-Function">> => Func,
-        <<"WASM-Params">> => Params,
-        <<"Image">> => Bin
+        <<"path">> => <<"init/compute/results">>,
+        <<"device">> => <<"wasm-64/1.0">>,
+        <<"wasm-function">> => Func,
+        <<"wasm-params">> => Params,
+        <<"image">> => Bin
     }.
 
 run_wasm_unsigned_benchmark_test() ->
@@ -159,13 +159,13 @@ parallel_wasm_signed_benchmark_test_disabled() ->
 %     Iterations = hb:benchmark(
 %         fun(X) ->
 %             MsgX = #{
-%                 device => <<"Scheduler/1.0">>,
-%                 path => <<"Schedule">>,
-%                 <<"Method">> => <<"POST">>,
-%                 <<"Message">> =>
+%                 <<"device">> => <<"Scheduler/1.0">>,
+%                 <<"path">> => <<"schedule">>,
+%                 <<"method">> => <<"POST">>,
+%                 <<"message">> =>
 %                     #{
-%                         <<"Type">> => <<"Message">>,
-%                         <<"Test-Val">> => X
+%                         <<"type">> => <<"message">>,
+%                         <<"test-val">> => X
 %                     }
 %             },
 %             Res = hb_http:post(URL, MsgX),
@@ -180,9 +180,9 @@ parallel_wasm_signed_benchmark_test_disabled() ->
 %     ),
 %     ?event(benchmark, {scheduled, Iterations}),
 %     Msg3 = #{
-%         path => <<"Slot">>,
-%         <<"Method">> => <<"GET">>,
-%         <<"Process">> => ProcID
+%         <<"path">> => <<"slot">>,
+%         <<"method">> => <<"GET">>,
+%         <<"process">> => ProcID
 %     },
 %     Res = hb_http:post(URL, Msg3),
 %     ?event(debug, {slot_result, Res}),

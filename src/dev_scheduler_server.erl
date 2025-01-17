@@ -54,7 +54,7 @@ slot_from_cache(ProcID, Opts) ->
             {
                 AssignmentNum,
                 hb_converge:get(
-                    <<"Hash-Chain">>, Assignment, #{ hashpath => ignore })
+                    <<"hash-chain">>, Assignment, #{ hashpath => ignore })
             }
     end.
 
@@ -113,18 +113,18 @@ do_assign(State, Message, ReplyPID) ->
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = hb_message:sign(#{
-                <<"Data-Protocol">> => <<"ao">>,
-                <<"Variant">> => <<"ao.TN.2">>,
-                <<"Process">> => hb_util:id(maps:get(id, State)),
-                <<"Epoch">> => <<"0">>,
-                <<"Slot">> => NextSlot,
-                <<"Message">> => hb_converge:get(id, Message),
-                <<"Block-Height">> => Height,
-                <<"Block-Hash">> => Hash,
-                <<"Block-Timestamp">> => Timestamp,
+                <<"data-protocol">> => <<"ao">>,
+                <<"variant">> => <<"ao.TN.2">>,
+                <<"process">> => hb_util:id(maps:get(id, State)),
+                <<"epoch">> => <<"0">>,
+                <<"slot">> => NextSlot,
+                <<"message">> => hb_converge:get(id, Message),
+                <<"block-height">> => Height,
+                <<"block-hash">> => Hash,
+                <<"block-timestamp">> => Timestamp,
                 % Note: Local time on the SU, not Arweave
-                <<"Timestamp">> => erlang:system_time(millisecond),
-                <<"Hash-Chain">> => hb_util:id(HashChain)
+                <<"timestamp">> => erlang:system_time(millisecond),
+                <<"hash-chain">> => hb_util:id(HashChain)
             }, maps:get(wallet, State)),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ?event(starting_message_write),
@@ -175,7 +175,7 @@ next_hashchain(HashChain, Message) ->
 new_proc_test() ->
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
-        #{ <<"data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),
     SignedItem2 = hb_message:sign(
@@ -185,7 +185,7 @@ new_proc_test() ->
     SignedItem3 = hb_message:sign(
         #{
             <<"data">> => <<"test2">>,
-            <<"Deep-Key">> =>
+            <<"deep-key">> =>
                 #{ <<"data">> => <<"test3">> }
         },
         Wallet
@@ -203,7 +203,7 @@ benchmark_test() ->
     BenchTime = 1,
     Wallet = ar_wallet:new(),
     SignedItem = hb_message:sign(
-        #{ <<"data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+        #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),
     dev_scheduler_registry:find(ID = hb_converge:get(id, SignedItem), true),
@@ -212,11 +212,11 @@ benchmark_test() ->
         fun(X) ->
             MsgX = #{
                 path => <<"Schedule">>,
-                <<"Method">> => <<"POST">>,
-                <<"Message">> =>
+                <<"method">> => <<"POST">>,
+                <<"message">> =>
                     #{
-                        <<"Type">> => <<"Message">>,
-                        <<"Test-Val">> => X
+                        <<"type">> => <<"Message">>,
+                        <<"test-val">> => X
                     }
             },
             schedule(ID, MsgX)

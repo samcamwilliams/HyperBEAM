@@ -200,8 +200,8 @@ raw_http_access_test() ->
         ar_bundles:serialize(
             hb_message:convert(
                 #{
-                    path => <<"Key1">>,
-                    <<"Key1">> => #{ <<"Key2">> => <<"Value1">> }
+                    <<"path">> => <<"key1">>,
+                    <<"key1">> => #{ <<"key2">> => <<"value1">> }
                 },
                 tx,
                 converge,
@@ -216,4 +216,4 @@ raw_http_access_test() ->
             [{body_format, binary}]
         ),
     Msg = hb_message:convert(ar_bundles:deserialize(Body), converge, tx, #{}),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"Key2">>, Msg, #{})).
+    ?assertEqual(<<"value1">>, hb_converge:get(<<"key2">>, Msg, #{})).

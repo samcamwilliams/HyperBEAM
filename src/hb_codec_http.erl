@@ -5,9 +5,9 @@
 %%% The HTTP Message is an Erlang Map with the following shape:
 %%% #{ 
 %%%     headers => [
-%%%         {<<"Example-Header">>, <<"Value">>}
+%%%         {<<"example-header">>, <<"value">>}
 %%%     ],
-%%%     body: <<"Some body">>
+%%%     body: <<"some body">>
 %%% }
 %%% 
 %%% Every HTTP message is an HTTP multipart message.

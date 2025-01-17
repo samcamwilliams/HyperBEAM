@@ -37,7 +37,7 @@ get(Node, Path, Opts) ->
 post(Node, Message, Opts) ->
     post(Node,
         hb_converge:get(
-            <<"Path">>,
+            <<"path">>,
             Message,
             <<"/">>,
             Opts#{ topic => converge_internal }
@@ -133,7 +133,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
         http -> maps:merge(ReqBase, hb_message:convert(Message, http, Opts));
         ans104 ->
             ReqBase#{
-                headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
+                headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
                 body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
             }
     end.
@@ -150,10 +150,10 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message, Opts) ->
-    Nodes = hb_converge:get(<<"Peers">>, Config, #{}, Opts),
-    Responses = hb_converge:get(<<"Responses">>, Config, 1, Opts),
-    StopAfter = hb_converge:get(<<"Stop-After">>, Config, true, Opts),
-    case hb_converge:get(<<"Parallel">>, Config, false, Opts) of
+    Nodes = hb_converge:get(<<"peers">>, Config, #{}, Opts),
+    Responses = hb_converge:get(<<"responses">>, Config, 1, Opts),
+    StopAfter = hb_converge:get(<<"stop-after">>, Config, true, Opts),
+    case hb_converge:get(<<"parallel">>, Config, false, Opts) of
         false ->
             serial_multirequest(
                 Nodes, Responses, Method, Path, Message, Opts);
@@ -273,7 +273,7 @@ reply(Req, Status, RawMessage) ->
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(Item) ->
-    case dev_message:get(<<"Status">>, Item) of
+    case dev_message:get(<<"status">>, Item) of
         {ok, RawStatus} ->
             case is_integer(RawStatus) of
                 true -> RawStatus;
@@ -318,8 +318,8 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
         },
     HTTPEncoded =
         #{
-            headers => maps:to_list(Headers),
-            body => Body
+            <<"headers">> => maps:to_list(Headers),
+            <<"body">> => Body
         },
     hb_codec_http:from(HTTPEncoded).
 
@@ -338,7 +338,7 @@ simple_converge_resolve_test() ->
     {ok, Res} =
         post(
             URL,
-            #{ path => <<"/key1">>, <<"key1">> => <<"Value1">> },
+            #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
             #{}
         ),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
@@ -349,7 +349,7 @@ nested_converge_resolve_test() ->
         post(
             URL,
             #{
-                path => <<"/key1/key2/key3">>,
+                <<"path">> => <<"/key1/key2/key3">>,
                 <<"key1">> =>
                     #{<<"key2">> =>
                         #{
@@ -364,10 +364,10 @@ nested_converge_resolve_test() ->
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
-        path => <<"/Init/Compute/Results">>,
-        <<"Device">> => <<"WASM-64/1.0">>,
-        <<"WASM-Function">> => Func,
-        <<"WASM-Params">> => Params,
+        <<"path">> => <<"/init/compute/results">>,
+        <<"device">> => <<"WASM-64/1.0">>,
+        <<"wasm-function">> => Func,
+        <<"wasm-params">> => Params,
         <<"body">> => Bin
     }.
 
@@ -375,13 +375,13 @@ run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     {ok, Res} = post(Node, Msg, #{}),
-    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+    ?assertEqual(ok, hb_converge:get(<<"type">>, Res, #{})).
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+    ?assertEqual(ok, hb_converge:get(<<"type">>, Res, #{})).
 
 % http_scheduling_test() ->
 %     % We need the rocksdb backend to run for hb_cache module to work
@@ -398,29 +398,29 @@ run_wasm_signed_test() ->
 %         hb_converge:resolve(
 %             Msg1,
 %             #{
-%                 path => <<"Append">>,
-%                 <<"Method">> => <<"POST">>,
-%                 <<"Message">> => Proc
+%                 <<"path">> => <<"append">>,
+%                 <<"method">> => <<"POST">>,
+%                 <<"message">> => Proc
 %             },
 %             #{}
 %         ),
 %     MsgX = #{
-%         device => <<"Scheduler/1.0">>,
-%         path => <<"Append">>,
-%         <<"Process">> => Proc,
-%         <<"Message">> =>
+%         <<"device">> => <<"Scheduler/1.0">>,
+%         <<"path">> => <<"append">>,
+%         <<"process">> => Proc,
+%         <<"message">> =>
 %             #{
-%                 <<"Target">> => ProcID,
-%                 <<"Type">> => <<"Message">>,
-%                 <<"Test-Val">> => 1
+%                 <<"target">> => ProcID,
+%                 <<"type">> => <<"message">>,
+%                 <<"test-val">> => 1
 %             }
 %     },
 %     Res = post(URL, MsgX),
 %     ?event(debug, {post_result, Res}),
 %     Msg3 = #{
-%         path => <<"Slot">>,
-%         <<"Method">> => <<"GET">>,
-%         <<"Process">> => ProcID
+%         <<"path">> => <<"slot">>,
+%         <<"method">> => <<"GET">>,
+%         <<"process">> => ProcID
 %     },
 %     SlotRes = post(URL, Msg3),
 %     ?event(debug, {slot_result, SlotRes}).

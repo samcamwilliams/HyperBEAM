@@ -48,7 +48,7 @@ info(_Msg1, _Opts) ->
         exclude => [instance]
     }.
 
-%% @doc Boot a WASM image on the image stated in the `Process/Image' field of
+%% @doc Boot a WASM image on the image stated in the `process/image' field of
 %% the message.
 init(M1, M2, Opts) ->
     ?event(running_init),
@@ -58,7 +58,7 @@ init(M1, M2, Opts) ->
     Prefix = dev_stack:prefix(M1, M2, Opts),
     ?event({in_prefix, InPrefix}),
     ImageBin =
-        case hb_converge:get(<<InPrefix/binary, "/Image">>, M1, Opts) of
+        case hb_converge:get(<<InPrefix/binary, "/image">>, M1, Opts) of
             not_found ->
                 case hb_converge:get(<<"body">>, M1, Opts) of
                     not_found ->
@@ -68,7 +68,7 @@ init(M1, M2, Opts) ->
                                 <<
                                     "No viable image found in ",
                                     InPrefix/binary,
-                                    "/Image."
+                                    "/image."
                                 >>,
                                 {msg1, M1}
                             }
@@ -78,10 +78,10 @@ init(M1, M2, Opts) ->
             ImageID when ?IS_ID(ImageID) ->
                 ?event({getting_wasm_image, ImageID}),
                 {ok, ImageMsg} = hb_cache:read(ImageID, Opts),
-                hb_converge:get(<<"Body">>, ImageMsg, Opts);
+                hb_converge:get(<<"body">>, ImageMsg, Opts);
             ImageMsg when is_map(ImageMsg) ->
                 ?event(wasm_image_message_directly_provided),
-                hb_converge:get(<<"Body">>, ImageMsg, Opts);
+                hb_converge:get(<<"body">>, ImageMsg, Opts);
             Image when is_binary(Image) ->
                 ?event(wasm_image_binary_directly_provided),
                 Image
@@ -151,15 +151,15 @@ compute(RawM1, M2, Opts) ->
             % Extract the WASM Instance, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             WASMFunction =
-                case hb_converge:get(<<"Message/WASM-Function">>, M2, Opts) of
+                case hb_converge:get(<<"message/wasm-function">>, M2, Opts) of
                     not_found ->
-                        hb_converge:get(<<"WASM-Function">>, M1, Opts);
+                        hb_converge:get(<<"wasm-function">>, M1, Opts);
                     Func -> Func
                 end,
             WASMParams =
-                case hb_converge:get(<<"Message/WASM-Params">>, M2, Opts) of
+                case hb_converge:get(<<"message/wasm-params">>, M2, Opts) of
                     not_found ->
-                        hb_converge:get(<<"WASM-Params">>, M1, Opts);
+                        hb_converge:get(<<"wasm-params">>, M1, Opts);
                     Params -> Params
                 end,
             ?event(
@@ -199,7 +199,7 @@ normalize(RawM1, M2, Opts) ->
         case instance(RawM1, M2, Opts) of
             not_found ->
                 DeviceKey =
-                    case hb_converge:get(<<"Device-Key">>, RawM1, Opts) of
+                    case hb_converge:get(<<"device-key">>, RawM1, Opts) of
                         not_found -> [];
                         Key -> [Key]
                     end,
@@ -210,7 +210,7 @@ normalize(RawM1, M2, Opts) ->
                 ),
                 Memory = 
                     hb_converge:get(
-                        [<<"Snapshot">>] ++ DeviceKey ++ [<<"body">>],
+                        [<<"snapshot">>] ++ DeviceKey ++ [<<"body">>],
                         {as, dev_message, RawM1},
                         Opts
                     ),
@@ -226,7 +226,7 @@ normalize(RawM1, M2, Opts) ->
                 ?event(wasm_instance_found_not_deserializing),
                 RawM1
         end,
-    dev_message:set(M3, #{ <<"Snapshot">> => unset }, Opts).
+    dev_message:set(M3, #{ <<"snapshot">> => unset }, Opts).
 
 %% @doc Serialize the WASM state to a binary.
 snapshot(M1, M2, Opts) ->
@@ -235,7 +235,7 @@ snapshot(M1, M2, Opts) ->
     {ok, Serialized} = hb_beamr:serialize(Instance),
     {ok,
         #{
-            body => Serialized
+            <<"body">> => Serialized
         }
     }.
 
@@ -269,8 +269,8 @@ instance(M1, M2, Opts) ->
 %% 5. If it fails with `not_found', call the stub handler.
 import(Msg1, Msg2, Opts) ->
     % 1. Adjust the path to the stdlib.
-    ModName = hb_converge:get(<<"Module">>, Msg2, Opts),
-    FuncName = hb_converge:get(<<"Func">>, Msg2, Opts),
+    ModName = hb_converge:get(<<"module">>, Msg2, Opts),
+    FuncName = hb_converge:get(<<"func">>, Msg2, Opts),
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
     AdjustedPath =
         <<
@@ -313,7 +313,7 @@ undefined_import_stub(Msg1, Msg2, Opts) ->
     ?event({unimplemented_dev_wasm_call, {msg1, Msg1}, {msg2, Msg2}}),
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
     UndefinedCallsPath =
-        <<"State/Results/", Prefix/binary, "/Undefined-Calls">>,
+        <<"state/results/", Prefix/binary, "/undefined-calls">>,
     Msg3 = hb_converge:set(
         Msg1,
         #{
@@ -343,20 +343,20 @@ input_prefix_test() ->
     #{ image := ImageID } = cache_wasm_image("test/test.wasm"),
     Msg1 =
         #{
-            <<"Device">> => <<"WASM-64/1.0">>,
-            <<"Input-Prefix">> => <<"Test-In">>,
-            <<"Test-In">> => #{ <<"Image">> => ImageID }
+            <<"device">> => <<"WASM-64/1.0">>,
+            <<"input-prefix">> => <<"test-in">>,
+            <<"test-in">> => #{ <<"image">> => ImageID }
         },
-    {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
+    {ok, Msg2} = hb_converge:resolve(Msg1, <<"init">>, #{}),
     ?event({after_init, Msg2}),
     Priv = hb_private:from_message(Msg2),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
-        hb_converge:resolve(Priv, <<"Instance">>, #{})
+        hb_converge:resolve(Priv, <<"instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"Import-Resolver">>, #{})
+        hb_converge:resolve(Priv, <<"import-resolver">>, #{})
     ).
 
 %% @doc Test that realistic prefixing for a `dev_process` works --
@@ -366,12 +366,12 @@ process_prefixes_test() ->
     init(),
     Msg1 =
         #{
-            <<"Device">> => <<"WASM-64/1.0">>,
-            <<"Output-Prefix">> => <<"wasm">>,
-            <<"Input-Prefix">> => <<"Process">>,
-            <<"Process">> => cache_wasm_image("test/test.wasm")
+            <<"device">> => <<"WASM-64/1.0">>,
+            <<"output-prefix">> => <<"wasm">>,
+            <<"input-prefix">> => <<"process">>,
+            <<"process">> => cache_wasm_image("test/test.wasm")
         },
-    {ok, Msg3} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg1, <<"init">>, #{}),
     ?event({after_init, Msg3}),
     Priv = hb_private:from_message(Msg3),
     ?assertMatch(
@@ -387,16 +387,16 @@ process_prefixes_test() ->
 init_test() ->
     init(),
     Msg = cache_wasm_image("test/test.wasm"),
-    {ok, Msg1} = hb_converge:resolve(Msg, <<"Init">>, #{}),
+    {ok, Msg1} = hb_converge:resolve(Msg, <<"init">>, #{}),
     ?event({after_init, Msg1}),
     Priv = hb_private:from_message(Msg1),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
-        hb_converge:resolve(Priv, <<"Instance">>, #{})
+        hb_converge:resolve(Priv, <<"instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"Import-Resolver">>, #{})
+        hb_converge:resolve(Priv, <<"import-resolver">>, #{})
     ).
 
 basic_execution_test() ->
@@ -434,14 +434,14 @@ benchmark_test() ->
     BenchTime = 0.5,
     init(),
     Msg0 = cache_wasm_image("test/test-64.wasm"),
-    {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
     Msg2 =
         maps:merge(
             Msg1,
             hb_converge:set(
                 #{
-                    <<"WASM-Function">> => <<"fac">>,
-                    <<"WASM-Params">> => [5.0]
+                    <<"wasm-function">> => <<"fac">>,
+                    <<"wasm-params">> => [5.0]
                 },
                 #{ hashpath => ignore }
             )
@@ -449,7 +449,7 @@ benchmark_test() ->
     Iterations =
         hb:benchmark(
             fun() ->
-                hb_converge:resolve(Msg2, <<"Compute">>, #{})
+                hb_converge:resolve(Msg2, <<"compute">>, #{})
             end,
             BenchTime
         ),
@@ -467,13 +467,13 @@ benchmark_test() ->
 %     % Generate a WASM message. We use the pow_calculator because it has a 
 %     % reasonable amount of memory to work with.
 %     Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
-%     {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+%     {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
 %     Msg2 =
 %         maps:merge(
 %             Msg1,
 %             Extras = #{
-%                 <<"WASM-Function">> => <<"pow">>,
-%                 <<"WASM-Params">> => [2, 2],
+%                 <<"wasm-function">> => <<"pow">>,
+%                 <<"wasm-params">> => [2, 2],
 %                 <<"stdlib">> =>
 %                     #{
 %                         <<"my_lib">> =>
@@ -483,7 +483,7 @@ benchmark_test() ->
 %         ),
 %     ?event({after_setup, Msg2}),
 %     % Compute a computation and export the state.
-%     {ok, Msg3a} = hb_converge:resolve(Msg2, <<"Compute">>, #{}),
+%     {ok, Msg3a} = hb_converge:resolve(Msg2, <<"compute">>, #{}),
 %     ?assertEqual([4], hb_converge:get(<<"Results/Output">>, Msg3a, #{})),
 %     {ok, State} = hb_converge:resolve(Msg3a, <<"Snapshot">>, #{}),
 %     ?event({state_res, State}),
@@ -491,14 +491,14 @@ benchmark_test() ->
 %     NewMsg1 = maps:merge(Msg0, Extras#{ <<"Snapshot">> => State }),
 %     ?assertEqual(
 %         {ok, [4]},
-%         hb_converge:resolve(NewMsg1, <<"Compute/Results/Output">>, #{})
+%         hb_converge:resolve(NewMsg1, <<"compute/results/output">>, #{})
 %     ).
 
 %%% Test helpers
 
 cache_wasm_image(Image) ->
     {ok, Bin} = file:read_file(Image),
-    Msg = #{ <<"Body">> => Bin },
+    Msg = #{ <<"body">> => Bin },
     {ok, ID} = hb_cache:write(Msg, #{}),
     #{
         device => <<"WASM-64/1.0">>,
@@ -508,21 +508,21 @@ cache_wasm_image(Image) ->
 test_run_wasm(File, Func, Params, AdditionalMsg) ->
     init(),
     Msg0 = cache_wasm_image(File),
-    {ok, Msg1} = hb_converge:resolve(Msg0, <<"Init">>, #{}),
+    {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
     ?event({after_init, Msg1}),
     Msg2 =
         maps:merge(
             Msg1,
             hb_converge:set(
                 #{
-                    <<"WASM-Function">> => Func,
-                    <<"WASM-Params">> => Params
+                    <<"wasm-function">> => Func,
+                    <<"wasm-params">> => Params
                 },
                 AdditionalMsg,
                 #{ hashpath => ignore }
             )
         ),
     ?event({after_setup, Msg2}),
-    {ok, StateRes} = hb_converge:resolve(Msg2, <<"Compute">>, #{}),
+    {ok, StateRes} = hb_converge:resolve(Msg2, <<"compute">>, #{}),
     ?event({after_resolve, StateRes}),
     hb_converge:resolve(StateRes, <<"results/output">>, #{}).

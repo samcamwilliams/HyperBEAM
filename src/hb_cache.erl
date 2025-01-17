@@ -72,7 +72,7 @@ write_message(Bin, Store, Opts) when is_binary(Bin) ->
     % we store the data items at just their sha256 hash, we get a hash
     % collision between the signed ID of a message, and its signature data.
     Hashpath = hb_path:hashpath(Bin, Opts),
-    ok = hb_store:write(Store, Path = <<"Messages/", Hashpath/binary>>, Bin),
+    ok = hb_store:write(Store, Path = <<"messages/", Hashpath/binary>>, Bin),
     {ok, Path};
 write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Precalculate the hashpath of the message.
@@ -282,7 +282,7 @@ link(Existing, New, Opts) ->
 
 test_unsigned(Data) ->
     #{
-        <<"Base-Test-Key">> => <<"Base-Test-Value">>,
+        <<"base-test-key">> => <<"base-test-value">>,
         <<"data">> => Data
     }.
 
@@ -308,7 +308,7 @@ test_store_simple_unsigned_item(Opts) ->
 
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_signed_item(Opts) ->
-    Item = test_signed(#{ <<"L2-Test-Key">> => <<"L2-Test-Value">> }),
+    Item = test_signed(#{ <<"l2-test-key">> => <<"l2-test-value">> }),
     %% Write the simple unsigned item
     {ok, _Path} = write(Item, Opts),
     %% Read the item back
@@ -325,22 +325,22 @@ test_deeply_nested_complex_item(Opts) ->
     DeepValueMsg = test_signed([1,2,3]),
     Outer =
         #{
-            <<"Level1">> =>
+            <<"level1">> =>
                 hb_message:sign(
                     #{
-                        <<"Level2">> =>
+                        <<"level2">> =>
                             #{
-                                <<"Level3">> => DeepValueMsg,
-                                <<"E">> => <<"F">>,
-                                <<"Z">> => [1,2,3]
+                                <<"level3">> => DeepValueMsg,
+                                <<"e">> => <<"f">>,
+                                <<"z">> => [1,2,3]
                             },
-                        <<"C">> => <<"D">>,
-                        <<"G">> => [<<"H">>, <<"I">>],
-                        <<"J">> => 1337
+                        <<"c">> => <<"d">>,
+                        <<"g">> => [<<"h">>, <<"i">>],
+                        <<"j">> => 1337
                     },
                     ar_wallet:new()
                 ),
-            <<"A">> => <<"B">>
+            <<"a">> => <<"b">>
         },
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
@@ -349,9 +349,9 @@ test_deeply_nested_complex_item(Opts) ->
         read(
             [
                 OuterID = hb_util:human_id(hb_converge:get(unsigned_id, Outer)),
-                <<"Level1">>,
-                <<"Level2">>,
-                <<"Level3">>
+                <<"level1">>,
+                <<"level2">>,
+                <<"level3">>
             ],
             Opts
         ),

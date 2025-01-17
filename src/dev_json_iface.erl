@@ -41,11 +41,11 @@
 
 %% @doc Initialize the device.
 init(M1, _M2, _Opts) ->
-    {ok, hb_converge:set(M1, #{<<"WASM-Function">> => <<"handle">>})}.
+    {ok, hb_converge:set(M1, #{<<"wasm-function">> => <<"handle">>})}.
 
 %% @doc On first pass prepare the call, on second pass get the results.
 compute(M1, M2, Opts) ->
-    case hb_converge:get(<<"Pass">>, M1, Opts) of
+    case hb_converge:get(<<"pass">>, M1, Opts) of
         1 -> prep_call(M1, M2, Opts);
         2 -> results(M1, M2, Opts);
         _ -> {ok, M1}
@@ -55,11 +55,11 @@ compute(M1, M2, Opts) ->
 %% the message as JSON representations into the WASM environment.
 prep_call(M1, M2, Opts) ->
     Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
-    Process = hb_converge:get(<<"Process">>, M1, Opts#{ hashpath => ignore }),
-    Assignment = hb_converge:get(<<"Assignment">>, M2, Opts#{ hashpath => ignore }),
-    Message = hb_converge:get(<<"Message">>, M2, Opts#{ hashpath => ignore }),
-    Image = hb_converge:get(<<"Process/WASM-Image">>, M1, Opts),
-    BlockHeight = hb_converge:get(<<"Block-Height">>, Assignment, Opts),
+    Process = hb_converge:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
+    Assignment = hb_converge:get(<<"assignment">>, M2, Opts#{ hashpath => ignore }),
+    Message = hb_converge:get(<<"message">>, M2, Opts#{ hashpath => ignore }),
+    Image = hb_converge:get(<<"process/wasm-image">>, M1, Opts),
+    BlockHeight = hb_converge:get(<<"block-height">>, Assignment, Opts),
     RawMsgJson =
         ar_bundles:item_to_json_struct(
             hb_message:convert(Message, tx, converge, #{})
@@ -90,8 +90,8 @@ prep_call(M1, M2, Opts) ->
         hb_converge:set(
             M1,
             #{
-                <<"WASM-Function">> => <<"handle">>,
-                <<"WASM-Params">> => [MsgJsonPtr, ProcessJsonPtr]
+                <<"wasm-function">> => <<"handle">>,
+                <<"wasm-params">> => [MsgJsonPtr, ProcessJsonPtr]
             },
             Opts
         )
@@ -101,26 +101,26 @@ prep_call(M1, M2, Opts) ->
 %% the environment has been set up by `prep_call/3' and that the WASM executor
 %% has been called with `computed{pass=1}'.
 results(M1, _M2, Opts) ->
-    Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
-    Type = hb_converge:get(<<"Results/WASM/Type">>, M1, Opts),
-    Proc = hb_converge:get(<<"Process">>, M1, Opts),
+    Instance = hb_private:get(<<"priv/wasm/instance">>, M1, Opts),
+    Type = hb_converge:get(<<"results/wasm/type">>, M1, Opts),
+    Proc = hb_converge:get(<<"process">>, M1, Opts),
     case hb_converge:normalize_key(Type) of
         error ->
             {error,
                 hb_converge:set(
                     M1,
                     #{
-                        <<"Outbox">> => undefined,
-                        <<"Results">> => 
+                        <<"outbox">> => undefined,
+                        <<"results">> => 
                             #{
-                                <<"Body">> => <<"WASM execution error.">>
+                                <<"body">> => <<"WASM execution error.">>
                             }
                     },
                     Opts
                 )
             };
         ok ->
-            [Ptr] = hb_converge:get(<<"Results/WASM/Output">>, M1, Opts),
+            [Ptr] = hb_converge:get(<<"results/wasm/output">>, M1, Opts),
             {ok, Str} = hb_beamr_io:read_string(Instance, Ptr),
             try jiffy:decode(Str, [return_maps]) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
@@ -129,7 +129,7 @@ results(M1, _M2, Opts) ->
                         hb_converge:set(
                             M1,
                             #{
-                                <<"Results/Outbox">> =>
+                                <<"results/outbox">> =>
                                     maps:from_list([
                                         {MessageNum, preprocess_results(Msg, Proc, Opts)}
                                     ||
@@ -139,7 +139,7 @@ results(M1, _M2, Opts) ->
                                                 Messages
                                             )
                                     ]),
-                                <<"Results/data">> => Data
+                                <<"results/data">> => Data
                             },
                             Opts
                         ),
@@ -150,8 +150,8 @@ results(M1, _M2, Opts) ->
                         hb_converge:set(
                             M1,
                             #{
-                                <<"Results/Outbox">> => undefined,
-                                <<"Results/Body">> =>
+                                <<"results/outbox">> => undefined,
+                                <<"results/body">> =>
                                     <<"JSON error parsing WASM result output.">>
                             },
                             Opts
@@ -162,16 +162,16 @@ results(M1, _M2, Opts) ->
 
 %% @doc Normalize the results of an evaluation.
 normalize_results(
-    #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages }) ->
+    #{ <<"output">> := #{<<"data">> := Data}, <<"messages">> := Messages }) ->
     {ok, Data, Messages};
-normalize_results(#{ <<"Error">> := Error }) ->
+normalize_results(#{ <<"error">> := Error }) ->
     {ok, Error, []}.
 
 %% @doc After the process returns messages from an evaluation, the
 %% signing node needs to add some tags to each message and spawn such that
 %% the target process knows these messages are created by a process.
 preprocess_results(Msg, Proc, Opts) ->
-    RawTags = maps:get(<<"Tags">>, Msg, []),
+    RawTags = maps:get(<<"tags">>, Msg, []),
     TagList =
         [
             {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
@@ -180,7 +180,7 @@ preprocess_results(Msg, Proc, Opts) ->
     Tags = maps:from_list(TagList),
     FilteredMsg =
         maps:without(
-            [<<"From-Process">>, <<"From-Image">>, <<"Anchor">>, <<"Tags">>],
+            [<<"from-process">>, <<"from-image">>, <<"anchor">>, <<"tags">>],
             Msg
         ),
     maps:merge(
@@ -193,8 +193,8 @@ preprocess_results(Msg, Proc, Opts) ->
             )
         ),
         Tags#{
-            <<"From-Process">> => hb_converge:get(id, Proc, Opts),
-            <<"From-Image">> => hb_converge:get(<<"Image">>, Proc, Opts)
+            <<"from-process">> => hb_converge:get(id, Proc, Opts),
+            <<"from-image">> => hb_converge:get(<<"image">>, Proc, Opts)
         }
     ).
 

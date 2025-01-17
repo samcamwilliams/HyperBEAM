@@ -174,7 +174,7 @@ hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
 %%% If no hashpath algorithm is specified, the protocol defaults to
 %%% `sha-256-chain'.
 hashpath_alg(Msg) ->
-    case dev_message:get(<<"Hashpath-Alg">>, Msg) of
+    case dev_message:get(<<"hashpath-alg">>, Msg) of
         {ok, <<"sha-256-chain">>} ->
             fun hb_crypto:sha256_chain/2;
         {ok, <<"accumulate-256">>} ->
@@ -321,26 +321,26 @@ hashpath_test() ->
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
 hashpath_direct_msg2_test() ->
-    Msg1 = #{ <<"Base">> => <<"Message">> },
-    Msg2 = #{ path => <<"Base">> },
+    Msg1 = #{ <<"base">> => <<"message">> },
+    Msg2 = #{ <<"path">> => <<"base">> },
     Hashpath = hashpath(Msg1, Msg2, #{}),
     [_, KeyName] = term_to_path_parts(Hashpath),
-    ?assert(matches(KeyName, <<"Base">>)).
+    ?assert(matches(KeyName, <<"base">>)).
 
 multiple_hashpaths_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
+    Msg3 = #{ <<"hashpath">> => hashpath(Msg1, Msg2, #{}) },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Msg3, Msg4, #{}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->
-    Msg1 = #{ <<"TEST">> => <<"INITIAL">> },
-    Msg2 = #{ <<"FirstApplied">> => <<"Msg2">> },
-    Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
-    Msg4 = #{ hashpath => hashpath(Msg2, Msg3, #{}) },
-    Msg3Fake = #{ hashpath => hashpath(Msg4, Msg2, #{}) },
+    Msg1 = #{ <<"test">> => <<"initial">> },
+    Msg2 = #{ <<"firstapplied">> => <<"msg2">> },
+    Msg3 = #{ <<"hashpath">> => hashpath(Msg1, Msg2, #{}) },
+    Msg4 = #{ <<"hashpath">> => hashpath(Msg2, Msg3, #{}) },
+    Msg3Fake = #{ <<"hashpath">> => hashpath(Msg4, Msg2, #{}) },
     ?assert(verify_hashpath([Msg1, Msg2, Msg3, Msg4], #{})),
     ?assertNot(verify_hashpath([Msg1, Msg2, Msg3Fake, Msg4], #{})).
 
@@ -354,43 +354,47 @@ validate_path_transitions(X, Opts) ->
     ?assertEqual(undefined, pop_request(X4, Opts)).
 
 pop_from_message_test() ->
-    validate_path_transitions(#{ path => [a, b, c] }, #{}).
+    validate_path_transitions(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{}).
 
 pop_from_path_list_test() ->
-    validate_path_transitions([a, b, c], #{}).
+    validate_path_transitions([<<"a">>, <<"b">>, <<"c">>], #{}).
 
 hd_test() ->
-    ?assertEqual(a, hd(#{ path => [a, b, c] }, #{})),
-    ?assertEqual(undefined, hd(#{ path => undefined }, #{})).
+    ?assertEqual(<<"a">>, hd(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{})),
+    ?assertEqual(undefined, hd(#{ <<"path">> => undefined }, #{})).
 
 tl_test() ->
-    ?assertMatch([b, c], maps:get(path, tl(#{ path => [a, b, c] }, #{}))),
-    ?assertEqual(undefined, tl(#{ path => [] }, #{})),
-    ?assertEqual(undefined, tl(#{ path => a }, #{})),
-    ?assertEqual(undefined, tl(#{ path => undefined }, #{})),
+    ?assertMatch([<<"b">>, <<"c">>], maps:get(<<"path">>, tl(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{}))),
+    ?assertEqual(undefined, tl(#{ <<"path">> => [] }, #{})),
+    ?assertEqual(undefined, tl(#{ <<"path">> => <<"a">> }, #{})),
+    ?assertEqual(undefined, tl(#{ <<"path">> => undefined }, #{})),
 
-    ?assertEqual([b, c], tl([a, b, c], #{ })),
-    ?assertEqual(undefined, tl([c], #{ })).
+    ?assertEqual([<<"b">>, <<"c">>], tl([<<"a">>, <<"b">>, <<"c">>], #{ })),
+    ?assertEqual(undefined, tl([<<"c">>], #{ })).
 
 to_binary_test() ->
-    ?assertEqual(<<"a/b/c">>, to_binary([a, b, c])),
+    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, <<"b">>, <<"c">>])),
     ?assertEqual(<<"a/b/c">>, to_binary(<<"a/b/c">>)),
-    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, b, [<<"c">>]])),
-    ?assertEqual(<<"a/b/c">>, to_binary(["a", b, <<"c">>])),
+    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, <<"b">>, <<"c">>])),
+    ?assertEqual(<<"a/b/c">>, to_binary(["a", <<"b">>, <<"c">>])),
     ?assertEqual(<<"a/b/b/c">>, to_binary([<<"a">>, [<<"b">>, <<"//b">>], <<"c">>])).
 
 term_to_path_parts_test() ->
-    ?assert(matches([a, b, c], term_to_path_parts(<<"a/b/c">>))),
-    ?assert(matches([a, b, c], term_to_path_parts([<<"a">>, <<"b">>, <<"c">>]))),
-    ?assert(matches([a, b, c], term_to_path_parts(["a", b, <<"c">>]))),
-    ?assert(matches([a, b, b, c], term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"c">>],
+        term_to_path_parts(<<"a/b/c">>))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"c">>],
+        term_to_path_parts([<<"a">>, <<"b">>, <<"c">>]))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"c">>],
+        term_to_path_parts(["a", <<"b">>, <<"c">>]))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"b">>, <<"c">>],
+        term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))),
     ?assertEqual([], term_to_path_parts(<<"/">>)).
 
 % calculate_multistage_hashpath_test() ->
-%     Msg1 = #{ <<"Base">> => <<"Message">> },
-%     Msg2 = #{ path => <<"2">> },
-%     Msg3 = #{ path => <<"3">> },
-%     Msg4 = #{ path => <<"4">> },
+%     Msg1 = #{ <<"base">> => <<"message">> },
+%     Msg2 = #{ <<"path">> => <<"2">> },
+%     Msg3 = #{ <<"path">> => <<"3">> },
+%     Msg4 = #{ <<"path">> => <<"4">> },
 %     Msg5 = hashpath(Msg1, [Msg2, Msg3, Msg4], #{}),
 %     ?assert(is_binary(Msg5)),
 %     Msg3Path = <<"3">>,

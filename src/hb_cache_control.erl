@@ -121,9 +121,9 @@ only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
     ),
     {error,
         #{
-            <<"Status">> => <<"Gateway Timeout">>,
-            <<"Status-Code">> => 504,
-            <<"Cache-Status">> => <<"miss">>,
+            <<"status">> => <<"Gateway Timeout">>,
+            <<"status-code">> => 504,
+            <<"cache-status">> => <<"miss">>,
             <<"body">> =>
                 <<"Computed result not available in cache.">>
         }
@@ -139,8 +139,8 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
     ),
     {error,
         #{
-            <<"Status">> => <<"Not Found">>,
-            <<"Status-Code">> => 404,
+            <<"status">> => <<"Not Found">>,
+            <<"status-code">> => 404,
             <<"body">> =>
                 <<"Necessary messages not found in cache.">>
         }
@@ -148,12 +148,12 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
-exec_likely_faster_heuristic(Msg1, #{ path := Key }, Opts) ->
+exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.
     % If we have `only-if-cached` in the opts, we always force lookup, too.
     case specifiers_to_cache_settings(maps:get(cache_control, Opts, [])) of
-        #{ only_if_cached := true } -> false;
+        #{ <<"only-if-cached">> := true } -> false;
         _ -> is_map(Msg1) andalso maps:is_key(Key, Msg1)
     end.
 
@@ -200,7 +200,7 @@ cache_source_to_cache_settings({opts, Opts}) ->
         _ -> CCMap
     end;
 cache_source_to_cache_settings(Msg) ->
-    case dev_message:get(<<"Cache-Control">>, Msg) of
+    case dev_message:get(<<"cache-control">>, Msg) of
         {ok, CC} -> specifiers_to_cache_settings(CC);
         {error, not_found} -> #{}
     end.
@@ -209,9 +209,10 @@ cache_source_to_cache_settings(Msg) ->
 %% normalized map of simply whether we should store and/or lookup the result.
 specifiers_to_cache_settings(CCSpecifier) when not is_list(CCSpecifier) ->
     specifiers_to_cache_settings([CCSpecifier]);
-specifiers_to_cache_settings(CCList) ->
+specifiers_to_cache_settings(RawCCList) ->
+    CCList = lists:map(fun hb_converge:normalize_key/1, RawCCList),
     #{
-        store =>
+        <<"store">> =>
             case lists:member(<<"always">>, CCList) of
                 true -> true;
                 false ->
@@ -224,7 +225,7 @@ specifiers_to_cache_settings(CCList) ->
                             end
                     end
             end,
-        lookup =>
+        <<"lookup">> =>
             case lists:member(<<"always">>, CCList) of
                 true -> true;
                 false ->
@@ -237,7 +238,7 @@ specifiers_to_cache_settings(CCList) ->
                         end
                     end
             end,
-        only_if_cached =>
+        <<"only-if-cached">> =>
             case lists:member(<<"only-if-cached">>, CCList) of
                 true -> true;
                 false -> undefined
@@ -247,7 +248,7 @@ specifiers_to_cache_settings(CCList) ->
 %%% Tests
 
 %% Helpers to create a message with Cache-Control header
-msg_with_cc(CC) -> #{ <<"Cache-Control">> => CC }.
+msg_with_cc(CC) -> #{ <<"cache-control">> => CC }.
 opts_with_cc(CC) -> #{ cache_control => CC }.
 
 %% Test precedence order (Opts > Msg3 > Msg2)
@@ -331,9 +332,9 @@ message_source_cache_control_test() ->
 %%% Basic cached Converge resolution tests
 
 cache_binary_result_test() ->
-    CachedMsg = <<"Test-Message">>,
-    Msg1 = #{ <<"Test-Key">> => CachedMsg },
-    Msg2 = <<"Test-Key">>,
+    CachedMsg = <<"test-message">>,
+    Msg1 = #{ <<"test-key">> => CachedMsg },
+    Msg2 = <<"test-key">>,
     {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
     ?assertEqual(CachedMsg, Res),
     {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
@@ -345,11 +346,11 @@ cache_message_result_test() ->
     hb_store:reset(hb_opts:get(store)),
     CachedMsg =
         #{
-            <<"Purpose">> => <<"Test-Message">>,
-            <<"Aux">> => #{ <<"Aux-Message">> => <<"Aux-Message-Value">> }
+            <<"purpose">> => <<"Test-Message">>,
+            <<"aux">> => #{ <<"aux-message">> => <<"Aux-Message-Value">> }
         },
-    Msg1 = #{ <<"Test-Key">> => CachedMsg, <<"Local">> => <<"Binary">> },
-    Msg2 = <<"Test-Key">>,
+    Msg1 = #{ <<"test-key">> => CachedMsg, <<"local">> => <<"Binary">> },
+    Msg2 = <<"test-key">>,
     {ok, Res} =
         hb_converge:resolve(
             Msg1,

@@ -487,7 +487,7 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"Status-Code">> => 400,
+            <<"status-code">> => 400,
             <<"body">> => <<"Request contains non-verifiable message.">>
         }
     }.
@@ -506,8 +506,8 @@ error_infinite(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"Status">> => <<"Loop Detected">>,
-            <<"Status-Code">> => 508,
+            <<"status">> => <<"Loop Detected">>,
+            <<"status-code">> => 508,
             <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
@@ -526,11 +526,11 @@ error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
     {
         error,
         #{
-            <<"Status">> => <<"Unprocessable Content">>,
-            <<"Status-Code">> => 422,
+            <<"status">> => <<"Unprocessable Content">>,
+            <<"status-code">> => 422,
             <<"body">> => Msg3,
-            <<"Key">> => maps:get(path, Msg2, <<"Key unknown.">>),
-            <<"Remaining-Path">> => RemainingPath
+            <<"key">> => maps:get(<<"path">>, Msg2, <<"Key unknown.">>),
+            <<"remaining-path">> => RemainingPath
         }
     }.
 
@@ -601,7 +601,7 @@ keys(Msg, Opts, remove) ->
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
 set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
-    Msg2 = maps:without([hashpath, priv], RawMsg2),
+    Msg2 = maps:without([<<"hashpath">>, <<"priv">>], RawMsg2),
     ?event(converge_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
     case keys(Msg2, internal_opts(Opts)) of

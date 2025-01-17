@@ -143,7 +143,7 @@ test_opts() ->
 %%% Test vector suite
 
 resolve_simple_test(Opts) ->
-    Res = hb_converge:resolve(#{ a => <<"RESULT">> }, a, Opts),
+    Res = hb_converge:resolve(#{ <<"a">> => <<"RESULT">> }, <<"a">>, Opts),
     ?assertEqual({ok, <<"RESULT">>}, Res).
 
 resolve_id_test(Opts) ->

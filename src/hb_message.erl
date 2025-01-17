@@ -198,7 +198,7 @@ format(Map, Indent) when is_map(Map) ->
             Indent
         ),
     % Put the path and device rows into the output at the _top_ of the map.
-    PriorityKeys = [{<<"Path">>, ValOrUndef(path)}, {<<"Device">>, ValOrUndef(device)}],
+    PriorityKeys = [{<<"path">>, ValOrUndef(path)}, {<<"device">>, ValOrUndef(device)}],
     FooterKeys =
         case hb_private:from_message(Map) of
             PrivMap when map_size(PrivMap) == 0 -> [];
@@ -210,7 +210,7 @@ format(Map, Indent) when is_map(Map) ->
         maps:to_list(
             minimize(Map,
                 [owner, signature, id, unsigned_id, hashpath, path, device]
-                ++ [<<"Device">>, <<"Path">>] % Hack: Until key capitalization is fixed.
+                ++ [<<"device">>, <<"path">>] % Hack: Until key capitalization is fixed.
             )
         ) ++ FooterKeys,
     % Format the remaining 'normal' keys and values.
@@ -475,26 +475,26 @@ single_layer_message_to_encoding_test(Codec) ->
 % key_encodings_to_tx_test() ->
 %     Msg = #{
 %         <<"last_tx">> => << 2:256 >>,
-%         <<"Owner">> => << 3:4096 >>,
-%         <<"Target">> => << 4:256 >>
+%         <<"owner">> => << 3:4096 >>,
+%         <<"target">> => << 4:256 >>
 %     },
 %     TX = message_to_tx(Msg),
 %     ?event({key_encodings_to_tx, {msg, Msg}, {tx, TX}}),
 %     ?assertEqual(maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
-%     ?assertEqual(maps:get(<<"Owner">>, Msg), TX#tx.owner),
-%     ?assertEqual(maps:get(<<"Target">>, Msg), TX#tx.target).
+%     ?assertEqual(maps:get(<<"owner">>, Msg), TX#tx.owner),
+%     ?assertEqual(maps:get(<<"target">>, Msg), TX#tx.target).
 
 %% @doc Test that the message matching function works.
 match_test(Codec) ->
-    Msg = #{ a => 1, b => 2 },
+    Msg = #{ <<"a">> => 1, <<"b">> => 2 },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
 match_modes_test() ->
-    Msg1 = #{ a => 1, b => 2 },
-    Msg2 = #{ a => 1 },
-    Msg3 = #{ a => 1, b => 2, c => 3 },
+    Msg1 = #{ <<"a">> => 1, <<"b">> => 2 },
+    Msg2 = #{ <<"a">> => 1 },
+    Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     ?assert(match(Msg1, Msg2, only_present)),
     ?assert(not match(Msg2, Msg1, strict)),
     ?assert(match(Msg1, Msg3, primary)),

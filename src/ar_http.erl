@@ -400,8 +400,8 @@ await_response(Args, Opts) ->
                                 Opts
                             );
 						false ->
-							log(err, http_fetched_too_much_data, Args,
-									<<"Fetched too much data">>, Opts),
+							?event(error, {http_fetched_too_much_data, Args,
+									<<"Fetched too much data">>, Opts}),
 							{error, too_much_data}
 					end
 			end;

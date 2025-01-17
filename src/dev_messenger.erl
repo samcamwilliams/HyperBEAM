@@ -22,7 +22,7 @@
 %%%                 `Value` time period, pushing the resulting messages as
 %%%                 in other modes. Default: Not set.
 %%% 
-%%%    Allow-URLs:  Whether messages for which the `Target` is a centralized
+%%%    allow-URLs:  Whether messages for which the `Target` is a centralized
 %%%                 web location (a fully-qualified IP/FDQN address) should be
 %%%                 honored (`True`) or ignored (`False`) by the messenger. 
 %%%                 If set to `True`, the device will relay messages as given
