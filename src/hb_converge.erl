@@ -140,7 +140,7 @@ resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
     ?event(converge_core, {stage, 1, normalize_raw_path_to_message}, Opts),
     % If we have been given a Path rather than a full Msg2, construct the
     % message around it and recurse.
-    resolve_stage(1, Msg1, #{ <<"path">> => normalize_key(Path) }, Opts);
+    resolve_stage(1, Msg1, #{ <<"path">> => hb_path:term_to_path_parts(normalize_key(Path)) }, Opts);
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
