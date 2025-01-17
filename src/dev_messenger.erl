@@ -111,7 +111,7 @@ dispatch(Msg1, Msg2, Opts) ->
                 {pushing_to_target, Target, hb_path:from_message(hashpath, Msg1)}
             ),
             {ok, Downstream} = hb_converge:resolve(
-                #{ path => <<Target, "/push">> },
+                #{ <<"path">> => <<Target, "/push">> },
                 Opts
             ),
             #{

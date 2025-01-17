@@ -119,11 +119,11 @@ default_import_resolver(Msg1, Msg2, Opts) ->
                 Opts
             ),
             #{
-                path => import,
-                module => list_to_binary(Module),
-                func => list_to_binary(Func),
-                args => Args,
-                func_sig => list_to_binary(Signature)
+                <<"path">> => <<"import">>,
+                <<"module">> => list_to_binary(Module),
+                <<"func">> => list_to_binary(Func),
+                <<"args">> => Args,
+                <<"func-sig">> => list_to_binary(Signature)
             },
             Opts
         ),
@@ -283,7 +283,7 @@ import(Msg1, Msg2, Opts) ->
             ModName/binary,
             "/state"
         >>,
-    AdjustedMsg2 = Msg2#{ path => AdjustedPath },
+    AdjustedMsg2 = Msg2#{ <<"path">> => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =
         hb_converge:set(

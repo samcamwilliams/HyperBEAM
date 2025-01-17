@@ -276,21 +276,21 @@ route_template_message_matches_test() ->
     ?assertEqual(
         {ok, <<"correct">>},
         find_route(
-            #{ path => <<"/">>, <<"special-key">> => <<"special-value">> },
+            #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
         no_matches,
         find_route(
-            #{ path => <<"/">>, <<"special-key">> => <<"special-value2">> },
+            #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value2">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
         {ok, <<"fallback">>},
         find_route(
-            #{ path => <<"/">> },
+            #{ <<"path">> => <<"/">> },
             #{ routes => Routes ++ [#{ <<"node">> => <<"fallback">> }] }
         )
     ).
@@ -308,15 +308,15 @@ route_regex_matches_test() ->
     ],
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(#{ path => <<"/abc/schedule">> }, #{ routes => Routes })
+        find_route(#{ <<"path">> => <<"/abc/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(#{ path => <<"/a/b/c/schedule">> }, #{ routes => Routes })
+        find_route(#{ <<"path">> => <<"/a/b/c/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
         no_matches,
-        find_route(#{ path => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
+        find_route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 
 get_routes_test() ->

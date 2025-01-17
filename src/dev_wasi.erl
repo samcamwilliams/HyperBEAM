@@ -138,7 +138,7 @@ fd_write(Msg1, Msg2, Opts) ->
     Instance = hb_private:get(<<"wasm/instance">>, State, Opts),
     [FD, Ptr, Vecs, RetPtr|_] = hb_converge:get(<<"args">>, Msg2, Opts),
     ?event({fd_write, {fd, FD}, {ptr, Ptr}, {vecs, Vecs}, {retptr, RetPtr}}),
-    Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
+    Signature = hb_converge:get(<<"func-sig">>, Msg2, Opts),
     ?event({signature, Signature}),
     fd_write(State, Instance, [FD, Ptr, Vecs, RetPtr], 0, Opts).
 
@@ -191,7 +191,7 @@ fd_read(Msg1, Msg2, Opts) ->
     State = hb_converge:get(<<"state">>, Msg1, Opts),
     Instance = hb_private:get(<<"wasm/instance">>, State, Opts),
     [FD, VecsPtr, NumVecs, RetPtr|_] = hb_converge:get(<<"args">>, Msg2, Opts),
-    Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
+    Signature = hb_converge:get(<<"func-sig">>, Msg2, Opts),
     ?event({signature, Signature}),
     fd_read(State, Instance, [FD, VecsPtr, NumVecs, RetPtr], 0, Opts).
 

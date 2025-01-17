@@ -84,11 +84,11 @@ snapshot(RawMsg1, _Msg2, Opts) ->
     {ok, SnapshotMsg} = run_as(
         <<"Execution">>,
         Msg1,
-        #{ <<"path">> => <<"Snapshot">>, <<"mode">> => <<"Map">> },
+        #{ <<"path">> => <<"snapshot">>, <<"mode">> => <<"Map">> },
         Opts#{ cache_control => [] }
     ),
     ProcID = hb_converge:get(<<"id">>, Msg1, Opts),
-    Slot = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+    Slot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
     {ok,
         hb_private:set(
             hb_converge:set(
@@ -143,13 +143,13 @@ compute(Msg1, Msg2, Opts) ->
             normalize,
             Opts
         ),
-    ProcID = hb_converge:get(<<"Process/id">>, Loaded, Opts),
+    ProcID = hb_converge:get(<<"process/id">>, Loaded, Opts),
     ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     do_compute(
         ProcID,
         Normalized,
         Msg2,
-        hb_converge:get(<<"Slot">>, Msg2, Opts),
+        hb_converge:get(<<"slot">>, Msg2, Opts),
         Opts
     ).
 
@@ -364,7 +364,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
         dev_message:set(
             ensure_process_key(Msg1, Opts),
             #{
-                device => 
+                <<"device">> => 
                     DeviceSet = hb_converge:get(
                         << Key/binary, "-device">>,
                         {as, dev_message, Msg1},
@@ -433,7 +433,7 @@ test_base_process() ->
     }.
 
 test_wasm_process(WASMImage) ->
-    #{ image := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
+    #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
     maps:merge(test_base_process(), #{
         <<"execution-device">> => <<"Stack/1.0">>,
         <<"device-stack">> => [<<"WASM-64/1.0">>],
@@ -480,9 +480,9 @@ schedule_test_message(Msg1, Text) ->
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
     Msg2 = hb_message:sign(#{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"message">> =>
             MsgBase#{
                 <<"type">> => <<"Message">>,
                 <<"test-label">> => Text
@@ -492,7 +492,7 @@ schedule_test_message(Msg1, Text, MsgBase) ->
 
 schedule_aos_call(Msg1, Code) ->
     Wallet = hb:wallet(),
-    ProcID = hb_converge:get(id, Msg1, #{}),
+    ProcID = hb_converge:get(<<"id">>, Msg1, #{}),
     Msg2 = hb_message:sign(#{
         <<"action">> => <<"Eval">>,
         <<"data">> => Code,
@@ -502,9 +502,9 @@ schedule_aos_call(Msg1, Code) ->
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
     Msg2 = #{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"message">> =>
             #{
                 <<"type">> => <<"Message">>,
                 <<"wasm-function">> => FuncName,
@@ -522,7 +522,7 @@ schedule_on_process_test() ->
     {ok, SchedulerRes} =
         hb_converge:resolve(Msg1, #{
             <<"method">> => <<"GET">>,
-            <<"path">> => <<"Schedule">>
+            <<"path">> => <<"schedule">>
         }, #{}),
     ?assertMatch(
         <<"TEST TEXT 1">>,
@@ -543,7 +543,7 @@ get_scheduler_slot_test() ->
         <<"method">> => <<"GET">>
     },
     ?assertMatch(
-        {ok, #{ <<"Current-Slot">> := CurrentSlot }} when CurrentSlot > 0,
+        {ok, #{ <<"current-slot">> := CurrentSlot }} when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
 
@@ -573,11 +573,11 @@ test_device_compute_test() ->
         {ok, <<"TEST TEXT 2">>},
         hb_converge:resolve(
             Msg1,
-            <<"Schedule/Assignments/1/Message/Test-Label">>,
+            <<"schedule/assignments/1/message/test-label">>,
             #{ <<"hashpath">> => ignore }
         )
     ),
-    Msg2 = #{ <<"path">> => <<"Compute">>, <<"slot">> => 1 },
+    Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
     {ok, Msg3} = hb_converge:resolve(Msg1, Msg2, #{}),
     ?event({computed_message, {msg3, Msg3}}),
     ?assertEqual(1, hb_converge:get(<<"results/assignment-slot">>, Msg3, #{})),
@@ -591,7 +591,7 @@ wasm_compute_test() ->
     {ok, Msg3} = 
         hb_converge:resolve(
             Msg1,
-            #{ <<"path">> => <<"Compute">>, <<"slot">> => 0 },
+            #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
             #{ <<"hashpath">> => ignore }
         ),
     ?event({computed_message, {msg3, Msg3}}),
@@ -599,7 +599,7 @@ wasm_compute_test() ->
     {ok, Msg4} = 
         hb_converge:resolve(
             Msg1,
-            #{ <<"path">> => <<"Compute">>, <<"slot">> => 1 },
+            #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
             #{ <<"hashpath">> => ignore }
         ),
     ?event({computed_message, {msg4, Msg4}}),

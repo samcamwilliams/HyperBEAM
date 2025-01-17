@@ -9,8 +9,8 @@
 %% @doc Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test`
 %% Comment/uncomment out as necessary.
-run_test() ->
-    run_single(normal, recursive_get).
+% run_test() ->
+%     run_single(normal, no_cache).
 
 %% @doc Run a single test with a given set of opts.
 run_single(OptsName, TestName) ->
@@ -411,6 +411,8 @@ deep_set_test(Opts) ->
     % First validate second layer changes are handled correctly.
     Msg0 = #{ <<"a">> => #{ <<"b">> => <<"RESULT">> } },
     ?assertMatch(#{ <<"a">> := #{ <<"b">> := <<"RESULT2">> } },
+        hb_converge:set(Msg0, <<"a/b">>, <<"RESULT2">>, Opts)),
+    ?assertMatch(#{ <<"a">> := #{ <<"b">> := <<"RESULT2">> } },
         hb_converge:set(Msg0, [<<"a">>, <<"b">>], <<"RESULT2">>, Opts)),
     % Now validate deeper layer changes are handled correctly.
     Msg = #{ <<"a">> => #{ <<"b">> => #{ <<"c">> => 1 } } },
@@ -491,10 +493,11 @@ deep_set_with_device_test(Opts) ->
             },
         <<"modified">> => false
     },
-    Outer = hb_converge:deep_set(Msg, [<<"a">>, <<"b">>, <<"c">>], <<"2">>, Opts),
+    Outer = hb_converge:set(Msg, <<"a/b/c">>, <<"2">>, Opts),
     A = hb_converge:get(<<"a">>, Outer, Opts),
     B = hb_converge:get(<<"b">>, A, Opts),
     C = hb_converge:get(<<"c">>, B, Opts),
+    ?event(debug, {debug, Outer}),
     ?assertEqual(<<"2">>, C),
     ?assertEqual(true, hb_converge:get(<<"modified">>, Outer)),
     ?assertEqual(false, hb_converge:get(<<"modified">>, A)),
@@ -582,3 +585,6 @@ list_transform_test(Opts) ->
     ?assertEqual(<<"C">>, hb_converge:get(3, Msg, Opts)),
     ?assertEqual(<<"D">>, hb_converge:get(4, Msg, Opts)),
     ?assertEqual(<<"E">>, hb_converge:get(5, Msg, Opts)).
+
+    
+    
