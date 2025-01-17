@@ -281,7 +281,7 @@ import(Msg1, Msg2, Opts) ->
             Prefix/binary,
             "/stdlib/",
             ModName/binary,
-            "state"
+            "/state"
         >>,
     AdjustedMsg2 = Msg2#{ path => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
