@@ -155,7 +155,10 @@ resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
             resolve_stage(
                 2,
                 Msg1,
-                hb_path:priv_store_remaining(Msg2#{ path => Path }, Remaining),
+                hb_path:priv_store_remaining(
+                    Msg2#{ <<"path">> => Path },
+                    Remaining
+                ),
                 Opts
             );
         _ -> resolve_stage(2, Msg1, Msg2, Opts)
@@ -270,7 +273,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
                 }
             ),
 			{Status, _Mod, Func} = message_to_fun(Msg1, Key, Opts),
-			?event(
+			?event(debug,
 				{found_func_for_exec,
                     {key, Key},
 					{func, Func},
@@ -412,7 +415,7 @@ resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) -
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)},
+        {Status, maps:without([<<"hashpath">>] ++ ?REGEN_KEYS, Msg3)},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
@@ -503,6 +506,7 @@ error_infinite(Msg1, Msg2, Opts) ->
         },
         Opts
     ),
+    ?trace(),
     {
         error,
         #{
@@ -571,14 +575,14 @@ get(Path, {as, Device, Msg}, Default, Opts) ->
         Path,
         set(
             Msg,
-            #{ device => Device },
+            #{ <<"device">> => Device },
             internal_opts(Opts)
         ),
         Default,
         Opts
     );
 get(Path, Msg, Default, Opts) ->
-	case resolve(Msg, #{ path => Path }, Opts#{ spawn_worker => false }) of
+	case resolve(Msg, #{ <<"path">> => Path }, Opts#{ spawn_worker => false }) of
 		{ok, Value} -> Value;
 		{error, _} -> Default
 	end.
@@ -587,7 +591,11 @@ get(Path, Msg, Default, Opts) ->
 keys(Msg) -> keys(Msg, #{}).
 keys(Msg, Opts) -> keys(Msg, Opts, keep).
 keys(Msg, Opts, keep) ->
-    get(keys, Msg, Opts);
+    try lists:map(fun normalize_key/1, get(<<"keys">>, Msg, Opts))
+    catch
+        A:B:C ->
+            throw({cannot_get_keys, {msg, Msg}, {opts, Opts}, {error, {A, B}}})
+    end;
 keys(Msg, Opts, remove) ->
     lists:filter(
         fun(Key) -> not lists:member(Key, ?CONVERGE_KEYS) end,
@@ -668,13 +676,13 @@ device_set(Msg, Key, Value, Opts) ->
         {
             calling_device_set,
             {msg, Msg},
-            {applying_path, #{ path => set, Key => Value }}
+            {applying_path, #{ <<"path">> => <<"set">>, Key => Value }}
         }
     ),
 	Res = hb_util:ok(
         resolve(
             Msg,
-            #{ <<"path">> => set, Key => Value },
+            #{ <<"path">> => <<"set">>, Key => Value },
             internal_opts(Opts)
         ),
         internal_opts(Opts)
@@ -691,7 +699,7 @@ remove(Msg, Key, Opts) ->
 	hb_util:ok(
         resolve(
             Msg,
-            #{ <<"path">> => remove, <<"item">> => Key },
+            #{ <<"path">> => <<"remove">>, <<"item">> => Key },
             internal_opts(Opts)
         ),
         Opts
@@ -898,7 +906,8 @@ normalize_key(Key, _Opts) when ?IS_ID(Key) -> Key;
 normalize_key(Key, _Opts) when is_binary(Key) -> hb_util:to_lower(Key);
 normalize_key(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
 normalize_key(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
-normalize_key(Key = [ASCII | _], _Opts) when is_integer(ASCII) -> list_to_binary(Key);
+normalize_key(Key = [ASCII | _], _Opts) when is_integer(ASCII) ->
+    normalize_key(list_to_binary(Key));
 normalize_key(Key, _Opts) when is_list(Key) ->
     iolist_to_binary(lists:join(<<"/">>, lists:map(fun normalize_key/1, Key))).
 

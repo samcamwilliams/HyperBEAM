@@ -30,7 +30,7 @@
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/1]).
 -export([hd/2, tl/2, push_request/2, queue_request/2, pop_request/2]).
--export([priv_remaining/2, priv_store_remaining/2, priv_store_original/3]).
+-export([priv_remaining/2, priv_store_remaining/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
 -export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
@@ -61,10 +61,10 @@ tl(Msg2, Opts) when is_map(Msg2) ->
         {_, Rest} -> Rest
     end;
 tl(Path, Opts) when is_list(Path) ->
-    case tl(#{ path => Path }, Opts) of
+    case tl(#{ <<"path">> => Path }, Opts) of
         [] -> undefined;
         undefined -> undefined;
-        #{ path := Rest } -> Rest
+        #{ <<"path">> := Rest } -> Rest
     end.
 
 %% @doc Return the `Remaining-Path' of a message, from its hidden `Converge'
@@ -75,28 +75,12 @@ priv_remaining(Msg, _Opts) ->
     Converge = maps:get(<<"converge">>, Priv, #{}),
     maps:get(<<"remaining">>, Converge, undefined).
 
-%% @doc Store the `Original-Path' (and optionally `Remaining-Path') of a message
-%% in its hidden `Converge' key
-priv_store_original(Msg, OriginalPath, RemainingPath) ->
-    Priv = hb_private:from_message(Msg),
-    Converge = maps:get(<<"converge">>, Priv, #{}),
-    Msg#{
-        priv =>
-            Priv#{
-                <<"converge">> =>
-                    Converge#{
-                        <<"original">> => OriginalPath,
-                        <<"remaining">> => RemainingPath
-                    }
-            }
-    }.
-
 %% @doc Store the remaining path of a message in its hidden `Converge' key.
 priv_store_remaining(Msg, RemainingPath) ->
     Priv = hb_private:from_message(Msg),
     Converge = maps:get(<<"converge">>, Priv, #{}),
     Msg#{
-        priv =>
+        <<"priv">> =>
             Priv#{
                 <<"converge">> =>
                     Converge#{
@@ -185,7 +169,7 @@ hashpath_alg(Msg) ->
 
 %%% @doc Add a message to the head (next to execute) of a request path.
 push_request(Msg, Path) ->
-    maps:put(path, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
+    maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
 
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
@@ -197,7 +181,7 @@ pop_request(Msg, Opts) when is_map(Msg) ->
         {Head, []} -> {Head, undefined};
         {Head, Rest} ->
             ?event({popped_request, Head, Rest}),
-            {Head, maps:put(path, Rest, Msg)}
+            {Head, maps:put(<<"path">>, Rest, Msg)}
     end;
 pop_request([], _Opts) -> undefined;
 pop_request([Head|Rest], _Opts) ->
@@ -207,7 +191,7 @@ pop_request([Head|Rest], _Opts) ->
 %%% key that we cannot use dev_message's `set/3' function for (as it expects
 %%% the compute path to be there), so we use `maps:put/3' instead.
 queue_request(Msg, Path) ->
-    maps:put(path, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
+    maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
@@ -346,11 +330,11 @@ verify_hashpath_test() ->
 
 validate_path_transitions(X, Opts) ->
     {Head, X2} = pop_request(X, Opts),
-    ?assertEqual(a, Head),
+    ?assertEqual(<<"a">>, Head),
     {H2, X3} = pop_request(X2, Opts),
-    ?assertEqual(b, H2),
+    ?assertEqual(<<"b">>, H2),
     {H3, X4} = pop_request(X3, Opts),
-    ?assertEqual(c, H3),
+    ?assertEqual(<<"c">>, H3),
     ?assertEqual(undefined, pop_request(X4, Opts)).
 
 pop_from_message_test() ->

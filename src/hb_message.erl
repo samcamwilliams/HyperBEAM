@@ -209,8 +209,15 @@ format(Map, Indent) when is_map(Map) ->
         FilterUndef(PriorityKeys) ++
         maps:to_list(
             minimize(Map,
-                [owner, signature, id, unsigned_id, hashpath, path, device]
-                ++ [<<"device">>, <<"path">>] % Hack: Until key capitalization is fixed.
+                [
+                    <<"owner">>,
+                    <<"signature">>,
+                    <<"id">>,
+                    <<"unsigned_id">>,
+                    <<"hashpath">>,
+                    <<"path">>,
+                    <<"device">>
+                ]
             )
         ) ++ FooterKeys,
     % Format the remaining 'normal' keys and values.

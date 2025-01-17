@@ -121,7 +121,6 @@ to(RawTABM) when is_map(RawTABM) ->
             M
         ),
     NormalizedMsgKeyMap = hb_converge:normalize_keys(MsgKeyMap),
-    ?event(debug, {normalized_msg_key_map, {explicit, NormalizedMsgKeyMap}}),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
     {RemainingMap, BaseTXList} =

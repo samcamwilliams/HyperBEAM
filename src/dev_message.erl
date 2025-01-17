@@ -150,7 +150,7 @@ keys(Msg) ->
         ok,
         lists:filter(
             fun(Key) -> not hb_private:is_private(Key) end,
-            maps:keys(Msg)
+            lists:map(fun hb_converge:normalize_key/1, maps:keys(Msg))
         )
     }.
 
@@ -159,30 +159,25 @@ keys(Msg) ->
 %% insensitively if the key is a binary.
 get(Key, Msg) -> get(Key, Msg, #{ <<"path">> => get }).
 get(Key, Msg, _Msg2) ->
-	?event({getting_key, {key, Key}, {msg, Msg}}),
-	{ok, PublicKeys} = keys(Msg),
-	case lists:member(Key, PublicKeys) of
-		true -> {ok, maps:get(Key, Msg)};
-		false -> case_insensitive_get(Key, Msg)
-	end.
+    case hb_private:is_private(Key) of
+        true -> {error, not_found};
+        false ->
+            case maps:get(Key, Msg, not_found) of
+                not_found -> case_insensitive_get(Key, Msg);
+                Value -> {ok, Value}
+            end
+    end.
 
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 
 %% implement a case-insensitive key lookup rather than delegating to
 %% `maps:get/2'. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
-	{ok, Keys} = keys(Msg),
-	%?event({case_insensitive_get, {key, Key}, {keys, Keys}}),
-	case_insensitive_get(Key, Msg, Keys).
-case_insensitive_get(Key, Msg, Keys) when byte_size(Key) > 43 ->
-    do_case_insensitive_get(Key, Msg, Keys);
-case_insensitive_get(Key, Msg, Keys) ->
-    do_case_insensitive_get(hb_converge:normalize_key(Key), Msg, Keys).
-do_case_insensitive_get(_Key, _Msg, []) -> {error, not_found};
-do_case_insensitive_get(Key, Msg, [CurrKey | Keys]) ->
-	case hb_converge:normalize_key(CurrKey) of
-		Key -> {ok, maps:get(CurrKey, Msg)};
-		_ -> do_case_insensitive_get(Key, Msg, Keys)
-	end.
+    NormKey = hb_converge:normalize_key(Key),
+    NormMsg = hb_converge:normalize_keys(Msg),
+    case maps:get(NormKey, NormMsg, not_found) of
+        not_found -> {error, not_found};
+        Value -> {ok, Value}
+    end.
 
 %%% Tests
 
@@ -206,11 +201,8 @@ keys_from_device_test() ->
 case_insensitive_get_test() ->
 	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"a">> => 1 })),
 	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"A">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"a">> => 1 })),
 	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"a">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"a">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"a">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"A">> => 1 })).
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"A">> => 1 })).
 
 private_keys_are_filtered_test() ->
     ?assertEqual(

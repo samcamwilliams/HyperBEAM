@@ -47,6 +47,7 @@ handle(Key, M1, M2, Opts) ->
 %%% Tests
 
 dedup_test() ->
+    hb:init(),
     % Create a stack with a dedup device and 2 devices that will append to a
     % `Result` key.
 	Msg = #{
@@ -60,11 +61,15 @@ dedup_test() ->
 		<<"result">> => <<"INIT">>
 	},
     % Send the same message twice, with the same binary.
-    {ok, Msg2} = hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{}),
-    {ok, Msg3} = hb_converge:resolve(Msg2, #{ path => append, bin => <<"_">> }, #{}),
+    {ok, Msg2} = hb_converge:resolve(Msg,
+        #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg2,
+        #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     % Send the same message twice, with another binary.
-    {ok, Msg4} = hb_converge:resolve(Msg3, #{ path => append, bin => <<"/">> }, #{}),
-    {ok, Msg5} = hb_converge:resolve(Msg4, #{ path => append, bin => <<"/">> }, #{}),
+    {ok, Msg4} = hb_converge:resolve(Msg3,
+        #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
+    {ok, Msg5} = hb_converge:resolve(Msg4,
+        #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     % Ensure that downstream devices have only seen each message once.
     ?assertMatch(
 		#{ <<"result">> := <<"INIT+D2_+D3_+D2/+D3/">> },
@@ -89,11 +94,11 @@ dedup_with_multipass_test() ->
         <<"passes">> => 2
 	},
     % Send the same message twice, with the same binary.
-    {ok, Msg2} = hb_converge:resolve(Msg, #{ path => append, bin => <<"_">> }, #{}),
-    {ok, Msg3} = hb_converge:resolve(Msg2, #{ path => append, bin => <<"_">> }, #{}),
+    {ok, Msg2} = hb_converge:resolve(Msg, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
+    {ok, Msg3} = hb_converge:resolve(Msg2, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     % Send the same message twice, with another binary.
-    {ok, Msg4} = hb_converge:resolve(Msg3, #{ path => append, bin => <<"/">> }, #{}),
-    {ok, Msg5} = hb_converge:resolve(Msg4, #{ path => append, bin => <<"/">> }, #{}),
+    {ok, Msg4} = hb_converge:resolve(Msg3, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
+    {ok, Msg5} = hb_converge:resolve(Msg4, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     % Ensure that downstream devices have only seen each message once.
     ?assertMatch(
 		#{ result := <<"INIT+D2_+D3_+D2_+D3_+D2/+D3/+D2/+D3/">> },

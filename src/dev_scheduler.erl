@@ -437,7 +437,7 @@ test_process() ->
         device => ?MODULE,
         process => #{
             <<"device-stack">> =>
-                [<<"Cron/1.0">>, <<"Wasm/1.0">>, <<"Poda/1.0">>],
+                [<<"Cron/1.0">>, <<"WASM-64/1.0">>, <<"PODA/1.0">>],
             <<"image">> => <<"wasm-image-id">>,
             <<"type">> => <<"process">>,
             <<"scheduler-location">> => Address,
@@ -465,7 +465,7 @@ register_new_process_test() ->
             Msg1,
             #{
                 <<"method">> => <<"POST">>,
-                <<"path">> => <<"Schedule">>,
+                <<"path">> => <<"schedule">>,
                 <<"message">> => Proc
             },
             #{}
@@ -484,7 +484,7 @@ schedule_message_and_get_slot_test() ->
     Proc = hb_converge:get(<<"process">>, Msg1, #{ hashpath => ignore }),
     ProcID = hb_util:id(Proc),
     Msg2 = #{
-        <<"path">> => <<"Schedule">>,
+        <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"message">> =>
             #{
@@ -495,13 +495,13 @@ schedule_message_and_get_slot_test() ->
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     Msg3 = #{
-        <<"path">> => <<"Slot">>,
+        <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
         <<"process">> => ProcID
     },
     ?event({pg, dev_scheduler_registry:get_processes()}),
     ?event({getting_schedule, {msg, Msg3}}),
-    ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
+    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
 
@@ -515,7 +515,7 @@ benchmark_test() ->
     Iterations = hb:benchmark(
         fun(X) ->
             MsgX = #{
-                <<"path">> => <<"Schedule">>,
+                <<"path">> => <<"schedule">>,
                 <<"method">> => <<"POST">>,
                 <<"message">> =>
                     #{
@@ -529,7 +529,7 @@ benchmark_test() ->
     ),
     ?event(benchmark, {scheduled, Iterations}),
     Msg3 = #{
-        <<"path">> => <<"Slot">>,
+        <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
         <<"process">> => ProcID
     },
@@ -546,7 +546,7 @@ get_schedule_test() ->
     start(),
     Msg1 = test_process(),
     Msg2 = #{
-        <<"path">> => <<"Schedule">>,
+        <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"message">> =>
             #{
@@ -555,7 +555,7 @@ get_schedule_test() ->
             }
     },
     Msg3 = #{
-        <<"path">> => <<"Schedule">>,
+        <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"message">> =>
             #{
@@ -569,7 +569,7 @@ get_schedule_test() ->
         {ok, _},
         hb_converge:resolve(Msg1, #{
             <<"method">> => <<"GET">>,
-            <<"path">> => <<"Schedule">>
+            <<"path">> => <<"schedule">>
         },
         #{})
     ).

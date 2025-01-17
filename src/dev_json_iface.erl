@@ -14,20 +14,20 @@
 %%%     ```
 %%%     M1/Computed when /Pass == 1 ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Instance
+%%%             M1/priv/wasm/instance
 %%%             M1/Process
 %%%             M2/Message
 %%%             M2/Assignment/Block-Height
 %%%         Generates:
-%%%             /WASM/Handler
-%%%             /WASM/Params
+%%%             /wasm/handler
+%%%             /wasm/params
 %%%         Side-effects:
 %%%             Writes the process and message as JSON representations into the
 %%%             WASM environment.
 %%% 
 %%%     M1/Computed when M2/Pass == 2 ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Instance
+%%%             M1/priv/wasm/instance
 %%%             M2/Results
 %%%             M2/Process
 %%%         Generates:
@@ -54,7 +54,7 @@ compute(M1, M2, Opts) ->
 %% @doc Prepare the WASM environment for execution by writing the process string and
 %% the message as JSON representations into the WASM environment.
 prep_call(M1, M2, Opts) ->
-    Instance = hb_private:get(<<"priv/WASM/Instance">>, M1, Opts),
+    Instance = hb_private:get(<<"priv/wasm/instance">>, M1, Opts),
     Process = hb_converge:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
     Assignment = hb_converge:get(<<"assignment">>, M2, Opts#{ hashpath => ignore }),
     Message = hb_converge:get(<<"message">>, M2, Opts#{ hashpath => ignore }),
@@ -209,24 +209,24 @@ generate_stack(File) ->
     Msg0 = dev_wasm:cache_wasm_image(File),
     Image = hb_converge:get(<<"Image">>, Msg0, #{}),
     Msg1 = Msg0#{
-        device => <<"Stack/1.0">>,
-        <<"Device-Stack">> =>
+        <<"device">> => <<"Stack/1.0">>,
+        <<"device-stack">> =>
             [
                 <<"WASI/1.0">>,
                 <<"JSON-Iface/1.0">>,
                 <<"WASM-64/1.0">>,
                 <<"Multipass/1.0">>
             ],
-        <<"Input-Prefix">> => <<"Process">>,
-        <<"Output-Prefix">> => <<"WASM">>,
-        <<"Passes">> => 2,
-        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
-        <<"Process">> => 
+        <<"input-prefix">> => <<"Process">>,
+        <<"output-prefix">> => <<"WASM">>,
+        <<"passes">> => 2,
+        <<"stack-keys">> => [<<"Init">>, <<"Compute">>],
+        <<"process">> => 
             hb_message:sign(#{
-                <<"Type">> => <<"Process">>,
-                <<"Image">> => Image,
-                <<"Scheduler">> => hb:address(),
-                <<"Authority">> => hb:address()
+                <<"type">> => <<"Process">>,
+                <<"image">> => Image,
+                <<"scheduler">> => hb:address(),
+                <<"authority">> => hb:address()
             }, Wallet)
     },
     {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
@@ -235,20 +235,20 @@ generate_stack(File) ->
 generate_aos_msg(ProcID, Code) ->
     Wallet = hb:wallet(),
     #{
-        path => <<"Compute">>,
-        <<"Message">> => 
+        <<"path">> => <<"compute">>,
+        <<"message">> => 
             hb_message:sign(#{
-                <<"Action">> => <<"Eval">>,
-                data => Code,
-                target => ProcID
+                <<"action">> => <<"Eval">>,
+                <<"data">> => Code,
+                <<"target">> => ProcID
             }, Wallet),
-        <<"Assignment">> =>
-            hb_message:sign(#{ <<"Block-Height">> => 1 }, Wallet)
+        <<"assignment">> =>
+            hb_message:sign(#{ <<"block-height">> => 1 }, Wallet)
     }.
 
 basic_aos_call_test() ->
     Msg = generate_stack("test/aos-2-pure-xs.wasm"),
-    Proc = hb_converge:get(<<"Process">>, Msg, #{ hashpath => ignore }),
+    Proc = hb_converge:get(<<"process">>, Msg, #{ hashpath => ignore }),
     ProcID = hb_converge:get(id, Proc, #{}),
     {ok, Msg3} =
         hb_converge:resolve(
@@ -256,14 +256,14 @@ basic_aos_call_test() ->
             generate_aos_msg(ProcID, <<"return 1+1">>),
             #{}
         ),
-    Data = hb_converge:get(<<"Results/data">>, Msg3, #{}),
+    Data = hb_converge:get(<<"results/data">>, Msg3, #{}),
     ?assertEqual(<<"2">>, Data).
 
 aos_stack_benchmark_test_() ->
     {timeout, 20, fun() ->
         BenchTime = 3,
         RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm"),
-        Proc = hb_converge:get(<<"Process">>, RawWASMMsg, #{ hashpath => ignore }),
+        Proc = hb_converge:get(<<"process">>, RawWASMMsg, #{ hashpath => ignore }),
         ProcID = hb_converge:get(id, Proc, #{}),
         {ok, Initialized} =
         hb_converge:resolve(

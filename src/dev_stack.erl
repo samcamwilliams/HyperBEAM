@@ -127,7 +127,7 @@ output_prefix(Msg1, _Msg2, Opts) ->
 %% @doc The device stack key router. Sends the request to `resolve_stack',
 %% except for `set/2' which is handled by the default implementation in
 %% `dev_message'.
-router(keys, Message1, Message2, _Opts) ->
+router(<<"keys">>, Message1, Message2, _Opts) ->
 	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
 	dev_message:keys(Message1);
 router(Key, Message1, Message2, Opts) ->
@@ -267,7 +267,7 @@ resolve_fold(Message1, Message2, Opts) ->
             dev_message:set(
                 Result,
                 #{
-                    device => InitDevMsg,
+                    <<"device">> => InitDevMsg,
                     <<"input-prefix">> =>
                         hb_converge:get(
                             <<"previous-input-prefix">>,

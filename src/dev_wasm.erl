@@ -9,27 +9,27 @@
 %%%             M1/Process
 %%%             M1/[Prefix]/Image
 %%%         Generates:
-%%%             /priv/WASM/Instance
-%%%             /priv/WASM/Import-Resolver
+%%%             /priv/wasm/instance
+%%%             /priv/wasm/import-resolver
 %%%         Side-effects:
 %%%             Creates a WASM executor loaded in memory of the HyperBEAM node.
 %%% 
 %%%     M1/Compute ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Instance
-%%%             M1/priv/WASM/Import-Resolver
-%%%             M1/Process
-%%%             M2/Message
-%%%             M2/Message/WASM-Function OR M1/WASM-Function
-%%%             M2/Message/WASM-Params OR M1/WASM-Params
+%%%             M1/priv/wasm/instance
+%%%             M1/priv/wasm/import-resolver
+%%%             M1/process
+%%%             M2/message
+%%%             M2/message/wasm-function OR M1/wasm-function
+%%%             M2/message/wasm-params OR M1/wasm-params
 %%%         Generates:
-%%%             /Results/WASM/Type
-%%%             /Results/WASM/Body
+%%%             /results/wasm/type
+%%%             /results/wasm/body
 %%%         Side-effects:
 %%%             Calls the WASM executor with the message and process.
-%%%     M1/WASM/State ->
+%%%     M1/wasm/state ->
 %%%         Assumes:
-%%%             M1/priv/WASM/Instance
+%%%             M1/priv/wasm/instance
 %%%         Generates:
 %%%             Raw binary WASM state
 %%% '''

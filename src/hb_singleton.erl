@@ -197,11 +197,11 @@ parse_part(Part) ->
         Part ->
             case part([$+, $&, $!, $|], Part) of
                 {no_match, PartKey, <<>>} ->
-                    #{ path => PartKey };
+                    #{ <<"path">> => PartKey };
                 {Sep, PartKey, PartModBin} ->
                     parse_part_mods(
                         << Sep:8/integer, PartModBin/binary >>,
-                        #{ path => PartKey }
+                        #{ <<"path">> => PartKey }
                     )
             end
     end.
@@ -307,7 +307,7 @@ basic_hashpath_test() ->
     [Base, Msg2] = Msgs,
     ?assertEqual(Base, Hashpath),
     ?assertEqual(<<"GET">>, maps:get(<<"method">>, Msg2)),
-    ?assertEqual(<<"some-other">>, maps:get(path, Msg2)).
+    ?assertEqual(<<"some-other">>, maps:get(<<"path">>, Msg2)).
 
 multiple_messages_test() ->
     Req = #{
@@ -361,9 +361,9 @@ subpath_in_key_test() ->
         {resolve,
             [
                 #{},
-                #{ path => <<"x">> },
-                #{ path => <<"y">> },
-                #{ path => <<"z">> }
+                #{ <<"path">> => <<"x">> },
+                #{ <<"path">> => <<"y">> },
+                #{ <<"path">> => <<"z">> }
             ]
         },
         maps:get(<<"test-key">>, Msg2, not_found)
@@ -379,19 +379,19 @@ subpath_in_path_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(<<"a">>, maps:get(path, Msg1)),
+    ?assertEqual(<<"a">>, maps:get(<<"path">>, Msg1)),
     ?assertEqual(
         {resolve,
             [
                 #{},
-                #{ path => <<"x">> },
-                #{ path => <<"y">> },
-                #{ path => <<"z">> }
+                #{ <<"path">> => <<"x">> },
+                #{ <<"path">> => <<"y">> },
+                #{ <<"path">> => <<"z">> }
             ]
         },
         Msg2
     ),
-    ?assertEqual(<<"z">>, maps:get(path, Msg3)).
+    ?assertEqual(<<"z">>, maps:get(<<"path">>, Msg3)).
 
 inlined_keys_test() ->
     Req = #{
@@ -429,10 +429,11 @@ subpath_in_inlined_test() ->
     ?event(debug, {got_msgs, Msgs}),
     ?assertEqual(4, length(Msgs)),
     [_, First, Second, Third] = Msgs,
-    ?assertEqual(<<"part1">>, maps:get(path, First)),
-    ?assertEqual(<<"part3">>, maps:get(path, Third)),
+    ?assertEqual(<<"part1">>, maps:get(<<"path">>, First)),
+    ?assertEqual(<<"part3">>, maps:get(<<"path">>, Third)),
+    ?event(debug, {second, Second}),
     ?assertEqual(
-        {resolve, [#{}, #{ path => <<"x">> }, #{ path => <<"y">> }] },
+        {resolve, [#{}, #{ <<"path">> => <<"x">> }, #{ <<"path">> => <<"y">> }] },
         maps:get(<<"b">>, Second)
     ).
 

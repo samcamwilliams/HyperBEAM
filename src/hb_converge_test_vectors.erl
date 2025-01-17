@@ -251,7 +251,7 @@ gen_handler_device() ->
             fun() ->
                 #{
                     handler =>
-                        fun(set, M1, M2, Opts) ->
+                        fun(<<"set">>, M1, M2, Opts) ->
                             dev_message:set(M1, M2, Opts);
                         (_, _, _, _) ->
                             {ok, <<"HANDLER VALUE">>}
@@ -471,7 +471,7 @@ deep_set_with_device_test(Opts) ->
                 % A device where the set function modifies the key
                 % and adds a modified flag.
                 {Key, Val} =
-                    hd(maps:to_list(maps:without([path, priv], Msg2))),
+                    hd(maps:to_list(maps:without([<<"path">>, <<"priv">>], Msg2))),
                 {ok, Msg1#{ Key => Val, <<"modified">> => true }}
             end
     },

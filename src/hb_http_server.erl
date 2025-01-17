@@ -3,7 +3,7 @@
 %%% only has to marshal the HTTP request into a message, and then
 %%% pass it to the Converge resolver. 
 %%% 
-%%% `hb_http:reply/3' is used to respond to the client, handling the 
+%%% `hb_http:reply/4' is used to respond to the client, handling the 
 %%% process of converting a message back into an HTTP response.
 %%% 
 %%% The router uses an `Opts` message as its Cowboy initial state, 
@@ -131,7 +131,7 @@ init(Req, ServerID) ->
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
     ?event(http, {http_inbound, ReqSingleton}),
     {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
-    hb_http:reply(Req, Res).
+    hb_http:reply(Req, Res, NodeMsg).
 
 %% @doc Return the complete Ranch ETS table for the node for debugging.
 ranch_ets() ->
