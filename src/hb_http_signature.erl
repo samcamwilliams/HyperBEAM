@@ -88,11 +88,25 @@ sign(MsgToSign, _Req, Opts) ->
     ?event({starting_to_sign, MsgToSign}),
     ?event({opts, Opts}),
     Wallet = {_Priv, {_, Pub}} = hb_opts:get(wallet, no_viable_wallet, Opts),
-    Encoded = hb_message:convert(MsgToSign, http, #{}),
-    ?event({encoded, {explicit, Encoded}}),
+    Enc = hb_message:convert(MsgToSign, http, #{}),
+    % Hack: Place the body into the `<<"headers">>` field if it is set. We should
+    % either unify the body and headers in this module, or add explicit support
+    % for the body in the HTTP Message.
+    EncWithBody =
+        case maps:get(<<"body">>, Enc, undefined) of
+            undefined -> Enc;
+            <<>> -> Enc;
+            Body ->
+                OrigHeaders = maps:get(<<"headers">>, Enc, #{}),
+                Enc#{
+                    <<"headers">> =>
+                        OrigHeaders ++ [{ <<"body">>, Body }]
+                }
+        end,
+    ?event({encoded, {explicit, EncWithBody}}),
     Authority = authority(maps:keys(MsgToSign), MsgToSign, Wallet),
     ?event({authority, Authority}),
-    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Encoded),
+    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, EncWithBody),
     [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
     SigName = hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
     maps:merge(
