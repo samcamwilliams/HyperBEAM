@@ -199,7 +199,7 @@ normalize(RawM1, M2, Opts) ->
                         not_found -> [];
                         Key -> [Key]
                     end,
-                ?event(debug,
+                ?event(
                     {no_instance_attempting_to_get_snapshot,
                         {msg1, RawM1}, {device_key, DeviceKey}
                     }

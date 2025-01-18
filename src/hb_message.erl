@@ -343,7 +343,7 @@ match(Map1, Map2, Mode) ->
                                     case Val1 == Val2 of
                                         true -> true;
                                         false ->
-                                            ?event(debug,
+                                            ?event(
                                                 {value_mismatch,
                                                     {key, Key},
                                                     {val1, Val1},
@@ -358,7 +358,7 @@ match(Map1, Map2, Mode) ->
                 Keys1
             );
         false ->
-            ?event(debug, {keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
+            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
             false
     end.
 	
@@ -462,6 +462,14 @@ basic_map_codec_test(Codec) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?assert(hb_message:match(Msg, Decoded)).
+
+set_body_codec_test(Codec) ->
+    Msg = #{ <<"body">> => <<"NORMAL_VALUE">> },
+    Encoded = convert(Msg, Codec, converge, #{}),
+    ?event(debug, {encoded, Encoded}),
+    Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 %% @doc Test that we can convert a message into a tx record and back.
@@ -613,7 +621,9 @@ deeply_nested_message_with_data_test(Codec) ->
 nested_structured_fields_test(Codec) ->
     NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
     Encoded = convert(NestedMsg, Codec, converge, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(NestedMsg, Decoded)).
 
 nested_message_with_large_keys_test(Codec) ->
@@ -633,14 +643,10 @@ signed_tx_encode_decode_verify_test(Codec) ->
         data = <<"TEST_DATA">>,
         tags = [{<<"test_key">>, <<"TEST_VALUE">>}]
     },
-    ?event(debug, {tx, TX}),
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
-    ?event(debug, {signed_tx, SignedTX}),
     Encoded = convert(SignedTX, Codec, tx, #{}),
-    ?event(debug, {encoded_tx, Encoded}),
     ?assert(ar_bundles:verify_item(SignedTX)),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event(debug, {decoded_tx, Decoded}),
     ?assert(verify(Decoded)).
 
 signed_message_encode_decode_verify_test(Codec) ->
@@ -737,7 +743,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [converge, tx, flat].
+    [converge, tx, flat, http].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -761,6 +767,7 @@ generate_test_suite(Suite) ->
 message_suite_test_() ->
     generate_test_suite([
         {"basic map codec test", fun basic_map_codec_test/1},
+        {"set body codec test", fun set_body_codec_test/1},
         {"match test", fun match_test/1},
         {"single layer message to encoding test", fun single_layer_message_to_encoding_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
@@ -782,4 +789,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    simple_nested_message_test(tx).
+    set_body_codec_test(http).

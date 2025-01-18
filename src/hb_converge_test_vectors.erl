@@ -525,7 +525,6 @@ deep_set_with_device_test(Opts) ->
     A = hb_converge:get(<<"a">>, Outer, Opts),
     B = hb_converge:get(<<"b">>, A, Opts),
     C = hb_converge:get(<<"c">>, B, Opts),
-    ?event(debug, {debug, Outer}),
     ?assertEqual(<<"2">>, C),
     ?assertEqual(true, hb_converge:get(<<"modified">>, Outer)),
     ?assertEqual(false, hb_converge:get(<<"modified">>, A)),

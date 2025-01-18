@@ -33,7 +33,7 @@
 
 %% @doc Device function that returns all known routes.
 routes(M1, M2, Opts) ->
-    ?event(debug, {routes_msg, M1, M2}),
+    ?event({routes_msg, M1, M2}),
     Routes = hb_opts:get(routes, [], Opts),
     case hb_converge:get(method, M2, Opts) of
         <<"POST">> ->
@@ -333,7 +333,7 @@ get_routes_test() ->
         }
     ),
     Res = hb_client:routes(Node),
-    ?event(debug, {get_routes_test, Res}),
+    ?event({get_routes_test, Res}),
     {ok, RecvdRoutes} = Res,
     ?assert(hb_message:match(Routes, RecvdRoutes)).
 
@@ -357,10 +357,10 @@ add_route_test() ->
             <<"priority">> => 15
         }
     ),
-    ?event(debug, {add_route_test, Res}),
+    ?event({add_route_test, Res}),
     ?assertEqual({ok, <<"Route added.">>}, Res),
     Res2 = hb_client:routes(Node),
-    ?event(debug, {new_routes, Res2}),
+    ?event({new_routes, Res2}),
     {ok, RecvdRoutes} = Res2,
     ?assert(hb_message:match(Routes ++ [NewRoute], RecvdRoutes)).
 

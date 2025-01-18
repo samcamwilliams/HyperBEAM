@@ -87,7 +87,7 @@ handle_cast({throttle, Peer, Path, From}, State) ->
 			%% Try to approach but not hit the limit.
 			case N2 + 1 > max(1, HalfLimit * 80 / 100) of
 				true ->
-					?event(debug,
+					?event(
                         {approaching_peer_rpm_limit,
                             {peer, Peer},
                             {path, Path},

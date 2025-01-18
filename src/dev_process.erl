@@ -351,7 +351,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     ),
                     init(Msg1, Msg2, Opts)
             end;
-        <<"True">> -> {ok, Msg1}
+        <<"true">> -> {ok, Msg1}
     end.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
@@ -453,7 +453,7 @@ test_aos_process() ->
                 <<"WASM-64/1.0">>,
                 <<"Multipass/1.0">>
             ],
-        <<"output-prefix">> => <<"WASM">>,
+        <<"output-prefix">> => <<"wasm">>,
         <<"passes">> => 2,
         <<"stack-keys">> =>
             [

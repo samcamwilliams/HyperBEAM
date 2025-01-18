@@ -101,6 +101,6 @@ dedup_with_multipass_test() ->
     {ok, Msg5} = hb_converge:resolve(Msg4, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     % Ensure that downstream devices have only seen each message once.
     ?assertMatch(
-		#{ result := <<"INIT+D2_+D3_+D2_+D3_+D2/+D3/+D2/+D3/">> },
+		#{ <<"result">> := <<"INIT+D2_+D3_+D2_+D3_+D2/+D3/+D2/+D3/">> },
 		Msg5
 	).

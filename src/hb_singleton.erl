@@ -426,12 +426,10 @@ subpath_in_inlined_test() ->
         <<"path">> => Path
     },
     Msgs = from(Req),
-    ?event(debug, {got_msgs, Msgs}),
     ?assertEqual(4, length(Msgs)),
     [_, First, Second, Third] = Msgs,
     ?assertEqual(<<"part1">>, maps:get(<<"path">>, First)),
     ?assertEqual(<<"part3">>, maps:get(<<"path">>, Third)),
-    ?event(debug, {second, Second}),
     ?assertEqual(
         {resolve, [#{}, #{ <<"path">> => <<"x">> }, #{ <<"path">> => <<"y">> }] },
         maps:get(<<"b">>, Second)

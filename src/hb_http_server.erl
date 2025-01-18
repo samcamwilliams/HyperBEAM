@@ -70,7 +70,7 @@ new_server(RawNodeMsg) ->
                 start_http2(ServerID, ProtoOpts, NodeMsg);
             _ -> {error, {unknown_protocol, Protocol}}
         end,
-    ?event(debug,
+    ?event(http,
         {http_server_started,
             {listener, Listener},
             {server_id, ServerID},
@@ -81,7 +81,7 @@ new_server(RawNodeMsg) ->
     {ok, Listener, Port}.
 
 start_http3(ServerID, ProtoOpts, _NodeMsg) ->
-    ?event(debug, {start_http3, ServerID}),
+    ?event(http, {start_http3, ServerID}),
     Parent = self(),
     ServerPID =
         spawn(fun() ->
@@ -115,7 +115,7 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
     end.
 
 start_http2(ServerID, ProtoOpts, NodeMsg) ->
-    ?event(debug, {start_http2, ServerID}),
+    ?event(http, {start_http2, ServerID}),
     {ok, Listener} = cowboy:start_clear(
         ServerID,
         [

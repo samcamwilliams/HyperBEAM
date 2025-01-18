@@ -116,15 +116,15 @@ await(Worker, Msg1, Msg2, Opts) ->
                 }
         ),
             {error, leader_died};
-        {resolved, _, GroupName, Msg2, Msg3} ->
+        {resolved, _, GroupName, Msg2, Res} ->
             ?event(worker,
                 {resolved_await,
                     {group, GroupName},
                     {msg2, Msg2},
-                    {msg3, Msg3}
+                    {res, Res}
                 }
             ),
-            Msg3
+            Res
     end.
 
 %% @doc Check our inbox for processes that are waiting for the resolution

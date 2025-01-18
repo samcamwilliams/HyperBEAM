@@ -563,7 +563,7 @@ test_prefix_msg() ->
                 Out = output_prefix(M1, M2, Opts),
                 Key = hb_converge:get(<<"key">>, M2, Opts),
                 Value = hb_converge:get(<<In/binary, "/", Key/binary>>, M2, Opts),
-                ?event(debug, {setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
+                ?event({setting, {inp, In}, {outp, Out}, {key, Key}, {value, Value}}),
                 {ok, hb_converge:set(
                     M1,
                     <<Out/binary, "/", Key/binary>>,

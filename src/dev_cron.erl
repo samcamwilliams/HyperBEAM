@@ -67,8 +67,8 @@ timestamp(M) ->
 create_cron(_State, CronTime) ->
     #tx{
         tags = [
-            {<<"action">>, <<"Cron">>},
-            {<<"timestamp">>, list_to_binary(integer_to_list(CronTime))}
+            {<<"Action">>, <<"Cron">>},
+            {<<"Timestamp">>, list_to_binary(integer_to_list(CronTime))}
         ]
     }.
 

@@ -16,7 +16,7 @@ from(Msg) when is_map(Msg) ->
                 case maps:find(Key, Msg) of
                     {ok, <<>>} ->
                         BinKey = hb_converge:normalize_key(Key),
-                        {<<"converge-type: ", BinKey/binary>>, <<"empty-binary">>};
+                        {<<"converge-type-", BinKey/binary>>, <<"empty-binary">>};
                     {ok, Value} when is_binary(Value) ->
                         {Key, Value};
                     {ok, Map} when is_map(Map) ->
@@ -27,14 +27,14 @@ from(Msg) when is_map(Msg) ->
                         {Key, from(hb_converge:normalize_keys(Msgs))};
                     {ok, []} ->
                         BinKey = hb_converge:normalize_key(Key),
-                        {<<"converge-type: ", BinKey/binary>>, <<"empty-list">>};
+                        {<<"converge-type-", BinKey/binary>>, <<"empty-list">>};
                     {ok, Value} when
                             is_atom(Value) or is_integer(Value)
                             or is_list(Value) ->
                         ItemKey = hb_converge:normalize_key(Key),
                         {Type, BinaryValue} = encode_value(Value),
                         [
-                            {<<"converge-type: ", ItemKey/binary>>, Type},
+                            {<<"converge-type-", ItemKey/binary>>, Type},
                             {ItemKey, BinaryValue}
                         ];
                     {ok, _} -> []
@@ -59,13 +59,13 @@ to(Bin) when is_binary(Bin) -> Bin;
 to(TABM0) ->
     % First, handle special cases of empty items, which `ar_bundles` cannot
     % handle. Needs to be transformed into a list (unfortunately) so that we
-    % can also remove the "Converge-Type:" prefix from the key.
+    % can also remove the "Converge-Type-" prefix from the key.
     TABM1 =
         maps:from_list(
             lists:map(
-                fun({<<"converge-type: ", Key/binary>>, <<"empty-binary">>}) ->
+                fun({<<"converge-type-", Key/binary>>, <<"empty-binary">>}) ->
                     {Key, <<>>};
-                ({<<"converge-type: ", Key/binary>>, <<"empty-list">>}) ->
+                ({<<"converge-type-", Key/binary>>, <<"empty-list">>}) ->
                     {Key, []};
                 ({Key, Value}) ->
                     {Key, Value}
@@ -73,17 +73,17 @@ to(TABM0) ->
                 maps:to_list(TABM0)
             )
         ),
-    % 1. Remove any keys from output that have a "Converge-Type:" prefix;
-    % 2. Decode any binary values that have a "Converge-Type:" prefix;
+    % 1. Remove any keys from output that have a "Converge-Type-" prefix;
+    % 2. Decode any binary values that have a "Converge-Type-" prefix;
     % 3. Recursively decode any maps that we encounter;
     % 4. Return the remaining keys and values as a map.
     hb_message:filter_default_keys(maps:filtermap(
-        fun(<<"converge-type: ", _/binary>>, _) ->
-            % Remove any keys from output that have a "Converge-Type:" prefix.
+        fun(<<"converge-type-", _/binary>>, _) ->
+            % Remove any keys from output that have a "Converge-Type-" prefix.
             false;
         (RawKey, BinaryValue) when is_binary(BinaryValue) ->
             Key = hb_converge:normalize_key(RawKey),
-            case maps:find(<<"converge-type: ", Key/binary>>, TABM1) of
+            case maps:find(<<"converge-type-", Key/binary>>, TABM1) of
                 error -> {true, BinaryValue};
                 {ok, Type} ->
                     {true, decode_value(Type, BinaryValue)}
@@ -124,7 +124,7 @@ encode_value(Values) when is_list(Values) ->
                     {
                         string,
                         <<
-                            "(converge-type: ", Type/binary, ") ",
+                            "(converge-type-", Type/binary, ") ",
                             Encoded/binary
                         >>
                     },
@@ -162,7 +162,7 @@ decode_value(atom, Value) ->
     binary_to_existing_atom(AtomString);
 decode_value(list, Value) ->
     lists:map(
-        fun({item, {string, <<"(converge-type: ", Rest/binary>>}, _}) ->
+        fun({item, {string, <<"(converge-type-", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
             decode_value(Type, Item);
            ({item, {string, Binary}, _}) -> Binary

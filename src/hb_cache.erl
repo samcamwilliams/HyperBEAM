@@ -180,7 +180,7 @@ write_link_tree(RootPath, PathMap, Store, Opts) ->
 write_binary(Hashpath, Bin, Opts) ->
     write_binary(Hashpath, Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
 write_binary(Hashpath, Bin, Store, Opts) ->
-    ?event(debug, {writing_binary, {hashpath, Hashpath}, {bin, Bin}, {store, Store}}),
+    ?event({writing_binary, {hashpath, Hashpath}, {bin, Bin}, {store, Store}}),
     {ok, Path} = write_message(Bin, Store, Opts),
     hb_store:make_link(Store, Path, Hashpath),
     {ok, Path}.
@@ -213,7 +213,7 @@ store_read(Path, Store, Opts) ->
             case hb_path:term_to_path_parts(Path) of
                 [BasePath, Key] when not ?IS_ID(Key) and is_binary(Key) ->
                     ?no_prod("This extra `/` looks dubious."),
-                    case hb_store:read(Store, <<BasePath/binary, "/", "/Converge-Type:", Key/binary>>) of
+                    case hb_store:read(Store, <<BasePath/binary, "/", "/Converge-Type-", Key/binary>>) of
                         no_viable_store ->
                             {ok, Binary};
                         {ok, Type} ->
@@ -227,7 +227,7 @@ store_read(Path, Store, Opts) ->
                 {ok, RawSubpaths} ->
                     Subpaths =
                         lists:map(fun hb_converge:normalize_key/1, RawSubpaths),
-                    ?event(debug,
+                    ?event(
                         {listed,
                             {original_path, Path},
                             {subpaths, {explicit, Subpaths}}
@@ -237,7 +237,7 @@ store_read(Path, Store, Opts) ->
                         maps:from_list(
                             lists:map(
                                 fun(Subpath) ->
-                                    ?event(debug, {subpath, Subpath}),
+                                    ?event({subpath, Subpath}),
                                     ResolvedSubpath =
                                         hb_store:resolve(Store,
                                             hb_path:to_binary([
@@ -256,7 +256,7 @@ store_read(Path, Store, Opts) ->
                             Subpaths
                         )
                     ),
-                    ?event(debug, {flat_map, FlatMap}),
+                    ?event({flat_map, FlatMap}),
                     {ok, FlatMap};
                 _ -> not_found
             end

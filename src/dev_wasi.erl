@@ -308,7 +308,7 @@ basic_aos_exec_test() ->
     [Ptr] = hb_converge:get(<<"results/wasm/output">>, StateRes),
     {ok, Output} = hb_beamr_io:read_string(Instance, Ptr),
     ?event({got_output, Output}),
-    #{ <<"response">> := #{ <<"output">> := #{ <<"data">> := Data }} }
+    #{ <<"response">> := #{ <<"Output">> := #{ <<"data">> := Data }} }
         = jiffy:decode(Output, [return_maps]),
     ?assertEqual(<<"2">>, Data).
 

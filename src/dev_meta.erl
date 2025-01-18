@@ -10,9 +10,9 @@
 %% with a `Meta` key are routed to the `handle_meta/2` function, while all
 %% other messages are routed to the `handle_converge/2` function.
 handle(NodeMsg, RawRequest) ->
-    ?event(debug, #{ request => RawRequest }),
+    ?event(RawRequest),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(debug, {processing_messages, NormRequest}),
+    ?event({processing_messages, NormRequest}),
     case is_meta_request(NormRequest) of
         true -> handle_meta(NormRequest, NodeMsg);
         false -> handle_converge(NormRequest, NodeMsg)
@@ -61,7 +61,7 @@ handle_converge(Request, NodeMsg) ->
                         NodeMsg#{ force_message => true }
                     )
                 ),
-            ?event(debug, {res, Res}),
+            ?event({res, Res}),
             % Apply the post-processor to the result.
             embed_status(
                 resolve_processor(

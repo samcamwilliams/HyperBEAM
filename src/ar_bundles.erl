@@ -793,7 +793,7 @@ item_to_json_struct(
     }
 ) ->
     % Set "From" if From-Process is Tag or set with "Owner" address
-    ?event(debug, {invoked_item_to_json_struct, {tags, Tags}, {owner, Owner}, {data, Data}}),
+    ?event({invoked_item_to_json_struct, {tags, Tags}, {owner, Owner}, {data, Data}}),
     From =
         case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
             [{_, FromProcess}] -> FromProcess;
