@@ -228,7 +228,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
                 Res ->
                     % Now that we have the result, we can skip right to potential
                     % recursion (step 11).
-                    {ok, Res}
+                    Res
             end;
         {infinite_recursion, GroupName} ->
             % We are the leader for this resolution, but we executing the 
@@ -585,8 +585,9 @@ keys(Msg, Opts, remove) ->
 %% `HashPath' for each step.
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
-set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
-    Msg2 = maps:without([<<"hashpath">>, <<"priv">>], RawMsg2),
+set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
+    Msg1 = normalize_keys(RawMsg1),
+    Msg2 = maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2)),
     ?event(converge_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
     case keys(Msg2, internal_opts(Opts)) of
