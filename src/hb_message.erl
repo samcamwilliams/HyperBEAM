@@ -621,9 +621,7 @@ deeply_nested_message_with_data_test(Codec) ->
 nested_structured_fields_test(Codec) ->
     NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
     Encoded = convert(NestedMsg, Codec, converge, #{}),
-    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
     ?assert(match(NestedMsg, Decoded)).
 
 nested_message_with_large_keys_test(Codec) ->
