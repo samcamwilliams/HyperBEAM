@@ -10,7 +10,7 @@
 %% with a `Meta` key are routed to the `handle_meta/2` function, while all
 %% other messages are routed to the `handle_converge/2` function.
 handle(NodeMsg, RawRequest) ->
-    ?event(RawRequest),
+    ?event({raw_request, RawRequest, NodeMsg}),
     NormRequest = hb_singleton:from(RawRequest),
     ?event({processing_messages, NormRequest}),
     case is_meta_request(NormRequest) of
@@ -63,12 +63,15 @@ handle_converge(Request, NodeMsg) ->
                 ),
             ?event({res, Res}),
             % Apply the post-processor to the result.
-            embed_status(
-                resolve_processor(
-                    postprocessor,
-                    Res,
-                    NodeMsg
-                )
+            maybe_sign(
+                embed_status(
+                    resolve_processor(
+                        postprocessor,
+                        Res,
+                        NodeMsg
+                    )
+                ),
+                NodeMsg
             );
         Res -> embed_status(Res)
     end.
@@ -87,4 +90,19 @@ resolve_processor(Processor, Request, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({Status, Res}) ->
-    {ok, Res#{ <<"status-code">> => hb_http:status_code(Status) }}.
+    {Status, Res#{ <<"status-code">> => hb_http:status_code(Status) }}.
+
+%% @doc Sign the result of a device call if the node is configured to do so.
+maybe_sign({ok, Res}, NodeMsg) ->
+    {ok, maybe_sign(Res, NodeMsg)};
+maybe_sign(Res, NodeMsg) ->
+    ?event({maybe_sign, Res, NodeMsg}),
+    case hb_opts:get(force_signed, false, NodeMsg) of
+        true ->
+            hb_message:sign(
+                Res,
+                hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
+                hb_opts:get(format, http, NodeMsg)
+            );
+        false -> Res
+    end.

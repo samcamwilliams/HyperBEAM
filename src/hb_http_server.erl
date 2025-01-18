@@ -167,7 +167,8 @@ test_opts(Opts) ->
                         <<"TEST-cache-", (integer_to_binary(Port))/binary>>
                 }
             },
-        priv_wallet => Wallet
+        priv_wallet => Wallet,
+        force_signed => true
     }.
 
 %% @doc Test that we can start the server, send a message, and get a response.
