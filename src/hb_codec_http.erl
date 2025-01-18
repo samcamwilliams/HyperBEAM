@@ -52,7 +52,7 @@
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
 from(#{ <<"headers">> := Headers, <<"body">> := Body }) when is_map(Headers) ->
-    from(#{ headers => maps:to_list(Headers), body => Body });
+    from(#{ <<"headers">> => maps:to_list(Headers), <<"body">> => Body });
 from(#{ <<"headers">> := Headers, <<"body">> := Body }) ->
     % First, parse all headers and add as key-value pairs to the TABM
     Map = from_headers(#{}, Headers),
@@ -319,7 +319,7 @@ field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
         headers ->
             Headers = maps:get(<<"headers">>, Http),
             NewHeaders = lists:append(Headers, [{NormalizedName, Value}]),
-            maps:put(headers, NewHeaders, Http);
+            maps:put(<<"headers">>, NewHeaders, Http);
         % Append the value as a part of the multipart body
         %
         % We'll need to prepend a Content-Disposition header to the part, using
