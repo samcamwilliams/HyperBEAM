@@ -53,15 +53,17 @@
 %%% 	keyid => <<"6eVuWgpNgv3bxfNgFrIiTkzE8Yb0V2omShxS4uKyzpw">>
 %%% 	tag => <<"HyperBEAM">>
 %%% }
--type signature_params() :: #{atom() | binary() | string() => binary() | integer()}.
+-type signature_params() ::
+    #{atom() | binary() | string() => binary() | integer()}.
 
 %%% The state encapsulated as the "Authority".
-%%% It includes an ordered list of parsed component identifiers, used for extracting values
-%%% from the Request/Response Message Context, as well as the signature parameters
-%%% used when creating the signature and encode in the signature base.
+%%% It includes an ordered list of parsed component identifiers, used for 
+%%% extracting values from the Request/Response Message Context, as well as 
+%%% the signature parameters used when creating the signature and encode in 
+%%% the signature base.
 %%%
-%%% This is effectively the State of an Authority, used to sign a Request/Response Message
-%%% Context.
+%%% This is effectively the State of an Authority, used to sign a Request/Response 
+%%% Message Context.
 %%%
 %%% #{
 %%% 	component_identifiers => [{item, {string, <<"@method">>}, []}]
@@ -84,6 +86,7 @@
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 sign(MsgToSign, _Req, Opts) ->
     ?event({starting_to_sign, MsgToSign}),
+    ?event({opts, Opts}),
     Wallet = {_Priv, {_, Pub}} = hb_opts:get(wallet, no_viable_wallet, Opts),
     Encoded = hb_message:convert(MsgToSign, http, #{}),
     ?event({encoded, {explicit, Encoded}}),
@@ -119,19 +122,24 @@ verify(MsgToVerify, _Req, Opts) ->
 	#{binary() => binary() | integer()},
 	{} %TODO: type out a key_pair
 ) -> authority_state().
-authority(ComponentIdentifiers, SigParams, PubKey = {KeyType = {ALG, _}, _Pub}) when is_atom(ALG) ->
+authority(ComponentIdentifiers, SigParams, PubKey = {KeyType = {ALG, _}, _Pub})
+        when is_atom(ALG) ->
     % Only the public key is provided, so use an stub binary for private
     % which will trigger errors downstream if it's needed, which is what we want
     authority(ComponentIdentifiers, SigParams, {{KeyType, <<>>, PubKey}, PubKey});
-authority(ComponentIdentifiers, SigParams, PrivKey = {KeyType = {ALG, _}, _Priv, Pub}) when is_atom(ALG) ->
+authority(ComponentIdentifiers, SigParams, PrivKey = {KeyType = {ALG, _}, _, Pub})
+        when is_atom(ALG) ->
     % Only the private key was provided, so derive the public from private
     authority(ComponentIdentifiers, SigParams, {PrivKey, {KeyType, Pub}});
 authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
     #{
 		% parse each component identifier into a Structured Field Item:
 		%
-		% <<"\"Example-Dict\";key=\"foo\"">> -> {item, {string, <<"Example-Dict">>}, [{<<"key">>, {string, <<"foo">>}}]}
-		% See hb_http_structuted_fields for parsed Structured Fields full data structures
+		% <<"\"Example-Dict\";key=\"foo\"">> ->
+        %   {item, {string, <<"Example-Dict">>},
+        %       [{<<"key">>, {string, <<"foo">>}}]}
+		% See hb_http_structuted_fields for parsed Structured Fields full data 
+        % structures
 		%
 		% sf_item/1 handles when the argument is already parsed.
 		% This provides a feedback loop, in case any encoded component identifier is
@@ -144,15 +152,19 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 		key_pair => KeyPair
 	}.
 
-%%% @doc using the provided Authority and Request Message Context, and create a Signature and SignatureInput
-%%% that can be used to additional signatures to a corresponding HTTP Message
--spec sign_auth(authority_state(), request_message()) -> {ok, {binary(), binary(), binary()}}.
+%%% @doc using the provided Authority and Request Message Context, and create a 
+%%% Signature and SignatureInput that can be used to additional signatures to a 
+%%% corresponding HTTP Message
+-spec sign_auth(authority_state(), request_message()) ->
+    {ok, {binary(), binary(), binary()}}.
 sign_auth(Authority, Req) ->
 	sign_auth(Authority, Req, #{}).
 
-%%% @doc using the provided Authority and Request/Response Messages Context, create a Name, Signature and SignatureInput
-%%% that can be used to additional signatures to a corresponding HTTP Message
--spec sign_auth(authority_state(), request_message(), response_message()) -> {ok, {binary(), binary(), binary()}}.
+%%% @doc using the provided Authority and Request/Response Messages Context,
+%%% create a Name, Signature and SignatureInput that can be used to additional
+%%% signatures to a corresponding HTTP Message
+-spec sign_auth(authority_state(), request_message(), response_message()) ->
+    {ok, {binary(), binary(), binary()}}.
 sign_auth(Authority, Req, Res) ->
     {Priv, {KeyType, PubKey}} = maps:get(key_pair, Authority),
     % Create the signature base and signature-input values
@@ -160,50 +172,64 @@ sign_auth(Authority, Req, Res) ->
         maps:get(sig_params, Authority),
         % TODO: determine alg based on KeyType from authority
         % TODO: is there a more turn-key way to get the wallet address
-        #{ alg => <<"rsa-pss-sha512">>, keyid => hb_util:encode(bin(ar_wallet:to_address(PubKey, KeyType))) } 
+        #{
+            alg => <<"rsa-pss-sha512">>,
+            keyid => hb_util:encode(bin(ar_wallet:to_address(PubKey, KeyType)))
+        } 
     ),
     ?no_prod(<<"Is the wallet address as keyid kosher here?">>),
-    AuthorityWithSigParams = maps:put(sig_params, SigParamsWithKeyAndAlg, Authority),
-	{SignatureInput, SignatureBase} = signature_base(AuthorityWithSigParams, Req, Res),
+    AuthorityWithSigParams =
+        maps:put(sig_params, SigParamsWithKeyAndAlg, Authority),
+	{SignatureInput, SignatureBase} =
+        signature_base(AuthorityWithSigParams, Req, Res),
     % Now perform the actual signing
 	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
 	{ok, {SignatureInput, Signature}}.
 
 %%% @doc same verify/3, but with an empty Request Message Context
 verify_auth(Verifier, Msg) ->
-    % Assume that the Msg is a response message, and use an empty Request message context
+    % Assume that the Msg is a response message, and use an empty Request 
+    % message context
     %
-    % A corollary is that a signature containing any components from the request will produce
-    % an error. It is the caller's responsibility to provide the required Message Context
-    % in order to verify the signature
+    % A corollary is that a signature containing any components from the request
+    % will produce an error. It is the caller's responsibility to provide the
+    % required Message Context in order to verify the signature
     verify_auth(Verifier, #{}, Msg).
 
 %%% @doc Given the signature name, and the Request/Response Message Context
 %%% verify the named signature by constructing the signature base and comparing
 verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
-    % Signature and Signature-Input fields are each themself a dictionary structured field.
-    % Ergo, we can use our same utilities to extract the value at the desired key, in this case,
-    % the signature name. Because our utilities already implement the relevant portions
-    % of RFC-9421, we get the error handling here as well.
+    % Signature and Signature-Input fields are each themself a dictionary 
+    % structured field.
+    % Ergo, we can use our same utilities to extract the value at the desired key,
+    % in this case, the signature name. Because our utilities already implement
+    % the relevant portions of RFC-9421, we get the error handling here as well.
     % 
     %  See https://datatracker.ietf.org/doc/html/rfc9421#section-3.2-3.2
     SigNameParams = [{<<"key">>, {string, bin(SigName)}}],
     SignatureIdentifier = {item, {string, <<"signature">>}, SigNameParams},
-    SignatureInputIdentifier = {item, {string, <<"signature-input">>}, SigNameParams},
+    SignatureInputIdentifier =
+        {item, {string, <<"signature-input">>}, SigNameParams},
     % extract signature and signature params
-    case {extract_field(SignatureIdentifier, Req, Res), extract_field(SignatureInputIdentifier, Req, Res)} of
+    SigIdentifier = extract_field(SignatureIdentifier, Req, Res),
+    SigInputIdentifier = extract_field(SignatureInputIdentifier, Req, Res),
+    case {SigIdentifier, SigInputIdentifier} of
         {{ok, {_, EncodedSignature}}, {ok, {_, SignatureInput}}} ->
-            % The signature may be encoded ie. as binary, so we need to parse it further
-            %  as a structured field
-            {item, {_, Signature}, _} = hb_http_structured_fields:parse_item(EncodedSignature),
+            % The signature may be encoded ie. as binary, so we need to parse it
+            % further as a structured field
+            {item, {_, Signature}, _} =
+                hb_http_structured_fields:parse_item(EncodedSignature),
             % The value encoded within signature input is also a structured field,
             % specifically an inner list that encodes the ComponentIdentifiers
             % and the Signature Params.
             % 
-            % So we must parse this value, and then use it to construct the signature base
-            [{list, ComponentIdentifiers, SigParams}] = hb_http_structured_fields:parse_list(SignatureInput),
-            % TODO: HACK convert parsed sig params into a map that authority() can handle
-            % maybe authority() should handle both parsed and unparsed SigParams, similar to ComponentIdentifiers
+            % So we must parse this value, and then use it to construct the 
+            % signature base
+            [{list, ComponentIdentifiers, SigParams}] =
+                hb_http_structured_fields:parse_list(SignatureInput),
+            % TODO: HACK convert parsed sig params into a map that authority() 
+            % can handle maybe authority() should handle both parsed and unparsed 
+            % SigParams, similar to ComponentIdentifiers
             SigParamsMap = lists:foldl(
                 % TODO: does not support SF decimal params
                 fun
@@ -217,35 +243,48 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
             {_, SignatureBase} = signature_base(Authority, Req, Res),
             {_Priv, Pub} = maps:get(key_pair, Authority),
-            % Now verify the signature base signed with the provided key matches the signature
+            % Now verify the signature base signed with the provided key matches
+            % the signature
             ar_wallet:verify(Pub, SignatureBase, Signature, sha512);
         % An issue with parsing the signature
         {SignatureErr, {ok, _}} -> SignatureErr;
         % An issue with parsing the signature input
         {{ok, _}, SignatureInputErr} -> SignatureInputErr;
-        % An issue with parsing both, so just return the first one from the signature parsing
+        % An issue with parsing both, so just return the first one from the
+        % signature parsing
         % TODO: maybe could merge the errors?
         {SignatureErr, _} -> SignatureErr
     end.
 
-%%% @doc create the signature base that will be signed in order to create the Signature and SignatureInput.
+%%% @doc create the signature base that will be signed in order to create the
+%%% Signature and SignatureInput.
 %%%
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
-	ParamsLine = signature_params_line(ComponentIdentifiers, maps:get(sig_params, Authority)),
+	ParamsLine =
+        signature_params_line(
+            ComponentIdentifiers,
+            maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
-    SignatureBase = <<ComponentsLine/binary, <<"\n">>/binary, <<"\"@signature-params\": ">>/binary, ParamsLine/binary>>,
+    SignatureBase =
+        <<
+            ComponentsLine/binary,
+            <<"\n">>/binary,
+            <<"\"@signature-params\": ">>/binary,
+            ParamsLine/binary
+        >>,
     SignatureBase.
 
-%%% @doc Given a list of Component Identifiers and a Request/Response Message context, create the
-%%% "signature-base-line" portion of the signature base
-%%% TODO: catch duplicate identifier: https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.1
+%%% @doc Given a list of Component Identifiers and a Request/Response Message
+%%% context, create the "signature-base-line" portion of the signature base
+%%% TODO: catch duplicate identifier:
+%%% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.1
 %%%
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.1
 signature_components_line(ComponentIdentifiers, Req, Res) ->
@@ -269,31 +308,38 @@ signature_params_line(ComponentIdentifiers, SigParams) ->
 	bin(Res).
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
-%%% extract the value represented by the Component Identifier, from the Messages Context,
-%%% and return the normalized form of the identifier, along with the extracted encoded value.
+%%% extract the value represented by the Component Identifier, from the Messages
+%%% Context, and return the normalized form of the identifier, along with the
+%%% extracted encoded value.
 %%%
-%%% Generally speaking, a Component Identifier may reference a "Derived" Component, a Message Field,
-%%% or a sub-component of a Message Field.
+%%% Generally speaking, a Component Identifier may reference a "Derived" Component,
+%%% a Message Field, or a sub-component of a Message Field.
 %%%
-%%% Since a Component Identifier is itself a Structured Field, it may also specify parameters, which are
-%%% used to describe behavior such as which Message to derive a field or sub-component of the field,
-%%% and how to encode the value as part of the signature base.
+%%% Since a Component Identifier is itself a Structured Field, it may also specify
+%%% parameters, which are used to describe behavior such as which Message to
+%%% derive a field or sub-component of the field, and how to encode the value as
+%%% part of the signature base.
 identifier_to_component(Identifier, Req, Res) when is_list(Identifier) ->
 	identifier_to_component(list_to_binary(Identifier), Req, Res);
 identifier_to_component(Identifier, Req, Res) when is_atom(Identifier) ->
 	identifier_to_component(atom_to_binary(Identifier), Req, Res);
 identifier_to_component(Identifier, Req, Res) when is_binary(Identifier) ->
-	identifier_to_component(hb_http_structured_fields:parse_item(Identifier), Req, Res);
-identifier_to_component(ParsedIdentifier = {item, {_Kind, Value}, _Params}, Req, Res) ->
+	identifier_to_component(
+        hb_http_structured_fields:parse_item(Identifier),
+        Req,
+        Res
+    );
+identifier_to_component(ParsedIdentifier = {item, {_, Value}, _Params}, Req, Res) ->
 	case Value of
 		<<$@, _R/bits>> -> derive_component(ParsedIdentifier, Req, Res);
 		_ -> extract_field(ParsedIdentifier, Req, Res)
 	end.
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
-%%% extract the value represented by the Component Identifier, from the Messages Context,
-%%% specifically a field on a Message within the Messages Context,
-%%% and return the normalized form of the identifier, along with the extracted encoded value.
+%%% extract the value represented by the Component Identifier, from the Messages
+%%% Context, specifically a field on a Message within the Messages Context,
+%%% and return the normalized form of the identifier, along with the extracted
+%%% encoded value.
 %%%
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-http-fields
@@ -307,49 +353,78 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 	case (IsStrictFormat orelse DictKey =/= false) andalso IsByteSequenceEncoded of
 		true ->
 			% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.2
-			{conflicting_params_error, <<"Component Identifier parameter 'bs' MUST not be used with 'sf' or 'key'">>};
+			{
+                conflicting_params_error,
+                <<
+                    "Component Identifier parameter 'bs' MUST not ",
+                    "be used with 'sf' or 'key'"
+                >>
+            };
 		_ ->
 			Lowered = lower_bin(IParsed),
-			NormalizedItem = hb_http_structured_fields:item({item, {string, Lowered}, IParams}),
-			[IsRequestIdentifier, IsTrailerField] = [find_sf_request_param(IParams), find_sf_trailer_param(IParams)],
+			NormalizedItem =
+                hb_http_structured_fields:item(
+                    {item, {string, Lowered}, IParams}
+                ),
+			[IsRequestIdentifier, IsTrailerField] = [
+                find_sf_request_param(IParams),
+                find_sf_trailer_param(IParams)
+            ],
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
 			MaybeRawFields = lists:filter(
 				fun({Key, _Value}) -> Key =:= Lowered end,
-				% Field names are normalized to lowercase in the signature base and also are case insensitive.
-				% So by converting all the names to lowercase here, we simoultaneously normalize them, and prepare
-				% them for comparison in one pass.
+				% Field names are normalized to lowercase in the signature base
+                % and also are case insensitive.
+                % So by converting all the names to lowercase here, we
+                % simoultaneously normalize them, and prepare them for
+                % comparison in one pass.
 				[
 					{lower_bin(Key), Value}
-                % TODO: how can we maintain the order msg fields, especially in the case where there are
-                % multiple fields with the same name, and order must be preserved
+                % TODO: how can we maintain the order msg fields, especially in
+                % the case where there are multiple fields with the same name,
+                % and order must be preserved
 				 || {Key, Value} <-
 						maps:get(
-							% The field will almost certainly be a header, but could also be a trailer
+							% The field will almost certainly be a header, but
+                            % could also be a trailer
 							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.10.1
-							case IsTrailerField of true -> trailers; false -> <<"headers">> end,
-							% The header may exist on any message in the context of the signature
-							% which could be the Request or Response Message
+							case IsTrailerField of
+                                true -> trailers;
+                                false -> <<"headers">>
+                            end,
+							% The header may exist on any message in the context of
+                            % the signature which could be the Request or Response
+                            % Message
 							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.8.1
-							case IsRequestIdentifier of true -> Req; false -> Res end
-						)
+							case IsRequestIdentifier of
+                                true -> Req;
+                                false -> Res
+                            end
+					)
 				]
 			),
 			case MaybeRawFields of
 				[] ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6
-					{field_not_found_error, <<"Component Identifier for a field MUST be present on the message">>};
+					{
+                        field_not_found_error,
+                        <<"Component Identifier for a field MUST be ",
+                        "present on the message">>
+                    };
 				FieldPairs ->
-					% The Field was found, but we still need to potentially parse it
-					% (it could be a Structured Field) and potentially extract
-					% subsequent values ie. specific dictionary key and its parameters, or further encode it
+					% The Field was found, but we still need to potentially
+                    % parse it (it could be a Structured Field) and potentially
+                    % extract subsequent values ie. specific dictionary key and
+                    % its parameters, or further encode it
 					case
 						extract_field_value(
 							[bin(Value) || {_Key, Value} <- FieldPairs],
 							[DictKey, IsStrictFormat, IsByteSequenceEncoded]
 						)
 					of
-						{ok, Extracted} -> {ok, {bin(NormalizedItem), bin(Extracted)}};
+						{ok, Extracted} ->
+                            {ok, {bin(NormalizedItem), bin(Extracted)}};
 						E -> E
 					end
 			end
@@ -379,11 +454,16 @@ extract_field_value(RawFields, [Key, IsStrictFormat, IsByteSequenceEncoded]) ->
 					case sf_parse(Combined) of
 						% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.1-3
 						{error, _} ->
-							{sf_parsing_error, <<"Component Identifier value could not be parsed as a structured field">>};
+							{
+                                sf_parsing_error,
+                                <<"Component Identifier value could not ",
+                                "be parsed as a structured field">>
+                            };
 						{ok, SF} ->
 							case Key of
-								% Not accessing a key, so just re-serialize, which should
-								% properly format the data in Strict-Formatting style
+								% Not accessing a key, so just re-serialize,
+                                % which should properly format the data in
+                                % Strict-Formatting style
 								false -> sf_encode(SF);
 								_ -> extract_dictionary_field_value(SF, Key)
 							end
@@ -399,19 +479,27 @@ extract_dictionary_field_value(StructuredField = [Elem | _Rest], Key) ->
 			case lists:keyfind(Key, 1, StructuredField) of
 				% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.2-5
 				false ->
-					{sf_dicionary_key_not_found_error,
-						<<"Component Identifier references key not found in dictionary structured field">>};
+					{
+                        sf_dicionary_key_not_found_error,
+                        <<"Component Identifier references key not ",
+                        "found in dictionary structured field">>
+                    };
 				{_, Value} ->
 					sf_encode(Value)
 			end;
 		_ ->
-			{sf_not_dictionary_error, <<"Component Identifier cannot reference key on a non-dictionary structured field">>}
+			{
+                sf_not_dictionary_error,
+                <<"Component Identifier cannot reference key on a ",
+                "non-dictionary structured field">>
+            }
 	end.
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
-%%% extract the value represented by the Component Identifier, from the Messages Context,
-%%% specifically a "Derived" Component within the Messages Context,
-%%% and return the normalized form of the identifier, along with the extracted encoded value.
+%%% extract the value represented by the Component Identifier, from the Messages
+%%% Context, specifically a "Derived" Component within the Messages Context,
+%%% and return the normalized form of the identifier, along with the extracted
+%%% encoded value.
 %%%
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-derived-components
@@ -423,11 +511,17 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 	case find_sf_request_param(IParams) andalso Subject =:= req of
 		% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.3
 		true ->
-			{req_identifier_error,
-				<<"A Component Identifier may not contain a req parameter if the target is a request message">>};
+			{
+                req_identifier_error,
+                <<"A Component Identifier may not contain a req parameter ",
+                "if the target is a request message">>
+            };
 		_ ->
 			Lowered = lower_bin(IParsed),
-			NormalizedItem = hb_http_structured_fields:item({item, {string, Lowered}, IParams}),
+			NormalizedItem =
+                hb_http_structured_fields:item(
+                    {item, {string, Lowered}, IParams}
+                ),
 			Result =
 				case Lowered of
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.2.1
@@ -459,7 +553,13 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 						RequestTarget =
 							case maps:get(is_absolute_form, Req, false) of
 								true -> maps:get(url, Req);
-								_ -> lists:join($?, [maps:get(path, URI), maps:get(query, URI, ?EMPTY_QUERY_PARAMS)])
+								_ ->
+                                    lists:join($?,
+                                        [
+                                            maps:get(path, URI),
+                                            maps:get(query, URI, ?EMPTY_QUERY_PARAMS)
+                                        ]
+                                    )
 							end,
 						{ok, bin(RequestTarget)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.12.1
@@ -484,10 +584,15 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 							% The name parameter MUST be provided when specifiying a @query-param
 							% Derived Component. See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.8-1
 							false ->
-								{req_identifier_error, <<"@query_param Derived Component Identifier must specify a name parameter">>};
+								{
+                                    req_identifier_error,
+                                    <<"@query_param Derived Component Identifier ",
+                                    "must specify a name parameter">>
+                                };
 							Name ->
 								URI = uri_string:parse(maps:get(url, Req)),
-								QueryParams = uri_string:dissect_query(maps:get(query, URI, "")),
+								QueryParams =
+                                    uri_string:dissect_query(maps:get(query, URI, "")),
 								QueryParam =
 									case lists:keyfind(Name, 1, QueryParams) of
 										{_, QP} -> QP;
@@ -503,7 +608,11 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 						case Subject =:= req of
 							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.9-8
 							true ->
-								{res_identifier_error, <<"@status Derived Component must not be used if target is a request message">>};
+								{
+                                    res_identifier_error,
+                                    <<"@status Derived Component must not be ",
+                                    "used if target is a request message">>
+                                };
 							_ ->
 								Status = maps:get(status, Res, <<"200">>),
 								{ok, Status}
@@ -531,7 +640,8 @@ sf_signature_param({Name, Param}) ->
         % all signature params are either integer or string values
         true -> case Param of
             I when is_integer(I) -> {ok, {NormalizedName, Param}};
-            P when is_atom(P) orelse is_list(P) orelse is_binary(P) -> {ok, {NormalizedName, {string, bin(P)}}};
+            P when is_atom(P) orelse is_list(P) orelse is_binary(P) ->
+                {ok, {NormalizedName, {string, bin(P)}}};
             P -> {invalid_signature_param_value, P}
         end
     end.
@@ -580,9 +690,9 @@ sf_signature(Signature) ->
 %%% @doc Attempt to parse the binary into a data structure that represents
 %%% an HTTP Structured Field.
 %%%
-%%% Lacking some sort of "hint", there isn't a way to know which "kind" of Structured Field
-%%% the binary is, apriori. So we simply try each parser, and return the first invocation that
-%%% doesn't result in an error.
+%%% Lacking some sort of "hint", there isn't a way to know which "kind" of
+%%% Structured Field the binary is, apriori. So we simply try each parser,
+%%% and return the first invocation that doesn't result in an error.
 %%%
 %%% If no parser is successful, then we return an error tuple
 sf_parse(Raw) when is_list(Raw) -> sf_parse(list_to_binary(Raw));
@@ -613,12 +723,14 @@ sf_encode(StructuredField = {item, _, _}) ->
 	sf_encode(fun hb_http_structured_fields:item/1, StructuredField);
 sf_encode(StructuredField = [Elem | _Rest]) ->
 	sf_encode(
-		% Both an sf list and dictionary is represented in Erlang as a List of pairs
-		% but a dictionary's members will always be a pair whose first value
+		% Both an sf list and dictionary is represented in Erlang as a List of
+        % pairs but a dictionary's members will always be a pair whose first value
 		% is a binary, so we can match on that to determine which serializer to use
 		case Elem of
-			{Name, _} when is_binary(Name) -> fun hb_http_structured_fields:dictionary/1;
-			_ -> fun hb_http_structured_fields:list/1
+			{Name, _} when is_binary(Name) ->
+                fun hb_http_structured_fields:dictionary/1;
+			_ ->
+                fun hb_http_structured_fields:list/1
 		end,
 		StructuredField
 	).
@@ -636,8 +748,8 @@ sf_item(ComponentIdentifier) when is_list(ComponentIdentifier) ->
 sf_item(ComponentIdentifier) when is_binary(ComponentIdentifier) ->
     sf_item(hb_http_structured_fields:parse_item(ComponentIdentifier)).
 
-%%% @doc Given a parameter Name, extract the Parameter value from the HTTP Structured Field
-%%% data structure.
+%%% @doc Given a parameter Name, extract the Parameter value from the HTTP
+%%% Structured Field data structure.
 %%%
 %%% If no value is found, then false is returned
 find_sf_param(Name, Params, Default) when is_list(Name) ->
