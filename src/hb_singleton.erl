@@ -58,7 +58,7 @@ from(RawMsg) ->
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
-    {Path, QMap} =
+    {Path, QKVList} =
         case binary:split(RelativeRef, <<"?">>) of
             [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
             [P] -> {P, #{}}
@@ -66,7 +66,7 @@ parse_full_path(RelativeRef) ->
     {
         ok,
         lists:map(fun(Part) -> decode_string(Part) end, path_parts($/, Path)),
-        QMap
+        maps:from_list(QKVList)
     }.
 
 %% @doc Step 2: Decode + Split + Sanitize the path. Split by `/` but avoid
