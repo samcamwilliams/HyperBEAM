@@ -15,8 +15,8 @@ from(Msg) when is_map(Msg) ->
             fun(Key) ->
                 case maps:find(Key, Msg) of
                     {ok, <<>>} ->
-                        BinKey = hb_converge:key_to_binary(Key),
-                        {<<"Converge-Type:", BinKey/binary>>, <<"Empty-Binary">>};
+                        BinKey = hb_converge:normalize_key(Key),
+                        {<<"converge-type-", BinKey/binary>>, <<"empty-binary">>};
                     {ok, Value} when is_binary(Value) ->
                         {Key, Value};
                     {ok, Map} when is_map(Map) ->
@@ -24,17 +24,17 @@ from(Msg) when is_map(Msg) ->
                     {ok, Msgs = [Msg1|_]} when is_map(Msg1) ->
                         % We have a list of maps. Convert to a numbered map and
                         % recurse.
-                        {Key, from(hb_converge:ensure_message(Msgs))};
+                        {Key, from(hb_converge:normalize_keys(Msgs))};
                     {ok, []} ->
-                        BinKey = hb_converge:key_to_binary(Key),
-                        {<<"Converge-Type:", BinKey/binary>>, <<"Empty-List">>};
+                        BinKey = hb_converge:normalize_key(Key),
+                        {<<"converge-type-", BinKey/binary>>, <<"empty-list">>};
                     {ok, Value} when
                             is_atom(Value) or is_integer(Value)
                             or is_list(Value) ->
-                        ItemKey = hb_converge:key_to_binary(Key),
+                        ItemKey = hb_converge:normalize_key(Key),
                         {Type, BinaryValue} = encode_value(Value),
                         [
-                            {<<"Converge-Type:", ItemKey/binary>>, Type},
+                            {<<"converge-type-", ItemKey/binary>>, Type},
                             {ItemKey, BinaryValue}
                         ];
                     {ok, _} -> []
@@ -59,13 +59,13 @@ to(Bin) when is_binary(Bin) -> Bin;
 to(TABM0) ->
     % First, handle special cases of empty items, which `ar_bundles` cannot
     % handle. Needs to be transformed into a list (unfortunately) so that we
-    % can also remove the "Converge-Type:" prefix from the key.
+    % can also remove the "Converge-Type-" prefix from the key.
     TABM1 =
         maps:from_list(
             lists:map(
-                fun({<<"Converge-Type:", Key/binary>>, <<"Empty-Binary">>}) ->
+                fun({<<"converge-type-", Key/binary>>, <<"empty-binary">>}) ->
                     {Key, <<>>};
-                ({<<"Converge-Type:", Key/binary>>, <<"Empty-List">>}) ->
+                ({<<"converge-type-", Key/binary>>, <<"empty-list">>}) ->
                     {Key, []};
                 ({Key, Value}) ->
                     {Key, Value}
@@ -73,17 +73,17 @@ to(TABM0) ->
                 maps:to_list(TABM0)
             )
         ),
-    % 1. Remove any keys from output that have a "Converge-Type:" prefix;
-    % 2. Decode any binary values that have a "Converge-Type:" prefix;
+    % 1. Remove any keys from output that have a "Converge-Type-" prefix;
+    % 2. Decode any binary values that have a "Converge-Type-" prefix;
     % 3. Recursively decode any maps that we encounter;
     % 4. Return the remaining keys and values as a map.
     hb_message:filter_default_keys(maps:filtermap(
-        fun(<<"Converge-Type:", _/binary>>, _) ->
-            % Remove any keys from output that have a "Converge-Type:" prefix.
+        fun(<<"converge-type-", _/binary>>, _) ->
+            % Remove any keys from output that have a "Converge-Type-" prefix.
             false;
         (RawKey, BinaryValue) when is_binary(BinaryValue) ->
-            Key = hb_converge:key_to_binary(RawKey),
-            case maps:find(<<"Converge-Type:", Key/binary>>, TABM1) of
+            Key = hb_converge:normalize_key(RawKey),
+            case maps:find(<<"converge-type-", Key/binary>>, TABM1) of
                 error -> {true, BinaryValue};
                 {ok, Type} ->
                     {true, decode_value(Type, BinaryValue)}
@@ -102,29 +102,29 @@ to(TABM0) ->
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
     [Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
-    {<<"Integer">>, Encoded};
+    {<<"integer">>, Encoded};
 encode_value(Value) when is_float(Value) ->
     ?no_prod("Must use structured field representation for floats!"),
-    {<<"Float">>, float_to_binary(Value)};
+    {<<"float">>, float_to_binary(Value)};
 encode_value(Value) when is_atom(Value) ->
     [EncodedIOList, _] =
         hb_http_structured_fields:item(
             {item, {string, atom_to_binary(Value, latin1)}, []}),
     Encoded = list_to_binary(EncodedIOList),
-    {<<"Atom">>, Encoded};
+    {<<"atom">>, Encoded};
 encode_value(Values) when is_list(Values) ->
     EncodedValues =
         lists:map(
             fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
                (Item) ->
                 {RawType, Encoded} = encode_value(Item),
-                Type = hb_converge:key_to_binary(RawType),
+                Type = hb_converge:normalize_key(RawType),
                 {
                     item,
                     {
                         string,
                         <<
-                            "(Converge-Type: ", Type/binary, ") ",
+                            "(converge-type-", Type/binary, ") ",
                             Encoded/binary
                         >>
                     },
@@ -134,9 +134,9 @@ encode_value(Values) when is_list(Values) ->
             Values
         ),
     EncodedList = hb_http_structured_fields:list(EncodedValues),
-    {<<"List">>, iolist_to_binary(EncodedList)};
+    {<<"list">>, iolist_to_binary(EncodedList)};
 encode_value(Value) when is_binary(Value) ->
-    {<<"Binary">>, Value};
+    {<<"binary">>, Value};
 encode_value(Value) ->
     Value.
 
@@ -159,10 +159,10 @@ decode_value(float, Value) ->
 decode_value(atom, Value) ->
     {item, {string, AtomString}, _} =
         hb_http_structured_fields:parse_item(Value),
-    binary_to_existing_atom(AtomString, latin1);
+    binary_to_existing_atom(AtomString);
 decode_value(list, Value) ->
     lists:map(
-        fun({item, {string, <<"(Converge-Type: ", Rest/binary>>}, _}) ->
+        fun({item, {string, <<"(converge-type-", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
             decode_value(Type, Item);
            ({item, {string, Binary}, _}) -> Binary
@@ -186,12 +186,12 @@ decode_value(OtherType, Value) ->
 
 list_encoding_test() ->
     % Test that we can encode and decode a list of integers.
-    {<<"List">>, Encoded} = encode_value(List1 = [1, 2, 3]),
+    {<<"list">>, Encoded} = encode_value(List1 = [1, 2, 3]),
     Decoded = decode_value(list, Encoded),
     ?assertEqual(List1, Decoded),
     % Test that we can encode and decode a list of binaries.
-    {<<"List">>, Encoded2} = encode_value(List2 = [<<"1">>, <<"2">>, <<"3">>]),
+    {<<"list">>, Encoded2} = encode_value(List2 = [<<"1">>, <<"2">>, <<"3">>]),
     ?assertEqual(List2, decode_value(list, Encoded2)),
     % Test that we can encode and decode a mixed list.
-    {<<"List">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
+    {<<"list">>, Encoded3} = encode_value(List3 = [1, <<"2">>, 3]),
     ?assertEqual(List3, decode_value(list, Encoded3)).

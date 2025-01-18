@@ -22,7 +22,7 @@
 %%%                 `Value` time period, pushing the resulting messages as
 %%%                 in other modes. Default: Not set.
 %%% 
-%%%    Allow-URLs:  Whether messages for which the `Target` is a centralized
+%%%    allow-URLs:  Whether messages for which the `Target` is a centralized
 %%%                 web location (a fully-qualified IP/FDQN address) should be
 %%%                 honored (`True`) or ignored (`False`) by the messenger. 
 %%%                 If set to `True`, the device will relay messages as given
@@ -30,7 +30,7 @@
 %%%                 response message received from the remote HTTP server to
 %%%                 its own output message.
 %%% Messenger-Keys: A list of the keys for which the messenger device should
-%%%                 be active. Default: [<<"Push">>].
+%%%                 be active. Default: [<<"push">>].
 %%%         Report: Determines whether the results of the message pushing 
 %%%                 should be reported in the resulting output, and if set,
 %%%                 to which subpath.
@@ -44,13 +44,13 @@
 push(M1, M2, Opts) ->
     Prefix =
         hb_converge:get(
-            <<"Input-Prefix">>,
+            <<"input-prefix">>,
             {as, dev_message, M1},
             <<>>,
             Opts
         ),
     ShouldReport =
-        hb_converge:get(<< Prefix/binary, "/Report">>, M1, false, Opts),
+        hb_converge:get(<< Prefix/binary, "/report">>, M1, false, Opts),
     case ShouldReport of
         false ->
             % We do not need to report our progress, so we can spawn a new
@@ -68,13 +68,13 @@ push(M1, M2, Opts) ->
     end.
 
 dispatch(Msg1, Msg2, Opts) ->
-    case hb_converge:get(<<"Target">>, Msg2, Opts) of
+    case hb_converge:get(<<"target">>, Msg2, Opts) of
         not_found ->
             ?event({uploading_to_arweave_as_no_target_set, Msg2}),
             hb_client:upload(Msg2);
         Target = << "http", _/binary >> ->
             ?event({posting_to_http, Target, Msg2}),
-            M1Allowed = hb_converge:get(<<"Allow-URLs">>, Msg1, Opts),
+            M1Allowed = hb_converge:get(<<"allow-urls">>, Msg1, Opts),
             OptsAllowed = hb_opts:get(allow_urls, false, Opts),
             case {M1Allowed, OptsAllowed} of
                 {A1, A2} when (not A1) or (A2 == false) ->
@@ -99,7 +99,7 @@ dispatch(Msg1, Msg2, Opts) ->
                     ?event({sending_to_http, Target, Msg2}),
                     case Admissable of
                         true ->
-                            case hb_converge:get(<<"Method">>, Msg2, Opts) of
+                            case hb_converge:get(<<"method">>, Msg2, Opts) of
                                 <<"POST">> -> hb_http:post(Target, Msg2);
                                 _ -> hb_http:get(Target, Msg2)
                             end;
@@ -111,11 +111,11 @@ dispatch(Msg1, Msg2, Opts) ->
                 {pushing_to_target, Target, hb_path:from_message(hashpath, Msg1)}
             ),
             {ok, Downstream} = hb_converge:resolve(
-                #{ path => <<Target, "/Push">> },
+                #{ <<"path">> => <<Target, "/push">> },
                 Opts
             ),
             #{
-                <<"Target">> => Target,
-                <<"Resulted-In">> => Downstream
+                <<"target">> => Target,
+                <<"resulted-in">> => Downstream
             }
     end.

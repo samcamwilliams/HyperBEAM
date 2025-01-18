@@ -10,9 +10,9 @@
 %% with a `Meta` key are routed to the `handle_meta/2` function, while all
 %% other messages are routed to the `handle_converge/2` function.
 handle(NodeMsg, RawRequest) ->
-    ?event(debug, #{ request => RawRequest }),
+    ?event(RawRequest),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(debug, {processing_messages, NormRequest}),
+    ?event({processing_messages, NormRequest}),
     case is_meta_request(NormRequest) of
         true -> handle_meta(NormRequest, NodeMsg);
         false -> handle_converge(NormRequest, NodeMsg)
@@ -20,7 +20,7 @@ handle(NodeMsg, RawRequest) ->
 
 %% @doc Handle a potential list of messages, checking if the first message
 %% has a path of `Meta`.
-is_meta_request([PrimaryMsg | _]) -> hb_path:hd(PrimaryMsg, #{}) == <<"Meta">>;
+is_meta_request([PrimaryMsg | _]) -> hb_path:hd(PrimaryMsg, #{}) == <<"meta">>;
 is_meta_request(_) -> false.
 
 %% @doc Get/set the node message based on the request method. If the request
@@ -56,12 +56,12 @@ handle_converge(Request, NodeMsg) ->
             % Resolve the request message.
             {ok, Res} =
                 embed_status(
-                    hb_converge:resolve(
+                    hb_converge:resolve_many(
                         PreProcMsg,
                         NodeMsg#{ force_message => true }
                     )
                 ),
-            ?event(debug, {res, Res}),
+            ?event({res, Res}),
             % Apply the post-processor to the result.
             embed_status(
                 resolve_processor(
@@ -87,4 +87,4 @@ resolve_processor(Processor, Request, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({Status, Res}) ->
-    {ok, Res#{ <<"Status-Code">> => hb_http:status_code(Status) }}.
+    {ok, Res#{ <<"status-code">> => hb_http:status_code(Status) }}.

@@ -30,8 +30,8 @@ read(Opts = #{ node := Node }, Key) ->
     ?event({reading, Key, Path, Opts}),
     case hb_http:get_binary(Path) of
         {ok, Bundle} ->
-            case lists:keyfind(<<"Status">>, 1, Bundle#tx.tags) of
-                {<<"Status">>, <<"404">>} ->
+            case lists:keyfind(<<"status">>, 1, Bundle#tx.tags) of
+                {<<"status">>, <<"404">>} ->
                     not_found;
                 _ ->
                     {ok, Bundle}

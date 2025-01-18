@@ -15,20 +15,20 @@
 %%%         - Part => #{ path => Part }
 %%%         - Part+Key=Value => #{ path => Part, Key => Value }
 %%%         - Part+Key => #{ path => Part, Key => true }
-%%%         - Part+K1=V1&K2=V2 => #{ path => Part, K1 => <<"V1">>, K2 => <<"V2">> }
+%%%         - Part+k1=v1&k2=v2 => #{ path => Part, k1 => <<"v1">>, k2 => <<"v2">> }
 %%%         - Part!Device => {as, Device, #{ path => Part }}
-%%%         - Part!D+K1=V1 => {as, D, #{ path => Part, K1 => <<"V1">> }}
-%%%         - Part+K1|Int=1 => #{ path => Part, K1 => 1 }
-%%%         - Part!D+K1|Int=1 => {as, D, #{ path => Part, K1 => 1 }}
+%%%         - Part!D+K1=V1 => {as, D, #{ path => Part, K1 => <<"v1">> }}
+%%%         - pt+k1|int=1 => #{ path => pt, k1 => 1 }
+%%%         - pt!d+k1|int=1 => {as, d, #{ path => pt, k1 => 1 }}
 %%%         - (/nested/path) => Resolution of the path /nested/path
-%%%         - (/nested/path+K1=V1) => (resolve /nested/path)#{`K1 => V1}
+%%%         - (/nested/path+k1=v1) => (resolve /nested/path)#{k1 => v1}
 %%%         - (/nested/path!D+K1=V1) => (resolve /nested/path)#{K1 => V1}
-%%%         - Pt+K1|Res=(/a/b/c) => #{ path => Pt, K1 => (resolve /a/b/c) }
+%%%         - pt+k1|res=(/a/b/c) => #{ path => pt, k1 => (resolve /a/b/c) }
 %%%     Key:
-%%%         - Key: <<"Value">> => #{ Key => <<"Value">>, ... } for all messages
-%%%         - N.Key: <<"Value">> => #{ Key => <<"Value">>, ... } for Nth message
-%%%         - Key|Int: 1 => #{ Key => 1, ... }
-%%%         - Key|Res: /nested/path => #{ Key => (resolve /nested/path), ... }
+%%%         - key: <<"value">> => #{ key => <<"value">>, ... } for all messages
+%%%         - n.key: <<"value">> => #{ key => <<"value">>, ... } for Nth message
+%%%         - key|Int: 1 => #{ key => 1, ... }
+%%%         - key|Res: /nested/path => #{ key => (resolve /nested/path), ... }
 %%%         - N.Key|Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
 %%% '''
 -module(hb_singleton).
@@ -58,15 +58,15 @@ from(RawMsg) ->
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
-    {Path, QMap} =
+    {Path, QKVList} =
         case binary:split(RelativeRef, <<"?">>) of
             [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
-            [P] -> {P, #{}}
+            [P] -> {P, []}
         end,
     {
         ok,
         lists:map(fun(Part) -> decode_string(Part) end, path_parts($/, Path)),
-        QMap
+        maps:from_list(QKVList)
     }.
 
 %% @doc Step 2: Decode + Split + Sanitize the path. Split by `/` but avoid
@@ -197,11 +197,11 @@ parse_part(Part) ->
         Part ->
             case part([$+, $&, $!, $|], Part) of
                 {no_match, PartKey, <<>>} ->
-                    #{ path => PartKey };
+                    #{ <<"path">> => PartKey };
                 {Sep, PartKey, PartModBin} ->
                     parse_part_mods(
                         << Sep:8/integer, PartModBin/binary >>,
-                        #{ path => PartKey }
+                        #{ <<"path">> => PartKey }
                     )
             end
     end.
@@ -267,7 +267,7 @@ maybe_typed(Key, Value) ->
         {no_match, OnlyKey, <<>>} -> {untyped, OnlyKey, Value};
         {$|, OnlyKey, Type} ->
             case {Type, Value} of
-                {<<"Resolve">>, Subpath} ->
+                {<<"resolve">>, Subpath} ->
                     % If the value needs to be resolved before it is converted,
                     % use the `Codec/1.0` device to resolve it.
                     % For example:
@@ -297,7 +297,7 @@ single_message_test() ->
 
 basic_hashpath_test() ->
     Hashpath = hb_util:human_id(crypto:strong_rand_bytes(32)),
-    Path = <<"/", Hashpath/binary, "/someOther">>,
+    Path = <<"/", Hashpath/binary, "/some-other">>,
     Req = #{
         <<"path">> => Path,
         <<"method">> => <<"GET">>
@@ -307,7 +307,7 @@ basic_hashpath_test() ->
     [Base, Msg2] = Msgs,
     ?assertEqual(Base, Hashpath),
     ?assertEqual(<<"GET">>, maps:get(<<"method">>, Msg2)),
-    ?assertEqual(<<"someOther">>, maps:get(path, Msg2)).
+    ?assertEqual(<<"some-other">>, maps:get(<<"path">>, Msg2)).
 
 multiple_messages_test() ->
     Req = #{
@@ -339,7 +339,7 @@ scoped_key_test() ->
 typed_key_test() ->
     Req = #{
         <<"path">> => <<"/a/b/c">>,
-        <<"2.test-key|Integer">> => <<"123">>
+        <<"2.test-key|integer">> => <<"123">>
     },
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
@@ -351,7 +351,7 @@ typed_key_test() ->
 subpath_in_key_test() ->
     Req = #{
         <<"path">> => <<"/a/b/c">>,
-        <<"2.test-key|Resolve">> => <<"/x/y/z">>
+        <<"2.test-key|resolve">> => <<"/x/y/z">>
     },
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
@@ -361,9 +361,9 @@ subpath_in_key_test() ->
         {resolve,
             [
                 #{},
-                #{ path => <<"x">> },
-                #{ path => <<"y">> },
-                #{ path => <<"z">> }
+                #{ <<"path">> => <<"x">> },
+                #{ <<"path">> => <<"y">> },
+                #{ <<"path">> => <<"z">> }
             ]
         },
         maps:get(<<"test-key">>, Msg2, not_found)
@@ -379,35 +379,35 @@ subpath_in_path_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(<<"a">>, maps:get(path, Msg1)),
+    ?assertEqual(<<"a">>, maps:get(<<"path">>, Msg1)),
     ?assertEqual(
         {resolve,
             [
                 #{},
-                #{ path => <<"x">> },
-                #{ path => <<"y">> },
-                #{ path => <<"z">> }
+                #{ <<"path">> => <<"x">> },
+                #{ <<"path">> => <<"y">> },
+                #{ <<"path">> => <<"z">> }
             ]
         },
         Msg2
     ),
-    ?assertEqual(<<"z">>, maps:get(path, Msg3)).
+    ?assertEqual(<<"z">>, maps:get(<<"path">>, Msg3)).
 
 inlined_keys_test() ->
     Req = #{
         <<"method">> => <<"POST">>,
-        <<"path">> => <<"/a/b+K1=V1/c+K2=V2">>
+        <<"path">> => <<"/a/b+k1=v1/c+k2=v2">>
     },
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(<<"V1">>, maps:get(<<"K1">>, Msg2)),
-    ?assertEqual(<<"V2">>, maps:get(<<"K2">>, Msg3)),
-    ?assertEqual(not_found, maps:get(<<"K1">>, Msg1, not_found)),
-    ?assertEqual(not_found, maps:get(<<"K2">>, Msg2, not_found)).
+    ?assertEqual(<<"v1">>, maps:get(<<"k1">>, Msg2)),
+    ?assertEqual(<<"v2">>, maps:get(<<"k2">>, Msg3)),
+    ?assertEqual(not_found, maps:get(<<"k1">>, Msg1, not_found)),
+    ?assertEqual(not_found, maps:get(<<"k2">>, Msg2, not_found)).
 
 multiple_inlined_keys_test() ->
-    Path = <<"/a/b+K1=V1&K2=V2">>,
+    Path = <<"/a/b+k1=v1&k2=v2">>,
     Req = #{
         <<"method">> => <<"POST">>,
         <<"path">> => Path
@@ -415,25 +415,24 @@ multiple_inlined_keys_test() ->
     Msgs = from(Req),
     ?assertEqual(3, length(Msgs)),
     [_, Msg1, Msg2] = Msgs,
-    ?assertEqual(not_found, maps:get(<<"K1">>, Msg1, not_found)),
-    ?assertEqual(not_found, maps:get(<<"K2">>, Msg1, not_found)),
-    ?assertEqual(<<"V1">>, maps:get(<<"K1">>, Msg2, not_found)),
-    ?assertEqual(<<"V2">>, maps:get(<<"K2">>, Msg2, not_found)).
+    ?assertEqual(not_found, maps:get(<<"k1">>, Msg1, not_found)),
+    ?assertEqual(not_found, maps:get(<<"k2">>, Msg1, not_found)),
+    ?assertEqual(<<"v1">>, maps:get(<<"k1">>, Msg2, not_found)),
+    ?assertEqual(<<"v2">>, maps:get(<<"k2">>, Msg2, not_found)).
 
 subpath_in_inlined_test() ->
-    Path = <<"/Part1/Part2+Test=1&B=(/x/y)/Part3">>,
+    Path = <<"/part1/part2+test=1&b=(/x/y)/part3">>,
     Req = #{
         <<"path">> => Path
     },
     Msgs = from(Req),
-    ?event(debug, {got_msgs, Msgs}),
     ?assertEqual(4, length(Msgs)),
     [_, First, Second, Third] = Msgs,
-    ?assertEqual(<<"Part1">>, maps:get(path, First)),
-    ?assertEqual(<<"Part3">>, maps:get(path, Third)),
+    ?assertEqual(<<"part1">>, maps:get(<<"path">>, First)),
+    ?assertEqual(<<"part3">>, maps:get(<<"path">>, Third)),
     ?assertEqual(
-        {resolve, [#{}, #{ path => <<"x">> }, #{ path => <<"y">> }] },
-        maps:get(<<"B">>, Second)
+        {resolve, [#{}, #{ <<"path">> => <<"x">> }, #{ <<"path">> => <<"y">> }] },
+        maps:get(<<"b">>, Second)
     ).
 
 path_parts_test() ->

@@ -6,7 +6,7 @@
 -module(hb_http).
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/4, request/5]).
--export([reply/2, reply/3]).
+-export([reply/3, reply/4]).
 -export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -21,14 +21,7 @@ get(Node, Opts) -> get(Node, <<"/">>, Opts).
 get(Node, Path, Opts) ->
     case request(<<"GET">>, Node, Path, #{}, Opts) of
         {ok, Body} ->
-            {ok,
-                hb_message:convert(
-                    ar_bundles:deserialize(Body),
-                    converge,
-                    tx,
-                    #{}
-                )
-            };
+            {ok, Body};
         Error -> Error
     end.
 
@@ -37,7 +30,7 @@ get(Node, Path, Opts) ->
 post(Node, Message, Opts) ->
     post(Node,
         hb_converge:get(
-            <<"Path">>,
+            <<"path">>,
             Message,
             <<"/">>,
             Opts#{ topic => converge_internal }
@@ -48,14 +41,8 @@ post(Node, Message, Opts) ->
 post(Node, Path, Message, Opts) ->
     case request(<<"POST">>, Node, Path, Message, Opts) of
         {ok, Res} ->
-            {ok,
-                hb_message:convert(
-                    ar_bundles:deserialize(Res),
-                    converge,
-                    tx,
-                    #{}
-                )
-            };
+            ?event(http, {post_response, Res}),
+            {ok, Res};
         Error -> Error
     end.
 
@@ -90,12 +77,27 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     }
                 }
             ),
+            HeaderMap = maps:from_list(Headers),
+            NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
             {
                 case Status of
                     201 -> created;
                     _ -> ok
                 end,
-                Body
+                case maps:get(<<"content-type">>, NormHeaderMap, undefined) of
+                    <<"application/x-ans-104">> ->
+                        ar_bundles:deserialize(Body);
+                    _ ->
+                        hb_message:convert(
+                            #{
+                                <<"headers">> => HeaderMap,
+                                <<"body">> => Body
+                            },
+                            converge,
+                            http,
+                            Opts
+                        )
+                end
             };
         {ok, Status, _Headers, Body} when Status == 400 ->
             ?event(
@@ -125,15 +127,20 @@ request(Method, Peer, Path, RawMessage, Opts) ->
 %% @doc Turn a set of request arguments into a request message, formatted in the
 %% preferred format.
 prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
-    Message = hb_converge:ensure_message(RawMessage),
+    Message = hb_converge:normalize_keys(RawMessage),
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
-        http -> maps:merge(ReqBase, hb_message:convert(Message, http, Opts));
+        http ->
+            #{ <<"headers">> := Headers, <<"body">> := Body } = hb_message:convert(Message, http, Opts),
+            ?event(debug, {encoded_outbound, #{ <<"headers">> => Headers, <<"body">> => Body }}),
+            Merged = maps:merge(ReqBase, #{ headers => Headers, body => Body }),
+            ?event(debug, {merged_outbound, Merged}),
+            Merged;
         ans104 ->
             ReqBase#{
-                headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
+                headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
                 body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
             }
     end.
@@ -150,10 +157,10 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message, Opts) ->
-    Nodes = hb_converge:get(<<"Peers">>, Config, #{}, Opts),
-    Responses = hb_converge:get(<<"Responses">>, Config, 1, Opts),
-    StopAfter = hb_converge:get(<<"Stop-After">>, Config, true, Opts),
-    case hb_converge:get(<<"Parallel">>, Config, false, Opts) of
+    Nodes = hb_converge:get(<<"peers">>, Config, #{}, Opts),
+    Responses = hb_converge:get(<<"responses">>, Config, 1, Opts),
+    StopAfter = hb_converge:get(<<"stop-after">>, Config, true, Opts),
+    case hb_converge:get(<<"parallel">>, Config, false, Opts) of
         false ->
             serial_multirequest(
                 Nodes, Responses, Method, Path, Message, Opts);
@@ -235,45 +242,53 @@ empty_inbox(Ref) ->
     end.
 
 %% @doc Reply to the client's HTTP request with a message.
-reply(Req, Message) ->
-    reply(Req, message_to_status(Message), Message).
-reply(Req, Status, RawMessage) ->
-    Message = hb_converge:ensure_message(RawMessage),
-    Encoded =
-        hb_message:convert(
-            Message,
-            hb_opts:get(format, http, #{}),
-            converge,
-            #{ topic => converge_internal }
-        ),
+reply(Req, Message, Opts) ->
+    reply(Req, message_to_status(Message), Message, Opts).
+reply(Req, Status, RawMessage, Opts) ->
+    Message = hb_converge:normalize_keys(RawMessage),
+    {ok, #{ <<"headers">> := EncodedHeaders, <<"body">> := EncodedBody}} =
+        prepare_reply(Message, Opts),
     ?event(http,
         {replying,
             {status, Status},
-            {path, maps:get(path, Req, undefined_path)},
-            {encoded, Encoded}
+            {path, maps:get(<<"path">>, Req, undefined_path)},
+            {raw_message, RawMessage},
+            {enc_headers, EncodedHeaders},
+            {enc_body, EncodedBody}
         }
     ),
-    Req2 = cowboy_req:stream_reply(
-        Status,
-        case Encoded of
-            #{ headers := Headers } -> maps:from_list(Headers);
-            _ -> #{<<"content-type">> => <<"application/octet-stream">>}
-        end,
-        Req
-    ),
-    Req3 = cowboy_req:stream_body(
-        case Encoded of
-            #{ body := Body } -> Body;
-            _ -> ar_bundles:serialize(Encoded)
-        end,
-        nofin,
-        Req2
-    ),
+    Req2 = cowboy_req:stream_reply(Status, maps:from_list(EncodedHeaders), Req),
+    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
+
+%% @doc Generate the headers and body for a HTTP response message.
+prepare_reply(Message, Opts) ->
+    case hb_opts:get(format, http, Opts) of
+        http ->
+            {ok,
+                hb_message:convert(
+                    Message,
+                    http,
+                    converge,
+                    #{ topic => converge_internal }
+                )
+            };
+        ans104 ->
+            {ok,
+                #{
+                    <<"headers">> =>
+                        [
+                            {<<"content-type">>, <<"application/octet-stream">>}
+                        ],
+                    <<"body">> =>
+                        ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
+                }
+            }
+    end.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(Item) ->
-    case dev_message:get(<<"Status">>, Item) of
+    case dev_message:get(<<"status">>, Item) of
         {ok, RawStatus} ->
             case is_integer(RawStatus) of
                 true -> RawStatus;
@@ -318,10 +333,12 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
         },
     HTTPEncoded =
         #{
-            headers => maps:to_list(Headers),
-            body => Body
+            <<"headers">> => maps:to_list(Headers),
+            <<"body">> => Body
         },
-    hb_codec_http:from(HTTPEncoded).
+    Final = hb_codec_http:from(HTTPEncoded),
+    ?event(debug, {serverside_http_request, Final}),
+    Final.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -335,12 +352,9 @@ read_body(Req0, Acc) ->
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
-    {ok, Res} =
-        post(
-            URL,
-            #{ path => <<"/key1">>, <<"key1">> => <<"Value1">> },
-            #{}
-        ),
+    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
+    ?event(debug, {res, hb_singleton:from(TestMsg)}),
+    {ok, Res} = post(URL, TestMsg, #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
@@ -349,7 +363,7 @@ nested_converge_resolve_test() ->
         post(
             URL,
             #{
-                path => <<"/key1/key2/key3">>,
+                <<"path">> => <<"/key1/key2/key3">>,
                 <<"key1">> =>
                     #{<<"key2">> =>
                         #{
@@ -364,10 +378,10 @@ nested_converge_resolve_test() ->
 wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
-        path => <<"/Init/Compute/Results">>,
-        <<"Device">> => <<"WASM-64/1.0">>,
-        <<"WASM-Function">> => Func,
-        <<"WASM-Params">> => Params,
+        <<"path">> => <<"/init/compute/results">>,
+        <<"device">> => <<"WASM-64/1.0">>,
+        <<"wasm-function">> => Func,
+        <<"wasm-params">> => Params,
         <<"body">> => Bin
     }.
 
@@ -375,13 +389,13 @@ run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     {ok, Res} = post(Node, Msg, #{}),
-    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+    ?assertEqual(ok, hb_converge:get(<<"type">>, Res, #{})).
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+    ?assertEqual(ok, hb_converge:get(<<"type">>, Res, #{})).
 
 % http_scheduling_test() ->
 %     % We need the rocksdb backend to run for hb_cache module to work
@@ -398,29 +412,29 @@ run_wasm_signed_test() ->
 %         hb_converge:resolve(
 %             Msg1,
 %             #{
-%                 path => <<"Append">>,
-%                 <<"Method">> => <<"POST">>,
-%                 <<"Message">> => Proc
+%                 <<"path">> => <<"append">>,
+%                 <<"method">> => <<"POST">>,
+%                 <<"message">> => Proc
 %             },
 %             #{}
 %         ),
 %     MsgX = #{
-%         device => <<"Scheduler/1.0">>,
-%         path => <<"Append">>,
-%         <<"Process">> => Proc,
-%         <<"Message">> =>
+%         <<"device">> => <<"Scheduler/1.0">>,
+%         <<"path">> => <<"append">>,
+%         <<"process">> => Proc,
+%         <<"message">> =>
 %             #{
-%                 <<"Target">> => ProcID,
-%                 <<"Type">> => <<"Message">>,
-%                 <<"Test-Val">> => 1
+%                 <<"target">> => ProcID,
+%                 <<"type">> => <<"message">>,
+%                 <<"test-val">> => 1
 %             }
 %     },
 %     Res = post(URL, MsgX),
-%     ?event(debug, {post_result, Res}),
+%     ?event(http, {post_result, Res}),
 %     Msg3 = #{
-%         path => <<"Slot">>,
-%         <<"Method">> => <<"GET">>,
-%         <<"Process">> => ProcID
+%         <<"path">> => <<"slot">>,
+%         <<"method">> => <<"GET">>,
+%         <<"process">> => ProcID
 %     },
 %     SlotRes = post(URL, Msg3),
-%     ?event(debug, {slot_result, SlotRes}).
+%     ?event(http, {slot_result, SlotRes}).

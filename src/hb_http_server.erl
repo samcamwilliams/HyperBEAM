@@ -3,7 +3,7 @@
 %%% only has to marshal the HTTP request into a message, and then
 %%% pass it to the Converge resolver. 
 %%% 
-%%% `hb_http:reply/3' is used to respond to the client, handling the 
+%%% `hb_http:reply/4' is used to respond to the client, handling the 
 %%% process of converting a message back into an HTTP response.
 %%% 
 %%% The router uses an `Opts` message as its Cowboy initial state, 
@@ -70,7 +70,7 @@ new_server(RawNodeMsg) ->
                 start_http2(ServerID, ProtoOpts, NodeMsg);
             _ -> {error, {unknown_protocol, Protocol}}
         end,
-    ?event(debug,
+    ?event(http,
         {http_server_started,
             {listener, Listener},
             {server_id, ServerID},
@@ -81,7 +81,7 @@ new_server(RawNodeMsg) ->
     {ok, Listener, Port}.
 
 start_http3(ServerID, ProtoOpts, _NodeMsg) ->
-    ?event(debug, {start_http3, ServerID}),
+    ?event(http, {start_http3, ServerID}),
     Parent = self(),
     ServerPID =
         spawn(fun() ->
@@ -115,7 +115,7 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
     end.
 
 start_http2(ServerID, ProtoOpts, NodeMsg) ->
-    ?event(debug, {start_http2, ServerID}),
+    ?event(http, {start_http2, ServerID}),
     {ok, Listener} = cowboy:start_clear(
         ServerID,
         [
@@ -131,7 +131,7 @@ init(Req, ServerID) ->
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
     ?event(http, {http_inbound, ReqSingleton}),
     {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
-    hb_http:reply(Req, Res).
+    hb_http:reply(Req, Res, NodeMsg).
 
 %% @doc Return the complete Ranch ETS table for the node for debugging.
 ranch_ets() ->
@@ -200,8 +200,8 @@ raw_http_access_test() ->
         ar_bundles:serialize(
             hb_message:convert(
                 #{
-                    path => <<"Key1">>,
-                    <<"Key1">> => #{ <<"Key2">> => <<"Value1">> }
+                    <<"path">> => <<"key1">>,
+                    <<"key1">> => #{ <<"key2">> => <<"value1">> }
                 },
                 tx,
                 converge,
@@ -216,4 +216,4 @@ raw_http_access_test() ->
             [{body_format, binary}]
         ),
     Msg = hb_message:convert(ar_bundles:deserialize(Body), converge, tx, #{}),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"Key2">>, Msg, #{})).
+    ?assertEqual(<<"value1">>, hb_converge:get(<<"key2">>, Msg, #{})).
