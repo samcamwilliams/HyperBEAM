@@ -465,7 +465,7 @@ basic_map_codec_test(Codec) ->
     ?assert(hb_message:match(Msg, Decoded)).
 
 set_body_codec_test(Codec) ->
-    Msg = #{ <<"body">> => <<"NORMAL_VALUE">> },
+    Msg = #{ <<"body">> => <<"NORMAL_VALUE">>, <<"test-key">> => <<"Test-Value">> },
     Encoded = convert(Msg, Codec, converge, #{}),
     ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),

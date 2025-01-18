@@ -58,7 +58,11 @@ from(#{ <<"headers">> := Headers, <<"body">> := Body }) ->
     Map = from_headers(#{}, Headers),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as additional key-binary value pairs, or as sub-TABMs
-    {_, ContentType} = find_header(Headers, <<"content-type">>),
+    ContentType =
+        case find_header(Headers, <<"content-type">>) of
+            {undefined, undefined} -> undefined;
+            {_, CT} -> CT
+        end,
     maps:remove(<<"content-type">>, from_body(Map, ContentType, Body)).
 
 from_headers(Map, Headers) -> from_headers(Map, Headers, Headers).
@@ -124,8 +128,14 @@ find_header(Headers, Name, Opts) when is_list(Headers) ->
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
-    {item, {_, _BodyType}, Params} =
-        hb_http_structured_fields:parse_item(ContentType),
+    {BodyType, Params} =
+        case ContentType of
+            undefined -> {undefined, []};
+            _ ->
+                {item, {_, XT}, XParams} =
+                    hb_http_structured_fields:parse_item(ContentType),
+                {XT, XParams}
+        end,
     case lists:keyfind(<<"boundary">>, 1, Params) of
         % The body is not a multipart, so just set as is to the Body key on the TABM
         false ->
@@ -221,32 +231,40 @@ to(TABM) when is_map(TABM) ->
         TABM
     ),
     Body = maps:get(<<"body">>, Http),
-    NewHttp = case maps:size(Body) of
-        0 -> maps:put(<<"body">>, <<>>, Http);
-        _ ->
-            {ok, RawBoundary} = dev_message:id(TABM),
-            Boundary = hb_util:encode(RawBoundary),
-            % Transform body into a binary, delimiting each part with the Boundary
-            BodyList = maps:fold(
-                fun (_, BodyPart, Acc) ->
-                    [<<"--", Boundary/binary, ?CRLF/binary, BodyPart/binary>> | Acc]
-                end,
-                [],
-                Body
-            ),
-            BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
-            #{ 
-                <<"headers">> => [
-                    {
-						<<"content-type">>,
-						<<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>
-					}
-                    | maps:get(<<"headers">>, Http)
-                ],
-                % End the body with a final terminating Boundary
-                <<"body">> => <<BodyBin/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
-            }
-    end,
+    NewHttp =
+        case Body of
+            % If the body is empty, then we need to set it to an empty binary.
+            X when map_size(X) =:= 0 -> maps:put(<<"body">>, <<>>, Http);
+            % % If the body has one element with the key "body", then we need to
+            % % set the body to the value of the "body" key.
+            #{ <<"body">> := BodyValue } ->
+                [_ContentDisposition, UserBody] = binary:split(BodyValue, ?CRLF, []),
+                maps:put(<<"body">>, UserBody, Http);
+            % Otherwise, we need to encode the body as a multipart message.
+            _ ->
+                {ok, RawBoundary} = dev_message:id(TABM),
+                Boundary = hb_util:encode(RawBoundary),
+                % Transform body into a binary, delimiting each part with the Boundary
+                BodyList = maps:fold(
+                    fun (_, BodyPart, Acc) ->
+                        [<<"--", Boundary/binary, ?CRLF/binary, BodyPart/binary>> | Acc]
+                    end,
+                    [],
+                    Body
+                ),
+                BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
+                #{ 
+                    <<"headers">> => [
+                        {
+                            <<"content-type">>,
+                            <<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>
+                        }
+                        | maps:get(<<"headers">>, Http)
+                    ],
+                    % End the body with a final terminating Boundary
+                    <<"body">> => <<BodyBin/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
+                }
+        end,
     NewHttp.
 
 encode_http_msg (_Http = #{ <<"headers">> := SubHeaders, <<"body">> := SubBody }) ->
@@ -262,7 +280,7 @@ encode_http_msg (_Http = #{ <<"headers">> := SubHeaders, <<"body">> := SubBody }
     case SubBody of
         <<>> -> EncodedHeaders;
         % Some-Headers: some-value
-        % Content-Type: image/png
+        % content-type: image/png
         % 
         % <body>
         _ -> <<EncodedHeaders/binary, ?DOUBLE_CRLF/binary, SubBody/binary>>
