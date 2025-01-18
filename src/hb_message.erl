@@ -53,7 +53,7 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([convert/3, convert/4, unsigned/1, attestations/1]).
--export([sign/2, verify/1, type/1, minimize/1]). 
+-export([sign/2, sign/3, verify/1, verify/2, type/1, minimize/1]). 
 -export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([match/2, match/3]).
 %%% Helpers:
@@ -269,8 +269,7 @@ format(Item, Indent) ->
 %% of the message itself. In the future, we will support multiple signers.
 signers(Msg) when is_map(Msg) ->
     case {maps:find(<<"owner">>, Msg), maps:find(<<"signature">>, Msg)} of
-        {_, error} -> [];
-        {error, _} -> [];
+        {Owner, Sig} when (Owner == error) or (Sig == error) -> [];
         {{ok, Owner}, {ok, _}} -> [ar_wallet:to_address(Owner)]
     end;
 signers(TX) when is_record(TX, tx) ->
@@ -280,12 +279,23 @@ signers(_) -> [].
 %% @doc Sign a message with the given wallet. Only supports the `tx' format
 %% at the moment.
 sign(Msg, Wallet) ->
+    sign(Msg, Wallet, tx).
+
+sign(Msg, Wallet, http) ->
+    HTTP = convert(Msg, tabm, #{}),
+    hb_http_signature:sign(HTTP, #{}, #{ wallet => Wallet });
+sign(Msg, Wallet, _) ->
     TX = convert(Msg, tx, #{}),
     SignedTX = ar_bundles:sign_item(TX, Wallet),
     convert(SignedTX, converge, tx, #{}).
 
 %% @doc Verify a message.
 verify(Msg) ->
+    verify(Msg, tx).
+
+verify(Msg, http) ->
+    hb_http_signature:verify(Msg, #{}, #{});
+verify(Msg, _) ->
     TX = convert(Msg, tx, converge, #{}),
     ar_bundles:verify_item(TX).
 
@@ -635,24 +645,12 @@ nested_message_with_large_keys_test(Codec) ->
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
-%% @doc Test that we can convert a signed tx into a message and back.
-signed_tx_encode_decode_verify_test(Codec) ->
-    TX = #tx {
-        data = <<"TEST_DATA">>,
-        tags = [{<<"test_key">>, <<"TEST_VALUE">>}]
-    },
-    SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
-    Encoded = convert(SignedTX, Codec, tx, #{}),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(verify(Decoded)).
-
 signed_message_encode_decode_verify_test(Codec) ->
     Msg = #{
-        <<"data">> => <<"TEST_DATA">>,
-        <<"tags">> => [{<<"test_key">>, <<"TEST_VALUE">>}]
+        <<"test_data">> => <<"TEST_DATA">>,
+        <<"test_key">> => <<"TEST_VALUE">>
     },
-    SignedMsg = hb_message:sign(Msg, hb:wallet()),
+    SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
     Encoded = convert(SignedMsg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(SignedMsg, Decoded)).
@@ -671,26 +669,24 @@ tabm_converge_ids_equal_test() ->
         dev_message:unsigned_id(convert(Msg, tabm, converge, #{}))
     ).
 
-signed_deep_tx_serialize_and_deserialize_test(Codec) ->
-    TX = #tx {
-        tags = [{<<"test_key">>, <<"TEST_VALUE">>}],
-        data = #{
-            <<"NESTED_TX">> =>
-                #tx {
-                    data = <<"NESTED_DATA">>,
-                    tags = [{<<"NESTED_KEY">>, <<"NESTED_VALUE">>}]
+signed_deep_message_test(Codec) ->
+    Msg = #{
+        <<"test_key">> => <<"TEST_VALUE">>,
+        <<"data">> => #{
+            <<"nested_key">> =>
+                #{
+                    <<"data">> => <<"NESTED_DATA">>,
+                    <<"nested_key">> => <<"NESTED_VALUE">>
                 }
         }
     },
-    SignedTX = ar_bundles:deserialize(
-        ar_bundles:sign_item(TX, hb:wallet())
-    ),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    Encoded = convert(SignedTX, Codec, tx, #{}),
+    SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
+    ?assert(hb_message:verify(SignedMsg, Codec)),
+    Encoded = convert(SignedMsg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(
         match(
-            convert(SignedTX, converge, tx, #{}),
+            SignedMsg,
             Decoded
         )
     ).
@@ -781,10 +777,9 @@ message_suite_test_() ->
         {"message with simple list test", fun message_with_simple_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
         {"signed item to message and back test", fun signed_message_encode_decode_verify_test/1},
-        {"signed item to tx and back test", fun signed_tx_encode_decode_verify_test/1},
-        {"signed deep serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
+        {"signed deep serialize and deserialize test", fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    set_body_codec_test(http).
+    signed_message_encode_decode_verify_test(http).
