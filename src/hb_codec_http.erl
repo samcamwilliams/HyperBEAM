@@ -70,10 +70,10 @@ from_headers(Map, [], _) -> Map;
 from_headers(Map, [{Name, Value} | Rest], Headers) ->
     NewMap = case Name of
         % Handled as part of "Signature" so simply skip it
-        <<"signature-input">> -> Map;
-        <<"signature">> ->
-            {_, SigInput} = find_header(Headers, <<"signature-input">>),
-            from_signature(Map, Value, SigInput);
+        % <<"signature-input">> -> Map;
+        % <<"signature">> ->
+        %     {_, SigInput} = find_header(Headers, <<"signature-input">>),
+        %     from_signature(Map, Value, SigInput);
         % Decode the header as normal
         N -> maps:put(N, Value, Map)
     end,
@@ -232,8 +232,8 @@ to(TABM) when is_map(TABM) ->
             Key = hb_converge:normalize_key(RawKey),
             case hb_util:to_lower(Key) of
                 <<"body">> -> body_to_http(Http, Value);
-                <<"signature">> -> signatures_to_http(Http, [Value]);
-                <<"signatures">> -> signatures_to_http(Http, Value);
+                %<<"signature">> -> signatures_to_http(Http, [Value]);
+                %<<"signatures">> -> signatures_to_http(Http, Value);
                 _ -> field_to_http(Http, {Key, Value}, #{})
             end
         end,
@@ -299,6 +299,7 @@ encode_http_msg (_Http = #{ <<"headers">> := SubHeaders, <<"body">> := SubBody }
 signatures_to_http(Http, Signatures) when is_map(Signatures) ->
     signatures_to_http(Http, maps:to_list(Signatures));
 signatures_to_http(Http, Signatures) when is_list(Signatures) ->
+    ?event({encoding_signatures, Signatures}),
     {SfSigInputs, SfSigs} = lists:foldl(
         fun ({SigName, SignatureMap = #{ <<"inputs">> := Inputs, <<"signature">> := Signature }}, {SfSigInputs, SfSigs}) ->
             NextSigInput = hb_http_signature:sf_signature_params(Inputs, SignatureMap),
