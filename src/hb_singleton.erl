@@ -61,7 +61,7 @@ parse_full_path(RelativeRef) ->
     {Path, QKVList} =
         case binary:split(RelativeRef, <<"?">>) of
             [P, QStr] -> {P, cowboy_req:parse_qs(#{ qs => QStr })};
-            [P] -> {P, #{}}
+            [P] -> {P, []}
         end,
     {
         ok,
