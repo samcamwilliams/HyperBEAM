@@ -2,9 +2,10 @@
 %%% as described in RFC-9421 https://datatracker.ietf.org/doc/html/rfc9421
 
 -module(hb_http_signature).
-
-% Signing/Verifying
--export([authority/3, sign/2, sign/3, verify/2, verify/3]).
+%%% Device API
+-export([sign/3, verify/3]).
+%%% HyperBEAM API
+-export([authority/3, sign_auth/2, sign_auth/3, verify_auth/2, verify_auth/3]).
 % Mapping
 -export([sf_signature/1, sf_signature_params/2, sf_signature_param/1]).
 
@@ -83,12 +84,12 @@
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 sign(MsgToSign, _Req, Opts) ->
     ?event({starting_to_sign, MsgToSign}),
-    Wallet = {_Priv, Pub} = hb_opts:get(wallet, no_viable_wallet, Opts),
+    Wallet = {_Priv, {_, Pub}} = hb_opts:get(wallet, no_viable_wallet, Opts),
     Encoded = hb_message:convert(MsgToSign, http, #{}),
     ?event({encoded, {explicit, Encoded}}),
     Authority = authority(maps:keys(MsgToSign), MsgToSign, Wallet),
     ?event({authority, Authority}),
-    {ok, {SignatureInput, Signature}} = sign_auth(Authority, Encoded, #{}),
+    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Encoded),
     [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
     SigName = hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
     maps:merge(
@@ -145,13 +146,14 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 
 %%% @doc using the provided Authority and Request Message Context, and create a Signature and SignatureInput
 %%% that can be used to additional signatures to a corresponding HTTP Message
--spec sign(authority_state(), request_message()) -> {ok, {binary(), binary(), binary()}}.
-sign(Authority, Req) ->
-	sign(Authority, Req, #{}).
+-spec sign_auth(authority_state(), request_message()) -> {ok, {binary(), binary(), binary()}}.
+sign_auth(Authority, Req) ->
+	sign_auth(Authority, Req, #{}).
+
 %%% @doc using the provided Authority and Request/Response Messages Context, create a Name, Signature and SignatureInput
 %%% that can be used to additional signatures to a corresponding HTTP Message
--spec sign(authority_state(), request_message(), response_message()) -> {ok, {binary(), binary(), binary()}}.
-sign(Authority, Req, Res) ->
+-spec sign_auth(authority_state(), request_message(), response_message()) -> {ok, {binary(), binary(), binary()}}.
+sign_auth(Authority, Req, Res) ->
     {Priv, {KeyType, PubKey}} = maps:get(key_pair, Authority),
     % Create the signature base and signature-input values
     SigParamsWithKeyAndAlg = maps:merge(
@@ -168,17 +170,17 @@ sign(Authority, Req, Res) ->
 	{ok, {SignatureInput, Signature}}.
 
 %%% @doc same verify/3, but with an empty Request Message Context
-verify(Verifier, Msg) ->
+verify_auth(Verifier, Msg) ->
     % Assume that the Msg is a response message, and use an empty Request message context
     %
     % A corollary is that a signature containing any components from the request will produce
     % an error. It is the caller's responsibility to provide the required Message Context
     % in order to verify the signature
-    verify(Verifier, #{}, Msg).
+    verify_auth(Verifier, #{}, Msg).
 
 %%% @doc Given the signature name, and the Request/Response Message Context
 %%% verify the named signature by constructing the signature base and comparing
-verify(#{ sig_name := SigName, key := Key }, Req, Res) ->
+verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
     % Signature and Signature-Input fields are each themself a dictionary structured field.
     % Ergo, we can use our same utilities to extract the value at the desired key, in this case,
     % the signature name. Because our utilities already implement the relevant portions
@@ -295,14 +297,13 @@ identifier_to_component(ParsedIdentifier = {item, {_Kind, Value}, _Params}, Req,
 %%%
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-http-fields
-extract_field(Identifier, Req, Res) when map_size(Res) == 0 ->
-	extract_field(Identifier, Req, Res);
 extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 	[IsStrictFormat, IsByteSequenceEncoded, DictKey] = [
 		find_sf_strict_format_param(IParams),
 		find_sf_byte_sequence_param(IParams),
 		find_sf_key_param(IParams)
 	],
+    ?event({extract, {item, IParsed}, IParams, {Req, Res}}),
 	case (IsStrictFormat orelse DictKey =/= false) andalso IsByteSequenceEncoded of
 		true ->
 			% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.2
@@ -322,17 +323,16 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 					{lower_bin(Key), Value}
                 % TODO: how can we maintain the order msg fields, especially in the case where there are
                 % multiple fields with the same name, and order must be preserved
-				 || {Key, Value} <- maps:to_list(
+				 || {Key, Value} <-
 						maps:get(
 							% The field will almost certainly be a header, but could also be a trailer
 							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.10.1
-							case IsTrailerField of true -> trailers; false -> headers end,
+							case IsTrailerField of true -> trailers; false -> <<"headers">> end,
 							% The header may exist on any message in the context of the signature
 							% which could be the Request or Response Message
 							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.8.1
 							case IsRequestIdentifier of true -> Req; false -> Res end
 						)
-					)
 				]
 			),
 			case MaybeRawFields of
