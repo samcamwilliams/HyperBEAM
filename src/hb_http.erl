@@ -21,14 +21,7 @@ get(Node, Opts) -> get(Node, <<"/">>, Opts).
 get(Node, Path, Opts) ->
     case request(<<"GET">>, Node, Path, #{}, Opts) of
         {ok, Body} ->
-            {ok,
-                hb_message:convert(
-                    ar_bundles:deserialize(Body),
-                    converge,
-                    tx,
-                    #{}
-                )
-            };
+            {ok, Body};
         Error -> Error
     end.
 
@@ -48,15 +41,8 @@ post(Node, Message, Opts) ->
 post(Node, Path, Message, Opts) ->
     case request(<<"POST">>, Node, Path, Message, Opts) of
         {ok, Res} ->
-            ?event(debug, {post_response, Res}),
-            {ok,
-                hb_message:convert(
-                    ar_bundles:deserialize(Res),
-                    converge,
-                    tx,
-                    #{}
-                )
-            };
+            ?event(http, {post_response, Res}),
+            {ok, Res};
         Error -> Error
     end.
 
@@ -91,12 +77,27 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     }
                 }
             ),
+            HeaderMap = maps:from_list(Headers),
+            NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
             {
                 case Status of
                     201 -> created;
                     _ -> ok
                 end,
-                Body
+                case maps:get(<<"content-type">>, NormHeaderMap, undefined) of
+                    <<"application/x-ans-104">> ->
+                        ar_bundles:deserialize(Body);
+                    _ ->
+                        hb_message:convert(
+                            #{
+                                <<"headers">> => HeaderMap,
+                                <<"body">> => Body
+                            },
+                            converge,
+                            http,
+                            Opts
+                        )
+                end
             };
         {ok, Status, _Headers, Body} when Status == 400 ->
             ?event(
@@ -131,7 +132,12 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
-        http -> maps:merge(ReqBase, hb_message:convert(Message, http, Opts));
+        http ->
+            #{ <<"headers">> := Headers, <<"body">> := Body } = hb_message:convert(Message, http, Opts),
+            ?event(debug, {encoded_outbound, #{ <<"headers">> => Headers, <<"body">> => Body }}),
+            Merged = maps:merge(ReqBase, #{ headers => Headers, body => Body }),
+            ?event(debug, {merged_outbound, Merged}),
+            Merged;
         ans104 ->
             ReqBase#{
                 headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
@@ -240,17 +246,19 @@ reply(Req, Message, Opts) ->
     reply(Req, message_to_status(Message), Message, Opts).
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, #{ <<"headers">> := Headers, <<"body">> := Encoded}} =
+    {ok, #{ <<"headers">> := EncodedHeaders, <<"body">> := EncodedBody}} =
         prepare_reply(Message, Opts),
     ?event(http,
         {replying,
             {status, Status},
             {path, maps:get(<<"path">>, Req, undefined_path)},
-            {encoded, Encoded}
+            {raw_message, RawMessage},
+            {enc_headers, EncodedHeaders},
+            {enc_body, EncodedBody}
         }
     ),
-    Req2 = cowboy_req:stream_reply(Status, maps:from_list(Headers), Req),
-    Req3 = cowboy_req:stream_body(Encoded, nofin, Req2),
+    Req2 = cowboy_req:stream_reply(Status, maps:from_list(EncodedHeaders), Req),
+    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
 
 %% @doc Generate the headers and body for a HTTP response message.
@@ -328,7 +336,9 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
             <<"headers">> => maps:to_list(Headers),
             <<"body">> => Body
         },
-    hb_codec_http:from(HTTPEncoded).
+    Final = hb_codec_http:from(HTTPEncoded),
+    ?event(debug, {serverside_http_request, Final}),
+    Final.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -342,12 +352,9 @@ read_body(Req0, Acc) ->
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
-    {ok, Res} =
-        post(
-            URL,
-            #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-            #{}
-        ),
+    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
+    ?event(debug, {res, hb_singleton:from(TestMsg)}),
+    {ok, Res} = post(URL, TestMsg, #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
@@ -423,11 +430,11 @@ run_wasm_signed_test() ->
 %             }
 %     },
 %     Res = post(URL, MsgX),
-%     ?event(debug, {post_result, Res}),
+%     ?event(http, {post_result, Res}),
 %     Msg3 = #{
 %         <<"path">> => <<"slot">>,
 %         <<"method">> => <<"GET">>,
 %         <<"process">> => ProcID
 %     },
 %     SlotRes = post(URL, Msg3),
-%     ?event(debug, {slot_result, SlotRes}).
+%     ?event(http, {slot_result, SlotRes}).
