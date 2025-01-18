@@ -80,6 +80,38 @@
 	key => binary()
 }.
 
+%% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
+sign(MsgToSign, _Req, Opts) ->
+    ?event({starting_to_sign, MsgToSign}),
+    Wallet = {_Priv, Pub} = hb_opts:get(wallet, no_viable_wallet, Opts),
+    Encoded = hb_message:convert(MsgToSign, http, #{}),
+    ?event({encoded, {explicit, Encoded}}),
+    Authority = authority(maps:keys(MsgToSign), MsgToSign, Wallet),
+    ?event({authority, Authority}),
+    {ok, {SignatureInput, Signature}} = sign_auth(Authority, Encoded, #{}),
+    [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
+    SigName = hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
+    maps:merge(
+        MsgToSign,
+        #{
+            % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
+            <<"signature">> => 
+                bin(hb_http_structured_fields:dictionary(
+                    #{ SigName => {item, {binary, Signature}, []} }
+                )),
+            <<"signature-input">> =>
+                bin(hb_http_structured_fields:dictionary(
+                    #{ SigName => ParsedSignatureInput }
+                )),
+            <<"signature-public-key">> => hb_util:encode(Pub)
+        }
+    ).
+
+verify(MsgToVerify, _Req, Opts) ->
+    Signature = maps:get(<<"signature">>, MsgToVerify),
+    PubKey = maps:get(<<"signature-public-key">>, MsgToVerify),
+    verify_auth(#{ sig_name => Signature, key => PubKey }, MsgToVerify, Opts).
+
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(
 	[binary() | component_identifier()],
