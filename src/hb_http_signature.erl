@@ -89,7 +89,7 @@ id(Msg, _Params, _Opts) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 sign(MsgToSign, _Req, Opts) ->
     ?event({starting_to_sign, MsgToSign}),
-    Wallet = {_Priv, {_, Pub}} = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    Wallet = {_Priv, {_, Pub}} = hb_opts:get(wallet, no_viable_wallet, Opts),
     Enc = hb_message:convert(MsgToSign, http, #{}),
     % Hack: Place the body into the `<<"headers">>` field if it is set. We should
     % either unify the body and headers in this module, or add explicit support
@@ -123,7 +123,7 @@ sign(MsgToSign, _Req, Opts) ->
                     #{ SigName => ParsedSignatureInput }
                 )),
             <<"signature-public-key">> => hb_util:encode(Pub),
-            <<"signature-device">> => <<"HTTP-sig/1.0">>
+            <<"signature-type">> => <<"http">>
         }
     ).
 
@@ -139,7 +139,7 @@ verify(MsgToVerify, _Req, Opts) ->
                 <<"signature">>,
                 <<"signature-input">>,
                 <<"signature-public-key">>,
-                <<"signature-device">>
+                <<"signature-type">>
             ],
             MsgToVerify
         ),
@@ -883,33 +883,122 @@ trim_ws_test() ->
 	ok.
 
 sign_test() ->
-	Res = #{
-		status => 202,
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
 		headers => #{
-			"fizz" => "buzz",
-			<<"foo">> => [<<"b">>, <<"a">>, <<"r">>]
+			<<"foo">> => <<"req-b-bar">>
 		},
 		trailers => #{}
 	},
-    Signed = sign(Res, #{}, #{ priv_wallet => ar_wallet:new() }),
-	?assert(
-		verify(Signed, #{}, #{})
-	).
+	Res = #{
+		status => 202,
+		headers => #{
+			"fizz" => "res-l-bar",
+			<<"Foo">> => "a=1, b=2;x=1;y=2, c=(a b   c), d"
+		},
+		trailers => #{}
+	},
+	% Ensure both parsed, and serialized SFs are handled
+	ComponentIdentifiers = [
+		{item, {string, <<"@method">>}, []},
+		<<"\"@path\"">>,
+		{item, {string, <<"foo">>}, [{<<"req">>, true}]},
+		"\"foo\";key=\"a\""
+	],
+	SigParams = #{},
+    Key = hb:wallet(),
+	Authority = authority(ComponentIdentifiers, SigParams, Key),
+
+    ?assertMatch(
+        {ok, {_SignatureInput, _Signature}},
+        sign(Authority, Req, Res)
+    ),
+	ok.
+
+verify_test() ->
+    Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => <<"req-b-bar">>
+		},
+		trailers => #{}
+	},
+	Res = #{
+		status => 202,
+		headers => #{
+			"fizz" => "res-l-bar",
+			<<"Foo">> => "a=1, b=2;x=1;y=2, c=(a b   c), d"
+		},
+		trailers => #{}
+	},
+	ComponentIdentifiers = [
+		{item, {string, <<"@method">>}, []},
+		<<"\"@path\"">>,
+		{item, {string, <<"foo">>}, [{<<"req">>, true}]},
+		"\"foo\";key=\"a\""
+	],
+	SigParams = #{},
+    Key = {_Priv, Pub} = hb:wallet(),
+	Authority = authority(ComponentIdentifiers, SigParams, Key),
+
+    % Create the signature and signature input
+    % TODO: maybe return the SF data structures instead, to make appending to headers easier?
+    % OR we could wrap behind an api ie. sf_dictionary_put(Key, SfValue, Dict)
+    {ok, {SignatureInput, Signature}} = sign(Authority, Req, Res),
+    SigName = <<"awesome">>,
+    [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
+    NewHeaders = maps:merge(
+        maps:get(headers, Res),
+        #{
+            % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
+            <<"signature">> => bin(hb_http_structured_fields:dictionary(#{ SigName => {item, {binary, Signature}, []} })),
+            <<"signature-input">> => bin(hb_http_structured_fields:dictionary(#{ SigName => ParsedSignatureInput }))
+        }
+    ),
+
+    SignedRes = maps:put(headers, NewHeaders, Res),
+    Result = verify(#{ sig_name => SigName, key => Pub }, Req, SignedRes),
+    ?assert(Result),
+	ok.
 
 join_signature_base_test() ->
 	ParamsLine =
-		<<"(\"@method\" \"@path\" \"foo\";req \"foo\";key=\"a\");"
-		    "created=1733165109501;nonce=\"foobar\";keyid=\"key1\"">>,
-	ComponentsLine = <<"\"@method\": GET\n\"@path\": /id-123/Data\n\"foo\";"
-        "req: req-b-bar\n\"foo\";key=\"a\": 1">>,
+		<<"(\"@method\" \"@path\" \"foo\";req \"foo\";key=\"a\");created=1733165109501;nonce=\"foobar\";keyid=\"key1\"">>,
+	ComponentsLine = <<"\"@method\": GET\n\"@path\": /id-123/Data\n\"foo\";req: req-b-bar\n\"foo\";key=\"a\": 1">>,
 	?assertEqual(
-		<<
-            ComponentsLine/binary,
-            <<"\n">>/binary,
-            <<"\"@signature-params\": ">>/binary,
-            ParamsLine/binary
-        >>,
+		<<ComponentsLine/binary, <<"\n">>/binary, <<"\"@signature-params\": ">>/binary, ParamsLine/binary>>,
 		join_signature_base(ComponentsLine, ParamsLine)
+	).
+
+signature_components_line_test() ->
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => <<"req-b-bar">>
+		},
+		trailers => #{}
+	},
+	Res = #{
+		status => 202,
+		headers => #{
+			"fizz" => "res-l-bar",
+			<<"Foo">> => "a=1, b=2;x=1;y=2, c=(a b   c), d"
+		},
+		trailers => #{}
+	},
+	ComponentIdentifiers = [
+		<<"\"@method\"">>,
+		<<"\"@path\"">>,
+		% parsed SF items are also handled
+		{item, {string, <<"foo">>}, [{<<"req">>, true}]},
+		<<"\"foo\";key=\"a\"">>
+	],
+	?assertEqual(
+		<<"\"@method\": GET\n\"@path\": /id-123/Data\n\"foo\";req: req-b-bar\n\"foo\";key=\"a\": 1">>,
+		signature_components_line(ComponentIdentifiers, Req, Res)
 	).
 
 signature_params_line_test() ->
@@ -922,6 +1011,290 @@ signature_params_line_test() ->
 		<<"(\"content-length\" \"@method\" \"@path\" \"content-type\";req \"example-dict\";sf);created=1733165109501;keyid=\"key1\";nonce=\"foobar\"">>,
 		Result
 	).
+
+extract_field_msg_access_test() ->
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => <<"req-b-bar">>
+		},
+		trailers => #{
+			another => <<"req-tr-atom-one">>
+		}
+	},
+	Res = #{
+		status => 202,
+		headers => #{
+			"fizz" => "res-l-bar",
+			"A-field" => "   first\none",
+			"a-field" => "   second   "
+		},
+		trailers => #{
+			<<"Woo">> => <<"res-tr-uppercase-woo">>
+		}
+	},
+	% req header + binary key + binary value
+	?assertEqual(
+		{ok, {<<"\"foo\";req">>, <<"req-b-bar">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"req">>, true}]}, Req, Res)
+	),
+
+	% req trailer + atom key + binary value
+	?assertEqual(
+		{ok, {<<"\"another\";req;tr">>, <<"req-tr-atom-one">>}},
+		extract_field({item, {string, <<"another">>}, [{<<"req">>, true}, {<<"tr">>, true}]}, Req, Res)
+	),
+
+	% res header + list key + list value
+	?assertEqual(
+		{ok, {<<"\"fizz\"">>, <<"res-l-bar">>}},
+		extract_field({item, {string, <<"fizz">>}, []}, Req, Res)
+	),
+
+	% res trailer + binary uppercase key + binary value
+	?assertEqual(
+		{ok, {<<"\"woo\";tr">>, <<"res-tr-uppercase-woo">>}},
+		extract_field({item, {string, <<"woo">>}, [{<<"tr">>, true}]}, Req, Res)
+	),
+
+	% multiple fields, with obs and newlines
+	?assertEqual(
+		{ok, {<<"\"a-field\"">>, <<"first one, second">>}},
+		extract_field({item, {string, <<"a-field">>}, []}, Req, Res)
+	).
+
+extract_field_bs_test() ->
+	Req = #{},
+	Res = #{
+		status => 202,
+		headers => #{
+			<<"Foo">> => "foobar",
+			<<"A-Field">> => "first",
+			<<"a-field">> => "second",
+			<<"b-field">> => "first, second"
+		},
+		trailers => #{}
+	},
+
+	% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.3-4
+
+	?assertEqual(
+		{ok, {<<"\"foo\";bs">>, <<":Zm9vYmFy:">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"bs">>, true}]}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"a-field\";bs">>, <<":Zmlyc3Q=:, :c2Vjb25k:">>}},
+		extract_field({item, {string, <<"a-field">>}, [{<<"bs">>, true}]}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"b-field\";bs">>, <<":Zmlyc3QsIHNlY29uZA==:">>}},
+		extract_field({item, {string, <<"b-field">>}, [{<<"bs">>, true}]}, Req, Res)
+	).
+
+extract_field_sf_test() ->
+	Req = #{},
+	Res = #{
+		status => 202,
+		headers => #{
+			<<"Foo">> => "a=1, b=2;x=1;y=2, c=(a b   c), d"
+		},
+		trailers => #{}
+	},
+	% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.2-6
+	?assertEqual(
+		{ok, {<<"\"foo\"">>, <<"a=1, b=2;x=1;y=2, c=(a b   c), d">>}},
+		extract_field({item, {string, <<"foo">>}, []}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"foo\";sf">>, <<"a=1, b=2;x=1;y=2, c=(a b c), d=?1">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"sf">>, true}]}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"foo\";key=\"a\"">>, <<"1">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"key">>, {string, <<"a">>}}]}, Req, Res)
+	),
+	% inner-list
+	?assertEqual(
+		{ok, {<<"\"foo\";key=\"c\"">>, <<"(a b c)">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"key">>, {string, <<"c">>}}]}, Req, Res)
+	),
+	% boolean
+	?assertEqual(
+		{ok, {<<"\"foo\";key=\"d\"">>, <<"?1">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"key">>, {string, <<"d">>}}]}, Req, Res)
+	),
+	% params
+	?assertEqual(
+		{ok, {<<"\"foo\";key=\"b\"">>, <<"2;x=1;y=2">>}},
+		extract_field({item, {string, <<"foo">>}, [{<<"key">>, {string, <<"b">>}}]}, Req, Res)
+	).
+
+extract_field_error_conflicting_params_test() ->
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => "a=1, b=2;x=1;y=2, c=(a b   c), d"
+		},
+		trailers => #{}
+	},
+	Res = #{
+		status => 202,
+		headers => #{},
+		trailers => #{}
+	},
+	Expected = conflicting_params_error,
+	{E, _} = extract_field({item, {string, <<"foo">>}, [{<<"bs">>, true}, {<<"sf">>, true}]}, Req, Res),
+	?assertEqual(Expected, E),
+
+	{E2, _} = extract_field({item, {string, <<"foo">>}, [{<<"bs">>, true}, {<<"key">>, {string, <<"foo">>}}]}, Req, Res),
+	?assertEqual(Expected, E2).
+
+extract_field_error_field_not_found_test() ->
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => "req-b-bar"
+		},
+		trailers => #{}
+	},
+	Res = #{
+		status => 202,
+		headers => #{},
+		trailers => #{}
+	},
+	Expected = field_not_found_error,
+	% req headers
+	{E, _} = extract_field({item, {string, <<"not-foo">>}, [{<<"req">>, true}]}, Req, Res),
+	?assertEqual(Expected, E),
+	% req trailers
+	{E2, _} = extract_field({item, {string, <<"not-foo">>}, [{<<"req">>, true}, {<<"tr">>, true}]}, Req, Res),
+	?assertEqual(Expected, E2),
+	% res headers
+	{E3, _} = extract_field({item, {string, <<"not-foo">>}, []}, Req, Res),
+	?assertEqual(Expected, E3),
+	% res trailers
+	{E4, _} = extract_field({item, {string, <<"not-foo">>}, [{<<"tr">>, true}]}, Req, Res),
+	?assertEqual(Expected, E4).
+
+extract_field_error_not_sf_dictionary_test() ->
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => "req-b-bar"
+		},
+		trailers => #{}
+	},
+	Res = #{
+		status => 202,
+		headers => #{},
+		trailers => #{}
+	},
+	Expected = sf_not_dictionary_error,
+	{E, _M} = extract_field({item, {string, <<"foo">>}, [{<<"req">>, true}, {<<"key">>, {string, <<"smth">>}}]}, Req, Res),
+	?assertEqual(Expected, E).
+
+extract_field_error_sf_dictionary_key_not_found_test() ->
+	Req = #{
+		url => <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+		method => "get",
+		headers => #{
+			<<"foo">> => "a=1, b=2;x=1;y=2, c=(a b   c), d"
+		},
+		trailers => #{}
+	},
+	Res = #{
+		status => 202,
+		headers => #{},
+		trailers => #{}
+	},
+	Expected = sf_dicionary_key_not_found_error,
+	{E, _M} = extract_field({item, {string, <<"foo">>}, [{<<"req">>, true}, {<<"key">>, {string, <<"smth">>}}]}, Req, Res),
+	?assertEqual(Expected, E).
+
+derive_component_test() ->
+	Url = <<"https://foo.bar/id-123/Data?another=one&fizz=buzz">>,
+	Req = #{
+		url => Url,
+		method => "get",
+		headers => #{}
+	},
+	Res = #{
+		status => 202
+	},
+
+	% normalize method (uppercase) + method
+	?assertEqual(
+		{ok, {<<"\"@method\"">>, <<"GET">>}},
+		derive_component({item, {string, <<"@method">>}, []}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@target-uri\"">>, Url}},
+		derive_component({item, {string, <<"@target-uri">>}, []}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@authority\"">>, <<"foo.bar">>}},
+		derive_component({item, {string, <<"@authority">>}, []}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@scheme\"">>, <<"https">>}},
+		derive_component({item, {string, <<"@scheme">>}, []}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@request-target\"">>, <<"/id-123/Data?another=one&fizz=buzz">>}},
+		derive_component({item, {string, <<"@request-target">>}, []}, Req, Res)
+	),
+
+	% absolute form
+	?assertEqual(
+		{ok, {<<"\"@request-target\"">>, Url}},
+		derive_component({item, {string, <<"@request-target">>}, []}, maps:merge(Req, #{is_absolute_form => true}), Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@path\"">>, <<"/id-123/Data">>}},
+		derive_component({item, {string, <<"@path">>}, []}, Req, Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@query\"">>, <<"another=one&fizz=buzz">>}},
+		derive_component({item, {string, <<"@query">>}, []}, Req, Res)
+	),
+
+	% no query params
+	?assertEqual(
+		{ok, {<<"\"@query\"">>, <<"?">>}},
+		derive_component({item, {string, <<"@query">>}, []}, maps:merge(Req, #{url => <<"https://foo.bar/id-123/Data">>}), Res)
+	),
+
+	% empty query params
+	?assertEqual(
+		{ok, {<<"\"@query\"">>, <<"?">>}},
+		derive_component({item, {string, <<"@query">>}, []}, maps:merge(Req, #{url => <<"https://foo.bar/id-123/Data?">>}), Res)
+	),
+
+	?assertEqual(
+		{ok, {<<"\"@query-param\";name=\"fizz\"">>, <<"buzz">>}},
+		derive_component({item, {string, <<"@query-param">>}, [{<<"name">>, {string, <<"fizz">>}}]}, Req, Res)
+	),
+
+	% normalize identifier (lowercase) + @status
+	?assertEqual(
+		{ok, {<<"\"@status\"">>, 202}},
+		derive_component({item, {string, <<"@Status">>}, []}, Req, Res)
+	),
+	ok.
 
 derive_component_error_req_param_on_request_target_test() ->
 	Result = derive_component({item, {string, <<"@query-param">>}, [{<<"req">>, true}]}, #{}, #{}, req),
