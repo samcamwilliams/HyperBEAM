@@ -56,8 +56,14 @@ raw_id(Item) -> raw_id(Item, unsigned).
 raw_id(TX, Type) when is_record(TX, tx) ->
     hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Map, Type) when is_map(Map) ->
-    TX = hb_message:convert(Map, tx, converge, #{}),
-    hb_util:encode(ar_bundles:id(TX, Type));
+    case maps:get(<<"signature-type">>, Map, undefined) of
+        <<"http">> ->
+            {ok, ID} = hb_http_signature:id(Map, Type, #{}),
+            ID;
+        _ ->
+            TX = hb_message:convert(Map, tx, converge, #{}),
+            hb_util:encode(ar_bundles:id(TX, Type))
+    end;
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin;
 raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
