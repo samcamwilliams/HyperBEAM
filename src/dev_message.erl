@@ -56,8 +56,8 @@ raw_id(Item) -> raw_id(Item, unsigned).
 raw_id(TX, Type) when is_record(TX, tx) ->
     hb_util:encode(ar_bundles:id(TX, Type));
 raw_id(Map, Type) when is_map(Map) ->
-    case maps:get(<<"signature-type">>, Map, undefined) of
-        <<"http">> ->
+    case maps:get(<<"signature-device">>, Map, undefined) of
+        <<"HTTP-Sig/1.0">> ->
             {ok, ID} = hb_http_signature:id(Map, Type, #{}),
             ID;
         _ ->
