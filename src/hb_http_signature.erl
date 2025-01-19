@@ -129,8 +129,10 @@ sign(MsgToSign, _Req, Opts) ->
 
 verify(MsgToVerify, _Req, Opts) ->
     Signature = maps:get(<<"signature">>, MsgToVerify),
+    SignatureInput = maps:get(<<"signature-input">>, MsgToVerify),
     RawPubKey =
-        hb_util:decode(maps:get(<<"signature-public-key">>, MsgToVerify)),
+        hb_util:decode(
+            NativePubKey = maps:get(<<"signature-public-key">>, MsgToVerify)),
     MsgWithoutSig =
         maps:without(
             [
@@ -143,29 +145,19 @@ verify(MsgToVerify, _Req, Opts) ->
         ),
     PubKey = {{rsa, 65537}, RawPubKey},
     Enc = hb_message:convert(MsgWithoutSig, http, #{}),
-    EncWithBody = #{ <<"headers">> := EncHdrList } =
-        case maps:get(<<"body">>, Enc, undefined) of
-            undefined -> Enc;
-            <<>> -> Enc;
-            Body ->
-                OrigHeaders = maps:get(<<"headers">>, Enc, #{}),
-                Enc#{
-                    <<"headers">> => [{ <<"body">>, Body }|OrigHeaders]
-                }
-        end,
-    EncHdrMap = maps:from_list(EncHdrList),
-    Authority = authority(maps:keys(EncHdrMap), EncHdrMap, PubKey),
-    ?event({authority, Authority}),
-    AuthorityWithSigParams = add_sig_params(Authority, PubKey),
-    verify_auth(AuthorityWithSigParams, MsgWithoutSig).
-    % {_, SignatureBase} = signature_base(AuthorityWithSigParams, #{}, EncWithBody),
-    % % Now verify the signature base signed with the provided key matches
-    % % the signature
-    % ?event({verify, {signature_base, hb_util:encode(hb_crypto:sha256(SignatureBase))},
-    %     {signature, Signature},
-    %     {pub, PubKey}
-    % }),
-    % ar_wallet:verify(PubKey, SignatureBase, Signature, sha512).
+    EncWithBody =
+        Enc#{
+            <<"headers">> =>
+                [
+                    {<<"body">>, maps:get(<<"body">>, Enc, <<>>)},
+                    {<<"signature">>, Signature},
+                    {<<"signature-input">>, SignatureInput},
+                    {<<"signature-public-key">>, NativePubKey}
+                |
+                    maps:get(<<"headers">>, Enc, #{})
+                ]
+        },
+    verify_auth(#{ key => PubKey, sig_name => <<"signature">> }, EncWithBody).
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(
@@ -326,7 +318,6 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
-    io:format(standard_error, "SignatureBase: ~p~n", [SignatureBase]),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
