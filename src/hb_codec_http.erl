@@ -138,7 +138,7 @@ find_header(Headers, Name, Opts) when is_list(Headers) ->
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
-    {BodyType, Params} =
+    {_BodyType, Params} =
         case ContentType of
             undefined -> {undefined, []};
             _ ->

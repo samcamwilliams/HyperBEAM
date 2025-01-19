@@ -782,4 +782,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(http).
+    signed_deep_message_test(http).
