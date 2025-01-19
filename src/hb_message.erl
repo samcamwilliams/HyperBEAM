@@ -283,7 +283,7 @@ sign(Msg, Wallet) ->
 
 sign(Msg, Wallet, http) ->
     HTTP = convert(Msg, tabm, #{}),
-    hb_http_signature:sign(HTTP, #{}, #{ wallet => Wallet });
+    hb_http_signature:sign(HTTP, #{}, #{ priv_wallet => Wallet });
 sign(Msg, Wallet, _) ->
     TX = convert(Msg, tx, #{}),
     SignedTX = ar_bundles:sign_item(TX, Wallet),

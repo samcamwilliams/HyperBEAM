@@ -123,7 +123,7 @@ sign(MsgToSign, _Req, Opts) ->
                     #{ SigName => ParsedSignatureInput }
                 )),
             <<"signature-public-key">> => hb_util:encode(Pub),
-            <<"signature-device">> => <<"HTTP-sig/1.0">>
+            <<"signature-device">> => <<"HTTP-Sig/1.0">>
         }
     ).
 
