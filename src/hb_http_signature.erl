@@ -3,7 +3,7 @@
 
 -module(hb_http_signature).
 %%% Device API
--export([sign/3, verify/3]).
+-export([id/3, sign/3, verify/3]).
 %%% HyperBEAM API
 -export([authority/3, sign_auth/2, sign_auth/3, verify_auth/2, verify_auth/3]).
 % Mapping
@@ -83,32 +83,33 @@
 	key => binary()
 }.
 
+id(Msg, _Params, _Opts) ->
+    {ok, <<"http">>}.
+
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 sign(MsgToSign, _Req, Opts) ->
     ?event({starting_to_sign, MsgToSign}),
-    ?event({opts, Opts}),
     Wallet = {_Priv, {_, Pub}} = hb_opts:get(wallet, no_viable_wallet, Opts),
     Enc = hb_message:convert(MsgToSign, http, #{}),
     % Hack: Place the body into the `<<"headers">>` field if it is set. We should
     % either unify the body and headers in this module, or add explicit support
     % for the body in the HTTP Message.
-    EncWithBody =
+    EncWithBody = #{ <<"headers">> := EncHdrList } =
         case maps:get(<<"body">>, Enc, undefined) of
             undefined -> Enc;
             <<>> -> Enc;
             Body ->
                 OrigHeaders = maps:get(<<"headers">>, Enc, #{}),
                 Enc#{
-                    <<"headers">> =>
-                        OrigHeaders ++ [{ <<"body">>, Body }]
+                    <<"headers">> => [{ <<"body">>, Body }|OrigHeaders]
                 }
         end,
-    ?event({encoded, {explicit, EncWithBody}}),
-    Authority = authority(maps:keys(MsgToSign), MsgToSign, Wallet),
-    ?event({authority, Authority}),
+    EncHdrMap = maps:from_list(EncHdrList),
+    ?event({options, {encoded, {explicit, EncWithBody}, {enc_hdr_map, EncHdrMap}}}),
+    Authority = authority(maps:keys(EncHdrMap), EncHdrMap, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, EncWithBody),
     [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
-    SigName = hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
+    SigName = <<"signature">>, %hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
     maps:merge(
         MsgToSign,
         #{
@@ -121,14 +122,50 @@ sign(MsgToSign, _Req, Opts) ->
                 bin(hb_http_structured_fields:dictionary(
                     #{ SigName => ParsedSignatureInput }
                 )),
-            <<"signature-public-key">> => hb_util:encode(Pub)
+            <<"signature-public-key">> => hb_util:encode(Pub),
+            <<"signature-type">> => <<"http">>
         }
     ).
 
 verify(MsgToVerify, _Req, Opts) ->
     Signature = maps:get(<<"signature">>, MsgToVerify),
-    PubKey = maps:get(<<"signature-public-key">>, MsgToVerify),
-    verify_auth(#{ sig_name => Signature, key => PubKey }, MsgToVerify, Opts).
+    RawPubKey =
+        hb_util:decode(maps:get(<<"signature-public-key">>, MsgToVerify)),
+    MsgWithoutSig =
+        maps:without(
+            [
+                <<"signature">>,
+                <<"signature-input">>,
+                <<"signature-public-key">>,
+                <<"signature-type">>
+            ],
+            MsgToVerify
+        ),
+    PubKey = {{rsa, 65537}, RawPubKey},
+    Enc = hb_message:convert(MsgWithoutSig, http, #{}),
+    EncWithBody = #{ <<"headers">> := EncHdrList } =
+        case maps:get(<<"body">>, Enc, undefined) of
+            undefined -> Enc;
+            <<>> -> Enc;
+            Body ->
+                OrigHeaders = maps:get(<<"headers">>, Enc, #{}),
+                Enc#{
+                    <<"headers">> => [{ <<"body">>, Body }|OrigHeaders]
+                }
+        end,
+    EncHdrMap = maps:from_list(EncHdrList),
+    Authority = authority(maps:keys(EncHdrMap), EncHdrMap, PubKey),
+    ?event({authority, Authority}),
+    AuthorityWithSigParams = add_sig_params(Authority, PubKey),
+    verify_auth(AuthorityWithSigParams, MsgWithoutSig).
+    % {_, SignatureBase} = signature_base(AuthorityWithSigParams, #{}, EncWithBody),
+    % % Now verify the signature base signed with the provided key matches
+    % % the signature
+    % ?event({verify, {signature_base, hb_util:encode(hb_crypto:sha256(SignatureBase))},
+    %     {signature, Signature},
+    %     {pub, PubKey}
+    % }),
+    % ar_wallet:verify(PubKey, SignatureBase, Signature, sha512).
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(
@@ -180,25 +217,30 @@ sign_auth(Authority, Req) ->
 -spec sign_auth(authority_state(), request_message(), response_message()) ->
     {ok, {binary(), binary(), binary()}}.
 sign_auth(Authority, Req, Res) ->
-    {Priv, {KeyType, PubKey}} = maps:get(key_pair, Authority),
+    {Priv, Pub} = maps:get(key_pair, Authority),
     % Create the signature base and signature-input values
-    SigParamsWithKeyAndAlg = maps:merge(
-        maps:get(sig_params, Authority),
-        % TODO: determine alg based on KeyType from authority
-        % TODO: is there a more turn-key way to get the wallet address
-        #{
-            alg => <<"rsa-pss-sha512">>,
-            keyid => hb_util:encode(bin(ar_wallet:to_address(PubKey, KeyType)))
-        } 
-    ),
-    ?no_prod(<<"Is the wallet address as keyid kosher here?">>),
-    AuthorityWithSigParams =
-        maps:put(sig_params, SigParamsWithKeyAndAlg, Authority),
+    AuthorityWithSigParams = add_sig_params(Authority, Pub),
 	{SignatureInput, SignatureBase} =
         signature_base(AuthorityWithSigParams, Req, Res),
     % Now perform the actual signing
+    ?event({signing, {signature_base, hb_util:encode(hb_crypto:sha256(SignatureBase))}}),
 	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
 	{ok, {SignatureInput, Signature}}.
+
+%% @doc Add the signature parameters to the authority state
+add_sig_params(Authority, {KeyType, PubKey}) ->
+    maps:put(
+        sig_params,
+        maps:merge(
+            maps:get(sig_params, Authority),
+            #{
+                alg => <<"rsa-pss-sha512">>,
+                keyid =>
+                    hb_util:human_id(ar_wallet:to_address(PubKey, KeyType))
+            }
+        ),
+        Authority
+    ).
 
 %%% @doc same verify/3, but with an empty Request Message Context
 verify_auth(Verifier, Msg) ->
@@ -277,12 +319,14 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
+    ?event({generating_sig_base, {component_identifiers, ComponentIdentifiers}, {req, Req}, {res, Res}}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
+    io:format(standard_error, "SignatureBase: ~p~n", [SignatureBase]),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
@@ -363,7 +407,6 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 		find_sf_byte_sequence_param(IParams),
 		find_sf_key_param(IParams)
 	],
-    ?event({extract, {item, IParsed}, IParams, {Req, Res}}),
 	case (IsStrictFormat orelse DictKey =/= false) andalso IsByteSequenceEncoded of
 		true ->
 			% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.2
@@ -404,7 +447,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
                             % could also be a trailer
 							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.10.1
 							case IsTrailerField of
-                                true -> trailers;
+                                true -> <<"trailers">>;
                                 false -> <<"headers">>
                             end,
 							% The header may exist on any message in the context of
@@ -424,7 +467,10 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 					{
                         field_not_found_error,
                         <<"Component Identifier for a field MUST be ",
-                        "present on the message">>
+                        "present on the message">>,
+                        {key, Lowered},
+                        {req, Req},
+                        {res, Res}
                     };
 				FieldPairs ->
 					% The Field was found, but we still need to potentially
