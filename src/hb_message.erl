@@ -616,7 +616,16 @@ nested_message_with_large_content_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, converge, #{}),
+    case Codec of
+        http ->
+            #{ <<"body">> := Body, <<"headers">> := Headers } = Encoded,
+            ?event(debug, {encoded_headers, Headers}),
+            io:format(standard_error, "Body: ~s~n", [Body]);
+        _ -> ok
+    end,
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {msg, Msg}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
@@ -808,4 +817,6 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
+    simple_nested_message_test(http),
+    signed_message_encode_decode_verify_test(http),
     nested_message_with_large_content_test(http).
