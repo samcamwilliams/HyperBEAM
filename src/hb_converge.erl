@@ -560,6 +560,7 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
 %% requested by the `Opts`.
 maybe_force_message({Status, Res}, Opts) ->
     case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
+        true when is_list(Res) -> {Status, normalize_keys(Res)};
         true -> {Status, #{ <<"body">> => Res }};
         false -> {Status, Res}
     end.
