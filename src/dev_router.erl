@@ -35,7 +35,7 @@
 routes(M1, M2, Opts) ->
     ?event({routes_msg, M1, M2}),
     Routes = hb_opts:get(routes, [], Opts),
-    case hb_converge:get(method, M2, Opts) of
+    case hb_converge:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
             Owner = hb_opts:get(owner, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
@@ -76,6 +76,7 @@ find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
 find_route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
     R = match_routes(Msg, Routes, Opts),
+    ?event({find_route, {msg, Msg}, {routes, Routes}, {res, R}}),
     case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
         false -> no_matches;
         Node when is_binary(Node) -> {ok, Node};
@@ -332,7 +333,7 @@ get_routes_test() ->
             ]
         }
     ),
-    Res = hb_client:routes(Node),
+    Res = hb_http:get(Node, <<"/!Router@1.0/routes">>, #{}),
     ?event({get_routes_test, Res}),
     {ok, RecvdRoutes} = Res,
     ?assert(hb_message:match(Routes, RecvdRoutes)).
@@ -350,16 +351,18 @@ add_route_test() ->
             ]
         }
     ),
-    Res = hb_client:add_route(Node,
+    Res = hb_client:add_route(
+        Node,
         NewRoute = #{
             <<"template">> => <<"/some/new/path">>,
             <<"node">> => <<"new">>,
             <<"priority">> => 15
-        }
+        },
+        #{}
     ),
     ?event({add_route_test, Res}),
     ?assertEqual({ok, <<"Route added.">>}, Res),
-    Res2 = hb_client:routes(Node),
+    Res2 = hb_client:routes(Node, #{}),
     ?event({new_routes, Res2}),
     {ok, RecvdRoutes} = Res2,
     ?assert(hb_message:match(Routes ++ [NewRoute], RecvdRoutes)).
