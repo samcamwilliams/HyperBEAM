@@ -620,11 +620,28 @@ as_test(Opts) ->
     % function. It normally returns `GOOD_FUNCTION`.
     Msg = #{
         <<"device">> => <<"test-device@1.0">>,
-        <<"test_func">> => <<"MESSAGE">>
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
     },
     ?assertEqual(<<"GOOD_FUNCTION">>, hb_converge:get(<<"test_func">>, Msg, Opts)),
-    % Now use the `as` keyword to get the key with the message device.
+    % Now use the `as` keyword to subresolve a key with the message device.
+    ?assertMatch(
+        {ok, #{ <<"test_key">> := <<"MESSAGE">> }},
+        hb_converge:resolve(
+            Msg,
+            {as, <<"message@1.0">>, #{ <<"path">> => <<"test_func">> }},
+            Opts
+        )
+    ),
+    % Resolve a list of messages in sequence, swapping the device in the middle.
     ?assertEqual(
         {ok, <<"MESSAGE">>},
-        hb_converge:resolve(Msg, {as, <<"message@1.0">>, <<"test_func">>}, Opts)
+        hb_converge:resolve_many(
+            [
+                Msg,
+                {as, <<"message@1.0">>, <<>>},
+                #{ <<"path">> => <<"test_func">> },
+                #{ <<"path">> => <<"test_key">> }
+            ],
+            Opts
+        )
     ).

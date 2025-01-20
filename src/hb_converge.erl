@@ -161,11 +161,16 @@ resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
 resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message.
     ?event(converge_core, {stage, 1, setting_device, {msg1, Msg1}, {dev, DevID}, {msg2, Msg2}, {opts, Opts}}),
-    Msg3 = set(Msg1, <<"device">>, DevID, Opts),
-    ?event(converge_core, {transformed_msg, Msg3}),
+    Msg1b = set(Msg1, <<"device">>, DevID, Opts),
+    ?event(converge_core, {message_as, Msg1b, {executing_path, Msg2}}),
     % Recurse with the modified message. The hashpath will have been updated
-    % to include the device ID, if requested.
-    resolve(Msg3, Msg2, Opts);
+    % to include the device ID, if requested. Simply return if the path is empty.
+    case hb_path:from_message(request, Msg2) of
+        undefined -> {ok, Msg1b};
+        _ -> 
+            ?event(debug, {resolve_as_subpath, {msg1, Msg1b}, {msg2, Msg2}, {opts, Opts}}),
+            resolve(Msg1b, Msg2, Opts)
+    end;
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
