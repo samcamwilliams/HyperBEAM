@@ -35,6 +35,7 @@
 routes(M1, M2, Opts) ->
     ?event({routes_msg, M1, M2}),
     Routes = hb_opts:get(routes, [], Opts),
+    ?event({routes, Routes}),
     case hb_converge:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
             Owner = hb_opts:get(owner, undefined, Opts),
@@ -320,6 +321,22 @@ route_regex_matches_test() ->
         find_route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 
+
+device_call_from_singleton_test() ->
+    % Try with a real-world example, taken from a GET request to the router.
+    NodeOpts = #{ routes => Routes = [#{
+        <<"template">> => <<"/some/path">>,
+        <<"node">> => <<"old">>,
+        <<"priority">> => 10
+    }]},
+    Msgs = hb_singleton:from(#{ <<"path">> => <<"!router@1.0/routes">> }),
+    ?event({msgs, Msgs}),
+    ?assertEqual(
+        {ok, Routes},
+        hb_converge:resolve_many(Msgs, NodeOpts)
+    ).
+    
+
 get_routes_test() ->
     Node = hb_http_server:start_test_node(
         #{
@@ -333,7 +350,7 @@ get_routes_test() ->
             ]
         }
     ),
-    Res = hb_http:get(Node, <<"/!Router@1.0/routes">>, #{}),
+    Res = hb_http:get(Node, <<"!Router@1.0/routes">>, #{}),
     ?event({get_routes_test, Res}),
     {ok, RecvdRoutes} = Res,
     ?assert(hb_message:match(Routes, RecvdRoutes)).
