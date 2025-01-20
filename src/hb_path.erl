@@ -221,6 +221,7 @@ from_message(request, _) -> undefined.
 term_to_path_parts(Path) ->
     term_to_path_parts(Path, #{ error_strategy => throw }).
 term_to_path_parts([], _Opts) -> undefined;
+term_to_path_parts(<<>>, _Opts) -> undefined;
 term_to_path_parts(<<"/">>, _Opts) -> [];
 term_to_path_parts(Binary, Opts) when is_binary(Binary) ->
     case binary:match(Binary, <<"/">>) of

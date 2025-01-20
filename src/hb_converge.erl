@@ -140,7 +140,15 @@ resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(converge_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            ?event(converge_core, {stage, 11, resolve_many, {msg3, Msg3}, {opts, Opts}}),
+            ?event(converge_core,
+                {
+                    stage,
+                    11,
+                    resolved_message_of_many,
+                    {msg3, Msg3},
+                    {opts, Opts}
+                }
+            ),
             resolve_many([Msg3 | MsgList], Opts);
         Res ->
             ?event(converge_core, {stage, 11, resolve_many_terminating_early, Res}),
@@ -160,15 +168,21 @@ resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
     resolve_stage(1, Msg1, #{ <<"path">> => NonMapMsg2 }, Opts);
 resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message.
-    ?event(converge_core, {stage, 1, setting_device, {msg1, Msg1}, {dev, DevID}, {msg2, Msg2}, {opts, Opts}}),
+    ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
     Msg1b = set(Msg1, <<"device">>, DevID, Opts),
-    ?event(converge_core, {message_as, Msg1b, {executing_path, Msg2}}),
+    ?event(converge_debug, {message_as, Msg1b, {executing_path, Msg2}}, Opts),
     % Recurse with the modified message. The hashpath will have been updated
     % to include the device ID, if requested. Simply return if the path is empty.
     case hb_path:from_message(request, Msg2) of
         undefined -> {ok, Msg1b};
         _ -> 
-            ?event(debug, {resolve_as_subpath, {msg1, Msg1b}, {msg2, Msg2}, {opts, Opts}}),
+            ?event(converge_debug,
+                {resolve_as_subpath,
+                    {msg1, Msg1b},
+                    {msg2, Msg2},
+                    {opts, Opts}},
+                Opts
+            ),
             resolve(Msg1b, Msg2, Opts)
     end;
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
