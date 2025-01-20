@@ -58,16 +58,7 @@ from(#{ <<"headers">> := Headers, <<"body">> := Body }) ->
     Map = from_headers(#{}, Headers),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as additional key-binary value pairs, or as sub-TABMs
-    ContentType =
-        case find_header(Headers, <<"content-type">>) of
-            {undefined, undefined} ->
-                case binary:split(Body, [?CRLF], []) of
-                    [<<"content-type: ", Dict/binary>>|_] ->
-                        Dict;
-                    _ -> undefined
-                end;
-            {_, CT} -> CT
-        end,
+    {_, ContentType} = find_header(Headers, <<"content-type">>),
     maps:remove(<<"content-type">>, from_body(Map, ContentType, Body)).
 
 from_headers(Map, Headers) -> from_headers(Map, Headers, Headers).
@@ -150,8 +141,7 @@ from_body(TABM, ContentType, Body) ->
         case ContentType of
             undefined -> {undefined, []};
             _ ->
-                {item, {_, XT}, XParams} =
-                    hb_http_structured_fields:parse_item(ContentType),
+                {item, {_, XT}, XParams} = hb_http_structured_fields:parse_item(ContentType),
                 {XT, XParams}
         end,
     case lists:keyfind(<<"boundary">>, 1, Params) of
@@ -161,27 +151,33 @@ from_body(TABM, ContentType, Body) ->
         % We need to manually parse the multipart body into key/values on the TABM
         {_, {_Type, Boundary}} ->
             % Find the sub-part of the body within the boundary
-            BegPat = <<"--", Boundary/binary>>,
-            EndPat = <<"--", Boundary/binary, "--">>,
+            % We also make sure to account for the CRLF at end and beginning
+            % of the starting and terminating part boundary, respectively
+            % 
+            % ie.
+            % --foo-boundary\r\n
+            % My-Awesome: Part
+            %
+            % an awesome body\r\n
+            % --foo-boundary--
+            BegPat = <<"--", Boundary/binary, ?CRLF/binary>>,
+            EndPat = <<?CRLF/binary, "--", Boundary/binary, "--">>,
             {Start, SL} = binary:match(Body, BegPat),
             {End, _} = binary:match(Body, EndPat),
             BodyPart = binary:part(Body, Start + SL, End - (Start + SL)),
+            % By taking into account all parts of the surrounding boundary above,
+            % we get precisely the sub-part that we're interested without any
+            % additional parsing
             Parts = binary:split(BodyPart, [<<"--", Boundary/binary>>], [global]),
-            % Finally, for each body part, we need to parse it into its
-            % own HTTP Message, then recursively convert into a TABM
-            InnerTABM = lists:foldl(
-                fun
-                    (Part, CurTABM) ->
-                    {ok, NewTABM} = append_body_part(CurTABM, Part),
-                    NewTABM 
-                end,
-                TABM,
-                Parts
-            ),
-            InnerTABM
+            % Finally, for each part within the sub-part, we need to parse it,
+            % potentially recursively as a sub-TABM, and then add it to the
+            % current TABM
+            {ok, NewTABM} = from_body_parts(TABM, Parts),
+            NewTABM
     end.
 
-append_body_part(TABM, Part) ->
+from_body_parts (TABM, []) -> {ok, TABM};
+from_body_parts(TABM, [Part | Rest]) ->
     % Extract the Headers block and Body. Only split on the FIRST double CRLF
     [RawHeadersBlock, RawBody] = case binary:split(Part, [?DOUBLE_CRLF], []) of
         % no body
@@ -208,29 +204,46 @@ append_body_part(TABM, Part) ->
     % so we separate off from the rest of the headers
     {AllContentDisposition, RestHeaders} = lists:partition(
         fun
-            ({Str, _}) -> hb_util:to_lower(Str) =:= <<"content-disposition">>;
+            ({HeaderName, _}) -> hb_util:to_lower(HeaderName) =:= <<"content-disposition">>;
             (_) -> false
         end,
         Headers    
     ),
-    ContentDisposition = case AllContentDisposition of
+    RawDisposition = case AllContentDisposition of
         [] -> undefined;
+        % Just grab the first Content-Disposition header value
         [{_, CD} | _Rest] -> CD
     end,
-    ?event(debug, {content_disposition, ContentDisposition}),
-    case ContentDisposition of
+    ?event(debug, {content_disposition, RawDisposition}),
+    case RawDisposition of
+        % A Content-Disposition header is required for each part
+        % in the multipart body
         undefined -> no_content_disposition_header_found;
+        % Extract the name 
         RawDisposition when is_binary(RawDisposition) ->
-            {item, {_, _Disposition}, Params} =
+            {item, {_, Disposition}, DispositionParams} =
                 hb_http_structured_fields:parse_item(RawDisposition),
-            ?event(debug, {part_params, Params}),
-            PartName = case lists:keyfind(<<"name">>, 1, Params) of
-                false -> <<"body">>;
-                {_, {_type, PN}} -> PN;
-                {<<"name">>, PN} -> PN
+            ?event(debug, {part_params, DispositionParams}),
+            {ok, PartName} = case Disposition of
+                % The inline part is the body
+                <<"inline">> ->
+                    {ok, <<"body">>};
+                % Otherwise, we need to extract the name of the part
+                % from the Content-Disposition parameters
+                _ ->
+                    case lists:keyfind(<<"name">>, 1, DispositionParams) of
+                        {_, {_type, PN}} -> {ok, PN};
+                        false -> no_part_name_found
+                    end
             end,
-            SubTABM = from(#{ <<"headers">> => RestHeaders, <<"body">> => RawBody }),
-            {ok, maps:put(PartName, SubTABM, TABM)}
+            ParsedPart = case RestHeaders of
+                % There are no headers besides the content disposition header
+                % So simply use the the raw body binary as the part
+                [] -> RawBody;
+                % We need recursively parse the sub part into its own TABM
+                _ -> from(#{ <<"headers">> => RestHeaders, <<"body">> => RawBody })
+            end,
+            from_body_parts(maps:put(PartName, ParsedPart, TABM), Rest)
     end.
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
@@ -255,40 +268,60 @@ to(TABM) when is_map(TABM) ->
     BodyMap = maps:get(<<"body">>, Http),
     NewHttp =
         case BodyMap of
+            % If the body map is empty, then simply set the body to be a corresponding empty binary.
             X when map_size(X) =:= 0 ->
-                % If the body is empty, then we need to set it to an empty binary.
                 maps:put(<<"body">>, <<>>, Http);
-            #{ <<"body">> := {{_, Disposition}, UserBody} } when map_size(BodyMap) =:= 1 ->
-                % If the body is a single part, then we need to set it to the UserBody
-                maps:put(<<"headers">>,
-                    [{<<"content-disposition">>, Disposition}
-                        |maps:get(<<"headers">>, Http, #{})],
-                    Http
-                ),
+            % Simply set the sole body binary as the body of the
+            % HTTP message, no further encoding required
+            #{ <<"body">> := UserBody } when map_size(BodyMap) =:= 1 andalso is_binary(UserBody) ->
+                ?event({encoding_single_body, {body, UserBody}, {http, Http}}),
                 maps:put(<<"body">>, UserBody, Http);
+            % Otherwise, we need to encode the body map as the
+            % multipart body of the HTTP message
             _ ->
-                % Otherwise, we need to encode the body as a multipart message.
                 ?event({encoding_multipart, {body, BodyMap}, {http, Http}}),
+                % The id of the Message will be used as the Boundary
+                % in the multipart body
                 {ok, RawBoundary} = dev_message:id(TABM),
                 Boundary = hb_util:encode(RawBoundary),
                 % Transform body into a binary, delimiting each part with the Boundary
                 BodyList = maps:fold(
-                    fun (_, {{<<"content-disposition">>, Disposition}, BodyPart}, Acc) ->
-                        ?event({encoding_multipart_part, {part, Disposition, BodyPart}, {http, Http}}),
-                        [
-                            <<
-                                "--", Boundary/binary, ?CRLF/binary,
-                                "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
-                                BodyPart/binary
-                            >>
-                        |
-                            Acc
-                        ]
+                    fun (PartName, BodyPart, Acc) ->
+                            ?event({encoding_multipart_part, {part, PartName, BodyPart}, {http, Http}}),
+                            % We'll need to prepend a Content-Disposition header to the part, using
+                            % the field name as the form part name.
+                            % (See https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
+                            Disposition = case PartName of
+                                % The body is always made the inline part of the
+                                % multipart body
+                                <<"body">> -> <<"inline">>;
+                                _ -> <<"form-data;name=", "\"", PartName/binary, "\"">>
+                            end,
+                            EncodedBodyPart = case BodyPart of
+                                BPMap when is_map(BPMap) ->
+                                    SubHttp = to(BPMap),
+                                    EncodedHttp = encode_http_msg(SubHttp),
+                                    EncodedHttp;
+                                BPBin when is_binary(BPBin) ->
+                                    BPBin
+                            end,
+                            [
+                                <<
+                                    "--", Boundary/binary, ?CRLF/binary,
+                                    "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                    EncodedBodyPart/binary
+                                >>
+                            |
+                                Acc
+                            ]
                     end,
                     [],
                     BodyMap
                 ),
+                % Finally, join each part of the multipart body into a single binary
+                % to be used as the body of the Http Message
                 BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
+                % Ensure we append the Content-Type to be a multipart response
                 #{ 
                     <<"headers">> => [
                         {
@@ -334,7 +367,7 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
             {
                 [{NextName, NextSigInput} | SfSigInputs],
                 [{NextName, NextSig} | SfSigs]
-            }
+		}
         end,
         % Start with empty Structured Field Dictionaries
         {[], []},
@@ -346,26 +379,27 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
     WithSigAndInput = field_to_http(WithSig, {<<"signature-input">>, hb_http_structured_fields:dictionary(SfSigInputs)}, #{}),
     WithSigAndInput.
 
-body_to_http(Http, Body) when is_map(Body) ->
-    Disposition = {<<"content-disposition">>, <<"inline">>},
-    SubHttp = to(Body),
-    EncodedBody = encode_http_msg(SubHttp),
-    field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
-body_to_http(Http, Body) when is_binary(Body) ->
-    Disposition = {<<"content-disposition">>, <<"inline">>},
-    field_to_http(Http, {<<"body">>, Body}, #{ disposition => Disposition, where => body }).
+% Force the value to be encoded into the body of the HTTP message
+body_to_http(Http, Body) ->
+    field_to_http(Http, {<<"body">>, Body}, #{ where => body }).
 
-field_to_http(Http, {Name, Value}, Opts) when is_map(Value) ->
-    SubHttp = to(Value),
-    EncodedHttpMap = encode_http_msg(SubHttp),
-    field_to_http(Http, {Name, EncodedHttpMap}, maps:put(where, body, Opts));
+% All maps are encoded into the body of the HTTP message
+% to be further encoded later.
+field_to_http(Http, {Name, Value}, _Opts) when is_map(Value) ->
+    NormalizedName = hb_converge:normalize_key(Name),
+    BodyMap = maps:get(<<"body">>, Http, #{}),
+    NewBody = maps:put(NormalizedName, Value, BodyMap),
+    maps:put(<<"body">>, NewBody, Http);
 field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
     NormalizedName = hb_converge:normalize_key(Name),
     % The default location where the value is encoded within the HTTP
     % message depends on its size.
     % 
     % So we check whether the size of the value is within the threshold
-    % to encode as a header, and other default to encoding in the body
+    % to encode as a header, and otherwise default to encoding in the body.
+    %
+    % Note that a "where" Opts may force the location of the encoded
+    % value -- this is only a default location if not specified in Opts 
     DefaultWhere =
         case {maps:get(where, Opts, headers), byte_size(Value)} of
             {headers, Fits} when Fits =< ?MAX_HEADER_LENGTH -> headers;
@@ -377,23 +411,7 @@ field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
             NewHeaders = lists:append(Headers, [{NormalizedName, Value}]),
             maps:put(<<"headers">>, NewHeaders, Http);
         body ->
-            % Append the value as a part of the multipart body
-            %
-            % We'll need to prepend a Content-Disposition header to the part, using
-            % the field name as the form part name.
-            % (See https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
-            % We allow the caller to provide a Content-Disposition in Opts, but default
-            % to appending as a field on the form-data
-            Disposition =
-                maps:get(
-                    disposition,
-                    Opts,
-                    {
-                        <<"content-disposition">>,
-                        <<"form-data;name=", NormalizedName/binary>>
-                    }
-                ),
-            Body = maps:get(<<"body">>, Http, #{}),
-            NewBody = maps:put(NormalizedName, {Disposition, Value}, Body),
-            maps:put(<<"body">>, NewBody, Http)
+            BodyMap = maps:get(<<"body">>, Http, #{}),
+            NewBodyMap = maps:put(NormalizedName, Value, BodyMap),
+            maps:put(<<"body">>, NewBodyMap, Http)
     end.
