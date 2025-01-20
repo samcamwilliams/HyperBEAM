@@ -437,7 +437,7 @@ test_process() ->
         device => ?MODULE,
         process => #{
             <<"device-stack">> =>
-                [<<"Cron/1.0">>, <<"WASM-64/1.0">>, <<"PODA/1.0">>],
+                [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
             <<"image">> => <<"wasm-image-id">>,
             <<"type">> => <<"process">>,
             <<"scheduler-location">> => Address,

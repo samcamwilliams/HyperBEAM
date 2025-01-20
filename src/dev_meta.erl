@@ -90,11 +90,11 @@ resolve_processor(Processor, Request, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({Status, Res}) ->
-    {Status, Res#{ <<"status-code">> => hb_http:status_code(Status) }}.
+    {ok, Res#{ <<"status">> => hb_http:status_code(Status) }}.
 
 %% @doc Sign the result of a device call if the node is configured to do so.
-maybe_sign({ok, Res}, NodeMsg) ->
-    {ok, maybe_sign(Res, NodeMsg)};
+maybe_sign({Status, Res}, NodeMsg) ->
+    {Status, maybe_sign(Res, NodeMsg)};
 maybe_sign(Res, NodeMsg) ->
     ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of

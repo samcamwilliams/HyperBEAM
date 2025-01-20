@@ -379,7 +379,7 @@ wasm_compute_request(ImageFile, Func, Params) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
         <<"path">> => <<"/init/compute/results">>,
-        <<"device">> => <<"WASM-64/1.0">>,
+        <<"device">> => <<"WASM-64@1.0">>,
         <<"wasm-function">> => Func,
         <<"wasm-params">> => Params,
         <<"body">> => Bin
@@ -419,7 +419,7 @@ run_wasm_signed_test() ->
 %             #{}
 %         ),
 %     MsgX = #{
-%         <<"device">> => <<"Scheduler/1.0">>,
+%         <<"device">> => <<"Scheduler@1.0">>,
 %         <<"path">> => <<"append">>,
 %         <<"process">> => Proc,
 %         <<"message">> =>

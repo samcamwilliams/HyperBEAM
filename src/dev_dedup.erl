@@ -51,10 +51,10 @@ dedup_test() ->
     % Create a stack with a dedup device and 2 devices that will append to a
     % `Result` key.
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
-				<<"1">> => <<"Dedup/1.0">>,
+				<<"1">> => <<"Dedup@1.0">>,
 				<<"2">> => dev_stack:generate_append_device(<<"+D2">>),
 				<<"3">> => dev_stack:generate_append_device(<<"+D3">>)
 			},
@@ -82,13 +82,13 @@ dedup_with_multipass_test() ->
     % an additional pass. We want to ensure that Multipass is not hindered by
     % the dedup device.
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
-				<<"1">> => <<"Dedup/1.0">>,
+				<<"1">> => <<"Dedup@1.0">>,
 				<<"2">> => dev_stack:generate_append_device(<<"+D2">>),
 				<<"3">> => dev_stack:generate_append_device(<<"+D3">>),
-                <<"4">> => <<"Multipass/1.0">>
+                <<"4">> => <<"Multipass@1.0">>
 			},
 		<<"result">> => <<"INIT">>,
         <<"passes">> => 2

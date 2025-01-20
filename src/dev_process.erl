@@ -401,7 +401,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
 %% In situations where the key that is `run_as` returns a message with a 
 %% transformed device, this is useful.
 as_process(Msg1, Opts) ->
-    {ok, Proc} = dev_message:set(Msg1, #{ <<"device">> => <<"Process/1.0">> }, Opts),
+    {ok, Proc} = dev_message:set(Msg1, #{ <<"device">> => <<"Process@1.0">> }, Opts),
     Proc.
 
 %% @doc Helper function to store a copy of the `process` key in the message.
@@ -425,8 +425,8 @@ test_base_process() ->
     Wallet = hb:wallet(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
-        <<"device">> => <<"Process/1.0">>,
-        <<"scheduler-device">> => <<"Scheduler/1.0">>,
+        <<"device">> => <<"Process@1.0">>,
+        <<"scheduler-device">> => <<"Scheduler@1.0">>,
         <<"scheduler-location">> => Address,
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
@@ -435,8 +435,8 @@ test_base_process() ->
 test_wasm_process(WASMImage) ->
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
     maps:merge(test_base_process(), #{
-        <<"execution-device">> => <<"Stack/1.0">>,
-        <<"device-stack">> => [<<"WASM-64/1.0">>],
+        <<"execution-device">> => <<"Stack@1.0">>,
+        <<"device-stack">> => [<<"WASM-64@1.0">>],
         <<"image">> => WASMImageID
     }).
 
@@ -448,10 +448,10 @@ test_aos_process() ->
     hb_message:sign(maps:merge(WASMProc, #{
         <<"device-stack">> =>
             [
-                <<"WASI/1.0">>,
-                <<"JSON-Iface/1.0">>,
-                <<"WASM-64/1.0">>,
-                <<"Multipass/1.0">>
+                <<"WASI@1.0">>,
+                <<"JSON-Iface@1.0">>,
+                <<"WASM-64@1.0">>,
+                <<"Multipass@1.0">>
             ],
         <<"output-prefix">> => <<"wasm">>,
         <<"passes">> => 2,
@@ -471,8 +471,8 @@ test_aos_process() ->
 %% `Already-Seen' elements for each assigned slot.
 dev_test_process() ->
     maps:merge(test_base_process(), #{
-        <<"execution-device">> => <<"Stack/1.0">>,
-        <<"device-stack">> => [<<"Test-Device/1.0">>, <<"Test-Device/1.0">>]
+        <<"execution-device">> => <<"Stack@1.0">>,
+        <<"device-stack">> => [<<"Test-Device@1.0">>, <<"Test-Device@1.0">>]
     }).
 
 schedule_test_message(Msg1, Text) ->

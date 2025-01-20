@@ -213,8 +213,8 @@ parse_part_mods([], Msg) -> Msg;
 parse_part_mods(<<>>, Msg) -> Msg;
 parse_part_mods(<<"!", PartMods/binary>>, Msg) ->
     % Get the string until the end of the device specifier or end of string.
-    [DeviceBin, Rest] = path_parts($+, PartMods),
-    InlinedMsgBin = iolist_to_binary(lists:join(Rest, <<"+">>)),
+    [DeviceBin|Rest] = path_parts($+, PartMods),
+    InlinedMsgBin = maybe_join(Rest, <<"+">>),
     % Calculate the inlined keys
     MsgWithInlines = parse_part_mods(InlinedMsgBin, Msg),
     % Apply the device specifier
@@ -279,6 +279,15 @@ maybe_typed(Key, Value) ->
                 {_T, Bin} when is_binary(Bin) ->
                     {typed, OnlyKey, hb_codec_converge:decode_value(Type, Bin)}
             end
+    end.
+
+%% @doc Join a list of items with a separator, or return the first item if there
+%% is only one item. If there are no items, return an empty binary.
+maybe_join(Items, Sep) ->
+    case length(Items) of
+        0 -> <<>>;
+        1 -> hd(Items);
+        _ -> iolist_to_binary(lists:join(Sep, Items))
     end.
 
 %%% Tests

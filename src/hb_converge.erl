@@ -947,7 +947,12 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 			{error, remote_devices_disabled}
 	end;
 load_device(ID, Opts) ->
-    case maps:get(ID, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
+    NormKey =
+        case is_atom(ID) of
+            true -> ID;
+            false -> normalize_key(ID)
+        end,
+    case maps:get(NormKey, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> load_device(Mod, Opts)
     end.

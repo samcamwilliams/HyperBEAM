@@ -409,15 +409,15 @@ transform_internal_call_device_test() ->
 	AppendDev = generate_append_device(<<"_">>),
 	Msg1 =
 		#{
-			<<"device">> => <<"Stack/1.0">>,
+			<<"device">> => <<"Stack@1.0">>,
 			<<"device-stack">> =>
 				#{
 					<<"1">> => AppendDev,
-					<<"2">> => <<"Message/1.0">>
+					<<"2">> => <<"Message@1.0">>
 				}
 		},
 	?assertMatch(
-		<<"Message/1.0">>,
+		<<"Message@1.0">>,
 		hb_converge:get(
 			<<"device">>,
 			element(2, transform(Msg1, <<"2">>, #{}))
@@ -428,7 +428,7 @@ transform_internal_call_device_test() ->
 %% return a version of msg1 with only that device attached.
 transform_external_call_device_test() ->
 	Msg1 = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"make-cool">> =>
@@ -480,7 +480,7 @@ example_device_for_stack_test() ->
 
 simple_stack_execute_test() ->
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"!D1!">>),
@@ -496,7 +496,7 @@ simple_stack_execute_test() ->
 
 many_devices_test() ->
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"+D1">>),
@@ -523,7 +523,7 @@ many_devices_test() ->
 benchmark_test() ->
     BenchTime = 0.3,
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"+D1">>),
@@ -573,7 +573,7 @@ test_prefix_msg() ->
             end
     },
     #{
-        <<"device">> => <<"Stack/1.0">>,
+        <<"device">> => <<"Stack@1.0">>,
         <<"device-stack">> => #{ <<"1">> => Dev, <<"2">> => Dev }
     }.
 
@@ -647,7 +647,7 @@ input_output_prefixes_passthrough_test() ->
 
 reinvocation_test() ->
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"+D1">>),
@@ -669,7 +669,7 @@ reinvocation_test() ->
 
 skip_test() ->
 	Msg1 = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"+D1">>, skip),
@@ -691,7 +691,7 @@ pass_test() ->
     % recursively calls the device by forcing its response to be `pass`
     % until that happens.
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"+D1">>, pass)
@@ -706,7 +706,7 @@ pass_test() ->
 not_found_test() ->
     % Ensure that devices not exposing a key are safely skipped.
 	Msg = #{
-		<<"device">> => <<"Stack/1.0">>,
+		<<"device">> => <<"Stack@1.0">>,
 		<<"device-stack">> =>
 			#{
 				<<"1">> => generate_append_device(<<"+D1">>),
@@ -730,7 +730,7 @@ not_found_test() ->
 
 simple_map_test() ->
     Msg = #{
-        <<"device">> => <<"Stack/1.0">>,
+        <<"device">> => <<"Stack@1.0">>,
         <<"device-stack">> =>
             #{
                 <<"1">> => generate_append_device(<<"+D1">>),
