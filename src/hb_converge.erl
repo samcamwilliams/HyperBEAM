@@ -155,6 +155,9 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
         Msg2,
         Opts
     );
+resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
+    ?event(converge_core, {stage, 1, path_normalize}),
+    resolve_stage(1, Msg1, #{ <<"path">> => NonMapMsg2 }, Opts);
 resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message.
     ?event(converge_core, {stage, 1, setting_device, {msg1, Msg1}, {dev, DevID}, {msg2, Msg2}, {opts, Opts}}),
