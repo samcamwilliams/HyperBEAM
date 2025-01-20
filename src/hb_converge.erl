@@ -118,7 +118,6 @@
 %%     10: Fork worker.
 %%     11: Recurse or terminate.
 
-
 resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
     resolve_many(hb_singleton:from(SingletonMsg), Opts).
 
@@ -131,7 +130,9 @@ resolve(Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, prepare_multimessage_resolution, {messages_to_exec, MessagesToExec}}),
     resolve_many([Msg1 | MessagesToExec], Opts).
 
-%% @doc Resolve a list of messages in sequence.
+%% @doc Resolve a list of messages in sequence. Take the output of the first
+%% message as the input for the next message. Once the last message is resolved,
+%% return the result.
 resolve_many([Msg3], _Opts) ->
     ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
     {ok, Msg3};
@@ -139,7 +140,15 @@ resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(converge_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            ?event(converge_core, {stage, 11, resolve_many, {msg3, Msg3}, {opts, Opts}}),
+            ?event(converge_core,
+                {
+                    stage,
+                    11,
+                    resolved_message_of_many,
+                    {msg3, Msg3},
+                    {opts, Opts}
+                }
+            ),
             resolve_many([Msg3 | MsgList], Opts);
         Res ->
             ?event(converge_core, {stage, 11, resolve_many_terminating_early, Res}),
@@ -154,6 +163,28 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
         Msg2,
         Opts
     );
+resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
+    ?event(converge_core, {stage, 1, path_normalize}),
+    resolve_stage(1, Msg1, #{ <<"path">> => NonMapMsg2 }, Opts);
+resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
+    % Set the device to the specified `DevID' and resolve the message.
+    ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
+    Msg1b = set(Msg1, <<"device">>, DevID, Opts),
+    ?event(converge_debug, {message_as, Msg1b, {executing_path, Msg2}}, Opts),
+    % Recurse with the modified message. The hashpath will have been updated
+    % to include the device ID, if requested. Simply return if the path is empty.
+    case hb_path:from_message(request, Msg2) of
+        undefined -> {ok, Msg1b};
+        _ -> 
+            ?event(converge_debug,
+                {resolve_as_subpath,
+                    {msg1, Msg1b},
+                    {msg2, Msg2},
+                    {opts, Opts}},
+                Opts
+            ),
+            resolve(Msg1b, Msg2, Opts)
+    end;
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
@@ -529,6 +560,7 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
 %% requested by the `Opts`.
 maybe_force_message({Status, Res}, Opts) ->
     case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
+        true when is_list(Res) -> {Status, normalize_keys(Res)};
         true -> {Status, #{ <<"body">> => Res }};
         false -> {Status, Res}
     end.
@@ -733,7 +765,7 @@ message_to_fun(Msg, Key, Opts) ->
 			{Status, Func} = info_handler_to_fun(Handler, Msg, Key, Opts),
             {Status, Dev, Func};
 		_ ->
-			?event(converge_devices, {handler_not_found, {dev, Dev}, {key, Key}}),
+			?event(converge_devices, {no_override_handler, {dev, Dev}, {key, Key}}),
 			case {find_exported_function(Msg, Dev, Key, 3, Opts), Exported} of
 				{{ok, Func}, true} ->
 					% Case 3: The device has a function of the name `Key`.
@@ -918,7 +950,7 @@ load_device(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+load_device(ID, Opts) when ?IS_ID(ID) ->
 	case hb_opts:get(load_remote_devices) of
 		true ->
 			{ok, Msg} = hb_cache:read(maps:get(store, Opts), ID),
@@ -947,7 +979,12 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 			{error, remote_devices_disabled}
 	end;
 load_device(ID, Opts) ->
-    case maps:get(ID, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
+    NormKey =
+        case is_atom(ID) of
+            true -> ID;
+            false -> normalize_key(ID)
+        end,
+    case maps:get(NormKey, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> load_device(Mod, Opts)
     end.

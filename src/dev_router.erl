@@ -35,7 +35,8 @@
 routes(M1, M2, Opts) ->
     ?event({routes_msg, M1, M2}),
     Routes = hb_opts:get(routes, [], Opts),
-    case hb_converge:get(method, M2, Opts) of
+    ?event({routes, Routes}),
+    case hb_converge:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
             Owner = hb_opts:get(owner, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
@@ -54,7 +55,8 @@ routes(M1, M2, Opts) ->
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
             end;
-        _ -> {ok, Routes}
+        _ ->
+            {ok, Routes}
     end.
 
 %% @doc If we have a route that has multiple resolving nodes, check
@@ -76,6 +78,7 @@ find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
 find_route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
     R = match_routes(Msg, Routes, Opts),
+    ?event({find_route, {msg, Msg}, {routes, Routes}, {res, R}}),
     case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
         false -> no_matches;
         Node when is_binary(Node) -> {ok, Node};
@@ -105,6 +108,11 @@ match_routes(ToMatch, Routes, Opts) ->
         hb_converge:keys(Routes),
         Opts
     ).
+match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _Routes, _Keys, _Opts) ->
+    % If the route is an explicit HTTP URL, we can match it directly.
+    #{ <<"node">> => Explicit };
+match_routes(#{ <<"path">> := Explicit = <<"https://", _/binary>> }, _Routes, _Keys, _Opts) ->
+    #{ <<"node">> => Explicit };
 match_routes(_, _, [], _) -> no_matches;
 match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
     XM = hb_converge:get(XKey, Routes, Opts),
@@ -319,11 +327,48 @@ route_regex_matches_test() ->
         find_route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 
+explicit_route_test() ->
+    Routes = [
+        #{
+            <<"template">> => <<"*">>,
+            <<"node">> => <<"unimportant">>
+        }
+    ],
+    ?assertEqual(
+        {ok, <<"https://google.com">>},
+        find_route(
+            #{ <<"path">> => <<"https://google.com">> },
+            #{ routes => Routes }
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"http://google.com">>},
+        find_route(
+            #{ <<"path">> => <<"http://google.com">> },
+            #{ routes => Routes }
+        )
+    ).
+
+device_call_from_singleton_test() ->
+    % Try with a real-world example, taken from a GET request to the router.
+    NodeOpts = #{ routes => Routes = [#{
+        <<"template">> => <<"/some/path">>,
+        <<"node">> => <<"old">>,
+        <<"priority">> => 10
+    }]},
+    Msgs = hb_singleton:from(#{ <<"path">> => <<"!router@1.0/routes">> }),
+    ?event({msgs, Msgs}),
+    ?assertEqual(
+        {ok, Routes},
+        hb_converge:resolve_many(Msgs, NodeOpts)
+    ).
+    
+
 get_routes_test() ->
     Node = hb_http_server:start_test_node(
         #{
             force_signed => false,
-            routes => Routes = [
+            routes => [
                 #{
                     <<"template">> => <<"*">>,
                     <<"node">> => <<"our_node">>,
@@ -332,37 +377,47 @@ get_routes_test() ->
             ]
         }
     ),
-    Res = hb_client:routes(Node),
+    Res = hb_http:get(Node, <<"/!Router@1.0/routes/1/node">>, #{}),
     ?event({get_routes_test, Res}),
-    {ok, RecvdRoutes} = Res,
-    ?assert(hb_message:match(Routes, RecvdRoutes)).
+    {ok, Recvd} = Res,
+    ?assertMatch(#{ <<"body">> := <<"our_node">> }, Recvd).
 
 add_route_test() ->
+    Owner = ar_wallet:new(),
     Node = hb_http_server:start_test_node(
         #{
+            protocol => http3,
             force_signed => false,
-            routes => Routes = [
+            routes => [
                 #{
                     <<"template">> => <<"/some/path">>,
                     <<"node">> => <<"old">>,
                     <<"priority">> => 10
                 }
-            ]
+            ],
+            owner => ar_wallet:to_address(Owner)
         }
     ),
-    Res = hb_client:add_route(Node,
-        NewRoute = #{
-            <<"template">> => <<"/some/new/path">>,
-            <<"node">> => <<"new">>,
-            <<"priority">> => 15
-        }
-    ),
-    ?event({add_route_test, Res}),
-    ?assertEqual({ok, <<"Route added.">>}, Res),
-    Res2 = hb_client:routes(Node),
-    ?event({new_routes, Res2}),
-    {ok, RecvdRoutes} = Res2,
-    ?assert(hb_message:match(Routes ++ [NewRoute], RecvdRoutes)).
+    Res =
+        hb_http:post(
+            Node,
+            hb_message:sign(
+                #{
+                    <<"path">> => <<"/!Router@1.0/routes">>,
+                    <<"template">> => <<"/some/new/path">>,
+                    <<"node">> => <<"new">>,
+                    <<"priority">> => 15
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({post_res, Res}),
+    ?assertMatch({ok, #{ <<"body">> := <<"Route added.">> }}, Res),
+    GetRes = hb_http:get(Node, <<"/!Router@1.0/routes/2/node">>, #{}),
+    ?event({get_res, GetRes}),
+    {ok, Recvd} = GetRes,
+    ?assertMatch(#{ <<"body">> := <<"new">> }, Recvd).
 
 %%% Statistical test utilities
 

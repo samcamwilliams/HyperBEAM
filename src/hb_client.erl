@@ -42,7 +42,7 @@ prefix_keys(Prefix, Message, Opts) ->
 routes(Node, Opts) ->
     resolve(Node,
         #{
-            <<"device">> => <<"Router/1.0">>
+            <<"device">> => <<"Router@1.0">>
         },
         #{
             <<"path">> => <<"routes">>,
@@ -54,7 +54,7 @@ routes(Node, Opts) ->
 add_route(Node, Route, Opts) ->
     resolve(Node,
         Route#{
-            <<"device">> => <<"Router/1.0">>
+            <<"device">> => <<"Router@1.0">>
         },
         #{
             <<"path">> => <<"routes">>,

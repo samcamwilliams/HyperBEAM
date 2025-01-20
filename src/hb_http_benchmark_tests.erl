@@ -57,7 +57,7 @@
 %     {ok, Bin} = file:read_file(ImageFile),
 %     #{
 %         <<"path">> => <<"init/compute/results">>,
-%         <<"device">> => <<"wasm-64/1.0">>,
+%         <<"device">> => <<"wasm-64@1.0">>,
 %         <<"wasm-function">> => Func,
 %         <<"wasm-params">> => Params,
 %         <<"image">> => Bin
@@ -159,7 +159,7 @@
 % %     Iterations = hb:benchmark(
 % %         fun(X) ->
 % %             MsgX = #{
-% %                 <<"device">> => <<"Scheduler/1.0">>,
+% %                 <<"device">> => <<"Scheduler@1.0">>,
 % %                 <<"path">> => <<"schedule">>,
 % %                 <<"method">> => <<"POST">>,
 % %                 <<"message">> =>

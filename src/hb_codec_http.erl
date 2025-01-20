@@ -60,7 +60,12 @@ from(#{ <<"headers">> := Headers, <<"body">> := Body }) ->
     % potentially as additional key-binary value pairs, or as sub-TABMs
     ContentType =
         case find_header(Headers, <<"content-type">>) of
-            {undefined, undefined} -> undefined;
+            {undefined, undefined} ->
+                case binary:split(Body, [?CRLF], []) of
+                    [<<"content-type: ", Dict/binary>>|_] ->
+                        Dict;
+                    _ -> undefined
+                end;
             {_, CT} -> CT
         end,
     maps:remove(<<"content-type">>, from_body(Map, ContentType, Body)).
@@ -79,6 +84,8 @@ from_headers(Map, [{Name, Value} | Rest], Headers) ->
     end,
     from_headers(NewMap, Rest, Headers).
 
+from_signature(KVList, RawSig, RawSigInput) when is_list(KVList) ->
+    from_signature(maps:from_list(KVList), RawSig, RawSigInput);
 from_signature(Map, RawSig, RawSigInput) ->
     SfSigs = hb_http_structured_fields:parse_dictionary(RawSig),
     SfInputs = hb_http_structured_fields:parse_dictionary(RawSigInput),
@@ -86,9 +93,9 @@ from_signature(Map, RawSig, RawSigInput) ->
     % with its corresponding Inputs.
     % 
     % Inputs are merged as fields on the Signature Map
-    Signatures = maps:fold(
-        fun (SigName, {item, {_, Sig}, _}, Sigs) ->
-            {list, SfInputItems, SfInputParams} = lists:keyfind(SigName, 1, SfInputs),
+    Signatures = lists:foldl(
+        fun ({SigName, {item, {_, Sig}, _}}, Sigs) ->
+            {<<"signature">>, {list, SfInputItems}, SfInputParams} = lists:keyfind(SigName, 1, SfInputs),
             % [<<"foo">>, <<"bar">>]
             Inputs = lists:map(fun({item, {_, Input}, _}) -> Input end, SfInputItems),
 
@@ -138,6 +145,7 @@ find_header(Headers, Name, Opts) when is_list(Headers) ->
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
+    ?event(debug, {from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
     {_BodyType, Params} =
         case ContentType of
             undefined -> {undefined, []};
@@ -161,7 +169,7 @@ from_body(TABM, ContentType, Body) ->
             Parts = binary:split(BodyPart, [<<"--", Boundary/binary>>], [global]),
             % Finally, for each body part, we need to parse it into its
             % own HTTP Message, then recursively convert into a TABM
-            TABM1 = lists:foldl(
+            InnerTABM = lists:foldl(
                 fun
                     (Part, CurTABM) ->
                     {ok, NewTABM} = append_body_part(CurTABM, Part),
@@ -170,7 +178,7 @@ from_body(TABM, ContentType, Body) ->
                 TABM,
                 Parts
             ),
-            TABM1
+            InnerTABM
     end.
 
 append_body_part(TABM, Part) ->
@@ -209,13 +217,17 @@ append_body_part(TABM, Part) ->
         [] -> undefined;
         [{_, CD} | _Rest] -> CD
     end,
+    ?event(debug, {content_disposition, ContentDisposition}),
     case ContentDisposition of
         undefined -> no_content_disposition_header_found;
         RawDisposition when is_binary(RawDisposition) ->
-            {item, {_, _Disposition}, Params} = hb_http_structured_fields:parse_item(RawDisposition),
+            {item, {_, _Disposition}, Params} =
+                hb_http_structured_fields:parse_item(RawDisposition),
+            ?event(debug, {part_params, Params}),
             PartName = case lists:keyfind(<<"name">>, 1, Params) of
                 false -> <<"body">>;
-                {_, {_type, PN}} -> PN
+                {_, {_type, PN}} -> PN;
+                {<<"name">>, PN} -> PN
             end,
             SubTABM = from(#{ <<"headers">> => RestHeaders, <<"body">> => RawBody }),
             {ok, maps:put(PartName, SubTABM, TABM)}
@@ -240,27 +252,41 @@ to(TABM) when is_map(TABM) ->
         #{ <<"headers">> => [], <<"body">> => #{} },
         TABM
     ),
-    Body = maps:get(<<"body">>, Http),
+    BodyMap = maps:get(<<"body">>, Http),
     NewHttp =
-        case Body of
-            % If the body is empty, then we need to set it to an empty binary.
-            X when map_size(X) =:= 0 -> maps:put(<<"body">>, <<>>, Http);
-            % % If the body has one element with the key "body", then we need to
-            % % set the body to the value of the "body" key.
-            #{ <<"body">> := BodyValue } ->
-                [_ContentDisposition, UserBody] = binary:split(BodyValue, ?CRLF, []),
+        case BodyMap of
+            X when map_size(X) =:= 0 ->
+                % If the body is empty, then we need to set it to an empty binary.
+                maps:put(<<"body">>, <<>>, Http);
+            #{ <<"body">> := {{_, Disposition}, UserBody} } when map_size(BodyMap) =:= 1 ->
+                % If the body is a single part, then we need to set it to the UserBody
+                maps:put(<<"headers">>,
+                    [{<<"content-disposition">>, Disposition}
+                        |maps:get(<<"headers">>, Http, #{})],
+                    Http
+                ),
                 maps:put(<<"body">>, UserBody, Http);
-            % Otherwise, we need to encode the body as a multipart message.
             _ ->
+                % Otherwise, we need to encode the body as a multipart message.
+                ?event({encoding_multipart, {body, BodyMap}, {http, Http}}),
                 {ok, RawBoundary} = dev_message:id(TABM),
                 Boundary = hb_util:encode(RawBoundary),
                 % Transform body into a binary, delimiting each part with the Boundary
                 BodyList = maps:fold(
-                    fun (_, BodyPart, Acc) ->
-                        [<<"--", Boundary/binary, ?CRLF/binary, BodyPart/binary>> | Acc]
+                    fun (_, {{<<"content-disposition">>, Disposition}, BodyPart}, Acc) ->
+                        ?event({encoding_multipart_part, {part, Disposition, BodyPart}, {http, Http}}),
+                        [
+                            <<
+                                "--", Boundary/binary, ?CRLF/binary,
+                                "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                BodyPart/binary
+                            >>
+                        |
+                            Acc
+                        ]
                     end,
                     [],
-                    Body
+                    BodyMap
                 ),
                 BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
                 #{ 
@@ -321,12 +347,12 @@ signatures_to_http(Http, Signatures) when is_list(Signatures) ->
     WithSigAndInput.
 
 body_to_http(Http, Body) when is_map(Body) ->
-    Disposition = <<"content-disposition: inline">>,
+    Disposition = {<<"content-disposition">>, <<"inline">>},
     SubHttp = to(Body),
     EncodedBody = encode_http_msg(SubHttp),
     field_to_http(Http, {<<"body">>, EncodedBody}, #{ disposition => Disposition, where => body });
 body_to_http(Http, Body) when is_binary(Body) ->
-    Disposition = <<"content-disposition: inline">>,
+    Disposition = {<<"content-disposition">>, <<"inline">>},
     field_to_http(Http, {<<"body">>, Body}, #{ disposition => Disposition, where => body }).
 
 field_to_http(Http, {Name, Value}, Opts) when is_map(Value) ->
@@ -340,25 +366,34 @@ field_to_http(Http, {Name, Value}, Opts) when is_binary(Value) ->
     % 
     % So we check whether the size of the value is within the threshold
     % to encode as a header, and other default to encoding in the body
-    DefaultWhere = case byte_size(Value) of
-        Fits when Fits =< ?MAX_HEADER_LENGTH -> headers;
-        _ -> maps:get(where, Opts, headers)
-    end,
+    DefaultWhere =
+        case {maps:get(where, Opts, headers), byte_size(Value)} of
+            {headers, Fits} when Fits =< ?MAX_HEADER_LENGTH -> headers;
+            _ -> body
+        end,
     case maps:get(where, Opts, DefaultWhere) of
         headers ->
             Headers = maps:get(<<"headers">>, Http),
             NewHeaders = lists:append(Headers, [{NormalizedName, Value}]),
             maps:put(<<"headers">>, NewHeaders, Http);
-        % Append the value as a part of the multipart body
-        %
-        % We'll need to prepend a Content-Disposition header to the part, using
-        % the field name as the form part name. (see https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
-        % We allow the caller to provide a Content-Disposition in Opts, but default
-        % to appending as a field on the form-data
         body ->
-            Body = maps:get(<<"body">>, Http),
-            Disposition = maps:get(disposition, Opts, <<"content-disposition: form-data;name=", NormalizedName/binary>>),
-            BodyPart = <<Disposition/binary, ?CRLF/binary, Value/binary>>,
-            NewBody = maps:put(NormalizedName, BodyPart, Body),
+            % Append the value as a part of the multipart body
+            %
+            % We'll need to prepend a Content-Disposition header to the part, using
+            % the field name as the form part name.
+            % (See https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
+            % We allow the caller to provide a Content-Disposition in Opts, but default
+            % to appending as a field on the form-data
+            Disposition =
+                maps:get(
+                    disposition,
+                    Opts,
+                    {
+                        <<"content-disposition">>,
+                        <<"form-data;name=", NormalizedName/binary>>
+                    }
+                ),
+            Body = maps:get(<<"body">>, Http, #{}),
+            NewBody = maps:put(NormalizedName, {Disposition, Value}, Body),
             maps:put(<<"body">>, NewBody, Http)
     end.

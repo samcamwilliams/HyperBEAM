@@ -47,23 +47,23 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
-                <<"Test-Device/1.0">> => dev_test,
-                <<"Message/1.0">> => dev_message,
-                <<"Stack/1.0">> => dev_stack,
-                <<"Multipass/1.0">> => dev_multipass,
-                <<"Scheduler/1.0">> => dev_scheduler,
-                <<"Process/1.0">> => dev_process,
-                <<"WASM-64/1.0">> => dev_wasm,
-                <<"WASI/1.0">> => dev_wasi,
-                <<"JSON-Iface/1.0">> => dev_json_iface,
-                <<"Dedup/1.0">> => dev_dedup,
-                <<"Router/1.0">> => dev_router,
-                <<"Cron">> => dev_cron,
-                <<"PODA">> => dev_poda,
-                <<"Monitor">> => dev_monitor,
-                <<"Push">> => dev_mu,
-                <<"Compute">> => dev_cu,
-                <<"P4">> => dev_p4
+                <<"test-device@1.0">> => dev_test,
+                <<"message@1.0">> => dev_message,
+                <<"stack@1.0">> => dev_stack,
+                <<"multipass@1.0">> => dev_multipass,
+                <<"scheduler@1.0">> => dev_scheduler,
+                <<"process@1.0">> => dev_process,
+                <<"wasm-64@1.0">> => dev_wasm,
+                <<"wasi@1.0">> => dev_wasi,
+                <<"json-iface@1.0">> => dev_json_iface,
+                <<"dedup@1.0">> => dev_dedup,
+                <<"router@1.0">> => dev_router,
+                <<"cron@1.0">> => dev_cron,
+                <<"poda@1.0">> => dev_poda,
+                <<"monitor@1.0">> => dev_monitor,
+                <<"push@1.0">> => dev_mu,
+                <<"compute@1.0">> => dev_cu,
+                <<"p4@1.0">> => dev_p4
             },
         codecs => 
             #{

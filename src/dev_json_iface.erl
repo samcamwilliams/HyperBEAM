@@ -252,13 +252,13 @@ generate_stack(File) ->
     Msg0 = dev_wasm:cache_wasm_image(File),
     Image = hb_converge:get(<<"image">>, Msg0, #{}),
     Msg1 = Msg0#{
-        <<"device">> => <<"Stack/1.0">>,
+        <<"device">> => <<"Stack@1.0">>,
         <<"device-stack">> =>
             [
-                <<"WASI/1.0">>,
-                <<"JSON-Iface/1.0">>,
-                <<"WASM-64/1.0">>,
-                <<"Multipass/1.0">>
+                <<"WASI@1.0">>,
+                <<"JSON-Iface@1.0">>,
+                <<"WASM-64@1.0">>,
+                <<"Multipass@1.0">>
             ],
         <<"input-prefix">> => <<"process">>,
         <<"output-prefix">> => <<"wasm">>,

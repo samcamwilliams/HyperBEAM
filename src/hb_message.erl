@@ -561,13 +561,18 @@ message_with_large_keys_test(Codec) ->
     ?assert(match(Msg, Decoded)).
 
 %% @doc Check that large keys and data fields are correctly handled together.
-nested_message_with_large_keys_and_data_test(Codec) ->
+nested_message_with_large_keys_and_content_test(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
     Msg = #{
         <<"normal_key">> => <<"normal_value">>,
         <<"large_key">> => << 0:(1024 * 16) >>,
         <<"another_large_key">> => << 0:(1024 * 16) >>,
         <<"another_normal_key">> => <<"another_normal_value">>,
-        data => <<"Hey from the data field!">>
+        MainBodyKey => <<"Hey from the data field!">>
     },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
@@ -593,33 +598,52 @@ simple_nested_message_test(Codec) ->
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
-nested_message_with_large_data_test(Codec) ->
+nested_message_with_large_content_test(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
     Msg = #{
-        <<"tx_depth">> => <<"outer">>,
-        <<"data">> => #{
-            <<"tx_map_item">> =>
+        <<"depth">> => <<"outer">>,
+        MainBodyKey => #{
+            <<"map_item">> =>
                 #{
-                    <<"tx_depth">> => <<"inner">>,
+                    <<"depth">> => <<"inner">>,
                     <<"large_data_inner">> => << 0:((1 + 1024) * 8) >>
                 },
             <<"large_data_outer">> => << 0:((1 + 1024) * 8) >>
         }
     },
     Encoded = convert(Msg, Codec, converge, #{}),
+    case Codec of
+        http ->
+            #{ <<"body">> := Body, <<"headers">> := Headers } = Encoded,
+            ?event(debug, {encoded_headers, Headers}),
+            io:format(standard_error, "Body: ~s~n", [Body]);
+        _ -> ok
+    end,
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {msg, Msg}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
-deeply_nested_message_with_data_test(Codec) ->
+deeply_nested_message_with_content_test(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
     Msg = #{
-        <<"tx_depth">> => <<"outer">>,
-        <<"data">> => #{
-            <<"tx_map_item">> =>
+        <<"depth">> => <<"outer">>,
+        MainBodyKey => #{
+            <<"map_item">> =>
                 #{
-                    <<"tx_depth">> => <<"inner">>,
-                    <<"data">> => #{
-                        <<"tx_depth">> => <<"innermost">>,
-                        <<"data">> => <<"DATA">>
+                    <<"depth">> => <<"inner">>,
+                    MainBodyKey => #{
+                        <<"depth">> => <<"innermost">>,
+                        MainBodyKey => <<"DATA">>
                     }
                 }
         }
@@ -683,7 +707,9 @@ signed_deep_message_test(Codec) ->
     SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
     ?assert(hb_message:verify(SignedMsg, Codec)),
     Encoded = convert(SignedMsg, Codec, converge, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(
         match(
             SignedMsg,
@@ -763,24 +789,34 @@ message_suite_test_() ->
         {"basic map codec test", fun basic_map_codec_test/1},
         {"set body codec test", fun set_body_codec_test/1},
         {"match test", fun match_test/1},
-        {"single layer message to encoding test", fun single_layer_message_to_encoding_test/1},
+        {"single layer message to encoding test",
+            fun single_layer_message_to_encoding_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
-        {"nested message with large keys and data test", fun nested_message_with_large_keys_and_data_test/1},
+        {"nested message with large keys and content test",
+            fun nested_message_with_large_keys_and_content_test/1},
         {"simple nested message test", fun simple_nested_message_test/1},
-        {"nested message with large data test", fun nested_message_with_large_data_test/1},
-        {"deeply nested message with data test", fun deeply_nested_message_with_data_test/1},
-        {"structured field atom parsing test", fun structured_field_atom_parsing_test/1},
-        {"structured field decimal parsing test", fun structured_field_decimal_parsing_test/1},
+        {"nested message with large content test",
+            fun nested_message_with_large_content_test/1},
+        {"deeply nested message with content test",
+            fun deeply_nested_message_with_content_test/1},
+        {"structured field atom parsing test",
+            fun structured_field_atom_parsing_test/1},
+        {"structured field decimal parsing test",
+            fun structured_field_decimal_parsing_test/1},
         {"binary to binary test", fun binary_to_binary_test/1},
         {"nested structured fields test", fun nested_structured_fields_test/1},
-        {"nested message with large keys test", fun nested_message_with_large_keys_test/1},
+        {"nested message with large keys test",
+            fun nested_message_with_large_keys_test/1},
         {"message with simple list test", fun message_with_simple_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
-        {"signed item to message and back test", fun signed_message_encode_decode_verify_test/1},
-        {"signed deep serialize and deserialize test", fun signed_deep_message_test/1},
+        {"signed item to message and back test",
+            fun signed_message_encode_decode_verify_test/1},
+        {"signed deep serialize and deserialize test",
+            fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    signed_deep_message_test(http),
-    signed_message_encode_decode_verify_test(http).
+    simple_nested_message_test(http),
+    signed_message_encode_decode_verify_test(http),
+    nested_message_with_large_content_test(http).
