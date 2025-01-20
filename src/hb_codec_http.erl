@@ -61,7 +61,7 @@ from(#{ <<"headers">> := Headers, <<"body">> := Body }) ->
     ContentType =
         case find_header(Headers, <<"content-type">>) of
             {undefined, undefined} ->
-                case binary:split(Body, [?CRLF], [global]) of
+                case binary:split(Body, [?CRLF], []) of
                     [<<"content-type: ", Dict/binary>>|_] ->
                         Dict;
                     _ -> undefined
@@ -175,10 +175,10 @@ from_body(TABM, ContentType, Body) ->
                     {ok, NewTABM} = append_body_part(CurTABM, Part),
                     NewTABM 
                 end,
-                #{},
+                TABM,
                 Parts
             ),
-            TABM#{ <<"body">> => InnerTABM }
+            InnerTABM
     end.
 
 append_body_part(TABM, Part) ->
@@ -217,14 +217,17 @@ append_body_part(TABM, Part) ->
         [] -> undefined;
         [{_, CD} | _Rest] -> CD
     end,
+    ?event(debug, {content_disposition, ContentDisposition}),
     case ContentDisposition of
         undefined -> no_content_disposition_header_found;
         RawDisposition when is_binary(RawDisposition) ->
             {item, {_, _Disposition}, Params} =
                 hb_http_structured_fields:parse_item(RawDisposition),
+            ?event(debug, {part_params, Params}),
             PartName = case lists:keyfind(<<"name">>, 1, Params) of
                 false -> <<"body">>;
-                {_, {_type, PN}} -> PN
+                {_, {_type, PN}} -> PN;
+                {<<"name">>, PN} -> PN
             end,
             SubTABM = from(#{ <<"headers">> => RestHeaders, <<"body">> => RawBody }),
             {ok, maps:put(PartName, SubTABM, TABM)}
