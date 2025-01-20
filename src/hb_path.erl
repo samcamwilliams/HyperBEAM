@@ -211,20 +211,16 @@ verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
 %% is directly from a user (in which case paths and hashpaths will not have 
 %% been assigned yet).
 from_message(hashpath, Msg) -> hashpath(Msg, #{});
-from_message(request, #{ path := [] }) -> undefined;
-from_message(request, #{ path := Path }) when is_list(Path) ->
-    term_to_path_parts(Path);
-from_message(request, #{ path := Other }) ->
-    term_to_path_parts(Other);
+from_message(request, #{ path := Path }) -> term_to_path_parts(Path);
 from_message(request, #{ <<"path">> := Path }) -> term_to_path_parts(Path);
 from_message(request, #{ <<"Path">> := Path }) -> term_to_path_parts(Path);
-from_message(request, _) ->
-    undefined.
+from_message(request, _) -> undefined.
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
 term_to_path_parts(Path) ->
     term_to_path_parts(Path, #{ error_strategy => throw }).
+term_to_path_parts([], _Opts) -> undefined;
 term_to_path_parts(<<"/">>, _Opts) -> [];
 term_to_path_parts(Binary, Opts) when is_binary(Binary) ->
     case binary:match(Binary, <<"/">>) of
@@ -235,7 +231,6 @@ term_to_path_parts(Binary, Opts) when is_binary(Binary) ->
                 Opts
             )
     end;
-term_to_path_parts([], _Opts) -> undefined;
 term_to_path_parts(Path = [ASCII | _], _Opts) when is_integer(ASCII) ->
     [hb_converge:normalize_key(Path)];
 term_to_path_parts(List, Opts) when is_list(List) ->
@@ -247,7 +242,9 @@ term_to_path_parts(List, Opts) when is_list(List) ->
     ));
 term_to_path_parts(Atom, _Opts) when is_atom(Atom) -> [Atom];
 term_to_path_parts(Integer, _Opts) when is_integer(Integer) ->
-    [hb_converge:normalize_key(Integer)].
+    [hb_converge:normalize_key(Integer)];
+term_to_path_parts({as, DevName, Msgs}, _Opts) ->
+    [{as, hb_converge:normalize_key(DevName), Msgs}].
 
 %% @doc Convert a path of any form to a binary.
 to_binary(Path) ->

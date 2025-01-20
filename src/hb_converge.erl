@@ -118,7 +118,6 @@
 %%     10: Fork worker.
 %%     11: Recurse or terminate.
 
-
 resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
     resolve_many(hb_singleton:from(SingletonMsg), Opts).
 
@@ -131,7 +130,9 @@ resolve(Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 1, prepare_multimessage_resolution, {messages_to_exec, MessagesToExec}}),
     resolve_many([Msg1 | MessagesToExec], Opts).
 
-%% @doc Resolve a list of messages in sequence.
+%% @doc Resolve a list of messages in sequence. Take the output of the first
+%% message as the input for the next message. Once the last message is resolved,
+%% return the result.
 resolve_many([Msg3], _Opts) ->
     ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
     {ok, Msg3};
@@ -154,6 +155,14 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
         Msg2,
         Opts
     );
+resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
+    % Set the device to the specified `DevID' and resolve the message.
+    ?event(converge_core, {stage, 1, setting_device, {msg1, Msg1}, {dev, DevID}, {msg2, Msg2}, {opts, Opts}}),
+    Msg3 = set(Msg1, <<"device">>, DevID, Opts),
+    ?event(converge_core, {transformed_msg, Msg3}),
+    % Recurse with the modified message. The hashpath will have been updated
+    % to include the device ID, if requested.
+    resolve(Msg3, Msg2, Opts);
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
@@ -733,7 +742,7 @@ message_to_fun(Msg, Key, Opts) ->
 			{Status, Func} = info_handler_to_fun(Handler, Msg, Key, Opts),
             {Status, Dev, Func};
 		_ ->
-			?event(converge_devices, {handler_not_found, {dev, Dev}, {key, Key}}),
+			?event(converge_devices, {no_override_handler, {dev, Dev}, {key, Key}}),
 			case {find_exported_function(Msg, Dev, Key, 3, Opts), Exported} of
 				{{ok, Func}, true} ->
 					% Case 3: The device has a function of the name `Key`.
@@ -918,7 +927,7 @@ load_device(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+load_device(ID, Opts) when ?IS_ID(ID) ->
 	case hb_opts:get(load_remote_devices) of
 		true ->
 			{ok, Msg} = hb_cache:read(maps:get(store, Opts), ID),

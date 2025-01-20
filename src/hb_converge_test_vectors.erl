@@ -10,7 +10,7 @@
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test`
 %% Comment/uncomment out as necessary.
 run_test() ->
-    run_single(normal, deep_recursive_get).
+    run_single(normal, as).
 
 %% @doc Run a single test with a given set of opts.
 run_single(OptsName, TestName) ->
@@ -44,6 +44,8 @@ test_suite() ->
             fun resolve_simple_test/1},
         {resolve_id, "resolve id",
             fun resolve_id_test/1},
+        {as, "as",
+            fun as_test/1},
         {resolve_key_twice, "resolve key twice",
             fun resolve_key_twice_test/1},
         {resolve_from_multiple_keys, "resolve from multiple keys",
@@ -613,5 +615,16 @@ list_transform_test(Opts) ->
     ?assertEqual(<<"D">>, hb_converge:get(4, Msg, Opts)),
     ?assertEqual(<<"E">>, hb_converge:get(5, Msg, Opts)).
 
-    
-    
+as_test(Opts) ->
+    % Create a message with the test device, which implements the test_func
+    % function. It normally returns `GOOD_FUNCTION`.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => <<"MESSAGE">>
+    },
+    ?assertEqual(<<"GOOD_FUNCTION">>, hb_converge:get(<<"test_func">>, Msg, Opts)),
+    % Now use the `as` keyword to get the key with the message device.
+    ?assertEqual(
+        {ok, <<"MESSAGE">>},
+        hb_converge:resolve(Msg, {as, <<"message@1.0">>, <<"test_func">>}, Opts)
+    ).

@@ -14,6 +14,7 @@
 %% handler resolution mechanism.
 info(_) ->
 	#{
+        <<"default">> => dev_message
 	}.
 
 test_func(_) ->
