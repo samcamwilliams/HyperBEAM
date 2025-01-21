@@ -14,27 +14,27 @@ verify(M1, _M2, _NodeOpts) ->
         case hb_converge:get(<<"node-message">>, M1, #{}) of
             undefined ->
                 case hb_converge:get(<<"node-message-id">>, M1, #{}) of
-                    undefined ->
-                        {error, missing_node_msg_id};
+                    undefined -> {error, missing_node_msg_id};
                     ID -> ID
                 end;
             NodeMsg -> hb_util:ok(dev_message:id(NodeMsg))
         end,
     % Extract hashes used in the expected measurement.
-    FirmwareHash = hb_converge:get(<<"firmware">>, M1, #{}),
-    KernelHash = hb_converge:get(<<"kernel">>, M1, #{}),
-    VMSAsHash = hb_converge:get(<<"vmsas">>, M1, #{}),
+    FirmwareH = hb_converge:get(<<"firmware">>, M1, #{}),
+    KernelH = hb_converge:get(<<"kernel">>, M1, #{}),
+    VMSAsH = hb_converge:get(<<"vmsas">>, M1, #{}),
     % Extract the attestation report and components.
     Report = hb_converge:get(<<"report">>, M1, #{}),
     ReportData = extract(report_data, Report),
     Measurement = extract(measurement, Report),
-    ExpectedMeasurement =
-        generate_measurement(FirmwareHash, KernelHash, VMSAsHash),
+    ExpectedMeasurement = generate_measurement(FirmwareH, KernelH, VMSAsH),
     case Measurement == ExpectedMeasurement of
         false -> {error, measurement_mismatch};
         true ->
-            case << Address/binary, NodeMsgID/binary >> == ReportData of
-                false -> {error, report_data_mismatch};
+            case is_debug_disabled(Report) andalso
+                (<< Address/binary, NodeMsgID/binary >> == ReportData)
+            of
+                false -> {error, report_data_invalid};
                 true ->
                     case dev_snp_attestation:verify(Report) of
                         {error, Reason} -> {error, Reason};
@@ -83,8 +83,17 @@ generate_measurement(FirmwareHash, KernelHash, VMSAsHash) ->
     S3 = crypto:hash_update(S2, VMSAsHash),
     crypto:hash_final(S3).
 
-extract(measurement, _Report) -> <<0:384>>;
-extract(report_data, _Report) -> <<0:256>>.
+%% @doc Extract a data field from an attestation report. Layout:
+%% https://github.com/torvalds/linux/blob/master/include/uapi/linux/psp-sev.h
+extract(policy, Report) when byte_size(Report) >= 16 ->
+    binary:decode_unsigned(binary:part(Report, 8, 8));
+extract(measurement, Report) ->
+    binary:part(Report, 144, 48);
+extract(report_data, Report) ->
+    binary:part(Report, 80, 64).
+
+is_debug_disabled(Report) ->
+    (extract(policy, Report) band 16#2) =/= 0.
 
 %% @doc Generate an attestation report and emit it via HTTP.
 generate_test() ->
