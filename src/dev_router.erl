@@ -48,13 +48,17 @@ routes(M1, M2, Opts) ->
                 ),
             case IsTrusted of
                 true ->
-                    % This seem to return 15, doing NewRoutes = [15 | OldRoutes] at the end
-                    % Priority = hb_converge:get(<<"priority">>, M2, Opts),
-                    % NewRoutes =
-                        % lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
-                    Msg2Routes = maps:with([<<"priority">>, <<"template">>, <<"node">>], M2),
+                    % Minimize the work performed by converge to make the sort
+                    % more efficient.
+                    SortOpts = Opts#{ hashpath => ignore },
                     NewRoutes =
-                        lists:sort(fun(X, Y) -> maps:get(<<"priority">>, X, 0) < maps:get(<<"priority">>, Y, 0) end, [Msg2Routes|Routes]),
+                        lists:sort(
+                            fun(X, Y) ->
+                                hb_converge:get(<<"priority">>, X, SortOpts)
+                                    < hb_converge:get(<<"priority">>, Y, SortOpts)
+                            end,
+                            [M2|Routes]
+                        ),
                     ok = hb_http_server:set_routes(Opts, NewRoutes),
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
