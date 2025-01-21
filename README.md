@@ -1,3 +1,5 @@
+<img src="https://arweave.net/dOpRkKrNNQ4HHebxZlPCo0BWfrjwJ-CEBQs2EPgrwbg" />
+
 # HyperBEAM: A Decentralized Supercomputer on Arweave
 
 HyperBEAM is an Erlang implementation of the Converge Protocol, a novel computation layer built on top of Arweave. It leverages Arweave's permanent storage to create a decentralized, verifiable, and scalable compute environment.  This README provides developers with the necessary information to understand and contribute to the HyperBEAM project.
