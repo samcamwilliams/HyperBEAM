@@ -32,7 +32,7 @@ verify(M1, _M2, _NodeOpts) ->
         false -> {error, measurement_mismatch};
         true ->
             case is_debug_disabled(Report) andalso
-                (<< Address/binary, NodeMsgID/binary >> == ReportData)
+                report_data_matches(Address, NodeMsgID, ReportData)
             of
                 false -> {error, report_data_invalid};
                 true ->
@@ -83,6 +83,10 @@ generate_measurement(FirmwareHash, KernelHash, VMSAsHash) ->
     S3 = crypto:hash_update(S2, VMSAsHash),
     crypto:hash_final(S3).
 
+%% @doc Generate the report data for an attestation.
+generate_report_data(Address, NodeMsgID) ->
+    <<Address/binary, NodeMsgID/binary>>.
+
 %% @doc Extract a data field from an attestation report. Layout:
 %% https://github.com/torvalds/linux/blob/master/include/uapi/linux/psp-sev.h
 extract(policy, Report) when byte_size(Report) >= 16 ->
@@ -92,8 +96,13 @@ extract(measurement, Report) ->
 extract(report_data, Report) ->
     binary:part(Report, 80, 64).
 
+%% @doc Ensure that the node's debug policy is disabled.
 is_debug_disabled(Report) ->
     (extract(policy, Report) band 16#2) =/= 0.
+
+%% @doc Ensure that the report data matches the expected report data.
+report_data_matches(Address, NodeMsgID, ReportData) ->
+    generate_report_data(Address, NodeMsgID) == ReportData.
 
 %% @doc Generate an attestation report and emit it via HTTP.
 generate_test() ->
