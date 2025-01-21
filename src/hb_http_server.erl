@@ -41,6 +41,9 @@ new_server(RawNodeMsg) ->
                 )
             )
         ),
+    % Put server ID into node message so it's possible to update current server
+    % params
+    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -56,7 +59,7 @@ new_server(RawNodeMsg) ->
             ]
         ),
     ProtoOpts = #{
-        env => #{dispatch => Dispatcher, node_msg => NodeMsg},
+        env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
         metrics_callback =>
             fun prometheus_cowboy2_instrumenter:observe/1,
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
@@ -143,11 +146,11 @@ ranch_ets() ->
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
 
-%% @doc Update the `Opts` map that the HTTP server uses for all future
+%% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
-    cowboy:set_env(ServerRef, opts, Opts).
+    ok = cowboy:set_env(ServerRef, node_msg, Opts).
 
 %%% Tests
 

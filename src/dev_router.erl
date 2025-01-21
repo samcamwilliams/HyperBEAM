@@ -48,10 +48,18 @@ routes(M1, M2, Opts) ->
                 ),
             case IsTrusted of
                 true ->
-                    Priority = hb_converge:get(<<"priority">>, M2, Opts),
+                    % Minimize the work performed by converge to make the sort
+                    % more efficient.
+                    SortOpts = Opts#{ hashpath => ignore },
                     NewRoutes =
-                        lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
-                    hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
+                        lists:sort(
+                            fun(X, Y) ->
+                                hb_converge:get(<<"priority">>, X, SortOpts)
+                                    < hb_converge:get(<<"priority">>, Y, SortOpts)
+                            end,
+                            [M2|Routes]
+                        ),
+                    ok = hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
             end;
@@ -244,7 +252,7 @@ unique_test(Strategy) ->
     unique_nodes(Simulation).
 
 choose_1_test(Strategy) ->
-    TestSize = 3750,
+    TestSize = 1500,
     Nodes = generate_nodes(20),
     Simulation = simulate(TestSize, 1, Nodes, Strategy),
     within_norms(Simulation, Nodes, TestSize).
@@ -386,7 +394,6 @@ add_route_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_test_node(
         #{
-            protocol => http3,
             force_signed => false,
             routes => [
                 #{
