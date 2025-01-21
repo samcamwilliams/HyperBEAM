@@ -1,27 +1,9 @@
-%%%---------------------------------------------------------------------
-%%% Module: sec_tee
-%%%---------------------------------------------------------------------
-%%% Purpose:
-%%% This module handles SEV-SNP attestation and verification processes.
+%%% @docThis module handles SEV-SNP attestation and verification processes.
 %%% It generates attestation reports, retrieves necessary certificates,
 %%% and verifies the attestation against AMD's root of trust using the
 %%% snpguest and OpenSSL commands.
-%%%---------------------------------------------------------------------
-%%% Exports
-%%%---------------------------------------------------------------------
-%%% generate_attestation(Nonce)
-%%%   Generates an attestation report and retrieves certificates.
-%%%   Returns a binary with the attestation report and public key.
-%%%
-%%% verify_attestation(AttestationBinary)
-%%%   Verifies the attestation report against the VCEK certificate
-%%%   and AMD root of trust.
-%%%---------------------------------------------------------------------
 -module(dev_snp_attestation).
--export([
-    generate_attestation/1,
-    verify_attestation/1
-]).
+-export([generate/1, verify/1]).
 -include("include/hb.hrl").
 
 %% Define the file paths
@@ -42,8 +24,9 @@
     "curl --proto \'=https\' --tlsv1.2 -sSf https://kdsintf.amd.com/vcek/v1/Milan/cert_chain -o " ++ ?CERT_CHAIN_FILE
 ).
 
-%% Generate attestation, request certificates, download VCEK, and upload a transaction
-generate_attestation(Nonce) ->
+%% @doc Generates an attestation report and retrieves certificates.
+%% Returns a binary with the attestation report and public key.
+generate(Nonce) ->
     % Check if the root directory exists, and create it if not
     case filelib:is_dir(?ROOT_DIR) of
         true -> ok;
@@ -109,8 +92,9 @@ generate_attestation_report() ->
             {error, failed_to_generate_report}
     end.
 
-%% Verify the attestation report using snpguest and VCEK certificate
-verify_attestation(AttestationBinary) ->
+%% @doc Verifies a given attestation report against the VCEK certificate
+%% and AMD root of trust.
+verify(AttestationBinary) ->
     % Extract the header (size info)
     <<ReportSize:32/unit:8, PublicKeySize:32/unit:8, Rest/binary>>
         = AttestationBinary,
@@ -144,7 +128,7 @@ verify_attestation(AttestationBinary) ->
             {error, verification_failed}
     end.
 
-%% Verify the attestation report
+%% @doc Verifies a given attestation report already stored in a file.
 verify_attestation_report() ->
     ?event({verifying_attestation_report, ?VERIFY_REPORT_CMD}),
     case run_command(?VERIFY_REPORT_CMD) of
@@ -163,7 +147,7 @@ verify_attestation_report() ->
             {error, verification_failed}
     end.
 
-%% Fetch certificates from host memory and store as PEM files
+%% @doc Fetches certificates from host and stores them as PEM files
 fetch_certificates() ->
     ?event({fetching_sev_snp_certificates, ?SNP_GUEST_CERTIFICATES_CMD}),
     case run_command(?SNP_GUEST_CERTIFICATES_CMD) of
@@ -175,7 +159,7 @@ fetch_certificates() ->
             {error, failed_to_fetch_certificates}
     end.
 
-%% Download VCEK root of trust certificate !!TEMPORARY!!
+%% @doc Downloads the VCEK root of trust certificate
 download_vcek_cert() ->
     ?event({downloading_vcek_root_of_trust_certificate, ?DOWNLOAD_VCEK_CMD}),
     case run_command(?DOWNLOAD_VCEK_CMD) of
