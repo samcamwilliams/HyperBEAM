@@ -48,10 +48,14 @@ routes(M1, M2, Opts) ->
                 ),
             case IsTrusted of
                 true ->
-                    Priority = hb_converge:get(<<"priority">>, M2, Opts),
+                    % This seem to return 15, doing NewRoutes = [15 | OldRoutes] at the end
+                    % Priority = hb_converge:get(<<"priority">>, M2, Opts),
+                    % NewRoutes =
+                        % lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
+                    Msg2Routes = maps:with([<<"priority">>, <<"template">>, <<"node">>], M2),
                     NewRoutes =
-                        lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
-                    hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
+                        lists:sort(fun(X, Y) -> maps:get(<<"priority">>, X, 0) < maps:get(<<"priority">>, Y, 0) end, [Msg2Routes|Routes]),
+                    ok = hb_http_server:set_routes(Opts, NewRoutes),
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
             end;
@@ -386,7 +390,7 @@ add_route_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_test_node(
         #{
-            protocol => http3,
+            % protocol => http3, % cowboy:set_env/3 raise expection for unsupervised supervised acceptors, so we are not using http3 for this test.
             force_signed => false,
             routes => [
                 #{

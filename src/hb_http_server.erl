@@ -10,7 +10,7 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, set_routes/2]).
 -export([start_test_node/0, start_test_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -41,6 +41,8 @@ new_server(RawNodeMsg) ->
                 )
             )
         ),
+    % Put server ID into node message so it's possible to update current server params
+    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -56,7 +58,7 @@ new_server(RawNodeMsg) ->
             ]
         ),
     ProtoOpts = #{
-        env => #{dispatch => Dispatcher, node_msg => NodeMsg},
+        env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
         metrics_callback =>
             fun prometheus_cowboy2_instrumenter:observe/1,
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
@@ -143,11 +145,19 @@ ranch_ets() ->
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
 
-%% @doc Update the `Opts` map that the HTTP server uses for all future
+%% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
-    cowboy:set_env(ServerRef, opts, Opts).
+    ok = cowboy:set_env(ServerRef, opts, Opts).
+
+%% @doc Update node_message/route param that HTTP server uses for all future requests
+set_routes(Opts, Routes) ->
+    ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
+    NodeMessage0 = cowboy:get_env(ServerRef, node_msg),
+    NodeMessage = maps:update(routes, Routes, NodeMessage0),
+    ok = cowboy:set_env(ServerRef, node_msg, NodeMessage),
+    ok.
 
 %%% Tests
 
