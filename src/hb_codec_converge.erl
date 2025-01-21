@@ -30,7 +30,7 @@ from(Msg) when is_map(Msg) ->
                         {<<"converge-type-", BinKey/binary>>, <<"empty-list">>};
                     {ok, Value} when
                             is_atom(Value) or is_integer(Value)
-                            or is_list(Value) ->
+                            or is_list(Value) or is_float(Value) ->
                         ItemKey = hb_converge:normalize_key(Key),
                         {Type, BinaryValue} = encode_value(Value),
                         [
