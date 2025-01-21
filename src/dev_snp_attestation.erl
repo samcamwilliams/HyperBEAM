@@ -50,35 +50,35 @@ generate_attestation(Nonce) ->
         false -> file:make_dir(?ROOT_DIR)
     end,
     % Debug: Print starting attestation generation
-    ?event("Starting attestation generation..."),
+    ?event(starting_attestation_generation),
     % Generate request file and attestation report
-    ?event("Generating request file with nonce..."),
+    ?event(generating_request_file_with_nonce),
     generate_request_file(Nonce),
-    ?event("Generating attestation report..."),
+    ?event(generating_attestation_report),
     generate_attestation_report(),
     % Request certificates, download VCEK, and upload the attestation
-    ?event("Fetching certificates from host memory..."),
+    ?event(fetching_certificates_from_host_memory),
     fetch_certificates(),
-    ?event("Downloading VCEK root of trust certificate..."),
+    ?event(downloading_vcek_root_of_trust_certificate),
     download_vcek_cert(),
     % Debug: Print reading the attestation report and public key
-    ?event("Reading the attestation report and public key..."),
+    ?event(reading_attestation_report_and_public_key),
     % Ensure that read_file returns the binary data as expected
-    {_, ReportBin} = sec_helpers:read_file(?REPORT_FILE),
-    {_, PublicKeyBin} = sec_helpers:read_file(?VCEK_FILE),
+    {ok, ReportBin} = file:read_file(?REPORT_FILE),
+    {ok, PublicKeyBin} = file:read_file(?VCEK_FILE),
     % Get sizes of the individual files (in binary)
     ReportSize = byte_size(ReportBin),
     PublicKeySize = byte_size(PublicKeyBin),
     % Debug: Print the sizes of the files
-    ?event({"Report size", ReportSize}),
-    ?event({"Public key size", PublicKeySize}),
+    ?event({report_size, ReportSize}),
+    ?event({public_key_size, PublicKeySize}),
     % Create a binary header with the sizes and offsets
     Header = <<ReportSize:32/unit:8, PublicKeySize:32/unit:8>>,
     % Create a binary with both the report and public key data concatenated 
     % after the header
     AttestationBinary = <<Header/binary, ReportBin/binary, PublicKeyBin/binary>>,
     % Debug: Print the final binary data size
-    ?event({"Generated attestation binary size", byte_size(AttestationBinary)}),
+    ?event({generated_attestation_binary_size, byte_size(AttestationBinary)}),
     % Return the binary containing the attestation data
     {ok, AttestationBinary}.
 
@@ -87,13 +87,13 @@ generate_request_file(Nonce) ->
     RequestFile = ?REQUEST_FILE,
     NonceHex = binary_to_list(binary:encode_hex(Nonce)),
     % Debug: Print the nonce
-    ?event({"Nonce in hex", NonceHex}),
+    ?event({nonce_in_hex, NonceHex}),
     case file:write_file(RequestFile, NonceHex) of
         ok ->
-            ?event({"Request file written successfully", RequestFile}),
+            ?event({request_file_written_successfully, RequestFile}),
             ok;
         {error, Reason} ->
-            ?event({"Failed to write request file", RequestFile, Reason}),
+            ?event({failed_to_write_request_file, RequestFile, Reason}),
             {error, failed_to_write_request_file}
     end.
 
@@ -102,10 +102,10 @@ generate_attestation_report() ->
     ?event({generating_snp_report, ?SNP_GUEST_REPORT_CMD}),
     case run_command(?SNP_GUEST_REPORT_CMD) of
         {ok, _} ->
-            ?event("SEV-SNP report generated successfully"),
+            ?event({snp_report_generated_successfully}),
             ok;
         {error, Reason} ->
-            ?event({"Failed to generate SEV-SNP report", Reason}),
+            ?event({failed_to_generate_snp_report, Reason}),
             {error, failed_to_generate_report}
     end.
 
@@ -191,6 +191,6 @@ download_vcek_cert() ->
 
 %% @doc Generalized function to run a shell command, hiding the stdout.
 run_command(Command) ->
-    ?event({"Executing command", Command}),
+    ?event({running_command, Command}),
     Output = os:cmd(Command ++ " 2>&1"),
     {ok, Output}.
