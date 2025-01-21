@@ -1,16 +1,16 @@
 %%% @doc A parser that translates Converge HTTP API requests in TABM format
 %%% into an ordered list of messages to evaluate. The details of this format
 %%% are described in `docs/converge-http-api.md`.
-%%% 
+%%%
 %%% Syntax overview:
 %%% ```
 %%%     Singleton: Message containing keys and a `path` field,
 %%%                which may also contain a query string of key-value pairs.
-%%% 
+%%%
 %%%     Path:
 %%%         - /Part1/Part2/.../PartN/ => [Part1, Part2, ..., PartN]
 %%%         - /ID/Part2/.../PartN => [ID, Part2, ..., PartN]
-%%% 
+%%%
 %%%     Part: (Key | Resolution), Device?, #{ K => V}?
 %%%         - Part => #{ path => Part }
 %%%         - Part+Key=Value => #{ path => Part, Key => Value }
@@ -40,7 +40,7 @@
 %% @doc Normalize a singleton TABM message into a list of executable Converge
 %% messages.
 from(RawMsg) ->
-    {ok, Path, Query} = 
+    {ok, Path, Query} =
         parse_full_path(P = hb_path:to_binary(hb_path:from_message(request, RawMsg))),
     MsgWithoutBasePath = maps:merge(
         maps:remove(<<"path">>, RawMsg),
@@ -51,10 +51,11 @@ from(RawMsg) ->
     Msgs = normalize_base(RawMsgs),
     % 3. Type keys and values
     Typed = apply_types(MsgWithoutBasePath),
-    % 4. Group keys by N-scope and global scope    
+    % 4. Group keys by N-scope and global scope
     ScopedModifications = group_scoped(Typed, Msgs),
     % 5. Generate the list of messages (plus-notation, device, typed keys).
-    build_messages(Msgs, ScopedModifications).
+    Messages = build_messages(Msgs, ScopedModifications),
+    Messages.
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
@@ -70,7 +71,7 @@ parse_full_path(RelativeRef) ->
     }.
 
 %% @doc Step 2: Decode + Split + Sanitize the path. Split by `/` but avoid
-%% subpath components, such that their own path parts are not dissociated from 
+%% subpath components, such that their own path parts are not dissociated from
 %% their parent path.
 path_messages(RawBin) when is_binary(RawBin) ->
     lists:map(fun parse_part/1, path_parts([$/], decode_string(RawBin))).
@@ -135,7 +136,7 @@ apply_types(Msg) ->
         Msg
     ).
 
-%% @doc Step 4: Group headers/query by N-scope. 
+%% @doc Step 4: Group headers/query by N-scope.
 %% `N.Key` => applies to Nth step. Otherwise => global
 group_scoped(Map, Msgs) ->
     {NScope, Global} =
@@ -152,11 +153,13 @@ group_scoped(Map, Msgs) ->
           {#{}, #{}},
           Map
         ),
-    [
-        maps:merge(Global, maps:get(N, NScope, #{})) 
-    ||
-        N <- lists:seq(1, length(Msgs))
-    ].
+    Res =
+        [
+            maps:merge(Global, maps:get(N, NScope, #{}))
+        ||
+            N <- lists:seq(1, length(Msgs))
+        ],
+    Res.
 
 %% @doc Get the scope of a key. Adds 1 to account for the base message.
 parse_scope(KeyBin) ->
@@ -177,8 +180,9 @@ do_build(_, [], _ScopedKeys) -> [];
 do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
     [Msg | do_build(I+1, Rest, ScopedKeys)];
 do_build(I, [Msg | Rest], ScopedKeys) ->
+    ScopedKey = lists:nth(I, ScopedKeys),
     StepMsg = hb_message:convert(
-        maps:merge(Msg, lists:nth(I, ScopedKeys)),
+        maps:merge(Msg, ScopedKey),
         converge,
         #{ topic => converge_internal }
     ),
@@ -206,7 +210,7 @@ parse_part(Part) ->
             end
     end.
 
-%% @doc Parse part modifiers: 
+%% @doc Parse part modifiers:
 %% 1. `!Device` => {as, Device, Msg}
 %% 2. `+K=V` => Msg#{ K => V }
 parse_part_mods([], Msg) -> Msg;
@@ -221,7 +225,7 @@ parse_part_mods(<<"!", PartMods/binary>>, Msg) ->
     {as, maybe_subpath(DeviceBin), MsgWithInlines};
 parse_part_mods(<< "+", InlinedMsgBin/binary >>, Msg) ->
     InlinedKeys = path_parts($&, InlinedMsgBin),
-    MsgWithInlined = 
+    MsgWithInlined =
         lists:foldl(
             fun(InlinedKey, Acc) ->
                 {Key, Val} = parse_inlined_key_val(InlinedKey),
@@ -455,7 +459,7 @@ path_parts_test() ->
         [
             <<"IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q">>,
             <<"msg2">>
-        ], 
+        ],
         path_parts($/, <<"/IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q/msg2">>)
     ),
     ?assertEqual(
