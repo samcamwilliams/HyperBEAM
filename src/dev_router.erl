@@ -59,7 +59,7 @@ routes(M1, M2, Opts) ->
                             end,
                             [M2|Routes]
                         ),
-                    ok = hb_http_server:set_routes(Opts, NewRoutes),
+                    ok = hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
             end;
@@ -394,7 +394,6 @@ add_route_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_test_node(
         #{
-            % protocol => http3, % cowboy:set_env/3 raise expection for unsupervised supervised acceptors, so we are not using http3 for this test.
             force_signed => false,
             routes => [
                 #{
