@@ -41,7 +41,7 @@
 %% messages.
 from(RawMsg) ->
     {ok, Path, Query} =
-        parse_full_path(P = hb_path:to_binary(hb_path:from_message(request, RawMsg))),
+        parse_full_path(hb_path:to_binary(hb_path:from_message(request, RawMsg))),
     MsgWithoutBasePath = maps:merge(
         maps:remove(<<"path">>, RawMsg),
         Query
@@ -54,8 +54,7 @@ from(RawMsg) ->
     % 4. Group keys by N-scope and global scope
     ScopedModifications = group_scoped(Typed, Msgs),
     % 5. Generate the list of messages (plus-notation, device, typed keys).
-    Messages = build_messages(Msgs, ScopedModifications),
-    Messages.
+    build_messages(Msgs, ScopedModifications).
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
@@ -153,13 +152,11 @@ group_scoped(Map, Msgs) ->
           {#{}, #{}},
           Map
         ),
-    Res =
-        [
-            maps:merge(Global, maps:get(N, NScope, #{}))
-        ||
-            N <- lists:seq(1, length(Msgs))
-        ],
-    Res.
+    [
+        maps:merge(Global, maps:get(N, NScope, #{}))
+    ||
+        N <- lists:seq(1, length(Msgs))
+    ].
 
 %% @doc Get the scope of a key. Adds 1 to account for the base message.
 parse_scope(KeyBin) ->
