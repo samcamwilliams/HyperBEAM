@@ -16,11 +16,39 @@
 call(_M1, M2, Opts) ->
     % Get the route for the message
     case dev_router:route(#{}, M2, Opts) of
-        {ok, Node} ->
+        {ok, URL} ->
             % Send the message to the node
-            case hb_converge:get(<<"method">>, M2, Opts) of
-                <<"GET">> -> hb_http:get(Node, M2, Opts);
-                <<"POST">> -> hb_http:post(Node, M2, Opts)
+            case hb_converge:get(<<"path">>, M2, Opts) of
+                <<"http", Sec, _/binary>> ->
+                    % The request is a direct HTTP URL, so we need to split the
+                    % URL into a host and path.
+                    URI = uri_string:parse(URL),
+                    Port =
+                        case maps:get(port, URI, undefined) of
+                            undefined ->
+                                % If no port is specified, use 80 for HTTP and 443
+                                % for HTTPS.
+                                case Sec of
+                                    $s -> <<"443">>;
+                                    _ -> <<"80">>
+                                end;
+                            X -> integer_to_binary(X)
+                        end,
+                    Host = maps:get(host, URI, <<"localhost">>),
+                    Protocol = maps:get(scheme, URI, <<"http">>),
+                    Node = << Host/binary >>,
+                    Method = hb_converge:get(<<"method">>, M2, Opts),
+                    Path = maps:get(path, URI, <<"/">>),
+                    ?event({relay, {node, Node}, {method, Method}, {path, Path}}),
+                    hb_http:request(
+                        Method,
+                        Node,
+                        Path,
+                        M2,
+                        Opts
+                    );
+                _ ->
+                    {error, {unsupported_protocol, URL}}
             end;
         {error, Reason} ->
             {error, {no_viable_route, Reason}}
@@ -42,14 +70,16 @@ cast(_M1, M2, Opts) ->
 %%% Tests
 
 call_get_test() ->
+    application:ensure_all_started(hb),
+    application:ensure_all_started(gun),
     {ok, Res} =
         call(
             #{},
             #{
                 <<"method">> => <<"GET">>,
-                <<"path">> => <<"https://google.com">>
+                <<"path">> => <<"https://www.google.com/">>
             },
-            #{}
+            #{ protocol => http2 }
         ),
     ?assertMatch(
         {ok, #{<<"status">> := 200, <<"body">> := Body}}

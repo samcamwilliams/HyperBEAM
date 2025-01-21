@@ -19,11 +19,7 @@ start() ->
 %% form.
 get(Node, Opts) -> get(Node, <<"/">>, Opts).
 get(Node, Path, Opts) ->
-    case request(<<"GET">>, Node, Path, #{}, Opts) of
-        {ok, Body} ->
-            {ok, Body};
-        Error -> Error
-    end.
+    request(<<"GET">>, Node, Path, #{}, Opts).
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
