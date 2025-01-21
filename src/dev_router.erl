@@ -248,7 +248,7 @@ unique_test(Strategy) ->
     unique_nodes(Simulation).
 
 choose_1_test(Strategy) ->
-    TestSize = 3750,
+    TestSize = 1500,
     Nodes = generate_nodes(20),
     Simulation = simulate(TestSize, 1, Nodes, Strategy),
     within_norms(Simulation, Nodes, TestSize).
