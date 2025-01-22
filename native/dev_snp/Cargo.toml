@@ -1,0 +1,22 @@
+[package]
+name = "dev_snp"
+version = "0.1.0"
+edition = "2025"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "dev_snp"
+path = "src/lib.rs"
+crate-type = ["dylib"]
+
+[target.'cfg(target_os = "macos")']
+rustflags = [
+    "-C", "link-arg=-undefined",
+    "-C", "link-arg=dynamic_lookup",
+]
+
+[dependencies]
+rustler = "0.36.0"
+sev = { path = "./sev", features = ["openssl"] }
+openssl = "0.10"
