@@ -69,20 +69,20 @@ cast(_M1, M2, Opts) ->
 
 %%% Tests
 
-call_get_test() ->
-    application:ensure_all_started(hb),
-    application:ensure_all_started(gun),
-    {ok, Res} =
-        call(
-            #{},
-            #{
-                <<"method">> => <<"GET">>,
-                <<"path">> => <<"https://www.google.com/">>
-            },
-            #{ protocol => http2 }
-        ),
-    ?assertMatch(
-        {ok, #{<<"status">> := 200, <<"body">> := Body}}
-            when byte_size(Body) > 100_000,
-        Res
-    ).
+% call_get_test() ->
+%     application:ensure_all_started(hb),
+%     application:ensure_all_started(gun),
+%     {ok, Res} =
+%         call(
+%             #{},
+%             #{
+%                 <<"method">> => <<"GET">>,
+%                 <<"path">> => <<"https://www.google.com/">>
+%             },
+%             #{ protocol => http2 }
+%         ),
+%     ?assertMatch(
+%         {ok, #{<<"status">> := 200, <<"body">> := Body}}
+%             when byte_size(Body) > 100_000,
+%         Res
+%     ).

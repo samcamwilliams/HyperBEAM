@@ -38,7 +38,7 @@ routes(M1, M2, Opts) ->
     ?event({routes, Routes}),
     case hb_converge:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
-            Owner = hb_opts:get(owner, undefined, Opts),
+            Owner = hb_opts:get(operator, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
             Signers = hb_message:signers(M2),
             IsTrusted =
@@ -402,7 +402,7 @@ add_route_test() ->
                     <<"priority">> => 10
                 }
             ],
-            owner => ar_wallet:to_address(Owner)
+            operator => ar_wallet:to_address(Owner)
         }
     ),
     Res =

@@ -159,7 +159,11 @@ test_opts(Opts) ->
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
     Port = 10000 + rand:uniform(20000),
-    Wallet = ar_wallet:new(),
+    Wallet =
+        case hb_opts:get(priv_wallet, no_viable_wallet, Opts) of
+            no_viable_wallet -> ar_wallet:new();
+            PassedWallet -> PassedWallet
+        end,
     Opts#{
         % Generate a random port number between 8000 and 9000.
         port => Port,

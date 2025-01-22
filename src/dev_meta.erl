@@ -3,8 +3,9 @@
 %%% Converge singleton request, after first applying the node's 
 %%% pre-processor, if set.
 -module(dev_meta).
--export([handle/2]).
+-export([handle/2, info/3]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta` key are routed to the `handle_meta/2` function, while all
@@ -13,32 +14,39 @@ handle(NodeMsg, RawRequest) ->
     ?event({raw_request, RawRequest, NodeMsg}),
     NormRequest = hb_singleton:from(RawRequest),
     ?event({processing_messages, NormRequest}),
-    case is_meta_request(NormRequest) of
-        true -> handle_meta(NormRequest, NodeMsg);
-        false -> handle_converge(NormRequest, NodeMsg)
-    end.
+    handle_converge(NormRequest, NodeMsg).
 
-%% @doc Handle a potential list of messages, checking if the first message
-%% has a path of `Meta`.
-is_meta_request([PrimaryMsg | _]) -> hb_path:hd(PrimaryMsg, #{}) == <<"meta">>;
-is_meta_request(_) -> false.
-
-%% @doc Get/set the node message based on the request method. If the request
-%% is a `POST`, we check that the request is signed by the owner of the node.
-%% If not, we return the node message as-is, aside all keys that are 
-%% private (according to `hb_private`).
-handle_meta([Request|_], NodeMsg) ->
+%% @doc Get/set the node message. If the request is a `POST`, we check that the
+%% request is signed by the owner of the node. If not, we return the node message
+%% as-is, aside all keys that are private (according to `hb_private`).
+info(_, Request, NodeMsg) ->
+    ?event({config_req, Request, NodeMsg}),
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
-            embed_status({ok, hb_private:reset(Request)});
+            embed_status({ok, hb_private:reset(NodeMsg)});
         <<"POST">> ->
             ReqSigners = hb_message:signers(Request),
-            Owner = hb_opts:get(owner, no_owner_set, NodeMsg),
-            case lists:member(Owner, ReqSigners) of
+            Owner =
+                hb_opts:get(
+                    operator,
+                    case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+                        no_viable_wallet -> unclaimed;
+                        Wallet -> ar_wallet:to_address(Wallet)
+                    end,
+                    NodeMsg
+                ),
+            case Owner == unclaimed orelse lists:member(Owner, ReqSigners) of
                 false ->
+                    ?event(auth, {set_node_message_fail, Request}),
                     embed_status({error, <<"Unauthorized">>});
                 true ->
-                    hb_http_server:set_opts(NodeMsg),
+                    ?event(auth, {set_node_message_success, Request}),
+                    hb_http_server:set_opts(
+                        Request#{
+                            http_server =>
+                                hb_opts:get(http_server, no_server, NodeMsg)
+                        }
+                    ),
                     embed_status({ok, <<"OK">>})
             end;
         _ -> embed_status({error, <<"Unsupported Method">>})
@@ -89,8 +97,10 @@ resolve_processor(Processor, Request, NodeMsg) ->
     end.
 
 %% @doc Wrap the result of a device call in a status.
-embed_status({Status, Res}) ->
-    {ok, Res#{ <<"status">> => hb_http:status_code(Status) }}.
+embed_status({Status, Res}) when is_map(Res) ->
+    {ok, Res#{ <<"status">> => hb_http:status_code(Status) }};
+embed_status({Status, Res}) when is_binary(Res) ->
+    {ok, #{ <<"status">> => hb_http:status_code(Status), <<"body">> => Res }}.
 
 %% @doc Sign the result of a device call if the node is configured to do so.
 maybe_sign({Status, Res}, NodeMsg) ->
@@ -106,3 +116,116 @@ maybe_sign(Res, NodeMsg) ->
             );
         false -> Res
     end.
+
+%%% Tests
+
+%% @doc Test that we can get the node message.
+config_test() ->
+    Node = hb_http_server:start_test_node(#{ test_config_item => <<"test">> }),
+    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
+
+%% @doc Test that we can't get the node message if the requested key is private.
+priv_inaccessible_test() ->
+    Node = hb_http_server:start_test_node(
+        #{
+            test_config_item => <<"test">>,
+            priv_key => <<"BAD">>
+        }
+    ),
+    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(not_found, hb_converge:get(<<"priv_key">>, Res, #{})).
+
+%% @doc Test that we can't set the node message if the request is not signed by
+%% the owner of the node.
+unauthorized_set_node_msg_fails_test() ->
+    Node = hb_http_server:start_test_node(#{ priv_wallet => ar_wallet:new() }),
+    {ok, SetRes} =
+        hb_http:post(
+            Node,
+            hb_message:sign(
+                #{
+                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"evil_config_item">> => <<"BAD">>
+                },
+                ar_wallet:new()
+            ),
+            #{}
+        ),
+    ?event({res, SetRes}),
+    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
+
+%% @doc Test that we can set the node message if the request is signed by the
+%% owner of the node.
+authorized_set_node_msg_succeeds_test() ->
+    Owner = ar_wallet:new(),
+    Node = hb_http_server:start_test_node(
+        #{
+            operator => ar_wallet:to_address(Owner),
+            test_config_item => <<"test">>
+        }
+    ),
+    {ok, SetRes} =
+        hb_http:post(
+            Node,
+            hb_message:sign(
+                #{
+                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"test_config_item">> => <<"test2">>
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({res, SetRes}),
+    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
+
+%% @doc Test that we can claim the node correctly and set the node message after.
+claim_node_test() ->
+    Owner = ar_wallet:new(),
+    Address = ar_wallet:to_address(Owner),
+    Node = hb_http_server:start_test_node(
+        #{
+            operator => unclaimed,
+            test_config_item => <<"test">>
+        }
+    ),
+    {ok, SetRes} =
+        hb_http:post(
+            Node,
+            hb_message:sign(
+                #{
+                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"operator">> => Address
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({res, SetRes}),
+    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(Address, hb_converge:get(<<"operator">>, Res, #{})),
+    {ok, SetRes2} =
+        hb_http:post(
+            Node,
+            hb_message:sign(
+                #{
+                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"test_config_item">> => <<"test2">>
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({res, SetRes2}),
+    {ok, Res2} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?event({res, Res2}),
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
