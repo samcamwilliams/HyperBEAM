@@ -187,7 +187,7 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 		% sf_item/1 handles when the argument is already parsed.
 		% This provides a feedback loop, in case any encoded component identifier is
 		% not properly encoded
-		component_identifiers => lists:map(fun sf_item/1, ComponentIdentifiers),
+		component_identifiers => ComponentIdentifiers,
 		% TODO: add checks to allow only valid signature parameters
 		% https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 		sig_params => SigParams,
@@ -373,7 +373,7 @@ identifier_to_component(Identifier, Req, Res) when is_atom(Identifier) ->
 	identifier_to_component(atom_to_binary(Identifier), Req, Res);
 identifier_to_component(Identifier, Req, Res) when is_binary(Identifier) ->
 	identifier_to_component(
-        hb_http_structured_fields:parse_item(Identifier),
+        {item, {string, Identifier}, []},
         Req,
         Res
     );
@@ -796,7 +796,7 @@ sf_item(SfItem = {item, {_Kind, _Parsed}, _Params}) ->
 sf_item(ComponentIdentifier) when is_list(ComponentIdentifier) ->
 	sf_item(list_to_binary(ComponentIdentifier));
 sf_item(ComponentIdentifier) when is_binary(ComponentIdentifier) ->
-    sf_item(hb_http_structured_fields:parse_item(ComponentIdentifier)).
+    {item, {string, ComponentIdentifier}, []}.
 
 %%% @doc Given a parameter Name, extract the Parameter value from the HTTP
 %%% Structured Field data structure.
