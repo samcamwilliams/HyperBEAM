@@ -35,8 +35,8 @@ call(_M1, M2, Opts) ->
                             X -> integer_to_binary(X)
                         end,
                     Host = maps:get(host, URI, <<"localhost">>),
-                    Protocol = maps:get(scheme, URI, <<"http">>),
-                    Node = << Host/binary >>,
+                    _Protocol = maps:get(scheme, URI, <<"http">>), % Fixme: Remove if not needed
+                    Node = << Host/binary, ":", Port/binary  >>,
                     Method = hb_converge:get(<<"method">>, M2, Opts),
                     Path = maps:get(path, URI, <<"/">>),
                     ?event({relay, {node, Node}, {method, Method}, {path, Path}}),
@@ -69,20 +69,15 @@ cast(_M1, M2, Opts) ->
 
 %%% Tests
 
-% call_get_test() ->
-%     application:ensure_all_started(hb),
-%     application:ensure_all_started(gun),
-%     {ok, Res} =
-%         call(
-%             #{},
-%             #{
-%                 <<"method">> => <<"GET">>,
-%                 <<"path">> => <<"https://www.google.com/">>
-%             },
-%             #{ protocol => http2 }
-%         ),
-%     ?assertMatch(
-%         {ok, #{<<"status">> := 200, <<"body">> := Body}}
-%             when byte_size(Body) > 100_000,
-%         Res
-%     ).
+call_get_test() ->
+    application:ensure_all_started([hb]),
+    {ok, #{<<"body">> := Body}} =
+        call(
+            #{},
+            #{
+                <<"method">> => <<"GET">>,
+                <<"path">> => <<"https://www.google.com/">>
+            },
+            #{ protocol => http2 }
+        ),
+    ?assertEqual(true, byte_size(Body) > 10_000).
