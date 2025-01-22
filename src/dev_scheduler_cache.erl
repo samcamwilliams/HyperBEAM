@@ -8,8 +8,8 @@
 write(Assignment, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
-    ProcID = hb_converge:get(<<"Process">>, Assignment),
-    Slot = hb_converge:get(<<"Slot">>, Assignment),
+    ProcID = hb_converge:get(<<"process">>, Assignment),
+    Slot = hb_converge:get(<<"slot">>, Assignment),
     ?event(
         {writing_assignment,
             {proc_id, ProcID},
@@ -28,7 +28,7 @@ write(Assignment, Opts) ->
             [
                 <<"assignments">>,
                 hb_util:human_id(ProcID),
-                hb_converge:key_to_binary(Slot)
+                hb_converge:normalize_key(Slot)
             ]
         )
     ),

@@ -8,11 +8,12 @@
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
--export([format_map/1, format_map/2]).
+-export([format_map/1, format_map/2, remove_trailing_noise/2]).
 -export([debug_print/4, debug_fmt/1, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
 -export([format_trace_short/1]).
+-export([count/2, mean/1, stddev/1, variance/1]).
 -include("include/hb.hrl").
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
@@ -42,11 +43,9 @@ id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 id(Data, Type) when is_list(Data) ->
     id(list_to_binary(Data), Type).
 
-%% @doc Convert a string to a lowercase.
-to_lower(Str) when is_list(Str) ->
-    string:to_lower(Str);
-to_lower(Bin) when is_binary(Bin) ->
-    list_to_binary(to_lower(binary_to_list(Bin))).
+%% @doc Convert a binary to a lowercase.
+to_lower(Str) ->
+    string:lowercase(Str).
 
 %% @doc Convert a human readable ID to a native binary ID. If the ID is already
 %% a native binary ID, it is returned as is.
@@ -157,23 +156,16 @@ message_to_numbered_list(Message, Opts) ->
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
 %% as well as a standard map of HyperBEAM runtime options.
-%% 
-%% If `error_strategy' is `throw', raise an exception if no integer keys are
-%% found. If `error_strategy' is `any', return `undefined' if no integer keys
-%% are found. By default, the function does not pass a `throw' execution
-%% strategy to `hb_converge:to_key/2', such that non-integer keys present in the
-%% message will not lead to an exception.
 hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    {ok, Keys} = hb_converge:resolve(Message, keys, #{}),
-    hd(Message, Keys, 1, ReturnType, Opts).
+    hd(Message, hb_converge:keys(Message, Opts), 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
 hd(_Map, [], _Index, _ReturnType, _Opts) -> undefined;
 hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
-    case hb_converge:to_key(Key, Opts#{ error_strategy => return }) of
+    case hb_converge:normalize_key(Key, Opts#{ error_strategy => return }) of
         undefined ->
             hd(Message, Rest, Index + 1, ReturnType, Opts);
         Key ->
@@ -245,16 +237,31 @@ format_debug_trace(Mod, Func, Line) ->
 
 %% @doc Convert a term to a string for debugging print purposes.
 debug_fmt(X) -> debug_fmt(X, 0).
-debug_fmt({explicit, X}, Indent) ->
+debug_fmt(X, Indent) ->
+    try do_debug_fmt(X, Indent)
+    catch _:_ ->
+        case hb_opts:get(mode, prod) of
+            prod ->
+                format_indented("[!PRINT FAIL!]", Indent);
+            _ ->
+                format_indented("[PRINT FAIL:] ~80p", [X], Indent)
+        end
+    end.
+
+do_debug_fmt(Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}, Indent) ->
+    format_address(Wallet, Indent);
+do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
+    format_address(Wallet, Indent);
+do_debug_fmt({explicit, X}, Indent) ->
     format_indented("~p", [X], Indent);
-debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
+do_debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Indent);
-debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
+do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
     format_indented("~p: [TX item]~n~s",
         [X, ar_bundles:format(Y, Indent + 1)],
         Indent
     );
-debug_fmt({X, Y}, Indent) when is_map(Y) ->
+do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
     Formatted = hb_util:format_map(Y, Indent + 1),
     HasNewline = lists:member($\n, Formatted),
     format_indented("~p~s",
@@ -267,18 +274,22 @@ debug_fmt({X, Y}, Indent) when is_map(Y) ->
         ],
         Indent
     );
-debug_fmt({X, Y}, Indent) ->
+do_debug_fmt({X, Y}, Indent) ->
     format_indented("~s: ~s", [debug_fmt(X, Indent), debug_fmt(Y, Indent)], Indent);
-debug_fmt(Map, Indent) when is_map(Map) ->
+do_debug_fmt(Map, Indent) when is_map(Map) ->
     hb_util:format_map(Map, Indent);
-debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
+do_debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
-debug_fmt(X, Indent) when is_binary(X) ->
+do_debug_fmt(X, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Indent);
-debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
+do_debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     format_indented("~s", [Str], Indent);
-debug_fmt(X, Indent) ->
+do_debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
+
+%% @doc If the user attempts to print a wallet, format it as an address.
+format_address(Wallet, Indent) ->
+    format_indented(human_id(ar_wallet:to_address(Wallet)), Indent).
 
 %% @doc Helper function to format tuples with arity greater than 2.
 format_tuple(Tuple, Indent) ->
@@ -300,9 +311,11 @@ do_to_lines(In =[RawElem | Rest]) ->
     end.
 
 remove_trailing_noise(Str) ->
-    case lists:member(lists:last(Str), ", \n") of
+    remove_trailing_noise(Str, " \n,").
+remove_trailing_noise(Str, Noise) ->
+    case lists:member(lists:last(Str), Noise) of
         true ->
-            remove_trailing_noise(lists:droplast(Str));
+            remove_trailing_noise(lists:droplast(Str), Noise);
         false -> Str
     end.
 
@@ -511,3 +524,18 @@ normalize_trace([]) -> [];
 normalize_trace([{Mod, _, _, _}|Rest]) when Mod == ?MODULE ->
     normalize_trace(Rest);
 normalize_trace(Trace) -> Trace.
+
+%%% Statistics
+
+count(Item, List) ->
+    length(lists:filter(fun(X) -> X == Item end, List)).
+
+mean(List) ->
+    lists:sum(List) / length(List).
+
+stddev(List) ->
+    math:sqrt(variance(List)).
+
+variance(List) ->
+    Mean = mean(List),
+    lists:sum([ math:pow(X - Mean, 2) || X <- List ]) / length(List).

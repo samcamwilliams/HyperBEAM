@@ -201,7 +201,7 @@ monitor_call(WASM, ImportFun, StateMsg, Opts) ->
                         },
                         Opts
                     ),
-                ?event({import_ret, Module, Func, {args, Args}, {params, Res}}),
+                ?event({import_ret, Module, Func, {args, Args}, {res, Res}}),
                 dispatch_response(WASM, Res),
                 monitor_call(WASM, ImportFun, StateMsg2, Opts)
             catch

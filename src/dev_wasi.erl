@@ -23,16 +23,16 @@
 -define(INIT_FDS,
     #{
         0 => #{
-            <<"Filename">> => <<"/dev/stdin">>,
-            <<"Offset">> => 0
+            <<"filename">> => <<"/dev/stdin">>,
+            <<"offset">> => 0
         },
         1 => #{
-            <<"Filename">> => <<"/dev/stdout">>,
-            <<"Offset">> => 0
+            <<"filename">> => <<"/dev/stdout">>,
+            <<"offset">> => 0
         },
         2 => #{
-            <<"Filename">> => <<"/dev/stderr">>,
-            <<"Offset">> => 0
+            <<"filename">> => <<"/dev/stderr">>,
+            <<"offset">> => 0
         }
     }
 ).
@@ -47,22 +47,22 @@ init(M1, _M2, Opts) ->
         hb_converge:set(
             M1,
             #{
-                <<"WASM/stdlib/wasi_snapshot_preview1">> =>
-                    #{ device => <<"WASI/1.0">>}
+                <<"wasm/stdlib/wasi_snapshot_preview1">> =>
+                    #{ device => <<"WASI@1.0">>}
             },
             Opts
         ),
     MsgWithFDs =
         hb_converge:set(
             MsgWithLib,
-            <<"File-Descriptors">>,
+            <<"file-descriptors">>,
             ?INIT_FDS,
             Opts
         ),
     CompleteMsg =
         hb_converge:set(
             MsgWithFDs,
-            <<"VFS">>,
+            <<"vfs">>,
             ?INIT_VFS,
             Opts
         ),
@@ -100,45 +100,45 @@ stdout(M) ->
 %% @doc Adds a file descriptor to the state message.
 %path_open(M, Instance, [FDPtr, LookupFlag, PathPtr|_]) ->
 path_open(Msg1, Msg2, Opts) ->
-    FDs = hb_converge:get(<<"File-Descriptors">>, Msg1, Opts),
-    Instance = hb_private:get(<<"Instance">>, Msg1, Opts),
-    [FDPtr, LookupFlag, PathPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
+    FDs = hb_converge:get(<<"file-descriptors">>, Msg1, Opts),
+    Instance = hb_private:get(<<"instance">>, Msg1, Opts),
+    [FDPtr, LookupFlag, PathPtr|_] = hb_converge:get(<<"args">>, Msg2, Opts),
     ?event({path_open, FDPtr, LookupFlag, PathPtr}),
     Path = hb_beamr_io:read_string(Instance, PathPtr),
     ?event({path_open, Path}),
     FD = #{
-        index := Index
+        <<"index">> := Index
     } =
-        case hb_converge:get(<<"vfs/", Path/binary>>, Msg1) of
+        case hb_converge:get(<<"vfs/", Path/binary>>, Msg1, Opts) of
             not_found ->
                 #{
-                    index => length(hb_converge:keys(FDs)) + 1,
-                    filename => Path,
-                    offset => 0
+                    <<"index">> => length(hb_converge:keys(FDs)) + 1,
+                    <<"filename">> => Path,
+                    <<"offset">> => 0
                 };
             F -> F
         end,
     {
         ok,
         #{
-            state =>
+            <<"state">> =>
                 hb_converge:set(
                     Msg1,
                     <<"vfs/", Path/binary>>,
                     FD
                 ),
-            results => [0, Index]
+            <<"results">> => [0, Index]
         }
     }.
 
 %% @doc WASM stdlib implementation of `fd_write', using the WASI-p1 standard
 %% interface.
 fd_write(Msg1, Msg2, Opts) ->
-    State = hb_converge:get(<<"State">>, Msg1, Opts),
-    Instance = hb_private:get(<<"WASM/Instance">>, State, Opts),
-    [FD, Ptr, Vecs, RetPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
+    State = hb_converge:get(<<"state">>, Msg1, Opts),
+    Instance = hb_private:get(<<"wasm/instance">>, State, Opts),
+    [FD, Ptr, Vecs, RetPtr|_] = hb_converge:get(<<"args">>, Msg2, Opts),
     ?event({fd_write, {fd, FD}, {ptr, Ptr}, {vecs, Vecs}, {retptr, RetPtr}}),
-    Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
+    Signature = hb_converge:get(<<"func-sig">>, Msg2, Opts),
     ?event({signature, Signature}),
     fd_write(State, Instance, [FD, Ptr, Vecs, RetPtr], 0, Opts).
 
@@ -148,17 +148,17 @@ fd_write(S, Instance, [_, _Ptr, 0, RetPtr], BytesWritten, _Opts) ->
         RetPtr,
         <<BytesWritten:64/little-unsigned-integer>>
     ),
-    {ok, #{ state => S, results => [0] }};
+    {ok, #{ <<"state">> => S, <<"results">> => [0] }};
 fd_write(S, Instance, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
     FDNumStr = integer_to_binary(FDnum),
-    FD = hb_converge:get(<<"File-Descriptors/", FDNumStr/binary>>, S, Opts),
-    Filename = hb_converge:get(<<"Filename">>, FD, Opts),
-    StartOffset = hb_converge:get(<<"Offset">>, FD, Opts),
+    FD = hb_converge:get(<<"file-descriptors/", FDNumStr/binary>>, S, Opts),
+    Filename = hb_converge:get(<<"filename">>, FD, Opts),
+    StartOffset = hb_converge:get(<<"offset">>, FD, Opts),
     {VecPtr, Len} = parse_iovec(Instance, Ptr),
     {ok, Data} = hb_beamr_io:read(Instance, VecPtr, Len),
     Before =
         binary:part(
-            OrigData = hb_converge:get(<<"Data">>, FD, Opts),
+            OrigData = hb_converge:get(<<"data">>, FD, Opts),
             0,
             StartOffset
         ),
@@ -167,7 +167,7 @@ fd_write(S, Instance, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
     S1 =
         hb_converge:set(
             S,
-            <<"File-Descriptors/", FDNumStr/binary, "/Offset">>,
+            <<"file-descriptors/", FDNumStr/binary, "/offset">>,
             StartOffset + byte_size(Data),
             Opts
         ),
@@ -188,10 +188,10 @@ fd_write(S, Instance, [FDnum, Ptr, Vecs, RetPtr], BytesWritten, Opts) ->
 
 %% @doc Read from a file using the WASI-p1 standard interface.
 fd_read(Msg1, Msg2, Opts) ->
-    State = hb_converge:get(<<"State">>, Msg1, Opts),
-    Instance = hb_private:get(<<"WASM/Instance">>, State, Opts),
-    [FD, VecsPtr, NumVecs, RetPtr|_] = hb_converge:get(<<"Args">>, Msg2, Opts),
-    Signature = hb_converge:get(<<"func_sig">>, Msg2, Opts),
+    State = hb_converge:get(<<"state">>, Msg1, Opts),
+    Instance = hb_private:get(<<"wasm/instance">>, State, Opts),
+    [FD, VecsPtr, NumVecs, RetPtr|_] = hb_converge:get(<<"args">>, Msg2, Opts),
+    Signature = hb_converge:get(<<"func-sig">>, Msg2, Opts),
     ?event({signature, Signature}),
     fd_read(State, Instance, [FD, VecsPtr, NumVecs, RetPtr], 0, Opts).
 
@@ -199,20 +199,20 @@ fd_read(S, Instance, [FD, _VecsPtr, 0, RetPtr], BytesRead, _Opts) ->
     ?event({{completed_read, FD, BytesRead}}),
     hb_beamr_io:write(Instance, RetPtr,
         <<BytesRead:64/little-unsigned-integer>>),
-    {ok, #{ state => S, results => [0] }};
+    {ok, #{ <<"state">> => S, <<"results">> => [0] }};
 fd_read(S, Instance, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
     ?event({fd_read, FDNum, VecsPtr, NumVecs, RetPtr}),
     % Parse the request
     FDNumStr = integer_to_binary(FDNum),
     Filename =
         hb_converge:get(
-            <<"File-Descriptors/", FDNumStr/binary, "/Filename">>, S, Opts),
+            <<"file-descriptors/", FDNumStr/binary, "/filename">>, S, Opts),
     {VecPtr, Len} = parse_iovec(Instance, VecsPtr),
     % Read the bytes from the file
     Data = hb_converge:get(<<"vfs/", Filename/binary>>, S, Opts),
     Offset =
         hb_converge:get(
-            <<"File-Descriptors/", FDNumStr/binary, "/Offset">>, S, Opts),
+            <<"file-descriptors/", FDNumStr/binary, "/offset">>, S, Opts),
     ReadSize = min(Len, byte_size(Data) - Offset),
     Bin = binary:part(Data, Offset, ReadSize),
     % Write the bytes to the WASM Instance
@@ -220,7 +220,7 @@ fd_read(S, Instance, [FDNum, VecsPtr, NumVecs, RetPtr], BytesRead, Opts) ->
     fd_read(
         hb_converge:set(
             S,
-            <<"File-Descriptors/", FDNumStr/binary, "/Offset">>,
+            <<"file-descriptors/", FDNumStr/binary, "/offset">>,
             Offset + ReadSize,
             Opts
         ),
@@ -242,8 +242,8 @@ parse_iovec(Instance, Ptr) ->
 %%% Misc WASI-preview-1 handlers.
 clock_time_get(Msg1, _Msg2, Opts) ->
     ?event({clock_time_get, {returning, 1}}),
-    State = hb_converge:get(<<"State">>, Msg1, Opts),
-    {ok, #{ state => State, results => [1] }}.
+    State = hb_converge:get(<<"state">>, Msg1, Opts),
+    {ok, #{ <<"state">> => State, <<"results">> => [1] }}.
 
 %%% Tests
 
@@ -254,19 +254,19 @@ generate_wasi_stack(File, Func, Params) ->
     init(),
     Msg0 = dev_wasm:cache_wasm_image(File),
     Msg1 = Msg0#{
-        device => <<"Stack/1.0">>,
-        <<"Device-Stack">> => [<<"WASI/1.0">>, <<"WASM-64/1.0">>],
-        <<"Output-Prefixes">> => [<<"WASM">>, <<"WASM">>],
-        <<"Stack-Keys">> => [<<"Init">>, <<"Compute">>],
-        <<"WASM-Function">> => Func,
-        <<"WASM-Params">> => Params
+        <<"device">> => <<"Stack@1.0">>,
+        <<"device-stack">> => [<<"WASI@1.0">>, <<"WASM-64@1.0">>],
+        <<"output-prefixes">> => [<<"wasm">>, <<"wasm">>],
+        <<"stack-keys">> => [<<"init">>, <<"compute">>],
+        <<"wasm-function">> => Func,
+        <<"wasm-params">> => Params
     },
-    {ok, Msg2} = hb_converge:resolve(Msg1, <<"Init">>, #{}),
+    {ok, Msg2} = hb_converge:resolve(Msg1, <<"init">>, #{}),
     Msg2.
 
 vfs_is_serializable_test() ->
     StackMsg = generate_wasi_stack("test/test-print.wasm", <<"hello">>, []),
-    VFSMsg = hb_converge:get(<<"VFS">>, StackMsg),
+    VFSMsg = hb_converge:get(<<"vfs">>, StackMsg),
     VFSMsg2 =
         hb_message:minimize(
             hb_message:convert(
@@ -291,7 +291,7 @@ basic_aos_exec_test() ->
     Init = generate_wasi_stack("test/test-aos-2-pure-xs.aot", <<"handle">>, []),
     Msg = gen_test_aos_msg("return 1 + 1"),
     Env = gen_test_env(),
-    Instance = hb_private:get(<<"WASM/Instance">>, Init, #{}),
+    Instance = hb_private:get(<<"wasm/instance">>, Init, #{}),
     {ok, Ptr1} = hb_beamr_io:malloc(Instance, byte_size(Msg)),
     ?assertNotEqual(0, Ptr1),
     hb_beamr_io:write(Instance, Ptr1, Msg),
@@ -303,9 +303,9 @@ basic_aos_exec_test() ->
     {ok, EnvBin} = hb_beamr_io:read(Instance, Ptr2, byte_size(Env)),
     ?assertEqual(Env, EnvBin),
     ?assertEqual(Msg, MsgBin),
-    Ready = Init#{ <<"WASM-Params">> => [Ptr1, Ptr2] },
-    {ok, StateRes} = hb_converge:resolve(Ready, <<"Compute">>, #{}),
-    [Ptr] = hb_converge:get(<<"Results/WASM/Output">>, StateRes),
+    Ready = Init#{ <<"wasm-params">> => [Ptr1, Ptr2] },
+    {ok, StateRes} = hb_converge:resolve(Ready, <<"compute">>, #{}),
+    [Ptr] = hb_converge:get(<<"results/wasm/output">>, StateRes),
     {ok, Output} = hb_beamr_io:read_string(Instance, Ptr),
     ?event({got_output, Output}),
     #{ <<"response">> := #{ <<"Output">> := #{ <<"data">> := Data }} }

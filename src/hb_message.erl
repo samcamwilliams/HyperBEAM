@@ -53,8 +53,9 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([convert/3, convert/4, unsigned/1, attestations/1]).
--export([sign/2, verify/1, match/2, type/1, minimize/1, normalize_keys/1]). 
+-export([sign/2, sign/3, verify/1, verify/2, type/1, minimize/1]). 
 -export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
+-export([match/2, match/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
@@ -82,7 +83,8 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
         _ -> convert_to_target(TABM, TargetFormat, Opts)
     end.
 
-convert_to_tabm(Msg, SourceFormat, Opts) ->
+convert_to_tabm(RawMsg, SourceFormat, Opts) ->
+    Msg = hb_converge:normalize_keys(RawMsg),
     SourceCodecMod = get_codec(SourceFormat, Opts),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
@@ -97,11 +99,11 @@ convert_to_target(Msg, TargetFormat, Opts) ->
 %% @doc Return the unsigned version of a message in Converge format.
 unsigned(Bin) when is_binary(Bin) -> Bin;
 unsigned(Msg) ->
-    maps:remove([signed_id, signature, owner], Msg).
+    maps:remove([<<"signed_id">>, <<"signature">>, <<"owner">>], Msg).
 
 %% @doc Return a sub-map of the attestation-related keys in a message.
 attestations(Msg) ->
-    maps:with([signed_id, signature, owner], Msg).
+    maps:with([<<"signed_id">>, <<"signature">>, <<"owner">>], Msg).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
@@ -123,6 +125,8 @@ format(Bin, Indent) when is_binary(Bin) ->
         hb_util:format_binary(Bin),
         Indent
     );
+format(List, Indent) when is_list(List) ->
+    format(lists:map(fun hb_converge:normalize_key/1, List), Indent);
 format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
@@ -194,7 +198,7 @@ format(Map, Indent) when is_map(Map) ->
             Indent
         ),
     % Put the path and device rows into the output at the _top_ of the map.
-    PriorityKeys = [{<<"Path">>, ValOrUndef(path)}, {<<"Device">>, ValOrUndef(device)}],
+    PriorityKeys = [{<<"path">>, ValOrUndef(path)}, {<<"device">>, ValOrUndef(device)}],
     FooterKeys =
         case hb_private:from_message(Map) of
             PrivMap when map_size(PrivMap) == 0 -> [];
@@ -205,20 +209,27 @@ format(Map, Indent) when is_map(Map) ->
         FilterUndef(PriorityKeys) ++
         maps:to_list(
             minimize(Map,
-                [owner, signature, id, unsigned_id, hashpath, path, device]
-                ++ [<<"Device">>, <<"Path">>] % Hack: Until key capitalization is fixed.
+                [
+                    <<"owner">>,
+                    <<"signature">>,
+                    <<"id">>,
+                    <<"unsigned_id">>,
+                    <<"hashpath">>,
+                    <<"path">>,
+                    <<"device">>
+                ]
             )
         ) ++ FooterKeys,
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
         fun({Key, Val}) ->
-            NormKey = hb_converge:to_key(Key, #{ error_strategy => ignore }),
+            NormKey = hb_converge:normalize_key(Key, #{ error_strategy => ignore }),
             KeyStr = 
                 case NormKey of
                     undefined ->
                         io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
                     _ ->
-                        hb_converge:key_to_binary(Key)
+                        hb_converge:normalize_key(Key)
                 end,
             hb_util:format_indented(
                 "~s => ~s~n",
@@ -257,9 +268,8 @@ format(Item, Indent) ->
 %% @doc Return the signers of a message. For now, this is just the signer
 %% of the message itself. In the future, we will support multiple signers.
 signers(Msg) when is_map(Msg) ->
-    case {maps:find(owner, Msg), maps:find(signature, Msg)} of
-        {_, error} -> [];
-        {error, _} -> [];
+    case {maps:find(<<"owner">>, Msg), maps:find(<<"signature">>, Msg)} of
+        {Owner, Sig} when (Owner == error) or (Sig == error) -> [];
         {{ok, Owner}, {ok, _}} -> [ar_wallet:to_address(Owner)]
     end;
 signers(TX) when is_record(TX, tx) ->
@@ -269,12 +279,23 @@ signers(_) -> [].
 %% @doc Sign a message with the given wallet. Only supports the `tx' format
 %% at the moment.
 sign(Msg, Wallet) ->
+    sign(Msg, Wallet, tx).
+
+sign(Msg, Wallet, http) ->
+    HTTP = convert(Msg, tabm, #{}),
+    hb_http_signature:sign(HTTP, #{}, #{ priv_wallet => Wallet });
+sign(Msg, Wallet, _) ->
     TX = convert(Msg, tx, #{}),
     SignedTX = ar_bundles:sign_item(TX, Wallet),
     convert(SignedTX, converge, tx, #{}).
 
 %% @doc Verify a message.
 verify(Msg) ->
+    verify(Msg, tx).
+
+verify(Msg, http) ->
+    hb_http_signature:verify(Msg, #{}, #{});
+verify(Msg, _) ->
     TX = convert(Msg, tx, converge, #{}),
     ar_bundles:verify_item(TX).
 
@@ -295,27 +316,52 @@ type(Msg) when is_map(Msg) ->
     end.
 
 %% @doc Check if two maps match, including recursively checking nested maps.
+%% Takes an optional mode argument to control the matching behavior:
+%%      `strict': All keys in both maps be present and match.
+%%      `only_present': Only present keys in both maps must match.
+%%      `primary': Only the primary map's keys must be present.
 match(Map1, Map2) ->
-    Keys1 = maps:keys(NormMap1 = minimize(normalize(Map1))),
-    Keys2 = maps:keys(NormMap2 = minimize(normalize(Map2))),
-    case Keys1 == Keys2 of
+    match(Map1, Map2, strict).
+match(Map1, Map2, Mode) ->
+    Keys1 =
+        maps:keys(
+            NormMap1 = minimize(normalize(hb_converge:normalize_keys(Map1)))
+        ),
+    Keys2 =
+        maps:keys(
+            NormMap2 = minimize(normalize(hb_converge:normalize_keys(Map2)))
+        ),
+    PrimaryKeysPresent =
+        (Mode == primary) andalso
+            lists:all(
+                fun(Key) -> lists:member(Key, Keys1) end,
+                Keys1
+            ),
+    case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
         true ->
             lists:all(
                 fun(Key) ->
                     Val1 = maps:get(Key, NormMap1, not_found),
                     Val2 = maps:get(Key, NormMap2, not_found),
-                    case is_map(Val1) andalso is_map(Val2) of
-                        true -> match(Val1, Val2);
+                    BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
+                    case (not BothPresent) and (Mode == only_present) of
+                        true -> true;
                         false ->
-                            case Val1 == Val2 of
-                                true -> true;
+                            case is_map(Val1) andalso is_map(Val2) of
+                                true -> match(Val1, Val2);
                                 false ->
-                                    ?event(
-                                        {value_mismatch,
-                                            {key, Val1, Val2}
-                                        }
-                                    ),
-                                    false
+                                    case Val1 == Val2 of
+                                        true -> true;
+                                        false ->
+                                            ?event(
+                                                {value_mismatch,
+                                                    {key, Key},
+                                                    {val1, Val1},
+                                                    {val2, Val2}
+                                                }
+                                            ),
+                                            false
+                                    end
                             end
                     end
                 end,
@@ -327,31 +373,19 @@ match(Map1, Map2) ->
     end.
 	
 matchable_keys(Map) ->
-    lists:sort(lists:map(fun hb_converge:key_to_binary/1, maps:keys(Map))).
-
-%% @doc Normalize the keys in a map. Also takes a list of keys and returns a
-%% sorted list of normalized keys if the input is a list.
-normalize_keys(Keys) when is_list(Keys) ->
-    lists:sort(lists:map(fun hb_converge:key_to_binary/1, Keys));
-normalize_keys(Map) ->
-    maps:from_list(
-        lists:map(
-            fun({Key, Value}) ->
-                {hb_converge:key_to_binary(Key), Value}
-            end,
-            maps:to_list(Map)
-        )
-    ).
+    lists:sort(lists:map(fun hb_converge:normalize_key/1, maps:keys(Map))).
 
 %% @doc Remove keys from the map that can be regenerated. Optionally takes an
 %% additional list of keys to include in the minimization.
 minimize(Msg) -> minimize(Msg, []).
 minimize(RawVal, _) when not is_map(RawVal) -> RawVal;
 minimize(Map, ExtraKeys) ->
-    NormKeys = normalize_keys(?REGEN_KEYS) ++ normalize_keys(ExtraKeys),
+    NormKeys =
+        lists:map(fun hb_converge:normalize_key/1, ?REGEN_KEYS)
+            ++ lists:map(fun hb_converge:normalize_key/1, ExtraKeys),
     maps:filter(
         fun(Key, _) ->
-            (not lists:member(hb_converge:key_to_binary(Key), NormKeys))
+            (not lists:member(hb_converge:normalize_key(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
         maps:map(fun(_K, V) -> minimize(V) end, Map)
@@ -360,7 +394,7 @@ minimize(Map, ExtraKeys) ->
 %% @doc Return a map with only the keys that necessary, without those that can
 %% be regenerated.
 normalize(Map) ->
-    NormalizedMap = normalize_keys(Map),
+    NormalizedMap = hb_converge:normalize_keys(Map),
     FilteredMap = filter_default_keys(NormalizedMap),
     maps:with(matchable_keys(FilteredMap), FilteredMap).
 
@@ -370,7 +404,7 @@ filter_default_keys(Map) ->
     DefaultsMap = default_tx_message(),
     maps:filter(
         fun(Key, Value) ->
-            case maps:find(hb_converge:key_to_binary(Key), DefaultsMap) of
+            case maps:find(hb_converge:normalize_key(Key), DefaultsMap) of
                 {ok, Value} -> false;
                 _ -> true
             end
@@ -380,11 +414,13 @@ filter_default_keys(Map) ->
 
 %% @doc Get the normalized fields and default values of the tx record.
 default_tx_message() ->
-    normalize_keys(maps:from_list(default_tx_list())).
+    maps:from_list(default_tx_list()).
 
-%% @doc Get the ordered list of fields and default values of the tx record.
+%% @doc Get the ordered list of fields as Converge keys and default values of
+%% the tx record.
 default_tx_list() ->
-    lists:zip(record_info(fields, tx), tl(tuple_to_list(#tx{}))).
+    Keys = lists:map(fun hb_converge:normalize_key/1, record_info(fields, tx)),
+    lists:zip(Keys, tl(tuple_to_list(#tx{}))).
 
 %% @doc Serialize a message to a binary representation, either as JSON or the
 %% binary format native to the message/bundles spec in use.
@@ -410,21 +446,21 @@ deserialize(B, binary) ->
 default_keys_removed_test() ->
     TX = #tx { unsigned_id = << 1:256 >>, last_tx = << 2:256 >> },
     TXMap = #{
-        unsigned_id => TX#tx.unsigned_id,
-        last_tx => TX#tx.last_tx,
+        <<"unsigned_id">> => TX#tx.unsigned_id,
+        <<"last_tx">> => TX#tx.last_tx,
         <<"owner">> => TX#tx.owner,
         <<"target">> => TX#tx.target,
-        data => TX#tx.data
+        <<"data">> => TX#tx.data
     },
     FilteredMap = filter_default_keys(TXMap),
-    ?assertEqual(<< 1:256 >>, maps:get(unsigned_id, FilteredMap)),
-    ?assertEqual(<< 2:256 >>, maps:get(last_tx, FilteredMap, not_found)),
+    ?assertEqual(<< 1:256 >>, maps:get(<<"unsigned_id">>, FilteredMap)),
+    ?assertEqual(<< 2:256 >>, maps:get(<<"last_tx">>, FilteredMap, not_found)),
     ?assertEqual(not_found, maps:get(<<"owner">>, FilteredMap, not_found)),
     ?assertEqual(not_found, maps:get(<<"target">>, FilteredMap, not_found)).
 
 minimization_test() ->
     Msg = #{
-        unsigned_id => << 1:256 >>,
+        <<"unsigned_id">> => << 1:256 >>,
         <<"id">> => << 2:256 >>
     },
     MinimizedMsg = minimize(Msg),
@@ -433,19 +469,27 @@ minimization_test() ->
 
 
 basic_map_codec_test(Codec) ->
-    Msg = #{ normal_key => <<"NORMAL_VALUE">> },
+    Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?assert(hb_message:match(Msg, Decoded)).
+
+set_body_codec_test(Codec) ->
+    Msg = #{ <<"body">> => <<"NORMAL_VALUE">>, <<"test-key">> => <<"Test-Value">> },
+    Encoded = convert(Msg, Codec, converge, #{}),
+    ?event(debug, {encoded, Encoded}),
+    Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_encoding_test(Codec) ->
     Msg = #{
-        last_tx => << 2:256 >>,
-        owner => << 3:4096 >>,
-        target => << 4:256 >>,
-        data => <<"DATA">>,
-        <<"Special-Key">> => <<"SPECIAL_VALUE">>
+        <<"last_tx">> => << 2:256 >>,
+        <<"owner">> => << 3:4096 >>,
+        <<"target">> => << 4:256 >>,
+        <<"data">> => <<"DATA">>,
+        <<"special-key">> => <<"SPECIAL_VALUE">>
     },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
@@ -456,21 +500,30 @@ single_layer_message_to_encoding_test(Codec) ->
 % key_encodings_to_tx_test() ->
 %     Msg = #{
 %         <<"last_tx">> => << 2:256 >>,
-%         <<"Owner">> => << 3:4096 >>,
-%         <<"Target">> => << 4:256 >>
+%         <<"owner">> => << 3:4096 >>,
+%         <<"target">> => << 4:256 >>
 %     },
 %     TX = message_to_tx(Msg),
 %     ?event({key_encodings_to_tx, {msg, Msg}, {tx, TX}}),
 %     ?assertEqual(maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
-%     ?assertEqual(maps:get(<<"Owner">>, Msg), TX#tx.owner),
-%     ?assertEqual(maps:get(<<"Target">>, Msg), TX#tx.target).
+%     ?assertEqual(maps:get(<<"owner">>, Msg), TX#tx.owner),
+%     ?assertEqual(maps:get(<<"target">>, Msg), TX#tx.target).
 
 %% @doc Test that the message matching function works.
 match_test(Codec) ->
-    Msg = #{ a => 1, b => 2 },
+    Msg = #{ <<"a">> => 1, <<"b">> => 2 },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
+
+match_modes_test() ->
+    Msg1 = #{ <<"a">> => 1, <<"b">> => 2 },
+    Msg2 = #{ <<"a">> => 1 },
+    Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
+    ?assert(match(Msg1, Msg2, only_present)),
+    ?assert(not match(Msg2, Msg1, strict)),
+    ?assert(match(Msg1, Msg3, primary)),
+    ?assert(not match(Msg3, Msg1, primary)).
 
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test(Codec) ->
@@ -508,13 +561,18 @@ message_with_large_keys_test(Codec) ->
     ?assert(match(Msg, Decoded)).
 
 %% @doc Check that large keys and data fields are correctly handled together.
-nested_message_with_large_keys_and_data_test(Codec) ->
+nested_message_with_large_keys_and_content_test(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
     Msg = #{
         <<"normal_key">> => <<"normal_value">>,
         <<"large_key">> => << 0:(1024 * 16) >>,
         <<"another_large_key">> => << 0:(1024 * 16) >>,
         <<"another_normal_key">> => <<"another_normal_value">>,
-        data => <<"Hey from the data field!">>
+        MainBodyKey => <<"Hey from the data field!">>
     },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
@@ -523,9 +581,9 @@ nested_message_with_large_keys_and_data_test(Codec) ->
 
 simple_nested_message_test(Codec) ->
     Msg = #{
-        a => <<"1">>,
-        nested => #{ <<"b">> => <<"1">> },
-        c => <<"3">>
+        <<"a">> => <<"1">>,
+        <<"nested">> => #{ <<"b">> => <<"1">> },
+        <<"c">> => <<"3">>
     },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
@@ -540,33 +598,52 @@ simple_nested_message_test(Codec) ->
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
-nested_message_with_large_data_test(Codec) ->
+nested_message_with_large_content_test(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
     Msg = #{
-        <<"tx_depth">> => <<"outer">>,
-        data => #{
-            <<"tx_map_item">> =>
+        <<"depth">> => <<"outer">>,
+        MainBodyKey => #{
+            <<"map_item">> =>
                 #{
-                    <<"tx_depth">> => <<"inner">>,
+                    <<"depth">> => <<"inner">>,
                     <<"large_data_inner">> => << 0:((1 + 1024) * 8) >>
                 },
             <<"large_data_outer">> => << 0:((1 + 1024) * 8) >>
         }
     },
     Encoded = convert(Msg, Codec, converge, #{}),
+    case Codec of
+        http ->
+            #{ <<"body">> := Body, <<"headers">> := Headers } = Encoded,
+            ?event(debug, {encoded_headers, Headers}),
+            io:format(standard_error, "Body: ~s~n", [Body]);
+        _ -> ok
+    end,
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {msg, Msg}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
-deeply_nested_message_with_data_test(Codec) ->
+deeply_nested_message_with_content_test(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
     Msg = #{
-        <<"tx_depth">> => <<"outer">>,
-        data => #{
-            <<"tx_map_item">> =>
+        <<"depth">> => <<"outer">>,
+        MainBodyKey => #{
+            <<"map_item">> =>
                 #{
-                    <<"tx_depth">> => <<"inner">>,
-                    data => #{
-                        <<"tx_depth">> => <<"innermost">>,
-                        data => <<"DATA">>
+                    <<"depth">> => <<"inner">>,
+                    MainBodyKey => #{
+                        <<"depth">> => <<"innermost">>,
+                        MainBodyKey => <<"DATA">>
                     }
                 }
         }
@@ -576,51 +653,39 @@ deeply_nested_message_with_data_test(Codec) ->
     ?assert(match(Msg, Decoded)).
 
 nested_structured_fields_test(Codec) ->
-    NestedMsg = #{ a => #{ b => 1 } },
+    NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
     Encoded = convert(NestedMsg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(NestedMsg, Decoded)).
 
 nested_message_with_large_keys_test(Codec) ->
     Msg = #{
-        a => <<"1">>,
-        long_data => << 0:((1 + 1024) * 8) >>,
-        nested => #{ <<"b">> => <<"1">> },
-        c => <<"3">>
+        <<"a">> => <<"1">>,
+        <<"long_data">> => << 0:((1 + 1024) * 8) >>,
+        <<"nested">> => #{ <<"b">> => <<"1">> },
+        <<"c">> => <<"3">>
     },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
-%% @doc Test that we can convert a signed tx into a message and back.
-signed_tx_encode_decode_verify_test(Codec) ->
-    TX = #tx {
-        data = <<"TEST_DATA">>,
-        tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
-    },
-    SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
-    Encoded = convert(SignedTX, Codec, tx, #{}),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(verify(Decoded)).
-
 signed_message_encode_decode_verify_test(Codec) ->
     Msg = #{
-        data => <<"TEST_DATA">>,
-        tags => [{<<"TEST_KEY">>, <<"TEST_VALUE">>}]
+        <<"test_data">> => <<"TEST_DATA">>,
+        <<"test_key">> => <<"TEST_VALUE">>
     },
-    SignedMsg = hb_message:sign(Msg, hb:wallet()),
+    SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
     Encoded = convert(SignedMsg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(SignedMsg, Decoded)).
 
 tabm_converge_ids_equal_test() ->
     Msg = #{
-        data => <<"TEST_DATA">>,
-        deep_data => #{
-            data => <<"DEEP_DATA">>,
-            complex_key => 1337,
-            list => [1,2,3]
+        <<"data">> => <<"TEST_DATA">>,
+        <<"deep_data">> => #{
+            <<"data">> => <<"DEEP_DATA">>,
+            <<"complex_key">> => 1337,
+            <<"list">> => [1,2,3]
         }
     },
     ?assertEqual(
@@ -628,32 +693,32 @@ tabm_converge_ids_equal_test() ->
         dev_message:unsigned_id(convert(Msg, tabm, converge, #{}))
     ).
 
-signed_deep_tx_serialize_and_deserialize_test(Codec) ->
-    TX = #tx {
-        tags = [{<<"TEST_KEY">>, <<"TEST_VALUE">>}],
-        data = #{
-            <<"NESTED_TX">> =>
-                #tx {
-                    data = <<"NESTED_DATA">>,
-                    tags = [{<<"NESTED_KEY">>, <<"NESTED_VALUE">>}]
+signed_deep_message_test(Codec) ->
+    Msg = #{
+        <<"test_key">> => <<"TEST_VALUE">>,
+        <<"data">> => #{
+            <<"nested_key">> =>
+                #{
+                    <<"data">> => <<"NESTED_DATA">>,
+                    <<"nested_key">> => <<"NESTED_VALUE">>
                 }
         }
     },
-    SignedTX = ar_bundles:deserialize(
-        ar_bundles:sign_item(TX, hb:wallet())
-    ),
-    ?assert(ar_bundles:verify_item(SignedTX)),
-    Encoded = convert(SignedTX, Codec, tx, #{}),
+    SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
+    ?assert(hb_message:verify(SignedMsg, Codec)),
+    Encoded = convert(SignedMsg, Codec, converge, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(
         match(
-            convert(SignedTX, converge, tx, #{}),
+            SignedMsg,
             Decoded
         )
     ).
 
 unsigned_id_test(Codec) ->
-    Msg = #{ data => <<"TEST_DATA">> },
+    Msg = #{ <<"data">> => <<"TEST_DATA">> },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assertEqual(
@@ -675,7 +740,7 @@ unsigned_id_test(Codec) ->
 %     ).
 
 message_with_simple_list_test(Codec) ->
-    Msg = #{ a => [<<"1">>, <<"2">>, <<"3">>] },
+    Msg = #{ <<"a">> => [<<"1">>, <<"2">>, <<"3">>] },
     Encoded = convert(Msg, Codec, converge, #{}),
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
@@ -698,7 +763,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [converge, tx, flat].
+    [converge, tx, flat, http].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -722,25 +787,36 @@ generate_test_suite(Suite) ->
 message_suite_test_() ->
     generate_test_suite([
         {"basic map codec test", fun basic_map_codec_test/1},
+        {"set body codec test", fun set_body_codec_test/1},
         {"match test", fun match_test/1},
-        {"single layer message to encoding test", fun single_layer_message_to_encoding_test/1},
+        {"single layer message to encoding test",
+            fun single_layer_message_to_encoding_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
-        {"nested message with large keys and data test", fun nested_message_with_large_keys_and_data_test/1},
+        {"nested message with large keys and content test",
+            fun nested_message_with_large_keys_and_content_test/1},
         {"simple nested message test", fun simple_nested_message_test/1},
-        {"nested message with large data test", fun nested_message_with_large_data_test/1},
-        {"deeply nested message with data test", fun deeply_nested_message_with_data_test/1},
-        {"structured field atom parsing test", fun structured_field_atom_parsing_test/1},
-        {"structured field decimal parsing test", fun structured_field_decimal_parsing_test/1},
+        {"nested message with large content test",
+            fun nested_message_with_large_content_test/1},
+        {"deeply nested message with content test",
+            fun deeply_nested_message_with_content_test/1},
+        {"structured field atom parsing test",
+            fun structured_field_atom_parsing_test/1},
+        {"structured field decimal parsing test",
+            fun structured_field_decimal_parsing_test/1},
         {"binary to binary test", fun binary_to_binary_test/1},
         {"nested structured fields test", fun nested_structured_fields_test/1},
-        {"nested message with large keys test", fun nested_message_with_large_keys_test/1},
+        {"nested message with large keys test",
+            fun nested_message_with_large_keys_test/1},
         {"message with simple list test", fun message_with_simple_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
-        {"signed item to message and back test", fun signed_message_encode_decode_verify_test/1},
-        {"signed item to tx and back test", fun signed_tx_encode_decode_verify_test/1},
-        {"signed deep serialize and deserialize test", fun signed_deep_tx_serialize_and_deserialize_test/1},
+        {"signed item to message and back test",
+            fun signed_message_encode_decode_verify_test/1},
+        {"signed deep serialize and deserialize test",
+            fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(tx).
+    simple_nested_message_test(http),
+    signed_message_encode_decode_verify_test(http),
+    nested_message_with_large_content_test(http).

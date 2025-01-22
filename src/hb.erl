@@ -41,8 +41,8 @@
 %%% 1. The `hb' and `hb_opts' modules manage the node's configuration, 
 %%%    environment variables, and debugging tools.
 %%% 
-%%% 2. The `hb_http' and `hb_http_router' modules manage all HTTP-related
-%%%    functionality. `hb_http_router' handles turning received HTTP requests
+%%% 2. The `hb_http' and `hb_http_server' modules manage all HTTP-related
+%%%    functionality. `hb_http_server' handles turning received HTTP requests
 %%%    into messages and applying those messages with the appropriate devices.
 %%%    `hb_http' handles making requests and responding with messages. `cowboy'
 %%%    is used to implement the underlying HTTP server.
@@ -196,35 +196,48 @@ profile(Fun) ->
 %% @doc Utility function to wait for a given amount of time, printing a debug
 %% message to the console first.
 debug_wait(T, Mod, Func, Line) ->
-    hb_util:debug_print(
-        lists:flatten(io_lib:format("[Debug waiting ~pms...]", [T])),
-        Mod, Func, Line),
+    ?event(wait, {debug_wait, {T, Mod, Func, Line}}),
     receive after T -> ok end.
 
 %% @doc Run a function as many times as possible in a given amount of time.
 benchmark(Fun, TLen) ->
-    benchmark(Fun, TLen, 1).
-benchmark(Fun, TLen, ReportEvery) ->
     T0 = erlang:system_time(millisecond),
     until(
         fun() -> erlang:system_time(millisecond) - T0 > (TLen * 1000) end,
         Fun,
-        ReportEvery,
         0
     ).
 
-until(Condition, Fun, ReportEvery, Count) ->
-    case Count rem ReportEvery of
-        0 -> ?event(benchmark, {iteration, Count});
-        _ -> ok
-    end,
+%% @doc Run multiple instances of a function in parallel for a given amount of time.
+benchmark(Fun, TLen, Procs) ->
+    Parent = self(),
+    StartWorker =
+        fun(_) ->
+            Ref = make_ref(),
+            link(spawn(fun() ->
+                Count = benchmark(Fun, TLen),
+                Parent ! {work_complete, Ref, Count}
+            end)),
+            Ref
+        end,
+    CollectRes =
+        fun(R) ->
+            receive
+                {work_complete, R, Count} ->
+                    Count
+            end
+        end,
+    Refs = lists:map(StartWorker, lists:seq(1, Procs)),
+    lists:sum(lists:map(CollectRes, Refs)).
+
+until(Condition, Fun, Count) ->
     case Condition() of
         false ->
             case apply(Fun, hb_converge:truncate_args(Fun, [Count])) of
                 {count, AddToCount} ->
-                    until(Condition, Fun, ReportEvery, Count + AddToCount);
+                    until(Condition, Fun, Count + AddToCount);
                 _ ->
-                    until(Condition, Fun, ReportEvery, Count + 1)
+                    until(Condition, Fun, Count + 1)
             end;
         true -> Count
     end.

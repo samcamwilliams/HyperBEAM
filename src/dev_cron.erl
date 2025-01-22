@@ -12,8 +12,8 @@
 }).
 
 init(State = #{ process := ProcM }, Params) ->
-    case lists:keyfind(<<"Time">>, 1, Params) of
-        {<<"Time">>, CronTime} ->
+    case lists:keyfind(<<"time">>, 1, Params) of
+        {<<"time">>, CronTime} ->
             MilliSecs = parse_time(CronTime),
             %% TODO: What's the most sensible way to initialize the last_run?
             %% Current behavior: Timer starts after _first_ message.
@@ -57,8 +57,8 @@ execute(_, S) ->
 
 timestamp(M) ->
     % TODO: Process this properly
-    case lists:keyfind(<<"Timestamp">>, 1, M#tx.tags) of
-        {<<"Timestamp">>, TSBin} ->
+    case lists:keyfind(<<"timestamp">>, 1, M#tx.tags) of
+        {<<"timestamp">>, TSBin} ->
             list_to_integer(binary_to_list(TSBin));
         false ->
             0

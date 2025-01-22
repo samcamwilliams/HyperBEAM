@@ -42,13 +42,13 @@ path(ProcID, Ref, PathSuffix, Opts) ->
     hb_store:path(
         Store,
         [
-            <<"Computed">>,
+            <<"computed">>,
             hb_util:human_id(ProcID)
         ] ++
         case Ref of
-            Int when is_integer(Int) -> ["Slot", integer_to_binary(Int)];
+            Int when is_integer(Int) -> ["slot", integer_to_binary(Int)];
             root -> [];
-            slot_root -> ["Slot"];
+            slot_root -> ["slot"];
             _ -> [Ref]
         end ++ PathSuffix
     ).
@@ -68,7 +68,7 @@ latest(ProcID, RawRequiredPath, Limit, Opts) ->
             _ ->
                 hb_path:term_to_path_parts(
                     RawRequiredPath,
-                    Opts#{ atom_keys => false }
+                    Opts
                 )
         end,
     Path = path(ProcID, slot_root, Opts),

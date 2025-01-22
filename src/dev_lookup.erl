@@ -8,6 +8,6 @@ read(#tx { tags = Tags }) ->
     % Note: Use the local store -- do not attempt to reach remotely.
     % hb_cache:read should return {ok, Val} or an error tuple, so we can return
     % the value directly.
-    {<<"Subpath">>, Subpath} = lists:keyfind(<<"Subpath">>, 1, Tags),
+    {<<"subpath">>, Subpath} = lists:keyfind(<<"subpath">>, 1, Tags),
     ?event({looking_up_for_remote_peer, Subpath}),
     hb_cache:read_message(hb_store:scope(hb_opts:get(store), local), Subpath).

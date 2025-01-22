@@ -30,9 +30,10 @@
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/1]).
 -export([hd/2, tl/2, push_request/2, queue_request/2, pop_request/2]).
+-export([priv_remaining/2, priv_store_remaining/2]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
--export([matches/2, to_binary/1]).
+-export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -60,25 +61,41 @@ tl(Msg2, Opts) when is_map(Msg2) ->
         {_, Rest} -> Rest
     end;
 tl(Path, Opts) when is_list(Path) ->
-    case tl(#{ path => Path }, Opts) of
+    case tl(#{ <<"path">> => Path }, Opts) of
         [] -> undefined;
         undefined -> undefined;
-        #{ path := Rest } -> Rest
+        #{ <<"path">> := Rest } -> Rest
     end.
 
-%% @doc Return the internal ID of a binary as it will be written to our
-%% stores.
-data_id(Bin, _Opts) when is_binary(Bin) ->
-    % Default hashpath for a binary message is its SHA2-256 hash.
-    hb_util:human_id(hb_crypto:sha256(Bin)).
+%% @doc Return the `Remaining-Path' of a message, from its hidden `Converge'
+%% key. Does not use the `get` or set `hb_private` functions, such that it
+%% can be safely used inside the main Converge resolve function.
+priv_remaining(Msg, _Opts) ->
+    Priv = hb_private:from_message(Msg),
+    Converge = maps:get(<<"converge">>, Priv, #{}),
+    maps:get(<<"remaining">>, Converge, undefined).
+
+%% @doc Store the remaining path of a message in its hidden `Converge' key.
+priv_store_remaining(Msg, RemainingPath) ->
+    Priv = hb_private:from_message(Msg),
+    Converge = maps:get(<<"converge">>, Priv, #{}),
+    Msg#{
+        <<"priv">> =>
+            Priv#{
+                <<"converge">> =>
+                    Converge#{
+                        <<"remaining">> => RemainingPath
+                    }
+            }
+    }.
 
 %%% @doc Add an ID of a Msg2 to the HashPath of another message.
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(RawMsg1, Opts) ->
-    Msg1 = hb_converge:ensure_message(RawMsg1),
-    case dev_message:get(hashpath, Msg1) of
+    Msg1 = hb_converge:normalize_keys(RawMsg1),
+    case dev_message:get(<<"hashpath">>, Msg1) of
         {ok, ignore} ->
             throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
         {ok, Hashpath} -> Hashpath;
@@ -105,7 +122,7 @@ hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ items => ?CONVERGE_KEYS }),
+    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ <<"items">> => ?CONVERGE_KEYS }),
     ?event({generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
     case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
         {0, Key} when Key =/= undefined ->
@@ -141,7 +158,7 @@ hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
 %%% If no hashpath algorithm is specified, the protocol defaults to
 %%% `sha-256-chain'.
 hashpath_alg(Msg) ->
-    case dev_message:get(<<"Hashpath-Alg">>, Msg) of
+    case dev_message:get(<<"hashpath-alg">>, Msg) of
         {ok, <<"sha-256-chain">>} ->
             fun hb_crypto:sha256_chain/2;
         {ok, <<"accumulate-256">>} ->
@@ -152,7 +169,7 @@ hashpath_alg(Msg) ->
 
 %%% @doc Add a message to the head (next to execute) of a request path.
 push_request(Msg, Path) ->
-    maps:put(path, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
+    maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
 
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
@@ -164,7 +181,7 @@ pop_request(Msg, Opts) when is_map(Msg) ->
         {Head, []} -> {Head, undefined};
         {Head, Rest} ->
             ?event({popped_request, Head, Rest}),
-            {Head, maps:put(path, Rest, Msg)}
+            {Head, maps:put(<<"path">>, Rest, Msg)}
     end;
 pop_request([], _Opts) -> undefined;
 pop_request([Head|Rest], _Opts) ->
@@ -174,7 +191,7 @@ pop_request([Head|Rest], _Opts) ->
 %%% key that we cannot use dev_message's `set/3' function for (as it expects
 %%% the compute path to be there), so we use `maps:put/3' instead.
 queue_request(Msg, Path) ->
-    maps:put(path, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
+    maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
@@ -194,34 +211,29 @@ verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
 %% is directly from a user (in which case paths and hashpaths will not have 
 %% been assigned yet).
 from_message(hashpath, Msg) -> hashpath(Msg, #{});
-from_message(request, #{ path := [] }) -> undefined;
-from_message(request, #{ path := Path }) when is_list(Path) ->
-    term_to_path_parts(Path);
-from_message(request, #{ path := Other }) ->
-    term_to_path_parts(Other);
+from_message(request, #{ path := Path }) -> term_to_path_parts(Path);
 from_message(request, #{ <<"path">> := Path }) -> term_to_path_parts(Path);
 from_message(request, #{ <<"Path">> := Path }) -> term_to_path_parts(Path);
-from_message(request, _) ->
-    undefined.
+from_message(request, _) -> undefined.
 
 %% @doc Convert a term into an executable path. Supports binaries, lists, and
 %% atoms. Notably, it does not support strings as lists of characters.
-term_to_path_parts(Path) -> term_to_path_parts(Path, #{ error_strategy => throw }).
+term_to_path_parts(Path) ->
+    term_to_path_parts(Path, #{ error_strategy => throw }).
+term_to_path_parts([], _Opts) -> undefined;
+term_to_path_parts(<<>>, _Opts) -> undefined;
+term_to_path_parts(<<"/">>, _Opts) -> [];
 term_to_path_parts(Binary, Opts) when is_binary(Binary) ->
     case binary:match(Binary, <<"/">>) of
         nomatch -> [Binary];
         _ ->
             term_to_path_parts(
-                lists:filter(
-                    fun(Part) -> byte_size(Part) > 0 end,
-                    binary:split(Binary, <<"/">>, [global])
-                ),
+                binary:split(Binary, <<"/">>, [global, trim_all]),
                 Opts
             )
     end;
-term_to_path_parts([], _Opts) -> undefined;
 term_to_path_parts(Path = [ASCII | _], _Opts) when is_integer(ASCII) ->
-    [list_to_binary(Path)];
+    [hb_converge:normalize_key(Path)];
 term_to_path_parts(List, Opts) when is_list(List) ->
     lists:flatten(lists:map(
         fun(Part) ->
@@ -231,7 +243,9 @@ term_to_path_parts(List, Opts) when is_list(List) ->
     ));
 term_to_path_parts(Atom, _Opts) when is_atom(Atom) -> [Atom];
 term_to_path_parts(Integer, _Opts) when is_integer(Integer) ->
-    [integer_to_binary(Integer)].
+    [hb_converge:normalize_key(Integer)];
+term_to_path_parts({as, DevName, Msgs}, _Opts) ->
+    [{as, hb_converge:normalize_key(DevName), Msgs}].
 
 %% @doc Convert a path of any form to a binary.
 to_binary(Path) ->
@@ -258,12 +272,27 @@ do_to_binary(Path) when is_list(Path) ->
 do_to_binary(Path) when is_binary(Path) ->
     Path;
 do_to_binary(Other) ->
-    hb_converge:key_to_binary(Other).
+    hb_converge:normalize_key(Other).
 
 %% @doc Check if two keys match.
 matches(Key1, Key2) ->
-    hb_util:to_lower(hb_converge:key_to_binary(Key1)) ==
-        hb_util:to_lower(hb_converge:key_to_binary(Key2)).
+    hb_util:to_lower(hb_converge:normalize_key(Key1)) ==
+        hb_util:to_lower(hb_converge:normalize_key(Key2)).
+
+%% @doc Check if two keys match using regex.
+regex_matches(Path1, Path2) ->
+    NormP1 = normalize(Path1),
+    NormP2 = normalize(Path2),
+    try re:run(NormP1, NormP2) =/= nomatch
+    catch _A:_B:_C -> false
+    end.
+
+%% @doc Normalize a path to a binary, removing the leading slash if present.
+normalize(Path) ->
+    case hb_converge:normalize_key(Path) of
+        BinPath = <<"/", _/binary>> -> BinPath;
+        Binary -> <<"/", Binary/binary>>
+    end.
 
 %%% TESTS
 
@@ -274,77 +303,90 @@ hashpath_test() ->
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
 hashpath_direct_msg2_test() ->
-    Msg1 = #{ <<"Base">> => <<"Message">> },
-    Msg2 = #{ path => <<"Base">> },
+    Msg1 = #{ <<"base">> => <<"message">> },
+    Msg2 = #{ <<"path">> => <<"base">> },
     Hashpath = hashpath(Msg1, Msg2, #{}),
     [_, KeyName] = term_to_path_parts(Hashpath),
-    ?assert(matches(KeyName, <<"Base">>)).
+    ?assert(matches(KeyName, <<"base">>)).
 
 multiple_hashpaths_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
+    Msg3 = #{ <<"hashpath">> => hashpath(Msg1, Msg2, #{}) },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Msg3, Msg4, #{}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->
-    Msg1 = #{ <<"TEST">> => <<"INITIAL">> },
-    Msg2 = #{ <<"FirstApplied">> => <<"Msg2">> },
-    Msg3 = #{ hashpath => hashpath(Msg1, Msg2, #{}) },
-    Msg4 = #{ hashpath => hashpath(Msg2, Msg3, #{}) },
-    Msg3Fake = #{ hashpath => hashpath(Msg4, Msg2, #{}) },
+    Msg1 = #{ <<"test">> => <<"initial">> },
+    Msg2 = #{ <<"firstapplied">> => <<"msg2">> },
+    Msg3 = #{ <<"hashpath">> => hashpath(Msg1, Msg2, #{}) },
+    Msg4 = #{ <<"hashpath">> => hashpath(Msg2, Msg3, #{}) },
+    Msg3Fake = #{ <<"hashpath">> => hashpath(Msg4, Msg2, #{}) },
     ?assert(verify_hashpath([Msg1, Msg2, Msg3, Msg4], #{})),
     ?assertNot(verify_hashpath([Msg1, Msg2, Msg3Fake, Msg4], #{})).
 
 validate_path_transitions(X, Opts) ->
     {Head, X2} = pop_request(X, Opts),
-    ?assertEqual(a, Head),
+    ?assertEqual(<<"a">>, Head),
     {H2, X3} = pop_request(X2, Opts),
-    ?assertEqual(b, H2),
+    ?assertEqual(<<"b">>, H2),
     {H3, X4} = pop_request(X3, Opts),
-    ?assertEqual(c, H3),
+    ?assertEqual(<<"c">>, H3),
     ?assertEqual(undefined, pop_request(X4, Opts)).
 
 pop_from_message_test() ->
-    validate_path_transitions(#{ path => [a, b, c] }, #{}).
+    validate_path_transitions(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{}).
 
 pop_from_path_list_test() ->
-    validate_path_transitions([a, b, c], #{}).
+    validate_path_transitions([<<"a">>, <<"b">>, <<"c">>], #{}).
 
 hd_test() ->
-    ?assertEqual(a, hd(#{ path => [a, b, c] }, #{})),
-    ?assertEqual(undefined, hd(#{ path => undefined }, #{})).
+    ?assertEqual(<<"a">>, hd(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{})),
+    ?assertEqual(undefined, hd(#{ <<"path">> => undefined }, #{})).
 
 tl_test() ->
-    ?assertMatch([b, c], maps:get(path, tl(#{ path => [a, b, c] }, #{}))),
-    ?assertEqual(undefined, tl(#{ path => [] }, #{})),
-    ?assertEqual(undefined, tl(#{ path => a }, #{})),
-    ?assertEqual(undefined, tl(#{ path => undefined }, #{})),
+    ?assertMatch([<<"b">>, <<"c">>], maps:get(<<"path">>, tl(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{}))),
+    ?assertEqual(undefined, tl(#{ <<"path">> => [] }, #{})),
+    ?assertEqual(undefined, tl(#{ <<"path">> => <<"a">> }, #{})),
+    ?assertEqual(undefined, tl(#{ <<"path">> => undefined }, #{})),
 
-    ?assertEqual([b, c], tl([a, b, c], #{ })),
-    ?assertEqual(undefined, tl([c], #{ })).
+    ?assertEqual([<<"b">>, <<"c">>], tl([<<"a">>, <<"b">>, <<"c">>], #{ })),
+    ?assertEqual(undefined, tl([<<"c">>], #{ })).
 
 to_binary_test() ->
-    ?assertEqual(<<"a/b/c">>, to_binary([a, b, c])),
+    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, <<"b">>, <<"c">>])),
     ?assertEqual(<<"a/b/c">>, to_binary(<<"a/b/c">>)),
-    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, b, [<<"c">>]])),
-    ?assertEqual(<<"a/b/c">>, to_binary(["a", b, <<"c">>])),
+    ?assertEqual(<<"a/b/c">>, to_binary([<<"a">>, <<"b">>, <<"c">>])),
+    ?assertEqual(<<"a/b/c">>, to_binary(["a", <<"b">>, <<"c">>])),
     ?assertEqual(<<"a/b/b/c">>, to_binary([<<"a">>, [<<"b">>, <<"//b">>], <<"c">>])).
 
 term_to_path_parts_test() ->
-    ?assert(matches([a, b, c], term_to_path_parts(<<"a/b/c">>))),
-    ?assert(matches([a, b, c], term_to_path_parts([<<"a">>, <<"b">>, <<"c">>]))),
-    ?assert(matches([a, b, c], term_to_path_parts(["a", b, <<"c">>]))),
-    ?assert(matches([a, b, b, c], term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))).
+    ?assert(matches([<<"a">>, <<"b">>, <<"c">>],
+        term_to_path_parts(<<"a/b/c">>))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"c">>],
+        term_to_path_parts([<<"a">>, <<"b">>, <<"c">>]))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"c">>],
+        term_to_path_parts(["a", <<"b">>, <<"c">>]))),
+    ?assert(matches([<<"a">>, <<"b">>, <<"b">>, <<"c">>],
+        term_to_path_parts([[<<"/a">>, [<<"b">>, <<"//b">>], <<"c">>]]))),
+    ?assertEqual([], term_to_path_parts(<<"/">>)).
 
 % calculate_multistage_hashpath_test() ->
-%     Msg1 = #{ <<"Base">> => <<"Message">> },
-%     Msg2 = #{ path => <<"2">> },
-%     Msg3 = #{ path => <<"3">> },
-%     Msg4 = #{ path => <<"4">> },
+%     Msg1 = #{ <<"base">> => <<"message">> },
+%     Msg2 = #{ <<"path">> => <<"2">> },
+%     Msg3 = #{ <<"path">> => <<"3">> },
+%     Msg4 = #{ <<"path">> => <<"4">> },
 %     Msg5 = hashpath(Msg1, [Msg2, Msg3, Msg4], #{}),
 %     ?assert(is_binary(Msg5)),
 %     Msg3Path = <<"3">>,
 %     Msg5b = hashpath(Msg1, [Msg2, Msg3Path, Msg4]),
 %     ?assertEqual(Msg5, Msg5b).
+
+regex_matches_test() ->
+    ?assert(regex_matches(<<"a/b/c">>, <<"a/.*/c">>)),
+    ?assertNot(regex_matches(<<"a/b/c">>, <<"a/.*/d">>)),
+    ?assert(regex_matches(<<"a/abcd/c">>, <<"a/abc.*/c">>)),
+    ?assertNot(regex_matches(<<"a/bcd/c">>, <<"a/abc.*/c">>)),
+    ?assert(regex_matches(<<"a/bcd/ignored/c">>, <<"a/.*/c">>)),
+    ?assertNot(regex_matches(<<"a/bcd/ignored/c">>, <<"a/.*/d">>)).

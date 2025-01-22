@@ -9,7 +9,7 @@
 %%% manager.
 
 -module(hb_persistent).
--export([find_or_register/3, unregister_notify/4, await/4]).
+-export([find_or_register/3, unregister_notify/4, await/4, notify/4]).
 -export([group/3, start_worker/3, start_worker/2, forward_work/2]).
 -export([default_grouper/3, default_worker/3]).
 -include("include/hb.hrl").
@@ -23,7 +23,7 @@ start() -> pg:start(pg).
 find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
     find_or_register(GroupName, Msg1, Msg2, Opts).
-find_or_register(GroupName, Msg1, Msg2, Opts) ->
+find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
     Self = self(),
     case find_execution(GroupName, Opts) of
         {ok, [Leader|_]} when Leader =/= Self ->
@@ -94,6 +94,8 @@ await(Worker, Msg1, Msg2, Opts) ->
     % Calculate the compute path that we will wait upon resolution of.
     % Register with the process.
     GroupName = group(Msg1, Msg2, Opts),
+    % set monitor to a worker, so we know if it exits
+    _Ref = erlang:monitor(process, Worker),
     Worker ! {resolve, self(), GroupName, Msg2, Opts},
     ?event(worker,
         {await_resolution,
@@ -106,15 +108,23 @@ await(Worker, Msg1, Msg2, Opts) ->
     ),
     % Wait for the result.
     receive
-        {resolved, _, GroupName, Msg2, Msg3} ->
+        {'DOWN', _R, process, Worker, _Reason} ->
+            ?event(worker,
+                {leader_died,
+                    {group, GroupName},
+                    {leader, Worker}
+                }
+        ),
+            {error, leader_died};
+        {resolved, _, GroupName, Msg2, Res} ->
             ?event(worker,
                 {resolved_await,
                     {group, GroupName},
                     {msg2, Msg2},
-                    {msg3, Msg3}
+                    {res, Res}
                 }
             ),
-            Msg3
+            Res
     end.
 
 %% @doc Check our inbox for processes that are waiting for the resolution
@@ -305,7 +315,7 @@ test_device(Base) ->
                 )
             end,
         slow_key =>
-            fun(_, #{ wait := Wait }) ->
+            fun(_, #{ <<"wait">> := Wait }) ->
                 ?event({slow_key_wait_started, Wait}),
                 receive after Wait ->
                     {ok,
@@ -319,7 +329,7 @@ test_device(Base) ->
                 end
             end,
         self =>
-            fun(M1, #{ wait := Wait }) ->
+            fun(M1, #{ <<"wait">> := Wait }) ->
                 ?event({self_waiting, {wait, Wait}}),
                 receive after Wait ->
                     ?event({self_returning, M1, {wait, Wait}}),
@@ -348,7 +358,7 @@ wait_for_test_result(Ref) ->
 deduplicated_execution_test() ->
     TestTime = 200,
     Msg1 = #{ device => test_device() },
-    Msg2 = #{ path => [slow_key], wait => TestTime },
+    Msg2 = #{ <<"path">> => [slow_key], <<"wait">> => TestTime },
     T0 = hb:now(),
     Ref1 = spawn_test_client(Msg1, Msg2),
     receive after 100 -> ok end,
@@ -367,9 +377,9 @@ persistent_worker_test() ->
     Msg1 = #{ device => test_device() },
     link(start_worker(Msg1, #{ static_worker => true })),
     receive after 10 -> ok end,
-    Msg2 = #{ path => [slow_key], wait => TestTime },
-    Msg3 = #{ path => [slow_key], wait => trunc(TestTime*1.1) },
-    Msg4 = #{ path => [slow_key], wait => trunc(TestTime*1.2) },
+    Msg2 = #{ <<"path">> => [slow_key], <<"wait">> => TestTime },
+    Msg3 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.1) },
+    Msg4 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 = spawn_test_client(Msg1, Msg2),
     Ref2 = spawn_test_client(Msg1, Msg3),
@@ -386,9 +396,9 @@ spawn_after_execution_test() ->
     ?event(<<"">>),
     TestTime = 500,
     Msg1 = #{ device => test_device() },
-    Msg2 = #{ path => [self], wait => TestTime },
-    Msg3 = #{ path => [slow_key], wait => trunc(TestTime*1.1) },
-    Msg4 = #{ path => [slow_key], wait => trunc(TestTime*1.2) },
+    Msg2 = #{ <<"path">> => [self], <<"wait">> => TestTime },
+    Msg3 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.1) },
+    Msg4 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 =
         spawn_test_client(

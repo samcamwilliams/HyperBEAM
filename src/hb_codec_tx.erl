@@ -9,22 +9,30 @@
 -define(MAX_TAG_VAL, 128).
 %% The list of TX fields that users can set directly.
 -define(TX_KEYS,
-    [id, unsigned_id, last_tx, owner, target, signature]).
+    [
+        <<"id">>,
+        <<"unsigned_id">>,
+        <<"last_tx">>,
+        <<"owner">>,
+        <<"target">>,
+        <<"signature">>
+    ]
+).
 -define(FILTERED_TAGS,
     [
-        <<"Bundle-Format">>,
-        <<"Bundle-Map">>,
-        <<"Bundle-Version">>
+        <<"bundle-format">>,
+        <<"bundle-map">>,
+        <<"bundle-version">>
     ]
 ).
 
 %% @doc Convert a #tx record into a message map recursively.
 from(Binary) when is_binary(Binary) -> Binary;
 from(TX) when is_record(TX, tx) ->
-    case lists:keyfind(<<"Converge-Type">>, 1, TX#tx.tags) of
+    case lists:keyfind(<<"converge-type">>, 1, TX#tx.tags) of
         false ->
             do_from(TX);
-        {<<"Converge-Type">>, <<"Binary">>} ->
+        {<<"converge-type">>, <<"binary">>} ->
             TX#tx.data
     end.
 do_from(RawTX) ->
@@ -34,10 +42,12 @@ do_from(RawTX) ->
     % the list of key-value pairs into a map, removing irrelevant fields.
     TXKeysMap =
         maps:with(?TX_KEYS,
-            maps:from_list(
-                lists:zip(
-                    record_info(fields, tx),
-                    tl(tuple_to_list(TX))
+            hb_converge:normalize_keys(
+                maps:from_list(
+                    lists:zip(
+                        record_info(fields, tx),
+                        tl(tuple_to_list(TX))
+                    )
                 )
             )
         ),
@@ -58,7 +68,7 @@ do_from(RawTX) ->
             Data when Data == ?DEFAULT_DATA ->
                 MapWithoutData;
             Data when is_binary(Data) ->
-                MapWithoutData#{ data => Data };
+                MapWithoutData#{ <<"data">> => Data };
             Data ->
                 ?event({unexpected_data_type, {explicit, Data}}),
                 ?event({was_processing, {explicit, TX}}),
@@ -66,7 +76,9 @@ do_from(RawTX) ->
         end,
     % Merge the data map with the rest of the TX map and remove any keys that
     % are not part of the message.
-    maps:without(?FILTERED_TAGS, maps:merge(DataMap, MapWithoutData)).
+    NormalizedDataMap =
+        hb_converge:normalize_keys(maps:merge(DataMap, MapWithoutData)),
+    maps:without(?FILTERED_TAGS, NormalizedDataMap).
 
 %% @doc Internal helper to translate a message to its #tx record representation,
 %% which can then be used by ar_bundles to serialize the message. We call the 
@@ -78,21 +90,22 @@ to(Binary) when is_binary(Binary) ->
     % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
     #tx{
-        tags= [{<<"Converge-Type">>, <<"Binary">>}],
+        tags= [{<<"converge-type">>, <<"binary">>}],
         data = Binary
     };
 to(TX) when is_record(TX, tx) -> TX;
-to(TABM) when is_map(TABM) ->
+to(RawTABM) when is_map(RawTABM) ->
     % The path is a special case so we normalized it first. It may have been
     % modified by `hb_converge` in order to set it to the current key that is
     % being executed. We should check whether the path is in the
     % `priv/Converge/Original-Path` field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
+    TABM = hb_converge:normalize_keys(RawTABM),
     M =
-        case {maps:find(path, TABM), hb_private:from_message(TABM)} of
-            {{ok, _}, #{ <<"Converge">> := #{ <<"Original-Path">> := Path } }} ->
-                maps:put(path, Path, TABM);
+        case {maps:find(<<"path">>, TABM), hb_private:from_message(TABM)} of
+            {{ok, _}, #{ <<"converge">> := #{ <<"original-path">> := Path } }} ->
+                maps:put(<<"path">>, Path, TABM);
             _ -> TABM
         end,
     % Translate the keys into a binary map. If a key has a value that is a map,
@@ -107,13 +120,13 @@ to(TABM) when is_map(TABM) ->
             end,
             M
         ),
-    NormalizedMsgKeyMap = hb_message:normalize_keys(MsgKeyMap),
+    NormalizedMsgKeyMap = hb_converge:normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
     {RemainingMap, BaseTXList} =
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
-                NormKey = hb_converge:key_to_binary(Field),
+                NormKey = hb_converge:normalize_key(Field),
                 case maps:find(NormKey, NormalizedMsgKeyMap) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
@@ -155,7 +168,7 @@ to(TABM) when is_map(TABM) ->
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
-            {Key, to(Value)}
+            {hb_converge:normalize_key(Key), to(Value)}
         end,
         RawDataItems
     )),
@@ -169,9 +182,9 @@ to(TABM) when is_map(TABM) ->
             {Data, _} when is_map(Data) ->
                 TX#tx { data = maps:merge(Data, DataItems) };
             {Data, _} when is_record(Data, tx) ->
-                TX#tx { data = DataItems#{ data => Data } };
+                TX#tx { data = DataItems#{ <<"data">> => Data } };
             {Data, _} when is_binary(Data) ->
-                TX#tx { data = DataItems#{ data => to(Data) } }
+                TX#tx { data = DataItems#{ <<"data">> => to(Data) } }
         end,
     % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
     Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))

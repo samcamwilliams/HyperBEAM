@@ -46,7 +46,7 @@ push(CarrierMsg, State) ->
             ),
             % TODO: Implement trace waiting.
             ResTX = ar_bundles:sign_item(
-                #tx{ tags = [{<<"Status">>, <<"200">>}]},
+                #tx{ tags = [{<<"status">>, <<"200">>}]},
                 hb:wallet()),
             {ok, #{ results => ResTX }}
         %false ->
@@ -110,9 +110,9 @@ push_messages(attest, Assignments, #{ logger := Logger }) ->
 handle_push_result(Results, Opts = #{ depth := Depth }) ->
     % Second pass: We have the results, so we can fork the messages/spawns/...
     Res = #result{
-        messages = maps:get(<<"/Outbox">>, Results, #{}),
-        assignments = maps:get(<<"/Assignment">>, Results, #{}),
-        spawns = maps:get(<<"/Spawn">>, Results, #{})
+        messages = maps:get(<<"/outbox">>, Results, #{}),
+        assignments = maps:get(<<"/assignment">>, Results, #{}),
+        spawns = maps:get(<<"/spawn">>, Results, #{})
     },
     ?event({push_recursing,
         {depth, Depth},

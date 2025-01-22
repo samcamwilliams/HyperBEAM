@@ -22,7 +22,11 @@
 
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.
-from_message(Msg) when is_map(Msg) -> maps:get(priv, Msg, #{});
+from_message(Msg) when is_map(Msg) ->
+    case maps:is_key(<<"priv">>, Msg) of
+        true -> maps:get(<<"priv">>, Msg, #{});
+        false -> maps:get(priv, Msg, #{})
+    end;
 from_message(_NonMapMessage) -> #{}.
 
 %% @doc Helper for getting a value from the private element of a message. Uses
@@ -37,7 +41,7 @@ get(InputPath, Msg, Default, Opts) ->
     Resolve =
         hb_converge:resolve(
             from_message(Msg),
-            #{ path => Path },
+            #{ <<"path">> => Path },
             priv_converge_opts(Opts)
         ),
     case Resolve of
@@ -58,11 +62,11 @@ set(Msg, PrivMap, Opts) ->
 
 %% @doc Helper function for setting the complete private element of a message.
 set_priv(Msg, PrivMap) ->
-    Msg#{ priv => PrivMap }.
+    Msg#{ <<"priv">> => PrivMap }.
 
 %% @doc Check if a key is private.
 is_private(Key) ->
-	case hb_converge:key_to_binary(Key) of
+	case hb_converge:normalize_key(Key) of
 		<<"priv", _/binary>> -> true;
 		_ -> false
 	end.
@@ -89,15 +93,15 @@ reset(Msg) ->
 %%% Tests
 
 set_private_test() ->
-    ?assertEqual(#{a => 1, priv => #{b => 2}}, set(#{a => 1}, b, 2, #{})),
-    Res = set(#{a => 1}, a, 1, #{}),
-    ?assertEqual(#{a => 1, priv => #{a => 1}}, Res),
-    ?assertEqual(#{a => 1, priv => #{a => 1}}, set(Res, a, 1, #{})).
+    ?assertEqual(#{<<"a">> => 1, <<"priv">> => #{<<"b">> => 2}}, set(#{<<"a">> => 1}, <<"b">>, 2, #{})),
+    Res = set(#{<<"a">> => 1}, <<"a">>, 1, #{}),
+    ?assertEqual(#{<<"a">> => 1, <<"priv">> => #{<<"a">> => 1}}, Res),
+    ?assertEqual(#{<<"a">> => 1, <<"priv">> => #{<<"a">> => 1}}, set(Res, a, 1, #{})).
 
 get_private_key_test() ->
-    M1 = #{a => 1, priv => #{b => 2}},
-    ?assertEqual(not_found, get(a, M1, #{})),
-    {ok, [a]} = hb_converge:resolve(M1, <<"Keys">>, #{}),
-    ?assertEqual(2, get(b, M1, #{})),
+    M1 = #{<<"a">> => 1, <<"priv">> => #{<<"b">> => 2}},
+    ?assertEqual(not_found, get(<<"a">>, M1, #{})),
+    {ok, [<<"a">>]} = hb_converge:resolve(M1, <<"keys">>, #{}),
+    ?assertEqual(2, get(<<"b">>, M1, #{})),
     {error, _} = hb_converge:resolve(M1, <<"priv/a">>, #{}),
-    {error, _} = hb_converge:resolve(M1, priv, #{}).
+    {error, _} = hb_converge:resolve(M1, <<"priv">>, #{}).

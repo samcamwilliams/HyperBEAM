@@ -13,31 +13,30 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3]).
+-export([get/1, get/2, get/3, default_message/0]).
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
-config() ->
+default_message() ->
     #{
         %%%%%%%% Functional options %%%%%%%%
+        %% What protocol should the node use for HTTP requests?
+        %% Options: http1, http2, http3
+        protocol => http2,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => aggressive,
+        scheduling_mode => local_confirmation,
         %% Compute mode: Determines whether the CU should attempt to execute
         %% more messages on a process after it has returned a result.
         %% Options: aggressive, lazy
         compute_mode => lazy,
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
-        http_host => "localhost",
-        gateway => "https://arweave.net",
-        bundler => "https://up.arweave.net",
-        %% Choice of nodes for remote tasks, in the form of a map between
-        %% node addresses and HTTP URLs.
-        %% `_' is a wildcard for any other address that is not specified.
-        nodes => #{ },
+        http_host => <<"localhost">>,
+        gateway => <<"https://arweave.net">>,
+        bundler => <<"https://up.arweave.net">>,
         %% Location of the wallet keyfile on disk that this node will use.
-        key_location => "hyperbeam-key.json",
+        key_location => <<"hyperbeam-key.json">>,
         %% Default page limit for pagination of results from the APIs.
         %% Currently used in the SU devices.
         default_page_limit => 5,
@@ -48,23 +47,23 @@ config() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
-                <<"Test-Device/1.0">> => dev_test,
-                <<"Message/1.0">> => dev_message,
-                <<"Stack/1.0">> => dev_stack,
-                <<"Multipass/1.0">> => dev_multipass,
-                <<"Scheduler/1.0">> => dev_scheduler,
-                <<"Process/1.0">> => dev_process,
-                <<"WASM-64/1.0">> => dev_wasm,
-                <<"WASI/1.0">> => dev_wasi,
-                <<"JSON-Iface/1.0">> => dev_json_iface,
-                <<"Emscripten/1.0">> => dev_emscripten,
-                <<"Cron">> => dev_cron,
-                <<"Deduplicate">> => dev_dedup,
-                <<"PODA">> => dev_poda,
-                <<"Monitor">> => dev_monitor,
-                <<"Push">> => dev_mu,
-                <<"Compute">> => dev_cu,
-                <<"P4">> => dev_p4
+                <<"test-device@1.0">> => dev_test,
+                <<"message@1.0">> => dev_message,
+                <<"stack@1.0">> => dev_stack,
+                <<"multipass@1.0">> => dev_multipass,
+                <<"scheduler@1.0">> => dev_scheduler,
+                <<"process@1.0">> => dev_process,
+                <<"wasm-64@1.0">> => dev_wasm,
+                <<"wasi@1.0">> => dev_wasi,
+                <<"json-iface@1.0">> => dev_json_iface,
+                <<"dedup@1.0">> => dev_dedup,
+                <<"router@1.0">> => dev_router,
+                <<"cron@1.0">> => dev_cron,
+                <<"poda@1.0">> => dev_poda,
+                <<"monitor@1.0">> => dev_monitor,
+                <<"push@1.0">> => dev_mu,
+                <<"compute@1.0">> => dev_cu,
+                <<"p4@1.0">> => dev_p4
             },
         codecs => 
             #{
@@ -73,13 +72,6 @@ config() ->
                 flat => hb_codec_flat,
                 http => hb_codec_http
             },
-        %% The stacks of devices that the node should expose by default.
-        %% These represent the core flows of functionality of the node.
-        default_device_stacks => [
-            {<<"data">>, {<<"read">>, [dev_p4, dev_lookup]}},
-            {<<"su">>, {<<"schedule">>, [dev_p4, dev_scheduler]}},
-            {<<"cu">>, {<<"execute">>, [dev_p4, dev_cu]}}
-        ],
         %% Should the node attempt to access data from remote caches for
         %% client requests?
         access_remote_cache_for_client => false,
@@ -91,7 +83,14 @@ config() ->
         client_error_strategy => throw,
         %% Default execution cache control options
         cache_control => [<<"no-cache">>, <<"no-store">>],
-        % Dev options
+        %% HTTP request options
+        http_connect_timeout => 5000,
+        http_response_timeout => 30000,
+        http_keepalive => 120000,
+        http_request_send_timeout => 60000,
+        http_default_remote_port => 8734,
+        http_port => 8734,
+        %% Dev options
         mode => debug,
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
@@ -147,12 +146,10 @@ get(Key, Default, Opts) ->
         store =>
             {"HB_STORE",
                 fun(Dir) ->
-                    [
-                        {
-                            hb_store_fs,
-                            #{ prefix => Dir }
-                        }
-                    ]
+                    {
+                        hb_store_fs,
+                        #{ prefix => Dir }
+                    }
                 end,
                 "TEST-cache"
             },
@@ -187,7 +184,7 @@ global_get(Key, Default) ->
 %% @doc An abstraction for looking up configuration variables. In the future,
 %% this is the function that we will want to change to support a more dynamic
 %% configuration system.
-config_lookup(Key, Default) -> maps:get(Key, config(), Default).
+config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
 
 %%% Tests
 

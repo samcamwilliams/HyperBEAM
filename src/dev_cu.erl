@@ -25,15 +25,15 @@ execute(CarrierMsg, S) ->
     Wallet = hb:wallet(),
     {ok, Results} =
         case MaybeBundle of
-            #tx{data = #{ <<"Message">> := _Msg, <<"Assignment">> := Assignment }} ->
+            #tx{data = #{ <<"message">> := _Msg, <<"assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
-                {_, ProcID} = lists:keyfind(<<"Process">>, 1, Assignment#tx.tags),
+                {_, ProcID} = lists:keyfind(<<"process">>, 1, Assignment#tx.tags),
                 ?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_util:id(Assignment, signed)}}),
                 hb_process:result(ProcID, hb_util:id(Assignment, signed), Store, Wallet);
             _ ->
-                case lists:keyfind(<<"Process">>, 1, CarrierMsg#tx.tags) of
+                case lists:keyfind(<<"process">>, 1, CarrierMsg#tx.tags) of
                     {_, Process} ->
-                        {_, Slot} = lists:keyfind(<<"Slot">>, 1, CarrierMsg#tx.tags),
+                        {_, Slot} = lists:keyfind(<<"slot">>, 1, CarrierMsg#tx.tags),
                         ?event({dev_cu_computing_from_slot_ref, {process, Process}, {slot, Slot}}),
                         hb_process:result(Process, Slot, Store, Wallet);
                     false ->
@@ -41,7 +41,7 @@ execute(CarrierMsg, S) ->
                 end
         end,
     {ResType, ModState = #{ results := _ModResults }} =
-        case lists:keyfind(<<"Attest-To">>, 1, CarrierMsg#tx.tags) of
+        case lists:keyfind(<<"attest-to">>, 1, CarrierMsg#tx.tags) of
             {_, RawAttestTo} ->
                 AttestTo = hb_util:decode(RawAttestTo),
                 ?event({attest_to_only_message, RawAttestTo}),
@@ -52,7 +52,7 @@ execute(CarrierMsg, S) ->
                             S#{
                                 results =>
                                     #tx {
-                                        tags = [{<<"Status">>, <<"404">>}],
+                                        tags = [{<<"status">>, 404}],
                                         data = <<"Requested message to attest to not in results bundle.">>
                                     }
                             }
@@ -63,8 +63,8 @@ execute(CarrierMsg, S) ->
                             results => ar_bundles:sign_item(
                                 #tx {
                                     tags = [
-                                        {<<"Status">>, <<"200">>},
-                                        {<<"Attestation-For">>, RawAttestTo}
+                                        {<<"status">>, 200},
+                                        {<<"attestation-for">>, RawAttestTo}
                                     ],
                                     data = <<>>
                                 },

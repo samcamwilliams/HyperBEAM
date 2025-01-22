@@ -15,12 +15,12 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 
 -define(BUNDLE_TAGS, [
-    {<<"Bundle-Format">>, <<"Binary">>},
-    {<<"Bundle-Version">>, <<"2.0.0">>}
+    {<<"bundle-format">>, <<"binary">>},
+    {<<"bundle-version">>, <<"2.0.0">>}
 ]).
 
 -define(LIST_TAGS, [
-    {<<"Map-Format">>, <<"List">>}
+    {<<"map-format">>, <<"list">>}
 ]).
 
 % How many bytes of a binary to print with `print/1'.
@@ -87,7 +87,7 @@ format(Item, Indent) ->
     format_line("INCORRECT ITEM: ~p", [Item], Indent).
 
 format_data(Item, Indent) when is_binary(Item#tx.data) ->
-    case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
+    case lists:keyfind(<<"bundle-format">>, 1, Item#tx.tags) of
         {_, _} ->
             format_data(deserialize(serialize(Item)), Indent);
         false ->
@@ -248,11 +248,11 @@ verify_item(DataItem) ->
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
-    lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags),
-    case lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags) of
-        {<<"Bundle-Map">>, _} ->
-            case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of
-                {<<"Map-Format">>, <<"List">>} -> list;
+    lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags),
+    case lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags) of
+        {<<"bundle-map">>, _} ->
+            case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
+                {<<"map-format">>, <<"list">>} -> list;
                 _ -> map
             end;
         _ ->
@@ -525,11 +525,11 @@ add_list_tags(Tags) ->
 add_manifest_tags(Tags, ManifestID) ->
     lists:filter(
         fun
-            ({<<"Bundle-Map">>, _}) -> false;
+            ({<<"bundle-map">>, _}) -> false;
             (_) -> true
         end,
         Tags
-    ) ++ [{<<"Bundle-Map">>, hb_util:encode(ManifestID)}].
+    ) ++ [{<<"bundle-map">>, hb_util:encode(ManifestID)}].
 
 finalize_bundle_data(Processed) ->
     Length = <<(length(Processed)):256/integer>>,
@@ -562,8 +562,8 @@ new_manifest(Index) ->
     TX = normalize(#tx{
         format = ans104,
         tags = [
-            {<<"Data-Protocol">>, <<"Bundle-Map">>},
-            {<<"Variant">>, <<"0.0.1">>}
+            {<<"data-protocol">>, <<"bundle-map">>},
+            {<<"variant">>, <<"0.0.1">>}
         ],
         data = jiffy:encode(Index)
     }),
@@ -691,18 +691,18 @@ deserialize(Bin, json) ->
     end.
 
 maybe_unbundle(Item) ->
-    Format = lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags),
-    Version = lists:keyfind(<<"Bundle-Version">>, 1, Item#tx.tags),
+    Format = lists:keyfind(<<"bundle-format">>, 1, Item#tx.tags),
+    Version = lists:keyfind(<<"bundle-version">>, 1, Item#tx.tags),
     case {Format, Version} of
-        {{<<"Bundle-Format">>, <<"Binary">>}, {<<"Bundle-Version">>, <<"2.0.0">>}} ->
+        {{<<"bundle-format">>, <<"binary">>}, {<<"bundle-version">>, <<"2.0.0">>}} ->
             maybe_map_to_list(maybe_unbundle_map(Item));
         _ ->
             Item
     end.
 
 maybe_map_to_list(Item) ->
-    case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of
-        {<<"Map-Format">>, <<"List">>} ->
+    case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
+        {<<"map-format">>, <<"List">>} ->
             unbundle_list(Item);
         _ ->
             Item
@@ -720,8 +720,8 @@ unbundle_list(Item) ->
     }.
 
 maybe_unbundle_map(Bundle) ->
-    case lists:keyfind(<<"Bundle-Map">>, 1, Bundle#tx.tags) of
-        {<<"Bundle-Map">>, MapTXID} ->
+    case lists:keyfind(<<"bundle-map">>, 1, Bundle#tx.tags) of
+        {<<"bundle-map">>, MapTXID} ->
             case unbundle(Bundle) of
                 detached -> Bundle#tx { data = detached };
                 Items ->
@@ -793,6 +793,7 @@ item_to_json_struct(
     }
 ) ->
     % Set "From" if From-Process is Tag or set with "Owner" address
+    ?event({invoked_item_to_json_struct, {tags, Tags}, {owner, Owner}, {data, Data}}),
     From =
         case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
             [{_, FromProcess}] -> FromProcess;
@@ -1022,7 +1023,7 @@ assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
 test_empty_bundle() ->
     Bundle = serialize([]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual([], BundleItem#tx.data).
+    ?assertEqual(#{}, BundleItem#tx.data).
 
 test_bundle_with_one_item() ->
     Item = new_item(
@@ -1033,7 +1034,7 @@ test_bundle_with_one_item() ->
     ),
     Bundle = serialize([Item]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData, (erlang:hd(BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
     Item1 = new_item(
@@ -1050,8 +1051,8 @@ test_bundle_with_two_items() ->
     ),
     Bundle = serialize([Item1, Item2]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData1, (erlang:hd(BundleItem#tx.data))#tx.data),
-    ?assertEqual(ItemData2, (erlang:hd(tl(BundleItem#tx.data)))#tx.data).
+    ?assertEqual(ItemData1, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (maps:get(<<"2">>, BundleItem#tx.data))#tx.data).
 
 test_recursive_bundle() ->
     W = ar_wallet:new(),
@@ -1072,9 +1073,9 @@ test_recursive_bundle() ->
     }, W),
     Bundle = serialize([Item3]),
     BundleItem = deserialize(Bundle),
-    [UnbundledItem3] = BundleItem#tx.data,
-    [UnbundledItem2] = UnbundledItem3#tx.data,
-    [UnbundledItem1] = UnbundledItem2#tx.data,
+    #{<<"1">> := UnbundledItem3} = BundleItem#tx.data,
+    #{<<"1">> := UnbundledItem2} = UnbundledItem3#tx.data,
+    #{<<"1">> := UnbundledItem1} = UnbundledItem2#tx.data,
     ?assert(verify_item(UnbundledItem1)),
     % TODO: Verify bundled lists...
     ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).
