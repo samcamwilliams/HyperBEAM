@@ -47,6 +47,7 @@ fn request_attestation_report<'a>(
     let report_bytes = bincode::serialize(&report).unwrap();
     let mut report_binary = OwnedBinary::new(report_bytes.len()).unwrap();
     report_binary.as_mut_slice().copy_from_slice(&report_bytes);
+	
 
     snp_print("INFO", file!(), line!(), "Attestation report serialized.");
     Ok((ok(), report_binary.release(env)).encode(env))
@@ -130,6 +131,64 @@ fn calculate_launch_digest<'a>(env: Env<'a>, input_map: Term<'a>) -> NifResult<T
 
     // Return the digest as the result
     Ok((atom::ok(), digest).encode(env))
+}
+
+
+/// Verifies the measurement in the attestation report against an expected measurement
+#[rustler::nif]
+fn verify_measurement<'a>(
+    env: Env<'a>,
+    _report: Binary,
+    _expected_measurement: Binary,
+) -> NifResult<Term<'a>> {
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
+    struct AttestationReport {
+        measurement: Vec<u8>,
+        // Add other fields here if needed
+    }
+
+    snp_print("INFO", file!(), line!(), "Verifying measurement...");
+
+    // Deserialize the JSON report
+    let report: AttestationReport =
+        serde_json::from_slice(_report.as_slice()).expect("Failed to deserialize report.");
+    snp_print(
+        "INFO",
+        file!(),
+        line!(),
+        &format!("Parsed report: {:?}", report),
+    );
+
+    // Extract the measurement from the report
+    let actual_measurement = &report.measurement;
+    snp_print(
+        "INFO",
+        file!(),
+        line!(),
+        &format!("Actual measurement: {:?}", actual_measurement),
+    );
+
+    // Decode the expected measurement
+    let expected_measurement_vec = _expected_measurement.as_slice().to_vec();
+    let expected_measurement: Vec<u8> = expected_measurement_vec;
+
+    snp_print(
+        "INFO",
+        file!(),
+        line!(),
+        &format!("Expected measurement: {:?}", expected_measurement),
+    );
+
+    // Compare the actual and expected measurements
+    if actual_measurement == &expected_measurement {
+        snp_print("INFO", file!(), line!(), "Measurements match.");
+        Ok((atom::ok(), "Measurements match").encode(env))
+    } else {
+        snp_print("ERROR", file!(), line!(), "Measurements do not match.");
+        Ok((atom::error(), "Measurements do not match").encode(env))
+    }
 }
 
 // Initialize the NIF module
