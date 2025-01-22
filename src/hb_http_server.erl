@@ -10,7 +10,7 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
 -export([start_test_node/0, start_test_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -129,7 +129,7 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
     {ok, Port, Listener}.
 
 init(Req, ServerID) ->
-    NodeMsg = cowboy:get_env(ServerID, node_msg, no_node_msg),
+    NodeMsg = get_opts(#{ http_server => ServerID }),
     % Parse the HTTP request into HyerBEAM's message format.
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
     ?event(http, {http_inbound, ReqSingleton}),
@@ -151,6 +151,10 @@ allowed_methods(Req, State) ->
 set_opts(Opts) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
     ok = cowboy:set_env(ServerRef, node_msg, Opts).
+
+get_opts(NodeMsg) ->
+    ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
+    cowboy:get_env(ServerRef, node_msg, no_node_msg).
 
 %%% Tests
 
