@@ -93,16 +93,7 @@ generate_attestation_report() ->
     end.
 
 generate_measurement(Report, Firmware, Kernel, VMSAs) ->
-    % Call the snpguest measurement command
-    ?event({generating_snp_measurement, ?SNP_GUEST_MEASUREMENT_CMD}),
-    case run_command(?SNP_GUEST_MEASUREMENT_CMD) of
-        {ok, _} ->
-            ?event({snp_measurement_generated_successfully}),
-            ok;
-        {error, Reason} ->
-            ?event({failed_to_generate_snp_measurement, Reason}),
-            {error, failed_to_generate_measurement}
-    end.
+    ok.
 
 %% @doc Verifies a given attestation report against the VCEK certificate
 %% and AMD root of trust.

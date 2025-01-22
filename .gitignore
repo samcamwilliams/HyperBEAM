@@ -35,6 +35,6 @@ priv/*
 TEST-data*
 test-cache/*
 TEST-cache**/**
-target/*
+native/**/target/**
 
 .githooks/_/.setup

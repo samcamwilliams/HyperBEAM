@@ -449,7 +449,7 @@ int wasm_execute_indirect_function(Proc* proc, const char *field_name, const was
         // If there are no arguments or only one argument (function index), no preparation is needed
     if (input_args->size <= 1) {
         DRV_DEBUG("Not enough arguments to create new wasm_val_vec_t");
-        return;
+        return 0;
     }
 
     // Allocate memory for the prepared arguments
