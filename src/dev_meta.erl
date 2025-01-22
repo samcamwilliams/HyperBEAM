@@ -68,15 +68,17 @@ handle_converge(Req, Msgs, NodeMsg) ->
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcMsg} ->
             ?event({result_after_preprocessing, PreProcMsg}),
+            AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
             {ok, Res} =
                 embed_status(
                     hb_converge:resolve_many(
                         PreProcMsg,
-                        NodeMsg#{ force_message => true }
+                        AfterPreprocOpts#{ force_message => true }
                     )
                 ),
             ?event({res, Res}),
+            AfterResolveOpts = hb_http_server:get_opts(NodeMsg),
             % Apply the post-processor to the result.
             maybe_sign(
                 embed_status(
@@ -85,7 +87,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
                         postprocessor,
                         Req,
                         Res,
-                        NodeMsg
+                        AfterResolveOpts
                     )
                 ),
                 NodeMsg
@@ -98,7 +100,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     case hb_opts:get(Processor, undefined, NodeMsg) of
         undefined -> {ok, Query};
         ProcessorMsg ->
-            ?event(payment, {resolve_processor, PathKey, ProcessorMsg}),
+            ?event({resolving_processor, PathKey, ProcessorMsg}),
             Res = hb_converge:resolve(
                 ProcessorMsg,
                 #{
@@ -108,7 +110,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
                 },
                 NodeMsg#{ hashpath => ignore }
             ),
-            ?event(payment, {preprocessor_result, Res}),
+            ?event({preprocessor_result, Res}),
             Res
     end.
 

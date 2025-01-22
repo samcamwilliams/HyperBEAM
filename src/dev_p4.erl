@@ -10,28 +10,27 @@
 %%%
 %%% The pricing device should implement the following keys:
 %%% ```
-%%%             GET /estimate?type=request|response&body=[...]&request=RequestMessage
-%%%             GET /price?type=request|response&body=[...]&request=RequestMessage
+%%%             GET /estimate?type=pre|post&body=[...]&request=RequestMessage
+%%%             GET /price?type=pre|post&body=[...]&request=RequestMessage
 %%% ```
 %%% 
 %%% The `body` key is used to pass either the request or response messages to the
 %%% device. The `type` key is used to specify whether the inquiry is for a request
-%%% or a response object -- requests carry lists of messages that will be executed,
-%%% while responses carry the results of the execution. The `price` key may return
-%%% `infinity` if the node will not serve a user under any circumstances. Else,
-%%% the value returned by the `price` key will be passed to the ledger device as
-%%% the `amount` key.
+%%% (pre) or a response (post) object. Requests carry lists of messages that will
+%%% be executed, while responses carry the results of the execution. The `price`
+%%% key may return `infinity` if the node will not serve a user under any
+%%% circumstances. Else, the value returned by the `price` key will be passed to
+%%% the ledger device as the `amount` key.
 %%%
 %%% The ledger device should implement the following keys:
 %%% ```
 %%%             POST /credit?message=PaymentMessage&request=RequestMessage
-%%%             POST /debit?quantity=PriceMessage&simulate=true|false
-%%%                         &request=RequestMessage
+%%%             POST /debit?amount=PriceMessage&type=pre|post&request=RequestMessage
 %%% ```
 %%%
-%%% The `simulate` key is optional and defaults to `false`. If `simulate` is set to
-%%% `true`, the debit will not be applied to the ledger, but it should return
-%%% whether the debit would have succeeded.
+%%% The `type` key is optional and defaults to `pre`. If `type` is set to `post`,
+%%% the debit must be applied to the ledger, whereas the `pre` type is used to
+%%% check whether the debit would succeed before execution.
 -module(dev_p4).
 -export([preprocess/3, postprocess/3]).
 -include("include/hb.hrl").
@@ -45,7 +44,7 @@ preprocess(State, Raw, NodeMsg) ->
     LedgerDevice = hb_converge:get(<<"ledger_device">>, State, false, NodeMsg),
     Messages = hb_converge:get(<<"body">>, Raw, NodeMsg#{ hashpath => ignore }),
     Request = hb_converge:get(<<"request">>, Raw, NodeMsg),
-    ?event(payment, {p4_processing_with_device, PricingDevice, LedgerDevice}),
+    ?event(payment, {preprocess_with_devices, PricingDevice, LedgerDevice}),
     case (PricingDevice =/= false) and (LedgerDevice =/= false) of
         false -> {ok, Messages};
         true ->
@@ -53,12 +52,11 @@ preprocess(State, Raw, NodeMsg) ->
             LedgerMsg = #{ <<"device">> => LedgerDevice },
             PricingReq = #{
                 <<"path">> => <<"estimate">>,
-                <<"type">> => <<"request">>,
+                <<"type">> => <<"pre">>,
                 <<"request">> => Request,
                 <<"body">> => Messages
             },
-            ?event(payment,
-                {p4_pricing_request, {devmsg, PricingMsg}, {req, PricingReq}}),
+            ?event({p4_pricing_request, {devmsg, PricingMsg}, {req, PricingReq}}),
             case hb_converge:resolve(PricingMsg, PricingReq, NodeMsg) of
                 {error, Error} ->
                     % The device is unable to estimate the cost of the request,
@@ -67,7 +65,7 @@ preprocess(State, Raw, NodeMsg) ->
                 {ok, <<"infinity">>} ->
                     % The device states that under no circumstances should we
                     % proceed with the request.
-                    ?event(payment, {p4_pricing_response, {error, <<"infinity">>}}),
+                    ?event(payment, {p4_pre_pricing_response, {error, <<"infinity">>}}),
                     {error,
                         <<"Node will not service this request "
                             "under any circumstances.">>};
@@ -79,17 +77,17 @@ preprocess(State, Raw, NodeMsg) ->
                         #{
                             <<"path">> => <<"debit">>,
                             <<"amount">> => Price,
-                            <<"simulate">> => true,
+                            <<"type">> => <<"pre">>,
                             <<"request">> => Request
                         },
-                    ?event(payment, {p4_ledger_request, LedgerReq}),
+                    ?event(payment, {p4_pre_pricing_estimate, Price}),
                     case hb_converge:resolve(LedgerMsg, LedgerReq, NodeMsg) of
                         {ok, true} ->
                             % The ledger device has confirmed that the user has
                             % enough funds for the request, so we proceed.
                             {ok, Messages};
                         {ok, false} ->
-                            ?event(payment, {p4_ledger_response, {error, false}}),
+                            ?event(payment, {pre_ledger_validation, {error, false}}),
                             {error, 
                                 #{
                                     <<"status">> => 429,
@@ -100,7 +98,7 @@ preprocess(State, Raw, NodeMsg) ->
                         {error, Error} ->
                             % The ledger device is unable to process the request,
                             % so we don't proceed.
-                            ?event(payment, {p4_ledger_response, {error, Error}}),
+                            ?event(payment, {pre_ledger_validation, {error, Error}}),
                             {error, {error_checking_ledger, Error}}
                     end
             end
@@ -116,8 +114,8 @@ postprocess(State, RawResponse, NodeMsg) ->
             RawResponse,
             NodeMsg#{ hashpath => ignore }
         ),
-    Request = hb_converge:get(<<"request">>, Response, NodeMsg),
-    ?event(payment, {p4_postprocessing_with_device, PricingDevice, LedgerDevice}),
+    Request = hb_converge:get(<<"request">>, RawResponse, NodeMsg),
+    ?event(payment, {post_processing_with_devices, PricingDevice, LedgerDevice}),
     case (PricingDevice =/= false) and (LedgerDevice =/= false) of
         false -> {ok, Response};
         true ->
@@ -125,11 +123,11 @@ postprocess(State, RawResponse, NodeMsg) ->
             LedgerMsg = #{ <<"device">> => LedgerDevice },
             PricingReq = #{
                 <<"path">> => <<"price">>,
-                <<"type">> => <<"response">>,
+                <<"type">> => <<"post">>,
                 <<"request">> => Request,
                 <<"body">> => Response
             },
-            ?event(payment, {p4_pricing_request, PricingReq}),
+            ?event({post_pricing_request, PricingReq}),
             PricingRes =
                 case hb_converge:resolve(PricingMsg, PricingReq, NodeMsg) of
                     {error, _Error} ->
@@ -139,7 +137,7 @@ postprocess(State, RawResponse, NodeMsg) ->
                         hb_converge:resolve(PricingMsg, EstimateReq, NodeMsg);
                     {ok, P} -> {ok, P}
                 end,
-            ?event(payment, {p4_pricing_response, PricingRes}),
+            ?event(payment, {p4_post_pricing_response, PricingRes}),
             case PricingRes of
                 {ok, Price} ->
                     % We have successfully estimated the cost of the request,
@@ -147,17 +145,18 @@ postprocess(State, RawResponse, NodeMsg) ->
                     LedgerReq =
                         #{
                             <<"path">> => <<"debit">>,
+                            <<"type">> => <<"post">>,
                             <<"amount">> => Price,
-                            <<"simulate">> => false,
                             <<"request">> => Request
                         },
-                    ?event(payment, {p4_ledger_request, LedgerReq}),
-                    {ok, _} = 
+                    ?event({p4_ledger_request, LedgerReq}),
+                    {ok, Resp} = 
                         hb_converge:resolve(
                             LedgerMsg,
                             LedgerReq,
                             NodeMsg
                         ),
+                    ?event(payment, {p4_post_ledger_response, Resp}),
                     % Return the original request.
                     {ok, Response};
                 {error, PricingError} ->
@@ -185,6 +184,7 @@ test_opts(Opts, PricingDev, LedgerDev) ->
         postprocessor => ProcessorMsg
     }.
 
+%% @doc Simple test of p4's capabilities with the `faff@1.0` device.
 faff_test() ->
     GoodWallet = ar_wallet:new(),
     BadWallet = ar_wallet:new(),

@@ -24,13 +24,13 @@
 estimate(_, Msg, NodeMsg) ->
     ?event(payment, {estimate, {msg, Msg}}),
     % Check if the address is in the allow-list.
-    case hb_converge:get(<<"type">>, Msg, <<"request">>, NodeMsg) of
-        <<"request">> ->
+    case hb_converge:get(<<"type">>, Msg, <<"pre">>, NodeMsg) of
+        <<"pre">> ->
             case is_admissible(Msg, NodeMsg) of
                 true -> {ok, 0};
                 false -> {ok, <<"infinity">>}
             end;
-        <<"response">> -> {ok, 0}
+        <<"post">> -> {ok, 0}
     end.
 
 
