@@ -614,12 +614,6 @@ nested_message_with_large_content_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, converge, #{}),
-    case Codec of
-        http ->
-            #{ <<"body">> := Body, <<"headers">> := Headers } = Encoded,
-            io:format(standard_error, "Body: ~s~n", [Body]);
-        _ -> ok
-    end,
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
