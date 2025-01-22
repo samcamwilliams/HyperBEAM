@@ -18,8 +18,16 @@ start() ->
 %% @doc Gets a URL via HTTP and returns the resulting message in deserialized
 %% form.
 get(Node, Opts) -> get(Node, <<"/">>, Opts).
-get(Node, Path, Opts) ->
-    request(<<"GET">>, Node, Path, #{}, Opts).
+get(Node, PathBin, Opts) when is_binary(PathBin) ->
+    get(Node, #{ <<"path">> => PathBin }, Opts);
+get(Node, Message, Opts) ->
+    request(
+        <<"GET">>,
+        Node,
+        hb_converge:get(<<"path">>, Message, <<"/">>, Opts),
+        Message,
+        Opts
+    ).
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
