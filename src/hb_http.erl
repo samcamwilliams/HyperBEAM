@@ -326,7 +326,8 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
         },
     HTTPEncoded =
         #{
-            <<"headers">> => maps:to_list(Headers),
+            <<"headers">> =>
+                maps:to_list(maps:without([<<"content-length">>], Headers)),
             <<"body">> => Body
         },
     hb_codec_http:from(HTTPEncoded).
