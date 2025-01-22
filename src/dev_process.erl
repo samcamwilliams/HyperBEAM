@@ -513,6 +513,31 @@ schedule_wasm_call(Msg1, FuncName, Params) ->
     },
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})).
 
+
+full_push_test_() ->
+    {timeout, 30, fun() ->
+        init(),
+        Msg1 = test_aos_process(),
+        Script = ping_ping_script(3),
+        ?event({script, Script}),
+        {ok, Msg2} = schedule_aos_call(Msg1, Script),
+        ?event({init_sched_result, Msg2}),
+        {ok, StartingMsgSlot} =
+            hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, #{}),
+        Msg3 =
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => StartingMsgSlot
+            },
+        {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
+        {ok, Res} = hb_converge:resolve(Msg1, <<"now/data">>, #{}),
+        ?event(push, {res, Res}),
+        ?assertEqual(
+            <<"Done.">>,
+            Res
+        )
+    end}.
+
 schedule_on_process_test() ->
     init(),
     Msg1 = test_aos_process(),
@@ -800,8 +825,23 @@ aos_persistent_worker_benchmark_test_() ->
 %%% Test helpers
 
 ping_ping_script(Limit) ->
+    % <<
+    %     "Handlers.add(\"Ping\",\n"
+    %     "   function(m)\n"
+    %     "       C = tonumber(m.Count)\n"
+    %     "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
+    %     "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
+    %     "           print(\"Ping\", C + 1)\n"
+    %     "       else\n"
+    %     "           print(\"Done.\")\n"
+    %     "       end\n"
+    %     "   end\n"
+    %     ")\n"
+    %     "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
+    % >>.
     <<
         "Handlers.add(\"Ping\",\n"
+        "   function (test) return true end,\n"
         "   function(m)\n"
         "       C = tonumber(m.Count)\n"
         "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
