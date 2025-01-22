@@ -1,9 +1,15 @@
 %%% @doc The hyperbeam meta device, which is the default entry point
 %%% for all messages processed by the machine. This device executes a
 %%% Converge singleton request, after first applying the node's 
-%%% pre-processor, if set.
+%%% pre-processor, if set. The pre-processor can halt the request by
+%%% returning an error, or return a modified version if it deems necessary --
+%%% the result of the pre-processor is used as the request for the Converge
+%%% resolver. Additionally, a post-processor can be set, which is executed after
+%%% the Converge resolver has returned a result.
 -module(dev_meta).
 -export([handle/2, info/3]).
+%%% Helper functions for processors
+-export([all_signers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -14,7 +20,7 @@ handle(NodeMsg, RawRequest) ->
     ?event({raw_request, RawRequest, NodeMsg}),
     NormRequest = hb_singleton:from(RawRequest),
     ?event({processing_messages, NormRequest}),
-    handle_converge(NormRequest, NodeMsg).
+    handle_converge(RawRequest, NormRequest, NodeMsg).
 
 %% @doc Get/set the node message. If the request is a `POST`, we check that the
 %% request is signed by the owner of the node. If not, we return the node message
@@ -57,26 +63,31 @@ info(_, Request, NodeMsg) ->
 %% using the node's Converge implementation if its response was `ok`.
 %% After execution, we run the node's `postprocessor` message on the result of
 %% the request before returning the result it grants back to the user.
-handle_converge(Request, NodeMsg) ->
+handle_converge(Req, Msgs, NodeMsg) ->
     % Apply the pre-processor to the request.
-    case resolve_processor(preprocessor, Request, NodeMsg) of
+    case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcMsg} ->
+            ?event({result_after_preprocessing, PreProcMsg}),
+            AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
             {ok, Res} =
                 embed_status(
                     hb_converge:resolve_many(
                         PreProcMsg,
-                        NodeMsg#{ force_message => true }
+                        AfterPreprocOpts#{ force_message => true }
                     )
                 ),
             ?event({res, Res}),
+            AfterResolveOpts = hb_http_server:get_opts(NodeMsg),
             % Apply the post-processor to the result.
             maybe_sign(
                 embed_status(
                     resolve_processor(
+                        <<"postprocess">>,
                         postprocessor,
+                        Req,
                         Res,
-                        NodeMsg
+                        AfterResolveOpts
                     )
                 ),
                 NodeMsg
@@ -85,15 +96,22 @@ handle_converge(Request, NodeMsg) ->
     end.
 
 %% @doc execute a message from the node message upon the user's request.
-resolve_processor(Processor, Request, NodeMsg) ->
+resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     case hb_opts:get(Processor, undefined, NodeMsg) of
-        undefined -> {ok, Request};
+        undefined -> {ok, Query};
         ProcessorMsg ->
-            hb_converge:resolve(
+            ?event({resolving_processor, PathKey, ProcessorMsg}),
+            Res = hb_converge:resolve(
                 ProcessorMsg,
-                Request,
-                NodeMsg#{ force_message => true }
-            )
+                #{
+                    <<"path">> => PathKey,
+                    <<"body">> => Query,
+                    <<"request">> => Req
+                },
+                NodeMsg#{ hashpath => ignore }
+            ),
+            ?event({preprocessor_result, Res}),
+            Res
     end.
 
 %% @doc Wrap the result of a device call in a status.
@@ -116,6 +134,20 @@ maybe_sign(Res, NodeMsg) ->
             );
         false -> Res
     end.
+
+%%% External helpers
+
+%% @doc Return the signers of a list of messages.
+all_signers(Msgs) ->
+    lists:foldl(
+        fun(Msg, Acc) ->
+            Signers =
+                hb_converge:get(<<"signers">>, Msg, #{}, #{ hashpath => ignore }),
+            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Signers))
+        end,
+        [],
+        Msgs
+    ).
 
 %%% Tests
 
@@ -229,3 +261,76 @@ claim_node_test() ->
     {ok, Res2} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
     ?event({res, Res2}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
+
+%% @doc Test that we can use a preprocessor upon a request.
+preprocessor_test() ->
+    Parent = self(),
+    Node = hb_http_server:start_test_node(
+        #{
+            preprocessor =>
+                #{
+                    <<"device">> => #{
+                        <<"preprocess">> =>
+                            fun(_, #{ <<"body">> := Msgs }, _) ->
+                                Parent ! ok,
+                                {ok, Msgs}
+                            end
+                    }
+                }
+        }),
+    hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?assert(receive ok -> true after 1000 -> false end).
+
+%% @doc Test that we can halt a request if the preprocessor returns an error.
+halt_request_test() ->
+    Node = hb_http_server:start_test_node(
+        #{
+            preprocessor =>
+                #{
+                    <<"device">> => #{
+                        <<"preprocess">> =>
+                            fun(_, _, _) ->
+                                {error, <<"Bad">>}
+                            end
+                    }
+                }
+        }),
+    {error, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?assertEqual(<<"Bad">>, Res).
+
+%% @doc Test that a preprocessor can modify a request.
+modify_request_test() ->
+    Node = hb_http_server:start_test_node(
+        #{
+            preprocessor =>
+                #{
+                    <<"device">> => #{
+                        <<"preprocess">> =>
+                            fun(_, #{ <<"body">> := [M|Ms] }, _) ->
+                                {ok, [M#{ <<"added">> => <<"value">> }|Ms]}
+                            end
+                    }
+                }
+        }),
+    {ok, Res} = hb_http:get(Node, <<"/added">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(<<"value">>, hb_converge:get(<<"body">>, Res, #{})).
+
+%% @doc Test that we can use a postprocessor upon a request.
+postprocessor_test() ->
+    Parent = self(),
+    Node = hb_http_server:start_test_node(
+        #{
+            postprocessor =>
+                #{
+                    <<"device">> => #{
+                        <<"postprocess">> =>
+                            fun(_, #{ <<"body">> := Msgs }, _) ->
+                                Parent ! ok,
+                                {ok, Msgs}
+                            end
+                    }
+                }
+        }),
+    hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    ?assert(receive ok -> true after 1000 -> false end).
