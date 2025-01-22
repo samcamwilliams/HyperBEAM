@@ -295,7 +295,7 @@ push(Msg1, Msg2, Opts) ->
                             }
                     end
                 end,
-                maps:without([hashpath], Outbox)
+                maps:without([<<"hashpath">>], Outbox)
             )}
     end.
 

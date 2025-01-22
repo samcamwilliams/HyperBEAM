@@ -214,7 +214,8 @@ normalize_results(#{ <<"error">> := Error }) ->
 %% signing node needs to add some tags to each message and spawn such that
 %% the target process knows these messages are created by a process.
 preprocess_results(Msg, Proc, Opts) ->
-    RawTags = maps:get(<<"tags">>, Msg, []),
+    NormMsg = hb_converge:normalize_keys(Msg),
+    RawTags = maps:get(<<"tags">>, NormMsg, []),
     TagList =
         [
             {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
@@ -224,7 +225,7 @@ preprocess_results(Msg, Proc, Opts) ->
     FilteredMsg =
         maps:without(
             [<<"from-process">>, <<"from-image">>, <<"anchor">>, <<"tags">>],
-            Msg
+            NormMsg
         ),
     maps:merge(
         maps:from_list(
