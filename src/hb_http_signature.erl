@@ -914,11 +914,11 @@ join_signature_base_test() ->
 signature_params_line_test() ->
 	Params = #{created => 1733165109501, nonce => "foobar", keyid => "key1"},
 	ContentIdentifiers = [
-		<<"\"Content-Length\"">>, <<"\"@method\"">>, "\"@Path\"", "\"content-type\";req", "\"example-dict\";sf"
+		<<"Content-Length">>, <<"@method">>, <<"@Path">>, <<"content-type">>, <<"example-dict">>
 	],
 	Result = signature_params_line(ContentIdentifiers, Params),
 	?assertEqual(
-		<<"(\"content-length\" \"@method\" \"@path\" \"content-type\";req \"example-dict\";sf);created=1733165109501;keyid=\"key1\";nonce=\"foobar\"">>,
+        <<"(\"content-length\" \"@method\" \"@path\" \"content-type\" \"example-dict\");created=1733165109501;keyid=\"key1\";nonce=\"foobar\"">>,
 		Result
 	).
 

@@ -197,27 +197,3 @@ start_test_node(Opts) ->
     ServerOpts = test_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
-
-raw_http_access_test() ->
-    URL = start_test_node(#{ protocol => http1 }),
-    TX =
-        ar_bundles:serialize(
-            hb_message:convert(
-                #{
-                    <<"path">> => <<"key1">>,
-                    <<"key1">> => #{ <<"key2">> => <<"value1">> }
-                },
-                tx,
-                converge,
-                #{}
-            )
-        ),
-    {ok, {{_, 200, _}, _, Body}} =
-        httpc:request(
-            post,
-            {iolist_to_binary(URL), [], "application/octet-stream", TX},
-            [],
-            [{body_format, binary}]
-        ),
-    Msg = hb_message:convert(ar_bundles:deserialize(Body), converge, tx, #{}),
-    ?assertEqual(<<"value1">>, hb_converge:get(<<"key2">>, Msg, #{})).

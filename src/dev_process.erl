@@ -729,7 +729,7 @@ simple_wasm_persistent_worker_benchmark_test() ->
         hb_converge:resolve(
             Msg1,
             #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-            #{ <<"spawn_worker">> => true }
+            #{ spawn_worker => true }
         ),
     Iterations = hb:benchmark(
         fun(Iteration) ->
