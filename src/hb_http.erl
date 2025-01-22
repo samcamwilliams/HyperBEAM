@@ -382,29 +382,27 @@ run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(Node, Msg, #{}),
-    ?assertEqual([6.0], hb_converge:get(<<"body">>, Res, #{})),
-    ?assertEqual([6.0], hb_converge:get(<<"output">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual([6.0], hb_converge:get(<<"body">>, Res, #{})),
-    ?assertEqual([6.0], hb_converge:get(<<"output">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 get_deep_unsigned_wasm_state_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => false}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<>>),
+    Msg = wasm_compute_request(
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?event(debug, {res, Res}),
-    ?assertEqual([6.0], hb_converge:get(<<"output">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"/results/output/1">>, Res, #{})).
 
 get_deep_signed_wasm_state_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<>>),
+    Msg = wasm_compute_request(
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/results/output">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?event(debug, {res, Res}),
-    ?assertEqual([6.0], hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
 
 
 % http_scheduling_test() ->
