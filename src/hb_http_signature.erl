@@ -83,7 +83,7 @@
 	key => binary()
 }.
 
-id(Msg, _Params, _Opts) ->
+id(_Msg, _Params, _Opts) ->
     {ok, <<"http">>}.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
@@ -127,7 +127,7 @@ sign(MsgToSign, _Req, Opts) ->
         }
     ).
 
-verify(MsgToVerify, _Req, Opts) ->
+verify(MsgToVerify, _Req, _Opts) ->
     Signature = maps:get(<<"signature">>, MsgToVerify),
     SignatureInput = maps:get(<<"signature-input">>, MsgToVerify),
     RawPubKey =
@@ -311,7 +311,6 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
-    ?event({generating_sig_base, {component_identifiers, ComponentIdentifiers}, {req, Req}, {res, Res}}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(

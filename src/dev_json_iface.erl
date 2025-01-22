@@ -299,7 +299,7 @@ basic_aos_call_test() ->
             generate_aos_msg(ProcID, <<"return 1+1">>),
             #{}
         ),
-    ?event(debug, {res, Msg3}),
+    ?event({res, Msg3}),
     Data = hb_converge:get(<<"results/data">>, Msg3, #{}),
     ?assertEqual(<<"2">>, Data).
 

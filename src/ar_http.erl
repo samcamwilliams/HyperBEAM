@@ -16,7 +16,6 @@
 %%% ==================================================================
 
 start_link(Opts) ->
-    ?event(debug, {start_link, Opts}),
 	gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 req(Args, Opts) -> req(Args, false, Opts).

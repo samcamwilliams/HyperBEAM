@@ -130,10 +130,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     case Format of
         http ->
             #{ <<"headers">> := Headers, <<"body">> := Body } = hb_message:convert(Message, http, Opts),
-            ?event(debug, {encoded_outbound, #{ <<"headers">> => Headers, <<"body">> => Body }}),
-            Merged = maps:merge(ReqBase, #{ headers => Headers, body => Body }),
-            ?event(debug, {merged_outbound, Merged}),
-            Merged;
+            maps:merge(ReqBase, #{ headers => Headers, body => Body });
         ans104 ->
             ReqBase#{
                 headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
@@ -332,9 +329,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
             <<"headers">> => maps:to_list(Headers),
             <<"body">> => Body
         },
-    Final = hb_codec_http:from(HTTPEncoded),
-    ?event(debug, {serverside_http_request, Final}),
-    Final.
+    hb_codec_http:from(HTTPEncoded).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -349,7 +344,6 @@ read_body(Req0, Acc) ->
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    ?event(debug, {res, hb_singleton:from(TestMsg)}),
     {ok, Res} = post(URL, TestMsg, #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 

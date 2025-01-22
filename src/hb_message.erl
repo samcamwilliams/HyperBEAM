@@ -477,9 +477,7 @@ basic_map_codec_test(Codec) ->
 set_body_codec_test(Codec) ->
     Msg = #{ <<"body">> => <<"NORMAL_VALUE">>, <<"test-key">> => <<"Test-Value">> },
     Encoded = convert(Msg, Codec, converge, #{}),
-    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 %% @doc Test that we can convert a message into a tx record and back.
@@ -619,13 +617,10 @@ nested_message_with_large_content_test(Codec) ->
     case Codec of
         http ->
             #{ <<"body">> := Body, <<"headers">> := Headers } = Encoded,
-            ?event(debug, {encoded_headers, Headers}),
             io:format(standard_error, "Body: ~s~n", [Body]);
         _ -> ok
     end,
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event(debug, {msg, Msg}),
-    ?event(debug, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
@@ -707,9 +702,7 @@ signed_deep_message_test(Codec) ->
     SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
     ?assert(hb_message:verify(SignedMsg, Codec)),
     Encoded = convert(SignedMsg, Codec, converge, #{}),
-    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, converge, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
     ?assert(
         match(
             SignedMsg,
