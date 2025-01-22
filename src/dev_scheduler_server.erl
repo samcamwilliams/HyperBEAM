@@ -114,7 +114,7 @@ do_assign(State, Message, ReplyPID) ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = hb_message:sign(#{
                 <<"data-protocol">> => <<"ao">>,
-                <<"variant">> => <<"ao.TN.2">>,
+                <<"variant">> => <<"ao.N.1">>,
                 <<"process">> => hb_util:id(maps:get(id, State)),
                 <<"epoch">> => <<"0">>,
                 <<"slot">> => NextSlot,

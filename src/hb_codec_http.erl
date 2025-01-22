@@ -136,7 +136,7 @@ find_header(Headers, Name, Opts) when is_list(Headers) ->
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
-    ?event(debug, {from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
+    ?event({from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
     {_BodyType, Params} =
         case ContentType of
             undefined -> {undefined, []};
@@ -214,7 +214,6 @@ from_body_parts(TABM, [Part | Rest]) ->
         % Just grab the first Content-Disposition header value
         [{_, CD} | _Rest] -> CD
     end,
-    ?event(debug, {content_disposition, RawDisposition}),
     case RawDisposition of
         % A Content-Disposition header is required for each part
         % in the multipart body
@@ -223,7 +222,6 @@ from_body_parts(TABM, [Part | Rest]) ->
         RawDisposition when is_binary(RawDisposition) ->
             {item, {_, Disposition}, DispositionParams} =
                 hb_http_structured_fields:parse_item(RawDisposition),
-            ?event(debug, {part_params, DispositionParams}),
             {ok, PartName} = case Disposition of
                 % The inline part is the body
                 <<"inline">> ->

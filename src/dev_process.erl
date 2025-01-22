@@ -295,7 +295,7 @@ push(Msg1, Msg2, Opts) ->
                             }
                     end
                 end,
-                maps:without([hashpath], Outbox)
+                maps:without([<<"hashpath">>], Outbox)
             )}
     end.
 
@@ -729,7 +729,7 @@ simple_wasm_persistent_worker_benchmark_test() ->
         hb_converge:resolve(
             Msg1,
             #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-            #{ <<"spawn_worker">> => true }
+            #{ spawn_worker => true }
         ),
     Iterations = hb:benchmark(
         fun(Iteration) ->
@@ -800,8 +800,23 @@ aos_persistent_worker_benchmark_test_() ->
 %%% Test helpers
 
 ping_ping_script(Limit) ->
+    % <<
+    %     "Handlers.add(\"Ping\",\n"
+    %     "   function(m)\n"
+    %     "       C = tonumber(m.Count)\n"
+    %     "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
+    %     "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
+    %     "           print(\"Ping\", C + 1)\n"
+    %     "       else\n"
+    %     "           print(\"Done.\")\n"
+    %     "       end\n"
+    %     "   end\n"
+    %     ")\n"
+    %     "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
+    % >>.
     <<
         "Handlers.add(\"Ping\",\n"
+        "   function (test) return true end,\n"
         "   function(m)\n"
         "       C = tonumber(m.Count)\n"
         "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"

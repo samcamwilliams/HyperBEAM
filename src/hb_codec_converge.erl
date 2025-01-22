@@ -39,9 +39,7 @@ from(Msg) when is_map(Msg) ->
                         ];
                     {ok, {resolve, Operations}} when is_list(Operations) ->
                         {Key, {resolve, Operations}};
-
-                    {ok, UnsupportedValue} ->
-                        logger:error("hb_converge_codec failed to process Key (~p) Value: (~p)", [Key, UnsupportedValue]),
+                    {ok, _UnsupportedValue} ->
                         []
                 end
             end,

@@ -19,11 +19,7 @@ start() ->
 %% form.
 get(Node, Opts) -> get(Node, <<"/">>, Opts).
 get(Node, Path, Opts) ->
-    case request(<<"GET">>, Node, Path, #{}, Opts) of
-        {ok, Body} ->
-            {ok, Body};
-        Error -> Error
-    end.
+    request(<<"GET">>, Node, Path, #{}, Opts).
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
@@ -134,10 +130,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     case Format of
         http ->
             #{ <<"headers">> := Headers, <<"body">> := Body } = hb_message:convert(Message, http, Opts),
-            ?event(debug, {encoded_outbound, #{ <<"headers">> => Headers, <<"body">> => Body }}),
-            Merged = maps:merge(ReqBase, #{ headers => Headers, body => Body }),
-            ?event(debug, {merged_outbound, Merged}),
-            Merged;
+            maps:merge(ReqBase, #{ headers => Headers, body => Body });
         ans104 ->
             ReqBase#{
                 headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
@@ -333,12 +326,11 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
         },
     HTTPEncoded =
         #{
-            <<"headers">> => maps:to_list(Headers),
+            <<"headers">> =>
+                maps:to_list(maps:without([<<"content-length">>], Headers)),
             <<"body">> => Body
         },
-    Final = hb_codec_http:from(HTTPEncoded),
-    ?event(debug, {serverside_http_request, Final}),
-    Final.
+    hb_codec_http:from(HTTPEncoded).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -353,7 +345,6 @@ read_body(Req0, Acc) ->
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    ?event(debug, {res, hb_singleton:from(TestMsg)}),
     {ok, Res} = post(URL, TestMsg, #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
@@ -391,29 +382,27 @@ run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(Node, Msg, #{}),
-    ?assertEqual([6.0], hb_converge:get(<<"body">>, Res, #{})),
-    ?assertEqual([6.0], hb_converge:get(<<"output">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual([6.0], hb_converge:get(<<"body">>, Res, #{})),
-    ?assertEqual([6.0], hb_converge:get(<<"output">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 get_deep_unsigned_wasm_state_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => false}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<>>),
+    Msg = wasm_compute_request(
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?event(debug, {res, Res}),
-    ?assertEqual([6.0], hb_converge:get(<<"output">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"/results/output/1">>, Res, #{})).
 
 get_deep_signed_wasm_state_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<>>),
+    Msg = wasm_compute_request(
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/results/output">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?event(debug, {res, Res}),
-    ?assertEqual([6.0], hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
 
 
 % http_scheduling_test() ->
