@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+canvas {
+    border: 1px solid #d3d3d3;
+    background-color: #f1f1f1;
+}
+</style>
+</head>
+<body onload="startGame()">
+<script>
+
+let m_pie_chart;
+let isDragging = false;
+let draggingIndex = null;
+let mouseX = 0;
+let mouseY = 0;
+let _radius = 320;
+
+function startGame() {
+    m_pie_chart = new PieChart(_radius - 40, [10, 30, 40, 20]); // Values for sections
+    myGameArea.start();
+}
+
+const myGameArea = {
+    canvas: document.createElement("canvas"),
+    start: function() {
+        this.canvas.width = _radius*2;
+        this.canvas.height = _radius*2;
+        this.context = this.canvas.getContext("2d");
+        document.body.insertBefore(this.canvas, document.body.childNodes[0]);
+        this.interval = setInterval(updateGameArea, 20);
+
+        // Mouse events
+        this.canvas.addEventListener("mousedown", onMouseDown);
+        this.canvas.addEventListener("mousemove", onMouseMove);
+        this.canvas.addEventListener("mouseup", onMouseUp);
+    },
+    clear: function() {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+};
+
+function PieChart(radius, values) {
+    this.radius = radius;
+    this.values = values;
+    this.points = []; // Points defining the sections
+    this.colors = ["#ff9999", "#66b3ff", "#99ff99", "#ffcc99"];
+
+    this.update = function() {
+        const ctx = myGameArea.context;
+        const x = ctx.canvas.width * 0.5;
+        const y = ctx.canvas.height * 0.5;
+        const radius = this.radius;
+
+        let total = this.values.reduce((sum, value) => sum + value, 0);
+
+        let startAngle = 0;
+        this.points = [];
+        for (let i = 0; i < this.values.length; i++) {
+            const sliceAngle = (this.values[i] / total) * 2 * Math.PI;
+
+            // Draw section
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.arc(x, y, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = this.colors[i % this.colors.length];
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#111";
+            ctx.stroke();
+
+            // Calculate and store points on circumference
+            const endAngle = startAngle + sliceAngle;
+            const pointX = x + radius * Math.cos(endAngle);
+            const pointY = y + radius * Math.sin(endAngle);
+            const isStatic = i === this.values.length - 1; // Rightmost point is static (last point)
+		    const hover = (distance(mouseX, mouseY, pointX, pointY) < 8) || draggingIndex === i;
+
+            this.points.push({
+                x: pointX,
+                y: pointY,
+                hover: hover,
+                angle: endAngle,
+                isStatic,
+            });
+
+            // Draw percentage inside the section
+            const midAngle = startAngle + sliceAngle / 2;
+            const labelX = x + (radius / 2) * Math.cos(midAngle);
+            const labelY = y + (radius / 2) * Math.sin(midAngle);
+            ctx.fillStyle = "#000";
+            ctx.font = "14px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`${((this.values[i] / total) * 100).toFixed(1)}%`, labelX, labelY);
+
+            startAngle = endAngle;
+        }
+
+        // Draw points and index labels on circumference
+        for (let i = 0; i < this.points.length; i++) {
+            const point = this.points[i];
+			if(!point.isStatic){
+				ctx.beginPath();
+				ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+				ctx.fillStyle = point.isStatic ? "#999" : (point.hover ? "red" : "#333");
+				ctx.fill();
+				// Draw index next to each point
+				ctx.fillStyle = "#000";
+				ctx.font = "12px Arial";
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				const indexOffsetX = 10 * Math.cos(point.angle);
+				const indexOffsetY = 10 * Math.sin(point.angle);
+				ctx.fillText(i, point.x + indexOffsetX, point.y + indexOffsetY);
+			}
+        }
+    };
+}
+
+// Mouse event handlers
+function onMouseDown(event) {
+    const { x, y } = getMousePosition(event);
+
+    for (let i = 0; i < m_pie_chart.points.length; i++) {
+        const point = m_pie_chart.points[i];
+        if (point.isStatic) continue; // Skip static point
+        if (distance(x, y, point.x, point.y) < 8) {
+            isDragging = true;
+            draggingIndex = i;
+            break;
+        }
+    }
+}
+
+function onMouseMove(event) {
+    const { x, y } = getMousePosition(event);
+	mouseX = x;
+	mouseY = y;
+
+    if (!isDragging || draggingIndex === null) return;
+
+    const centerX = myGameArea.canvas.width / 2;
+    const centerY = myGameArea.canvas.height / 2;
+    let newAngle = Math.atan2(y - centerY, x - centerX);
+    if (newAngle < 0) newAngle += 2 * Math.PI;
+
+    // Get the neighbor index
+    const neighborIndex = (draggingIndex + 1) % m_pie_chart.values.length;
+
+    // Calculate the angle constraints
+    const total = m_pie_chart.values.reduce((sum, v) => sum + v, 0);
+    const totalAngle = 2 * Math.PI;
+    const deltaAngle = newAngle - m_pie_chart.points[draggingIndex].angle;
+    const deltaValue = (deltaAngle / totalAngle) * total;
+
+    // Update only the current and neighbor values
+    m_pie_chart.values[draggingIndex] += deltaValue;
+    m_pie_chart.values[neighborIndex] -= deltaValue;
+
+    // Update the dragged point's angle
+    m_pie_chart.points[draggingIndex].angle = newAngle;
+
+    updateGameArea();
+}
+
+function onMouseUp() {
+    isDragging = false;
+    draggingIndex = null;
+}
+
+// Utility to get mouse position relative to canvas
+function getMousePosition(event) {
+    const rect = myGameArea.canvas.getBoundingClientRect();
+    return {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+    };
+}
+
+// Utility to calculate distance
+function distance(x1, y1, x2, y2) {
+    return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+}
+
+function updateGameArea() {
+    myGameArea.clear();
+    m_pie_chart.update();
+}
+
+</script>
+</body>
+</html>
