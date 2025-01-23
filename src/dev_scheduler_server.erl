@@ -113,18 +113,23 @@ do_assign(State, Message, ReplyPID) ->
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = hb_message:sign(#{
+                <<"path">> =>
+                    case hb_path:from_message(request, Message) of
+                        undefined -> <<"compute">>;
+                        Path -> Path
+                    end,
                 <<"data-protocol">> => <<"ao">>,
                 <<"variant">> => <<"ao.N.1">>,
                 <<"process">> => hb_util:id(maps:get(id, State)),
                 <<"epoch">> => <<"0">>,
                 <<"slot">> => NextSlot,
-                <<"message">> => hb_converge:get(id, Message),
                 <<"block-height">> => Height,
                 <<"block-hash">> => Hash,
                 <<"block-timestamp">> => Timestamp,
                 % Note: Local time on the SU, not Arweave
                 <<"timestamp">> => erlang:system_time(millisecond),
-                <<"hash-chain">> => hb_util:id(HashChain)
+                <<"hash-chain">> => hb_util:id(HashChain),
+                <<"body">> => Message
             }, maps:get(wallet, State)),
             maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
             ?event(starting_message_write),
@@ -139,8 +144,6 @@ do_assign(State, Message, ReplyPID) ->
             ?event(writes_complete),
             ?event(uploading_assignment),
             hb_client:upload(Assignment),
-            ?event(uploading_message),
-            hb_client:upload(Message),
             ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
@@ -213,7 +216,7 @@ benchmark_test() ->
             MsgX = #{
                 path => <<"Schedule">>,
                 <<"method">> => <<"POST">>,
-                <<"message">> =>
+                <<"body">> =>
                     #{
                         <<"type">> => <<"Message">>,
                         <<"test-val">> => X

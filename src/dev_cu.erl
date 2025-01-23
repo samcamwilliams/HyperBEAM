@@ -25,7 +25,7 @@ execute(CarrierMsg, S) ->
     Wallet = hb:wallet(),
     {ok, Results} =
         case MaybeBundle of
-            #tx{data = #{ <<"message">> := _Msg, <<"assignment">> := Assignment }} ->
+            #tx{data = #{ <<"body">> := _Msg, <<"assignment">> := Assignment }} ->
                 % TODO: Execute without needing to call the SU unnecessarily.
                 {_, ProcID} = lists:keyfind(<<"process">>, 1, Assignment#tx.tags),
                 ?event({dev_cu_computing_from_full_assignment, {process, ProcID}, {slot, hb_util:id(Assignment, signed)}}),
