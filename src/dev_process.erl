@@ -166,7 +166,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
             % Get the next input from the scheduler device.
-            {ok, #{ <<"message">> := ToProcess, <<"state">> := State }} =
+            {ok, #{ <<"body">> := ToProcess, <<"state">> := State }} =
                 next(Msg1, Msg2, Opts),
             ?event(process_compute,
                 {
@@ -268,7 +268,7 @@ push(Msg1, Msg2, Opts) ->
                                 #{
                                     <<"method">> => <<"POST">>,
                                     <<"path">> => <<"schedule/slot">>,
-                                    <<"message">> =>
+                                    <<"body">> =>
                                         PushedMsg = hb_message:sign(
                                             MsgToPush,
                                             Wallet
@@ -482,7 +482,7 @@ schedule_test_message(Msg1, Text, MsgBase) ->
     Msg2 = hb_message:sign(#{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
-        <<"message">> =>
+        <<"body">> =>
             MsgBase#{
                 <<"type">> => <<"Message">>,
                 <<"test-label">> => Text
@@ -504,7 +504,7 @@ schedule_wasm_call(Msg1, FuncName, Params) ->
     Msg2 = #{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
-        <<"message">> =>
+        <<"body">> =>
             #{
                 <<"type">> => <<"Message">>,
                 <<"wasm-function">> => FuncName,
@@ -524,13 +524,14 @@ schedule_on_process_test() ->
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>
         }, #{}),
+    ?event({scheduler_response, SchedulerRes}),
     ?assertMatch(
         <<"TEST TEXT 1">>,
-        hb_converge:get(<<"Assignments/0/Message/Test-Label">>, SchedulerRes)
+        hb_converge:get(<<"assignments/0/body/Test-Label">>, SchedulerRes)
     ),
     ?assertMatch(
         <<"TEST TEXT 2">>,
-        hb_converge:get(<<"Assignments/1/Message/Test-Label">>, SchedulerRes)
+        hb_converge:get(<<"assignments/1/body/Test-Label">>, SchedulerRes)
     ).
 
 get_scheduler_slot_test() ->
@@ -573,7 +574,7 @@ test_device_compute_test() ->
         {ok, <<"TEST TEXT 2">>},
         hb_converge:resolve(
             Msg1,
-            <<"schedule/assignments/1/message/test-label">>,
+            <<"schedule/assignments/1/body/test-label">>,
             #{ <<"hashpath">> => ignore }
         )
     ),

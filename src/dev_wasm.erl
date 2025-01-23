@@ -147,13 +147,13 @@ compute(RawM1, M2, Opts) ->
             % Extract the WASM Instance, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             WASMFunction =
-                case hb_converge:get(<<"message/wasm-function">>, M2, Opts) of
+                case hb_converge:get(<<"body/wasm-function">>, M2, Opts) of
                     not_found ->
                         hb_converge:get(<<"wasm-function">>, M1, Opts);
                     Func -> Func
                 end,
             WASMParams =
-                case hb_converge:get(<<"message/wasm-params">>, M2, Opts) of
+                case hb_converge:get(<<"body/wasm-params">>, M2, Opts) of
                     not_found ->
                         hb_converge:get(<<"wasm-params">>, M1, Opts);
                     Params -> Params

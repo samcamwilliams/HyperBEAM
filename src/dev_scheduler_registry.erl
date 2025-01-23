@@ -1,5 +1,5 @@
 -module(dev_scheduler_registry).
--export([start/0, find/1, find/2, get_wallet/0, get_processes/0]).
+-export([start/0, find/1, find/2, find/3, get_wallet/0, get_processes/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -16,24 +16,26 @@ get_wallet() ->
 
 find(ProcID) -> find(ProcID, false).
 find(ProcID, GenIfNotHosted) ->
+    find(ProcID, GenIfNotHosted, #{ priv_wallet => hb:wallet() }).
+find(ProcID, GenIfNotHosted, Opts) ->
     case pg:get_local_members({dev_scheduler, ProcID}) of
         [] ->
-            maybe_new_proc(ProcID, GenIfNotHosted);
+            maybe_new_proc(ProcID, GenIfNotHosted, Opts);
         [Pid] ->
             case is_process_alive(Pid) of
                 true -> Pid;
                 false -> 
-                    maybe_new_proc(ProcID, GenIfNotHosted)
+                    maybe_new_proc(ProcID, GenIfNotHosted, Opts)
             end
     end.
 
 get_processes() ->
     [ ProcID || {dev_scheduler, ProcID} <- pg:which_groups() ].
 
-maybe_new_proc(_ProcID, false) -> not_found;
-maybe_new_proc(ProcID, _) -> 
+maybe_new_proc(_ProcID, false, _Opts) -> not_found;
+maybe_new_proc(ProcID, _GenIfNotHosted, Opts) -> 
     ?event({starting_scheduler_for, ProcID}),
-    Pid = dev_scheduler_server:start(ProcID, #{}),
+    Pid = dev_scheduler_server:start(ProcID, Opts),
     try
         pg:join({dev_scheduler, ProcID}, Pid),
         Pid

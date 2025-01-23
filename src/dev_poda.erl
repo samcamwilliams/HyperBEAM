@@ -37,12 +37,11 @@ extract_opts(Params) ->
 
 %%% Execution flow: Pre-execution validation.
 
-execute(Outer = #tx { data = #{ <<"message">> := Msg } }, S = #{ pass := 1 }, Opts) ->
+execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ pass := 1 }, Opts) ->
     case is_user_signed(Msg) of
         true ->
             {ok, S};
         false ->
-            % For now, the message itself will be at `/Message/Message`.
             case validate(Msg, Opts) of
                 true ->
                     ?event({poda_validated, ok}),
@@ -76,7 +75,7 @@ execute(Outer = #tx { data = #{ <<"message">> := Msg } }, S = #{ pass := 1 }, Op
                             % the actual message, then replace `/Message` with it.
                             Outer#tx{
                                 data = (Outer#tx.data)#{
-                                    <<"message">> => maps:get(<<"message">>, Msg#tx.data)
+                                    <<"body">> => maps:get(<<"body">>, Msg#tx.data)
                                 }
                             }
                         ]
@@ -94,7 +93,7 @@ validate(Msg, Opts) ->
 
 validate_stage(1, Msg, Opts) when is_record(Msg, tx) ->
     validate_stage(1, Msg#tx.data, Opts);
-validate_stage(1, #{ <<"attestations">> := Attestations, <<"message">> := Content }, Opts) ->
+validate_stage(1, #{ <<"attestations">> := Attestations, <<"body">> := Content }, Opts) ->
     validate_stage(2, Attestations, Content, Opts);
 validate_stage(1, _M, _Opts) -> {false, <<"Required PoDA messages missing">>}.
 
@@ -170,7 +169,7 @@ return_error(S = #{ wallet := Wallet }, Reason) ->
         }
     }}.
 
-is_user_signed(#tx { data = #{ <<"message">> := Msg } }) ->
+is_user_signed(#tx { data = #{ <<"body">> := Msg } }) ->
     ?no_prod(use_real_attestation_detection),
     lists:keyfind(<<"from-process">>, 1, Msg#tx.tags) == false;
 is_user_signed(_) -> true.
@@ -265,7 +264,7 @@ add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logge
                         target = NewMsg#tx.target,
                         data = #{
                             <<"attestations">> => CompleteAttestations,
-                            <<"message">> => NewMsg
+                            <<"body">> => NewMsg
                         }
                     }
                 ),

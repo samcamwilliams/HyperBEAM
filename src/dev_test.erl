@@ -24,12 +24,14 @@ test_func(_) ->
 %% the slots that have been computed in the state message and places the new
 %% slot number in the results key.
 compute(Msg1, Msg2, Opts) ->
-    AssignmentSlot = hb_converge:get(<<"assignment/slot">>, Msg2, Opts),
+    AssignmentSlot = hb_converge:get(<<"slot">>, Msg2, Opts),
     Seen = hb_converge:get(<<"already-seen">>, Msg1, Opts),
+    ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok,
         hb_converge:set(
             Msg1,
             #{
+                <<"random-key">> => <<"random-value">>,
                 <<"results">> =>
                     #{ <<"assignment-slot">> => AssignmentSlot },
                 <<"already-seen">> => [AssignmentSlot | Seen]
@@ -95,8 +97,8 @@ compute_test() ->
         hb_converge:set(
             #{ <<"path">> => <<"compute">> },
             #{
-                <<"assignment/slot">> => 1,
-                <<"message/number">> => 1337
+                <<"slot">> => 1,
+                <<"body/number">> => 1337
             },
             #{}
         ),
@@ -106,8 +108,8 @@ compute_test() ->
         hb_converge:set(
             #{ <<"path">> => <<"compute">> },
             #{
-                <<"assignment/slot">> => 2,
-                <<"message/number">> => 9001
+                <<"slot">> => 2,
+                <<"body/number">> => 9001
             },
             #{}
         ),

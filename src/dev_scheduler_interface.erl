@@ -157,7 +157,7 @@ assignments_to_bundle(_, [], Bundle) ->
     Bundle;
 assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
     {_, Slot} = lists:keyfind(<<"slot">>, 1, Assignment#tx.tags),
-    {_, MessageID} = lists:keyfind(<<"message">>, 1, Assignment#tx.tags),
+    {_, MessageID} = lists:keyfind(<<"body">>, 1, Assignment#tx.tags),
     {ok, Message} = hb_cache:read_message(Store, MessageID),
     ?event({adding_assignment_to_bundle, Slot, {requested, MessageID}, hb_util:id(Assignment, signed), hb_util:id(Assignment, unsigned)}),
     assignments_to_bundle(
@@ -169,11 +169,11 @@ assignments_to_bundle(Store, [Assignment | Assignments], Bundle) ->
                     #tx{
                         tags = [
                             {<<"assignment">>, Slot},
-                            {<<"message">>, MessageID}
+                            {<<"body">>, MessageID}
                         ],
                         data = #{
                             <<"assignment">> => Assignment,
-                            <<"message">> => Message
+                            <<"body">> => Message
                         }
                     },
                     hb:wallet()
