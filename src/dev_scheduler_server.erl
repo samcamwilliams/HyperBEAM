@@ -113,6 +113,8 @@ do_assign(State, Message, ReplyPID) ->
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = hb_message:sign(#{
+                % TODO: Allow the path to be specified by the user.
+                <<"path">> => <<"compute">>,
                 <<"data-protocol">> => <<"ao">>,
                 <<"variant">> => <<"ao.N.1">>,
                 <<"process">> => hb_util:id(maps:get(id, State)),
