@@ -3,7 +3,7 @@
 %%% not included.
 -module(dev_message).
 -export([info/0, keys/1, id/1, unsigned_id/1, signed_id/1, signers/1]).
--export([set/3, remove/2, get/2, get/3, verify/3]).
+-export([set/3, remove/2, get/2, get/3, verify/3, verify_target/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -41,7 +41,13 @@ id(M) ->
 
 %% @doc Verify a message nested in the body.
 verify(Self, Req, Opts) ->
-    Target =
+    {ok, Target} = verify_target(Self, Req, Opts),
+    ?event({verify, Target, {self, Self}}),
+    {ok, hb_message:verify(Target, Opts)}.
+
+%% @doc Find the target of a verification request.
+verify_target(Self, Req, Opts) ->
+    {ok,
         case hb_converge:get(<<"target">>, Req, Opts) of
             <<"self">> -> Self;
             Key ->
@@ -51,9 +57,8 @@ verify(Self, Req, Opts) ->
                     hb_converge:get(<<"body">>, Req, Opts),
                     Opts
                 )
-        end,
-    ?event({verify, Target, {self, Self}}),
-    {ok, hb_message:verify(Target, Opts)}.
+        end
+    }.
 
 %% @doc Wrap a call to the `hb_util:id/2' function, which returns the
 %% unsigned ID of a message.
