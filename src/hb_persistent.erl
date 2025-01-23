@@ -357,8 +357,8 @@ wait_for_test_result(Ref) ->
 %% @doc Test merging and returning a value with a persistent worker.
 deduplicated_execution_test() ->
     TestTime = 200,
-    Msg1 = #{ device => test_device() },
-    Msg2 = #{ <<"path">> => [slow_key], <<"wait">> => TestTime },
+    Msg1 = #{ <<"device">> => test_device() },
+    Msg2 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
     T0 = hb:now(),
     Ref1 = spawn_test_client(Msg1, Msg2),
     receive after 100 -> ok end,
@@ -374,12 +374,12 @@ deduplicated_execution_test() ->
 %% @doc Test spawning a default persistent worker.
 persistent_worker_test() ->
     TestTime = 200,
-    Msg1 = #{ device => test_device() },
+    Msg1 = #{ <<"device">> => test_device() },
     link(start_worker(Msg1, #{ static_worker => true })),
     receive after 10 -> ok end,
-    Msg2 = #{ <<"path">> => [slow_key], <<"wait">> => TestTime },
-    Msg3 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.1) },
-    Msg4 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.2) },
+    Msg2 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
+    Msg3 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
+    Msg4 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 = spawn_test_client(Msg1, Msg2),
     Ref2 = spawn_test_client(Msg1, Msg3),
@@ -395,10 +395,10 @@ persistent_worker_test() ->
 spawn_after_execution_test() ->
     ?event(<<"">>),
     TestTime = 500,
-    Msg1 = #{ device => test_device() },
-    Msg2 = #{ <<"path">> => [self], <<"wait">> => TestTime },
-    Msg3 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.1) },
-    Msg4 = #{ <<"path">> => [slow_key], <<"wait">> => trunc(TestTime*1.2) },
+    Msg1 = #{ <<"device">> => test_device() },
+    Msg2 = #{ <<"path">> => <<"self">>, <<"wait">> => TestTime },
+    Msg3 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
+    Msg4 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 =
         spawn_test_client(

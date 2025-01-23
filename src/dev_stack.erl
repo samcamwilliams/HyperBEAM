@@ -165,7 +165,7 @@ transformer_message(Msg1, Opts) ->
     BaseInfo = info(Msg1),
 	{ok, 
 		Msg1#{
-			device => #{
+			<<"device">> => #{
 				info =>
 					fun() ->
                         maps:merge(
@@ -178,7 +178,7 @@ transformer_message(Msg1, Opts) ->
                             }
                         )
 					end,
-				type => <<"stack-transformer">>
+				<<"type">> => <<"stack-transformer">>
 			}
 		}
 	}.

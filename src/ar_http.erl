@@ -16,7 +16,6 @@
 %%% ==================================================================
 
 start_link(Opts) ->
-    ?event(debug, {start_link, Opts}),
 	gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 req(Args, Opts) -> req(Args, false, Opts).
@@ -121,7 +120,8 @@ handle_call({get_connection, Args}, From,
 					StatusByPID
                 ),
 			{
-                noreply,
+                reply,
+                {ok, PID},
                 State#state{
                     pid_by_peer = PIDPeer2,
                     status_by_pid = StatusByPID2
@@ -285,13 +285,18 @@ open_connection(#{ peer := Peer }, Opts) ->
             retry => 0,
             connect_timeout => ConnectTimeout
         },
+    Transport =
+        case Port of
+            443 -> tls;
+            _ -> tcp
+        end,
     GunOpts =
         case Proto = hb_opts:get(protocol, no_proto, Opts) of
             http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
-            http2 -> BaseGunOpts#{protocols => [http2], transport => tcp};
-            http1 -> BaseGunOpts#{protocols => [http], transport => tcp}
+            http2 -> BaseGunOpts#{protocols => [http2], transport => Transport};
+            http1 -> BaseGunOpts#{protocols => [http], transport => Transport}
         end,
-    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}}),
+    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}, {transport, Transport}}),
 	gun:open(Host, Port, GunOpts).
 
 parse_peer(Peer, Opts) ->

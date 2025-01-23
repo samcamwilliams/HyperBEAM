@@ -15,6 +15,7 @@
 -module(hb_opts).
 -export([get/1, get/2, get/3, default_message/0]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
 default_message() ->
@@ -47,7 +48,7 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
-                <<"test-device@1.0">> => dev_test,
+                <<"meta@1.0">> => dev_meta,
                 <<"message@1.0">> => dev_message,
                 <<"stack@1.0">> => dev_stack,
                 <<"multipass@1.0">> => dev_multipass,
@@ -63,7 +64,10 @@ default_message() ->
                 <<"monitor@1.0">> => dev_monitor,
                 <<"push@1.0">> => dev_mu,
                 <<"compute@1.0">> => dev_cu,
-                <<"p4@1.0">> => dev_p4
+                <<"p4@1.0">> => dev_p4,
+                <<"faff@1.0">> => dev_faff,
+                <<"simple-pay@1.0">> => dev_simple_pay,
+                <<"test-device@1.0">> => dev_test
             },
         codecs => 
             #{
@@ -113,6 +117,12 @@ default_message() ->
 %% `prefer' defaults to `local'.
 get(Key) -> ?MODULE:get(Key, undefined).
 get(Key, Default) -> ?MODULE:get(Key, Default, #{}).
+get(Key, Default, Opts) when is_binary(Key) ->
+    try binary_to_existing_atom(Key, utf8) of
+        AtomKey -> get(AtomKey, Default, Opts)
+    catch
+        error:badarg -> Default
+    end;
 get(Key, Default, Opts = #{ only := local }) ->
     case maps:find(Key, Opts) of
         {ok, Value} -> Value;

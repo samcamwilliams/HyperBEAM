@@ -216,7 +216,8 @@ normalize_results(#{ <<"error">> := Error }) ->
 %% signing node needs to add some tags to each message and spawn such that
 %% the target process knows these messages are created by a process.
 preprocess_results(Msg, Proc, Opts) ->
-    RawTags = maps:get(<<"tags">>, Msg, []),
+    NormMsg = hb_converge:normalize_keys(Msg),
+    RawTags = maps:get(<<"tags">>, NormMsg, []),
     TagList =
         [
             {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
@@ -226,7 +227,7 @@ preprocess_results(Msg, Proc, Opts) ->
     FilteredMsg =
         maps:without(
             [<<"from-process">>, <<"from-image">>, <<"anchor">>, <<"tags">>],
-            Msg
+            NormMsg
         ),
     maps:merge(
         maps:from_list(
@@ -303,7 +304,7 @@ basic_aos_call_test() ->
             generate_aos_msg(ProcID, <<"return 1+1">>),
             #{}
         ),
-    ?event(debug, {res, Msg3}),
+    ?event({res, Msg3}),
     Data = hb_converge:get(<<"results/data">>, Msg3, #{}),
     ?assertEqual(<<"2">>, Data).
 

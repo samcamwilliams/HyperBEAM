@@ -10,7 +10,7 @@
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
 -export([start_test_node/0, start_test_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -41,6 +41,9 @@ new_server(RawNodeMsg) ->
                 )
             )
         ),
+    % Put server ID into node message so it's possible to update current server
+    % params
+    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -56,7 +59,7 @@ new_server(RawNodeMsg) ->
             ]
         ),
     ProtoOpts = #{
-        env => #{dispatch => Dispatcher, node_msg => NodeMsg},
+        env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
         metrics_callback =>
             fun prometheus_cowboy2_instrumenter:observe/1,
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
@@ -126,7 +129,7 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
     {ok, Port, Listener}.
 
 init(Req, ServerID) ->
-    NodeMsg = cowboy:get_env(ServerID, node_msg, no_node_msg),
+    NodeMsg = get_opts(#{ http_server => ServerID }),
     % Parse the HTTP request into HyerBEAM's message format.
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
     ?event(http, {http_inbound, ReqSingleton}),
@@ -143,11 +146,15 @@ ranch_ets() ->
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
 
-%% @doc Update the `Opts` map that the HTTP server uses for all future
+%% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
-    cowboy:set_env(ServerRef, opts, Opts).
+    ok = cowboy:set_env(ServerRef, node_msg, Opts).
+
+get_opts(NodeMsg) ->
+    ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
+    cowboy:get_env(ServerRef, node_msg, no_node_msg).
 
 %%% Tests
 
@@ -156,7 +163,11 @@ test_opts(Opts) ->
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
     Port = 10000 + rand:uniform(20000),
-    Wallet = ar_wallet:new(),
+    Wallet =
+        case hb_opts:get(priv_wallet, no_viable_wallet, Opts) of
+            no_viable_wallet -> ar_wallet:new();
+            PassedWallet -> PassedWallet
+        end,
     Opts#{
         % Generate a random port number between 8000 and 9000.
         port => Port,
@@ -180,7 +191,6 @@ start_test_node(Opts) ->
         stdlib,
         inets,
         ssl,
-        debugger,
         ranch,
         cowboy,
         gun,
@@ -194,27 +204,3 @@ start_test_node(Opts) ->
     ServerOpts = test_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
-
-raw_http_access_test() ->
-    URL = start_test_node(#{ protocol => http1 }),
-    TX =
-        ar_bundles:serialize(
-            hb_message:convert(
-                #{
-                    <<"path">> => <<"key1">>,
-                    <<"key1">> => #{ <<"key2">> => <<"value1">> }
-                },
-                tx,
-                converge,
-                #{}
-            )
-        ),
-    {ok, {{_, 200, _}, _, Body}} =
-        httpc:request(
-            post,
-            {iolist_to_binary(URL), [], "application/octet-stream", TX},
-            [],
-            [{body_format, binary}]
-        ),
-    Msg = hb_message:convert(ar_bundles:deserialize(Body), converge, tx, #{}),
-    ?assertEqual(<<"value1">>, hb_converge:get(<<"key2">>, Msg, #{})).

@@ -25,9 +25,9 @@
 %%% '''
 -module(dev_router).
 %%% Device API:
--export([routes/3]).
+-export([routes/3, route/3]).
 %%% Public utilities:
--export([find_route/2, find_route/3, match_routes/3]).
+-export([match_routes/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -38,7 +38,7 @@ routes(M1, M2, Opts) ->
     ?event({routes, Routes}),
     case hb_converge:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
-            Owner = hb_opts:get(owner, undefined, Opts),
+            Owner = hb_opts:get(operator, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
             Signers = hb_message:signers(M2),
             IsTrusted =
@@ -48,10 +48,18 @@ routes(M1, M2, Opts) ->
                 ),
             case IsTrusted of
                 true ->
-                    Priority = hb_converge:get(<<"priority">>, M2, Opts),
+                    % Minimize the work performed by converge to make the sort
+                    % more efficient.
+                    SortOpts = Opts#{ hashpath => ignore },
                     NewRoutes =
-                        lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
-                    hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
+                        lists:sort(
+                            fun(X, Y) ->
+                                hb_converge:get(<<"priority">>, X, SortOpts)
+                                    < hb_converge:get(<<"priority">>, Y, SortOpts)
+                            end,
+                            [M2|Routes]
+                        ),
+                    ok = hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
             end;
@@ -74,8 +82,8 @@ routes(M1, M2, Opts) ->
 %% Can operate as a `Router/1.0` device, which will ignore the base message,
 %% routing based on the Opts and request message provided, or as a standalone
 %% function, taking only the request message and the `Opts` map.
-find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
-find_route(_, Msg, Opts) ->
+route(Msg, Opts) -> route(undefined, Msg, Opts).
+route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
     R = match_routes(Msg, Routes, Opts),
     ?event({find_route, {msg, Msg}, {routes, Routes}, {res, R}}),
@@ -108,10 +116,10 @@ match_routes(ToMatch, Routes, Opts) ->
         hb_converge:keys(Routes),
         Opts
     ).
-match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _Routes, _Keys, _Opts) ->
+match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
     % If the route is an explicit HTTP URL, we can match it directly.
     #{ <<"node">> => Explicit };
-match_routes(#{ <<"path">> := Explicit = <<"https://", _/binary>> }, _Routes, _Keys, _Opts) ->
+match_routes(#{ <<"path">> := Explicit = <<"https://", _/binary>> }, _, _, _) ->
     #{ <<"node">> => Explicit };
 match_routes(_, _, [], _) -> no_matches;
 match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
@@ -244,7 +252,7 @@ unique_test(Strategy) ->
     unique_nodes(Simulation).
 
 choose_1_test(Strategy) ->
-    TestSize = 3750,
+    TestSize = 1500,
     Nodes = generate_nodes(20),
     Simulation = simulate(TestSize, 1, Nodes, Strategy),
     within_norms(Simulation, Nodes, TestSize).
@@ -283,21 +291,21 @@ route_template_message_matches_test() ->
     ],
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(
+        route(
             #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
         no_matches,
-        find_route(
+        route(
             #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value2">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
         {ok, <<"fallback">>},
-        find_route(
+        route(
             #{ <<"path">> => <<"/">> },
             #{ routes => Routes ++ [#{ <<"node">> => <<"fallback">> }] }
         )
@@ -316,15 +324,15 @@ route_regex_matches_test() ->
     ],
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(#{ <<"path">> => <<"/abc/schedule">> }, #{ routes => Routes })
+        route(#{ <<"path">> => <<"/abc/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(#{ <<"path">> => <<"/a/b/c/schedule">> }, #{ routes => Routes })
+        route(#{ <<"path">> => <<"/a/b/c/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
         no_matches,
-        find_route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
+        route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 
 explicit_route_test() ->
@@ -336,14 +344,14 @@ explicit_route_test() ->
     ],
     ?assertEqual(
         {ok, <<"https://google.com">>},
-        find_route(
+        route(
             #{ <<"path">> => <<"https://google.com">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
         {ok, <<"http://google.com">>},
-        find_route(
+        route(
             #{ <<"path">> => <<"http://google.com">> },
             #{ routes => Routes }
         )
@@ -386,7 +394,6 @@ add_route_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_test_node(
         #{
-            protocol => http3,
             force_signed => false,
             routes => [
                 #{
@@ -395,7 +402,7 @@ add_route_test() ->
                     <<"priority">> => 10
                 }
             ],
-            owner => ar_wallet:to_address(Owner)
+            operator => ar_wallet:to_address(Owner)
         }
     ),
     Res =

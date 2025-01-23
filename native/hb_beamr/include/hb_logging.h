@@ -2,10 +2,9 @@
 #define HB_LOGGING_H
 
 #include "hb_core.h"
-
 // Enable debug logging by default if not defined
+#define HB_DEBUG 0
 #ifndef HB_DEBUG
-#define HB_DEBUG 1
 #endif
 
 

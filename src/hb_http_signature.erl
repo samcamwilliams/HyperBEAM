@@ -83,7 +83,7 @@
 	key => binary()
 }.
 
-id(Msg, _Params, _Opts) ->
+id(_Msg, _Params, _Opts) ->
     {ok, <<"http">>}.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
@@ -127,7 +127,7 @@ sign(MsgToSign, _Req, Opts) ->
         }
     ).
 
-verify(MsgToVerify, _Req, Opts) ->
+verify(MsgToVerify, _Req, _Opts) ->
     Signature = maps:get(<<"signature">>, MsgToVerify),
     SignatureInput = maps:get(<<"signature-input">>, MsgToVerify),
     RawPubKey =
@@ -187,7 +187,7 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 		% sf_item/1 handles when the argument is already parsed.
 		% This provides a feedback loop, in case any encoded component identifier is
 		% not properly encoded
-		component_identifiers => lists:map(fun sf_item/1, ComponentIdentifiers),
+		component_identifiers => ComponentIdentifiers,
 		% TODO: add checks to allow only valid signature parameters
 		% https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 		sig_params => SigParams,
@@ -311,7 +311,6 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
-    ?event({generating_sig_base, {component_identifiers, ComponentIdentifiers}, {req, Req}, {res, Res}}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(
@@ -374,7 +373,7 @@ identifier_to_component(Identifier, Req, Res) when is_atom(Identifier) ->
 	identifier_to_component(atom_to_binary(Identifier), Req, Res);
 identifier_to_component(Identifier, Req, Res) when is_binary(Identifier) ->
 	identifier_to_component(
-        hb_http_structured_fields:parse_item(Identifier),
+        {item, {string, Identifier}, []},
         Req,
         Res
     );
@@ -797,7 +796,7 @@ sf_item(SfItem = {item, {_Kind, _Parsed}, _Params}) ->
 sf_item(ComponentIdentifier) when is_list(ComponentIdentifier) ->
 	sf_item(list_to_binary(ComponentIdentifier));
 sf_item(ComponentIdentifier) when is_binary(ComponentIdentifier) ->
-    sf_item(hb_http_structured_fields:parse_item(ComponentIdentifier)).
+    {item, {string, ComponentIdentifier}, []}.
 
 %%% @doc Given a parameter Name, extract the Parameter value from the HTTP
 %%% Structured Field data structure.
@@ -915,11 +914,11 @@ join_signature_base_test() ->
 signature_params_line_test() ->
 	Params = #{created => 1733165109501, nonce => "foobar", keyid => "key1"},
 	ContentIdentifiers = [
-		<<"\"Content-Length\"">>, <<"\"@method\"">>, "\"@Path\"", "\"content-type\";req", "\"example-dict\";sf"
+		<<"Content-Length">>, <<"@method">>, <<"@Path">>, <<"content-type">>, <<"example-dict">>
 	],
 	Result = signature_params_line(ContentIdentifiers, Params),
 	?assertEqual(
-		<<"(\"content-length\" \"@method\" \"@path\" \"content-type\";req \"example-dict\";sf);created=1733165109501;keyid=\"key1\";nonce=\"foobar\"">>,
+        <<"(\"content-length\" \"@method\" \"@path\" \"content-type\" \"example-dict\");created=1733165109501;keyid=\"key1\";nonce=\"foobar\"">>,
 		Result
 	).
 

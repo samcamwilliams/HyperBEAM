@@ -30,11 +30,13 @@ node_modules
 
 native/hb_beamr/*.o
 native/hb_beamr/*.d
+native/dev_snp_nif/target
+native/dev_snp_nif/Cargo.lock
+
 priv/*
 .DS_STORE
 TEST-data*
 test-cache/*
 TEST-cache**/**
-native/**/target/**
 
 .githooks/_/.setup
