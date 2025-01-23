@@ -174,7 +174,19 @@ post_schedule(Msg1, Msg2, Opts) ->
                     Address ->
                         % Start the scheduler process if we are the scheduler.
                         dev_scheduler_registry:find(ProcID, true, Opts);
-                    _ -> throw(scheduler_location_mismatch)
+                    not_found ->
+                        throw(
+                            {scheduler_location_not_found,
+                                {proc_id, ProcID}
+                            }
+                        );
+                    ProcScheduler ->
+                        throw(
+                            {scheduler_location_mismatch,
+                                {local, Address},
+                                {required, ProcScheduler}
+                            }
+                        )
                 end;
             Proc -> Proc
         end,
@@ -287,21 +299,25 @@ get_schedule(Msg1, Msg2, Opts) ->
 %% 1. `Msg2/target`
 %% 2. `Msg1/id`
 find_id(Msg1, Msg2, Opts) ->
-    hb_converge:get(
-        <<"target">>,
-        Msg2,
-        hb_converge:get(
-            <<"process/id">>,
-            Msg1,
-            hb_converge:get(<<"id">>, Msg1, Opts#{ hashpath => ignore }),
-            Opts#{ hashpath => ignore }
-        ),
-        Opts#{ hashpath => ignore }
-    ).
+    TempOpts = Opts#{ hashpath => ignore },
+    Res = case hb_converge:get(<<"target">>, Msg2, TempOpts) of
+        not_found ->
+            case hb_converge:get(<<"process/id">>, Msg1, TempOpts) of
+                not_found -> hb_converge:get(<<"id">>, Msg1, TempOpts);
+                ID -> ID
+            end;
+        Target -> Target
+    end,
+    ?event({found_id, {id, Res}}),
+    Res.
+
+%% @doc Find the process from a given request. Check if it has a `process`
+%% field, and if so, return that. Otherwise, return the full message.
+find_process(Msg, Opts) ->
+    hb_converge:get(<<"process">>, Msg, Msg, Opts#{ hashpath => ignore }).
 
 %% @doc Generate a `GET /schedule' response for a process.
 gen_schedule(ProcID, From, To, Opts) ->
-    Wallet = hb_opts:get(priv_wallet, Opts),
     {Timestamp, Height, Hash} = ar_timestamp:get(),
     ?event(
         {servicing_request_for_assignments,
@@ -379,18 +395,18 @@ checkpoint(State) -> {ok, State}.
 %% @doc Generate a _transformed_ process message, not as they are generated 
 %% by users. See `dev_process' for examples of AO process messages.
 test_process() ->
-    Wallet = hb:wallet(),
+    test_process(hb:wallet()).
+
+test_process(Wallet) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
         device => ?MODULE,
-        process => #{
-            <<"device-stack">> =>
-                [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
-            <<"image">> => <<"wasm-image-id">>,
-            <<"type">> => <<"process">>,
-            <<"scheduler-location">> => Address,
-            <<"test-random-seed">> => rand:uniform(1337)
-        }
+        <<"device-stack">> =>
+            [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
+        <<"image">> => <<"wasm-image-id">>,
+        <<"type">> => <<"process">>,
+        <<"scheduler-location">> => Address,
+        <<"test-random-seed">> => rand:uniform(1337)
     }.
 
 status_test() ->
@@ -524,12 +540,12 @@ get_schedule_test() ->
 
 http_schedule_test() ->
     start(),
-    Wallet = hb:wallet(),
-    Node = <<"http://localhost:8734">>,
-    UnsignedProc = test_process(),
+    Wallet = ar_wallet:new(),
+    Node = hb_http_server:start_test_node(#{ priv_wallet => Wallet }),
+    UnsignedProc = test_process(Wallet),
     SignedProcessMsg = hb_message:sign(UnsignedProc, Wallet), % add `, http` for http-sig
     Msg1 = hb_message:sign(#{
-        <<"path">> => <<"/!scheduler@1.0">>,
+        <<"path">> => <<"/!scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => SignedProcessMsg,
         <<"body">> =>
@@ -540,17 +556,11 @@ http_schedule_test() ->
     }, Wallet),
     {ok, Res} = hb_http:post(Node, Msg1, #{}),
     ?event(debug, {res, Res}),
-    ?assertEqual(0, hb_converge:get(<<"assignment">>, Res, #{})),
-    Msg2 = hb_message:sign(#{
-        <<"path">> => <<"/!scheduler@1.0/slot">>,
-        <<"method">> => <<"GET">>,
-        <<"process">> => SignedProcessMsg,
-        <<"body">> => 
-            hb_message:sign(#{
-                <<"type">> => <<"Message">>,
-                <<"test-key">> => <<"Test-Val2">>
-            }, Wallet)
-    }, Wallet),
-    {ok, Res2} = hb_http:post(Node, Msg2, #{}),
-    ?event(debug, {res, Res2}),
-    ?assertEqual(1, hb_converge:get(<<"assignment">>, Res2, #{})).
+    ?assertEqual(<<"Test-Val1">>, hb_converge:get(<<"body/test-key">>, Res, #{})),
+    Res2 =
+        hb_http:get(Node, #{
+            <<"path">> => <<"/!scheduler@1.0/slot">>,
+            <<"method">> => <<"GET">>,
+            <<"process">> => SignedProcessMsg
+        }, #{}),
+    ?assertMatch({ok, #{ <<"current-slot">> := 0 }}, Res2).
