@@ -67,6 +67,7 @@ default_message() ->
                 <<"p4@1.0">> => dev_p4,
                 <<"faff@1.0">> => dev_faff,
                 <<"simple-pay@1.0">> => dev_simple_pay,
+                <<"snp@1.0">> => dev_snp,
                 <<"test-device@1.0">> => dev_test
             },
         codecs => 

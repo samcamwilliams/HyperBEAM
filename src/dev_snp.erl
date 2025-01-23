@@ -179,7 +179,7 @@ generate_test() ->
             wallet => Wallet
         }
     ),
-    {ok, Report} = hb_http:get(Node, <<"/!snp/generate">>, #{}),
+    {ok, Report} = hb_http:get(Node, <<"/!snp@1.0/generate">>, #{}),
     ?event(debug, {snp_report_rcvd, Report}),
     ?assertEqual({ok, Addr}, hb_converge:get(<<"address">>, Report, #{})),
     {ok, ValidationRes} = verify(#{}, Report, #{}),
