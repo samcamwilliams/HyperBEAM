@@ -3,7 +3,7 @@
 %%% not included.
 -module(dev_message).
 -export([info/0, keys/1, id/1, unsigned_id/1, signed_id/1, signers/1]).
--export([set/3, remove/2, get/2, get/3]).
+-export([set/3, remove/2, get/2, get/3, verify/3, verify_target/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -17,7 +17,8 @@
     <<"keys">>,
     <<"get">>,
     <<"set">>,
-    <<"remove">>
+    <<"remove">>,
+    <<"verify">>
 ]).
 
 %% @doc Return the info for the identity device.
@@ -37,6 +38,27 @@ id(M) ->
             _ -> raw_id(M, signed)
         end,
     {ok, ID}.
+
+%% @doc Verify a message nested in the body.
+verify(Self, Req, Opts) ->
+    {ok, Target} = verify_target(Self, Req, Opts),
+    ?event({verify, Target, {self, Self}}),
+    {ok, hb_message:verify(Target, Opts)}.
+
+%% @doc Find the target of a verification request.
+verify_target(Self, Req, Opts) ->
+    {ok,
+        case hb_converge:get(<<"target">>, Req, Opts) of
+            <<"self">> -> Self;
+            Key ->
+                hb_converge:get(
+                    Key,
+                    Req,
+                    hb_converge:get(<<"body">>, Req, Opts),
+                    Opts
+                )
+        end
+    }.
 
 %% @doc Wrap a call to the `hb_util:id/2' function, which returns the
 %% unsigned ID of a message.
@@ -247,3 +269,30 @@ set_ignore_undefined_test() ->
 	Msg2 = #{ <<"path">> => <<"set">>, <<"test-key">> => undefined },
 	?assertEqual({ok, #{ <<"test-key">> => <<"Value1">> }},
 		set(Msg1, Msg2, #{ hashpath => ignore })).
+
+verify_test() ->
+    Unsigned = #{ <<"a">> => 1 },
+    Signed = hb_message:sign(Unsigned, hb:wallet()),
+    BadSigned = Unsigned#{ <<"bad">> => <<"key">> },
+    ?assertEqual({ok, false},
+        hb_converge:resolve(
+            #{ <<"device">> => <<"message@1.0">> },
+            #{ <<"path">> => <<"verify">>, <<"body">> => BadSigned },
+            #{ hashpath => ignore }
+        )
+    ),
+    ?assertEqual({ok, true},
+        hb_converge:resolve(
+            #{ <<"device">> => <<"message@1.0">> },
+            #{ <<"path">> => <<"verify">>, <<"body">> => Signed },
+            #{ hashpath => ignore }
+        )
+    ),
+    % Test that we can verify a message without specifying the device explicitly.
+    ?assertEqual({ok, true},
+        hb_converge:resolve(
+            #{},
+            #{ <<"path">> => <<"verify">>, <<"body">> => Signed },
+            #{ hashpath => ignore }
+        )
+    ).
