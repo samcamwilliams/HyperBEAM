@@ -5,7 +5,7 @@
 
 // Enable debug logging by default if not defined
 #ifndef HB_DEBUG
-#define HB_DEBUG 1
+#define HB_DEBUG 0
 #endif
 
 

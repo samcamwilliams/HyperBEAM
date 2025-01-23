@@ -191,7 +191,6 @@ start_test_node(Opts) ->
         stdlib,
         inets,
         ssl,
-        debugger,
         ranch,
         cowboy,
         gun,
