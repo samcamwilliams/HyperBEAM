@@ -593,7 +593,7 @@ single_converge(Opts) ->
 
 many_clients(Opts) ->
     BenchTime = 1,
-    Processes = 25,
+    Processes = hb_opts:get(workers, 25, Opts),
     {Node, Wallet} = http_init(Opts),
     PMsg = hb_message:sign(test_process(Wallet), Wallet),
     Msg1 = hb_message:sign(#{
@@ -675,16 +675,17 @@ benchmark_suite_test_() ->
             desc => "RocksDB store, aggressive conf."
         },
         #{
-            name => rocksdb_aggressive_h3,
+            name => rocksdb_extreme_aggressive_h3,
             opts => #{
                 store => {hb_store_rocksdb, #{
                     prefix => <<"TEST-cache-rocksdb-",
                         (integer_to_binary(Port+3))/binary>>
                 }},
                 scheduling_mode => aggressive,
-                protocol => http3
+                protocol => http3,
+                workers => 100
             },
-            desc => "RocksDB store, aggressive conf, http/3."
+            desc => "100xRocksDB store, aggressive conf, http/3."
         }
     ],
     hb_test_utils:suite_with_opts(Bench, OptSpecs).
