@@ -11,7 +11,7 @@
 %% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
     {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
-    spawn(
+    spawn_link(
         fun() ->
             ?event(
                 {starting_scheduling_server,
@@ -72,10 +72,7 @@ schedule(ErlangProcID, Message) ->
 info(ProcID) ->
     ?event({getting_info, {proc_id, ProcID}}),
     ProcID ! {info, self()},
-    receive
-        {info, Info} ->
-            Info
-    end.
+    receive {info, Info} -> Info end.
 
 %% @doc The main loop of the server. Simply waits for messages to assign and
 %% returns the current slot.
@@ -108,7 +105,8 @@ do_assign(State, Message, ReplyPID) ->
     ),
     HashChain = next_hashchain(maps:get(hash_chain, State), Message),
     NextSlot = maps:get(current, State) + 1,
-    % Run the signing of the assignment and writes to the disk in a separate process
+    % Run the signing of the assignment and writes to the disk in a separate
+    % process.
     spawn(
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
