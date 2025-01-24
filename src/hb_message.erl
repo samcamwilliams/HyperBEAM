@@ -641,6 +641,24 @@ deeply_nested_message_with_content_test(Codec) ->
     Decoded = convert(Encoded, converge, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
+deeply_nested_message_with_only_content(Codec) ->
+    MainBodyKey =
+        case Codec of
+            tx -> <<"data">>;
+            _ -> <<"body">>
+        end,
+    Msg = #{
+         <<"depth">> => <<"outer">>,
+        MainBodyKey => #{
+            MainBodyKey => #{
+                MainBodyKey => <<"DATA">>    
+            }
+        }
+    },
+    Encoded = convert(Msg, Codec, converge, #{}),
+    Decoded = convert(Encoded, converge, Codec, #{}),
+    ?assert(match(Msg, Decoded)).
+
 nested_structured_fields_test(Codec) ->
     NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
     Encoded = convert(NestedMsg, Codec, converge, #{}),
@@ -786,6 +804,8 @@ message_suite_test_() ->
             fun nested_message_with_large_content_test/1},
         {"deeply nested message with content test",
             fun deeply_nested_message_with_content_test/1},
+        {"deeply nested message with only content test",
+            fun deeply_nested_message_with_only_content/1},
         {"structured field atom parsing test",
             fun structured_field_atom_parsing_test/1},
         {"structured field decimal parsing test",
