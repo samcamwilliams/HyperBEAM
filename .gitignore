@@ -33,6 +33,8 @@ native/hb_beamr/*.d
 native/dev_snp_nif/target
 native/dev_snp_nif/Cargo.lock
 
+!test/snp-*.json
+
 priv/*
 .DS_STORE
 TEST-data*

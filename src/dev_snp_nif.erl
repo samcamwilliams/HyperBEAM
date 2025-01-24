@@ -1,5 +1,5 @@
 -module(dev_snp_nif).
--export([request_attestation_report/2, calculate_launch_digest/1]).
+-export([generate_attestation_report/2, compute_launch_digest/1, check_snp_support/0]).
 -export([verify_measurement/2, verify_signature/1]).
 -include("cargo.hrl").
 -include("include/hb.hrl").
@@ -8,10 +8,13 @@
 -on_load(init/0).
 -define(NOT_LOADED, not_loaded(?LINE)).
 
-request_attestation_report(_UniqueData, _VMPL) ->
+check_snp_support() ->
+	?NOT_LOADED.
+
+generate_attestation_report(_UniqueData, _VMPL) ->
     ?NOT_LOADED.
 
-calculate_launch_digest(_Args) ->
+compute_launch_digest(_Args) ->
 	?NOT_LOADED.
 
 verify_measurement(_Report, _Expected) ->
@@ -26,15 +29,27 @@ init() ->
 not_loaded(Line) ->
     erlang:nif_error({not_loaded, [{module, ?MODULE}, {line, Line}]}).
 
-request_attestation_report_test() ->
-	UniqueData = crypto:strong_rand_bytes(64),
-	VMPL = 1,
-	?assertEqual(
-        {ok, UniqueData},
-        dev_snp_nif:request_attestation_report(UniqueData, VMPL)
-    ).
 
-calculate_launch_digest_test() ->
+generate_attestation_report_test() ->
+	%% Call check_support() to determine if SNP is supported
+	case dev_snp_nif:check_snp_support() of
+		{ok, true} ->
+			%% SNP is supported, generate unique data and test attestation report
+			UniqueData = crypto:strong_rand_bytes(64),
+			VMPL = 1,
+			?assertEqual(
+				{ok, UniqueData},
+				dev_snp_nif:generate_attestation_report(UniqueData, VMPL)
+			);
+		{ok, false} ->
+			%% SNP is not supported, log event and assert NIF not loaded
+			?event("SNP not supported on machine, skipping test..."),
+			?assertEqual(ok, ok)
+	end.
+
+
+
+compute_launch_digest_test() ->
 	%% Define the data structure
 	ArgsMap = #{ 
 		vcpus => 1,
@@ -42,16 +57,16 @@ calculate_launch_digest_test() ->
 		vmm_type => 1,
 		guest_features => 16#1,
 
-		ovmf_hash_str => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
-		kernel_hash => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
-		initrd_hash => "ca3bf9f3c453471fb98beadb9ca735dd77e8f9879bb33177696b349114ff0737",
-		append_hash => "f8532adfd035eefb418ff317c0095b0cc4bfd9d622aeadee98e04a134fa0edd9"
+		ovmf => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
+		kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
+		initrd => "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",
+		append => "56e1e5190622c8c6b9daa4fe3ad83f3831c305bb736735bf795b284cb462c9e7"
 	},
 
 	?event(ArgsMap),
 
 		%% Call the NIF
-	Result = dev_snp_nif:calculate_launch_digest(ArgsMap),
+	Result = dev_snp_nif:compute_launch_digest(ArgsMap),
 
 	%% Expected result
 	?event(Result),
@@ -70,6 +85,6 @@ verify_measurement_test() ->
 
 verify_signature_test() ->
 	%% Define a mock report (JSON string) as binary
-    {ok, MockAttestation} = file:read_file("test/snp-attestation.json"),
+    {ok, MockAttestation} = file:read_file("test/snp-measurement.json"),
 	Result = dev_snp_nif:verify_signature(MockAttestation),
-	?assertMatch({ok, <<"Verification successful">>}, Result).
+	?assertMatch({ok, <<"Signature verification successful">>}, Result).

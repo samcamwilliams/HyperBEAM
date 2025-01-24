@@ -47,15 +47,16 @@ verify(Self, Req, Opts) ->
 
 %% @doc Find the target of a verification request.
 verify_target(Self, Req, Opts) ->
+	GetOpts = Opts#{ hashpath => ignore },
     {ok,
-        case hb_converge:get(<<"target">>, Req, Opts) of
+        case hb_converge:get(<<"target">>, Req, GetOpts) of
             <<"self">> -> Self;
             Key ->
                 hb_converge:get(
                     Key,
                     Req,
-                    hb_converge:get(<<"body">>, Req, Opts),
-                    Opts
+                    hb_converge:get(<<"body">>, Req, GetOpts),
+                    GetOpts
                 )
         end
     }.
