@@ -198,21 +198,17 @@ post_schedule(Msg1, Msg2, Opts) ->
             {message, ToSched}
         }
     ),
-    ?no_prod("SU does not validate item before writing into stream."),
-    case {true, hb_converge:get(type, ToSched)} of
+    Verified =
+        case hb_opts:get(verify_assignments, true, Opts) of
+            true -> hb_message:verify(ToSched);
+            false -> true
+        end,
+    case {Verified, hb_converge:get(type, ToSched)} of
         {false, _} ->
-            {error,
-                #{
-                    <<"status">> => 500,
-                    <<"body">> =>
-                        <<"Scheduler location does not match wallet address.">>
-                }
-            };
-        {true, false} ->
             {ok,
                 #{
                     <<"status">> => 400,
-                    <<"body">> => <<"Data item is not valid.">>
+                    <<"body">> => <<"Message is not valid.">>
                 }
             };
         {true, <<"Process">>} ->
@@ -234,12 +230,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             };
         {true, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
-            {ok,
-                dev_scheduler_server:schedule(
-                    dev_scheduler_registry:find(ProcID, true, Opts),
-                    ToSched
-                )
-            }
+            {ok, dev_scheduler_server:schedule(PID, ToSched)}
     end.
 
 %% @doc Returns information about the current slot for a process.
@@ -536,14 +527,14 @@ http_init() ->
     Node = hb_http_server:start_test_node(#{ priv_wallet => Wallet }),
     {Node, Wallet}.
 
-http_post_schedule(Node, Msg, ProcessMsg, Wallet) ->
+http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
     Msg1 = hb_message:sign(#{
         <<"path">> => <<"/!scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => ProcessMsg,
         <<"body">> => hb_message:sign(Msg, Wallet)
     }, Wallet),
-    {ok, _} = hb_http:post(Node, Msg1, #{}).
+    hb_http:post(Node, Msg1, #{}).
 
 http_get_slot(N, PMsg) ->
     {ok, _} = hb_http:get(N, #{
@@ -565,7 +556,7 @@ http_post_schedule_test() ->
     {N, W} = http_init(),
     PMsg = hb_message:sign(test_process(W), W),
     {ok, Res} =
-        http_post_schedule(
+        http_post_schedule_sign(
             N,
             #{ <<"inner">> => <<"test-message">> },
             PMsg,
@@ -576,26 +567,53 @@ http_post_schedule_test() ->
     ?assertMatch({ok, #{ <<"current-slot">> := 0 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test() ->
-    {N, W} = http_init(),
-    PMsg = hb_message:sign(test_process(W), W),
+    {Node, Wallet} = http_init(),
+    PMsg = hb_message:sign(test_process(Wallet), Wallet),
+    Msg1 = hb_message:sign(#{
+        <<"path">> => <<"/!scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => PMsg,
+        <<"body">> => hb_message:sign(#{ <<"inner">> => <<"test">> }, Wallet)
+    }, Wallet),
+    {ok, _} = hb_http:post(Node, Msg1, #{}),
     lists:foreach(
         fun(X) ->
-            {ok, _} =
-                http_post_schedule(
-                    N,
-                    #{ <<"inner">> => <<"test-message">>, <<"slot">> => X-1 },
-                    PMsg,
-                    W
-                )
+            {ok, _} = hb_http:post(Node, Msg1, #{})
         end,
         lists:seq(1, 10)
     ),
-    ?assertMatch({ok, #{ <<"current-slot">> := 9 }}, http_get_slot(N, PMsg)),
-    {ok, Schedule} = http_get_schedule(N, PMsg, 0, 10),
+    ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
+    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
     Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
     ?event(debug, {assignments, Assignments}),
     ?event(debug, {keys, maps:keys(Assignments)}),
     ?assertEqual(
-        10,
+        11,
         length(maps:values(maps:without([<<"hashpath">>], Assignments)))
     ).
+
+multihttp_benchmark_test() ->
+    BenchTime = 1,
+    Processes = 25,
+    {Node, Wallet} = http_init(),
+    PMsg = hb_message:sign(test_process(Wallet), Wallet),
+    Msg1 = hb_message:sign(#{
+        <<"path">> => <<"/!scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => PMsg,
+        <<"body">> => hb_message:sign(#{ <<"inner">> => <<"test">> }, Wallet)
+    }, Wallet),
+    {ok, _} = hb_http:post(Node, Msg1, #{}),
+    Iterations = hb:benchmark(
+        fun(_) ->
+            {ok, _} = hb_http:post(Node, Msg1, #{})
+        end,
+        BenchTime,
+        Processes
+    ),
+    ?event(debug, {iterations, Iterations}),
+    hb_util:eunit_print(
+        "Scheduled ~p messages with ~p workers through HTTP in ~ps (~.2f msg/s)",
+        [Iterations, Processes, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 25).

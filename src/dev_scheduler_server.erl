@@ -2,17 +2,17 @@
 %%% It acts as a deliberate 'bottleneck' to prevent the server accidentally
 %%% assigning multiple messages to the same slot.
 -module(dev_scheduler_server).
--export([start/2, schedule/2]).
+-export([start/2, schedule/2, stop/1]).
 -export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
-
 -include("include/hb.hrl").
 
 %% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
-    {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
     spawn_link(
         fun() ->
+            pg:join({dev_scheduler, ProcID}, self()),
+            {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
             ?event(
                 {starting_scheduling_server,
                     {proc_id, ProcID},
@@ -74,6 +74,10 @@ info(ProcID) ->
     ProcID ! {info, self()},
     receive {info, Info} -> Info end.
 
+stop(ProcID) ->
+    ?event({stopping_scheduling_server, {proc_id, ProcID}}),
+    ProcID ! stop.
+
 %% @doc The main loop of the server. Simply waits for messages to assign and
 %% returns the current slot.
 server(State) ->
@@ -82,7 +86,8 @@ server(State) ->
             server(assign(State, Message, Reply));
         {info, Reply} ->
             Reply ! {info, State},
-            server(State)
+            server(State);
+        stop -> ok
     end.
 
 %% @doc Assign a message to the next slot.
@@ -92,17 +97,11 @@ assign(State, Message, ReplyPID) ->
     catch
         _Class:Reason:Stack ->
             ?event({error_scheduling, Reason, Stack}),
-            {error, State}
+            State
     end.
 
 %% @doc Generate and store the actual assignment message.
 do_assign(State, Message, ReplyPID) ->
-    ?event(
-        {assigning_message,
-            {id, hb_converge:get(id, Message)},
-            {message, Message}
-        }
-    ),
     HashChain = next_hashchain(maps:get(hash_chain, State), Message),
     NextSlot = maps:get(current, State) + 1,
     % Run the signing of the assignment and writes to the disk in a separate
@@ -167,7 +166,7 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
 next_hashchain(HashChain, Message) ->
     crypto:hash(
         sha256,
-        << HashChain/binary, (hb_util:id(Message, signed))/binary >>
+        << HashChain/binary, (hb_util:id(Message, unsigned))/binary >>
     ).
 
 %% TESTS
