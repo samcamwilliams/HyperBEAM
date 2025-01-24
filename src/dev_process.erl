@@ -424,21 +424,25 @@ init() ->
 test_base_process() ->
     Wallet = hb:wallet(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    #{
+    hb_message:sign(#{
         <<"device">> => <<"Process@1.0">>,
         <<"scheduler-device">> => <<"Scheduler@1.0">>,
         <<"scheduler-location">> => Address,
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
-    }.
+    }, Wallet).
 
 test_wasm_process(WASMImage) ->
+    Wallet = hb:wallet(),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
-    maps:merge(test_base_process(), #{
-        <<"execution-device">> => <<"Stack@1.0">>,
-        <<"device-stack">> => [<<"WASM-64@1.0">>],
-        <<"image">> => WASMImageID
-    }).
+    hb_message:sign(
+        maps:merge(test_base_process(), #{
+            <<"execution-device">> => <<"Stack@1.0">>,
+            <<"device-stack">> => [<<"WASM-64@1.0">>],
+            <<"image">> => WASMImageID
+        }),
+        Wallet
+    ).
 
 %% @doc Generate a process message with a random number, and the 
 %% `dev_wasm' device for execution.
@@ -470,10 +474,14 @@ test_aos_process() ->
 %% execution. This should generate a message state has doubled 
 %% `Already-Seen' elements for each assigned slot.
 dev_test_process() ->
-    maps:merge(test_base_process(), #{
-        <<"execution-device">> => <<"Stack@1.0">>,
-        <<"device-stack">> => [<<"Test-Device@1.0">>, <<"Test-Device@1.0">>]
-    }).
+    Wallet = hb:wallet(),
+    hb_message:sign(
+        maps:merge(test_base_process(), #{
+            <<"execution-device">> => <<"Stack@1.0">>,
+            <<"device-stack">> => [<<"Test-Device@1.0">>, <<"Test-Device@1.0">>]
+        }),
+        Wallet
+    ).
 
 schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
@@ -483,10 +491,13 @@ schedule_test_message(Msg1, Text, MsgBase) ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            MsgBase#{
-                <<"type">> => <<"Message">>,
-                <<"test-label">> => Text
-            }
+            hb_message:sign(
+                MsgBase#{
+                    <<"type">> => <<"Message">>,
+                    <<"test-label">> => Text
+                },
+                Wallet
+            )
     }, Wallet),
     {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
 
@@ -501,16 +512,20 @@ schedule_aos_call(Msg1, Code) ->
     schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
-    Msg2 = #{
+    Wallet = hb:wallet(),
+    Msg2 = hb_message:sign(#{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            #{
-                <<"type">> => <<"Message">>,
-                <<"wasm-function">> => FuncName,
-                <<"wasm-params">> => Params
-            }
-    },
+            hb_message:sign(
+                #{
+                    <<"type">> => <<"Message">>,
+                    <<"wasm-function">> => FuncName,
+                    <<"wasm-params">> => Params
+                },
+                Wallet
+            )
+    }, Wallet),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})).
 
 schedule_on_process_test() ->

@@ -46,13 +46,6 @@ find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
 unregister_notify(GroupName, Msg2, Msg3, Opts) ->
-    % ?event(
-    %     {unregister_notify,
-    %         {group, GroupName},
-    %         {msg3, Msg3},
-    %         {opts, Opts}
-    %     }
-    % ),
     unregister_groupname(GroupName, Opts),
     notify(GroupName, Msg2, Msg3, Opts).
 

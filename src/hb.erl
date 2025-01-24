@@ -211,19 +211,22 @@ benchmark(Fun, TLen) ->
 %% @doc Run multiple instances of a function in parallel for a given amount of time.
 benchmark(Fun, TLen, Procs) ->
     Parent = self(),
+    receive X -> ?event(benchmark, {start_benchmark_worker, X}) end,
     StartWorker =
         fun(_) ->
             Ref = make_ref(),
-            link(spawn(fun() ->
+            ?event(benchmark, {start_benchmark_worker, Ref}),
+            spawn_link(fun() ->
                 Count = benchmark(Fun, TLen),
                 Parent ! {work_complete, Ref, Count}
-            end)),
+            end),
             Ref
         end,
     CollectRes =
         fun(R) ->
             receive
                 {work_complete, R, Count} ->
+                    ?event(benchmark, {work_complete, R, Count}),
                     Count
             end
         end,

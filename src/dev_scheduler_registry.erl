@@ -34,15 +34,7 @@ get_processes() ->
 
 maybe_new_proc(_ProcID, false, _Opts) -> not_found;
 maybe_new_proc(ProcID, _GenIfNotHosted, Opts) -> 
-    ?event({starting_scheduler_for, ProcID}),
-    Pid = dev_scheduler_server:start(ProcID, Opts),
-    try
-        pg:join({dev_scheduler, ProcID}, Pid),
-        Pid
-    catch
-        error:badarg ->
-            {error, registration_failed}
-    end.
+    dev_scheduler_server:start(ProcID, Opts).
 
 %%% Tests
 
