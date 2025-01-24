@@ -4,39 +4,17 @@
 -module(hb_converge_test_vectors).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
--export([run_single/2]).
 
 %% @doc Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test`
 %% Comment/uncomment out as necessary.
-run_test() ->
-    run_single(normal, as).
-
-%% @doc Run a single test with a given set of opts.
-run_single(OptsName, TestName) ->
-    {_, _, Test} = lists:keyfind(TestName, 1, test_suite()),
-    [Opts|_] = [ O || #{ name := OName, opts := O } <- test_opts(), OName == OptsName ],
-    Test(Opts).
+% run_test() ->
+%     hb_test_utils:run(normal, as, test_suite(), test_opts()).
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
 run_all_test_() ->
-    lists:map(
-        fun(#{ name := _Name, opts := Opts, skip := Skip, desc := ODesc}) ->
-            Store = hb_opts:get(store, Opts),
-            {foreach,
-                fun() -> hb_store:start(Store) end,
-                fun(_) -> hb_store:reset(Store) end,
-                [
-                    {ODesc ++ ": " ++ TestDesc, fun() -> Test(Opts) end}
-                ||
-                    {TestAtom, TestDesc, Test} <- test_suite(), 
-                        not lists:member(TestAtom, Skip)
-                ]
-            }
-        end,
-        test_opts()
-    ).
+    hb_test_utils:suite_with_opts(test_suite(), test_opts()).
 
 test_suite() ->
     [
@@ -60,7 +38,8 @@ test_suite() ->
             fun key_from_id_device_with_args_test/1},
         {device_with_handler_function, "device with handler function",
             fun device_with_handler_function_test/1},
-        {device_with_default_handler_function, "device with default handler function",
+        {device_with_default_handler_function,
+            "device with default handler function",
             fun device_with_default_handler_function_test/1},
         {basic_get, "basic get",
             fun basic_get_test/1},
@@ -112,7 +91,8 @@ test_opts() ->
                 spawn_worker => false,
                 store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
             },
-            skip => []
+            skip => [],
+            reset => false
         },
         #{
             name => only_if_cached,

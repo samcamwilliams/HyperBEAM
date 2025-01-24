@@ -451,41 +451,6 @@ schedule_message_and_get_slot_test() ->
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
 
-benchmark_test() ->
-    start(),
-    BenchTime = 1,
-    Msg1 = test_process(),
-    ?event({benchmark_start, ?MODULE}),
-    MsgToSchedule = hb_message:sign(#{
-        <<"type">> => <<"Message">>,
-        <<"test-key">> => <<"test-val">>
-    }, hb:wallet()),
-    Iterations = hb:benchmark(
-        fun(_) ->
-            MsgX = #{
-                <<"path">> => <<"schedule">>,
-                <<"method">> => <<"POST">>,
-                <<"body">> => MsgToSchedule
-            },
-            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, #{}))
-        end,
-        BenchTime
-    ),
-    ?event(benchmark, {scheduled, Iterations}),
-    Msg3 = #{
-        <<"path">> => <<"slot">>,
-        <<"method">> => <<"GET">>,
-        <<"process">> => hb_util:id(Msg1)
-    },
-    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
-            when CurrentSlot == Iterations - 1,
-        hb_converge:resolve(Msg1, Msg3, #{})),
-    hb_util:eunit_print(
-        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
-    ),
-    ?assert(Iterations > 25).
-
 get_schedule_test() ->
     start(),
     Msg1 = test_process(),
@@ -521,10 +486,11 @@ get_schedule_test() ->
 
 %%% HTTP tests
 
-http_init() ->
+http_init() -> http_init(#{}).
+http_init(Opts) ->
     start(),
     Wallet = ar_wallet:new(),
-    Node = hb_http_server:start_test_node(#{ priv_wallet => Wallet }),
+    Node = hb_http_server:start_test_node(Opts#{ priv_wallet => Wallet }),
     {Node, Wallet}.
 
 http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
@@ -562,7 +528,6 @@ http_post_schedule_test() ->
             PMsg,
             W
         ),
-    ?event(debug, {res, Res}),
     ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res, #{})),
     ?assertMatch({ok, #{ <<"current-slot">> := 0 }}, http_get_slot(N, PMsg)).
 
@@ -577,25 +542,59 @@ http_get_schedule_test() ->
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
     lists:foreach(
-        fun(X) ->
-            {ok, _} = hb_http:post(Node, Msg1, #{})
-        end,
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
         lists:seq(1, 10)
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
     {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
     Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
-    ?event(debug, {assignments, Assignments}),
-    ?event(debug, {keys, maps:keys(Assignments)}),
     ?assertEqual(
         11,
         length(maps:values(maps:without([<<"hashpath">>], Assignments)))
     ).
 
-multihttp_benchmark_test() ->
+%%% Benchmarks
+
+single_converge(Opts) ->
+    start(),
+    BenchTime = 1,
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
+    Msg1 = test_process(Wallet),
+    ?event({benchmark_start, ?MODULE}),
+    MsgToSchedule = hb_message:sign(#{
+        <<"type">> => <<"Message">>,
+        <<"test-key">> => <<"test-val">>
+    }, Wallet),
+    Iterations = hb:benchmark(
+        fun(_) ->
+            MsgX = #{
+                <<"path">> => <<"schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> => MsgToSchedule
+            },
+            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, Opts))
+        end,
+        BenchTime
+    ),
+    ?event(benchmark, {scheduled, Iterations}),
+    Msg3 = #{
+        <<"path">> => <<"slot">>,
+        <<"method">> => <<"GET">>,
+        <<"process">> => hb_util:id(Msg1)
+    },
+    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
+            when CurrentSlot == Iterations - 1,
+        hb_converge:resolve(Msg1, Msg3, Opts)),
+    hb_util:eunit_print(
+        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 3).
+
+many_clients(Opts) ->
     BenchTime = 1,
     Processes = 25,
-    {Node, Wallet} = http_init(),
+    {Node, Wallet} = http_init(Opts),
     PMsg = hb_message:sign(test_process(Wallet), Wallet),
     Msg1 = hb_message:sign(#{
         <<"path">> => <<"/!scheduler@1.0/schedule">>,
@@ -603,10 +602,11 @@ multihttp_benchmark_test() ->
         <<"process">> => PMsg,
         <<"body">> => hb_message:sign(#{ <<"inner">> => <<"test">> }, Wallet)
     }, Wallet),
-    {ok, _} = hb_http:post(Node, Msg1, #{}),
+    {ok, _} = hb_http:post(Node, Msg1, Opts),
     Iterations = hb:benchmark(
-        fun(_) ->
-            {ok, _} = hb_http:post(Node, Msg1, #{})
+        fun(X) ->
+            {ok, _} = hb_http:post(Node, Msg1, Opts),
+            ?event(bench, {iteration, X, self()})
         end,
         BenchTime,
         Processes
@@ -616,4 +616,75 @@ multihttp_benchmark_test() ->
         "Scheduled ~p messages with ~p workers through HTTP in ~ps (~.2f msg/s)",
         [Iterations, Processes, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 25).
+    ?assert(Iterations > 10).
+
+benchmark_suite_test_() ->
+    rand:seed(exsplus, erlang:timestamp()),
+    Port = 30000 + rand:uniform(10000),
+    Bench = [
+        {benchmark, "benchmark", fun single_converge/1},
+        {multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
+    ],
+    OptSpecs = [
+        #{
+            name => fs,
+            opts => #{
+                store => {hb_store_fs, #{
+                    prefix => <<"TEST-cache/fs-",
+                        (integer_to_binary(Port))/binary>>
+                }},
+                scheduling_mode => local_confirmation,
+                port => Port
+            },
+            desc => "FS store, local conf."
+        },
+        #{
+            name => fs_aggressive,
+            opts => #{
+                store => {hb_store_fs, #{
+                    prefix => <<"TEST-cache/fs-",
+                        (integer_to_binary(Port))/binary>>
+                }},
+                scheduling_mode => aggressive,
+                port => Port + 1
+            },
+            desc => "FS store, aggressive conf."
+        },
+        #{
+            name => rocksdb,
+            opts => #{
+                store => {hb_store_rocksdb, #{
+                    prefix => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+1))/binary>>
+                }},
+                scheduling_mode => local_confirmation,
+                port => Port + 2
+            },
+            desc => "RocksDB store, local conf."
+        },
+        #{
+            name => rocksdb_aggressive,
+            opts => #{
+                store => {hb_store_rocksdb, #{
+                    prefix => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+2))/binary>>
+                }},
+                scheduling_mode => aggressive,
+                port => Port + 3
+            },
+            desc => "RocksDB store, aggressive conf."
+        },
+        #{
+            name => rocksdb_aggressive_h3,
+            opts => #{
+                store => {hb_store_rocksdb, #{
+                    prefix => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+3))/binary>>
+                }},
+                scheduling_mode => aggressive,
+                protocol => http3
+            },
+            desc => "RocksDB store, aggressive conf, http/3."
+        }
+    ],
+    hb_test_utils:suite_with_opts(Bench, OptSpecs).

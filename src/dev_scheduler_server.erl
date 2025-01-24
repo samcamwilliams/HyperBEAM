@@ -106,7 +106,7 @@ do_assign(State, Message, ReplyPID) ->
     NextSlot = maps:get(current, State) + 1,
     % Run the signing of the assignment and writes to the disk in a separate
     % process.
-    spawn(
+    AssignFun =
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
             Assignment = hb_message:sign(#{
@@ -128,15 +128,21 @@ do_assign(State, Message, ReplyPID) ->
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
             }, maps:get(wallet, State)),
-            maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
+            maybe_inform_recipient(
+                aggressive,
+                ReplyPID,
+                Message,
+                Assignment,
+                State
+            ),
             ?event(starting_message_write),
             dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
-            hb_cache:write(Message, maps:get(opts, State)),
             maybe_inform_recipient(
                 local_confirmation,
                 ReplyPID,
                 Message,
-                Assignment
+                Assignment,
+                State
             ),
             ?event(writes_complete),
             ?event(uploading_assignment),
@@ -146,17 +152,24 @@ do_assign(State, Message, ReplyPID) ->
                 remote_confirmation,
                 ReplyPID,
                 Message,
-                Assignment
+                Assignment,
+                State
             )
-        end
-    ),
+        end,
+    case hb_opts:get(scheduling_mode, sync, maps:get(opts, State)) of
+        aggressive ->
+            spawn(AssignFun);
+        Other ->
+            ?event(debug, {scheduling_mode, Other}),
+            AssignFun()
+    end,
     State#{
         current := NextSlot,
         hash_chain := HashChain
     }.
 
-maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
-    case hb_opts:get(scheduling_mode, remote_confirmation) of
+maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
+    case hb_opts:get(scheduling_mode, remote_confirmation, maps:get(opts, State)) of
         Mode -> ReplyPID ! {scheduled, Message, Assignment};
         _ -> ok
     end.
