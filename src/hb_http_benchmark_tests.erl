@@ -162,9 +162,9 @@
 % %                 <<"device">> => <<"Scheduler@1.0">>,
 % %                 <<"path">> => <<"schedule">>,
 % %                 <<"method">> => <<"POST">>,
-% %                 <<"message">> =>
+% %                 <<"body">> =>
 % %                     #{
-% %                         <<"type">> => <<"message">>,
+% %                         <<"type">> => <<"body">>,
 % %                         <<"test-val">> => X
 % %                     }
 % %             },

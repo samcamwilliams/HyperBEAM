@@ -59,10 +59,9 @@ prep_call(M1, M2, Opts) ->
     ?event({prep_call, M1, M2, Opts}),
     Instance = hb_private:get(<<"priv/wasm/instance">>, M1, Opts),
     Process = hb_converge:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
-    Assignment = hb_converge:get(<<"assignment">>, M2, Opts#{ hashpath => ignore }),
-    Message = hb_converge:get(<<"message">>, M2, Opts#{ hashpath => ignore }),
+    Message = hb_converge:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_converge:get(<<"process/image">>, M1, Opts),
-    BlockHeight = hb_converge:get(<<"block-height">>, Assignment, Opts),
+    BlockHeight = hb_converge:get(<<"block-height">>, M2, Opts),
     RawMsgJson =
         ar_bundles:item_to_json_struct(
             hb_message:convert(Message, tx, converge, #{})
@@ -282,17 +281,16 @@ generate_stack(File, Mode) ->
 
 generate_aos_msg(ProcID, Code) ->
     Wallet = hb:wallet(),
-    #{
+    hb_message:sign(#{
         <<"path">> => <<"compute">>,
-        <<"message">> => 
+        <<"body">> => 
             hb_message:sign(#{
                 <<"Action">> => <<"Eval">>,
                 <<"Data">> => Code,
                 <<"Target">> => ProcID
             }, Wallet),
-        <<"assignment">> =>
-            hb_message:sign(#{ <<"block-height">> => 1 }, Wallet)
-    }.
+        <<"block-height">> => 1
+    }, Wallet).
 
 basic_aos_call_test() ->
     Msg = generate_stack("test/aos-2-pure-xs.wasm"),

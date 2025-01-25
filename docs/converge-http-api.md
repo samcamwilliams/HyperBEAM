@@ -31,7 +31,7 @@ For example, `GET /hashpath1/key1+dict1=val1/key2` adds `dict1=val1` to the
 message for the resolution of the `key1` key.
 - `N.KeyName` in headers or query parameters is interpreted as `KeyName` in the
 message dictionary for the resolution of the `N`th key.
-- `Key!DevName` in a path segment is interpreted as executing the message with
+- `Key~DevName` in a path segment is interpreted as executing the message with
 the `Device` set to `DevName`.
 - A dictionary key of form `Key|Type` is interpreted as a type annotation for
 `Key`, which can be used to parse the value of the key using HTTP Structured
@@ -92,9 +92,9 @@ curl -X POST http://host:port/Init/Compute \
     -H "2.WASM-Function: fac" -H "2.WASM-Params: [10]"
 ```
 
-To fork an existing process to use a new device, we can use the `!` key operator:
+To fork an existing process to use a new device, we can use the `~` key operator:
 ```
-curl -X POST http://host:port/Schedule!Process/2.0/(/ProcID/Now)+Method=POST
+curl -X POST http://host:port/Schedule~Process/2.0/(/ProcID/Now)+Method=POST
 ```
 
 To run multiple computations in the same request, with separate headers for

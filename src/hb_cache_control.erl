@@ -341,11 +341,11 @@ cache_binary_result_test() ->
     ?assertEqual(Res2, Res3).
 
 cache_message_result_test() ->
-    hb_store:reset(hb_opts:get(store)),
     CachedMsg =
         #{
             <<"purpose">> => <<"Test-Message">>,
-            <<"aux">> => #{ <<"aux-message">> => <<"Aux-Message-Value">> }
+            <<"aux">> => #{ <<"aux-message">> => <<"Aux-Message-Value">> },
+            <<"test-key">> => rand:uniform(1000000)
         },
     Msg1 = #{ <<"test-key">> => CachedMsg, <<"local">> => <<"Binary">> },
     Msg2 = <<"test-key">>,

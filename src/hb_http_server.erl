@@ -162,6 +162,7 @@ test_opts(Opts) ->
     rand:seed(default),
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
+    rand:seed(exsplus, erlang:timestamp()),
     Port = 10000 + rand:uniform(20000),
     Wallet =
         case hb_opts:get(priv_wallet, no_viable_wallet, Opts) of

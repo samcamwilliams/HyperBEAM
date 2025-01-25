@@ -32,7 +32,7 @@ start_link(Stores) when is_list(Stores) ->
         _ -> ignore
     end;
 start_link(Store) ->
-    ?event(error, {invalid_store_config, Store}),
+    ?event(rocksdb, {invalid_store_config, Store}),
     ignore.
 
 start(Opts) ->
@@ -212,8 +212,7 @@ handle_call({meta, Key}, _From, State) ->
     {reply, Result, State};
 handle_call(reset, _From, #{db_handle := DBHandle, dir := Dir}) ->
     ok = rocksdb:close(DBHandle),
-    ok = rocksdb:destroy(Dir, []),
-
+    ok = rocksdb:destroy(ensure_list(Dir), []),
     {ok, NewDBHandle, [DefaultH, MetaH]} = open_rockdb(Dir),
     NewState = #{
         db_handle => NewDBHandle,
@@ -221,7 +220,6 @@ handle_call(reset, _From, #{db_handle := DBHandle, dir := Dir}) ->
         data_family => DefaultH,
         meta_family => MetaH
     },
-
     {reply, ok, NewState};
 handle_call({list, Path}, _From, State = #{db_handle := DBHandle}) ->
     {ok, Iterator} = rocksdb:iterator(DBHandle, []),
@@ -240,16 +238,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Private
 %%%=============================================================================
 
+open_rockdb(RawDir) ->
+    filelib:ensure_dir(Dir = ensure_list(RawDir)),
+    ColumnFamilies = [{"default", []}, {"meta", []}],
+    Options = [{create_if_missing, true}, {create_missing_column_families, true}],
+    rocksdb:open_with_cf(Dir, Options, ColumnFamilies).
+
 % Helper function to convert lists to binaries
 convert_if_list(Value) when is_list(Value) ->
     join(Value);  % Perform the conversion if it's a list
 convert_if_list(Value) ->
     Value.  % Leave unchanged if it's not a list
 
-open_rockdb(Dir) ->
-    ColumnFamilies = [{"default", []}, {"meta", []}],
-    Options = [{create_if_missing, true}, {create_missing_column_families, true}],
-    rocksdb:open_with_cf(Dir, Options, ColumnFamilies).
+%% @doc Ensure that the given filename is a list, not a binary.
+ensure_list(Value) when is_binary(Value) -> binary_to_list(Value);
+ensure_list(Value) -> Value.
 
 get_data(#{data_family := F, db_handle := Handle}, Key, Opts) ->
     rocksdb:get(Handle, F, Key, Opts).

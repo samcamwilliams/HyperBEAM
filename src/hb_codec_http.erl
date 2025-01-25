@@ -39,6 +39,7 @@
 %%% 
 -module(hb_codec_http).
 -export([to/1, from/1]).
+%%% Helper utilities
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -92,7 +93,11 @@ from_signature(Map, RawSig, RawSigInput) ->
 
             SigMap = lists:foldl(
                 fun({PName, PBareItem}, PAcc) ->
-                    maps:put(PName, from_sf_bare_item(PBareItem), PAcc)
+                    maps:put(
+                        PName,
+                        hb_http_structured_fields:from_bare_item(PBareItem),
+                        PAcc
+                    )
                 end,
                 #{ <<"signature">> => Sig, <<"inputs">> => Inputs },
                  % Signature parameters are converted into top-level keys on the signature Map
@@ -107,15 +112,6 @@ from_signature(Map, RawSig, RawSigInput) ->
     % Finally place the Signatures as a top-level Map on the parent Map
     maps:put(<<"signatures">>, Signatures, Map).
 
-from_sf_bare_item (BareItem) ->
-    case BareItem of
-        I when is_integer(I) -> I;
-        B when is_boolean(B) -> B;
-        D = {decimal, _} -> list_to_float(hb_http_structured_fields:bare_item(D));
-        {string, S} -> S;
-        {token, T} -> binary_to_existing_atom(T);
-        {binary, B} -> B
-    end.
 
 find_header(Headers, Name) ->
     find_header(Headers, Name, []).
@@ -247,7 +243,8 @@ from_body_parts(TABM, [Part | Rest]) ->
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API
 to(Bin) when is_binary(Bin) -> Bin;
-to(TABM) when is_map(TABM) ->
+to(TABM) -> to(TABM, []).
+to(TABM, Opts) when is_map(TABM) ->
     % PublicMsg = hb_private:reset(TABM),
     % MinimizedMsg = hb_message:minimize(PublicMsg),
     Http = maps:fold(
@@ -265,13 +262,20 @@ to(TABM) when is_map(TABM) ->
     ),
     BodyMap = maps:get(<<"body">>, Http),
     NewHttp =
-        case BodyMap of
+        case {BodyMap, lists:member(sub_part, Opts)} of
             % If the body map is empty, then simply set the body to be a corresponding empty binary.
-            X when map_size(X) =:= 0 ->
+            {X, _} when map_size(X) =:= 0 ->
                 maps:put(<<"body">>, <<>>, Http);
             % Simply set the sole body binary as the body of the
             % HTTP message, no further encoding required
-            #{ <<"body">> := UserBody } when map_size(BodyMap) =:= 1 andalso is_binary(UserBody) ->
+            % 
+            % NOTE: this may only be done for the top most message as sub-messages MUST be
+            % encoded as sub-parts, in order to preserve the nested hierarchy of messages,
+            % even in the case of a sole body binary.
+            % 
+            % In all other cases, the mapping fallsthrough to the case below that properly
+            % encodes a nested body within a sub-part
+            {#{ <<"body">> := UserBody }, false} when map_size(BodyMap) =:= 1 andalso is_binary(UserBody) ->
                 ?event({encoding_single_body, {body, UserBody}, {http, Http}}),
                 maps:put(<<"body">>, UserBody, Http);
             % Otherwise, we need to encode the body map as the
@@ -295,18 +299,44 @@ to(TABM) when is_map(TABM) ->
                                 <<"body">> -> <<"inline">>;
                                 _ -> <<"form-data;name=", "\"", PartName/binary, "\"">>
                             end,
+                            % Sub-parts MUST have at least one header, according to the multipart spec.
+                            % Adding the Content-Disposition not only satisfies that requirement,
+                            % but also encodes the HB message field that resolves to the sub-message
                             EncodedBodyPart = case BodyPart of
                                 BPMap when is_map(BPMap) ->
-                                    SubHttp = to(BPMap),
+                                    WithDisposition = maps:put(
+                                        <<"Content-Disposition">>,
+                                        Disposition,
+                                        BPMap
+                                    ),
+                                    SubHttp = to(WithDisposition, [sub_part]),
                                     EncodedHttp = encode_http_msg(SubHttp),
                                     EncodedHttp;
                                 BPBin when is_binary(BPBin) ->
-                                    BPBin
+                                    case PartName of
+                                        % A properly encoded inlined body part MUST have a CRLF between
+                                        % it and the header block, so we MUST use two CRLF:
+                                        % - first to signal end of the Content-Disposition header
+                                        % - second to signal the end of the header block
+                                        <<"body">> -> 
+                                            <<
+                                                "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                                ?CRLF/binary,
+                                                BPBin/binary
+                                            >>;
+                                        % All other binary values are encoded as a header in their
+                                        % respective sub-part
+                                        _ ->
+                                            <<
+                                                "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                                BPBin/binary
+                                            >>
+                                    end
+                                    
                             end,
                             [
                                 <<
                                     "--", Boundary/binary, ?CRLF/binary,
-                                    "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
                                     EncodedBodyPart/binary
                                 >>
                             |

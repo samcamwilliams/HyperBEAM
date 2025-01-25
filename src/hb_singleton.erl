@@ -11,25 +11,25 @@
 %%%         - /Part1/Part2/.../PartN/ => [Part1, Part2, ..., PartN]
 %%%         - /ID/Part2/.../PartN => [ID, Part2, ..., PartN]
 %%%
-%%%     Part: (Key | Resolution), Device?, #{ K => V}?
+%%%     Part: (Key + Resolution), Device?, #{ K => V}?
 %%%         - Part => #{ path => Part }
-%%%         - Part+Key=Value => #{ path => Part, Key => Value }
-%%%         - Part+Key => #{ path => Part, Key => true }
-%%%         - Part+k1=v1&k2=v2 => #{ path => Part, k1 => <<"v1">>, k2 => <<"v2">> }
-%%%         - Part!Device => {as, Device, #{ path => Part }}
-%%%         - Part!D+K1=V1 => {as, D, #{ path => Part, K1 => <<"v1">> }}
-%%%         - pt+k1|int=1 => #{ path => pt, k1 => 1 }
-%%%         - pt!d+k1|int=1 => {as, d, #{ path => pt, k1 => 1 }}
+%%%         - Part&Key=Value => #{ path => Part, Key => Value }
+%%%         - Part&Key => #{ path => Part, Key => true }
+%%%         - Part&k1=v1&k2=v2 => #{ path => Part, k1 => <<"v1">>, k2 => <<"v2">> }
+%%%         - Part~Device => {as, Device, #{ path => Part }}
+%%%         - Part~D&K1=V1 => {as, D, #{ path => Part, K1 => <<"v1">> }}
+%%%         - pt&k1+int=1 => #{ path => pt, k1 => 1 }
+%%%         - pt~d&k1+int=1 => {as, d, #{ path => pt, k1 => 1 }}
 %%%         - (/nested/path) => Resolution of the path /nested/path
-%%%         - (/nested/path+k1=v1) => (resolve /nested/path)#{k1 => v1}
-%%%         - (/nested/path!D+K1=V1) => (resolve /nested/path)#{K1 => V1}
-%%%         - pt+k1|res=(/a/b/c) => #{ path => pt, k1 => (resolve /a/b/c) }
+%%%         - (/nested/path&k1=v1) => (resolve /nested/path)#{k1 => v1}
+%%%         - (/nested/path~D&K1=V1) => (resolve /nested/path)#{K1 => V1}
+%%%         - pt&k1+res=(/a/b/c) => #{ path => pt, k1 => (resolve /a/b/c) }
 %%%     Key:
 %%%         - key: <<"value">> => #{ key => <<"value">>, ... } for all messages
 %%%         - n.key: <<"value">> => #{ key => <<"value">>, ... } for Nth message
-%%%         - key|Int: 1 => #{ key => 1, ... }
-%%%         - key|Res: /nested/path => #{ key => (resolve /nested/path), ... }
-%%%         - N.Key|Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
+%%%         - key+Int: 1 => #{ key => 1, ... }
+%%%         - key+Res: /nested/path => #{ key => (resolve /nested/path), ... }
+%%%         - N.Key+Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
 %%% '''
 -module(hb_singleton).
 -export([from/1]).
@@ -69,7 +69,7 @@ parse_full_path(RelativeRef) ->
         maps:from_list(QKVList)
     }.
 
-%% @doc Step 2: Decode + Split + Sanitize the path. Split by `/` but avoid
+%% @doc Step 2: Decode, split and sanitize the path. Split by `/` but avoid
 %% subpath components, such that their own path parts are not dissociated from
 %% their parent path.
 path_messages(RawBin) when is_binary(RawBin) ->
@@ -175,7 +175,7 @@ build_messages(Msgs, ScopedModifications) ->
 
 do_build(_, [], _ScopedKeys) -> [];
 do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
-    [Msg | do_build(I+1, Rest, ScopedKeys)];
+    [Msg | do_build(I + 1, Rest, ScopedKeys)];
 do_build(I, [Msg | Rest], ScopedKeys) ->
     ScopedKey = lists:nth(I, ScopedKeys),
     StepMsg = hb_message:convert(
@@ -183,7 +183,7 @@ do_build(I, [Msg | Rest], ScopedKeys) ->
         converge,
         #{ topic => converge_internal }
     ),
-    [StepMsg | do_build(I+1, Rest, ScopedKeys)].
+    [StepMsg | do_build(I + 1, Rest, ScopedKeys)].
 
 %% @doc Parse a path part into a message or an ID.
 %% Applies the syntax rules outlined in the module doc, in the following order:
@@ -196,7 +196,7 @@ parse_part(Part) ->
     case maybe_subpath(Part) of
         {resolve, Subpath} -> {resolve, Subpath};
         Part ->
-            case part([$+, $&, $!, $|], Part) of
+            case part([$&, $~, $+], Part) of
                 {no_match, PartKey, <<>>} ->
                     #{ <<"path">> => PartKey };
                 {Sep, PartKey, PartModBin} ->
@@ -208,24 +208,24 @@ parse_part(Part) ->
     end.
 
 %% @doc Parse part modifiers:
-%% 1. `!Device` => {as, Device, Msg}
-%% 2. `+K=V` => Msg#{ K => V }
+%% 1. `~Device` => {as, Device, Msg}
+%% 2. `&K=V` => Msg#{ K => V }
 parse_part_mods([], Msg) -> Msg;
 parse_part_mods(<<>>, Msg) -> Msg;
-parse_part_mods(<<"!", PartMods/binary>>, Msg) ->
+parse_part_mods(<<"~", PartMods/binary>>, Msg) ->
     % Get the string until the end of the device specifier or end of string.
-    [DeviceBin|Rest] = path_parts($+, PartMods),
-    InlinedMsgBin = maybe_join(Rest, <<"+">>),
+    {_, DeviceBin, InlinedMsgBin} = part([$=, $&], PartMods),
     % Calculate the inlined keys
     MsgWithInlines = parse_part_mods(InlinedMsgBin, Msg),
     % Apply the device specifier
     {as, maybe_subpath(DeviceBin), MsgWithInlines};
-parse_part_mods(<< "+", InlinedMsgBin/binary >>, Msg) ->
+parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->
     InlinedKeys = path_parts($&, InlinedMsgBin),
     MsgWithInlined =
         lists:foldl(
             fun(InlinedKey, Acc) ->
                 {Key, Val} = parse_inlined_key_val(InlinedKey),
+                ?event(debug, {inlined_key, {explicit, Key}, {explicit, Val}}),
                 maps:put(Key, Val, Acc)
             end,
             Msg,
@@ -264,15 +264,15 @@ maybe_subpath(Other) -> Other.
 
 %% @doc Parse a key's type (applying it to the value) and device name if present.
 maybe_typed(Key, Value) ->
-    case part($|, Key) of
+    case part($+, Key) of
         {no_match, OnlyKey, <<>>} -> {untyped, OnlyKey, Value};
-        {$|, OnlyKey, Type} ->
+        {$+, OnlyKey, Type} ->
             case {Type, Value} of
                 {<<"resolve">>, Subpath} ->
                     % If the value needs to be resolved before it is converted,
                     % use the `Codec/1.0` device to resolve it.
                     % For example:
-                    % /a/b+k|Int=(/x/y/z)` => /a/b+k=(/x/y/z/body+Type=Int|Codec)
+                    % /a/b&k+Int=(/x/y/z)` => /a/b&k=(/x/y/z/body&Type=Int+Codec)
                     {typed,
                         OnlyKey,
                         {resolve, from(#{ <<"path">> => Subpath })}
@@ -349,7 +349,7 @@ scoped_key_test() ->
 typed_key_test() ->
     Req = #{
         <<"path">> => <<"/a/b/c">>,
-        <<"2.test-key|integer">> => <<"123">>
+        <<"2.test-key+integer">> => <<"123">>
     },
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
@@ -361,7 +361,7 @@ typed_key_test() ->
 subpath_in_key_test() ->
     Req = #{
         <<"path">> => <<"/a/b/c">>,
-        <<"2.test-key|resolve">> => <<"/x/y/z">>
+        <<"2.test-key+resolve">> => <<"/x/y/z">>
     },
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
@@ -406,7 +406,7 @@ subpath_in_path_test() ->
 inlined_keys_test() ->
     Req = #{
         <<"method">> => <<"POST">>,
-        <<"path">> => <<"/a/b+k1=v1/c+k2=v2">>
+        <<"path">> => <<"/a/b&k1=v1/c&k2=v2">>
     },
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
@@ -417,7 +417,7 @@ inlined_keys_test() ->
     ?assertEqual(not_found, maps:get(<<"k2">>, Msg2, not_found)).
 
 multiple_inlined_keys_test() ->
-    Path = <<"/a/b+k1=v1&k2=v2">>,
+    Path = <<"/a/b&k1=v1&k2=v2">>,
     Req = #{
         <<"method">> => <<"POST">>,
         <<"path">> => Path
@@ -431,7 +431,7 @@ multiple_inlined_keys_test() ->
     ?assertEqual(<<"v2">>, maps:get(<<"k2">>, Msg2, not_found)).
 
 subpath_in_inlined_test() ->
-    Path = <<"/part1/part2+test=1&b=(/x/y)/part3">>,
+    Path = <<"/part1/part2&test=1&b=(/x/y)/part3">>,
     Req = #{
         <<"path">> => Path
     },
@@ -447,8 +447,8 @@ subpath_in_inlined_test() ->
 
 path_parts_test() ->
     ?assertEqual(
-        [<<"a">>, <<"b+c=(/d/e)">>, <<"f">>],
-        path_parts($/, <<"/a/b+c=(/d/e)/f">>)
+        [<<"a">>, <<"b&c=(/d/e)">>, <<"f">>],
+        path_parts($/, <<"/a/b&c=(/d/e)/f">>)
     ),
     ?assertEqual([<<"a">>], path_parts($/, <<"/a">>)),
     ?assertEqual([<<"a">>, <<"b">>, <<"c">>], path_parts($/, <<"/a/b/c">>)),
@@ -460,8 +460,8 @@ path_parts_test() ->
         path_parts($/, <<"/IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q/msg2">>)
     ),
     ?assertEqual(
-        [<<"a">>, <<"b+K1=V1">>, <<"c+K2=V2">>],
-        path_parts($/, <<"/a/b+K1=V1/c+K2=V2">>)
+        [<<"a">>, <<"b&K1=V1">>, <<"c&K2=V2">>],
+        path_parts($/, <<"/a/b&K1=V1/c&K2=V2">>)
     ),
     ?assertEqual(
         [<<"a">>, <<"(x/y/z)">>, <<"c">>],
