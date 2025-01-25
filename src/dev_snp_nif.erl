@@ -47,8 +47,6 @@ generate_attestation_report_test() ->
 			?assertEqual(ok, ok)
 	end.
 
-
-
 compute_launch_digest_test() ->
 	%% Define the data structure
 	ArgsMap = #{ 
@@ -56,7 +54,6 @@ compute_launch_digest_test() ->
 		vcpu_type => 5, 
 		vmm_type => 1,
 		guest_features => 16#1,
-
 		firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
 		kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
 		initrd => "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",

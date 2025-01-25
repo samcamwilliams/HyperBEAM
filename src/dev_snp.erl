@@ -217,5 +217,3 @@ generate_test() ->
 	ValidationRes = verify(#{ <<"trusted">> => Trusted}, #{ <<"body">> => Report }, #{}),
 	?event(debug, {snp_validation_res, ValidationRes}),
     ?assertEqual({ok, true}, ValidationRes).
-
-%8atras
