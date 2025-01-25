@@ -382,7 +382,9 @@ run_as(Key, Msg1, Msg2, Opts) ->
             },
             Opts
         ),
-    %?event({resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
+    ?event({resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
+    DeviceAsSet = hb_converge:get(<<"device">>, PreparedMsg, Opts),
+    ?event({device_set, DeviceAsSet}),
     {ok, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,

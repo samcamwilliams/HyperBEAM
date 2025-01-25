@@ -162,6 +162,8 @@ compute(RawM1, M2, Opts) ->
                 {
                     calling_wasm_executor,
                     {prefix, Prefix},
+                    {wasm_function, {explicit, WASMFunction}},
+                    {wasm_params, WASMParams},
                     {m1, M1},
                     {m2, M2},
                     {priv, hb_private:from_message(M1)}

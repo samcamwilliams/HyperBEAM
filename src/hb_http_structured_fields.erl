@@ -1,7 +1,7 @@
 -module(hb_http_structured_fields).
 
 -export([parse_dictionary/1, parse_item/1, parse_list/1, parse_bare_item/1]).
--export([dictionary/1, item/1, list/1, bare_item/1]).
+-export([dictionary/1, item/1, list/1, bare_item/1, from_bare_item/1]).
 -export([to_dictionary/1, to_list/1, to_item/1, to_item/2]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -139,6 +139,23 @@ to_bare_item(BareItem) ->
             Dec;
         A when is_atom(A) -> {token, atom_to_binary(A)};
         S when is_binary(S) or is_list(S) -> {string, iolist_to_binary(S)}
+    end.
+
+from_bare_item(BareItem) ->
+    case BareItem of
+        I when is_integer(I) -> I;
+        B when is_boolean(B) -> B;
+        D = {decimal, _} ->
+            list_to_float(
+                binary_to_list(
+                    iolist_to_binary(
+                        hb_http_structured_fields:bare_item(D)
+                    )
+                )
+            );
+        {string, S} -> S;
+        {token, T} -> binary_to_existing_atom(T);
+        {binary, B} -> B
     end.
 
 key_to_binary(Key) when is_atom(Key) -> atom_to_binary(Key);

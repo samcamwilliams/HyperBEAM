@@ -585,6 +585,7 @@ single_converge(Opts) ->
     ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
         hb_converge:resolve(Msg1, Msg3, Opts)),
+    ?event(bench, {res, Iterations - 1}),
     hb_util:eunit_print(
         "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
@@ -616,6 +617,8 @@ many_clients(Opts) ->
         "Scheduled ~p messages with ~p workers through HTTP in ~ps (~.2f msg/s)",
         [Iterations, Processes, BenchTime, Iterations / BenchTime]
     ),
+    {ok, Res} = http_get_slot(Node, PMsg),
+    ?event(bench, {res, Res}),
     ?assert(Iterations > 10).
 
 benchmark_suite_test_() ->
