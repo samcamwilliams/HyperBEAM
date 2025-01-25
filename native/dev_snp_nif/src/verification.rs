@@ -25,7 +25,7 @@ fn verify_measurement<'a>(
     _report: Binary,
     _expected_measurement: Binary,
 ) -> NifResult<Term<'a>> {
-    log_message("INFO", file!(), line!(), "Starting measurement verification...");
+    //log_message("INFO", file!(), line!(), "Starting measurement verification...");
 
     // Define a struct for deserializing the attestation report.
     #[derive(Debug, Deserialize)]
@@ -37,12 +37,12 @@ fn verify_measurement<'a>(
     // Step 1: Deserialize the JSON report.
     let report: AttestationReport = match serde_json::from_slice(_report.as_slice()) {
         Ok(parsed_report) => {
-            log_message(
-                "INFO",
-                file!(),
-                line!(),
-                &format!("Successfully parsed report: {:?}", parsed_report),
-            );
+            //log_message(
+            //    "INFO",
+            //    file!(),
+            //    line!(),
+            //    &format!("Successfully parsed report: {:?}", parsed_report),
+            //);
             parsed_report
         }
         Err(err) => {
@@ -58,28 +58,28 @@ fn verify_measurement<'a>(
 
     // Step 2: Extract the actual measurement from the report.
     let actual_measurement = &report.measurement;
-    log_message(
-        "INFO",
-        file!(),
-        line!(),
-        &format!("Extracted actual measurement: {:?}", actual_measurement),
-    );
+    // log_message(
+    //     "INFO",
+    //     file!(),
+    //     line!(),
+    //     &format!("Extracted actual measurement: {:?}", actual_measurement),
+    // );
 
     // Step 3: Decode the expected measurement from the input binary.
     let expected_measurement: Vec<u8> = _expected_measurement.as_slice().to_vec();
-    log_message(
-        "INFO",
-        file!(),
-        line!(),
-        &format!("Decoded expected measurement: {:?}", expected_measurement),
-    );
+    // log_message(
+    //     "INFO",
+    //     file!(),
+    //     line!(),
+    //     &format!("Decoded expected measurement: {:?}", expected_measurement),
+    // );
 
     // Step 4: Compare the actual and expected measurements.
     if actual_measurement == &expected_measurement {
-        log_message("INFO", file!(), line!(), "Measurements match.");
+        //log_message("INFO", file!(), line!(), "Measurements match.");
         Ok((atom::ok(), "Measurements match").encode(env))
     } else {
-        log_message("ERROR", file!(), line!(), "Measurements do not match.");
+        //log_message("ERROR", file!(), line!(), "Measurements do not match.");
         Ok((atom::error(), "Measurements do not match").encode(env))
     }
 }
@@ -100,7 +100,7 @@ fn verify_signature<'a>(
     env: Env<'a>,
     report: Binary<'a>,
 ) ->  NifResult<Term<'a>>  {
-    log_message("INFO", file!(), line!(), "Verifying signature...");
+    // log_message("INFO", file!(), line!(), "Verifying signature...");
 
     // Step 1: Parse the report JSON into a serde Value object.
     let json_data = match serde_json::from_slice::<Value>(report.as_slice()) {
@@ -291,7 +291,7 @@ fn verify_signature<'a>(
         );
         return Ok((atom::error(), format!("CA verification failed: {:?}", e)).encode(env));
     }
-    log_message("INFO", file!(), line!(), "CA chain verification successful.");
+    //log_message("INFO", file!(), line!(), "CA chain verification successful.");
 
     // Step 6: Verify the attestation report.
     let cert_chain = Chain { ca, vek: vcek };
@@ -305,6 +305,6 @@ fn verify_signature<'a>(
         return Ok((atom::error(), format!("Report verification failed: {:?}", e)).encode(env));
     }
 
-    log_message("INFO", file!(), line!(), "Signature verification successful.");
+    //log_message("INFO", file!(), line!(), "Signature verification successful.");
     Ok((ok(), "Signature verification successful").encode(env))
 }

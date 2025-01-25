@@ -46,7 +46,7 @@ struct LaunchDigestArgs {
 /// ```
 #[rustler::nif]
 pub fn compute_launch_digest<'a>(env: Env<'a>, input_map: Term<'a>) -> NifResult<Term<'a>> {
-    log_message("INFO", file!(), line!(), "Starting launch digest calculation...");
+    //log_message("INFO", file!(), line!(), "Starting launch digest calculation...");
 
     // Step 1: Validate that the input is a map.
     if !input_map.is_map() {
@@ -136,12 +136,12 @@ pub fn compute_launch_digest<'a>(env: Env<'a>, input_map: Term<'a>) -> NifResult
         }
     };
 
-    log_message(
-        "INFO",
-        file!(),
-        line!(),
-        "Launch digest successfully computed and serialized.",
-    );
+    //log_message(
+    //    "INFO",
+    //    file!(),
+    //    line!(),
+    //    "Launch digest successfully computed and serialized.",
+    //);
 
     // Step 7: Return the calculated and serialized digest.
     Ok((ok(), serialized_digest).encode(env))

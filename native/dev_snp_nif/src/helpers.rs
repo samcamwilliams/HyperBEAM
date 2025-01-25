@@ -27,12 +27,12 @@ const KDS_CERT_CHAIN: &str = "cert_chain";
 pub fn request_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Box<dyn std::error::Error>> {
 // Blocking version of reqwest
     let url = format!("{KDS_CERT_SITE}{KDS_VCEK}/{sev_prod_name}/{KDS_CERT_CHAIN}");
-    log_message(
-        "INFO",
-        file!(),
-        line!(),
-        &format!("Requesting AMD certificate chain from: {url}"),
-    );
+    // log_message(
+    //     "INFO",
+    //     file!(),
+    //     line!(),
+    //     &format!("Requesting AMD certificate chain from: {url}"),
+    // );
 
     // Perform the blocking GET request
     let response = get(&url)?;
@@ -49,12 +49,12 @@ pub fn request_cert_chain(sev_prod_name: &str) -> Result<ca::Chain, Box<dyn std:
     let ask = chain[0].to_pem()?;
     let ca_chain = ca::Chain::from_pem(&ark, &ask)?;
 
-    log_message(
-        "INFO",
-        file!(),
-        line!(),
-        "Successfully fetched AMD certificate chain.",
-    );
+    //log_message(
+    //    "INFO",
+    //    file!(),
+    //    line!(),
+    //    "Successfully fetched AMD certificate chain.",
+    //);
 
     Ok(ca_chain)
 }
@@ -91,12 +91,12 @@ pub fn request_vcek(
         reported_tcb.bootloader, reported_tcb.tee, reported_tcb.snp, reported_tcb.microcode
     );
 
-    log_message(
-        "INFO",
-        file!(),
-        line!(),
-        &format!("Requesting VCEK from: {url}"),
-    );
+    // log_message(
+    //     "INFO",
+    //     file!(),
+    //     line!(),
+    //     &format!("Requesting VCEK from: {url}"),
+    // );
 
     // Perform the blocking GET request
     let response = get(&url)?;
@@ -105,6 +105,6 @@ pub fn request_vcek(
     // Parse the VCEK response as a DER-encoded certificate
     let vcek_cert = Certificate::from_der(&rsp_bytes)?;
 
-    log_message("INFO", file!(), line!(), "Successfully fetched VCEK.");
+    // log_message("INFO", file!(), line!(), "Successfully fetched VCEK.");
     Ok(vcek_cert)
 }

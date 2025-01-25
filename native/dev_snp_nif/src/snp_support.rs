@@ -19,22 +19,22 @@ use crate::logging::log_message;
 /// ```
 #[rustler::nif]
 pub fn check_snp_support<'a>(env: Env<'a>) -> NifResult<Term<'a>> {
-    log_message("INFO", file!(), line!(), "Checking SNP support...");
+    //log_message("INFO", file!(), line!(), "Checking SNP support...");
 
     // Step 1: Attempt to open the firmware interface.
     // If the firmware is accessible, SNP is supported; otherwise, it is not.
     let is_supported = match Firmware::open() {
         Ok(_) => {
-            log_message("INFO", file!(), line!(), "SNP is supported.");
+            //log_message("INFO", file!(), line!(), "SNP is supported.");
             true // SNP is supported.
         }
         Err(_) => {
-            log_message(
-                "ERROR",
-                file!(),
-                line!(),
-                "Failed to open firmware. SNP is not supported.",
-            );
+            // log_message(
+            //     "ERROR",
+            //     file!(),
+            //     line!(),
+            //     "Failed to open firmware. SNP is not supported.",
+            // );
             false // SNP is not supported.
         }
     };
