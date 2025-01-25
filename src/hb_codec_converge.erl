@@ -168,9 +168,19 @@ decode_value(list, Value) ->
         fun({item, {string, <<"(converge-type-", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
             decode_value(Type, Item);
-           ({item, {string, Binary}, _}) -> Binary
+           ({item, Item, _}) -> hb_http_structured_fields:from_bare_item(Item)
         end,
         hb_http_structured_fields:parse_list(iolist_to_binary(Value))
+    );
+decode_value(map, Value) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, {item, Item, _}}) ->
+                ?event(debug, {decoded_item, {explicit, Key}, Item}),
+                {Key, hb_http_structured_fields:from_bare_item(Item)}
+            end,
+            hb_http_structured_fields:parse_dictionary(iolist_to_binary(Value))
+        )
     );
 decode_value(BinType, Value) when is_binary(BinType) ->
     decode_value(
