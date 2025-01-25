@@ -385,7 +385,7 @@ get_routes_test() ->
             ]
         }
     ),
-    Res = hb_http:get(Node, <<"/!Router@1.0/routes/1/node">>, #{}),
+    Res = hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{}),
     ?event({get_routes_test, Res}),
     {ok, Recvd} = Res,
     ?assertMatch(#{ <<"body">> := <<"our_node">> }, Recvd).
@@ -410,7 +410,7 @@ add_route_test() ->
             Node,
             hb_message:sign(
                 #{
-                    <<"path">> => <<"/!Router@1.0/routes">>,
+                    <<"path">> => <<"/~router@1.0/routes">>,
                     <<"template">> => <<"/some/new/path">>,
                     <<"node">> => <<"new">>,
                     <<"priority">> => 15
@@ -421,7 +421,7 @@ add_route_test() ->
         ),
     ?event({post_res, Res}),
     ?assertMatch({ok, #{ <<"body">> := <<"Route added.">> }}, Res),
-    GetRes = hb_http:get(Node, <<"/!Router@1.0/routes/2/node">>, #{}),
+    GetRes = hb_http:get(Node, <<"/~router@1.0/routes/2/node">>, #{}),
     ?event({get_res, GetRes}),
     {ok, Recvd} = GetRes,
     ?assertMatch(#{ <<"body">> := <<"new">> }, Recvd).

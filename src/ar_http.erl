@@ -23,7 +23,7 @@ req(Args, ReestablishedConnection, Opts) ->
 	StartTime = erlang:monotonic_time(),
 	#{ peer := Peer, path := Path, method := Method } = Args,
 	Response =
-        case catch gen_server:call(?MODULE, {get_connection, Args, Opts}, infinity) of
+        case catch gen_server:call(?MODULE, {get_connection, Args}, infinity) of
             {ok, PID} ->
                 ar_rate_limiter:throttle(Peer, Path, Opts),
                 case request(PID, Args, Opts) of
@@ -105,12 +105,12 @@ init(Opts) ->
     ?event(started),
 	{ok, #state{ opts = Opts }}.
 
-handle_call({get_connection, Args, Opts}, From,
+handle_call({get_connection, Args}, From,
 		#state{ pid_by_peer = PIDPeer, status_by_pid = StatusByPID } = State) ->
-    Peer = maps:get(peer, Args),
+	Peer = maps:get(peer, Args),
 	case maps:get(Peer, PIDPeer, not_found) of
 		not_found ->
-			{ok, PID} = open_connection(Args, Opts),
+			{ok, PID} = open_connection(Args, State#state.opts),
 			MonitorRef = monitor(process, PID),
 			PIDPeer2 = maps:put(Peer, PID, PIDPeer),
 			StatusByPID2 =
@@ -296,8 +296,8 @@ open_connection(#{ peer := Peer }, Opts) ->
             http2 -> BaseGunOpts#{protocols => [http2], transport => Transport};
             http1 -> BaseGunOpts#{protocols => [http], transport => Transport}
         end,
-    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}}),
-    gun:open(Host, Port, GunOpts).
+    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}, {transport, Transport}}),
+	gun:open(Host, Port, GunOpts).
 
 parse_peer(Peer, Opts) ->
     case binary:split(Peer, <<":">>, [global]) of
