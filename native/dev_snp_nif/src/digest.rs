@@ -93,10 +93,10 @@ pub fn compute_launch_digest<'a>(env: Env<'a>, input_map: Term<'a>) -> NifResult
         }
     }
 
-    log_message("INFO", file!(), line!(), &format!("Parsed arguments: {:?}", args));
+    //log_message("INFO", file!(), line!(), &format!("Parsed arguments: {:?}", args));
 
     // Step 4: Prepare SnpMeasurementArgs for digest calculation.
-    let ovmf_file = "/home/hb/bin/OVMF.fd".to_owned();
+    let ovmf_file = "test/OVMF-1.55.fd".to_owned();
     let measurement_args = SnpMeasurementArgs {
         ovmf_file: Some(PathBuf::from(ovmf_file)),
         kernel_file: None,

@@ -57,7 +57,7 @@ compute_launch_digest_test() ->
 		vmm_type => 1,
 		guest_features => 16#1,
 
-		ovmf => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
+		firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
 		kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
 		initrd => "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",
 		append => "56e1e5190622c8c6b9daa4fe3ad83f3831c305bb736735bf795b284cb462c9e7"
@@ -66,13 +66,12 @@ compute_launch_digest_test() ->
 	?event(ArgsMap),
 
 		%% Call the NIF
-	Result = dev_snp_nif:compute_launch_digest(ArgsMap),
+	{ok, Result} = dev_snp_nif:compute_launch_digest(ArgsMap),
 
 	%% Expected result
-	?event(Result),
-	?assertMatch({ok, [220,244,169,131,67,254,72,77,141,164,219,30,151,179,18,
-    49,34,26,185,253,106,33,90,13,37,218,244,77,123,154,120,9,252,127,244,96,
-    169,15,155,82,90,93,235,107,183,91,137,0]}, Result).
+    EncTestVector =
+        <<"Lhgbg_pneEf5Ebaj1ru3lIFu7RXHY4jBVnjSd-Yk7D0jIryZ3aLdks4YOWfjajKW">>,
+	?assertMatch(EncTestVector, hb_util:encode(Result)).
 
 verify_measurement_test() ->
 	%% Define a mock report (JSON string) as binary
@@ -85,6 +84,6 @@ verify_measurement_test() ->
 
 verify_signature_test() ->
 	%% Define a mock report (JSON string) as binary
-    {ok, MockAttestation} = file:read_file("test/snp-measurement.json"),
+    {ok, MockAttestation} = file:read_file("test/snp-attestation.json"),
 	Result = dev_snp_nif:verify_signature(MockAttestation),
 	?assertMatch({ok, <<"Signature verification successful">>}, Result).
