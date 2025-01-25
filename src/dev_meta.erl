@@ -154,7 +154,7 @@ all_signers(Msgs) ->
 %% @doc Test that we can get the node message.
 config_test() ->
     Node = hb_http_server:start_test_node(#{ test_config_item => <<"test">> }),
-    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
 
@@ -166,7 +166,7 @@ priv_inaccessible_test() ->
             priv_key => <<"BAD">>
         }
     ),
-    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
     ?assertEqual(not_found, hb_converge:get(<<"priv_key">>, Res, #{})).
@@ -180,7 +180,7 @@ unauthorized_set_node_msg_fails_test() ->
             Node,
             hb_message:sign(
                 #{
-                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"path">> => <<"/~meta@1.0/info">>,
                     <<"evil_config_item">> => <<"BAD">>
                 },
                 ar_wallet:new()
@@ -188,7 +188,7 @@ unauthorized_set_node_msg_fails_test() ->
             #{}
         ),
     ?event({res, SetRes}),
-    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
 
@@ -207,7 +207,7 @@ authorized_set_node_msg_succeeds_test() ->
             Node,
             hb_message:sign(
                 #{
-                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
                 },
                 Owner
@@ -215,7 +215,7 @@ authorized_set_node_msg_succeeds_test() ->
             #{}
         ),
     ?event({res, SetRes}),
-    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
 
@@ -234,7 +234,7 @@ claim_node_test() ->
             Node,
             hb_message:sign(
                 #{
-                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"path">> => <<"/~meta@1.0/info">>,
                     <<"operator">> => Address
                 },
                 Owner
@@ -242,7 +242,7 @@ claim_node_test() ->
             #{}
         ),
     ?event({res, SetRes}),
-    {ok, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(Address, hb_converge:get(<<"operator">>, Res, #{})),
     {ok, SetRes2} =
@@ -250,7 +250,7 @@ claim_node_test() ->
             Node,
             hb_message:sign(
                 #{
-                    <<"path">> => <<"/!meta@1.0/info">>,
+                    <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
                 },
                 Owner
@@ -258,7 +258,7 @@ claim_node_test() ->
             #{}
         ),
     ?event({res, SetRes2}),
-    {ok, Res2} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {ok, Res2} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res2}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
 
@@ -278,7 +278,7 @@ preprocessor_test() ->
                     }
                 }
         }),
-    hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?assert(receive ok -> true after 1000 -> false end).
 
 %% @doc Test that we can halt a request if the preprocessor returns an error.
@@ -295,7 +295,7 @@ halt_request_test() ->
                     }
                 }
         }),
-    {error, Res} = hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    {error, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?assertEqual(<<"Bad">>, Res).
 
 %% @doc Test that a preprocessor can modify a request.
@@ -332,5 +332,5 @@ postprocessor_test() ->
                     }
                 }
         }),
-    hb_http:get(Node, <<"/!meta@1.0/info">>, #{}),
+    hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?assert(receive ok -> true after 1000 -> false end).

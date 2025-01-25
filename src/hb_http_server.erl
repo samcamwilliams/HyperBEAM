@@ -159,11 +159,15 @@ get_opts(NodeMsg) ->
 %%% Tests
 
 test_opts(Opts) ->
-    rand:seed(default),
     % Generate a random port number between 42000 and 62000 to use
     % for the server.
-    rand:seed(exsplus, erlang:timestamp()),
-    Port = 10000 + rand:uniform(20000),
+    Port =
+        case hb_opts:get(port, no_port, Opts) of
+            no_port ->
+                rand:seed(exsplus, erlang:timestamp()),
+                10000 + rand:uniform(20000);
+            PassedPort -> PassedPort
+        end,
     Wallet =
         case hb_opts:get(priv_wallet, no_viable_wallet, Opts) of
             no_viable_wallet -> ar_wallet:new();

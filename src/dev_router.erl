@@ -364,7 +364,7 @@ device_call_from_singleton_test() ->
         <<"node">> => <<"old">>,
         <<"priority">> => 10
     }]},
-    Msgs = hb_singleton:from(#{ <<"path">> => <<"!router@1.0/routes">> }),
+    Msgs = hb_singleton:from(#{ <<"path">> => <<"~router@1.0/routes">> }),
     ?event({msgs, Msgs}),
     ?assertEqual(
         {ok, Routes},

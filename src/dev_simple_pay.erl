@@ -139,7 +139,7 @@ get_balance_and_top_up_test() ->
         hb_http:get(
             Node,
             hb_message:sign(
-                #{<<"path">> => <<"/!simple-pay@1.0/balance">>},
+                #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
                 Wallet
             ),
             #{}
@@ -150,7 +150,7 @@ get_balance_and_top_up_test() ->
             Node,
             hb_message:sign(
                 #{
-                    <<"path">> => <<"/!simple-pay@1.0/topup">>,
+                    <<"path">> => <<"/~simple-pay@1.0/topup">>,
                     <<"amount">> => 100,
                     <<"recipient">> => Address
                 },
@@ -163,7 +163,7 @@ get_balance_and_top_up_test() ->
         hb_http:get(
             Node,
             hb_message:sign(
-                #{<<"path">> => <<"/!simple-pay@1.0/balance">>},
+                #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
                 Wallet
             ),
             #{}
