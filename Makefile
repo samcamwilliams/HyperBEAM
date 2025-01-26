@@ -6,9 +6,6 @@ compile:
 WAMR_VERSION = 2.2.0
 WAMR_DIR = _build/wamr
 
-# commented out to remove NFR blocking commits
-# GITHOOKS_DIR = .githooks
-
 ifdef HB_DEBUG
 	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DWAMR_BUILD_DUMP_CALL_STACK=1 -DCMAKE_BUILD_TYPE=Debug
 else
@@ -29,8 +26,6 @@ else
     WAMR_BUILD_PLATFORM = linux
     WAMR_BUILD_TARGET = X86_64
 endif
-
-# githooks: $(GITHOOKS_DIR)/_/setup
 
 wamr: $(WAMR_DIR)/lib/libvmlib.a
 
@@ -74,9 +69,6 @@ $(WAMR_DIR)/lib/libvmlib.a: $(WAMR_DIR)
         -DWAMR_BUILD_MEMORY_PROFILING=1 \
         -DWAMR_BUILD_DUMP_CALL_STACK=1
 	make -C $(WAMR_DIR)/lib -j8
-
-# $(GITHOOKS_DIR)/_/setup:
-#	@sh ./$(GITHOOKS_DIR)/_/install.sh
 
 clean:
 	rebar3 clean
