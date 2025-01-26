@@ -90,7 +90,11 @@ init(M1, M2, Opts) ->
         case hb_converge:get(<<InPrefix/binary, "/Mode">>, M1, Opts) of
             not_found -> wasm;
             <<"WASM">> -> wasm;
-            <<"AOT">> -> aot
+            <<"AOT">> ->
+                case hb_opts:get(wasm_allow_aot, false, Opts) of
+                    true -> aot;
+                    false -> wasm
+                end
         end,
     % Start the WASM executor.
     {ok, Instance, _Imports, _Exports} = hb_beamr:start(ImageBin, Mode),
