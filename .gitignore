@@ -21,18 +21,16 @@ rebar3.crashdump
 *~
 
 *.json
-node_modules
 !.vscode/*
 
 *.bin
-!.vscode/*
+.vscode/c_cpp_properties.json
 
-c_src/*.o
-c_src/*.d
+native/hb_beamr/*.o
+native/hb_beamr/*.d
+
 priv/*
 .DS_STORE
 TEST-data*
 test-cache/*
-TEST-cache-**
-
-.githooks/_/.setup
+TEST-cache**/**

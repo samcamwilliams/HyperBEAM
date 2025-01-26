@@ -375,11 +375,11 @@ nested_converge_resolve_test() ->
     ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
 
 wasm_compute_request(ImageFile, Func, Params) ->
-    wasm_compute_request(ImageFile, Func, Params, <<"/results">>).
+    wasm_compute_request(ImageFile, Func, Params, <<"">>).
 wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
     {ok, Bin} = file:read_file(ImageFile),
     #{
-        <<"path">> => <<"/init/compute", ResultPath/binary>>,
+        <<"path">> => <<"/init/compute/results", ResultPath/binary>>,
         <<"device">> => <<"WASM-64@1.0">>,
         <<"wasm-function">> => Func,
         <<"wasm-params">> => Params,
@@ -394,7 +394,7 @@ run_wasm_unsigned_test() ->
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
@@ -403,11 +403,11 @@ get_deep_unsigned_wasm_state_test() ->
     Msg = wasm_compute_request(
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(6.0, hb_converge:get(<<"/results/output/1">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"/output/1">>, Res, #{})).
 
 get_deep_signed_wasm_state_test() ->
     URL = hb_http_server:start_test_node(#{force_signed => true}),
     Msg = wasm_compute_request(
-        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/results/output">>),
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).

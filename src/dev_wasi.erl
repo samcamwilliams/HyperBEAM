@@ -289,7 +289,7 @@ wasi_stack_is_serializable_test() ->
 
 basic_aos_exec_test() ->
     Init = generate_wasi_stack("test/aos-2-pure-xs.wasm", <<"handle">>, []),
-    Msg = gen_test_aos_msg("return 1+1"),
+    Msg = gen_test_aos_msg("return 1 + 1"),
     Env = gen_test_env(),
     Instance = hb_private:get(<<"wasm/instance">>, Init, #{}),
     {ok, Ptr1} = hb_beamr_io:malloc(Instance, byte_size(Msg)),

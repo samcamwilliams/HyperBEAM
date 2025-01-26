@@ -67,6 +67,7 @@ default_message() ->
                 <<"p4@1.0">> => dev_p4,
                 <<"faff@1.0">> => dev_faff,
                 <<"simple-pay@1.0">> => dev_simple_pay,
+                <<"snp@1.0">> => dev_snp,
                 <<"test-device@1.0">> => dev_test
             },
         codecs => 
@@ -94,6 +95,7 @@ default_message() ->
         http_request_send_timeout => 60000,
         http_default_remote_port => 8734,
         http_port => 8734,
+        wasm_allow_aot => false,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,

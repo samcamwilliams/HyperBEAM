@@ -8,7 +8,6 @@
         stdlib,
         inets,
         ssl,
-        debugger,
         cowboy,
         prometheus,
         prometheus_cowboy,
