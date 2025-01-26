@@ -100,7 +100,7 @@ hashpath(RawMsg1, Opts) ->
             throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
         {ok, Hashpath} -> Hashpath;
         _ ->
-            try hb_util:ok(dev_message:id(Msg1))
+            try hb_util:ok(dev_message:id(Msg1, #{ <<"attestors">> => <<"all">> }, Opts))
             catch
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
             end
@@ -115,20 +115,26 @@ hashpath(RawMsg1, Opts) ->
 %         hashpath(Msg1, Opts),
 %         Msgs
 %     );
-hashpath(Msg1, Msg2ID, Opts) when is_map(Msg1) ->
+hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
     HashpathAlg = hashpath_alg(Msg1),
-    hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, Opts);
+    hashpath(Msg1Hashpath, Msg2, HashpathAlg, Opts);
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    {ok, Msg2WithoutMeta} = dev_message:remove(Msg2, #{ <<"items">> => ?CONVERGE_KEYS }),
+    {ok, Msg2WithoutMeta} =
+        dev_message:remove(Msg2, #{ <<"items">> => ?CONVERGE_KEYS }),
     ?event({generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
     case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
         {0, Key} when Key =/= undefined ->
             hashpath(Msg1, to_binary(Key), HashpathAlg, Opts);
         _ ->
-            {ok, Msg2ID} = dev_message:id(Msg2),
+            {ok, Msg2ID} =
+                dev_message:id(
+                    Msg2,
+                    #{ <<"attestors">> => <<"all">> },
+                    Opts
+                ),
             hashpath(Msg1, Msg2ID, HashpathAlg, Opts)
     end;
 hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->

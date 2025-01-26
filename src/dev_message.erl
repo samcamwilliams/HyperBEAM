@@ -1,21 +1,28 @@
-%%% @doc The identity device: Simply return a key from the message as it is found
-%%% in the message's underlying Erlang map. Private keys (`priv[.*]') are 
-%%% not included.
+%%% @doc The identity device: For non-reserved keys, it simply returns a key 
+%%% from the message as it is found in the message's underlying Erlang map. 
+%%% Private keys (`priv[.*]') are not included.
+%%% Reserved keys are: `id', `attestations', `attestors', `keys', `path', 
+%%% `set', `remove', `get', and `verify'. Their function comments describe the 
+%%% behaviour of the device when these keys are set.
 -module(dev_message).
--export([info/0, keys/1, id/1, unsigned_id/1, signed_id/1, signers/1]).
--export([set/3, remove/2, get/2, get/3, verify/3, verify_target/3]).
+%%% Base Converge reserved keys:
+-export([info/0, keys/1]).
+-export([set/3, remove/2, get/2, get/3]).
+%%% Attestation-specific keys:
+-export([id/1, id/2, id/3]).
+-export([attest/3, attestors/3, attestations/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
+-define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
+-define(DEFAULT_ATT_DEVICE, <<"httpsig@1.0">>).
 
 %% The list of keys that are exported by this device.
 -define(DEVICE_KEYS, [
-    <<"path">>,
     <<"id">>,
-    <<"unsigned_id">>,
-    <<"signed_id">>,
-    <<"signers">>,
+    <<"attestations">>,
+    <<"attestors">>,
     <<"keys">>,
-    <<"get">>,
+    <<"path">>,
     <<"set">>,
     <<"remove">>,
     <<"verify">>
@@ -28,75 +35,157 @@ info() ->
         %exports => ?DEVICE_KEYS
     }.
 
-%% @doc Return the ID of a message. If the message already has an ID, return
-%% that. Otherwise, return the signed ID.
-id(M) ->
-    ID = 
-        case get(<<"signature">>, M) of
-            {error, not_found} -> raw_id(M, unsigned);
-            {ok, ?DEFAULT_SIG} -> raw_id(M, unsigned);
-            _ -> raw_id(M, signed)
+%% @doc Return the ID of a message, using the `attestors` list if it exists.
+%% If the `attestors` key is `all`, return the ID including all known 
+%% attestations -- `none` yields the ID without any attestations. If the 
+%% `attestors` key is a list/map, return the ID including only the specified 
+%% attestations.
+%% 
+%% The `id-device` key in the message can be used to specify the device that
+%% should be used to calculate the ID. If it is not set, the default device
+%% (`httpsig@1.0`) is used.
+%% 
+%% Note: This function _does not_ use Converge's `get/3' function, as it
+%% as it would require significant computation. We may want to change this
+%% if/when non-map message structures are created.
+id(Base) -> id(Base, #{}).
+id(Base, Req) -> id(Base, Req, #{}).
+id(Base, _, NodeOpts) when not is_map(Base) ->
+    % Return the hashpath of the message in native format, to match the native
+    % format of the message ID return.
+    {ok, hb_util:native_id(hb_path:hashpath(Base, NodeOpts))};
+id(Base, Req, NodeOpts) ->
+    ModBase =
+        case maps:get(<<"attestors">>, Req, <<"none">>) of
+            <<"all">> -> Base;
+            <<"none">> -> Base;
+            RawAttestorIDs ->
+                KeepIDs = maps:values(RawAttestorIDs),
+                BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
+                Base#{
+                    <<"attestations">> => maps:with(KeepIDs, BaseAttestations)
+                }
         end,
-    {ok, ID}.
-
-%% @doc Verify a message nested in the body.
-verify(Self, Req, Opts) ->
-    {ok, Target} = verify_target(Self, Req, Opts),
-    ?event({verify, Target, {self, Self}}),
-    {ok, hb_message:verify(Target, Opts)}.
-
-%% @doc Find the target of a verification request.
-verify_target(Self, Req, Opts) ->
-	GetOpts = Opts#{ hashpath => ignore },
-    {ok,
-        case hb_converge:get(<<"target">>, Req, GetOpts) of
-            <<"self">> -> Self;
-            Key ->
-                hb_converge:get(
-                    Key,
-                    Req,
-                    hb_converge:get(<<"body">>, Req, GetOpts),
-                    GetOpts
-                )
-        end
-    }.
-
-%% @doc Wrap a call to the `hb_util:id/2' function, which returns the
-%% unsigned ID of a message.
-unsigned_id(M) ->
-    {ok, raw_id(M, unsigned)}.
-
-%% @doc Return the signed ID of a message.
-signed_id(M) ->
-    try
-        {ok, raw_id(M, signed)}
-    catch
-        _:_ -> {error, not_signed}
+    IDMod = maps:get(<<"id-device">>, ModBase, ?DEFAULT_ID_DEVICE),
+    % Get the device module from the message, or use the default if it is not
+    % set. We can tell if the device is not set (or is the default) by checking 
+    % whether the device module is the same as this module.
+    {ok, DevMod} =
+        case hb_converge:message_to_device(#{ <<"device">> => IDMod }, NodeOpts) of
+            ?MODULE -> {ok, ?DEFAULT_ID_DEVICE};
+            Mod -> {ok, Mod}
+        end,
+    % Apply the function's `id` function with the appropriate arguments. If it
+    % doesn't exist, error.
+    case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
+        {ok, Fun} -> apply(Fun, [ModBase, Req, NodeOpts]);
+        {error, not_found} ->
+            throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
-%% @doc Encode an ID in any format to a normalized, b64u 43 character binary.
-raw_id(Item) -> raw_id(Item, unsigned).
-raw_id(TX, Type) when is_record(TX, tx) ->
-    hb_util:encode(ar_bundles:id(TX, Type));
-raw_id(Map, Type) when is_map(Map) ->
-    case maps:get(<<"signature-device">>, Map, undefined) of
-        <<"HTTP-Sig@1.0">> ->
-            {ok, ID} = hb_http_signature:id(Map, Type, #{}),
-            ID;
-        _ ->
-            TX = hb_message:convert(Map, tx, converge, #{}),
-            hb_util:encode(ar_bundles:id(TX, Type))
-    end;
-raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
-    Bin;
-raw_id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
-    hb_util:encode(Bin);
-raw_id(Data, _) when is_list(Data) ->
-    raw_id(list_to_binary(Data)).
+%% @doc Return the attestors of a message that are present in the given request.
+attestors(Base, _, _NodeOpts) ->
+    {ok, maps:keys(maps:get(<<"attestations">>, Base, #{}))}.
 
-%% @doc Return the signers of a message.
-signers(M) ->
-    {ok, hb_util:list_to_numbered_map(hb_message:signers(M))}.
+%% @doc Return a device that resolves a given path to a specific attestation.
+attestations(Base, _Req, _NodeOpts) ->
+    {ok,
+        Base#{
+            <<"device">> =>
+                #{
+                    info =>
+                        fun(Msg, MsgWithPath, _NodeOpts2) ->
+                            Attestor = maps:get(<<"path">>, MsgWithPath),
+                            Attestation = maps:get(Attestor, Msg),
+                            % 'Promote' the keys of the attestation to the root
+                            % of the message.
+                            {
+                                ok,
+                                maps:merge(
+                                    maps:without([<<"attestations">>], Msg),
+                                    Attestation
+                                )
+                            }
+                        end
+                }
+        }
+    }.
+
+%% @doc Attest to a message, using the `attestation-device' key to specify the
+%% device that should be used to attest to the message. If the key is not set,
+%% the default device (`httpsig@1.0') is used.
+attest(Self, Req, Opts) ->
+    {ok, Base} = hb_message:find_target(Self, Req, Opts),
+    AttDev = maps:get(<<"attestation-device">>, Base, ?DEFAULT_ATT_DEVICE),
+    % We _do not_ set the `device` key in the message, as the device will be
+    % part of the attestation. Instead, we find the device module's `attest`
+    % function and apply it.
+    {ok, AttMod} = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
+    {ok, AttFun} = hb_converge:find_exported_function(Base1, AttMod, attest, 3, Opts),
+    apply(AttFun, hb_converge:truncate_args(AttFun, [Base, Req, Opts])).
+
+%% @doc Verify a message nested in the body. As with `id', the `attestors'
+%% key in the request can be used to specify which attestations should be
+%% verified. 
+verify(Self, Req, Opts) ->
+    % Get the target message of the verification request.
+    {ok, Base1} = hb_message:find_target(Self, Req, Opts),
+    ?event({verify, Base1, {self, Self}}),
+    % Get the attestations to verify.
+    Base2 =
+        case maps:get(<<"attestors">>, Req, <<"all">>) of
+            <<"none">> -> [];
+            <<"all">> -> maps:get(<<"attestations">>, Base1, #{});
+            AttestorIDs ->
+                maps:with(
+                    AttestorIDs,
+                    maps:get(<<"attestations">>, Base1, #{})
+                )
+        end,
+    % Remove the attestations from the base message.
+    Attestations = maps:get(<<"attestations">>, Base2, #{}),
+    Base3 = maps:without([<<"attestations">>], Base1),
+    % Verify the attestations. Stop execution if any fail.
+    Res =
+        lists:all(
+            fun(Attestor) ->
+                {ok, Res} = verify_attestation(
+                    Base3,
+                    maps:get(Attestor, Attestations),
+                    Req,
+                    Opts
+                ),
+                Res
+            end,
+            maps:keys(Attestations)
+        ),
+    {ok, Res}.
+
+%% @doc Verify a single attestation in the context of its parent message.
+%% Note: Assumes that the `attestations` key has already been removed from the
+%% message.
+verify_attestation(Base, Attestation, Req, Opts) ->
+    AttestionMessage = maps:merge(Base, Attestation),
+    AttDev =
+        maps:get(
+            <<"attestation-device">>,
+            AttestionMessage,
+            ?DEFAULT_ATT_DEVICE
+        ),
+    {ok, AttMod} =
+        hb_converge:message_to_device(
+            #{ <<"device">> => AttDev },
+            Opts
+        ),
+    {ok, AttFun} =
+        hb_converge:find_exported_function(
+            AttestionMessage,
+            AttMod,
+            verify,
+            3,
+            Opts
+        ),
+    apply(AttFun, [AttestionMessage, Req, Opts]).
 
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
@@ -230,7 +319,11 @@ private_keys_are_filtered_test() ->
 cannot_get_private_keys_test() ->
     ?assertEqual(
         {error, not_found},
-        hb_converge:resolve(#{ <<"a">> => 1, <<"private_key">> => 2 }, <<"private_key">>, #{})
+        hb_converge:resolve(
+            #{ <<"a">> => 1, <<"private_key">> => 2 },
+            <<"private_key">>,
+            #{ hashpath => ignore }
+        )
     ).
 
 key_from_device_test() ->
@@ -273,7 +366,7 @@ set_ignore_undefined_test() ->
 
 verify_test() ->
     Unsigned = #{ <<"a">> => 1 },
-    Signed = hb_message:sign(Unsigned, hb:wallet()),
+    Signed = hb_message:attest(Unsigned, hb:wallet()),
     BadSigned = Unsigned#{ <<"bad">> => <<"key">> },
     ?assertEqual({ok, false},
         hb_converge:resolve(

@@ -433,7 +433,7 @@ schedule_message_and_get_slot_test() ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"type">> => <<"Message">>,
                 <<"test-key">> => <<"true">>
             }, hb:wallet())
@@ -458,7 +458,7 @@ get_schedule_test() ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"type">> => <<"Message">>,
                 <<"test-key">> => <<"Test-Val">>
             }, hb:wallet())
@@ -467,7 +467,7 @@ get_schedule_test() ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"type">> => <<"Message">>,
                 <<"test-key">> => <<"Test-Val-2">>
             }, hb:wallet())
@@ -494,11 +494,11 @@ http_init(Opts) ->
     {Node, Wallet}.
 
 http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
-    Msg1 = hb_message:sign(#{
+    Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => ProcessMsg,
-        <<"body">> => hb_message:sign(Msg, Wallet)
+        <<"body">> => hb_message:attest(Msg, Wallet)
     }, Wallet),
     hb_http:post(Node, Msg1, #{}).
 
@@ -520,7 +520,7 @@ http_get_schedule(N, PMsg, From, To) ->
 
 http_post_schedule_test() ->
     {N, W} = http_init(),
-    PMsg = hb_message:sign(test_process(W), W),
+    PMsg = hb_message:attest(test_process(W), W),
     {ok, Res} =
         http_post_schedule_sign(
             N,
@@ -533,12 +533,12 @@ http_post_schedule_test() ->
 
 http_get_schedule_test() ->
     {Node, Wallet} = http_init(),
-    PMsg = hb_message:sign(test_process(Wallet), Wallet),
-    Msg1 = hb_message:sign(#{
+    PMsg = hb_message:attest(test_process(Wallet), Wallet),
+    Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => PMsg,
-        <<"body">> => hb_message:sign(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
     lists:foreach(
@@ -561,7 +561,7 @@ single_converge(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Msg1 = test_process(Wallet),
     ?event({benchmark_start, ?MODULE}),
-    MsgToSchedule = hb_message:sign(#{
+    MsgToSchedule = hb_message:attest(#{
         <<"type">> => <<"Message">>,
         <<"test-key">> => <<"test-val">>
     }, Wallet),
@@ -596,12 +596,12 @@ many_clients(Opts) ->
     BenchTime = 1,
     Processes = hb_opts:get(workers, 25, Opts),
     {Node, Wallet} = http_init(Opts),
-    PMsg = hb_message:sign(test_process(Wallet), Wallet),
-    Msg1 = hb_message:sign(#{
+    PMsg = hb_message:attest(test_process(Wallet), Wallet),
+    Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => PMsg,
-        <<"body">> => hb_message:sign(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, Opts),
     Iterations = hb:benchmark(

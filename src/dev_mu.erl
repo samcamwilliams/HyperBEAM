@@ -48,7 +48,7 @@ push(CarrierMsg, State) ->
             ResTX = ar_bundles:sign_item(
                 #tx{ tags = [{<<"status">>, <<"200">>}]},
                 hb:wallet()),
-            {ok, #{ results => ResTX }}
+            {ok, #{ <<"results">> => ResTX }}
         %false ->
         %    {error, cannot_push_invalid_message}
     end.

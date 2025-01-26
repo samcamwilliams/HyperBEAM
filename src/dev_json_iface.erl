@@ -269,7 +269,7 @@ generate_stack(File, Mode) ->
         <<"passes">> => 2,
         <<"stack-keys">> => [<<"init">>, <<"compute">>],
         <<"process">> => 
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"type">> => <<"Process">>,
                 <<"image">> => Image,
                 <<"scheduler">> => hb:address(),
@@ -281,10 +281,10 @@ generate_stack(File, Mode) ->
 
 generate_aos_msg(ProcID, Code) ->
     Wallet = hb:wallet(),
-    hb_message:sign(#{
+    hb_message:attest(#{
         <<"path">> => <<"compute">>,
         <<"body">> => 
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"Action">> => <<"Eval">>,
                 <<"Data">> => Code,
                 <<"Target">> => ProcID

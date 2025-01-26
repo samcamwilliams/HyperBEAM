@@ -1,6 +1,6 @@
 %%% @doc Codec for managing transformations from `ar_bundles`-style Arweave TX
 %%% records to and from TABMs.
--module(hb_codec_tx).
+-module(dev_codec_ans104).
 -export([to/1, from/1]).
 -include("include/hb.hrl").
 

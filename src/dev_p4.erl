@@ -200,9 +200,9 @@ faff_test() ->
         <<"path">> => <<"/greeting">>,
         <<"greeting">> => <<"Hello, world!">>
     },
-    GoodSignedReq = hb_message:sign(Req, GoodWallet),
+    GoodSignedReq = hb_message:attest(Req, GoodWallet),
     ?event({req, GoodSignedReq}),
-    BadSignedReq = hb_message:sign(Req, BadWallet),
+    BadSignedReq = hb_message:attest(Req, BadWallet),
     ?event({req, BadSignedReq}),
     {ok, Res} = hb_http:get(Node, GoodSignedReq, #{}),
     ?event(payment, {res, Res}),

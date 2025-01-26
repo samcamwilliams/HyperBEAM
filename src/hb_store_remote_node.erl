@@ -10,11 +10,11 @@
 
 scope(_) -> remote.
 
-resolve(#{ node := Node }, Key) ->
+resolve(#{ <<"node">> := Node }, Key) ->
     ?event({resolving_to_self, Node, Key}),
     Key.
 
-type(Opts = #{ node := Node }, Key) ->
+type(Opts = #{ <<"node">> := Node }, Key) ->
     ?no_prod("No need to get the whole message in order to get its type..."),
     ?event({remote_type, Node, Key}),
     case read(Opts, Key) of
@@ -25,7 +25,7 @@ type(Opts = #{ node := Node }, Key) ->
 
 read(Opts, Key) when is_binary(Key) ->
     read(Opts, binary_to_list(Key));
-read(Opts = #{ node := Node }, Key) ->
+read(Opts = #{ <<"node">> := Node }, Key) ->
     Path = Node ++ "/data?Subpath=" ++ uri_string:quote(hb_store:join(Key)),
     ?event({reading, Key, Path, Opts}),
     case hb_http:get_binary(Path) of

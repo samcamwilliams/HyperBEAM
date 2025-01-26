@@ -333,12 +333,10 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
             <<"method">> => cowboy_req:method(Req)
         },
     HTTPEncoded =
-        #{
-            <<"headers">> =>
-                maps:to_list(maps:without([<<"content-length">>], Headers)),
+        (maps:without([<<"content-length">>], Headers))#{
             <<"body">> => Body
         },
-    hb_codec_http:from(HTTPEncoded).
+    dev_codec_httpsig_conv:from(HTTPEncoded).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).

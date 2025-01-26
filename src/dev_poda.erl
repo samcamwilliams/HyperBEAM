@@ -37,7 +37,7 @@ extract_opts(Params) ->
 
 %%% Execution flow: Pre-execution validation.
 
-execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ pass := 1 }, Opts) ->
+execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 }, Opts) ->
     case is_user_signed(Msg) of
         true ->
             {ok, S};
@@ -69,7 +69,7 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ pass := 1 }, Opts)
                             Atts
                         ),
                     % Update the arg prefix to include the unwrapped message.
-                    {ok, S#{ vfs => VFS1, arg_prefix =>
+                    {ok, S#{ <<"vfs">> => VFS1, <<"arg_prefix">> =>
                         [
                             % Traverse two layers of `/Message/Message` to get
                             % the actual message, then replace `/Message` with it.
@@ -83,7 +83,7 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ pass := 1 }, Opts)
                 {false, Reason} -> return_error(S, Reason)
             end
     end;
-execute(_M, S = #{ pass := 3, results := _Results }, _Opts) ->
+execute(_M, S = #{ <<"pass">> := 3, <<"results">> := _Results }, _Opts) ->
     {ok, S};
 execute(_M, S, _Opts) ->
     {ok, S}.
@@ -113,7 +113,7 @@ validate_stage(2, Attestations, Content, Opts) ->
         false -> {false, <<"Invalid attestations">>}
     end;
 
-validate_stage(3, Content, Attestations, Opts = #{ quorum := Quorum }) ->
+validate_stage(3, Content, Attestations, Opts = #{ <<"quorum">> := Quorum }) ->
     Validations =
         lists:filter(
             fun({_, Att}) -> validate_attestation(Content, Att, Opts) end,
@@ -153,7 +153,7 @@ validate_attestation(Msg, Att, Opts) ->
 
 %%% Execution flow: Error handling.
 %%% Skip execution of this message, instead returning an error message.
-return_error(S = #{ wallet := Wallet }, Reason) ->
+return_error(S = #{ <<"wallet">> := Wallet }, Reason) ->
     ?event({poda_return_error, Reason}),
     ?debug_wait(10000),
     {skip, S#{
@@ -178,9 +178,9 @@ is_user_signed(_) -> true.
 
 %% @doc Hook used by the MU pathway (currently) to add attestations to an
 %% outbound message if the computation requests it.
-push(_Item, S = #{ results := ResultsMsg }) ->
+push(_Item, S = #{ <<"results">> := ResultsMsg }) ->
     NewRes = attest_to_results(ResultsMsg, S),
-    {ok, S#{ results => NewRes }}.
+    {ok, S#{ <<"results">> => NewRes }}.
 
 attest_to_results(Msg, S) ->
     case is_map(Msg#tx.data) of
@@ -205,11 +205,11 @@ attest_to_results(Msg, S) ->
         false -> Msg
     end.
 
-add_attestations(NewMsg, S = #{ assignment := Assignment, store := _Store, logger := _Logger, wallet := Wallet }) ->
+add_attestations(NewMsg, S = #{ <<"assignment">> := Assignment, <<"store">> := _Store, <<"logger">> := _Logger, <<"wallet">> := Wallet }) ->
     Process = find_process(NewMsg, S),
     case is_record(Process, tx) andalso lists:member({<<"device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
-            #{ authorities := InitAuthorities, quorum := Quorum } =
+            #{ <<"authorities">> := InitAuthorities, <<"quorum">> := Quorum } =
                 extract_opts(Process#tx.tags),
             ?event({poda_push, InitAuthorities, Quorum}),
             % Aggregate validations from other nodes.
@@ -309,7 +309,7 @@ pfiltermap(Pred, List) ->
 
 %% @doc Find the process that this message is targeting, in order to
 %% determine which attestations to add.
-find_process(Item, #{ logger := _Logger, store := Store }) ->
+find_process(Item, #{ <<"logger">> := _Logger, <<"store">> := Store }) ->
     case Item#tx.target of
         X when X =/= <<>> ->
             ?event({poda_find_process, hb_util:id(Item#tx.target)}),

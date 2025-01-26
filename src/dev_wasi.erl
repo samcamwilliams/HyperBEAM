@@ -48,7 +48,7 @@ init(M1, _M2, Opts) ->
             M1,
             #{
                 <<"wasm/stdlib/wasi_snapshot_preview1">> =>
-                    #{ device => <<"WASI@1.0">>}
+                    #{ <<"device">> => <<"WASI@1.0">>}
             },
             Opts
         ),

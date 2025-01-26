@@ -20,7 +20,7 @@
 %% 5. Verify the measurement is valid.
 %% 6. Verify the report's certificate chain to hardware root of trust.
 verify(M1, M2, NodeOpts) ->
-    {ok, MsgWithJSONReport} = dev_message:verify_target(M1, M2, NodeOpts),
+    {ok, MsgWithJSONReport} = hb_message:find_target(M1, M2, NodeOpts),
 	% Normalize the request message
 	ReportJSON = hb_converge:get(<<"report">>, MsgWithJSONReport, NodeOpts),
 	Report = jiffy:decode(ReportJSON, [return_maps]),
@@ -40,7 +40,7 @@ verify(M1, M2, NodeOpts) ->
                     undefined -> {error, missing_node_msg_id};
                     ID -> ID
                 end;
-            NodeMsg -> hb_util:ok(dev_message:id(NodeMsg))
+            NodeMsg -> hb_util:ok(dev_message:id(NodeMsg, #{}, NodeOpts))
         end,
     ?event({snp_node_msg_id, NodeMsgID}),
     Nonce = hb_util:decode(hb_converge:get(<<"nonce">>, Msg, NodeOpts)),
@@ -101,7 +101,13 @@ generate(_M1, _M2, Opts) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     ?event(debug, {snp_wallet, Wallet}),
     % Remove the `priv*` keys from the options.
-    {ok, PublicNodeMsgID} = dev_message:id(NodeMsg = hb_private:reset(Opts)),
+    {ok, PublicNodeMsgID} =
+        dev_message:id(
+            NodeMsg =
+                hb_private:reset(Opts),
+                #{ <<"attestors">> => <<"none">> },
+                Opts
+            ),
 	RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
     ?event(debug, {snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
     % Generate the attestation report.
@@ -117,7 +123,7 @@ generate(_M1, _M2, Opts) ->
             {report, ReportJSON}
         }
     ),
-    ReportMsg = hb_message:sign(LocalHashes#{
+    ReportMsg = hb_message:attest(LocalHashes#{
         <<"nonce">> => hb_util:encode(ReportData),
         <<"address">> => Address,
         <<"node-message">> => NodeMsg,

@@ -68,14 +68,11 @@ default_message() ->
                 <<"faff@1.0">> => dev_faff,
                 <<"simple-pay@1.0">> => dev_simple_pay,
                 <<"snp@1.0">> => dev_snp,
+                <<"httpsig@1.0">> => dev_httpsig,
+                <<"ans104@1.0">> => dev_codec_ans104,
+                <<"flat@1.0">> => dev_codec_flat,
+                <<"structured@1.0">> => dev_codec_structured,
                 <<"test-device@1.0">> => dev_test
-            },
-        codecs => 
-            #{
-                converge => hb_codec_converge,
-                tx => hb_codec_tx,
-                flat => hb_codec_flat,
-                http => hb_codec_http
             },
         %% Should the node attempt to access data from remote caches for
         %% client requests?

@@ -1,23 +1,20 @@
-%%% @doc This module implements HTTP Message Signatures
-%%% as described in RFC-9421 https://datatracker.ietf.org/doc/html/rfc9421
-
--module(hb_http_signature).
+%%% @doc This module implements HTTP Message Signatures as described in RFC-9421
+%%% (https://datatracker.ietf.org/doc/html/rfc9421), as a Converge device.
+%%% It implements the codec standard (from/1, to/1), as well as the optional
+%%% attestation functions (id/3, sign/3, verify/3). The attestation functions
+%%% are found in this module, while the codec functions are relayed to the 
+%%% `dev_codec_httpsig_conv' module.
+-module(dev_codec_httpsig).
 %%% Device API
--export([id/3, sign/3, verify/3]).
-%%% HyperBEAM API
--export([authority/3, sign_auth/2, sign_auth/3, verify_auth/2, verify_auth/3]).
-% Mapping
--export([sf_signature/1, sf_signature_params/2, sf_signature_param/1]).
-
+-export([id/3, attest/3, verify/3]).
+%%% Codec API functions
+-export([to/1, from/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 -define(EMPTY_QUERY_PARAMS, $?).
 % https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 -define(SIGNATURE_PARAMS, [created, expired, nonce, alg, keyid, tag]).
-
 -include("include/hb.hrl").
-
 -include_lib("eunit/include/eunit.hrl").
-
 -type fields() :: #{
 	binary() | atom() | string() => binary() | atom() | string()
 }.
@@ -38,6 +35,10 @@
 	{string, binary()},
 	{binary(), integer() | boolean() | {string | token | binary, binary()}}
 }.
+
+%%% Routing functions for the `dev_codec_httpsig_conv' module
+to(Msg) -> dev_codec_httpsig_conv:to(Msg).
+from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 
 %%% A map that contains signature parameters metadata as described
 %%% in https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
@@ -87,7 +88,7 @@ id(_Msg, _Params, _Opts) ->
     {ok, <<"http">>}.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
-sign(MsgToSign, _Req, Opts) ->
+attest(MsgToSign, _Req, Opts) ->
     ?event({starting_to_sign, MsgToSign}),
     Wallet = {_Priv, {_, Pub}} = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     Enc = hb_message:convert(MsgToSign, http, #{}),
@@ -108,24 +109,30 @@ sign(MsgToSign, _Req, Opts) ->
     ?event({options, {encoded, {explicit, EncWithBody}, {enc_hdr_map, EncHdrMap}}}),
     Authority = authority(maps:keys(EncHdrMap), EncHdrMap, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, EncWithBody),
-    [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
-    SigName = <<"signature">>, %hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
-    maps:merge(
-        MsgToSign,
+    [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
+    SigName = <<"signature">>,
+    % Place the signature into the `attestations` key of the message.
+    Attestation =
         #{
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
-            <<"signature">> => 
-                bin(hb_http_structured_fields:dictionary(
+            <<"signature">> =>
+                bin(dev_codec_structured_conv:dictionary(
                     #{ SigName => {item, {binary, Signature}, []} }
                 )),
             <<"signature-input">> =>
-                bin(hb_http_structured_fields:dictionary(
+                bin(dev_codec_structured_conv:dictionary(
                     #{ SigName => ParsedSignatureInput }
                 )),
             <<"signature-public-key">> => hb_util:encode(Pub),
-            <<"signature-device">> => <<"HTTP-Sig@1.0">>
-        }
-    ).
+            <<"signature-device">> => <<"httpsig@1.0">>
+        },
+    ExistingAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+    {ok, maps:put(
+        <<"attestations">>,
+        maps:put(Address, Attestation, ExistingAttestations),
+        MsgToSign
+    )}.
 
 verify(MsgToVerify, _Req, _Opts) ->
     Signature = maps:get(<<"signature">>, MsgToVerify),
@@ -195,14 +202,6 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 		key_pair => KeyPair
 	}.
 
-%%% @doc using the provided Authority and Request Message Context, and create a 
-%%% Signature and SignatureInput that can be used to additional signatures to a 
-%%% corresponding HTTP Message
--spec sign_auth(authority_state(), request_message()) ->
-    {ok, {binary(), binary(), binary()}}.
-sign_auth(Authority, Req) ->
-	sign_auth(Authority, Req, #{}).
-
 %%% @doc using the provided Authority and Request/Response Messages Context,
 %%% create a Name, Signature and SignatureInput that can be used to additional
 %%% signatures to a corresponding HTTP Message
@@ -216,7 +215,7 @@ sign_auth(Authority, Req, Res) ->
         signature_base(AuthorityWithSigParams, Req, Res),
     % Now perform the actual signing
     ?event({signing, {signature_base, hb_util:encode(hb_crypto:sha256(SignatureBase))}}),
-	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
+	Signature = ar_wallet:attest(Priv, SignatureBase, sha512),
 	{ok, {SignatureInput, Signature}}.
 
 %% @doc Add the signature parameters to the authority state
@@ -266,7 +265,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % The signature may be encoded ie. as binary, so we need to parse it
             % further as a structured field
             {item, {_, Signature}, _} =
-                hb_http_structured_fields:parse_item(EncodedSignature),
+                dev_codec_structured_conv:parse_item(EncodedSignature),
             % The value encoded within signature input is also a structured field,
             % specifically an inner list that encodes the ComponentIdentifiers
             % and the Signature Params.
@@ -274,7 +273,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % So we must parse this value, and then use it to construct the 
             % signature base
             [{list, ComponentIdentifiers, SigParams}] =
-                hb_http_structured_fields:parse_list(SignatureInput),
+                dev_codec_structured_conv:parse_list(SignatureInput),
             % TODO: HACK convert parsed sig params into a map that authority() 
             % can handle maybe authority() should handle both parsed and unparsed 
             % SigParams, similar to ComponentIdentifiers
@@ -307,8 +306,8 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% @doc create the signature base that will be signed in order to create the
 %%% Signature and SignatureInput.
 %%%
-%%% This implements a portion of RFC-9421
-%%% See https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
+%%% This implements a portion of RFC-9421 see:
+%%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
@@ -352,7 +351,7 @@ signature_components_line(ComponentIdentifiers, Req, Res) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.3.2.4
 signature_params_line(ComponentIdentifiers, SigParams) ->
 	SfList = sf_signature_params(ComponentIdentifiers, SigParams),
-	Res = hb_http_structured_fields:list(SfList),
+	Res = dev_codec_structured_conv:list(SfList),
 	bin(Res).
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
@@ -410,7 +409,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 		_ ->
 			Lowered = lower_bin(IParsed),
 			NormalizedItem =
-                hb_http_structured_fields:item(
+                dev_codec_structured_conv:item(
                     {item, {string, Lowered}, IParams}
                 ),
 			[IsRequestIdentifier, IsTrailerField] = [
@@ -569,7 +568,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 		_ ->
 			Lowered = lower_bin(IParsed),
 			NormalizedItem =
-                hb_http_structured_fields:item(
+                dev_codec_structured_conv:item(
                     {item, {string, Lowered}, IParams}
                 ),
 			Result =
@@ -748,9 +747,9 @@ sf_signature(Signature) ->
 sf_parse(Raw) when is_list(Raw) -> sf_parse(list_to_binary(Raw));
 sf_parse(Raw) when is_binary(Raw) ->
 	Parsers = [
-		fun hb_http_structured_fields:parse_list/1,
-		fun hb_http_structured_fields:parse_dictionary/1,
-		fun hb_http_structured_fields:parse_item/1
+		fun dev_codec_structured_conv:parse_list/1,
+		fun dev_codec_structured_conv:parse_dictionary/1,
+		fun dev_codec_structured_conv:parse_item/1
 	],
 	sf_parse(Parsers, Raw).
 
@@ -768,9 +767,9 @@ sf_parse([Parser | Rest], Raw) ->
 sf_encode(StructuredField = {list, _, _}) ->
 	% The value is an inner_list, and so needs to be wrapped with an outer list
 	% before being serialized
-	sf_encode(fun hb_http_structured_fields:list/1, [StructuredField]);
+	sf_encode(fun dev_codec_structured_conv:list/1, [StructuredField]);
 sf_encode(StructuredField = {item, _, _}) ->
-	sf_encode(fun hb_http_structured_fields:item/1, StructuredField);
+	sf_encode(fun dev_codec_structured_conv:item/1, StructuredField);
 sf_encode(StructuredField = [Elem | _Rest]) ->
 	sf_encode(
 		% Both an sf list and dictionary is represented in Erlang as a List of
@@ -778,9 +777,9 @@ sf_encode(StructuredField = [Elem | _Rest]) ->
 		% is a binary, so we can match on that to determine which serializer to use
 		case Elem of
 			{Name, _} when is_binary(Name) ->
-                fun hb_http_structured_fields:dictionary/1;
+                fun dev_codec_structured_conv:dictionary/1;
 			_ ->
-                fun hb_http_structured_fields:list/1
+                fun dev_codec_structured_conv:list/1
 		end,
 		StructuredField
 	).
@@ -890,7 +889,7 @@ sign_test() ->
 		},
 		trailers => #{}
 	},
-    Signed = sign(Res, #{}, #{ priv_wallet => ar_wallet:new() }),
+    Signed = attest(Res, #{}, #{ priv_wallet => ar_wallet:new() }),
 	?assert(
 		verify(Signed, #{}, #{})
 	).

@@ -111,31 +111,46 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
                     ),
                     Path
                 end,
-            hb_message:unsigned(Msg)
+            hb_message:unattested(Msg)
         ),
     % Write links for each key in the unsigned message to the underlying data.
     write_link_tree(UnsignedID, UnsignedMsgPathMap, Store, Opts),
-    % If the message is signed, we need to write links for the attestations.
-    case dev_message:signed_id(Msg) of
-        {error, not_signed} ->
+    % If the message is attested, we need to write links for the attestations.
+    % Note: We use `maps:get` here such that we avoid `dev_message:attestations/3`.
+    % This is for both performance, and to avoid exposure to `attestations`'s
+    % transformer device. We do, however, use the transformer device if attestations
+    % are present, in order to write the resulting attested message to the store.
+    case maps:get(<<"attestations">>, Msg, <<"none">>) of
+        Attestors when map_size(Attestors) =:= 0 ->
             {ok, UnsignedID};
-        {ok, SignedID} ->
-            % Write each attestation-related key in the message to the store.
+        Attestors ->
+            % Write each attestation to the store individually. The duplicated
+            % keys will only be written once, as their binaries will lead to the
+            % same underlying data.
             AttestedMsgPathMap =
-                maps:map(
-                    WriteSubkey,
-                    hb_message:attestations(Msg)
+                maps:from_list(
+                    lists:map(
+                        fun(Attestor) ->
+                            MsgX =
+                                hb_converge:get(
+                                    [<<"attestations">>, Attestor],
+                                    Msg,
+                                    Opts
+                                ),
+                            WriteSubkey(Attestor, MsgX)
+                        end,
+                        maps:keys(Attestors)
+                    )
                 ),
-            % Merge the unsigned and attested message path maps, such that we have
-            % a complete map of all keys in the message and their paths.
-            CompleteMsgPathMap = maps:merge(UnsignedMsgPathMap, AttestedMsgPathMap),
-            % Generate links for the signed message.
-            write_link_tree(
-                SignedID, 
-                CompleteMsgPathMap,
-                Store,
-                Opts
-            ),
+            % Calculate the ID of the message, including the attestations.
+            {ok, SignedID} =
+                dev_message:id(
+                    Msg,
+                    #{ <<"attestors">> => <<"all">> },
+                    Opts
+                ),
+            % Write links for the signed message.
+            write_link_tree(SignedID, AttestedMsgPathMap, Store, Opts),
             {ok, SignedID}
     end.
 
@@ -267,7 +282,7 @@ read_output(MsgID1, MsgID2, Opts) when ?IS_ID(MsgID1) and ?IS_ID(MsgID2) ->
     ?event({cache_lookup, {msg1, MsgID1}, {msg2, MsgID2}, {opts, Opts}}),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
 read_output(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
-    {ok, MsgID2} = dev_message:id(Msg2),
+    {ok, MsgID2} = dev_message:id(Msg2, #{ <<"attestors">> => <<"all">> }, Opts),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
 read_output(Msg1, Msg2, Opts) when is_map(Msg1) and is_map(Msg2) ->
     read(hb_path:hashpath(Msg1, Msg2, Opts), Opts);
@@ -294,7 +309,7 @@ test_unsigned(Data) ->
 
 %% Helper function to create signed #tx items.
 test_signed(Data) ->
-    hb_message:sign(test_unsigned(Data), ar_wallet:new()).
+    hb_message:attest(test_unsigned(Data), ar_wallet:new()).
 
 test_store_binary(Opts) ->
     Bin = <<"Simple unsigned data item">>,
@@ -332,7 +347,7 @@ test_deeply_nested_complex_item(Opts) ->
     Outer =
         #{
             <<"level1">> =>
-                hb_message:sign(
+                hb_message:attest(
                     #{
                         <<"level2">> =>
                             #{

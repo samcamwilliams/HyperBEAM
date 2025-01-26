@@ -146,7 +146,7 @@ resolve_key_twice_test(Opts) ->
 resolve_from_multiple_keys_test(Opts) ->
     ?assertEqual(
         {ok, [<<"a">>]},
-        hb_converge:resolve(#{ a => <<"1">>, "priv_a" => <<"2">> }, keys, Opts)
+        hb_converge:resolve(#{ <<"a">> => <<"1">>, <<"priv_a">> => <<"2">> }, keys, Opts)
     ).
 
 resolve_path_element_test(Opts) ->

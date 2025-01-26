@@ -816,7 +816,7 @@ message_to_fun(Msg, Key, Opts) ->
 
 %% @doc Extract the device module from a message.
 message_to_device(Msg, Opts) ->
-    case dev_message:get(device, Msg) of
+    case dev_message:get(<<"device">>, Msg) of
         {error, not_found} ->
             % The message does not specify a device, so we use the default device.
             default_module();
@@ -959,7 +959,7 @@ load_device(ID, Opts) when ?IS_ID(ID) ->
 					fun(Signer) ->
 						lists:member(Signer, hb_opts:get(trusted_device_signers))
 					end,
-					hb_message:signers(Msg)
+					hb_util:ok(dev_message:attestors(Msg), Opts)
 				),
 			case Trusted of
 				true ->

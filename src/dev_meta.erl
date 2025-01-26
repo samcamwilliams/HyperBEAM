@@ -31,7 +31,7 @@ info(_, Request, NodeMsg) ->
         <<"GET">> ->
             embed_status({ok, hb_private:reset(NodeMsg)});
         <<"POST">> ->
-            ReqSigners = hb_message:signers(Request),
+            {ok, ReqSigners} = dev_message:attestors(Request),
             Owner =
                 hb_opts:get(
                     operator,
@@ -127,7 +127,7 @@ maybe_sign(Res, NodeMsg) ->
     ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
-            hb_message:sign(
+            hb_message:attest(
                 Res,
                 hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
                 hb_opts:get(format, http, NodeMsg)
@@ -178,7 +178,7 @@ unauthorized_set_node_msg_fails_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"evil_config_item">> => <<"BAD">>
@@ -205,7 +205,7 @@ authorized_set_node_msg_succeeds_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
@@ -232,7 +232,7 @@ claim_node_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"operator">> => Address
@@ -248,7 +248,7 @@ claim_node_test() ->
     {ok, SetRes2} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>

@@ -1,0 +1,457 @@
+
+%%% @doc A codec for the that marshals TABM encoded messages to and from the
+%%% "HTTP" message structure.
+%%% 
+%%% The HTTP Message is an Erlang Map with the following shape:
+%%% #{ 
+%%%     headers => [
+%%%         {<<"example-header">>, <<"value">>}
+%%%     ],
+%%%     body: <<"some body">>
+%%% }
+%%% 
+%%% Every HTTP message is an HTTP multipart message.
+%%% See https://datatracker.ietf.org/doc/html/rfc7578
+%%%
+%%% For each TABM Key:
+%%% 
+%%% The TABM Key will be ignored if:
+%%% - The field is private (according to hb_private:is_private/1)
+%%% - The field is one of ?REGEN_KEYS
+%%%
+%%% The Key/Value Pair will be encoded according to the following rules:
+%%%     "signatures" -> {SignatureInput, Signature} header Tuples, each encoded
+%%% 					as a Structured Field Dictionary
+%%%     "body" ->
+%%%         - if a map, then recursively encode as its own HyperBEAM message
+%%%         - otherwise encode as a normal field
+%%%     _ -> encode as a normal field
+%%% 
+%%% Each field will be mapped to the HTTP Message according to the following 
+%%% rules:
+%%%     "body" -> always encoded part of the body as with Content-Disposition
+%%% 			  type of "inline"
+%%%     _ ->
+%%%         - If the byte size of the value is less than the ?MAX_TAG_VALUE,
+%%% 		  then encode as a header, also attempting to encode as a
+%%% 		  structured field.
+%%%         - Otherwise encode the value as a part in the multipart response
+%%% 
+-module(dev_codec_httpsig_conv).
+-export([to/1, from/1]).
+%%% Helper utilities
+-include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+% The max header length is 4KB
+-define(MAX_HEADER_LENGTH, 4096).
+% https://datatracker.ietf.org/doc/html/rfc7231#section-3.1.1.4
+-define(CRLF, <<"\r\n">>).
+-define(DOUBLE_CRLF, <<?CRLF/binary, ?CRLF/binary>>).
+
+%% @doc Convert an HTTP Message into a TABM.
+%% HTTP Structured Field is encoded into it's equivalent TABM encoding.
+from(Bin) when is_binary(Bin) -> Bin;
+from(HTTP) ->
+    Body = maps:get(<<"body">>, HTTP, <<>>),
+    % First, parse all headers excluding the signature-related headers, as they
+    % are handled separately.
+    Headers =
+        maps:without([<<"body">>, <<"signature">>, <<"signature-input">>], HTTP),
+    % Next, we need to potentially parse the body and add to the TABM
+    % potentially as sub-TABMs.
+    MsgWithoutSigs = 
+        maps:remove(
+            <<"content-type">>,
+            from_body(
+                Headers,
+                maps:get(<<"content-type">>, Headers, undefined),
+                Body
+            )
+        ),
+    % Finally, we need to add the signatures to the TABM
+    attestations_from_signature(
+        MsgWithoutSigs,
+        maps:get(<<"signature">>, Headers, undefined),
+        maps:get(<<"signature-input">>, Headers, undefined)
+    ).
+
+from_body(TABM, _ContentType, <<>>) -> TABM;
+from_body(TABM, ContentType, Body) ->
+    ?event({from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
+    {_BodyType, Params} =
+        case ContentType of
+            undefined -> [];
+            _ ->
+                {item, {_, _XT}, XParams} =
+                    dev_codec_structured_conv:parse_item(ContentType),
+                XParams
+        end,
+    case lists:keyfind(<<"boundary">>, 1, Params) of
+        false ->
+            % The body is not a multipart, so just set as is to the body key on
+            % the TABM.
+            maps:put(<<"body">>, Body, TABM);
+        {_, {_Type, Boundary}} ->
+            % We need to manually parse the multipart body into key/values on the
+            % TABM.
+            % 
+            % Find the sub-part of the body within the boundary.
+            % We also make sure to account for the CRLF at end and beginning
+            % of the starting and terminating part boundary, respectively
+            % 
+            % ie.
+            % --foo-boundary\r\n
+            % My-Awesome: Part
+            %
+            % an awesome body\r\n
+            % --foo-boundary--
+            BegPat = <<"--", Boundary/binary, ?CRLF/binary>>,
+            EndPat = <<?CRLF/binary, "--", Boundary/binary, "--">>,
+            {Start, SL} = binary:match(Body, BegPat),
+            {End, _} = binary:match(Body, EndPat),
+            BodyPart = binary:part(Body, Start + SL, End - (Start + SL)),
+            % By taking into account all parts of the surrounding boundary above,
+            % we get precisely the sub-part that we're interested without any
+            % additional parsing
+            Parts = binary:split(BodyPart, [<<"--", Boundary/binary>>], [global]),
+            % Finally, for each part within the sub-part, we need to parse it,
+            % potentially recursively as a sub-TABM, and then add it to the
+            % current TABM
+            {ok, NewTABM} = from_body_parts(TABM, Parts),
+            NewTABM
+    end.
+
+from_body_parts (TABM, []) -> {ok, TABM};
+from_body_parts(TABM, [Part | Rest]) ->
+    % Extract the Headers block and Body. Only split on the FIRST double CRLF
+    [RawHeadersBlock, RawBody] =
+        case binary:split(Part, [?DOUBLE_CRLF], []) of
+            [RHB] ->
+                % no body
+                [RHB, <<>>];
+            [RHB, RB] -> [RHB, RB]
+        end,
+    % Extract individual headers
+    RawHeaders = binary:split(RawHeadersBlock, ?CRLF, [global]),
+    % Now we parse each header, splitting into {Key, Value}
+    Headers =
+        maps:from_list(lists:filtermap(
+            fun (<<>>) -> false;
+                (RawHeader) -> 
+                    case binary:split(RawHeader, [<<": ">>]) of
+                        [Name, Value] -> {true, {Name, Value}};
+                        _ ->
+                            % skip lines that aren't properly formatted headers
+                            false
+                    end
+            end,
+            RawHeaders
+        )),
+    % The Content-Disposition is from the parent message,
+    % so we separate off from the rest of the headers
+    case maps:get(<<"content-disposition">>, Headers, undefined) of
+        undefined ->
+            % A Content-Disposition header is required for each part
+            % in the multipart body
+            throw({error, no_content_disposition_in_multipart, Headers});
+        RawDisposition when is_binary(RawDisposition) ->
+            % Extract the name 
+            {item, {_, Disposition}, DispositionParams} =
+                dev_codec_structured_conv:parse_item(RawDisposition),
+            {ok, PartName} = case Disposition of
+                <<"inline">> ->
+                    % The inline part is the body
+                    {ok, <<"body">>};
+                _ ->
+                    % Otherwise, we need to extract the name of the part
+                    % from the Content-Disposition parameters
+                    case lists:keyfind(<<"name">>, 1, DispositionParams) of
+                        {_, {_type, PN}} -> {ok, PN};
+                        false -> no_part_name_found
+                    end
+            end,
+            RestHeaders = maps:without([<<"content-disposition">>], Headers),
+            ParsedPart =
+                case maps:size(RestHeaders) of
+                    0 ->
+                        % There are no headers besides the content disposition header
+                        % So simply use the the raw body binary as the part
+                        RawBody;
+                    _ ->
+                        % We need recursively parse the sub part into its own TABM
+                        from(RestHeaders#{ <<"body">> => RawBody })
+                end,
+            from_body_parts(maps:put(PartName, ParsedPart, TABM), Rest)
+    end.
+
+%% @doc Populate the `/attestations` key on the TABM with the dictionary of 
+%% signatures and their corresponding inputs.
+attestations_from_signature(Map, RawSig, RawSigInput) ->
+    SfSigs = dev_codec_structured_conv:parse_dictionary(RawSig),
+    SfInputs = dev_codec_structured_conv:parse_dictionary(RawSigInput),
+    % Build a Map for Signatures by gathering each Signature
+    % with its corresponding Inputs.
+    % 
+    % Inputs are merged as fields on the Signature Map
+    Attestations = lists:foldl(
+        fun ({SigName, {item, {_, Sig}, _}}, Sigs) ->
+            {<<"signature">>, {list, SfInputItems}, SfInputParams}
+                = lists:keyfind(SigName, 1, SfInputs),
+            Inputs = lists:map(fun({item, {_, Input}, _}) -> Input end, SfInputItems),
+            % Build a message for each Signature, with its corresponding Inputs
+            SigMap = lists:foldl(
+                fun({PName, PBareItem}, PAcc) ->
+                    maps:put(
+                        PName,
+                        dev_codec_structured_conv:from_bare_item(PBareItem),
+                        PAcc
+                    )
+                end,
+                #{ <<"signature">> => Sig, <<"inputs">> => Inputs },
+                    % Signature parameters are converted into top-level keys on
+                    % the signature Map
+                SfInputParams    
+            ),
+            % #{ [SigName/binary] => #{ <<"signature">> => <<>>, <<"inputs">> => , ... } }
+            maps:put(SigName, SigMap, Sigs)
+        end,
+        #{},
+        SfSigs
+    ),
+    % Store the original signature and signature-input as a top-level message
+    % in the `hmac` key on the parent, such that the order of the original inputs
+    % is preserved.
+    HMac =
+        #{
+            <<"originals">> =>
+                #{
+                    <<"signature">> => RawSig,
+                    <<"signature-input">> => RawSigInput
+                }
+        },
+    % Finally place the attestations as a top-level message on the parent message
+    maps:put(<<"attestations">>, maps:put(<<"hmac">>, HMac, Attestations), Map).
+
+%%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
+%%% that can translated to a given web server Response API
+to(Bin) when is_binary(Bin) -> Bin;
+to(TABM) -> to(TABM, []).
+to(TABM, Opts) when is_map(TABM) ->
+    % PublicMsg = hb_private:reset(TABM)s
+    % MinimizedMsg = hb_message:minimize(PublicMsg),
+    % Calculate the initial encoding from the TABM
+    Enc0 =
+        maps:fold(
+            fun(<<"body">>, Value, AccMap) -> body_to_http(AccMap, Value);
+                (Key, Value, AccMap) -> field_to_http(AccMap, {Key, Value}, #{})
+            end,
+            #{},
+            maps:without([<<"attestations">>, <<"signature">>, <<"signature-input">>], TABM)
+        ),
+    BodyMap = maps:get(<<"body">>, Enc0),
+    Enc1 =
+        case {BodyMap, lists:member(sub_part, Opts)} of
+            {X, _} when map_size(X) =:= 0 ->
+                % If the body map is empty, then simply set the body to be a 
+                % corresponding empty binary.
+                maps:put(<<"body">>, <<>>, Enc0);
+            {#{ <<"body">> := UserBody }, false}
+                    when map_size(BodyMap) =:= 1 andalso is_binary(UserBody) ->
+                % Simply set the sole body binary as the body of the
+                % HTTP message, no further encoding required
+                % 
+                % NOTE: this may only be done for the top most message as 
+                % sub-messages MUST be encoded as sub-parts, in order to preserve 
+                % the nested hierarchy of messages, even in the case of a sole 
+                % body binary.
+                % 
+                % In all other cases, the mapping fallsthrough to the case below 
+                % that properly encodes a nested body within a sub-part
+                ?event({encoding_single_body, {body, UserBody}, {http, Enc0}}),
+                maps:put(<<"body">>, UserBody, Enc0);
+            _ ->
+                % Otherwise, we need to encode the body map as the
+                % multipart body of the HTTP message
+                ?event({encoding_multipart, {body, BodyMap}, {http, Enc0}}),
+                % The id of the Message will be used as the Boundary
+                % in the multipart body
+                {ok, RawBoundary} =
+                    dev_message:id(TABM, #{ <<"attestors">> => <<"all">> }, Opts),
+                Boundary = hb_util:encode(RawBoundary),
+                % Transform body into a binary, delimiting each part with the
+                % boundary
+                BodyList = maps:fold(
+                    fun (PartName, BodyPart, Acc) ->
+                            ?event(
+                                {encoding_multipart_part,
+                                    {part, PartName, BodyPart},
+                                    {http, Enc0}}),
+                            % We'll need to prepend a Content-Disposition header
+                            % to the part, using the field name as the form part
+                            % name.
+                            % (See https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
+                            Disposition =
+                                case PartName of
+                                    % The body is always made the inline part of
+                                    % the multipart body
+                                    <<"body">> -> <<"inline">>;
+                                    _ -> <<"form-data;name=", "\"", PartName/binary, "\"">>
+                                end,
+                            % Sub-parts MUST have at least one header, according to the
+                            % multipart spec. Adding the Content-Disposition not only
+                            % satisfies that requirement, but also encodes the
+                            % HB message field that resolves to the sub-message
+                            EncodedBodyPart =
+                                case BodyPart of
+                                    BPMap when is_map(BPMap) ->
+                                        WithDisposition = maps:put(
+                                            <<"Content-Disposition">>,
+                                            Disposition,
+                                            BPMap
+                                        ),
+                                        SubHttp = to(WithDisposition, [sub_part]),
+                                        encode_http_msg(SubHttp);
+                                    BPBin when is_binary(BPBin) ->
+                                        case PartName of
+                                            % A properly encoded inlined body part MUST have a CRLF between
+                                            % it and the header block, so we MUST use two CRLF:
+                                            % - first to signal end of the Content-Disposition header
+                                            % - second to signal the end of the header block
+                                            <<"body">> -> 
+                                                <<
+                                                    "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                                    ?CRLF/binary,
+                                                    BPBin/binary
+                                                >>;
+                                            % All other binary values are encoded as a header in their
+                                            % respective sub-part
+                                            _ ->
+                                                <<
+                                                    "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                                    BPBin/binary
+                                                >>
+                                        end
+                                end,
+                            [
+                                <<
+                                    "--", Boundary/binary, ?CRLF/binary,
+                                    EncodedBodyPart/binary
+                                >>
+                            |
+                                Acc
+                            ]
+                    end,
+                    [],
+                    BodyMap
+                ),
+                % Finally, join each part of the multipart body into a single binary
+                % to be used as the body of the Http Message
+                BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
+                % Ensure we append the Content-Type to be a multipart response
+                Enc0#{ 
+                    <<"content-type">> =>
+                        <<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>,
+                    <<"body">> => <<BodyBin/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
+                }
+        end,
+    % Finally, add the signatures to the HTTP message
+    case maps:get(<<"attestations">>, TABM, #{}) of
+        #{ <<"hmac">> :=
+            #{ <<"originals">> :=
+                #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } } ->
+            % Add the original signature encodings to the HTTP message
+            Enc1#{
+                <<"signature">> => Sig,
+                <<"signature-input">> => SigInput
+            };
+        _ ->
+            % Otherwise, we need to add the signatures to the HTTP message
+            case maps:get(<<"signature">>, TABM, not_found) of
+                not_found ->
+                    Enc1;
+                Signature ->
+                    signatures_to_httpsig(
+                        Enc1,
+                        Signature,
+                        maps:get(<<"signature-input">>, TABM)
+                    )
+            end
+    end.
+
+encode_http_msg(Httpsig) ->
+    % Serialize the headers, to be included in the part of the multipart response
+    HeaderList = lists:foldl(
+        fun ({HeaderName, HeaderValue}, Acc) ->
+            [<<HeaderName/binary, ": ", HeaderValue/binary>> | Acc]
+        end,
+        [],
+        maps:to_list(maps:without([<<"body">>], Httpsig))
+    ),
+    EncodedHeaders = iolist_to_binary(lists:join(?CRLF, lists:reverse(HeaderList))),
+    case maps:get(<<"body">>, Httpsig, <<>>) of
+        <<>> -> EncodedHeaders;
+        % Some-Headers: some-value
+        % content-type: image/png
+        % 
+        % <body>
+        SubBody -> <<EncodedHeaders/binary, ?DOUBLE_CRLF/binary, SubBody/binary>>
+    end.
+
+signatures_to_httpsig(Httpsig, Signatures, Inputs) when is_map(Signatures) ->
+    signatures_to_httpsig(Httpsig, maps:to_list(Signatures), maps:to_list(Inputs));
+signatures_to_httpsig(Httpsig, Signatures, Inputs) when is_list(Signatures) ->
+    ?event({encoding_signatures, Signatures}),
+    throw({error, not_implemented}),
+    {SfSigInputs, SfSigs} = lists:foldl(
+        fun ({SigName, SignatureMap = #{ <<"inputs">> := Inputs, <<"signature">> := Signature }}, {SfSigInputs, SfSigs}) ->
+            NextSigInput = dev_codec_httpsig:sf_signature_params(Inputs, SignatureMap),
+            NextSig = dev_codec_httpsig:sf_signature(Signature),
+            NextName = hb_converge:normalize_key(SigName),
+            {
+                [{NextName, NextSigInput} | SfSigInputs],
+                [{NextName, NextSig} | SfSigs]
+		}
+        end,
+        % Start with empty Structured Field Dictionaries
+        {[], []},
+        Signatures
+    ),
+    % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
+    % each transmitted either as a header, or as a part in the multi-part body
+    WithSig = field_to_http(Httpsig, {<<"signature">>, dev_codec_structured_conv:dictionary(SfSigs)}, #{}),
+    WithSigAndInput = field_to_http(WithSig, {<<"signature-input">>, dev_codec_structured_conv:dictionary(SfSigInputs)}, #{}),
+    WithSigAndInput.
+
+% Force the value to be encoded into the body of the HTTP message
+body_to_http(Http, Body) ->
+    field_to_http(Http, {<<"body">>, Body}, #{ where => body }).
+
+% All maps are encoded into the body of the HTTP message
+% to be further encoded later.
+field_to_http(Httpsig, {Name, Value}, _Opts) when is_map(Value) ->
+    NormalizedName = hb_converge:normalize_key(Name),
+    OldBody = maps:get(<<"body">>, Httpsig, #{}),
+    Httpsig#{ <<"body">> => OldBody#{ NormalizedName => Value } };
+field_to_http(Httpsig, {Name, Value}, Opts) when is_binary(Value) ->
+    NormalizedName = hb_converge:normalize_key(Name),
+    % The default location where the value is encoded within the HTTP
+    % message depends on its size.
+    % 
+    % So we check whether the size of the value is within the threshold
+    % to encode as a header, and otherwise default to encoding in the body.
+    %
+    % Note that a "where" Opts may force the location of the encoded
+    % value -- this is only a default location if not specified in Opts 
+    DefaultWhere =
+        case {maps:get(where, Opts, headers), byte_size(Value)} of
+            {headers, Fits} when Fits =< ?MAX_HEADER_LENGTH -> headers;
+            _ -> body
+        end,
+    case maps:get(where, Opts, DefaultWhere) of
+        headers ->
+            Httpsig#{ NormalizedName => Value };
+        body ->
+            OldBody = maps:get(<<"body">>, Httpsig, #{}),
+            Httpsig#{ <<"body">> => OldBody#{ NormalizedName => Value } }
+    end.

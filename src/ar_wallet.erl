@@ -24,7 +24,7 @@ sign(Key, Data) ->
 %% @doc sign some data, hashed using the provided DigestType.
 %% TODO: support signing for other key types
 sign({{rsa, PublicExpnt}, Priv, Pub}, Data, DigestType) when PublicExpnt =:= 65537 ->
-    rsa_pss:sign(
+    rsa_pss:attest(
         Data,
         DigestType,
         #'RSAPrivateKey'{

@@ -237,7 +237,7 @@ sign_item(_, undefined) -> throw(wallet_not_found);
 sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
     Item = (normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
     % Generate the signature from the data item's data segment in 'signed'-ready mode.
-    Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item, signed)),
+    Sig = ar_wallet:attest(PrivKey, data_item_signature_data(Item, signed)),
     reset_ids(Item#tx{signature = Sig}).
 
 %% @doc Verify the validity of a data item.

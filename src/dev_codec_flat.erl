@@ -1,6 +1,7 @@
-%%% A codec for turning TABMs into/from flat Erlang maps that have (potentially
-%%% multi-layer) paths as their keys, and a normal TABM binary as their value.
--module(hb_codec_flat).
+%%% @doc A codec for turning TABMs into/from flat Erlang maps that have 
+%%% (potentially multi-layer) paths as their keys, and a normal TABM binary as 
+%%% their value.
+-module(dev_codec_flat).
 -export([from/1, to/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").

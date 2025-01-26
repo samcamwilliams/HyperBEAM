@@ -37,7 +37,7 @@ new(Dest, Reward, Qty, Last, SigType) ->
 %% @doc Cryptographically sign (claim ownership of) a transaction.
 sign(TX, {PrivKey, {KeyType, Owner}}) ->
     NewTX = TX#tx{ owner = Owner, signature_type = KeyType },
-    Sig = ar_wallet:sign(PrivKey, signature_data_segment(NewTX)),
+    Sig = ar_wallet:attest(PrivKey, signature_data_segment(NewTX)),
     ID = crypto:hash(sha256, <<Sig/binary>>),
     NewTX#tx{ id = ID, signature = Sig }.
 
