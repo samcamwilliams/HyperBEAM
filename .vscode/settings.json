@@ -1,10 +1,5 @@
 {
   "editor.detectIndentation": false,
   "editor.insertSpaces": false,
-"editor.tabSize": 4,
-"workbench.colorCustomizations": {
-	"activityBar.background": "#3B2930",
-	"titleBar.activeBackground": "#523943",
-	"titleBar.activeForeground": "#FBFAFA"
-}
+  "editor.tabSize": 4
 }
