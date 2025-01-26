@@ -160,7 +160,7 @@ do_assign(State, Message, ReplyPID) ->
         aggressive ->
             spawn(AssignFun);
         Other ->
-            ?event(debug, {scheduling_mode, Other}),
+            ?event({scheduling_mode, Other}),
             AssignFun()
     end,
     State#{

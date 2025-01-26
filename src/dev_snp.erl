@@ -99,7 +99,7 @@ verify(M1, M2, NodeOpts) ->
 generate(_M1, _M2, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_valid_wallet, Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    ?event(debug, {snp_wallet, Wallet}),
+    ?event({snp_wallet, Wallet}),
     % Remove the `priv*` keys from the options.
     {ok, PublicNodeMsgID} =
         dev_message:id(
@@ -109,13 +109,13 @@ generate(_M1, _M2, Opts) ->
                 Opts
             ),
 	RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
-    ?event(debug, {snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
+    ?event({snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
     % Generate the attestation report.
-	?event(debug, {snp_address,  byte_size(Address)}),
+	?event({snp_address,  byte_size(Address)}),
     ReportData = generate_nonce(Address, RawPublicNodeMsgID),
-	?event(debug, {snp_report_data, byte_size(ReportData)}),
+	?event({snp_report_data, byte_size(ReportData)}),
     {ok,ReportJSON} = dev_snp_nif:generate_attestation_report(ReportData, 1),
-	?event(debug, {snp_report_json, ReportJSON}),
+	?event({snp_report_json, ReportJSON}),
 	LocalHashes = hb_opts:get(snp_hashes, {error, not_configured}, Opts),
     ?event(debug,
         {snp_report_generated,
@@ -129,7 +129,7 @@ generate(_M1, _M2, Opts) ->
         <<"node-message">> => NodeMsg,
 		<<"report">> => ReportJSON
     }, Wallet),
-	?event(debug, {snp_report_msg, ReportMsg}),
+	?event({snp_report_msg, ReportMsg}),
     {ok, ReportMsg}.
 
 %% @doc Ensure that the node's debug policy is disabled.
@@ -157,7 +157,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
                 <<"key">> => ReportKey,
                 <<"body">> => ReportVal
             },
-            ?event(debug, {is_trusted_query, {base, ModM1}, {query, QueryMsg}}),
+            ?event({is_trusted_query, {base, ModM1}, {query, QueryMsg}}),
             % Resolve the query message against the modified base message.
             {ok, KeyIsTrusted} = hb_converge:resolve(ModM1, QueryMsg, NodeOpts),
             ?event(debug,
@@ -171,18 +171,18 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
         end,
 		?ATTESTED_PARAMETERS
     ),
-    ?event(debug, {is_all_software_trusted, Result}),
+    ?event({is_all_software_trusted, Result}),
     {ok, Result}.
 
 %% @doc Default implementation of a resolver for trusted software. Searches the
 %% `trusted` key in the base message for a list of trusted values, and checks
 %% if the value in the request message is a member of that list.
 trusted(Msg1, Msg2, NodeOpts) ->
-	%?event(debug, {trusted, Msg1, Msg2, NodeOpts}),
+	%?event({trusted, Msg1, Msg2, NodeOpts}),
     Key = hb_converge:get(<<"key">>, Msg2, NodeOpts),
     Trusted = hb_converge:get([<<"trusted">>, Key], Msg1, [], NodeOpts),
     Body = hb_converge:get(<<"body">>, Msg2, not_found, NodeOpts),
-    ?event(debug, {checking_trusted, Key, {trusted_list, Trusted}, {body, Body}}),
+    ?event({checking_trusted, Key, {trusted_list, Trusted}, {body, Body}}),
     {ok, lists:member(Body, if is_list(Trusted) -> Trusted; true -> [Trusted] end)}.
 
 %% @doc Ensure that the report data matches the expected report data.
@@ -218,8 +218,8 @@ generate_nonce(RawAddress, RawNodeMsgID) ->
 %         }
 %     ),
 %     {ok, Report} = hb_http:get(Node, <<"/\~snp@1.0/generate">>, #{}),
-%     ?event(debug, {snp_report_rcvd, Report}),
+%     ?event({snp_report_rcvd, Report}),
 %     ?assertEqual(Addr, hb_converge:get(<<"address">>, Report, #{})),
 % 	ValidationRes = verify(#{ <<"trusted">> => Trusted}, #{ <<"body">> => Report }, #{}),
-% 	?event(debug, {snp_validation_res, ValidationRes}),
+% 	?event({snp_validation_res, ValidationRes}),
 %     ?assertEqual({ok, true}, ValidationRes).

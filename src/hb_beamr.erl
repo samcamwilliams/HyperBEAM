@@ -72,7 +72,7 @@ load_driver() ->
 start(WasmBinary) when is_binary(WasmBinary) ->
     start(WasmBinary, wasm).
 start(WasmBinary, Mode) when is_binary(WasmBinary) ->
-    ?event(debug, {loading_module, {bytes, byte_size(WasmBinary)}, Mode}),
+    ?event({loading_module, {bytes, byte_size(WasmBinary)}, Mode}),
     Self = self(),
     WASM = spawn(
         fun() ->

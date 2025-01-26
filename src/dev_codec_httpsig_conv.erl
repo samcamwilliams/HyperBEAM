@@ -179,7 +179,7 @@ from_body_parts(TABM, [Part | Rest]) ->
                         % So simply use the the raw body binary as the part
                         RawBody;
                     _ ->
-                        % We need recursively parse the sub part into its own TABM
+                        % We need to recursively parse the sub part into its own TABM
                         from(RestHeaders#{ <<"body">> => RawBody })
                 end,
             from_body_parts(maps:put(PartName, ParsedPart, TABM), Rest)
@@ -249,7 +249,8 @@ to(TABM, Opts) when is_map(TABM) ->
             #{},
             maps:without([<<"attestations">>, <<"signature">>, <<"signature-input">>], TABM)
         ),
-    BodyMap = maps:get(<<"body">>, Enc0),
+    ?event({encoding_http, {msg, Enc0}}),
+    BodyMap = maps:get(<<"body">>, Enc0, #{}),
     Enc1 =
         case {BodyMap, lists:member(sub_part, Opts)} of
             {X, _} when map_size(X) =:= 0 ->
@@ -277,7 +278,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 % The id of the Message will be used as the Boundary
                 % in the multipart body
                 {ok, RawBoundary} =
-                    dev_message:id(TABM, #{ <<"attestors">> => <<"all">> }, Opts),
+                    dev_message:id(TABM, #{ <<"attestors">> => <<"all">> }, #{}),
                 Boundary = hb_util:encode(RawBoundary),
                 % Transform body into a binary, delimiting each part with the
                 % boundary
@@ -398,11 +399,11 @@ encode_http_msg(Httpsig) ->
         SubBody -> <<EncodedHeaders/binary, ?DOUBLE_CRLF/binary, SubBody/binary>>
     end.
 
-signatures_to_httpsig(Httpsig, Signatures, Inputs) when is_map(Signatures) ->
-    signatures_to_httpsig(Httpsig, maps:to_list(Signatures), maps:to_list(Inputs));
-signatures_to_httpsig(Httpsig, Signatures, Inputs) when is_list(Signatures) ->
-    ?event({encoding_signatures, Signatures}),
-    throw({error, not_implemented}),
+signatures_to_httpsig(Httpsig, SignaturesBin, SigInputsBin) ->
+    ?event({encoding_signatures, SignaturesBin, SigInputsBin, {msg, Httpsig}}),
+    ParsedSigs = dev_codec_structured_conv:parse_dictionary(SignaturesBin),
+    ParsedInputs = dev_codec_structured_conv:parse_dictionary(SigInputsBin),
+    ?event({signature_dicts, {sigs, ParsedSigs}, {inputs, ParsedInputs}}),
     {SfSigInputs, SfSigs} = lists:foldl(
         fun ({SigName, SignatureMap = #{ <<"inputs">> := Inputs, <<"signature">> := Signature }}, {SfSigInputs, SfSigs}) ->
             NextSigInput = dev_codec_httpsig:sf_signature_params(Inputs, SignatureMap),
@@ -411,11 +412,11 @@ signatures_to_httpsig(Httpsig, Signatures, Inputs) when is_list(Signatures) ->
             {
                 [{NextName, NextSigInput} | SfSigInputs],
                 [{NextName, NextSig} | SfSigs]
-		}
+		    }
         end,
         % Start with empty Structured Field Dictionaries
         {[], []},
-        Signatures
+        ParsedSigs
     ),
     % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
     % each transmitted either as a header, or as a part in the multi-part body

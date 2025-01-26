@@ -55,14 +55,14 @@ to(Map) when is_map(Map) ->
 simple_conversion_test() ->
     Flat = #{[<<"a">>] => <<"value">>},
     Nested = #{<<"a">> => <<"value">>},
-    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
-    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
+    ?assert(hb_message:match(Nested, dev_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, dev_codec_flat:to(Nested))).
 
 nested_conversion_test() ->
     Flat = #{<<"a/b">> => <<"value">>},
     Nested = #{<<"a">> => #{<<"b">> => <<"value">>}},
-    Unflattened = hb_codec_flat:from(Flat),
-    Flattened = hb_codec_flat:to(Nested),
+    Unflattened = dev_codec_flat:from(Flat),
+    Flattened = dev_codec_flat:to(Nested),
     ?assert(hb_message:match(Nested, Unflattened)),
     ?assert(hb_message:match(Flat, Flattened)).
 
@@ -79,22 +79,22 @@ multiple_paths_test() ->
         },
         <<"a">> => <<"3">>
     },
-    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
-    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
+    ?assert(hb_message:match(Nested, dev_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, dev_codec_flat:to(Nested))).
 
 binary_passthrough_test() ->
     Bin = <<"raw binary">>,
-    ?assertEqual(Bin, hb_codec_flat:from(Bin)),
-    ?assertEqual(Bin, hb_codec_flat:to(Bin)).
+    ?assertEqual(Bin, dev_codec_flat:from(Bin)),
+    ?assertEqual(Bin, dev_codec_flat:to(Bin)).
 
 deep_nesting_test() ->
     Flat = #{<<"a/b/c/d">> => <<"deep">>},
     Nested = #{<<"a">> => #{<<"b">> => #{<<"c">> => #{<<"d">> => <<"deep">>}}}},
-    Unflattened = hb_codec_flat:from(Flat),
-    Flattened = hb_codec_flat:to(Nested),
+    Unflattened = dev_codec_flat:from(Flat),
+    Flattened = dev_codec_flat:to(Nested),
     ?assert(hb_message:match(Nested, Unflattened)),
     ?assert(hb_message:match(Flat, Flattened)).
 
 empty_map_test() ->
-    ?assertEqual(#{}, hb_codec_flat:from(#{})),
-    ?assertEqual(#{}, hb_codec_flat:to(#{})).
+    ?assertEqual(#{}, dev_codec_flat:from(#{})),
+    ?assertEqual(#{}, dev_codec_flat:to(#{})).

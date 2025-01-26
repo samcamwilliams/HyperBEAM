@@ -195,7 +195,7 @@ handle_info({gun_error, PID, Reason},
 					ok
 			end,
 			gun:shutdown(PID),
-			?event(debug, {connection_error, {reason, Reason}}),
+			?event({connection_error, {reason, Reason}}),
 			{noreply, State#state{ status_by_pid = StatusByPID2, pid_by_peer = PIDByPeer2 }}
 	end;
 

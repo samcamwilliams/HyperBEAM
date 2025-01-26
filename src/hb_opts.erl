@@ -68,7 +68,7 @@ default_message() ->
                 <<"faff@1.0">> => dev_faff,
                 <<"simple-pay@1.0">> => dev_simple_pay,
                 <<"snp@1.0">> => dev_snp,
-                <<"httpsig@1.0">> => dev_httpsig,
+                <<"httpsig@1.0">> => dev_codec_httpsig,
                 <<"ans104@1.0">> => dev_codec_ans104,
                 <<"flat@1.0">> => dev_codec_flat,
                 <<"structured@1.0">> => dev_codec_structured,

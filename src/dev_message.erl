@@ -70,10 +70,14 @@ id(Base, Req, NodeOpts) ->
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
-    {ok, DevMod} =
+    DevMod =
         case hb_converge:message_to_device(#{ <<"device">> => IDMod }, NodeOpts) of
-            ?MODULE -> {ok, ?DEFAULT_ID_DEVICE};
-            Mod -> {ok, Mod}
+            ?MODULE ->
+                hb_converge:message_to_device(
+                    #{ <<"device">> => ?DEFAULT_ID_DEVICE },
+                    NodeOpts
+                );
+            Mod -> Mod
         end,
     % Apply the function's `id` function with the appropriate arguments. If it
     % doesn't exist, error.
@@ -120,8 +124,8 @@ attest(Self, Req, Opts) ->
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.
-    {ok, AttMod} = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
-    {ok, AttFun} = hb_converge:find_exported_function(Base1, AttMod, attest, 3, Opts),
+    AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
+    {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, attest, 3, Opts),
     apply(AttFun, hb_converge:truncate_args(AttFun, [Base, Req, Opts])).
 
 %% @doc Verify a message nested in the body. As with `id', the `attestors'
@@ -130,9 +134,8 @@ attest(Self, Req, Opts) ->
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base1} = hb_message:find_target(Self, Req, Opts),
-    ?event({verify, Base1, {self, Self}}),
     % Get the attestations to verify.
-    Base2 =
+    Attestations =
         case maps:get(<<"attestors">>, Req, <<"all">>) of
             <<"none">> -> [];
             <<"all">> -> maps:get(<<"attestations">>, Base1, #{});
@@ -143,14 +146,19 @@ verify(Self, Req, Opts) ->
                 )
         end,
     % Remove the attestations from the base message.
-    Attestations = maps:get(<<"attestations">>, Base2, #{}),
-    Base3 = maps:without([<<"attestations">>], Base1),
+    Base2 = maps:without([<<"attestations">>], Base1),
+    ?event({verifying_attestations, Attestations}),
     % Verify the attestations. Stop execution if any fail.
     Res =
         lists:all(
             fun(Attestor) ->
+                ?event(
+                    {verify_attestation,
+                        {attestor, Attestor},
+                        {target, Base1},
+                        {transformed, Base2}}),
                 {ok, Res} = verify_attestation(
-                    Base3,
+                    Base2,
                     maps:get(Attestor, Attestations),
                     Req,
                     Opts
@@ -172,7 +180,7 @@ verify_attestation(Base, Attestation, Req, Opts) ->
             AttestionMessage,
             ?DEFAULT_ATT_DEVICE
         ),
-    {ok, AttMod} =
+    AttMod =
         hb_converge:message_to_device(
             #{ <<"device">> => AttDev },
             Opts

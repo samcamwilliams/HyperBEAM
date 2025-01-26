@@ -92,13 +92,14 @@
 %%% 					Default: `<not set>'.
 -module(hb_converge).
 %%% Main Converge API:
--export([resolve/2, resolve/3, resolve_many/2, load_device/2, message_to_device/2]).
+-export([resolve/2, resolve/3, resolve_many/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
+-export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
 %%% Exports for tests in hb_converge_tests.erl:
--export([deep_set/4, is_exported/4, message_to_fun/3]).
+-export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
 
 %% @doc Get the value of a message's key by running its associated device
@@ -840,7 +841,7 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 					{ok, MsgWithoutDevice} =
 						dev_message:remove(Msg, #{ item => device }),
 					message_to_fun(
-						MsgWithoutDevice#{ device => default_module() },
+						MsgWithoutDevice#{ <<"device">> => default_module() },
 						Key,
 						Opts
 					);

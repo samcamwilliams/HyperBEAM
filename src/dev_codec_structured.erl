@@ -183,7 +183,7 @@ decode_value(map, Value) ->
     maps:from_list(
         lists:map(
             fun({Key, {item, Item, _}}) ->
-                ?event(debug, {decoded_item, {explicit, Key}, Item}),
+                ?event({decoded_item, {explicit, Key}, Item}),
                 {Key, dev_codec_structured_conv:from_bare_item(Item)}
             end,
             dev_codec_structured_conv:parse_dictionary(iolist_to_binary(Value))

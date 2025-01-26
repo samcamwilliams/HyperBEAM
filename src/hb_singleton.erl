@@ -225,7 +225,7 @@ parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->
         lists:foldl(
             fun(InlinedKey, Acc) ->
                 {Key, Val} = parse_inlined_key_val(InlinedKey),
-                ?event(debug, {inlined_key, {explicit, Key}, {explicit, Val}}),
+                ?event({inlined_key, {explicit, Key}, {explicit, Val}}),
                 maps:put(Key, Val, Acc)
             end,
             Msg,

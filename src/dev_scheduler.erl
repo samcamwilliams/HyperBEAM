@@ -612,7 +612,7 @@ many_clients(Opts) ->
         BenchTime,
         Processes
     ),
-    ?event(debug, {iterations, Iterations}),
+    ?event({iterations, Iterations}),
     hb_util:eunit_print(
         "Scheduled ~p messages with ~p workers through HTTP in ~ps (~.2f msg/s)",
         [Iterations, Processes, BenchTime, Iterations / BenchTime]

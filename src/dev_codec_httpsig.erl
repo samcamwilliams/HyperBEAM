@@ -89,26 +89,14 @@ id(_Msg, _Params, _Opts) ->
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
-    ?event({starting_to_sign, MsgToSign}),
     Wallet = {_Priv, {_, Pub}} = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    Enc = hb_message:convert(MsgToSign, http, #{}),
+    Enc = hb_message:convert(MsgToSign, <<"httpsig@1.0">>, Opts),
     % Hack: Place the body into the `<<"headers">>` field if it is set. We should
     % either unify the body and headers in this module, or add explicit support
     % for the body in the HTTP Message.
-    EncWithBody = #{ <<"headers">> := EncHdrList } =
-        case maps:get(<<"body">>, Enc, undefined) of
-            undefined -> Enc;
-            <<>> -> Enc;
-            Body ->
-                OrigHeaders = maps:get(<<"headers">>, Enc, #{}),
-                Enc#{
-                    <<"headers">> => [{ <<"body">>, Body }|OrigHeaders]
-                }
-        end,
-    EncHdrMap = maps:from_list(EncHdrList),
-    ?event({options, {encoded, {explicit, EncWithBody}, {enc_hdr_map, EncHdrMap}}}),
-    Authority = authority(maps:keys(EncHdrMap), EncHdrMap, Wallet),
-    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, EncWithBody),
+    ?event({encoded, {explicit, Enc}}),
+    Authority = authority(maps:keys(Enc), Enc, Wallet),
+    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
     SigName = <<"signature">>,
     % Place the signature into the `attestations` key of the message.
@@ -124,7 +112,7 @@ attest(MsgToSign, _Req, Opts) ->
                     #{ SigName => ParsedSignatureInput }
                 )),
             <<"signature-public-key">> => hb_util:encode(Pub),
-            <<"signature-device">> => <<"httpsig@1.0">>
+            <<"attestation-device">> => <<"httpsig@1.0">>
         },
     ExistingAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
@@ -135,34 +123,17 @@ attest(MsgToSign, _Req, Opts) ->
     )}.
 
 verify(MsgToVerify, _Req, _Opts) ->
-    Signature = maps:get(<<"signature">>, MsgToVerify),
-    SignatureInput = maps:get(<<"signature-input">>, MsgToVerify),
     RawPubKey =
         hb_util:decode(
             NativePubKey = maps:get(<<"signature-public-key">>, MsgToVerify)),
-    MsgWithoutSig =
-        maps:without(
-            [
-                <<"signature">>,
-                <<"signature-input">>,
-                <<"signature-public-key">>,
-                <<"signature-device">>
-            ],
-            MsgToVerify
-        ),
     PubKey = {{rsa, 65537}, RawPubKey},
-    Enc = hb_message:convert(MsgWithoutSig, http, #{}),
+    % Re-run the same conversion that was done when creating the signature.
+    Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
+    % Add the `body` if it is missing, and re-set the `signature-public-key`.
     EncWithBody =
         Enc#{
-            <<"headers">> =>
-                [
-                    {<<"body">>, maps:get(<<"body">>, Enc, <<>>)},
-                    {<<"signature">>, Signature},
-                    {<<"signature-input">>, SignatureInput},
-                    {<<"signature-public-key">>, NativePubKey}
-                |
-                    maps:get(<<"headers">>, Enc, #{})
-                ]
+            <<"body">> => maps:get(<<"body">>, Enc, <<>>),
+            <<"signature-public-key">> => NativePubKey
         },
     verify_auth(#{ key => PubKey, sig_name => <<"signature">> }, EncWithBody).
 
@@ -215,7 +186,7 @@ sign_auth(Authority, Req, Res) ->
         signature_base(AuthorityWithSigParams, Req, Res),
     % Now perform the actual signing
     ?event({signing, {signature_base, hb_util:encode(hb_crypto:sha256(SignatureBase))}}),
-	Signature = ar_wallet:attest(Priv, SignatureBase, sha512),
+	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
 	{ok, {SignatureInput, Signature}}.
 
 %% @doc Add the signature parameters to the authority state
@@ -391,11 +362,9 @@ identifier_to_component(ParsedIdentifier = {item, {_, Value}, _Params}, Req, Res
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-http-fields
 extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
-	[IsStrictFormat, IsByteSequenceEncoded, DictKey] = [
-		find_sf_strict_format_param(IParams),
-		find_sf_byte_sequence_param(IParams),
-		find_sf_key_param(IParams)
-	],
+	IsStrictFormat = find_sf_strict_format_param(IParams),
+	IsByteSequenceEncoded = find_sf_byte_sequence_param(IParams),
+	DictKey = find_sf_key_param(IParams),
 	case (IsStrictFormat orelse DictKey =/= false) andalso IsByteSequenceEncoded of
 		true ->
 			% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.2
@@ -412,46 +381,12 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
                 dev_codec_structured_conv:item(
                     {item, {string, Lowered}, IParams}
                 ),
-			[IsRequestIdentifier, IsTrailerField] = [
-                find_sf_request_param(IParams),
-                find_sf_trailer_param(IParams)
-            ],
+			IsRequestIdentifier = find_sf_request_param(IParams),
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
-			MaybeRawFields = lists:filter(
-				fun({Key, _Value}) -> Key =:= Lowered end,
-				% Field names are normalized to lowercase in the signature base
-                % and also are case insensitive.
-                % So by converting all the names to lowercase here, we
-                % simoultaneously normalize them, and prepare them for
-                % comparison in one pass.
-				[
-					{lower_bin(Key), Value}
-                % TODO: how can we maintain the order msg fields, especially in
-                % the case where there are multiple fields with the same name,
-                % and order must be preserved
-				 || {Key, Value} <-
-						maps:get(
-							% The field will almost certainly be a header, but
-                            % could also be a trailer
-							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.10.1
-							case IsTrailerField of
-                                true -> <<"trailers">>;
-                                false -> <<"headers">>
-                            end,
-							% The header may exist on any message in the context of
-                            % the signature which could be the Request or Response
-                            % Message
-							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.8.1
-							case IsRequestIdentifier of
-                                true -> Req;
-                                false -> Res
-                            end
-					)
-				]
-			),
-			case MaybeRawFields of
-				[] ->
+            ?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
+			case maps:get(Lowered, if IsRequestIdentifier -> Req; true -> Res end, not_found) of
+				not_found ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6
 					{
                         field_not_found_error,
@@ -461,16 +396,15 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
                         {req, Req},
                         {res, Res}
                     };
-				FieldPairs ->
+				FieldValue ->
 					% The Field was found, but we still need to potentially
                     % parse it (it could be a Structured Field) and potentially
                     % extract subsequent values ie. specific dictionary key and
                     % its parameters, or further encode it
 					case
 						extract_field_value(
-							[bin(Value) || {_Key, Value} <- FieldPairs],
-							[DictKey, IsStrictFormat, IsByteSequenceEncoded]
-						)
+                            [FieldValue],
+                            [DictKey, IsStrictFormat, IsByteSequenceEncoded])
 					of
 						{ok, Extracted} ->
                             {ok, {bin(NormalizedItem), bin(Extracted)}};
