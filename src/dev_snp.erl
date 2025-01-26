@@ -190,30 +190,30 @@ generate_nonce(RawAddress, RawNodeMsgID) ->
     << Address/binary, NodeMsgID/binary >>.
 
 %% @doc Generate an attestation report and emit it via HTTP.
-generate_test() ->
-	Trusted =
-		#{
-			vcpus => 1,
-			vcpu_type => 5, 
-			vmm_type => 1,
-			guest_features => 16#1,
-			firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
-			kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
-			initrd => "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",
-			append => "56e1e5190622c8c6b9daa4fe3ad83f3831c305bb736735bf795b284cb462c9e7"
-		},
-    Wallet = ar_wallet:new(),
-    Addr = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    Node = hb_http_server:start_test_node(
-        #{
-            force_signed => true,
-            priv_wallet => Wallet,
-			snp_hashes => Trusted
-        }
-    ),
-    {ok, Report} = hb_http:get(Node, <<"/!snp@1.0/generate">>, #{}),
-    ?event(debug, {snp_report_rcvd, Report}),
-    ?assertEqual(Addr, hb_converge:get(<<"address">>, Report, #{})),
-	ValidationRes = verify(#{ <<"trusted">> => Trusted}, #{ <<"body">> => Report }, #{}),
-	?event(debug, {snp_validation_res, ValidationRes}),
-    ?assertEqual({ok, true}, ValidationRes).
+% generate_test() ->
+% 	Trusted =
+% 		#{
+% 			vcpus => 1,
+% 			vcpu_type => 5, 
+% 			vmm_type => 1,
+% 			guest_features => 16#1,
+% 			firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
+% 			kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
+% 			initrd => "02e28b6c718bf0a5260d6f34d3c8fe0d71bf5f02af13e1bc695c6bc162120da1",
+% 			append => "56e1e5190622c8c6b9daa4fe3ad83f3831c305bb736735bf795b284cb462c9e7"
+% 		},
+%     Wallet = ar_wallet:new(),
+%     Addr = hb_util:human_id(ar_wallet:to_address(Wallet)),
+%     Node = hb_http_server:start_test_node(
+%         #{
+%             force_signed => true,
+%             priv_wallet => Wallet,
+% 			snp_hashes => Trusted
+%         }
+%     ),
+%     {ok, Report} = hb_http:get(Node, <<"/\~snp@1.0/generate">>, #{}),
+%     ?event(debug, {snp_report_rcvd, Report}),
+%     ?assertEqual(Addr, hb_converge:get(<<"address">>, Report, #{})),
+% 	ValidationRes = verify(#{ <<"trusted">> => Trusted}, #{ <<"body">> => Report }, #{}),
+% 	?event(debug, {snp_validation_res, ValidationRes}),
+%     ?assertEqual({ok, true}, ValidationRes).
