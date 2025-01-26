@@ -159,10 +159,10 @@ get_opts(NodeMsg) ->
 %%% Tests
 
 test_opts(Opts) ->
-    % Generate a random port number between 42000 and 62000 to use
+    % Generate a random port number between 10000 and 30000 to use
     % for the server.
     Port =
-        case hb_opts:get(port, no_port, Opts) of
+        case hb_opts:get(port, no_port, Opts#{ only => local }) of
             no_port ->
                 rand:seed(exsplus, erlang:timestamp()),
                 10000 + rand:uniform(20000);
@@ -174,7 +174,6 @@ test_opts(Opts) ->
             PassedWallet -> PassedWallet
         end,
     Opts#{
-        % Generate a random port number between 8000 and 9000.
         port => Port,
         store =>
             {hb_store_fs,
