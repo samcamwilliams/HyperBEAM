@@ -144,7 +144,7 @@ find_id(_) ->
 
 %%@doc Ensure that the attestations and hmac are properly encoded
 reset_hmac(Msg) ->
-    ?event(debug, {reset_hmac, {msg, Msg}}),
+    ?event(debug, {reset_hmac_start, {msg, Msg}}),
     Attestations =
         maps:without(
             [<<"hmac-sha256">>],
@@ -178,24 +178,30 @@ reset_hmac(Msg) ->
             end,
             maps:to_list(Attestations)
         )),
-    Combined = #{
+    HMacSigInfo = #{
             <<"signature">> =>
                 bin(dev_codec_structured_conv:dictionary(AllSigs)),
             <<"signature-input">> =>
                 bin(dev_codec_structured_conv:dictionary(AllInputs))
     },
-    HMacInputMsg = maps:merge(Msg, Combined),
+    HMacInputMsg = maps:merge(Msg, HMacSigInfo),
     {ok, ID} = hmac(HMacInputMsg),
-    {
+    Res = {
         ok,
         maps:put(
             <<"attestations">>,
             Attestations#{
-                <<"hmac-sha256">> => Combined#{ <<"id">> => bin(hb_util:human_id(ID)) }
+                <<"hmac-sha256">> =>
+                    HMacSigInfo#{
+                        <<"id">> => bin(hb_util:human_id(ID)),
+                        <<"attestation-device">> => <<"httpsig@1.0">>
+                    }
             },
             Msg
         )
-    }.
+    },
+    ?event(debug, {reset_hmac_complete, {explicit, Res}}),
+    Res.
 
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.

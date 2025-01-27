@@ -89,7 +89,7 @@ convert_to_tabm(RawMsg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
-            minimize(filter_default_keys(TypicalMsg));
+            TypicalMsg;
         OtherTypeRes -> OtherTypeRes
     end.
 
@@ -889,4 +889,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
+    signed_message_encode_decode_verify_test(<<"structured@1.0">>).

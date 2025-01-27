@@ -135,20 +135,19 @@ attest(Self, Req, Opts) ->
 %% verified. 
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
-    {ok, Base1} = hb_message:find_target(Self, Req, Opts),
+    {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Get the attestations to verify.
     Attestations =
         case maps:get(<<"attestors">>, Req, <<"all">>) of
             <<"none">> -> [];
-            <<"all">> -> maps:get(<<"attestations">>, Base1, #{});
+            <<"all">> -> maps:get(<<"attestations">>, Base, #{});
             AttestorIDs ->
                 maps:with(
                     AttestorIDs,
-                    maps:get(<<"attestations">>, Base1, #{})
+                    maps:get(<<"attestations">>, Base, #{})
                 )
         end,
     % Remove the attestations from the base message.
-    Base2 = maps:without([<<"attestations">>], Base1),
     ?event({verifying_attestations, Attestations}),
     % Verify the attestations. Stop execution if any fail.
     Res =
@@ -157,10 +156,10 @@ verify(Self, Req, Opts) ->
                 ?event(
                     {verify_attestation,
                         {attestor, Attestor},
-                        {target, Base1},
-                        {transformed, Base2}}),
+                        {target, Base}}
+                ),
                 {ok, Res} = verify_attestation(
-                    Base2,
+                    Base,
                     maps:get(Attestor, Attestations),
                     Req#{ <<"attestor">> => Attestor },
                     Opts

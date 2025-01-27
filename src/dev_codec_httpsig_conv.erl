@@ -223,7 +223,8 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
                             dev_codec_structured_conv:dictionary(
                                 #{ SigName => maps:get(SigName, SfInputs) }
                             )
-                        )
+                        ),
+                    <<"attestation-device">> => <<"httpsig@1.0">>
                 }
             }
         end,
