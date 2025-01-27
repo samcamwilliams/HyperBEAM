@@ -297,7 +297,7 @@ route_template_message_matches_test() ->
         )
     ),
     ?assertEqual(
-        no_matches,
+        {error, no_matches},
         route(
             #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value2">> },
             #{ routes => Routes }
@@ -331,7 +331,7 @@ route_regex_matches_test() ->
         route(#{ <<"path">> => <<"/a/b/c/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
-        no_matches,
+        {error, no_matches},
         route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 
