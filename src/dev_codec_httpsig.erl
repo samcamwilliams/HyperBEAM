@@ -191,13 +191,15 @@ set_hmac(Msg) ->
 
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.
-hmac(Msg = #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }) ->
+hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
+    EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
+    ?event(debug, {encoded_msg, EncodedMsg}),
     ComponentsLine =
         iolist_to_binary(
             signature_components_line(
-                [{<<"signature">>, Sig}, {<<"signature-input">>, SigInput}],
+                maps:to_list(EncodedMsg),
                 #{},
                 Msg
             )
@@ -206,10 +208,12 @@ hmac(Msg = #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }) ->
     ParamsLine =
         iolist_to_binary(
             dev_codec_structured_conv:dictionary(
-                [
-                    {<<"signature">>, {item, {token, bin(Sig)}, []}},
-                    {<<"signature-input">>, {item, {token, bin(SigInput)}, []}}
-                ]
+                maps:map(
+                    fun(_Key, Value) ->
+                        {item, {token, Value}, []}
+                    end,
+                    EncodedMsg
+                )
             )
         ),
     ?event(debug, {params_line, ParamsLine}),
@@ -218,16 +222,16 @@ hmac(Msg = #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }) ->
     {ok, HMacValue}.
 
 verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
-    ?event(debug, {verify_hmac, {target, MsgToVerify}}),
-    case find_id(set_hmac(MsgToVerify)) of
+    ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
+    ?event(debug, {verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
+    case find_id(set_hmac(maps:without([<<"id">>], MsgToVerify))) of
         {error, no_id} -> {error, could_not_calculate_id};
+        {ok, ExpectedID} ->
+            ?event(debug, {hmac_verified, {id, ExpectedID}}),
+            {ok, true};
         {ok, ActualID} ->
-            case find_id(MsgToVerify) of
-                {ok, ExpectedID} ->
-                    {ok, ActualID =:= ExpectedID};
-                {error, no_id} ->
-                    {error, could_not_get_base_message_id}
-            end
+            ?event(debug, {hmac_failed_verification, {calculated_id, ActualID}, {expected, ExpectedID}}),
+            {ok, false}
     end;
 verify(MsgToVerify, Req, _Opts) ->
     ?event(debug, {verify, {target, MsgToVerify}, {req, Req}}),
@@ -430,6 +434,12 @@ join_signature_base(ComponentsLine, ParamsLine) ->
         <<"\"@signature-params\": ">>/binary,
         ParamsLine/binary
     >>.
+
+%%% @doc Given a map or KVList, return a sorted list of its key-value pairs.
+to_sorted_list(Msg) when is_map(Msg) ->
+    to_sorted_list(maps:to_list(Msg));
+to_sorted_list(Msg) when is_list(Msg) ->
+    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
 
 %%% @doc Given a list of Component Identifiers and a Request/Response Message
 %%% context, create the "signature-base-line" portion of the signature base

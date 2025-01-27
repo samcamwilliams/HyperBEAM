@@ -194,14 +194,6 @@ format(Map, Indent) when is_map(Map) ->
             {ok, [Attestor]} ->
                 [{<<"Att.">>, hb_util:short_id(Attestor)}];
             {ok, Attestors} ->
-                hb_util:eunit_print(
-                    "MSG: ~p. Attestors: ~p",
-                    [Map, Attestors]
-                ),
-                hb_util:eunit_print(
-                    "WAT: ~p",
-                    [Attestors]
-                ),
                 [
                     {
                         <<"Atts.">>,
@@ -716,6 +708,7 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?assertEqual(true, verify(SignedMsg)),
     ?event(debug, "Verified!"),
     Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event(debug, {decoded, Decoded}),
     ?assert(match(SignedMsg, Decoded)),

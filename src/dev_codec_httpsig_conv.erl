@@ -56,8 +56,7 @@ from(HTTP) ->
     Body = maps:get(<<"body">>, HTTP, <<>>),
     % First, parse all headers excluding the signature-related headers, as they
     % are handled separately.
-    Headers =
-        maps:without([<<"body">>, <<"signature">>, <<"signature-input">>], HTTP),
+    Headers = maps:without([<<"body">>], HTTP),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
     MsgWithoutSigs = 
@@ -69,6 +68,7 @@ from(HTTP) ->
                 Body
             )
         ),
+    ?event(debug, {from_body, {headers, Headers}, {body, Body}, {msgwithoutsigs, MsgWithoutSigs}}),
     % Finally, we need to add the signatures to the TABM
     attestations_from_signature(
         MsgWithoutSigs,
@@ -201,8 +201,8 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
             ?event(debug, {adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
             #{
                 <<"signature">> => Signature,
-                <<"inputs">> =>
-                    dev_codec_structured_conv:to_list(
+                <<"signature-input">> =>
+                    dev_codec_structured_conv:list(
                         maps:get(SigName, SfInputs, [])
                     )
             }
@@ -214,11 +214,8 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
     % is preserved.
     HMac =
         #{
-            <<"originals">> =>
-                #{
-                    <<"signature">> => RawSig,
-                    <<"signature-input">> => RawSigInput
-                }
+            <<"signature">> => RawSig,
+            <<"signature-input">> => RawSigInput
         },
     % Finally place the attestations as a top-level message on the parent message
     maps:put(<<"attestations">>, maps:put(<<"hmac-sha256">>, HMac, Attestations), Map).
@@ -351,8 +348,7 @@ to(TABM, Opts) when is_map(TABM) ->
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of
         #{ <<"hmac-sha256">> :=
-            #{ <<"originals">> :=
-                #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } } ->
+            #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
             % Add the original signature encodings to the HTTP message
             Enc1#{
                 <<"signature">> => Sig,
@@ -398,10 +394,6 @@ signatures_to_httpsig(Httpsig, SignaturesBin, SigInputsBin) ->
     WithSig = field_to_http(Httpsig, {<<"signature">>, dev_codec_structured_conv:dictionary(SfSigs)}, #{}),
     WithSigAndInput = field_to_http(WithSig, {<<"signature-input">>, dev_codec_structured_conv:dictionary(SfSigInputs)}, #{}),
     WithSigAndInput.
-
-% Force the value to be encoded into the body of the HTTP message
-body_to_http(Http, Body) ->
-    field_to_http(Http, {<<"body">>, Body}, #{ where => body }).
 
 % All maps are encoded into the body of the HTTP message
 % to be further encoded later.
