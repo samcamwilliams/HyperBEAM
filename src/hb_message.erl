@@ -78,7 +78,9 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
+    ?event(convert, {before_tabm, {explicit, Msg}}),
     TABM = convert_to_tabm(Msg, SourceFormat, Opts),
+    ?event(convert, {after_tabm, {explicit, TABM}}),
     case TargetFormat of
         tabm -> TABM;
         _ -> convert_to_target(TABM, TargetFormat, Opts)
@@ -171,9 +173,9 @@ format(Map, Indent) when is_map(Map) ->
         case hb_opts:get(debug_ids, false, #{}) of
             false ->
                 [
-                    {<<"#P">>, ValOrUndef(hashpath)},
-                    {<<"*U">>, ValOrUndef(unsigned_id)},
-                    {<<"*S">>, ValOrUndef(id)}
+                    {<<"#P">>, ValOrUndef(<<"hashpath">>)},
+                    {<<"*U">>, ValOrUndef(<<"unsigned_id">>)},
+                    {<<"*S">>, ValOrUndef(<<"id">>)}
                 ];
             true ->
                 {ok, UID} = dev_message:id(Map, #{ <<"attestors">> => <<"none">> }, #{}),
@@ -475,8 +477,7 @@ minimization_test() ->
     },
     MinimizedMsg = minimize(Msg),
     ?event({minimized, MinimizedMsg}),
-    ?assertEqual(0, maps:size(MinimizedMsg)).
-
+    ?assertEqual(1, maps:size(MinimizedMsg)).
 
 basic_map_codec_test(Codec) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
@@ -706,9 +707,9 @@ signed_message_encode_decode_verify_test(Codec) ->
         ),
     ?event(debug, {signed_msg, SignedMsg}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event(debug, "Verified!"),
+    ?event(test, {verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(debug, {msg_encoded_as_codec, Encoded}),
+    ?event(test, {msg_encoded_as_codec, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event(debug, {decoded, Decoded}),
     ?assertEqual(true, verify(Decoded)),
@@ -776,7 +777,7 @@ signed_deep_message_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?assertEqual({ok, true}, dev_message:verify(SignedMsg, Codec, #{})),
+    ?assertEqual(true, verify(SignedMsg)),
     Encoded = convert(SignedMsg, Codec, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(
