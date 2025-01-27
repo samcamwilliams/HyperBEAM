@@ -250,7 +250,7 @@ debug_fmt(X) -> debug_fmt(X, 0).
 debug_fmt(X, Indent) ->
     try do_debug_fmt(X, Indent)
     catch A:B:C ->
-        eunit_format:format(
+        eunit_print(
             "~p:~p:~p",
             [A, B, C]
         ),

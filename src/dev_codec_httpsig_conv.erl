@@ -278,86 +278,51 @@ to(TABM, Opts) when is_map(TABM) ->
             _ ->
                 % Otherwise, we need to encode the body map as the
                 % multipart body of the HTTP message
-                ?event({encoding_multipart, {body, BodyMap}, {http, Enc0}}),
-                % The id of the Message will be used as the Boundary
-                % in the multipart body
-                RawBoundary = crypto:strong_rand_bytes(8),
+                ?event({encoding_multipart, {bodymap, {explicit, BodyMap}}}),
+                % We need to generate a unique, reproducible boundary for the
+                % multipart body, however we cannot use the id of the message as
+                % the boundary, as the id is not known until the message is
+                % encoded. Subsequently, we generate each body part individually,
+                % concatenate them, and apply a SHA2-256 hash to the result.
+                % This ensures that the boundary is unique, reproducible, and
+                % secure.
+                ProcessedBodyParts = maps:map(fun encode_body_part/2, BodyMap),
+                PartList = to_sorted_list(ProcessedBodyParts),
+                BodyBin =
+                    iolist_to_binary(
+                        lists:join(?CRLF,
+                            lists:map(
+                                fun ({_PartName, PartBin}) -> PartBin end,
+                                PartList
+                            )
+                        )
+                    ),
+                RawBoundary = crypto:hash(sha256, BodyBin),
                 Boundary = hb_util:encode(RawBoundary),
                 % Transform body into a binary, delimiting each part with the
                 % boundary
-                BodyList = maps:fold(
-                    fun (PartName, BodyPart, Acc) ->
-                            ?event(
-                                {encoding_multipart_part,
-                                    {part, PartName, BodyPart},
-                                    {http, Enc0}}),
-                            % We'll need to prepend a Content-Disposition header
-                            % to the part, using the field name as the form part
-                            % name.
-                            % (See https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
-                            Disposition =
-                                case PartName of
-                                    % The body is always made the inline part of
-                                    % the multipart body
-                                    <<"body">> -> <<"inline">>;
-                                    _ -> <<"form-data;name=", "\"", PartName/binary, "\"">>
-                                end,
-                            % Sub-parts MUST have at least one header, according to the
-                            % multipart spec. Adding the Content-Disposition not only
-                            % satisfies that requirement, but also encodes the
-                            % HB message field that resolves to the sub-message
-                            EncodedBodyPart =
-                                case BodyPart of
-                                    BPMap when is_map(BPMap) ->
-                                        WithDisposition = maps:put(
-                                            <<"content-disposition">>,
-                                            Disposition,
-                                            BPMap
-                                        ),
-                                        SubHttp = to(WithDisposition, [sub_part]),
-                                        ?event({sub_http, {sub_part, SubHttp}}),
-                                        encode_http_msg(SubHttp);
-                                    BPBin when is_binary(BPBin) ->
-                                        case PartName of
-                                            % A properly encoded inlined body part MUST have a CRLF between
-                                            % it and the header block, so we MUST use two CRLF:
-                                            % - first to signal end of the Content-Disposition header
-                                            % - second to signal the end of the header block
-                                            <<"body">> -> 
-                                                <<
-                                                    "content-disposition: ", Disposition/binary, ?CRLF/binary,
-                                                    ?CRLF/binary,
-                                                    BPBin/binary
-                                                >>;
-                                            % All other binary values are encoded as a header in their
-                                            % respective sub-part
-                                            _ ->
-                                                <<
-                                                    "content-disposition: ", Disposition/binary, ?CRLF/binary,
-                                                    BPBin/binary
-                                                >>
-                                        end
-                                end,
-                            [
-                                <<
-                                    "--", Boundary/binary, ?CRLF/binary,
-                                    EncodedBodyPart/binary
-                                >>
-                            |
-                                Acc
-                            ]
+                BodyList = lists:foldl(
+                    fun ({_PartName, BodyPart}, Acc) ->
+                        [
+                            <<
+                                "--", Boundary/binary, ?CRLF/binary,
+                                BodyPart/binary
+                            >>
+                        |
+                            Acc
+                        ]
                     end,
                     [],
-                    BodyMap
+                    PartList
                 ),
                 % Finally, join each part of the multipart body into a single binary
                 % to be used as the body of the Http Message
-                BodyBin = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
+                FinalBody = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
                 % Ensure we append the Content-Type to be a multipart response
                 Enc0#{ 
                     <<"content-type">> =>
                         <<"multipart/form-data; boundary=", "\"" , Boundary/binary, "\"">>,
-                    <<"body">> => <<BodyBin/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
+                    <<"body">> => <<FinalBody/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
                 }
         end,
     % Finally, add the signatures to the HTTP message
@@ -371,6 +336,60 @@ to(TABM, Opts) when is_map(TABM) ->
             };
         not_found -> Enc1
     end.
+
+%% @doc Encode a multipart body part to a flat binary.
+encode_body_part(PartName, BodyPart) ->
+    % We'll need to prepend a Content-Disposition header
+    % to the part, using the field name as the form part
+    % name.
+    % (See https://www.rfc-editor.org/rfc/rfc7578#section-4.2).
+    Disposition =
+        case PartName of
+            % The body is always made the inline part of
+            % the multipart body
+            <<"body">> -> <<"inline">>;
+            _ -> <<"form-data;name=", "\"", PartName/binary, "\"">>
+        end,
+    % Sub-parts MUST have at least one header, according to the
+    % multipart spec. Adding the Content-Disposition not only
+    % satisfies that requirement, but also encodes the
+    % HB message field that resolves to the sub-message
+    case BodyPart of
+        BPMap when is_map(BPMap) ->
+            WithDisposition = maps:put(
+                <<"content-disposition">>,
+                Disposition,
+                BPMap
+            ),
+            SubHttp = to(WithDisposition, [sub_part]),
+            encode_http_msg(SubHttp);
+        BPBin when is_binary(BPBin) ->
+            case PartName of
+                % A properly encoded inlined body part MUST have a CRLF between
+                % it and the header block, so we MUST use two CRLF:
+                % - first to signal end of the Content-Disposition header
+                % - second to signal the end of the header block
+                <<"body">> -> 
+                    <<
+                        "content-disposition: ", Disposition/binary, ?CRLF/binary,
+                        ?CRLF/binary,
+                        BPBin/binary
+                    >>;
+                % All other binary values are encoded as a header in their
+                % respective sub-part
+                _ ->
+                    <<
+                        "content-disposition: ", Disposition/binary, ?CRLF/binary,
+                        BPBin/binary
+                    >>
+            end
+    end.
+
+%%% @doc Given a map or KVList, return a sorted list of its key-value pairs.
+to_sorted_list(Msg) when is_map(Msg) ->
+    to_sorted_list(maps:to_list(Msg));
+to_sorted_list(Msg) when is_list(Msg) ->
+    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
 
 encode_http_msg(Httpsig) ->
     % Serialize the headers, to be included in the part of the multipart response

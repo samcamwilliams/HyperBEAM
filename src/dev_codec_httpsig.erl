@@ -84,8 +84,15 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 	key => binary()
 }.
 
-id(_Msg, _Params, _Opts) ->
-    {ok, <<"http">>}.
+id(Msg, Params, Opts) ->
+    case find_id(Msg) of
+        {ok, ID} -> {ok, ID};
+        _ ->
+            ?event(debug, regenerating_id),
+            {ok, ResetMsg} = reset_hmac(Msg),
+            {ok, ID} = find_id(ResetMsg),
+            {ok, ID}
+    end.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
@@ -143,8 +150,8 @@ find_id(_) ->
     {error, no_id}.
 
 %%@doc Ensure that the attestations and hmac are properly encoded
-reset_hmac(Msg) ->
-    ?event(debug, {reset_hmac_start, {msg, Msg}}),
+reset_hmac(RawMsg) ->
+    Msg = hb_message:convert(RawMsg, tabm, #{}),
     Attestations =
         maps:without(
             [<<"hmac-sha256">>],
@@ -209,7 +216,6 @@ hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
     EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
-    ?event(debug, {encoded_msg, EncodedMsg}),
     ComponentsLine =
         iolist_to_binary(
             signature_components_line(
@@ -218,7 +224,6 @@ hmac(Msg) ->
                 Msg
             )
         ),
-    ?event(debug, {components_line, ComponentsLine}),
     ParamsLine =
         iolist_to_binary(
             dev_codec_structured_conv:dictionary(
@@ -230,7 +235,6 @@ hmac(Msg) ->
                 )
             )
         ),
-    ?event(debug, {params_line, ParamsLine}),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
@@ -448,12 +452,6 @@ join_signature_base(ComponentsLine, ParamsLine) ->
         <<"\"@signature-params\": ">>/binary,
         ParamsLine/binary
     >>.
-
-%%% @doc Given a map or KVList, return a sorted list of its key-value pairs.
-to_sorted_list(Msg) when is_map(Msg) ->
-    to_sorted_list(maps:to_list(Msg));
-to_sorted_list(Msg) when is_list(Msg) ->
-    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
 
 %%% @doc Given a list of Component Identifiers and a Request/Response Message
 %%% context, create the "signature-base-line" portion of the signature base

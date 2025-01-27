@@ -78,9 +78,7 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
-    ?event(convert, {before_tabm, {explicit, Msg}}),
     TABM = convert_to_tabm(Msg, SourceFormat, Opts),
-    ?event(convert, {after_tabm, {explicit, TABM}}),
     case TargetFormat of
         tabm -> TABM;
         _ -> convert_to_target(TABM, TargetFormat, Opts)
@@ -742,7 +740,7 @@ multisignature_test(Codec) ->
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
 
-tabm_converge_ids_equal_test() ->
+tabm_converge_ids_equal_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"deep_data">> => #{
@@ -751,24 +749,25 @@ tabm_converge_ids_equal_test() ->
             <<"list">> => [1,2,3]
         }
     },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event(debug, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assertEqual(
         dev_message:id(Msg, #{ <<"attestors">> => <<"none">>}, #{}),
-        dev_message:id(
-            convert(Msg, tabm, <<"structured@1.0">>, #{}),
-            #{ <<"attestors">> => <<"none">>},
-            #{}
-        )
+        dev_message:id(Decoded, #{ <<"attestors">> => <<"none">>}, #{})
     ).
 
 signed_deep_message_test(Codec) ->
     Msg = #{
         <<"test_key">> => <<"TEST_VALUE">>,
-        <<"data">> => #{
+        <<"body">> => #{
             <<"nested_key">> =>
                 #{
-                    <<"data">> => <<"NESTED_DATA">>,
+                    <<"body">> => <<"NESTED_DATA">>,
                     <<"nested_key">> => <<"NESTED_VALUE">>
-                }
+                },
+            <<"nested_key2">> => <<"NESTED_VALUE2">>
         }
     },
     {ok, SignedMsg} =
@@ -777,9 +776,15 @@ signed_deep_message_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
+    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
+    ?event(debug, {verify_hmac_res, {explicit, Res}}),
     ?assertEqual(true, verify(SignedMsg)),
+    ?event(debug, {verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(debug, {encoded, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, {explicit, Decoded}}),
     ?assert(
         match(
             SignedMsg,
@@ -861,6 +866,7 @@ message_suite_test_() ->
         {"match test", fun match_test/1},
         {"single layer message to encoding test",
             fun single_layer_message_to_encoding_test/1},
+        {"tabm converge ids equal test", fun tabm_converge_ids_equal_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
         {"nested message with large keys and content test",
             fun nested_message_with_large_keys_and_content_test/1},
@@ -890,4 +896,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(<<"structured@1.0">>).
+    signed_deep_message_test(<<"httpsig@1.0">>).
