@@ -708,11 +708,11 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?assertEqual(true, verify(SignedMsg)),
     ?event(debug, "Verified!"),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event(debug, {msg_encoded_as_codec, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event(debug, {decoded, Decoded}),
-    ?assert(match(SignedMsg, Decoded)),
-    ?assertEqual(true, verify(Decoded)).
+    ?assertEqual(true, verify(Decoded)),
+    ?assert(match(SignedMsg, Decoded)).
 
 multisignature_test(Codec) ->
     Wallet1 = ar_wallet:new(),
@@ -889,7 +889,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    multisignature_test(<<"httpsig@1.0">>).
-    %signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
-    %signed_message_encode_decode_verify_test(http),
-    %nested_message_with_large_content_test(http).
+    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).

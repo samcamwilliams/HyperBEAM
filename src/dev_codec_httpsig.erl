@@ -6,7 +6,7 @@
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, attest/3, verify/3]).
+-export([id/3, attest/3, verify/3, reset_hmac/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
@@ -124,10 +124,7 @@ attest(MsgToSign, _Req, Opts) ->
         OldAttestations#{
             Attestor => Attestation
         },
-    {
-        ok,
-        set_hmac(MsgToSign#{ <<"attestations">> => NewAttestations })
-    }.
+    reset_hmac(MsgToSign#{ <<"attestations">> => NewAttestations }).
 
 %% @doc Convert an address to a signature name that is short, unique to the
 %% address, and lowercase.
@@ -146,8 +143,8 @@ find_id(_) ->
     {error, no_id}.
 
 %%@doc Ensure that the attestations and hmac are properly encoded
-set_hmac(Msg) ->
-    ?event(debug, {set_hmac, {msg, Msg}}),
+reset_hmac(Msg) ->
+    ?event(debug, {reset_hmac, {msg, Msg}}),
     Attestations =
         maps:without(
             [<<"hmac-sha256">>],
@@ -189,13 +186,16 @@ set_hmac(Msg) ->
     },
     HMacInputMsg = maps:merge(Msg, Combined),
     {ok, ID} = hmac(HMacInputMsg),
-    maps:put(
-        <<"attestations">>,
-        Attestations#{
-			<<"hmac-sha256">> => Combined#{ <<"id">> => bin(hb_util:human_id(ID)) }
-		},
-        Msg
-    ).
+    {
+        ok,
+        maps:put(
+            <<"attestations">>,
+            Attestations#{
+                <<"hmac-sha256">> => Combined#{ <<"id">> => bin(hb_util:human_id(ID)) }
+            },
+            Msg
+        )
+    }.
 
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.
@@ -232,7 +232,8 @@ hmac(Msg) ->
 verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
     ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
     ?event(debug, {verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
-    case find_id(set_hmac(maps:without([<<"id">>], MsgToVerify))) of
+    {ok, Recalculated} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
+    case find_id(Recalculated) of
         {error, no_id} -> {error, could_not_calculate_id};
         {ok, ExpectedID} ->
             ?event(debug, {hmac_verified, {id, ExpectedID}}),

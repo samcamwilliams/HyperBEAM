@@ -60,21 +60,23 @@ from(HTTP) ->
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
     MsgWithoutSigs = 
-        maps:remove(
-            <<"content-type">>,
+        maps:without(
+            [<<"content-type">>, <<"signature">>, <<"signature-input">>, <<"attestations">>],
             from_body(
                 Headers,
                 maps:get(<<"content-type">>, Headers, undefined),
                 Body
             )
         ),
-    ?event(debug, {from_body, {headers, Headers}, {body, Body}, {msgwithoutsigs, MsgWithoutSigs}}),
+    ?event(debug, {from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Finally, we need to add the signatures to the TABM
-    attestations_from_signature(
+    {ok, Res} = attestations_from_signature(
         MsgWithoutSigs,
         maps:get(<<"signature">>, Headers, not_found),
         maps:get(<<"signature-input">>, Headers, not_found)
-    ).
+    ),
+    ?event(debug, {message_with_atts, Res}),
+    Res.
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
@@ -188,37 +190,49 @@ from_body_parts(TABM, [Part | Rest]) ->
 %% @doc Populate the `/attestations` key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
 attestations_from_signature(Map, not_found, _RawSigInput) ->
-    maps:without([<<"attestations">>], Map);
+    ?event(debug, {no_sigs_found_in_from, {msg, Map}}),
+    {ok, maps:without([<<"attestations">>], Map)};
 attestations_from_signature(Map, RawSig, RawSigInput) ->
-    SfSigs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSig)),
+    SfSigsKV = dev_codec_structured_conv:parse_dictionary(RawSig),
     SfInputs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSigInput)),
+    ?event(debug, {adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
     % Build a Map for Signatures by gathering each Signature
     % with its corresponding Inputs.
     % 
     % Inputs are merged as fields on the Signature Map
-    Attestations = maps:map(
-        fun (SigName, Signature) ->
+    Attestations = maps:from_list(lists:map(
+        fun ({SigName, Signature}) ->
             ?event(debug, {adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
-            #{
-                <<"signature">> => Signature,
-                <<"signature-input">> =>
-                    dev_codec_structured_conv:list(
-                        maps:get(SigName, SfInputs, [])
-                    )
+            {list, _SigInputs, ParamsKVList} = maps:get(SigName, SfInputs, #{}),
+            Params = maps:from_list(ParamsKVList),
+            {string, EncPubKey} = maps:get(<<"keyid">>, Params),
+            PubKey = hb_util:decode(EncPubKey),
+            Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
+            ?event(debug, {calculated_name, {address, Address}, {sig, Signature}, {inputs, {explicit, SfInputs}, {implicit, Params}}}),
+            {
+                Address,
+                #{
+                    <<"signature">> =>
+                        iolist_to_binary(
+                            dev_codec_structured_conv:dictionary(
+                                #{ SigName => Signature }
+                            )
+                        ),
+                    <<"signature-input">> =>
+                        iolist_to_binary(
+                            dev_codec_structured_conv:dictionary(
+                                #{ SigName => maps:get(SigName, SfInputs) }
+                            )
+                        )
+                }
             }
         end,
-        SfSigs
-    ),
-    % Store the original signature and signature-input as a top-level message
-    % in the `hmac-sha256` key on the parent, such that the order of the original inputs
-    % is preserved.
-    HMac =
-        #{
-            <<"signature">> => RawSig,
-            <<"signature-input">> => RawSigInput
-        },
+        SfSigsKV
+    )),
+    Msg = Map#{ <<"attestations">> => Attestations },
+    ?event(debug, {adding_attestations, {msg, Msg}}),
     % Finally place the attestations as a top-level message on the parent message
-    maps:put(<<"attestations">>, maps:put(<<"hmac-sha256">>, HMac, Attestations), Map).
+    dev_codec_httpsig:reset_hmac(Msg).
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API
