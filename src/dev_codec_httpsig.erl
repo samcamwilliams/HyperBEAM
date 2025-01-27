@@ -98,8 +98,9 @@ attest(MsgToSign, _Req, Opts) ->
     Authority = authority(maps:keys(Enc), Enc, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
-    Attestor = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    SigName = <<"sig-", (hb_util:to_hex(binary:part(Pub, 1, 8)))/binary>>,
+    % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]`
+    Attestor = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
+    SigName = address_to_sig_name(Address),
     % Calculate the id and place the signature into the `attestations` key of the message.
     Attestation =
         #{
@@ -125,35 +126,53 @@ attest(MsgToSign, _Req, Opts) ->
         set_hmac(MsgToSign#{ <<"attestations">> => NewAttestations })
     }.
 
+%% @doc Convert an address to a signature name that is short, unique to the
+%% address, and lowercase.
+-spec address_to_sig_name(binary()) -> binary().
+address_to_sig_name(Address) when ?IS_ID(Address) ->
+    <<"http-sig-", (hb_util:to_hex(binary:part(hb_util:native_id(Address), 1, 8)))/binary>>;
+address_to_sig_name(OtherRef) ->
+    OtherRef.
+
+%% @doc Find the ID of the message, which is the hmac of the signature and signature input.
+find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
+    {ok, ID};
+find_id(#{ <<"attestations">> := #{ <<"hmac">> := #{ <<"id">> := ID } } }) ->
+    {ok, ID};
+find_id(_) ->
+    {error, no_id}.
+
 %%@doc Ensure that the attestations and hmac are properly encoded
 set_hmac(Msg) ->
     Attestations = maps:get(<<"attestations">>, Msg, #{}),
     AllSigs =
-        maps:map(
-            fun (SigName, #{ <<"signature">> := Signature }) ->
+        maps:from_list(lists:map(
+            fun ({Attestor, #{ <<"signature">> := Signature }}) ->
+                SigName = address_to_sig_name(Attestor),
                 SigBin =
                     maps:get(SigName,
                         maps:from_list(
                             dev_codec_structured_conv:parse_dictionary(Signature)
                         )
                     ),
-                ?event(debug, {got_bin_sig, SigBin}),
-                SigBin
+                ?event(debug, {SigName, SigBin}),
+                {SigName, SigBin}
             end,
-            Attestations
-        ),
+            maps:to_list(Attestations)
+        )),
     AllInputs =
-        maps:map(
-            fun (SigName, #{ <<"signature-input">> := Inputs }) ->
+        maps:from_list(lists:map(
+            fun ({Attestor, #{ <<"signature-input">> := Inputs }}) ->
+                SigName = address_to_sig_name(Attestor),
                 ?event(debug, {trying_to_parse, Inputs}),
                 Res = dev_codec_structured_conv:parse_dictionary(Inputs),
                 ?event(debug, {parsed_dict, Res}),
                 SingleSigInput = maps:get(SigName, maps:from_list(Res)),
                 ?event(debug, {single_sig_input, SingleSigInput}),
-                SingleSigInput
+                {SigName, SingleSigInput}
             end,
-            Attestations
-        ),
+            maps:to_list(Attestations)
+        )),
     Combined = #{
             <<"signature">> =>
                 bin(dev_codec_structured_conv:dictionary(AllSigs)),
@@ -165,7 +184,7 @@ set_hmac(Msg) ->
     maps:put(
         <<"attestations">>,
         Attestations#{
-			<<"hmac">> => Combined#{ <<"id">> => bin(hb_util:human_id(ID)) }
+			<<"hmac-sha256">> => Combined#{ <<"id">> => bin(hb_util:human_id(ID)) }
 		},
         Msg
     ).
@@ -198,21 +217,60 @@ hmac(Msg = #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }) ->
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
 
-verify(MsgToVerify, _Req, _Opts) ->
-    RawPubKey =
-        hb_util:decode(
-            NativePubKey = maps:get(<<"signature-public-key">>, MsgToVerify)),
-    PubKey = {{rsa, 65537}, RawPubKey},
-    % Re-run the same conversion that was done when creating the signature.
-    Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
-    % Add the signature data back into the encoded message.
-    EncWithSig =
-        Enc#{
-            <<"signature-public-key">> => NativePubKey,
-            <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
-            <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
-        },
-    {ok, verify_auth(#{ key => PubKey, sig_name => <<"signature">> }, EncWithSig)}.
+verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
+    ?event(debug, {verify_hmac, {target, MsgToVerify}}),
+    case find_id(set_hmac(MsgToVerify)) of
+        {error, no_id} -> {error, could_not_calculate_id};
+        {ok, ActualID} ->
+            case find_id(MsgToVerify) of
+                {ok, ExpectedID} ->
+                    {ok, ActualID =:= ExpectedID};
+                {error, no_id} ->
+                    {error, could_not_get_base_message_id}
+            end
+    end;
+verify(MsgToVerify, Req, _Opts) ->
+    ?event(debug, {verify, {target, MsgToVerify}, {req, Req}}),
+    % Parse the signature parameters into a map.
+    Attestor = maps:get(<<"attestor">>, Req),
+    SigName = address_to_sig_name(Attestor),
+    {list, _SigInputs, ParamsKVList} =
+        maps:get(
+            SigName,
+            maps:from_list(
+                dev_codec_structured_conv:parse_dictionary(
+                    maps:get(<<"signature-input">>, MsgToVerify)
+                )
+            )
+        ),
+    Alg = maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)),
+    case Alg of
+        {string, <<"rsa-pss-sha512">>} ->
+            {string, KeyID} = maps:get(<<"keyid">>, Params),
+            PubKey = hb_util:decode(KeyID),
+            Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
+            % Re-run the same conversion that was done when creating the signature.
+            Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
+            % Add the signature data back into the encoded message.
+            EncWithSig =
+                Enc#{
+                    <<"signature-public-key">> => hb_util:encode(PubKey),
+                    <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
+                    <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
+                },
+            {
+                ok,
+                verify_auth(
+                    #{
+                        key => {{rsa, 65537}, PubKey},
+                        sig_name => address_to_sig_name(Address)
+                    },
+                    EncWithSig
+                )
+            };
+        _ ->
+            {error, {unsupported_alg, Alg}}
+    end.
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(
@@ -541,7 +599,9 @@ extract_dictionary_field_value(StructuredField = [Elem | _Rest], Key) ->
 					{
                         sf_dicionary_key_not_found_error,
                         <<"Component Identifier references key not ",
-                        "found in dictionary structured field">>
+                        "found in dictionary structured field">>,
+                        {key, Key},
+                        {structured_field, StructuredField}
                     };
 				{_, Value} ->
 					sf_encode(Value)
@@ -741,10 +801,6 @@ sf_signature_params(ComponentIdentifiers, SigParams) when is_list(SigParams) ->
             )
 		}
 	].
-
-% TODO: should this also handle the Signature already being encoded?
-sf_signature(Signature) ->
-    {item, {binary, Signature}, []}.
 
 %%% @doc Attempt to parse the binary into a data structure that represents
 %%% an HTTP Structured Field.

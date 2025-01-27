@@ -160,7 +160,7 @@ verify(Self, Req, Opts) ->
                 {ok, Res} = verify_attestation(
                     Base2,
                     maps:get(Attestor, Attestations),
-                    Req,
+                    Req#{ <<"attestor">> => Attestor },
                     Opts
                 ),
                 Res

@@ -210,7 +210,7 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
         SfSigs
     ),
     % Store the original signature and signature-input as a top-level message
-    % in the `hmac` key on the parent, such that the order of the original inputs
+    % in the `hmac-sha256` key on the parent, such that the order of the original inputs
     % is preserved.
     HMac =
         #{
@@ -221,7 +221,7 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
                 }
         },
     % Finally place the attestations as a top-level message on the parent message
-    maps:put(<<"attestations">>, maps:put(<<"hmac">>, HMac, Attestations), Map).
+    maps:put(<<"attestations">>, maps:put(<<"hmac-sha256">>, HMac, Attestations), Map).
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API
@@ -350,7 +350,7 @@ to(TABM, Opts) when is_map(TABM) ->
         end,
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of
-        #{ <<"hmac">> :=
+        #{ <<"hmac-sha256">> :=
             #{ <<"originals">> :=
                 #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } } ->
             % Add the original signature encodings to the HTTP message
