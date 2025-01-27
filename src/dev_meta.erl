@@ -17,9 +17,9 @@
 %% with a `Meta` key are routed to the `handle_meta/2` function, while all
 %% other messages are routed to the `handle_converge/2` function.
 handle(NodeMsg, RawRequest) ->
-    ?event({raw_request, RawRequest, NodeMsg}),
+    ?event({singleton_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event({processing_messages, NormRequest}),
+    ?event({normalized_request, NormRequest}),
     handle_converge(RawRequest, NormRequest, NodeMsg).
 
 %% @doc Get/set the node message. If the request is a `POST`, we check that the

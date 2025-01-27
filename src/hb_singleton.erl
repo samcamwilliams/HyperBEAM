@@ -40,21 +40,29 @@
 %% @doc Normalize a singleton TABM message into a list of executable Converge
 %% messages.
 from(RawMsg) ->
-    {ok, Path, Query} =
-        parse_full_path(hb_path:to_binary(hb_path:from_message(request, RawMsg))),
+    RawPath = maps:get(<<"path">>, RawMsg, <<>>),
+    ?event(parsing, {raw_path, RawPath}),
+    {ok, Path, Query} = parse_full_path(RawPath),
+    ?event(parsing, {parsed_path, Path, Query}),
     MsgWithoutBasePath = maps:merge(
         maps:remove(<<"path">>, RawMsg),
         Query
     ),
     % 2. Decode, split, and sanitize path segments. Each yields one step message.
     RawMsgs = lists:flatten(lists:map(fun path_messages/1, Path)),
+    ?event(parsing, {raw_messages, RawMsgs}),
     Msgs = normalize_base(RawMsgs),
+    ?event(parsing, {normalized_messages, Msgs}),
     % 3. Type keys and values
     Typed = apply_types(MsgWithoutBasePath),
+    ?event(parsing, {typed_messages, Typed}),
     % 4. Group keys by N-scope and global scope
     ScopedModifications = group_scoped(Typed, Msgs),
+    ?event(parsing, {scoped_modifications, ScopedModifications}),
     % 5. Generate the list of messages (plus-notation, device, typed keys).
-    build_messages(Msgs, ScopedModifications).
+    Result = build_messages(Msgs, ScopedModifications),
+    ?event(parsing, {result, Result}),
+    Result.
 
 %% @doc Parse the relative reference into path, query, and fragment.
 parse_full_path(RelativeRef) ->
@@ -214,9 +222,9 @@ parse_part_mods([], Msg) -> Msg;
 parse_part_mods(<<>>, Msg) -> Msg;
 parse_part_mods(<<"~", PartMods/binary>>, Msg) ->
     % Get the string until the end of the device specifier or end of string.
-    {_, DeviceBin, InlinedMsgBin} = part([$=, $&], PartMods),
+    {_, DeviceBin, InlinedMsgBin} = part([$&], PartMods),
     % Calculate the inlined keys
-    MsgWithInlines = parse_part_mods(InlinedMsgBin, Msg),
+    MsgWithInlines = parse_part_mods(<<"&", InlinedMsgBin/binary >>, Msg),
     % Apply the device specifier
     {as, maybe_subpath(DeviceBin), MsgWithInlines};
 parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->

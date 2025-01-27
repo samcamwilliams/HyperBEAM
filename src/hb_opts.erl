@@ -59,6 +59,7 @@ default_message() ->
                 <<"json-iface@1.0">> => dev_json_iface,
                 <<"dedup@1.0">> => dev_dedup,
                 <<"router@1.0">> => dev_router,
+                <<"relay@1.0">> => dev_relay,
                 <<"cron@1.0">> => dev_cron,
                 <<"poda@1.0">> => dev_poda,
                 <<"monitor@1.0">> => dev_monitor,
