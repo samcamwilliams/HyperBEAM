@@ -53,9 +53,9 @@
 %%% `hb_cache' module uses TABMs as the internal format for storing and 
 %%% retrieving messages.
 -module(hb_message).
--export([convert/3, convert/4, unsigned/1, attestations/1]).
--export([sign/2, sign/3, verify/1, verify/2, type/1, minimize/1]). 
--export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
+-export([convert/3, convert/4, unattested/1]).
+-export([verify/1, attest/2, attest/3, type/1, minimize/1]). 
+-export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
