@@ -1,6 +1,6 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
--export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1]).
+-export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
@@ -118,6 +118,16 @@ safe_decode(E) ->
         _:_ ->
         {error, invalid}
     end.
+
+%% @doc Convert a binary to a hex string. Do not use this for anything other than
+%% generating a lower-case, non-special character id. It should not become part of
+%% the core protocol. We use b64u for efficient encoding.
+to_hex(Bin) when is_binary(Bin) ->
+    to_lower(
+        iolist_to_binary(
+            [io_lib:format("~2.16.0B", [X]) || X <- binary_to_list(Bin)]
+        )
+    ).
 
 %% @doc Label a list of elements with a number.
 number(List) ->
@@ -239,7 +249,11 @@ format_debug_trace(Mod, Func, Line) ->
 debug_fmt(X) -> debug_fmt(X, 0).
 debug_fmt(X, Indent) ->
     try do_debug_fmt(X, Indent)
-    catch _:_ ->
+    catch A:B:C ->
+        eunit_format:format(
+            "~p:~p:~p",
+            [A, B, C]
+        ),
         case hb_opts:get(mode, prod) of
             prod ->
                 format_indented("[!PRINT FAIL!]", Indent);

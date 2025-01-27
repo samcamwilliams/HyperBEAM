@@ -1,5 +1,4 @@
 -module(dev_codec_structured_conv).
--export([to_term/1]).
 -export([parse_dictionary/1, parse_item/1, parse_list/1, parse_bare_item/1]).
 -export([dictionary/1, item/1, list/1, bare_item/1, from_bare_item/1]).
 -export([to_dictionary/1, to_list/1, to_item/1, to_item/2]).

@@ -190,15 +190,23 @@ format(Map, Indent) when is_map(Map) ->
         end,
     AttestorMetadata =
         case dev_message:attestors(Map, #{}, #{}) of
-            [] -> [];
-            [Attestor] ->
+            {ok, []} -> [];
+            {ok, [Attestor]} ->
                 [{<<"Att.">>, hb_util:short_id(Attestor)}];
-            Attestors ->
+            {ok, Attestors} ->
+                hb_util:eunit_print(
+                    "MSG: ~p. Attestors: ~p",
+                    [Map, Attestors]
+                ),
+                hb_util:eunit_print(
+                    "WAT: ~p",
+                    [Attestors]
+                ),
                 [
                     {
                         <<"Atts.">>,
                         string:join(
-                            lists:map(fun hb_util:short_id/1, Attestors),
+                            lists:map(fun(X) -> [hb_util:short_id(X)] end, Attestors),
                             ", "
                         )
                     }
@@ -232,12 +240,16 @@ format(Map, Indent) when is_map(Map) ->
         FilterUndef(PriorityKeys) ++
         maps:to_list(
             minimize(Map,
-                [
-                    <<"attestations">>,
-                    <<"hashpath">>,
-                    <<"path">>,
-                    <<"device">>
-                ]
+                case hb_opts:get(debug_hide_metadata, false, #{}) of
+                    true ->
+                        [
+                            <<"attestations">>,
+                            <<"hashpath">>,
+                            <<"path">>,
+                            <<"device">>
+                        ];
+                    false -> []
+                end
             )
         ) ++ FooterKeys,
     % Format the remaining 'normal' keys and values.
@@ -477,7 +489,9 @@ minimization_test() ->
 basic_map_codec_test(Codec) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
     Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 set_body_codec_test(Codec) ->
@@ -620,7 +634,9 @@ nested_message_with_large_content_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
@@ -654,15 +670,18 @@ deeply_nested_message_with_only_content(Codec) ->
             _ -> <<"body">>
         end,
     Msg = #{
-         <<"depth">> => <<"outer">>,
+         <<"depth1">> => <<"outer">>,
         MainBodyKey => #{
+            <<"depth2">> => <<"middle">>,
             MainBodyKey => #{
                 MainBodyKey => <<"DATA">>    
             }
         }
     },
     Encoded = convert(Msg, Codec, #{}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 nested_structured_fields_test(Codec) ->
@@ -694,10 +713,12 @@ signed_message_encode_decode_verify_test(Codec) ->
             #{ priv_wallet => hb:wallet() }
         ),
     ?event(debug, {signed_msg, SignedMsg}),
+    ?assertEqual(true, verify(SignedMsg)),
+    ?event(debug, "Verified!"),
     Encoded = convert(SignedMsg, Codec, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assert(match(SignedMsg, Decoded)),
-    ?assertEqual(true, verify(SignedMsg)),
     ?assertEqual(true, verify(Decoded)).
 
 tabm_converge_ids_equal_test() ->
@@ -791,7 +812,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [<<"structured@1.0">>].
+    [<<"structured@1.0">>, <<"httpsig@1.0">>].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -847,6 +868,6 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(<<"structured@1.0">>).
+    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
     %signed_message_encode_decode_verify_test(http),
     %nested_message_with_large_content_test(http).

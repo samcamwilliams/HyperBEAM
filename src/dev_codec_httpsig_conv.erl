@@ -72,14 +72,14 @@ from(HTTP) ->
     % Finally, we need to add the signatures to the TABM
     attestations_from_signature(
         MsgWithoutSigs,
-        maps:get(<<"signature">>, Headers, undefined),
-        maps:get(<<"signature-input">>, Headers, undefined)
+        maps:get(<<"signature">>, Headers, not_found),
+        maps:get(<<"signature-input">>, Headers, not_found)
     ).
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
     ?event({from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
-    {_BodyType, Params} =
+    Params =
         case ContentType of
             undefined -> [];
             _ ->
@@ -187,36 +187,26 @@ from_body_parts(TABM, [Part | Rest]) ->
 
 %% @doc Populate the `/attestations` key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
+attestations_from_signature(Map, not_found, _RawSigInput) ->
+    maps:without([<<"attestations">>], Map);
 attestations_from_signature(Map, RawSig, RawSigInput) ->
-    SfSigs = dev_codec_structured_conv:parse_dictionary(RawSig),
-    SfInputs = dev_codec_structured_conv:parse_dictionary(RawSigInput),
+    SfSigs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSig)),
+    SfInputs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSigInput)),
     % Build a Map for Signatures by gathering each Signature
     % with its corresponding Inputs.
     % 
     % Inputs are merged as fields on the Signature Map
-    Attestations = lists:foldl(
-        fun ({SigName, {item, {_, Sig}, _}}, Sigs) ->
-            {<<"signature">>, {list, SfInputItems}, SfInputParams}
-                = lists:keyfind(SigName, 1, SfInputs),
-            Inputs = lists:map(fun({item, {_, Input}, _}) -> Input end, SfInputItems),
-            % Build a message for each Signature, with its corresponding Inputs
-            SigMap = lists:foldl(
-                fun({PName, PBareItem}, PAcc) ->
-                    maps:put(
-                        PName,
-                        dev_codec_structured_conv:from_bare_item(PBareItem),
-                        PAcc
+    Attestations = maps:map(
+        fun (SigName, Signature) ->
+            ?event(debug, {adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
+            #{
+                <<"signature">> => Signature,
+                <<"inputs">> =>
+                    dev_codec_structured_conv:to_list(
+                        maps:get(SigName, SfInputs, [])
                     )
-                end,
-                #{ <<"signature">> => Sig, <<"inputs">> => Inputs },
-                    % Signature parameters are converted into top-level keys on
-                    % the signature Map
-                SfInputParams    
-            ),
-            % #{ [SigName/binary] => #{ <<"signature">> => <<>>, <<"inputs">> => , ... } }
-            maps:put(SigName, SigMap, Sigs)
+            }
         end,
-        #{},
         SfSigs
     ),
     % Store the original signature and signature-input as a top-level message
@@ -243,19 +233,21 @@ to(TABM, Opts) when is_map(TABM) ->
     % Calculate the initial encoding from the TABM
     Enc0 =
         maps:fold(
-            fun(<<"body">>, Value, AccMap) -> body_to_http(AccMap, Value);
+            fun(<<"body">>, Value, AccMap) ->
+                    AccMap#{ <<"body">> => #{ <<"body">> => Value } };
                 (Key, Value, AccMap) -> field_to_http(AccMap, {Key, Value}, #{})
             end,
             #{},
             maps:without([<<"attestations">>, <<"signature">>, <<"signature-input">>], TABM)
         ),
-    ?event({encoding_http, {msg, Enc0}}),
+    ?event({prepared_body_map, {msg, Enc0}}),
     BodyMap = maps:get(<<"body">>, Enc0, #{}),
     Enc1 =
         case {BodyMap, lists:member(sub_part, Opts)} of
             {X, _} when map_size(X) =:= 0 ->
                 % If the body map is empty, then simply set the body to be a 
                 % corresponding empty binary.
+                ?event({encoding_empty_body, {msg, Enc0}}),
                 maps:put(<<"body">>, <<>>, Enc0);
             {#{ <<"body">> := UserBody }, false}
                     when map_size(BodyMap) =:= 1 andalso is_binary(UserBody) ->
@@ -277,8 +269,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 ?event({encoding_multipart, {body, BodyMap}, {http, Enc0}}),
                 % The id of the Message will be used as the Boundary
                 % in the multipart body
-                {ok, RawBoundary} =
-                    dev_message:id(TABM, #{ <<"attestors">> => <<"all">> }, #{}),
+                RawBoundary = crypto:strong_rand_bytes(8),
                 Boundary = hb_util:encode(RawBoundary),
                 % Transform body into a binary, delimiting each part with the
                 % boundary
@@ -307,11 +298,12 @@ to(TABM, Opts) when is_map(TABM) ->
                                 case BodyPart of
                                     BPMap when is_map(BPMap) ->
                                         WithDisposition = maps:put(
-                                            <<"Content-Disposition">>,
+                                            <<"content-disposition">>,
                                             Disposition,
                                             BPMap
                                         ),
                                         SubHttp = to(WithDisposition, [sub_part]),
+                                        ?event({sub_http, {sub_part, SubHttp}}),
                                         encode_http_msg(SubHttp);
                                     BPBin when is_binary(BPBin) ->
                                         case PartName of
@@ -321,7 +313,7 @@ to(TABM, Opts) when is_map(TABM) ->
                                             % - second to signal the end of the header block
                                             <<"body">> -> 
                                                 <<
-                                                    "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                                    "content-disposition: ", Disposition/binary, ?CRLF/binary,
                                                     ?CRLF/binary,
                                                     BPBin/binary
                                                 >>;
@@ -329,7 +321,7 @@ to(TABM, Opts) when is_map(TABM) ->
                                             % respective sub-part
                                             _ ->
                                                 <<
-                                                    "Content-Disposition: ", Disposition/binary, ?CRLF/binary,
+                                                    "content-disposition: ", Disposition/binary, ?CRLF/binary,
                                                     BPBin/binary
                                                 >>
                                         end
@@ -357,7 +349,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 }
         end,
     % Finally, add the signatures to the HTTP message
-    case maps:get(<<"attestations">>, TABM, #{}) of
+    case maps:get(<<"attestations">>, TABM, not_found) of
         #{ <<"hmac">> :=
             #{ <<"originals">> :=
                 #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } } ->
@@ -366,24 +358,14 @@ to(TABM, Opts) when is_map(TABM) ->
                 <<"signature">> => Sig,
                 <<"signature-input">> => SigInput
             };
-        _ ->
-            % Otherwise, we need to add the signatures to the HTTP message
-            case maps:get(<<"signature">>, TABM, not_found) of
-                not_found ->
-                    Enc1;
-                Signature ->
-                    signatures_to_httpsig(
-                        Enc1,
-                        Signature,
-                        maps:get(<<"signature-input">>, TABM)
-                    )
-            end
+        not_found -> Enc1
     end.
 
 encode_http_msg(Httpsig) ->
     % Serialize the headers, to be included in the part of the multipart response
     HeaderList = lists:foldl(
         fun ({HeaderName, HeaderValue}, Acc) ->
+            ?event({encoding_http_header, {header, HeaderName}, {value, HeaderValue}}),
             [<<HeaderName/binary, ": ", HeaderValue/binary>> | Acc]
         end,
         [],
@@ -401,22 +383,15 @@ encode_http_msg(Httpsig) ->
 
 signatures_to_httpsig(Httpsig, SignaturesBin, SigInputsBin) ->
     ?event({encoding_signatures, SignaturesBin, SigInputsBin, {msg, Httpsig}}),
-    ParsedSigs = dev_codec_structured_conv:parse_dictionary(SignaturesBin),
-    ParsedInputs = dev_codec_structured_conv:parse_dictionary(SigInputsBin),
-    ?event({signature_dicts, {sigs, ParsedSigs}, {inputs, ParsedInputs}}),
-    {SfSigInputs, SfSigs} = lists:foldl(
-        fun ({SigName, SignatureMap = #{ <<"inputs">> := Inputs, <<"signature">> := Signature }}, {SfSigInputs, SfSigs}) ->
-            NextSigInput = dev_codec_httpsig:sf_signature_params(Inputs, SignatureMap),
-            NextSig = dev_codec_httpsig:sf_signature(Signature),
-            NextName = hb_converge:normalize_key(SigName),
-            {
-                [{NextName, NextSigInput} | SfSigInputs],
-                [{NextName, NextSig} | SfSigs]
-		    }
+    SigDict = maps:from_list(dev_codec_structured_conv:parse_dictionary(SignaturesBin)),
+    ?event({signature_dicts, {sigs, SigDict}, {inputs, SigInputsBin}}),
+    {SfSigInputs, SfSigs} = maps:map(
+        fun (Attestor, SignatureMap) ->
+            {Attestor, SignatureMap}
         end,
         % Start with empty Structured Field Dictionaries
         {[], []},
-        ParsedSigs
+        SigDict
     ),
     % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
     % each transmitted either as a header, or as a part in the multi-part body

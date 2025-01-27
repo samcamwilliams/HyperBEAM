@@ -98,8 +98,9 @@ attest(MsgToSign, _Req, Opts) ->
     Authority = authority(maps:keys(Enc), Enc, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
-    SigName = <<"signature">>,
-    % Place the signature into the `attestations` key of the message.
+    Attestor = hb_util:human_id(ar_wallet:to_address(Wallet)),
+    SigName = <<"sig-", (hb_util:to_hex(binary:part(Pub, 1, 8)))/binary>>,
+    % Calculate the id and place the signature into the `attestations` key of the message.
     Attestation =
         #{
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
@@ -114,13 +115,88 @@ attest(MsgToSign, _Req, Opts) ->
             <<"signature-public-key">> => hb_util:encode(Pub),
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
-    ExistingAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
-    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    {ok, maps:put(
+    OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
+    NewAttestations =
+        OldAttestations#{
+            Attestor => Attestation
+        },
+    {
+        ok,
+        set_hmac(MsgToSign#{ <<"attestations">> => NewAttestations })
+    }.
+
+%%@doc Ensure that the attestations and hmac are properly encoded
+set_hmac(Msg) ->
+    Attestations = maps:get(<<"attestations">>, Msg, #{}),
+    AllSigs =
+        maps:map(
+            fun (SigName, #{ <<"signature">> := Signature }) ->
+                SigBin =
+                    maps:get(SigName,
+                        maps:from_list(
+                            dev_codec_structured_conv:parse_dictionary(Signature)
+                        )
+                    ),
+                ?event(debug, {got_bin_sig, SigBin}),
+                SigBin
+            end,
+            Attestations
+        ),
+    AllInputs =
+        maps:map(
+            fun (SigName, #{ <<"signature-input">> := Inputs }) ->
+                ?event(debug, {trying_to_parse, Inputs}),
+                Res = dev_codec_structured_conv:parse_dictionary(Inputs),
+                ?event(debug, {parsed_dict, Res}),
+                SingleSigInput = maps:get(SigName, maps:from_list(Res)),
+                ?event(debug, {single_sig_input, SingleSigInput}),
+                SingleSigInput
+            end,
+            Attestations
+        ),
+    Combined = #{
+            <<"signature">> =>
+                bin(dev_codec_structured_conv:dictionary(AllSigs)),
+            <<"signature-input">> =>
+                bin(dev_codec_structured_conv:dictionary(AllInputs))
+    },
+    HMacInputMsg = maps:merge(Msg, Combined),
+    {ok, ID} = hmac(HMacInputMsg),
+    maps:put(
         <<"attestations">>,
-        maps:put(Address, Attestation, ExistingAttestations),
-        MsgToSign
-    )}.
+        Attestations#{
+			<<"hmac">> => Combined#{ <<"id">> => bin(hb_util:human_id(ID)) }
+		},
+        Msg
+    ).
+
+%% @doc Generate the ID of the message, with the current signature and signature
+%% input as the components for the hmac.
+hmac(Msg = #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }) ->
+    % The message already has a signature and signature input, so we can use
+    % just those as the components for the hmac
+    ComponentsLine =
+        iolist_to_binary(
+            signature_components_line(
+                [{<<"signature">>, Sig}, {<<"signature-input">>, SigInput}],
+                #{},
+                Msg
+            )
+        ),
+    ?event(debug, {components_line, ComponentsLine}),
+    ParamsLine =
+        iolist_to_binary(
+            dev_codec_structured_conv:dictionary(
+                [
+                    {<<"signature">>, {item, {token, bin(Sig)}, []}},
+                    {<<"signature-input">>, {item, {token, bin(SigInput)}, []}}
+                ]
+            )
+        ),
+    ?event(debug, {params_line, ParamsLine}),
+    SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
+    HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
+    {ok, HMacValue}.
 
 verify(MsgToVerify, _Req, _Opts) ->
     RawPubKey =
@@ -129,13 +205,14 @@ verify(MsgToVerify, _Req, _Opts) ->
     PubKey = {{rsa, 65537}, RawPubKey},
     % Re-run the same conversion that was done when creating the signature.
     Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
-    % Add the `body` if it is missing, and re-set the `signature-public-key`.
-    EncWithBody =
+    % Add the signature data back into the encoded message.
+    EncWithSig =
         Enc#{
-            <<"body">> => maps:get(<<"body">>, Enc, <<>>),
-            <<"signature-public-key">> => NativePubKey
+            <<"signature-public-key">> => NativePubKey,
+            <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
+            <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
         },
-    verify_auth(#{ key => PubKey, sig_name => <<"signature">> }, EncWithBody).
+    {ok, verify_auth(#{ key => PubKey, sig_name => <<"signature">> }, EncWithSig)}.
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(
@@ -197,8 +274,7 @@ add_sig_params(Authority, {KeyType, PubKey}) ->
             maps:get(sig_params, Authority),
             #{
                 alg => <<"rsa-pss-sha512">>,
-                keyid =>
-                    hb_util:human_id(ar_wallet:to_address(PubKey, KeyType))
+                keyid => hb_util:encode(PubKey)
             }
         ),
         Authority
@@ -290,14 +366,12 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
-    SignatureBase =
-        <<
-            ComponentsLine/binary,
-            <<"\n">>/binary,
-            <<"\"@signature-params\": ">>/binary,
-            ParamsLine/binary
-        >>,
-    SignatureBase.
+    <<
+        ComponentsLine/binary,
+        <<"\n">>/binary,
+        <<"\"@signature-params\": ">>/binary,
+        ParamsLine/binary
+    >>.
 
 %%% @doc Given a list of Component Identifiers and a Request/Response Message
 %%% context, create the "signature-base-line" portion of the signature base
@@ -307,10 +381,12 @@ join_signature_base(ComponentsLine, ParamsLine) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.1
 signature_components_line(ComponentIdentifiers, Req, Res) ->
 	ComponentsLines = lists:map(
-		fun(ComponentIdentifier) ->
-			% TODO: handle errors?
-			{ok, {I, V}} = identifier_to_component(ComponentIdentifier, Req, Res),
-			<<I/binary, <<": ">>/binary, V/binary>>
+		fun({Name, DirectBinary}) when is_binary(DirectBinary) andalso is_binary(Name) ->
+			<<Name/binary, <<": ">>/binary, DirectBinary/binary>>;
+			(ComponentIdentifier) ->
+				% TODO: handle errors?
+				{ok, {I, V}} = identifier_to_component(ComponentIdentifier, Req, Res),
+				<<I/binary, <<": ">>/binary, V/binary>>
 		end,
 		ComponentIdentifiers
 	),
