@@ -120,7 +120,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     % This is for both performance, and to avoid exposure to `attestations`'s
     % transformer device. We do, however, use the transformer device if attestations
     % are present, in order to write the resulting attested message to the store.
-    case maps:get(<<"attestations">>, Msg, <<"none">>) of
+    case maps:get(<<"attestations">>, Msg, #{}) of
         Attestors when map_size(Attestors) =:= 0 ->
             {ok, UnsignedID};
         Attestors ->
@@ -207,7 +207,7 @@ read(Path, Opts) ->
     case store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts) of
         not_found -> not_found;
         {ok, FlatMsg} when is_map(FlatMsg) ->
-            {ok, hb_message:convert(FlatMsg, converge, flat, Opts)};
+            {ok, hb_message:convert(FlatMsg, <<"structured@1.0">>, <<"flat@1.0">>, Opts)};
         {ok, Res} -> {ok, Res}
     end.
         
