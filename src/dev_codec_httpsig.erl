@@ -90,11 +90,15 @@ id(_Msg, _Params, _Opts) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
     Wallet = {_Priv, {_, Pub}} = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    Enc = hb_message:convert(MsgToSign, <<"httpsig@1.0">>, Opts),
+    Enc =
+    maps:without(
+        [<<"signature">>, <<"signature-input">>],
+        hb_message:convert(MsgToSign, <<"httpsig@1.0">>, Opts)
+    ),
     % Hack: Place the body into the `<<"headers">>` field if it is set. We should
     % either unify the body and headers in this module, or add explicit support
     % for the body in the HTTP Message.
-    ?event({encoded, {explicit, Enc}}),
+    ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
     Authority = authority(maps:keys(Enc), Enc, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
@@ -113,7 +117,6 @@ attest(MsgToSign, _Req, Opts) ->
                 bin(dev_codec_structured_conv:dictionary(
                     #{ SigName => ParsedSignatureInput }
                 )),
-            <<"signature-public-key">> => hb_util:encode(Pub),
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
     OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
@@ -144,7 +147,12 @@ find_id(_) ->
 
 %%@doc Ensure that the attestations and hmac are properly encoded
 set_hmac(Msg) ->
-    Attestations = maps:get(<<"attestations">>, Msg, #{}),
+    ?event(debug, {set_hmac, {msg, Msg}}),
+    Attestations =
+        maps:without(
+            [<<"hmac-sha256">>],
+            maps:get(<<"attestations">>, Msg, #{})
+        ),
     AllSigs =
         maps:from_list(lists:map(
             fun ({Attestor, #{ <<"signature">> := Signature }}) ->
@@ -258,7 +266,6 @@ verify(MsgToVerify, Req, _Opts) ->
             % Add the signature data back into the encoded message.
             EncWithSig =
                 Enc#{
-                    <<"signature-public-key">> => hb_util:encode(PubKey),
                     <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
                 },
@@ -528,7 +535,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 			IsRequestIdentifier = find_sf_request_param(IParams),
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
-            ?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
+            %?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
 			case maps:get(Lowered, if IsRequestIdentifier -> Req; true -> Res end, not_found) of
 				not_found ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6

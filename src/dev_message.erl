@@ -10,7 +10,7 @@
 -export([set/3, remove/2, get/2, get/3]).
 %%% Attestation-specific keys:
 -export([id/1, id/2, id/3]).
--export([attest/3, attestors/3, attestations/3, verify/3]).
+-export([attest/3, attestors/1, attestors/2, attestors/3, attestations/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -88,6 +88,8 @@ id(Base, Req, NodeOpts) ->
     end.
 
 %% @doc Return the attestors of a message that are present in the given request.
+attestors(Base) -> attestors(Base, #{}).
+attestors(Base, Req) -> attestors(Base, Req, #{}).
 attestors(Base, _, _NodeOpts) ->
     {ok, maps:keys(maps:get(<<"attestations">>, Base, #{}))}.
 
@@ -163,6 +165,7 @@ verify(Self, Req, Opts) ->
                     Req#{ <<"attestor">> => Attestor },
                     Opts
                 ),
+                ?event(debug, {verify_attestation_res, {attestor, Attestor}, {res, Res}}),
                 Res
             end,
             maps:keys(Attestations)
@@ -173,7 +176,8 @@ verify(Self, Req, Opts) ->
 %% Note: Assumes that the `attestations` key has already been removed from the
 %% message.
 verify_attestation(Base, Attestation, Req, Opts) ->
-    AttestionMessage = maps:merge(Base, Attestation),
+    AttestionMessage =
+        maps:merge(Base, maps:without([<<"attestation-device">>], Attestation)),
     AttDev =
         maps:get(
             <<"attestation-device">>,

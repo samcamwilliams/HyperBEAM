@@ -714,6 +714,33 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?assert(match(SignedMsg, Decoded)),
     ?assertEqual(true, verify(Decoded)).
 
+multisignature_test(Codec) ->
+    Wallet1 = ar_wallet:new(),
+    Wallet2 = ar_wallet:new(),
+    Msg = #{
+        <<"data">> => <<"TEST_DATA">>,
+        <<"test_key">> => <<"TEST_VALUE">>
+    },
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => Wallet1 }
+        ),
+    ?event(debug, {signed_msg, SignedMsg}),
+    {ok, MsgSignedTwice} =
+        dev_message:attest(
+            SignedMsg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => Wallet2 }
+        ),
+    ?event(debug, {signed_msg_twice, MsgSignedTwice}),
+    ?assert(verify(MsgSignedTwice)),
+    {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
+    ?event(debug, {attestors, Attestors}),
+    ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
+    ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
+
 tabm_converge_ids_equal_test() ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
@@ -855,12 +882,14 @@ message_suite_test_() ->
         {"empty string in tag test", fun empty_string_in_tag_test/1},
         {"signed item to message and back test",
             fun signed_message_encode_decode_verify_test/1},
+        {"multisignature test", fun multisignature_test/1},
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
+    multisignature_test(<<"httpsig@1.0">>).
+    %signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
     %signed_message_encode_decode_verify_test(http),
     %nested_message_with_large_content_test(http).
