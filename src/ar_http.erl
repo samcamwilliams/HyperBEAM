@@ -309,7 +309,7 @@ parse_peer(Peer, Opts) ->
         [Host, Port] ->
             {binary_to_list(Host), parse_port(Port)};
         [Host] ->
-            {binary_to_list(Host), hb_opts:get(http_port, 443, Opts)}
+            {binary_to_list(Host), hb_opts:get(port, 443, Opts)}
     end.
 
 parse_port(Port) ->

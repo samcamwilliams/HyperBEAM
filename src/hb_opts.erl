@@ -95,7 +95,7 @@ default_message() ->
         http_keepalive => 120000,
         http_request_send_timeout => 60000,
         http_default_remote_port => 8734,
-        http_port => 8734,
+        port => 8734,
         wasm_allow_aot => false,
         %% Dev options
         mode => debug,
@@ -155,7 +155,7 @@ get(Key, Default, Opts) ->
 -define(ENV_KEYS,
     #{
         key_location => {"HB_KEY", "hyperbeam-key.json"},
-        http_port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
+        port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
             {"HB_STORE",
                 fun(Dir) ->
