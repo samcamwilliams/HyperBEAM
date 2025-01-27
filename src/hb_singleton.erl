@@ -71,7 +71,7 @@ to(Messages) ->
                                 (<<"method">>, Value, {AccIn, Scoped}) ->
                                     {maps:put(<<"method">>, Value, AccIn), Scoped};
                                 (Key, {resolve, SubMessages}, {AccIn, Scoped}) ->
-                                    NewKey = <<Key/binary, "|resolve">>,
+                                    NewKey = <<Key/binary, "+resolve">>,
                                     NewSubMessages = maps:get(<<"path">>, to(SubMessages)),
                                     {
                                         maps:put(NewKey, NewSubMessages, AccIn),
@@ -102,7 +102,7 @@ to(Messages) ->
                     {NewKey, NewValue} =
                         case type(Value) of
                             integer ->
-                                K = <<Index/binary, ".", Key/binary, "|integer">>,
+                                K = <<Index/binary, ".", Key/binary, "+integer">>,
                                 V = integer_to_binary(Value),
                                 {K, V};
                             _ -> {<<Index/binary, ".", Key/binary>>, Value}
@@ -400,7 +400,9 @@ simple_to_test() ->
         #{<<"path">> => <<"a">>, <<"test-key">> => <<"test-value">>}
     ],
     Expected = #{<<"path">> => <<"/a">>, <<"test-key">> => <<"test-value">>},
-    ?assertEqual(Expected, to(Messages)).
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
 
 multiple_messages_to_test() ->
     Messages =
@@ -414,7 +416,8 @@ multiple_messages_to_test() ->
         <<"path">> => <<"/a/b/c">>,
         <<"test-key">> => <<"test-value">>
     },
-    ?assertEqual(Expected, to(Messages)).
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
 
 basic_hashpath_to_test() ->
     Messages = [
@@ -425,7 +428,8 @@ basic_hashpath_to_test() ->
         <<"path">> => <<"/e5ohB7TgMYRoc0BLllkmAqkqLy1SrliEkOPJlNPXBQ8/some-other">>,
         <<"method">> => <<"GET">>
     },
-    ?assertEqual(Expected, to(Messages)).
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
 
 scoped_key_to_test() ->
     Messages = [
@@ -435,7 +439,8 @@ scoped_key_to_test() ->
         #{<<"path">> => <<"c">>}
     ],
     Expected = #{<<"2.test-key">> => <<"test-value">>, <<"path">> => <<"/a/b/c">>},
-    ?assertEqual(Expected, to(Messages)).
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
 
 typed_key_to_test() ->
     Messages =
@@ -445,8 +450,9 @@ typed_key_to_test() ->
             #{<<"path">> => <<"b">>, <<"test-key">> => 123},
             #{<<"path">> => <<"c">>}
         ],
-    Expected = #{<<"2.test-key|integer">> => <<"123">>, <<"path">> => <<"/a/b/c">>},
-    ?assertEqual(Expected, to(Messages)).
+    Expected = #{<<"2.test-key+integer">> => <<"123">>, <<"path">> => <<"/a/b/c">>},
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
 
 subpath_in_key_to_test() ->
     Messages = [
@@ -466,8 +472,9 @@ subpath_in_key_to_test() ->
         },
         #{<<"path">> => <<"c">>}
     ],
-    Expected = #{<<"2.test-key|resolve">> => <<"/x/y/z">>, <<"path">> => <<"/a/b/c">>},
-    ?assertEqual(Expected, to(Messages)).
+    Expected = #{<<"2.test-key+resolve">> => <<"/x/y/z">>, <<"path">> => <<"/a/b/c">>},
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
 
 subpath_in_path_to_test() ->
     Messages = [
@@ -486,7 +493,8 @@ subpath_in_path_to_test() ->
     Expected = #{
         <<"path">> => <<"/a/(x/y/z)/z">>
     },
-    ?assertEqual(Expected, to(Messages)).
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
 
 inlined_keys_to_test() ->
     Messages =
@@ -507,14 +515,9 @@ inlined_keys_to_test() ->
                 <<"path">> => <<"c">>
             }
         ],
-
     % NOTE: The implementation above does not convert the given list of messages
     % into the original format, however it assures that the `to/1' and `from/1'
     % operations are idempotent.
-    % Expected = #{
-    %     <<"method">> => <<"POST">>,
-    %     <<"path">> => <<"/a/b+k1=v1/c+k2=v2">>
-    % },
     ?assertEqual(Messages, from(to(Messages))).
 
 multiple_inlined_keys_to_test() ->
@@ -523,14 +526,9 @@ multiple_inlined_keys_to_test() ->
             #{<<"method">> => <<"POST">>, <<"path">> => <<"a">>},
             #{<<"k1">> => <<"v1">>, <<"k2">> => <<"v2">>, <<"method">> => <<"POST">>, <<"path">> => <<"b">>}
         ],
-
     % NOTE: The implementation above does not convert the given list of messages
     % into the original format, however it assures that the `to/1' and `from/1'
     % operations are idempotent.
-    % Expected = #{
-    %     <<"method">> => <<"POST">>,
-    %     <<"path">> => <<"/a/b+k1=v1&k2=v2">>
-    % },
     ?assertEqual(Messages, from(to(Messages))).
 
 subpath_in_inlined_to_test() ->
@@ -545,13 +543,9 @@ subpath_in_inlined_to_test() ->
                     <<"path">> => <<"part2">>,
                     <<"test">> => <<"1">>},
         #{<<"path">> => <<"part3">>}],
-
     % NOTE: The implementation above does not convert the given list of messages
     % into the original format, however it assures that the `to/1' and `from/1'
     % operations are idempotent.
-    % Expected = #{
-    %     <<"path">> => <<"/part1/part2+test=1&b=(/x/y)/part3">>
-    % },
     ?assertEqual(Messages, from(to(Messages))).
 
 %%% `from/1' function tests
