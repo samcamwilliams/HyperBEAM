@@ -63,7 +63,7 @@ list(Path, Opts) ->
 %% be recalled from the underlying dataset, without associated keys that were
 %% written to the hashpath-graph by other messages.
 write(RawMsg, Opts) ->
-    Msg = hb_message:convert(RawMsg, tabm, converge, Opts),
+    Msg = hb_message:convert(RawMsg, tabm, Opts),
     write_message(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
 write_message(Bin, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
@@ -80,7 +80,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
     ?event({storing_msg_with_hashpath, MsgHashpath}),
     % Get the ID of the unsigned message.
-    {ok, UnsignedID} = dev_message:unsigned_id(Msg),
+    {ok, UnsignedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
     % Write the keys of the message into the graph of hashpaths, generating a map of
     % keys to paths of the underlying data as we do so.
     UnsignedMsgPathMap =
