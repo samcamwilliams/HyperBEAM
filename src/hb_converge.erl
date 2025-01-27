@@ -96,7 +96,8 @@
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
--export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
+-export([get/2, get/3, get/4, get_first/2, get_first/3]).
+-export([set/2, set/3, set/4, remove/2, remove/3]).
 %%% Exports for tests in hb_converge_tests.erl:
 -export([deep_set/4, is_exported/4, message_to_fun/3]).
 -include("include/hb.hrl").
@@ -466,7 +467,7 @@ resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts) ->
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
     resolve_stage(10, Msg1, Msg2, Res, ExecName, Opts);
-resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
+resolve_stage(10, _Msg1, _Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, maybe_spawn_worker}, Opts),
     % Check if we should spawn a worker for the current execution
     case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
@@ -595,6 +596,16 @@ get(Path, Msg, Default, Opts) ->
 		{ok, Value} -> Value;
 		{error, _} -> Default
 	end.
+
+%% @doc take a sequence of base messages and paths, then return the value of the
+%% first message that can be resolved using a path.
+get_first(Paths, Opts) -> get_first(Paths, not_found, Opts).
+get_first([], Default, _Opts) -> Default;
+get_first([{Base, Path}|Msgs], Default, Opts) ->
+    case get(Path, Base, Opts) of
+        not_found -> get_first(Msgs, Default, Opts);
+        Value -> Value
+    end.
 
 %% @doc Shortcut to get the list of keys from a message.
 keys(Msg) -> keys(Msg, #{}).

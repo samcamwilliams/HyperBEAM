@@ -6,78 +6,61 @@
 %%% remote peer to the message sent. In `cast` mode, the invocation returns
 %%% immediately, and the message is relayed asynchronously. No response is given
 %%% and the device returns `{ok, <<"OK">>}`.
+%%% 
+%%% Example usage:
+%%% 
+%%% ```
+%%%     curl /~relay@.1.0/call?method=GET?0.path=https://www.arweave.net/
+%%% ```
 -module(dev_relay).
 -export([call/3, cast/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% @doc Execute a `call` request, relaying the request message exactly as given
-%% in the `M2` argument. The response from the peer is returned as the result.
-call(_M1, M2, Opts) ->
-    % Get the route for the message
-    case dev_router:route(#{}, M2, Opts) of
-        {ok, URL} ->
-            % Send the message to the node
-            case hb_converge:get(<<"path">>, M2, Opts) of
-                <<"http", Sec, _/binary>> ->
-                    % The request is a direct HTTP URL, so we need to split the
-                    % URL into a host and path.
-                    URI = uri_string:parse(URL),
-                    Port =
-                        case maps:get(port, URI, undefined) of
-                            undefined ->
-                                % If no port is specified, use 80 for HTTP and 443
-                                % for HTTPS.
-                                case Sec of
-                                    $s -> <<"443">>;
-                                    _ -> <<"80">>
-                                end;
-                            X -> integer_to_binary(X)
-                        end,
-                    Host = maps:get(host, URI, <<"localhost">>),
-                    _Protocol = maps:get(scheme, URI, <<"http">>), % Fixme: Remove if not needed
-                    Node = << Host/binary, ":", Port/binary  >>,
-                    Method = hb_converge:get(<<"method">>, M2, Opts),
-                    Path = maps:get(path, URI, <<"/">>),
-                    ?event({relay, {node, Node}, {method, Method}, {path, Path}}),
-                    hb_http:request(
-                        Method,
-                        Node,
-                        Path,
-                        M2,
-                        Opts
-                    );
-                _ ->
-                    {error, {unsupported_protocol, URL}}
-            end;
-        {error, Reason} ->
-            {error, {no_viable_route, Reason}}
-    end.
+%% @doc Execute a `call` request using a node's routes.
+%% 
+%% Supports the following options:
+%% - `target`: The target message to relay. Defaults to the original message.
+%% - `relay-path`: The path to relay the message to. Defaults to the original path.
+%% - `method`: The method to use for the request. Defaults to the original method.
+%% - `requires-sign`: Whether the request requires signing before dispatching.
+%% Defaults to `false`.
+call(M1, RawM2, Opts) ->
+    {ok, BaseTarget} = hb_message:find_target(M1, RawM2, Opts),
+    TargetMod1 =
+        case hb_converge:get(<<"relay-path">>, BaseTarget, Opts) of
+            not_found -> BaseTarget;
+            RelayPath ->
+                ?event({setting_path, {base_target, BaseTarget}, {relay_path, RelayPath}}),
+                hb_converge:set(BaseTarget, <<"path">>, RelayPath, Opts)
+        end,
+    TargetMod2 =
+        case hb_converge:get(<<"requires-sign">>, BaseTarget, false, Opts) of
+            true -> hb_message:sign(TargetMod1, Opts);
+            false -> TargetMod1
+        end,
+    % Let `hb_http:request/2` handle finding the peer and dispatching the request.
+    hb_http:request(TargetMod2, Opts).
 
-%% @doc Execute a `cast` request, relaying the request message exactly as given
-%% in the `M2` argument asynchronously -- without waiting for a response.
-cast(_M1, M2, Opts) ->
-    % Check that we can route the message, before forking asynchronously
-    case dev_router:route(#{}, M2, Opts) of
-        {ok, Node} ->
-            % Spawn a new process to send the message to the node
-            spawn(fun() -> hb_http:post(Node, M2, Opts) end),
-            {ok, <<"OK">>};
-        {error, Reason} ->
-            {error, {no_viable_route, Reason}}
-    end.
+%% @doc Execute a request in the same way as `call/3`, but asynchronously. Always
+%% returns <<"OK">>.
+cast(M1, M2, Opts) ->
+    spawn(fun() -> call(M1, M2, Opts) end),
+    {ok, <<"OK">>}.
+
 
 %%% Tests
 
 call_get_test() ->
     application:ensure_all_started([hb]),
     {ok, #{<<"body">> := Body}} =
-        call(
-            #{},
+        hb_converge:resolve(
             #{
+                <<"device">> => <<"relay@1.0">>,
                 <<"method">> => <<"GET">>,
                 <<"path">> => <<"https://www.google.com/">>
             },
+            <<"call">>,
             #{ protocol => http2 }
         ),
     ?assertEqual(true, byte_size(Body) > 10_000).

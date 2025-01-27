@@ -5,7 +5,7 @@
 %%% HTTP requests.
 -module(hb_http).
 -export([start/0]).
--export([get/2, get/3, post/3, post/4, request/4, request/5]).
+-export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
 -export([reply/3, reply/4]).
 -export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
@@ -52,6 +52,11 @@ post(Node, Path, Message, Opts) ->
 
 %% @doc Posts a binary to a URL on a remote peer via HTTP, returning the raw
 %% binary body.
+request(Message, Opts) ->
+    % Special case: We are not given a peer and a path, so we need to
+    % preprocess the URL to find them.
+    {ok, Method, Peer, Path, MessageToSend} = message_to_request(Message, Opts),
+    request(Method, Peer, Path, MessageToSend, Opts).
 request(Method, Peer, Path, Opts) ->
     request(Method, Peer, Path, #{}, Opts).
 request(Method, Config, Path, Message, Opts) when is_map(Config) ->
@@ -126,6 +131,39 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 }
             ),
             Response
+    end.
+
+%% @doc Given a message, return the information needed to make the request.
+message_to_request(M, Opts) ->
+    Method = hb_converge:get(<<"method">>, M, <<"GET">>, Opts),
+    % Get the route for the message
+    case dev_router:route(#{}, M, Opts) of
+        {ok, URL = <<"http", Sec, _/binary>>} ->
+            % The request is a direct HTTP URL, so we need to split the
+            % URL into a host and path.
+            URI = uri_string:parse(URL),
+            Port =
+                case maps:get(port, URI, undefined) of
+                    undefined ->
+                        % If no port is specified, use 80 for HTTP and 443
+                        % for HTTPS.
+                        case Sec of
+                            $s -> <<"443">>;
+                            _ -> <<"80">>
+                        end;
+                    X -> integer_to_binary(X)
+                end,
+            Host = maps:get(host, URI, <<"localhost">>),
+            Node = << Host/binary, ":", Port/binary  >>,
+            Path = maps:get(path, URI, <<"/">>),
+            ?event({relay, {node, Node}, {method, Method}, {path, Path}}),
+            {ok, Method, Node, Path, M};
+        {ok, Route} ->
+            % The result is a route, so we leave it to `request` to handle it.
+            Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
+            {ok, Method, Route, Path, M};
+        {error, Reason} ->
+            {error, {no_viable_route, Reason}}
     end.
 
 %% @doc Turn a set of request arguments into a request message, formatted in the

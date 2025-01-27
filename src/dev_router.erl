@@ -88,7 +88,7 @@ route(_, Msg, Opts) ->
     R = match_routes(Msg, Routes, Opts),
     ?event({find_route, {msg, Msg}, {routes, Routes}, {res, R}}),
     case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
-        false -> no_matches;
+        false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
         not_found ->
             Nodes = hb_converge:get(<<"peers">>, R, Opts),
@@ -297,7 +297,7 @@ route_template_message_matches_test() ->
         )
     ),
     ?assertEqual(
-        no_matches,
+        {error, no_matches},
         route(
             #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value2">> },
             #{ routes => Routes }
@@ -331,7 +331,7 @@ route_regex_matches_test() ->
         route(#{ <<"path">> => <<"/a/b/c/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
-        no_matches,
+        {error, no_matches},
         route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 

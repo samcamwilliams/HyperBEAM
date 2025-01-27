@@ -55,7 +55,7 @@
 -export([convert/3, convert/4, unsigned/1, attestations/1]).
 -export([sign/2, sign/3, verify/1, verify/2, type/1, minimize/1]). 
 -export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
--export([match/2, match/3]).
+-export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
@@ -374,6 +374,26 @@ match(Map1, Map2, Mode) ->
 	
 matchable_keys(Map) ->
     lists:sort(lists:map(fun hb_converge:normalize_key/1, maps:keys(Map))).
+
+%% @doc Implements a standard pattern in which the target for an operation is
+%% found by looking for a `target' key in the request. If the target is `self',
+%% or not present, the operation is performed on the original message. Otherwise,
+%% the target is expected to be a key in the message, and the operation is
+%% performed on the value of that key.
+find_target(Self, Req, Opts) ->
+	GetOpts = Opts#{ hashpath => ignore },
+    {ok,
+        case hb_converge:get(<<"target">>, Req, <<"self">>, GetOpts) of
+            <<"self">> -> Self;
+            Key ->
+                hb_converge:get(
+                    Key,
+                    Req,
+                    hb_converge:get(<<"body">>, Req, GetOpts),
+                    GetOpts
+                )
+        end
+    }.
 
 %% @doc Remove keys from the map that can be regenerated. Optionally takes an
 %% additional list of keys to include in the minimization.
