@@ -130,7 +130,7 @@ maybe_sign(Res, NodeMsg) ->
             hb_message:attest(
                 Res,
                 hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-                hb_opts:get(format, http, NodeMsg)
+                hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
             );
         false -> Res
     end.
