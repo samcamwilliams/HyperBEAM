@@ -739,7 +739,9 @@ multisignature_test(Codec) ->
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
 
-deep_multisignature_test(Codec) ->
+deep_multisignature_test() ->
+    % Only the `httpsig@1.0` codec supports multisignatures.
+    Codec = <<"httpsig@1.0">>,
     Wallet1 = ar_wallet:new(),
     Wallet2 = ar_wallet:new(),
     Msg = #{
@@ -867,7 +869,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [<<"structured@1.0">>, <<"httpsig@1.0">>, <<"flat@1.0">>].
+    [<<"structured@1.0">>, <<"httpsig@1.0">>, <<"flat@1.0">>, <<"ans104@1.0">>].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -918,12 +920,10 @@ message_suite_test_() ->
         {"empty string in tag test", fun empty_string_in_tag_test/1},
         {"signed item to message and back test",
             fun signed_message_encode_decode_verify_test/1},
-        {"multisignature test", fun multisignature_test/1},
-        {"deeply nested multisignature test", fun deep_multisignature_test/1},
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1}
     ]).
 
 simple_test() ->
-    deep_multisignature_test(<<"httpsig@1.0">>).
+    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).

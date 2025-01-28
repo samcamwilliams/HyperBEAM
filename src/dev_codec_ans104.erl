@@ -11,7 +11,6 @@
 -define(TX_KEYS,
     [
         <<"id">>,
-        <<"unsigned_id">>,
         <<"last_tx">>,
         <<"owner">>,
         <<"target">>,
@@ -44,9 +43,9 @@ attest(Msg, _Req, Opts) ->
                 PriorAttestations#{
                     Address => #{
                         <<"attestation-device">> => <<"ans104@1.0">>,
-                        <<"id">> => hb_util:human_id(ID),
-                        <<"owner">> => hb_util:encode(Owner),
-                        <<"signature">> => hb_util:encode(Sig)
+                        <<"id">> => ID,
+                        <<"owner">> => Owner,
+                        <<"signature">> => Sig
                     }
                 }
         }
@@ -55,20 +54,7 @@ attest(Msg, _Req, Opts) ->
 %% @doc Verify an ANS-104 attestation.
 verify(Msg, _Req, _Opts) ->
     MsgWithoutAttestations = maps:without([<<"attestations">>], Msg),
-    MsgWithDecoded =
-        maps:map(
-            fun(Key, Value) ->
-                case lists:member(Key, [<<"id">>, <<"owner">>, <<"signature">>]) of
-                    true ->
-                        Decoded = hb_util:decode(Value),
-                        ?event({decoded, {key, Key}, {value, Decoded}}),
-                        Decoded;
-                    false -> Value
-                end
-            end,
-            MsgWithoutAttestations
-        ),
-    TX = to(MsgWithDecoded),
+    TX = to(MsgWithoutAttestations),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
 

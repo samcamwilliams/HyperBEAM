@@ -122,7 +122,6 @@ attestations(Base, _Req, _NodeOpts) ->
 %% the default device (`httpsig@1.0') is used.
 attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    AttDev = maps:get(<<"attestation-device">>, Base, ?DEFAULT_ATT_DEVICE),
     AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
