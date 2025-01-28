@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles`-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([to/1, from/1]).
+-export([to/1, from/1, attest/3, verify/3]).
 -include("include/hb.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
@@ -25,6 +25,52 @@
         <<"bundle-version">>
     ]
 ).
+
+%% @doc Sign a message using the `priv_wallet` key in the options.
+attest(Msg, _Req, Opts) ->
+    Signed = ar_bundles:sign_item(
+        to(Msg),
+        Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
+    ),
+    ID = Signed#tx.id,
+    Owner = Signed#tx.owner,
+    Sig = Signed#tx.signature,
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+    % Gather the prior attestations.
+    PriorAttestations = maps:get(<<"attestations">>, Msg, #{}),
+    {ok,
+        Msg#{
+            <<"attestations">> =>
+                PriorAttestations#{
+                    Address => #{
+                        <<"attestation-device">> => <<"ans104@1.0">>,
+                        <<"id">> => hb_util:human_id(ID),
+                        <<"owner">> => hb_util:encode(Owner),
+                        <<"signature">> => hb_util:encode(Sig)
+                    }
+                }
+        }
+    }.
+
+%% @doc Verify an ANS-104 attestation.
+verify(Msg, _Req, _Opts) ->
+    MsgWithoutAttestations = maps:without([<<"attestations">>], Msg),
+    MsgWithDecoded =
+        maps:map(
+            fun(Key, Value) ->
+                case lists:member(Key, [<<"id">>, <<"owner">>, <<"signature">>]) of
+                    true ->
+                        Decoded = hb_util:decode(Value),
+                        ?event({decoded, {key, Key}, {value, Decoded}}),
+                        Decoded;
+                    false -> Value
+                end
+            end,
+            MsgWithoutAttestations
+        ),
+    TX = to(MsgWithDecoded),
+    Res = ar_bundles:verify_item(TX),
+    {ok, Res}.
 
 %% @doc Convert a #tx record into a message map recursively.
 from(Binary) when is_binary(Binary) -> Binary;
