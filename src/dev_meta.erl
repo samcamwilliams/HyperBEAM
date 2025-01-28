@@ -37,7 +37,7 @@ info(_, Request, NodeMsg) ->
                     operator,
                     case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
                         no_viable_wallet -> unclaimed;
-                        Wallet -> ar_wallet:to_address(Wallet)
+                        Wallet -> hb_util:human_id(ar_wallet:to_address(Wallet))
                     end,
                     NodeMsg
                 ),

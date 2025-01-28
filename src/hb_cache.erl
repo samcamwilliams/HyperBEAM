@@ -87,6 +87,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
         maps:map(
             WriteSubkey = 
                 fun(Key, Value) ->
+                    ?event(debug, {writing_subkey, {key, Key}, {value, Value}}),
                     {ok, Path} = write_message(Value, Store, Opts),
                     KeyHashPath =
                         hb_path:hashpath(

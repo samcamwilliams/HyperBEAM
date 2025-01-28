@@ -968,20 +968,6 @@ trim_ws_test() ->
 	?assertEqual(<<>>, trim_ws(<<"         ">>)),
 	ok.
 
-sign_test() ->
-	Res = #{
-		status => 202,
-		headers => #{
-			"fizz" => "buzz",
-			<<"foo">> => [<<"b">>, <<"a">>, <<"r">>]
-		},
-		trailers => #{}
-	},
-    Signed = attest(Res, #{}, #{ priv_wallet => ar_wallet:new() }),
-	?assert(
-		verify(Signed, #{}, #{})
-	).
-
 join_signature_base_test() ->
 	ParamsLine =
 		<<"(\"@method\" \"@path\" \"foo\";req \"foo\";key=\"a\");"

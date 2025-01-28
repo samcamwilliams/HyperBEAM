@@ -62,32 +62,21 @@ prep_call(M1, M2, Opts) ->
     Message = hb_converge:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_converge:get(<<"process/image">>, M1, Opts),
     BlockHeight = hb_converge:get(<<"block-height">>, M2, Opts),
+    % Generate and write the message as JSON to the WASM environment.
     RawMsgJson =
-        ar_bundles:item_to_json_struct(
-            hb_message:convert(Message, tx, converge, #{})
+        encode_ans104(
+            Message#{ <<"Module">> => Image, <<"Block-Height">> => BlockHeight }
         ),
-    {Props} = RawMsgJson,
-    MsgProps =
-        normalize_props(
-            Props ++
-                [
-                    {<<"Module">>, Image},
-                    {<<"Block-Height">>, BlockHeight}
-                ]
-        ),
-    MsgJson = jiffy:encode({MsgProps}),
+    MsgJson = jiffy:encode(RawMsgJson),
     {ok, MsgJsonPtr} = hb_beamr_io:write_string(Instance, MsgJson),
+    % Generate and write the process as JSON to the WASM environment.
     ProcessProps =
-        normalize_props(
-            [
-                {<<"Process">>,
-                    ar_bundles:item_to_json_struct(
-                                hb_message:convert(Process, tx, converge, #{})
-                            )
-                        }
-            ]
+        encode_ans104(
+            #{
+                <<"Process">> => encode_ans104(Process)
+            }
         ),
-    ProcessJson = jiffy:encode({ProcessProps}),
+    ProcessJson = jiffy:encode(ProcessProps),
     {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Instance, ProcessJson),
     {ok,
         hb_converge:set(
@@ -99,6 +88,36 @@ prep_call(M1, M2, Opts) ->
             Opts
         )
     }.
+
+%% @doc Encode a message as JSON, emulating ANS-104, with AOS-compatible
+%% header casing.
+encode_ans104(Message) ->
+    ANS104Keys =
+        [
+            <<"Id">>,
+            <<"Anchor">>,
+            <<"Owner">>,
+            <<"From">>,
+            <<"Tags">>,
+            <<"Target">>,
+            <<"Data">>,
+            <<"Signature">>
+        ],
+    Flat = hb_message:convert(Message, <<"flat@1.0">>, #{}),
+    HeaderCaseMap =
+        maps:from_list(
+            lists:map(
+                fun({Key, Value}) ->
+                    {header_case_string(Key), Value}
+                end,
+                maps:to_list(Flat)
+            )
+        ),
+    BaseMap = maps:with(ANS104Keys, HeaderCaseMap),
+    Tags = maps:to_list(maps:without(ANS104Keys, HeaderCaseMap)),
+    Map = maps:merge(BaseMap, #{<<"Tags">> => {Tags}}),
+    ?event({ans104, Map}),
+    Map.
 
 %% @doc Normalize the properties of a message to begin with a capital letter for
 %% backwards compatibility with AOS.
@@ -125,10 +144,8 @@ normalize_props(Props) ->
     ).
 
 header_case_string(Key) ->
-    ?event({header_casing, Key}),
     NormKey = hb_converge:normalize_key(Key),
     Words = string:lexemes(NormKey, "-"),
-    ?event({words, Words}),
     TitleCaseWords =
         lists:map(
             fun binary_to_list/1,
@@ -137,9 +154,7 @@ header_case_string(Key) ->
                 Words
             )
         ),
-    TitleCaseKey = list_to_binary(string:join(TitleCaseWords, "-")),
-    ?event({titlecase, TitleCaseKey}),
-    TitleCaseKey.
+    list_to_binary(string:join(TitleCaseWords, "-")).
 
 %% @doc Read the computed results out of the WASM environment, assuming that
 %% the environment has been set up by `prep_call/3' and that the WASM executor

@@ -446,7 +446,7 @@ deserialize(J, json) ->
     {JSONStruct} = jiffy:decode(J),
     ar_bundles:json_struct_to_item(JSONStruct);
 deserialize(B, binary) ->
-    convert(ar_bundles:deserialize(B), converge, tx, #{}).
+    convert(ar_bundles:deserialize(B), <<"structured@1.0">>, <<"ans104@1.0">>, #{}).
 
 %%% Tests
 

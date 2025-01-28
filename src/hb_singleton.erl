@@ -188,7 +188,7 @@ do_build(I, [Msg | Rest], ScopedKeys) ->
     ScopedKey = lists:nth(I, ScopedKeys),
     StepMsg = hb_message:convert(
         maps:merge(Msg, ScopedKey),
-        converge,
+        <<"structured@1.0">>,
         #{ topic => converge_internal }
     ),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys)].

@@ -378,11 +378,15 @@ set_ignore_undefined_test() ->
 verify_test() ->
     Unsigned = #{ <<"a">> => 1 },
     Signed = hb_message:attest(Unsigned, hb:wallet()),
-    BadSigned = Unsigned#{ <<"bad">> => <<"key">> },
+    BadSigned = Unsigned#{ <<"a">> => <<"b">> },
     ?assertEqual({ok, false},
         hb_converge:resolve(
             #{ <<"device">> => <<"message@1.0">> },
-            #{ <<"path">> => <<"verify">>, <<"body">> => BadSigned },
+            #{ 
+                <<"path">> => <<"verify">>,
+                <<"body">> => BadSigned,
+                <<"target">> => <<"body">>
+            },
             #{ hashpath => ignore }
         )
     ),
