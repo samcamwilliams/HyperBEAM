@@ -31,17 +31,24 @@ info(_, Request, NodeMsg) ->
         <<"GET">> ->
             embed_status({ok, hb_private:reset(NodeMsg)});
         <<"POST">> ->
-            {ok, ReqSigners} = dev_message:attestors(Request),
-            Owner =
+            {ok, RequestSigners} = dev_message:attestors(Request),
+            Operator =
                 hb_opts:get(
                     operator,
                     case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
                         no_viable_wallet -> unclaimed;
-                        Wallet -> hb_util:human_id(ar_wallet:to_address(Wallet))
+                        Wallet -> ar_wallet:to_address(Wallet)
                     end,
                     NodeMsg
                 ),
-            case Owner == unclaimed orelse lists:member(Owner, ReqSigners) of
+            EncOperator =
+                case Operator of
+                    unclaimed ->
+                        unclaimed;
+                    Val ->
+                        hb_util:human_id(Val)
+                end,
+            case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
                 false ->
                     ?event(auth, {set_node_message_fail, Request}),
                     embed_status({error, <<"Unauthorized">>});

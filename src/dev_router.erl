@@ -402,7 +402,7 @@ add_route_test() ->
                     <<"priority">> => 10
                 }
             ],
-            operator => ar_wallet:to_address(Owner)
+            operator => hb_util:encode(ar_wallet:to_address(Owner))
         }
     ),
     Res =
