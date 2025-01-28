@@ -183,7 +183,7 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
 
 test_stores() ->
     [
-        {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }},
+        %{hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }},
         {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
     ].
 

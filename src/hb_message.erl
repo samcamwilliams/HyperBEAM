@@ -341,14 +341,13 @@ match(Map1, Map2, Mode) ->
                                     case Val1 == Val2 of
                                         true -> true;
                                         false ->
-                                            ?event(
+                                            throw(
                                                 {value_mismatch,
                                                     {key, Key},
                                                     {val1, Val1},
                                                     {val2, Val2}
                                                 }
-                                            ),
-                                            false
+                                            )
                                     end
                             end
                     end
@@ -356,8 +355,7 @@ match(Map1, Map2, Mode) ->
                 Keys1
             );
         false ->
-            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
-            false
+            throw({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}})
     end.
 	
 matchable_keys(Map) ->
@@ -685,13 +683,13 @@ signed_message_encode_decode_verify_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, SignedMsg}),
+    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
     ?assertEqual(true, verify(SignedMsg)),
     ?event(test, {verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
     ?event(test, {msg_encoded_as_codec, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event(debug, {decoded, {explicit, Decoded}}),
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
@@ -909,4 +907,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).
+    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).

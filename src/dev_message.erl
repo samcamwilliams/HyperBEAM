@@ -60,7 +60,11 @@ id(Base, Req, NodeOpts) ->
             <<"all">> -> Base;
             <<"none">> -> Base;
             RawAttestorIDs ->
-                KeepIDs = maps:values(RawAttestorIDs),
+                KeepIDs =
+                    case is_map(RawAttestorIDs) of
+                        true -> maps:keys(RawAttestorIDs);
+                        false -> RawAttestorIDs
+                    end,
                 BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
                 Base#{
                     <<"attestations">> => maps:with(KeepIDs, BaseAttestations)
