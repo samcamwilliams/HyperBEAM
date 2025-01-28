@@ -209,21 +209,23 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
             PubKey = hb_util:decode(EncPubKey),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             ?event(debug, {calculated_name, {address, Address}, {sig, Signature}, {inputs, {explicit, SfInputs}, {implicit, Params}}}),
+            SerializedSig = iolist_to_binary(
+                dev_codec_structured_conv:dictionary(
+                    #{ SigName => Signature }
+                )
+            ),
+            {item, {binary, UnencodedSig}, _} = Signature,
             {
                 Address,
                 #{
-                    <<"signature">> =>
-                        iolist_to_binary(
-                            dev_codec_structured_conv:dictionary(
-                                #{ SigName => Signature }
-                            )
-                        ),
+                    <<"signature">> => SerializedSig,
                     <<"signature-input">> =>
                         iolist_to_binary(
                             dev_codec_structured_conv:dictionary(
                                 #{ SigName => maps:get(SigName, SfInputs) }
                             )
                         ),
+                    <<"id">> => crypto:hash(sha256, UnencodedSig),
                     <<"attestation-device">> => <<"httpsig@1.0">>
                 }
             }

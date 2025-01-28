@@ -115,6 +115,7 @@ attest(MsgToSign, _Req, Opts) ->
     % Calculate the id and place the signature into the `attestations` key of the message.
     Attestation =
         #{
+            <<"id">> => crypto:hash(sha256, Signature),
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
             <<"signature">> =>
                 bin(dev_codec_structured_conv:dictionary(
@@ -143,8 +144,6 @@ address_to_sig_name(OtherRef) ->
 
 %% @doc Find the ID of the message, which is the hmac of the signature and signature input.
 find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
-    {ok, ID};
-find_id(#{ <<"attestations">> := #{ <<"hmac">> := #{ <<"id">> := ID } } }) ->
     {ok, ID};
 find_id(_) ->
     {error, no_id}.
@@ -239,7 +238,11 @@ hmac(Msg) ->
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
 
+%% @doc Verify different forms of httpsig attested messages. `dev_message:verify`
+%% already places the keys from the attestation message into the root of the
+%% message.
 verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
+    % Verify a hmac on the message
     ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
     ?event(debug, {verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
     {ok, Recalculated} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
@@ -253,6 +256,7 @@ verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
             {ok, false}
     end;
 verify(MsgToVerify, Req, _Opts) ->
+    % Validate a signed attestation.
     ?event(debug, {verify, {target, MsgToVerify}, {req, Req}}),
     % Parse the signature parameters into a map.
     Attestor = maps:get(<<"attestor">>, Req),
