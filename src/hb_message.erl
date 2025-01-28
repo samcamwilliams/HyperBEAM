@@ -514,6 +514,14 @@ match_modes_test() ->
     ?assert(match(Msg1, Msg3, primary)),
     ?assert(not match(Msg3, Msg1, primary)).
 
+binary_to_binary_test(Codec) ->
+    % Serialization must be able to turn a raw binary into a TX, then turn
+    % that TX back into a binary and have the result match the original.
+    Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
+    Encoded = convert(Bin, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?assertEqual(Bin, Decoded).
+
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test(Codec) ->
     Msg = #{ highly_unusual_http_header => highly_unusual_value },
@@ -526,14 +534,6 @@ structured_field_decimal_parsing_test(Codec) ->
     Encoded = convert(Msg, Codec, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
-
-binary_to_binary_test(Codec) ->
-    % Serialization must be able to turn a raw binary into a TX, then turn
-    % that TX back into a binary and have the result match the original.
-    Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Encoded = convert(Bin, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assertEqual(Bin, Decoded).
 
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
@@ -690,6 +690,28 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?event(test, {msg_encoded_as_codec, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event(debug, {decoded, {explicit, Decoded}}),
+    ?assertEqual(true, verify(Decoded)),
+    ?assert(match(SignedMsg, Decoded)).
+
+complex_signed_message_test(Codec) ->
+    Msg = #{
+        <<"data">> => <<"TEST_DATA">>,
+        <<"deep_data">> => #{
+            <<"data">> => <<"DEEP_DATA">>,
+            <<"complex_key">> => 1337,
+            <<"list">> => [1,2,3]
+        }
+    },
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(debug, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
@@ -903,7 +925,8 @@ message_suite_test_() ->
             fun signed_message_encode_decode_verify_test/1},
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
-        {"unsigned id test", fun unsigned_id_test/1}
+        {"unsigned id test", fun unsigned_id_test/1},
+        {"complex signed message test", fun complex_signed_message_test/1}
     ]).
 
 simple_test() ->

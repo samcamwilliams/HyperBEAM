@@ -133,7 +133,9 @@ read(Path, Opts) ->
         not_found -> not_found;
         {ok, Res} ->
             ?event({read_encoded_message, Res}),
-            {ok, dev_codec_structured:to(Res)}
+            Structured = dev_codec_structured:to(Res),
+            ?event({read_structured_message, Structured}),
+            {ok, Structured}
     end.
         
 %% @doc List all of the subpaths of a given path, read each in turn, returning a 
@@ -161,7 +163,7 @@ store_read(Path, Store, Opts) ->
                                         Store,
                                         Opts
                                     ),
-                                    {Subpath, Res}
+                                    {iolist_to_binary([Subpath]), Res}
                                 end,
                                 Subpaths
                             )
@@ -235,7 +237,7 @@ test_deeply_nested_complex_message(Opts) ->
     Wallet = ar_wallet:new(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     %% Create nested data
-    DeepValueMsg = test_signed([1,2,3], Wallet),
+    Level3SignedSubmessage = test_signed([1,2,3], Wallet),
     Outer =
         #{
             <<"level1">> =>
@@ -243,7 +245,7 @@ test_deeply_nested_complex_message(Opts) ->
                     #{
                         <<"level2">> =>
                             #{
-                                <<"level3">> => DeepValueMsg,
+                                <<"level3">> => Level3SignedSubmessage,
                                 <<"e">> => <<"f">>,
                                 <<"z">> => [1,2,3]
                             },
@@ -272,7 +274,8 @@ test_deeply_nested_complex_message(Opts) ->
         ),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_converge:get(<<"data">>, DeepMsg)),
-    ?assert(hb_message:match(DeepValueMsg, DeepMsg)),
+    ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
+    ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assert(hb_message:match(Outer, OuterMsg)),
     {ok, AttestedMsg} = read(hb_util:human_id(AttestedID), Opts),
