@@ -341,13 +341,14 @@ match(Map1, Map2, Mode) ->
                                     case Val1 == Val2 of
                                         true -> true;
                                         false ->
-                                            throw(
+                                            ?event(
                                                 {value_mismatch,
                                                     {key, Key},
                                                     {val1, Val1},
                                                     {val2, Val2}
                                                 }
-                                            )
+                                            ),
+                                            false
                                     end
                             end
                     end
@@ -355,7 +356,8 @@ match(Map1, Map2, Mode) ->
                 Keys1
             );
         false ->
-            throw({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}})
+            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
+            false
     end.
 	
 matchable_keys(Map) ->
@@ -930,4 +932,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
+    complex_signed_message_test(<<"ans104@1.0">>).

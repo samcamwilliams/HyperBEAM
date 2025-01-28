@@ -126,13 +126,16 @@ attestations(Base, _Req, _NodeOpts) ->
 %% the default device (`httpsig@1.0') is used.
 attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
+    % Encode to a TABM.
     AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.
     AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
     {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, attest, 3, Opts),
-    apply(AttFun, hb_converge:truncate_args(AttFun, [Base, Req, Opts])).
+    Encoded = hb_message:convert(Self, tabm, Opts),
+    {ok, Attested} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
+    {ok, hb_message:convert(Attested, <<"structured@1.0">>, Opts)}.
 
 %% @doc Verify a message nested in the body. As with `id', the `attestors'
 %% key in the request can be used to specify which attestations should be
@@ -200,7 +203,8 @@ verify_attestation(Base, Attestation, Req, Opts) ->
             3,
             Opts
         ),
-    apply(AttFun, [AttestionMessage, Req, Opts]).
+    Encoded = hb_message:convert(AttestionMessage, tabm, Opts),
+    apply(AttFun, [Encoded, Req, Opts]).
 
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
