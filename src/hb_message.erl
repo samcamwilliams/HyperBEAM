@@ -84,8 +84,7 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
         _ -> convert_to_target(TABM, TargetFormat, Opts)
     end.
 
-convert_to_tabm(RawMsg, SourceFormat, Opts) ->
-    Msg = hb_converge:normalize_keys(RawMsg),
+convert_to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
@@ -868,7 +867,7 @@ empty_string_in_tag_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [<<"structured@1.0">>, <<"httpsig@1.0">>].
+    [<<"structured@1.0">>, <<"httpsig@1.0">>, <<"flat@1.0">>].
 
 generate_test_suite(Suite) ->
     lists:map(
