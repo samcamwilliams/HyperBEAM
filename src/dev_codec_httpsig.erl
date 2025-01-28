@@ -96,7 +96,7 @@ id(Msg, Params, Opts) ->
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
-    Wallet = {_Priv, {_, Pub}} = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     Enc =
     maps:without(
         [<<"signature">>, <<"signature-input">>],
