@@ -234,6 +234,8 @@ test_store_simple_signed_message(Opts) ->
 
 %% @doc Test deeply nested item storage and retrieval
 test_deeply_nested_complex_message(Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:reset(Store),
     Wallet = ar_wallet:new(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     %% Create nested data
@@ -282,6 +284,8 @@ test_deeply_nested_complex_message(Opts) ->
     ?assert(hb_message:match(Outer, AttestedMsg)).
 
 test_message_with_message(Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:reset(Store),
     Msg = test_unsigned([<<"a">>, <<"b">>, <<"c">>]),
     ?event({writing_message, Msg}),
     {ok, Path} = write(Msg, Opts),
