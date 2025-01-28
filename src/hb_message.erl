@@ -55,7 +55,6 @@
 -module(hb_message).
 -export([convert/3, convert/4, unattested/1]).
 -export([verify/1, attest/2, attest/3, type/1, minimize/1]). 
--export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -430,22 +429,6 @@ default_tx_message() ->
 default_tx_list() ->
     Keys = lists:map(fun hb_converge:normalize_key/1, record_info(fields, tx)),
     lists:zip(Keys, tl(tuple_to_list(#tx{}))).
-
-%% @doc Serialize a message to a binary representation, either as JSON or the
-%% binary format native to the message/bundles spec in use.
-serialize(M) -> serialize(M, binary).
-serialize(M, json) ->
-    jiffy:encode(ar_bundles:item_to_json_struct(M));
-serialize(M, binary) ->
-    ar_bundles:serialize(convert(M, tx, #{})).
-
-%% @doc Deserialize a message from a binary representation.
-deserialize(B) -> deserialize(B, binary).
-deserialize(J, json) ->
-    {JSONStruct} = jiffy:decode(J),
-    ar_bundles:json_struct_to_item(JSONStruct);
-deserialize(B, binary) ->
-    convert(ar_bundles:deserialize(B), <<"structured@1.0">>, <<"ans104@1.0">>, #{}).
 
 %%% Tests
 

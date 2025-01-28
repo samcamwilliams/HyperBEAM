@@ -286,7 +286,7 @@ maybe_typed(Key, Value) ->
                         {resolve, from(#{ <<"path">> => Subpath })}
                     };
                 {_T, Bin} when is_binary(Bin) ->
-                    {typed, OnlyKey, hb_codec_converge:decode_value(Type, Bin)}
+                    {typed, OnlyKey, dev_codec_structured:decode_value(Type, Bin)}
             end
     end.
 
