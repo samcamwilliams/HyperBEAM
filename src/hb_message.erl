@@ -341,7 +341,7 @@ match(Map1, Map2, Mode) ->
                                     case Val1 == Val2 of
                                         true -> true;
                                         false ->
-                                            ?event(
+                                            ?event(match,
                                                 {value_mismatch,
                                                     {key, Key},
                                                     {val1, Val1},
@@ -356,7 +356,7 @@ match(Map1, Map2, Mode) ->
                 Keys1
             );
         false ->
-            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
+            ?event(match, {keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
             false
     end.
 	
