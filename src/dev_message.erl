@@ -376,20 +376,12 @@ set_ignore_undefined_test() ->
 		set(Msg1, Msg2, #{ hashpath => ignore })).
 
 verify_test() ->
-    Unsigned = #{ <<"a">> => 1 },
+    Unsigned = #{ <<"a">> => <<"b">> },
     Signed = hb_message:attest(Unsigned, hb:wallet()),
-    BadSigned = Unsigned#{ <<"a">> => <<"b">> },
-    ?assertEqual({ok, false},
-        hb_converge:resolve(
-            #{ <<"device">> => <<"message@1.0">> },
-            #{ 
-                <<"path">> => <<"verify">>,
-                <<"body">> => BadSigned,
-                <<"target">> => <<"body">>
-            },
-            #{ hashpath => ignore }
-        )
-    ),
+    ?event({signed, Signed}),
+    BadSigned = Signed#{ <<"a">> => <<"c">> },
+    ?event({bad_signed, BadSigned}),
+    ?assertEqual(false, hb_message:verify(BadSigned)),
     ?assertEqual({ok, true},
         hb_converge:resolve(
             #{ <<"device">> => <<"message@1.0">> },
