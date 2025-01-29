@@ -55,6 +55,7 @@ set(Msg, InputPath, Value, Opts) ->
     Priv = from_message(Msg),
     NewPriv = hb_converge:set(Priv, Path, Value, priv_converge_opts(Opts)),
     set(Msg, NewPriv, Opts).
+    set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
     NewPriv = hb_converge:set(CurrentPriv, PrivMap, priv_converge_opts(Opts)),

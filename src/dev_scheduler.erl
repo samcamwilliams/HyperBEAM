@@ -549,8 +549,8 @@ http_get_schedule_test() ->
     {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
     Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
     ?assertEqual(
-        11,
-        length(maps:values(maps:without([<<"hashpath">>], Assignments)))
+        12, % +1 for the hashpath
+        length(maps:values(Assignments))
     ).
 
 %%% Benchmarks
