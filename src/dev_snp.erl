@@ -2,10 +2,27 @@
 %%% as well as generating them, if called in an appropriate environment.
 -module(dev_snp).
 -export([generate/3, verify/3, trusted/3]).
+-export([init/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -define(ATTESTED_PARAMETERS, [vcpus, vcpu_type, vmm_type, guest_features,
 	firmware, kernel, initrd, append]).
+
+
+% Should take in options to set for the device such as kernel, initrd, firmware, and append hashes and make them available to the device.
+init(M1, _M2, Opts) ->
+	?event(message, M1),
+	?event(message2, _M2),
+	Snp_hashes = hb_converge:get(<<"body">>, M1, Opts),
+	SNP_Result = jiffy:decode(Snp_hashes, [return_maps]),
+	Hashes = maps:get(<<"snp_hashes">>, SNP_Result),
+	ok = hb_http_server:set_opts(Opts#{
+		trusted => maps:merge(hb_converge:get(<<"trusted">>, Opts, #{}), Hashes),
+		snp_hashes => Hashes
+	}),
+
+
+	{ok, "ALLGOOD"}.
 
 %% @doc Verify an attestation report message; validating the identity of a 
 %% remote node, its ephemeral private address, and the integrity of the report.
@@ -69,6 +86,7 @@ verify(M1, M2, NodeOpts) ->
 				maps:to_list(maps:with(lists:map(fun atom_to_binary/1, ?ATTESTED_PARAMETERS), Msg))
 			)
 		),
+	?event({args, Args}),
     {ok,Expected} = dev_snp_nif:compute_launch_digest(Args),
     ?event({expected_measurement, Expected}),
     Measurement = hb_converge:get(<<"measurement">>, Msg, NodeOpts),
@@ -172,15 +190,27 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
 %% `trusted` key in the base message for a list of trusted values, and checks
 %% if the value in the request message is a member of that list.
 trusted(Msg1, Msg2, NodeOpts) ->
-	%?event(debug, {trusted, Msg1, Msg2, NodeOpts}),
     Key = hb_converge:get(<<"key">>, Msg2, NodeOpts),
-    Trusted = hb_converge:get([<<"trusted">>, Key], Msg1, [], NodeOpts),
     Body = hb_converge:get(<<"body">>, Msg2, not_found, NodeOpts),
-    ?event(debug, {checking_trusted, Key, {trusted_list, Trusted}, {body, Body}}),
-    {ok, lists:member(Body, if is_list(Trusted) -> Trusted; true -> [Trusted] end)}.
+
+    %% Ensure Trusted is always a map
+    Trusted = hb_opts:get(trusted, #{}, NodeOpts),
+
+    %% Convert Key to binary if it's an atom
+    KeyBin = if is_atom(Key) -> atom_to_binary(Key, utf8); true -> Key end,
+
+    TrustKey = maps:get(KeyBin, Trusted, not_found),
+    ?event(debug, {trust_key, TrustKey, maps:is_key(KeyBin, Trusted)}),
+
+    %% Final trust validation
+    {ok, TrustKey == Body}.
+
+
 
 %% @doc Ensure that the report data matches the expected report data.
 report_data_matches(Address, NodeMsgID, ReportData) ->
+	?event(debug, {generated_nonce, binary_to_list(generate_nonce(Address, NodeMsgID))}),
+	?event(debug, {expected_nonce, binary_to_list(ReportData)}),
     generate_nonce(Address, NodeMsgID) == ReportData.
 
 %% @doc Generate the nonce to use in the attestation report.
