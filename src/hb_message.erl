@@ -485,9 +485,9 @@ minimization_test() ->
 basic_map_codec_test(Codec) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
     Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event{encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event{decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 set_body_codec_test(Codec) ->
@@ -630,9 +630,9 @@ nested_message_with_large_content_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event{encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event{decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
@@ -675,9 +675,9 @@ deeply_nested_message_with_only_content(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event{encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event{decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 nested_structured_fields_test(Codec) ->
@@ -708,13 +708,13 @@ signed_message_encode_decode_verify_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    ?event{signed_msg, {explicit, SignedMsg}}),
     ?assertEqual(true, verify(SignedMsg)),
     ?event(test, {verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
     ?event(test, {msg_encoded_as_codec, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, {explicit, Decoded}}),
+    ?event{decoded, {explicit, Decoded}}),
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
@@ -734,9 +734,9 @@ complex_signed_message_test(Codec) ->
             #{ priv_wallet => hb:wallet() }
         ),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event{encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event{decoded, Decoded}),
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
@@ -753,17 +753,17 @@ multisignature_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => Wallet1 }
         ),
-    ?event(debug, {signed_msg, SignedMsg}),
+    ?event{signed_msg, SignedMsg}),
     {ok, MsgSignedTwice} =
         dev_message:attest(
             SignedMsg,
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => Wallet2 }
         ),
-    ?event(debug, {signed_msg_twice, MsgSignedTwice}),
+    ?event{signed_msg_twice, MsgSignedTwice}),
     ?assert(verify(MsgSignedTwice)),
     {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
-    ?event(debug, {attestors, Attestors}),
+    ?event{attestors, Attestors}),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
 
@@ -785,17 +785,17 @@ deep_multisignature_test() ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => Wallet1 }
         ),
-    ?event(debug, {signed_msg, SignedMsg}),
+    ?event{signed_msg, SignedMsg}),
     {ok, MsgSignedTwice} =
         dev_message:attest(
             SignedMsg,
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => Wallet2 }
         ),
-    ?event(debug, {signed_msg_twice, MsgSignedTwice}),
+    ?event{signed_msg_twice, MsgSignedTwice}),
     ?assert(verify(MsgSignedTwice)),
     {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
-    ?event(debug, {attestors, Attestors}),
+    ?event{attestors, Attestors}),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
 
@@ -809,9 +809,9 @@ tabm_converge_ids_equal_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event{encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event{decoded, Decoded}),
     ?assertEqual(
         dev_message:id(Msg, #{ <<"attestors">> => <<"none">>}, #{}),
         dev_message:id(Decoded, #{ <<"attestors">> => <<"none">>}, #{})
@@ -835,15 +835,15 @@ signed_deep_message_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    ?event{signed_msg, {explicit, SignedMsg}}),
     {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
-    ?event(debug, {verify_hmac_res, {explicit, Res}}),
+    ?event{verify_hmac_res, {explicit, Res}}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event(debug, {verified, {explicit, SignedMsg}}),
+    ?event{verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(debug, {encoded, {explicit, Encoded}}),
+    ?event{encoded, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, {explicit, Decoded}}),
+    ?event{decoded, {explicit, Decoded}}),
     ?assert(
         match(
             SignedMsg,
