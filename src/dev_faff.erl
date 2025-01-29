@@ -39,9 +39,11 @@ is_admissible(Msg, NodeMsg) ->
     AllowList = hb_opts:get(faff_allow_list, [], NodeMsg),
     Req = hb_converge:get(<<"request">>, Msg, NodeMsg),
     Signers =
-        lists:map(
-            fun hb_util:human_id/1,
-            maps:values(hb_converge:get(<<"signers">>, Req, undefined, NodeMsg))
+        lists:filtermap(
+            fun(Signer) when not ?IS_ID(Signer) -> false;
+               (Signer) -> {true, hb_util:human_id(Signer)}
+            end,
+            hb_converge:get(<<"attestors">>, Req, undefined, NodeMsg)
         ),
     ?event(payment, {is_admissible, {signers, Signers}, {allow_list, AllowList}}),
     lists:all(
