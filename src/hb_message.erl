@@ -176,7 +176,9 @@ format(List, Indent) when is_list(List) ->
 format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
-        fun(Key) ->
+        fun(<<"hashpath">>) ->
+            hb_private:get(<<"hashpath">>, Map, undefined, #{});
+        (Key) ->
             case dev_message:get(Key, Map) of
                 {ok, Val} ->
                     case hb_util:short_id(Val) of
@@ -207,7 +209,7 @@ format(Map, Indent) when is_map(Map) ->
                 {ok, ID} =
                     dev_message:id(Map, #{ <<"attestors">> => <<"all">> }, #{}),
                 [
-                    {<<"#P">>, hb_util:short_id(ValOrUndef(hashpath))},
+                    {<<"#P">>, hb_util:short_id(ValOrUndef(<<"hashpath">>))},
                     {<<"*U">>, hb_util:short_id(UID)}
                 ] ++
                 case ID of
