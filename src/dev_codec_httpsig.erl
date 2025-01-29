@@ -98,13 +98,10 @@ id(Msg, Params, Opts) ->
 attest(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     Enc =
-    maps:without(
-        [<<"signature">>, <<"signature-input">>],
-        hb_message:convert(MsgToSign, <<"httpsig@1.0">>, Opts)
-    ),
-    % Hack: Place the body into the `<<"headers">>` field if it is set. We should
-    % either unify the body and headers in this module, or add explicit support
-    % for the body in the HTTP Message.
+        maps:without(
+            [<<"signature">>, <<"signature-input">>],
+            hb_message:convert(MsgToSign, <<"httpsig@1.0">>, Opts)
+        ),
     ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
     Authority = authority(maps:keys(Enc), Enc, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
@@ -127,10 +124,15 @@ attest(MsgToSign, _Req, Opts) ->
                 )),
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
+    AttestationWithHP =
+        case maps:get(<<"hashpath">>, MsgToSign, undefined) of
+            undefined -> Attestation;
+            Hashpath -> Attestation#{ <<"hashpath">> => Hashpath }
+        end,
     OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
     NewAttestations =
         OldAttestations#{
-            Attestor => Attestation
+            Attestor => AttestationWithHP
         },
     reset_hmac(MsgToSign#{ <<"attestations">> => NewAttestations }).
 

@@ -37,16 +37,25 @@ attest(Msg, _Req, Opts) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % Gather the prior attestations.
     PriorAttestations = maps:get(<<"attestations">>, Msg, #{}),
+    Attestation =
+        #{
+            <<"attestation-device">> => <<"ans104@1.0">>,
+            <<"id">> => ID,
+            <<"owner">> => Owner,
+            <<"signature">> => Sig
+        },
+    AttestationWithHP =
+        case Msg of
+            #{ <<"hashpath">> := Hashpath } ->
+                Attestation#{ <<"hashpath">> => Hashpath };
+            _ -> Attestation
+        end,
+    MsgWithoutHP = maps:without([<<"hashpath">>], Msg),
     {ok,
-        Msg#{
+        MsgWithoutHP#{
             <<"attestations">> =>
                 PriorAttestations#{
-                    Address => #{
-                        <<"attestation-device">> => <<"ans104@1.0">>,
-                        <<"id">> => ID,
-                        <<"owner">> => Owner,
-                        <<"signature">> => Sig
-                    }
+                    Address => AttestationWithHP
                 }
         }
     }.

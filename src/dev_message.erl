@@ -59,16 +59,28 @@ id(Base, Req, NodeOpts) ->
         case maps:get(<<"attestors">>, Req, <<"none">>) of
             <<"all">> -> Base;
             <<"none">> -> Base;
+            [] -> Base;
             RawAttestorIDs ->
                 KeepIDs =
                     case is_map(RawAttestorIDs) of
                         true -> maps:keys(RawAttestorIDs);
                         false -> RawAttestorIDs
                     end,
-                BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
-                Base#{
-                    <<"attestations">> => maps:with(KeepIDs, BaseAttestations)
-                }
+                % Add attestations with only the keys that are requested.
+                BaseWithAttestations = 
+                    Base#{
+                        <<"attestations">> =>
+                            maps:with(KeepIDs, maps:get(<<"attestations">>, Base, #{}))
+                    },
+                % Add the hashpath to the message if it is present.
+                case Base of
+                    #{ <<"priv">> := #{ <<"hashpath">> := Hashpath }} ->
+                        BaseWithAttestations#{
+                            <<"hashpath">> => Hashpath
+                        };
+                    _ ->
+                        BaseWithAttestations
+                end
         end,
     IDMod = maps:get(<<"id-device">>, ModBase, ?DEFAULT_ID_DEVICE),
     % Get the device module from the message, or use the default if it is not
@@ -128,12 +140,17 @@ attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
     AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
+    BaseWithHP =
+        case maps:get(<<"priv">>, Base, #{}) of
+            #{ <<"hashpath">> := Hashpath } -> Base#{ <<"hashpath">> => Hashpath };
+            _ -> Base
+        end,
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.
     AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
     {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, attest, 3, Opts),
-    Encoded = hb_message:convert(Self, tabm, Opts),
+    Encoded = hb_message:convert(BaseWithHP, tabm, Opts),
     {ok, Attested} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
     {ok, hb_message:convert(Attested, <<"structured@1.0">>, Opts)}.
 
