@@ -386,7 +386,7 @@ test_process() -> test_process(hb:wallet()).
 test_process(Wallet) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
-        device => ?MODULE,
+        <<"device">> => ?MODULE,
         <<"device-stack">> =>
             [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
         <<"image">> => <<"wasm-image-id">>,
