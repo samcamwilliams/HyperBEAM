@@ -48,7 +48,7 @@ verify(M1, M2, NodeOpts) ->
     NonceMatches = report_data_matches(Address, NodeMsgID, Nonce),
     ?event({nonce_matches, NonceMatches}),
     % Step 2: Verify the address and the signature.
-    Signer = hb_converge:get(<<"signers/1">>, Msg, NodeOpts),
+    Signer = hb_converge:get(<<"attestors/1">>, Msg, NodeOpts),
     ?event({snp_signer, Signer}),
     %{ok, SigIsValid} = hb_message:verify(MsgWithJSONReport),
 	SigIsValid = true,
