@@ -97,10 +97,22 @@ id(Msg, Params, Opts) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    {HPKey, MsgWithHPTForm} =
+        case maps:get(<<"hashpath">>, MsgToSign, undefined) of
+            undefined -> {undefined, MsgToSign};
+            HP ->
+                % Add the hashpath to the message with an ID derivative of its
+                % name, such that it can be differentiated from other signatures
+                % on different hashpaths that lead to the same message.
+                HashPathTag =
+                    hb_util:to_hex(binary:part(crypto:hash(sha256, HP), 1, 8)),
+                HashPathKey = <<"hashpath-", HashPathTag/binary>>,
+                {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
+        end,
     Enc =
         maps:without(
             [<<"signature">>, <<"signature-input">>],
-            hb_message:convert(MsgToSign, <<"httpsig@1.0">>, Opts)
+            hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
         ),
     ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
     Authority = authority(maps:keys(Enc), Enc, Wallet),
@@ -125,16 +137,17 @@ attest(MsgToSign, _Req, Opts) ->
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
     AttestationWithHP =
-        case maps:get(<<"hashpath">>, MsgToSign, undefined) of
+        case HPKey of
             undefined -> Attestation;
-            Hashpath -> Attestation#{ <<"hashpath">> => Hashpath }
+            HPKey -> Attestation#{ HPKey => maps:get(<<"hashpath">>, MsgToSign) }
         end,
     OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
     NewAttestations =
         OldAttestations#{
             Attestor => AttestationWithHP
         },
-    reset_hmac(MsgToSign#{ <<"attestations">> => NewAttestations }).
+    MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
+    reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
 
 %% @doc Convert an address to a signature name that is short, unique to the
 %% address, and lowercase.
@@ -158,6 +171,7 @@ reset_hmac(RawMsg) ->
             [<<"hmac-sha256">>],
             maps:get(<<"attestations">>, Msg, #{})
         ),
+    ?event(hmac, {msg_before_hmac, Msg}),
     AllSigs =
         maps:from_list(lists:map(
             fun ({Attestor, #{ <<"signature">> := Signature }}) ->
@@ -286,6 +300,7 @@ verify(MsgToVerify, Req, _Opts) ->
                     <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
                 },
+            ?event(debug, {encoded_msg_for_verification, EncWithSig}),
             {
                 ok,
                 verify_auth(

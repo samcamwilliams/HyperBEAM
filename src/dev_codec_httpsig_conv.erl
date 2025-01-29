@@ -69,13 +69,18 @@ from(HTTP) ->
             )
         ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
+    % Extract all hashpaths from the attestations of the message
+    HPs = extract_hashpaths(HTTP),
     % Finally, we need to add the signatures to the TABM
-    {ok, Res} = attestations_from_signature(
-        MsgWithoutSigs,
+    {ok, MsgWithSigs} = attestations_from_signature(
+        maps:without(maps:keys(HPs), MsgWithoutSigs),
+        HPs,
         maps:get(<<"signature">>, Headers, not_found),
         maps:get(<<"signature-input">>, Headers, not_found)
     ),
-    ?event({message_with_atts, Res}),
+    ?event(debug, {message_with_atts, MsgWithSigs}),
+    Res = maps:without(Removed = maps:keys(HPs), MsgWithSigs),
+    ?event(debug, {message_without_atts, Res, Removed}),
     Res.
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
@@ -189,10 +194,10 @@ from_body_parts(TABM, [Part | Rest]) ->
 
 %% @doc Populate the `/attestations` key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
-attestations_from_signature(Map, not_found, _RawSigInput) ->
+attestations_from_signature(Map, _HPs, not_found, _RawSigInput) ->
     ?event({no_sigs_found_in_from, {msg, Map}}),
     {ok, maps:without([<<"attestations">>], Map)};
-attestations_from_signature(Map, RawSig, RawSigInput) ->
+attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
     SfSigsKV = dev_codec_structured_conv:parse_dictionary(RawSig),
     SfInputs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSigInput)),
     ?event({adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
@@ -203,7 +208,29 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
     Attestations = maps:from_list(lists:map(
         fun ({SigName, Signature}) ->
             ?event({adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
-            {list, _SigInputs, ParamsKVList} = maps:get(SigName, SfInputs, #{}),
+            {list, SigInputs, ParamsKVList} = maps:get(SigName, SfInputs, #{}),
+            ?event(debug, {inputs, {signame, SigName}, {inputs, SigInputs}, {params, ParamsKVList}}),
+            % Find all hashpaths from the signature and add them to the 
+            % attestations message.
+            Hashpath =
+                lists:filtermap(
+                    fun ({item, BareItem, _}) ->
+                        case dev_codec_structured_conv:from_bare_item(BareItem) of
+                            HP = <<"hash", _/binary>> -> {true, HP};
+                            _ -> false
+                        end;
+                    (_) -> false
+                end,
+                SigInputs
+            ),
+            ?event(debug, {all_hashpaths, HPs}),
+            Hashpaths = maps:from_list(lists:map(
+                fun (HP) ->
+                    {HP, maps:get(HP, HPs, <<>>)}
+                end,
+                Hashpath
+            )),
+            ?event(debug, {hashpaths, Hashpaths}),
             Params = maps:from_list(ParamsKVList),
             {string, EncPubKey} = maps:get(<<"keyid">>, Params),
             PubKey = hb_util:decode(EncPubKey),
@@ -217,7 +244,7 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
             {item, {binary, UnencodedSig}, _} = Signature,
             {
                 Address,
-                #{
+                Hashpaths#{
                     <<"signature">> => SerializedSig,
                     <<"signature-input">> =>
                         iolist_to_binary(
@@ -330,14 +357,36 @@ to(TABM, Opts) when is_map(TABM) ->
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of
         #{ <<"hmac-sha256">> :=
-            #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
+                #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
+            HPs = hashpaths_from_message(TABM),
+            EncWithHPs = maps:merge(Enc1, HPs),
             % Add the original signature encodings to the HTTP message
-            Enc1#{
+            EncWithHPs#{
                 <<"signature">> => Sig,
                 <<"signature-input">> => SigInput
             };
         not_found -> Enc1
     end.
+
+%% Extract all hashpaths from the attestations of a given message
+hashpaths_from_message(Msg) ->
+    maps:fold(
+        fun (_, Att, Acc) ->
+            maps:merge(Acc, extract_hashpaths(Att))
+        end,
+        #{},
+        maps:get(<<"attestations">>, Msg, #{})
+    ).
+
+%% @doc Extract all keys labelled `hashpath*` from the attestations, and add them
+%% to the HTTP message as `hashpath*` keys.
+extract_hashpaths(Map) ->
+    maps:filter(
+        fun (<<"hashpath", _/binary>>, _) -> true;
+            (_, _) -> false
+        end,
+        Map
+    ).
 
 %% @doc Encode a multipart body part to a flat binary.
 encode_body_part(PartName, BodyPart) ->
