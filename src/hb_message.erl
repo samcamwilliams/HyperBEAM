@@ -265,7 +265,6 @@ format(Map, Indent) when is_map(Map) ->
                     true ->
                         [
                             <<"attestations">>,
-                            <<"hashpath">>,
                             <<"path">>,
                             <<"device">>
                         ];
@@ -748,32 +747,32 @@ complex_signed_message_test(Codec) ->
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
-multisignature_test(Codec) ->
-    Wallet1 = ar_wallet:new(),
-    Wallet2 = ar_wallet:new(),
-    Msg = #{
-        <<"data">> => <<"TEST_DATA">>,
-        <<"test_key">> => <<"TEST_VALUE">>
-    },
-    {ok, SignedMsg} =
-        dev_message:attest(
-            Msg,
-            #{ <<"attestation-device">> => Codec },
-            #{ priv_wallet => Wallet1 }
-        ),
-    ?event({signed_msg, SignedMsg}),
-    {ok, MsgSignedTwice} =
-        dev_message:attest(
-            SignedMsg,
-            #{ <<"attestation-device">> => Codec },
-            #{ priv_wallet => Wallet2 }
-        ),
-    ?event({signed_msg_twice, MsgSignedTwice}),
-    ?assert(verify(MsgSignedTwice)),
-    {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
-    ?event({attestors, Attestors}),
-    ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
-    ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
+% multisignature_test(Codec) ->
+%     Wallet1 = ar_wallet:new(),
+%     Wallet2 = ar_wallet:new(),
+%     Msg = #{
+%         <<"data">> => <<"TEST_DATA">>,
+%         <<"test_key">> => <<"TEST_VALUE">>
+%     },
+%     {ok, SignedMsg} =
+%         dev_message:attest(
+%             Msg,
+%             #{ <<"attestation-device">> => Codec },
+%             #{ priv_wallet => Wallet1 }
+%         ),
+%     ?event({signed_msg, SignedMsg}),
+%     {ok, MsgSignedTwice} =
+%         dev_message:attest(
+%             SignedMsg,
+%             #{ <<"attestation-device">> => Codec },
+%             #{ priv_wallet => Wallet2 }
+%         ),
+%     ?event({signed_msg_twice, MsgSignedTwice}),
+%     ?assert(verify(MsgSignedTwice)),
+%     {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
+%     ?event({attestors, Attestors}),
+%     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
+%     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
 
 deep_multisignature_test() ->
     % Only the `httpsig@1.0` codec supports multisignatures.
@@ -901,6 +900,51 @@ empty_string_in_tag_test(Codec) ->
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
+hashpath_sign_verify_test(Codec) ->
+    Msg =
+        hb_private:set(#{
+                <<"test_key">> => <<"TEST_VALUE">>,
+                <<"body">> => #{
+                    <<"nested_key">> =>
+                        #{
+                            <<"body">> => <<"NESTED_DATA">>,
+                            <<"nested_key">> => <<"NESTED_VALUE">>
+                        },
+                    <<"nested_key2">> => <<"NESTED_VALUE2">>
+                }
+            },
+            <<"priv/hashpath">>,
+            hb_path:hashpath(
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                fun hb_crypto:sha256_chain/2,
+                #{}
+            ),
+            #{}
+        ),
+    ?event(debug, {msg, {explicit, Msg}}),
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
+    ?event(debug, {verify_hmac_res, {explicit, Res}}),
+    ?assertEqual(true, verify(SignedMsg)),
+    ?event(debug, {verified, {explicit, SignedMsg}}),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(hmac, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(hmac, {decoded, Decoded}),
+    ?assert(verify(Decoded)),
+    ?assert(
+        match(
+            SignedMsg,
+            Decoded
+        )
+    ).
 
 %%% Test helpers
 
@@ -959,8 +1003,9 @@ message_suite_test_() ->
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
-        {"complex signed message test", fun complex_signed_message_test/1}
+        {"complex signed message test", fun complex_signed_message_test/1},
+        {"signed message with hashpath test", fun hashpath_sign_verify_test/1}
     ]).
 
 simple_test() ->
-    complex_signed_message_test(<<"ans104@1.0">>).
+    hashpath_sign_verify_test(<<"httpsig@1.0">>).

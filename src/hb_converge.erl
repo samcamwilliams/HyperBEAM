@@ -429,22 +429,37 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     resolve_stage(8, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
             update ->
-                ?event({setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-                {ok,
-                    hb_private:set(Msg3, <<"hashpath">>, hb_path:hashpath(Msg1, Msg2, Opts))
-                };
-            reset -> {ok, hb_private:set(Msg3, <<"hashpath">>, unset, Opts)};
-            ignore -> {ok, Msg3}
+                Priv = hb_private:from_message(Msg3),
+                HP = hb_path:hashpath(Msg1, Msg2, Opts),
+                if not is_binary(HP) ->
+                    throw({invalid_hashpath, {hp, HP}, {msg3, Msg3}});
+                true ->
+                    % TODO: UPDATE HASHPATH
+                    {ok, Msg3}
+                end;
+            reset ->
+                %?event(hashpath, {resetting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+                Priv = hb_private:from_message(Msg3),
+                {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
+            ignore ->
+                Priv = hb_private:from_message(Msg3),
+                if not is_map(Priv) ->
+                    throw({invalid_private_message, {msg3, Msg3}});
+                true ->
+                    {ok, Msg3}
+                end
         end,
         ExecName,
         Opts
     );
 resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     ?event(converge_core, {stage, 7, ExecName, abnormal_status_reset_hashpath}, Opts),
+    ?event(hashpath, {resetting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
+    Priv = hb_private:from_message(Msg3),
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, hb_private:set(Msg3, <<"hashpath">>, unset, Opts)},
+        {Status, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),

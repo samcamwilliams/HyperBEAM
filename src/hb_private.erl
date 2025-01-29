@@ -53,12 +53,15 @@ get(InputPath, Msg, Default, Opts) ->
 set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath),
     Priv = from_message(Msg),
+    ?event({set_private, {in, InputPath}, {out, Path}, {value, Value}, {opts, Opts}}),
     NewPriv = hb_converge:set(Priv, Path, Value, priv_converge_opts(Opts)),
-    set(Msg, NewPriv, Opts).
+    ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
+    ?event({set_private, {in, PrivMap}, {opts, Opts}}),
     NewPriv = hb_converge:set(CurrentPriv, PrivMap, priv_converge_opts(Opts)),
+    ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 
 %% @doc Helper function for setting the complete private element of a message.

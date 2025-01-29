@@ -21,7 +21,7 @@
 %%% Binary Messages (TABMs), such that each of the keys in the message is
 %%% either a map or a direct binary.
 -module(hb_cache).
--export([read/2, read_output/3, write/2, write_binary/3, link/3]).
+-export([read/2, read_output/3, write/2, write_binary/3, write_hashpath/2, link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
 -include("src/include/hb.hrl").
@@ -88,13 +88,6 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
         end,
         hb_private:reset(Msg)
     ),
-    % Link the message's hashpath to the unattested ID, if it exists.
-    case hb_private:from_message(Msg) of
-        #{ <<"hashpath">> := HP } ->
-            hb_store:make_link(Store, UnattestedID, HP);
-        _ ->
-            do_nothing
-    end,
     % Write the attestations to the store, linking each attestation ID to the
     % unattested message.
     case maps:get(<<"attestations">>, Msg, #{}) of
@@ -119,6 +112,18 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
             ),
             {ok, UnattestedID}
     end.
+
+%% @doc Write a hashpath and its message to the store and link it.
+write_hashpath(Msg = #{ <<"priv">> := #{ <<"hashpath">> := HP } }, Opts) ->
+    write_hashpath(HP, Msg, Opts);
+write_hashpath(MsgWithoutHP, Opts) ->
+    write(MsgWithoutHP, Opts).
+write_hashpath(HP, Msg, Opts) when is_binary(HP) or is_list(HP) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    ?event(cache_debug, {writing_hashpath, {hashpath, HP}, {msg, Msg}, {store, Store}}),
+    {ok, Path} = write_message(Msg, Store, Opts),
+    hb_store:make_link(Store, Path, HP),
+    {ok, Path}.
 
 %% @doc Write a raw binary keys into the store and link it at a given hashpath.
 write_binary(Hashpath, Bin, Opts) ->
