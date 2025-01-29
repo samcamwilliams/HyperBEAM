@@ -431,11 +431,9 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
             update ->
                 ?event({setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
                 {ok,
-                    maps:without(?REGEN_KEYS,
-                        Msg3#{ <<"hashpath">> => hb_path:hashpath(Msg1, Msg2, Opts) }
-                    )
+                    hb_private:set(Msg3, <<"hashpath">>, hb_path:hashpath(Msg1, Msg2, Opts))
                 };
-            reset -> {ok, maps:without([<<"hashpath">>] ++ ?REGEN_KEYS, Msg3)};
+            reset -> {ok, hb_private:set(Msg3, <<"hashpath">>, unset, Opts)};
             ignore -> {ok, Msg3}
         end,
         ExecName,
@@ -446,7 +444,7 @@ resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) -
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, maps:without([<<"hashpath">>] ++ ?REGEN_KEYS, Msg3)},
+        {Status, hb_private:set(Msg3, <<"hashpath">>, unset, Opts)},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
