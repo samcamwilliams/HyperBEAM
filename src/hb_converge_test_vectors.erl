@@ -337,12 +337,12 @@ recursive_get_test(Opts) ->
     },
     ?assertEqual(
         {ok, <<"value1">>},
-        hb_converge:resolve(Msg, #{ path => key1 }, Opts)
+        hb_converge:resolve(Msg, #{ <<"path">> => <<"key1">> }, Opts)
     ),
     ?assertEqual(<<"value1">>, hb_converge:get(<<"key1">>, Msg, Opts)),
     ?assertEqual(
         {ok, <<"value3">>},
-        hb_converge:resolve(Msg, #{ path => [<<"key2">>, <<"key3">>] }, Opts)
+        hb_converge:resolve(Msg, #{ <<"path">> => [<<"key2">>, <<"key3">>] }, Opts)
     ),
     ?assertEqual(<<"value3">>, hb_converge:get([<<"key2">>, <<"key3">>], Msg, Opts)),
     ?assertEqual(<<"value3">>, hb_converge:get(<<"key2/key3">>, Msg, Opts)).
@@ -363,17 +363,17 @@ deep_recursive_get_test(Opts) ->
     ?assertEqual(<<"value7">>, hb_converge:get(<<"key2/key4/key6/key7">>, Msg, Opts)).
 
 basic_set_test(Opts) ->
-    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-    UpdatedMsg = hb_converge:set(Msg, #{ key1 => <<"new_value1">> }, Opts),
-    ?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
+    Msg = #{ <<"key1">> => <<"value1">>, <<"key2">> => <<"value2">> },
+    UpdatedMsg = hb_converge:set(Msg, #{ <<"key1">> => <<"new_value1">> }, Opts),
+    ?event({set_key_complete, {key, <<"key1">>}, {value, <<"new_value1">>}}),
     ?assertEqual(<<"new_value1">>, hb_converge:get(<<"key1">>, UpdatedMsg, Opts)),
     ?assertEqual(<<"value2">>, hb_converge:get(<<"key2">>, UpdatedMsg, Opts)).
 
 get_with_device_test(Opts) ->
     Msg =
         #{
-            device => generate_device_with_keys_using_args(),
-            state_key => <<"STATE">>
+            <<"device">> => generate_device_with_keys_using_args(),
+            <<"state_key">> => <<"STATE">>
         },
     ?assertEqual(<<"STATE">>, hb_converge:get(<<"state_key">>, Msg, Opts)),
     ?assertEqual(<<"STATE">>, hb_converge:get(<<"key_using_only_state">>, Msg, Opts)).
@@ -381,8 +381,8 @@ get_with_device_test(Opts) ->
 get_as_with_device_test(Opts) ->
     Msg =
         #{
-            device => gen_handler_device(),
-            test_key => <<"ACTUAL VALUE">>
+            <<"device">> => gen_handler_device(),
+            <<"test_key">> => <<"ACTUAL VALUE">>
         },
     ?assertEqual(
         <<"HANDLER VALUE">>,
