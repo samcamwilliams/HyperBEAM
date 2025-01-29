@@ -95,26 +95,14 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(RawMsg1, Opts) ->
     Msg1 = hb_converge:normalize_keys(RawMsg1),
-    case dev_message:get(<<"hashpath">>, Msg1) of
-        {ok, ignore} ->
-            throw({hashpath_set_to_ignore, {msg1, Msg1}, {opts, Opts}});
-        {ok, Hashpath} -> Hashpath;
-        _ ->
+    case hb_private:get(<<"hashpath">>, Msg1, Opts) of
+        not_found ->
             try hb_util:ok(dev_message:id(Msg1, #{ <<"attestors">> => <<"all">> }, Opts))
             catch
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
-            end
+            end;
+        Hashpath -> Hashpath
     end.
-% hashpath(Msg1, Msgs, Opts) when is_list(Msgs) ->
-%     HashpathAlg = hashpath_alg(Msg1),
-%     lists:foldl(
-%         fun(Msg, Acc) ->
-%             ?event({generating_hashpath, {current, Acc}, {msg, Msg}}),
-%             hashpath(Acc, hashpath(Msg, Opts), HashpathAlg, Opts)
-%         end,
-%         hashpath(Msg1, Opts),
-%         Msgs
-%     );
 hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
     HashpathAlg = hashpath_alg(Msg1),
@@ -122,12 +110,11 @@ hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    {ok, Msg2WithoutMeta} =
-        dev_message:remove(Msg2, #{ <<"items">> => ?CONVERGE_KEYS }),
-    ?event({generating_msg2_hashpath_with_keys, maps:keys(Msg2WithoutMeta)}),
-    case {map_size(Msg2WithoutMeta), hd(Msg2, Opts)} of
-        {0, Key} when Key =/= undefined ->
-            hashpath(Msg1, to_binary(Key), HashpathAlg, Opts);
+    Msg2WithoutMeta = maps:without(?CONVERGE_KEYS, Msg2),
+    ReqPath = from_message(request, Msg2),
+    case {map_size(Msg2WithoutMeta), ReqPath} of
+        {0, _} when ReqPath =/= undefined ->
+            hashpath(Msg1, to_binary(hd(ReqPath)), HashpathAlg, Opts);
         _ ->
             {ok, Msg2ID} =
                 dev_message:id(
@@ -149,10 +136,7 @@ hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
                 NativeNewBase =
                     HashpathAlg(
                         hb_util:native_id(Prev1),
-                        case byte_size(Prev2) of
-                            43 -> hb_util:native_id(Prev2);
-                            _ -> Prev2
-                        end
+                        hb_util:native_id(Prev2)
                     ),
                 HumanNewBase = hb_util:human_id(NativeNewBase),
                 << HumanNewBase/binary, "/", Msg2ID/binary >>
@@ -303,8 +287,8 @@ normalize(Path) ->
 %%% TESTS
 
 hashpath_test() ->
-    Msg1 = #{ <<"empty">> => <<"message">> },
-    Msg2 = #{ <<"exciting">> => <<"message2">> },
+    Msg1 = #{ priv => #{<<"empty">> => <<"message">>} },
+    Msg2 = #{ priv => #{<<"exciting">> => <<"message2">>} },
     Hashpath = hashpath(Msg1, Msg2, #{}),
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
@@ -318,7 +302,7 @@ hashpath_direct_msg2_test() ->
 multiple_hashpaths_test() ->
     Msg1 = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ <<"hashpath">> => hashpath(Msg1, Msg2, #{}) },
+    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Msg1, Msg2, #{}) } },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Msg3, Msg4, #{}),
     ?assert(is_binary(Msg5)).
@@ -326,9 +310,9 @@ multiple_hashpaths_test() ->
 verify_hashpath_test() ->
     Msg1 = #{ <<"test">> => <<"initial">> },
     Msg2 = #{ <<"firstapplied">> => <<"msg2">> },
-    Msg3 = #{ <<"hashpath">> => hashpath(Msg1, Msg2, #{}) },
-    Msg4 = #{ <<"hashpath">> => hashpath(Msg2, Msg3, #{}) },
-    Msg3Fake = #{ <<"hashpath">> => hashpath(Msg4, Msg2, #{}) },
+    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Msg1, Msg2, #{})} },
+    Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Msg2, Msg3, #{})} },
+    Msg3Fake = #{ priv => #{<<"hashpath">> => hashpath(Msg4, Msg2, #{})} },
     ?assert(verify_hashpath([Msg1, Msg2, Msg3, Msg4], #{})),
     ?assertNot(verify_hashpath([Msg1, Msg2, Msg3Fake, Msg4], #{})).
 
