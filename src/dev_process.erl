@@ -255,7 +255,7 @@ push(Msg1, Msg2, Opts) ->
                     case hb_converge:get(<<"target">>, MsgToPush, Opts) of
                         not_found ->
                             ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
-                            {ok, <<"No Target. Did not push.">>};
+                            #{};
                         Target ->
                             ?event(push,
                                 {pushing_child,
