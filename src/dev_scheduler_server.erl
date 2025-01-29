@@ -12,9 +12,10 @@ start(ProcID, Opts) ->
     spawn_link(
         fun() ->
             pg:join({dev_scheduler, ProcID}, self()),
+            ?event(debug, {starting_scheduling_server, {proc_id, ProcID}}),
             {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
             ?event(
-                {starting_scheduling_server,
+                {scheduler_got_process_info,
                     {proc_id, ProcID},
                     {current, CurrentSlot},
                     {hash_chain, HashChain}
@@ -34,6 +35,7 @@ start(ProcID, Opts) ->
 
 %% @doc Get the current slot from the cache.
 slot_from_cache(ProcID, Opts) ->
+    ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
     case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
             ?event({no_assignments_in_cache, {proc_id, ProcID}}),
@@ -177,9 +179,11 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
 %% @doc Create the next element in a chain of hashes that links this and prior
 %% assignments.
 next_hashchain(HashChain, Message) ->
+    ?event({creating_next_hashchain, {hash_chain, HashChain}, {message, Message}}),
+    ID = hb_message:id(Message, all),
     crypto:hash(
         sha256,
-        << HashChain/binary, (hb_util:id(Message, unsigned))/binary >>
+        << HashChain/binary, ID/binary >>
     ).
 
 %% TESTS

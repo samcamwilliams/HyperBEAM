@@ -32,10 +32,7 @@ id(Item) -> id(Item, unsigned).
 id(TX, Type) when is_record(TX, tx) ->
     encode(ar_bundles:id(TX, Type));
 id(Map, Type) when is_map(Map) ->
-    case Type of
-        unsigned -> hb_converge:get(unsigned_id, Map);
-        signed -> encode(hb_converge:get(id, Map))
-    end;
+    hb_message:id(Map, Type);
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->

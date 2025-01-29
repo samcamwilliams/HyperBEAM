@@ -53,6 +53,7 @@
 %%% `hb_cache' module uses TABMs as the internal format for storing and 
 %%% retrieving messages.
 -module(hb_message).
+-export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, unattested/1]).
 -export([verify/1, attest/2, attest/3, type/1, minimize/1]). 
 -export([match/2, match/3, find_target/3]).
@@ -94,6 +95,28 @@ convert_to_tabm(Msg, SourceFormat, Opts) ->
 convert_to_target(Msg, TargetFormat, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
     TargetCodecMod:to(Msg).
+
+%% @doc Return the ID of a message.
+id(Msg) -> id(Msg, unattested).
+id(Msg, Attestors) -> id(Msg, Attestors, #{}).
+id(Msg, RawAttestors, Opts) ->
+    Attestors =
+        case RawAttestors of
+            unattested -> <<"none">>;
+            unsigned -> <<"none">>;
+            none -> <<"none">>;
+            all -> <<"all">>;
+            signed -> <<"all">>;
+            List -> List
+        end,
+    ?event({getting_id, {msg, Msg}, {attestors, Attestors}}),
+    {ok, ID} =
+        hb_converge:resolve(
+            Msg,
+            #{ <<"path">> => <<"id">>, <<"attestors">> => Attestors },
+            Opts
+        ),
+    hb_util:human_id(ID).
 
 %% @doc Sign a message with the given wallet. Only supports the `tx' format
 %% at the moment.
