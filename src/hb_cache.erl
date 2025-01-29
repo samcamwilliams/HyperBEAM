@@ -63,8 +63,8 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
     ?event({writing_message_with_unsigned_id, UnattestedID}),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
-    % Write the keys of the message into the graph of hashpaths, generating a map of
-    % keys to paths of the underlying data as we do so.
+    % Write the keys of the message into the store, rolling the keys into 
+    % hashpaths (having only two parts) as we do so.
     maps:map(
         fun(Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
@@ -88,6 +88,15 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
         end,
         hb_private:reset(Msg)
     ),
+    % Link the message's hashpath to the unattested ID, if it exists.
+    case hb_private:from_message(Msg) of
+        #{ <<"hashpath">> := HP } ->
+            hb_store:make_link(Store, UnattestedID, HP);
+        _ ->
+            do_nothing
+    end,
+    % Write the attestations to the store, linking each attestation ID to the
+    % unattested message.
     case maps:get(<<"attestations">>, Msg, #{}) of
         Attestors when map_size(Attestors) =:= 0 ->
             % There are no attestations, so we can return the unattested ID
@@ -306,4 +315,4 @@ cache_suite_test_() ->
 
 run_test() ->
     Opts = #{ store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }} },
-    test_deeply_nested_complex_message(Opts).
+    test_store_simple_signed_message(Opts).

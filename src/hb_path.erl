@@ -95,13 +95,13 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(RawMsg1, Opts) ->
     Msg1 = hb_converge:normalize_keys(RawMsg1),
-    case hb_private:get(<<"hashpath">>, Msg1, Opts) of
-        not_found ->
+    case hb_private:from_message(Msg1) of
+        #{ <<"hashpath">> := HP } -> HP;
+        _ ->
             try hb_util:ok(dev_message:id(Msg1, #{ <<"attestors">> => <<"all">> }, Opts))
             catch
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
-            end;
-        Hashpath -> Hashpath
+            end
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
@@ -122,13 +122,13 @@ hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
                     #{ <<"attestors">> => <<"all">> },
                     Opts
                 ),
-            hashpath(Msg1, Msg2ID, HashpathAlg, Opts)
+            hashpath(Msg1, hb_util:human_id(Msg2ID), HashpathAlg, Opts)
     end;
-hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
+hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, _Opts) ->
     HP = 
         case term_to_path_parts(Msg1Hashpath) of
             [_] -> 
-                << Msg1Hashpath/binary, "/", Msg2ID/binary >>;
+                << Msg1Hashpath/binary, "/", HumanMsg2ID/binary >>;
             [Prev1, Prev2] ->
                 % Calculate the new base of the hashpath. We check whether the key is
                 % a human-readable binary ID, or a path part, and convert or pass
@@ -136,12 +136,15 @@ hashpath(Msg1Hashpath, Msg2ID, HashpathAlg, _Opts) ->
                 NativeNewBase =
                     HashpathAlg(
                         hb_util:native_id(Prev1),
-                        hb_util:native_id(Prev2)
+                        case byte_size(Prev2) of
+                            43 -> hb_util:native_id(Prev2);
+                            _ -> Prev2
+                        end
                     ),
                 HumanNewBase = hb_util:human_id(NativeNewBase),
-                << HumanNewBase/binary, "/", Msg2ID/binary >>
+                << HumanNewBase/binary, "/", HumanMsg2ID/binary >>
         end,
-    ?event({generated_hashpath, HP, {msg1hp, Msg1Hashpath}, {msg2id, Msg2ID}}),
+    ?event({generated_hashpath, HP, {msg1hp, Msg1Hashpath}, {msg2id, HumanMsg2ID}}),
     HP.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
