@@ -75,7 +75,9 @@ prep_call(M1, M2, Opts) ->
     MsgJson = jiffy:encode({MsgProps}),
     {ok, MsgJsonPtr} = hb_beamr_io:write_string(Instance, MsgJson),
     ProcessProps =
-        normalize_props([{<<"Process">>,message_to_json_struct(Process)}]),
+        normalize_props(
+            [{<<"Process">>, message_to_json_struct(Process)}]
+        ),
     ProcessJson = jiffy:encode({ProcessProps}),
     {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Instance, ProcessJson),
     {ok,
@@ -94,7 +96,7 @@ denormalize_message(Message) ->
     Signers =
         lists:filter(
             fun(ID) -> ?IS_ID(ID) end,
-            hb_converge:get(<<"attestors">>, {as, <<"message@1.0">>, Message}, #{})
+            hb_converge:get(<<"attestors">>, {as, <<"message@1.0">>, Message})
         ),
     NormOwnerMsg =
         case Signers of
@@ -102,19 +104,18 @@ denormalize_message(Message) ->
             [Signer|_] ->
                 Sig =
                     hb_converge:get(
-                        [<<"attestations">>, Signer, <<"signature">>],
-                        {as, <<"message@1.0">>, Message},
-                        <<>>,
-                        #{}
+                        <<"attestations/", Signer/binary, "/signature">>,
+                        {as, <<"message@1.0">>, Message}
                     ),
                 Message#{ <<"owner">> => Signer, <<"signature">> => Sig }
         end,
-    (maps:without([<<"owner">>], NormOwnerMsg))#{
-        <<"id">> => hb_converge:get(<<"id">>, {as, <<"message@1.0">>, Message}, #{})
+    NormOwnerMsg#{
+        <<"id">> => hb_converge:get(<<"id">>, {as, <<"message@1.0">>, Message})
     }.
 
-message_to_json_struct(Message) ->
-    ID = hb_converge:get(<<"id">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+message_to_json_struct(RawMsg) ->
+    Message = maps:without([<<"attestations">>], RawMsg),
+    ID = hb_message:id(Message, all),
     Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     Owner = hb_converge:get(<<"owner">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     Data = hb_converge:get(<<"data">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
@@ -193,10 +194,8 @@ normalize_props(Props) ->
     ).
 
 header_case_string(Key) ->
-    ?event({header_casing, Key}),
     NormKey = hb_converge:normalize_key(Key),
     Words = string:lexemes(NormKey, "-"),
-    ?event({words, Words}),
     TitleCaseWords =
         lists:map(
             fun binary_to_list/1,
@@ -206,7 +205,6 @@ header_case_string(Key) ->
             )
         ),
     TitleCaseKey = list_to_binary(string:join(TitleCaseWords, "-")),
-    ?event({titlecase, TitleCaseKey}),
     TitleCaseKey.
 
 %% @doc Read the computed results out of the WASM environment, assuming that
@@ -363,7 +361,7 @@ generate_aos_msg(ProcID, Code) ->
 basic_aos_call_test() ->
     Msg = generate_stack("test/aos-2-pure-xs.wasm"),
     Proc = hb_converge:get(<<"process">>, Msg, #{ hashpath => ignore }),
-    ProcID = hb_converge:get(id, Proc, #{}),
+    ProcID = hb_message:id(Proc, all),
     {ok, Msg3} =
         hb_converge:resolve(
             Msg,

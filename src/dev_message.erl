@@ -10,7 +10,7 @@
 -export([set/3, remove/2, get/2, get/3]).
 %%% Attestation-specific keys:
 -export([id/1, id/2, id/3]).
--export([attest/3, attestors/1, attestors/2, attestors/3, attestations/3, verify/3]).
+-export([attest/3, attestors/1, attestors/2, attestors/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -97,29 +97,29 @@ attestors(Base, Req) -> attestors(Base, Req, #{}).
 attestors(Base, _, _NodeOpts) ->
     {ok, maps:keys(maps:get(<<"attestations">>, Base, #{}))}.
 
-%% @doc Return a device that resolves a given path to a specific attestation.
-attestations(Base, _Req, _NodeOpts) ->
-    {ok,
-        Base#{
-            <<"device">> =>
-                #{
-                    info =>
-                        fun(Msg, MsgWithPath, _NodeOpts2) ->
-                            Attestor = maps:get(<<"path">>, MsgWithPath),
-                            Attestation = maps:get(Attestor, Msg),
-                            % 'Promote' the keys of the attestation to the root
-                            % of the message.
-                            {
-                                ok,
-                                maps:merge(
-                                    maps:without([<<"attestations">>], Msg),
-                                    Attestation
-                                )
-                            }
-                        end
-                }
-        }
-    }.
+% %% @doc Return a device that resolves a given path to a specific attestation.
+% attestations(Base, _Req, _NodeOpts) ->
+%     {ok,
+%         Base#{
+%             <<"device">> =>
+%                 #{
+%                     info =>
+%                         fun(Msg, MsgWithPath, _NodeOpts2) ->
+%                             Attestor = maps:get(<<"path">>, MsgWithPath),
+%                             Attestation = maps:get(Attestor, Msg),
+%                             % 'Promote' the keys of the attestation to the root
+%                             % of the message.
+%                             {
+%                                 ok,
+%                                 maps:merge(
+%                                     maps:without([<<"attestations">>], Msg),
+%                                     Attestation
+%                                 )
+%                             }
+%                         end
+%                 }
+%         }
+%     }.
 
 %% @doc Attest to a message, using the `attestation-device' key to specify the
 %% device that should be used to attest to the message. If the key is not set,
