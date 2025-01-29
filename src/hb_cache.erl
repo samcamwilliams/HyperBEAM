@@ -67,7 +67,7 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     % keys to paths of the underlying data as we do so.
     maps:map(
         fun(Key, Value) ->
-            ?event{writing_subkey, {key, Key}, {value, Value}}),
+            ?event({writing_subkey, {key, Key}, {value, Value}}),
             KeyHashPath =
                 hb_path:hashpath(
                     UnattestedID,

@@ -672,7 +672,7 @@ do_test_restore() ->
             #{ <<"path">> => <<"compute">>, <<"slot">> => 2 },
             Opts
         ),
-    ?event{result_b, ResultB}),
+    ?event({result_b, ResultB}),
     ?assertEqual(<<"1337">>, hb_converge:get(<<"results/data">>, ResultB, #{})).
 
 now_results_test() ->

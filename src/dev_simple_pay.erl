@@ -29,7 +29,7 @@ debit(_, RawReq, NodeMsg) ->
         <<"pre">> ->
             ?event(payment, {debit_preprocessing}),
             Req = hb_converge:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
-            Signer = hb_converge:get(<<"attestors/1">>, Req, undefined, NodeMsg),
+            Signer = hd(hb_message:signers(Req)),
             UserBalance = get_balance(Signer, NodeMsg),
             Price = hb_converge:get(<<"amount">>, RawReq, 0, NodeMsg),
             ?event(payment,
@@ -48,7 +48,7 @@ debit(_, RawReq, NodeMsg) ->
 
 %% @doc Get the balance of a user in the ledger.
 balance(_, Req, NodeMsg) ->
-    Signer = hb_converge:get(<<"attestors/1">>, Req, NodeMsg),
+    Signer = hd(hb_message:signers(Req)),
     {ok, get_balance(Signer, NodeMsg)}.
 
 %% @doc Adjust a user's balance, normalizing their wallet ID first.
@@ -83,8 +83,7 @@ get_balance(Signer, NodeMsg) ->
 
 %% @doc Top up the user's balance in the ledger.
 topup(_, Req, NodeMsg) ->
-    SignerRaw = hb_converge:get(<<"attestors/1">>, Req, NodeMsg),
-    Signer = hb_util:human_id(SignerRaw),
+    Signer = hd(hb_message:signers(Req)),
     case hb_opts:get(operator, undefined, NodeMsg) of
         Unauth when Unauth =/= Signer -> {error, <<"Unauthorized">>};
         Operator ->

@@ -171,7 +171,7 @@ verify(Self, Req, Opts) ->
                     Req#{ <<"attestor">> => Attestor },
                     Opts
                 ),
-                ?event{verify_attestation_res, {attestor, Attestor}, {res, Res}}),
+                ?event({verify_attestation_res, {attestor, Attestor}, {res, Res}}),
                 Res
             end,
             maps:keys(Attestations)

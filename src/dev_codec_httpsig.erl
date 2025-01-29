@@ -88,7 +88,7 @@ id(Msg, Params, Opts) ->
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
         _ ->
-            ?eventregenerating_id),
+            ?event(regenerating_id),
             {ok, ResetMsg} = reset_hmac(Msg),
             {ok, ID} = find_id(ResetMsg),
             {ok, ID}
@@ -166,7 +166,7 @@ reset_hmac(RawMsg) ->
                             dev_codec_structured_conv:parse_dictionary(Signature)
                         )
                     ),
-                ?event{SigName, SigBin}),
+                ?event({SigName, SigBin}),
                 {SigName, SigBin}
             end,
             maps:to_list(Attestations)
@@ -175,11 +175,11 @@ reset_hmac(RawMsg) ->
         maps:from_list(lists:map(
             fun ({Attestor, #{ <<"signature-input">> := Inputs }}) ->
                 SigName = address_to_sig_name(Attestor),
-                ?event{trying_to_parse, Inputs}),
+                ?event({trying_to_parse, Inputs}),
                 Res = dev_codec_structured_conv:parse_dictionary(Inputs),
-                ?event{parsed_dict, Res}),
+                ?event({parsed_dict, Res}),
                 SingleSigInput = maps:get(SigName, maps:from_list(Res)),
-                ?event{single_sig_input, SingleSigInput}),
+                ?event({single_sig_input, SingleSigInput}),
                 {SigName, SingleSigInput}
             end,
             maps:to_list(Attestations)
@@ -206,7 +206,7 @@ reset_hmac(RawMsg) ->
             Msg
         )
     },
-    ?event{reset_hmac_complete, {explicit, Res}}),
+    ?event({reset_hmac_complete, {explicit, Res}}),
     Res.
 
 %% @doc Generate the ID of the message, with the current signature and signature
@@ -244,20 +244,20 @@ hmac(Msg) ->
 verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
     % Verify a hmac on the message
     ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
-    ?event{verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
+    ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
     {ok, Recalculated} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
     case find_id(Recalculated) of
         {error, no_id} -> {error, could_not_calculate_id};
         {ok, ExpectedID} ->
-            ?event{hmac_verified, {id, ExpectedID}}),
+            ?event({hmac_verified, {id, ExpectedID}}),
             {ok, true};
         {ok, ActualID} ->
-            ?event{hmac_failed_verification, {calculated_id, ActualID}, {expected, ExpectedID}}),
+            ?event({hmac_failed_verification, {calculated_id, ActualID}, {expected, ExpectedID}}),
             {ok, false}
     end;
 verify(MsgToVerify, Req, _Opts) ->
     % Validate a signed attestation.
-    ?event{verify, {target, MsgToVerify}, {req, Req}}),
+    ?event({verify, {target, MsgToVerify}, {req, Req}}),
     % Parse the signature parameters into a map.
     Attestor = maps:get(<<"attestor">>, Req),
     SigName = address_to_sig_name(Attestor),

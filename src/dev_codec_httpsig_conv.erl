@@ -68,14 +68,14 @@ from(HTTP) ->
                 Body
             )
         ),
-    ?event{from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
+    ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Finally, we need to add the signatures to the TABM
     {ok, Res} = attestations_from_signature(
         MsgWithoutSigs,
         maps:get(<<"signature">>, Headers, not_found),
         maps:get(<<"signature-input">>, Headers, not_found)
     ),
-    ?event{message_with_atts, Res}),
+    ?event({message_with_atts, Res}),
     Res.
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
@@ -190,25 +190,25 @@ from_body_parts(TABM, [Part | Rest]) ->
 %% @doc Populate the `/attestations` key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
 attestations_from_signature(Map, not_found, _RawSigInput) ->
-    ?event{no_sigs_found_in_from, {msg, Map}}),
+    ?event({no_sigs_found_in_from, {msg, Map}}),
     {ok, maps:without([<<"attestations">>], Map)};
 attestations_from_signature(Map, RawSig, RawSigInput) ->
     SfSigsKV = dev_codec_structured_conv:parse_dictionary(RawSig),
     SfInputs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSigInput)),
-    ?event{adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
+    ?event({adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
     % Build a Map for Signatures by gathering each Signature
     % with its corresponding Inputs.
     % 
     % Inputs are merged as fields on the Signature Map
     Attestations = maps:from_list(lists:map(
         fun ({SigName, Signature}) ->
-            ?event{adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
+            ?event({adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
             {list, _SigInputs, ParamsKVList} = maps:get(SigName, SfInputs, #{}),
             Params = maps:from_list(ParamsKVList),
             {string, EncPubKey} = maps:get(<<"keyid">>, Params),
             PubKey = hb_util:decode(EncPubKey),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
-            ?event{calculated_name, {address, Address}, {sig, Signature}, {inputs, {explicit, SfInputs}, {implicit, Params}}}),
+            ?event({calculated_name, {address, Address}, {sig, Signature}, {inputs, {explicit, SfInputs}, {implicit, Params}}}),
             SerializedSig = iolist_to_binary(
                 dev_codec_structured_conv:dictionary(
                     #{ SigName => Signature }
@@ -233,7 +233,7 @@ attestations_from_signature(Map, RawSig, RawSigInput) ->
         SfSigsKV
     )),
     Msg = Map#{ <<"attestations">> => Attestations },
-    ?event{adding_attestations, {msg, Msg}}),
+    ?event({adding_attestations, {msg, Msg}}),
     % Finally place the attestations as a top-level message on the parent message
     dev_codec_httpsig:reset_hmac(Msg).
 
