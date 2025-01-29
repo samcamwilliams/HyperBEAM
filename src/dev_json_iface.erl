@@ -159,7 +159,8 @@ message_to_json_struct(RawMsg) ->
                 _ -> Sig
             end}
     ],
-    {Fields}.
+    HeaderCaseFields = normalize_props(Fields),
+    {HeaderCaseFields}.
 
 safe_to_id(<<>>) -> <<>>;
 safe_to_id(ID) -> hb_util:human_id(ID).

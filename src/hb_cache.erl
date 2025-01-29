@@ -21,7 +21,7 @@
 %%% Binary Messages (TABMs), such that each of the keys in the message is
 %%% either a map or a direct binary.
 -module(hb_cache).
--export([read/2, read_output/3, write/2, write_binary/3]).
+-export([read/2, read_output/3, write/2, write_binary/3, link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
 -include("src/include/hb.hrl").
@@ -184,6 +184,15 @@ read_output(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
 read_output(Msg1, Msg2, Opts) when is_map(Msg1) and is_map(Msg2) ->
     read(hb_path:hashpath(Msg1, Msg2, Opts), Opts);
 read_output(_, _, _) -> not_found.
+
+%% @doc Make a link from one path to another in the store.
+%% Note: Argument order is `link(Src, Dst, Opts)'.
+link(Existing, New, Opts) ->
+    hb_store:make_link(
+        hb_opts:get(store, no_viable_store, Opts),
+        Existing,
+        New
+    ).
 
 %%% Tests
 

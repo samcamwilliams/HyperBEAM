@@ -9,7 +9,7 @@
 -module(dev_meta).
 -export([handle/2, info/3]).
 %%% Helper functions for processors
--export([all_signers/1]).
+-export([all_attestors/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -145,12 +145,12 @@ maybe_sign(Res, NodeMsg) ->
 %%% External helpers
 
 %% @doc Return the signers of a list of messages.
-all_signers(Msgs) ->
+all_attestors(Msgs) ->
     lists:foldl(
         fun(Msg, Acc) ->
-            Signers =
-                hb_converge:get(<<"signers">>, Msg, #{}, #{ hashpath => ignore }),
-            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Signers))
+            Attestors =
+                hb_converge:get(<<"attestors">>, Msg, #{}, #{ hashpath => ignore }),
+            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Attestors))
         end,
         [],
         Msgs
