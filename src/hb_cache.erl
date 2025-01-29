@@ -78,12 +78,6 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
             ?event({key_hashpath_from_unsigned, KeyHashPath}),
             {ok, Path} = write_message(Value, Store, Opts),
             hb_store:make_link(Store, Path, KeyHashPath),
-            % MessageLink =
-            %     case hb_path:term_to_path_parts(KeyHashPath) of
-            %         [MsgHashpath, _] -> unnecessary;
-            %         [NewRoot|_] ->
-            %             hb_store:make_link(Store, NewRoot, MsgHashpath)
-            %     end,
             ?event(
                 {
                     {link, KeyHashPath},
