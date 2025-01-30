@@ -73,7 +73,7 @@ verify(M1, M2, NodeOpts) ->
     AddressIsValid = SigIsValid andalso Signer == Address,
     ?event({address_is_valid, AddressIsValid}),
     % Step 3: Verify that the debug flag is disabled.
-    DebugDisabled = is_debug_disabled(Msg),
+    DebugDisabled = not is_debug(Msg),
     ?event({debug_disabled, DebugDisabled}),
     % Step 4: Verify measurement data (firmware, kernel, OS image) is trusted.
     IsTrustedSoftware = execute_is_trusted(M1, Msg, NodeOpts),
@@ -94,7 +94,8 @@ verify(M1, M2, NodeOpts) ->
     MeasurementIsValid = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
     ?event({measurement_is_valid, MeasurementIsValid}),
     % Step 6: Check the report's integrity.
-    ReportIsValid = true,
+    {ok, ReportIsValid} = dev_snp_nif:verify_signature(ReportJSON),
+	?event({report_is_valid, ReportIsValid}),
     Valid =
         lists:all(
             fun(Bool) -> Bool end,
@@ -121,6 +122,7 @@ generate(_M1, _M2, Opts) ->
     % Remove the `priv*` keys from the options.
     {ok, PublicNodeMsgID} = dev_message:id(NodeMsg = hb_private:reset(Opts)),
 	RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
+	?event(debug, {snp_node_msg, NodeMsg}),
     ?event(debug, {snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
     % Generate the attestation report.
 	?event(debug, {snp_address,  byte_size(Address)}),
@@ -145,8 +147,8 @@ generate(_M1, _M2, Opts) ->
     {ok, ReportMsg}.
 
 %% @doc Ensure that the node's debug policy is disabled.
-is_debug_disabled(Report) ->
-    (hb_converge:get(<<"policy">>, Report, #{}) band 16#2) =/= 0.
+is_debug(Report) ->
+    (hb_converge:get(<<"policy">>, Report, #{}) band (1 bsl 19)) =/= 0.
 
 %% @doc Ensure that all of the software hashes are trusted. The caller may set
 %% a specific device to use for the `is-trusted` key. The device must then
