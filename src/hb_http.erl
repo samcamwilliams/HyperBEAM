@@ -367,20 +367,25 @@ req_to_tabm_singleton(Req, Opts) ->
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
     {ok, Body} = read_body(Req),
     Headers =
-        RawHeaders#{
-            <<"path">> =>
-                iolist_to_binary(
-                    cowboy_req:uri(
-                        Req,
-                        #{
-                            host => undefined,
-                            port => undefined,
-                            scheme => undefined
-                        }
-                    )
-                ),
-            <<"method">> => cowboy_req:method(Req)
-        },
+        case maps:get(<<"path">>, RawHeaders, undefined) of
+            undefined ->
+                RawHeaders#{
+                    <<"path">> =>
+                        iolist_to_binary(
+                            cowboy_req:uri(
+                                Req,
+                                #{
+                                    host => undefined,
+                                    port => undefined,
+                                    scheme => undefined
+                                }
+                            )
+                    ),
+                    <<"method">> => cowboy_req:method(Req)
+                };
+            _ -> RawHeaders
+        end,
+    ?event({recvd_req_with_headers, {raw, RawHeaders}, {headers, Headers}}),
     HTTPEncoded =
         (maps:without([<<"content-length">>], Headers))#{
             <<"body">> => Body
