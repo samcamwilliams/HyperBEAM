@@ -372,7 +372,7 @@ req_to_tabm_singleton(Req, Opts) ->
 
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
     {ok, Body} = read_body(Req),
-    Headers =
+    HeadersWithPath =
         case maps:get(<<"path">>, RawHeaders, undefined) of
             undefined ->
                 RawHeaders#{
@@ -386,14 +386,14 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
                                     scheme => undefined
                                 }
                             )
-                    ),
-                    <<"method">> => cowboy_req:method(Req)
+                    )
                 };
             _ -> RawHeaders
         end,
-    ?event({recvd_req_with_headers, {raw, RawHeaders}, {headers, Headers}}),
+    HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
+    ?event({recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
     HTTPEncoded =
-        (maps:without([<<"content-length">>], Headers))#{
+        (maps:without([<<"content-length">>], HeadersWithMethod))#{
             <<"body">> => Body
         },
     dev_codec_httpsig_conv:from(HTTPEncoded).
