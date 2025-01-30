@@ -10,7 +10,9 @@
 
 %%% Test constants
 %% Matching attestation report is found in `test/snp-attestation` in 
-%% `dev_codec_flat:serialize/1`'s format.
+%% `dev_codec_flat:serialize/1`'s format. Alternatively, set the `TEST_NODE`
+%% constant to a live node to run the tests against it.
+-define(TEST_NODE, undefined).
 -define(TEST_TRUSTED_SOFTWARE, #{
     vcpus => 1,
     vcpu_type => 5, 
@@ -47,10 +49,10 @@ real_node_test() ->
         ?assertEqual({ok, true}, Result)
     end.
 
-% Should take in options to set for the device such as kernel, initrd, firmware,
-% and append hashes and make them available to the device. Only runnable once,
-% and only if the operator is not set to an address (and thus, the node has not
-% had any priviledged access).
+%% @doc Should take in options to set for the device such as kernel, initrd, firmware,
+%% and append hashes and make them available to the device. Only runnable once,
+%% and only if the operator is not set to an address (and thus, the node has not
+%% had any priviledged access).
 init(M1, _M2, Opts) ->
     case {hb_opts:get(trusted, #{}, Opts), hb_opts:get(operator, undefined, Opts)} of
         {#{snp_hashes := _}, _} ->
@@ -215,6 +217,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
             not_found -> M1#{ <<"device">> => <<"snp@1.0">> };
             Device -> {as, Device, M1}
         end,
+    %?event(debug, {starting_to_validate_software, {mod_m1, {explicit, ModM1}}, {m2, {explicit, Msg}}, {node_opts, {explicit, NodeOpts}}}),
     Result = lists:all(
         fun(ReportKey) ->
             ReportVal = hb_converge:get(ReportKey, Msg, NodeOpts),
@@ -243,23 +246,15 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
 %% @doc Default implementation of a resolver for trusted software. Searches the
 %% `trusted` key in the base message for a list of trusted values, and checks
 %% if the value in the request message is a member of that list.
-trusted(Msg1, Msg2, NodeOpts) ->
+trusted(_Msg1, Msg2, NodeOpts) ->
     Key = hb_converge:get(<<"key">>, Msg2, NodeOpts),
     Body = hb_converge:get(<<"body">>, Msg2, not_found, NodeOpts),
-
     %% Ensure Trusted is always a map
     TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
     PropertyName = hb_converge:get(Key, TrustedSoftware, not_found, NodeOpts),
     ?event(debug, {trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
-    KeyBin = if is_atom(Key) -> atom_to_binary(Key, utf8); true -> Key end,
-
-    TrustKey = maps:get(KeyBin, Trusted, not_found),
-    ?event(debug, {trust_key, TrustKey, maps:is_key(KeyBin, Trusted)}),
-
     %% Final trust validation
     {ok, PropertyName == Body}.
-
-
 
 %% @doc Ensure that the report data matches the expected report data.
 report_data_matches(Address, NodeMsgID, ReportData) ->
