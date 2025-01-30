@@ -319,5 +319,5 @@ cache_suite_test_() ->
     ]).
 
 run_test() ->
-    Opts = #{ store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }} },
+    Opts = #{ store => {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }} },
     test_store_simple_signed_message(Opts).

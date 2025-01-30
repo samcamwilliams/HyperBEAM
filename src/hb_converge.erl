@@ -431,14 +431,12 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
             update ->
                 Priv = hb_private:from_message(Msg3),
                 HP = hb_path:hashpath(Msg1, Msg2, Opts),
-                if not is_binary(HP) ->
+                if not is_binary(HP) or not is_map(Priv) ->
                     throw({invalid_hashpath, {hp, HP}, {msg3, Msg3}});
                 true ->
-                    % TODO: UPDATE HASHPATH
-                    {ok, Msg3}
+                    {ok, Msg3#{ <<"priv">> => Priv#{ <<"hashpath">> => HP } }}
                 end;
             reset ->
-                %?event(hashpath, {resetting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
                 Priv = hb_private:from_message(Msg3),
                 {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
             ignore ->
