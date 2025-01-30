@@ -87,11 +87,11 @@ preprocess(State, Raw, NodeMsg) ->
                             % enough funds for the request, so we proceed.
                             {ok, Messages};
                         {ok, false} ->
-                            ?event(payment, {pre_ledger_validation, {error, false}}),
+                            ?event(payment, {pre_ledger_validation, false}),
                             {error, 
                                 #{
                                     <<"status">> => 429,
-                                    <<"reason">> => <<"Insufficient funds">>,
+                                    <<"body">> => <<"Insufficient funds">>,
                                     <<"price">> => Price
                                 }
                             };

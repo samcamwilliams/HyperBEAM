@@ -78,7 +78,9 @@ short_id(Bin) when byte_size(Bin) > 43 andalso byte_size(Bin) < 100 ->
     end;
 short_id(<< "/", SingleElemHashpath/binary >>) ->
     Enc = short_id(SingleElemHashpath),
-    << "/", Enc/binary >>;
+    if is_binary(Enc) -> << "/", Enc/binary >>;
+    true -> undefined
+    end;
 short_id(Key) when byte_size(Key) < 43 -> Key;
 short_id(_) -> undefined.
 

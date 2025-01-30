@@ -120,8 +120,10 @@ id(Msg, RawAttestors, Opts) ->
 
 %% @doc Sign a message with the given wallet. Only supports the `tx' format
 %% at the moment.
-attest(Msg, Wallet) ->
-    attest(Msg, Wallet, <<"httpsig@1.0">>).
+attest(Msg, WalletOrOpts) ->
+    attest(Msg, WalletOrOpts, <<"httpsig@1.0">>).
+attest(Msg, Opts, Format) when is_map(Opts) ->
+    attest(Msg, hb_opts:get(priv_wallet, no_viable_wallet, Opts), Format);
 attest(Msg, Wallet, Format) ->
     {ok, Signed} =
         dev_message:attest(
@@ -250,7 +252,7 @@ format(Map, Indent) when is_map(Map) ->
             Indent
         ),
     % Put the path and device rows into the output at the _top_ of the map.
-    PriorityKeys = [{<<"path">>, ValOrUndef(path)}, {<<"device">>, ValOrUndef(device)}],
+    PriorityKeys = [{<<"path">>, ValOrUndef(<<"path">>)}, {<<"device">>, ValOrUndef(<<"device">>)}],
     FooterKeys =
         case hb_private:from_message(Map) of
             PrivMap when map_size(PrivMap) == 0 -> [];
@@ -268,7 +270,10 @@ format(Map, Indent) when is_map(Map) ->
                             <<"path">>,
                             <<"device">>
                         ];
-                    false -> []
+                    false -> [
+                        <<"path">>,
+                        <<"device">>
+                    ]
                 end
             )
         ) ++ FooterKeys,
@@ -922,18 +927,18 @@ hashpath_sign_verify_test(Codec) ->
             ),
             #{}
         ),
-    ?event(debug, {msg, {explicit, Msg}}),
+    ?event({msg, {explicit, Msg}}),
     {ok, SignedMsg} =
         dev_message:attest(
             Msg,
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    ?event({signed_msg, {explicit, SignedMsg}}),
     {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
-    ?event(debug, {verify_hmac_res, {explicit, Res}}),
+    ?event({verify_hmac_res, {explicit, Res}}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event(debug, {verified, {explicit, SignedMsg}}),
+    ?event({verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
     ?event(hmac, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),

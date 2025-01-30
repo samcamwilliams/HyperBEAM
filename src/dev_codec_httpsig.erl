@@ -300,7 +300,7 @@ verify(MsgToVerify, Req, _Opts) ->
                     <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
                 },
-            ?event(debug, {encoded_msg_for_verification, EncWithSig}),
+            ?event({encoded_msg_for_verification, EncWithSig}),
             {
                 ok,
                 verify_auth(

@@ -72,7 +72,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             Opts
         ),
     case ar_http:req(Req, Opts) of
-        {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
+        {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
             ?event(
                 {
                     http_rcvd,
@@ -135,32 +135,38 @@ request(Method, Peer, Path, RawMessage, Opts) ->
 %% @doc Given a message, return the information needed to make the request.
 message_to_request(M, Opts) ->
     Method = hb_converge:get(<<"method">>, M, <<"GET">>, Opts),
+    % We must remove the path and host from the message, because they are not
+    % valid for outbound requests. The path is retrieved from the route, and
+    % the host should already be known to the caller.
+    MsgWithoutMeta = maps:without([<<"path">>, <<"host">>], M),
     % Get the route for the message
     case dev_router:route(#{}, M, Opts) of
-        {ok, URL = <<"http", Sec, _/binary>>} ->
+        {ok, URL} when is_binary(URL) ->
             % The request is a direct HTTP URL, so we need to split the
             % URL into a host and path.
             URI = uri_string:parse(URL),
+            ?event(http, {parsed_uri, {uri, {explicit, URI}}}),
             Port =
                 case maps:get(port, URI, undefined) of
                     undefined ->
                         % If no port is specified, use 80 for HTTP and 443
                         % for HTTPS.
-                        case Sec of
-                            $s -> <<"443">>;
+                        case URL of
+                            <<"https", _/binary>> -> <<"443">>;
                             _ -> <<"80">>
                         end;
                     X -> integer_to_binary(X)
                 end,
+            Protocol = maps:get(scheme, URI, <<"https">>),
             Host = maps:get(host, URI, <<"localhost">>),
-            Node = << Host/binary, ":", Port/binary  >>,
+            Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
             Path = maps:get(path, URI, <<"/">>),
-            ?event({relay, {node, Node}, {method, Method}, {path, Path}}),
-            {ok, Method, Node, Path, M};
+            ?event(http, {relay, {node, Node}, {method, Method}, {path, Path}}),
+            {ok, Method, Node, Path, MsgWithoutMeta};
         {ok, Route} ->
             % The result is a route, so we leave it to `request` to handle it.
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
-            {ok, Method, Route, Path, M};
+            {ok, Method, Route, Path, MsgWithoutMeta};
         {error, Reason} ->
             {error, {no_viable_route, Reason}}
     end.
@@ -296,7 +302,19 @@ reply(Req, Status, RawMessage, Opts) ->
             {enc_body, EncodedBody}
         }
     ),
-    Req2 = cowboy_req:stream_reply(Status, EncodedHeaders, Req),
+    % Cowboy handles cookies in headers separately, so we need to manipulate
+    % the request to set the cookies such that they will be sent over the wire
+    % unmodified.
+    SetCookiesReq =
+        case maps:get(<<"set-cookie">>, EncodedHeaders, undefined) of
+            undefined -> Req#{ resp_headers => EncodedHeaders };
+            Cookies ->
+                Req#{
+                    resp_headers => EncodedHeaders,
+                    resp_cookies => #{ <<"__HB_SET_COOKIE">> => Cookies }
+                }
+        end,
+    Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
     Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
 
@@ -354,23 +372,28 @@ req_to_tabm_singleton(Req, Opts) ->
 
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
     {ok, Body} = read_body(Req),
-    Headers =
-        RawHeaders#{
-            <<"path">> =>
-                iolist_to_binary(
-                    cowboy_req:uri(
-                        Req,
-                        #{
-                            host => undefined,
-                            port => undefined,
-                            scheme => undefined
-                        }
+    HeadersWithPath =
+        case maps:get(<<"path">>, RawHeaders, undefined) of
+            undefined ->
+                RawHeaders#{
+                    <<"path">> =>
+                        iolist_to_binary(
+                            cowboy_req:uri(
+                                Req,
+                                #{
+                                    host => undefined,
+                                    port => undefined,
+                                    scheme => undefined
+                                }
+                            )
                     )
-                ),
-            <<"method">> => cowboy_req:method(Req)
-        },
+                };
+            _ -> RawHeaders
+        end,
+    HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
+    ?event({recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
     HTTPEncoded =
-        (maps:without([<<"content-length">>], Headers))#{
+        (maps:without([<<"content-length">>], HeadersWithMethod))#{
             <<"body">> => Body
         },
     dev_codec_httpsig_conv:from(HTTPEncoded).
@@ -382,8 +405,6 @@ read_body(Req0, Acc) ->
         {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
         {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
-
-%%% Tests
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),

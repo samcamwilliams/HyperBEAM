@@ -6,8 +6,8 @@
 %%% ```
 %%%     M1/Init ->
 %%%         Assumes:
-%%%             M1/Process
-%%%             M1/[Prefix]/Image
+%%%             M1/process
+%%%             M1/[Prefix]/image
 %%%         Generates:
 %%%             /priv/wasm/instance
 %%%             /priv/wasm/import-resolver

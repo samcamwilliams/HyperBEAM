@@ -7,7 +7,7 @@
 -module(dev_message).
 %%% Base Converge reserved keys:
 -export([info/0, keys/1]).
--export([set/3, remove/2, get/2, get/3]).
+-export([set/3, set_path/3, remove/2, get/2, get/3]).
 %%% Attestation-specific keys:
 -export([id/1, id/2, id/3]).
 -export([attest/3, attestors/1, attestors/2, attestors/3, verify/3]).
@@ -273,6 +273,12 @@ set(Message1, NewValuesMsg, _Opts) ->
 			)
 		)
 	}.
+
+%% @doc Special case of `set/3' for setting the `path' key. This cannot be set
+%% using the normal `set' function, as the `path' is a reserved key, necessary 
+%% for Converge to know the key to evaluate in requests.
+set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
+    {ok, Message1#{ <<"path">> => Value }}.
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ <<"item">> := Key }) ->
