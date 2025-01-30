@@ -51,7 +51,7 @@ verify(M1, M2, NodeOpts) ->
     Address = hb_converge:get(<<"address">>, Msg, NodeOpts),
     ?event({snp_address, Address}),
     NodeMsgID =
-        case hb_converge:get(<<"node-message">>, Msg, NodeOpts) of
+        case hb_converge:get(<<"node-message">>, Msg, NodeOpts#{ hashpath => ignore }) of
             undefined ->
                 case hb_converge:get(<<"node-message-id">>, Msg, NodeOpts) of
                     undefined -> {error, missing_node_msg_id};
