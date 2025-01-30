@@ -296,7 +296,19 @@ reply(Req, Status, RawMessage, Opts) ->
             {enc_body, EncodedBody}
         }
     ),
-    Req2 = cowboy_req:stream_reply(Status, EncodedHeaders, Req),
+    % Cowboy handles cookies in headers separately, so we need to manipulate
+    % the request to set the cookies such that they will be sent over the wire
+    % unmodified.
+    SetCookiesReq =
+        case maps:get(<<"set-cookie">>, EncodedHeaders, undefined) of
+            undefined -> Req#{ resp_headers => EncodedHeaders };
+            Cookies ->
+                Req#{
+                    resp_headers => EncodedHeaders,
+                    resp_cookies => #{ <<"__HB_SET_COOKIE">> => Cookies }
+                }
+        end,
+    Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
     Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
 
