@@ -15,24 +15,25 @@
     vcpu_type => 5, 
     vmm_type => 1,
     guest_features => 1,
-    firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
-    kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
-    initrd => "853ebf56bc6ba5f08bd5583055a457898ffa3545897bee00103d3066b8766f5c",
-    append => "50109b0411fb62260ce47ca17bf43b968aba1d32f964c5f816501c35d483f084"
+    firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+    kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+    initrd => <<"853ebf56bc6ba5f08bd5583055a457898ffa3545897bee00103d3066b8766f5c">>,
+    append => <<"6cb8a0082b483849054f93b203aa7d98439736e44163d614f79380ca368cc77e">>
 }).
 
 real_node_test() ->
+    application:ensure_all_started(hb),
     if ?TEST_NODE == undefined ->
-        {skip, "Test node not set."};
+        {skip, <<"Test node not set.">>};
     true ->
         {ok, Report} =
-        hb_http:get(
-            ?TEST_NODE,
-            <<"/~snp@1.0/generate">>,
-            #{
-                <<"is-trusted-device">> => <<"snp@1.0">>
-            }
-        ),
+            hb_http:get(
+                ?TEST_NODE,
+                <<"/~snp@1.0/generate">>,
+                #{
+                    <<"is-trusted-device">> => <<"snp@1.0">>
+                }
+            ),
         ?event(debug, {snp_report_rcvd, Report}),
         ?event(debug, {report_verifies, hb_message:verify(Report)}),
         Result =
@@ -109,12 +110,12 @@ verify(M1, M2, NodeOpts) ->
     NonceMatches = report_data_matches(Address, NodeMsgID, Nonce),
     ?event({nonce_matches, NonceMatches}),
     % Step 2: Verify the address and the signature.
-    Signer = hb_converge:get(<<"attestors/1">>, Msg, NodeOpts),
-    ?event({snp_signer, Signer}),
-    SigIsValid= hb_message:verify(MsgWithJSONReport),
+    Signers = hb_message:signers(MsgWithJSONReport),
+    ?event({snp_signers, Signers}),
+    SigIsValid = hb_message:verify(MsgWithJSONReport),
     ?event({snp_sig_is_valid, SigIsValid}),
-    AddressIsValid = Signer == Address,
-    ?event({address_is_valid, AddressIsValid, {signer, Signer}, {address, Address}}),
+    AddressIsValid = lists:member(Address, Signers),
+    ?event({address_is_valid, AddressIsValid, {signer, Signers}, {address, Address}}),
     % Step 3: Verify that the debug flag is disabled.
     DebugDisabled = not is_debug(Msg),
     ?event({debug_disabled, DebugDisabled}),
@@ -134,14 +135,14 @@ verify(M1, M2, NodeOpts) ->
     ?event({expected_measurement, Expected}),
     Measurement = hb_converge:get(<<"measurement">>, Msg, NodeOpts),
     ?event({measurement, {explicit,Measurement}}),
-    MeasurementIsValid = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
+    {ok, MeasurementIsValid} = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
     ?event({measurement_is_valid, MeasurementIsValid}),
     % Step 6: Check the report's integrity.
     {ok, ReportIsValid} = dev_snp_nif:verify_signature(ReportJSON),
 	?event({report_is_valid, ReportIsValid}),
     Valid =
         lists:all(
-            fun(Bool) -> Bool end,
+            fun({ok, Bool}) -> Bool; (Bool) -> Bool end,
             [
                 NonceMatches,
 				SigIsValid,
@@ -246,16 +247,16 @@ trusted(Msg1, Msg2, NodeOpts) ->
     Body = hb_converge:get(<<"body">>, Msg2, not_found, NodeOpts),
 
     %% Ensure Trusted is always a map
-    Trusted = hb_opts:get(trusted, #{}, NodeOpts),
-
-    %% Convert Key to binary if it's an atom
+    TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
+    PropertyName = hb_converge:get(Key, TrustedSoftware, not_found, NodeOpts),
+    ?event(debug, {trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
     KeyBin = if is_atom(Key) -> atom_to_binary(Key, utf8); true -> Key end,
 
     TrustKey = maps:get(KeyBin, Trusted, not_found),
     ?event(debug, {trust_key, TrustKey, maps:is_key(KeyBin, Trusted)}),
 
     %% Final trust validation
-    {ok, TrustKey == Body}.
+    {ok, PropertyName == Body}.
 
 
 
