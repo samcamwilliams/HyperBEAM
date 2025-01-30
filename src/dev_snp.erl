@@ -8,21 +8,65 @@
 -define(ATTESTED_PARAMETERS, [vcpus, vcpu_type, vmm_type, guest_features,
 	firmware, kernel, initrd, append]).
 
+%%% Test constants
+-define(TEST_NODE, undefined).
+-define(TEST_TRUSTED_SOFTWARE, #{
+    vcpus => 1,
+    vcpu_type => 5, 
+    vmm_type => 1,
+    guest_features => 1,
+    firmware => "b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510",
+    kernel => "69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576",
+    initrd => "853ebf56bc6ba5f08bd5583055a457898ffa3545897bee00103d3066b8766f5c",
+    append => "50109b0411fb62260ce47ca17bf43b968aba1d32f964c5f816501c35d483f084"
+}).
 
-% Should take in options to set for the device such as kernel, initrd, firmware, and append hashes and make them available to the device.
+real_node_test() ->
+    if ?TEST_NODE == undefined ->
+        {skip, "Test node not set."};
+    true ->
+        {ok, Report} =
+        hb_http:get(
+            ?TEST_NODE,
+            <<"/~snp@1.0/generate">>,
+            #{
+                <<"is-trusted-device">> => <<"snp@1.0">>
+            }
+        ),
+        ?event(debug, {snp_report_rcvd, Report}),
+        ?event(debug, {report_verifies, hb_message:verify(Report)}),
+        Result =
+            verify(
+                Report,
+                #{ <<"target">> => <<"self">> },
+                #{ trusted => ?TEST_TRUSTED_SOFTWARE }
+            ),
+        ?event(debug, {snp_validation_res, Result}),
+        ?assertEqual({ok, true}, Result)
+    end.
+
+% Should take in options to set for the device such as kernel, initrd, firmware,
+% and append hashes and make them available to the device. Only runnable once,
+% and only if the operator is not set to an address (and thus, the node has not
+% had any priviledged access).
 init(M1, _M2, Opts) ->
-	?event(message, M1),
-	?event(message2, _M2),
-	Snp_hashes = hb_converge:get(<<"body">>, M1, Opts),
-	SNP_Result = jiffy:decode(Snp_hashes, [return_maps]),
-	Hashes = maps:get(<<"snp_hashes">>, SNP_Result),
-	ok = hb_http_server:set_opts(Opts#{
-		trusted => maps:merge(hb_converge:get(<<"trusted">>, Opts, #{}), Hashes),
-		snp_hashes => Hashes
-	}),
-
-
-	{ok, "ALLGOOD"}.
+    case {hb_opts:get(trusted, #{}, Opts), hb_opts:get(operator, undefined, Opts)} of
+        {#{snp_hashes := _}, _} ->
+            {error, <<"Already initialized.">>};
+        {_, Addr} when is_binary(Addr) ->
+            {error, <<"Cannot enable SNP if operator is already set.">>};
+        _ ->
+            SnpHashes = hb_converge:get(<<"body">>, M1, Opts),
+            SNPDecoded = jiffy:decode(SnpHashes, [return_maps]),
+            Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
+            ok = hb_http_server:set_opts(Opts#{
+                % Add our trusted hashes to the device's trusted software list
+                trusted => maps:merge(hb_opts:get(trusted, #{}, Opts), Hashes),
+                % Set our hashes to the given hashes
+                snp_hashes => Hashes
+            }),
+            {ok, <<"SNP node initialized successfully.">>}
+    end.
 
 %% @doc Verify an attestation report message; validating the identity of a 
 %% remote node, its ephemeral private address, and the integrity of the report.
