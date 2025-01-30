@@ -83,4 +83,4 @@ verify_signature_test() ->
 	%% Define a mock report (JSON string) as binary
     {ok, MockAttestation} = file:read_file("test/snp-attestation.json"),
 	Result = dev_snp_nif:verify_signature(MockAttestation),
-	?assertMatch({ok, <<"Signature verification successful">>}, Result).
+	?assertMatch({ok, true}, Result).
