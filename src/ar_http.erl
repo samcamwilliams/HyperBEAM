@@ -269,6 +269,7 @@ terminate(Reason, #state{ status_by_pid = StatusByPID }) ->
 
 open_connection(#{ peer := Peer }, Opts) ->
     {Host, Port} = parse_peer(Peer, Opts),
+    ?event(http, {parsed_peer, {peer, Peer}, {host, Host}, {port, Port}}),
 	ConnectTimeout =
 		hb_opts:get(http_connect_timeout, no_connect_timeout, Opts),
     BaseGunOpts =
@@ -290,6 +291,7 @@ open_connection(#{ peer := Peer }, Opts) ->
             443 -> tls;
             _ -> tcp
         end,
+    % Fallback through earlier HTTP versions if the protocol is not supported.
     GunOpts =
         case Proto = hb_opts:get(protocol, no_proto, Opts) of
             http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
