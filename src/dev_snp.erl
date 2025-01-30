@@ -2,10 +2,75 @@
 %%% as well as generating them, if called in an appropriate environment.
 -module(dev_snp).
 -export([generate/3, verify/3, trusted/3]).
+-export([init/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -define(ATTESTED_PARAMETERS, [vcpus, vcpu_type, vmm_type, guest_features,
 	firmware, kernel, initrd, append]).
+
+%%% Test constants
+%% Matching attestation report is found in `test/snp-attestation` in 
+%% `dev_codec_flat:serialize/1`'s format. Alternatively, set the `TEST_NODE`
+%% constant to a live node to run the tests against it.
+-define(TEST_NODE, undefined).
+-define(TEST_TRUSTED_SOFTWARE, #{
+    vcpus => 1,
+    vcpu_type => 5, 
+    vmm_type => 1,
+    guest_features => 1,
+    firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+    kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+    initrd => <<"853ebf56bc6ba5f08bd5583055a457898ffa3545897bee00103d3066b8766f5c">>,
+    append => <<"6cb8a0082b483849054f93b203aa7d98439736e44163d614f79380ca368cc77e">>
+}).
+
+real_node_test() ->
+    application:ensure_all_started(hb),
+    if ?TEST_NODE == undefined ->
+        {skip, <<"Test node not set.">>};
+    true ->
+        {ok, Report} =
+            hb_http:get(
+                ?TEST_NODE,
+                <<"/~snp@1.0/generate">>,
+                #{
+                    <<"is-trusted-device">> => <<"snp@1.0">>
+                }
+            ),
+        ?event(debug, {snp_report_rcvd, Report}),
+        ?event(debug, {report_verifies, hb_message:verify(Report)}),
+        Result =
+            verify(
+                Report,
+                #{ <<"target">> => <<"self">> },
+                #{ trusted => ?TEST_TRUSTED_SOFTWARE }
+            ),
+        ?event(debug, {snp_validation_res, Result}),
+        ?assertEqual({ok, true}, Result)
+    end.
+
+%% @doc Should take in options to set for the device such as kernel, initrd, firmware,
+%% and append hashes and make them available to the device. Only runnable once,
+%% and only if the operator is not set to an address (and thus, the node has not
+%% had any priviledged access).
+init(M1, _M2, Opts) ->
+    case {hb_opts:get(trusted, #{}, Opts), hb_opts:get(operator, undefined, Opts)} of
+        {#{snp_hashes := _}, _} ->
+            {error, <<"Already initialized.">>};
+        {_, Addr} when is_binary(Addr) ->
+            {error, <<"Cannot enable SNP if operator is already set.">>};
+        _ ->
+            SnpHashes = hb_converge:get(<<"body">>, M1, Opts),
+            SNPDecoded = jiffy:decode(SnpHashes, [return_maps]),
+            Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
+            ok = hb_http_server:set_opts(Opts#{
+                % Add our trusted hashes to the device's trusted software list
+                trusted => maps:merge(hb_opts:get(trusted, #{}, Opts), Hashes),
+                % Set our hashes to the given hashes
+                snp_hashes => Hashes
+            }),
+            {ok, <<"SNP node initialized successfully.">>}
+    end.
 
 %% @doc Verify an attestation report message; validating the identity of a 
 %% remote node, its ephemeral private address, and the integrity of the report.
@@ -34,7 +99,7 @@ verify(M1, M2, NodeOpts) ->
     Address = hb_converge:get(<<"address">>, Msg, NodeOpts),
     ?event({snp_address, Address}),
     NodeMsgID =
-        case hb_converge:get(<<"node-message">>, Msg, NodeOpts) of
+        case hb_converge:get(<<"node-message">>, Msg, NodeOpts#{ hashpath => ignore }) of
             undefined ->
                 case hb_converge:get(<<"node-message-id">>, Msg, NodeOpts) of
                     undefined -> {error, missing_node_msg_id};
@@ -48,15 +113,14 @@ verify(M1, M2, NodeOpts) ->
     NonceMatches = report_data_matches(Address, NodeMsgID, Nonce),
     ?event({nonce_matches, NonceMatches}),
     % Step 2: Verify the address and the signature.
-    Signer = hb_converge:get(<<"attestors/1">>, Msg, NodeOpts),
-    ?event({snp_signer, Signer}),
-    %{ok, SigIsValid} = hb_message:verify(MsgWithJSONReport),
-	SigIsValid = true,
+    Signers = hb_message:signers(MsgWithJSONReport),
+    ?event({snp_signers, Signers}),
+    SigIsValid = hb_message:verify(MsgWithJSONReport),
     ?event({snp_sig_is_valid, SigIsValid}),
-    AddressIsValid = SigIsValid andalso Signer == Address,
-    ?event({address_is_valid, AddressIsValid}),
+    AddressIsValid = lists:member(Address, Signers),
+    ?event({address_is_valid, AddressIsValid, {signer, Signers}, {address, Address}}),
     % Step 3: Verify that the debug flag is disabled.
-    DebugDisabled = is_debug_disabled(Msg),
+    DebugDisabled = not is_debug(Msg),
     ?event({debug_disabled, DebugDisabled}),
     % Step 4: Verify measurement data (firmware, kernel, OS image) is trusted.
     IsTrustedSoftware = execute_is_trusted(M1, Msg, NodeOpts),
@@ -69,19 +133,22 @@ verify(M1, M2, NodeOpts) ->
 				maps:to_list(maps:with(lists:map(fun atom_to_binary/1, ?ATTESTED_PARAMETERS), Msg))
 			)
 		),
+	?event({args, Args}),
     {ok,Expected} = dev_snp_nif:compute_launch_digest(Args),
     ?event({expected_measurement, Expected}),
     Measurement = hb_converge:get(<<"measurement">>, Msg, NodeOpts),
     ?event({measurement, {explicit,Measurement}}),
-    MeasurementIsValid = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
+    {ok, MeasurementIsValid} = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
     ?event({measurement_is_valid, MeasurementIsValid}),
     % Step 6: Check the report's integrity.
-    ReportIsValid = true,
+    {ok, ReportIsValid} = dev_snp_nif:verify_signature(ReportJSON),
+	?event({report_is_valid, ReportIsValid}),
     Valid =
         lists:all(
-            fun(Bool) -> Bool end,
+            fun({ok, Bool}) -> Bool; (Bool) -> Bool end,
             [
                 NonceMatches,
+				SigIsValid,
                 AddressIsValid,
                 DebugDisabled,
                 IsTrustedSoftware,
@@ -109,7 +176,8 @@ generate(_M1, _M2, Opts) ->
                 Opts
             ),
 	RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
-    ?event({snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
+	?event(debug, {snp_node_msg, NodeMsg}),
+    ?event(debug, {snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
     % Generate the attestation report.
 	?event({snp_address,  byte_size(Address)}),
     ReportData = generate_nonce(Address, RawPublicNodeMsgID),
@@ -133,8 +201,8 @@ generate(_M1, _M2, Opts) ->
     {ok, ReportMsg}.
 
 %% @doc Ensure that the node's debug policy is disabled.
-is_debug_disabled(Report) ->
-    (hb_converge:get(<<"policy">>, Report, #{}) band 16#2) =/= 0.
+is_debug(Report) ->
+    (hb_converge:get(<<"policy">>, Report, #{}) band (1 bsl 19)) =/= 0.
 
 %% @doc Ensure that all of the software hashes are trusted. The caller may set
 %% a specific device to use for the `is-trusted` key. The device must then
@@ -149,6 +217,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
             not_found -> M1#{ <<"device">> => <<"snp@1.0">> };
             Device -> {as, Device, M1}
         end,
+    %?event(debug, {starting_to_validate_software, {mod_m1, {explicit, ModM1}}, {m2, {explicit, Msg}}, {node_opts, {explicit, NodeOpts}}}),
     Result = lists:all(
         fun(ReportKey) ->
             ReportVal = hb_converge:get(ReportKey, Msg, NodeOpts),
@@ -177,16 +246,20 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
 %% @doc Default implementation of a resolver for trusted software. Searches the
 %% `trusted` key in the base message for a list of trusted values, and checks
 %% if the value in the request message is a member of that list.
-trusted(Msg1, Msg2, NodeOpts) ->
-	%?event({trusted, Msg1, Msg2, NodeOpts}),
+trusted(_Msg1, Msg2, NodeOpts) ->
     Key = hb_converge:get(<<"key">>, Msg2, NodeOpts),
-    Trusted = hb_converge:get([<<"trusted">>, Key], Msg1, [], NodeOpts),
     Body = hb_converge:get(<<"body">>, Msg2, not_found, NodeOpts),
-    ?event({checking_trusted, Key, {trusted_list, Trusted}, {body, Body}}),
-    {ok, lists:member(Body, if is_list(Trusted) -> Trusted; true -> [Trusted] end)}.
+    %% Ensure Trusted is always a map
+    TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
+    PropertyName = hb_converge:get(Key, TrustedSoftware, not_found, NodeOpts),
+    ?event(debug, {trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
+    %% Final trust validation
+    {ok, PropertyName == Body}.
 
 %% @doc Ensure that the report data matches the expected report data.
 report_data_matches(Address, NodeMsgID, ReportData) ->
+	?event(debug, {generated_nonce, binary_to_list(generate_nonce(Address, NodeMsgID))}),
+	?event(debug, {expected_nonce, binary_to_list(ReportData)}),
     generate_nonce(Address, NodeMsgID) == ReportData.
 
 %% @doc Generate the nonce to use in the attestation report.

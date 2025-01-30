@@ -77,10 +77,10 @@ fn verify_measurement<'a>(
     // Step 4: Compare the actual and expected measurements.
     if actual_measurement == &expected_measurement {
         //log_message("INFO", file!(), line!(), "Measurements match.");
-        Ok((atom::ok(), "Measurements match").encode(env))
+        Ok((atom::ok(), true).encode(env))
     } else {
         //log_message("ERROR", file!(), line!(), "Measurements do not match.");
-        Ok((atom::error(), "Measurements do not match").encode(env))
+        Ok((atom::error(), false).encode(env))
     }
 }
 
@@ -306,5 +306,5 @@ fn verify_signature<'a>(
     }
 
     //log_message("INFO", file!(), line!(), "Signature verification successful.");
-    Ok((ok(), "Signature verification successful").encode(env))
+    Ok((ok(), true).encode(env))
 }

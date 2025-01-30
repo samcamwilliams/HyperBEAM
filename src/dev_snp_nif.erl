@@ -77,10 +77,10 @@ verify_measurement_test() ->
 	ExpectedMeasurement = <<94,87,4,197,20,11,255,129,179,197,146,104,8,212,152,248,110,11,60,246,82,254,24,55,201,47,157,229,163,82,108,66,191,138,241,229,40,144,133,170,116,109,17,62,20,241,144,119>>,
 	%% Call the NIF
 	Result = dev_snp_nif:verify_measurement(MockReport, ExpectedMeasurement),
-	?assertMatch({ok, <<"Measurements match">>}, Result).
+	?assertMatch({ok, true}, Result).
 
 verify_signature_test() ->
 	%% Define a mock report (JSON string) as binary
     {ok, MockAttestation} = file:read_file("test/snp-attestation.json"),
 	Result = dev_snp_nif:verify_signature(MockAttestation),
-	?assertMatch({ok, <<"Signature verification successful">>}, Result).
+	?assertMatch({ok, true}, Result).
