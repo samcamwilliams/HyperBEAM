@@ -9,7 +9,8 @@
 	firmware, kernel, initrd, append]).
 
 %%% Test constants
--define(TEST_NODE, undefined).
+%% Matching attestation report is found in `test/snp-attestation` in 
+%% `dev_codec_flat:serialize/1`'s format.
 -define(TEST_TRUSTED_SOFTWARE, #{
     vcpus => 1,
     vcpu_type => 5, 
