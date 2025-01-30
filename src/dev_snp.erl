@@ -67,11 +67,10 @@ verify(M1, M2, NodeOpts) ->
     % Step 2: Verify the address and the signature.
     Signer = hb_converge:get(<<"signers/1">>, Msg, NodeOpts),
     ?event({snp_signer, Signer}),
-    %{ok, SigIsValid} = hb_message:verify(MsgWithJSONReport),
-	SigIsValid = true,
+    SigIsValid= hb_message:verify(MsgWithJSONReport),
     ?event({snp_sig_is_valid, SigIsValid}),
     AddressIsValid = SigIsValid andalso Signer == Address,
-    ?event({address_is_valid, AddressIsValid}),
+    ?event({address_is_valid, AddressIsValid, {signer, Signer}, {address, Address}}),
     % Step 3: Verify that the debug flag is disabled.
     DebugDisabled = not is_debug(Msg),
     ?event({debug_disabled, DebugDisabled}),

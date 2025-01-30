@@ -306,5 +306,5 @@ fn verify_signature<'a>(
     }
 
     //log_message("INFO", file!(), line!(), "Signature verification successful.");
-    Ok((ok(), "Signature verification successful").encode(env))
+    Ok((ok(), true).encode(env))
 }
