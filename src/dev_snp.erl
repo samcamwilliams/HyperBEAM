@@ -69,7 +69,7 @@ verify(M1, M2, NodeOpts) ->
     ?event({snp_signer, Signer}),
     SigIsValid= hb_message:verify(MsgWithJSONReport),
     ?event({snp_sig_is_valid, SigIsValid}),
-    AddressIsValid = SigIsValid andalso Signer == Address,
+    AddressIsValid = Signer == Address,
     ?event({address_is_valid, AddressIsValid, {signer, Signer}, {address, Address}}),
     % Step 3: Verify that the debug flag is disabled.
     DebugDisabled = not is_debug(Msg),
@@ -100,6 +100,7 @@ verify(M1, M2, NodeOpts) ->
             fun(Bool) -> Bool end,
             [
                 NonceMatches,
+				SigIsValid,
                 AddressIsValid,
                 DebugDisabled,
                 IsTrustedSoftware,
