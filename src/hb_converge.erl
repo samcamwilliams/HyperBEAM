@@ -703,26 +703,36 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
             Msg#{ Key => deep_set(#{}, Rest, Value, Opts) }
     end.
 
+%% @doc Call the device's `set' function.
 device_set(Msg, Key, Value, Opts) ->
+    Req =
+        case Key of
+            <<"path">> ->
+                #{ <<"path">> => <<"set_path">>, <<"value">> => Value };
+            _ ->
+                #{ <<"path">> => <<"set">>, Key => Value }
+        end,
 	?event(
         converge_internal,
         {
             calling_device_set,
             {msg, Msg},
-            {applying_path, #{ <<"path">> => <<"set">>, Key => Value }}
-        }
+            {applying_set, Req}
+        },
+        Opts
     ),
 	Res = hb_util:ok(
         resolve(
             Msg,
-            #{ <<"path">> => <<"set">>, Key => Value },
+            Req,
             internal_opts(Opts)
         ),
         internal_opts(Opts)
     ),
 	?event(
         converge_internal,
-        {device_set_result, Res}
+        {device_set_result, Res},
+        Opts
     ),
 	Res.
 
