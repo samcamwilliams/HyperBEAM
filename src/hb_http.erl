@@ -72,7 +72,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             Opts
         ),
     case ar_http:req(Req, Opts) of
-        {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
+        {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
             ?event(
                 {
                     http_rcvd,
@@ -135,32 +135,38 @@ request(Method, Peer, Path, RawMessage, Opts) ->
 %% @doc Given a message, return the information needed to make the request.
 message_to_request(M, Opts) ->
     Method = hb_converge:get(<<"method">>, M, <<"GET">>, Opts),
+    % We must remove the path and host from the message, because they are not
+    % valid for outbound requests. The path is retrieved from the route, and
+    % the host should already be known to the caller.
+    MsgWithoutMeta = maps:without([<<"path">>, <<"host">>], M),
     % Get the route for the message
     case dev_router:route(#{}, M, Opts) of
-        {ok, URL = <<"http", Sec, _/binary>>} ->
+        {ok, URL} when is_binary(URL) ->
             % The request is a direct HTTP URL, so we need to split the
             % URL into a host and path.
             URI = uri_string:parse(URL),
+            ?event(http, {parsed_uri, {uri, {explicit, URI}}}),
             Port =
                 case maps:get(port, URI, undefined) of
                     undefined ->
                         % If no port is specified, use 80 for HTTP and 443
                         % for HTTPS.
-                        case Sec of
-                            $s -> <<"443">>;
+                        case URL of
+                            <<"https", _/binary>> -> <<"443">>;
                             _ -> <<"80">>
                         end;
                     X -> integer_to_binary(X)
                 end,
+            Protocol = maps:get(scheme, URI, <<"https">>),
             Host = maps:get(host, URI, <<"localhost">>),
-            Node = << Host/binary, ":", Port/binary  >>,
+            Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
             Path = maps:get(path, URI, <<"/">>),
-            ?event({relay, {node, Node}, {method, Method}, {path, Path}}),
-            {ok, Method, Node, Path, M};
+            ?event(http, {relay, {node, Node}, {method, Method}, {path, Path}}),
+            {ok, Method, Node, Path, MsgWithoutMeta};
         {ok, Route} ->
             % The result is a route, so we leave it to `request` to handle it.
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
-            {ok, Method, Route, Path, M};
+            {ok, Method, Route, Path, MsgWithoutMeta};
         {error, Reason} ->
             {error, {no_viable_route, Reason}}
     end.
@@ -399,8 +405,6 @@ read_body(Req0, Acc) ->
         {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
         {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
-
-%%% Tests
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
