@@ -92,14 +92,15 @@
 %%% 					Default: `<not set>'.
 -module(hb_converge).
 %%% Main Converge API:
--export([resolve/2, resolve/3, resolve_many/2, load_device/2, message_to_device/2]).
+-export([resolve/2, resolve/3, resolve_many/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
+-export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
 -export([set/2, set/3, set/4, remove/2, remove/3]).
 %%% Exports for tests in hb_converge_tests.erl:
--export([deep_set/4, is_exported/4, message_to_fun/3]).
+-export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
 
 %% @doc Get the value of a message's key by running its associated device
@@ -428,24 +429,35 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     resolve_stage(8, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
             update ->
-                ?event({setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-                {ok,
-                    maps:without(?REGEN_KEYS,
-                        Msg3#{ <<"hashpath">> => hb_path:hashpath(Msg1, Msg2, Opts) }
-                    )
-                };
-            reset -> {ok, maps:without([<<"hashpath">>] ++ ?REGEN_KEYS, Msg3)};
-            ignore -> {ok, Msg3}
+                Priv = hb_private:from_message(Msg3),
+                HP = hb_path:hashpath(Msg1, Msg2, Opts),
+                if not is_binary(HP) or not is_map(Priv) ->
+                    throw({invalid_hashpath, {hp, HP}, {msg3, Msg3}});
+                true ->
+                    {ok, Msg3#{ <<"priv">> => Priv#{ <<"hashpath">> => HP } }}
+                end;
+            reset ->
+                Priv = hb_private:from_message(Msg3),
+                {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
+            ignore ->
+                Priv = hb_private:from_message(Msg3),
+                if not is_map(Priv) ->
+                    throw({invalid_private_message, {msg3, Msg3}});
+                true ->
+                    {ok, Msg3}
+                end
         end,
         ExecName,
         Opts
     );
 resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     ?event(converge_core, {stage, 7, ExecName, abnormal_status_reset_hashpath}, Opts),
+    ?event(hashpath, {resetting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
+    Priv = hb_private:from_message(Msg3),
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, maps:without([<<"hashpath">>] ++ ?REGEN_KEYS, Msg3)},
+        {Status, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
@@ -970,7 +982,7 @@ load_device(ID, Opts) when ?IS_ID(ID) ->
 					fun(Signer) ->
 						lists:member(Signer, hb_opts:get(trusted_device_signers))
 					end,
-					hb_message:signers(Msg)
+					hb_util:ok(dev_message:attestors(Msg), Opts)
 				),
 			case Trusted of
 				true ->

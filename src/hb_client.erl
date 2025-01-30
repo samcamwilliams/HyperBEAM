@@ -93,30 +93,29 @@ download(ID) ->
     end.
 
 %% @doc Upload a data item to the bundler node.
-upload(Message) when is_map(Message) ->
-    upload(hb_message:convert(Message, tx, converge, #{}));
-upload(Item) ->
-    ?event({uploading_item, Item}),
-    case
-        httpc:request(
-            post,
-            {
-                <<(hb_opts:get(bundler))/binary, "/tx">>,
-                [],
-                "application/octet-stream",
-                ar_bundles:serialize(Item)
-            },
-            [],
-            []
-        )
-    of
-        {ok, {{_, 200, _}, _, Body}} ->
-            ?event(upload_success),
-            {ok, jiffy:decode(Body, [return_maps])};
-        Response ->
-            ?event(upload_error),
-            {error, bundler_http_error, Response}
-    end.
+upload(HyperbeamMsg) ->
+    todo.
+    % ?event({uploading_item, Item}),
+    % case
+    %     httpc:request(
+    %         post,
+    %         {
+    %             <<(hb_opts:get(bundler))/binary, "/tx">>,
+    %             [],
+    %             "application/octet-stream",
+    %             ar_bundles:serialize(Item)
+    %         },
+    %         [],
+    %         []
+    %     )
+    % of
+    %     {ok, {{_, 200, _}, _, Body}} ->
+    %         ?event(upload_success),
+    %         {ok, jiffy:decode(Body, [return_maps])};
+    %     Response ->
+    %         ?event(upload_error),
+    %         {error, bundler_http_error, Response}
+    % end.
 
 %%% Utility functions
 

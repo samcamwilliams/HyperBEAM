@@ -1,11 +1,22 @@
-%%% @doc A codec for the that marshals TABM encoded messages to and from the
-%%% main Converge format, which features rich types with deterministic encoding
-%%% built around the HTTP Structured Fields (RFC-9651) specification.
--module(hb_codec_converge).
--export([to/1, from/1]).
+%%% @doc A device implementing the codec interface (to/1, from/1) for 
+%%% HyperBEAM's internal, richly typed message format.
+%%% 
+%%% This format mirrors HTTP Structured Fields, aside from its limitations of 
+%%% compound type depths, as well as limited floating point representations.
+%%% 
+%%% As with all Converge codecs, its target format (the format it expects to 
+%%% receive in the `to/1` function, and give in `from/1`) is TABM.
+%%% 
+%%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
+-module(dev_codec_structured).
+-export([to/1, from/1, attest/3, verify/3]).
 -export([decode_value/2, encode_value/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%%% Route signature functions to the `dev_codec_httpsig' module
+attest(Msg, Req, Opts) -> dev_codec_httpsig:attest(Msg, Req, Opts).
+verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;
@@ -104,14 +115,14 @@ to(TABM0) ->
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
-    [Encoded, _] = hb_http_structured_fields:item({item, Value, []}),
+    [Encoded, _] = dev_codec_structured_conv:item({item, Value, []}),
     {<<"integer">>, Encoded};
 encode_value(Value) when is_float(Value) ->
     ?no_prod("Must use structured field representation for floats!"),
     {<<"float">>, float_to_binary(Value)};
 encode_value(Value) when is_atom(Value) ->
     [EncodedIOList, _] =
-        hb_http_structured_fields:item(
+        dev_codec_structured_conv:item(
             {item, {string, atom_to_binary(Value, latin1)}, []}),
     Encoded = list_to_binary(EncodedIOList),
     {<<"atom">>, Encoded};
@@ -136,7 +147,7 @@ encode_value(Values) when is_list(Values) ->
             end,
             Values
         ),
-    EncodedList = hb_http_structured_fields:list(EncodedValues),
+    EncodedList = dev_codec_structured_conv:list(EncodedValues),
     {<<"list">>, iolist_to_binary(EncodedList)};
 encode_value(Value) when is_binary(Value) ->
     {<<"binary">>, Value};
@@ -155,31 +166,31 @@ decode_value(Type, Value) when is_binary(Type) ->
         Value
     );
 decode_value(integer, Value) ->
-    {item, Number, _} = hb_http_structured_fields:parse_item(Value),
+    {item, Number, _} = dev_codec_structured_conv:parse_item(Value),
     Number;
 decode_value(float, Value) ->
     binary_to_float(Value);
 decode_value(atom, Value) ->
     {item, {string, AtomString}, _} =
-        hb_http_structured_fields:parse_item(Value),
+        dev_codec_structured_conv:parse_item(Value),
     binary_to_existing_atom(AtomString);
 decode_value(list, Value) ->
     lists:map(
         fun({item, {string, <<"(converge-type-", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
             decode_value(Type, Item);
-           ({item, Item, _}) -> hb_http_structured_fields:from_bare_item(Item)
+           ({item, Item, _}) -> dev_codec_structured_conv:from_bare_item(Item)
         end,
-        hb_http_structured_fields:parse_list(iolist_to_binary(Value))
+        dev_codec_structured_conv:parse_list(iolist_to_binary(Value))
     );
 decode_value(map, Value) ->
     maps:from_list(
         lists:map(
             fun({Key, {item, Item, _}}) ->
-                ?event(debug, {decoded_item, {explicit, Key}, Item}),
-                {Key, hb_http_structured_fields:from_bare_item(Item)}
+                ?event({decoded_item, {explicit, Key}, Item}),
+                {Key, dev_codec_structured_conv:from_bare_item(Item)}
             end,
-            hb_http_structured_fields:parse_dictionary(iolist_to_binary(Value))
+            dev_codec_structured_conv:parse_dictionary(iolist_to_binary(Value))
         )
     );
 decode_value(BinType, Value) when is_binary(BinType) ->

@@ -164,7 +164,7 @@ test_write_and_read_output(Opts) ->
         read(ProcID, hb_util:human_id(hb_converge:get(id, Item1)), Opts),
     ?assert(hb_message:match(Item1, ReadItem1ByID)),
     {ok, ReadItem2ByID} =
-        read(ProcID, hb_util:human_id(hb_converge:get(unsigned_id, Item2)), Opts),
+        read(ProcID, hb_util:human_id(hb_message:id(Item2, none)), Opts),
     ?assert(hb_message:match(Item2, ReadItem2ByID)).
 
 %% @doc Test for retrieving the latest computed output for a process.

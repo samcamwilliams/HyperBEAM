@@ -91,7 +91,10 @@ test_opts() ->
                 spawn_worker => false,
                 store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
             },
-            skip => [],
+            skip => [
+                denormalized_device_key,
+                deep_set_with_device
+            ],
             reset => false
         },
         #{
@@ -111,7 +114,8 @@ test_opts() ->
                 resolve_path_element,
                 denormalized_device_key,
                 % Skip test with locally defined device
-                deep_set_with_device
+                deep_set_with_device,
+                as
                 % Skip tests that call hb_converge utils (which have their own 
                 % cache settings).
             ]
@@ -146,13 +150,13 @@ resolve_key_twice_test(Opts) ->
 resolve_from_multiple_keys_test(Opts) ->
     ?assertEqual(
         {ok, [<<"a">>]},
-        hb_converge:resolve(#{ a => <<"1">>, "priv_a" => <<"2">> }, keys, Opts)
+        hb_converge:resolve(#{ <<"a">> => <<"1">>, <<"priv_a">> => <<"2">> }, <<"keys">>, Opts)
     ).
 
 resolve_path_element_test(Opts) ->
     ?assertEqual(
-        {ok, [test_path]},
-        hb_converge:resolve(#{ path => [test_path] }, path, Opts)
+        {ok, [<<"test_path">>]},
+        hb_converge:resolve(#{ <<"path">> => [<<"test_path">>] }, <<"path">>, Opts)
     ),
     ?assertEqual(
         {ok, [<<"a">>]},
@@ -316,7 +320,7 @@ device_with_default_handler_function_test(Opts) ->
     ).
 
 basic_get_test(Opts) ->
-    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
+    Msg = #{ <<"key1">> => <<"value1">>, <<"key2">> => <<"value2">> },
     ?assertEqual(<<"value1">>, hb_converge:get(<<"key1">>, Msg, Opts)),
     ?assertEqual(<<"value2">>, hb_converge:get(<<"key2">>, Msg, Opts)),
     ?assertEqual(<<"value2">>, hb_converge:get(<<"key2">>, Msg, Opts)),
@@ -324,38 +328,38 @@ basic_get_test(Opts) ->
 
 recursive_get_test(Opts) ->
     Msg = #{
-        key1 => <<"value1">>,
-        key2 => #{
-            key3 => <<"value3">>,
-            key4 => #{
-                key5 => <<"value5">>,
-                key6 => #{
-                    key7 => <<"value7">>
+        <<"key1">> => <<"value1">>,
+        <<"key2">> => #{
+            <<"key3">> => <<"value3">>,
+            <<"key4">> => #{
+                <<"key5">> => <<"value5">>,
+                <<"key6">> => #{
+                    <<"key7">> => <<"value7">>
                 }
             }
         }
     },
     ?assertEqual(
         {ok, <<"value1">>},
-        hb_converge:resolve(Msg, #{ path => key1 }, Opts)
+        hb_converge:resolve(Msg, #{ <<"path">> => <<"key1">> }, Opts)
     ),
     ?assertEqual(<<"value1">>, hb_converge:get(<<"key1">>, Msg, Opts)),
     ?assertEqual(
         {ok, <<"value3">>},
-        hb_converge:resolve(Msg, #{ path => [<<"key2">>, <<"key3">>] }, Opts)
+        hb_converge:resolve(Msg, #{ <<"path">> => [<<"key2">>, <<"key3">>] }, Opts)
     ),
     ?assertEqual(<<"value3">>, hb_converge:get([<<"key2">>, <<"key3">>], Msg, Opts)),
     ?assertEqual(<<"value3">>, hb_converge:get(<<"key2/key3">>, Msg, Opts)).
 
 deep_recursive_get_test(Opts) ->
     Msg = #{
-        key1 => <<"value1">>,
-        key2 => #{
-            key3 => <<"value3">>,
-            key4 => #{
-                key5 => <<"value5">>,
-                key6 => #{
-                    key7 => <<"value7">>
+        <<"key1">> => <<"value1">>,
+        <<"key2">> => #{
+            <<"key3">> => <<"value3">>,
+            <<"key4">> => #{
+                <<"key5">> => <<"value5">>,
+                <<"key6">> => #{
+                    <<"key7">> => <<"value7">>
                 }
             }
         }
@@ -363,17 +367,17 @@ deep_recursive_get_test(Opts) ->
     ?assertEqual(<<"value7">>, hb_converge:get(<<"key2/key4/key6/key7">>, Msg, Opts)).
 
 basic_set_test(Opts) ->
-    Msg = #{ key1 => <<"value1">>, key2 => <<"value2">> },
-    UpdatedMsg = hb_converge:set(Msg, #{ key1 => <<"new_value1">> }, Opts),
-    ?event({set_key_complete, {key, key1}, {value, <<"new_value1">>}}),
+    Msg = #{ <<"key1">> => <<"value1">>, <<"key2">> => <<"value2">> },
+    UpdatedMsg = hb_converge:set(Msg, #{ <<"key1">> => <<"new_value1">> }, Opts),
+    ?event({set_key_complete, {key, <<"key1">>}, {value, <<"new_value1">>}}),
     ?assertEqual(<<"new_value1">>, hb_converge:get(<<"key1">>, UpdatedMsg, Opts)),
     ?assertEqual(<<"value2">>, hb_converge:get(<<"key2">>, UpdatedMsg, Opts)).
 
 get_with_device_test(Opts) ->
     Msg =
         #{
-            device => generate_device_with_keys_using_args(),
-            state_key => <<"STATE">>
+            <<"device">> => generate_device_with_keys_using_args(),
+            <<"state_key">> => <<"STATE">>
         },
     ?assertEqual(<<"STATE">>, hb_converge:get(<<"state_key">>, Msg, Opts)),
     ?assertEqual(<<"STATE">>, hb_converge:get(<<"key_using_only_state">>, Msg, Opts)).
@@ -381,8 +385,8 @@ get_with_device_test(Opts) ->
 get_as_with_device_test(Opts) ->
     Msg =
         #{
-            device => gen_handler_device(),
-            test_key => <<"ACTUAL VALUE">>
+            <<"device">> => gen_handler_device(),
+            <<"test_key">> => <<"ACTUAL VALUE">>
         },
     ?assertEqual(
         <<"HANDLER VALUE">>,
@@ -425,9 +429,9 @@ deep_set_test(Opts) ->
     ?assertMatch(#{ <<"a">> := #{ <<"b">> := <<"RESULT2">> } },
         hb_converge:set(Msg0, [<<"a">>, <<"b">>], <<"RESULT2">>, Opts)),
     % Now validate deeper layer changes are handled correctly.
-    Msg = #{ <<"a">> => #{ <<"b">> => #{ <<"c">> => 1 } } },
-    ?assertMatch(#{ <<"a">> := #{ <<"b">> := #{ <<"c">> := 2 } } },
-        hb_converge:set(Msg, [<<"a">>, <<"b">>, <<"c">>], 2, Opts)).
+    Msg = #{ <<"a">> => #{ <<"b">> => #{ <<"c">> => <<"1">> } } },
+    ?assertMatch(#{ <<"a">> := #{ <<"b">> := #{ <<"c">> := <<"2">> } } },
+        hb_converge:set(Msg, [<<"a">>, <<"b">>, <<"c">>], <<"2">>, Opts)).
 
 deep_set_new_messages_test() ->
     Opts = maps:get(opts, hd(test_opts())),

@@ -195,7 +195,7 @@ handle_info({gun_error, PID, Reason},
 					ok
 			end,
 			gun:shutdown(PID),
-			?event(debug, {connection_error, {reason, Reason}}),
+			?event({connection_error, {reason, Reason}}),
 			{noreply, State#state{ status_by_pid = StatusByPID2, pid_by_peer = PIDByPeer2 }}
 	end;
 
@@ -309,7 +309,7 @@ parse_peer(Peer, Opts) ->
         [Host, Port] ->
             {binary_to_list(Host), parse_port(Port)};
         [Host] ->
-            {binary_to_list(Host), hb_opts:get(http_port, 443, Opts)}
+            {binary_to_list(Host), hb_opts:get(port, 443, Opts)}
     end.
 
 parse_port(Port) ->

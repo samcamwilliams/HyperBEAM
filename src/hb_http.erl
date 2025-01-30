@@ -98,12 +98,11 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                         ar_bundles:deserialize(Body);
                     _ ->
                         hb_message:convert(
-                            #{
-                                <<"headers">> => HeaderMap,
+                            HeaderMap#{
                                 <<"body">> => Body
                             },
-                            converge,
-                            http,
+                            <<"structured@1.0">>,
+                            <<"httpsig@1.0">>,
                             Opts
                         )
                 end
@@ -175,7 +174,9 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
         http ->
-            #{ <<"headers">> := Headers, <<"body">> := Body } = hb_message:convert(Message, http, Opts),
+            FullEncoding = #{ <<"body">> := Body } =
+                hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
+            Headers = maps:without([<<"body">>], FullEncoding),
             maps:merge(ReqBase, #{ headers => Headers, body => Body });
         ans104 ->
             ReqBase#{
@@ -285,8 +286,7 @@ reply(Req, Message, Opts) ->
     reply(Req, message_to_status(Message), Message, Opts).
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, #{ <<"headers">> := EncodedHeaders, <<"body">> := EncodedBody}} =
-        prepare_reply(Message, Opts),
+    {ok, EncodedHeaders, EncodedBody} = prepare_reply(Message, Opts),
     ?event(http,
         {replying,
             {status, Status},
@@ -296,7 +296,7 @@ reply(Req, Status, RawMessage, Opts) ->
             {enc_body, EncodedBody}
         }
     ),
-    Req2 = cowboy_req:stream_reply(Status, maps:from_list(EncodedHeaders), Req),
+    Req2 = cowboy_req:stream_reply(Status, EncodedHeaders, Req),
     Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
 
@@ -304,24 +304,23 @@ reply(Req, Status, RawMessage, Opts) ->
 prepare_reply(Message, Opts) ->
     case hb_opts:get(format, http, Opts) of
         http ->
-            {ok,
+            EncMessage =
                 hb_message:convert(
                     Message,
-                    http,
-                    converge,
+                    <<"httpsig@1.0">>,
+                    <<"structured@1.0">>,
                     #{ topic => converge_internal }
-                )
+                ),
+            {ok,
+                maps:without([<<"body">>], EncMessage),
+                maps:get(<<"body">>, EncMessage, <<>>)
             };
         ans104 ->
             {ok,
                 #{
-                    <<"headers">> =>
-                        [
-                            {<<"content-type">>, <<"application/octet-stream">>}
-                        ],
-                    <<"body">> =>
-                        ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
-                }
+                    <<"content-type">> => <<"application/octet-stream">>
+                },
+                ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
             }
     end.
 
@@ -348,7 +347,7 @@ req_to_tabm_singleton(Req, Opts) ->
     case cowboy_req:header(<<"content-type">>, Req) of
         <<"application/x-ans-104">> ->
             {ok, Body} = read_body(Req),
-            hb_message:convert(ar_bundles:deserialize(Body), tabm, tx, Opts);
+            hb_message:convert(ar_bundles:deserialize(Body), <<"structured@1.0">>, <<"ans104@1.0">>, Opts);
         _ ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
@@ -371,12 +370,10 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
             <<"method">> => cowboy_req:method(Req)
         },
     HTTPEncoded =
-        #{
-            <<"headers">> =>
-                maps:to_list(maps:without([<<"content-length">>], Headers)),
+        (maps:without([<<"content-length">>], Headers))#{
             <<"body">> => Body
         },
-    hb_codec_http:from(HTTPEncoded).
+    dev_codec_httpsig_conv:from(HTTPEncoded).
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).

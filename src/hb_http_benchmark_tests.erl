@@ -109,7 +109,7 @@
 %     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
 %     Iterations = hb:benchmark(
 %         fun(X) ->
-%             ?event(debug, {post_start, X}),
+%             ?event({post_start, X}),
 %             case hb_http:post(URL, Msg, #{}) of
 %                 {ok, _} ->
 %                     1;
@@ -169,7 +169,7 @@
 % %                     }
 % %             },
 % %             Res = hb_http:post(URL, MsgX),
-% %             ?event(debug, {post_result, Res}),
+% %             ?event({post_result, Res}),
 % %             case Res of
 % %                 {ok, _} -> 1;
 % %                 _ -> 0
@@ -185,7 +185,7 @@
 % %         <<"process">> => ProcID
 % %     },
 % %     Res = hb_http:post(URL, Msg3),
-% %     ?event(debug, {slot_result, Res}),
+% %     ?event({slot_result, Res}),
 % %     hb_util:eunit_print(
 % %         "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
 % %         [Iterations, BenchTime, Iterations / BenchTime]

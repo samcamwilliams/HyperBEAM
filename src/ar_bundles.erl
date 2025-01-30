@@ -5,7 +5,6 @@
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
--export([item_to_json_struct/1, json_struct_to_item/1]).
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
 -export([print/1, format/1, format/2]).
@@ -385,7 +384,7 @@ serialize(RawTX, binary) ->
     >>;
 serialize(TX, json) ->
     true = enforce_valid_tx(TX),
-    jiffy:encode(item_to_json_struct(TX)).
+    jiffy:encode(hb_message:convert(TX, <<"ans104@1.0">>, #{})).
 
 %% @doc Take an item and ensure that it is of valid form. Useful for ensuring
 %% that a message is viable for serialization/deserialization before execution.
@@ -680,11 +679,8 @@ deserialize(Binary, binary) ->
 %end;
 deserialize(Bin, json) ->
     try
-        normalize(
-            maybe_unbundle(
-                json_struct_to_item(element(1, jiffy:decode(Bin)))
-            )
-        )
+        Map = jiffy:decode(Bin, [return_maps]),
+        hb_message:convert(Map, <<"ans104@1.0">>, #{})
     catch
         _:_:_Stack ->
             {error, invalid_item}
@@ -780,91 +776,6 @@ decode_bundle_header(0, ItemsBin, Header) ->
     {ItemsBin, lists:reverse(Header)};
 decode_bundle_header(Count, <<Size:256/integer, ID:32/binary, Rest/binary>>, Header) ->
     decode_bundle_header(Count - 1, Rest, [{ID, Size} | Header]).
-
-item_to_json_struct(
-    #tx{
-        id = ID,
-        last_tx = Last,
-        owner = Owner,
-        tags = Tags,
-        target = Target,
-        data = Data,
-        signature = Sig
-    }
-) ->
-    % Set "From" if From-Process is Tag or set with "Owner" address
-    ?event({invoked_item_to_json_struct, {tags, Tags}, {owner, Owner}, {data, Data}}),
-    From =
-        case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
-            [{_, FromProcess}] -> FromProcess;
-            [] -> hb_util:encode(ar_wallet:to_address(Owner))
-        end,
-    Fields = [
-        {<<"Id">>, hb_util:encode(ID)},
-        % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, hb_util:encode(Last)},
-        % NOTE: When sent to ao "Owner" is the wallet address
-        {<<"Owner">>, hb_util:encode(ar_wallet:to_address(Owner))},
-        {<<"From">>, From},
-        {<<"Tags">>,
-            lists:map(
-                fun({Name, Value}) ->
-                    {
-                        [
-                            {name, maybe_list_to_binary(Name)},
-                            {value, maybe_list_to_binary(Value)}
-                        ]
-                    }
-                end,
-                Tags
-            )},
-        {<<"Target">>, hb_util:encode(Target)},
-        {<<"Data">>, Data},
-        {<<"Signature">>, hb_util:encode(Sig)}
-    ],
-    {Fields}.
-
-maybe_list_to_binary(List) when is_list(List) ->
-    list_to_binary(List);
-maybe_list_to_binary(Bin) ->
-    Bin.
-
-json_struct_to_item(Map) when is_map(Map) ->
-    deserialize(jiffy:encode(Map), json);
-json_struct_to_item({TXStruct}) ->
-    json_struct_to_item(TXStruct);
-json_struct_to_item(RawTXStruct) ->
-    TXStruct = [{string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct],
-    Tags =
-        case hb_util:find_value(<<"tags">>, TXStruct) of
-            undefined ->
-                [];
-            Xs ->
-                Xs
-        end,
-    TXID = hb_util:decode(hb_util:find_value(<<"id">>, TXStruct, hb_util:encode(?DEFAULT_ID))),
-    #tx{
-        format = ans104,
-        id = TXID,
-        last_tx = hb_util:decode(hb_util:find_value(<<"anchor">>, TXStruct, <<>>)),
-        owner = hb_util:decode(
-            hb_util:find_value(<<"owner">>, TXStruct, hb_util:encode(?DEFAULT_OWNER))
-        ),
-        tags =
-            lists:map(
-                fun({KeyVals}) ->
-                    {_, Name} = lists:keyfind(<<"name">>, 1, KeyVals),
-                    {_, Value} = lists:keyfind(<<"value">>, 1, KeyVals),
-                    {Name, Value}
-                end,
-                Tags
-            ),
-        target = hb_util:decode(hb_util:find_value(<<"target">>, TXStruct, <<>>)),
-        data = hb_util:find_value(<<"data">>, TXStruct, <<>>),
-        signature = hb_util:decode(
-            hb_util:find_value(<<"signature">>, TXStruct, hb_util:encode(?DEFAULT_SIG))
-        )
-    }.
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in

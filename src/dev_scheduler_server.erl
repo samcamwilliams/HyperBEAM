@@ -12,9 +12,10 @@ start(ProcID, Opts) ->
     spawn_link(
         fun() ->
             pg:join({dev_scheduler, ProcID}, self()),
+            ?event({starting_scheduling_server, {proc_id, ProcID}}),
             {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
             ?event(
-                {starting_scheduling_server,
+                {scheduler_got_process_info,
                     {proc_id, ProcID},
                     {current, CurrentSlot},
                     {hash_chain, HashChain}
@@ -34,6 +35,7 @@ start(ProcID, Opts) ->
 
 %% @doc Get the current slot from the cache.
 slot_from_cache(ProcID, Opts) ->
+    ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
     case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
             ?event({no_assignments_in_cache, {proc_id, ProcID}}),
@@ -109,7 +111,7 @@ do_assign(State, Message, ReplyPID) ->
     AssignFun =
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
-            Assignment = hb_message:sign(#{
+            Assignment = hb_message:attest(#{
                 <<"path">> =>
                     case hb_path:from_message(request, Message) of
                         undefined -> <<"compute">>;
@@ -160,7 +162,7 @@ do_assign(State, Message, ReplyPID) ->
         aggressive ->
             spawn(AssignFun);
         Other ->
-            ?event(debug, {scheduling_mode, Other}),
+            ?event({scheduling_mode, Other}),
             AssignFun()
     end,
     State#{
@@ -177,9 +179,11 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
 %% @doc Create the next element in a chain of hashes that links this and prior
 %% assignments.
 next_hashchain(HashChain, Message) ->
+    ?event({creating_next_hashchain, {hash_chain, HashChain}, {message, Message}}),
+    ID = hb_message:id(Message, all),
     crypto:hash(
         sha256,
-        << HashChain/binary, (hb_util:id(Message, unsigned))/binary >>
+        << HashChain/binary, ID/binary >>
     ).
 
 %% TESTS
@@ -187,15 +191,15 @@ next_hashchain(HashChain, Message) ->
 %% @doc Test the basic functionality of the server.
 new_proc_test() ->
     Wallet = ar_wallet:new(),
-    SignedItem = hb_message:sign(
+    SignedItem = hb_message:attest(
         #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),
-    SignedItem2 = hb_message:sign(
+    SignedItem2 = hb_message:attest(
         #{ <<"data">> => <<"test2">> },
         Wallet
     ),
-    SignedItem3 = hb_message:sign(
+    SignedItem3 = hb_message:attest(
         #{
             <<"data">> => <<"test2">>,
             <<"deep-key">> =>
@@ -215,7 +219,7 @@ new_proc_test() ->
 benchmark_test() ->
     BenchTime = 1,
     Wallet = ar_wallet:new(),
-    SignedItem = hb_message:sign(
+    SignedItem = hb_message:attest(
         #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),

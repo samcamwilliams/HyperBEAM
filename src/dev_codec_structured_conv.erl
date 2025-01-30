@@ -1,11 +1,8 @@
--module(hb_http_structured_fields).
-
+-module(dev_codec_structured_conv).
 -export([parse_dictionary/1, parse_item/1, parse_list/1, parse_bare_item/1]).
 -export([dictionary/1, item/1, list/1, bare_item/1, from_bare_item/1]).
 -export([to_dictionary/1, to_list/1, to_item/1, to_item/2]).
-
 -include_lib("eunit/include/eunit.hrl").
-
 -include("include/hb_http.hrl").
 
 %%% The mapping between Erlang and structured headers types is as follow:
@@ -149,7 +146,7 @@ from_bare_item(BareItem) ->
             list_to_float(
                 binary_to_list(
                     iolist_to_binary(
-                        hb_http_structured_fields:bare_item(D)
+                        bare_item(D)
                     )
                 )
             );

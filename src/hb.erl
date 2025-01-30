@@ -142,9 +142,12 @@ event(Topic, X, ModStr, Func, Line, Opts) ->
     % Check if the debug_print option has the topic in it if set.
     case hb_opts:get(debug_print, false, Opts) of
         ModList when is_list(ModList) ->
-            (lists:member(ModStr, ModList)
-                orelse lists:member(atom_to_list(Topic), ModList))
-                andalso hb_util:debug_print(X, ModStr, Func, Line);
+            case lists:member(ModStr, ModList)
+                orelse lists:member(atom_to_list(Topic), ModList)
+            of
+                true -> hb_util:debug_print(X, ModStr, Func, Line);
+                false -> X
+            end;
         true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
     end.

@@ -1,9 +1,14 @@
-%%% A codec for turning TABMs into/from flat Erlang maps that have (potentially
-%%% multi-layer) paths as their keys, and a normal TABM binary as their value.
--module(hb_codec_flat).
--export([from/1, to/1]).
+%%% @doc A codec for turning TABMs into/from flat Erlang maps that have 
+%%% (potentially multi-layer) paths as their keys, and a normal TABM binary as 
+%%% their value.
+-module(dev_codec_flat).
+-export([from/1, to/1, attest/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
+
+%%% Route signature functions to the `dev_codec_httpsig' module
+attest(Msg, Req, Opts) -> dev_codec_httpsig:attest(Msg, Req, Opts).
+verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
 
 %% @doc Convert a flat map to a TABM.
 from(Bin) when is_binary(Bin) -> Bin;
@@ -54,14 +59,14 @@ to(Map) when is_map(Map) ->
 simple_conversion_test() ->
     Flat = #{[<<"a">>] => <<"value">>},
     Nested = #{<<"a">> => <<"value">>},
-    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
-    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
+    ?assert(hb_message:match(Nested, dev_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, dev_codec_flat:to(Nested))).
 
 nested_conversion_test() ->
     Flat = #{<<"a/b">> => <<"value">>},
     Nested = #{<<"a">> => #{<<"b">> => <<"value">>}},
-    Unflattened = hb_codec_flat:from(Flat),
-    Flattened = hb_codec_flat:to(Nested),
+    Unflattened = dev_codec_flat:from(Flat),
+    Flattened = dev_codec_flat:to(Nested),
     ?assert(hb_message:match(Nested, Unflattened)),
     ?assert(hb_message:match(Flat, Flattened)).
 
@@ -78,22 +83,22 @@ multiple_paths_test() ->
         },
         <<"a">> => <<"3">>
     },
-    ?assert(hb_message:match(Nested, hb_codec_flat:from(Flat))),
-    ?assert(hb_message:match(Flat, hb_codec_flat:to(Nested))).
+    ?assert(hb_message:match(Nested, dev_codec_flat:from(Flat))),
+    ?assert(hb_message:match(Flat, dev_codec_flat:to(Nested))).
 
 binary_passthrough_test() ->
     Bin = <<"raw binary">>,
-    ?assertEqual(Bin, hb_codec_flat:from(Bin)),
-    ?assertEqual(Bin, hb_codec_flat:to(Bin)).
+    ?assertEqual(Bin, dev_codec_flat:from(Bin)),
+    ?assertEqual(Bin, dev_codec_flat:to(Bin)).
 
 deep_nesting_test() ->
     Flat = #{<<"a/b/c/d">> => <<"deep">>},
     Nested = #{<<"a">> => #{<<"b">> => #{<<"c">> => #{<<"d">> => <<"deep">>}}}},
-    Unflattened = hb_codec_flat:from(Flat),
-    Flattened = hb_codec_flat:to(Nested),
+    Unflattened = dev_codec_flat:from(Flat),
+    Flattened = dev_codec_flat:to(Nested),
     ?assert(hb_message:match(Nested, Unflattened)),
     ?assert(hb_message:match(Flat, Flattened)).
 
 empty_map_test() ->
-    ?assertEqual(#{}, hb_codec_flat:from(#{})),
-    ?assertEqual(#{}, hb_codec_flat:to(#{})).
+    ?assertEqual(#{}, dev_codec_flat:from(#{})),
+    ?assertEqual(#{}, dev_codec_flat:to(#{})).

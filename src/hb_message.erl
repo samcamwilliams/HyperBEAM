@@ -11,7 +11,7 @@
 %%% `hb_message' and the HyperBEAM caches can interact with multiple different
 %%% types of message formats:
 %%% 
-%%%     - Richly typed Converge messages.
+%%%     - Richly typed Converge structured messages.
 %%%     - Arweave transations.
 %%%     - ANS-104 data items.
 %%%     - HTTP Signed Messages.
@@ -29,16 +29,17 @@
 %%% The structure of the conversions is as follows:
 %%% 
 %%% ```
-%%%     Arweave TX/ANS-104 ==> hb_codec_tx:from/1 ==> TABM
-%%%     HTTP Signed Message ==> hb_codec_http:from/1 ==> TABM
-%%%     Flat Maps ==> hb_codec_flat:from/1 ==> TABM
+%%%     Arweave TX/ANS-104 ==> dev_codec_ans104:from/1 ==> TABM
+%%%     HTTP Signed Message ==> dev_codec_httpsig_conv:from/1 ==> TABM
+%%%     Flat Maps ==> dev_codec_flat:from/1 ==> TABM
 %%% 
-%%%     TABM ==> hb_codec_converge:to/1 ==> Converge Message
-%%%     Converge Message ==> hb_codec_converge:from/1 ==> TABM
+%%%     TABM ==> dev_codec_structured:to/1 ==> Converge Message
+%%%     Converge Message ==> dev_codec_structured:from/1 ==> TABM
 %%% 
-%%%     TABM ==> hb_codec_tx:to/1 ==> Arweave TX/ANS-104
-%%%     TABM ==> hb_codec_http:to/1 ==> HTTP Signed Message
-%%%     TABM ==> hb_codec_flat:to/1 ==> Flat Maps
+%%%     TABM ==> dev_codec_ans104:to/1 ==> Arweave TX/ANS-104
+%%%     TABM ==> dev_codec_httpsig_conv:to/1 ==> HTTP Signed Message
+%%%     TABM ==> dev_codec_flat:to/1 ==> Flat Maps
+%%%     ...
 %%% '''
 %%% 
 %%% Additionally, this module provides a number of utility functions for
@@ -52,9 +53,9 @@
 %%% `hb_cache' module uses TABMs as the internal format for storing and 
 %%% retrieving messages.
 -module(hb_message).
--export([convert/3, convert/4, unsigned/1, attestations/1]).
--export([sign/2, sign/3, verify/1, verify/2, type/1, minimize/1]). 
--export([signers/1, serialize/1, serialize/2, deserialize/1, deserialize/2]).
+-export([id/1, id/2, id/3]).
+-export([convert/3, convert/4, unattested/1]).
+-export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]). 
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -75,7 +76,7 @@
 %% The conversion to a TABM is done by the `converge' codec, which is always
 %% available. The conversion from a TABM is done by the target codec.
 convert(Msg, TargetFormat, Opts) ->
-    convert(Msg, TargetFormat, converge, Opts).
+    convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
     TABM = convert_to_tabm(Msg, SourceFormat, Opts),
     case TargetFormat of
@@ -83,12 +84,11 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
         _ -> convert_to_target(TABM, TargetFormat, Opts)
     end.
 
-convert_to_tabm(RawMsg, SourceFormat, Opts) ->
-    Msg = hb_converge:normalize_keys(RawMsg),
+convert_to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
-            minimize(filter_default_keys(TypicalMsg));
+            TypicalMsg;
         OtherTypeRes -> OtherTypeRes
     end.
 
@@ -96,20 +96,66 @@ convert_to_target(Msg, TargetFormat, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
     TargetCodecMod:to(Msg).
 
-%% @doc Return the unsigned version of a message in Converge format.
-unsigned(Bin) when is_binary(Bin) -> Bin;
-unsigned(Msg) ->
-    maps:remove([<<"signed_id">>, <<"signature">>, <<"owner">>], Msg).
+%% @doc Return the ID of a message.
+id(Msg) -> id(Msg, unattested).
+id(Msg, Attestors) -> id(Msg, Attestors, #{}).
+id(Msg, RawAttestors, Opts) ->
+    Attestors =
+        case RawAttestors of
+            unattested -> <<"none">>;
+            unsigned -> <<"none">>;
+            none -> <<"none">>;
+            all -> <<"all">>;
+            signed -> <<"all">>;
+            List -> List
+        end,
+    ?event({getting_id, {msg, Msg}, {attestors, Attestors}}),
+    {ok, ID} =
+        hb_converge:resolve(
+            Msg,
+            #{ <<"path">> => <<"id">>, <<"attestors">> => Attestors },
+            Opts
+        ),
+    hb_util:human_id(ID).
 
-%% @doc Return a sub-map of the attestation-related keys in a message.
-attestations(Msg) ->
-    maps:with([<<"signed_id">>, <<"signature">>, <<"owner">>], Msg).
+%% @doc Sign a message with the given wallet. Only supports the `tx' format
+%% at the moment.
+attest(Msg, Wallet) ->
+    attest(Msg, Wallet, <<"httpsig@1.0">>).
+attest(Msg, Wallet, Format) ->
+    {ok, Signed} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Format },
+            #{ priv_wallet => Wallet }
+        ),
+    Signed.
+
+%% @doc wrapper function to verify a message.
+verify(Msg) ->
+    {ok, Res} = dev_message:verify(Msg, #{}, #{}),
+    Res.
+
+%% @doc Return the unsigned version of a message in Converge format.
+unattested(Bin) when is_binary(Bin) -> Bin;
+unattested(Msg) ->
+    maps:remove([<<"attestations">>], Msg).
+
+%% @doc Return all of the attestors on a message that have 'normal', 256 bit, 
+%% addresses.
+signers(Msg) ->
+    lists:filter(fun(Signer) -> ?IS_ID(Signer) end,
+        hb_converge:get(<<"attestors">>, Msg, #{})).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
-    case hb_opts:get(codecs, #{}, Opts) of
-        #{ TargetFormat := CodecMod } -> CodecMod;
-        _ -> throw({message_codec_not_found, TargetFormat})
+    try
+        hb_converge:message_to_device(
+            #{ <<"device">> => TargetFormat },
+            Opts
+        )
+    catch _:_ ->
+        throw({message_codec_not_viable, TargetFormat})
     end.
 
 %% @doc Pretty-print a message.
@@ -130,7 +176,9 @@ format(List, Indent) when is_list(List) ->
 format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
-        fun(Key) ->
+        fun(<<"hashpath">>) ->
+            hb_private:get(<<"hashpath">>, Map, undefined, #{});
+        (Key) ->
             case dev_message:get(Key, Map) of
                 {ok, Val} ->
                     case hb_util:short_id(Val) of
@@ -152,15 +200,16 @@ format(Map, Indent) when is_map(Map) ->
         case hb_opts:get(debug_ids, false, #{}) of
             false ->
                 [
-                    {<<"#P">>, ValOrUndef(hashpath)},
-                    {<<"*U">>, ValOrUndef(unsigned_id)},
-                    {<<"*S">>, ValOrUndef(id)}
+                    {<<"#P">>, ValOrUndef(<<"hashpath">>)},
+                    {<<"*U">>, ValOrUndef(<<"unsigned_id">>)},
+                    {<<"*S">>, ValOrUndef(<<"id">>)}
                 ];
             true ->
-                {ok, UID} = dev_message:unsigned_id(Map),
-                {ok, ID} = dev_message:id(Map),
+                {ok, UID} = dev_message:id(Map, #{ <<"attestors">> => <<"none">> }, #{}),
+                {ok, ID} =
+                    dev_message:id(Map, #{ <<"attestors">> => <<"all">> }, #{}),
                 [
-                    {<<"#P">>, hb_util:short_id(ValOrUndef(hashpath))},
+                    {<<"#P">>, hb_util:short_id(ValOrUndef(<<"hashpath">>))},
                     {<<"*U">>, hb_util:short_id(UID)}
                 ] ++
                 case ID of
@@ -168,21 +217,24 @@ format(Map, Indent) when is_map(Map) ->
                     _ -> [{<<"*S">>, hb_util:short_id(ID)}]
                 end
         end,
-    SignerMetadata =
-        case signers(Map) of
-            [] -> [];
-            [Signer] ->
-                [{<<"Sig">>, hb_util:short_id(Signer)}];
-            Signers ->
+    AttestorMetadata =
+        case dev_message:attestors(Map, #{}, #{}) of
+            {ok, []} -> [];
+            {ok, [Attestor]} ->
+                [{<<"Att.">>, hb_util:short_id(Attestor)}];
+            {ok, Attestors} ->
                 [
                     {
-                        <<"Sigs">>,
-                        string:join(lists:map(fun hb_util:short_id/1, Signers), ", ")
+                        <<"Atts.">>,
+                        string:join(
+                            lists:map(fun(X) -> [hb_util:short_id(X)] end, Attestors),
+                            ", "
+                        )
                     }
                 ]
         end,
     % Concatenate the present metadata rows.
-    Metadata = FilterUndef(lists:flatten([IDMetadata, SignerMetadata])),
+    Metadata = FilterUndef(lists:flatten([IDMetadata, AttestorMetadata])),
     % Format the metadata row.
     Header =
         hb_util:format_indented("Message [~s] {",
@@ -209,15 +261,15 @@ format(Map, Indent) when is_map(Map) ->
         FilterUndef(PriorityKeys) ++
         maps:to_list(
             minimize(Map,
-                [
-                    <<"owner">>,
-                    <<"signature">>,
-                    <<"id">>,
-                    <<"unsigned_id">>,
-                    <<"hashpath">>,
-                    <<"path">>,
-                    <<"device">>
-                ]
+                case hb_opts:get(debug_hide_metadata, false, #{}) of
+                    true ->
+                        [
+                            <<"attestations">>,
+                            <<"path">>,
+                            <<"device">>
+                        ];
+                    false -> []
+                end
             )
         ) ++ FooterKeys,
     % Format the remaining 'normal' keys and values.
@@ -265,41 +317,7 @@ format(Item, Indent) ->
     % Whatever we have is not a message map.
     hb_util:format_indented("[UNEXPECTED VALUE] ~p", [Item], Indent).
 
-%% @doc Return the signers of a message. For now, this is just the signer
-%% of the message itself. In the future, we will support multiple signers.
-signers(Msg) when is_map(Msg) ->
-    case {maps:find(<<"owner">>, Msg), maps:find(<<"signature">>, Msg)} of
-        {Owner, Sig} when (Owner == error) or (Sig == error) -> [];
-        {{ok, Owner}, {ok, _}} -> [ar_wallet:to_address(Owner)]
-    end;
-signers(TX) when is_record(TX, tx) ->
-    ar_bundles:signer(TX);
-signers(_) -> [].
-
-%% @doc Sign a message with the given wallet. Only supports the `tx' format
-%% at the moment.
-sign(Msg, Wallet) ->
-    sign(Msg, Wallet, tx).
-
-sign(Msg, Wallet, http) ->
-    HTTP = convert(Msg, tabm, #{}),
-    hb_http_signature:sign(HTTP, #{}, #{ priv_wallet => Wallet });
-sign(Msg, Wallet, _) ->
-    TX = convert(Msg, tx, #{}),
-    SignedTX = ar_bundles:sign_item(TX, Wallet),
-    convert(SignedTX, converge, tx, #{}).
-
-%% @doc Verify a message.
-verify(Msg) ->
-    verify(Msg, tx).
-
-verify(Msg, http) ->
-    hb_http_signature:verify(Msg, #{}, #{});
-verify(Msg, _) ->
-    TX = convert(Msg, tx, converge, #{}),
-    ar_bundles:verify_item(TX).
-
-%% @doc Return the type of a message.
+%% @doc Return the type of an encoded message.
 type(TX) when is_record(TX, tx) -> tx;
 type(Binary) when is_binary(Binary) -> binary;
 type(Msg) when is_map(Msg) ->
@@ -353,7 +371,7 @@ match(Map1, Map2, Mode) ->
                                     case Val1 == Val2 of
                                         true -> true;
                                         false ->
-                                            ?event(
+                                            ?event(match,
                                                 {value_mismatch,
                                                     {key, Key},
                                                     {val1, Val1},
@@ -368,7 +386,7 @@ match(Map1, Map2, Mode) ->
                 Keys1
             );
         false ->
-            ?event({keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
+            ?event(match, {keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
             false
     end.
 	
@@ -442,22 +460,6 @@ default_tx_list() ->
     Keys = lists:map(fun hb_converge:normalize_key/1, record_info(fields, tx)),
     lists:zip(Keys, tl(tuple_to_list(#tx{}))).
 
-%% @doc Serialize a message to a binary representation, either as JSON or the
-%% binary format native to the message/bundles spec in use.
-serialize(M) -> serialize(M, binary).
-serialize(M, json) ->
-    jiffy:encode(ar_bundles:item_to_json_struct(M));
-serialize(M, binary) ->
-    ar_bundles:serialize(convert(M, tx, #{})).
-
-%% @doc Deserialize a message from a binary representation.
-deserialize(B) -> deserialize(B, binary).
-deserialize(J, json) ->
-    {JSONStruct} = jiffy:decode(J),
-    ar_bundles:json_struct_to_item(JSONStruct);
-deserialize(B, binary) ->
-    convert(ar_bundles:deserialize(B), converge, tx, #{}).
-
 %%% Tests
 
 %% @doc Test that the filter_default_keys/1 function removes TX fields
@@ -485,19 +487,20 @@ minimization_test() ->
     },
     MinimizedMsg = minimize(Msg),
     ?event({minimized, MinimizedMsg}),
-    ?assertEqual(0, maps:size(MinimizedMsg)).
-
+    ?assertEqual(1, maps:size(MinimizedMsg)).
 
 basic_map_codec_test(Codec) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 set_body_codec_test(Codec) ->
     Msg = #{ <<"body">> => <<"NORMAL_VALUE">>, <<"test-key">> => <<"Test-Value">> },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 %% @doc Test that we can convert a message into a tx record and back.
@@ -509,8 +512,8 @@ single_layer_message_to_encoding_test(Codec) ->
         <<"data">> => <<"DATA">>,
         <<"special-key">> => <<"SPECIAL_VALUE">>
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(hb_message:match(Msg, Decoded)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
@@ -530,8 +533,8 @@ single_layer_message_to_encoding_test(Codec) ->
 %% @doc Test that the message matching function works.
 match_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2 },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
 match_modes_test() ->
@@ -543,26 +546,26 @@ match_modes_test() ->
     ?assert(match(Msg1, Msg3, primary)),
     ?assert(not match(Msg3, Msg1, primary)).
 
-%% @doc Structured field parsing tests.
-structured_field_atom_parsing_test(Codec) ->
-    Msg = #{ highly_unusual_http_header => highly_unusual_value },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
-structured_field_decimal_parsing_test(Codec) ->
-    Msg = #{ integer_field => 1234567890 },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
-
 binary_to_binary_test(Codec) ->
     % Serialization must be able to turn a raw binary into a TX, then turn
     % that TX back into a binary and have the result match the original.
     Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Encoded = convert(Bin, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Bin, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assertEqual(Bin, Decoded).
+
+%% @doc Structured field parsing tests.
+structured_field_atom_parsing_test(Codec) ->
+    Msg = #{ highly_unusual_http_header => highly_unusual_value },
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?assert(match(Msg, Decoded)).
+
+structured_field_decimal_parsing_test(Codec) ->
+    Msg = #{ integer_field => 1234567890 },
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?assert(match(Msg, Decoded)).
 
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
@@ -574,15 +577,15 @@ message_with_large_keys_test(Codec) ->
         <<"another_large_key">> => << 0:((1 + 1024) * 8) >>,
         <<"another_normal_key">> => <<"another_normal_value">>
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Check that large keys and data fields are correctly handled together.
 nested_message_with_large_keys_and_content_test(Codec) ->
     MainBodyKey =
         case Codec of
-            tx -> <<"data">>;
+            <<"ans104@1.0">> -> <<"data">>;
             _ -> <<"body">>
         end,
     Msg = #{
@@ -592,8 +595,8 @@ nested_message_with_large_keys_and_content_test(Codec) ->
         <<"another_normal_key">> => <<"another_normal_value">>,
         MainBodyKey => <<"Hey from the data field!">>
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(match(Msg, Decoded)).
 
@@ -603,8 +606,8 @@ simple_nested_message_test(Codec) ->
         <<"nested">> => #{ <<"b">> => <<"1">> },
         <<"c">> => <<"3">>
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(
         match(
@@ -619,7 +622,7 @@ simple_nested_message_test(Codec) ->
 nested_message_with_large_content_test(Codec) ->
     MainBodyKey =
         case Codec of
-            tx -> <<"data">>;
+            <<"ans104@1.0">> -> <<"data">>;
             _ -> <<"body">>
         end,
     Msg = #{
@@ -633,15 +636,17 @@ nested_message_with_large_content_test(Codec) ->
             <<"large_data_outer">> => << 0:((1 + 1024) * 8) >>
         }
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
 deeply_nested_message_with_content_test(Codec) ->
     MainBodyKey =
         case Codec of
-            tx -> <<"data">>;
+            <<"ans104@1.0">> -> <<"data">>;
             _ -> <<"body">>
         end,
     Msg = #{
@@ -657,32 +662,35 @@ deeply_nested_message_with_content_test(Codec) ->
                 }
         }
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
 deeply_nested_message_with_only_content(Codec) ->
     MainBodyKey =
         case Codec of
-            tx -> <<"data">>;
+            <<"ans104@1.0">> -> <<"data">>;
             _ -> <<"body">>
         end,
     Msg = #{
-         <<"depth">> => <<"outer">>,
+         <<"depth1">> => <<"outer">>,
         MainBodyKey => #{
+            <<"depth2">> => <<"middle">>,
             MainBodyKey => #{
                 MainBodyKey => <<"DATA">>    
             }
         }
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
 
 nested_structured_fields_test(Codec) ->
     NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
-    Encoded = convert(NestedMsg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(NestedMsg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(NestedMsg, Decoded)).
 
 nested_message_with_large_keys_test(Codec) ->
@@ -692,8 +700,8 @@ nested_message_with_large_keys_test(Codec) ->
         <<"nested">> => #{ <<"b">> => <<"1">> },
         <<"c">> => <<"3">>
     },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
 signed_message_encode_decode_verify_test(Codec) ->
@@ -701,12 +709,23 @@ signed_message_encode_decode_verify_test(Codec) ->
         <<"test_data">> => <<"TEST_DATA">>,
         <<"test_key">> => <<"TEST_VALUE">>
     },
-    SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
-    Encoded = convert(SignedMsg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    ?event({signed_msg, {explicit, SignedMsg}}),
+    ?assertEqual(true, verify(SignedMsg)),
+    ?event(test, {verified, {explicit, SignedMsg}}),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(test, {msg_encoded_as_codec, {explicit, Encoded}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, {explicit, Decoded}}),
+    ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
-tabm_converge_ids_equal_test() ->
+complex_signed_message_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"deep_data">> => #{
@@ -715,26 +734,123 @@ tabm_converge_ids_equal_test() ->
             <<"list">> => [1,2,3]
         }
     },
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assertEqual(true, verify(Decoded)),
+    ?assert(match(SignedMsg, Decoded)).
+
+% multisignature_test(Codec) ->
+%     Wallet1 = ar_wallet:new(),
+%     Wallet2 = ar_wallet:new(),
+%     Msg = #{
+%         <<"data">> => <<"TEST_DATA">>,
+%         <<"test_key">> => <<"TEST_VALUE">>
+%     },
+%     {ok, SignedMsg} =
+%         dev_message:attest(
+%             Msg,
+%             #{ <<"attestation-device">> => Codec },
+%             #{ priv_wallet => Wallet1 }
+%         ),
+%     ?event({signed_msg, SignedMsg}),
+%     {ok, MsgSignedTwice} =
+%         dev_message:attest(
+%             SignedMsg,
+%             #{ <<"attestation-device">> => Codec },
+%             #{ priv_wallet => Wallet2 }
+%         ),
+%     ?event({signed_msg_twice, MsgSignedTwice}),
+%     ?assert(verify(MsgSignedTwice)),
+%     {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
+%     ?event({attestors, Attestors}),
+%     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
+%     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
+
+deep_multisignature_test() ->
+    % Only the `httpsig@1.0` codec supports multisignatures.
+    Codec = <<"httpsig@1.0">>,
+    Wallet1 = ar_wallet:new(),
+    Wallet2 = ar_wallet:new(),
+    Msg = #{
+        <<"data">> => <<"TEST_DATA">>,
+        <<"test_key">> => <<"TEST_VALUE">>,
+        <<"body">> => #{
+            <<"nested_key">> => <<"NESTED_VALUE">>
+        }
+    },
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => Wallet1 }
+        ),
+    ?event({signed_msg, SignedMsg}),
+    {ok, MsgSignedTwice} =
+        dev_message:attest(
+            SignedMsg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => Wallet2 }
+        ),
+    ?event({signed_msg_twice, MsgSignedTwice}),
+    ?assert(verify(MsgSignedTwice)),
+    {ok, Attestors} = dev_message:attestors(MsgSignedTwice),
+    ?event({attestors, Attestors}),
+    ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Attestors)),
+    ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Attestors)).
+
+tabm_converge_ids_equal_test(Codec) ->
+    Msg = #{
+        <<"data">> => <<"TEST_DATA">>,
+        <<"deep_data">> => #{
+            <<"data">> => <<"DEEP_DATA">>,
+            <<"complex_key">> => 1337,
+            <<"list">> => [1,2,3]
+        }
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
     ?assertEqual(
-        dev_message:unsigned_id(Msg),
-        dev_message:unsigned_id(convert(Msg, tabm, converge, #{}))
+        dev_message:id(Msg, #{ <<"attestors">> => <<"none">>}, #{}),
+        dev_message:id(Decoded, #{ <<"attestors">> => <<"none">>}, #{})
     ).
 
 signed_deep_message_test(Codec) ->
     Msg = #{
         <<"test_key">> => <<"TEST_VALUE">>,
-        <<"data">> => #{
+        <<"body">> => #{
             <<"nested_key">> =>
                 #{
-                    <<"data">> => <<"NESTED_DATA">>,
+                    <<"body">> => <<"NESTED_DATA">>,
                     <<"nested_key">> => <<"NESTED_VALUE">>
-                }
+                },
+            <<"nested_key2">> => <<"NESTED_VALUE2">>
         }
     },
-    SignedMsg = hb_message:sign(Msg, hb:wallet(), Codec),
-    ?assert(hb_message:verify(SignedMsg, Codec)),
-    Encoded = convert(SignedMsg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    ?event({signed_msg, {explicit, SignedMsg}}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
+    ?event({verify_hmac_res, {explicit, Res}}),
+    ?assertEqual(true, verify(SignedMsg)),
+    ?event({verified, {explicit, SignedMsg}}),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event({encoded, {explicit, Encoded}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, {explicit, Decoded}}),
     ?assert(
         match(
             SignedMsg,
@@ -744,11 +860,11 @@ signed_deep_message_test(Codec) ->
 
 unsigned_id_test(Codec) ->
     Msg = #{ <<"data">> => <<"TEST_DATA">> },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assertEqual(
-        dev_message:unsigned_id(Decoded),
-        dev_message:unsigned_id(Msg)
+        dev_message:id(Decoded, #{ <<"attestors">> => <<"none">>}, #{}),
+        dev_message:id(Msg, #{ <<"attestors">> => <<"none">>}, #{})
     ).
 
 % signed_id_test_disabled() ->
@@ -766,8 +882,8 @@ unsigned_id_test(Codec) ->
 
 message_with_simple_list_test(Codec) ->
     Msg = #{ <<"a">> => [<<"1">>, <<"2">>, <<"3">>] },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
 empty_string_in_tag_test(Codec) ->
@@ -780,15 +896,60 @@ empty_string_in_tag_test(Codec) ->
                     <<"stdout">> => <<"c">>
                 }
         },
-    Encoded = convert(Msg, Codec, converge, #{}),
-    Decoded = convert(Encoded, converge, Codec, #{}),
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
 
+hashpath_sign_verify_test(Codec) ->
+    Msg =
+        hb_private:set(#{
+                <<"test_key">> => <<"TEST_VALUE">>,
+                <<"body">> => #{
+                    <<"nested_key">> =>
+                        #{
+                            <<"body">> => <<"NESTED_DATA">>,
+                            <<"nested_key">> => <<"NESTED_VALUE">>
+                        },
+                    <<"nested_key2">> => <<"NESTED_VALUE2">>
+                }
+            },
+            <<"priv/hashpath">>,
+            hb_path:hashpath(
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                fun hb_crypto:sha256_chain/2,
+                #{}
+            ),
+            #{}
+        ),
+    ?event(debug, {msg, {explicit, Msg}}),
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
+    ?event(debug, {verify_hmac_res, {explicit, Res}}),
+    ?assertEqual(true, verify(SignedMsg)),
+    ?event(debug, {verified, {explicit, SignedMsg}}),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(hmac, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(hmac, {decoded, Decoded}),
+    ?assert(verify(Decoded)),
+    ?assert(
+        match(
+            SignedMsg,
+            Decoded
+        )
+    ).
 
 %%% Test helpers
 
 test_codecs() ->
-    [converge, tx, flat, http].
+    [<<"structured@1.0">>, <<"httpsig@1.0">>, <<"flat@1.0">>, <<"ans104@1.0">>].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -798,7 +959,7 @@ generate_test_suite(Suite) ->
                 fun(_) -> ok end,
                 [
                     {
-                        atom_to_list(CodecName) ++ ": " ++ Desc,
+                        << CodecName/binary, ": ", (list_to_binary(Desc))/binary >>,
                         fun() -> Test(CodecName) end
                     }
                 ||
@@ -816,6 +977,7 @@ message_suite_test_() ->
         {"match test", fun match_test/1},
         {"single layer message to encoding test",
             fun single_layer_message_to_encoding_test/1},
+        {"tabm converge ids equal test", fun tabm_converge_ids_equal_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
         {"nested message with large keys and content test",
             fun nested_message_with_large_keys_and_content_test/1},
@@ -840,10 +1002,10 @@ message_suite_test_() ->
             fun signed_message_encode_decode_verify_test/1},
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
-        {"unsigned id test", fun unsigned_id_test/1}
+        {"unsigned id test", fun unsigned_id_test/1},
+        {"complex signed message test", fun complex_signed_message_test/1},
+        {"signed message with hashpath test", fun hashpath_sign_verify_test/1}
     ]).
 
 simple_test() ->
-    simple_nested_message_test(http),
-    signed_message_encode_decode_verify_test(http),
-    nested_message_with_large_content_test(http).
+    hashpath_sign_verify_test(<<"httpsig@1.0">>).
