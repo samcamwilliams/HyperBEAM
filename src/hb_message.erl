@@ -922,18 +922,18 @@ hashpath_sign_verify_test(Codec) ->
             ),
             #{}
         ),
-    ?event(debug, {msg, {explicit, Msg}}),
+    ?event({msg, {explicit, Msg}}),
     {ok, SignedMsg} =
         dev_message:attest(
             Msg,
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, {explicit, SignedMsg}}),
+    ?event({signed_msg, {explicit, SignedMsg}}),
     {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
-    ?event(debug, {verify_hmac_res, {explicit, Res}}),
+    ?event({verify_hmac_res, {explicit, Res}}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event(debug, {verified, {explicit, SignedMsg}}),
+    ?event({verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
     ?event(hmac, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),

@@ -11,11 +11,24 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Estimate the cost of a request by counting the number of messages in
-%% the request, then multiplying by the per-message price.
+%% the request, then multiplying by the per-message price. The operator does
+%% not pay for their own requests.
 estimate(_, Req, NodeMsg) ->
-    case hb_converge:get(<<"type">>, Req, undefined, NodeMsg) of
-        <<"post">> -> {ok, 0};
-        <<"pre">> ->
+    IsOperator =
+        case hb_opts:get(operator, undefined, NodeMsg) of
+            undefined -> false;
+            Operator ->
+                lists:any(
+                    fun(Signer) ->
+                        hb_util:human_id(Operator) =:= hb_util:human_id(Signer)
+                    end,
+                    hb_message:signers(Req)
+                )
+        end,
+    case {IsOperator, hb_converge:get(<<"type">>, Req, undefined, NodeMsg)} of
+        {true, _} -> {ok, 0};
+        {_, <<"post">>} -> {ok, 0};
+        {_, <<"pre">>} ->
             Messages = hb_converge:get(<<"body">>, Req, NodeMsg#{ hashpath => ignore }),
             {ok, length(Messages) * hb_opts:get(simple_pay_price, 1, NodeMsg)}
     end.

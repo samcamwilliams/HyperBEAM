@@ -78,9 +78,9 @@ from(HTTP) ->
         maps:get(<<"signature">>, Headers, not_found),
         maps:get(<<"signature-input">>, Headers, not_found)
     ),
-    ?event(debug, {message_with_atts, MsgWithSigs}),
+    ?event({message_with_atts, MsgWithSigs}),
     Res = maps:without(Removed = maps:keys(HPs), MsgWithSigs),
-    ?event(debug, {message_without_atts, Res, Removed}),
+    ?event({message_without_atts, Res, Removed}),
     Res.
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
@@ -209,7 +209,7 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
         fun ({SigName, Signature}) ->
             ?event({adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
             {list, SigInputs, ParamsKVList} = maps:get(SigName, SfInputs, #{}),
-            ?event(debug, {inputs, {signame, SigName}, {inputs, SigInputs}, {params, ParamsKVList}}),
+            ?event({inputs, {signame, SigName}, {inputs, SigInputs}, {params, ParamsKVList}}),
             % Find all hashpaths from the signature and add them to the 
             % attestations message.
             Hashpath =
@@ -223,14 +223,14 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
                 end,
                 SigInputs
             ),
-            ?event(debug, {all_hashpaths, HPs}),
+            ?event({all_hashpaths, HPs}),
             Hashpaths = maps:from_list(lists:map(
                 fun (HP) ->
                     {HP, maps:get(HP, HPs, <<>>)}
                 end,
                 Hashpath
             )),
-            ?event(debug, {hashpaths, Hashpaths}),
+            ?event({hashpaths, Hashpaths}),
             Params = maps:from_list(ParamsKVList),
             {string, EncPubKey} = maps:get(<<"keyid">>, Params),
             PubKey = hb_util:decode(EncPubKey),
