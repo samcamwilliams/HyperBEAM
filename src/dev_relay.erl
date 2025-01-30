@@ -39,6 +39,7 @@ call(M1, RawM2, Opts) ->
             true -> hb_message:attest(TargetMod1, Opts);
             false -> TargetMod1
         end,
+    ?event({relaying_message, TargetMod2}),
     % Let `hb_http:request/2` handle finding the peer and dispatching the request.
     hb_http:request(TargetMod2, Opts).
 
@@ -47,7 +48,6 @@ call(M1, RawM2, Opts) ->
 cast(M1, M2, Opts) ->
     spawn(fun() -> call(M1, M2, Opts) end),
     {ok, <<"OK">>}.
-
 
 %%% Tests
 
