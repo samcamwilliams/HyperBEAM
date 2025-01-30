@@ -57,4 +57,5 @@ relay_with_payments_test() ->
     Res2 = hb_http:get(HostNode, ClientMessage1, #{}),
     ?assertMatch({ok, #{ <<"body">> := Bin }} when byte_size(Bin) > 10_000, Res2),
     {ok, Resp} = Res2,
+    ?assert(length(hb_message:signers(Resp)) > 0),
     ?assert(hb_message:verify(Resp)).
