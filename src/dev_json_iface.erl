@@ -62,10 +62,7 @@ prep_call(M1, M2, Opts) ->
     Message = hb_converge:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_converge:get(<<"process/image">>, M1, Opts),
     BlockHeight = hb_converge:get(<<"block-height">>, M2, Opts),
-    RawMsgJson =
-        ar_bundles:item_to_json_struct(
-            hb_message:convert(Message, tx, converge, #{})
-        ),
+    RawMsgJson = message_to_json_struct(denormalize_message(Message)),
     {Props} = RawMsgJson,
     MsgProps =
         normalize_props(
@@ -79,13 +76,7 @@ prep_call(M1, M2, Opts) ->
     {ok, MsgJsonPtr} = hb_beamr_io:write_string(Instance, MsgJson),
     ProcessProps =
         normalize_props(
-            [
-                {<<"Process">>,
-                    ar_bundles:item_to_json_struct(
-                                hb_message:convert(Process, tx, converge, #{})
-                            )
-                        }
-            ]
+            [{<<"Process">>, message_to_json_struct(Process)}]
         ),
     ProcessJson = jiffy:encode({ProcessProps}),
     {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Instance, ProcessJson),
@@ -99,6 +90,85 @@ prep_call(M1, M2, Opts) ->
             Opts
         )
     }.
+
+%% @doc Normalize a message for AOS-compatibility.
+denormalize_message(Message) ->
+    Signers =
+        lists:filter(
+            fun(ID) -> ?IS_ID(ID) end,
+            hb_converge:get(<<"attestors">>, {as, <<"message@1.0">>, Message})
+        ),
+    NormOwnerMsg =
+        case Signers of
+            [] -> Message;
+            [Signer|_] ->
+                Sig =
+                    hb_converge:get(
+                        <<"attestations/", Signer/binary, "/signature">>,
+                        {as, <<"message@1.0">>, Message}
+                    ),
+                Message#{ <<"owner">> => Signer, <<"signature">> => Sig }
+        end,
+    NormOwnerMsg#{
+        <<"id">> => hb_converge:get(<<"id">>, {as, <<"message@1.0">>, Message})
+    }.
+
+message_to_json_struct(RawMsg) ->
+    Message = maps:without([<<"attestations">>], RawMsg),
+    ID = hb_message:id(Message, all),
+    Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Owner = hb_converge:get(<<"owner">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Data = hb_converge:get(<<"data">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Target = hb_converge:get(<<"target">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    % Set "From" if From-Process is Tag or set with "Owner" address
+    From = hb_converge:get(<<"from-process">>, {as, <<"message@1.0">>, Message}, Owner, #{}),
+    Sig = hb_converge:get(<<"signature">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Fields = [
+        {<<"Id">>, safe_to_id(ID)},
+        % NOTE: In Arweave TXs, these are called "last_tx"
+        {<<"Anchor">>, safe_to_id(Last)},
+        % NOTE: When sent to ao "Owner" is the wallet address
+        {<<"Owner">>, safe_to_id(Owner)},
+        {<<"From">>, safe_to_id(From)},
+        {<<"Tags">>,
+            lists:map(
+                fun({Name, Value}) ->
+                    {
+                        [
+                            {name, maybe_list_to_binary(Name)},
+                            {value, maybe_list_to_binary(Value)}
+                        ]
+                    }
+                end,
+                maps:to_list(
+                    maps:without(
+                        [
+                            <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
+                            <<"target">>, <<"signature">>
+                        ],
+                        Message
+                    )
+                )
+            )},
+        {<<"Target">>, safe_to_id(Target)},
+        {<<"Data">>, Data},
+        {<<"Signature">>,
+            case byte_size(Sig) of
+                0 -> <<>>;
+                512 -> hb_util:encode(Sig);
+                _ -> Sig
+            end}
+    ],
+    HeaderCaseFields = normalize_props(Fields),
+    {HeaderCaseFields}.
+
+safe_to_id(<<>>) -> <<>>;
+safe_to_id(ID) -> hb_util:human_id(ID).
+
+maybe_list_to_binary(List) when is_list(List) ->
+    list_to_binary(List);
+maybe_list_to_binary(Bin) ->
+    Bin.
 
 %% @doc Normalize the properties of a message to begin with a capital letter for
 %% backwards compatibility with AOS.
@@ -125,10 +195,8 @@ normalize_props(Props) ->
     ).
 
 header_case_string(Key) ->
-    ?event({header_casing, Key}),
     NormKey = hb_converge:normalize_key(Key),
     Words = string:lexemes(NormKey, "-"),
-    ?event({words, Words}),
     TitleCaseWords =
         lists:map(
             fun binary_to_list/1,
@@ -138,7 +206,6 @@ header_case_string(Key) ->
             )
         ),
     TitleCaseKey = list_to_binary(string:join(TitleCaseWords, "-")),
-    ?event({titlecase, TitleCaseKey}),
     TitleCaseKey.
 
 %% @doc Read the computed results out of the WASM environment, assuming that
@@ -269,7 +336,7 @@ generate_stack(File, Mode) ->
         <<"passes">> => 2,
         <<"stack-keys">> => [<<"init">>, <<"compute">>],
         <<"process">> => 
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"type">> => <<"Process">>,
                 <<"image">> => Image,
                 <<"scheduler">> => hb:address(),
@@ -281,10 +348,10 @@ generate_stack(File, Mode) ->
 
 generate_aos_msg(ProcID, Code) ->
     Wallet = hb:wallet(),
-    hb_message:sign(#{
+    hb_message:attest(#{
         <<"path">> => <<"compute">>,
         <<"body">> => 
-            hb_message:sign(#{
+            hb_message:attest(#{
                 <<"Action">> => <<"Eval">>,
                 <<"Data">> => Code,
                 <<"Target">> => ProcID
@@ -295,7 +362,7 @@ generate_aos_msg(ProcID, Code) ->
 basic_aos_call_test() ->
     Msg = generate_stack("test/aos-2-pure-xs.wasm"),
     Proc = hb_converge:get(<<"process">>, Msg, #{ hashpath => ignore }),
-    ProcID = hb_converge:get(id, Proc, #{}),
+    ProcID = hb_message:id(Proc, all),
     {ok, Msg3} =
         hb_converge:resolve(
             Msg,

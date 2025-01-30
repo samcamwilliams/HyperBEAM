@@ -1,23 +1,20 @@
-%%% @doc This module implements HTTP Message Signatures
-%%% as described in RFC-9421 https://datatracker.ietf.org/doc/html/rfc9421
-
--module(hb_http_signature).
+%%% @doc This module implements HTTP Message Signatures as described in RFC-9421
+%%% (https://datatracker.ietf.org/doc/html/rfc9421), as a Converge device.
+%%% It implements the codec standard (from/1, to/1), as well as the optional
+%%% attestation functions (id/3, sign/3, verify/3). The attestation functions
+%%% are found in this module, while the codec functions are relayed to the 
+%%% `dev_codec_httpsig_conv' module.
+-module(dev_codec_httpsig).
 %%% Device API
--export([id/3, sign/3, verify/3]).
-%%% HyperBEAM API
--export([authority/3, sign_auth/2, sign_auth/3, verify_auth/2, verify_auth/3]).
-% Mapping
--export([sf_signature/1, sf_signature_params/2, sf_signature_param/1]).
-
+-export([id/3, attest/3, verify/3, reset_hmac/1]).
+%%% Codec API functions
+-export([to/1, from/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 -define(EMPTY_QUERY_PARAMS, $?).
 % https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 -define(SIGNATURE_PARAMS, [created, expired, nonce, alg, keyid, tag]).
-
 -include("include/hb.hrl").
-
 -include_lib("eunit/include/eunit.hrl").
-
 -type fields() :: #{
 	binary() | atom() | string() => binary() | atom() | string()
 }.
@@ -38,6 +35,10 @@
 	{string, binary()},
 	{binary(), integer() | boolean() | {string | token | binary, binary()}}
 }.
+
+%%% Routing functions for the `dev_codec_httpsig_conv' module
+to(Msg) -> dev_codec_httpsig_conv:to(Msg).
+from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 
 %%% A map that contains signature parameters metadata as described
 %%% in https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
@@ -83,81 +84,236 @@
 	key => binary()
 }.
 
-id(_Msg, _Params, _Opts) ->
-    {ok, <<"http">>}.
+id(Msg, Params, Opts) ->
+    case find_id(Msg) of
+        {ok, ID} -> {ok, ID};
+        _ ->
+            ?event(regenerating_id),
+            {ok, ResetMsg} = reset_hmac(Msg),
+            {ok, ID} = find_id(ResetMsg),
+            {ok, ID}
+    end.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
-sign(MsgToSign, _Req, Opts) ->
-    ?event({starting_to_sign, MsgToSign}),
-    Wallet = {_Priv, {_, Pub}} = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    Enc = hb_message:convert(MsgToSign, http, #{}),
-    % Hack: Place the body into the `<<"headers">>` field if it is set. We should
-    % either unify the body and headers in this module, or add explicit support
-    % for the body in the HTTP Message.
-    EncWithBody = #{ <<"headers">> := EncHdrList } =
-        case maps:get(<<"body">>, Enc, undefined) of
-            undefined -> Enc;
-            <<>> -> Enc;
-            Body ->
-                OrigHeaders = maps:get(<<"headers">>, Enc, #{}),
-                Enc#{
-                    <<"headers">> => [{ <<"body">>, Body }|OrigHeaders]
-                }
+attest(MsgToSign, _Req, Opts) ->
+    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    {HPKey, MsgWithHPTForm} =
+        case maps:get(<<"hashpath">>, MsgToSign, undefined) of
+            undefined -> {undefined, MsgToSign};
+            HP ->
+                % Add the hashpath to the message with an ID derivative of its
+                % name, such that it can be differentiated from other signatures
+                % on different hashpaths that lead to the same message.
+                HashPathTag =
+                    hb_util:to_hex(binary:part(crypto:hash(sha256, HP), 1, 8)),
+                HashPathKey = <<"hashpath-", HashPathTag/binary>>,
+                {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
         end,
-    EncHdrMap = maps:from_list(EncHdrList),
-    ?event({options, {encoded, {explicit, EncWithBody}, {enc_hdr_map, EncHdrMap}}}),
-    Authority = authority(maps:keys(EncHdrMap), EncHdrMap, Wallet),
-    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, EncWithBody),
-    [ParsedSignatureInput] = hb_http_structured_fields:parse_list(SignatureInput),
-    SigName = <<"signature">>, %hb_util:human_id(ar_wallet:to_address(Wallet, {rsa, 65537})),
-    maps:merge(
-        MsgToSign,
+    Enc =
+        maps:without(
+            [<<"signature">>, <<"signature-input">>],
+            hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
+        ),
+    ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
+    Authority = authority(maps:keys(Enc), Enc, Wallet),
+    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
+    [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
+    % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]`
+    Attestor = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
+    SigName = address_to_sig_name(Address),
+    % Calculate the id and place the signature into the `attestations` key of the message.
+    Attestation =
         #{
+            <<"id">> => crypto:hash(sha256, Signature),
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
-            <<"signature">> => 
-                bin(hb_http_structured_fields:dictionary(
+            <<"signature">> =>
+                bin(dev_codec_structured_conv:dictionary(
                     #{ SigName => {item, {binary, Signature}, []} }
                 )),
             <<"signature-input">> =>
-                bin(hb_http_structured_fields:dictionary(
+                bin(dev_codec_structured_conv:dictionary(
                     #{ SigName => ParsedSignatureInput }
                 )),
-            <<"signature-public-key">> => hb_util:encode(Pub),
-            <<"signature-device">> => <<"HTTP-Sig@1.0">>
-        }
-    ).
-
-verify(MsgToVerify, _Req, _Opts) ->
-    Signature = maps:get(<<"signature">>, MsgToVerify),
-    SignatureInput = maps:get(<<"signature-input">>, MsgToVerify),
-    RawPubKey =
-        hb_util:decode(
-            NativePubKey = maps:get(<<"signature-public-key">>, MsgToVerify)),
-    MsgWithoutSig =
-        maps:without(
-            [
-                <<"signature">>,
-                <<"signature-input">>,
-                <<"signature-public-key">>,
-                <<"signature-device">>
-            ],
-            MsgToVerify
-        ),
-    PubKey = {{rsa, 65537}, RawPubKey},
-    Enc = hb_message:convert(MsgWithoutSig, http, #{}),
-    EncWithBody =
-        Enc#{
-            <<"headers">> =>
-                [
-                    {<<"body">>, maps:get(<<"body">>, Enc, <<>>)},
-                    {<<"signature">>, Signature},
-                    {<<"signature-input">>, SignatureInput},
-                    {<<"signature-public-key">>, NativePubKey}
-                |
-                    maps:get(<<"headers">>, Enc, #{})
-                ]
+            <<"attestation-device">> => <<"httpsig@1.0">>
         },
-    verify_auth(#{ key => PubKey, sig_name => <<"signature">> }, EncWithBody).
+    AttestationWithHP =
+        case HPKey of
+            undefined -> Attestation;
+            HPKey -> Attestation#{ HPKey => maps:get(<<"hashpath">>, MsgToSign) }
+        end,
+    OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
+    NewAttestations =
+        OldAttestations#{
+            Attestor => AttestationWithHP
+        },
+    MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
+    reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
+
+%% @doc Convert an address to a signature name that is short, unique to the
+%% address, and lowercase.
+-spec address_to_sig_name(binary()) -> binary().
+address_to_sig_name(Address) when ?IS_ID(Address) ->
+    <<"http-sig-", (hb_util:to_hex(binary:part(hb_util:native_id(Address), 1, 8)))/binary>>;
+address_to_sig_name(OtherRef) ->
+    OtherRef.
+
+%% @doc Find the ID of the message, which is the hmac of the signature and signature input.
+find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
+    {ok, ID};
+find_id(_) ->
+    {error, no_id}.
+
+%%@doc Ensure that the attestations and hmac are properly encoded
+reset_hmac(RawMsg) ->
+    Msg = hb_message:convert(RawMsg, tabm, #{}),
+    Attestations =
+        maps:without(
+            [<<"hmac-sha256">>],
+            maps:get(<<"attestations">>, Msg, #{})
+        ),
+    ?event(hmac, {msg_before_hmac, Msg}),
+    AllSigs =
+        maps:from_list(lists:map(
+            fun ({Attestor, #{ <<"signature">> := Signature }}) ->
+                SigName = address_to_sig_name(Attestor),
+                SigBin =
+                    maps:get(SigName,
+                        maps:from_list(
+                            dev_codec_structured_conv:parse_dictionary(Signature)
+                        )
+                    ),
+                ?event({SigName, SigBin}),
+                {SigName, SigBin}
+            end,
+            maps:to_list(Attestations)
+        )),
+    AllInputs =
+        maps:from_list(lists:map(
+            fun ({Attestor, #{ <<"signature-input">> := Inputs }}) ->
+                SigName = address_to_sig_name(Attestor),
+                ?event({trying_to_parse, Inputs}),
+                Res = dev_codec_structured_conv:parse_dictionary(Inputs),
+                ?event({parsed_dict, Res}),
+                SingleSigInput = maps:get(SigName, maps:from_list(Res)),
+                ?event({single_sig_input, SingleSigInput}),
+                {SigName, SingleSigInput}
+            end,
+            maps:to_list(Attestations)
+        )),
+    HMacSigInfo = #{
+            <<"signature">> =>
+                bin(dev_codec_structured_conv:dictionary(AllSigs)),
+            <<"signature-input">> =>
+                bin(dev_codec_structured_conv:dictionary(AllInputs))
+    },
+    HMacInputMsg = maps:merge(Msg, HMacSigInfo),
+    {ok, ID} = hmac(HMacInputMsg),
+    Res = {
+        ok,
+        maps:put(
+            <<"attestations">>,
+            Attestations#{
+                <<"hmac-sha256">> =>
+                    HMacSigInfo#{
+                        <<"id">> => bin(hb_util:human_id(ID)),
+                        <<"attestation-device">> => <<"httpsig@1.0">>
+                    }
+            },
+            Msg
+        )
+    },
+    ?event({reset_hmac_complete, {explicit, Res}}),
+    Res.
+
+%% @doc Generate the ID of the message, with the current signature and signature
+%% input as the components for the hmac.
+hmac(Msg) ->
+    % The message already has a signature and signature input, so we can use
+    % just those as the components for the hmac
+    EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
+    ComponentsLine =
+        iolist_to_binary(
+            signature_components_line(
+                maps:to_list(EncodedMsg),
+                #{},
+                Msg
+            )
+        ),
+    ParamsLine =
+        iolist_to_binary(
+            dev_codec_structured_conv:dictionary(
+                maps:map(
+                    fun(_Key, Value) ->
+                        {item, {token, Value}, []}
+                    end,
+                    EncodedMsg
+                )
+            )
+        ),
+    SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
+    HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
+    {ok, HMacValue}.
+
+%% @doc Verify different forms of httpsig attested messages. `dev_message:verify`
+%% already places the keys from the attestation message into the root of the
+%% message.
+verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
+    % Verify a hmac on the message
+    ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
+    ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
+    {ok, Recalculated} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
+    case find_id(Recalculated) of
+        {error, no_id} -> {error, could_not_calculate_id};
+        {ok, ExpectedID} ->
+            ?event({hmac_verified, {id, ExpectedID}}),
+            {ok, true};
+        {ok, ActualID} ->
+            ?event({hmac_failed_verification, {calculated_id, ActualID}, {expected, ExpectedID}}),
+            {ok, false}
+    end;
+verify(MsgToVerify, Req, _Opts) ->
+    % Validate a signed attestation.
+    ?event({verify, {target, MsgToVerify}, {req, Req}}),
+    % Parse the signature parameters into a map.
+    Attestor = maps:get(<<"attestor">>, Req),
+    SigName = address_to_sig_name(Attestor),
+    {list, _SigInputs, ParamsKVList} =
+        maps:get(
+            SigName,
+            maps:from_list(
+                dev_codec_structured_conv:parse_dictionary(
+                    maps:get(<<"signature-input">>, MsgToVerify)
+                )
+            )
+        ),
+    Alg = maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)),
+    case Alg of
+        {string, <<"rsa-pss-sha512">>} ->
+            {string, KeyID} = maps:get(<<"keyid">>, Params),
+            PubKey = hb_util:decode(KeyID),
+            Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
+            % Re-run the same conversion that was done when creating the signature.
+            Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
+            % Add the signature data back into the encoded message.
+            EncWithSig =
+                Enc#{
+                    <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
+                    <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
+                },
+            ?event({encoded_msg_for_verification, EncWithSig}),
+            {
+                ok,
+                verify_auth(
+                    #{
+                        key => {{rsa, 65537}, PubKey},
+                        sig_name => address_to_sig_name(Address)
+                    },
+                    EncWithSig
+                )
+            };
+        _ ->
+            {error, {unsupported_alg, Alg}}
+    end.
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(
@@ -195,14 +351,6 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 		key_pair => KeyPair
 	}.
 
-%%% @doc using the provided Authority and Request Message Context, and create a 
-%%% Signature and SignatureInput that can be used to additional signatures to a 
-%%% corresponding HTTP Message
--spec sign_auth(authority_state(), request_message()) ->
-    {ok, {binary(), binary(), binary()}}.
-sign_auth(Authority, Req) ->
-	sign_auth(Authority, Req, #{}).
-
 %%% @doc using the provided Authority and Request/Response Messages Context,
 %%% create a Name, Signature and SignatureInput that can be used to additional
 %%% signatures to a corresponding HTTP Message
@@ -227,8 +375,7 @@ add_sig_params(Authority, {KeyType, PubKey}) ->
             maps:get(sig_params, Authority),
             #{
                 alg => <<"rsa-pss-sha512">>,
-                keyid =>
-                    hb_util:human_id(ar_wallet:to_address(PubKey, KeyType))
+                keyid => hb_util:encode(PubKey)
             }
         ),
         Authority
@@ -266,7 +413,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % The signature may be encoded ie. as binary, so we need to parse it
             % further as a structured field
             {item, {_, Signature}, _} =
-                hb_http_structured_fields:parse_item(EncodedSignature),
+                dev_codec_structured_conv:parse_item(EncodedSignature),
             % The value encoded within signature input is also a structured field,
             % specifically an inner list that encodes the ComponentIdentifiers
             % and the Signature Params.
@@ -274,7 +421,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % So we must parse this value, and then use it to construct the 
             % signature base
             [{list, ComponentIdentifiers, SigParams}] =
-                hb_http_structured_fields:parse_list(SignatureInput),
+                dev_codec_structured_conv:parse_list(SignatureInput),
             % TODO: HACK convert parsed sig params into a map that authority() 
             % can handle maybe authority() should handle both parsed and unparsed 
             % SigParams, similar to ComponentIdentifiers
@@ -307,8 +454,8 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% @doc create the signature base that will be signed in order to create the
 %%% Signature and SignatureInput.
 %%%
-%%% This implements a portion of RFC-9421
-%%% See https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
+%%% This implements a portion of RFC-9421 see:
+%%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
@@ -320,14 +467,12 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
-    SignatureBase =
-        <<
-            ComponentsLine/binary,
-            <<"\n">>/binary,
-            <<"\"@signature-params\": ">>/binary,
-            ParamsLine/binary
-        >>,
-    SignatureBase.
+    <<
+        ComponentsLine/binary,
+        <<"\n">>/binary,
+        <<"\"@signature-params\": ">>/binary,
+        ParamsLine/binary
+    >>.
 
 %%% @doc Given a list of Component Identifiers and a Request/Response Message
 %%% context, create the "signature-base-line" portion of the signature base
@@ -337,10 +482,12 @@ join_signature_base(ComponentsLine, ParamsLine) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.1
 signature_components_line(ComponentIdentifiers, Req, Res) ->
 	ComponentsLines = lists:map(
-		fun(ComponentIdentifier) ->
-			% TODO: handle errors?
-			{ok, {I, V}} = identifier_to_component(ComponentIdentifier, Req, Res),
-			<<I/binary, <<": ">>/binary, V/binary>>
+		fun({Name, DirectBinary}) when is_binary(DirectBinary) andalso is_binary(Name) ->
+			<<Name/binary, <<": ">>/binary, DirectBinary/binary>>;
+			(ComponentIdentifier) ->
+				% TODO: handle errors?
+				{ok, {I, V}} = identifier_to_component(ComponentIdentifier, Req, Res),
+				<<I/binary, <<": ">>/binary, V/binary>>
 		end,
 		ComponentIdentifiers
 	),
@@ -352,7 +499,7 @@ signature_components_line(ComponentIdentifiers, Req, Res) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.3.2.4
 signature_params_line(ComponentIdentifiers, SigParams) ->
 	SfList = sf_signature_params(ComponentIdentifiers, SigParams),
-	Res = hb_http_structured_fields:list(SfList),
+	Res = dev_codec_structured_conv:list(SfList),
 	bin(Res).
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
@@ -392,11 +539,9 @@ identifier_to_component(ParsedIdentifier = {item, {_, Value}, _Params}, Req, Res
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-http-fields
 extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
-	[IsStrictFormat, IsByteSequenceEncoded, DictKey] = [
-		find_sf_strict_format_param(IParams),
-		find_sf_byte_sequence_param(IParams),
-		find_sf_key_param(IParams)
-	],
+	IsStrictFormat = find_sf_strict_format_param(IParams),
+	IsByteSequenceEncoded = find_sf_byte_sequence_param(IParams),
+	DictKey = find_sf_key_param(IParams),
 	case (IsStrictFormat orelse DictKey =/= false) andalso IsByteSequenceEncoded of
 		true ->
 			% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.2
@@ -410,49 +555,15 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 		_ ->
 			Lowered = lower_bin(IParsed),
 			NormalizedItem =
-                hb_http_structured_fields:item(
+                dev_codec_structured_conv:item(
                     {item, {string, Lowered}, IParams}
                 ),
-			[IsRequestIdentifier, IsTrailerField] = [
-                find_sf_request_param(IParams),
-                find_sf_trailer_param(IParams)
-            ],
+			IsRequestIdentifier = find_sf_request_param(IParams),
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
-			MaybeRawFields = lists:filter(
-				fun({Key, _Value}) -> Key =:= Lowered end,
-				% Field names are normalized to lowercase in the signature base
-                % and also are case insensitive.
-                % So by converting all the names to lowercase here, we
-                % simoultaneously normalize them, and prepare them for
-                % comparison in one pass.
-				[
-					{lower_bin(Key), Value}
-                % TODO: how can we maintain the order msg fields, especially in
-                % the case where there are multiple fields with the same name,
-                % and order must be preserved
-				 || {Key, Value} <-
-						maps:get(
-							% The field will almost certainly be a header, but
-                            % could also be a trailer
-							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.10.1
-							case IsTrailerField of
-                                true -> <<"trailers">>;
-                                false -> <<"headers">>
-                            end,
-							% The header may exist on any message in the context of
-                            % the signature which could be the Request or Response
-                            % Message
-							% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-18.8.1
-							case IsRequestIdentifier of
-                                true -> Req;
-                                false -> Res
-                            end
-					)
-				]
-			),
-			case MaybeRawFields of
-				[] ->
+            %?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
+			case maps:get(Lowered, if IsRequestIdentifier -> Req; true -> Res end, not_found) of
+				not_found ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6
 					{
                         field_not_found_error,
@@ -462,16 +573,15 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
                         {req, Req},
                         {res, Res}
                     };
-				FieldPairs ->
+				FieldValue ->
 					% The Field was found, but we still need to potentially
                     % parse it (it could be a Structured Field) and potentially
                     % extract subsequent values ie. specific dictionary key and
                     % its parameters, or further encode it
 					case
 						extract_field_value(
-							[bin(Value) || {_Key, Value} <- FieldPairs],
-							[DictKey, IsStrictFormat, IsByteSequenceEncoded]
-						)
+                            [FieldValue],
+                            [DictKey, IsStrictFormat, IsByteSequenceEncoded])
 					of
 						{ok, Extracted} ->
                             {ok, {bin(NormalizedItem), bin(Extracted)}};
@@ -532,7 +642,9 @@ extract_dictionary_field_value(StructuredField = [Elem | _Rest], Key) ->
 					{
                         sf_dicionary_key_not_found_error,
                         <<"Component Identifier references key not ",
-                        "found in dictionary structured field">>
+                        "found in dictionary structured field">>,
+                        {key, Key},
+                        {structured_field, StructuredField}
                     };
 				{_, Value} ->
 					sf_encode(Value)
@@ -569,7 +681,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 		_ ->
 			Lowered = lower_bin(IParsed),
 			NormalizedItem =
-                hb_http_structured_fields:item(
+                dev_codec_structured_conv:item(
                     {item, {string, Lowered}, IParams}
                 ),
 			Result =
@@ -733,10 +845,6 @@ sf_signature_params(ComponentIdentifiers, SigParams) when is_list(SigParams) ->
 		}
 	].
 
-% TODO: should this also handle the Signature already being encoded?
-sf_signature(Signature) ->
-    {item, {binary, Signature}, []}.
-
 %%% @doc Attempt to parse the binary into a data structure that represents
 %%% an HTTP Structured Field.
 %%%
@@ -748,9 +856,9 @@ sf_signature(Signature) ->
 sf_parse(Raw) when is_list(Raw) -> sf_parse(list_to_binary(Raw));
 sf_parse(Raw) when is_binary(Raw) ->
 	Parsers = [
-		fun hb_http_structured_fields:parse_list/1,
-		fun hb_http_structured_fields:parse_dictionary/1,
-		fun hb_http_structured_fields:parse_item/1
+		fun dev_codec_structured_conv:parse_list/1,
+		fun dev_codec_structured_conv:parse_dictionary/1,
+		fun dev_codec_structured_conv:parse_item/1
 	],
 	sf_parse(Parsers, Raw).
 
@@ -768,9 +876,9 @@ sf_parse([Parser | Rest], Raw) ->
 sf_encode(StructuredField = {list, _, _}) ->
 	% The value is an inner_list, and so needs to be wrapped with an outer list
 	% before being serialized
-	sf_encode(fun hb_http_structured_fields:list/1, [StructuredField]);
+	sf_encode(fun dev_codec_structured_conv:list/1, [StructuredField]);
 sf_encode(StructuredField = {item, _, _}) ->
-	sf_encode(fun hb_http_structured_fields:item/1, StructuredField);
+	sf_encode(fun dev_codec_structured_conv:item/1, StructuredField);
 sf_encode(StructuredField = [Elem | _Rest]) ->
 	sf_encode(
 		% Both an sf list and dictionary is represented in Erlang as a List of
@@ -778,9 +886,9 @@ sf_encode(StructuredField = [Elem | _Rest]) ->
 		% is a binary, so we can match on that to determine which serializer to use
 		case Elem of
 			{Name, _} when is_binary(Name) ->
-                fun hb_http_structured_fields:dictionary/1;
+                fun dev_codec_structured_conv:dictionary/1;
 			_ ->
-                fun hb_http_structured_fields:list/1
+                fun dev_codec_structured_conv:list/1
 		end,
 		StructuredField
 	).
@@ -880,20 +988,6 @@ trim_ws_test() ->
 	?assertEqual(<<>>, trim_ws(<<"">>)),
 	?assertEqual(<<>>, trim_ws(<<"         ">>)),
 	ok.
-
-sign_test() ->
-	Res = #{
-		status => 202,
-		headers => #{
-			"fizz" => "buzz",
-			<<"foo">> => [<<"b">>, <<"a">>, <<"r">>]
-		},
-		trailers => #{}
-	},
-    Signed = sign(Res, #{}, #{ priv_wallet => ar_wallet:new() }),
-	?assert(
-		verify(Signed, #{}, #{})
-	).
 
 join_signature_base_test() ->
 	ParamsLine =

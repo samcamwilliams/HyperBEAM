@@ -9,7 +9,7 @@
 -module(dev_meta).
 -export([handle/2, info/3]).
 %%% Helper functions for processors
--export([all_signers/1]).
+-export([all_attestors/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -31,8 +31,8 @@ info(_, Request, NodeMsg) ->
         <<"GET">> ->
             embed_status({ok, hb_private:reset(NodeMsg)});
         <<"POST">> ->
-            ReqSigners = hb_message:signers(Request),
-            Owner =
+            {ok, RequestSigners} = dev_message:attestors(Request),
+            Operator =
                 hb_opts:get(
                     operator,
                     case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
@@ -41,7 +41,14 @@ info(_, Request, NodeMsg) ->
                     end,
                     NodeMsg
                 ),
-            case Owner == unclaimed orelse lists:member(Owner, ReqSigners) of
+            EncOperator =
+                case Operator of
+                    unclaimed ->
+                        unclaimed;
+                    Val ->
+                        hb_util:human_id(Val)
+                end,
+            case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
                 false ->
                     ?event(auth, {set_node_message_fail, Request}),
                     embed_status({error, <<"Unauthorized">>});
@@ -127,10 +134,10 @@ maybe_sign(Res, NodeMsg) ->
     ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
-            hb_message:sign(
+            hb_message:attest(
                 Res,
                 hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-                hb_opts:get(format, http, NodeMsg)
+                hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
             );
         false -> Res
     end.
@@ -138,12 +145,12 @@ maybe_sign(Res, NodeMsg) ->
 %%% External helpers
 
 %% @doc Return the signers of a list of messages.
-all_signers(Msgs) ->
+all_attestors(Msgs) ->
     lists:foldl(
         fun(Msg, Acc) ->
-            Signers =
-                hb_converge:get(<<"signers">>, Msg, #{}, #{ hashpath => ignore }),
-            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Signers))
+            Attestors =
+                hb_converge:get(<<"attestors">>, Msg, #{}, #{ hashpath => ignore }),
+            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Attestors))
         end,
         [],
         Msgs
@@ -178,7 +185,7 @@ unauthorized_set_node_msg_fails_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"evil_config_item">> => <<"BAD">>
@@ -205,7 +212,7 @@ authorized_set_node_msg_succeeds_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
@@ -232,7 +239,7 @@ claim_node_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"operator">> => Address
@@ -248,7 +255,7 @@ claim_node_test() ->
     {ok, SetRes2} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>

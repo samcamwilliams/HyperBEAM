@@ -87,11 +87,11 @@ preprocess(State, Raw, NodeMsg) ->
                             % enough funds for the request, so we proceed.
                             {ok, Messages};
                         {ok, false} ->
-                            ?event(payment, {pre_ledger_validation, {error, false}}),
+                            ?event(payment, {pre_ledger_validation, false}),
                             {error, 
                                 #{
                                     <<"status">> => 429,
-                                    <<"reason">> => <<"Insufficient funds">>,
+                                    <<"body">> => <<"Insufficient funds">>,
                                     <<"price">> => Price
                                 }
                             };
@@ -200,9 +200,9 @@ faff_test() ->
         <<"path">> => <<"/greeting">>,
         <<"greeting">> => <<"Hello, world!">>
     },
-    GoodSignedReq = hb_message:sign(Req, GoodWallet),
+    GoodSignedReq = hb_message:attest(Req, GoodWallet),
     ?event({req, GoodSignedReq}),
-    BadSignedReq = hb_message:sign(Req, BadWallet),
+    BadSignedReq = hb_message:attest(Req, BadWallet),
     ?event({req, BadSignedReq}),
     {ok, Res} = hb_http:get(Node, GoodSignedReq, #{}),
     ?event(payment, {res, Res}),

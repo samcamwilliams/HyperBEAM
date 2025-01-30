@@ -254,10 +254,10 @@ push(Msg1, Msg2, Opts) ->
                 fun(Key, MsgToPush) ->
                     case hb_converge:get(<<"target">>, MsgToPush, Opts) of
                         not_found ->
-                            ?event({skip_no_target, {key, Key}, MsgToPush}),
-                            {ok, <<"No Target. Did not push.">>};
+                            ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
+                            #{};
                         Target ->
-                            ?event(
+                            ?event(push,
                                 {pushing_child,
                                     {originates_from_slot, PushMsgSlot},
                                     {outbox_key, Key}
@@ -269,7 +269,7 @@ push(Msg1, Msg2, Opts) ->
                                     <<"method">> => <<"POST">>,
                                     <<"path">> => <<"schedule/slot">>,
                                     <<"body">> =>
-                                        PushedMsg = hb_message:sign(
+                                        PushedMsg = hb_message:attest(
                                             MsgToPush,
                                             Wallet
                                         )
@@ -277,10 +277,11 @@ push(Msg1, Msg2, Opts) ->
                                 Opts
                             ),
                             PushedMsgID = hb_converge:get(<<"id">>, PushedMsg, Opts),
-                            ?event(
+                            ?event(push,
                                 {push_scheduled,
                                     {assigned_slot, NextSlotOnProc},
-                                    {target, Target}
+                                    {target, Target},
+                                    {pushed_msg, PushedMsg}
                                 }),
                             {ok, Downstream} = hb_converge:resolve(
                                 Msg1,
@@ -426,7 +427,7 @@ init() ->
 test_base_process() ->
     Wallet = hb:wallet(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    hb_message:sign(#{
+    hb_message:attest(#{
         <<"device">> => <<"Process@1.0">>,
         <<"scheduler-device">> => <<"Scheduler@1.0">>,
         <<"scheduler-location">> => Address,
@@ -437,7 +438,7 @@ test_base_process() ->
 test_wasm_process(WASMImage) ->
     Wallet = hb:wallet(),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
-    hb_message:sign(
+    hb_message:attest(
         maps:merge(test_base_process(), #{
             <<"execution-device">> => <<"Stack@1.0">>,
             <<"device-stack">> => [<<"WASM-64@1.0">>],
@@ -451,7 +452,7 @@ test_wasm_process(WASMImage) ->
 test_aos_process() ->
     Wallet = hb:wallet(),
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>),
-    hb_message:sign(maps:merge(WASMProc, #{
+    hb_message:attest(maps:merge(WASMProc, #{
         <<"device-stack">> =>
             [
                 <<"WASI@1.0">>,
@@ -468,8 +469,8 @@ test_aos_process() ->
                 <<"snapshot">>,
                 <<"normalize">>
             ],
-        <<"scheduler">> => hb:address(),
-        <<"authority">> => hb:address()
+        <<"scheduler">> => hb_util:human_id(hb:address()),
+        <<"authority">> => hb_util:human_id(hb:address())
     }), Wallet).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
@@ -477,7 +478,7 @@ test_aos_process() ->
 %% `Already-Seen' elements for each assigned slot.
 dev_test_process() ->
     Wallet = hb:wallet(),
-    hb_message:sign(
+    hb_message:attest(
         maps:merge(test_base_process(), #{
             <<"execution-device">> => <<"Stack@1.0">>,
             <<"device-stack">> => [<<"Test-Device@1.0">>, <<"Test-Device@1.0">>]
@@ -489,11 +490,11 @@ schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
-    Msg2 = hb_message:sign(#{
+    Msg2 = hb_message:attest(#{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:sign(
+            hb_message:attest(
                 MsgBase#{
                     <<"type">> => <<"Message">>,
                     <<"test-label">> => Text
@@ -505,8 +506,8 @@ schedule_test_message(Msg1, Text, MsgBase) ->
 
 schedule_aos_call(Msg1, Code) ->
     Wallet = hb:wallet(),
-    ProcID = hb_converge:get(<<"id">>, Msg1, #{}),
-    Msg2 = hb_message:sign(#{
+    ProcID = hb_message:id(Msg1, all),
+    Msg2 = hb_message:attest(#{
         <<"action">> => <<"Eval">>,
         <<"data">> => Code,
         <<"target">> => ProcID
@@ -515,11 +516,11 @@ schedule_aos_call(Msg1, Code) ->
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
     Wallet = hb:wallet(),
-    Msg2 = hb_message:sign(#{
+    Msg2 = hb_message:attest(#{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"type">> => <<"Message">>,
                     <<"wasm-function">> => FuncName,
@@ -541,7 +542,6 @@ schedule_on_process_test() ->
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>
         }, #{}),
-    ?event({scheduler_response, SchedulerRes}),
     ?assertMatch(
         <<"TEST TEXT 1">>,
         hb_converge:get(<<"assignments/0/body/Test-Label">>, SchedulerRes)
@@ -652,6 +652,9 @@ do_test_restore() ->
     % Execute the first computation, then the second as a disconnected process.
     Opts = #{ process_cache_frequency => 1 },
     init(),
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    ResetRes = hb_store:reset(Store),
+    ?event({reset_store, {result, ResetRes}, {store, Store}}),
     Msg1 = test_aos_process(),
     schedule_aos_call(Msg1, <<"X = 42">>),
     schedule_aos_call(Msg1, <<"X = 1337">>),
@@ -685,10 +688,11 @@ full_push_test_() ->
     {timeout, 30, fun() ->
         init(),
         Msg1 = test_aos_process(),
+        ?event(push, {msg1, Msg1}),
         Script = ping_ping_script(3),
         ?event({script, Script}),
         {ok, Msg2} = schedule_aos_call(Msg1, Script),
-        ?event({init_sched_result, Msg2}),
+        ?event(push, {init_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, #{}),
         Msg3 =

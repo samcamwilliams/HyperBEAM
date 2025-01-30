@@ -98,6 +98,7 @@ dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
         fun() ->
             case is_binary(Msg3) of
                 true ->
+                    ?event({writing_binary, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
                     hb_cache:write_binary(
                         hb_path:hashpath(Msg1, Msg2, Opts),
                         Msg3,

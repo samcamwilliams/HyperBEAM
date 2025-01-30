@@ -27,7 +27,7 @@ default_message() ->
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
-        scheduling_mode => aggressive,
+        scheduling_mode => local_confirmation,
         %% Compute mode: Determines whether the CU should attempt to execute
         %% more messages on a process after it has returned a result.
         %% Options: aggressive, lazy
@@ -69,14 +69,11 @@ default_message() ->
                 <<"faff@1.0">> => dev_faff,
                 <<"simple-pay@1.0">> => dev_simple_pay,
                 <<"snp@1.0">> => dev_snp,
+                <<"httpsig@1.0">> => dev_codec_httpsig,
+                <<"ans104@1.0">> => dev_codec_ans104,
+                <<"flat@1.0">> => dev_codec_flat,
+                <<"structured@1.0">> => dev_codec_structured,
                 <<"test-device@1.0">> => dev_test
-            },
-        codecs => 
-            #{
-                converge => hb_codec_converge,
-                tx => hb_codec_tx,
-                flat => hb_codec_flat,
-                http => hb_codec_http
             },
         %% Should the node attempt to access data from remote caches for
         %% client requests?
@@ -95,7 +92,7 @@ default_message() ->
         http_keepalive => 120000,
         http_request_send_timeout => 60000,
         http_default_remote_port => 8734,
-        http_port => 8734,
+        port => 8734,
         wasm_allow_aot => false,
         %% Dev options
         mode => debug,
@@ -108,7 +105,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_ids => true,
+        debug_hide_metadata => false
 		trusted => #{}
     }.
 
@@ -156,7 +153,7 @@ get(Key, Default, Opts) ->
 -define(ENV_KEYS,
     #{
         key_location => {"HB_KEY", "hyperbeam-key.json"},
-        http_port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
+        port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
             {"HB_STORE",
                 fun(Dir) ->

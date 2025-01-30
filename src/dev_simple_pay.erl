@@ -11,12 +11,19 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Estimate the cost of a request by counting the number of messages in
-%% the request, then multiplying by the per-message price.
-estimate(_, Req, NodeMsg) ->
-    case hb_converge:get(<<"type">>, Req, undefined, NodeMsg) of
-        <<"post">> -> {ok, 0};
-        <<"pre">> ->
-            Messages = hb_converge:get(<<"body">>, Req, NodeMsg#{ hashpath => ignore }),
+%% the request, then multiplying by the per-message price. The operator does
+%% not pay for their own requests.
+estimate(_, EstimateReq, NodeMsg) ->
+    Req = hb_converge:get(<<"request">>, EstimateReq, NodeMsg#{ hashpath => ignore }),
+    ReqType = hb_converge:get(<<"type">>, EstimateReq, undefined, NodeMsg),
+    case {is_operator(Req, NodeMsg), ReqType} of
+        {true, _} -> {ok, 0};
+        {_, <<"post">>} ->
+            % We do not charge after the request has been processed, as balances
+            % in the ledger are updated in the pre-processing step.
+            {ok, 0};
+        {_, <<"pre">>} ->
+            Messages = hb_converge:get(<<"body">>, EstimateReq, NodeMsg#{ hashpath => ignore }),
             {ok, length(Messages) * hb_opts:get(simple_pay_price, 1, NodeMsg)}
     end.
 
@@ -27,9 +34,9 @@ debit(_, RawReq, NodeMsg) ->
     case hb_converge:get(<<"type">>, RawReq, undefined, NodeMsg) of
         <<"post">> -> {ok, true};
         <<"pre">> ->
-            ?event(payment, {debit_preprocessing}),
+            ?event(payment, {debit_preprocessing, RawReq}),
             Req = hb_converge:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
-            Signer = hb_converge:get(<<"signers/1">>, Req, undefined, NodeMsg),
+            Signer = hd(hb_message:signers(Req)),
             UserBalance = get_balance(Signer, NodeMsg),
             Price = hb_converge:get(<<"amount">>, RawReq, 0, NodeMsg),
             ?event(payment,
@@ -48,7 +55,7 @@ debit(_, RawReq, NodeMsg) ->
 
 %% @doc Get the balance of a user in the ledger.
 balance(_, Req, NodeMsg) ->
-    Signer = hb_converge:get(<<"signers/1">>, Req, NodeMsg),
+    Signer = hd(hb_message:signers(Req)),
     {ok, get_balance(Signer, NodeMsg)}.
 
 %% @doc Adjust a user's balance, normalizing their wallet ID first.
@@ -83,13 +90,12 @@ get_balance(Signer, NodeMsg) ->
 
 %% @doc Top up the user's balance in the ledger.
 topup(_, Req, NodeMsg) ->
-    SignerRaw = hb_converge:get(<<"signers/1">>, Req, NodeMsg),
-    Signer = hb_util:human_id(SignerRaw),
-    case hb_opts:get(operator, undefined, NodeMsg) of
-        Unauth when Unauth =/= Signer -> {error, <<"Unauthorized">>};
-        Operator ->
+    ?event({topup, {req, Req}, {node_msg, NodeMsg}}),
+    case is_operator(Req, NodeMsg) of
+        false -> {error, <<"Unauthorized">>};
+        true ->
             Amount = hb_converge:get(<<"amount">>, Req, 0, NodeMsg),
-            Recipient = hb_converge:get(<<"recipient">>, Req, Operator, NodeMsg),
+            Recipient = hb_converge:get(<<"recipient">>, Req, undefined, NodeMsg),
             CurrentBalance = get_balance(Recipient, NodeMsg),
             ?event(payment,
                 {topup,
@@ -109,9 +115,21 @@ topup(_, Req, NodeMsg) ->
             {ok, get_balance(Recipient, NewNodeMsg)}
     end.
 
+%% @doc Check if the request is from the operator.
+is_operator(Req, NodeMsg) ->
+    Signers = hb_message:signers(Req),
+    OperatorAddr = hb_util:human_id(hb_opts:get(operator, undefined, NodeMsg)),
+    lists:any(
+        fun(Signer) ->
+            OperatorAddr =:= hb_util:human_id(Signer)
+        end,
+        Signers
+    ).
+
 %%% Tests
 
-test_opts() ->
+test_opts() -> test_opts(#{}).
+test_opts(Ledger) ->
     Wallet = ar_wallet:new(),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     ProcessorMsg =
@@ -124,7 +142,7 @@ test_opts() ->
         Address,
         Wallet,
         #{
-            simple_pay_ledger => #{Address => 100},
+            simple_pay_ledger => Ledger,
             simple_pay_price => 10,
             operator => Address,
             preprocessor => ProcessorMsg,
@@ -133,14 +151,16 @@ test_opts() ->
     }.
 
 get_balance_and_top_up_test() ->
-    {Address, Wallet, Opts} = test_opts(),
+    ClientWallet = ar_wallet:new(),
+    ClientAddress = hb_util:human_id(ar_wallet:to_address(ClientWallet)),
+    {_HostAddress, HostWallet, Opts} = test_opts(#{ClientAddress => 100}),
     Node = hb_http_server:start_test_node(Opts),
     {ok, Res} =
         hb_http:get(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
-                Wallet
+                ClientWallet
             ),
             #{}
         ),
@@ -148,24 +168,24 @@ get_balance_and_top_up_test() ->
     {ok, NewBalance} =
         hb_http:post(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{
                     <<"path">> => <<"/~simple-pay@1.0/topup">>,
                     <<"amount">> => 100,
-                    <<"recipient">> => Address
+                    <<"recipient">> => ClientAddress
                 },
-                Wallet
+                HostWallet
             ),
             #{}
         ),
-    ?assertEqual(140, hb_converge:get(<<"body">>, NewBalance, #{})),
+    ?assertEqual(170, hb_converge:get(<<"body">>, NewBalance, #{})),
     {ok, Res2} =
         hb_http:get(
             Node,
-            hb_message:sign(
+            hb_message:attest(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
-                Wallet
+                ClientWallet
             ),
             #{}
         ),
-    ?assertEqual(110, hb_converge:get(<<"body">>, Res2, #{})).
+    ?assertEqual(140, hb_converge:get(<<"body">>, Res2, #{})).

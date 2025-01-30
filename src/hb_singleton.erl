@@ -188,7 +188,7 @@ do_build(I, [Msg | Rest], ScopedKeys) ->
     ScopedKey = lists:nth(I, ScopedKeys),
     StepMsg = hb_message:convert(
         maps:merge(Msg, ScopedKey),
-        converge,
+        <<"structured@1.0">>,
         #{ topic => converge_internal }
     ),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys)].
@@ -233,7 +233,7 @@ parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->
         lists:foldl(
             fun(InlinedKey, Acc) ->
                 {Key, Val} = parse_inlined_key_val(InlinedKey),
-                ?event(debug, {inlined_key, {explicit, Key}, {explicit, Val}}),
+                ?event({inlined_key, {explicit, Key}, {explicit, Val}}),
                 maps:put(Key, Val, Acc)
             end,
             Msg,
@@ -286,7 +286,7 @@ maybe_typed(Key, Value) ->
                         {resolve, from(#{ <<"path">> => Subpath })}
                     };
                 {_T, Bin} when is_binary(Bin) ->
-                    {typed, OnlyKey, hb_codec_converge:decode_value(Type, Bin)}
+                    {typed, OnlyKey, dev_codec_structured:decode_value(Type, Bin)}
             end
     end.
 
