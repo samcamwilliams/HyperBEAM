@@ -115,7 +115,7 @@ attest(MsgToSign, _Req, Opts) ->
             hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
         ),
     ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
-    Authority = authority(maps:keys(Enc), Enc, Wallet),
+    Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]`
