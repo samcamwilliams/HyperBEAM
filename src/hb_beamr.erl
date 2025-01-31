@@ -60,7 +60,7 @@
 
 %% @doc Load the driver for the WASM executor.
 load_driver() ->
-    case erl_ddll:load("./priv", ?MODULE) of
+    case erl_ddll:load(code:priv_dir(hb), ?MODULE) of
         ok -> ok;
         {error, already_loaded} -> ok;
         {error, Error} -> {error, Error}
