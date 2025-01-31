@@ -231,26 +231,18 @@ hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
     EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
-    ComponentsLine =
-        iolist_to_binary(
-            signature_components_line(
-                maps:to_list(EncodedMsg),
-                #{},
-                Msg
-            )
-        ),
-    ParamsLine =
-        iolist_to_binary(
-            dev_codec_structured_conv:dictionary(
-                maps:map(
-                    fun(_Key, Value) ->
-                        {item, {token, Value}, []}
-                    end,
-                    EncodedMsg
-                )
-            )
-        ),
-    SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
+    {_, SignatureBase} = signature_base(
+        #{
+            component_identifiers => lists:sort(maps:keys(EncodedMsg)),
+            sig_params => #{
+                keyid => <<"ao">>,
+                alg => <<"hmac-sha256">>
+            }
+        },
+        #{},
+        EncodedMsg
+    ),
+    ?event({explicit, {signature_base, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
 
@@ -468,10 +460,8 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
 
 join_signature_base(ComponentsLine, ParamsLine) ->
     <<
-        ComponentsLine/binary,
-        <<"\n">>/binary,
-        <<"\"@signature-params\": ">>/binary,
-        ParamsLine/binary
+        ComponentsLine/binary, "\n",
+        "\"@signature-params\": ", ParamsLine/binary
     >>.
 
 %%% @doc Given a list of Component Identifiers and a Request/Response Message
