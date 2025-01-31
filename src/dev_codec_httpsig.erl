@@ -529,9 +529,9 @@ identifier_to_component(ParsedIdentifier = {item, {_, Value}, _Params}, Req, Res
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-http-fields
 extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
-	IsStrictFormat = find_sf_strict_format_param(IParams),
-	IsByteSequenceEncoded = find_sf_byte_sequence_param(IParams),
-	DictKey = find_sf_key_param(IParams),
+	IsStrictFormat = find_strict_format_param(IParams),
+	IsByteSequenceEncoded = find_byte_sequence_param(IParams),
+	DictKey = find_key_param(IParams),
 	case (IsStrictFormat orelse DictKey =/= false) andalso IsByteSequenceEncoded of
 		true ->
 			% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.2
@@ -548,7 +548,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
                 dev_codec_structured_conv:item(
                     {item, {string, Lowered}, IParams}
                 ),
-			IsRequestIdentifier = find_sf_request_param(IParams),
+            IsRequestIdentifier = find_request_param(IParams),
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
             %?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
@@ -586,7 +586,12 @@ extract_field_value(RawFields, [Key, IsStrictFormat, IsByteSequenceEncoded]) ->
 	% TODO: (maybe this already works?) empty string for empty header
 	HasKey = case Key of false -> false; _ -> true end,
 	case not (HasKey orelse IsStrictFormat orelse IsByteSequenceEncoded) of
-		% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-5
+        % No RFC-9421 parameterized encodings ie. "sf", "bs", "key"
+        % (see https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-17)
+        % So simply normalize and return the field values.
+        % 
+        % This takes into account the list-based fields serialization
+        % described in https://datatracker.ietf.org/doc/html/rfc9421#section-2.1-5
 		true ->
 			Normalized = [trim_and_normalize(Field) || Field <- RawFields],
 			{ok, bin(lists:join(<<", ">>, Normalized))};
@@ -600,6 +605,11 @@ extract_field_value(RawFields, [Key, IsStrictFormat, IsByteSequenceEncoded]) ->
 					],
 					sf_encode(SfList);
 				_ ->
+                    % In all cases, multiple fields MUST be combined
+                    % into a single data structure, before serialization,
+                    %
+                    % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.1-2
+                    % And https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.2-2
 					Combined = bin(lists:join(<<", ">>, RawFields)),
 					case sf_parse(Combined) of
 						% https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.1-3
@@ -610,11 +620,14 @@ extract_field_value(RawFields, [Key, IsStrictFormat, IsByteSequenceEncoded]) ->
                                 "be parsed as a structured field">>
                             };
 						{ok, SF} ->
-							case Key of
-								% Not accessing a key, so just re-serialize,
-                                % which should properly format the data in
-                                % Strict-Formatting style
-								false -> sf_encode(SF);
+							case HasKey of
+                                % https://datatracker.ietf.org/doc/html/rfc9421#section-2.1.1
+								false -> case IsStrictFormat of
+                                    % just re-serialize, which should properly
+                                    % format the data in Strict-Formatting style
+                                    true -> sf_encode(SF);
+                                    _ -> Combined
+                                end;
 								_ -> extract_dictionary_field_value(SF, Key)
 							end
 					end
@@ -660,7 +673,7 @@ derive_component(Identifier, Req, Res) when map_size(Res) == 0 ->
 derive_component(Identifier, Req, Res) ->
 	derive_component(Identifier, Req, Res, res).
 derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
-	case find_sf_request_param(IParams) andalso Subject =:= req of
+	case find_request_param(IParams) andalso Subject =:= req of
 		% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.3
 		true ->
 			{
@@ -732,7 +745,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 						{ok, bin(Query)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.16.1
 					<<"@query-param">> ->
-						case find_sf_name_param(IParams) of
+						case find_name_param(IParams) of
 							% The name parameter MUST be provided when specifiying a @query-param
 							% Derived Component. See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.8-1
 							false ->
@@ -916,12 +929,12 @@ find_sf_param(Name, Params, Default) ->
 %%% https://datatracker.ietf.org/doc/html/rfc9421#section-6.5.2-1
 %%% using functions allows encapsulating default values
 %%%
-find_sf_strict_format_param(Params) -> find_sf_param(<<"sf">>, Params, false).
-find_sf_key_param(Params) -> find_sf_param(<<"key">>, Params, false).
-find_sf_byte_sequence_param(Params) -> find_sf_param(<<"bs">>, Params, false).
-find_sf_trailer_param(Params) -> find_sf_param(<<"tr">>, Params, false).
-find_sf_request_param(Params) -> find_sf_param(<<"req">>, Params, false).
-find_sf_name_param(Params) -> find_sf_param(<<"name">>, Params, false).
+find_strict_format_param(Params) -> find_sf_param(<<"sf">>, Params, false).
+find_key_param(Params) -> find_sf_param(<<"key">>, Params, false).
+find_byte_sequence_param(Params) -> find_sf_param(<<"bs">>, Params, false).
+find_trailer_param(Params) -> find_sf_param(<<"tr">>, Params, false).
+find_request_param(Params) -> find_sf_param(<<"req">>, Params, false).
+find_name_param(Params) -> find_sf_param(<<"name">>, Params, false).
 
 %%%
 %%% Data Utilities
