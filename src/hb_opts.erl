@@ -21,6 +21,7 @@
 default_message() ->
     #{
         %%%%%%%% Functional options %%%%%%%%
+        initialized => true,
         %% What protocol should the node use for HTTP requests?
         %% Options: http1, http2, http3
         protocol => http2,

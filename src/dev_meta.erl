@@ -19,50 +19,83 @@
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event({normalized_request, NormRequest}),
-    handle_converge(RawRequest, NormRequest, NodeMsg).
+    ?event({normalized_request, hb_converge:normalize_keys(NormRequest)}),
+    case hb_opts:get(initialized, false, NodeMsg) of
+        false ->
+            embed_status(handle_initialize(NormRequest, NodeMsg));
+        true ->
+            handle_converge(RawRequest, NormRequest, NodeMsg);
+        _ ->
+            embed_status({error, <<"`initialized` not found in node message.">>})
+    end.
+
+handle_initialize([Base = #{ <<"device">> := Device}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
+    ?event({got, {device, Device}, {path, Path}}),
+    case {Device, Path} of
+        {<<"meta@1.0">>, <<"info">>} -> info(Base, Req, NodeMsg);
+        _ -> {error, <<"Node must be initialized before use.">>}
+    end;
+handle_initialize([{as, <<"meta@1.0">>, _}|Rest], NodeMsg) ->
+    handle_initialize([#{ <<"device">> => <<"meta@1.0">>}|Rest], NodeMsg);
+handle_initialize([_|Rest], NodeMsg) ->
+    handle_initialize(Rest, NodeMsg);
+handle_initialize([], _NodeMsg) ->
+    {error, <<"Node must be initialized before use.">>}.
 
 %% @doc Get/set the node message. If the request is a `POST`, we check that the
 %% request is signed by the owner of the node. If not, we return the node message
 %% as-is, aside all keys that are private (according to `hb_private`).
 info(_, Request, NodeMsg) ->
-    ?event({config_req, Request, NodeMsg}),
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
+            ?event(debug, {get_config_req, Request, NodeMsg}),
             embed_status({ok, hb_private:reset(NodeMsg)});
         <<"POST">> ->
-            {ok, RequestSigners} = dev_message:attestors(Request),
-            Operator =
-                hb_opts:get(
-                    operator,
-                    case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
-                        no_viable_wallet -> unclaimed;
-                        Wallet -> ar_wallet:to_address(Wallet)
-                    end,
-                    NodeMsg
-                ),
-            EncOperator =
-                case Operator of
-                    unclaimed ->
-                        unclaimed;
-                    Val ->
-                        hb_util:human_id(Val)
-                end,
-            case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
-                false ->
-                    ?event(auth, {set_node_message_fail, Request}),
-                    embed_status({error, <<"Unauthorized">>});
-                true ->
-                    ?event(auth, {set_node_message_success, Request}),
-                    hb_http_server:set_opts(
-                        Request#{
-                            http_server =>
-                                hb_opts:get(http_server, no_server, NodeMsg)
+            case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
+                <<"permanent">> ->
+                    embed_status(
+                        {error,
+                            <<"The node message of this machine is already "
+                                "permanent. It cannot be changed.">>
                         }
-                    ),
-                    embed_status({ok, <<"OK">>})
+                    );
+                _ ->
+                    update_node_message(Request, NodeMsg)
             end;
-        _ -> embed_status({error, <<"Unsupported Method">>})
+        _ -> embed_status({error, <<"Unsupported Meta/info method.">>})
+    end.
+
+update_node_message(Request, NodeMsg) ->
+    {ok, RequestSigners} = dev_message:attestors(Request),
+    Operator =
+        hb_opts:get(
+            operator,
+            case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+                no_viable_wallet -> unclaimed;
+                Wallet -> ar_wallet:to_address(Wallet)
+            end,
+            NodeMsg
+        ),
+    EncOperator =
+        case Operator of
+            unclaimed ->
+                unclaimed;
+            Val ->
+                hb_util:human_id(Val)
+        end,
+    case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
+        false ->
+            ?event(debug, {set_node_message_fail, Request}),
+            embed_status({error, <<"Unauthorized">>});
+        true ->
+            ?event(debug, {set_node_message_success, Request}),
+            hb_http_server:set_opts(
+                Request#{
+                    http_server =>
+                        hb_opts:get(http_server, no_server, NodeMsg)
+                }
+            ),
+            embed_status({ok, <<"OK">>})
     end.
 
 %% @doc Handle a Converge request, which is a list of messages. We apply
@@ -225,6 +258,57 @@ authorized_set_node_msg_succeeds_test() ->
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
+
+%% @doc Test that an uninitialized node will not run computation.
+uninitialized_node_test() ->
+    Node = hb_http_server:start_test_node(#{ initialized => false }),
+    {error, Res} = hb_http:get(Node, <<"/key1?1.key1=value1">>, #{}),
+    ?event({res, Res}),
+    ?assertEqual(<<"Node must be initialized before use.">>, Res).
+
+%% @doc Test that a permanent node message cannot be changed.
+permanent_node_message_test() ->
+    Owner = ar_wallet:new(),
+    Node = hb_http_server:start_test_node(
+        #{
+            operator => unclaimed,
+            initialized => false,
+            test_config_item => <<"test">>
+        }
+    ),
+    {ok, SetRes1} =
+        hb_http:post(
+            Node,
+            hb_message:attest(
+                #{
+                    <<"path">> => <<"/~meta@1.0/info">>,
+                    <<"test_config_item">> => <<"test2">>,
+                    initialized => <<"permanent">>
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({set_res, SetRes1}),
+    {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
+    ?event({get_res, Res}),
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
+    {ok, SetRes2} =
+        hb_http:post(
+            Node,
+            hb_message:attest(
+                #{
+                    <<"path">> => <<"/~meta@1.0/info">>,
+                    <<"test_config_item">> => <<"bad_value">>
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({set_res, SetRes2}),
+    {ok, Res2} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
+    ?event({get_res, Res2}),
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
 
 %% @doc Test that we can claim the node correctly and set the node message after.
 claim_node_test() ->
