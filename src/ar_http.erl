@@ -295,8 +295,7 @@ open_connection(#{ peer := Peer }, Opts) ->
     GunOpts =
         case Proto = hb_opts:get(protocol, no_proto, Opts) of
             http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
-            http2 -> BaseGunOpts#{protocols => [http2], transport => Transport};
-            http1 -> BaseGunOpts#{protocols => [http], transport => Transport}
+            _ -> BaseGunOpts
         end,
     ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}, {transport, Transport}}),
 	gun:open(Host, Port, GunOpts).
