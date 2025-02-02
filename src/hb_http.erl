@@ -428,16 +428,18 @@ read_body(Req0, Acc) ->
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
+    Wallet = hb:wallet(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    {ok, Res} = post(URL, TestMsg, #{}),
+    {ok, Res} = post(URL, hb_message:attest(TestMsg, Wallet), #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
+    Wallet = hb:wallet(),
     {ok, Res} =
         post(
             URL,
-            #{
+            hb_message:attest(#{
                 <<"path">> => <<"/key1/key2/key3">>,
                 <<"key1">> =>
                     #{<<"key2">> =>
@@ -445,7 +447,7 @@ nested_converge_resolve_test() ->
                             <<"key3">> => <<"Value2">>
                         }
                     }
-            },
+            }, Wallet),
             #{}
         ),
     ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
@@ -454,13 +456,14 @@ wasm_compute_request(ImageFile, Func, Params) ->
     wasm_compute_request(ImageFile, Func, Params, <<"">>).
 wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
     {ok, Bin} = file:read_file(ImageFile),
-    #{
+    Wallet = hb:wallet(),
+    hb_message:attest(#{
         <<"path">> => <<"/init/compute/results", ResultPath/binary>>,
         <<"device">> => <<"WASM-64@1.0">>,
         <<"wasm-function">> => Func,
         <<"wasm-params">> => Params,
         <<"body">> => Bin
-    }.
+    }, Wallet).
 
 run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),
