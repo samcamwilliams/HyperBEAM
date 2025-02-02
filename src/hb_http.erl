@@ -377,10 +377,11 @@ req_to_tabm_singleton(Req, Opts) ->
 
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
     {ok, Body} = read_body(Req),
+    SignedHeaders = remove_unsigned_fields(RawHeaders),
     HeadersWithPath =
         case maps:get(<<"path">>, RawHeaders, undefined) of
             undefined ->
-                RawHeaders#{
+                SignedHeaders#{
                     <<"path">> =>
                         iolist_to_binary(
                             cowboy_req:uri(
@@ -393,7 +394,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
                             )
                     )
                 };
-            _ -> RawHeaders
+            _ -> SignedHeaders
         end,
     HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
     ?event(http, {recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
@@ -402,6 +403,26 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
             <<"body">> => Body
         },
     dev_codec_httpsig_conv:from(HTTPEncoded).
+
+remove_unsigned_fields (RawHeaders) ->
+    % Every signature ought to have the same signature base
+    % And so we just parse out the first signature input,
+    % and use it to determine the signed components, stripping
+    % the components that are not signed
+    [{_SigInputName, SigInput} | _] = dev_codec_structured_conv:parse_dictionary(
+        maps:get(<<"signature-input">>, RawHeaders)
+    ),
+    {list, ComponentIdentifiers, _SigParams} = SigInput,
+    BinComponentIdentifiers = lists:map(
+        fun({item, {_Kind, CI}, _Params}) -> CI end,
+        ComponentIdentifiers    
+    ),
+    SignedHeaders = maps:with(
+        [<<"signature", "signature-input">>] ++ BinComponentIdentifiers,
+        RawHeaders
+    ),
+    ?event(debug, {{component_identifiers, BinComponentIdentifiers}, {sanitized_headers, SignedHeaders}}),
+    SignedHeaders.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -429,16 +450,18 @@ id_case_is_preserved_test() ->
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
+    Wallet = hb:wallet(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    {ok, Res} = post(URL, TestMsg, #{}),
+    {ok, Res} = post(URL, hb_message:attest(TestMsg, Wallet), #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
+    Wallet = hb:wallet(),
     {ok, Res} =
         post(
             URL,
-            #{
+            hb_message:attest(#{
                 <<"path">> => <<"/key1/key2/key3">>,
                 <<"key1">> =>
                     #{<<"key2">> =>
@@ -446,7 +469,7 @@ nested_converge_resolve_test() ->
                             <<"key3">> => <<"Value2">>
                         }
                     }
-            },
+            }, Wallet),
             #{}
         ),
     ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
@@ -455,13 +478,14 @@ wasm_compute_request(ImageFile, Func, Params) ->
     wasm_compute_request(ImageFile, Func, Params, <<"">>).
 wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
     {ok, Bin} = file:read_file(ImageFile),
-    #{
+    Wallet = hb:wallet(),
+    hb_message:attest(#{
         <<"path">> => <<"/init/compute/results", ResultPath/binary>>,
         <<"device">> => <<"WASM-64@1.0">>,
         <<"wasm-function">> => Func,
         <<"wasm-params">> => Params,
         <<"body">> => Bin
-    }.
+    }, Wallet).
 
 
 
