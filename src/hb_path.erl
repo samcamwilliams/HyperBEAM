@@ -282,13 +282,12 @@ regex_matches(Path1, Path2) ->
 
 %% @doc Normalize a path to a binary, removing the leading slash if present.
 normalize(Path) ->
-    case hb_converge:normalize_key(Path) of
+    case iolist_to_binary([Path]) of
         BinPath = <<"/", _/binary>> -> BinPath;
         Binary -> <<"/", Binary/binary>>
     end.
 
 %%% TESTS
-
 hashpath_test() ->
     Msg1 = #{ priv => #{<<"empty">> => <<"message">>} },
     Msg2 = #{ priv => #{<<"exciting">> => <<"message2">>} },
