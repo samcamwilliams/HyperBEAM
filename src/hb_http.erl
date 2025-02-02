@@ -160,7 +160,12 @@ message_to_request(M, Opts) ->
             Protocol = maps:get(scheme, URI, <<"https">>),
             Host = maps:get(host, URI, <<"localhost">>),
             Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
-            Path = maps:get(path, URI, <<"/">>),
+            PathParts = [maps:get(path, URI, <<"/">>)] ++
+                case maps:get(query, URI, <<>>) of
+                    <<>> -> [];
+                    Query -> [<<"?", Query/binary>>]
+                end,
+            Path = iolist_to_binary(PathParts),
             ?event(http, {relay, {node, Node}, {method, Method}, {path, Path}}),
             {ok, Method, Node, Path, MsgWithoutMeta};
         {ok, Route} ->
@@ -391,7 +396,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
             _ -> RawHeaders
         end,
     HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
-    ?event({recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
+    ?event(http, {recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
     HTTPEncoded =
         (maps:without([<<"content-length">>], HeadersWithMethod))#{
             <<"body">> => Body
@@ -405,6 +410,22 @@ read_body(Req0, Acc) ->
         {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
         {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
+
+%%% Tests
+
+id_case_is_preserved_test() ->
+    URL = hb_http_server:start_test_node(),
+    TestID = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    {ok, Res} =
+        post(
+            URL,
+            #{
+                TestID => <<"value1">>,
+                <<"path">> => <<TestID/binary>>
+            },
+            #{}
+        ),
+    ?assertEqual(<<"value1">>, hb_converge:get(TestID, Res, #{})).
 
 simple_converge_resolve_test() ->
     URL = hb_http_server:start_test_node(),
@@ -441,6 +462,8 @@ wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
         <<"wasm-params">> => Params,
         <<"body">> => Bin
     }.
+
+
 
 run_wasm_unsigned_test() ->
     Node = hb_http_server:start_test_node(#{force_signed => false}),

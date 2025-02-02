@@ -20,6 +20,64 @@ start_link(Opts) ->
 
 req(Args, Opts) -> req(Args, false, Opts).
 req(Args, ReestablishedConnection, Opts) ->
+    case hb_opts:get(http_client, gun, Opts) of
+        gun -> gun_req(Args, ReestablishedConnection, Opts);
+        httpc -> httpc_req(Args, ReestablishedConnection, Opts)
+    end.
+
+httpc_req(Args, _, Opts) ->
+    #{
+        peer := Peer,
+        path := Path,
+        method := RawMethod,
+        headers := Headers,
+        body := Body
+    } = Args,
+    {Host, Port} = parse_peer(Peer, Opts),
+    Scheme = case Port of
+        443 -> "https";
+        _ -> "http"
+    end,
+    ?event(http, {httpc_req, Args}),
+    URL = binary_to_list(iolist_to_binary([Scheme, "://", Host, ":", integer_to_binary(Port), Path])),
+    FilteredHeaders = maps:remove(<<"content-type">>, Headers),
+    HeaderKV =
+        [ {binary_to_list(Key), binary_to_list(Value)} || {Key, Value} <- maps:to_list(FilteredHeaders) ],
+    Method = binary_to_existing_atom(hb_util:to_lower(RawMethod)),
+    ContentType = maps:get(<<"content-type">>, Headers, <<"application/octet-stream">>),
+    Request =
+        case Method of
+            get ->
+                {
+                    URL,
+                    HeaderKV
+                };
+            _ ->
+                {
+                    URL,
+                    HeaderKV,
+                    ContentType,
+                    Body
+                }
+        end,
+    ?event(http, {httpc_req, Method, URL, Request}),
+    HTTPCOpts = [{full_result, true}, {body_format, binary}],
+    case httpc:request(Method, Request, [], HTTPCOpts) of
+        {ok, {{_, Status, _}, RawRespHeaders, RespBody}} ->
+            RespHeaders =
+                [
+                    {list_to_binary(Key), list_to_binary(Value)}
+                ||
+                    {Key, Value} <- RawRespHeaders
+                ],
+            ?event(http, {httpc_resp, Status, RespHeaders, RespBody}),
+            {ok, Status, RespHeaders, RespBody};
+        {error, Reason} ->
+            ?event(http, {httpc_error, Reason}),
+            {error, Reason}
+    end.
+
+gun_req(Args, ReestablishedConnection, Opts) ->
 	StartTime = erlang:monotonic_time(),
 	#{ peer := Peer, path := Path, method := Method } = Args,
 	Response =
