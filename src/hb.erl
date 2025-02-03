@@ -83,6 +83,9 @@
 -module(hb).
 %%% Configuration and environment:
 -export([init/0, now/0, build/0]).
+%%% Base start configurations:
+-export([start_simple_pay/0, start_simple_pay/1, start_simple_pay/2]).
+-export([topup/3, topup/4]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, event/4, event/5, event/6, no_prod/3]).
 -export([read/1, read/2, debug_wait/4, profile/1, benchmark/2, benchmark/3]).
@@ -97,6 +100,63 @@ init() ->
     Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
     ?event({old_system_stack_depth, Old}),
     ok.
+
+%%% @doc Start a server with a `simple-pay@1.0` pre-processor.
+start_simple_pay() ->
+    start_simple_pay(address()).
+start_simple_pay(Addr) ->
+    rand:seed(default),
+    start_simple_pay(Addr, 10000 + rand:uniform(50000)).
+start_simple_pay(Addr, Port) ->
+    do_start_simple_pay(#{ port => Port, operator => Addr }).
+
+do_start_simple_pay(Opts) ->
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    Port = maps:get(port, Opts),
+    Processor =
+        #{
+            <<"device">> => <<"p4@1.0">>,
+            <<"ledger_device">> => <<"simple-pay@1.0">>,
+            <<"pricing_device">> => <<"simple-pay@1.0">>
+        },
+    hb_http_server:start_node(
+        Opts#{
+            preprocessor => Processor,
+            postprocessor => Processor
+        }
+    ),
+    io:format(
+        "Started simple-pay node at http://localhost:~p~n"
+        "Operator: ~s~n",
+        [Port, address()]
+    ),
+    <<"http://localhost:", (integer_to_binary(Port))/binary>>.
+
+%% @doc Helper for topping up a user's balance on a simple-pay node.
+topup(Node, Amount, Recipient) ->
+    topup(Node, Amount, Recipient, wallet()).
+topup(Node, Amount, Recipient, Wallet) ->
+    Message = hb_message:attest(
+        #{
+            <<"path">> => <<"/~simple-pay@1.0/topup">>,
+            <<"amount">> => Amount,
+            <<"recipient">> => Recipient
+        },
+        Wallet
+    ),
+    hb_http:get(Node, Message, #{}).
 
 wallet() ->
     wallet(hb_opts:get(key_location)).
