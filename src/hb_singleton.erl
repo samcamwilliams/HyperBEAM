@@ -32,10 +32,106 @@
 %%%         - N.Key+Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
 %%% '''
 -module(hb_singleton).
--export([from/1]).
+-export([from/1, to/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -define(MAX_SEGMENT_LENGTH, 512).
+
+-type converge_message() :: map() | binary().
+-type tabm_message() :: map().
+
+%% @doc Convert a list of converge message into TABM message.
+-spec to(list(converge_message())) -> tabm_message().
+to(Messages) ->
+    % Iterate through all converge messages folding them into the TABM message
+    % Scopes contains the following map: #{Key => [StageIndex, StageIndex2...]}
+    % that allows to scope keys to the given stage.
+    {TABMMessage, _FinalIndex, Scopes} =
+        lists:foldl(
+            fun
+                % Special case when Converge message is ID
+                (Message, {Acc, Index, ScopedModifications}) when ?IS_ID(Message) ->
+                    {append_path(Message, Acc), Index + 1, ScopedModifications};
+
+                % Special case when Converge message contains resolve command
+                ({resolve, SubMessages0}, {Acc, Index, ScopedModifications}) ->
+                    SubMessages1 = maps:get(<<"path">>, to(SubMessages0)),
+                    <<"/", SubMessages2/binary>> = SubMessages1,
+                    SubMessages = <<"(", SubMessages2/binary, ")">>,
+                    {append_path(SubMessages, Acc), Index + 1, ScopedModifications};
+
+                % Regular case when message is a map
+                (Message, {Acc, Index, ScopedModifications}) ->
+                    {NewMessage, NewScopedModifications} =
+                        maps:fold(
+                            fun
+                                (<<"path">>, PathPart, {AccIn, Scoped}) ->
+                                    {append_path(PathPart, AccIn), Scoped};
+                                % Specifically ignore method field from scope modifications
+                                (<<"method">>, Value, {AccIn, Scoped}) ->
+                                    {maps:put(<<"method">>, Value, AccIn), Scoped};
+                                (Key, {resolve, SubMessages}, {AccIn, Scoped}) ->
+                                    NewKey = <<Key/binary, "+resolve">>,
+                                    NewSubMessages = maps:get(<<"path">>, to(SubMessages)),
+                                    {
+                                        maps:put(NewKey, NewSubMessages, AccIn),
+                                        maps:update_with(
+                                            NewKey,
+                                            fun(Indexes) -> [Index | Indexes] end,
+                                            [Index],
+                                            Scoped
+                                        )
+                                    };
+                                (Key, Value, {AccIn, Scoped}) ->
+                                    {
+                                        maps:put(Key, Value, AccIn),
+                                        maps:update_with(
+                                            Key,
+                                            fun(Indexes) -> [Index | Indexes] end,
+                                            [Index],
+                                            Scoped
+                                        )
+                                    }
+                            end,
+                            {Acc, ScopedModifications},
+                            Message),
+
+                        {NewMessage, Index + 1, NewScopedModifications}
+
+            end,
+            {#{}, 0, #{}},
+            Messages),
+
+    MessageWithTypeAndScopes =
+        maps:fold(
+            fun
+                % For the case when a given Key appeared only once in scopes
+                (Key, [SingleIndexScope], AccIn) ->
+                    Index = integer_to_binary(SingleIndexScope),
+                    {Value, NewAccIn} = maps:take(Key, AccIn),
+                    {NewKey, NewValue} =
+                        case type(Value) of
+                            integer ->
+                                K = <<Index/binary, ".", Key/binary, "+integer">>,
+                                V = integer_to_binary(Value),
+                                {K, V};
+                            _ -> {<<Index/binary, ".", Key/binary>>, Value}
+                        end,
+                    maps:put(NewKey, NewValue, NewAccIn);
+                (_Key, _Value, AccIn) -> AccIn
+            end,
+            TABMMessage,
+            Scopes),
+    MessageWithTypeAndScopes.
+
+append_path(PathPart, #{<<"path">> := Path} = Message) ->
+    maps:put(<<"path">>, <<Path/binary, "/", PathPart/binary>>, Message);
+append_path(PathPart, Message) ->
+    maps:put(<<"path">>, <<"/", PathPart/binary>>, Message).
+
+type(Value) when is_binary(Value) -> binary;
+type(Value) when is_integer(Value) -> integer;
+type(_Value) -> unknown.
 
 %% @doc Normalize a singleton TABM message into a list of executable Converge
 %% messages.
@@ -301,9 +397,183 @@ maybe_join(Items, Sep) ->
 
 %%% Tests
 
-%%% Simple tests
+%%% `to/1' function tests
+to_suite_test_() ->
+    [
+        fun simple_to_test/0,
+        fun multiple_messages_to_test/0,
+        fun basic_hashpath_to_test/0,
+        fun scoped_key_to_test/0,
+        fun typed_key_to_test/0,
+        fun subpath_in_key_to_test/0,
+        fun subpath_in_path_to_test/0,
+        fun inlined_keys_to_test/0,
+        fun multiple_inlined_keys_to_test/0,
+        fun subpath_in_inlined_to_test/0
+    ].
 
+simple_to_test() ->
+    Messages = [
+        #{<<"test-key">> => <<"test-value">>},
+        #{<<"path">> => <<"a">>, <<"test-key">> => <<"test-value">>}
+    ],
+    Expected = #{<<"path">> => <<"/a">>, <<"test-key">> => <<"test-value">>},
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+
+multiple_messages_to_test() ->
+    Messages =
+        [
+            #{<<"test-key">> => <<"test-value">>},
+            #{<<"path">> => <<"a">>, <<"test-key">> => <<"test-value">>},
+            #{<<"path">> => <<"b">>, <<"test-key">> => <<"test-value">>},
+            #{<<"path">> => <<"c">>, <<"test-key">> => <<"test-value">>}
+        ],
+    Expected = #{
+        <<"path">> => <<"/a/b/c">>,
+        <<"test-key">> => <<"test-value">>
+    },
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+basic_hashpath_to_test() ->
+    Messages = [
+        <<"e5ohB7TgMYRoc0BLllkmAqkqLy1SrliEkOPJlNPXBQ8">>,
+        #{<<"method">> => <<"GET">>, <<"path">> => <<"some-other">>}
+    ],
+    Expected = #{
+        <<"path">> => <<"/e5ohB7TgMYRoc0BLllkmAqkqLy1SrliEkOPJlNPXBQ8/some-other">>,
+        <<"method">> => <<"GET">>
+    },
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+scoped_key_to_test() ->
+    Messages = [
+        #{},
+        #{<<"path">> => <<"a">>},
+        #{<<"path">> => <<"b">>, <<"test-key">> => <<"test-value">>},
+        #{<<"path">> => <<"c">>}
+    ],
+    Expected = #{<<"2.test-key">> => <<"test-value">>, <<"path">> => <<"/a/b/c">>},
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+typed_key_to_test() ->
+    Messages =
+        [
+            #{},
+            #{<<"path">> => <<"a">>},
+            #{<<"path">> => <<"b">>, <<"test-key">> => 123},
+            #{<<"path">> => <<"c">>}
+        ],
+    Expected = #{<<"2.test-key+integer">> => <<"123">>, <<"path">> => <<"/a/b/c">>},
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+subpath_in_key_to_test() ->
+    Messages = [
+        #{},
+        #{<<"path">> => <<"a">>},
+        #{
+            <<"path">> => <<"b">>,
+            <<"test-key">> =>
+                {resolve,
+                    [
+                        #{},
+                        #{<<"path">> => <<"x">>},
+                        #{<<"path">> => <<"y">>},
+                        #{<<"path">> => <<"z">>}
+                    ]
+                }
+        },
+        #{<<"path">> => <<"c">>}
+    ],
+    Expected = #{<<"2.test-key+resolve">> => <<"/x/y/z">>, <<"path">> => <<"/a/b/c">>},
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+subpath_in_path_to_test() ->
+    Messages = [
+        #{},
+        #{<<"path">> => <<"a">>},
+        {resolve,
+            [
+                #{},
+                #{<<"path">> => <<"x">>},
+                #{<<"path">> => <<"y">>},
+                #{<<"path">> => <<"z">>}
+            ]
+        },
+        #{<<"path">> => <<"z">>}
+    ],
+    Expected = #{
+        <<"path">> => <<"/a/(x/y/z)/z">>
+    },
+    ?assertEqual(Expected, to(Messages)),
+    ?assertEqual(Messages, from(to(Messages))).
+
+inlined_keys_to_test() ->
+    Messages =
+        [
+            #{<<"method">> => <<"POST">>},
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"a">>
+            },
+            #{
+                <<"k1">> => <<"v1">>,
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"b">>
+            },
+            #{
+                <<"k2">> => <<"v2">>,
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"c">>
+            }
+        ],
+    % NOTE: The implementation above does not convert the given list of messages
+    % into the original format, however it assures that the `to/1' and `from/1'
+    % operations are idempotent.
+    ?assertEqual(Messages, from(to(Messages))).
+
+multiple_inlined_keys_to_test() ->
+    Messages = [
+        #{<<"method">> => <<"POST">>},
+            #{<<"method">> => <<"POST">>, <<"path">> => <<"a">>},
+            #{
+                <<"k1">> => <<"v1">>,
+                <<"k2">> => <<"v2">>,
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"b">>
+            }
+        ],
+    % NOTE: The implementation above does not convert the given list of messages
+    % into the original format, however it assures that the `to/1' and `from/1'
+    % operations are idempotent.
+    ?assertEqual(Messages, from(to(Messages))).
+
+subpath_in_inlined_to_test() ->
+    Messages = [
+        #{},
+        #{<<"path">> => <<"part1">>},
+        #{<<"b">> =>
+                {resolve,
+                    [#{},
+                     #{<<"path">> => <<"x">>},
+                     #{<<"path">> => <<"y">>}]},
+                    <<"path">> => <<"part2">>,
+                    <<"test">> => <<"1">>},
+        #{<<"path">> => <<"part3">>}],
+    % NOTE: The implementation above does not convert the given list of messages
+    % into the original format, however it assures that the `to/1' and `from/1'
+    % operations are idempotent.
+    ?assertEqual(Messages, from(to(Messages))).
+
+%%% `from/1' function tests
 single_message_test() ->
+    % This is a singleton TABM message
     Req = #{
         <<"path">> => <<"/a">>,
         <<"test-key">> => <<"test-value">>
