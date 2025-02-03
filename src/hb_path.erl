@@ -274,8 +274,8 @@ matches(Key1, Key2) ->
 
 %% @doc Check if two keys match using regex.
 regex_matches(Path1, Path2) ->
-    NormP1 = normalize(Path1),
-    NormP2 = normalize(Path2),
+    NormP1 = normalize(hb_converge:normalize_key(Path1)),
+    NormP2 = normalize(hb_converge:normalize_key(Path2)),
     try re:run(NormP1, NormP2) =/= nomatch
     catch _A:_B:_C -> false
     end.
