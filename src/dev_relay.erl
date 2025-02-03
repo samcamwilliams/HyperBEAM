@@ -39,9 +39,14 @@ call(M1, RawM2, Opts) ->
             true -> hb_message:attest(TargetMod1, Opts);
             false -> TargetMod1
         end,
+    Client =
+        case hb_converge:get(<<"http-client">>, BaseTarget, Opts) of
+            not_found -> hb_opts:get(relay_http_client, Opts);
+            RequestedClient -> RequestedClient
+        end,
     ?event({relaying_message, TargetMod2}),
     % Let `hb_http:request/2` handle finding the peer and dispatching the request.
-    hb_http:request(TargetMod2, Opts).
+    hb_http:request(TargetMod2, Opts#{ http_client => Client }).
 
 %% @doc Execute a request in the same way as `call/3`, but asynchronously. Always
 %% returns <<"OK">>.

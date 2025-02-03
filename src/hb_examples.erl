@@ -25,7 +25,7 @@ relay_with_payments_test() ->
             <<"pricing_device">> => <<"simple-pay@1.0">>
         },
     HostNode =
-        hb_http_server:start_test_node(
+        hb_http_server:start_node(
             #{
                 operator => ar_wallet:to_address(HostWallet),
                 preprocessor => ProcessorMsg,
@@ -76,7 +76,7 @@ paid_wasm_test() ->
             <<"pricing_device">> => <<"simple-pay@1.0">>
         },
     HostNode =
-        hb_http_server:start_test_node(
+        hb_http_server:start_node(
             #{
                 simple_pay_ledger => #{ ClientAddress => 100 },
                 simple_pay_price => 10,

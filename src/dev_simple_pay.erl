@@ -154,7 +154,7 @@ get_balance_and_top_up_test() ->
     ClientWallet = ar_wallet:new(),
     ClientAddress = hb_util:human_id(ar_wallet:to_address(ClientWallet)),
     {_HostAddress, HostWallet, Opts} = test_opts(#{ClientAddress => 100}),
-    Node = hb_http_server:start_test_node(Opts),
+    Node = hb_http_server:start_node(Opts),
     {ok, Res} =
         hb_http:get(
             Node,

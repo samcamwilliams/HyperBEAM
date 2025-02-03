@@ -283,7 +283,7 @@ generate_nonce(RawAddress, RawNodeMsgID) ->
 % 		},
 %     Wallet = ar_wallet:new(),
 %     Addr = hb_util:human_id(ar_wallet:to_address(Wallet)),
-%     Node = hb_http_server:start_test_node(
+%     Node = hb_http_server:start_node(
 %         #{
 %             force_signed => true,
 %             priv_wallet => Wallet,

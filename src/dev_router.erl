@@ -373,7 +373,7 @@ device_call_from_singleton_test() ->
     
 
 get_routes_test() ->
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             force_signed => false,
             routes => [
@@ -392,7 +392,7 @@ get_routes_test() ->
 
 add_route_test() ->
     Owner = ar_wallet:new(),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             force_signed => false,
             routes => [
