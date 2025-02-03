@@ -175,28 +175,32 @@ reset_hmac(RawMsg) ->
     AllSigs =
         maps:from_list(lists:map(
             fun ({Attestor, #{ <<"signature">> := Signature }}) ->
-                SigName = address_to_sig_name(Attestor),
+                SigNameFromDict = sig_name_from_dict(Signature),
+                ?event({name_options,
+                    {attestor, Attestor},
+                    {sig_name_from_dict, SigNameFromDict}}
+                ),
                 SigBin =
-                    maps:get(SigName,
+                    maps:get(SigNameFromDict,
                         maps:from_list(
                             dev_codec_structured_conv:parse_dictionary(Signature)
                         )
                     ),
-                ?event({SigName, SigBin}),
-                {SigName, SigBin}
+                ?event({SigNameFromDict, SigBin}),
+                {SigNameFromDict, SigBin}
             end,
             maps:to_list(Attestations)
         )),
     AllInputs =
         maps:from_list(lists:map(
-            fun ({Attestor, #{ <<"signature-input">> := Inputs }}) ->
-                SigName = address_to_sig_name(Attestor),
+            fun ({_Attestor, #{ <<"signature-input">> := Inputs }}) ->
+                SigNameFromDict = sig_name_from_dict(Inputs),
                 ?event({trying_to_parse, Inputs}),
                 Res = dev_codec_structured_conv:parse_dictionary(Inputs),
                 ?event({parsed_dict, Res}),
-                SingleSigInput = maps:get(SigName, maps:from_list(Res)),
+                SingleSigInput = maps:get(SigNameFromDict, maps:from_list(Res)),
                 ?event({single_sig_input, SingleSigInput}),
-                {SigName, SingleSigInput}
+                {SigNameFromDict, SingleSigInput}
             end,
             maps:to_list(Attestations)
         )),
@@ -224,6 +228,10 @@ reset_hmac(RawMsg) ->
     },
     ?event({reset_hmac_complete, {explicit, Res}}),
     Res.
+
+sig_name_from_dict(DictBin) ->
+    [{SigNameFromDict, _}] = dev_codec_structured_conv:parse_dictionary(DictBin),
+    SigNameFromDict.
 
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.

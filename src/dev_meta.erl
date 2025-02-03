@@ -48,7 +48,7 @@ handle_initialize([], _NodeMsg) ->
 info(_, Request, NodeMsg) ->
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
-            ?event(debug, {get_config_req, Request, NodeMsg}),
+            ?event({get_config_req, Request, NodeMsg}),
             embed_status({ok, hb_private:reset(NodeMsg)});
         <<"POST">> ->
             case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
@@ -85,10 +85,10 @@ update_node_message(Request, NodeMsg) ->
         end,
     case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
         false ->
-            ?event(debug, {set_node_message_fail, Request}),
+            ?event({set_node_message_fail, Request}),
             embed_status({error, <<"Unauthorized">>});
         true ->
-            ?event(debug, {set_node_message_success, Request}),
+            ?event({set_node_message_success, Request}),
             hb_http_server:set_opts(
                 Request#{
                     http_server =>
