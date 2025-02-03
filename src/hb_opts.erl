@@ -98,6 +98,8 @@ default_message() ->
         http_default_remote_port => 8734,
         port => 8734,
         wasm_allow_aot => false,
+        %% Options for the relay device
+        relay_http_client => httpc,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,
