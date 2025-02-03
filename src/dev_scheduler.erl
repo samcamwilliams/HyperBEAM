@@ -503,19 +503,21 @@ http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
     hb_http:post(Node, Msg1, #{}).
 
 http_get_slot(N, PMsg) ->
+    ID = hb_message:id(PMsg, all),
     Wallet = hb:wallet(),
     {ok, _} = hb_http:get(N, hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/slot">>,
         <<"method">> => <<"GET">>,
-        <<"process">> => PMsg
+        <<"target">> => ID
     }, Wallet), #{}).
 
 http_get_schedule(N, PMsg, From, To) ->
+    ID = hb_message:id(PMsg, all),
     Wallet = hb:wallet(),
     {ok, _} = hb_http:get(N, hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"GET">>,
-        <<"process">> => PMsg,
+        <<"target">> => ID,
         <<"from">> => From,
         <<"to">> => To
     }, Wallet), #{}).
