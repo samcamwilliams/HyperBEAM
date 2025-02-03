@@ -75,7 +75,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
             ?event(
                 {
-                    http_rcvd,
+                    http_response,
                     {req, Req},
                     {response,
                         #{
@@ -404,7 +404,15 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
         },
     dev_codec_httpsig_conv:from(HTTPEncoded).
 
-remove_unsigned_fields (RawHeaders) ->
+remove_unsigned_fields(RawHeaders) ->
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, RawHeaders),
+    Sig = maps:get(<<"signature">>, RawHeaders, undefined),
+    case ForceSignedRequests orelse Sig /= undefined of
+        true -> do_remove_unsigned_fields(RawHeaders);
+        false -> RawHeaders
+    end.
+
+do_remove_unsigned_fields(RawHeaders) ->
     % Every signature ought to have the same signature base
     % And so we just parse out the first signature input,
     % and use it to determine the signed components, stripping
@@ -418,10 +426,10 @@ remove_unsigned_fields (RawHeaders) ->
         ComponentIdentifiers    
     ),
     SignedHeaders = maps:with(
-        [<<"signature", "signature-input">>] ++ BinComponentIdentifiers,
+        [<<"signature">>, <<"signature-input">>] ++ BinComponentIdentifiers,
         RawHeaders
     ),
-    ?event(debug, {{component_identifiers, BinComponentIdentifiers}, {sanitized_headers, SignedHeaders}}),
+    ?event(http, {sanitizing, {component_identifiers, BinComponentIdentifiers}, {sanitized_headers, SignedHeaders}}),
     SignedHeaders.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
@@ -434,25 +442,36 @@ read_body(Req0, Acc) ->
 
 %%% Tests
 
-id_case_is_preserved_test() ->
+% id_case_is_preserved_test() ->
+%     URL = hb_http_server:start_test_node(),
+%     TestID = hb_util:human_id(crypto:strong_rand_bytes(32)),
+%     {ok, Res} =
+%         post(
+%             URL,
+%             #{
+%                 TestID => <<"value1">>,
+%                 <<"path">> => <<TestID/binary>>
+%             },
+%             #{}
+%         ),
+%     ?assertEqual(<<"value1">>, hb_converge:get(TestID, Res, #{})).
+
+simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_test_node(),
-    TestID = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
+    {ok, Res} = post(URL, TestMsg, #{}),
+    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+
+simple_converge_resolve_signed_test() ->
+    URL = hb_http_server:start_test_node(),
+    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
+    Wallet = hb:wallet(),
     {ok, Res} =
         post(
             URL,
-            #{
-                TestID => <<"value1">>,
-                <<"path">> => <<TestID/binary>>
-            },
+            hb_message:attest(TestMsg, Wallet),
             #{}
         ),
-    ?assertEqual(<<"value1">>, hb_converge:get(TestID, Res, #{})).
-
-simple_converge_resolve_test() ->
-    URL = hb_http_server:start_test_node(),
-    Wallet = hb:wallet(),
-    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    {ok, Res} = post(URL, hb_message:attest(TestMsg, Wallet), #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
