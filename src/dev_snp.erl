@@ -37,15 +37,15 @@ real_node_test() ->
                     <<"is-trusted-device">> => <<"snp@1.0">>
                 }
             ),
-        ?event(debug, {snp_report_rcvd, Report}),
-        ?event(debug, {report_verifies, hb_message:verify(Report)}),
+        ?event({snp_report_rcvd, Report}),
+        ?event({report_verifies, hb_message:verify(Report)}),
         Result =
             verify(
                 Report,
                 #{ <<"target">> => <<"self">> },
                 #{ trusted => ?TEST_TRUSTED_SOFTWARE }
             ),
-        ?event(debug, {snp_validation_res, Result}),
+        ?event({snp_validation_res, Result}),
         ?assertEqual({ok, true}, Result)
     end.
 
@@ -176,8 +176,8 @@ generate(_M1, _M2, Opts) ->
                 Opts
             ),
 	RawPublicNodeMsgID = hb_util:native_id(PublicNodeMsgID),
-	?event(debug, {snp_node_msg, NodeMsg}),
-    ?event(debug, {snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
+	?event({snp_node_msg, NodeMsg}),
+    ?event({snp_node_msg_id, byte_size(RawPublicNodeMsgID)}),
     % Generate the attestation report.
 	?event({snp_address,  byte_size(Address)}),
     ReportData = generate_nonce(Address, RawPublicNodeMsgID),
@@ -217,7 +217,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
             not_found -> M1#{ <<"device">> => <<"snp@1.0">> };
             Device -> {as, Device, M1}
         end,
-    %?event(debug, {starting_to_validate_software, {mod_m1, {explicit, ModM1}}, {m2, {explicit, Msg}}, {node_opts, {explicit, NodeOpts}}}),
+    %?event({starting_to_validate_software, {mod_m1, {explicit, ModM1}}, {m2, {explicit, Msg}}, {node_opts, {explicit, NodeOpts}}}),
     Result = lists:all(
         fun(ReportKey) ->
             ReportVal = hb_converge:get(ReportKey, Msg, NodeOpts),
@@ -252,14 +252,14 @@ trusted(_Msg1, Msg2, NodeOpts) ->
     %% Ensure Trusted is always a map
     TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
     PropertyName = hb_converge:get(Key, TrustedSoftware, not_found, NodeOpts),
-    ?event(debug, {trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
+    ?event({trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
     %% Final trust validation
     {ok, PropertyName == Body}.
 
 %% @doc Ensure that the report data matches the expected report data.
 report_data_matches(Address, NodeMsgID, ReportData) ->
-	?event(debug, {generated_nonce, binary_to_list(generate_nonce(Address, NodeMsgID))}),
-	?event(debug, {expected_nonce, binary_to_list(ReportData)}),
+	?event({generated_nonce, binary_to_list(generate_nonce(Address, NodeMsgID))}),
+	?event({expected_nonce, binary_to_list(ReportData)}),
     generate_nonce(Address, NodeMsgID) == ReportData.
 
 %% @doc Generate the nonce to use in the attestation report.

@@ -176,7 +176,10 @@ reset_hmac(RawMsg) ->
         maps:from_list(lists:map(
             fun ({Attestor, #{ <<"signature">> := Signature }}) ->
                 SigNameFromDict = sig_name_from_dict(Signature),
-                ?event(debug, {name_options, {attestor, Attestor}, {sig_name_from_dict, SigNameFromDict}}),
+                ?event({name_options,
+                    {attestor, Attestor},
+                    {sig_name_from_dict, SigNameFromDict}}
+                ),
                 SigBin =
                     maps:get(SigNameFromDict,
                         maps:from_list(
