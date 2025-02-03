@@ -75,12 +75,22 @@ to(Messages) ->
                                     NewSubMessages = maps:get(<<"path">>, to(SubMessages)),
                                     {
                                         maps:put(NewKey, NewSubMessages, AccIn),
-                                        maps:update_with(NewKey, fun(Indexes) -> [Index | Indexes] end, [Index], Scoped)
+                                        maps:update_with(
+                                            NewKey,
+                                            fun(Indexes) -> [Index | Indexes] end,
+                                            [Index],
+                                            Scoped
+                                        )
                                     };
                                 (Key, Value, {AccIn, Scoped}) ->
                                     {
                                         maps:put(Key, Value, AccIn),
-                                        maps:update_with(Key, fun(Indexes) -> [Index | Indexes] end, [Index], Scoped)
+                                        maps:update_with(
+                                            Key,
+                                            fun(Indexes) -> [Index | Indexes] end,
+                                            [Index],
+                                            Scoped
+                                        )
                                     }
                             end,
                             {Acc, ScopedModifications},
@@ -524,7 +534,12 @@ multiple_inlined_keys_to_test() ->
     Messages = [
         #{<<"method">> => <<"POST">>},
             #{<<"method">> => <<"POST">>, <<"path">> => <<"a">>},
-            #{<<"k1">> => <<"v1">>, <<"k2">> => <<"v2">>, <<"method">> => <<"POST">>, <<"path">> => <<"b">>}
+            #{
+                <<"k1">> => <<"v1">>,
+                <<"k2">> => <<"v2">>,
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"b">>
+            }
         ],
     % NOTE: The implementation above does not convert the given list of messages
     % into the original format, however it assures that the `to/1' and `from/1'
