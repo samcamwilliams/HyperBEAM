@@ -490,7 +490,7 @@ http_init() -> http_init(#{}).
 http_init(Opts) ->
     start(),
     Wallet = ar_wallet:new(),
-    Node = hb_http_server:start_test_node(Opts#{ priv_wallet => Wallet }),
+    Node = hb_http_server:start_node(Opts#{ priv_wallet => Wallet }),
     {Node, Wallet}.
 
 http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->

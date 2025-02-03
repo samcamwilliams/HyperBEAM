@@ -193,14 +193,14 @@ all_attestors(Msgs) ->
 
 %% @doc Test that we can get the node message.
 config_test() ->
-    Node = hb_http_server:start_test_node(#{ test_config_item => <<"test">> }),
+    Node = hb_http_server:start_node(#{ test_config_item => <<"test">> }),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
 
 %% @doc Test that we can't get the node message if the requested key is private.
 priv_inaccessible_test() ->
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             test_config_item => <<"test">>,
             priv_key => <<"BAD">>
@@ -214,7 +214,7 @@ priv_inaccessible_test() ->
 %% @doc Test that we can't set the node message if the request is not signed by
 %% the owner of the node.
 unauthorized_set_node_msg_fails_test() ->
-    Node = hb_http_server:start_test_node(#{ priv_wallet => ar_wallet:new() }),
+    Node = hb_http_server:start_node(#{ priv_wallet => ar_wallet:new() }),
     {ok, SetRes} =
         hb_http:post(
             Node,
@@ -236,7 +236,7 @@ unauthorized_set_node_msg_fails_test() ->
 %% owner of the node.
 authorized_set_node_msg_succeeds_test() ->
     Owner = ar_wallet:new(),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             operator => ar_wallet:to_address(Owner),
             test_config_item => <<"test">>
@@ -261,7 +261,7 @@ authorized_set_node_msg_succeeds_test() ->
 
 %% @doc Test that an uninitialized node will not run computation.
 uninitialized_node_test() ->
-    Node = hb_http_server:start_test_node(#{ initialized => false }),
+    Node = hb_http_server:start_node(#{ initialized => false }),
     {error, Res} = hb_http:get(Node, <<"/key1?1.key1=value1">>, #{}),
     ?event({res, Res}),
     ?assertEqual(<<"Node must be initialized before use.">>, Res).
@@ -269,7 +269,7 @@ uninitialized_node_test() ->
 %% @doc Test that a permanent node message cannot be changed.
 permanent_node_message_test() ->
     Owner = ar_wallet:new(),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             operator => unclaimed,
             initialized => false,
@@ -314,7 +314,7 @@ permanent_node_message_test() ->
 claim_node_test() ->
     Owner = ar_wallet:new(),
     Address = ar_wallet:to_address(Owner),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             operator => unclaimed,
             test_config_item => <<"test">>
@@ -356,7 +356,7 @@ claim_node_test() ->
 %% @doc Test that we can use a preprocessor upon a request.
 preprocessor_test() ->
     Parent = self(),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             preprocessor =>
                 #{
@@ -374,7 +374,7 @@ preprocessor_test() ->
 
 %% @doc Test that we can halt a request if the preprocessor returns an error.
 halt_request_test() ->
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             preprocessor =>
                 #{
@@ -391,7 +391,7 @@ halt_request_test() ->
 
 %% @doc Test that a preprocessor can modify a request.
 modify_request_test() ->
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             preprocessor =>
                 #{
@@ -410,7 +410,7 @@ modify_request_test() ->
 %% @doc Test that we can use a postprocessor upon a request.
 postprocessor_test() ->
     Parent = self(),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             postprocessor =>
                 #{

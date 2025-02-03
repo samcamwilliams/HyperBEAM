@@ -11,7 +11,7 @@
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
 -export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
--export([start_test_node/0, start_test_node/1]).
+-export([start_node/0, start_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -188,9 +188,9 @@ test_opts(Opts) ->
     }.
 
 %% @doc Test that we can start the server, send a message, and get a response.
-start_test_node() ->
-    start_test_node(#{}).
-start_test_node(Opts) ->
+start_node() ->
+    start_node(#{}).
+start_node(Opts) ->
     application:ensure_all_started([
         kernel,
         stdlib,

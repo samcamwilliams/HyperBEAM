@@ -188,7 +188,7 @@ test_opts(Opts, PricingDev, LedgerDev) ->
 faff_test() ->
     GoodWallet = ar_wallet:new(),
     BadWallet = ar_wallet:new(),
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
        test_opts(
             #{
                 faff_allow_list =>

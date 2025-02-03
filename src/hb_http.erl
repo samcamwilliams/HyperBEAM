@@ -443,7 +443,7 @@ read_body(Req0, Acc) ->
 %%% Tests
 
 % id_case_is_preserved_test() ->
-%     URL = hb_http_server:start_test_node(),
+%     URL = hb_http_server:start_node(),
 %     TestID = hb_util:human_id(crypto:strong_rand_bytes(32)),
 %     {ok, Res} =
 %         post(
@@ -457,13 +457,13 @@ read_body(Req0, Acc) ->
 %     ?assertEqual(<<"value1">>, hb_converge:get(TestID, Res, #{})).
 
 simple_converge_resolve_unsigned_test() ->
-    URL = hb_http_server:start_test_node(),
+    URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
     {ok, Res} = post(URL, TestMsg, #{}),
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 simple_converge_resolve_signed_test() ->
-    URL = hb_http_server:start_test_node(),
+    URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
     Wallet = hb:wallet(),
     {ok, Res} =
@@ -475,7 +475,7 @@ simple_converge_resolve_signed_test() ->
     ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
 
 nested_converge_resolve_test() ->
-    URL = hb_http_server:start_test_node(),
+    URL = hb_http_server:start_node(),
     Wallet = hb:wallet(),
     {ok, Res} =
         post(
@@ -509,26 +509,26 @@ wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
 
 
 run_wasm_unsigned_test() ->
-    Node = hb_http_server:start_test_node(#{force_signed => false}),
+    Node = hb_http_server:start_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(Node, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
-    URL = hb_http_server:start_test_node(#{force_signed => true}),
+    URL = hb_http_server:start_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 get_deep_unsigned_wasm_state_test() ->
-    URL = hb_http_server:start_test_node(#{force_signed => false}),
+    URL = hb_http_server:start_node(#{force_signed => false}),
     Msg = wasm_compute_request(
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"/output/1">>, Res, #{})).
 
 get_deep_signed_wasm_state_test() ->
-    URL = hb_http_server:start_test_node(#{force_signed => true}),
+    URL = hb_http_server:start_node(#{force_signed => true}),
     Msg = wasm_compute_request(
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
