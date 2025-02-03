@@ -56,7 +56,7 @@ httpc_req(Args, _, Opts) ->
                 {
                     URL,
                     HeaderKV,
-                    ContentType,
+                    binary_to_list(ContentType),
                     Body
                 }
         end,
