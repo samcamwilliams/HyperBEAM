@@ -274,21 +274,20 @@ matches(Key1, Key2) ->
 
 %% @doc Check if two keys match using regex.
 regex_matches(Path1, Path2) ->
-    NormP1 = normalize(Path1),
-    NormP2 = normalize(Path2),
+    NormP1 = normalize(hb_converge:normalize_key(Path1)),
+    NormP2 = normalize(hb_converge:normalize_key(Path2)),
     try re:run(NormP1, NormP2) =/= nomatch
     catch _A:_B:_C -> false
     end.
 
 %% @doc Normalize a path to a binary, removing the leading slash if present.
 normalize(Path) ->
-    case hb_converge:normalize_key(Path) of
+    case iolist_to_binary([Path]) of
         BinPath = <<"/", _/binary>> -> BinPath;
         Binary -> <<"/", Binary/binary>>
     end.
 
 %%% TESTS
-
 hashpath_test() ->
     Msg1 = #{ priv => #{<<"empty">> => <<"message">>} },
     Msg2 = #{ priv => #{<<"exciting">> => <<"message2">>} },

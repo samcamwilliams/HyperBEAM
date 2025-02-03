@@ -130,6 +130,7 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
 
 init(Req, ServerID) ->
     NodeMsg = get_opts(#{ http_server => ServerID }),
+    ?event(http, {http_inbound, Req}),
     % Parse the HTTP request into HyerBEAM's message format.
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
     ?event(http, {http_inbound, ReqSingleton}),
