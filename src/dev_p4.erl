@@ -32,9 +32,15 @@
 %%% the debit must be applied to the ledger, whereas the `pre` type is used to
 %%% check whether the debit would succeed before execution.
 -module(dev_p4).
--export([preprocess/3, postprocess/3]).
+-export([preprocess/3, postprocess/3, balance/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%%% The default list of routes that should not be charged for.
+-define(DEFAULT_NON_CHARGABLE_ROUTES, [
+    #{ <<"template">> => <<"/~p4@1.0/balance">> },
+    #{ <<"template">> => <<"/~meta@1.0/*">> }
+]).
 
 %% @doc Estimate the cost of a transaction and decide whether to proceed with
 %% a request. The default behavior if `pricing_device` or `p4_balances` are
@@ -44,10 +50,12 @@ preprocess(State, Raw, NodeMsg) ->
     LedgerDevice = hb_converge:get(<<"ledger_device">>, State, false, NodeMsg),
     Messages = hb_converge:get(<<"body">>, Raw, NodeMsg#{ hashpath => ignore }),
     Request = hb_converge:get(<<"request">>, Raw, NodeMsg),
-    ?event(payment, {preprocess_with_devices, PricingDevice, LedgerDevice}),
-    case (PricingDevice =/= false) and (LedgerDevice =/= false) of
-        false -> {ok, Messages};
-        true ->
+    IsChargable = is_chargable_req(Request, NodeMsg),
+    ?event(payment, {preprocess_with_devices, PricingDevice, LedgerDevice, {chargable, IsChargable}}),
+    case {IsChargable, (PricingDevice =/= false) and (LedgerDevice =/= false)} of
+        {false, _} -> {ok, Messages};
+        {true, false} -> {ok, Messages};
+        {true, true} ->
             PricingMsg = #{ <<"device">> => PricingDevice },
             LedgerMsg = #{ <<"device">> => LedgerDevice },
             PricingReq = #{
@@ -166,6 +174,51 @@ postprocess(State, RawResponse, NodeMsg) ->
             end
     end.
 
+%% @doc Get the balance of a user in the ledger.
+balance(_, Req, NodeMsg) ->
+    LedgerDevice =
+        hb_converge:get(
+            <<"preprocessor/ledger_device">>,
+            NodeMsg,
+            false,
+            NodeMsg
+        ),
+    LedgerMsg = #{ <<"device">> => LedgerDevice },
+    LedgerReq = #{
+        <<"path">> => <<"balance">>,
+        <<"request">> => Req
+    },
+    ?event(debug, {ledger_message, {ledger_msg, LedgerMsg}}),
+    case hb_converge:resolve(LedgerMsg, LedgerReq, NodeMsg) of
+        {ok, Balance} ->
+            {ok, Balance};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc The node operator may elect to make certain routes non-chargable, using 
+%% the `routes` syntax also used to declare routes in `router@1.0`.
+is_chargable_req(Req, NodeMsg) ->
+    NonChargableRoutes =
+        hb_opts:get(
+            p4_non_chargable_routes,
+            ?DEFAULT_NON_CHARGABLE_ROUTES,
+            NodeMsg
+        ),
+    Matches = dev_router:match_routes(Req, NonChargableRoutes, NodeMsg),
+    ?event(debug,
+        {
+            is_chargable,
+            {non_chargable_routes, NonChargableRoutes},
+            {req, Req},
+            {matches, Matches}
+        }
+    ),
+    case Matches of
+        no_matches -> true;
+        _ -> false
+    end.
+
 %%% Tests
 
 test_opts(Opts) ->
@@ -208,3 +261,42 @@ faff_test() ->
     ?event(payment, {res, Res}),
     ?assertEqual(<<"Hello, world!">>, hb_converge:get(<<"body">>, Res, #{})),
     ?assertMatch({error, _}, hb_http:get(Node, BadSignedReq, #{})).
+
+%% @doc Test that a non-chargable route is not charged for.
+non_chargable_route_test() ->
+    Wallet = ar_wallet:new(),
+    Processor =
+        #{
+            <<"device">> => <<"p4@1.0">>,
+            <<"ledger_device">> => <<"simple-pay@1.0">>,
+            <<"pricing_device">> => <<"simple-pay@1.0">>
+        },
+    Node = hb_http_server:start_node(
+        #{
+            p4_non_chargable_routes =>
+                [
+                    #{ <<"template">> => <<"/~p4@1.0/balance">> },
+                    #{ <<"template">> => <<"/~meta@1.0/*">> }
+                ],
+            preprocessor => Processor,
+            postprocessor => Processor,
+            operator => hb:address()
+        }
+    ),
+    Req = #{
+        <<"path">> => <<"/~p4@1.0/balance">>
+    },
+    GoodSignedReq = hb_message:attest(Req, Wallet),
+    Res = hb_http:get(Node, GoodSignedReq, #{}),
+    ?event(debug, {res1, Res}),
+    ?assertMatch({ok, #{ <<"body">> := 0 }}, Res),
+    Req2 = #{ <<"path">> => <<"/~meta@1.0/info">> },
+    GoodSignedReq2 = hb_message:attest(Req2, Wallet),
+    Res2 = hb_http:get(Node, GoodSignedReq2, #{}),
+    ?event(debug, {res2, Res2}),
+    ?assertMatch({ok, #{ <<"operator">> := _ }}, Res2),
+    Req3 = #{ <<"path">> => <<"/~scheduler@1.0">> },
+    BadSignedReq3 = hb_message:attest(Req3, Wallet),
+    Res3 = hb_http:get(Node, BadSignedReq3, #{}),
+    ?event(debug, {res3, Res3}),
+    ?assertMatch({error, _}, Res3).
