@@ -34,3 +34,6 @@ priv/*
 TEST-data*
 test-cache/*
 TEST-cache**/**
+
+diagram.dot
+diagram.svg
