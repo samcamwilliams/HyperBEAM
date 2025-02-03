@@ -54,9 +54,13 @@ debit(_, RawReq, NodeMsg) ->
     end.
 
 %% @doc Get the balance of a user in the ledger.
-balance(_, Req, NodeMsg) ->
-    Signer = hd(hb_message:signers(Req)),
-    {ok, get_balance(Signer, NodeMsg)}.
+balance(_, RawReq, NodeMsg) ->
+    Target =
+        case hb_converge:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }) of
+            not_found -> hd(hb_message:signers(RawReq));
+            Req -> hd(hb_message:signers(Req))
+        end,
+    {ok, get_balance(Target, NodeMsg)}.
 
 %% @doc Adjust a user's balance, normalizing their wallet ID first.
 set_balance(Signer, Amount, NodeMsg) ->

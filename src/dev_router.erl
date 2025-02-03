@@ -113,7 +113,7 @@ match_routes(ToMatch, Routes, Opts) ->
     match_routes(
         ToMatch,
         Routes,
-        hb_converge:keys(Routes),
+        hb_converge:keys(hb_converge:normalize_keys(Routes)),
         Opts
     ).
 match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
