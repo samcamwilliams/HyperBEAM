@@ -213,7 +213,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             };
         {true, <<"Process">>} ->
             hb_cache:write(ToSched, Opts),
-            hb_client:upload(ToSched),
+            spawn(fun() -> hb_client:upload(ToSched) end),
             ?event(
                 {registering_new_process,
                     {proc_id, ProcID},
@@ -236,13 +236,8 @@ post_schedule(Msg1, Msg2, Opts) ->
 %% @doc Returns information about the current slot for a process.
 slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
-    Proc = hb_converge:get(
-        process,
-        {as, dev_message, M1},
-        Opts#{ hashpath => ignore }
-    ),
     ProcID = find_id(M1, M2, Opts),
-    ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
+    ?event({getting_current_slot, {proc_id, ProcID}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
     #{ current := CurrentSlot, wallet := Wallet } =
         dev_scheduler_server:info(
@@ -325,7 +320,7 @@ gen_schedule(Format, ProcID, From, To, Opts) ->
             <<"application/http">> ->
                 fun dev_scheduler_formats:assignments_to_bundle/4
         end,
-    Res = FormatterFun(Assignments, Opts),
+    Res = FormatterFun(ProcID, Assignments, More, Opts),
     ?event({assignments_bundle_outbound, {format, Format}, {res, Res}}),
     Res.
 

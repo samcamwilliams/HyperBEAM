@@ -41,7 +41,7 @@ assignments_to_bundle(ProcID, Assignments, More, Opts) ->
 assignments_to_json(_ProcID, Assignments, More, Opts) ->
     {ok, 
         #{
-            <<"Content-Type">> => <<"application/json">>,
+            <<"content-type">> => <<"application/json">>,
             <<"body">> => jiffy:encode(
                 {[
                     {<<"page_info">>,
