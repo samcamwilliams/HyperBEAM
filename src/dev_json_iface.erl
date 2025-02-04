@@ -36,6 +36,8 @@
 
 -module(dev_json_iface).
 -export([init/3, compute/3]).
+%%% Public interface helpers:
+-export([message_to_json_struct/1]).
 %%% Test helper exports:
 -export([generate_stack/1, generate_stack/2, generate_aos_msg/2]).
 -include_lib("eunit/include/eunit.hrl").
