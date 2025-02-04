@@ -277,8 +277,7 @@ get_schedule(Msg1, Msg2, Opts) ->
                 );
             ToRes -> ToRes
         end,
-    Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
-    gen_schedule(Format, ProcID, From, To, Opts).
+    gen_schedule(ProcID, From, To, Opts).
 
 %%% Private methods
 
@@ -306,7 +305,8 @@ find_process(Msg, Opts) ->
     hb_converge:get(<<"process">>, Msg, Msg, Opts#{ hashpath => ignore }).
 
 %% @doc Generate a `GET /schedule' response for a process.
-gen_schedule(Format, ProcID, From, To, Opts) ->
+gen_schedule(ProcID, From, To, Opts) ->
+    {Timestamp, Height, Hash} = ar_timestamp:get(),
     ?event(
         {servicing_request_for_assignments,
             {proc_id, ProcID},
@@ -316,18 +316,17 @@ gen_schedule(Format, ProcID, From, To, Opts) ->
     ),
     {Assignments, More} = get_assignments(ProcID, From, To, Opts),
     ?event({got_assignments, length(Assignments), {more, More}}),
-    % Determine and apply the formatting function to use for generation of the
-    % response, based on the `Accept' header.
-    FormatterFun =
-        case Format of
-            <<"application/json">> ->
-                fun dev_scheduler_formats:assignments_to_json/4;
-            <<"application/http">> ->
-                fun dev_scheduler_formats:assignments_to_bundle/4
-        end,
-    Res = FormatterFun(Assignments, Opts),
-    ?event({assignments_bundle_outbound, {format, Format}, {res, Res}}),
-    Res.
+    Bundle = #{
+        <<"type">> => <<"schedule">>,
+        <<"process">> => ProcID,
+        <<"continues">> => atom_to_binary(More, utf8),
+        <<"timestamp">> => list_to_binary(integer_to_list(Timestamp)),
+        <<"block-height">> => list_to_binary(integer_to_list(Height)),
+        <<"block-hash">> => Hash,
+        <<"assignments">> => assignment_bundle(Assignments, Opts)
+    },
+    ?event(assignments_bundle_outbound),
+    {ok, Bundle}.
 
 %% @doc Get the assignments for a process, and whether the request was truncated.
 get_assignments(ProcID, From, RequestedTo, Opts) ->
@@ -357,6 +356,24 @@ do_get_assignments(ProcID, From, To, Opts) ->
                 )
             ]
     end.
+
+%% @doc Generate a bundle of assignments for a process.
+assignment_bundle(Assignments, Opts) ->
+    maps:from_list(
+        lists:map(
+            fun(Assignment) ->
+                {
+                    hb_converge:get(
+                        <<"slot">>,
+                        Assignment,
+                        Opts#{ hashpath => ignore }
+                    ),
+                    Assignment
+                }
+            end,
+            Assignments
+        )
+    ).
 
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.
