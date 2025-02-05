@@ -689,7 +689,7 @@ full_push_test_() ->
         init(),
         Msg1 = test_aos_process(),
         ?event(push, {msg1, Msg1}),
-        Script = ping_ping_script(3),
+        Script = ping_ping_script(2),
         ?event({script, Script}),
         {ok, Msg2} = schedule_aos_call(Msg1, Script),
         ?event(push, {init_sched_result, Msg2}),

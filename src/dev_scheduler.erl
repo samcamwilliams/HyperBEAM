@@ -490,6 +490,9 @@ http_get_slot(N, PMsg) ->
     }, Wallet), #{}).
 
 http_get_schedule(N, PMsg, From, To) ->
+    http_get_schedule(N, PMsg, From, To, <<"application/http">>).
+
+http_get_schedule(N, PMsg, From, To, Format) ->
     ID = hb_message:id(PMsg, all),
     Wallet = hb:wallet(),
     {ok, _} = hb_http:get(N, hb_message:attest(#{
@@ -497,7 +500,8 @@ http_get_schedule(N, PMsg, From, To) ->
         <<"method">> => <<"GET">>,
         <<"target">> => ID,
         <<"from">> => From,
-        <<"to">> => To
+        <<"to">> => To,
+        <<"accept">> => Format
     }, Wallet), #{}).
 
 http_post_schedule_test() ->
@@ -533,6 +537,30 @@ http_get_schedule_test() ->
     ?assertEqual(
         12, % +1 for the hashpath
         length(maps:values(Assignments))
+    ).
+
+http_get_json_schedule_test() ->
+    {Node, Wallet} = http_init(),
+    PMsg = hb_message:attest(test_process(Wallet), Wallet),
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => PMsg,
+        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+    }, Wallet),
+    {ok, _} = hb_http:post(Node, Msg1, #{}),
+    lists:foreach(
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        lists:seq(1, 10)
+    ),
+    ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
+    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/json">>),
+    ?event(debug, {schedule, Schedule}),
+    JSON = hb_converge:get(<<"body">>, Schedule, #{}),
+    Assignments = jiffy:decode(JSON, [return_maps]),
+    ?assertEqual(
+        11, % +1 for the hashpath
+        length(maps:get(<<"edges">>, Assignments))
     ).
 
 %%% Benchmarks
