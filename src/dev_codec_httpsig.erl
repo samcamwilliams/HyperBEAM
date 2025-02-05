@@ -6,7 +6,7 @@
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, attest/3, verify/3, reset_hmac/1]).
+-export([id/3, attest/3, verify/3, reset_hmac/1, public_keys/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
@@ -314,6 +314,22 @@ verify(MsgToVerify, Req, _Opts) ->
         _ ->
             {error, {unsupported_alg, Alg}}
     end.
+
+public_keys(Attestation) ->
+    SigInputs = maps:get(<<"signature-input">>, Attestation),
+    lists:filtermap(
+        fun ({_SigName, {list, _, ParamsKVList}}) ->
+            case maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)) of
+                {string, <<"rsa-pss-sha512">>} ->
+                    {string, KeyID} = maps:get(<<"keyid">>, Params),
+                    PubKey = hb_util:decode(KeyID),
+                    {true, PubKey};
+                _ ->
+                    false
+            end
+        end,
+        dev_codec_structured_conv:parse_dictionary(SigInputs)
+    ).
 
 %%% @doc A helper to validate and produce an "Authority" State
 -spec authority(

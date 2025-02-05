@@ -116,22 +116,55 @@ denormalize_message(Message) ->
     }.
 
 message_to_json_struct(RawMsg) ->
+    message_to_json_struct(RawMsg, [owner_as_address]).
+message_to_json_struct(RawMsg, Features) ->
     Message = maps:without([<<"attestations">>], RawMsg),
-    ID = hb_message:id(Message, all),
+    ID = hb_message:id(RawMsg, all),
     Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
-    Owner = hb_converge:get(<<"owner">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+	Owner =
+        case hb_message:signers(RawMsg) of
+            [] -> <<>>;
+            [Signer|_] ->
+                ?event(debug, {signer, Signer, Message}),
+                case lists:member(owner_as_address, Features) of
+                    true -> hb_util:native_id(Signer);
+                    false ->
+                        Attestation =
+                            hb_converge:get(
+                                <<"attestations/", Signer/binary>>,
+                                {as, <<"message@1.0">>, RawMsg},
+                                #{}
+                            ),
+                        case hb_converge:get(<<"owner">>, Attestation, #{}) of
+                            not_found ->
+                                % The signature is likely a HTTPsig, so we need to extract
+                                % the owner from the signature.
+                                case dev_codec_httpsig:public_keys(Attestation) of
+                                    [] -> <<>>;
+                                    [PubKey|_] -> PubKey
+                                end;
+                            ANS104Owner -> ANS104Owner
+                        end
+                end
+        end,
     Data = hb_converge:get(<<"data">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     Target = hb_converge:get(<<"target">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     % Set "From" if From-Process is Tag or set with "Owner" address
-    From = hb_converge:get(<<"from-process">>, {as, <<"message@1.0">>, Message}, Owner, #{}),
+    From =
+        hb_converge:get(
+            <<"from-process">>,
+            {as, <<"message@1.0">>, Message},
+            hb_util:encode(Owner),
+            #{}
+        ),
     Sig = hb_converge:get(<<"signature">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     Fields = [
         {<<"Id">>, safe_to_id(ID)},
         % NOTE: In Arweave TXs, these are called "last_tx"
         {<<"Anchor">>, safe_to_id(Last)},
         % NOTE: When sent to ao "Owner" is the wallet address
-        {<<"Owner">>, safe_to_id(Owner)},
-        {<<"From">>, safe_to_id(From)},
+        {<<"Owner">>, hb_util:encode(Owner)},
+        {<<"From">>, case ?IS_ID(From) of true -> safe_to_id(From); false -> From end},
         {<<"Tags">>,
             lists:map(
                 fun({Name, Value}) ->
@@ -146,7 +179,7 @@ message_to_json_struct(RawMsg) ->
                     maps:without(
                         [
                             <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
-                            <<"target">>, <<"signature">>
+                            <<"target">>, <<"signature">>, <<"attestations">>
                         ],
                         Message
                     )
@@ -161,6 +194,7 @@ message_to_json_struct(RawMsg) ->
                 _ -> Sig
             end}
     ],
+    ?event(push, {fields, Fields}),
     HeaderCaseFields = normalize_props(Fields),
     {HeaderCaseFields}.
 
