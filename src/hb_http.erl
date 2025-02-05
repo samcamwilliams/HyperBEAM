@@ -506,8 +506,6 @@ wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
         <<"body">> => Bin
     }, Wallet).
 
-
-
 run_wasm_unsigned_test() ->
     Node = hb_http_server:start_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),

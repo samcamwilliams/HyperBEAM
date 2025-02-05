@@ -148,6 +148,8 @@ read(Path, Opts) ->
         
 %% @doc List all of the subpaths of a given path, read each in turn, returning a 
 %% flat map.
+store_read(_Path, no_viable_store, _) ->
+    not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
     ?event({reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
