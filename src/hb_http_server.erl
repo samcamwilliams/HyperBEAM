@@ -174,15 +174,20 @@ test_opts(Opts) ->
             no_viable_wallet -> ar_wallet:new();
             PassedWallet -> PassedWallet
         end,
+    Store =
+        case hb_opts:get(store, no_store, Opts) of
+            no_store ->
+                {hb_store_fs,
+                    #{
+                        prefix =>
+                            <<"TEST-cache-", (integer_to_binary(Port))/binary>>
+                    }
+                };
+            PassedStore -> PassedStore
+        end,
     Opts#{
         port => Port,
-        store =>
-            {hb_store_fs,
-                #{
-                    prefix =>
-                        <<"TEST-cache-", (integer_to_binary(Port))/binary>>
-                }
-            },
+        store => Store,
         priv_wallet => Wallet,
         force_signed => true
     }.
