@@ -40,12 +40,17 @@ assignments_to_bundle(ProcID, Assignments, More, Opts) ->
     }}.
 
 %%% Return legacy net-SU compatible results.
-assignments_to_aos2(_ProcID, Assignments, More, Opts) ->
+assignments_to_aos2(ProcID, Assignments, More, Opts) ->
+    {Timestamp, Height, Hash} = ar_timestamp:get(),
     BodyStruct = 
         {[
             {<<"page_info">>,
                 {[
-                    {<<"has_next_page">>, More}
+                    {<<"process">>, hb_util:human_id(ProcID)},
+                    {<<"has_next_page">>, More},
+                    {<<"timestamp">>, list_to_binary(integer_to_list(Timestamp))},
+                    {<<"block-height">>, list_to_binary(integer_to_list(Height))},
+                    {<<"block-hash">>, hb_util:human_id(Hash)}
                 ]}
             },
             {<<"edges">>, [
@@ -56,11 +61,13 @@ assignments_to_aos2(_ProcID, Assignments, More, Opts) ->
                 || Assignment <- Assignments
             ]}
         ]},
+    Encoded = jiffy:encode(BodyStruct),
     ?event(debug, {body_struct, BodyStruct}),
+    ?event(debug, {encoded, {explicit, Encoded}}),
     {ok, 
         #{
             <<"content-type">> => <<"application/json">>,
-            <<"body">> => jiffy:encode(BodyStruct)
+            <<"body">> => Encoded
         }
     }.
 
