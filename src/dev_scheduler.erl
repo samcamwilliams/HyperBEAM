@@ -315,8 +315,8 @@ gen_schedule(Format, ProcID, From, To, Opts) ->
     % response, based on the `Accept' header.
     FormatterFun =
         case Format of
-            <<"application/json">> ->
-                fun dev_scheduler_formats:assignments_to_json/4;
+            <<"application/aos-2">> ->
+                fun dev_scheduler_formats:assignments_to_aos2/4;
             <<"application/http">> ->
                 fun dev_scheduler_formats:assignments_to_bundle/4
         end,
@@ -554,7 +554,7 @@ http_get_json_schedule_test() ->
         lists:seq(1, 10)
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
-    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/json">>),
+    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
     ?event(debug, {schedule, Schedule}),
     JSON = hb_converge:get(<<"body">>, Schedule, #{}),
     Assignments = jiffy:decode(JSON, [return_maps]),

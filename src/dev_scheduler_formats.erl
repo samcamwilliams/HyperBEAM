@@ -7,7 +7,7 @@
 %%% The `application/json' format is a legacy format that is not recommended for
 %%% new integrations of the AO protocol.
 -module(dev_scheduler_formats).
--export([assignments_to_bundle/4, assignments_to_json/4]).
+-export([assignments_to_bundle/4, assignments_to_aos2/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -40,7 +40,7 @@ assignments_to_bundle(ProcID, Assignments, More, Opts) ->
     }}.
 
 %%% Return legacy net-SU compatible results.
-assignments_to_json(_ProcID, Assignments, More, Opts) ->
+assignments_to_aos2(_ProcID, Assignments, More, Opts) ->
     BodyStruct = 
         {[
             {<<"page_info">>,
