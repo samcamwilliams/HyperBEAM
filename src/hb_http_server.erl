@@ -19,9 +19,30 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts` argument to use for all Converge resolution requests downstream.
 start() ->
-    start(#{ priv_wallet => hb:wallet(hb_opts:get(key_location)) }).
+    start(
+        #{
+            priv_wallet => hb:wallet(hb_opts:get(key_location)),
+            store => {hb_store_fs, #{ <<"prefix">> => <<"store-main">> }},
+            port => hb_opts:get(http_default_remote_port, 8734)
+        }
+    ).
 start(Opts) ->
-    {ok, Listener, _Port} = new_server(Opts),
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    hb:init(),
+    BaseOpts = set_base_opts(Opts),
+    {ok, Listener, _Port} = new_server(BaseOpts),
     {ok, Listener}.
 
 new_server(RawNodeMsg) ->
@@ -159,7 +180,7 @@ get_opts(NodeMsg) ->
 
 %%% Tests
 
-test_opts(Opts) ->
+set_base_opts(Opts) ->
     % Generate a random port number between 10000 and 30000 to use
     % for the server.
     Port =
@@ -189,6 +210,7 @@ test_opts(Opts) ->
         port => Port,
         store => Store,
         priv_wallet => Wallet,
+        address => hb_util:human_id(ar_wallet:to_address(Wallet)),
         force_signed => true
     }.
 
@@ -211,6 +233,6 @@ start_node(Opts) ->
     ]),
     hb:init(),
     hb_sup:start_link(Opts),
-    ServerOpts = test_opts(Opts),
+    ServerOpts = set_base_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
