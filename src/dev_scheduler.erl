@@ -160,6 +160,7 @@ post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
     ToSched = hb_converge:get(
         <<"body">>, Msg2, Msg2, Opts#{ hashpath => ignore }),
+    ?event(debug, {to_sched, ToSched}),
     ProcID = find_id(Msg1, Msg2, Opts),
     PID =
         case dev_scheduler_registry:find(ProcID, false, Opts) of
@@ -170,8 +171,16 @@ post_schedule(Msg1, Msg2, Opts) ->
                 Address = hb_util:human_id(ar_wallet:to_address(
                     hb_opts:get(priv_wallet, hb:wallet(), Opts))),
                 Proc = find_process(Msg1, Opts),
-                case hb_converge:get(<<"scheduler-location">>,
-                        Proc, Opts#{ hashpath => ignore }) of
+                SchedLoc =
+                    hb_converge:get_first(
+                        [
+                            {Proc, <<"scheduler-location">>},
+                            {ToSched, <<"scheduler-location">>}
+                        ],
+                        not_found,
+                        Opts#{ hashpath => ignore }
+                    ),
+                case SchedLoc of
                     Address ->
                         % Start the scheduler process if we are the scheduler.
                         dev_scheduler_registry:find(ProcID, true, Opts);
@@ -199,7 +208,7 @@ post_schedule(Msg1, Msg2, Opts) ->
         }
     ),
     Verified =
-        case hb_opts:get(verify_assignments, true, Opts) of
+        case hb_opts:get(verify_assignments, false, Opts) of
             true -> hb_message:verify(ToSched);
             false -> true
         end,

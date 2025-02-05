@@ -19,10 +19,13 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts` argument to use for all Converge resolution requests downstream.
 start() ->
+    ?event(http, {start_store, "main-cache"}),
+    Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
+    hb_store:start(Store),
     start(
         #{
             priv_wallet => hb:wallet(hb_opts:get(key_location)),
-            store => {hb_store_fs, #{ <<"prefix">> => <<"store-main">> }},
+            store => Store,
             port => hb_opts:get(http_default_remote_port, 8734)
         }
     ).
@@ -99,7 +102,8 @@ new_server(RawNodeMsg) ->
             {listener, Listener},
             {server_id, ServerID},
             {port, Port},
-            {protocol, Protocol}
+            {protocol, Protocol},
+            {store, hb_opts:get(store, no_store, NodeMsg)}
         }
     ),
     {ok, Listener, Port}.
