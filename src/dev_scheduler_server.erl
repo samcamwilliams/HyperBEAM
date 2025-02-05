@@ -123,7 +123,7 @@ do_assign(State, Message, ReplyPID) ->
                 <<"epoch">> => <<"0">>,
                 <<"slot">> => NextSlot,
                 <<"block-height">> => Height,
-                <<"block-hash">> => Hash,
+                <<"block-hash">> => hb_util:human_id(Hash),
                 <<"block-timestamp">> => Timestamp,
                 % Note: Local time on the SU, not Arweave
                 <<"timestamp">> => erlang:system_time(millisecond),

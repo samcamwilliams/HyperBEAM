@@ -118,7 +118,12 @@ denormalize_message(Message) ->
 message_to_json_struct(RawMsg) ->
     message_to_json_struct(RawMsg, [owner_as_address]).
 message_to_json_struct(RawMsg, Features) ->
-    Message = maps:without([<<"attestations">>], RawMsg),
+    Message = 
+        hb_message:convert(
+            hb_private:reset(maps:without([<<"attestations">>], RawMsg)),
+            tabm,
+            #{}
+        ),
     ID = hb_message:id(RawMsg, all),
     Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
 	Owner =
