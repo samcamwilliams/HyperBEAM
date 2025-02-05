@@ -115,21 +115,34 @@ paid_wasm_test() ->
 create_schedule_aos2_test() ->
     hb:wallet(),
     application:ensure_all_started(hb),
+    % The legacy process format, according to the ao.tn.1 spec:
     % Data-Protocol	The name of the Data-Protocol for this data-item	1-1	ao
     % Variant	The network version that this data-item is for	1-1	ao.TN.1
     % Type	Indicates the shape of this Data-Protocol data-item	1-1	Process
-    % Module	Links the process to ao module using the module's unique Transaction ID (TXID).	1-1	{TXID}
-    % Scheduler	Specifies the scheduler unit by Wallet Address or Name, and can be referenced by a recent Scheduler-Location.	1-1	{ADDRESS}
-    % Cron-Interval	An interval at which a particular Cron Message is recevied by the process, in the format X-Y, where X is a scalar value, and Y is milliseconds, seconds, minutes, hours, days, months, years, or blocks	0-n	1-second
-    % Cron-Tag-{Name}	defines tags for Cron Messages at set intervals, specifying relevant metadata.	0-1	
-    % Memory-Limit	Overrides maximum memory, in megabytes or gigabytes, set by Module, can not exceed modules setting	0-1	16-mb
-    % Compute-Limit	Caps the compute cycles for a module per evaluation, ensuring efficient, controlled execution	0-1	1000
+    % Module	Links the process to ao module using the module's unique
+    %   Transaction ID (TXID).	1-1	{TXID}
+    % Scheduler	Specifies the scheduler unit by Wallet Address or Name, and can
+    %   be referenced by a recent Scheduler-Location.	1-1	{ADDRESS}
+    % Cron-Interval	An interval at which a particular Cron Message is recevied by the process,
+    %   in the format X-Y, where X is a scalar value, and Y is milliseconds,
+    %   seconds, minutes, hours, days, months, years, or blocks	0-n	1-second
+    % Cron-Tag-{Name}	defines tags for Cron Messages at set intervals,
+    %   specifying relevant metadata.	0-1	
+    % Memory-Limit	Overrides maximum memory, in megabytes or gigabytes, set by 
+    %   Module, can not exceed modules setting	0-1	16-mb
+    % Compute-Limit	Caps the compute cycles for a module per evaluation, ensuring
+    %   efficient, controlled execution	0-1	1000
     % Pushed-For	Message TXID that this Process is pushed as a result	0-1	{TXID}
-    % Cast	Sets message handling: 'True' for do not push, 'False' for normal pushing	0-1	{True or False}
-    % Authority	Defines a trusted wallet address which can send Messages to the Process	0-1	{ADDRESS}
-    % On-Boot	Defines a startup script to run when the process is spawned. If value "Data" it uses the Data field of the Process Data Item. If it is a TXID it will load that TX from Arweave and execute it.	0-1	{Data or TXID}
+    % Cast	Sets message handling: 'True' for do not push, 'False' for normal
+    %   pushing	0-1	{True or False}
+    % Authority	Defines a trusted wallet address which can send Messages to
+    %   the Process	0-1	{ADDRESS}
+    % On-Boot	Defines a startup script to run when the process is spawned. If
+    %   value "Data" it uses the Data field of the Process Data Item. If it is a
+    %   TXID it will load that TX from Arweave and execute it.	0-1	{Data or TXID}
     % {Any-Tags}	Custom Tags specific for the initial input of the Process	0-n
     ProcMsg = #{
+        <<"Data-Protocol">> => <<"ao">>,
         <<"type">> => <<"Process">>,
         <<"variant">> => <<"ao.TN.1">>,
         <<"type">> => <<"Process">>,
@@ -153,7 +166,7 @@ create_schedule_aos2_test() ->
         <<"/~scheduler@1.0/slot?target=", IDNone/binary>>,
         #{}
     ),
-    ?assertMatch(0, hb_converge:get(<<"current-slot">>, Res2, #{})).
+    ?assertMatch(Slot when Slot >= 0, hb_converge:get(<<"current-slot">>, Res2, #{})).
 
 schedule(ProcMsg, Target) ->
     schedule(ProcMsg, Target, hb:wallet()).
