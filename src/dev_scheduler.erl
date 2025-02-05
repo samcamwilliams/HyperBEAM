@@ -221,13 +221,7 @@ post_schedule(Msg1, Msg2, Opts) ->
                     {is_alive, is_process_alive(PID)}
                 }
             ),
-            {ok,
-                #{
-                    <<"status">> => 200,
-                    <<"assignment">> => <<"0">>,
-                    <<"process">> => ProcID
-                }
-            };
+            {ok, dev_scheduler_server:schedule(PID, ToSched)};
         {true, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
             {ok, dev_scheduler_server:schedule(PID, ToSched)}
