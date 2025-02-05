@@ -33,12 +33,18 @@ list_numbered(Path, Opts) ->
     [ list_to_integer(Name) || Name <- list(SlotDir, Opts) ].
 
 %% @doc List all items under a given path.
-list(Path, Opts) ->
-    ResolvedPath =
-        hb_store:resolve(hb_opts:get(store, no_viable_store, Opts), Path),
-    case hb_store:list(hb_opts:get(store, no_viable_store, Opts), ResolvedPath) of
+list(Path, Opts) when is_map(Opts)->
+    case hb_opts:get(store, no_viable_store, Opts) of
+        no_viable_store -> [];
+        Store ->
+            list(Path, Store)
+    end;
+list(Path, Store) ->
+    ResolvedPath = hb_store:resolve(Store, Path),
+    case hb_store:list(Store, ResolvedPath) of
         {ok, Names} -> Names;
-        {error, _} -> []
+        {error, _} -> [];
+        no_viable_store -> []
     end.
 
 %% @doc Write a message to the cache. For raw binaries, we write the data at
