@@ -320,7 +320,7 @@ gen_schedule(Format, ProcID, From, To, Opts) ->
         case Format of
             <<"application/aos-2">> ->
                 fun dev_scheduler_formats:assignments_to_aos2/4;
-            <<"application/http">> ->
+            _ ->
                 fun dev_scheduler_formats:assignments_to_bundle/4
         end,
     Res = FormatterFun(ProcID, Assignments, More, Opts),
