@@ -37,7 +37,7 @@
 -module(dev_json_iface).
 -export([init/3, compute/3]).
 %%% Public interface helpers:
--export([message_to_json_struct/1]).
+-export([message_to_json_struct/1, json_to_message/2]).
 %%% Test helper exports:
 -export([generate_stack/1, generate_stack/2, generate_aos_msg/2]).
 -include_lib("eunit/include/eunit.hrl").
@@ -125,7 +125,6 @@ message_to_json_struct(RawMsg, Features) ->
         case hb_message:signers(RawMsg) of
             [] -> <<>>;
             [Signer|_] ->
-                ?event(debug, {signer, Signer, Message}),
                 case lists:member(owner_as_address, Features) of
                     true -> hb_util:native_id(Signer);
                     false ->
@@ -137,8 +136,8 @@ message_to_json_struct(RawMsg, Features) ->
                             ),
                         case hb_converge:get(<<"owner">>, Attestation, #{}) of
                             not_found ->
-                                % The signature is likely a HTTPsig, so we need to extract
-                                % the owner from the signature.
+                                % The signature is likely a HTTPsig, so we need 
+                                % to extract the owner from the signature.
                                 case dev_codec_httpsig:public_keys(Attestation) of
                                     [] -> <<>>;
                                     [PubKey|_] -> PubKey
@@ -197,6 +196,37 @@ message_to_json_struct(RawMsg, Features) ->
     ?event(push, {fields, Fields}),
     HeaderCaseFields = normalize_props(Fields),
     {HeaderCaseFields}.
+
+%% @doc Translates a compute result -- either from a WASM execution using the 
+%% JSON-Iface, or from a `Legacy' CU -- and transforms it into a result message.
+json_to_message(JSON, Opts) when is_binary(JSON) ->
+    json_to_message(jiffy:decode(JSON, [return_maps]), Opts);
+json_to_message(Resp, Opts) when is_map(Resp) ->
+    {ok, Data, Messages} = normalize_results(Resp),
+    Output = 
+        #{
+            <<"outbox">> =>
+                maps:from_list([
+                    {MessageNum, preprocess_results(Msg, Opts)}
+                ||
+                    {MessageNum, Msg} <-
+                        lists:zip(
+                            lists:seq(1, length(Messages)),
+                            Messages
+                        )
+                ]),
+            <<"data">> => Data
+        },
+    {ok, Output};
+json_to_message(#{ <<"ok">> := false, <<"error">> := Error }, _Opts) ->
+    {error, Error};
+json_to_message(Other, _Opts) ->
+    {error,
+        #{
+            <<"error">> => <<"Invalid JSON message input.">>,
+            <<"received">> => Other
+        }
+    }.
 
 safe_to_id(<<>>) -> <<>>;
 safe_to_id(ID) -> hb_util:human_id(ID).
@@ -271,28 +301,18 @@ results(M1, _M2, Opts) ->
             {ok, Str} = hb_beamr_io:read_string(Instance, Ptr),
             try jiffy:decode(Str, [return_maps]) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
-                    {ok, Data, Messages} = normalize_results(Resp),
-                    Output = 
-                        hb_converge:set(
-                            M1,
-                            #{
-                                <<"results/outbox">> =>
-                                    maps:from_list([
-                                        {MessageNum, preprocess_results(Msg, Proc, Opts)}
-                                    ||
-                                        {MessageNum, Msg} <-
-                                            lists:zip(
-                                                lists:seq(1, length(Messages)),
-                                                Messages
-                                            )
-                                    ]),
-                                <<"results/data">> => Data
-                            },
-                            Opts
-                        ),
-                    {ok, Output}
+                    {ok, ProcessedResults} = json_to_message(Resp, Opts),
+                    PostProcessed = postprocess_outbox(ProcessedResults, Proc, Opts),
+                    Out = hb_converge:set(
+                        M1,
+                        <<"results">>,
+                        PostProcessed,
+                        Opts
+                    ),
+                    {ok, Out}
             catch
                 _:_ ->
+                    ?event(error, {json_error, Str}),
                     {error,
                         hb_converge:set(
                             M1,
@@ -312,12 +332,14 @@ normalize_results(
     #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages }) ->
     {ok, Data, Messages};
 normalize_results(#{ <<"error">> := Error }) ->
-    {ok, Error, []}.
+    {ok, Error, []};
+normalize_results(Other) ->
+    throw({invalid_results, Other}).
 
 %% @doc After the process returns messages from an evaluation, the
 %% signing node needs to add some tags to each message and spawn such that
 %% the target process knows these messages are created by a process.
-preprocess_results(Msg, Proc, Opts) ->
+preprocess_results(Msg, _Opts) ->
     NormMsg = hb_converge:normalize_keys(Msg),
     RawTags = maps:get(<<"tags">>, NormMsg, []),
     TagList =
@@ -340,16 +362,34 @@ preprocess_results(Msg, Proc, Opts) ->
                 maps:to_list(FilteredMsg)
             )
         ),
-        Tags#{
-            <<"from-process">> => hb_converge:get(id, Proc, Opts),
-            <<"from-image">> => hb_converge:get(<<"image">>, Proc, Opts)
-        }
+        Tags
     ).
+
+%% @doc Post-process messages in the outbox to add the correct `from-process'
+%% and `from-image' tags.
+postprocess_outbox(Msg, Proc, Opts) ->
+    AdjustedOutbox =
+        maps:map(
+            fun(_Key, XMsg) ->
+                XMsg#{
+                    <<"from-process">> => hb_converge:get(id, Proc, Opts),
+                    <<"from-image">> => hb_converge:get(<<"image">>, Proc, Opts)
+                }
+            end,
+            hb_converge:get(<<"outbox">>, Msg, #{}, Opts)
+        ),
+    hb_converge:set(Msg, <<"outbox">>, AdjustedOutbox, Opts).
 
 %%% Tests
 
 test_init() ->
     application:ensure_all_started(hb).
+
+json_to_message_test() ->
+    {ok, JSON} = file:read_file("test/example_json_iface_result.json"),
+    {ok, Msg} = json_to_message(JSON, #{}),
+    ?event(debug, {msg, Msg}),
+    ?assertEqual(<<"OK">>, hb_converge:get(<<"outbox/1/result">>, Msg, #{})).
 
 generate_stack(File) ->
     generate_stack(File, <<"WASM">>).

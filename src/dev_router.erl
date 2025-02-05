@@ -90,6 +90,7 @@ route(_, Msg, Opts) ->
     case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
         false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
+        Node when is_map(Node) -> apply_node(Msg, Node);
         not_found ->
             Nodes = hb_converge:get(<<"peers">>, R, Opts),
             case hb_converge:get(<<"strategy">>, R, Opts) of
@@ -107,6 +108,24 @@ route(_, Msg, Opts) ->
                     end
             end
     end.
+
+%% @doc Apply a node map's rules for transforming the path of the message.
+%% Supports the following keys:
+%% - `prefix`: The prefix to add to the path.
+%% - `suffix`: The suffix to add to the path.
+%% - `replace`: A regex to replace in the path.
+apply_node(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
+    {ok, <<Prefix/binary, Path/binary>>};
+apply_node(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
+    {ok, <<Path/binary, Suffix/binary>>};
+apply_node(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
+    % Apply the regex to the path and replace the first occurrence.
+    case re:replace(Path, Match, With, [global]) of
+        NewPath when is_binary(NewPath) ->
+            {ok, NewPath};
+        _ -> {error, invalid_replace_args}
+    end.
+
 
 %% @doc Find the first matching template in a list of known routes.
 match_routes(ToMatch, Routes, Opts) ->

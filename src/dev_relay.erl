@@ -27,12 +27,20 @@
 %% Defaults to `false`.
 call(M1, RawM2, Opts) ->
     {ok, BaseTarget} = hb_message:find_target(M1, RawM2, Opts),
+    RelayPath =
+        hb_converge:get_first(
+            [
+                {RawM2, <<"relay-path">>},
+                {M1, <<"relay-path">>}
+            ],
+            Opts
+        ),
     TargetMod1 =
-        case hb_converge:get(<<"relay-path">>, BaseTarget, Opts) of
+        case RelayPath of
             not_found -> BaseTarget;
-            RelayPath ->
-                ?event({setting_path, {base_target, BaseTarget}, {relay_path, {explicit, RelayPath}}}),
-                hb_converge:set(BaseTarget, <<"path">>, RelayPath, Opts#{ topic => debug })
+            RPath ->
+                ?event({setting_path, {base_target, BaseTarget}, {relay_path, {explicit, RPath}}}),
+                hb_converge:set(BaseTarget, <<"path">>, RPath, Opts#{ topic => debug })
         end,
     TargetMod2 =
         case hb_converge:get(<<"requires-sign">>, BaseTarget, false, Opts) of
