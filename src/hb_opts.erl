@@ -78,6 +78,7 @@ default_message() ->
                 <<"flat@1.0">> => dev_codec_flat,
                 <<"structured@1.0">> => dev_codec_structured,
                 <<"lookup@1.0">> => dev_lookup,
+                <<"compute-lite@1.0">> => dev_compute_lite,
                 <<"test-device@1.0">> => dev_test
             },
         %% Should the node attempt to access data from remote caches for
