@@ -135,7 +135,7 @@ attest(Msg, Wallet, Format) ->
 
 %% @doc wrapper function to verify a message.
 verify(Msg) ->
-    {ok, Res} = dev_message:verify(Msg, #{}, #{}),
+    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => <<"all">> }, #{}),
     Res.
 
 %% @doc Return the unsigned version of a message in Converge format.

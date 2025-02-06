@@ -223,7 +223,6 @@ reset_hmac(RawMsg) ->
                             dev_codec_structured_conv:parse_dictionary(Signature)
                         )
                     ),
-                ?event({SigNameFromDict, SigBin}),
                 {SigNameFromDict, SigBin}
             end,
             maps:to_list(Attestations)
@@ -232,11 +231,8 @@ reset_hmac(RawMsg) ->
         maps:from_list(lists:map(
             fun ({_Attestor, #{ <<"signature-input">> := Inputs }}) ->
                 SigNameFromDict = sig_name_from_dict(Inputs),
-                ?event({trying_to_parse, Inputs}),
                 Res = dev_codec_structured_conv:parse_dictionary(Inputs),
-                ?event({parsed_dict, Res}),
                 SingleSigInput = maps:get(SigNameFromDict, maps:from_list(Res)),
-                ?event({single_sig_input, SingleSigInput}),
                 {SigNameFromDict, SingleSigInput}
             end,
             maps:to_list(Attestations)
@@ -263,7 +259,7 @@ reset_hmac(RawMsg) ->
             Msg
         )
     },
-    ?event({reset_hmac_complete, {explicit, Res}}),
+    ?event({reset_hmac_complete, Res}),
     Res.
 
 sig_name_from_dict(DictBin) ->
@@ -338,25 +334,26 @@ verify(MsgToVerify, Req, _Opts) ->
             % Add the signature data back into the encoded message.
             EncWithSig =
                 Enc#{
-                    <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
-                    <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
+                    <<"signature-input">> =>
+                        maps:get(<<"signature-input">>, MsgToVerify),
+                    <<"signature">> =>
+                        maps:get(<<"signature">>, MsgToVerify)
                 },
             % If the content-digest is already present, we override it with a
             % regenerated value. If those values match, then the signature will
             % verify correctly. If they do not match, then the signature will
             % fail to verify, as the signature bases will not be the same.
             EncWithDigest = generate_content_digest(EncWithSig),
-            ?event({encoded_msg_for_verification, EncWithDigest}),
-            {
-                ok,
-                verify_auth(
-                    #{
-                        key => {{rsa, 65537}, PubKey},
-                        sig_name => address_to_sig_name(Address)
-                    },
-                    EncWithDigest
-                )
-            };
+            ?event({encoded_msg_for_verification, {explicit, EncWithDigest}}),
+            Res = verify_auth(
+                #{
+                    key => {{rsa, 65537}, PubKey},
+                    sig_name => address_to_sig_name(Address)
+                },
+                EncWithDigest
+            ),
+            ?event({rsa_verify_res, Res}),
+            Res;
         _ ->
             {error, {unsupported_alg, Alg}}
     end.

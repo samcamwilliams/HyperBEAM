@@ -107,7 +107,10 @@ handle_converge(Req, Msgs, NodeMsg) ->
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcMsg} ->
-            ?event({result_after_preprocessing, PreProcMsg}),
+            ?event(
+                {result_after_preprocessing,
+                    hb_converge:normalize_keys(PreProcMsg)}
+            ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
             {ok, Res} =

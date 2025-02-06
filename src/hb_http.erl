@@ -378,6 +378,7 @@ req_to_tabm_singleton(Req, Opts) ->
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
     SignedHeaders = remove_unsigned_fields(RawHeaders, Opts),
+    MaybeSignedMsg = SignedHeaders#{ <<"body">> => Body },
     HeadersWithPath =
         case maps:get(<<"path">>, RawHeaders, undefined) of
             undefined ->
@@ -398,11 +399,20 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
         end,
     HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
     ?event(http, {recvd_req_with_headers, {raw, {explicit, RawHeaders}, {headers, {explicit, HeadersWithMethod}}}}),
-    HTTPEncoded =
+    HTTPSigReady =
         (maps:without([<<"content-length">>], HeadersWithMethod))#{
             <<"body">> => Body
         },
-    dev_codec_httpsig_conv:from(HTTPEncoded).
+    HTTPSig = dev_codec_httpsig_conv:from(HTTPSigReady),
+    case maps:get(<<"signature">>, MaybeSignedMsg, undefined) of
+        undefined -> HTTPSig;
+        _ ->
+            case hb_message:verify(HTTPSig) of
+                true -> HTTPSig;
+                _ ->
+                    throw({invalid_signature, MaybeSignedMsg})
+            end
+    end.
 
 remove_unsigned_fields(RawHeaders, Opts) ->
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
