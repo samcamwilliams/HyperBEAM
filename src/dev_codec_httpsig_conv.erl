@@ -291,7 +291,7 @@ to(TABM, Opts) when is_map(TABM) ->
         ),
     ?event({prepared_body_map, {msg, Enc0}}),
     BodyMap = maps:get(<<"body">>, Enc0, #{}),
-    FlattenedBodyMap = hb_converge:normalize_keys(BodyMap),
+    FlattenedBodyMap = dev_codec_flat:to(BodyMap),
     Enc1 =
         case {FlattenedBodyMap, lists:member(sub_part, Opts)} of
             {X, _} when map_size(X) =:= 0 ->
