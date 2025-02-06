@@ -8,7 +8,7 @@
 %% @doc List of special keys that are used in the Converge Protocol.
 -define(CONVERGE_KEYS, [<<"path">>, <<"hashpath">>, <<"priv">>]).
 %% @doc Keys that can be regenerated losslessly.
--define(REGEN_KEYS, [<<"unsigned_id">>]).
+-define(REGEN_KEYS, [<<"unsigned_id">>, <<"content-digest">>]).
 
 %% @doc Record used for parsing relevant components of a cursor-browsable
 %% response.
