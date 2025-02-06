@@ -353,7 +353,7 @@ verify(MsgToVerify, Req, _Opts) ->
                 EncWithDigest
             ),
             ?event({rsa_verify_res, Res}),
-            Res;
+            {ok, Res};
         _ ->
             {error, {unsupported_alg, Alg}}
     end.
