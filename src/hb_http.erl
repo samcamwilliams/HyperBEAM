@@ -397,7 +397,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
             _ -> SignedHeaders
         end,
     HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
-    ?event(http, {recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
+    ?event(http, {recvd_req_with_headers, {raw, {explicit, RawHeaders}, {headers, {explicit, HeadersWithMethod}}}}),
     HTTPEncoded =
         (maps:without([<<"content-length">>], HeadersWithMethod))#{
             <<"body">> => Body
@@ -422,16 +422,17 @@ do_remove_unsigned_fields(RawHeaders) ->
     ),
     {list, ComponentIdentifiers, _SigParams} = SigInput,
     BinComponentIdentifiers = lists:map(
-        fun({item, {_Kind, CI}, _Params}) -> CI end,
+        fun({item, {_Kind, ID}, _Params}) -> ID end,
         ComponentIdentifiers    
     ),
     SignedHeaders = maps:with(
-        [<<"signature">>, <<"signature-input">>] ++ BinComponentIdentifiers,
+        [<<"signature">>, <<"signature-input">>] ++
+            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
         RawHeaders
     ),
     case maps:get(<<"content-digest">>, SignedHeaders, undefined) of
         undefined -> SignedHeaders;
-        ContentDigest ->
+        _ContentDigest ->
             SignedHeaders#{
                 <<"body">> => maps:get(<<"body">>, RawHeaders, <<>>)
             }

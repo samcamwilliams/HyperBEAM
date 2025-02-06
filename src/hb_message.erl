@@ -951,6 +951,35 @@ hashpath_sign_verify_test(Codec) ->
         )
     ).
 
+signed_message_with_derived_components_test(Codec) ->
+    Msg = #{
+        <<"path">> => <<"/test">>,
+        <<"authority">> => <<"example.com">>,
+        <<"scheme">> => <<"https">>,
+        <<"method">> => <<"GET">>,
+        <<"target-uri">> => <<"/test">>,
+        <<"request-target">> => <<"/test">>,
+        <<"status">> => <<"200">>,
+        <<"reason-phrase">> => <<"OK">>,
+        <<"body">> => <<"TEST_DATA">>,
+        <<"content-digest">> => <<"TEST_DIGEST">>,
+        <<"normal">> => <<"hello">>
+    },
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    ?event(debug, {signed_msg, SignedMsg}),
+    ?assert(verify(SignedMsg)),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event(debug, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
+    ?assert(verify(Decoded)),
+    ?assert(match(SignedMsg, Decoded)).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1009,8 +1038,9 @@ message_suite_test_() ->
             fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
-        {"signed message with hashpath test", fun hashpath_sign_verify_test/1}
+        {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
+        {"message with derived components test", fun signed_message_with_derived_components_test/1}
     ]).
 
 simple_test() ->
-    hashpath_sign_verify_test(<<"httpsig@1.0">>).
+    signed_message_with_derived_components_test(<<"httpsig@1.0">>).

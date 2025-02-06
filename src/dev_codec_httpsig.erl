@@ -11,6 +11,7 @@
 -export([to/1, from/1]).
 %%% Public API functions
 -export([generate_content_digest/1]).
+-export([add_derived_specifiers/1, remove_derived_specifiers/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 -define(EMPTY_QUERY_PARAMS, $?).
 % https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
@@ -37,6 +38,21 @@
 	{string, binary()},
 	{binary(), integer() | boolean() | {string | token | binary, binary()}}
 }.
+
+%%% A list of components that are `derived' in the context of RFC-9421 from the
+%%% request message.
+-define(DERIVED_COMPONENTS, [
+    <<"method">>,
+    <<"target-uri">>,
+    <<"authority">>,
+    <<"scheme">>,
+    <<"request-target">>,
+    <<"path">>,
+    <<"query">>,
+    <<"fragment">>,
+    <<"query-param">>,
+    <<"status">>
+]).
 
 %%% Routing functions for the `dev_codec_httpsig_conv' module
 to(Msg) -> dev_codec_httpsig_conv:to(Msg).
@@ -378,28 +394,38 @@ authority(ComponentIdentifiers, SigParams, PrivKey = {KeyType = {ALG, _}, _, Pub
     authority(ComponentIdentifiers, SigParams, {PrivKey, {KeyType, Pub}});
 authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
     #{
-		% parse each component identifier into a Structured Field Item:
-		%
-		% <<"\"Example-Dict\";key=\"foo\"">> ->
-        %   {item, {string, <<"Example-Dict">>},
-        %       [{<<"key">>, {string, <<"foo">>}}]}
-		% See hb_http_structuted_fields for parsed Structured Fields full data 
-        % structures
-		%
-		% sf_item/1 handles when the argument is already parsed.
-		% This provides a feedback loop, in case any encoded component identifier is
-		% not properly encoded
-		component_identifiers => ComponentIdentifiers,
+		component_identifiers => add_derived_specifiers(ComponentIdentifiers),
 		% TODO: add checks to allow only valid signature parameters
 		% https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
 		sig_params => SigParams,
-        % TODO: validate the key is supported?
 		key_pair => KeyPair
 	}.
 
-%%% @doc using the provided Authority and Request/Response Messages Context,
-%%% create a Name, Signature and SignatureInput that can be used to additional
-%%% signatures to a corresponding HTTP Message
+%% @doc Normalize key parameters to ensure their names are correct.
+add_derived_specifiers(ComponentIdentifiers) ->
+    Res = lists:flatten(
+        lists:map(
+            fun(Key) ->
+                case lists:member(Key, ?DERIVED_COMPONENTS) of
+                    true -> << "@", Key/binary >>;
+                    false -> Key
+                end
+            end,
+            ComponentIdentifiers
+        )
+    ),
+    Res.
+
+%% @doc Remove derived specifiers from a list of component identifiers.
+remove_derived_specifiers(ComponentIdentifiers) ->
+    lists:map(
+        fun(<<"@", Key/binary>>) -> Key; (Key) -> Key end,
+        ComponentIdentifiers
+    ).
+
+%% @doc using the provided Authority and Request/Response Messages Context,
+%% create a Name, Signature and SignatureInput that can be used to additional
+%% signatures to a corresponding HTTP Message
 -spec sign_auth(authority_state(), request_message(), response_message()) ->
     {ok, {binary(), binary(), binary()}}.
 sign_auth(Authority, Req, Res) ->
@@ -468,9 +494,6 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % signature base
             [{list, ComponentIdentifiers, SigParams}] =
                 dev_codec_structured_conv:parse_list(SignatureInput),
-            % TODO: HACK convert parsed sig params into a map that authority() 
-            % can handle maybe authority() should handle both parsed and unparsed 
-            % SigParams, similar to ComponentIdentifiers
             SigParamsMap = lists:foldl(
                 % TODO: does not support SF decimal params
                 fun
@@ -568,9 +591,10 @@ identifier_to_component(Identifier, Req, Res) when is_binary(Identifier) ->
         Req,
         Res
     );
-identifier_to_component(ParsedIdentifier = {item, {_, Value}, _Params}, Req, Res) ->
+identifier_to_component(ParsedIdentifier = {item, {X, Value}, Params}, Req, Res) ->
 	case Value of
-		<<$@, _R/bits>> -> derive_component(ParsedIdentifier, Req, Res);
+		<<$@, Rest/bits>> -> 
+            extract_field({item, {X, Rest}, Params}, Req, Res);
 		_ -> extract_field(ParsedIdentifier, Req, Res)
 	end.
 
@@ -612,7 +636,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 					{
                         field_not_found_error,
                         <<"Component Identifier for a field MUST be ",
-                        "present on the message">>,
+                            "present on the message">>,
                         {key, Lowered},
                         {req, Req},
                         {res, Res}
@@ -671,7 +695,7 @@ extract_field_value(RawFields, [Key, IsStrictFormat, IsByteSequenceEncoded]) ->
 							{
                                 sf_parsing_error,
                                 <<"Component Identifier value could not ",
-                                "be parsed as a structured field">>
+                                    "be parsed as a structured field">>
                             };
 						{ok, SF} ->
 							case HasKey of
@@ -699,7 +723,7 @@ extract_dictionary_field_value(StructuredField = [Elem | _Rest], Key) ->
 					{
                         sf_dicionary_key_not_found_error,
                         <<"Component Identifier references key not ",
-                        "found in dictionary structured field">>,
+                            "found in dictionary structured field">>,
                         {key, Key},
                         {structured_field, StructuredField}
                     };
@@ -710,7 +734,7 @@ extract_dictionary_field_value(StructuredField = [Elem | _Rest], Key) ->
 			{
                 sf_not_dictionary_error,
                 <<"Component Identifier cannot reference key on a ",
-                "non-dictionary structured field">>
+                    "non-dictionary structured field">>
             }
 	end.
 
@@ -733,7 +757,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 			{
                 req_identifier_error,
                 <<"A Component Identifier may not contain a req parameter ",
-                "if the target is a request message">>
+                    "if the target is a request message">>
             };
 		_ ->
 			Lowered = lower_bin(IParsed),
@@ -745,23 +769,23 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 				case Lowered of
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.2.1
 					<<"@method">> ->
-						{ok, upper_bin(maps:get(method, Req))};
+						{ok, upper_bin(maps:get(<<"method">>, Req, <<>>))};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.4.1
 					<<"@target-uri">> ->
-						{ok, bin(maps:get(url, Req))};
+						{ok, bin(maps:get(<<"path">>, Req, <<>>))};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.6.1
 					<<"@authority">> ->
-						URI = uri_string:parse(maps:get(url, Req)),
-						Authority = maps:get(host, URI),
+						URI = uri_string:parse(maps:get(<<"path">>, Req, <<>>)),
+						Authority = maps:get(host, URI, <<>>),
 						{ok, lower_bin(Authority)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.8.1
 					<<"@scheme">> ->
-						URI = uri_string:parse(maps:get(url, Req)),
-						Scheme = maps:get(scheme, URI),
+						URI = uri_string:parse(maps:get(<<"path">>, Req)),
+						Scheme = maps:get(scheme, URI, <<>>),
 						{ok, lower_bin(Scheme)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.10.1
 					<<"@request-target">> ->
-						URI = uri_string:parse(maps:get(url, Req)),
+						URI = uri_string:parse(maps:get(<<"path">>, Req)),
 						% If message contains the absolute form value, then
 						% the value must be the absolut url
 						%
@@ -775,7 +799,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 								_ ->
                                     lists:join($?,
                                         [
-                                            maps:get(path, URI),
+                                            maps:get(path, URI, <<>>),
                                             maps:get(query, URI, ?EMPTY_QUERY_PARAMS)
                                         ]
                                     )
@@ -783,12 +807,12 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 						{ok, bin(RequestTarget)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.12.1
 					<<"@path">> ->
-						URI = uri_string:parse(maps:get(url, Req)),
+						URI = uri_string:parse(maps:get(<<"path">>, Req)),
 						Path = maps:get(path, URI),
 						{ok, bin(Path)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.14.1
 					<<"@query">> ->
-						URI = uri_string:parse(maps:get(url, Req)),
+						URI = uri_string:parse(maps:get(<<"path">>, Req)),
 						% No query params results in a "?" value
 						% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 						Query =
@@ -809,7 +833,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
                                     "must specify a name parameter">>
                                 };
 							Name ->
-								URI = uri_string:parse(maps:get(url, Req)),
+								URI = uri_string:parse(maps:get(<<"path">>, Req)),
 								QueryParams =
                                     uri_string:dissect_query(maps:get(query, URI, "")),
 								QueryParam =
@@ -833,12 +857,15 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
                                     "used if target is a request message">>
                                 };
 							_ ->
-								Status = maps:get(status, Res, <<"200">>),
+								Status = maps:get(<<"status">>, Res, <<"200">>),
 								{ok, Status}
 						end
 				end,
+            ?event(debug, {derive_component, IParsed, Result}),
 			case Result of
-				{ok, V} -> {ok, {bin(NormalizedItem), V}};
+				{ok, V} ->
+                    ?event(debug, {derive_component, IParsed, {ok, V}}),
+                    {ok, {bin(NormalizedItem), V}};
 				E -> E
 			end
 	end.
