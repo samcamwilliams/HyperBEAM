@@ -10,7 +10,9 @@
 %%%     #{ method: GET, path: <<"/schedule">> } -> get_schedule(Msg1, Msg2, Opts)
 %%%         Returns the schedule for a process in a cursor-traversable format.
 %%%     #{ method: POST, path: <<"/schedule">> } -> post_schedule(Msg1, Msg2, Opts)
-%%%         Schedules a new message for a process.'''
+%%%         Schedules a new message for a process, or starts a new scheduler
+%%%         for the given message.
+%%% '''
 
 -module(dev_scheduler).
 %%% Converge API functions:
@@ -158,16 +160,14 @@ schedule(Msg1, Msg2, Opts) ->
 %% for this scheduler. If so, it schedules the message and returns the assignment.
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
-    ToSched = hb_converge:get(
-        <<"body">>, Msg2, Msg2, Opts#{ hashpath => ignore }),
-    ?event({to_sched, ToSched}),
-    ProcID = find_id(Msg1, Msg2, Opts),
+    ToSched = find_message_to_schedule(Msg1, Msg2, Opts),
+    ?event(debug, {to_sched, ToSched}),
+    ProcID = find_schedule_id(Msg1, Msg2, Opts),
+    ?event(debug, {proc_id, ProcID}),
     PID =
         case dev_scheduler_registry:find(ProcID, false, Opts) of
             not_found ->
                 % Check if we are the scheduler for this process.
-                ?no_prod("Once we have GQL, get the scheduler location record. "
-                    "For now, we'll just use the address of the wallet."),
                 Address = hb_util:human_id(ar_wallet:to_address(
                     hb_opts:get(priv_wallet, hb:wallet(), Opts))),
                 Proc = find_process(Msg1, Opts),
@@ -175,7 +175,9 @@ post_schedule(Msg1, Msg2, Opts) ->
                     hb_converge:get_first(
                         [
                             {Proc, <<"scheduler-location">>},
-                            {ToSched, <<"scheduler-location">>}
+                            {ToSched, <<"scheduler-location">>},
+                            {Proc, <<"scheduler">>},
+                            {ToSched, <<"scheduler">>}
                         ],
                         not_found,
                         Opts#{ hashpath => ignore }
@@ -239,7 +241,7 @@ post_schedule(Msg1, Msg2, Opts) ->
 %% @doc Returns information about the current slot for a process.
 slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
-    ProcID = find_id(M1, M2, Opts),
+    ProcID = find_schedule_id(M1, M2, Opts),
     ?event({getting_current_slot, {proc_id, ProcID}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
     #{ current := CurrentSlot, wallet := Wallet } =
@@ -257,7 +259,7 @@ slot(M1, M2, Opts) ->
     }}.
 
 get_schedule(Msg1, Msg2, Opts) ->
-    ProcID = find_id(Msg1, Msg2, Opts),
+    ProcID = find_schedule_id(Msg1, Msg2, Opts),
     From =
         case hb_converge:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
@@ -280,23 +282,55 @@ get_schedule(Msg1, Msg2, Opts) ->
 
 %%% Private methods
 
-%% @doc Find the ID from a given request. The precidence order for search is as
-%% follows:
+%% @doc Find the schedule ID from a given request. The precidence order for 
+%% search is as follows:
 %% 1. `Msg2/target`
-%% 2. `Msg1/process/id`
-%% 3. `Msg1/id`
-find_id(Msg1, Msg2, Opts) ->
+%% 2. `Msg2/id` when `Msg2` has `type: Process`
+%% 3. `Msg1/process/id`
+%% 4. `Msg1/id` when `Msg1` has `type: Process`
+%% 5. `Msg2/id`
+find_schedule_id(Msg1, Msg2, Opts) ->
     TempOpts = Opts#{ hashpath => ignore },
-    Res = case hb_converge:get(<<"target">>, Msg2, TempOpts) of
-        not_found ->
-            case hb_converge:get(<<"process/id">>, Msg1, TempOpts) of
-                not_found -> hb_converge:get(<<"id">>, Msg1, TempOpts);
-                ID -> ID
-            end;
-        Target -> Target
+    Res = case hb_converge:resolve(Msg2, <<"target">>, TempOpts) of
+        {ok, Target} ->
+            % ID found at Msg2/target
+            Target;
+        _ ->
+            case hb_converge:resolve(Msg2, <<"type">>, TempOpts) of
+                {ok, <<"Process">>} ->
+                    % Msg2 is a Process, so the ID is at Msg2/id
+                    hb_converge:get(<<"id">>, Msg2, TempOpts);
+                _ ->
+                    case hb_converge:resolve(Msg1, <<"process/id">>, TempOpts) of
+                        {ok, ID} ->
+                            % ID found at Msg1/process/id
+                            ID;
+                    _ ->
+                        % Does the message have a type of Process?
+                        case hb_converge:get(Msg1, <<"type">>, TempOpts) of
+                            <<"Process">> ->
+                                % Yes, so try Msg1/id
+                                hb_converge:get(<<"id">>, Msg1, TempOpts);
+                            _ ->
+                                % No, so the ID is at Msg2/id
+                                hb_converge:get(<<"id">>, Msg2, TempOpts)
+                        end
+                end
+            end
     end,
-    ?event({found_id, {id, Res}}),
+    ?event(debug, {found_id, {id, Res}}),
     Res.
+
+%% @doc Search the given base and request message pair to find the message to
+%% schedule. The precidence order for search is as follows:
+%% 1. `Msg2/body`
+%% 2. `Msg2`
+find_message_to_schedule(_Msg1, Msg2, Opts) ->
+    case hb_converge:resolve(Msg2, <<"body">>, Opts) of
+        {ok, Body} ->
+            Body;
+        _ -> Msg2
+    end.
 
 %% @doc Find the process from a given request. Check if it has a `process`
 %% field, and if so, return that. Otherwise, return the full message.

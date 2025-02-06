@@ -977,12 +977,12 @@ signed_message_with_derived_components_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, SignedMsg}),
+    ?event({signed_msg, SignedMsg}),
     ?assert(verify(SignedMsg)),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event({encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event({decoded, Decoded}),
     ?assert(verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 

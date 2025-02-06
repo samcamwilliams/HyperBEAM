@@ -10,7 +10,7 @@
 %%% Codec API functions
 -export([to/1, from/1]).
 %%% Public API functions
--export([generate_content_digest/1]).
+-export([add_content_digest/1]).
 -export([add_derived_specifiers/1, remove_derived_specifiers/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 -define(EMPTY_QUERY_PARAMS, $?).
@@ -127,7 +127,7 @@ attest(MsgToSign, _Req, Opts) ->
                 {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
         end,
     Enc =
-        generate_content_digest(
+        add_content_digest(
             maps:without(
                 [<<"signature">>, <<"signature-input">>],
                 hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
@@ -169,12 +169,13 @@ attest(MsgToSign, _Req, Opts) ->
     reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
 
 %% @doc If the `body` key is present, replace it with a content-digest.
-generate_content_digest(Msg) ->
+add_content_digest(Msg) ->
     case maps:get(<<"body">>, Msg, not_found) of
         not_found -> Msg;
         Body ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
+            ?event(debug, {add_content_digest, {body, Body}, {msg, Msg}}),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(dev_codec_structured_conv:dictionary(
@@ -272,7 +273,7 @@ hmac(Msg) ->
     % just those as the components for the hmac
     EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
     % Remove the body and set the content-digest as a field
-    MsgWithContentDigest = generate_content_digest(EncodedMsg),
+    MsgWithContentDigest = add_content_digest(EncodedMsg),
     ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
     % Generate the signature base
     {_, SignatureBase} = signature_base(
@@ -343,7 +344,7 @@ verify(MsgToVerify, Req, _Opts) ->
             % regenerated value. If those values match, then the signature will
             % verify correctly. If they do not match, then the signature will
             % fail to verify, as the signature bases will not be the same.
-            EncWithDigest = generate_content_digest(EncWithSig),
+            EncWithDigest = add_content_digest(EncWithSig),
             ?event({encoded_msg_for_verification, {explicit, EncWithDigest}}),
             Res = verify_auth(
                 #{
@@ -530,6 +531,7 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
+    ?event(debug, {signature_base, {explicit, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
@@ -858,10 +860,10 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 								{ok, Status}
 						end
 				end,
-            ?event(debug, {derive_component, IParsed, Result}),
+            ?event({derive_component, IParsed, Result}),
 			case Result of
 				{ok, V} ->
-                    ?event(debug, {derive_component, IParsed, {ok, V}}),
+                    ?event({derive_component, IParsed, {ok, V}}),
                     {ok, {bin(NormalizedItem), V}};
 				E -> E
 			end

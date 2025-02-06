@@ -343,7 +343,7 @@ to(TABM, Opts) when is_map(TABM) ->
     Enc2 =
         maps:merge(
             Enc1,
-            dev_codec_httpsig:generate_content_digest(Enc1)
+            dev_codec_httpsig:add_content_digest(Enc1)
         ),
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of

@@ -378,41 +378,46 @@ req_to_tabm_singleton(Req, Opts) ->
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
     SignedHeaders = remove_unsigned_fields(RawHeaders, Opts),
-    MaybeSignedMsg = SignedHeaders#{ <<"body">> => Body },
-    HeadersWithPath =
-        case maps:get(<<"path">>, RawHeaders, undefined) of
-            undefined ->
-                SignedHeaders#{
-                    <<"path">> =>
-                        iolist_to_binary(
-                            cowboy_req:uri(
-                                Req,
-                                #{
-                                    host => undefined,
-                                    port => undefined,
-                                    scheme => undefined
-                                }
-                            )
-                    )
-                };
-            _ -> SignedHeaders
-        end,
-    HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
-    ?event(http, {recvd_req_with_headers, {raw, {explicit, RawHeaders}, {headers, {explicit, HeadersWithMethod}}}}),
-    HTTPSigReady =
-        (maps:without([<<"content-length">>], HeadersWithMethod))#{
-            <<"body">> => Body
-        },
-    HTTPSig = dev_codec_httpsig_conv:from(HTTPSigReady),
-    case maps:get(<<"signature">>, MaybeSignedMsg, undefined) of
-        undefined -> HTTPSig;
+    MaybeSignedHTTP = SignedHeaders#{ <<"body">> => Body },
+    Msg = dev_codec_httpsig_conv:from(MaybeSignedHTTP),
+    case hb_converge:get(<<"signature">>, MaybeSignedHTTP, not_found, Opts) of
+        not_found -> maybe_add_unsigned(Req, Msg, Opts);
         _ ->
-            case hb_message:verify(HTTPSig) of
-                true -> HTTPSig;
-                _ ->
-                    throw({invalid_signature, MaybeSignedMsg})
+            case true of%hb_message:verify(Msg) of
+                true ->
+                    maybe_add_unsigned(Req, Msg, Opts);
+                false ->
+                    throw({invalid_signature, Msg})
             end
     end.
+
+%% @doc Add the method and path to a message, if they are not already present.
+%% The precidence order for finding the path is:
+%% 1. The path in the message
+%% 2. The path in the request URI
+maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
+    Method = cowboy_req:method(Req),
+    MsgPath =
+        hb_converge:get(
+            <<"path">>,
+            Msg,
+            maps:get(
+                <<"path">>, 
+                RawHeaders,
+                iolist_to_binary(
+                    cowboy_req:uri(
+                        Req,
+                        #{
+                            host => undefined,
+                            port => undefined,
+                            scheme => undefined
+                        }
+                    )
+                )
+            ),
+            Opts
+        ),
+    Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
 remove_unsigned_fields(RawHeaders, Opts) ->
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
