@@ -49,7 +49,6 @@
     <<"request-target">>,
     <<"path">>,
     <<"query">>,
-    <<"fragment">>,
     <<"query-param">>,
     <<"status">>
 ]).
@@ -278,7 +277,8 @@ hmac(Msg) ->
     % Generate the signature base
     {_, SignatureBase} = signature_base(
         #{
-            component_identifiers => lists:sort(maps:keys(MsgWithContentDigest)),
+            component_identifiers => 
+                add_derived_specifiers(lists:sort(maps:keys(MsgWithContentDigest))),
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
