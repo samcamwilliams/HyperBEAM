@@ -62,8 +62,8 @@ assignments_to_aos2(ProcID, Assignments, More, Opts) ->
             ]}
         ]},
     Encoded = jiffy:encode(BodyStruct),
-    ?event(debug, {body_struct, BodyStruct}),
-    ?event(debug, {encoded, {explicit, Encoded}}),
+    ?event({body_struct, BodyStruct}),
+    ?event({encoded, {explicit, Encoded}}),
     {ok, 
         #{
             <<"content-type">> => <<"application/json">>,

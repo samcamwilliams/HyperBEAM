@@ -36,10 +36,10 @@ do_compute(ProcID, Slot, Opts) ->
             },
             Opts
         ),
-    ?event(debug, {res, Res}),
+    ?event({res, Res}),
     {ok, Response} = Res,
     JSONRes = hb_converge:get(<<"body">>, Response, Opts),
-    ?event(debug, {json_res, JSONRes}),
+    ?event({json_res, JSONRes}),
     dev_json_iface:json_to_message(JSONRes, Opts).
 
 %%% Tests
@@ -65,6 +65,6 @@ compute_test() ->
                     ]
                 }
             ),
-            ?event(debug, {res, Res}),
+            ?event({res, Res}),
             ?assertEqual(#{}, maps:get(<<"outbox">>, Res, not_found))
     end.

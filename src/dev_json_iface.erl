@@ -393,7 +393,7 @@ test_init() ->
 json_to_message_test() ->
     {ok, JSON} = file:read_file("test/example_json_iface_result.json"),
     {ok, Msg} = json_to_message(JSON, #{}),
-    ?event(debug, {msg, Msg}),
+    ?event({msg, Msg}),
     ?assertEqual(<<"OK">>, hb_converge:get(<<"outbox/1/result">>, Msg, #{})).
 
 generate_stack(File) ->

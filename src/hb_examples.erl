@@ -158,9 +158,9 @@ create_schedule_aos2_test() ->
     IDNone = hb_message:id(SignedProc, none),
     IDAll = hb_message:id(SignedProc, all),
     {ok, Res} = schedule(SignedProc, IDNone),
-    ?event(debug, {res, Res}),
+    ?event({res, Res}),
     receive after 100 -> ok end,
-    ?event(debug, {id, IDNone, IDAll}),
+    ?event({id, IDNone, IDAll}),
     {ok, Res2} = hb_http:get(
         <<"http://localhost:8734">>,
         <<"/~scheduler@1.0/slot?target=", IDNone/binary>>,
@@ -180,5 +180,5 @@ schedule(ProcMsg, Target, Wallet) ->
             },
             Wallet
         ),
-    ?event(debug, {signed_req, SignedReq}),
+    ?event({signed_req, SignedReq}),
     hb_http:post(<<"http://localhost:8734">>, SignedReq, #{}).

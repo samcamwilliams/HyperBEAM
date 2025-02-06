@@ -160,7 +160,7 @@ post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
     ToSched = hb_converge:get(
         <<"body">>, Msg2, Msg2, Opts#{ hashpath => ignore }),
-    ?event(debug, {to_sched, ToSched}),
+    ?event({to_sched, ToSched}),
     ProcID = find_id(Msg1, Msg2, Opts),
     PID =
         case dev_scheduler_registry:find(ProcID, false, Opts) of
@@ -558,7 +558,7 @@ http_get_json_schedule_test() ->
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
     {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
-    ?event(debug, {schedule, Schedule}),
+    ?event({schedule, Schedule}),
     JSON = hb_converge:get(<<"body">>, Schedule, #{}),
     Assignments = jiffy:decode(JSON, [return_maps]),
     ?assertEqual(
