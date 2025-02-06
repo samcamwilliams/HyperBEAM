@@ -9,8 +9,7 @@
 
 compute(Msg1, Msg2, Opts) ->
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
-    MessageToCompute = hb_converge:get(<<"body">>, Msg2, Opts),
-    MessageID = hb_message:id(MessageToCompute, all),
+    Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
     ProcessID =
         hb_converge:get_first(
             [
@@ -19,18 +18,18 @@ compute(Msg1, Msg2, Opts) ->
             ],
             Opts
         ),
-    {ok, Res} = do_compute(ProcessID, MessageID, Opts),
+    {ok, Res} = do_compute(ProcessID, Slot, Opts),
     hb_converge:set(Msg1, <<OutputPrefix/binary, "/results">>, Res, Opts).
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
-do_compute(ProcID, MsgID, Opts) ->
+do_compute(ProcID, Slot, Opts) ->
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">> }, #{
             <<"path">> => <<"call">>,
             <<"relay-path">> =>
                 <<
                     "/result/",
-                    MsgID/binary,
+                    (integer_to_binary(Slot))/binary,
                     "?process-id=",
                     ProcID/binary
                 >>
@@ -50,9 +49,9 @@ compute_test() ->
         false ->
             {skip, "Remote dependent test"};
         true ->
-            do_compute(
-                <<"QIFgbqEmk5MyJy01wuINfcRP_erGNNbhqHRkAQjxKgg">>,
-                <<"N6D1IaUCE50R-CiwILa_vxPy32rgwDaU-FkoP3VW3S8">>,
+            {ok, Res} = do_compute(
+                <<"aozr8BIc9rDth0oll6457y5GxFnJ2lVbMBuS3O_8g3I">>,
+                0,
                 #{
                     routes => [
                         #{
@@ -60,10 +59,12 @@ compute_test() ->
                             <<"node">> =>
                                 #{
                                     <<"prefix">> =>
-                                        <<"https://cu5767.ao-testnet.xyz">>
+                                        <<"http://137.220.36.155:6363">>
                                 }
                         }
                     ]
                 }
-            )
+            ),
+            ?event(debug, {res, Res}),
+            ?assertEqual(#{}, maps:get(<<"outbox">>, Res, not_found))
     end.
