@@ -375,9 +375,9 @@ req_to_tabm_singleton(Req, Opts) ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
 
-http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
+http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
-    SignedHeaders = remove_unsigned_fields(RawHeaders),
+    SignedHeaders = remove_unsigned_fields(RawHeaders, Opts),
     HeadersWithPath =
         case maps:get(<<"path">>, RawHeaders, undefined) of
             undefined ->
@@ -404,8 +404,8 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
         },
     dev_codec_httpsig_conv:from(HTTPEncoded).
 
-remove_unsigned_fields(RawHeaders) ->
-    ForceSignedRequests = hb_opts:get(force_signed_requests, false, RawHeaders),
+remove_unsigned_fields(RawHeaders, Opts) ->
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     Sig = maps:get(<<"signature">>, RawHeaders, undefined),
     case ForceSignedRequests orelse Sig /= undefined of
         true -> do_remove_unsigned_fields(RawHeaders);
