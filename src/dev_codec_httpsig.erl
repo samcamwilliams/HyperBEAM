@@ -110,9 +110,11 @@ attest(MsgToSign, _Req, Opts) ->
                 {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
         end,
     Enc =
-        maps:without(
-            [<<"signature">>, <<"signature-input">>],
-            hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
+        generate_content_digest(
+            maps:without(
+                [<<"signature">>, <<"signature-input">>],
+                hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
+            )
         ),
     ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
     Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
@@ -149,6 +151,24 @@ attest(MsgToSign, _Req, Opts) ->
     MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
     reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
 
+%% @doc If the `body` key is present, replace it with a content-digest.
+generate_content_digest(Msg) ->
+    case maps:get(<<"body">>, Msg, not_found) of
+        not_found -> Msg;
+        Body ->
+            % Remove the body from the message and add the content-digest,
+            % encoded as a structured field.
+            (maps:without([<<"body">>], Msg))#{
+                <<"content-digest">> =>
+                    iolist_to_binary(dev_codec_structured_conv:dictionary(
+                        #{
+                            <<"sha-256">> =>
+                                {item, {binary, hb_crypto:sha256(Body)}, []}
+                        }
+                    ))
+            }
+    end.
+
 %% @doc Convert an address to a signature name that is short, unique to the
 %% address, and lowercase.
 -spec address_to_sig_name(binary()) -> binary().
@@ -171,7 +191,6 @@ reset_hmac(RawMsg) ->
             [<<"hmac-sha256">>],
             maps:get(<<"attestations">>, Msg, #{})
         ),
-    ?event(hmac, {msg_before_hmac, Msg}),
     AllSigs =
         maps:from_list(lists:map(
             fun ({Attestor, #{ <<"signature">> := Signature }}) ->
@@ -239,16 +258,20 @@ hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
     EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
+    % Remove the body and set the content-digest as a field
+    MsgWithContentDigest = generate_content_digest(EncodedMsg),
+    ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
+    % Generate the signature base
     {_, SignatureBase} = signature_base(
         #{
-            component_identifiers => lists:sort(maps:keys(EncodedMsg)),
+            component_identifiers => lists:sort(maps:keys(MsgWithContentDigest)),
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
             }
         },
         #{},
-        EncodedMsg
+        MsgWithContentDigest
     ),
     ?event({explicit, {signature_base, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
@@ -300,7 +323,12 @@ verify(MsgToVerify, Req, _Opts) ->
                     <<"signature-input">> => maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> => maps:get(<<"signature">>, MsgToVerify)
                 },
-            ?event({encoded_msg_for_verification, EncWithSig}),
+            % If the content-digest is already present, we override it with a
+            % regenerated value. If those values match, then the signature will
+            % verify correctly. If they do not match, then the signature will
+            % fail to verify, as the signature bases will not be the same.
+            EncWithDigest = generate_content_digest(EncWithSig),
+            ?event({encoded_msg_for_verification, EncWithDigest}),
             {
                 ok,
                 verify_auth(
@@ -308,7 +336,7 @@ verify(MsgToVerify, Req, _Opts) ->
                         key => {{rsa, 65537}, PubKey},
                         sig_name => address_to_sig_name(Address)
                     },
-                    EncWithSig
+                    EncWithDigest
                 )
             };
         _ ->
