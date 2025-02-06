@@ -22,15 +22,15 @@
 
 -define(INIT_FDS,
     #{
-        0 => #{
+        <<"0">> => #{
             <<"filename">> => <<"/dev/stdin">>,
             <<"offset">> => 0
         },
-        1 => #{
+        <<"1">> => #{
             <<"filename">> => <<"/dev/stdout">>,
             <<"offset">> => 0
         },
-        2 => #{
+        <<"2">> => #{
             <<"filename">> => <<"/dev/stderr">>,
             <<"offset">> => 0
         }
