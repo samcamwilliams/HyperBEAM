@@ -429,8 +429,13 @@ do_remove_unsigned_fields(RawHeaders) ->
         [<<"signature">>, <<"signature-input">>] ++ BinComponentIdentifiers,
         RawHeaders
     ),
-    ?event(http, {sanitizing, {component_identifiers, BinComponentIdentifiers}, {sanitized_headers, SignedHeaders}}),
-    SignedHeaders.
+    case maps:get(<<"content-digest">>, SignedHeaders, undefined) of
+        undefined -> SignedHeaders;
+        ContentDigest ->
+            SignedHeaders#{
+                <<"body">> => maps:get(<<"body">>, RawHeaders, <<>>)
+            }
+    end.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -442,19 +447,19 @@ read_body(Req0, Acc) ->
 
 %%% Tests
 
-% id_case_is_preserved_test() ->
-%     URL = hb_http_server:start_node(),
-%     TestID = hb_util:human_id(crypto:strong_rand_bytes(32)),
-%     {ok, Res} =
-%         post(
-%             URL,
-%             #{
-%                 TestID => <<"value1">>,
-%                 <<"path">> => <<TestID/binary>>
-%             },
-%             #{}
-%         ),
-%     ?assertEqual(<<"value1">>, hb_converge:get(TestID, Res, #{})).
+%% @doc Ensure that the presence of a content-digest header causes the body
+%% to be included in the signed fields.
+remove_unsigned_fields_content_digest_test() ->
+    Msg = #{
+        <<"path">> => <<"/key1">>,
+        <<"key1">> => <<"Value1">>,
+        <<"content-digest">> => <<"sha256=1234567890">>
+    },
+    SignedMsg = hb_message:convert(hb_message:attest(Msg, hb:wallet()), <<"httpsig@1.0">>, #{}),
+    Msg2 = SignedMsg#{ <<"body">> => <<"Body1">>, <<"unattested">> => <<"Value2">> },
+    Truncated = remove_unsigned_fields(Msg2, #{ force_signed_requests => true }),
+    ?assertEqual(<<"Body1">>, hb_converge:get(<<"body">>, Truncated, #{})),
+    ?assertEqual(not_found, hb_converge:get(<<"unattested">>, Truncated, #{})).
 
 simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),
