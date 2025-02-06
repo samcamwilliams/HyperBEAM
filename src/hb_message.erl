@@ -346,13 +346,19 @@ type(Msg) when is_map(Msg) ->
 match(Map1, Map2) ->
     match(Map1, Map2, strict).
 match(Map1, Map2, Mode) ->
-    Keys1 =
+     Keys1 =
         maps:keys(
-            NormMap1 = minimize(normalize(hb_converge:normalize_keys(Map1)))
+            NormMap1 = minimize(
+                normalize(hb_converge:normalize_keys(Map1)),
+                [<<"content-type">>]
+            )
         ),
     Keys2 =
         maps:keys(
-            NormMap2 = minimize(normalize(hb_converge:normalize_keys(Map2)))
+            NormMap2 = minimize(
+                normalize(hb_converge:normalize_keys(Map2)),
+                [<<"content-type">>]
+            )
         ),
     PrimaryKeysPresent =
         (Mode == primary) andalso

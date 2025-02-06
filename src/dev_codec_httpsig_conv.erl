@@ -58,20 +58,12 @@ from(HTTP) ->
     % are handled separately.
     Headers = maps:without([<<"body">>], HTTP),
     ContentType = maps:get(<<"content-type">>, Headers, undefined),
-    % We only should omit the content-type header if the content-type
-    % happens to be the HyperBEAM native http encoding: multipart/form-data
-    % (and is ergo not part of the message's contents, but HyperBEAM's encoding)
-    %
-    % Otherwise, the header ought not be omitted
-    SigHeaderNames = case ContentType of
-        <<"multipart/form-data", _/binary>> ->
-            [<<"content-type">>, <<"signature">>, <<"signature-input">>, <<"attestations">>];
-        _ ->
-            [<<"signature">>, <<"signature-input">>, <<"attestations">>]
-    end,
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
-    MsgWithoutSigs = maps:without(SigHeaderNames, from_body(Headers, ContentType, Body)),
+    MsgWithoutSigs = maps:without(
+        [<<"signature">>, <<"signature-input">>, <<"attestations">>],
+        from_body(Headers, ContentType, Body)
+    ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Extract all hashpaths from the attestations of the message
     HPs = extract_hashpaths(HTTP),
@@ -89,7 +81,7 @@ from(HTTP) ->
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
-    ?event({from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
+    ?event({from_body, {from_headers, TABM}, {content_type, {explicit, ContentType}}, {body, Body}}),
     Params =
         case ContentType of
             undefined -> [];
