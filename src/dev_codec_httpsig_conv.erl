@@ -83,7 +83,7 @@ from(HTTP) ->
         maps:get(<<"signature-input">>, Headers, not_found)
     ),
     ?event({message_with_atts, MsgWithSigs}),
-    Res = maps:without(Removed = maps:keys(HPs), MsgWithSigs),
+    Res = maps:without(Removed = maps:keys(HPs) ++ [<<"content-digest">>], MsgWithSigs),
     ?event({message_without_atts, Res, Removed}),
     Res.
 
@@ -345,18 +345,26 @@ to(TABM, Opts) when is_map(TABM) ->
                     <<"body">> => <<FinalBody/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
                 }
         end,
+    % Add the content-digest to the HTTP message. `generate_content_digest/1`
+    % will return a map with the `content-digest` key set, but the body removed,
+    % so we merge the two maps together to maintain the body and the content-digest.
+    Enc2 =
+        maps:merge(
+            Enc1,
+            dev_codec_httpsig:generate_content_digest(Enc1)
+        ),
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of
         #{ <<"hmac-sha256">> :=
                 #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
             HPs = hashpaths_from_message(TABM),
-            EncWithHPs = maps:merge(Enc1, HPs),
+            EncWithHPs = maps:merge(Enc2, HPs),
             % Add the original signature encodings to the HTTP message
             EncWithHPs#{
                 <<"signature">> => Sig,
                 <<"signature-input">> => SigInput
             };
-        not_found -> Enc1
+        not_found -> Enc2
     end.
 
 % We need to generate a unique, reproducible boundary for the

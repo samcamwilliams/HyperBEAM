@@ -9,6 +9,8 @@
 -export([id/3, attest/3, verify/3, reset_hmac/1, public_keys/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
+%%% Public API functions
+-export([generate_content_digest/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 -define(EMPTY_QUERY_PARAMS, $?).
 % https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
