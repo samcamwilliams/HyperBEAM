@@ -19,9 +19,33 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts` argument to use for all Converge resolution requests downstream.
 start() ->
-    start(#{ priv_wallet => hb:wallet(hb_opts:get(key_location)) }).
+    ?event(http, {start_store, "main-cache"}),
+    Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
+    hb_store:start(Store),
+    start(
+        #{
+            priv_wallet => hb:wallet(hb_opts:get(key_location)),
+            store => Store,
+            port => hb_opts:get(http_default_remote_port, 8734)
+        }
+    ).
 start(Opts) ->
-    {ok, Listener, _Port} = new_server(Opts),
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    hb:init(),
+    BaseOpts = set_base_opts(Opts),
+    {ok, Listener, _Port} = new_server(BaseOpts),
     {ok, Listener}.
 
 new_server(RawNodeMsg) ->
@@ -78,7 +102,8 @@ new_server(RawNodeMsg) ->
             {listener, Listener},
             {server_id, ServerID},
             {port, Port},
-            {protocol, Protocol}
+            {protocol, Protocol},
+            {store, hb_opts:get(store, no_store, NodeMsg)}
         }
     ),
     {ok, Listener, Port}.
@@ -133,7 +158,7 @@ init(Req, ServerID) ->
     ?event(http, {http_inbound, Req}),
     % Parse the HTTP request into HyerBEAM's message format.
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
-    ?event(http, {http_inbound, ReqSingleton}),
+    ?event(http, {parsed_singleton, ReqSingleton}),
     {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
     hb_http:reply(Req, Res, NodeMsg).
 
@@ -159,7 +184,7 @@ get_opts(NodeMsg) ->
 
 %%% Tests
 
-test_opts(Opts) ->
+set_base_opts(Opts) ->
     % Generate a random port number between 10000 and 30000 to use
     % for the server.
     Port =
@@ -174,16 +199,22 @@ test_opts(Opts) ->
             no_viable_wallet -> ar_wallet:new();
             PassedWallet -> PassedWallet
         end,
+    Store =
+        case hb_opts:get(store, no_store, Opts) of
+            no_store ->
+                {hb_store_fs,
+                    #{
+                        prefix =>
+                            <<"TEST-cache-", (integer_to_binary(Port))/binary>>
+                    }
+                };
+            PassedStore -> PassedStore
+        end,
     Opts#{
         port => Port,
-        store =>
-            {hb_store_fs,
-                #{
-                    prefix =>
-                        <<"TEST-cache-", (integer_to_binary(Port))/binary>>
-                }
-            },
+        store => Store,
         priv_wallet => Wallet,
+        address => hb_util:human_id(ar_wallet:to_address(Wallet)),
         force_signed => true
     }.
 
@@ -206,6 +237,6 @@ start_node(Opts) ->
     ]),
     hb:init(),
     hb_sup:start_link(Opts),
-    ServerOpts = test_opts(Opts),
+    ServerOpts = set_base_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.

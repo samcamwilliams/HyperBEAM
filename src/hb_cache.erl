@@ -33,32 +33,46 @@ list_numbered(Path, Opts) ->
     [ list_to_integer(Name) || Name <- list(SlotDir, Opts) ].
 
 %% @doc List all items under a given path.
-list(Path, Opts) ->
-    ResolvedPath =
-        hb_store:resolve(hb_opts:get(store, no_viable_store, Opts), Path),
-    case hb_store:list(hb_opts:get(store, no_viable_store, Opts), ResolvedPath) of
+list(Path, Opts) when is_map(Opts)->
+    case hb_opts:get(store, no_viable_store, Opts) of
+        no_viable_store -> [];
+        Store ->
+            list(Path, Store)
+    end;
+list(Path, Store) ->
+    ResolvedPath = hb_store:resolve(Store, Path),
+    case hb_store:list(Store, ResolvedPath) of
         {ok, Names} -> Names;
-        {error, _} -> []
+        {error, _} -> [];
+        no_viable_store -> []
     end.
 
 %% @doc Write a message to the cache. For raw binaries, we write the data at
-%% the hashpath of the data (by default the SHA2-256 hash of the data). For
-%% deep messages, we link the unattended ID's hashpath for the keys (including
-%% `/attestations`) on the message to the underlying data and recurse. We then
-%% link each attestation ID to the unattested message, such that any of the 
-%% attested or unattested IDs can be read, and once in memory all of the
-%% attestations are available. For deep messages, the attestations will also
-%% be read, such that the ID of the outer message (which does not include its
-%% attestations) will be built upon the attestations of the inner messages.
+%% the hashpath of the data (by default the SHA2-256 hash of the data). We link
+%% the unattended ID's hashpath for the keys (including `/attestations`) on the
+%% message to the underlying data and recurse. We then link each attestation ID
+%% to the unattested message, such that any of the attested or unattested IDs
+%% can be read, and once in memory all of the attestations are available. For
+%% deep messages, the attestations will also be read, such that the ID of the
+%% outer message (which does not include its attestations) will be built upon
+%% the attestations of the inner messages. We do not, however, store the IDs from
+%% attestations on signed _inner_ messages. We may wish to revisit this.
 write(RawMsg, Opts) ->
-    Msg = hb_message:convert(RawMsg, tabm, <<"structured@1.0">>, Opts),
-    write_message(Msg, hb_opts:get(store, no_viable_store, Opts), Opts).
-write_message(Bin, Store, Opts) when is_binary(Bin) ->
+    % Use the _structured_ format for calculating alternative IDs, but the
+    % _tabm_ format for writing to the store.
+    do_write_message(
+        hb_message:convert(RawMsg, tabm, <<"structured@1.0">>, Opts),
+        calculate_alt_ids(RawMsg, Opts),
+        hb_opts:get(store, no_viable_store, Opts),
+        Opts
+    ).
+do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
     ok = hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin),
+    lists:map(fun(AltID) -> hb_store:make_link(Store, Path, AltID) end, AltIDs),
     {ok, Path};
-write_message(Msg, Store, Opts) when is_map(Msg) ->
+do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     % Get the ID of the unsigned message.
     {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
     ?event({writing_message_with_unsigned_id, UnattestedID}),
@@ -76,7 +90,11 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
                     Opts
                 ),
             ?event({key_hashpath_from_unsigned, KeyHashPath}),
-            {ok, Path} = write_message(Value, Store, Opts),
+            % Note: We do not pass the AltIDs here, as we cannot calculate them
+            % based on the TABM that we have in-memory at this point. We could
+            % turn the TABM back into a structured message, but this is
+            % expensive.
+            {ok, Path} = do_write_message(Value, [], Store, Opts),
             hb_store:make_link(Store, Path, KeyHashPath),
             ?event(
                 {
@@ -90,28 +108,28 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
     ),
     % Write the attestations to the store, linking each attestation ID to the
     % unattested message.
-    case maps:get(<<"attestations">>, Msg, #{}) of
-        Attestors when map_size(Attestors) =:= 0 ->
-            % There are no attestations, so we can return the unattested ID
-            % immediately.
-            {ok, UnattestedID};
-        Attestors ->
-            % Generate the ID for each attestation and write a link from the 
-            % attestationID to the unattested message.
-            lists:map(
-                fun(Attestor) ->
-                    AttestationID =
-                        hb_converge:get(
-                            [<<"attestations">>, Attestor, <<"id">>],
-                            Msg,
-                            Opts
-                        ),
-                    hb_store:make_link(Store, UnattestedID, AttestationID)
-                end,
-                maps:keys(Attestors)
-            ),
-            {ok, UnattestedID}
-    end.
+    lists:map(
+        fun(AltID) ->
+            hb_store:make_link(Store, UnattestedID, AltID)
+        end,
+        AltIDs
+    ),
+    {ok, UnattestedID}.
+
+%% @doc Calculate the alternative IDs for a message.
+calculate_alt_ids(Bin, _Opts) when is_binary(Bin) -> [];
+calculate_alt_ids(Msg, Opts) ->
+    Attestors = maps:keys(maps:get(<<"attestors">>, Msg, #{})),
+    lists:map(
+        fun(Attestor) ->
+            hb_converge:get(
+                [<<"attestations">>, Attestor, <<"id">>],
+                Msg,
+                Opts
+            )
+        end,
+        Attestors
+    ).
 
 %% @doc Write a hashpath and its message to the store and link it.
 write_hashpath(Msg = #{ <<"priv">> := #{ <<"hashpath">> := HP } }, Opts) ->
@@ -121,7 +139,7 @@ write_hashpath(MsgWithoutHP, Opts) ->
 write_hashpath(HP, Msg, Opts) when is_binary(HP) or is_list(HP) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     ?event(cache_debug, {writing_hashpath, {hashpath, HP}, {msg, Msg}, {store, Store}}),
-    {ok, Path} = write_message(Msg, Store, Opts),
+    {ok, Path} = write(Msg, Opts),
     hb_store:make_link(Store, Path, HP),
     {ok, Path}.
 
@@ -130,8 +148,7 @@ write_binary(Hashpath, Bin, Opts) ->
     write_binary(Hashpath, Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
 write_binary(Hashpath, Bin, Store, Opts) ->
     ?event({writing_binary, {hashpath, Hashpath}, {bin, Bin}, {store, Store}}),
-    {ok, Path} = write_message(Bin, Store, Opts),
-    hb_store:make_link(Store, Path, Hashpath),
+    {ok, Path} = do_write_message(Bin, [Hashpath], Store, Opts),
     {ok, Path}.
 
 %% @doc Read the message at a path. Returns in 'structured@1.0' format: Either a
@@ -148,6 +165,8 @@ read(Path, Opts) ->
         
 %% @doc List all of the subpaths of a given path, read each in turn, returning a 
 %% flat map.
+store_read(_Path, no_viable_store, _) ->
+    not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
     ?event({reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),

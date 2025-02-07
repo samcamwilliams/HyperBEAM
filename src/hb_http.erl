@@ -173,7 +173,7 @@ message_to_request(M, Opts) ->
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Route, Path, MsgWithoutMeta};
         {error, Reason} ->
-            {error, {no_viable_route, Reason}}
+            {error, {no_viable_route, Reason, {message, M}}}
     end.
 
 %% @doc Turn a set of request arguments into a request message, formatted in the
@@ -375,37 +375,60 @@ req_to_tabm_singleton(Req, Opts) ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
 
-http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
+http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
-    SignedHeaders = remove_unsigned_fields(RawHeaders),
-    HeadersWithPath =
-        case maps:get(<<"path">>, RawHeaders, undefined) of
-            undefined ->
-                SignedHeaders#{
-                    <<"path">> =>
-                        iolist_to_binary(
-                            cowboy_req:uri(
-                                Req,
-                                #{
-                                    host => undefined,
-                                    port => undefined,
-                                    scheme => undefined
-                                }
-                            )
-                    )
-                };
-            _ -> SignedHeaders
-        end,
-    HeadersWithMethod = HeadersWithPath#{ <<"method">> => cowboy_req:method(Req) },
-    ?event(http, {recvd_req_with_headers, {raw, RawHeaders}, {headers, HeadersWithMethod}}),
-    HTTPEncoded =
-        (maps:without([<<"content-length">>], HeadersWithMethod))#{
-            <<"body">> => Body
-        },
-    dev_codec_httpsig_conv:from(HTTPEncoded).
+    SignedHeaders = remove_unsigned_fields(RawHeaders, Opts),
+    MaybeSignedHTTP = SignedHeaders#{ <<"body">> => Body },
+    Msg = dev_codec_httpsig_conv:from(MaybeSignedHTTP),
+    case hb_converge:get(<<"signature">>, MaybeSignedHTTP, not_found, Opts) of
+        not_found -> maybe_add_unsigned(Req, Msg, Opts);
+        _ ->
+            case hb_message:verify(Msg) of
+                true ->
+                    ?event(http, {verified_signature, Msg}),
+                    case hb_opts:get(store_all_signed, false, Opts) of
+                        true ->
+                            hb_cache:write(Msg, Opts);
+                        false ->
+                            do_nothing
+                    end,
+                    maybe_add_unsigned(Req, Msg, Opts);
+                false ->
+                    ?event(http, {invalid_signature, Msg}),
+                    throw({invalid_signature, Msg})
+            end
+    end.
 
-remove_unsigned_fields(RawHeaders) ->
-    ForceSignedRequests = hb_opts:get(force_signed_requests, false, RawHeaders),
+%% @doc Add the method and path to a message, if they are not already present.
+%% The precidence order for finding the path is:
+%% 1. The path in the message
+%% 2. The path in the request URI
+maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
+    Method = cowboy_req:method(Req),
+    MsgPath =
+        hb_converge:get(
+            <<"path">>,
+            Msg,
+            maps:get(
+                <<"path">>, 
+                RawHeaders,
+                iolist_to_binary(
+                    cowboy_req:uri(
+                        Req,
+                        #{
+                            host => undefined,
+                            port => undefined,
+                            scheme => undefined
+                        }
+                    )
+                )
+            ),
+            Opts
+        ),
+    Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
+
+remove_unsigned_fields(RawHeaders, Opts) ->
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     Sig = maps:get(<<"signature">>, RawHeaders, undefined),
     case ForceSignedRequests orelse Sig /= undefined of
         true -> do_remove_unsigned_fields(RawHeaders);
@@ -422,15 +445,21 @@ do_remove_unsigned_fields(RawHeaders) ->
     ),
     {list, ComponentIdentifiers, _SigParams} = SigInput,
     BinComponentIdentifiers = lists:map(
-        fun({item, {_Kind, CI}, _Params}) -> CI end,
+        fun({item, {_Kind, ID}, _Params}) -> ID end,
         ComponentIdentifiers    
     ),
     SignedHeaders = maps:with(
-        [<<"signature">>, <<"signature-input">>] ++ BinComponentIdentifiers,
+        [<<"signature">>, <<"signature-input">>] ++
+            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
         RawHeaders
     ),
-    ?event(http, {sanitizing, {component_identifiers, BinComponentIdentifiers}, {sanitized_headers, SignedHeaders}}),
-    SignedHeaders.
+    case maps:get(<<"content-digest">>, SignedHeaders, undefined) of
+        undefined -> SignedHeaders;
+        _ContentDigest ->
+            SignedHeaders#{
+                <<"body">> => maps:get(<<"body">>, RawHeaders, <<>>)
+            }
+    end.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -442,19 +471,19 @@ read_body(Req0, Acc) ->
 
 %%% Tests
 
-% id_case_is_preserved_test() ->
-%     URL = hb_http_server:start_node(),
-%     TestID = hb_util:human_id(crypto:strong_rand_bytes(32)),
-%     {ok, Res} =
-%         post(
-%             URL,
-%             #{
-%                 TestID => <<"value1">>,
-%                 <<"path">> => <<TestID/binary>>
-%             },
-%             #{}
-%         ),
-%     ?assertEqual(<<"value1">>, hb_converge:get(TestID, Res, #{})).
+%% @doc Ensure that the presence of a content-digest header causes the body
+%% to be included in the signed fields.
+remove_unsigned_fields_content_digest_test() ->
+    Msg = #{
+        <<"path">> => <<"/key1">>,
+        <<"key1">> => <<"Value1">>,
+        <<"content-digest">> => <<"sha256=1234567890">>
+    },
+    SignedMsg = hb_message:convert(hb_message:attest(Msg, hb:wallet()), <<"httpsig@1.0">>, #{}),
+    Msg2 = SignedMsg#{ <<"body">> => <<"Body1">>, <<"unattested">> => <<"Value2">> },
+    Truncated = remove_unsigned_fields(Msg2, #{ force_signed_requests => true }),
+    ?assertEqual(<<"Body1">>, hb_converge:get(<<"body">>, Truncated, #{})),
+    ?assertEqual(not_found, hb_converge:get(<<"unattested">>, Truncated, #{})).
 
 simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),
@@ -505,8 +534,6 @@ wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
         <<"wasm-params">> => Params,
         <<"body">> => Bin
     }, Wallet).
-
-
 
 run_wasm_unsigned_test() ->
     Node = hb_http_server:start_node(#{force_signed => false}),

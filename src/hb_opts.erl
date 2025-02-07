@@ -77,6 +77,8 @@ default_message() ->
                 <<"ans104@1.0">> => dev_codec_ans104,
                 <<"flat@1.0">> => dev_codec_flat,
                 <<"structured@1.0">> => dev_codec_structured,
+                <<"lookup@1.0">> => dev_lookup,
+                <<"compute-lite@1.0">> => dev_compute_lite,
                 <<"test-device@1.0">> => dev_test
             },
         %% Should the node attempt to access data from remote caches for
@@ -113,7 +115,18 @@ default_message() ->
         short_trace_len => 5,
         debug_hide_metadata => false,
         debug_ids => false,
-		trusted => #{}
+		trusted => #{},
+        % Routes for the compute-lite device to use a local CU, if requested.
+        routes => [
+            #{
+                <<"template">> => <<"/result/.*">>,
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            }
+        ],
+        % Should the node store all signed messages?
+        store_all_signed => true,
+        % Should the node use persistent processes?
+        persistent_processes => true
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

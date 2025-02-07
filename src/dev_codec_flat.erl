@@ -113,6 +113,24 @@ multiple_paths_test() ->
     ?assert(hb_message:match(Nested, dev_codec_flat:from(Flat))),
     ?assert(hb_message:match(Flat, dev_codec_flat:to(Nested))).
 
+path_list_test() ->
+    Nested = #{
+        <<"x">> => #{
+            [<<"y">>, <<"z">>] => #{
+                <<"a">> => <<"2">>
+            },
+            <<"a">> => <<"2">>
+        }
+    },
+    Flat = dev_codec_flat:to(Nested),
+    io:format(standard_error, "Flat: ~p~n", [Flat]),
+    lists:foreach(
+        fun(Key) ->
+            ?assert(not lists:member($\n, binary_to_list(Key)))
+        end,
+        maps:keys(Flat)
+    ).
+
 binary_passthrough_test() ->
     Bin = <<"raw binary">>,
     ?assertEqual(Bin, dev_codec_flat:from(Bin)),

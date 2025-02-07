@@ -4,6 +4,7 @@
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
+-export([is_string_list/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
@@ -43,6 +44,10 @@ id(Data, Type) when is_list(Data) ->
 %% @doc Convert a binary to a lowercase.
 to_lower(Str) ->
     string:lowercase(Str).
+
+%% @doc Is the given term a string list?
+is_string_list(MaybeString) ->
+    lists:all(fun is_integer/1, MaybeString).
 
 %% @doc Convert a human readable ID to a native binary ID. If the ID is already
 %% a native binary ID, it is returned as is.

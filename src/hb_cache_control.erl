@@ -7,6 +7,11 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%%% When other cache control settings are not specified, we default to the
+%%% following settings.
+-define(DEFAULT_STORE_OPT, false).
+-define(DEFAULT_LOOKUP_OPT, false).
+
 %%% Public API
 
 %% @doc Write a resulting M3 message to the cache if requested. The precidence
@@ -96,15 +101,22 @@ lookup(Msg1, Msg2, Opts) ->
 dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
     Dispatch =
         fun() ->
-            case is_binary(Msg3) of
-                true ->
+            hb_cache:write(Msg1, Opts),
+            hb_cache:write(Msg2, Opts),
+            case Msg3 of
+                <<_/binary>> ->
                     ?event({writing_binary, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
                     hb_cache:write_binary(
                         hb_path:hashpath(Msg1, Msg2, Opts),
                         Msg3,
                         Opts
                     );
-                false -> hb_cache:write(Msg3, Opts)
+                Map when is_map(Map) ->
+                    ?event({writing_message, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+                    hb_cache:write(Msg3, Opts);
+                _ ->
+                    ?event({cannot_write_result, Msg3}),
+                    skip_caching
             end
         end,
     case hb_opts:get(async_cache, false, Opts) of
@@ -147,6 +159,8 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
+% exec_likely_faster_heuristic(ID, _Msg2, _Opts) when ?IS_ID(ID) ->
+%     false;
 exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.
@@ -168,7 +182,7 @@ derive_cache_settings(SourceList, Opts) ->
         fun(Source, Acc) ->
             maybe_set(Acc, cache_source_to_cache_settings(Source))
         end,
-        #{ <<"store">> => true, <<"lookup">> => true },
+        #{ <<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT },
         [{opts, Opts}|lists:filter(fun erlang:is_map/1, SourceList)]
     ).
 
@@ -268,18 +282,22 @@ msg_precidence_overrides_test() ->
 no_store_directive_test() ->
     Msg = msg_with_cc([<<"no-store">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => false, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 no_cache_directive_test() ->
     Msg = msg_with_cc([<<"no-cache">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => true, <<"lookup">> => false}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => false}, Result).
 
 only_if_cached_directive_test() ->
     Msg = msg_with_cc([<<"only-if-cached">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
     ?assertEqual(
-        #{<<"store">> => true, <<"lookup">> => true, <<"only-if-cached">> => true},
+        #{
+            <<"store">> => ?DEFAULT_STORE_OPT,
+            <<"lookup">> => ?DEFAULT_LOOKUP_OPT,
+            <<"only-if-cached">> => true
+        },
         Result
     ).
 
@@ -287,25 +305,29 @@ only_if_cached_directive_test() ->
 hashpath_ignore_prevents_storage_test() ->
     Opts = (opts_with_cc([]))#{hashpath => ignore},
     Result = derive_cache_settings([], Opts),
-    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 %% Test multiple directives
 multiple_directives_test() ->
     Msg = msg_with_cc([<<"no-store">>, <<"no-cache">>, <<"only-if-cached">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
     ?assertEqual(
-        #{<<"store">> => false, <<"lookup">> => false, <<"only-if-cached">> => true},
+        #{
+            <<"store">> => false,
+            <<"lookup">> => false,
+            <<"only-if-cached">> => true
+        },
         Result
     ).
 
 %% Test empty/missing cases
 empty_message_list_test() ->
     Result = derive_cache_settings([], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 message_without_cache_control_test() ->
     Result = derive_cache_settings([#{}], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 %% Test the cache_source_to_cache_setting function directly
 opts_source_cache_control_test() ->

@@ -515,6 +515,8 @@ schedule_aos_call(Msg1, Code) ->
     schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
 
 schedule_wasm_call(Msg1, FuncName, Params) ->
+    schedule_wasm_call(Msg1, FuncName, Params, #{}).
+schedule_wasm_call(Msg1, FuncName, Params, Opts) ->
     Wallet = hb:wallet(),
     Msg2 = hb_message:attest(#{
         <<"path">> => <<"schedule">>,
@@ -529,7 +531,7 @@ schedule_wasm_call(Msg1, FuncName, Params) ->
                 Wallet
             )
     }, Wallet),
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})).
+    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, Opts)).
 
 schedule_on_process_test() ->
     init(),
@@ -623,6 +625,17 @@ wasm_compute_test() ->
     ?event({computed_message, {msg4, Msg4}}),
     ?assertEqual([720.0], hb_converge:get(<<"results/output">>, Msg4, #{})).
 
+wasm_compute_from_id_test() ->
+    init(),
+    Opts = #{ cache_control => <<"always">> },
+    Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
+    schedule_wasm_call(Msg1, <<"fac">>, [5.0], Opts),
+    Msg1ID = hb_message:id(Msg1),
+    Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
+    {ok, Msg3} = hb_converge:resolve(Msg1ID, Msg2, Opts),
+    ?event({computed_message, {msg3, Msg3}}),
+    ?assertEqual([120.0], hb_converge:get(<<"results/output">>, Msg3, Opts)).
+
 aos_compute_test_() ->
     {timeout, 30, fun() ->
         init(),
@@ -689,7 +702,7 @@ full_push_test_() ->
         init(),
         Msg1 = test_aos_process(),
         ?event(push, {msg1, Msg1}),
-        Script = ping_ping_script(3),
+        Script = ping_ping_script(2),
         ?event({script, Script}),
         {ok, Msg2} = schedule_aos_call(Msg1, Script),
         ?event(push, {init_sched_result, Msg2}),

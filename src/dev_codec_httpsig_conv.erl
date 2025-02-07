@@ -58,20 +58,12 @@ from(HTTP) ->
     % are handled separately.
     Headers = maps:without([<<"body">>], HTTP),
     ContentType = maps:get(<<"content-type">>, Headers, undefined),
-    % We only should omit the content-type header if the content-type
-    % happens to be the HyperBEAM native http encoding: multipart/form-data
-    % (and is ergo not part of the message's contents, but HyperBEAM's encoding)
-    %
-    % Otherwise, the header ought not be omitted
-    SigHeaderNames = case ContentType of
-        <<"multipart/form-data", _/binary>> ->
-            [<<"content-type">>, <<"signature">>, <<"signature-input">>, <<"attestations">>];
-        _ ->
-            [<<"signature">>, <<"signature-input">>, <<"attestations">>]
-    end,
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
-    MsgWithoutSigs = maps:without(SigHeaderNames, from_body(Headers, ContentType, Body)),
+    MsgWithoutSigs = maps:without(
+        [<<"signature">>, <<"signature-input">>, <<"attestations">>],
+        from_body(Headers, ContentType, Body)
+    ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Extract all hashpaths from the attestations of the message
     HPs = extract_hashpaths(HTTP),
@@ -83,13 +75,13 @@ from(HTTP) ->
         maps:get(<<"signature-input">>, Headers, not_found)
     ),
     ?event({message_with_atts, MsgWithSigs}),
-    Res = maps:without(Removed = maps:keys(HPs), MsgWithSigs),
+    Res = maps:without(Removed = maps:keys(HPs) ++ [<<"content-digest">>], MsgWithSigs),
     ?event({message_without_atts, Res, Removed}),
     Res.
 
 from_body(TABM, _ContentType, <<>>) -> TABM;
 from_body(TABM, ContentType, Body) ->
-    ?event({from_body, {from_headers, TABM}, {content_type, ContentType}, {body, Body}}),
+    ?event({from_body, {from_headers, TABM}, {content_type, {explicit, ContentType}}, {body, Body}}),
     Params =
         case ContentType of
             undefined -> [];
@@ -345,18 +337,26 @@ to(TABM, Opts) when is_map(TABM) ->
                     <<"body">> => <<FinalBody/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
                 }
         end,
+    % Add the content-digest to the HTTP message. `generate_content_digest/1`
+    % will return a map with the `content-digest` key set, but the body removed,
+    % so we merge the two maps together to maintain the body and the content-digest.
+    Enc2 =
+        maps:merge(
+            Enc1,
+            dev_codec_httpsig:add_content_digest(Enc1)
+        ),
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of
         #{ <<"hmac-sha256">> :=
                 #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
             HPs = hashpaths_from_message(TABM),
-            EncWithHPs = maps:merge(Enc1, HPs),
+            EncWithHPs = maps:merge(Enc2, HPs),
             % Add the original signature encodings to the HTTP message
             EncWithHPs#{
                 <<"signature">> => Sig,
                 <<"signature-input">> => SigInput
             };
-        not_found -> Enc1
+        not_found -> Enc2
     end.
 
 % We need to generate a unique, reproducible boundary for the
@@ -466,24 +466,6 @@ encode_http_msg(Httpsig) ->
         % <body>
         SubBody -> <<EncodedHeaders/binary, ?DOUBLE_CRLF/binary, SubBody/binary>>
     end.
-
-signatures_to_httpsig(Httpsig, SignaturesBin, SigInputsBin) ->
-    ?event({encoding_signatures, SignaturesBin, SigInputsBin, {msg, Httpsig}}),
-    SigDict = maps:from_list(dev_codec_structured_conv:parse_dictionary(SignaturesBin)),
-    ?event({signature_dicts, {sigs, SigDict}, {inputs, SigInputsBin}}),
-    {SfSigInputs, SfSigs} = maps:map(
-        fun (Attestor, SignatureMap) ->
-            {Attestor, SignatureMap}
-        end,
-        % Start with empty Structured Field Dictionaries
-        {[], []},
-        SigDict
-    ),
-    % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
-    % each transmitted either as a header, or as a part in the multi-part body
-    WithSig = field_to_http(Httpsig, {<<"signature">>, dev_codec_structured_conv:dictionary(SfSigs)}, #{}),
-    WithSigAndInput = field_to_http(WithSig, {<<"signature-input">>, dev_codec_structured_conv:dictionary(SfSigInputs)}, #{}),
-    WithSigAndInput.
 
 % All maps are encoded into the body of the HTTP message
 % to be further encoded later.

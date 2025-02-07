@@ -188,7 +188,7 @@ balance(_, Req, NodeMsg) ->
         <<"path">> => <<"balance">>,
         <<"request">> => Req
     },
-    ?event(debug, {ledger_message, {ledger_msg, LedgerMsg}}),
+    ?event({ledger_message, {ledger_msg, LedgerMsg}}),
     case hb_converge:resolve(LedgerMsg, LedgerReq, NodeMsg) of
         {ok, Balance} ->
             {ok, Balance};
@@ -288,15 +288,15 @@ non_chargable_route_test() ->
     },
     GoodSignedReq = hb_message:attest(Req, Wallet),
     Res = hb_http:get(Node, GoodSignedReq, #{}),
-    ?event(debug, {res1, Res}),
+    ?event({res1, Res}),
     ?assertMatch({ok, #{ <<"body">> := 0 }}, Res),
     Req2 = #{ <<"path">> => <<"/~meta@1.0/info">> },
     GoodSignedReq2 = hb_message:attest(Req2, Wallet),
     Res2 = hb_http:get(Node, GoodSignedReq2, #{}),
-    ?event(debug, {res2, Res2}),
+    ?event({res2, Res2}),
     ?assertMatch({ok, #{ <<"operator">> := _ }}, Res2),
     Req3 = #{ <<"path">> => <<"/~scheduler@1.0">> },
     BadSignedReq3 = hb_message:attest(Req3, Wallet),
     Res3 = hb_http:get(Node, BadSignedReq3, #{}),
-    ?event(debug, {res3, Res3}),
+    ?event({res3, Res3}),
     ?assertMatch({error, _}, Res3).

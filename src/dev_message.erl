@@ -193,6 +193,7 @@ verify(Self, Req, Opts) ->
             end,
             maps:keys(Attestations)
         ),
+    ?event({verify_res, Res}),
     {ok, Res}.
 
 %% @doc Verify a single attestation in the context of its parent message.

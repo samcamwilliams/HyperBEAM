@@ -54,7 +54,7 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, unattested/1]).
+-export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
 -export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]). 
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
@@ -78,13 +78,13 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
-    TABM = convert_to_tabm(Msg, SourceFormat, Opts),
+    TABM = to_tabm(Msg, SourceFormat, Opts),
     case TargetFormat of
         tabm -> TABM;
-        _ -> convert_to_target(TABM, TargetFormat, Opts)
+        _ -> from_tabm(TABM, TargetFormat, Opts)
     end.
 
-convert_to_tabm(Msg, SourceFormat, Opts) ->
+to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
@@ -92,7 +92,7 @@ convert_to_tabm(Msg, SourceFormat, Opts) ->
         OtherTypeRes -> OtherTypeRes
     end.
 
-convert_to_target(Msg, TargetFormat, Opts) ->
+from_tabm(Msg, TargetFormat, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
     TargetCodecMod:to(Msg).
 
@@ -135,7 +135,7 @@ attest(Msg, Wallet, Format) ->
 
 %% @doc wrapper function to verify a message.
 verify(Msg) ->
-    {ok, Res} = dev_message:verify(Msg, #{}, #{}),
+    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => <<"all">> }, #{}),
     Res.
 
 %% @doc Return the unsigned version of a message in Converge format.
@@ -346,13 +346,19 @@ type(Msg) when is_map(Msg) ->
 match(Map1, Map2) ->
     match(Map1, Map2, strict).
 match(Map1, Map2, Mode) ->
-    Keys1 =
+     Keys1 =
         maps:keys(
-            NormMap1 = minimize(normalize(hb_converge:normalize_keys(Map1)))
+            NormMap1 = minimize(
+                normalize(hb_converge:normalize_keys(Map1)),
+                [<<"content-type">>]
+            )
         ),
     Keys2 =
         maps:keys(
-            NormMap2 = minimize(normalize(hb_converge:normalize_keys(Map2)))
+            NormMap2 = minimize(
+                normalize(hb_converge:normalize_keys(Map2)),
+                [<<"content-type">>]
+            )
         ),
     PrimaryKeysPresent =
         (Mode == primary) andalso
@@ -951,6 +957,35 @@ hashpath_sign_verify_test(Codec) ->
         )
     ).
 
+signed_message_with_derived_components_test(Codec) ->
+    Msg = #{
+        <<"path">> => <<"/test">>,
+        <<"authority">> => <<"example.com">>,
+        <<"scheme">> => <<"https">>,
+        <<"method">> => <<"GET">>,
+        <<"target-uri">> => <<"/test">>,
+        <<"request-target">> => <<"/test">>,
+        <<"status">> => <<"200">>,
+        <<"reason-phrase">> => <<"OK">>,
+        <<"body">> => <<"TEST_DATA">>,
+        <<"content-digest">> => <<"TEST_DIGEST">>,
+        <<"normal">> => <<"hello">>
+    },
+    {ok, SignedMsg} =
+        dev_message:attest(
+            Msg,
+            #{ <<"attestation-device">> => Codec },
+            #{ priv_wallet => hb:wallet() }
+        ),
+    ?event({signed_msg, SignedMsg}),
+    ?assert(verify(SignedMsg)),
+    Encoded = convert(SignedMsg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(verify(Decoded)),
+    ?assert(match(SignedMsg, Decoded)).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1009,8 +1044,9 @@ message_suite_test_() ->
             fun signed_deep_message_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
-        {"signed message with hashpath test", fun hashpath_sign_verify_test/1}
+        {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
+        {"message with derived components test", fun signed_message_with_derived_components_test/1}
     ]).
 
 simple_test() ->
-    hashpath_sign_verify_test(<<"httpsig@1.0">>).
+    signed_message_with_derived_components_test(<<"httpsig@1.0">>).
