@@ -336,7 +336,7 @@ results(M1, _M2, Opts) ->
 normalize_results(
     #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages }) ->
     {ok, Data, Messages};
-normalize_results(#{ <<"error">> := Error }) ->
+normalize_results(#{ <<"Error">> := Error }) ->
     {ok, Error, []};
 normalize_results(Other) ->
     throw({invalid_results, Other}).
