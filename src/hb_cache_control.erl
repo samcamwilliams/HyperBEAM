@@ -292,18 +292,22 @@ msg_precidence_overrides_test() ->
 no_store_directive_test() ->
     Msg = msg_with_cc([<<"no-store">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => false, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 no_cache_directive_test() ->
     Msg = msg_with_cc([<<"no-cache">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => true, <<"lookup">> => false}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => false}, Result).
 
 only_if_cached_directive_test() ->
     Msg = msg_with_cc([<<"only-if-cached">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
     ?assertEqual(
-        #{<<"store">> => true, <<"lookup">> => true, <<"only-if-cached">> => true},
+        #{
+            <<"store">> => ?DEFAULT_STORE_OPT,
+            <<"lookup">> => ?DEFAULT_LOOKUP_OPT,
+            <<"only-if-cached">> => true
+        },
         Result
     ).
 
@@ -311,25 +315,29 @@ only_if_cached_directive_test() ->
 hashpath_ignore_prevents_storage_test() ->
     Opts = (opts_with_cc([]))#{hashpath => ignore},
     Result = derive_cache_settings([], Opts),
-    ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 %% Test multiple directives
 multiple_directives_test() ->
     Msg = msg_with_cc([<<"no-store">>, <<"no-cache">>, <<"only-if-cached">>]),
     Result = derive_cache_settings([Msg], opts_with_cc([])),
     ?assertEqual(
-        #{<<"store">> => false, <<"lookup">> => false, <<"only-if-cached">> => true},
+        #{
+            <<"store">> => false,
+            <<"lookup">> => false,
+            <<"only-if-cached">> => true
+        },
         Result
     ).
 
 %% Test empty/missing cases
 empty_message_list_test() ->
     Result = derive_cache_settings([], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 message_without_cache_control_test() ->
     Result = derive_cache_settings([#{}], opts_with_cc([])),
-    ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
+    ?assertEqual(#{<<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT}, Result).
 
 %% Test the cache_source_to_cache_setting function directly
 opts_source_cache_control_test() ->
