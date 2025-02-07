@@ -467,24 +467,6 @@ encode_http_msg(Httpsig) ->
         SubBody -> <<EncodedHeaders/binary, ?DOUBLE_CRLF/binary, SubBody/binary>>
     end.
 
-signatures_to_httpsig(Httpsig, SignaturesBin, SigInputsBin) ->
-    ?event({encoding_signatures, SignaturesBin, SigInputsBin, {msg, Httpsig}}),
-    SigDict = maps:from_list(dev_codec_structured_conv:parse_dictionary(SignaturesBin)),
-    ?event({signature_dicts, {sigs, SigDict}, {inputs, SigInputsBin}}),
-    {SfSigInputs, SfSigs} = maps:map(
-        fun (Attestor, SignatureMap) ->
-            {Attestor, SignatureMap}
-        end,
-        % Start with empty Structured Field Dictionaries
-        {[], []},
-        SigDict
-    ),
-    % Signature and Signature-Input are always encoded as Structured Field dictionaries, and then
-    % each transmitted either as a header, or as a part in the multi-part body
-    WithSig = field_to_http(Httpsig, {<<"signature">>, dev_codec_structured_conv:dictionary(SfSigs)}, #{}),
-    WithSigAndInput = field_to_http(WithSig, {<<"signature-input">>, dev_codec_structured_conv:dictionary(SfSigInputs)}, #{}),
-    WithSigAndInput.
-
 % All maps are encoded into the body of the HTTP message
 % to be further encoded later.
 field_to_http(Httpsig, {Name, Value}, _Opts) when is_map(Value) ->
