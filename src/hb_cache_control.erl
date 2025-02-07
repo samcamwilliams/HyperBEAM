@@ -7,6 +7,11 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%%% When other cache control settings are not specified, we default to the
+%%% following settings.
+-define(DEFAULT_STORE_OPT, false).
+-define(DEFAULT_LOOKUP_OPT, false).
+
 %%% Public API
 
 %% @doc Write a resulting M3 message to the cache if requested. The precidence
@@ -187,7 +192,7 @@ derive_cache_settings(SourceList, Opts) ->
         fun(Source, Acc) ->
             maybe_set(Acc, cache_source_to_cache_settings(Source))
         end,
-        #{ <<"store">> => true, <<"lookup">> => true },
+        #{ <<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT },
         [{opts, Opts}|lists:filter(fun erlang:is_map/1, SourceList)]
     ).
 

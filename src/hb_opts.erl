@@ -124,7 +124,7 @@ default_message() ->
             }
         ],
         % Should the node store all signed messages?
-        store_all_signed => false,
+        store_all_signed => true,
         % Should the node use persistent processes?
         persistent_processes => true
     }.
