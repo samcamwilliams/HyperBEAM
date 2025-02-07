@@ -19,7 +19,7 @@ compute(Msg1, Msg2, Opts) ->
             ],
             Opts
         ),
-    {ok, JSONRes} = do_compute(ProcessID, Slot, Accept, Opts),
+    {ok, JSONRes} = do_compute(ProcessID, Slot, Opts),
     case Accept of
         <<"application/http">> ->
             {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
@@ -36,7 +36,7 @@ compute(Msg1, Msg2, Opts) ->
     end.
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
-do_compute(ProcID, Slot, Accept, Opts) ->
+do_compute(ProcID, Slot, Opts) ->
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">> }, #{
             <<"path">> => <<"call">>,
@@ -55,30 +55,3 @@ do_compute(ProcID, Slot, Accept, Opts) ->
     JSONRes = hb_converge:get(<<"body">>, Response, Opts),
     ?event({json_res, JSONRes}),
     {ok, JSONRes}.
-
-%%% Tests
-
-% compute_test() ->
-%     case hb_opts:get(run_remote_tests, true) of
-%         false ->
-%             {skip, "Remote dependent test"};
-%         true ->
-%             {ok, Res} = do_compute(
-%                 <<"aozr8BIc9rDth0oll6457y5GxFnJ2lVbMBuS3O_8g3I">>,
-%                 0,
-%                 #{
-%                     routes => [
-%                         #{
-%                             <<"template">> => <<"/result/.*">>,
-%                             <<"node">> =>
-%                                 #{
-%                                     <<"prefix">> =>
-%                                         <<"http://137.220.36.155:6363">>
-%                                 }
-%                         }
-%                     ]
-%                 }
-%             ),
-%             ?event({res, Res}),
-%             ?assertEqual(#{}, maps:get(<<"outbox">>, Res, not_found))
-%     end.
