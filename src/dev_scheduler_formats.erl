@@ -61,7 +61,7 @@ assignments_to_aos2(ProcID, Assignments, More, Opts) ->
                 || Assignment <- Assignments
             ]}
         ]},
-    Encoded = jiffy:encode(BodyStruct),
+    Encoded = iolist_to_binary(lists:flatten([jiffy:encode(BodyStruct)])),
     ?event({body_struct, BodyStruct}),
     ?event({encoded, {explicit, Encoded}}),
     {ok, 
