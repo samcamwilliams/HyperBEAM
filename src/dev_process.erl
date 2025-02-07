@@ -627,7 +627,7 @@ wasm_compute_test() ->
 
 wasm_compute_from_id_test() ->
     init(),
-    Opts = #{ cache_control => always },
+    Opts = #{ cache_control => <<"always">> },
     Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
     schedule_wasm_call(Msg1, <<"fac">>, [5.0], Opts),
     Msg1ID = hb_message:id(Msg1),
