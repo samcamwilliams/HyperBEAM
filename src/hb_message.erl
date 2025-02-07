@@ -54,7 +54,7 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, unattested/1]).
+-export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
 -export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]). 
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
@@ -78,13 +78,13 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
-    TABM = convert_to_tabm(Msg, SourceFormat, Opts),
+    TABM = to_tabm(Msg, SourceFormat, Opts),
     case TargetFormat of
         tabm -> TABM;
-        _ -> convert_to_target(TABM, TargetFormat, Opts)
+        _ -> from_tabm(TABM, TargetFormat, Opts)
     end.
 
-convert_to_tabm(Msg, SourceFormat, Opts) ->
+to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
@@ -92,7 +92,7 @@ convert_to_tabm(Msg, SourceFormat, Opts) ->
         OtherTypeRes -> OtherTypeRes
     end.
 
-convert_to_target(Msg, TargetFormat, Opts) ->
+from_tabm(Msg, TargetFormat, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
     TargetCodecMod:to(Msg).
 

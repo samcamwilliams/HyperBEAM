@@ -122,7 +122,11 @@ default_message() ->
                 <<"template">> => <<"/result/.*">>,
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             }
-        ]
+        ],
+        % Should the node store all signed messages?
+        store_all_signed => true,
+        % Should the node use persistent processes?
+        persistent_processes => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

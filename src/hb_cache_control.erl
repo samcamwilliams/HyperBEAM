@@ -96,15 +96,22 @@ lookup(Msg1, Msg2, Opts) ->
 dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
     Dispatch =
         fun() ->
-            case is_binary(Msg3) of
-                true ->
+            % hb_cache:write(Msg1, Opts),
+            % hb_cache:write(Msg2, Opts),
+            case Msg3 of
+                <<_/binary>> ->
                     ?event({writing_binary, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
                     hb_cache:write_binary(
                         hb_path:hashpath(Msg1, Msg2, Opts),
                         Msg3,
                         Opts
                     );
-                false -> hb_cache:write(Msg3, Opts)
+                Map when is_map(Map) ->
+                    ?event({writing_message, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
+                    hb_cache:write(Msg3, Opts);
+                _ ->
+                    ?event({cannot_write_result, Msg3}),
+                    skip_caching
             end
         end,
     case hb_opts:get(async_cache, false, Opts) of
@@ -147,6 +154,8 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
+exec_likely_faster_heuristic(ID, _Msg2, _Opts) when ?IS_ID(ID) ->
+    false;
 exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.

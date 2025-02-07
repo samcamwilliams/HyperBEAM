@@ -103,6 +103,8 @@
 -export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
 
+-define(NON_RECURSIVE_OPTS, [add_key, force_message, cache_control]).
+
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, takes options that control the runtime environment. 
 %% This function returns the raw result of the device function call:
@@ -355,7 +357,11 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = maps:without([add_key, force_message], Opts),
+	UserOpts1 =
+        maps:without(
+            ?NON_RECURSIVE_OPTS,
+            Opts
+        ),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.

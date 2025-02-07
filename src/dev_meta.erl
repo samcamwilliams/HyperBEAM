@@ -158,6 +158,13 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     end.
 
 %% @doc Wrap the result of a device call in a status.
+embed_status({error, not_found}) ->
+    {error,
+        #{
+            <<"status">> => hb_http:status_code(not_found),
+            <<"body">> => <<"Not found.">>
+        }
+    };
 embed_status({Status, Res}) when is_map(Res) ->
     {ok, Res#{ <<"status">> => hb_http:status_code(Status) }};
 embed_status({Status, Res}) when is_binary(Res) ->

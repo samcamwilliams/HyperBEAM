@@ -383,10 +383,18 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     case hb_converge:get(<<"signature">>, MaybeSignedHTTP, not_found, Opts) of
         not_found -> maybe_add_unsigned(Req, Msg, Opts);
         _ ->
-            case true of%hb_message:verify(Msg) of
+            case hb_message:verify(Msg) of
                 true ->
+                    ?event(http, {verified_signature, Msg}),
+                    case hb_opts:get(store_all_signed, false, Opts) of
+                        true ->
+                            hb_cache:write(Msg, Opts);
+                        false ->
+                            do_nothing
+                    end,
                     maybe_add_unsigned(Req, Msg, Opts);
                 false ->
+                    ?event(http, {invalid_signature, Msg}),
                     throw({invalid_signature, Msg})
             end
     end.
