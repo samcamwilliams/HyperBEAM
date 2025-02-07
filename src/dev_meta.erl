@@ -49,7 +49,7 @@ info(_, Request, NodeMsg) ->
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
             ?event({get_config_req, Request, NodeMsg}),
-            embed_status({ok, hb_private:reset(NodeMsg)});
+            embed_status({ok, filter_node_msg(add_dynamic_keys(NodeMsg))});
         <<"POST">> ->
             case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 <<"permanent">> ->
@@ -64,6 +64,24 @@ info(_, Request, NodeMsg) ->
             end;
         _ -> embed_status({error, <<"Unsupported Meta/info method.">>})
     end.
+
+%% @doc Remove items from the node message that are not encodable into a
+%% message.
+filter_node_msg(Msg) when is_map(Msg) ->
+    maps:map(fun(_, Value) -> filter_node_msg(Value) end, hb_private:reset(Msg));
+filter_node_msg(Msg) when is_list(Msg) ->
+    lists:map(fun filter_node_msg/1, Msg);
+filter_node_msg(Tuple) when is_tuple(Tuple) ->
+    <<"Unencodable value.">>;
+filter_node_msg(Other) ->
+    Other.
+
+%% @doc Add dynamic keys to the node message.
+add_dynamic_keys(NodeMsg) ->
+    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
+    maps:merge(NodeMsg, #{
+        <<"address">> => hb_util:id(ar_wallet:to_address(Wallet))
+    }).
 
 update_node_message(Request, NodeMsg) ->
     {ok, RequestSigners} = dev_message:attestors(Request),
