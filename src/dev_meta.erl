@@ -78,10 +78,14 @@ filter_node_msg(Other) ->
 
 %% @doc Add dynamic keys to the node message.
 add_dynamic_keys(NodeMsg) ->
-    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-    maps:merge(NodeMsg, #{
-        <<"address">> => hb_util:id(ar_wallet:to_address(Wallet))
-    }).
+    case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+        no_viable_wallet ->
+            NodeMsg;
+        Wallet ->
+            maps:merge(NodeMsg, #{
+                <<"address">> => hb_util:id(ar_wallet:to_address(Wallet))
+            })
+    end.
 
 update_node_message(Request, NodeMsg) ->
     {ok, RequestSigners} = dev_message:attestors(Request),
