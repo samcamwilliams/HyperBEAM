@@ -19,7 +19,7 @@ compute(Msg1, Msg2, Opts) ->
             Opts
         ),
     {ok, Res} = do_compute(ProcessID, Slot, Opts),
-    hb_converge:set(Msg1, <<OutputPrefix/binary, "/results">>, Res, Opts).
+    {ok, hb_converge:set(Msg1, <<OutputPrefix/binary, "/results">>, Res, Opts)}.
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Slot, Opts) ->
