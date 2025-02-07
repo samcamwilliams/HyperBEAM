@@ -318,7 +318,6 @@ find_schedule_id(Msg1, Msg2, Opts) ->
                             ID;
                     _ ->
                         % Does the message have a type of Process?
-                        ?event(debug, {getting_type, {msg, Msg1}}),
                         case hb_converge:get(<<"type">>, Msg1, TempOpts) of
                             <<"Process">> ->
                                 % Yes, so try Msg1/id
@@ -549,7 +548,7 @@ http_get_schedule(N, PMsg, From, To, Format) ->
     {ok, _} = hb_http:get(N, hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"GET">>,
-        <<"target">> => ID,
+        <<"target">> => hb_util:human_id(ID),
         <<"from">> => From,
         <<"to">> => To,
         <<"accept">> => Format

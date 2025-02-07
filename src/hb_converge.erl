@@ -955,10 +955,17 @@ normalize_key(Key, _Opts) when ?IS_ID(Key) -> Key;
 normalize_key(Key, _Opts) when is_binary(Key) -> hb_util:to_lower(Key);
 normalize_key(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
 normalize_key(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
-normalize_key(Key = [ASCII | _], _Opts) when is_integer(ASCII) ->
-    normalize_key(list_to_binary(Key));
 normalize_key(Key, _Opts) when is_list(Key) ->
-    iolist_to_binary(lists:join(<<"/">>, lists:map(fun normalize_key/1, Key))).
+    case hb_util:is_string_list(Key) of
+        true -> normalize_key(list_to_binary(Key));
+        false ->
+            iolist_to_binary(
+                lists:join(
+                    <<"/">>,
+                    lists:map(fun normalize_key/1, Key)
+                )
+            )
+    end.
 
 %% @doc Ensure that a message is processable by the Converge resolver: No lists.
 normalize_keys(Msg1) when is_list(Msg1) ->

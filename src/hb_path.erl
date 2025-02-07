@@ -245,23 +245,26 @@ to_binary(Path) ->
     Parts = binary:split(do_to_binary(Path), <<"/">>, [global, trim_all]),
     iolist_to_binary(lists:join(<<"/">>, Parts)).
 
-do_to_binary(String = [ASCII|_]) when is_integer(ASCII) ->
-    to_binary(list_to_binary(String));
 do_to_binary(Path) when is_list(Path) ->
-    iolist_to_binary(
-        lists:join(
-            "/",
-            lists:filtermap(
-                fun(Part) ->
-                    case do_to_binary(Part) of
-                        <<>> -> false;
-                        BinPart -> {true, BinPart}
-                    end
-                end,
-                Path
-            )
-        )
-    );
+    case hb_util:is_string_list(Path) of
+        false ->
+            iolist_to_binary(
+                lists:join(
+                    "/",
+                    lists:filtermap(
+                        fun(Part) ->
+                            case do_to_binary(Part) of
+                                <<>> -> false;
+                                BinPart -> {true, BinPart}
+                            end
+                        end,
+                        Path
+                    )
+                )
+            );
+        true ->
+            to_binary(list_to_binary(Path))
+    end;
 do_to_binary(Path) when is_binary(Path) ->
     Path;
 do_to_binary(Other) ->
