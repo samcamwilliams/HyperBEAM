@@ -106,16 +106,13 @@ write_message(Msg, Store, Opts) when is_map(Msg) ->
             % attestationID to the unattested message.
             lists:map(
                 fun(Attestor) ->
-                    #{ <<"attestations">> := #{ Attestor := Attestation } } =
-                        Msg,
-                        case Attestation of
-                            #{ <<"signature">> := AttestationSignature } ->
-                                AttestationID = hb_util:human_id(hb_crypto:sha256(AttestationSignature)),
-                                hb_store:make_link(Store, UnattestedID, AttestationID);
-                            _ ->
-                                % No signature, so we can't attest
-                                {error, no_signature}
-                        end
+                    AttestationID =
+                        hb_converge:get(
+                            [<<"attestations">>, Attestor, <<"id">>],
+                            Msg,
+                            Opts
+                        ),
+                    hb_store:make_link(Store, UnattestedID, AttestationID)
                 end,
                 maps:keys(Attestors)
             ),
