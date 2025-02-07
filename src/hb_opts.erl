@@ -115,7 +115,14 @@ default_message() ->
         short_trace_len => 5,
         debug_hide_metadata => false,
         debug_ids => false,
-		trusted => #{}
+		trusted => #{},
+        % Routes for the compute-lite device to use a local CU, if requested.
+        routes => [
+            #{
+                <<"template">> => <<"/result/.*">>,
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            }
+        ]
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

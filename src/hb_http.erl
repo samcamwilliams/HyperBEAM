@@ -173,7 +173,7 @@ message_to_request(M, Opts) ->
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Route, Path, MsgWithoutMeta};
         {error, Reason} ->
-            {error, {no_viable_route, Reason}}
+            {error, {no_viable_route, Reason, {message, M}}}
     end.
 
 %% @doc Turn a set of request arguments into a request message, formatted in the
