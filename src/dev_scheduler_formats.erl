@@ -43,7 +43,7 @@ assignments_to_bundle(ProcID, Assignments, More, Opts) ->
 assignments_to_aos2(ProcID, Assignments, More, Opts) ->
     {Timestamp, Height, Hash} = ar_timestamp:get(),
     BodyStruct = 
-        {[
+        {
             {<<"page_info">>,
                 {[
                     {<<"process">>, hb_util:human_id(ProcID)},
@@ -60,7 +60,7 @@ assignments_to_aos2(ProcID, Assignments, More, Opts) ->
                 ]}
                 || Assignment <- Assignments
             ]}
-        ]},
+        },
     Encoded = jiffy:encode(BodyStruct),
     ?event({body_struct, BodyStruct}),
     ?event({encoded, {explicit, Encoded}}),
