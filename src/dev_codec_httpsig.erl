@@ -175,7 +175,7 @@ add_content_digest(Msg) ->
         Body ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
-            ?event(debug, {add_content_digest, {body, Body}, {msg, Msg}}),
+            ?event({add_content_digest, {body, Body}, {msg, Msg}}),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(dev_codec_structured_conv:dictionary(
@@ -531,7 +531,7 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
-    ?event(debug, {signature_base, {explicit, SignatureBase}}),
+    ?event({signature_base, {explicit, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
