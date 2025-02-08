@@ -135,11 +135,15 @@ handle_converge(Req, Msgs, NodeMsg) ->
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
+            HTTPOpts = maps:merge(
+                AfterPreprocOpts,
+                hb_opts:get(http_extra_opts, #{}, NodeMsg)
+            ),
             {ok, Res} =
                 embed_status(
                     hb_converge:resolve_many(
                         PreProcMsg,
-                        AfterPreprocOpts#{ force_message => true }
+                        HTTPOpts#{ force_message => true }
                     )
                 ),
             ?event({res, Res}),
@@ -181,7 +185,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({error, not_found}) ->
-    {error,
+    {ok,
         #{
             <<"status">> => hb_http:status_code(not_found),
             <<"body">> => <<"Not found.">>
