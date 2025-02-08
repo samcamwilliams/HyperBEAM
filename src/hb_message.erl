@@ -55,7 +55,8 @@
 -module(hb_message).
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
--export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]). 
+-export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]).
+-export([attested/1, attested/2, attested/3]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -132,6 +133,13 @@ attest(Msg, Wallet, Format) ->
             #{ priv_wallet => Wallet }
         ),
     Signed.
+
+%% @doc Return the list of attested keys from a message.
+attested(Msg) -> attested(Msg, #{ <<"attestors">> => <<"all">> }, #{}).
+attested(Msg, Opts) -> attested(Msg, Opts, #{}).
+attested(Msg, Opts, Format) ->
+    {ok, AttestedKeys} = dev_message:attested(Msg, Opts, Format),
+    AttestedKeys.
 
 %% @doc wrapper function to verify a message.
 verify(Msg) ->
@@ -500,6 +508,15 @@ minimization_test() ->
     ?event({minimized, MinimizedMsg}),
     ?assertEqual(1, maps:size(MinimizedMsg)).
 
+match_modes_test() ->
+    Msg1 = #{ <<"a">> => 1, <<"b">> => 2 },
+    Msg2 = #{ <<"a">> => 1 },
+    Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
+    ?assert(match(Msg1, Msg2, only_present)),
+    ?assert(not match(Msg2, Msg1, strict)),
+    ?assert(match(Msg1, Msg3, primary)),
+    ?assert(not match(Msg3, Msg1, primary)).
+
 basic_map_codec_test(Codec) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
     Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
@@ -547,15 +564,6 @@ match_test(Codec) ->
     Encoded = convert(Msg, Codec, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(match(Msg, Decoded)).
-
-match_modes_test() ->
-    Msg1 = #{ <<"a">> => 1, <<"b">> => 2 },
-    Msg2 = #{ <<"a">> => 1 },
-    Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
-    ?assert(match(Msg1, Msg2, only_present)),
-    ?assert(not match(Msg2, Msg1, strict)),
-    ?assert(match(Msg1, Msg3, primary)),
-    ?assert(not match(Msg3, Msg1, primary)).
 
 binary_to_binary_test(Codec) ->
     % Serialization must be able to turn a raw binary into a TX, then turn
@@ -986,6 +994,16 @@ signed_message_with_derived_components_test(Codec) ->
     ?assert(verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
+attested_keys_test(Codec) ->
+    Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
+    Signed = attest(Msg, hb:wallet(), Codec),
+    AttestedKeys = attested(Signed),
+    ?assert(lists:member(<<"a">>, AttestedKeys)),
+    ?assert(lists:member(<<"b">>, AttestedKeys)),
+    ?assert(lists:member(<<"c">>, AttestedKeys)),
+    MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
+    ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter))).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1045,7 +1063,8 @@ message_suite_test_() ->
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
-        {"message with derived components test", fun signed_message_with_derived_components_test/1}
+        {"message with derived components test", fun signed_message_with_derived_components_test/1},
+        {"attested keys test", fun attested_keys_test/1}
     ]).
 
 simple_test() ->

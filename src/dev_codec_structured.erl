@@ -17,6 +17,7 @@
 %%% Route signature functions to the `dev_codec_httpsig' module
 attest(Msg, Req, Opts) -> dev_codec_httpsig:attest(Msg, Req, Opts).
 verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
+attested(Msg, Req, Opts) -> dev_codec_httpsig:attested(Msg, Req, Opts).
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;

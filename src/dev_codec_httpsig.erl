@@ -6,7 +6,7 @@
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, attest/3, verify/3, reset_hmac/1, public_keys/1]).
+-export([id/3, attest/3, attested/3, verify/3, reset_hmac/1, public_keys/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
 %%% Public API functions
@@ -167,6 +167,26 @@ attest(MsgToSign, _Req, Opts) ->
         },
     MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
     reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
+
+%% @doc Return the list of attested keys from a message. The message will have
+%% had the `attestations` key removed and the signature inputs added to the
+%% root. Subsequently, we can parse that to get the list of attested keys.
+attested(Msg, _Req, _Opts) ->
+    [{_SigInputName, SigInput} | _] = dev_codec_structured_conv:parse_dictionary(
+        maps:get(<<"signature-input">>, Msg)
+    ),
+    {list, ComponentIdentifiers, _SigParams} = SigInput,
+    BinComponentIdentifiers = lists:map(
+        fun({item, {_Kind, ID}, _Params}) -> ID end,
+        ComponentIdentifiers    
+    ),
+    Signed =
+        [<<"signature">>, <<"signature-input">>] ++
+            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
+    case lists:member(<<"content-digest">>, Signed) of
+        false -> {ok, Signed};
+        true -> {ok, Signed ++ [<<"body">>]}
+    end.
 
 %% @doc If the `body` key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
