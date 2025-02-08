@@ -86,6 +86,7 @@
 %%% Base start configurations:
 -export([start_simple_pay/0, start_simple_pay/1, start_simple_pay/2]).
 -export([topup/3, topup/4]).
+-export([start_mainnet/0, start_mainnet/1, start_mainnet/2]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, event/4, event/5, event/6, no_prod/3]).
 -export([read/1, read/2, debug_wait/4, profile/1, benchmark/2, benchmark/3]).
@@ -100,6 +101,40 @@ init() ->
     Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
     ?event({old_system_stack_depth, Old}),
     ok.
+
+%% @doc Start a mainnet server without payments.
+start_mainnet() ->
+    start_mainnet(10000 + rand:uniform(50000)).
+start_mainnet(Port) ->
+    start_mainnet(Port, address()).
+start_mainnet(Port, Addr) ->
+    do_start_mainnet(#{ port => Port, operator => Addr }).
+
+do_start_mainnet(Opts) ->
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    hb_http_server:start_node(
+        Opts#{
+            store => {hb_store_fs, #{ prefix => "main-cache" }}
+        }
+    ),
+    io:format(
+        "Started mainnet node at http://localhost:~p~n"
+        "Operator: ~s~n",
+        [maps:get(port, Opts), address()]
+    ),
+    <<"http://localhost:", (integer_to_binary(maps:get(port, Opts)))/binary>>.
 
 %%% @doc Start a server with a `simple-pay@1.0` pre-processor.
 start_simple_pay() ->

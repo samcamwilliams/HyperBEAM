@@ -3,9 +3,14 @@
 %%% bring trusted results into the local node, or as the `Execution-Device` of
 %%% an AO process.
 -module(dev_compute_lite).
--export([compute/3]).
+-export([init/3, compute/3, normalize/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Initialize or normalize the compute-lite device. For now, we don't
+%% need to do anything special here.
+init(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
+normalize(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 
 compute(Msg1, Msg2, Opts) ->
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),

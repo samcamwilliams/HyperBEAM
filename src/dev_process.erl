@@ -162,7 +162,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
             throw({error, {already_calculated_slot, TargetSlot}});
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
-            ?event({reached_target_slot_returning_state, TargetSlot}),
+            ?event(process_compute, {reached_target_slot_returning_state, TargetSlot}),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
             % Get the next input from the scheduler device.
@@ -210,7 +210,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                     end;
                 _ -> nothing_to_do
             end,
-            ?event({do_compute_result, {msg3, Msg3}}),
+            ?event(process_compute, {do_compute_result, {msg3, Msg3}}),
             do_compute(
                 ProcID,
                 hb_converge:set(
@@ -404,12 +404,13 @@ run_as(Key, Msg1, Msg2, Opts) ->
 %% In situations where the key that is `run_as` returns a message with a 
 %% transformed device, this is useful.
 as_process(Msg1, Opts) ->
-    {ok, Proc} = dev_message:set(Msg1, #{ <<"device">> => <<"Process@1.0">> }, Opts),
+    {ok, Proc} = dev_message:set(Msg1, #{ <<"device">> => <<"process@1.0">> }, Opts),
     Proc.
 
 %% @doc Helper function to store a copy of the `process` key in the message.
 ensure_process_key(Msg1, Opts) ->
-    case hb_converge:get(<<"process">>, {as, dev_message, Msg1}, Opts) of
+    ?event(debug, {ensure_process_key_called, {msg1, Msg1}, {opts, Opts}}),
+    case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
             hb_converge:set(
                 Msg1, #{ <<"process">> => Msg1 }, Opts#{ hashpath => ignore });
@@ -436,8 +437,10 @@ test_base_process() ->
     }, Wallet).
 
 test_wasm_process(WASMImage) ->
+    test_wasm_process(WASMImage, #{}).
+test_wasm_process(WASMImage, Opts) ->
     Wallet = hb:wallet(),
-    #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage),
+    #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:attest(
         maps:merge(test_base_process(), #{
             <<"execution-device">> => <<"Stack@1.0">>,
@@ -633,8 +636,54 @@ wasm_compute_from_id_test() ->
     Msg1ID = hb_message:id(Msg1),
     Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
     {ok, Msg3} = hb_converge:resolve(Msg1ID, Msg2, Opts),
-    ?event({computed_message, {msg3, Msg3}}),
+    ?event(process_compute, {computed_message, {msg3, Msg3}}),
     ?assertEqual([120.0], hb_converge:get(<<"results/output">>, Msg3, Opts)).
+
+wasm_full_http_run_cycle_test() ->
+    Node = hb_http_server:start_node(Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store => {hb_store_fs, #{ prefix => "main-cache" }}
+    }),
+    Wallet = ar_wallet:new(),
+    Proc = test_wasm_process(<<"test/test-64.wasm">>, Opts),
+    ProcID = hb_util:human_id(hb_message:id(Proc)),
+    InitRes =
+        hb_http:post(
+            Node,
+            << "/schedule">>,
+            Proc,
+            #{}
+        ),
+    ?event({schedule_proc_res, InitRes}),
+    ExecMsg =
+        hb_message:attest(#{
+            <<"target">> => ProcID,
+            <<"type">> => <<"Message">>,
+            <<"wasm-function">> => <<"fac">>,
+            <<"wasm-params">> => [5.0]
+        },
+        Wallet
+    ),
+    {ok, Msg3} =
+        hb_http:post(
+            Node,
+            << ProcID/binary, "/schedule">>,
+            ExecMsg,
+            #{}
+        ),
+    ?event({schedule_msg_res, {msg3, Msg3}}),
+    {ok, Msg4} =
+        hb_http:get(
+            Node,
+            #{
+                <<"path">> => << ProcID/binary, "/compute">>,
+                <<"slot">> => 0
+            },
+            #{}
+        ),
+    ?event({compute_msg_res, {msg4, Msg4}}),
+    ?assertEqual([120.0], hb_converge:get(<<"results/output">>, Msg4, #{})).
 
 aos_compute_test_() ->
     {timeout, 30, fun() ->

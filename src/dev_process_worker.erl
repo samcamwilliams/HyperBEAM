@@ -13,11 +13,23 @@
 group(Msg1, undefined, Opts) ->
     hb_persistent:default_grouper(Msg1, undefined, Opts);
 group(Msg1, Msg2, Opts) ->
-    case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
+    case hb_opts:get(persistent_processes, false, Opts) of
+        false ->
+            ?event(debug, {not_using_persistent_processes, Msg1, Msg2}),
+            hb_persistent:default_grouper(Msg1, Msg2, Opts);
         true ->
-            process_to_group_name(Msg1, Opts);
-        _ ->
-            hb_persistent:default_grouper(Msg1, Msg2, Opts)
+            ?event(debug, {using_persistent_processes, Msg1, Msg2}),
+            case Msg2 of
+                undefined ->
+                    hb_persistent:default_grouper(Msg1, undefined, Opts);
+                _ ->
+                    case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
+                        true ->
+                            process_to_group_name(Msg1, Opts);
+                        _ ->
+                            hb_persistent:default_grouper(Msg1, Msg2, Opts)
+                    end
+            end
     end.
 
 process_to_group_name(Msg1, Opts) ->

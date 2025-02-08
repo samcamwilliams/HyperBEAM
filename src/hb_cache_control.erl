@@ -74,11 +74,10 @@ lookup(Msg1, Msg2, Opts) ->
                                     true ->
                                         case hb_cache:read(Msg1, Opts) of
                                             {ok, FullMsg1} ->
-                                                ?event(
-                                                    {message_cache_hit,
-                                                        {msg1, Msg1},
-                                                        {msg2, Msg2},
-                                                        {msg3, FullMsg1}
+                                                ?event(load_message,
+                                                    {cache_hit_base_message_load,
+                                                        {base_id, Msg1},
+                                                        {base_loaded, FullMsg1}
                                                     }
                                                 ),
                                                 {continue, FullMsg1, Msg2};
@@ -105,14 +104,12 @@ dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
             hb_cache:write(Msg2, Opts),
             case Msg3 of
                 <<_/binary>> ->
-                    ?event({writing_binary, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
                     hb_cache:write_binary(
                         hb_path:hashpath(Msg1, Msg2, Opts),
                         Msg3,
                         Opts
                     );
                 Map when is_map(Map) ->
-                    ?event({writing_message, {msg1, Msg1}, {msg2, Msg2}, {msg3, Msg3}}),
                     hb_cache:write(Msg3, Opts);
                 _ ->
                     ?event({cannot_write_result, Msg3}),
@@ -145,7 +142,7 @@ only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
 %% cache lookup are not found in the cache.
 necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
     ?event(
-        caching,
+        load_message,
         {necessary_messages_not_found, {msg1, Msg1}, {msg2, Msg2}},
         Opts
     ),
@@ -161,10 +158,13 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 %% our cache (hoping we have it), or executing it directly.
 % exec_likely_faster_heuristic(ID, _Msg2, _Opts) when ?IS_ID(ID) ->
 %     false;
+exec_likely_faster_heuristic(ID1, _Msg2, _Opts) when ?IS_ID(ID1) ->
+    false;
 exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.
     % If we have `only-if-cached` in the opts, we always force lookup, too.
+    ?event(cache_control, {exec_likely_faster_heuristic, {msg1, Msg1}, {key, Key}}),
     case specifiers_to_cache_settings(hb_opts:get(cache_control, [], Opts)) of
         #{ <<"only-if-cached">> := true } -> false;
         _ -> is_map(Msg1) andalso maps:is_key(Key, Msg1)
