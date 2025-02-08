@@ -202,7 +202,7 @@ verify(Self, Req, Opts) ->
 %% Note: Assumes that the `attestations' key has already been removed from the
 %% message if applicable.
 exec_for_attestation(Func, Base, Attestation, Req, Opts) ->
-    ?event(debug, {executing_for_attestation, {func, Func}, {base, Base}, {attestation, Attestation}, {req, Req}}),
+    ?event({executing_for_attestation, {func, Func}, {base, Base}, {attestation, Attestation}, {req, Req}}),
     AttestionMessage =
         maps:merge(Base, maps:without([<<"attestation-device">>], Attestation)),
     AttDev =
@@ -239,8 +239,6 @@ attested(Self, Req, Opts) ->
         lists:map(
             fun(Attestor) ->
                 Attestion = maps:get(Attestor, Attestations),
-                ?event(debug, {calculating_keys_for_attestor, {attestor, Attestor}, {attestation, Attestion}}),
-                ?event(debug, {base, Base}),
                 {ok, AttestedKeys} =
                     exec_for_attestation(
                         attested,

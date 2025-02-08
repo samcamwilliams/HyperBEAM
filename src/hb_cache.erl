@@ -63,8 +63,10 @@ write(RawMsg, Opts) ->
     Msg =
         case is_map(RawMsg) andalso maps:is_key(<<"attestations">>, RawMsg) of
             true ->
+                Enc = hb_message:convert(RawMsg, <<"httpsig@1.0">>, #{}),
+                Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
                 maps:with(
-                    [<<"attestations">>] ++ hb_message:attested(RawMsg),
+                    [<<"attestations">>] ++ hb_message:attested(Dec),
                     RawMsg
                 );
             false -> RawMsg

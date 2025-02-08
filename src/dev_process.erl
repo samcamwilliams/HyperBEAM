@@ -651,7 +651,7 @@ wasm_full_http_run_cycle_test() ->
     InitRes =
         hb_http:post(
             Node,
-            << "/schedule">>,
+            << "/schedule" >>,
             Proc,
             #{}
         ),
