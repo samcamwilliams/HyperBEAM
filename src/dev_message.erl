@@ -235,7 +235,6 @@ attested(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     Attestators = maps:keys(Attestations = maps:get(<<"attestations">>, Base, #{})),
     % Get the list of attested keys from each attestor.
-    ?event(debug, {calculating_attested_keys, {attestations, Attestators}}),
     AttestationKeys =
         lists:map(
             fun(Attestor) ->
@@ -254,7 +253,6 @@ attested(Self, Req, Opts) ->
             end,
             Attestators
         ),
-    ?event(debug, {all_results, AttestationKeys}),
     % Remove attestations that are not in *every* attestor's list.
     % To start, we need to create the super-set of attested keys.
     AllAttestedKeys =
@@ -268,7 +266,6 @@ attested(Self, Req, Opts) ->
             [],
             lists:flatten(AttestationKeys)
         ),
-    ?event(debug, {unique_attested_keys, AllAttestedKeys}),
     % Next, we filter the list of all attested keys to only include those that
     % are present in every attestor's list.
     OnlyAttestedKeys =

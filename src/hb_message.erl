@@ -358,14 +358,14 @@ match(Map1, Map2, Mode) ->
         maps:keys(
             NormMap1 = minimize(
                 normalize(hb_converge:normalize_keys(Map1)),
-                [<<"content-type">>]
+                [<<"content-type">>, <<"body-keys">>]
             )
         ),
     Keys2 =
         maps:keys(
             NormMap2 = minimize(
                 normalize(hb_converge:normalize_keys(Map2)),
-                [<<"content-type">>]
+                [<<"content-type">>, <<"body-keys">>]
             )
         ),
     PrimaryKeysPresent =
@@ -861,15 +861,17 @@ signed_deep_message_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event({signed_msg, {explicit, SignedMsg}}),
-    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
-    ?event({verify_hmac_res, {explicit, Res}}),
+    ?event(debug, {signed_msg, SignedMsg}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => <<"all">>}, #{}),
+    ?event(debug, {verify_res, Res}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event({verified, {explicit, SignedMsg}}),
+    ?event(debug, {verified, SignedMsg}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event({encoded, {explicit, Encoded}}),
+    ?event(debug, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, {explicit, Decoded}}),
+    ?event(debug, {decoded, Decoded}),
+    {ok, DecodedRes} = dev_message:verify(Decoded, #{ <<"attestors">> => <<"all">>}, #{}),
+    ?event(debug, {verify_decoded_res, DecodedRes}),
     ?assert(
         match(
             SignedMsg,
@@ -1068,4 +1070,4 @@ message_suite_test_() ->
     ]).
 
 simple_test() ->
-    signed_message_with_derived_components_test(<<"httpsig@1.0">>).
+    signed_deep_message_test(<<"httpsig@1.0">>).

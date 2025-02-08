@@ -126,14 +126,13 @@ attest(MsgToSign, _Req, Opts) ->
                 HashPathKey = <<"hashpath-", HashPathTag/binary>>,
                 {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
         end,
-    Enc =
-        add_content_digest(
-            maps:without(
-                [<<"signature">>, <<"signature-input">>],
-                hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
-            )
+    EncWithoutBodyKeys =
+        maps:without(
+            [<<"signature">>, <<"signature-input">>, <<"body-keys">>],
+            hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
         ),
-    ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
+    Enc = add_content_digest(EncWithoutBodyKeys),
+    ?event(debug, {encoded_to_httpsig_for_attestation, Enc}),
     Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
@@ -165,7 +164,7 @@ attest(MsgToSign, _Req, Opts) ->
         OldAttestations#{
             Attestor => AttestationWithHP
         },
-    MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
+    MsgWithoutHP = maps:without([<<"hashpath">>, <<"body-keys">>], MsgToSign),
     reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
 
 %% @doc Return the list of attested keys from a message. The message will have
@@ -291,7 +290,7 @@ sig_name_from_dict(DictBin) ->
 hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
-    EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
+    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>], Msg)),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
     ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
@@ -299,7 +298,16 @@ hmac(Msg) ->
     {_, SignatureBase} = signature_base(
         #{
             component_identifiers => 
-                add_derived_specifiers(lists:sort(maps:keys(MsgWithContentDigest))),
+                add_derived_specifiers(
+                    lists:sort(
+                        maps:keys(
+                            maps:without(
+                                [<<"body-keys">>, <<"converge-type-body-keys">>],
+                                MsgWithContentDigest
+                            )
+                        )
+                    )
+                ),
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
@@ -352,9 +360,10 @@ verify(MsgToVerify, Req, _Opts) ->
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
+            EncWithoutBodyKeys = maps:without([<<"body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
-                Enc#{
+                EncWithoutBodyKeys#{
                     <<"signature-input">> =>
                         maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> =>
@@ -521,6 +530,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
                 #{},
                 SigParams
             ),
+            ?event(debug, {sig_params_map, ComponentIdentifiers}),
             % Construct the signature base using the parsed parameters
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
             {_, SignatureBase} = signature_base(Authority, Req, Res),
@@ -545,6 +555,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
+    ?event(debug, {component_identifiers_for_sig_base, ComponentIdentifiers}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(

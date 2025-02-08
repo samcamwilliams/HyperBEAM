@@ -60,8 +60,17 @@ list(Path, Store) ->
 write(RawMsg, Opts) ->
     % Use the _structured_ format for calculating alternative IDs, but the
     % _tabm_ format for writing to the store.
+    Msg =
+        case is_map(RawMsg) andalso maps:is_key(<<"attestations">>, RawMsg) of
+            true ->
+                maps:with(
+                    [<<"attestations">>] ++ hb_message:attested(RawMsg),
+                    RawMsg
+                );
+            false -> RawMsg
+        end,
     do_write_message(
-        hb_message:convert(RawMsg, tabm, <<"structured@1.0">>, Opts),
+        hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
         calculate_alt_ids(RawMsg, Opts),
         hb_opts:get(store, no_viable_store, Opts),
         Opts
@@ -226,7 +235,7 @@ link(Existing, New, Opts) ->
 test_unsigned(Data) ->
     #{
         <<"base-test-key">> => <<"base-test-value">>,
-        <<"data">> => Data
+        <<"deep-test-key">> => Data
     }.
 
 %% Helper function to create signed #tx items.
@@ -263,6 +272,7 @@ test_store_simple_signed_message(Opts) ->
     %% Read the item back
     {ok, UID} = dev_message:id(Item, #{ <<"attestors">> => <<"none">> }, Opts),
     {ok, RetrievedItemU} = read(UID, Opts),
+    ?event({retreived_unsigned_message, {expected, Item}, {got, RetrievedItemU}}),
     ?assert(hb_message:match(Item, RetrievedItemU)),
     {ok, AttestedID} = dev_message:id(Item, #{ <<"attestors">> => [Address] }, Opts),
     {ok, RetrievedItemS} = read(AttestedID, Opts),
@@ -338,5 +348,5 @@ cache_suite_test_() ->
     ]).
 
 run_test() ->
-    Opts = #{ store => {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }} },
+    Opts = #{ store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }} },
     test_store_simple_signed_message(Opts).
