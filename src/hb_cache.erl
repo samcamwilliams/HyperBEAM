@@ -175,7 +175,7 @@ store_read(_Path, no_viable_store, _) ->
     not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event({reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
+    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
     case hb_store:type(Store, ResolvedFullPath) of
         simple -> hb_store:read(Store, ResolvedFullPath);
         _ ->
@@ -191,6 +191,7 @@ store_read(Path, Store, Opts) ->
                         maps:from_list(
                             lists:map(
                                 fun(Subpath) ->
+                                    ?event(read_debug, {reading_subpath, {path, Subpath}, {store, Store}}),
                                     {ok, Res} = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
@@ -245,6 +246,12 @@ test_store_binary(Opts) ->
     {ok, ID} = write(Bin, Opts),
     {ok, RetrievedBin} = read(ID, Opts),
     ?assertEqual(Bin, RetrievedBin).
+
+test_store_unsigned_empty_message(Opts) ->
+    Item = #{},
+    {ok, Path} = write(Item, Opts),
+    {ok, RetrievedItem} = read(Path, Opts),
+    ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_unsigned_message(Opts) ->
@@ -338,6 +345,7 @@ test_message_with_message(Opts) ->
 
 cache_suite_test_() ->
     hb_store:generate_test_suite([
+        {"store unsigned empty message", fun test_store_unsigned_empty_message/1},
         {"store binary", fun test_store_binary/1},
         {"store simple unsigned message", fun test_store_simple_unsigned_message/1},
         {"store simple signed message", fun test_store_simple_signed_message/1},
