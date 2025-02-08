@@ -397,6 +397,32 @@ maybe_join(Items, Sep) ->
 
 %%% Tests
 
+parse_explicit_message_test() ->
+    Singleton1 = #{
+        <<"path">> => <<"/a">>,
+        <<"a">> => <<"b">>
+    },
+    ?assertEqual(
+        [
+            #{ <<"a">> => <<"b">>},
+            #{ <<"path">> => <<"a">>, <<"a">> => <<"b">> }
+        ],
+        from(Singleton1)
+    ),
+    DummyID = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    Singleton2 = #{
+        <<"path">> => <<"/", DummyID/binary, "/a">>
+    },
+    ?assertEqual([DummyID, #{ <<"path">> => <<"a">> }], from(Singleton2)),
+    Singleton3 = #{
+        <<"path">> => <<"/", DummyID/binary, "/a">>,
+        <<"a">> => <<"b">>
+    },
+    ?assertEqual(
+        [DummyID, #{ <<"path">> => <<"a">>, <<"a">> => <<"b">> }],
+        from(Singleton3)
+    ).
+
 %%% `to/1' function tests
 to_suite_test_() ->
     [
@@ -420,7 +446,6 @@ simple_to_test() ->
     Expected = #{<<"path">> => <<"/a">>, <<"test-key">> => <<"test-value">>},
     ?assertEqual(Expected, to(Messages)),
     ?assertEqual(Messages, from(to(Messages))).
-
 
 multiple_messages_to_test() ->
     Messages =
