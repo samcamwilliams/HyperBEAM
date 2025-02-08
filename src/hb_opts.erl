@@ -109,7 +109,6 @@ default_message() ->
         debug_print_binary_max => 60,
         debug_print_indent => 2,
         debug_print => false,
-        cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
@@ -123,10 +122,16 @@ default_message() ->
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             }
         ],
+        http_extra_opts =>
+            #{
+                force_message => true,
+                store => {hb_store_fs, #{ prefix => "main-cache" }},
+                cache_control => [<<"always">>]
+            },
         % Should the node store all signed messages?
         store_all_signed => true,
         % Should the node use persistent processes?
-        persistent_processes => true
+        persistent_processes => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
