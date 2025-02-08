@@ -198,7 +198,6 @@ message_to_json_struct(RawMsg, Features) ->
                 _ -> Sig
             end}
     ],
-    ?event(push, {fields, Fields}),
     HeaderCaseFields = normalize_props(Fields),
     {HeaderCaseFields}.
 

@@ -60,23 +60,18 @@ list(Path, Store) ->
 write(RawMsg, Opts) ->
     % Use the _structured_ format for calculating alternative IDs, but the
     % _tabm_ format for writing to the store.
-    Msg =
-        case is_map(RawMsg) andalso maps:is_key(<<"attestations">>, RawMsg) of
-            true ->
-                Enc = hb_message:convert(RawMsg, <<"httpsig@1.0">>, #{}),
-                Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-                maps:with(
-                    [<<"attestations">>] ++ hb_message:attested(Dec),
-                    RawMsg
-                );
-            false -> RawMsg
-        end,
-    do_write_message(
-        hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
-        calculate_alt_ids(RawMsg, Opts),
-        hb_opts:get(store, no_viable_store, Opts),
-        Opts
-    ).
+    case hb_message:with_only_attested(RawMsg) of
+        {ok, Msg} ->
+            ?event(debug_store, {storing, Msg}),
+            do_write_message(
+                hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
+                calculate_alt_ids(RawMsg, Opts),
+                hb_opts:get(store, no_viable_store, Opts),
+                Opts
+            );
+        {error, Err} ->
+            {error, Err}
+    end.
 do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
@@ -322,8 +317,9 @@ test_deeply_nested_complex_message(Opts) ->
             ],
             Opts
         ),
+    ?event(debug, {deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_converge:get(<<"data">>, DeepMsg)),
+    ?assertEqual([1,2,3], hb_converge:get(<<"deep-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
@@ -351,4 +347,4 @@ cache_suite_test_() ->
 
 run_test() ->
     Opts = #{ store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }} },
-    test_store_simple_signed_message(Opts).
+    test_deeply_nested_complex_message(Opts).

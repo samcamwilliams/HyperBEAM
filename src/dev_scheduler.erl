@@ -174,6 +174,20 @@ post_schedule(Msg1, Msg2, Opts) ->
                 end
         end,
     ?event({proc_id, ProcID}),
+    case hb_message:with_only_attested(ToSched) of
+        {ok, Filtered} ->
+            do_post_schedule(ProcID, Filtered, Msg1, Opts);
+        {error, _} ->
+            {ok,
+                #{
+                    <<"status">> => 400,
+                    <<"body">> => <<"Message is not valid.">>
+                }
+            }
+    end.
+
+%% @doc Post schedule the message.
+do_post_schedule(ProcID, ToSched, Msg1, Opts) ->
     PID =
         case dev_scheduler_registry:find(ProcID, false, Opts) of
             not_found ->

@@ -56,7 +56,7 @@
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
 -export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]).
--export([attested/1, attested/2, attested/3]).
+-export([attested/1, attested/2, attested/3, with_only_attested/1]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -118,6 +118,30 @@ id(Msg, RawAttestors, Opts) ->
             Opts
         ),
     hb_util:human_id(ID).
+
+%% @doc Return a message with only the attested keys.
+with_only_attested(Msg) when is_map(Msg) ->
+    case is_map(Msg) andalso maps:is_key(<<"attestations">>, Msg) of
+        true ->
+            try
+                Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
+                ?event(debug, {enc, Enc}),
+                Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
+                ?event(debug, {dec, Dec}),
+                Attested = hb_message:attested(Dec),
+                ?event(debug, {attested, Attested}),
+                {ok, maps:with(
+                    [<<"attestations">>] ++ Attested,
+                    Msg
+                )}
+            catch _:_ ->
+                {error, {could_not_normalize, Msg}}
+            end;
+        false -> {ok, Msg}
+    end;
+with_only_attested(Msg) ->
+    % If the message is not a map, it cannot be signed.
+    {ok, Msg}.
 
 %% @doc Sign a message with the given wallet. Only supports the `tx' format
 %% at the moment.
@@ -1008,6 +1032,22 @@ attested_keys_test(Codec) ->
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
     ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter))).
 
+deeply_nested_attested_keys_test() ->
+    Msg = #{
+        <<"a">> => 1,
+        <<"b">> => #{ <<"c">> => #{ <<"d">> => <<0:((1 + 1024) * 1024)>> } },
+        <<"e">> => <<0:((1 + 1024) * 1024)>>
+    },
+    Signed = attest(Msg, hb:wallet()),
+    {ok, WithOnlyAttested} = with_only_attested(Signed),
+    ?event(debug, {with_only_attested, WithOnlyAttested}),
+    ?assert(
+        match(
+            Msg,
+            maps:without([<<"attestations">>], WithOnlyAttested)
+        )
+    ).
+
 large_body_attested_keys_test(Codec) ->
     case Codec of
         <<"ans104@1.0">> ->
@@ -1091,6 +1131,3 @@ message_suite_test_() ->
         {"attested keys test", fun attested_keys_test/1},
         {"large body attested keys test", fun large_body_attested_keys_test/1}
     ]).
-
-simple_test() ->
-    large_body_attested_keys_test(<<"structured@1.0">>).

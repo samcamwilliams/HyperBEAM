@@ -72,9 +72,9 @@ grouper_test() ->
     M2 = #{ <<"path">> => <<"compute">>, <<"v">> => 1 },
     M3 = #{ <<"path">> => <<"compute">>, <<"v">> => 2 },
     M4 = #{ <<"path">> => <<"not-compute">>, <<"v">> => 3 },
-    G1 = hb_persistent:group(M1, M2, #{}),
-    G2 = hb_persistent:group(M1, M3, #{}),
-    G3 = hb_persistent:group(M1, M4, #{}),
+    G1 = hb_persistent:group(M1, M2, #{ persistent_processes => true }),
+    G2 = hb_persistent:group(M1, M3, #{ persistent_processes => true }),
+    G3 = hb_persistent:group(M1, M4, #{ persistent_processes => true }),
     ?event({group_samples, {g1, G1}, {g2, G2}, {g3, G3}}),
     ?assertEqual(G1, G2),
     ?assertNotEqual(G1, G3).

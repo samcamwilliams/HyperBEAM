@@ -244,10 +244,12 @@ push(Msg1, Msg2, Opts) ->
     {ok, Outbox} = hb_converge:resolve(
         Msg1,
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => PushMsgSlot },
-        Opts#{ spawn_worker => true }
+        Opts#{ hashpath => ignore }
     ),
+    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, {explicit, Outbox}}}),
     case ?IS_EMPTY_MESSAGE(Outbox) of
         true ->
+            ?event(push, {push_outbox_empty, {slot, PushMsgSlot}}),
             {ok, #{}};
         false ->
             {ok, maps:map(

@@ -3,7 +3,7 @@
 %%% bring trusted results into the local node, or as the `Execution-Device` of
 %%% an AO process.
 -module(dev_compute_lite).
--export([init/3, compute/3, normalize/3]).
+-export([init/3, compute/3, normalize/3, snapshot/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -11,6 +11,7 @@
 %% need to do anything special here.
 init(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 normalize(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
+snapshot(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 
 compute(Msg1, Msg2, Opts) ->
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
@@ -25,20 +26,18 @@ compute(Msg1, Msg2, Opts) ->
             Opts
         ),
     {ok, JSONRes} = do_compute(ProcessID, Slot, Opts),
-    case Accept of
-        <<"application/http">> ->
-            {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
-            {ok,
-                hb_converge:set(
-                    Msg1,
-                    <<OutputPrefix/binary, "/results">>,
-                    Msg,
-                    Opts
-                )
-            };
-        <<"application/json">> ->
-            {ok, #{ <<"body">> => JSONRes }}
-    end.
+    ?event(debug_res, {results, {accept, Accept}, {json_res, JSONRes}}),
+    {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
+    {ok,
+        hb_converge:set(
+            Msg1,
+            #{
+                <<OutputPrefix/binary, "/results">> => Msg,
+                <<OutputPrefix/binary, "/results/json">> => JSONRes
+            },
+            Opts
+        )
+    }.
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Slot, Opts) ->
