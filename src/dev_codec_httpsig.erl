@@ -128,11 +128,11 @@ attest(MsgToSign, _Req, Opts) ->
         end,
     EncWithoutBodyKeys =
         maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"body-keys">>],
+            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"converge-type-body-keys">>],
             hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
-    ?event(debug, {encoded_to_httpsig_for_attestation, Enc}),
+    ?event({encoded_to_httpsig_for_attestation, Enc}),
     Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
@@ -164,7 +164,7 @@ attest(MsgToSign, _Req, Opts) ->
         OldAttestations#{
             Attestor => AttestationWithHP
         },
-    MsgWithoutHP = maps:without([<<"hashpath">>, <<"body-keys">>], MsgToSign),
+    MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
     reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
 
 %% @doc Return the list of attested keys from a message. The message will have
@@ -184,8 +184,28 @@ attested(Msg, _Req, _Opts) ->
             dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
     case lists:member(<<"content-digest">>, Signed) of
         false -> {ok, Signed};
-        true -> {ok, Signed ++ [<<"body">>]}
+        true ->
+            {ok,
+                Signed
+                    ++ [<<"body">>]
+                    ++ normalize_body_keys(
+                        maps:get(<<"body-keys">>, Msg, [])
+                    )
+            }
     end.
+
+%% @doc Normalize a body key to be a list of keys.
+normalize_body_keys(List) when is_list(List) ->
+    List;
+normalize_body_keys(Body) when is_binary(Body) ->
+    Items = dev_codec_structured_conv:parse_list(Body),
+    lists:map(
+        fun({item, {X, Key}, _}) when X =:= binary; X =:= string ->
+                hd(hb_path:term_to_path_parts(Key, #{}));
+            (Other) -> Other
+        end,
+        Items
+    ).
 
 %% @doc If the `body` key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
@@ -360,7 +380,7 @@ verify(MsgToVerify, Req, _Opts) ->
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
-            EncWithoutBodyKeys = maps:without([<<"body-keys">>], Enc),
+            EncWithoutBodyKeys = maps:without([<<"body-keys">>, <<"converge-type-body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
                 EncWithoutBodyKeys#{
@@ -530,7 +550,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
                 #{},
                 SigParams
             ),
-            ?event(debug, {sig_params_map, ComponentIdentifiers}),
+            ?event({sig_params_map, ComponentIdentifiers}),
             % Construct the signature base using the parsed parameters
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
             {_, SignatureBase} = signature_base(Authority, Req, Res),

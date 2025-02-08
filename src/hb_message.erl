@@ -855,9 +855,11 @@ signed_deep_message_test(Codec) ->
             <<"nested_key2">> => <<"NESTED_VALUE2">>
         }
     },
+    EncDec = convert(convert(Msg, Codec, #{}), <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {enc_dec, EncDec}),
     {ok, SignedMsg} =
         dev_message:attest(
-            Msg,
+            EncDec,
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
@@ -1006,6 +1008,26 @@ attested_keys_test(Codec) ->
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
     ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter))).
 
+large_body_attested_keys_test(Codec) ->
+    case Codec of
+        <<"ans104@1.0">> ->
+            skip;
+        _ ->
+            Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> } },
+            Encoded = convert(Msg, <<"httpsig@1.0">>, #{}),
+            ?event(debug, {encoded, Encoded}),
+            Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+            ?event(debug, {decoded, Decoded}),
+            Signed = attest(Decoded, hb:wallet(), Codec),
+            ?event(debug, {signed, Signed}),
+            AttestedKeys = attested(Signed),
+            ?assert(lists:member(<<"a">>, AttestedKeys)),
+            ?assert(lists:member(<<"b">>, AttestedKeys)),
+            ?assert(lists:member(<<"c">>, AttestedKeys)),
+            MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
+            ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter)))
+    end.
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1066,8 +1088,9 @@ message_suite_test_() ->
         {"complex signed message test", fun complex_signed_message_test/1},
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
-        {"attested keys test", fun attested_keys_test/1}
+        {"attested keys test", fun attested_keys_test/1},
+        {"large body attested keys test", fun large_body_attested_keys_test/1}
     ]).
 
 simple_test() ->
-    signed_deep_message_test(<<"httpsig@1.0">>).
+    large_body_attested_keys_test(<<"structured@1.0">>).
