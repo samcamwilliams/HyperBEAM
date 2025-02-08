@@ -86,8 +86,6 @@
 %%% 
 %%% `update_hashpath':  Whether to add the `Msg2' to `HashPath' for the `Msg3'.
 %%% 					Default: true.
-%%% `cache_results':    Whether to cache the resolved `Msg3'.
-%%% 					Default: true.
 %%% `add_key':          Whether to add the key to the start of the arguments.
 %%% 					Default: `<not set>'.
 -module(hb_converge).
