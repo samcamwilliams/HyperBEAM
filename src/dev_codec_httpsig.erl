@@ -114,26 +114,26 @@ id(Msg, Params, Opts) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    {HPKey, MsgWithHPTForm} =
+    % The hashpath, if present, is encoded as a HTTP Sig tag,
+    % added as a field on the attestation, and then the field is removed from the Msg,
+    % so that it is not included in the actual signature matierial.
+    %
+    % In this sense, the hashpath is a property of the attestation
+    % and the signature metadata, not the message itself, being signed
+    % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
+    {SigParams, HashPath, MsgWithoutHP} =
         case maps:get(<<"hashpath">>, MsgToSign, undefined) of
-            undefined -> {undefined, MsgToSign};
-            HP ->
-                % Add the hashpath to the message with an ID derivative of its
-                % name, such that it can be differentiated from other signatures
-                % on different hashpaths that lead to the same message.
-                HashPathTag =
-                    hb_util:to_hex(binary:part(crypto:hash(sha256, HP), 1, 8)),
-                HashPathKey = <<"hashpath-", HashPathTag/binary>>,
-                {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
+            undefined -> {#{}, undefined, MsgToSign};
+            HP -> {#{ tag => HP }, HP, maps:without([<<"hashpath">>], MsgToSign)} 
         end,
     EncWithoutBodyKeys =
         maps:without(
             [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"converge-type-body-keys">>],
-            hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
+            hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
     ?event({encoded_to_httpsig_for_attestation, Enc}),
-    Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
+    Authority = authority(lists:sort(maps:keys(Enc)), SigParams, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]`
@@ -155,17 +155,14 @@ attest(MsgToSign, _Req, Opts) ->
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
     AttestationWithHP =
-        case HPKey of
+        case HashPath of
             undefined -> Attestation;
-            HPKey -> Attestation#{ HPKey => maps:get(<<"hashpath">>, MsgToSign) }
+            HashPath -> Attestation#{ <<"hashpath">> => HashPath }
         end,
     OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
-    NewAttestations =
-        OldAttestations#{
-            Attestor => AttestationWithHP
-        },
-    MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
-    reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
+    reset_hmac(MsgWithoutHP#{<<"attestations">> =>
+        OldAttestations#{ Attestor => AttestationWithHP }
+    }).
 
 %% @doc Return the list of attested keys from a message. The message will have
 %% had the `attestations` key removed and the signature inputs added to the
