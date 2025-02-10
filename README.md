@@ -111,7 +111,7 @@ space, leveraging function application and composition at its core.
 > in their outputs, or even _sharded_ across arbitrary sets of nodes, as necessary
 
 If a `message` does not explicitly specify a `device`, its implied `device` is `Map`,
-which simply returns the binary or message at a given named function.
+which simply returns the binary or `message` at a given named function.
 
 ## Devices
 
@@ -123,3 +123,20 @@ to add and remove devices as necessary.
 ### Preloaded Devices
 
 The following devices are included in the `preloaded_devices` of a HyperBEAM node:
+
+## IDs, Hashpaths & Converge.
+
+Along the path of executing and orchestrating `devices`, HyperBEAM will compute a
+a number of resultant `messages` as well as a series of cryptographic linkages. First,
+each `message` has a cryptographic ID that uniquely identifies it in the space of computation.
+Second, each `message` will have linked the series of function applications that produced it.
+This value is called the `hashpath` and can be undestood as a memoization of the tree of execution
+that was applied to produce the message.
+
+Due to it Merkalized form, a `hashpath` can be used as concise, and cryptographically verifiable, way
+to reconstruct the entire branch of inputs used to generate a given `message`.
+
+Also, because multiple paths of executions may produce the same resultant `message`, HyperBEAM is able
+to compute and store "links" between `hashpaths` that each point to the same underlying `message`.
+In this sense, HyperBEAM "converges" computation, linking paths to the same data, similar to how HTTP
+may respond with a `Redirect` to a Hyperlink.
