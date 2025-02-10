@@ -6,9 +6,9 @@ Erlang-based (BEAM) client implementing a number of devices for the protocol.
 AO-Core is a protocol built to enable decentralized computations, offering a
 series of universal primitives to achieve this end. Instead of enforcing a single,
 monolithic architecture, AO-Core provides a framework into which any number of
-different `devices' can be attached.
+different computational models, encapsulated as primitive `devices`, can be attached.
 
-AO's protocol offers a framework for decentralized computations, built upon the
+AO-Core's protocol offers a framework for decentralized computations, built upon the
 following fundamental primitives:
 
 1. Hashpaths: A mechanism for referencing locations in a program's state-space
@@ -19,9 +19,9 @@ as described in the [HTTP Semantics RFC](https://www.rfc-editor.org/rfc/rfc9110.
 3. A unified protocol for expressing `attestations` of the `states` found at
 particular `hashpaths`. These attestations allow nodes to participate in varied
 economic and cryptographic mechanisms to prove and challenge each-other's
-representations regarding the programs that operate inside the AO protocol.
+representations regarding the programs that operate inside the AO-Core protocol.
 4. A meta-VM that allows any number of different virtual machines and computational
-models (`devices`) to be executed inside the AO protocol, while enabling their
+models (`devices`) to be executed inside the AO-Core protocol, while enabling their
 states and inputs to be calculated and attested to in a unified format.
 
 ## What is HyperBeam?
@@ -32,7 +32,7 @@ AO enables; abstracting hardware provisioning and details from the execution of
 individual programs.
 
 HyperBEAM node operators can offer the services of their machine to others inside
-the network by electing to execute any number of different devices, charging 
+the network by electing to execute any number of different `devices`, charging 
 users for their computation as necessary.
 
 Each HyperBEAM node is configured using the `~meta@1.0` device, which provides
@@ -41,8 +41,12 @@ payments information, amongst other configuration options.
 
 ## Getting Started
 
-To begin using HyperBeam, you will need to install the Erlang runtime and the
-HyperBeam client.
+To begin using HyperBeam, you will need to install:
+
+- The Erlang runtime (OTP 27)
+- Rebar3
+
+Then you can clone the HyperBEAM source and build it:
 
 ```bash
 git clone https://github.com/ao-labs/hyperbeam.git
