@@ -16,7 +16,8 @@
 %%%     Msg1.HashPath = Msg1.ID
 %%%     Msg3.HashPath = Msg1.Hash(Msg1.HashPath, Msg2.ID)
 %%%     Msg3.{...} = Converge.apply(Msg1, Msg2)
-%%%     ...'''
+%%%     ...
+%%% '''
 %%% 
 %%% A message's ID itself includes its HashPath, leading to the mixing of
 %%% a Msg2's merkle list into the resulting Msg3's HashPath. This allows a single
@@ -45,8 +46,8 @@ hd(Msg2, Opts) ->
     case pop_request(Msg2, Opts) of
         undefined -> undefined;
         {Head, _} ->
-            % `term_to_path` returns the full path, so we need to take the
-            % `hd` of our `Head`.
+            % `term_to_path' returns the full path, so we need to take the
+            % `hd' of our `Head'.
             erlang:hd(term_to_path_parts(Head, Opts))
     end.
 
@@ -68,7 +69,7 @@ tl(Path, Opts) when is_list(Path) ->
     end.
 
 %% @doc Return the `Remaining-Path' of a message, from its hidden `Converge'
-%% key. Does not use the `get` or set `hb_private` functions, such that it
+%% key. Does not use the `get' or set `hb_private' functions, such that it
 %% can be safely used inside the main Converge resolve function.
 priv_remaining(Msg, _Opts) ->
     Priv = hb_private:from_message(Msg),

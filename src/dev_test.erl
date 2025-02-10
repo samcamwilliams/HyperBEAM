@@ -45,8 +45,8 @@ init(Msg, _Msg2, Opts) ->
     ?event({init_called_on_dev_test, Msg}),
     {ok, hb_converge:set(Msg, #{ <<"already-seen">> => [] }, Opts)}.
 
-%% @doc Example `restore/3' handler. Sets the hidden key `Test/Started` to the
-%% value of `Current-Slot` and checks whether the `Already-Seen` key is valid.
+%% @doc Example `restore/3' handler. Sets the hidden key `Test/Started' to the
+%% value of `Current-Slot' and checks whether the `Already-Seen' key is valid.
 restore(Msg, _Msg2, Opts) ->
     ?event({restore_called_on_dev_test, Msg}),
     case hb_converge:get(<<"already-seen">>, Msg, Opts) of
@@ -64,7 +64,7 @@ restore(Msg, _Msg2, Opts) ->
             }
     end.
 
-%% @doc Example implementation of an `imported` function for a WASM
+%% @doc Example implementation of an `imported' function for a WASM
 %% executor.
 mul(Msg1, Msg2) ->
     ?event(mul_called),

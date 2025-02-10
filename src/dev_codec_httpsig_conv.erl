@@ -2,22 +2,10 @@
 %%% @doc A codec for the that marshals TABM encoded messages to and from the
 %%% "HTTP" message structure.
 %%% 
-%%% The HTTP Message is an Erlang Map with the following shape:
-%%% #{ 
-%%%     headers => [
-%%%         {<<"example-header">>, <<"value">>}
-%%%     ],
-%%%     body: <<"some body">>
-%%% }
-%%% 
 %%% Every HTTP message is an HTTP multipart message.
 %%% See https://datatracker.ietf.org/doc/html/rfc7578
 %%%
 %%% For each TABM Key:
-%%% 
-%%% The TABM Key will be ignored if:
-%%% - The field is private (according to hb_private:is_private/1)
-%%% - The field is one of ?REGEN_KEYS
 %%%
 %%% The Key/Value Pair will be encoded according to the following rules:
 %%%     "signatures" -> {SignatureInput, Signature} header Tuples, each encoded
@@ -192,7 +180,7 @@ from_body_parts(TABM, [Part | Rest]) ->
             from_body_parts(maps:put(PartName, ParsedPart, TABM), Rest)
     end.
 
-%% @doc Populate the `/attestations` key on the TABM with the dictionary of 
+%% @doc Populate the `/attestations' key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
 attestations_from_signature(Map, _HPs, not_found, _RawSigInput) ->
     ?event({no_sigs_found_in_from, {msg, Map}}),
@@ -337,8 +325,8 @@ to(TABM, Opts) when is_map(TABM) ->
                     <<"body">> => <<FinalBody/binary, ?CRLF/binary, "--", Boundary/binary, "--">>
                 }
         end,
-    % Add the content-digest to the HTTP message. `generate_content_digest/1`
-    % will return a map with the `content-digest` key set, but the body removed,
+    % Add the content-digest to the HTTP message. `generate_content_digest/1'
+    % will return a map with the `content-digest' key set, but the body removed,
     % so we merge the two maps together to maintain the body and the content-digest.
     Enc2 =
         maps:merge(
@@ -389,8 +377,8 @@ hashpaths_from_message(Msg) ->
         maps:get(<<"attestations">>, Msg, #{})
     ).
 
-%% @doc Extract all keys labelled `hashpath*` from the attestations, and add them
-%% to the HTTP message as `hashpath*` keys.
+%% @doc Extract all keys labelled `hashpath*' from the attestations, and add them
+%% to the HTTP message as `hashpath*' keys.
 extract_hashpaths(Map) ->
     maps:filter(
         fun (<<"hashpath", _/binary>>, _) -> true;

@@ -1,15 +1,15 @@
 %%% @doc Tests for the core Converge resolution engine.
-%%% Uses a series of different `Opts` values to test the resolution engine's 
+%%% Uses a series of different `Opts' values to test the resolution engine's 
 %%% execution under different circumstances.
 -module(hb_converge_test_vectors).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
 
-%% @doc Easy hook to make a test executable via the command line:
-%% `rebar3 eunit --test hb_converge_test_vectors:run_test`
+%% Easy hook to make a test executable via the command line:
+%% `rebar3 eunit --test hb_converge_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
-% run_test() ->
-%     hb_test_utils:run(normal, as, test_suite(), test_opts()).
+%% run_test() ->
+%%     hb_test_utils:run(normal, as, test_suite(), test_opts()).
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
@@ -601,13 +601,13 @@ list_transform_test(Opts) ->
 
 as_test(Opts) ->
     % Create a message with the test device, which implements the test_func
-    % function. It normally returns `GOOD_FUNCTION`.
+    % function. It normally returns `GOOD_FUNCTION'.
     Msg = #{
         <<"device">> => <<"test-device@1.0">>,
         <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
     },
     ?assertEqual(<<"GOOD_FUNCTION">>, hb_converge:get(<<"test_func">>, Msg, Opts)),
-    % Now use the `as` keyword to subresolve a key with the message device.
+    % Now use the `as' keyword to subresolve a key with the message device.
     ?assertMatch(
         {ok, #{ <<"test_key">> := <<"MESSAGE">> }},
         hb_converge:resolve(

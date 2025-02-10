@@ -137,10 +137,10 @@ attest(MsgToSign, _Req, Opts) ->
     Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
-    % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]`
+    % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
     Attestor = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
     SigName = address_to_sig_name(Address),
-    % Calculate the id and place the signature into the `attestations` key of the message.
+    % Calculate the id and place the signature into the `attestations' key of the message.
     Attestation =
         #{
             <<"id">> => crypto:hash(sha256, Signature),
@@ -168,7 +168,7 @@ attest(MsgToSign, _Req, Opts) ->
     MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
     reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
 
-%% @doc If the `body` key is present, replace it with a content-digest.
+%% @doc If the `body' key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
     case maps:get(<<"body">>, Msg, not_found) of
         not_found -> Msg;
@@ -292,7 +292,7 @@ hmac(Msg) ->
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
 
-%% @doc Verify different forms of httpsig attested messages. `dev_message:verify`
+%% @doc Verify different forms of httpsig attested messages. `dev_message:verify'
 %% already places the keys from the attestation message into the root of the
 %% message.
 verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
