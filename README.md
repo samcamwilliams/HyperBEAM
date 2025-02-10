@@ -92,6 +92,27 @@ Your-Config-Tag: Your-Config-Tag
 The individual headers provided in the message will each be interpreted as additional
 configuration options for the node.
 
+## Messages
+
+HyperBEAM describes every piece of data as a `message`, which can be interpreted as
+a binary term or as collection of named functions aka. a `Map` of functions.
+
+Every message _may_ specify a `device` which is interpreted by the AO-Core compatible
+system in order to operate upon the message's contents, which to say read it, or
+execute it. Executing a named function within a message, providing a map of arguments,
+results in yet another `message`.
+
+In this way, A `message` _begets_ another `message`, giving rise to a vast computational
+space, leveraging function application and composition at its core.
+
+> Notably, this computation does not require the computor of a message
+> to know the values of all the keys contained therin. In other words, keys
+> may be _lazily_ evaluated, and only by computors that are interested
+> in their outputs, or even _sharded_ across arbitrary sets of nodes, as necessary
+
+If a `message` does not explicitly specify a `device`, its implied `device` is `Map`,
+which simply returns the binary or message at a given named function.
+
 ## Devices
 
 HyperBeam supports a number of different devices, each of which enable different
