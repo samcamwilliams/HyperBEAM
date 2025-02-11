@@ -1,5 +1,5 @@
 %%% @doc A device that looks up an ID from a local store and returns it, honoring
-%%% the `accept` key to return the correct format.
+%%% the `accept' key to return the correct format.
 -module(dev_lookup).
 -export([read/3]).
 -include("include/hb.hrl").

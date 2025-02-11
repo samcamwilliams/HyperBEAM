@@ -5,7 +5,7 @@
 %%% compound type depths, as well as limited floating point representations.
 %%% 
 %%% As with all Converge codecs, its target format (the format it expects to 
-%%% receive in the `to/1` function, and give in `from/1`) is TABM.
+%%% receive in the `to/1' function, and give in `from/1') is TABM.
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
@@ -71,7 +71,7 @@ from(Other) -> hb_path:to_binary(Other).
 %% @doc Convert a TABM into a native HyperBEAM message.
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM0) ->
-    % First, handle special cases of empty items, which `ar_bundles` cannot
+    % First, handle special cases of empty items, which `ar_bundles' cannot
     % handle. Needs to be transformed into a list (unfortunately) so that we
     % can also remove the "Converge-Type-" prefix from the key.
     TABM1 =

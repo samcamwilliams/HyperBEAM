@@ -45,7 +45,7 @@
 %%%
 %%%     DevMod:info : Optional. Returns a map of options for the device. All 
 %%%                   options are optional and assumed to be the defaults if 
-%%%                   not specified. This function can accept a `Message1` as 
+%%%                   not specified. This function can accept a `Message1' as 
 %%%                   an argument, allowing it to specify its functionality 
 %%%                   based on a specific message if appropriate.
 %%% 
@@ -62,12 +62,12 @@
 %%% 
 %%%     info/default : A function that should be used to handle all keys that
 %%%                    are not explicitly implemented by the device. Defaults to
-%%%                    the `dev_message` device, which contains general keys for 
+%%%                    the `dev_message' device, which contains general keys for 
 %%%                    interacting with messages.
 %%% 
 %%%     info/default_mod : A different device module that should be used to
 %%%                    handle all keys that are not explicitly implemented
-%%%                    by the device. Defaults to the `dev_message` device.
+%%%                    by the device. Defaults to the `dev_message' device.
 %%% 
 %%%     info/grouper : A function that returns the concurrency 'group' name for
 %%%                    an execution. Executions with the same group name will
@@ -88,6 +88,7 @@
 %%% 					Default: true.
 %%% `add_key':          Whether to add the key to the start of the arguments.
 %%% 					Default: `<not set>'.
+%%% '''
 -module(hb_converge).
 %%% Main Converge API:
 -export([resolve/2, resolve/3, resolve_many/2]).
@@ -198,7 +199,7 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 2, cache_lookup}, Opts),
     % Lookup request in the cache. If we find a result, return it.
     % If we do not find a result, we continue to the next stage,
-    % unless the cache lookup returns `halt` (the user has requested that we 
+    % unless the cache lookup returns `halt' (the user has requested that we 
     % only return a result if it is already in the cache).
     case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
@@ -229,8 +230,8 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
     % Erlang cluster) processes that are already performing the execution.
     % Before we search for a live executor, we check if the device specifies 
     % a function that tailors the 'group' name of the execution. For example, 
-    % the `dev_process` device 'groups' all calls to the same process onto
-    % calls to a single executor. By default, `{Msg1, Msg2}` is used as the
+    % the `dev_process' device 'groups' all calls to the same process onto
+    % calls to a single executor. By default, `{Msg1, Msg2}' is used as the
     % group name.
     case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
         {leader, ExecName} ->
@@ -416,7 +417,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                     }
                 ),
                 % If the function call fails, we raise an error in the manner
-                % indicated by caller's `#Opts`.
+                % indicated by caller's `#Opts'.
                 error_execution(
                     ExecName,
                     Msg2,
@@ -574,7 +575,7 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
     end.
 
 %% @doc Force the result of a device call into a message if the result is not
-%% requested by the `Opts`.
+%% requested by the `Opts'.
 maybe_force_message({Status, Res}, Opts) ->
     case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
         true when is_list(Res) -> {Status, normalize_keys(Res)};
@@ -588,7 +589,7 @@ maybe_force_message({Status, Res}, Opts) ->
 %% 
 %% Additionally, this function supports the `{as, Device, Msg}' syntax, which
 %% allows the key to be resolved using another device to resolve the key,
-%% while maintaining the tracability of the `HashPath` of the output message.
+%% while maintaining the tracability of the `HashPath' of the output message.
 %% 
 %% Returns the value of the key if it is found, otherwise returns the default
 %% provided by the user, or `not_found' if no default is provided.
@@ -653,7 +654,7 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
         [] -> Msg1;
         [Key|_] ->
             % Get the value to set. Use Converge by default, but fall back to
-            % getting via `maps` if it is not found.
+            % getting via `maps' if it is not found.
             Val =
                 case get(Key, Msg2, internal_opts(Opts)) of
                     not_found -> maps:get(Key, Msg2);
@@ -805,7 +806,7 @@ message_to_fun(Msg, Key, Opts) ->
 			?event(converge_devices, {no_override_handler, {dev, Dev}, {key, Key}}),
 			case {find_exported_function(Msg, Dev, Key, 3, Opts), Exported} of
 				{{ok, Func}, true} ->
-					% Case 3: The device has a function of the name `Key`.
+					% Case 3: The device has a function of the name `Key'.
 					{ok, Dev, Func};
 				_ ->
 					case {maps:find(default, Info), Exported} of
@@ -927,10 +928,10 @@ find_exported_function(Msg, Mod, Key, Arity, Opts) ->
 
 %% @doc Check if a device is guarding a key via its `exports' list. Defaults to
 %% true if the device does not specify an `exports' list. The `info' function is
-%% always exported, if it exists. Elements of the `exludes` list are not
+%% always exported, if it exists. Elements of the `exludes' list are not
 %% exported. Note that we check for info _twice_ -- once when the device is
 %% given but the info result is not, and once when the info result is given.
-%% The reason for this is that `info/3` calls other functions that may need to
+%% The reason for this is that `info/3' calls other functions that may need to
 %% check if a key is exported, so we must avoid infinite loops. We must, however,
 %% also return a consistent result in the case that only the info result is
 %% given, so we check for it in both cases.

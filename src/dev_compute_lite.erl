@@ -1,6 +1,6 @@
 %%% @doc Simple wrapper module that enables compute on remote machines,
 %%% implementing the JSON-Iface. This can be used either as a standalone, to 
-%%% bring trusted results into the local node, or as the `Execution-Device` of
+%%% bring trusted results into the local node, or as the `Execution-Device' of
 %%% an AO process.
 -module(dev_compute_lite).
 -export([compute/3]).

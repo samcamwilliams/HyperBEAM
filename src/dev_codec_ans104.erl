@@ -1,4 +1,4 @@
-%%% @doc Codec for managing transformations from `ar_bundles`-style Arweave TX
+%%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
 -export([to/1, from/1, attest/3, verify/3]).
@@ -25,7 +25,7 @@
     ]
 ).
 
-%% @doc Sign a message using the `priv_wallet` key in the options.
+%% @doc Sign a message using the `priv_wallet' key in the options.
 attest(Msg, _Req, Opts) ->
     Signed = ar_bundles:sign_item(
         to(Msg),
@@ -137,9 +137,9 @@ to(Binary) when is_binary(Binary) ->
 to(TX) when is_record(TX, tx) -> TX;
 to(RawTABM) when is_map(RawTABM) ->
     % The path is a special case so we normalized it first. It may have been
-    % modified by `hb_converge` in order to set it to the current key that is
+    % modified by `hb_converge' in order to set it to the current key that is
     % being executed. We should check whether the path is in the
-    % `priv/Converge/Original-Path` field, and if so, use that instead of the
+    % `priv/Converge/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
     TABM = hb_converge:normalize_keys(RawTABM),

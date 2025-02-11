@@ -9,8 +9,8 @@
 	firmware, kernel, initrd, append]).
 
 %%% Test constants
-%% Matching attestation report is found in `test/snp-attestation` in 
-%% `dev_codec_flat:serialize/1`'s format. Alternatively, set the `TEST_NODE`
+%% Matching attestation report is found in `test/snp-attestation' in 
+%% `dev_codec_flat:serialize/1''s format. Alternatively, set the `TEST_NODE'
 %% constant to a live node to run the tests against it.
 -define(TEST_NODE, undefined).
 -define(TEST_TRUSTED_SOFTWARE, #{
@@ -167,7 +167,7 @@ generate(_M1, _M2, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_valid_wallet, Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     ?event({snp_wallet, Wallet}),
-    % Remove the `priv*` keys from the options.
+    % Remove the `priv*' keys from the options.
     {ok, PublicNodeMsgID} =
         dev_message:id(
             NodeMsg =
@@ -205,12 +205,12 @@ is_debug(Report) ->
     (hb_converge:get(<<"policy">>, Report, #{}) band (1 bsl 19)) =/= 0.
 
 %% @doc Ensure that all of the software hashes are trusted. The caller may set
-%% a specific device to use for the `is-trusted` key. The device must then
-%% implement the `trusted` resolver.
+%% a specific device to use for the `is-trusted' key. The device must then
+%% implement the `trusted' resolver.
 execute_is_trusted(M1, Msg, NodeOpts) ->
     % Generate a modified version of the base message, with the 
-    % `is-trusted-device` key set as the device, if provided by the caller.
-    % If not provided, use the default resolver (this module's `trusted`
+    % `is-trusted-device' key set as the device, if provided by the caller.
+    % If not provided, use the default resolver (this module's `trusted'
     % function).
     ModM1 =
         case hb_converge:get(<<"is-trusted-device">>, M1, NodeOpts) of
@@ -244,7 +244,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
     {ok, Result}.
 
 %% @doc Default implementation of a resolver for trusted software. Searches the
-%% `trusted` key in the base message for a list of trusted values, and checks
+%% `trusted' key in the base message for a list of trusted values, and checks
 %% if the value in the request message is a member of that list.
 trusted(_Msg1, Msg2, NodeOpts) ->
     Key = hb_converge:get(<<"key">>, Msg2, NodeOpts),
@@ -268,7 +268,7 @@ generate_nonce(RawAddress, RawNodeMsgID) ->
 	NodeMsgID = hb_util:native_id(RawNodeMsgID),
     << Address/binary, NodeMsgID/binary >>.
 
-%% @doc Generate an attestation report and emit it via HTTP.
+%% Generate an attestation report and emit it via HTTP.
 % generate_test() ->
 % 	Trusted =
 % 		#{

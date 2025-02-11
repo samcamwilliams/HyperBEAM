@@ -57,7 +57,7 @@
 -include_lib("include/hb.hrl").
 
 %% The frequency at which the process state should be cached. Can be overridden
-%% with the `cache_frequency` option.
+%% with the `cache_frequency' option.
 -define(DEFAULT_CACHE_FREQ, 10).
 
 %% @doc When the info key is called, we should return the process exports.
@@ -182,7 +182,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                     ToProcess,
                     Opts
                 ),
-            % Cache the `Memory` key every `Cache-Frequency` slots.
+            % Cache the `Memory' key every `Cache-Frequency' slots.
             Freq =
                 hb_opts:get(
                     process_cache_frequency,
@@ -401,13 +401,13 @@ run_as(Key, Msg1, Msg2, Opts) ->
     end.
 
 %% @doc Change the message to for that has the device set as this module.
-%% In situations where the key that is `run_as` returns a message with a 
+%% In situations where the key that is `run_as' returns a message with a 
 %% transformed device, this is useful.
 as_process(Msg1, Opts) ->
     {ok, Proc} = dev_message:set(Msg1, #{ <<"device">> => <<"Process@1.0">> }, Opts),
     Proc.
 
-%% @doc Helper function to store a copy of the `process` key in the message.
+%% @doc Helper function to store a copy of the `process' key in the message.
 ensure_process_key(Msg1, Opts) ->
     case hb_converge:get(<<"process">>, {as, dev_message, Msg1}, Opts) of
         not_found ->

@@ -173,7 +173,7 @@ parse_full_path(RelativeRef) ->
         maps:from_list(QKVList)
     }.
 
-%% @doc Step 2: Decode, split and sanitize the path. Split by `/` but avoid
+%% @doc Step 2: Decode, split and sanitize the path. Split by `/' but avoid
 %% subpath components, such that their own path parts are not dissociated from
 %% their parent path.
 path_messages(RawBin) when is_binary(RawBin) ->
@@ -240,7 +240,7 @@ apply_types(Msg) ->
     ).
 
 %% @doc Step 4: Group headers/query by N-scope.
-%% `N.Key` => applies to Nth step. Otherwise => global
+%% `N.Key' => applies to Nth step. Otherwise => `global'
 group_scoped(Map, Msgs) ->
     {NScope, Global} =
         maps:fold(
@@ -312,8 +312,8 @@ parse_part(Part) ->
     end.
 
 %% @doc Parse part modifiers:
-%% 1. `~Device` => {as, Device, Msg}
-%% 2. `&K=V` => Msg#{ K => V }
+%% 1. `~Device' => `{as, Device, Msg}'
+%% 2. `&K=V' => `Msg#{ K => V }'
 parse_part_mods([], Msg) -> Msg;
 parse_part_mods(<<>>, Msg) -> Msg;
 parse_part_mods(<<"~", PartMods/binary>>, Msg) ->
@@ -339,7 +339,7 @@ parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->
 
 %% @doc Extrapolate the inlined key-value pair from a path segment. If the
 %% key has a value, it may provide a type (as with typical keys), but if a
-%% value is not provided, it is assumed to be a boolean `true`.
+%% value is not provided, it is assumed to be a boolean `true'.
 parse_inlined_key_val(Bin) ->
     case part([$=, $&], Bin) of
         {no_match, K, <<>>} -> {K, true};

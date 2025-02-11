@@ -6,7 +6,7 @@
 %%% `hb_http:reply/4' is used to respond to the client, handling the 
 %%% process of converting a message back into an HTTP response.
 %%% 
-%%% The router uses an `Opts` message as its Cowboy initial state, 
+%%% The router uses an `Opts' message as its Cowboy initial state, 
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
@@ -15,9 +15,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%% @doc Starts the HTTP server. Optionally accepts an `Opts` message, which
+%% @doc Starts the HTTP server. Optionally accepts an `Opts' message, which
 %% is used as the source for server configuration settings, as well as the
-%% `Opts` argument to use for all Converge resolution requests downstream.
+%% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
     ?event(http, {start_store, "main-cache"}),
     Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
