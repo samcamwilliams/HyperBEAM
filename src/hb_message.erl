@@ -55,7 +55,7 @@
 -module(hb_message).
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
--export([verify/1, attest/2, attest/3, signers/1, type/1, minimize/1]).
+-export([verify/1, verify/2, attest/2, attest/3, signers/1, type/1, minimize/1]).
 -export([attested/1, attested/2, attested/3, with_only_attested/1]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
@@ -166,8 +166,9 @@ attested(Msg, Opts, Format) ->
     AttestedKeys.
 
 %% @doc wrapper function to verify a message.
-verify(Msg) ->
-    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => <<"all">> }, #{}),
+verify(Msg) -> verify(Msg, <<"all">>).
+verify(Msg, Attestors) ->
+    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => Attestors }, #{}),
     Res.
 
 %% @doc Return the unsigned version of a message in Converge format.

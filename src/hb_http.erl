@@ -378,24 +378,28 @@ req_to_tabm_singleton(Req, Opts) ->
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
     Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
-    SignedHeaders = remove_unsigned_fields(Msg, Opts),
-    case hb_converge:get(<<"signature">>, SignedHeaders, not_found, Opts) of
-        not_found -> maybe_add_unsigned(Req, Msg, Opts);
-        _ ->
-            case hb_message:verify(Msg) of
+    {ok, SignedMsg} = remove_unsigned_fields(Msg, Opts),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
+    Signers = hb_message:signers(SignedMsg),
+    case ForceSignedRequests orelse hb_message:verify(SignedMsg, Signers) of
+        true ->
+            ?event(http, {verified_signature, Msg}),
+            case hb_opts:get(store_all_signed, false, Opts) of
                 true ->
-                    ?event(http, {verified_signature, Msg}),
-                    case hb_opts:get(store_all_signed, false, Opts) of
-                        true ->
-                            hb_cache:write(Msg, Opts);
-                        false ->
-                            do_nothing
-                    end,
-                    maybe_add_unsigned(Req, Msg, Opts);
+                    hb_cache:write(Msg, Opts);
                 false ->
-                    ?event(http, {invalid_signature, Msg}),
-                    throw({invalid_signature, Msg})
-            end
+                    do_nothing
+            end,
+            maybe_add_unsigned(Req, SignedMsg, Opts);
+        false ->
+            ?event(http,
+                {invalid_signature,
+                    {raw, RawHeaders},
+                    {signed, SignedMsg},
+                    {force, ForceSignedRequests}
+                }
+            ),
+            throw({invalid_signature, SignedMsg})
     end.
 
 %% @doc Add the method and path to a message, if they are not already present.
@@ -426,12 +430,10 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
         ),
     Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
-remove_unsigned_fields(Msg, Opts) ->
-    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
-    Sig = maps:get(<<"signature">>, Msg, undefined),
-    case ForceSignedRequests orelse Sig /= undefined of
-        true -> hb_message:with_only_attested(Msg);
-        false -> Msg
+remove_unsigned_fields(Msg, _Opts) ->
+    case hb_message:signers(Msg) of
+        [] -> {ok, Msg};
+        _ -> hb_message:with_only_attested(Msg)
     end.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
