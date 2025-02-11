@@ -77,7 +77,7 @@ For example, in order to start a node using a custom port and Arweave wallet,
 you could execute the following command:
 
 ```bash
-rebar3 shell --eval "hb:start_mainnet(#{ port => 10001, key_location => 'path/to/my/wallet.key' })."
+rebar3 shell --eval "hb:start_mainnet(#{ port => 9001, key_location => 'path/to/my/wallet.key' })."
 ```
 
 Additionally, if you would like to modify a running node's configuration, you can
@@ -100,18 +100,20 @@ a binary term or as collection of named functions aka. a `Map` of functions.
 Every message _may_ specify a `device` which is interpreted by the AO-Core compatible
 system in order to operate upon the message's contents, which to say read it, or
 execute it. Executing a named function within a message, providing a map of arguments,
-results in yet another `message`.
+results in another `message`.
 
-In this way, A `message` _begets_ another `message`, giving rise to a vast computational
-space, leveraging function application and composition at its core.
+In this way, `messages` in AO-Core always _beget_ further `messages`, giving rise 
+to a vast computational space, leveraging function application and composition at its core.
+For those familiar with the concept, this programming model is similar to that 
+described by traditional `combinator` systems.
 
 > Notably, this computation does not require the computor of a message
 > to know the values of all the keys contained therin. In other words, keys
 > may be _lazily_ evaluated, and only by computors that are interested
 > in their outputs, or even _sharded_ across arbitrary sets of nodes, as necessary
 
-If a `message` does not explicitly specify a `device`, its implied `device` is `Map`,
-which simply returns the binary or `message` at a given named function.
+If a `message` does not explicitly specify a `device`, its implied `device` is a
+ `message@1.0`, which simply returns the binary or `message` at a given named function.
 
 ## Devices
 
@@ -124,19 +126,74 @@ to add and remove devices as necessary.
 
 The following devices are included in the `preloaded_devices` of a HyperBEAM node:
 
-## IDs, Hashpaths & Converge.
+- `~meta@1.0`: The `~meta@1.0` device is used to configure the node's hardware,
+supported devices, metering and payments information, amongst other configuration options.
+Additionally, this device allows external clients to find and validate the configuration
+of nodes in the network.
 
-Along the path of executing and orchestrating `devices`, HyperBEAM will compute a
-a number of resultant `messages` as well as a series of cryptographic linkages. First,
-each `message` has a cryptographic ID that uniquely identifies it in the space of computation.
-Second, each `message` will have linked the series of function applications that produced it.
-This value is called the `hashpath` and can be undestood as a memoization of the tree of execution
-that was applied to produce the message.
+- `~relay@1.0`: The `~relay@1.0` device is used to relay messages between nodes
+and the wider HTTP network. It offers an interface for sending and receiving messages
+to and from nodes in the network, using a variety of execution strategies.
 
-Due to it Merkalized form, a `hashpath` can be used as concise, and cryptographically verifiable, way
-to reconstruct the entire branch of inputs used to generate a given `message`.
+- `~wasm64@1.0`: The `~wasm64@1.0` device is used to execute WebAssembly code, using
+the [Web Assembly Micro-Runtime (WAMR)](https://github.com/bytecodealliance/wasm-micro-runtime)
+under-the-hood. WASM modules can be called from any other device, and can also be
+used to execute `devices` written in languages such as Rust, C, and C++.
 
-Also, because multiple paths of executions may produce the same resultant `message`, HyperBEAM is able
-to compute and store "links" between `hashpaths` that each point to the same underlying `message`.
-In this sense, HyperBEAM "converges" computation, linking paths to the same data, similar to how HTTP
-may respond with a `Redirect` to a Hyperlink.
+- `~json-iface@1.0`: The `~json-iface@1.0` device offers a translation layer between
+the JSON-encoded message format used by AOS 2.0 and prior versions, to HyperBEAM's
+native HTTP message format.
+
+- `~compute-lite@1.0`: The `~compute-lite@1.0` device is a lightweight device wrapping
+a local WASM executor, used for executing legacynet AO processes inside HyperBEAM.
+See the [HyperBEAM OS](https://github.com/PeterFarber/hb-os) repository for an 
+example setup with co-executing HyperBEAM and legacy-CU nodes.
+
+- `~snp@1.0`: The `~snp@1.0` device is used to generate and validate proofs that 
+the local node, or another node in the network, is executing inside a [Trusted Execution
+Environment (TEE)](https://en.wikipedia.org/wiki/Trusted_execution_environment).
+Nodes executing inside these environments use an ephemeral key pair, provably
+only existing inside the TEE, and can be sign attestations of AO-Core executions
+in a trust-minimized way.
+
+- `p4@1.0`: The `p4@1.0` device runs as a `pre-processor` and `post-processor` in
+the framework provided by `~meta@1.0`, enabling a framework for node operators to
+sell usage of their machine's hardware to execute AO-Core devices. The `p4@1.0`
+framework offers two additional hooks, allowing node operators flexibility in how
+their hardware is offered: A `pricing` device, and a `ledger` device.
+
+- `~simple-pay@1.0`: Implements a simple, flexible pricing device that can be used
+in conjunction with `p4@1.0` to offer flat-fees for the execution of AO-Core messages.
+
+- `~faff@1.0`: A simple pricing (and ledger) device for `p4@1.0`, allowing nodes
+to offer access to their services only to a specific set of users. This device is
+useful if you intend to operate your node onmly for personal use, or for a specific
+subset of users (servicing an individual app, for example).
+
+- `scheduler@1.0`: The `scheduler@1.0` device is used to assign a linear hashpath
+to an execution, such that all users may access it with a deterministic ordering.
+When used in conjunction with other AO-Core devices, this allows for the creation
+of executions that mirror the behaviour of traditional smart contracting networks.
+
+- `stack@1.0`: The `stack@1.0` device is used to execute an ordered set of devices,
+over the same inputs. This device allows its users to create complex combinations of
+other devices and apply them as a single unit, with a single hashpath.
+
+- `~process@1.0`: Processes enable users to create persistent, shared executions
+that can be accessed by any number of users, each of whom may add additional inputs
+to its hashpath. The `~process@1.0` allows users to customize the `execution` and
+`scheduler` devices that they choose for their process, such that a variety of different
+execution patterns can be created. In addition, the `~process@1.0` device offers a
+`push` key, which moves messages from a process's execution `outbox` into the
+schedule of another execution.
+
+Details on other devices found in the pre-loaded set can be located in their 
+respective documentation.
+
+## Contributing
+
+HyperBEAM is developed as an open source implementation of the AO-Core protocol 
+by [Forward Research](https://fwd.arweave.net). Pull Requests are always welcome!
+
+To get started building on HyperBEAM, check out the [hacking on HyperBEAM](./docs/hacking-on-hyperbeam.md)
+guide.
