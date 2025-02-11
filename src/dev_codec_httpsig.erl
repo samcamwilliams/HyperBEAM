@@ -212,6 +212,7 @@ add_content_digest(Msg) ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
             ?event({add_content_digest, {body, Body}, {msg, Msg}}),
+            %io:format(standard_error, "Body pre-image:~n~s~n", [Body]),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(dev_codec_structured_conv:dictionary(
@@ -572,7 +573,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
-    ?event(debug, {component_identifiers_for_sig_base, ComponentIdentifiers}),
+    ?event({component_identifiers_for_sig_base, ComponentIdentifiers}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(

@@ -15,10 +15,10 @@ group(Msg1, undefined, Opts) ->
 group(Msg1, Msg2, Opts) ->
     case hb_opts:get(persistent_processes, false, Opts) of
         false ->
-            ?event(debug, {not_using_persistent_processes, Msg1, Msg2}),
+            ?event({not_using_persistent_processes, Msg1, Msg2}),
             hb_persistent:default_grouper(Msg1, Msg2, Opts);
         true ->
-            ?event(debug, {using_persistent_processes, Msg1, Msg2}),
+            ?event({using_persistent_processes, Msg1, Msg2}),
             case Msg2 of
                 undefined ->
                     hb_persistent:default_grouper(Msg1, undefined, Opts);

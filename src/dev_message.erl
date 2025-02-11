@@ -276,7 +276,7 @@ attested(Self, Req, Opts) ->
             end,
             AllAttestedKeys
         ),
-    ?event(debug, {only_attested_keys, OnlyAttestedKeys}),
+    ?event({only_attested_keys, OnlyAttestedKeys}),
     {ok, OnlyAttestedKeys}.
 
 set(Message1, NewValuesMsg, _Opts) ->

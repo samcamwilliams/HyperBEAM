@@ -324,7 +324,7 @@ test_deeply_nested_complex_message(Opts) ->
             ],
             Opts
         ),
-    ?event(debug, {deep_message, DeepMsg}),
+    ?event({deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_converge:get(<<"deep-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),

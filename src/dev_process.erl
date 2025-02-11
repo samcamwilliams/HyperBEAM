@@ -411,7 +411,7 @@ as_process(Msg1, Opts) ->
 
 %% @doc Helper function to store a copy of the `process` key in the message.
 ensure_process_key(Msg1, Opts) ->
-    ?event(debug, {ensure_process_key_called, {msg1, Msg1}, {opts, Opts}}),
+    ?event({ensure_process_key_called, {msg1, Msg1}, {opts, Opts}}),
     case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
             hb_converge:set(

@@ -125,11 +125,11 @@ with_only_attested(Msg) when is_map(Msg) ->
         true ->
             try
                 Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
-                ?event(debug, {enc, Enc}),
+                ?event({enc, Enc}),
                 Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-                ?event(debug, {dec, Dec}),
+                ?event({dec, Dec}),
                 Attested = hb_message:attested(Dec),
-                ?event(debug, {attested, Attested}),
+                ?event({attested, Attested}),
                 {ok, maps:with(
                     [<<"attestations">>] ++ Attested,
                     Msg
@@ -880,24 +880,24 @@ signed_deep_message_test(Codec) ->
         }
     },
     EncDec = convert(convert(Msg, Codec, #{}), <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {enc_dec, EncDec}),
+    ?event({enc_dec, EncDec}),
     {ok, SignedMsg} =
         dev_message:attest(
             EncDec,
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event(debug, {signed_msg, SignedMsg}),
+    ?event({signed_msg, SignedMsg}),
     {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => <<"all">>}, #{}),
-    ?event(debug, {verify_res, Res}),
+    ?event({verify_res, Res}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event(debug, {verified, SignedMsg}),
+    ?event({verified, SignedMsg}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(debug, {encoded, Encoded}),
+    ?event({encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
+    ?event({decoded, Decoded}),
     {ok, DecodedRes} = dev_message:verify(Decoded, #{ <<"attestors">> => <<"all">>}, #{}),
-    ?event(debug, {verify_decoded_res, DecodedRes}),
+    ?event({verify_decoded_res, DecodedRes}),
     ?assert(
         match(
             SignedMsg,
@@ -1040,7 +1040,7 @@ deeply_nested_attested_keys_test() ->
     },
     Signed = attest(Msg, hb:wallet()),
     {ok, WithOnlyAttested} = with_only_attested(Signed),
-    ?event(debug, {with_only_attested, WithOnlyAttested}),
+    ?event({with_only_attested, WithOnlyAttested}),
     ?assert(
         match(
             Msg,
@@ -1055,11 +1055,11 @@ large_body_attested_keys_test(Codec) ->
         _ ->
             Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> } },
             Encoded = convert(Msg, <<"httpsig@1.0">>, #{}),
-            ?event(debug, {encoded, Encoded}),
+            ?event({encoded, Encoded}),
             Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-            ?event(debug, {decoded, Decoded}),
+            ?event({decoded, Decoded}),
             Signed = attest(Decoded, hb:wallet(), Codec),
-            ?event(debug, {signed, Signed}),
+            ?event({signed, Signed}),
             AttestedKeys = attested(Signed),
             ?assert(lists:member(<<"a">>, AttestedKeys)),
             ?assert(lists:member(<<"b">>, AttestedKeys)),
