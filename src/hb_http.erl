@@ -377,13 +377,12 @@ req_to_tabm_singleton(Req, Opts) ->
 
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
-    SignedHeaders = remove_unsigned_fields(RawHeaders, Opts),
-    MaybeSignedHTTP = SignedHeaders#{ <<"body">> => Body },
-    Msg = dev_codec_httpsig_conv:from(MaybeSignedHTTP),
-    case hb_converge:get(<<"signature">>, MaybeSignedHTTP, not_found, Opts) of
+    Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
+    SignedHeaders = remove_unsigned_fields(Msg, Opts),
+    case hb_converge:get(<<"signature">>, SignedHeaders, not_found, Opts) of
         not_found -> maybe_add_unsigned(Req, Msg, Opts);
         _ ->
-            case true of %hb_message:verify(Msg) of
+            case hb_message:verify(Msg) of
                 true ->
                     ?event(http, {verified_signature, Msg}),
                     case hb_opts:get(store_all_signed, false, Opts) of
@@ -427,38 +426,12 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
         ),
     Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
-remove_unsigned_fields(RawHeaders, Opts) ->
+remove_unsigned_fields(Msg, Opts) ->
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
-    Sig = maps:get(<<"signature">>, RawHeaders, undefined),
+    Sig = maps:get(<<"signature">>, Msg, undefined),
     case ForceSignedRequests orelse Sig /= undefined of
-        true -> do_remove_unsigned_fields(RawHeaders);
-        false -> RawHeaders
-    end.
-
-do_remove_unsigned_fields(RawHeaders) ->
-    % Every signature ought to have the same signature base
-    % And so we just parse out the first signature input,
-    % and use it to determine the signed components, stripping
-    % the components that are not signed
-    [{_SigInputName, SigInput} | _] = dev_codec_structured_conv:parse_dictionary(
-        maps:get(<<"signature-input">>, RawHeaders)
-    ),
-    {list, ComponentIdentifiers, _SigParams} = SigInput,
-    BinComponentIdentifiers = lists:map(
-        fun({item, {_Kind, ID}, _Params}) -> ID end,
-        ComponentIdentifiers    
-    ),
-    SignedHeaders = maps:with(
-        [<<"signature">>, <<"signature-input">>] ++
-            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
-        RawHeaders
-    ),
-    case maps:get(<<"content-digest">>, SignedHeaders, undefined) of
-        undefined -> SignedHeaders;
-        _ContentDigest ->
-            SignedHeaders#{
-                <<"body">> => maps:get(<<"body">>, RawHeaders, <<>>)
-            }
+        true -> hb_message:with_only_attested(Msg);
+        false -> Msg
     end.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
