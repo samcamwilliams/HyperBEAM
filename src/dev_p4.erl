@@ -206,7 +206,7 @@ is_chargable_req(Req, NodeMsg) ->
             NodeMsg
         ),
     Matches = dev_router:match_routes(Req, NonChargableRoutes, NodeMsg),
-    ?event(debug,
+    ?event(
         {
             is_chargable,
             {non_chargable_routes, NonChargableRoutes},
