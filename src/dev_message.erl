@@ -309,10 +309,16 @@ set(Message1, NewValuesMsg, _Opts) ->
             end,
             maps:keys(Message1)
         ),
+    % Calculate if we need to remove the attestations from the message.
+    WithoutAtts =
+        case UnsetKeys ++ ConflictingKeys of
+            [] -> [];
+            _ -> [<<"attestations">>]
+        end,
 	{
 		ok,
 		maps:merge(
-			maps:without(ConflictingKeys ++ UnsetKeys, Message1),
+			maps:without(ConflictingKeys ++ UnsetKeys ++ WithoutAtts, Message1),
 			maps:from_list(
 				lists:filtermap(
 					fun(Key) ->
