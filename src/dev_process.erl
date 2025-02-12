@@ -642,18 +642,21 @@ wasm_compute_from_id_test() ->
     ?assertEqual([120.0], hb_converge:get(<<"results/output">>, Msg3, Opts)).
 
 wasm_full_http_run_cycle_test() ->
+    rand:seed(default),
     Node = hb_http_server:start_node(Opts = #{
+        port => 10000 + rand:uniform(10000),
         priv_wallet => hb:wallet(),
         cache_control => <<"always">>,
         store => {hb_store_fs, #{ prefix => "main-cache" }}
     }),
     Wallet = ar_wallet:new(),
     Proc = test_wasm_process(<<"test/test-64.wasm">>, Opts),
+    hb_cache:write(Proc, Opts),
     ProcID = hb_util:human_id(hb_message:id(Proc)),
     InitRes =
         hb_http:post(
             Node,
-            << "/schedule" >>,
+            << "/", ProcID/binary, "/schedule" >>,
             Proc,
             #{}
         ),
