@@ -114,6 +114,7 @@ id(Msg, Params, Opts) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
+    NormMsg = hb_converge:normalize_keys(MsgToSign),
     % The hashpath, if present, is encoded as a HTTP Sig tag,
     % added as a field on the attestation, and then the field is removed from the Msg,
     % so that it is not included in the actual signature matierial.
@@ -122,9 +123,9 @@ attest(MsgToSign, _Req, Opts) ->
     % and the signature metadata, not the message itself, being signed
     % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
     {SigParams, HashPath, MsgWithoutHP} =
-        case maps:get(<<"hashpath">>, MsgToSign, undefined) of
-            undefined -> {#{}, undefined, MsgToSign};
-            HP -> {#{ tag => HP }, HP, maps:without([<<"hashpath">>], MsgToSign)} 
+        case maps:get(<<"hashpath">>, NormMsg, undefined) of
+            undefined -> {#{}, undefined, NormMsg};
+            HP -> {#{ tag => HP }, HP, maps:without([<<"hashpath">>], NormMsg)} 
         end,
     EncWithoutBodyKeys =
         maps:without(
@@ -159,7 +160,7 @@ attest(MsgToSign, _Req, Opts) ->
             undefined -> Attestation;
             HashPath -> Attestation#{ <<"hashpath">> => HashPath }
         end,
-    OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
+    OldAttestations = maps:get(<<"attestations">>, NormMsg, #{}),
     reset_hmac(MsgWithoutHP#{<<"attestations">> =>
         OldAttestations#{ Attestor => AttestationWithHP }
     }).
