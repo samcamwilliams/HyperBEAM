@@ -381,9 +381,9 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, SignedMsg} = remove_unsigned_fields(Msg, Opts),
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     Signers = hb_message:signers(SignedMsg),
-    case ForceSignedRequests orelse hb_message:verify(SignedMsg, Signers) of
+    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg, Signers) of
         true ->
-            ?event(http, {verified_signature, Msg}),
+            ?event(http, {verified_signature, SignedMsg}),
             case hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     hb_cache:write(Msg, Opts);
