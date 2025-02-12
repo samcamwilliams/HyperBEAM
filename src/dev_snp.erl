@@ -185,7 +185,7 @@ generate(_M1, _M2, Opts) ->
     {ok,ReportJSON} = dev_snp_nif:generate_attestation_report(ReportData, 1),
 	?event({snp_report_json, ReportJSON}),
 	LocalHashes = hb_opts:get(snp_hashes, {error, not_configured}, Opts),
-    ?event(debug,
+    ?event(
         {snp_report_generated,
             {nonce, ReportData},
             {report, ReportJSON}
@@ -229,7 +229,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
             ?event({is_trusted_query, {base, ModM1}, {query, QueryMsg}}),
             % Resolve the query message against the modified base message.
             {ok, KeyIsTrusted} = hb_converge:resolve(ModM1, QueryMsg, NodeOpts),
-            ?event(debug,
+            ?event(
                 {is_software_component_trusted,
                     {key, ReportKey},
                     {trusted, ReportKey},
