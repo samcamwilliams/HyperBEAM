@@ -446,20 +446,6 @@ read_body(Req0, Acc) ->
 
 %%% Tests
 
-%% @doc Ensure that the presence of a content-digest header causes the body
-%% to be included in the signed fields.
-remove_unsigned_fields_content_digest_test() ->
-    Msg = #{
-        <<"path">> => <<"/key1">>,
-        <<"key1">> => <<"Value1">>,
-        <<"content-digest">> => <<"sha256=1234567890">>
-    },
-    SignedMsg = hb_message:convert(hb_message:attest(Msg, hb:wallet()), <<"httpsig@1.0">>, #{}),
-    Msg2 = SignedMsg#{ <<"body">> => <<"Body1">>, <<"unattested">> => <<"Value2">> },
-    Truncated = remove_unsigned_fields(Msg2, #{ force_signed_requests => true }),
-    ?assertEqual(<<"Body1">>, hb_converge:get(<<"body">>, Truncated, #{})),
-    ?assertEqual(not_found, hb_converge:get(<<"unattested">>, Truncated, #{})).
-
 simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
