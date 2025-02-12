@@ -952,26 +952,26 @@ empty_string_in_tag_test(Codec) ->
 
 hashpath_sign_verify_test(Codec) ->
     Msg =
-        hb_private:set(#{
-                <<"test_key">> => <<"TEST_VALUE">>,
-                <<"body">> => #{
-                    <<"nested_key">> =>
-                        #{
-                            <<"body">> => <<"NESTED_DATA">>,
-                            <<"nested_key">> => <<"NESTED_VALUE">>
-                        },
-                    <<"nested_key2">> => <<"NESTED_VALUE2">>
-                }
+        #{
+            <<"test_key">> => <<"TEST_VALUE">>,
+            <<"body">> => #{
+                <<"nested_key">> =>
+                    #{
+                        <<"body">> => <<"NESTED_DATA">>,
+                        <<"nested_key">> => <<"NESTED_VALUE">>
+                    },
+                <<"nested_key2">> => <<"NESTED_VALUE2">>
             },
-            <<"priv/hashpath">>,
-            hb_path:hashpath(
-                hb_util:human_id(crypto:strong_rand_bytes(32)),
-                hb_util:human_id(crypto:strong_rand_bytes(32)),
-                fun hb_crypto:sha256_chain/2,
-                #{}
-            ),
-            #{}
-        ),
+            <<"priv">> => #{
+                <<"hashpath">> =>
+                    hb_path:hashpath(
+                        hb_util:human_id(crypto:strong_rand_bytes(32)),
+                        hb_util:human_id(crypto:strong_rand_bytes(32)),
+                        fun hb_crypto:sha256_chain/2,
+                        #{}
+                    )
+            }
+        },
     ?event({msg, {explicit, Msg}}),
     {ok, SignedMsg} =
         dev_message:attest(

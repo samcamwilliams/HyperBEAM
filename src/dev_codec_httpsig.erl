@@ -122,10 +122,11 @@ attest(MsgToSign, _Req, Opts) ->
     % In this sense, the hashpath is a property of the attestation
     % and the signature metadata, not the message itself, being signed
     % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
-    {SigParams, HashPath, MsgWithoutHP} =
-        case maps:get(<<"hashpath">>, NormMsg, undefined) of
-            undefined -> {#{}, undefined, NormMsg};
-            HP -> {#{ tag => HP }, HP, maps:without([<<"hashpath">>], NormMsg)} 
+    {SigParams, MsgWithoutHP} =
+        case NormMsg of
+            #{ <<"priv">> := #{ <<"hashpath">> := HP }} ->
+                {#{ tag => HP }, NormMsg};
+            _ -> {#{}, NormMsg}
         end,
     EncWithoutBodyKeys =
         maps:without(
@@ -155,14 +156,9 @@ attest(MsgToSign, _Req, Opts) ->
                 )),
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
-    AttestationWithHP =
-        case HashPath of
-            undefined -> Attestation;
-            HashPath -> Attestation#{ <<"hashpath">> => HashPath }
-        end,
     OldAttestations = maps:get(<<"attestations">>, NormMsg, #{}),
     reset_hmac(MsgWithoutHP#{<<"attestations">> =>
-        OldAttestations#{ Attestor => AttestationWithHP }
+        OldAttestations#{ Attestor => Attestation }
     }).
 
 %% @doc Return the list of attested keys from a message. The message will have
@@ -290,7 +286,7 @@ reset_hmac(RawMsg) ->
             Attestations#{
                 <<"hmac-sha256">> =>
                     HMacSigInfo#{
-                        <<"id">> => bin(hb_util:human_id(ID)),
+                        <<"id">> => hb_util:human_id(ID),
                         <<"attestation-device">> => <<"httpsig@1.0">>
                     }
             },
