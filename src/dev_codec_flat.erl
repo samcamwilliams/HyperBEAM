@@ -124,7 +124,6 @@ path_list_test() ->
         }
     },
     Flat = dev_codec_flat:to(Nested),
-    io:format(standard_error, "Flat: ~p~n", [Flat]),
     lists:foreach(
         fun(Key) ->
             ?assert(not lists:member($\n, binary_to_list(Key)))
