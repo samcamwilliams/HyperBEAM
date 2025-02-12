@@ -234,8 +234,8 @@ do_post_schedule(ProcID, ToSched, Msg1, Opts) ->
         }
     ),
     Verified =
-        case hb_opts:get(verify_assignments, false, Opts) of
-            true -> hb_message:verify(ToSched);
+        case hb_opts:get(verify_assignments, true, Opts) of
+            true -> hb_message:verify(ToSched, signers);
             false -> true
         end,
     case {Verified, hb_converge:get(type, ToSched)} of
