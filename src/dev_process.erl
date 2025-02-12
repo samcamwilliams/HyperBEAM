@@ -388,18 +388,18 @@ run_as(Key, Msg1, Msg2, Opts) ->
     ?event({resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
     DeviceAsSet = hb_converge:get(<<"device">>, PreparedMsg, Opts),
     ?event({device_set, DeviceAsSet}),
-    {ok, BaseResult} =
+    {Status, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,
             Msg2,
             Opts
         ),
-    case BaseResult of
-        #{ <<"device">> := DeviceSet } ->
+    case {Status, BaseResult} of
+        {ok, #{ <<"device">> := DeviceSet }} ->
             {ok, hb_converge:set(BaseResult, #{ <<"device">> => BaseDevice })};
         _ ->
             ?event({returning_base_result, BaseResult}),
-            {ok, BaseResult}
+            {Status, BaseResult}
     end.
 
 %% @doc Change the message to for that has the device set as this module.
