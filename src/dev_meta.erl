@@ -14,8 +14,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Normalize and route messages downstream based on their path. Messages
-%% with a `Meta` key are routed to the `handle_meta/2` function, while all
-%% other messages are routed to the `handle_converge/2` function.
+%% with a `Meta' key are routed to the `handle_meta/2' function, while all
+%% other messages are routed to the `handle_converge/2' function.
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
@@ -42,9 +42,9 @@ handle_initialize([_|Rest], NodeMsg) ->
 handle_initialize([], _NodeMsg) ->
     {error, <<"Node must be initialized before use.">>}.
 
-%% @doc Get/set the node message. If the request is a `POST`, we check that the
+%% @doc Get/set the node message. If the request is a `POST', we check that the
 %% request is signed by the owner of the node. If not, we return the node message
-%% as-is, aside all keys that are private (according to `hb_private`).
+%% as-is, aside all keys that are private (according to `hb_private').
 info(_, Request, NodeMsg) ->
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
@@ -122,8 +122,8 @@ update_node_message(Request, NodeMsg) ->
 
 %% @doc Handle a Converge request, which is a list of messages. We apply
 %% the node's pre-processor to the request first, and then resolve the request
-%% using the node's Converge implementation if its response was `ok`.
-%% After execution, we run the node's `postprocessor` message on the result of
+%% using the node's Converge implementation if its response was `ok'.
+%% After execution, we run the node's `postprocessor' message on the result of
 %% the request before returning the result it grants back to the user.
 handle_converge(Req, Msgs, NodeMsg) ->
     % Apply the pre-processor to the request.

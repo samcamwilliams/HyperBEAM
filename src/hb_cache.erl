@@ -49,7 +49,7 @@ list(Path, Store) ->
 
 %% @doc Write a message to the cache. For raw binaries, we write the data at
 %% the hashpath of the data (by default the SHA2-256 hash of the data). We link
-%% the unattended ID's hashpath for the keys (including `/attestations`) on the
+%% the unattended ID's hashpath for the keys (including `/attestations') on the
 %% message to the underlying data and recurse. We then link each attestation ID
 %% to the unattested message, such that any of the attested or unattested IDs
 %% can be read, and once in memory all of the attestations are available. For

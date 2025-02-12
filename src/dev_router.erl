@@ -3,16 +3,16 @@
 %%% routed to a single process per node, which then load-balances them
 %%% between downstream workers that perform the actual requests.
 %%% 
-%%% The routes for the router are defined in the `routes` key of the `Opts`,
+%%% The routes for the router are defined in the `routes' key of the `Opts',
 %%% as a precidence-ordered list of maps. The first map that matches the
 %%% message will be used to determine the route.
 %%% 
 %%% Multiple nodes can be specified as viable for a single route, with the
-%%% `Choose` key determining how many nodes to choose from the list (defaulting
-%%% to 1). The `Strategy` key determines the load distribution strategy,
-%%% which can be one of `Random`, `By-Base`, or `Nearest`. The route may also 
+%%% `Choose' key determining how many nodes to choose from the list (defaulting
+%%% to 1). The `Strategy' key determines the load distribution strategy,
+%%% which can be one of `Random', `By-Base', or `Nearest'. The route may also 
 %%% define additional parallel execution parameters, which are used by the
-%%% `hb_http` module to manage control of requests.
+%%% `hb_http' module to manage control of requests.
 %%% 
 %%% The structure of the routes should be as follows:
 %%% ```
@@ -75,13 +75,13 @@ routes(M1, M2, Opts) ->
 %%       Nearest: According to the distance of the node's wallet address to the
 %%                base message's hashpath.
 %% '''
-%% `By-Base` will ensure that all traffic for the same hashpath is routed to the
-%% same node, minimizing work duplication, while `Random` ensures a more even
+%% `By-Base' will ensure that all traffic for the same hashpath is routed to the
+%% same node, minimizing work duplication, while `Random' ensures a more even
 %% distribution of the requests.
 %% 
-%% Can operate as a `Router/1.0` device, which will ignore the base message,
+%% Can operate as a `Router/1.0' device, which will ignore the base message,
 %% routing based on the Opts and request message provided, or as a standalone
-%% function, taking only the request message and the `Opts` map.
+%% function, taking only the request message and the `Opts' map.
 route(Msg, Opts) -> route(undefined, Msg, Opts).
 route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
@@ -111,9 +111,9 @@ route(_, Msg, Opts) ->
 
 %% @doc Apply a node map's rules for transforming the path of the message.
 %% Supports the following keys:
-%% - `prefix`: The prefix to add to the path.
-%% - `suffix`: The suffix to add to the path.
-%% - `replace`: A regex to replace in the path.
+%% - `prefix': The prefix to add to the path.
+%% - `suffix': The suffix to add to the path.
+%% - `replace': A regex to replace in the path.
 apply_node(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
     {ok, <<Prefix/binary, Path/binary>>};
 apply_node(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
@@ -253,7 +253,7 @@ strategy_suite_test_() ->
         [<<"Random">>, <<"By-Base">>, <<"Nearest">>]
     ).
 
-%% @doc Ensure that `By-Base` always chooses the same node for the same
+%% @doc Ensure that `By-Base' always chooses the same node for the same
 %% hashpath.
 by_base_determinism_test() ->
     FirstN = 5,
@@ -499,7 +499,7 @@ simulation_distribution(SimRes, Nodes) ->
 
 within_norms(SimRes, Nodes, TestSize) ->
     Distribution = simulation_distribution(SimRes, Nodes),
-    % Check that the mean is `TestSize/length(Nodes)`
+    % Check that the mean is `TestSize/length(Nodes)'
     Mean = hb_util:mean(Distribution),
     ?assert(Mean == (TestSize / length(Nodes))),
     % Check that the highest count is not more than 3 standard deviations

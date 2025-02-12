@@ -385,7 +385,7 @@ format_binary(Bin) ->
             lists:flatten(io_lib:format("~s", [ShortID]))
     end.
 
-%% @doc Add `,` characters to a number every 3 digits to make it human readable.
+%% @doc Add `,' characters to a number every 3 digits to make it human readable.
 human_int(Int) ->
     lists:reverse(add_commas(lists:reverse(integer_to_list(Int)))).
 

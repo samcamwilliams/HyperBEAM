@@ -16,9 +16,9 @@
 
 %% @doc Write a resulting M3 message to the cache if requested. The precidence
 %% order of cache control sources is as follows:
-%% 1. The `Opts` map (letting the node operator have the final say).
-%% 2. The `Msg3` results message (granted by Msg1's device).
-%% 3. The `Msg2` message (the user's request).
+%% 1. The `Opts' map (letting the node operator have the final say).
+%% 2. The `Msg3' results message (granted by Msg1's device).
+%% 3. The `Msg2' message (the user's request).
 %% Msg1 is not used, such that it can specify cache control information about 
 %% itself, without affecting its outputs.
 maybe_store(Msg1, Msg2, Msg3, Opts) ->
@@ -31,12 +31,12 @@ maybe_store(Msg1, Msg2, Msg3, Opts) ->
     end.
 
 %% @doc Handles cache lookup, modulated by the caching options requested by
-%% the user. Honors the following `Opts` cache keys: 
-%%      `only_if_cached`: If set and we do not find a result in the cache,
-%%                        return an error with a `Cache-Status` of `miss` and
-%%                        a 504 `Status`.
-%%      `no_cache`:       If set, the cached values are never used. Returns
-%%                        `continue` to the caller.
+%% the user. Honors the following `Opts' cache keys: 
+%%      `only_if_cached': If set and we do not find a result in the cache,
+%%                        return an error with a `Cache-Status' of `miss' and
+%%                        a 504 `Status'.
+%%      `no_cache':       If set, the cached values are never used. Returns
+%%                        `continue' to the caller.
 maybe_lookup(Msg1, Msg2, Opts) ->
     case exec_likely_faster_heuristic(Msg1, Msg2, Opts) of
         true ->
@@ -121,7 +121,7 @@ dispatch_cache_write(Msg1, Msg2, Msg3, Opts) ->
         false -> Dispatch()
     end.
 
-%% @doc Generate a message to return when `only_if_cached` was specified, and
+%% @doc Generate a message to return when `only_if_cached' was specified, and
 %% we don't have a cached result.
 only_if_cached_not_found_error(Msg1, Msg2, Opts) ->
     ?event(
@@ -163,8 +163,7 @@ exec_likely_faster_heuristic(ID1, _Msg2, _Opts) when ?IS_ID(ID1) ->
 exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.
-    % If we have `only-if-cached` in the opts, we always force lookup, too.
-    ?event(cache_control, {exec_likely_faster_heuristic, {msg1, Msg1}, {key, Key}}),
+    % If we have `only-if-cached' in the opts, we always force lookup, too.
     case specifiers_to_cache_settings(hb_opts:get(cache_control, [], Opts)) of
         #{ <<"only-if-cached">> := true } -> false;
         _ -> is_map(Msg1) andalso maps:is_key(Key, Msg1)
@@ -175,7 +174,7 @@ exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
 %% map with `store' and `lookup' keys, each of which is a boolean.
 %% 
 %% For example, if the last source has a `no_store', the first expresses no
-%% preference, but the Opts has `cache_control => [always]`, then the result 
+%% preference, but the Opts has `cache_control => [always]', then the result 
 %% will contain a `store => true' entry.
 derive_cache_settings(SourceList, Opts) ->
     lists:foldr(
@@ -202,8 +201,8 @@ maybe_set(Map1, Map2) ->
 
 %% @doc Convert a cache source to a cache setting. The setting _must_ always be
 %% directly in the source, not a Converge-derivable value. The 
-%% `to_cache_control_map` function is used as the source of settings in all
-%% cases, except where an `Opts` specifies that hashpaths should not be updated,
+%% `to_cache_control_map' function is used as the source of settings in all
+%% cases, except where an `Opts' specifies that hashpaths should not be updated,
 %% which leads to the result not being cached (as it may be stored with an 
 %% incorrect hashpath).
 cache_source_to_cache_settings({opts, Opts}) ->

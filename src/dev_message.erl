@@ -35,15 +35,15 @@ info() ->
         %exports => ?DEVICE_KEYS
     }.
 
-%% @doc Return the ID of a message, using the `attestors` list if it exists.
-%% If the `attestors` key is `all`, return the ID including all known 
-%% attestations -- `none` yields the ID without any attestations. If the 
-%% `attestors` key is a list/map, return the ID including only the specified 
+%% @doc Return the ID of a message, using the `attestors' list if it exists.
+%% If the `attestors' key is `all', return the ID including all known 
+%% attestations -- `none' yields the ID without any attestations. If the 
+%% `attestors' key is a list/map, return the ID including only the specified 
 %% attestations.
 %% 
-%% The `id-device` key in the message can be used to specify the device that
+%% The `id-device' key in the message can be used to specify the device that
 %% should be used to calculate the ID. If it is not set, the default device
-%% (`httpsig@1.0`) is used.
+%% (`httpsig@1.0') is used.
 %% 
 %% Note: This function _does not_ use Converge's `get/3' function, as it
 %% as it would require significant computation. We may want to change this
@@ -95,7 +95,7 @@ id(Base, Req, NodeOpts) ->
                 );
             Mod -> Mod
         end,
-    % Apply the function's `id` function with the appropriate arguments. If it
+    % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
     case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
         {ok, Fun} -> apply(Fun, [ModBase, Req, NodeOpts]);

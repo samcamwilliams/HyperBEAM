@@ -7,9 +7,9 @@
 %% @doc Run each test in a suite with each set of options. Start and reset
 %% the store(s) for each test. Expects suites to be a list of tuples with
 %% the test name, description, and test function.
-%% The list of `Opts` should contain maps with the `name` and `opts` keys.
-%% Each element may also contain a `skip` key with a list of test names to skip.
-%% They can also contain a `desc` key with a description of the options.
+%% The list of `Opts' should contain maps with the `name' and `opts' keys.
+%% Each element may also contain a `skip' key with a list of test names to skip.
+%% They can also contain a `desc' key with a description of the options.
 suite_with_opts(Suite, OptsList) ->
     lists:map(
         fun(OptSpec = #{ name := _Name, opts := Opts, desc := ODesc}) ->
