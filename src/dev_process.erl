@@ -428,7 +428,9 @@ init() ->
 %% @doc Generate a process message with a random number, and no 
 %% executor.
 test_base_process() ->
-    Wallet = hb:wallet(),
+    test_base_process(#{}).
+test_base_process(Opts) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     hb_message:attest(#{
         <<"device">> => <<"Process@1.0">>,
@@ -441,10 +443,10 @@ test_base_process() ->
 test_wasm_process(WASMImage) ->
     test_wasm_process(WASMImage, #{}).
 test_wasm_process(WASMImage, Opts) ->
-    Wallet = hb:wallet(),
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:attest(
-        maps:merge(test_base_process(), #{
+        maps:merge(test_base_process(Opts), #{
             <<"execution-device">> => <<"Stack@1.0">>,
             <<"device-stack">> => [<<"WASM-64@1.0">>],
             <<"image">> => WASMImageID
@@ -643,9 +645,10 @@ wasm_compute_from_id_test() ->
 
 wasm_full_http_run_cycle_test() ->
     rand:seed(default),
+    SchedWallet = ar_wallet:new(),
     Node = hb_http_server:start_node(Opts = #{
         port => 10000 + rand:uniform(10000),
-        priv_wallet => hb:wallet(),
+        priv_wallet => SchedWallet,
         cache_control => <<"always">>,
         store => {hb_store_fs, #{ prefix => "main-cache" }}
     }),
