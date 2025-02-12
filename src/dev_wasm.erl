@@ -38,7 +38,7 @@
 %%% API for other devices:
 -export([instance/3]).
 %%% Test API:
--export([cache_wasm_image/1]).
+-export([cache_wasm_image/1, cache_wasm_image/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -498,9 +498,11 @@ state_export_and_restore_test() ->
 %%% Test helpers
 
 cache_wasm_image(Image) ->
+    cache_wasm_image(Image, #{}).
+cache_wasm_image(Image, Opts) ->
     {ok, Bin} = file:read_file(Image),
     Msg = #{ <<"body">> => Bin },
-    {ok, ID} = hb_cache:write(Msg, #{}),
+    {ok, ID} = hb_cache:write(Msg, Opts),
     #{
         <<"device">> => <<"WASM-64@1.0">>,
         <<"image">> => ID

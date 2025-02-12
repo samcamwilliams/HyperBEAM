@@ -369,6 +369,7 @@ claim_node_test() ->
             #{}
         ),
     ?event({res, SetRes}),
+    timer:sleep(100),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
     ?assertEqual(Address, hb_converge:get(<<"operator">>, Res, #{})),

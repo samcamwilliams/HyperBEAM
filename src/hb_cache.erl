@@ -60,12 +60,18 @@ list(Path, Store) ->
 write(RawMsg, Opts) ->
     % Use the _structured_ format for calculating alternative IDs, but the
     % _tabm_ format for writing to the store.
-    do_write_message(
-        hb_message:convert(RawMsg, tabm, <<"structured@1.0">>, Opts),
-        calculate_alt_ids(RawMsg, Opts),
-        hb_opts:get(store, no_viable_store, Opts),
-        Opts
-    ).
+    case hb_message:with_only_attested(RawMsg) of
+        {ok, Msg} ->
+            ?event(debug_store, {storing, Msg}),
+            do_write_message(
+                hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
+                calculate_alt_ids(RawMsg, Opts),
+                hb_opts:get(store, no_viable_store, Opts),
+                Opts
+            );
+        {error, Err} ->
+            {error, Err}
+    end.
 do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
@@ -79,6 +85,9 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
     % Write the keys of the message into the store, rolling the keys into 
     % hashpaths (having only two parts) as we do so.
+    % We start by writing the group, such that if the message is empty, we
+    % still have a group in the store.
+    hb_store:make_group(Store, UnattestedID),
     maps:map(
         fun(Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
@@ -169,7 +178,7 @@ store_read(_Path, no_viable_store, _) ->
     not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event({reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
+    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
     case hb_store:type(Store, ResolvedFullPath) of
         simple -> hb_store:read(Store, ResolvedFullPath);
         _ ->
@@ -185,6 +194,7 @@ store_read(Path, Store, Opts) ->
                         maps:from_list(
                             lists:map(
                                 fun(Subpath) ->
+                                    ?event(read_debug, {reading_subpath, {path, Subpath}, {store, Store}}),
                                     {ok, Res} = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
@@ -226,7 +236,7 @@ link(Existing, New, Opts) ->
 test_unsigned(Data) ->
     #{
         <<"base-test-key">> => <<"base-test-value">>,
-        <<"data">> => Data
+        <<"deep-test-key">> => Data
     }.
 
 %% Helper function to create signed #tx items.
@@ -239,6 +249,12 @@ test_store_binary(Opts) ->
     {ok, ID} = write(Bin, Opts),
     {ok, RetrievedBin} = read(ID, Opts),
     ?assertEqual(Bin, RetrievedBin).
+
+test_store_unsigned_empty_message(Opts) ->
+    Item = #{},
+    {ok, Path} = write(Item, Opts),
+    {ok, RetrievedItem} = read(Path, Opts),
+    ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_unsigned_message(Opts) ->
@@ -263,6 +279,7 @@ test_store_simple_signed_message(Opts) ->
     %% Read the item back
     {ok, UID} = dev_message:id(Item, #{ <<"attestors">> => <<"none">> }, Opts),
     {ok, RetrievedItemU} = read(UID, Opts),
+    ?event({retreived_unsigned_message, {expected, Item}, {got, RetrievedItemU}}),
     ?assert(hb_message:match(Item, RetrievedItemU)),
     {ok, AttestedID} = dev_message:id(Item, #{ <<"attestors">> => [Address] }, Opts),
     {ok, RetrievedItemS} = read(AttestedID, Opts),
@@ -310,8 +327,9 @@ test_deeply_nested_complex_message(Opts) ->
             ],
             Opts
         ),
+    ?event({deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_converge:get(<<"data">>, DeepMsg)),
+    ?assertEqual([1,2,3], hb_converge:get(<<"deep-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
@@ -330,6 +348,7 @@ test_message_with_message(Opts) ->
 
 cache_suite_test_() ->
     hb_store:generate_test_suite([
+        {"store unsigned empty message", fun test_store_unsigned_empty_message/1},
         {"store binary", fun test_store_binary/1},
         {"store simple unsigned message", fun test_store_simple_unsigned_message/1},
         {"store simple signed message", fun test_store_simple_signed_message/1},
@@ -338,5 +357,5 @@ cache_suite_test_() ->
     ]).
 
 run_test() ->
-    Opts = #{ store => {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }} },
-    test_store_simple_signed_message(Opts).
+    Opts = #{ store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }} },
+    test_deeply_nested_complex_message(Opts).

@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([to/1, from/1, attest/3, verify/3]).
+-export([to/1, from/1, attest/3, verify/3, attested/3]).
 -include("include/hb.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
@@ -59,6 +59,14 @@ attest(Msg, _Req, Opts) ->
                 }
         }
     }.
+
+%% @doc Return an empty list if the message as given does not validate, as
+%% ANS-104 messages do not keep a list of attested keys.
+attested(Msg, Req, Opts) ->
+    case verify(Msg, Req, Opts) of
+        {ok, true} -> {ok, maps:keys(Msg)};
+        _ -> {ok, []}
+    end.
 
 %% @doc Verify an ANS-104 attestation.
 verify(Msg, _Req, _Opts) ->

@@ -377,26 +377,29 @@ req_to_tabm_singleton(Req, Opts) ->
 
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
-    SignedHeaders = remove_unsigned_fields(RawHeaders, Opts),
-    MaybeSignedHTTP = SignedHeaders#{ <<"body">> => Body },
-    Msg = dev_codec_httpsig_conv:from(MaybeSignedHTTP),
-    case hb_converge:get(<<"signature">>, MaybeSignedHTTP, not_found, Opts) of
-        not_found -> maybe_add_unsigned(Req, Msg, Opts);
-        _ ->
-            case hb_message:verify(Msg) of
+    Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
+    {ok, SignedMsg} = remove_unsigned_fields(Msg, Opts),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
+    Signers = hb_message:signers(SignedMsg),
+    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg, Signers) of
+        true ->
+            ?event(http, {verified_signature, SignedMsg}),
+            case hb_opts:get(store_all_signed, false, Opts) of
                 true ->
-                    ?event(http, {verified_signature, Msg}),
-                    case hb_opts:get(store_all_signed, false, Opts) of
-                        true ->
-                            hb_cache:write(Msg, Opts);
-                        false ->
-                            do_nothing
-                    end,
-                    maybe_add_unsigned(Req, Msg, Opts);
+                    hb_cache:write(Msg, Opts);
                 false ->
-                    ?event(http, {invalid_signature, Msg}),
-                    throw({invalid_signature, Msg})
-            end
+                    do_nothing
+            end,
+            maybe_add_unsigned(Req, SignedMsg, Opts);
+        false ->
+            ?event(http,
+                {invalid_signature,
+                    {raw, RawHeaders},
+                    {signed, SignedMsg},
+                    {force, ForceSignedRequests}
+                }
+            ),
+            throw({invalid_signature, SignedMsg})
     end.
 
 %% @doc Add the method and path to a message, if they are not already present.
@@ -427,38 +430,10 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
         ),
     Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
-remove_unsigned_fields(RawHeaders, Opts) ->
-    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
-    Sig = maps:get(<<"signature">>, RawHeaders, undefined),
-    case ForceSignedRequests orelse Sig /= undefined of
-        true -> do_remove_unsigned_fields(RawHeaders);
-        false -> RawHeaders
-    end.
-
-do_remove_unsigned_fields(RawHeaders) ->
-    % Every signature ought to have the same signature base
-    % And so we just parse out the first signature input,
-    % and use it to determine the signed components, stripping
-    % the components that are not signed
-    [{_SigInputName, SigInput} | _] = dev_codec_structured_conv:parse_dictionary(
-        maps:get(<<"signature-input">>, RawHeaders)
-    ),
-    {list, ComponentIdentifiers, _SigParams} = SigInput,
-    BinComponentIdentifiers = lists:map(
-        fun({item, {_Kind, ID}, _Params}) -> ID end,
-        ComponentIdentifiers    
-    ),
-    SignedHeaders = maps:with(
-        [<<"signature">>, <<"signature-input">>] ++
-            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
-        RawHeaders
-    ),
-    case maps:get(<<"content-digest">>, SignedHeaders, undefined) of
-        undefined -> SignedHeaders;
-        _ContentDigest ->
-            SignedHeaders#{
-                <<"body">> => maps:get(<<"body">>, RawHeaders, <<>>)
-            }
+remove_unsigned_fields(Msg, _Opts) ->
+    case hb_message:signers(Msg) of
+        [] -> {ok, Msg};
+        _ -> hb_message:with_only_attested(Msg)
     end.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
@@ -470,20 +445,6 @@ read_body(Req0, Acc) ->
     end.
 
 %%% Tests
-
-%% @doc Ensure that the presence of a content-digest header causes the body
-%% to be included in the signed fields.
-remove_unsigned_fields_content_digest_test() ->
-    Msg = #{
-        <<"path">> => <<"/key1">>,
-        <<"key1">> => <<"Value1">>,
-        <<"content-digest">> => <<"sha256=1234567890">>
-    },
-    SignedMsg = hb_message:convert(hb_message:attest(Msg, hb:wallet()), <<"httpsig@1.0">>, #{}),
-    Msg2 = SignedMsg#{ <<"body">> => <<"Body1">>, <<"unattested">> => <<"Value2">> },
-    Truncated = remove_unsigned_fields(Msg2, #{ force_signed_requests => true }),
-    ?assertEqual(<<"Body1">>, hb_converge:get(<<"body">>, Truncated, #{})),
-    ?assertEqual(not_found, hb_converge:get(<<"unattested">>, Truncated, #{})).
 
 simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),

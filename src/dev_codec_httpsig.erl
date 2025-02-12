@@ -6,7 +6,7 @@
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, attest/3, verify/3, reset_hmac/1, public_keys/1]).
+-export([id/3, attest/3, attested/3, verify/3, reset_hmac/1, public_keys/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
 %%% Public API functions
@@ -114,27 +114,28 @@ id(Msg, Params, Opts) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    {HPKey, MsgWithHPTForm} =
-        case maps:get(<<"hashpath">>, MsgToSign, undefined) of
-            undefined -> {undefined, MsgToSign};
-            HP ->
-                % Add the hashpath to the message with an ID derivative of its
-                % name, such that it can be differentiated from other signatures
-                % on different hashpaths that lead to the same message.
-                HashPathTag =
-                    hb_util:to_hex(binary:part(crypto:hash(sha256, HP), 1, 8)),
-                HashPathKey = <<"hashpath-", HashPathTag/binary>>,
-                {HashPathKey, maps:put(HashPathKey, HP, maps:without([<<"hashpath">>], MsgToSign))}
+    NormMsg = hb_converge:normalize_keys(MsgToSign),
+    % The hashpath, if present, is encoded as a HTTP Sig tag,
+    % added as a field on the attestation, and then the field is removed from the Msg,
+    % so that it is not included in the actual signature matierial.
+    %
+    % In this sense, the hashpath is a property of the attestation
+    % and the signature metadata, not the message itself, being signed
+    % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
+    {SigParams, MsgWithoutHP} =
+        case NormMsg of
+            #{ <<"priv">> := #{ <<"hashpath">> := HP }} ->
+                {#{ tag => HP }, NormMsg};
+            _ -> {#{}, NormMsg}
         end,
-    Enc =
-        add_content_digest(
-            maps:without(
-                [<<"signature">>, <<"signature-input">>],
-                hb_message:convert(MsgWithHPTForm, <<"httpsig@1.0">>, Opts)
-            )
+    EncWithoutBodyKeys =
+        maps:without(
+            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"converge-type-body-keys">>],
+            hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
-    ?event({encoded_to_httpsig_for_attestation, {explicit, Enc}}),
-    Authority = authority(lists:sort(maps:keys(Enc)), #{}, Wallet),
+    Enc = add_content_digest(EncWithoutBodyKeys),
+    ?event({encoded_to_httpsig_for_attestation, Enc}),
+    Authority = authority(lists:sort(maps:keys(Enc)), SigParams, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
@@ -155,18 +156,50 @@ attest(MsgToSign, _Req, Opts) ->
                 )),
             <<"attestation-device">> => <<"httpsig@1.0">>
         },
-    AttestationWithHP =
-        case HPKey of
-            undefined -> Attestation;
-            HPKey -> Attestation#{ HPKey => maps:get(<<"hashpath">>, MsgToSign) }
+    OldAttestations = maps:get(<<"attestations">>, NormMsg, #{}),
+    reset_hmac(MsgWithoutHP#{<<"attestations">> =>
+        OldAttestations#{ Attestor => Attestation }
+    }).
+
+%% @doc Return the list of attested keys from a message. The message will have
+%% had the `attestations` key removed and the signature inputs added to the
+%% root. Subsequently, we can parse that to get the list of attested keys.
+attested(Msg, _Req, _Opts) ->
+    [{_SigInputName, SigInput} | _] = dev_codec_structured_conv:parse_dictionary(
+        maps:get(<<"signature-input">>, Msg)
+    ),
+    {list, ComponentIdentifiers, _SigParams} = SigInput,
+    BinComponentIdentifiers = lists:map(
+        fun({item, {_Kind, ID}, _Params}) -> ID end,
+        ComponentIdentifiers    
+    ),
+    Signed =
+        [<<"signature">>, <<"signature-input">>] ++
+            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
+    case lists:member(<<"content-digest">>, Signed) of
+        false -> {ok, Signed};
+        true ->
+            {ok,
+                Signed
+                    ++ [<<"body">>]
+                    ++ normalize_body_keys(
+                        maps:get(<<"body-keys">>, Msg, [])
+                    )
+            }
+    end.
+
+%% @doc Normalize a body key to be a list of keys.
+normalize_body_keys(List) when is_list(List) ->
+    List;
+normalize_body_keys(Body) when is_binary(Body) ->
+    Items = dev_codec_structured_conv:parse_list(Body),
+    lists:map(
+        fun({item, {X, Key}, _}) when X =:= binary; X =:= string ->
+                hd(hb_path:term_to_path_parts(Key, #{}));
+            (Other) -> Other
         end,
-    OldAttestations = maps:get(<<"attestations">>, MsgToSign, #{}),
-    NewAttestations =
-        OldAttestations#{
-            Attestor => AttestationWithHP
-        },
-    MsgWithoutHP = maps:without([<<"hashpath">>], MsgToSign),
-    reset_hmac(MsgWithoutHP#{ <<"attestations">> => NewAttestations }).
+        Items
+    ).
 
 %% @doc If the `body' key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
@@ -176,6 +209,7 @@ add_content_digest(Msg) ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
             ?event({add_content_digest, {body, Body}, {msg, Msg}}),
+            %io:format(standard_error, "Body pre-image:~n~s~n", [Body]),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(dev_codec_structured_conv:dictionary(
@@ -252,7 +286,7 @@ reset_hmac(RawMsg) ->
             Attestations#{
                 <<"hmac-sha256">> =>
                     HMacSigInfo#{
-                        <<"id">> => bin(hb_util:human_id(ID)),
+                        <<"id">> => hb_util:human_id(ID),
                         <<"attestation-device">> => <<"httpsig@1.0">>
                     }
             },
@@ -271,7 +305,7 @@ sig_name_from_dict(DictBin) ->
 hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
-    EncodedMsg = to(maps:without([<<"attestations">>], Msg)),
+    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>], Msg)),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
     ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
@@ -279,7 +313,16 @@ hmac(Msg) ->
     {_, SignatureBase} = signature_base(
         #{
             component_identifiers => 
-                add_derived_specifiers(lists:sort(maps:keys(MsgWithContentDigest))),
+                add_derived_specifiers(
+                    lists:sort(
+                        maps:keys(
+                            maps:without(
+                                [<<"body-keys">>, <<"converge-type-body-keys">>],
+                                MsgWithContentDigest
+                            )
+                        )
+                    )
+                ),
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
@@ -332,9 +375,10 @@ verify(MsgToVerify, Req, _Opts) ->
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
+            EncWithoutBodyKeys = maps:without([<<"body-keys">>, <<"converge-type-body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
-                Enc#{
+                EncWithoutBodyKeys#{
                     <<"signature-input">> =>
                         maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> =>
@@ -501,6 +545,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
                 #{},
                 SigParams
             ),
+            ?event({sig_params_map, ComponentIdentifiers}),
             % Construct the signature base using the parsed parameters
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
             {_, SignatureBase} = signature_base(Authority, Req, Res),
@@ -525,6 +570,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
     ComponentIdentifiers = maps:get(component_identifiers, Authority),
+    ?event({component_identifiers_for_sig_base, ComponentIdentifiers}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(

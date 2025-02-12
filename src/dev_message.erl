@@ -10,7 +10,7 @@
 -export([set/3, set_path/3, remove/2, get/2, get/3]).
 %%% Attestation-specific keys:
 -export([id/1, id/2, id/3]).
--export([attest/3, attestors/1, attestors/2, attestors/3, verify/3]).
+-export([attest/3, attested/3, attestors/1, attestors/2, attestors/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -140,17 +140,12 @@ attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
     AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
-    BaseWithHP =
-        case maps:get(<<"priv">>, Base, #{}) of
-            #{ <<"hashpath">> := Hashpath } -> Base#{ <<"hashpath">> => Hashpath };
-            _ -> Base
-        end,
-    % We _do not_ set the `device' key in the message, as the device will be
-    % part of the attestation. Instead, we find the device module's `attest'
+    % We _do not_ set the `device` key in the message, as the device will be
+    % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.
     AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
     {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, attest, 3, Opts),
-    Encoded = hb_message:convert(BaseWithHP, tabm, Opts),
+    Encoded = hb_message:convert(Base, tabm, Opts),
     {ok, Attested} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
     {ok, hb_message:convert(Attested, <<"structured@1.0">>, Opts)}.
 
@@ -182,7 +177,8 @@ verify(Self, Req, Opts) ->
                         {attestor, Attestor},
                         {target, Base}}
                 ),
-                {ok, Res} = verify_attestation(
+                {ok, Res} = exec_for_attestation(
+                    verify,
                     Base,
                     maps:get(Attestor, Attestations),
                     Req#{ <<"attestor">> => Attestor },
@@ -196,10 +192,12 @@ verify(Self, Req, Opts) ->
     ?event({verify_res, Res}),
     {ok, Res}.
 
-%% @doc Verify a single attestation in the context of its parent message.
+%% @doc Execute a function for a single attestation in the context of its
+%% parent message.
 %% Note: Assumes that the `attestations' key has already been removed from the
-%% message.
-verify_attestation(Base, Attestation, Req, Opts) ->
+%% message if applicable.
+exec_for_attestation(Func, Base, Attestation, Req, Opts) ->
+    ?event({executing_for_attestation, {func, Func}, {base, Base}, {attestation, Attestation}, {req, Req}}),
     AttestionMessage =
         maps:merge(Base, maps:without([<<"attestation-device">>], Attestation)),
     AttDev =
@@ -217,15 +215,65 @@ verify_attestation(Base, Attestation, Req, Opts) ->
         hb_converge:find_exported_function(
             AttestionMessage,
             AttMod,
-            verify,
+            Func,
             3,
             Opts
         ),
     Encoded = hb_message:convert(AttestionMessage, tabm, Opts),
     apply(AttFun, [Encoded, Req, Opts]).
 
+%% @doc Return the list of attested keys from a message.
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
+attested(Self, Req, Opts) ->
+    % Get the target message of the verification request.
+    {ok, Base} = hb_message:find_target(Self, Req, Opts),
+    Attestators = maps:keys(Attestations = maps:get(<<"attestations">>, Base, #{})),
+    % Get the list of attested keys from each attestor.
+    AttestationKeys =
+        lists:map(
+            fun(Attestor) ->
+                Attestion = maps:get(Attestor, Attestations),
+                {ok, AttestedKeys} =
+                    exec_for_attestation(
+                        attested,
+                        Base,
+                        Attestion,
+                        #{ <<"attestor">> => Attestor },
+                        Opts
+                    ),
+                AttestedKeys
+            end,
+            Attestators
+        ),
+    % Remove attestations that are not in *every* attestor's list.
+    % To start, we need to create the super-set of attested keys.
+    AllAttestedKeys =
+        lists:foldl(
+            fun(Key, Acc) ->
+                case lists:member(Key, Acc) of
+                    true -> Acc;
+                    false -> [Key | Acc]
+                end
+            end,
+            [],
+            lists:flatten(AttestationKeys)
+        ),
+    % Next, we filter the list of all attested keys to only include those that
+    % are present in every attestor's list.
+    OnlyAttestedKeys =
+        lists:filter(
+            fun(Key) ->
+                lists:all(
+                    fun(AttestedKeys) -> lists:member(Key, AttestedKeys) end,
+                    AttestationKeys
+                )
+            end,
+            AllAttestedKeys
+        ),
+    ?event({only_attested_keys, OnlyAttestedKeys}),
+    {ok, OnlyAttestedKeys}.
+
 set(Message1, NewValuesMsg, _Opts) ->
 	% Filter keys that are in the default device (this one).
     {ok, NewValuesKeys} = keys(NewValuesMsg),
@@ -256,10 +304,16 @@ set(Message1, NewValuesMsg, _Opts) ->
             end,
             maps:keys(Message1)
         ),
+    % Calculate if we need to remove the attestations from the message.
+    WithoutAtts =
+        case UnsetKeys ++ ConflictingKeys of
+            [] -> [];
+            _ -> [<<"attestations">>]
+        end,
 	{
 		ok,
 		maps:merge(
-			maps:without(ConflictingKeys ++ UnsetKeys, Message1),
+			maps:without(ConflictingKeys ++ UnsetKeys ++ WithoutAtts, Message1),
 			maps:from_list(
 				lists:filtermap(
 					fun(Key) ->
