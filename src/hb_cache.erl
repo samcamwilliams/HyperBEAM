@@ -85,6 +85,9 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
     % Write the keys of the message into the store, rolling the keys into 
     % hashpaths (having only two parts) as we do so.
+    % We start by writing the group, such that if the message is empty, we
+    % still have a group in the store.
+    hb_store:make_group(Store, UnattestedID),
     maps:map(
         fun(Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
