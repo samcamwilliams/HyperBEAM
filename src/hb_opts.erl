@@ -138,7 +138,7 @@ default_message() ->
         % Should the node store all signed messages?
         store_all_signed => true,
         % Should the node use persistent processes?
-        persistent_processes => false
+        persistent_processes => true
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

@@ -9,10 +9,10 @@
 
 %% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
+    ?event(scheduling, {starting_scheduling_server, {proc_id, ProcID}}),
     spawn_link(
         fun() ->
             pg:join({dev_scheduler, ProcID}, self()),
-            ?event({starting_scheduling_server, {proc_id, ProcID}}),
             {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
             ?event(
                 {scheduler_got_process_info,
@@ -130,6 +130,14 @@ do_assign(State, Message, ReplyPID) ->
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
             }, maps:get(wallet, State)),
+            AssignmentID = hb_message:id(Assignment, all),
+            ?event(scheduling,
+                {assigned,
+                    {proc_id, maps:get(id, State)},
+                    {slot, NextSlot},
+                    {assignment, AssignmentID}
+                }
+            ),
             maybe_inform_recipient(
                 aggressive,
                 ReplyPID,

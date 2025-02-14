@@ -129,10 +129,15 @@ do_start_mainnet(Opts) ->
             store => {hb_store_fs, #{ prefix => "main-cache" }}
         }
     ),
+    Address =
+        case hb_opts:get(priv_wallet, no_wallet, Opts) of
+            no_wallet -> <<"[ !!! no-wallet !!! ]">>;
+            Wallet -> ar_wallet:to_address(Wallet)
+        end,
     io:format(
         "Started mainnet node at http://localhost:~p~n"
         "Operator: ~s~n",
-        [maps:get(port, Opts), address()]
+        [maps:get(port, Opts), Address]
     ),
     <<"http://localhost:", (integer_to_binary(maps:get(port, Opts)))/binary>>.
 

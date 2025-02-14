@@ -58,7 +58,7 @@
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency' option.
--define(DEFAULT_CACHE_FREQ, 10).
+-define(DEFAULT_CACHE_FREQ, 1).
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1) ->
@@ -87,7 +87,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         #{ <<"path">> => <<"snapshot">>, <<"mode">> => <<"Map">> },
         Opts#{ cache_control => [] }
     ),
-    ProcID = hb_converge:get(<<"id">>, Msg1, Opts),
+    ProcID = hb_message:id(Msg1, all),
     Slot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
     {ok,
         hb_private:set(
@@ -144,7 +144,8 @@ compute(Msg1, Msg2, Opts) ->
             Opts
         ),
     ProcID = hb_converge:get(<<"process/id">>, Loaded, Opts),
-    ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
+    ?event(push, {computing, {process_id, ProcID}, {slot, Slot}}),
     do_compute(
         ProcID,
         Normalized,
@@ -159,7 +160,14 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
     ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
     case hb_converge:get(<<"current-slot">>, Msg1, Opts) of
         CurrentSlot when CurrentSlot > TargetSlot ->
-            throw({error, {already_calculated_slot, TargetSlot}});
+            throw(
+                {error,
+                    {already_calculated_slot,
+                        {target, TargetSlot},
+                        {current, CurrentSlot}
+                    }
+                }
+            );
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             ?event(process_compute, {reached_target_slot_returning_state, TargetSlot}),
@@ -201,7 +209,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                             dev_process_cache:write(
                                 ProcID,
                                 CurrentSlot,
-                                Snapshot,
+                                maps:without([<<"snapshot">>], Snapshot),
                                 Opts
                             );
                         not_found ->
@@ -241,17 +249,16 @@ now(RawMsg1, _Msg2, Opts) ->
 push(Msg1, Msg2, Opts) ->
     Wallet = hb:wallet(),
     PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
-    {ok, Outbox} = hb_converge:resolve(
+    ID = hb_converge:get(<<"id">>, Msg1, Opts),
+    ?event(push, {push_computing_outbox, {process_id, ID}, {slot, PushMsgSlot}}),
+    Result = hb_converge:resolve(
         Msg1,
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => PushMsgSlot },
         Opts#{ hashpath => ignore }
     ),
-    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, {explicit, Outbox}}}),
-    case ?IS_EMPTY_MESSAGE(Outbox) of
-        true ->
-            ?event(push, {push_outbox_empty, {slot, PushMsgSlot}}),
-            {ok, #{}};
-        false ->
+    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, Result}}),
+    case Result of
+        {ok, Outbox} when not ?IS_EMPTY_MESSAGE(Outbox) ->
             {ok, maps:map(
                 fun(Key, MsgToPush) ->
                     case hb_converge:get(<<"target">>, MsgToPush, Opts) of
@@ -278,7 +285,7 @@ push(Msg1, Msg2, Opts) ->
                                 },
                                 Opts
                             ),
-                            PushedMsgID = hb_converge:get(<<"id">>, PushedMsg, Opts),
+                            PushedMsgID = hb_message:id(PushedMsg, all),
                             ?event(push,
                                 {push_scheduled,
                                     {assigned_slot, NextSlotOnProc},
@@ -299,7 +306,10 @@ push(Msg1, Msg2, Opts) ->
                     end
                 end,
                 maps:without([<<"hashpath">>], Outbox)
-            )}
+            )};
+        _ ->
+            ?event(push, {done, {slot, PushMsgSlot}}),
+            {ok, #{}}
     end.
 
 %% @doc Ensure that the process message we have in memory is live and
@@ -309,12 +319,16 @@ ensure_loaded(Msg1, Msg2, Opts) ->
     TargetSlot = hb_converge:get(<<"slot">>, Msg2, undefined, Opts),
     ProcID = 
         case hb_converge:get(<<"process/id">>, {as, dev_message, Msg1}, Opts) of
-            not_found ->
-                hb_converge:get(<<"id">>, Msg1, Opts);
+            not_found -> hb_message:id(Msg1, all);
             P -> P
         end,
-    case hb_converge:get(<<"initialized">>, Msg1, <<"false">>, Opts) of
-        <<"false">> ->
+    ?event({ensure_loaded, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    case hb_converge:get(<<"initialized">>, Msg1, Opts) of
+        <<"true">> ->
+            ?event({already_initialized, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+            {ok, Msg1};
+        _ ->
+            ?event({not_initialized, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
             % Try to load the latest complete state from disk.
             LoadRes =
                 dev_process_cache:latest(
@@ -353,8 +367,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                         }
                     ),
                     init(Msg1, Msg2, Opts)
-            end;
-        <<"true">> -> {ok, Msg1}
+            end
     end.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
