@@ -13,17 +13,29 @@
 group(Msg1, undefined, Opts) ->
     hb_persistent:default_grouper(Msg1, undefined, Opts);
 group(Msg1, Msg2, Opts) ->
-    case hb_path:matches(<<"Compute">>, hb_path:hd(Msg2, Opts)) of
+    case hb_opts:get(persistent_processes, false, Opts) of
+        false ->
+            ?event({not_using_persistent_processes, Msg1, Msg2}),
+            hb_persistent:default_grouper(Msg1, Msg2, Opts);
         true ->
-            process_to_group_name(Msg1, Opts);
-        _ ->
-            hb_persistent:default_grouper(Msg1, Msg2, Opts)
+            ?event({using_persistent_processes, Msg1, Msg2}),
+            case Msg2 of
+                undefined ->
+                    hb_persistent:default_grouper(Msg1, undefined, Opts);
+                _ ->
+                    case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
+                        true ->
+                            process_to_group_name(Msg1, Opts);
+                        _ ->
+                            hb_persistent:default_grouper(Msg1, Msg2, Opts)
+                    end
+            end
     end.
 
 process_to_group_name(Msg1, Opts) ->
     hb_util:human_id(
         hb_converge:get(
-            <<"Process/id">>,
+            <<"process/id">>,
             {as,
                 dev_message,
                 dev_process:ensure_process_key(Msg1, Opts)
@@ -57,12 +69,12 @@ info_test() ->
 grouper_test() ->
     test_init(),
     M1 = dev_process:test_aos_process(),
-    M2 = #{ path => <<"Compute">>, v => 1 },
-    M3 = #{ path => <<"Compute">>, v => 2 },
-    M4 = #{ path => <<"Not-Compute">>, v => 3 },
-    G1 = hb_persistent:group(M1, M2, #{}),
-    G2 = hb_persistent:group(M1, M3, #{}),
-    G3 = hb_persistent:group(M1, M4, #{}),
+    M2 = #{ <<"path">> => <<"compute">>, <<"v">> => 1 },
+    M3 = #{ <<"path">> => <<"compute">>, <<"v">> => 2 },
+    M4 = #{ <<"path">> => <<"not-compute">>, <<"v">> => 3 },
+    G1 = hb_persistent:group(M1, M2, #{ persistent_processes => true }),
+    G2 = hb_persistent:group(M1, M3, #{ persistent_processes => true }),
+    G3 = hb_persistent:group(M1, M4, #{ persistent_processes => true }),
     ?event({group_samples, {g1, G1}, {g2, G2}, {g3, G3}}),
     ?assertEqual(G1, G2),
     ?assertNotEqual(G1, G3).

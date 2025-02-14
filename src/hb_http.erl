@@ -5,9 +5,9 @@
 %%% HTTP requests.
 -module(hb_http).
 -export([start/0]).
--export([get/2, get/3, post/3, post/4, request/4, request/5]).
--export([reply/2, reply/3]).
--export([message_to_status/1, req_to_tabm_singleton/2]).
+-export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
+-export([reply/3, reply/4]).
+-export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -18,85 +18,182 @@ start() ->
 %% @doc Gets a URL via HTTP and returns the resulting message in deserialized
 %% form.
 get(Node, Opts) -> get(Node, <<"/">>, Opts).
-get(Node, Path, Opts) ->
-    case request(<<"GET">>, Node, Path, #{}, Opts) of
-        {ok, Body} ->
-            {ok,
-                hb_message:convert(
-                    ar_bundles:deserialize(Body),
-                    converge,
-                    tx,
-                    #{}
-                )
-            };
-        Error -> Error
-    end.
+get(Node, PathBin, Opts) when is_binary(PathBin) ->
+    get(Node, #{ <<"path">> => PathBin }, Opts);
+get(Node, Message, Opts) ->
+    request(
+        <<"GET">>,
+        Node,
+        hb_converge:get(<<"path">>, Message, <<"/">>, Opts),
+        Message,
+        Opts
+    ).
 
 %% @doc Posts a message to a URL on a remote peer via HTTP. Returns the
 %% resulting message in deserialized form.
 post(Node, Message, Opts) ->
     post(Node,
-        hb_converge:get(<<"Path">>, Message, <<"/">>, #{}),
+        hb_converge:get(
+            <<"path">>,
+            Message,
+            <<"/">>,
+            Opts#{ topic => converge_internal }
+        ),
         Message,
         Opts
     ).
 post(Node, Path, Message, Opts) ->
     case request(<<"POST">>, Node, Path, Message, Opts) of
         {ok, Res} ->
-            {ok,
-                hb_message:convert(
-                    ar_bundles:deserialize(Res),
-                    converge,
-                    tx,
-                    #{}
-                )
-            };
+            ?event(http, {post_response, Res}),
+            {ok, Res};
         Error -> Error
     end.
 
 %% @doc Posts a binary to a URL on a remote peer via HTTP, returning the raw
 %% binary body.
+request(Message, Opts) ->
+    % Special case: We are not given a peer and a path, so we need to
+    % preprocess the URL to find them.
+    {ok, Method, Peer, Path, MessageToSend} = message_to_request(Message, Opts),
+    request(Method, Peer, Path, MessageToSend, Opts).
 request(Method, Peer, Path, Opts) ->
     request(Method, Peer, Path, #{}, Opts).
 request(Method, Config, Path, Message, Opts) when is_map(Config) ->
     multirequest(Config, Method, Path, Message, Opts);
 request(Method, Peer, Path, RawMessage, Opts) ->
-    Message = hb_converge:ensure_message(RawMessage),
-    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
-    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
-    ?event(http, {http_outbound, Method, BinPeer, BinPath, Message}),
-    BinMessage =
-        case map_size(Message) of
-            0 -> <<>>;
-            _ -> ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
-        end,
     Req =
-        #{
-            peer => BinPeer,
-            path => BinPath,
-            method => Method,
-            headers => [{<<"Content-Type">>, <<"application/x-ans-104">>}],
-            body => BinMessage
-        },
+        prepare_request(
+            hb_opts:get(format, http, Opts),
+            Method,
+            Peer,
+            Path,
+            RawMessage,
+            Opts
+        ),
     case ar_http:req(Req, Opts) of
-        {ok, Status, Headers, Body} when Status >= 200, Status < 300 ->
-            ?event({http_got, BinPeer, BinPath, Status, Headers, Body}),
+        {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
+            ?event(
+                {
+                    http_response,
+                    {req, Req},
+                    {response,
+                        #{
+                            status => Status,
+                            headers => Headers,
+                            body => Body
+                        }
+                    }
+                }
+            ),
+            HeaderMap = maps:from_list(Headers),
+            NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
             {
                 case Status of
                     201 -> created;
                     _ -> ok
                 end,
-                Body
+                case maps:get(<<"content-type">>, NormHeaderMap, undefined) of
+                    <<"application/x-ans-104">> ->
+                        ar_bundles:deserialize(Body);
+                    _ ->
+                        hb_message:convert(
+                            HeaderMap#{
+                                <<"body">> => Body
+                            },
+                            <<"structured@1.0">>,
+                            <<"httpsig@1.0">>,
+                            Opts
+                        )
+                end
             };
         {ok, Status, _Headers, Body} when Status == 400 ->
-            ?event({http_got_client_error, BinPeer, BinPath}),
+            ?event(
+                {http_got_client_error,
+                    {req, Req},
+                    {response, #{status => Status, body => Body}}
+                }),
             {error, Body};
         {ok, Status, _Headers, Body} when Status > 400 ->
-            ?event({http_got_server_error, BinPeer, BinPath}),
+            ?event(
+                {http_got_server_error,
+                    {req, Req},
+                    {response, #{status => Status, body => Body}}
+                }
+            ),
             {unavailable, Body};
         Response ->
-            ?event({http_error, BinPeer, BinPath, Response}),
+            ?event(
+                {http_error,
+                    {req, Req},
+                    {response, Response}
+                }
+            ),
             Response
+    end.
+
+%% @doc Given a message, return the information needed to make the request.
+message_to_request(M, Opts) ->
+    Method = hb_converge:get(<<"method">>, M, <<"GET">>, Opts),
+    % We must remove the path and host from the message, because they are not
+    % valid for outbound requests. The path is retrieved from the route, and
+    % the host should already be known to the caller.
+    MsgWithoutMeta = maps:without([<<"path">>, <<"host">>], M),
+    % Get the route for the message
+    case dev_router:route(#{}, M, Opts) of
+        {ok, URL} when is_binary(URL) ->
+            % The request is a direct HTTP URL, so we need to split the
+            % URL into a host and path.
+            URI = uri_string:parse(URL),
+            ?event(http, {parsed_uri, {uri, {explicit, URI}}}),
+            Port =
+                case maps:get(port, URI, undefined) of
+                    undefined ->
+                        % If no port is specified, use 80 for HTTP and 443
+                        % for HTTPS.
+                        case URL of
+                            <<"https", _/binary>> -> <<"443">>;
+                            _ -> <<"80">>
+                        end;
+                    X -> integer_to_binary(X)
+                end,
+            Protocol = maps:get(scheme, URI, <<"https">>),
+            Host = maps:get(host, URI, <<"localhost">>),
+            Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
+            PathParts = [maps:get(path, URI, <<"/">>)] ++
+                case maps:get(query, URI, <<>>) of
+                    <<>> -> [];
+                    Query -> [<<"?", Query/binary>>]
+                end,
+            Path = iolist_to_binary(PathParts),
+            ?event(http, {relay, {node, Node}, {method, Method}, {path, Path}}),
+            {ok, Method, Node, Path, MsgWithoutMeta};
+        {ok, Route} ->
+            % The result is a route, so we leave it to `request` to handle it.
+            Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
+            {ok, Method, Route, Path, MsgWithoutMeta};
+        {error, Reason} ->
+            {error, {no_viable_route, Reason, {message, M}}}
+    end.
+
+%% @doc Turn a set of request arguments into a request message, formatted in the
+%% preferred format.
+prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
+    Message = hb_converge:normalize_keys(RawMessage),
+    BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
+    BinPath = hb_path:normalize(hb_path:to_binary(Path)),
+    ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
+    case Format of
+        http ->
+            FullEncoding = #{ <<"body">> := Body } =
+                hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
+            Headers = maps:without([<<"body">>], FullEncoding),
+            maps:merge(ReqBase, #{ headers => Headers, body => Body });
+        ans104 ->
+            ReqBase#{
+                headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
+                body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
+            }
     end.
 
 %% @doc Dispatch the same HTTP request to many nodes. Can be configured to
@@ -111,10 +208,10 @@ request(Method, Peer, Path, RawMessage, Opts) ->
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message, Opts) ->
-    Nodes = hb_converge:get(<<"Peers">>, Config, #{}, Opts),
-    Responses = hb_converge:get(<<"Responses">>, Config, 1, Opts),
-    StopAfter = hb_converge:get(<<"Stop-After">>, Config, true, Opts),
-    case hb_converge:get(<<"Parallel">>, Config, false, Opts) of
+    Nodes = hb_converge:get(<<"peers">>, Config, #{}, Opts),
+    Responses = hb_converge:get(<<"responses">>, Config, 1, Opts),
+    StopAfter = hb_converge:get(<<"stop-after">>, Config, true, Opts),
+    case hb_converge:get(<<"parallel">>, Config, false, Opts) of
         false ->
             serial_multirequest(
                 Nodes, Responses, Method, Path, Message, Opts);
@@ -196,33 +293,63 @@ empty_inbox(Ref) ->
     end.
 
 %% @doc Reply to the client's HTTP request with a message.
-reply(Req, Message) ->
-    reply(Req, message_to_status(Message), Message).
-reply(Req, Status, RawMessage) ->
-    Message = hb_converge:ensure_message(RawMessage),
-    TX = hb_message:convert(Message, tx, converge, #{}),
+reply(Req, Message, Opts) ->
+    reply(Req, message_to_status(Message), Message, Opts).
+reply(Req, Status, RawMessage, Opts) ->
+    Message = hb_converge:normalize_keys(RawMessage),
+    {ok, EncodedHeaders, EncodedBody} = prepare_reply(Message, Opts),
     ?event(http,
         {replying,
             {status, Status},
-            {path, maps:get(path, Req, undefined_path)},
-            {tx, TX}
+            {path, maps:get(<<"path">>, Req, undefined_path)},
+            {raw_message, RawMessage},
+            {enc_headers, EncodedHeaders},
+            {enc_body, EncodedBody}
         }
     ),
-    Req2 = cowboy_req:stream_reply(
-        Status,
-        #{<<"content-type">> => <<"application/x-ans-104">>},
-        Req
-    ),
-    Req3 = cowboy_req:stream_body(
-        ar_bundles:serialize(TX),
-        nofin,
-        Req2
-    ),
+    % Cowboy handles cookies in headers separately, so we need to manipulate
+    % the request to set the cookies such that they will be sent over the wire
+    % unmodified.
+    SetCookiesReq =
+        case maps:get(<<"set-cookie">>, EncodedHeaders, undefined) of
+            undefined -> Req#{ resp_headers => EncodedHeaders };
+            Cookies ->
+                Req#{
+                    resp_headers => EncodedHeaders,
+                    resp_cookies => #{ <<"__HB_SET_COOKIE">> => Cookies }
+                }
+        end,
+    Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
+    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
+
+%% @doc Generate the headers and body for a HTTP response message.
+prepare_reply(Message, Opts) ->
+    case hb_opts:get(format, http, Opts) of
+        http ->
+            EncMessage =
+                hb_message:convert(
+                    Message,
+                    <<"httpsig@1.0">>,
+                    <<"structured@1.0">>,
+                    #{ topic => converge_internal }
+                ),
+            {ok,
+                maps:without([<<"body">>], EncMessage),
+                maps:get(<<"body">>, EncMessage, <<>>)
+            };
+        ans104 ->
+            {ok,
+                #{
+                    <<"content-type">> => <<"application/octet-stream">>
+                },
+                ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
+            }
+    end.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
 message_to_status(Item) ->
-    case dev_message:get(<<"Status">>, Item) of
+    case dev_message:get(<<"status">>, Item) of
         {ok, RawStatus} ->
             case is_integer(RawStatus) of
                 true -> RawStatus;
@@ -231,21 +358,63 @@ message_to_status(Item) ->
         _ -> 200
     end.
 
+%% @doc Convert an HTTP status code to an atom.
+status_code(ok) -> 200;
+status_code(error) -> 400;
+status_code(created) -> 201;
+status_code(unavailable) -> 503;
+status_code(Status) -> Status.
+
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->
     case cowboy_req:header(<<"content-type">>, Req) of
-        {ok, <<"application/x-ans-104">>} ->
+        <<"application/x-ans-104">> ->
             {ok, Body} = read_body(Req),
-            hb_message:convert(ar_bundles:deserialize(Body), tabm, tx, Opts);
+            hb_message:convert(ar_bundles:deserialize(Body), <<"structured@1.0">>, <<"ans104@1.0">>, Opts);
         _ ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
 
-http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
+http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
-    Headers =
-        RawHeaders#{
-            <<"relative-reference">> =>
+    Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
+    {ok, SignedMsg} = remove_unsigned_fields(Msg, Opts),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
+    Signers = hb_message:signers(SignedMsg),
+    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg, Signers) of
+        true ->
+            ?event(http, {verified_signature, SignedMsg}),
+            case hb_opts:get(store_all_signed, false, Opts) of
+                true ->
+                    hb_cache:write(Msg, Opts);
+                false ->
+                    do_nothing
+            end,
+            maybe_add_unsigned(Req, SignedMsg, Opts);
+        false ->
+            ?event(http,
+                {invalid_signature,
+                    {raw, RawHeaders},
+                    {signed, SignedMsg},
+                    {force, ForceSignedRequests}
+                }
+            ),
+            throw({invalid_signature, SignedMsg})
+    end.
+
+%% @doc Add the method and path to a message, if they are not already present.
+%% The precidence order for finding the path is:
+%% 1. The path in the message
+%% 2. The path in the request URI
+maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
+    Method = cowboy_req:method(Req),
+    MsgPath =
+        hb_converge:get(
+            <<"path">>,
+            Msg,
+            maps:get(
+                <<"path">>, 
+                RawHeaders,
                 iolist_to_binary(
                     cowboy_req:uri(
                         Req,
@@ -255,15 +424,17 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, _Opts) ->
                             scheme => undefined
                         }
                     )
-                ),
-            <<"method">> => cowboy_req:method(Req)
-        },
-    HTTPEncoded =
-        #{
-            headers => maps:to_list(Headers),
-            body => Body
-        },
-    hb_codec_http:from(HTTPEncoded).
+                )
+            ),
+            Opts
+        ),
+    Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
+
+remove_unsigned_fields(Msg, _Opts) ->
+    case hb_message:signers(Msg) of
+        [] -> {ok, Msg};
+        _ -> hb_message:with_only_attested(Msg)
+    end.
 
 %% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
 read_body(Req) -> read_body(Req, <<>>).
@@ -275,84 +446,78 @@ read_body(Req0, Acc) ->
 
 %%% Tests
 
-simple_converge_resolve_test() ->
-    URL = hb_http_server:start_test_node(),
+simple_converge_resolve_unsigned_test() ->
+    URL = hb_http_server:start_node(),
+    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
+    {ok, Res} = post(URL, TestMsg, #{}),
+    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+
+simple_converge_resolve_signed_test() ->
+    URL = hb_http_server:start_node(),
+    TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
+    Wallet = hb:wallet(),
     {ok, Res} =
         post(
             URL,
-            #{
-                path => <<"Key1">>,
-                <<"Key1">> =>
-                    #{<<"Key2">> =>
-                        #{
-                            <<"Key3">> => <<"Value2">>
-                        }
-                    }
-            },
+            hb_message:attest(TestMsg, Wallet),
             #{}
         ),
-    ?assertEqual(<<"Value2">>, hb_converge:get(<<"Key2/Key3">>, Res, #{})).
+    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+
+nested_converge_resolve_test() ->
+    URL = hb_http_server:start_node(),
+    Wallet = hb:wallet(),
+    {ok, Res} =
+        post(
+            URL,
+            hb_message:attest(#{
+                <<"path">> => <<"/key1/key2/key3">>,
+                <<"key1">> =>
+                    #{<<"key2">> =>
+                        #{
+                            <<"key3">> => <<"Value2">>
+                        }
+                    }
+            }, Wallet),
+            #{}
+        ),
+    ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
 
 wasm_compute_request(ImageFile, Func, Params) ->
+    wasm_compute_request(ImageFile, Func, Params, <<"">>).
+wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
     {ok, Bin} = file:read_file(ImageFile),
-    #{
-        path => <<"Init/Compute/Results">>,
-        device => <<"WASM-64/1.0">>,
-        <<"WASM-Function">> => Func,
-        <<"WASM-Params">> => Params,
-        <<"Image">> => Bin
-    }.
+    Wallet = hb:wallet(),
+    hb_message:attest(#{
+        <<"path">> => <<"/init/compute/results", ResultPath/binary>>,
+        <<"device">> => <<"WASM-64@1.0">>,
+        <<"wasm-function">> => Func,
+        <<"wasm-params">> => Params,
+        <<"body">> => Bin
+    }, Wallet).
 
 run_wasm_unsigned_test() ->
-    Node = hb_http_server:start_test_node(#{force_signed => false}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
+    Node = hb_http_server:start_node(#{force_signed => false}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(Node, Msg, #{}),
-    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
-    URL = hb_http_server:start_test_node(#{force_signed => true}),
-    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [10]),
+    URL = hb_http_server:start_node(#{force_signed => true}),
+    Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(ok, hb_converge:get(<<"Type">>, Res, #{})).
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
 
-% http_scheduling_test() ->
-%     % We need the rocksdb backend to run for hb_cache module to work
-%     application:ensure_all_started(hb),
-%     pg:start(pg),
-%     <<I1:32/unsigned-integer, I2:32/unsigned-integer, I3:32/unsigned-integer>>
-%         = crypto:strong_rand_bytes(12),
-%     rand:seed(exsplus, {I1, I2, I3}),
-%     URL = hb_http_server:start_test_node(#{force_signed => true}),
-%     Msg1 = dev_scheduler:test_process(),
-%     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
-%     ProcID = hb_util:id(Proc),
-%     {ok, Res} =
-%         hb_converge:resolve(
-%             Msg1,
-%             #{
-%                 path => <<"Append">>,
-%                 <<"Method">> => <<"POST">>,
-%                 <<"Message">> => Proc
-%             },
-%             #{}
-%         ),
-%     MsgX = #{
-%         device => <<"Scheduler/1.0">>,
-%         path => <<"Append">>,
-%         <<"Process">> => Proc,
-%         <<"Message">> =>
-%             #{
-%                 <<"Target">> => ProcID,
-%                 <<"Type">> => <<"Message">>,
-%                 <<"Test-Val">> => 1
-%             }
-%     },
-%     Res = post(URL, MsgX),
-%     ?event(debug, {post_result, Res}),
-%     Msg3 = #{
-%         path => <<"Slot">>,
-%         <<"Method">> => <<"GET">>,
-%         <<"Process">> => ProcID
-%     },
-%     SlotRes = post(URL, Msg3),
-%     ?event(debug, {slot_result, SlotRes}).
+get_deep_unsigned_wasm_state_test() ->
+    URL = hb_http_server:start_node(#{force_signed => false}),
+    Msg = wasm_compute_request(
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
+    {ok, Res} = post(URL, Msg, #{}),
+    ?assertEqual(6.0, hb_converge:get(<<"/output/1">>, Res, #{})).
+
+get_deep_signed_wasm_state_test() ->
+    URL = hb_http_server:start_node(#{force_signed => true}),
+    Msg = wasm_compute_request(
+        <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
+    {ok, Res} = post(URL, Msg, #{}),
+    ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).

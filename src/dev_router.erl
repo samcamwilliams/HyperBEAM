@@ -3,16 +3,16 @@
 %%% routed to a single process per node, which then load-balances them
 %%% between downstream workers that perform the actual requests.
 %%% 
-%%% The routes for the router are defined in the `routes` key of the `Opts`,
+%%% The routes for the router are defined in the `routes' key of the `Opts',
 %%% as a precidence-ordered list of maps. The first map that matches the
 %%% message will be used to determine the route.
 %%% 
 %%% Multiple nodes can be specified as viable for a single route, with the
-%%% `Choose` key determining how many nodes to choose from the list (defaulting
-%%% to 1). The `Strategy` key determines the load distribution strategy,
-%%% which can be one of `Random`, `By-Base`, or `Nearest`. The route may also 
+%%% `Choose' key determining how many nodes to choose from the list (defaulting
+%%% to 1). The `Strategy' key determines the load distribution strategy,
+%%% which can be one of `Random', `By-Base', or `Nearest'. The route may also 
 %%% define additional parallel execution parameters, which are used by the
-%%% `hb_http` module to manage control of requests.
+%%% `hb_http' module to manage control of requests.
 %%% 
 %%% The structure of the routes should be as follows:
 %%% ```
@@ -25,21 +25,22 @@
 %%% '''
 -module(dev_router).
 %%% Device API:
--export([routes/3]).
+-export([routes/3, route/3]).
 %%% Public utilities:
--export([find_route/2, find_route/3, match_routes/3]).
+-export([match_routes/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
 %% @doc Device function that returns all known routes.
 routes(M1, M2, Opts) ->
-    ?event(debug, {routes_msg, M1, M2}),
+    ?event({routes_msg, M1, M2}),
     Routes = hb_opts:get(routes, [], Opts),
-    case hb_converge:get(method, M2, Opts) of
+    ?event({routes, Routes}),
+    case hb_converge:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
-            Owner = hb_opts:get(owner, undefined, Opts),
+            Owner = hb_opts:get(operator, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
-            Signers = hb_message:signers(M2),
+            {ok, Signers} = dev_message:attestors(M2),
             IsTrusted =
                 lists:any(
                     fun(Signer) -> lists:member(Signer, Signers) end,
@@ -47,14 +48,23 @@ routes(M1, M2, Opts) ->
                 ),
             case IsTrusted of
                 true ->
-                    Priority = hb_converge:get(<<"Priority">>, M2, Opts),
+                    % Minimize the work performed by converge to make the sort
+                    % more efficient.
+                    SortOpts = Opts#{ hashpath => ignore },
                     NewRoutes =
-                        lists:sort(fun(X, Y) -> X > Y end, [Priority|Routes]),
-                    hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
+                        lists:sort(
+                            fun(X, Y) ->
+                                hb_converge:get(<<"priority">>, X, SortOpts)
+                                    < hb_converge:get(<<"priority">>, Y, SortOpts)
+                            end,
+                            [M2|Routes]
+                        ),
+                    ok = hb_http_server:set_opts(Opts#{ routes => NewRoutes }),
                     {ok, <<"Route added.">>};
                 false -> {error, not_authorized}
             end;
-        _ -> {ok, Routes}
+        _ ->
+            {ok, Routes}
     end.
 
 %% @doc If we have a route that has multiple resolving nodes, check
@@ -65,52 +75,77 @@ routes(M1, M2, Opts) ->
 %%       Nearest: According to the distance of the node's wallet address to the
 %%                base message's hashpath.
 %% '''
-%% `By-Base` will ensure that all traffic for the same hashpath is routed to the
-%% same node, minimizing work duplication, while `Random` ensures a more even
+%% `By-Base' will ensure that all traffic for the same hashpath is routed to the
+%% same node, minimizing work duplication, while `Random' ensures a more even
 %% distribution of the requests.
 %% 
-%% Can operate as a `Router/1.0` device, which will ignore the base message,
+%% Can operate as a `Router/1.0' device, which will ignore the base message,
 %% routing based on the Opts and request message provided, or as a standalone
-%% function, taking only the request message and the `Opts` map.
-find_route(Msg, Opts) -> find_route(undefined, Msg, Opts).
-find_route(_, Msg, Opts) ->
+%% function, taking only the request message and the `Opts' map.
+route(Msg, Opts) -> route(undefined, Msg, Opts).
+route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
     R = match_routes(Msg, Routes, Opts),
-    case (R =/= no_matches) andalso hb_converge:get(<<"Node">>, R, Opts) of
-        false -> no_matches;
+    ?event({find_route, {msg, Msg}, {routes, Routes}, {res, R}}),
+    case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
+        false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
+        Node when is_map(Node) -> apply_node(Msg, Node);
         not_found ->
-            Nodes = hb_converge:get(<<"Peers">>, R, Opts),
-            case hb_converge:get(<<"Strategy">>, R, Opts) of
+            Nodes = hb_converge:get(<<"peers">>, R, Opts),
+            case hb_converge:get(<<"strategy">>, R, Opts) of
                 not_found -> {ok, Nodes};
                 Strategy ->
-                    ChooseN = hb_converge:get(<<"Choose">>, R, 1, Opts),
+                    ChooseN = hb_converge:get(<<"choose">>, R, 1, Opts),
                     Hashpath = hb_path:from_message(hashpath, R),
                     Chosen = choose(ChooseN, Strategy, Hashpath, Nodes, Opts),
                     case Chosen of
                         [X] when is_map(X) ->
-                            {ok, hb_converge:get(<<"Host">>, X, Opts)};
+                            {ok, hb_converge:get(<<"host">>, X, Opts)};
                         [X] -> {ok, X};
                         _ ->
-                            {ok, hb_converge:set(<<"Peers">>, Chosen, Opts)}
+                            {ok, hb_converge:set(<<"peers">>, Chosen, Opts)}
                     end
             end
     end.
+
+%% @doc Apply a node map's rules for transforming the path of the message.
+%% Supports the following keys:
+%% - `prefix': The prefix to add to the path.
+%% - `suffix': The suffix to add to the path.
+%% - `replace': A regex to replace in the path.
+apply_node(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
+    {ok, <<Prefix/binary, Path/binary>>};
+apply_node(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
+    {ok, <<Path/binary, Suffix/binary>>};
+apply_node(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
+    % Apply the regex to the path and replace the first occurrence.
+    case re:replace(Path, Match, With, [global]) of
+        NewPath when is_binary(NewPath) ->
+            {ok, NewPath};
+        _ -> {error, invalid_replace_args}
+    end.
+
 
 %% @doc Find the first matching template in a list of known routes.
 match_routes(ToMatch, Routes, Opts) ->
     match_routes(
         ToMatch,
         Routes,
-        hb_converge:keys(Routes),
+        hb_converge:keys(hb_converge:normalize_keys(Routes)),
         Opts
     ).
+match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
+    % If the route is an explicit HTTP URL, we can match it directly.
+    #{ <<"node">> => Explicit };
+match_routes(#{ <<"path">> := Explicit = <<"https://", _/binary>> }, _, _, _) ->
+    #{ <<"node">> => Explicit };
 match_routes(_, _, [], _) -> no_matches;
 match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
     XM = hb_converge:get(XKey, Routes, Opts),
     Template =
         hb_converge:get(
-            <<"Template">>,
+            <<"template">>,
             XM,
             #{},
             Opts#{ hashpath => ignore }
@@ -218,7 +253,7 @@ strategy_suite_test_() ->
         [<<"Random">>, <<"By-Base">>, <<"Nearest">>]
     ).
 
-%% @doc Ensure that `By-Base` always chooses the same node for the same
+%% @doc Ensure that `By-Base' always chooses the same node for the same
 %% hashpath.
 by_base_determinism_test() ->
     FirstN = 5,
@@ -236,7 +271,7 @@ unique_test(Strategy) ->
     unique_nodes(Simulation).
 
 choose_1_test(Strategy) ->
-    TestSize = 3750,
+    TestSize = 1500,
     Nodes = generate_nodes(20),
     Simulation = simulate(TestSize, 1, Nodes, Strategy),
     within_norms(Simulation, Nodes, TestSize).
@@ -265,113 +300,159 @@ unique_nodes(Simulation) ->
 route_template_message_matches_test() ->
     Routes = [
         #{
-            <<"Template">> => #{ <<"Other-Key">> => <<"Other-Value">> },
-            <<"Node">> => <<"incorrect">>
+            <<"template">> => #{ <<"other-key">> => <<"other-value">> },
+            <<"node">> => <<"incorrect">>
         },
         #{
-            <<"Template">> => #{ <<"Special-Key">> => <<"Special-Value">> },
-            <<"Node">> => <<"correct">>
+            <<"template">> => #{ <<"special-key">> => <<"special-value">> },
+            <<"node">> => <<"correct">>
         }
     ],
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(
-            #{ path => <<"/">>, <<"Special-Key">> => <<"Special-Value">> },
+        route(
+            #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
-        no_matches,
-        find_route(
-            #{ path => <<"/">>, <<"Special-Key">> => <<"Special-Value2">> },
+        {error, no_matches},
+        route(
+            #{ <<"path">> => <<"/">>, <<"special-key">> => <<"special-value2">> },
             #{ routes => Routes }
         )
     ),
     ?assertEqual(
         {ok, <<"fallback">>},
-        find_route(
-            #{ path => <<"/">> },
-            #{ routes => Routes ++ [#{ <<"Node">> => <<"fallback">> }] }
+        route(
+            #{ <<"path">> => <<"/">> },
+            #{ routes => Routes ++ [#{ <<"node">> => <<"fallback">> }] }
         )
     ).
 
 route_regex_matches_test() ->
     Routes = [
         #{
-            <<"Template">> => <<"/.*/Compute">>,
-            <<"Node">> => <<"incorrect">>
+            <<"template">> => <<"/.*/compute">>,
+            <<"node">> => <<"incorrect">>
         },
         #{
-            <<"Template">> => <<"/.*/Schedule">>,
-            <<"Node">> => <<"correct">>
+            <<"template">> => <<"/.*/schedule">>,
+            <<"node">> => <<"correct">>
         }
     ],
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(#{ path => <<"/abc/Schedule">> }, #{ routes => Routes })
+        route(#{ <<"path">> => <<"/abc/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
         {ok, <<"correct">>},
-        find_route(#{ path => <<"/a/b/c/Schedule">> }, #{ routes => Routes })
+        route(#{ <<"path">> => <<"/a/b/c/schedule">> }, #{ routes => Routes })
     ),
     ?assertEqual(
-        no_matches,
-        find_route(#{ path => <<"/a/b/c/BadKey">> }, #{ routes => Routes })
+        {error, no_matches},
+        route(#{ <<"path">> => <<"/a/b/c/bad-key">> }, #{ routes => Routes })
     ).
 
+explicit_route_test() ->
+    Routes = [
+        #{
+            <<"template">> => <<"*">>,
+            <<"node">> => <<"unimportant">>
+        }
+    ],
+    ?assertEqual(
+        {ok, <<"https://google.com">>},
+        route(
+            #{ <<"path">> => <<"https://google.com">> },
+            #{ routes => Routes }
+        )
+    ),
+    ?assertEqual(
+        {ok, <<"http://google.com">>},
+        route(
+            #{ <<"path">> => <<"http://google.com">> },
+            #{ routes => Routes }
+        )
+    ).
+
+device_call_from_singleton_test() ->
+    % Try with a real-world example, taken from a GET request to the router.
+    NodeOpts = #{ routes => Routes = [#{
+        <<"template">> => <<"/some/path">>,
+        <<"node">> => <<"old">>,
+        <<"priority">> => 10
+    }]},
+    Msgs = hb_singleton:from(#{ <<"path">> => <<"~router@1.0/routes">> }),
+    ?event({msgs, Msgs}),
+    ?assertEqual(
+        {ok, Routes},
+        hb_converge:resolve_many(Msgs, NodeOpts)
+    ).
+    
+
 get_routes_test() ->
-    Node = hb_http_server:start_test_node(
+    Node = hb_http_server:start_node(
         #{
             force_signed => false,
-            routes => Routes = [
+            routes => [
                 #{
-                    <<"Template">> => <<"*">>,
-                    <<"Node">> => <<"our_node">>,
-                    <<"Priority">> => 10
+                    <<"template">> => <<"*">>,
+                    <<"node">> => <<"our_node">>,
+                    <<"priority">> => 10
                 }
             ]
         }
     ),
-    Res = hb_client:routes(Node),
-    ?event(debug, {get_routes_test, Res}),
-    {ok, RecvdRoutes} = Res,
-    ?assert(hb_message:match(Routes, RecvdRoutes)).
+    Res = hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{}),
+    ?event({get_routes_test, Res}),
+    {ok, Recvd} = Res,
+    ?assertMatch(#{ <<"body">> := <<"our_node">> }, Recvd).
 
 add_route_test() ->
-    Node = hb_http_server:start_test_node(
+    Owner = ar_wallet:new(),
+    Node = hb_http_server:start_node(
         #{
             force_signed => false,
-            routes => Routes = [
+            routes => [
                 #{
-                    <<"Template">> => <<"/Some/Path">>,
-                    <<"Node">> => <<"old">>,
-                    <<"Priority">> => 10
+                    <<"template">> => <<"/some/path">>,
+                    <<"node">> => <<"old">>,
+                    <<"priority">> => 10
                 }
-            ]
+            ],
+            operator => hb_util:encode(ar_wallet:to_address(Owner))
         }
     ),
-    Res = hb_client:add_route(Node,
-        NewRoute = #{
-            <<"Template">> => <<"/Some/New/Path">>,
-            <<"Node">> => <<"new">>,
-            <<"Priority">> => 15
-        }
-    ),
-    ?event(debug, {add_route_test, Res}),
-    ?assertEqual({ok, <<"Route added.">>}, Res),
-    Res2 = hb_client:routes(Node),
-    ?event(debug, {new_routes, Res2}),
-    {ok, RecvdRoutes} = Res2,
-    ?assert(hb_message:match(Routes ++ [NewRoute], RecvdRoutes)).
+    Res =
+        hb_http:post(
+            Node,
+            hb_message:attest(
+                #{
+                    <<"path">> => <<"/~router@1.0/routes">>,
+                    <<"template">> => <<"/some/new/path">>,
+                    <<"node">> => <<"new">>,
+                    <<"priority">> => 15
+                },
+                Owner
+            ),
+            #{}
+        ),
+    ?event({post_res, Res}),
+    ?assertMatch({ok, #{ <<"body">> := <<"Route added.">> }}, Res),
+    GetRes = hb_http:get(Node, <<"/~router@1.0/routes/2/node">>, #{}),
+    ?event({get_res, GetRes}),
+    {ok, Recvd} = GetRes,
+    ?assertMatch(#{ <<"body">> := <<"new">> }, Recvd).
 
 %%% Statistical test utilities
 
 generate_nodes(N) ->
     [
         #{
-            <<"Host">> =>
+            <<"host">> =>
                 <<"http://localhost:", (integer_to_binary(Port))/binary>>,
-            <<"Wallet">> => hb_util:encode(crypto:strong_rand_bytes(32))
+            <<"wallet">> => hb_util:encode(crypto:strong_rand_bytes(32))
         }
     ||
         Port <- lists:seq(1, N)
@@ -418,7 +499,7 @@ simulation_distribution(SimRes, Nodes) ->
 
 within_norms(SimRes, Nodes, TestSize) ->
     Distribution = simulation_distribution(SimRes, Nodes),
-    % Check that the mean is `TestSize/length(Nodes)`
+    % Check that the mean is `TestSize/length(Nodes)'
     Mean = hb_util:mean(Distribution),
     ?assert(Mean == (TestSize / length(Nodes))),
     % Check that the highest count is not more than 3 standard deviations

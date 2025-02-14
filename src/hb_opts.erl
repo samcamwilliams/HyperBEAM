@@ -15,14 +15,19 @@
 -module(hb_opts).
 -export([get/1, get/2, get/3, default_message/0]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
 default_message() ->
     #{
         %%%%%%%% Functional options %%%%%%%%
+        initialized => true,
         %% What protocol should the node use for HTTP requests?
         %% Options: http1, http2, http3
         protocol => http2,
+        %% What HTTP client should the node use?
+        %% Options: gun, httpc
+        http_client => gun,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
@@ -47,30 +52,34 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices =>
             #{
-                <<"Test-Device/1.0">> => dev_test,
-                <<"Message/1.0">> => dev_message,
-                <<"Stack/1.0">> => dev_stack,
-                <<"Multipass/1.0">> => dev_multipass,
-                <<"Scheduler/1.0">> => dev_scheduler,
-                <<"Process/1.0">> => dev_process,
-                <<"WASM-64/1.0">> => dev_wasm,
-                <<"WASI/1.0">> => dev_wasi,
-                <<"JSON-Iface/1.0">> => dev_json_iface,
-                <<"Dedup/1.0">> => dev_dedup,
-                <<"Router/1.0">> => dev_router,
-                <<"Cron">> => dev_cron,
-                <<"PODA">> => dev_poda,
-                <<"Monitor">> => dev_monitor,
-                <<"Push">> => dev_mu,
-                <<"Compute">> => dev_cu,
-                <<"P4">> => dev_p4
-            },
-        codecs => 
-            #{
-                converge => hb_codec_converge,
-                tx => hb_codec_tx,
-                flat => hb_codec_flat,
-                http => hb_codec_http
+                <<"meta@1.0">> => dev_meta,
+                <<"message@1.0">> => dev_message,
+                <<"stack@1.0">> => dev_stack,
+                <<"multipass@1.0">> => dev_multipass,
+                <<"scheduler@1.0">> => dev_scheduler,
+                <<"process@1.0">> => dev_process,
+                <<"wasm-64@1.0">> => dev_wasm,
+                <<"wasi@1.0">> => dev_wasi,
+                <<"json-iface@1.0">> => dev_json_iface,
+                <<"dedup@1.0">> => dev_dedup,
+                <<"router@1.0">> => dev_router,
+                <<"relay@1.0">> => dev_relay,
+                <<"cron@1.0">> => dev_cron,
+                <<"poda@1.0">> => dev_poda,
+                <<"monitor@1.0">> => dev_monitor,
+                <<"push@1.0">> => dev_mu,
+                <<"compute@1.0">> => dev_cu,
+                <<"p4@1.0">> => dev_p4,
+                <<"faff@1.0">> => dev_faff,
+                <<"simple-pay@1.0">> => dev_simple_pay,
+                <<"snp@1.0">> => dev_snp,
+                <<"httpsig@1.0">> => dev_codec_httpsig,
+                <<"ans104@1.0">> => dev_codec_ans104,
+                <<"flat@1.0">> => dev_codec_flat,
+                <<"structured@1.0">> => dev_codec_structured,
+                <<"lookup@1.0">> => dev_lookup,
+                <<"compute-lite@1.0">> => dev_compute_lite,
+                <<"test-device@1.0">> => dev_test
             },
         %% Should the node attempt to access data from remote caches for
         %% client requests?
@@ -89,7 +98,10 @@ default_message() ->
         http_keepalive => 120000,
         http_request_send_timeout => 60000,
         http_default_remote_port => 8734,
-        http_port => 8734,
+        port => 8734,
+        wasm_allow_aot => false,
+        %% Options for the relay device
+        relay_http_client => httpc,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,
@@ -97,11 +109,29 @@ default_message() ->
         debug_print_binary_max => 60,
         debug_print_indent => 2,
         debug_print => false,
-        cache_results => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_ids => true
+        debug_hide_metadata => false,
+        debug_ids => false,
+		trusted => #{},
+        % Routes for the compute-lite device to use a local CU, if requested.
+        routes => [
+            #{
+                <<"template">> => <<"/result/.*">>,
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            }
+        ],
+        http_extra_opts =>
+            #{
+                force_message => true,
+                store => {hb_store_fs, #{ prefix => "main-cache" }},
+                cache_control => [<<"always">>]
+            },
+        % Should the node store all signed messages?
+        store_all_signed => true,
+        % Should the node use persistent processes?
+        persistent_processes => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
@@ -113,6 +143,12 @@ default_message() ->
 %% `prefer' defaults to `local'.
 get(Key) -> ?MODULE:get(Key, undefined).
 get(Key, Default) -> ?MODULE:get(Key, Default, #{}).
+get(Key, Default, Opts) when is_binary(Key) ->
+    try binary_to_existing_atom(Key, utf8) of
+        AtomKey -> get(AtomKey, Default, Opts)
+    catch
+        error:badarg -> Default
+    end;
 get(Key, Default, Opts = #{ only := local }) ->
     case maps:find(Key, Opts) of
         {ok, Value} -> Value;
@@ -142,7 +178,7 @@ get(Key, Default, Opts) ->
 -define(ENV_KEYS,
     #{
         key_location => {"HB_KEY", "hyperbeam-key.json"},
-        http_port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
+        port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
             {"HB_STORE",
                 fun(Dir) ->

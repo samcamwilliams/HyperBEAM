@@ -1,31 +1,31 @@
 %%% @doc A simple scheduler scheme for AO.
 %%% This device expects a message of the form:
-%%%     Process: #{ id, Scheduler: #{ Authority } }
+%%%     Process: `#{ id, Scheduler: #{ Authority } }'
 %%% ```
 %%% It exposes the following keys for scheduling:
-%%%     #{ method: GET, path: <<"/info">> } ->
+%%%     `#{ method: GET, path: <<"/info">> }' ->
 %%%         Returns information about the scheduler.
-%%%     #{ method: GET, path: <<"/slot">> } -> slot(Msg1, Msg2, Opts)
+%%%     `#{ method: GET, path: <<"/slot">> }' -> `slot(Msg1, Msg2, Opts)'
 %%%         Returns the current slot for a process.
-%%%     #{ method: GET, path: <<"/schedule">> } -> get_schedule(Msg1, Msg2, Opts)
+%%%     `#{ method: GET, path: <<"/schedule">> }' -> `get_schedule(Msg1, Msg2, Opts)'
 %%%         Returns the schedule for a process in a cursor-traversable format.
-%%%     #{ method: POST, path: <<"/schedule">> } -> post_schedule(Msg1, Msg2, Opts)
-%%%         Schedules a new message for a process.'''
+%%%    ` #{ method: POST, path: <<"/schedule">> }' -> `post_schedule(Msg1, Msg2, Opts)'
+%%%         Schedules a new message for a process, or starts a new scheduler
+%%%         for the given message.
+%%% '''
 
 -module(dev_scheduler).
 %%% Converge API functions:
 -export([info/0]).
 %%% Local scheduling functions:
--export([schedule/3, append/3]).
+-export([schedule/3, router/4]).
 %%% CU-flow functions:
 -export([slot/3, status/3, next/3]).
--export([start/0, init/3, end_of_schedule/3, checkpoint/1]).
+-export([start/0, checkpoint/1]).
 %%% Test helper exports:
 -export([test_process/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
-
 -define(MAX_ASSIGNMENT_QUERY_LEN, 1000).
 
 %% @doc Helper to ensure that the environment is started.
@@ -46,14 +46,18 @@ info() ->
                 status,
                 next,
                 schedule,
-                append,
                 slot,
                 init,
-                end_of_schedule,
                 checkpoint
             ],
-        excludes => [set, keys]
+        excludes => [set, keys],
+        default => fun router/4
     }.
+
+%% @doc The default handler for the scheduler device.
+router(_, Msg1, Msg2, Opts) ->
+    ?event({scheduler_router_called, {msg2, Msg2}, {opts, Opts}}),
+    schedule(Msg1, Msg2, Opts).
 
 %% @doc Load the schedule for a process into the cache, then return the next
 %% assignment. Assumes that Msg1 is a `dev_process` or similar message, having
@@ -63,11 +67,11 @@ next(Msg1, Msg2, Opts) ->
     ?event({scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     Schedule =
         hb_private:get(
-            <<"priv/Scheduler/Assignments">>,
+            <<"priv/scheduler/assignments">>,
             Msg1,
             Opts
         ),
-    LastProcessed = hb_converge:get(<<"Current-Slot">>, Msg1, Opts),
+    LastProcessed = hb_converge:get(<<"current-slot">>, Msg1, Opts),
     ?event({local_schedule_cache, {schedule, Schedule}}),
     Assignments =
         case Schedule of
@@ -77,9 +81,9 @@ next(Msg1, Msg2, Opts) ->
                     hb_converge:resolve(
                         Msg1,
                         #{
-                            <<"Method">> => <<"GET">>,
-                            path => <<"Schedule/Assignments">>,
-                            <<"From">> => LastProcessed
+                            <<"method">> => <<"GET">>,
+                            <<"path">> => <<"schedule/assignments">>,
+                            <<"from">> => LastProcessed
                         },
                         Opts
                     ),
@@ -87,43 +91,41 @@ next(Msg1, Msg2, Opts) ->
         end,
     ValidKeys =
         lists:filter(
-            fun(Slot) ->
-                try 
-                    binary_to_integer(Slot) > LastProcessed
-                catch
-                    _:_ -> false
-                end
-            end,
+            fun(Slot) -> Slot > LastProcessed end,
             maps:keys(Assignments)
         ),
     % Remove assignments that are below the last processed slot.
     FilteredAssignments = maps:with(ValidKeys, Assignments),
     ?event({filtered_assignments, FilteredAssignments}),
-    Slot = lists:min([ binary_to_integer(S) || S <- ValidKeys ]),
+    Slot =
+        case ValidKeys of
+            [] -> LastProcessed;
+            Slots -> lists:min(Slots)
+        end,
     ?event({next_slot_to_process, Slot, {last_processed, LastProcessed}}),
     case (LastProcessed + 1) == Slot of
         true ->
             NextMessage =
                 hb_converge:get(
-                    integer_to_binary(Slot),
+                    Slot,
                     FilteredAssignments,
                     Opts
                 ),
             NextState =
                 hb_private:set(
                     Msg1,
-                    <<"Schedule/Assignments">>,
+                    <<"schedule/assignments">>,
                     hb_converge:remove(FilteredAssignments, Slot),
                     Opts
                 ),
             ?event(
                 {next_returning, {slot, Slot}, {message, NextMessage}}),
-            {ok, #{ <<"Message">> => NextMessage, <<"State">> => NextState }};
+            {ok, #{ <<"body">> => NextMessage, <<"state">> => NextState }};
         false ->
             {error,
                 #{
-                    <<"Status">> => <<"Service Unavailable">>,
-                    <<"Body">> => <<"No assignment found for next slot.">>
+                    <<"status">> => 503,
+                    <<"body">> => <<"No assignment found for next slot.">>
                 }
             }
     end.
@@ -134,13 +136,13 @@ status(_M1, _M2, _Opts) ->
     Wallet = dev_scheduler_registry:get_wallet(),
     {ok,
         #{
-            <<"Address">> => hb_util:id(ar_wallet:to_address(Wallet)),
-            <<"Processes">> =>
+            <<"address">> => hb_util:id(ar_wallet:to_address(Wallet)),
+            <<"processes">> =>
                 lists:map(
                     fun hb_util:id/1,
                     dev_scheduler_registry:get_processes()
                 ),
-            <<"Cache-Control">> => <<"no-store">>
+            <<"cache-control">> => <<"no-store">>
         }
     }.
 
@@ -148,60 +150,105 @@ status(_M1, _M2, _Opts) ->
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
-    case hb_converge:get(<<"Method">>, Msg2, <<"GET">>, Opts) of
+    case hb_converge:get(<<"method">>, Msg2, <<"GET">>, Opts) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
 
-%% @doc Alternate access path for scheduling a message, for situations in which
-%% the user cannot modify the `Method`.
-append(Msg1, Msg2, Opts) ->
-    post_schedule(Msg1, Msg2, Opts).
-
-%% @doc Schedules a new message on the SU.
+%% @doc Schedules a new message on the SU. Searches Msg1 for the appropriate ID,
+%% then uses the wallet address of the scheduler to determine if the message is
+%% for this scheduler. If so, it schedules the message and returns the assignment.
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
-    ToSched = hb_converge:get(message, Msg2, Opts#{ hashpath => ignore }),
-    ToSchedID = hb_converge:get(id, ToSched),
-    Proc = hb_converge:get(process, Msg1, Opts#{ hashpath => ignore }),
-    ?no_prod("Once we have GQL, get the scheduler location record. "
-        "For now, we'll just use the address of the wallet."),
-    SchedulerLocation =
-        hb_converge:get(<<"Process/Scheduler-Location">>,
-            Msg1, Opts#{ hashpath => ignore }),
-    ProcID = hb_converge:get(id, Proc),
-    PID = dev_scheduler_registry:find(ProcID, true),
-    #{ wallet := Wallet } = dev_scheduler_server:info(PID),
-    WalletAddress = hb_util:id(ar_wallet:to_address(Wallet)),
+    ToSched = find_message_to_schedule(Msg1, Msg2, Opts),
+    ?event({to_sched, ToSched}),
+    ProcID =
+        case hb_converge:get(<<"type">>, ToSched, not_found, Opts) of
+            <<"Process">> ->
+                hb_converge:get(<<"id">>, ToSched, not_found, Opts);
+            _ ->
+                case hb_converge:get(<<"target">>, ToSched, not_found, Opts) of
+                    not_found ->
+                        find_schedule_id(Msg1, Msg2, Opts);
+                    Target -> Target
+                end
+        end,
+    ?event({proc_id, ProcID}),
+    case hb_message:with_only_attested(ToSched) of
+        {ok, Filtered} ->
+            do_post_schedule(ProcID, Filtered, Msg1, Opts);
+        {error, _} ->
+            {ok,
+                #{
+                    <<"status">> => 400,
+                    <<"body">> => <<"Message is not valid.">>
+                }
+            }
+    end.
+
+%% @doc Post schedule the message.
+do_post_schedule(ProcID, ToSched, Msg1, Opts) ->
+    PID =
+        case dev_scheduler_registry:find(ProcID, false, Opts) of
+            not_found ->
+                % Check if we are the scheduler for this process.
+                Address = hb_util:human_id(ar_wallet:to_address(
+                    hb_opts:get(priv_wallet, hb:wallet(), Opts))),
+                Proc = find_process(Msg1, Opts),
+                SchedLoc =
+                    hb_converge:get_first(
+                        [
+                            {Proc, <<"scheduler-location">>},
+                            {ToSched, <<"scheduler-location">>},
+                            {Proc, <<"scheduler">>},
+                            {ToSched, <<"scheduler">>}
+                        ],
+                        not_found,
+                        Opts#{ hashpath => ignore }
+                    ),
+                case SchedLoc of
+                    Address ->
+                        % Start the scheduler process if we are the scheduler.
+                        dev_scheduler_registry:find(ProcID, true, Opts);
+                    not_found ->
+                        throw(
+                            {scheduler_location_not_found,
+                                {proc_id, ProcID}
+                            }
+                        );
+                    ProcScheduler ->
+                        throw(
+                            {scheduler_location_mismatch,
+                                {local, Address},
+                                {required, ProcScheduler}
+                            }
+                        )
+                end;
+            Proc -> Proc
+        end,
     ?event(
         {post_schedule,
-            {process_id, ProcID},
-            {process, Proc},
-            {message_id, ToSchedID},
+            {schedule_id, ProcID},
+            {scheduler_pid, PID},
             {message, ToSched}
         }
     ),
-    ?no_prod("SU does not validate item before writing into stream."),
-    %case {ar_bundles:verify_item(ToSched), hb_converge:get(type, ToSched)} of
-    case {WalletAddress == SchedulerLocation, true, hb_converge:get(type, ToSched)} of
-        {false, _, _} ->
+    Verified =
+        case hb_opts:get(verify_assignments, true, Opts) of
+            true -> hb_message:verify(ToSched, signers);
+            false -> true
+        end,
+    case {Verified, hb_converge:get(type, ToSched)} of
+        {false, _} ->
             {ok,
                 #{
-                    <<"Status">> => <<"Failed">>,
-                    <<"Body">> => <<"Scheduler location does not match wallet address.">>
+                    <<"status">> => 400,
+                    <<"body">> => <<"Message is not valid.">>
                 }
             };
-        {true, false, _} ->
-            {ok,
-                #{
-                    <<"Status">> => <<"Failed">>,
-                    <<"Body">> => <<"Data item is not valid.">>
-                }
-            };
-        {true, true, <<"Process">>} ->
-            ?no_prod("SU does not write to cache or upload to bundler."),
+        {true, <<"Process">>} ->
             hb_cache:write(ToSched, Opts),
-            hb_client:upload(ToSched),
+            spawn(fun() -> hb_client:upload(ToSched) end),
             ?event(
                 {registering_new_process,
                     {proc_id, ProcID},
@@ -209,63 +256,42 @@ post_schedule(Msg1, Msg2, Opts) ->
                     {is_alive, is_process_alive(PID)}
                 }
             ),
-            {ok,
-                #{
-                    <<"Status">> => <<"OK">>,
-                    <<"Assignment">> => <<"0">>,
-                    <<"Process">> => ProcID
-                }
-            };
-        {true, true, _} ->
+            {ok, dev_scheduler_server:schedule(PID, ToSched)};
+        {true, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
-            {ok,
-                dev_scheduler_server:schedule(
-                    dev_scheduler_registry:find(ProcID, true),
-                    ToSched
-                )
-            }
+            {ok, dev_scheduler_server:schedule(PID, ToSched)}
     end.
 
 %% @doc Returns information about the current slot for a process.
-slot(M1, _M2, Opts) ->
+slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
-    Proc = hb_converge:get(
-        process,
-        {as, dev_message, M1},
-        Opts#{ hashpath => ignore }
-    ),
-    ProcID = hb_converge:get(id, Proc),
-    ?event({getting_current_slot, {proc_id, ProcID}, {process, Proc}}),
+    ProcID = find_schedule_id(M1, M2, Opts),
+    ?event({getting_current_slot, {proc_id, ProcID}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
     #{ current := CurrentSlot, wallet := Wallet } =
         dev_scheduler_server:info(
             dev_scheduler_registry:find(ProcID)
         ),
     {ok, #{
-        <<"Process">> => ProcID,
-        <<"Current-Slot">> => CurrentSlot,
-        <<"Timestamp">> => Timestamp,
-        <<"Block-Height">> => Height,
-        <<"Block-Hash">> => Hash,
-        <<"Cache-Control">> => <<"no-store">>,
-        <<"Wallet-Address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
+        <<"process">> => ProcID,
+        <<"current-slot">> => CurrentSlot,
+        <<"timestamp">> => Timestamp,
+        <<"block-height">> => Height,
+        <<"block-hash">> => Hash,
+        <<"cache-control">> => <<"no-store">>,
+        <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
     }}.
 
 get_schedule(Msg1, Msg2, Opts) ->
-    Proc = hb_converge:get(
-        process,
-        {as, dev_message, Msg1},
-        Opts#{ hashpath => ignore }
-    ),
-    ProcID = hb_converge:get(id, Proc),
+    ProcID = find_schedule_id(Msg1, Msg2, Opts),
     From =
-        case hb_converge:get(from, Msg2, not_found, Opts) of
+        case hb_converge:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
             X when X < 0 -> 0;
             FromRes -> FromRes
         end,
     To =
-        case hb_converge:get(to, Msg2, not_found, Opts) of
+        case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
                 maps:get(current,
@@ -275,12 +301,69 @@ get_schedule(Msg1, Msg2, Opts) ->
                 );
             ToRes -> ToRes
         end,
-    gen_schedule(ProcID, From, To, Opts).
+    Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
+    gen_schedule(Format, ProcID, From, To, Opts).
 
-%% Private methods
+%%% Private methods
 
-gen_schedule(ProcID, From, To, Opts) ->
-    {Timestamp, Height, Hash} = ar_timestamp:get(),
+%% @doc Find the schedule ID from a given request. The precidence order for 
+%% search is as follows:
+%% [1. `ToSched/id' -- in the case of `POST schedule', handled locally]
+%% 2. `Msg2/target'
+%% 3. `Msg2/id' when `Msg2' has `type: Process'
+%% 4. `Msg1/process/id'
+%% 5. `Msg1/id' when `Msg1' has `type: Process'
+%% 6. `Msg2/id'
+find_schedule_id(Msg1, Msg2, Opts) ->
+    TempOpts = Opts#{ hashpath => ignore },
+    Res = case hb_converge:resolve(Msg2, <<"target">>, TempOpts) of
+        {ok, Target} ->
+            % ID found at Msg2/target
+            Target;
+        _ ->
+            case hb_converge:resolve(Msg2, <<"type">>, TempOpts) of
+                {ok, <<"Process">>} ->
+                    % Msg2 is a Process, so the ID is at Msg2/id
+                    hb_converge:get(<<"id">>, Msg2, TempOpts);
+                _ ->
+                    case hb_converge:resolve(Msg1, <<"process/id">>, TempOpts) of
+                        {ok, ID} ->
+                            % ID found at Msg1/process/id
+                            ID;
+                    _ ->
+                        % Does the message have a type of Process?
+                        case hb_converge:get(<<"type">>, Msg1, TempOpts) of
+                            <<"Process">> ->
+                                % Yes, so try Msg1/id
+                                hb_converge:get(<<"id">>, Msg1, TempOpts);
+                            _ ->
+                                % No, so the ID is at Msg2/id
+                                hb_converge:get(<<"id">>, Msg2, TempOpts)
+                        end
+                end
+            end
+    end,
+    ?event({found_id, {id, Res}}),
+    Res.
+
+%% @doc Search the given base and request message pair to find the message to
+%% schedule. The precidence order for search is as follows:
+%% 1. `Msg2/body'
+%% 2. `Msg2'
+find_message_to_schedule(_Msg1, Msg2, Opts) ->
+    case hb_converge:resolve(Msg2, <<"body">>, Opts#{ hashpath => ignore }) of
+        {ok, Body} ->
+            Body;
+        _ -> Msg2
+    end.
+
+%% @doc Find the process from a given request. Check if it has a `process'
+%% field, and if so, return that. Otherwise, return the full message.
+find_process(Msg, Opts) ->
+    hb_converge:get(<<"process">>, Msg, Msg, Opts#{ hashpath => ignore }).
+
+%% @doc Generate a `GET /schedule' response for a process.
+gen_schedule(Format, ProcID, From, To, Opts) ->
     ?event(
         {servicing_request_for_assignments,
             {proc_id, ProcID},
@@ -288,25 +371,20 @@ gen_schedule(ProcID, From, To, Opts) ->
             {to, To}
         }
     ),
-    {Assignments, More} = get_assignments(
-        ProcID,
-        From,
-        To,
-        Opts
-    ),
+    {Assignments, More} = get_assignments(ProcID, From, To, Opts),
     ?event({got_assignments, length(Assignments), {more, More}}),
-    Bundle = #{
-        <<"Type">> => <<"Schedule">>,
-        <<"Process">> => ProcID,
-        <<"Continues">> => atom_to_binary(More, utf8),
-        <<"Timestamp">> => list_to_binary(integer_to_list(Timestamp)),
-        <<"Block-Height">> => list_to_binary(integer_to_list(Height)),
-        <<"Block-Hash">> => Hash,
-        <<"Assignments">> => assignment_bundle(Assignments, Opts)
-    },
-    ?event(assignments_bundle_outbound),
-    Signed = hb_message:sign(Bundle, hb:wallet()),
-    {ok, Signed}.
+    % Determine and apply the formatting function to use for generation of the
+    % response, based on the `Accept' header.
+    FormatterFun =
+        case Format of
+            <<"application/aos-2">> ->
+                fun dev_scheduler_formats:assignments_to_aos2/4;
+            _ ->
+                fun dev_scheduler_formats:assignments_to_bundle/4
+        end,
+    Res = FormatterFun(ProcID, Assignments, More, Opts),
+    ?event({assignments_bundle_outbound, {format, Format}, {res, Res}}),
+    Res.
 
 %% @doc Get the assignments for a process, and whether the request was truncated.
 get_assignments(ProcID, From, RequestedTo, Opts) ->
@@ -318,6 +396,7 @@ get_assignments(ProcID, From, RequestedTo, Opts) ->
         end,
     {do_get_assignments(ProcID, From, ComputedTo, Opts), ComputedTo =/= RequestedTo }.
 
+%% @doc Get the assignments for a process.
 do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
     [];
 do_get_assignments(ProcID, From, To, Opts) ->
@@ -336,119 +415,31 @@ do_get_assignments(ProcID, From, To, Opts) ->
             ]
     end.
 
-assignment_bundle(Assignments, Opts) ->
-    assignment_bundle(Assignments, #{}, Opts).
-assignment_bundle([], Bundle, _Opts) ->
-    Bundle;
-assignment_bundle([Assignment | Assignments], Bundle, Opts) ->
-    Slot = hb_converge:get(<<"Slot">>, Assignment, Opts#{ hashpath => ignore }),
-    MessageID =
-        hb_converge:get(<<"Message">>, Assignment, Opts#{ hashpath => ignore }),
-    {ok, Message} = hb_cache:read(MessageID, Opts),
-    ?event(
-        {adding_assignment_to_bundle,
-            Slot,
-            {requested, MessageID},
-            hb_util:id(Assignment, signed),
-            hb_util:id(Assignment, unsigned)
-        }
-    ),
-    assignment_bundle(
-        Assignments,
-        Bundle#{
-            Slot =>
-                hb_message:sign(
-                    #{
-                        path => <<"Compute">>,
-                        <<"Assignment">> => Assignment,
-                        <<"Message">> => Message
-                    },
-                    hb:wallet()
-                )
-        },
-        Opts
-    ).
-
-%%% Compute-stack flow functions.
-%%% These keys are used during the compute phase for a process to interact with
-%%% the scheduler.
-
-%% @doc Initializes the scheduler state.
-init(M1, M2, Opts) ->
-    update_schedule(M1, M2, Opts).
-
-%% @doc Updates the schedule for a process.
-end_of_schedule(M1, M2, Opts) -> update_schedule(M1, M2, Opts).
-
-%% @doc Abstracted function for updating the schedule for a process the current
-%% schedule is in the `/priv/Scheduler/*' private map.
-update_schedule(M1, M2, Opts) ->
-    Proc = hb_converge:get(process, M1, Opts),
-    ProcID = hb_util:id(Proc),
-    CurrentSlot =
-        hb_converge:get(<<"Current-Slot">>, M1, Opts, 0),
-    ToSlot =
-        hb_converge:get(<<"Slot">>, M2, Opts, undefined),
-    ?event({updating_schedule_current, CurrentSlot, to, ToSlot}),
-    Assignments =
-        hb_client:get_assignments(
-            ProcID,
-            CurrentSlot,
-            ToSlot
-        ),
-    ?event({got_assignments_from_su,
-        [
-            {
-                element(2, lists:keyfind(<<"Assignment">>, 1, A#tx.tags)),
-                hb_util:id(A, signed),
-                hb_util:id(A, unsigned)
-            }
-        ||
-            A <- Assignments
-        ]}),
-    lists:foreach(
-        fun(Assignment) ->
-            ?event(
-                {writing_assignment_to_cache,
-                    hb_util:id(Assignment, unsigned)
-                }
-            ),
-            hb_cache:write(Assignment, Opts)
-        end,
-        Assignments
-    ),
-    {ok, hb_private:set(M1, <<"priv/Schedule">>, Assignments, Opts)}.
-
 %% @doc Returns the current state of the scheduler.
 checkpoint(State) -> {ok, State}.
 
 %%% Tests
-%%% These tests assume that the process message has been transformed by the 
-%%% dev_process, such that the full process is found in `/process', but the
-%%% scheduler is the device of the primary message.
-
 
 %% @doc Generate a _transformed_ process message, not as they are generated 
 %% by users. See `dev_process' for examples of AO process messages.
-test_process() ->
-    Wallet = hb:wallet(),
+test_process() -> test_process(hb:wallet()).
+test_process(Wallet) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     #{
-        device => ?MODULE,
-        process => #{
-            <<"Device-Stack">> => [dev_cron, dev_wasm, dev_poda],
-            <<"Image">> => <<"wasm-image-id">>,
-            <<"Type">> => <<"Process">>,
-            <<"Scheduler-Location">> => Address,
-            <<"Test-Random-Seed">> => rand:uniform(1337)
-        }
+        <<"device">> => <<"scheduler@1.0">>,
+        <<"device-stack">> =>
+            [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
+        <<"image">> => <<"wasm-image-id">>,
+        <<"type">> => <<"Process">>,
+        <<"scheduler-location">> => Address,
+        <<"test-random-seed">> => rand:uniform(1337)
     }.
 
 status_test() ->
     start(),
     ?assertMatch(
-        #{<<"Processes">> := Processes,
-            <<"Address">> := Address}
+        #{<<"processes">> := Processes,
+            <<"address">> := Address}
             when is_list(Processes) and is_binary(Address),
         hb_converge:get(status, test_process())
     ).
@@ -456,119 +447,322 @@ status_test() ->
 register_new_process_test() ->
     start(),
     Msg1 = test_process(),
-    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
-    ProcID = hb_util:id(Proc),
-    ?event({test_registering_new_process, {id, ProcID}, {msg, Msg1}}),
+    ?event({test_registering_new_process, {msg, Msg1}}),
     ?assertMatch({ok, _},
         hb_converge:resolve(
             Msg1,
             #{
-                <<"Method">> => <<"POST">>,
-                path => <<"Schedule">>,
-                <<"Message">> => Proc
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
             },
             #{}
         )
     ),
+    Procs = hb_converge:get(<<"processes">>, hb_converge:get(status, Msg1)),
+    ?event({procs, Procs}),
     ?assert(
         lists:member(
-            ProcID,
-            hb_converge:get(processes, hb_converge:get(status, Msg1))
+            hb_util:id(Msg1, all),
+            hb_converge:get(<<"processes">>, hb_converge:get(status, Msg1))
         )
     ).
 
 schedule_message_and_get_slot_test() ->
     start(),
     Msg1 = test_process(),
-    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
-    ProcID = hb_util:id(Proc),
     Msg2 = #{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
-            #{
-                <<"Type">> => <<"Message">>,
-                <<"Test-Key">> => <<"true">>
-            }
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> =>
+            hb_message:attest(#{
+                <<"type">> => <<"Message">>,
+                <<"test-key">> => <<"true">>
+            }, hb:wallet())
     },
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     Msg3 = #{
-        path => <<"Slot">>,
-        <<"Method">> => <<"GET">>,
-        <<"Process">> => ProcID
+        <<"path">> => <<"slot">>,
+        <<"method">> => <<"GET">>,
+        <<"process">> => hb_util:id(Msg1)
     },
     ?event({pg, dev_scheduler_registry:get_processes()}),
     ?event({getting_schedule, {msg, Msg3}}),
-    ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
+    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
-
-benchmark_test() ->
-    start(),
-    BenchTime = 4,
-    Msg1 = test_process(),
-    Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
-    ProcID = hb_util:id(Proc),
-    ?event({benchmark_start, ?MODULE}),
-    Iterations = hb:benchmark(
-        fun(X) ->
-            MsgX = #{
-                path => <<"Schedule">>,
-                <<"Method">> => <<"POST">>,
-                <<"Message">> =>
-                    #{
-                        <<"Type">> => <<"Message">>,
-                        <<"Test-Val">> => X
-                    }
-            },
-            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, #{}))
-        end,
-        BenchTime
-    ),
-    ?event(benchmark, {scheduled, Iterations}),
-    Msg3 = #{
-        path => <<"Slot">>,
-        <<"Method">> => <<"GET">>,
-        <<"Process">> => ProcID
-    },
-    ?assertMatch({ok, #{ <<"Current-Slot">> := CurrentSlot }}
-            when CurrentSlot == Iterations - 1,
-        hb_converge:resolve(Msg1, Msg3, #{})),
-    hb_util:eunit_print(
-        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
-    ),
-    ?assert(Iterations > 100).
 
 get_schedule_test() ->
     start(),
     Msg1 = test_process(),
     Msg2 = #{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
-            #{
-                <<"Type">> => <<"Message">>,
-                <<"Test-Key">> => <<"Test-Val">>
-            }
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> =>
+            hb_message:attest(#{
+                <<"type">> => <<"Message">>,
+                <<"test-key">> => <<"Test-Val">>
+            }, hb:wallet())
     },
     Msg3 = #{
-        path => <<"Schedule">>,
-        <<"Method">> => <<"POST">>,
-        <<"Message">> =>
-            #{
-                <<"Type">> => <<"Message">>,
-                <<"Test-Key">> => <<"Test-Val-2">>
-            }
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> =>
+            hb_message:attest(#{
+                <<"type">> => <<"Message">>,
+                <<"test-key">> => <<"Test-Val-2">>
+            }, hb:wallet())
     },
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
     ?assertMatch(
         {ok, _},
         hb_converge:resolve(Msg1, #{
-            <<"Method">> => <<"GET">>,
-            path => <<"Schedule">>
+            <<"method">> => <<"GET">>,
+            <<"path">> => <<"schedule">>,
+            <<"target">> => hb_util:id(Msg1)
         },
         #{})
     ).
+
+%%% HTTP tests
+
+http_init() -> http_init(#{}).
+http_init(Opts) ->
+    start(),
+    Wallet = ar_wallet:new(),
+    Node = hb_http_server:start_node(Opts#{ priv_wallet => Wallet }),
+    {Node, Wallet}.
+
+http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => ProcessMsg,
+        <<"body">> => hb_message:attest(Msg, Wallet)
+    }, Wallet),
+    hb_http:post(Node, Msg1, #{}).
+
+http_get_slot(N, PMsg) ->
+    ID = hb_message:id(PMsg, all),
+    Wallet = hb:wallet(),
+    {ok, _} = hb_http:get(N, hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/slot">>,
+        <<"method">> => <<"GET">>,
+        <<"target">> => ID
+    }, Wallet), #{}).
+
+http_get_schedule(N, PMsg, From, To) ->
+    http_get_schedule(N, PMsg, From, To, <<"application/http">>).
+
+http_get_schedule(N, PMsg, From, To, Format) ->
+    ID = hb_message:id(PMsg, all),
+    Wallet = hb:wallet(),
+    {ok, _} = hb_http:get(N, hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"GET">>,
+        <<"target">> => hb_util:human_id(ID),
+        <<"from">> => From,
+        <<"to">> => To,
+        <<"accept">> => Format
+    }, Wallet), #{}).
+
+http_post_schedule_test() ->
+    {N, W} = http_init(),
+    PMsg = hb_message:attest(test_process(W), W),
+    {ok, Res} =
+        http_post_schedule_sign(
+            N,
+            #{ <<"inner">> => <<"test-message">> },
+            PMsg,
+            W
+        ),
+    ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res, #{})),
+    ?assertMatch({ok, #{ <<"current-slot">> := 0 }}, http_get_slot(N, PMsg)).
+
+http_get_schedule_test() ->
+    {Node, Wallet} = http_init(),
+    PMsg = hb_message:attest(test_process(Wallet), Wallet),
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => PMsg,
+        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+    }, Wallet),
+    {ok, _} = hb_http:post(Node, Msg1, #{}),
+    lists:foreach(
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        lists:seq(1, 10)
+    ),
+    ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
+    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
+    Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
+    ?assertEqual(
+        12, % +1 for the hashpath
+        length(maps:values(Assignments))
+    ).
+
+http_get_json_schedule_test() ->
+    {Node, Wallet} = http_init(),
+    PMsg = hb_message:attest(test_process(Wallet), Wallet),
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => PMsg,
+        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+    }, Wallet),
+    {ok, _} = hb_http:post(Node, Msg1, #{}),
+    lists:foreach(
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        lists:seq(1, 10)
+    ),
+    ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
+    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
+    ?event({schedule, Schedule}),
+    JSON = hb_converge:get(<<"body">>, Schedule, #{}),
+    Assignments = jiffy:decode(JSON, [return_maps]),
+    ?assertEqual(
+        11, % +1 for the hashpath
+        length(maps:get(<<"edges">>, Assignments))
+    ).
+
+%%% Benchmarks
+
+single_converge(Opts) ->
+    start(),
+    BenchTime = 1,
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
+    Msg1 = test_process(Wallet),
+    ?event({benchmark_start, ?MODULE}),
+    MsgToSchedule = hb_message:attest(#{
+        <<"type">> => <<"Message">>,
+        <<"test-key">> => <<"test-val">>
+    }, Wallet),
+    Iterations = hb:benchmark(
+        fun(_) ->
+            MsgX = #{
+                <<"path">> => <<"schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> => MsgToSchedule
+            },
+            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, Opts))
+        end,
+        BenchTime
+    ),
+    ?event(benchmark, {scheduled, Iterations}),
+    Msg3 = #{
+        <<"path">> => <<"slot">>,
+        <<"method">> => <<"GET">>,
+        <<"process">> => hb_util:id(Msg1)
+    },
+    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
+            when CurrentSlot == Iterations - 1,
+        hb_converge:resolve(Msg1, Msg3, Opts)),
+    ?event(bench, {res, Iterations - 1}),
+    hb_util:eunit_print(
+        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 3).
+
+many_clients(Opts) ->
+    BenchTime = 1,
+    Processes = hb_opts:get(workers, 25, Opts),
+    {Node, Wallet} = http_init(Opts),
+    PMsg = hb_message:attest(test_process(Wallet), Wallet),
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"process">> => PMsg,
+        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+    }, Wallet),
+    {ok, _} = hb_http:post(Node, Msg1, Opts),
+    Iterations = hb:benchmark(
+        fun(X) ->
+            {ok, _} = hb_http:post(Node, Msg1, Opts),
+            ?event(bench, {iteration, X, self()})
+        end,
+        BenchTime,
+        Processes
+    ),
+    ?event({iterations, Iterations}),
+    hb_util:eunit_print(
+        "Scheduled ~p messages with ~p workers through HTTP in ~ps (~.2f msg/s)",
+        [Iterations, Processes, BenchTime, Iterations / BenchTime]
+    ),
+    {ok, Res} = http_get_slot(Node, PMsg),
+    ?event(bench, {res, Res}),
+    ?assert(Iterations > 10).
+
+benchmark_suite_test_() ->
+    rand:seed(exsplus, erlang:timestamp()),
+    Port = 30000 + rand:uniform(10000),
+    Bench = [
+        {benchmark, "benchmark", fun single_converge/1},
+        {multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
+    ],
+    OptSpecs = [
+        #{
+            name => fs,
+            opts => #{
+                store => {hb_store_fs, #{
+                    prefix => <<"TEST-cache/fs-",
+                        (integer_to_binary(Port))/binary>>
+                }},
+                scheduling_mode => local_confirmation,
+                port => Port
+            },
+            desc => "FS store, local conf."
+        },
+        #{
+            name => fs_aggressive,
+            opts => #{
+                store => {hb_store_fs, #{
+                    prefix => <<"TEST-cache/fs-",
+                        (integer_to_binary(Port))/binary>>
+                }},
+                scheduling_mode => aggressive,
+                port => Port + 1
+            },
+            desc => "FS store, aggressive conf."
+        },
+        #{
+            name => rocksdb,
+            opts => #{
+                store => {hb_store_rocksdb, #{
+                    prefix => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+1))/binary>>
+                }},
+                scheduling_mode => local_confirmation,
+                port => Port + 2
+            },
+            desc => "RocksDB store, local conf."
+        },
+        #{
+            name => rocksdb_aggressive,
+            opts => #{
+                store => {hb_store_rocksdb, #{
+                    prefix => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+2))/binary>>
+                }},
+                scheduling_mode => aggressive,
+                port => Port + 3
+            },
+            desc => "RocksDB store, aggressive conf."
+        }
+        % #{
+        %     name => rocksdb_extreme_aggressive_h3,
+        %     opts => #{
+        %         store => {hb_store_rocksdb, #{
+        %             prefix => <<"TEST-cache-rocksdb-",
+        %                 (integer_to_binary(Port+3))/binary>>
+        %         }},
+        %         scheduling_mode => aggressive,
+        %         protocol => http3,
+        %         workers => 100
+        %     },
+        %     desc => "100xRocksDB store, aggressive conf, http/3."
+        % }
+    ],
+    hb_test_utils:suite_with_opts(Bench, OptSpecs).

@@ -98,7 +98,13 @@ type(Path) ->
 make_group(#{ prefix := DataDir }, Path) ->
     P = hb_store:join([DataDir, Path]),
     ?event({making_group, P}),
-    ok = filelib:ensure_dir(P).
+    % We need to ensure that the parent directory exists, so that we can
+    % make the group.
+    filelib:ensure_dir(P),
+    case file:make_dir(P) of
+        ok -> ok;
+        {error, eexist} -> ok
+    end.
 
 make_link(_, Link, Link) -> ok;
 make_link(Opts, Existing, New) ->

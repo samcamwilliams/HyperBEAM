@@ -11,15 +11,15 @@
     last_run
 }).
 
-init(State = #{ process := ProcM }, Params) ->
-    case lists:keyfind(<<"Time">>, 1, Params) of
-        {<<"Time">>, CronTime} ->
+init(State = #{ <<"process">> := ProcM }, Params) ->
+    case lists:keyfind(<<"time">>, 1, Params) of
+        {<<"time">>, CronTime} ->
             MilliSecs = parse_time(CronTime),
             %% TODO: What's the most sensible way to initialize the last_run?
             %% Current behavior: Timer starts after _first_ message.
-            {ok, State#{ cron => #state { time = MilliSecs, last_run = timestamp(ProcM) } }};
+            {ok, State#{ <<"cron">> => #state { time = MilliSecs, last_run = timestamp(ProcM) } }};
         false ->
-            {ok, State#{ cron => inactive }}
+            {ok, State#{ <<"cron">> => inactive }}
     end.
 
 parse_time(BinString) ->
@@ -35,18 +35,18 @@ parse_time(BinString) ->
         _ -> throw({error, invalid_time_unit, UnitStr})
     end.
 
-execute(_M, State = #{ cron := inactive }) ->
+execute(_M, State = #{ <<"cron">> := inactive }) ->
     {ok, State};
-execute(M, State = #{ pass := 1, cron := #state { last_run = undefined } }) ->
-    {ok, State#{ cron := #state { last_run = timestamp(M) } }};
-execute(Message, State = #{ pass := 1, cron := #state { time = MilliSecs, last_run = LastRun }, schedule := Sched }) ->
+execute(M, State = #{ <<"pass">> := 1, <<"cron">> := #state { last_run = undefined } }) ->
+    {ok, State#{ <<"cron">> := #state { last_run = timestamp(M) } }};
+execute(Message, State = #{ <<"pass">> := 1, <<"cron">> := #state { time = MilliSecs, last_run = LastRun }, <<"schedule">> := Sched }) ->
     case timestamp(Message) - LastRun of
         Time when Time > MilliSecs ->
             NextCronMsg = create_cron(State, CronTime = timestamp(Message) + MilliSecs),
             {pass,
                 State#{
-                    cron := #state { last_run = CronTime },
-                    schedule := [NextCronMsg | Sched]
+                    <<"cron">> := #state { last_run = CronTime },
+                    <<"schedule">> := [NextCronMsg | Sched]
                 }
             };
         _ ->
@@ -57,8 +57,8 @@ execute(_, S) ->
 
 timestamp(M) ->
     % TODO: Process this properly
-    case lists:keyfind(<<"Timestamp">>, 1, M#tx.tags) of
-        {<<"Timestamp">>, TSBin} ->
+    case lists:keyfind(<<"timestamp">>, 1, M#tx.tags) of
+        {<<"timestamp">>, TSBin} ->
             list_to_integer(binary_to_list(TSBin));
         false ->
             0

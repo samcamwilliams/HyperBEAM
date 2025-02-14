@@ -3,6 +3,7 @@
 %%% execution passes to be completed in sequence across devices.
 -module(dev_multipass).
 -export([info/1]).
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 info(_M1) ->
@@ -12,13 +13,13 @@ info(_M1) ->
 
 %% @doc Forward the keys function to the message device, handle all others
 %% with deduplication. We only act on the first pass.
-handle(keys, M1, _M2, _Opts) ->
+handle(<<"keys">>, M1, _M2, _Opts) ->
     dev_message:keys(M1);
-handle(set, M1, M2, Opts) ->
+handle(<<"set">>, M1, M2, Opts) ->
     dev_message:set(M1, M2, Opts);
 handle(_Key, M1, _M2, Opts) ->
-    Passes = hb_converge:get(<<"Passes">>, {as, dev_message, M1}, 1, Opts),
-    Pass = hb_converge:get(<<"Pass">>, {as, dev_message, M1}, 1, Opts),
+    Passes = hb_converge:get(<<"passes">>, {as, dev_message, M1}, 1, Opts),
+    Pass = hb_converge:get(<<"pass">>, {as, dev_message, M1}, 1, Opts),
     case Pass < Passes of
         true -> {pass, M1};
         false -> {ok, M1}
@@ -29,10 +30,11 @@ handle(_Key, M1, _M2, Opts) ->
 basic_multipass_test() ->
     Msg1 =
         #{
-            <<"device">> => <<"Multipass/1.0">>,
-            <<"Passes">> => 2,
-            <<"Pass">> => 1
+            <<"device">> => <<"Multipass@1.0">>,
+            <<"passes">> => 2,
+            <<"pass">> => 1
         },
-    Msg2 = Msg1#{ <<"Pass">> => 2 },
+    Msg2 = Msg1#{ <<"pass">> => 2 },
     ?assertMatch({pass, _}, hb_converge:resolve(Msg1, <<"Compute">>, #{})),
+    ?event(alive),
     ?assertMatch({ok, _}, hb_converge:resolve(Msg2, <<"Compute">>, #{})).

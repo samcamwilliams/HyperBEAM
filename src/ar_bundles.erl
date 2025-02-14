@@ -5,7 +5,6 @@
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
 -export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
--export([item_to_json_struct/1, json_struct_to_item/1]).
 -export([data_item_signature_data/1]).
 -export([normalize/1]).
 -export([print/1, format/1, format/2]).
@@ -15,12 +14,12 @@
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
 
 -define(BUNDLE_TAGS, [
-    {<<"Bundle-Format">>, <<"Binary">>},
-    {<<"Bundle-Version">>, <<"2.0.0">>}
+    {<<"bundle-format">>, <<"binary">>},
+    {<<"bundle-version">>, <<"2.0.0">>}
 ]).
 
 -define(LIST_TAGS, [
-    {<<"Map-Format">>, <<"List">>}
+    {<<"map-format">>, <<"list">>}
 ]).
 
 % How many bytes of a binary to print with `print/1'.
@@ -87,7 +86,7 @@ format(Item, Indent) ->
     format_line("INCORRECT ITEM: ~p", [Item], Indent).
 
 format_data(Item, Indent) when is_binary(Item#tx.data) ->
-    case lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags) of
+    case lists:keyfind(<<"bundle-format">>, 1, Item#tx.tags) of
         {_, _} ->
             format_data(deserialize(serialize(Item)), Indent);
         false ->
@@ -248,11 +247,11 @@ verify_item(DataItem) ->
     ValidID andalso ValidSignature andalso ValidTags.
 
 type(Item) when is_record(Item, tx) ->
-    lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags),
-    case lists:keyfind(<<"Bundle-Map">>, 1, Item#tx.tags) of
-        {<<"Bundle-Map">>, _} ->
-            case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of
-                {<<"Map-Format">>, <<"List">>} -> list;
+    lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags),
+    case lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags) of
+        {<<"bundle-map">>, _} ->
+            case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
+                {<<"map-format">>, <<"list">>} -> list;
                 _ -> map
             end;
         _ ->
@@ -385,7 +384,7 @@ serialize(RawTX, binary) ->
     >>;
 serialize(TX, json) ->
     true = enforce_valid_tx(TX),
-    jiffy:encode(item_to_json_struct(TX)).
+    jiffy:encode(hb_message:convert(TX, <<"ans104@1.0">>, #{})).
 
 %% @doc Take an item and ensure that it is of valid form. Useful for ensuring
 %% that a message is viable for serialization/deserialization before execution.
@@ -525,11 +524,11 @@ add_list_tags(Tags) ->
 add_manifest_tags(Tags, ManifestID) ->
     lists:filter(
         fun
-            ({<<"Bundle-Map">>, _}) -> false;
+            ({<<"bundle-map">>, _}) -> false;
             (_) -> true
         end,
         Tags
-    ) ++ [{<<"Bundle-Map">>, hb_util:encode(ManifestID)}].
+    ) ++ [{<<"bundle-map">>, hb_util:encode(ManifestID)}].
 
 finalize_bundle_data(Processed) ->
     Length = <<(length(Processed)):256/integer>>,
@@ -562,8 +561,8 @@ new_manifest(Index) ->
     TX = normalize(#tx{
         format = ans104,
         tags = [
-            {<<"Data-Protocol">>, <<"Bundle-Map">>},
-            {<<"Variant">>, <<"0.0.1">>}
+            {<<"data-protocol">>, <<"bundle-map">>},
+            {<<"variant">>, <<"0.0.1">>}
         ],
         data = jiffy:encode(Index)
     }),
@@ -680,29 +679,26 @@ deserialize(Binary, binary) ->
 %end;
 deserialize(Bin, json) ->
     try
-        normalize(
-            maybe_unbundle(
-                json_struct_to_item(element(1, jiffy:decode(Bin)))
-            )
-        )
+        Map = jiffy:decode(Bin, [return_maps]),
+        hb_message:convert(Map, <<"ans104@1.0">>, #{})
     catch
         _:_:_Stack ->
             {error, invalid_item}
     end.
 
 maybe_unbundle(Item) ->
-    Format = lists:keyfind(<<"Bundle-Format">>, 1, Item#tx.tags),
-    Version = lists:keyfind(<<"Bundle-Version">>, 1, Item#tx.tags),
+    Format = lists:keyfind(<<"bundle-format">>, 1, Item#tx.tags),
+    Version = lists:keyfind(<<"bundle-version">>, 1, Item#tx.tags),
     case {Format, Version} of
-        {{<<"Bundle-Format">>, <<"Binary">>}, {<<"Bundle-Version">>, <<"2.0.0">>}} ->
+        {{<<"bundle-format">>, <<"binary">>}, {<<"bundle-version">>, <<"2.0.0">>}} ->
             maybe_map_to_list(maybe_unbundle_map(Item));
         _ ->
             Item
     end.
 
 maybe_map_to_list(Item) ->
-    case lists:keyfind(<<"Map-Format">>, 1, Item#tx.tags) of
-        {<<"Map-Format">>, <<"List">>} ->
+    case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
+        {<<"map-format">>, <<"List">>} ->
             unbundle_list(Item);
         _ ->
             Item
@@ -720,8 +716,8 @@ unbundle_list(Item) ->
     }.
 
 maybe_unbundle_map(Bundle) ->
-    case lists:keyfind(<<"Bundle-Map">>, 1, Bundle#tx.tags) of
-        {<<"Bundle-Map">>, MapTXID} ->
+    case lists:keyfind(<<"bundle-map">>, 1, Bundle#tx.tags) of
+        {<<"bundle-map">>, MapTXID} ->
             case unbundle(Bundle) of
                 detached -> Bundle#tx { data = detached };
                 Items ->
@@ -780,90 +776,6 @@ decode_bundle_header(0, ItemsBin, Header) ->
     {ItemsBin, lists:reverse(Header)};
 decode_bundle_header(Count, <<Size:256/integer, ID:32/binary, Rest/binary>>, Header) ->
     decode_bundle_header(Count - 1, Rest, [{ID, Size} | Header]).
-
-item_to_json_struct(
-    #tx{
-        id = ID,
-        last_tx = Last,
-        owner = Owner,
-        tags = Tags,
-        target = Target,
-        data = Data,
-        signature = Sig
-    }
-) ->
-    % Set "From" if From-Process is Tag or set with "Owner" address
-    From =
-        case lists:filter(fun({Name, _}) -> Name =:= <<"From-Process">> end, Tags) of
-            [{_, FromProcess}] -> FromProcess;
-            [] -> hb_util:encode(ar_wallet:to_address(Owner))
-        end,
-    Fields = [
-        {<<"Id">>, hb_util:encode(ID)},
-        % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, hb_util:encode(Last)},
-        % NOTE: When sent to ao "Owner" is the wallet address
-        {<<"Owner">>, hb_util:encode(ar_wallet:to_address(Owner))},
-        {<<"From">>, From},
-        {<<"Tags">>,
-            lists:map(
-                fun({Name, Value}) ->
-                    {
-                        [
-                            {name, maybe_list_to_binary(Name)},
-                            {value, maybe_list_to_binary(Value)}
-                        ]
-                    }
-                end,
-                Tags
-            )},
-        {<<"Target">>, hb_util:encode(Target)},
-        {<<"Data">>, Data},
-        {<<"Signature">>, hb_util:encode(Sig)}
-    ],
-    {Fields}.
-
-maybe_list_to_binary(List) when is_list(List) ->
-    list_to_binary(List);
-maybe_list_to_binary(Bin) ->
-    Bin.
-
-json_struct_to_item(Map) when is_map(Map) ->
-    deserialize(jiffy:encode(Map), json);
-json_struct_to_item({TXStruct}) ->
-    json_struct_to_item(TXStruct);
-json_struct_to_item(RawTXStruct) ->
-    TXStruct = [{string:lowercase(FieldName), Value} || {FieldName, Value} <- RawTXStruct],
-    Tags =
-        case hb_util:find_value(<<"tags">>, TXStruct) of
-            undefined ->
-                [];
-            Xs ->
-                Xs
-        end,
-    TXID = hb_util:decode(hb_util:find_value(<<"id">>, TXStruct, hb_util:encode(?DEFAULT_ID))),
-    #tx{
-        format = ans104,
-        id = TXID,
-        last_tx = hb_util:decode(hb_util:find_value(<<"anchor">>, TXStruct, <<>>)),
-        owner = hb_util:decode(
-            hb_util:find_value(<<"owner">>, TXStruct, hb_util:encode(?DEFAULT_OWNER))
-        ),
-        tags =
-            lists:map(
-                fun({KeyVals}) ->
-                    {_, Name} = lists:keyfind(<<"name">>, 1, KeyVals),
-                    {_, Value} = lists:keyfind(<<"value">>, 1, KeyVals),
-                    {Name, Value}
-                end,
-                Tags
-            ),
-        target = hb_util:decode(hb_util:find_value(<<"target">>, TXStruct, <<>>)),
-        data = hb_util:find_value(<<"data">>, TXStruct, <<>>),
-        signature = hb_util:decode(
-            hb_util:find_value(<<"signature">>, TXStruct, hb_util:encode(?DEFAULT_SIG))
-        )
-    }.
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 - but it is is written in
@@ -1022,7 +934,7 @@ assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
 test_empty_bundle() ->
     Bundle = serialize([]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual([], BundleItem#tx.data).
+    ?assertEqual(#{}, BundleItem#tx.data).
 
 test_bundle_with_one_item() ->
     Item = new_item(
@@ -1033,7 +945,7 @@ test_bundle_with_one_item() ->
     ),
     Bundle = serialize([Item]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData, (erlang:hd(BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
     Item1 = new_item(
@@ -1050,8 +962,8 @@ test_bundle_with_two_items() ->
     ),
     Bundle = serialize([Item1, Item2]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData1, (erlang:hd(BundleItem#tx.data))#tx.data),
-    ?assertEqual(ItemData2, (erlang:hd(tl(BundleItem#tx.data)))#tx.data).
+    ?assertEqual(ItemData1, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (maps:get(<<"2">>, BundleItem#tx.data))#tx.data).
 
 test_recursive_bundle() ->
     W = ar_wallet:new(),
@@ -1072,9 +984,9 @@ test_recursive_bundle() ->
     }, W),
     Bundle = serialize([Item3]),
     BundleItem = deserialize(Bundle),
-    [UnbundledItem3] = BundleItem#tx.data,
-    [UnbundledItem2] = UnbundledItem3#tx.data,
-    [UnbundledItem1] = UnbundledItem2#tx.data,
+    #{<<"1">> := UnbundledItem3} = BundleItem#tx.data,
+    #{<<"1">> := UnbundledItem2} = UnbundledItem3#tx.data,
+    #{<<"1">> := UnbundledItem1} = UnbundledItem2#tx.data,
     ?assert(verify_item(UnbundledItem1)),
     % TODO: Verify bundled lists...
     ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).

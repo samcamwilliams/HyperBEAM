@@ -3,11 +3,8 @@
 compile:
 	rebar3 compile
 
-WAMR_VERSION = 2.1.2
+WAMR_VERSION = 2.2.0
 WAMR_DIR = _build/wamr
-
-# commented out to remove NFR blocking commits
-# GITHOOKS_DIR = .githooks
 
 ifdef HB_DEBUG
 	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DWAMR_BUILD_DUMP_CALL_STACK=1 -DCMAKE_BUILD_TYPE=Debug
@@ -30,8 +27,6 @@ else
     WAMR_BUILD_TARGET = X86_64
 endif
 
-# githooks: $(GITHOOKS_DIR)/_/setup
-
 wamr: $(WAMR_DIR)/lib/libvmlib.a
 
 debug: debug-clean $(WAMR_DIR)
@@ -51,25 +46,29 @@ $(WAMR_DIR):
 		--single-branch
 
 $(WAMR_DIR)/lib/libvmlib.a: $(WAMR_DIR)
+	sed -i '742a tbl_inst->is_table64 = 1;' ./_build/wamr/core/iwasm/aot/aot_runtime.c; \
 	cmake \
 		$(WAMR_FLAGS) \
 		-S $(WAMR_DIR) \
 		-B $(WAMR_DIR)/lib \
 		-DWAMR_BUILD_TARGET=$(WAMR_BUILD_TARGET) \
 		-DWAMR_BUILD_PLATFORM=$(WAMR_BUILD_PLATFORM) \
-		-DWAMR_BUILD_LIBC_WASI=0 \
 		-DWAMR_BUILD_MEMORY64=1 \
 		-DWAMR_DISABLE_HW_BOUND_CHECK=1 \
 		-DWAMR_BUILD_EXCE_HANDLING=1 \
 		-DWAMR_BUILD_SHARED_MEMORY=0 \
-		-DWAMR_BUILD_AOT=0 \
+		-DWAMR_BUILD_AOT=1 \
+		-DWAMR_BUILD_LIBC_WASI=0 \
 		-DWAMR_BUILD_FAST_INTERP=0 \
 		-DWAMR_BUILD_INTERP=1 \
-		-DWAMR_BUILD_JIT=0
-	make -C $(WAMR_DIR)/lib
-
-# $(GITHOOKS_DIR)/_/setup:
-#	@sh ./$(GITHOOKS_DIR)/_/install.sh
+		-DWAMR_BUILD_JIT=0 \
+		-DWAMR_BUILD_FAST_JIT=0 \
+        -DWAMR_BUILD_DEBUG_AOT=1 \
+        -DWAMR_BUILD_TAIL_CALL=1 \
+        -DWAMR_BUILD_AOT_STACK_FRAME=1 \
+        -DWAMR_BUILD_MEMORY_PROFILING=1 \
+        -DWAMR_BUILD_DUMP_CALL_STACK=1
+	make -C $(WAMR_DIR)/lib -j8
 
 clean:
 	rebar3 clean

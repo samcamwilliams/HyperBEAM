@@ -51,7 +51,7 @@
 %%% are welcome.
 -module(hb_beamr).
 %%% Control API:
--export([start/1, call/3, call/4, call/5, call/6, stop/1, wasm_send/2]).
+-export([start/1, start/2, call/3, call/4, call/5, call/6, stop/1, wasm_send/2]).
 %%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
 
@@ -60,21 +60,25 @@
 
 %% @doc Load the driver for the WASM executor.
 load_driver() ->
-    case erl_ddll:load("./priv", ?MODULE) of
+    case erl_ddll:load(code:priv_dir(hb), ?MODULE) of
         ok -> ok;
         {error, already_loaded} -> ok;
         {error, Error} -> {error, Error}
     end.
 
 %% @doc Start a WASM executor context. Yields a port to the LID, and the
-%% imports and exports of the WASM module.
+%% imports and exports of the WASM module. Optionally, specify a mode 
+%% (wasm or aot) to indicate the type of WASM module being loaded.
 start(WasmBinary) when is_binary(WasmBinary) ->
+    start(WasmBinary, wasm).
+start(WasmBinary, Mode) when is_binary(WasmBinary) ->
+    ?event({loading_module, {bytes, byte_size(WasmBinary)}, Mode}),
     Self = self(),
     WASM = spawn(
         fun() ->
             ok = load_driver(),
             Port = open_port({spawn, "hb_beamr"}, []),
-            Port ! {self(), {command, term_to_binary({init, WasmBinary})}},
+            Port ! {self(), {command, term_to_binary({init, WasmBinary, Mode})}},
             ?event({waiting_for_init_from, Port}),
             worker(Port, Self)
         end
@@ -129,19 +133,19 @@ stop(WASM) when is_pid(WASM) ->
     ok.
 
 %% @doc Call a function in the WASM executor (see moduledoc for more details).
-call(Port, FunctionName, Args) ->
-    {ok, Res, _} = call(Port, FunctionName, Args, fun stub/3),
+call(PID, FuncRef, Args) ->
+    {ok, Res, _} = call(PID, FuncRef, Args, fun stub/3),
     {ok, Res}.
-call(Port, FunctionName, Args, ImportFun) ->
-    call(Port, FunctionName, Args, ImportFun, #{}).
-call(Port, FunctionName, Args, ImportFun, StateMsg) ->
-    call(Port, FunctionName, Args, ImportFun, StateMsg, #{}).
-call(Port, FunctionName, Args, ImportFun, StateMsg, Opts)
-        when is_binary(FunctionName) ->
-    call(Port, binary_to_list(FunctionName), Args, ImportFun, StateMsg, Opts);
-call(WASM, FunctionName, Args, ImportFun, StateMsg, Opts) 
+call(PID, FuncRef, Args, ImportFun) ->
+    call(PID, FuncRef, Args, ImportFun, #{}).
+call(PID, FuncRef, Args, ImportFun, StateMsg) ->
+    call(PID, FuncRef, Args, ImportFun, StateMsg, #{}).
+call(PID, FuncRef, Args, ImportFun, StateMsg, Opts)
+        when is_binary(FuncRef) ->
+    call(PID, binary_to_list(FuncRef), Args, ImportFun, StateMsg, Opts);
+call(WASM, FuncRef, Args, ImportFun, StateMsg, Opts) 
         when is_pid(WASM)
-        andalso is_list(FunctionName)
+        andalso (is_list(FuncRef) or is_integer(FuncRef))
         andalso is_list(Args)
         andalso is_function(ImportFun)
         andalso is_map(Opts) ->
@@ -150,13 +154,21 @@ call(WASM, FunctionName, Args, ImportFun, StateMsg, Opts)
             ?event(
                 {call_started,
                     WASM,
-                    FunctionName,
+                    FuncRef,
                     Args,
                     ImportFun,
                     StateMsg,
                     Opts}),
             wasm_send(WASM,
-                {command, term_to_binary({call, FunctionName, Args})}),
+                {command,
+                    term_to_binary(
+                        case is_integer(FuncRef) of
+                            true -> {indirect_call, FuncRef, Args};
+                            false -> {call, FuncRef, Args}
+                        end
+                    )
+                }
+            ),
             ?event({waiting_for_call_result, self(), WASM}),
             monitor_call(WASM, ImportFun, StateMsg, Opts);
         false ->
@@ -189,7 +201,7 @@ monitor_call(WASM, ImportFun, StateMsg, Opts) ->
                         },
                         Opts
                     ),
-                ?event({import_ret, Module, Func, {args, Args}, {params, Res}}),
+                ?event({import_ret, Module, Func, {args, Args}, {res, Res}}),
                 dispatch_response(WASM, Res),
                 monitor_call(WASM, ImportFun, StateMsg2, Opts)
             catch

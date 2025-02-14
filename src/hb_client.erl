@@ -18,8 +18,8 @@ resolve(Node, Msg1, Msg2, Opts) ->
     TABM2 =
         hb_converge:set(
             #{
-                <<"Path">> => hb_converge:get(<<"Path">>, Msg2, <<"/">>, Opts),
-                <<"2.Path">> => unset
+                <<"path">> => hb_converge:get(<<"path">>, Msg2, <<"/">>, Opts),
+                <<"2.path">> => unset
             },
         prefix_keys(<<"2.">>, Msg2, Opts),
         Opts#{ hashpath => ignore }
@@ -42,11 +42,11 @@ prefix_keys(Prefix, Message, Opts) ->
 routes(Node, Opts) ->
     resolve(Node,
         #{
-            device => <<"Router/1.0">>
+            <<"device">> => <<"Router@1.0">>
         },
         #{
-            path => <<"Routes">>,
-            method => <<"GET">>
+            <<"path">> => <<"routes">>,
+            <<"method">> => <<"GET">>
         },
         Opts
     ).
@@ -54,11 +54,11 @@ routes(Node, Opts) ->
 add_route(Node, Route, Opts) ->
     resolve(Node,
         Route#{
-            device => <<"Router/1.0">>
+            <<"device">> => <<"Router@1.0">>
         },
         #{
-            path => <<"Routes">>,
-            method => <<"POST">>
+            <<"path">> => <<"routes">>,
+            <<"method">> => <<"POST">>
         },
         Opts
     ).
@@ -93,30 +93,29 @@ download(ID) ->
     end.
 
 %% @doc Upload a data item to the bundler node.
-upload(Message) when is_map(Message) ->
-    upload(hb_message:convert(Message, tx, converge, #{}));
-upload(Item) ->
-    ?event({uploading_item, Item}),
-    case
-        httpc:request(
-            post,
-            {
-                <<(hb_opts:get(bundler))/binary, "/tx">>,
-                [],
-                "application/octet-stream",
-                ar_bundles:serialize(Item)
-            },
-            [],
-            []
-        )
-    of
-        {ok, {{_, 200, _}, _, Body}} ->
-            ?event(upload_success),
-            {ok, jiffy:decode(Body, [return_maps])};
-        Response ->
-            ?event(upload_error),
-            {error, bundler_http_error, Response}
-    end.
+upload(HyperbeamMsg) ->
+    todo.
+    % ?event({uploading_item, Item}),
+    % case
+    %     httpc:request(
+    %         post,
+    %         {
+    %             <<(hb_opts:get(bundler))/binary, "/tx">>,
+    %             [],
+    %             "application/octet-stream",
+    %             ar_bundles:serialize(Item)
+    %         },
+    %         [],
+    %         []
+    %     )
+    % of
+    %     {ok, {{_, 200, _}, _, Body}} ->
+    %         ?event(upload_success),
+    %         {ok, jiffy:decode(Body, [return_maps])};
+    %     Response ->
+    %         ?event(upload_error),
+    %         {error, bundler_http_error, Response}
+    % end.
 
 %%% Utility functions
 
@@ -158,14 +157,14 @@ json_struct_to_result(Struct, Res) ->
             Res#result{
                 messages = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    hb_util:find_value(<<"Messages">>, Struct, [])
+                    hb_util:find_value(<<"messages">>, Struct, [])
                 ),
-                assignments = hb_util:find_value(<<"Assignments">>, Struct, []),
+                assignments = hb_util:find_value(<<"assignments">>, Struct, []),
                 spawns = lists:map(
                     fun ar_bundles:json_struct_to_item/1,
-                    hb_util:find_value(<<"Spawns">>, Struct, [])
+                    hb_util:find_value(<<"spawns">>, Struct, [])
                 ),
-                output = hb_util:find_value(<<"Output">>, Struct, [])
+                output = hb_util:find_value(<<"output">>, Struct, [])
             };
         {_, {NodeStruct}} ->
             json_struct_to_result(

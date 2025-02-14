@@ -42,13 +42,13 @@ path(ProcID, Ref, PathSuffix, Opts) ->
     hb_store:path(
         Store,
         [
-            <<"Computed">>,
+            <<"computed">>,
             hb_util:human_id(ProcID)
         ] ++
         case Ref of
-            Int when is_integer(Int) -> ["Slot", integer_to_binary(Int)];
+            Int when is_integer(Int) -> ["slot", integer_to_binary(Int)];
             root -> [];
-            slot_root -> ["Slot"];
+            slot_root -> ["slot"];
             _ -> [Ref]
         end ++ PathSuffix
     ).
@@ -68,7 +68,7 @@ latest(ProcID, RawRequiredPath, Limit, Opts) ->
             _ ->
                 hb_path:term_to_path_parts(
                     RawRequiredPath,
-                    Opts#{ atom_keys => false }
+                    Opts
                 )
         end,
     Path = path(ProcID, slot_root, Opts),
@@ -137,8 +137,7 @@ process_cache_suite_test_() ->
         [
             {Name, Opts}
         ||
-            {Name, Opts} <- hb_store:test_stores(),
-                Name =/= hb_store_rocksdb % Disable rocksdb for now
+            {Name, Opts} <- hb_store:test_stores()
         ]
     ).
 
@@ -164,7 +163,7 @@ test_write_and_read_output(Opts) ->
         read(ProcID, hb_util:human_id(hb_converge:get(id, Item1)), Opts),
     ?assert(hb_message:match(Item1, ReadItem1ByID)),
     {ok, ReadItem2ByID} =
-        read(ProcID, hb_util:human_id(hb_converge:get(unsigned_id, Item2)), Opts),
+        read(ProcID, hb_util:human_id(hb_message:id(Item2, none)), Opts),
     ?assert(hb_message:match(Item2, ReadItem2ByID)).
 
 %% @doc Test for retrieving the latest computed output for a process.
@@ -205,5 +204,5 @@ find_latest_outputs(Opts) ->
     {ok, 2, ReadMsg2Required} = latest(ProcID, <<"Deep/Process">>, Opts),
     ?assert(hb_message:match(Msg2, ReadMsg2Required)),
     ?event(read_latest_slot_with_deep_key),
-    {ok, 1, ReadMsg1} = latest(ProcID, <<"">>, 1, Opts),
+    {ok, 1, ReadMsg1} = latest(ProcID, [], 1, Opts),
     ?assert(hb_message:match(Msg1, ReadMsg1)).

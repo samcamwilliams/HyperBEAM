@@ -29,7 +29,7 @@ run(Proc, Msg, _Opts) ->
 %     init(),
 %     {Proc, Msg} = generate_test_data(<<"return 42">>),
 %     {ok, Result} = run(Proc, Msg, #{ on_idle => terminate }),
-%     #tx { data = <<"42">> } = maps:get(<<"/Data">>, Result),
+%     #tx { data = <<"42">> } = maps:get(<<"/data">>, Result),
 %     ok.
 
 % full_push_test_() ->
@@ -71,9 +71,9 @@ default_test_img(Wallet) ->
         Img = ar_bundles:sign_item(
             #tx {
                 tags = [
-                    {<<"Protocol">>, <<"ao">>},
-                    {<<"Variant">>, <<"ao.tn.2">>},
-                    {<<"Type">>, <<"Image">>}
+                    {<<"protocol">>, <<"ao">>},
+                    {<<"variant">>, <<"ao.tn.2">>},
+                    {<<"type">>, <<"image">>}
                 ],
                 data = Module
             },
@@ -88,30 +88,30 @@ default_test_devices(Wallet, Opts) ->
     Img = maps:get(image, Opts),
     Quorum = maps:get(quorum, Opts, 2),
     [
-        {<<"Protocol">>, <<"ao">>},
-        {<<"Variant">>, <<"ao.tn.2">>},
-        {<<"Type">>, <<"Process">>},
-        {<<"Device">>, <<"Stack">>},
-        {<<"Device.1">>, <<"Scheduler">>},
-        {<<"Location">>, hb_util:id(ID)},
-        {<<"Device.2">>, <<"PODA">>},
-        {<<"Quorum">>, integer_to_binary(Quorum)}
+        {<<"protocol">>, <<"ao">>},
+        {<<"variant">>, <<"ao.tn.2">>},
+        {<<"type">>, <<"Process">>},
+        {<<"device">>, <<"Stack">>},
+        {<<"device.1">>, <<"Scheduler">>},
+        {<<"location">>, hb_util:id(ID)},
+        {<<"device.2">>, <<"PODA">>},
+        {<<"quorum">>, integer_to_binary(Quorum)}
     ] ++
     [
-        {<<"Authority">>, Addr} ||
+        {<<"authority">>, Addr} ||
             Addr <- maps:keys(maps:get(compute, hb_opts:get(nodes))),
             Addr =/= '_'
     ] ++
     [
-        {<<"Device.3">>, <<"JSON-Interface">>},
-        {<<"Device.5">>, <<"VFS">>},
-        {<<"Device.6">>, <<"WASM64-pure">>},
-        {<<"Module">>, <<"aos-2-pure">>},
-        {<<"Image">>, hb_util:id(Img)},
-        {<<"Device.7">>, <<"Cron">>},
-        {<<"Time">>, <<"100-Milliseconds">>},
-        {<<"Device.8">>, <<"Multipass">>},
-        {<<"Passes">>, <<"3">>}
+        {<<"device.3">>, <<"JSON-Interface">>},
+        {<<"device.5">>, <<"VFS">>},
+        {<<"device.6">>, <<"WASM64-pure">>},
+        {<<"module">>, <<"aos-2-pure">>},
+        {<<"image">>, hb_util:id(Img)},
+        {<<"device.7">>, <<"Cron">>},
+        {<<"time">>, <<"100-Milliseconds">>},
+        {<<"device.8">>, <<"Multipass">>},
+        {<<"passes">>, <<"3">>}
     ].
 
 % ping_ping_script() ->
@@ -142,10 +142,10 @@ generate_test_data(Script, Wallet, _Opts, Devs) ->
         #tx{
             target = ar_bundles:id(SignedProcess, signed),
             tags = [
-                {<<"Protocol">>, <<"ao">>},
-                {<<"Variant">>, <<"ao.tn.2">>},
-                {<<"Type">>, <<"Message">>},
-                {<<"Action">>, <<"Eval">>}
+                {<<"protocol">>, <<"ao">>},
+                {<<"variant">>, <<"ao.tn.2">>},
+                {<<"type">>, <<"Message">>},
+                {<<"action">>, <<"Eval">>}
             ],
             data = Script
         },

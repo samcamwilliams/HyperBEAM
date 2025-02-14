@@ -36,16 +36,16 @@
 %%% ```
 %%%     DevMod:ExportedFunc : Key resolution functions. All are assumed to be
 %%%                           device keys (thus, present in every message that
-%%%                           uses it) unless specified by `DevMod:info()`.
+%%%                           uses it) unless specified by `DevMod:info()'.
 %%%                           Each function takes a set of parameters
-%%%                           of the form `DevMod:KeyHandler(Msg1, Msg2, Opts)`.
+%%%                           of the form `DevMod:KeyHandler(Msg1, Msg2, Opts)'.
 %%%                           Each of these arguments can be ommitted if not
 %%%                           needed. Non-exported functions are not assumed
 %%%                           to be device keys.
 %%%
 %%%     DevMod:info : Optional. Returns a map of options for the device. All 
 %%%                   options are optional and assumed to be the defaults if 
-%%%                   not specified. This function can accept a `Message1` as 
+%%%                   not specified. This function can accept a `Message1' as 
 %%%                   an argument, allowing it to specify its functionality 
 %%%                   based on a specific message if appropriate.
 %%% 
@@ -62,12 +62,12 @@
 %%% 
 %%%     info/default : A function that should be used to handle all keys that
 %%%                    are not explicitly implemented by the device. Defaults to
-%%%                    the `dev_message` device, which contains general keys for 
+%%%                    the `dev_message' device, which contains general keys for 
 %%%                    interacting with messages.
 %%% 
 %%%     info/default_mod : A different device module that should be used to
 %%%                    handle all keys that are not explicitly implemented
-%%%                    by the device. Defaults to the `dev_message` device.
+%%%                    by the device. Defaults to the `dev_message' device.
 %%% 
 %%%     info/grouper : A function that returns the concurrency 'group' name for
 %%%                    an execution. Executions with the same group name will
@@ -86,45 +86,23 @@
 %%% 
 %%% `update_hashpath':  Whether to add the `Msg2' to `HashPath' for the `Msg3'.
 %%% 					Default: true.
-%%% `cache_results':    Whether to cache the resolved `Msg3'.
-%%% 					Default: true.
 %%% `add_key':          Whether to add the key to the start of the arguments.
 %%% 					Default: `<not set>'.
+%%% '''
 -module(hb_converge).
 %%% Main Converge API:
--export([resolve/2, resolve/3, load_device/2, message_to_device/2]).
--export([to_key/1, to_key/2, key_to_binary/1, key_to_binary/2, ensure_message/1]).
+-export([resolve/2, resolve/3, resolve_many/2]).
+-export([normalize_key/1, normalize_key/2, normalize_keys/1]).
+-export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
--export([get/2, get/3, get/4, set/2, set/3, set/4, remove/2, remove/3]).
+-export([get/2, get/3, get/4, get_first/2, get_first/3]).
+-export([set/2, set/3, set/4, remove/2, remove/3]).
 %%% Exports for tests in hb_converge_tests.erl:
--export([deep_set/4, is_exported/4, message_to_fun/3]).
+-export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
 
-%% @doc Takes a singleton message and parse Msg1 and Msg2 from it, then invoke
-%% `resolve'.
-resolve(Msg, Opts) ->
-    Path =
-        hb_path:term_to_path_parts(
-            hb_converge:get(
-                path,
-                Msg,
-                #{ hashpath => ignore }
-            ),
-            Opts
-        ),
-    case Path of
-        [ Msg1ID | _Rest ] when ?IS_ID(Msg1ID) ->
-            ?event({normalizing_single_message_message_path, Msg}),
-            {ok, Msg1} = hb_cache:read(<<"Messages/", Msg1ID/binary>>, Opts),
-            resolve(
-                Msg1,
-                hb_path:tl(Msg, Opts),
-                Opts
-            );
-        SingletonPath ->
-            resolve(Msg, #{ path => SingletonPath }, Opts)
-    end.
+-define(NON_RECURSIVE_OPTS, [add_key, force_message, cache_control]).
 
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, takes options that control the runtime environment. 
@@ -141,57 +119,92 @@ resolve(Msg, Opts) ->
 %%      8: Result caching.
 %%      9: Notify waiters.
 %%     10: Fork worker.
-%%     11: Recurse, fork, or terminate.
-resolve(Msg1, Msg2, Opts) -> resolve_stage(1, Msg1, Msg2, Opts).
+%%     11: Recurse or terminate.
+
+resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
+    resolve_many(hb_singleton:from(SingletonMsg), Opts).
+
+resolve(Msg1, Path, Opts) when not is_map(Path) ->
+    resolve(Msg1, #{ <<"path">> => Path }, Opts);
+resolve(Msg1, Msg2, Opts) ->
+    PathParts = hb_path:from_message(request, Msg2),
+    ?event(converge_core, {stage, 1, prepare_multimessage_resolution, {path_parts, PathParts}}),
+    MessagesToExec = [ Msg2#{ <<"path">> => Path } || Path <- PathParts ],
+    ?event(converge_core, {stage, 1, prepare_multimessage_resolution, {messages_to_exec, MessagesToExec}}),
+    resolve_many([Msg1 | MessagesToExec], Opts).
+
+%% @doc Resolve a list of messages in sequence. Take the output of the first
+%% message as the input for the next message. Once the last message is resolved,
+%% return the result.
+resolve_many([Msg3], _Opts) ->
+    ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
+    {ok, Msg3};
+resolve_many([Msg1, Msg2 | MsgList], Opts) ->
+    ?event(converge_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    case resolve_stage(1, Msg1, Msg2, Opts) of
+        {ok, Msg3} ->
+            ?event(converge_core,
+                {
+                    stage,
+                    11,
+                    resolved_message_of_many,
+                    {msg3, Msg3},
+                    {opts, Opts}
+                }
+            ),
+            resolve_many([Msg3 | MsgList], Opts);
+        Res ->
+            ?event(converge_core, {stage, 11, resolve_many_terminating_early, Res}),
+            Res
+    end.
+
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 1, list_normalize}, Opts),
     resolve_stage(1,
-        ensure_message(Msg1),
+        normalize_keys(Msg1),
         Msg2,
         Opts
     );
-resolve_stage(1, Msg1, Path, Opts) when not is_map(Path) ->
-    ?event(converge_core, {stage, 1, normalize_raw_path_to_message}, Opts),
-    % If we have been given a Path rather than a full Msg2, construct the
-    % message around it and recurse.
-    resolve_stage(1, Msg1, #{ path => Path }, Opts);
-resolve_stage(1, Msg1, Msg2, Opts) ->
-    ?event(converge_core, {stage, 1, normalize_path}, Opts),
-    % Path normalization: Ensure that the path is requesting a single key.
-    % Stash remaining path elements in `priv/Converge/Remaining-Path'.
-    % Stash the original path in `priv/Converge/Original-Path', if it
-    % is not already there from a previous resolution.
-    InitialPriv = hb_private:from_message(Msg1),
-    OriginalPath =
-        case InitialPriv of
-            #{ <<"Converge">> := #{ <<"Original-Path">> := XPath } } ->
-                XPath;
-            _ -> hb_path:from_message(request, Msg2)
-        end,
-    Head = hb_path:hd(Msg2, Opts),
-    FullPath = hb_path:from_message(request, Msg2),
-    case FullPath of
-        undefined ->
-            throw({error, {invalid_path, FullPath, Msg2}});
-        _ -> ok
-    end,
-    Msg2UpdatedPriv =
-        hb_path:priv_store_original(
-            Msg2,
-            OriginalPath,
-            hb_path:tl(FullPath, Opts)
-        ),
-    resolve_stage(2, Msg1, Msg2UpdatedPriv#{ path => Head }, Opts);
+resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
+    ?event(converge_core, {stage, 1, path_normalize}),
+    resolve_stage(1, Msg1, #{ <<"path">> => NonMapMsg2 }, Opts);
+resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
+    % Set the device to the specified `DevID' and resolve the message.
+    ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
+    Msg1b = set(Msg1, <<"device">>, DevID, Opts),
+    ?event(converge_debug, {message_as, Msg1b, {executing_path, Msg2}}, Opts),
+    % Recurse with the modified message. The hashpath will have been updated
+    % to include the device ID, if requested. Simply return if the path is empty.
+    case hb_path:from_message(request, Msg2) of
+        undefined -> {ok, Msg1b};
+        _ -> 
+            ?event(converge_debug,
+                {resolve_as_subpath,
+                    {msg1, Msg1b},
+                    {msg2, Msg2},
+                    {opts, Opts}},
+                Opts
+            ),
+            resolve(Msg1b, Msg2, Opts)
+    end;
+resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
+    % Normalize the path to a private key containing the list of remaining
+    % keys to resolve.
+    ?event(converge_core, {stage, 1, normalize}, Opts),
+    Msg1 = normalize_keys(RawMsg1),
+    Msg2 = normalize_keys(RawMsg2),
+    resolve_stage(2, Msg1, Msg2, Opts);
 resolve_stage(2, Msg1, Msg2, Opts) ->
     ?event(converge_core, {stage, 2, cache_lookup}, Opts),
     % Lookup request in the cache. If we find a result, return it.
     % If we do not find a result, we continue to the next stage,
-    % unless the cache lookup returns `halt` (the user has requested that we 
+    % unless the cache lookup returns `halt' (the user has requested that we 
     % only return a result if it is already in the cache).
     case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            resolve_stage(11, Msg1, Msg2, {ok, Msg3}, no_exec_cache_hit, Opts);
+            ?event(converge_core, {stage, 2, cache_hit, {msg3, Msg3}, {opts, Opts}}),
+            {ok, Msg3};
         {continue, NewMsg1, NewMsg2} ->
             resolve_stage(3, NewMsg1, NewMsg2, Opts);
         {error, CacheResp} -> {error, CacheResp}
@@ -217,8 +230,8 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
     % Erlang cluster) processes that are already performing the execution.
     % Before we search for a live executor, we check if the device specifies 
     % a function that tailors the 'group' name of the execution. For example, 
-    % the `dev_process` device 'groups' all calls to the same process onto
-    % calls to a single executor. By default, `{Msg1, Msg2}` is used as the
+    % the `dev_process' device 'groups' all calls to the same process onto
+    % calls to a single executor. By default, `{Msg1, Msg2}' is used as the
     % group name.
     case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
         {leader, ExecName} ->
@@ -249,8 +262,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
                 Res ->
                     % Now that we have the result, we can skip right to potential
                     % recursion (step 11).
-                    resolve_stage(11, Msg1, Msg2, Res, Leader,
-                        Opts#{ spawn_worker => false })
+                    Res
             end;
         {infinite_recursion, GroupName} ->
             % We are the leader for this resolution, but we executing the 
@@ -344,7 +356,11 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = maps:remove(add_key, Opts),
+	UserOpts1 =
+        maps:without(
+            ?NON_RECURSIVE_OPTS,
+            Opts
+        ),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
@@ -361,7 +377,11 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
     % Try to execute the function.
     Res = 
         try
-            MsgRes = apply(Func, truncate_args(Func, Args)),
+            MsgRes =
+                maybe_force_message(
+                    apply(Func, truncate_args(Func, Args)),
+                    Opts
+                ),
             ?event(
                 converge_result,
                 {
@@ -397,7 +417,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                     }
                 ),
                 % If the function call fails, we raise an error in the manner
-                % indicated by caller's `#Opts`.
+                % indicated by caller's `#Opts'.
                 error_execution(
                     ExecName,
                     Msg2,
@@ -414,24 +434,35 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     resolve_stage(8, Msg1, Msg2,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
             update ->
-                ?event({setting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
-                {ok,
-                    maps:without(?REGEN_KEYS,
-                        Msg3#{ hashpath => hb_path:hashpath(Msg1, Msg2, Opts) }
-                    )
-                };
+                Priv = hb_private:from_message(Msg3),
+                HP = hb_path:hashpath(Msg1, Msg2, Opts),
+                if not is_binary(HP) or not is_map(Priv) ->
+                    throw({invalid_hashpath, {hp, HP}, {msg3, Msg3}});
+                true ->
+                    {ok, Msg3#{ <<"priv">> => Priv#{ <<"hashpath">> => HP } }}
+                end;
+            reset ->
+                Priv = hb_private:from_message(Msg3),
+                {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
             ignore ->
-                {ok, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)}
+                Priv = hb_private:from_message(Msg3),
+                if not is_map(Priv) ->
+                    throw({invalid_private_message, {msg3, Msg3}});
+                true ->
+                    {ok, Msg3}
+                end
         end,
         ExecName,
         Opts
     );
 resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     ?event(converge_core, {stage, 7, ExecName, abnormal_status_reset_hashpath}, Opts),
+    ?event(hashpath, {resetting_hashpath_msg3, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
+    Priv = hb_private:from_message(Msg3),
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, maps:without([hashpath] ++ ?REGEN_KEYS, Msg3)},
+        {Status, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
@@ -453,42 +484,21 @@ resolve_stage(9, Msg1, Msg2, Res, ExecName, Opts) ->
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Msg2, Res, Opts),
     resolve_stage(10, Msg1, Msg2, Res, ExecName, Opts);
-resolve_stage(10, Msg1, Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
+resolve_stage(10, _Msg1, _Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, maybe_spawn_worker}, Opts),
     % Check if we should spawn a worker for the current execution
     case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
         {A, B} when (A == false) or (B == false) ->
-            resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false });
+            Res;
         {_, _} ->
             % Spawn a worker for the current execution
             WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
             hb_persistent:forward_work(WorkerPID, Opts),
-            resolve_stage(11, Msg1, Msg2, Res, ExecName, Opts#{ spawn_worker => false })
+            Res
     end;
-resolve_stage(10, Msg1, Msg2, OtherRes, ExecName, Opts) ->
+resolve_stage(10, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
-    resolve_stage(11, Msg1, Msg2, OtherRes, ExecName, Opts);
-resolve_stage(11, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) ->
-    ?event(converge_core, {stage, 11, ExecName, recursing_or_returning}, Opts),
-    % Recurse, or terminate.
-    RemainingPath = hb_path:priv_remaining(Msg2, Opts),
-	case RemainingPath of
-		undefined ->
-            % Terminate: We have reached the end of the path.
-			{Status, Msg3};
-		_ when Status == ok ->
-			% There are more elements in the path, so we recurse.
-			?event(
-                converge_core,
-                {resolution_recursing,
-                    {remaining_path, RemainingPath}
-                }
-            ),
-			resolve(Msg3, Msg2#{ path => RemainingPath }, Opts);
-        _ ->
-            error_invalid_intermediate_status(
-                Msg1, Msg2, Msg3, RemainingPath, Opts)
-	end.
+    OtherRes.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
@@ -504,7 +514,7 @@ error_invalid_message(Msg1, Msg2, Opts) ->
     {
         error,
         #{
-            <<"Status">> => <<"Forbidden">>,
+            <<"status">> => 400,
             <<"body">> => <<"Request contains non-verifiable message.">>
         }
     }.
@@ -520,16 +530,16 @@ error_infinite(Msg1, Msg2, Opts) ->
         },
         Opts
     ),
+    ?trace(),
     {
         error,
         #{
-            <<"Status">> => <<"Loop Detected">>,
-            <<"Status-Code">> => 508,
+            <<"status">> => 508,
             <<"body">> => <<"Request creates infinite recursion.">>
         }
     }.
 
-error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
+error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) ->
     ?event(
         converge_core,
         {error, {type, invalid_intermediate_status},
@@ -540,14 +550,17 @@ error_invalid_intermediate_status(_Msg1, Msg2, Msg3, RemainingPath, Opts) ->
         },
         Opts
     ),
+    ?event(converge_result, 
+        {intermediate_failure, {msg1, Msg1},
+            {msg2, Msg2}, {msg3, Msg3},
+            {remaining_path, RemainingPath}, {opts, Opts}}),
     {
         error,
         #{
-            <<"Status">> => <<"Unprocessable Content">>,
-            <<"Status-Code">> => 422,
+            <<"status">> => 422,
             <<"body">> => Msg3,
-            <<"Key">> => maps:get(path, Msg2, <<"Key unknown.">>),
-            <<"Remaining-Path">> => RemainingPath
+            <<"key">> => maps:get(<<"path">>, Msg2, <<"Key unknown.">>),
+            <<"remaining-path">> => RemainingPath
         }
     }.
 
@@ -561,13 +574,22 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
         _ -> Error
     end.
 
+%% @doc Force the result of a device call into a message if the result is not
+%% requested by the `Opts'.
+maybe_force_message({Status, Res}, Opts) ->
+    case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
+        true when is_list(Res) -> {Status, normalize_keys(Res)};
+        true -> {Status, #{ <<"body">> => Res }};
+        false -> {Status, Res}
+    end.
+
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
 %% maintaining a functional style.
 %% 
 %% Additionally, this function supports the `{as, Device, Msg}' syntax, which
 %% allows the key to be resolved using another device to resolve the key,
-%% while maintaining the tracability of the `HashPath` of the output message.
+%% while maintaining the tracability of the `HashPath' of the output message.
 %% 
 %% Returns the value of the key if it is found, otherwise returns the default
 %% provided by the user, or `not_found' if no default is provided.
@@ -580,23 +602,37 @@ get(Path, {as, Device, Msg}, Default, Opts) ->
         Path,
         set(
             Msg,
-            #{ device => Device },
+            #{ <<"device">> => Device },
             internal_opts(Opts)
         ),
         Default,
         Opts
     );
 get(Path, Msg, Default, Opts) ->
-	case resolve(Msg, #{ path => Path }, Opts#{ spawn_worker => false }) of
+	case resolve(Msg, #{ <<"path">> => Path }, Opts#{ spawn_worker => false }) of
 		{ok, Value} -> Value;
 		{error, _} -> Default
 	end.
+
+%% @doc take a sequence of base messages and paths, then return the value of the
+%% first message that can be resolved using a path.
+get_first(Paths, Opts) -> get_first(Paths, not_found, Opts).
+get_first([], Default, _Opts) -> Default;
+get_first([{Base, Path}|Msgs], Default, Opts) ->
+    case get(Path, Base, Opts) of
+        not_found -> get_first(Msgs, Default, Opts);
+        Value -> Value
+    end.
 
 %% @doc Shortcut to get the list of keys from a message.
 keys(Msg) -> keys(Msg, #{}).
 keys(Msg, Opts) -> keys(Msg, Opts, keep).
 keys(Msg, Opts, keep) ->
-    get(keys, Msg, Opts);
+    try lists:map(fun normalize_key/1, get(<<"keys">>, Msg, Opts))
+    catch
+        A:B:C ->
+            throw({cannot_get_keys, {msg, Msg}, {opts, Opts}, {error, {A, B}}})
+    end;
 keys(Msg, Opts, remove) ->
     lists:filter(
         fun(Key) -> not lists:member(Key, ?CONVERGE_KEYS) end,
@@ -609,15 +645,16 @@ keys(Msg, Opts, remove) ->
 %% `HashPath' for each step.
 set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
-set(Msg1, RawMsg2, Opts) when is_map(RawMsg2) ->
-    Msg2 = maps:without([hashpath, priv], RawMsg2),
+set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
+    Msg1 = normalize_keys(RawMsg1),
+    Msg2 = maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2)),
     ?event(converge_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
     case keys(Msg2, internal_opts(Opts)) of
         [] -> Msg1;
         [Key|_] ->
             % Get the value to set. Use Converge by default, but fall back to
-            % getting via `maps` if it is not found.
+            % getting via `maps' if it is not found.
             Val =
                 case get(Key, Msg2, internal_opts(Opts)) of
                     not_found -> maps:get(Key, Msg2);
@@ -671,26 +708,36 @@ deep_set(Msg, [Key|Rest], Value, Opts) ->
             Msg#{ Key => deep_set(#{}, Rest, Value, Opts) }
     end.
 
+%% @doc Call the device's `set' function.
 device_set(Msg, Key, Value, Opts) ->
+    Req =
+        case Key of
+            <<"path">> ->
+                #{ <<"path">> => <<"set_path">>, <<"value">> => Value };
+            _ ->
+                #{ <<"path">> => <<"set">>, Key => Value }
+        end,
 	?event(
         converge_internal,
         {
             calling_device_set,
             {msg, Msg},
-            {applying_path, #{ path => set, Key => Value }}
-        }
+            {applying_set, Req}
+        },
+        Opts
     ),
 	Res = hb_util:ok(
         resolve(
             Msg,
-            #{ path => set, Key => Value },
+            Req,
             internal_opts(Opts)
         ),
         internal_opts(Opts)
     ),
 	?event(
         converge_internal,
-        {device_set_result, Res}
+        {device_set_result, Res},
+        Opts
     ),
 	Res.
 
@@ -700,7 +747,7 @@ remove(Msg, Key, Opts) ->
 	hb_util:ok(
         resolve(
             Msg,
-            #{ path => remove, item => Key },
+            #{ <<"path">> => <<"remove">>, <<"item">> => Key },
             internal_opts(Opts)
         ),
         Opts
@@ -756,10 +803,10 @@ message_to_fun(Msg, Key, Opts) ->
 			{Status, Func} = info_handler_to_fun(Handler, Msg, Key, Opts),
             {Status, Dev, Func};
 		_ ->
-			?event(converge_devices, {handler_not_found, {dev, Dev}, {key, Key}}),
+			?event(converge_devices, {no_override_handler, {dev, Dev}, {key, Key}}),
 			case {find_exported_function(Msg, Dev, Key, 3, Opts), Exported} of
 				{{ok, Func}, true} ->
-					% Case 3: The device has a function of the name `Key`.
+					% Case 3: The device has a function of the name `Key'.
 					{ok, Dev, Func};
 				_ ->
 					case {maps:find(default, Info), Exported} of
@@ -849,17 +896,8 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 %% the key using its literal value. If that fails, we cast the key to an atom
 %% and try again.
 find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
-	case maps:get(Key, Dev, not_found) of
-		not_found ->
-			case to_key(Key) of
-				undefined -> not_found;
-				Key ->
-					% The key is unchanged, so we return not_found.
-					not_found;
-				KeyAtom ->
-					% The key was cast to an atom, so we try again.
-					find_exported_function(Msg, Dev, KeyAtom, MaxArity, Opts)
-			end;
+	case maps:get(normalize_key(Key), normalize_keys(Dev), not_found) of
+		not_found -> not_found;
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
 				{arity, Arity} when Arity =< MaxArity ->
@@ -873,44 +911,27 @@ find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
 find_exported_function(_Msg, _Mod, _Key, Arity, _Opts) when Arity < 0 ->
     not_found;
 find_exported_function(Msg, Mod, Key, Arity, Opts) when not is_atom(Key) ->
-	case to_key(Key, Opts) of
-		ConvertedKey when is_atom(ConvertedKey) ->
-			find_exported_function(Msg, Mod, ConvertedKey, Arity, Opts);
-		undefined -> not_found;
-		BinaryKey when is_binary(BinaryKey) ->
-			not_found
+	try binary_to_existing_atom(normalize_key(Key), latin1) of
+		KeyAtom -> find_exported_function(Msg, Mod, KeyAtom, Arity, Opts)
+	catch _:_ -> not_found
 	end;
 find_exported_function(Msg, Mod, Key, Arity, Opts) ->
-	%?event({finding, {mod, Mod}, {key, Key}, {arity, Arity}}),
 	case erlang:function_exported(Mod, Key, Arity) of
 		true ->
 			case is_exported(Msg, Mod, Key, Opts) of
-				true ->
-					%?event({found, {ok, fun Mod:Key/Arity}}),
-					{ok, fun Mod:Key/Arity};
-				false ->
-					%?event({result, not_found}),
-					not_found
+				true -> {ok, fun Mod:Key/Arity};
+				false -> not_found
 			end;
 		false ->
-			%?event(
-            %     {
-            %         find_exported_function_result,
-            %         {mod, Mod},
-            %         {key, Key},
-            %         {arity, Arity},
-            %         {result, false}
-            %     }
-            % ),
 			find_exported_function(Msg, Mod, Key, Arity - 1, Opts)
 	end.
 
 %% @doc Check if a device is guarding a key via its `exports' list. Defaults to
 %% true if the device does not specify an `exports' list. The `info' function is
-%% always exported, if it exists. Elements of the `exludes` list are not
+%% always exported, if it exists. Elements of the `exludes' list are not
 %% exported. Note that we check for info _twice_ -- once when the device is
 %% given but the info result is not, and once when the info result is given.
-%% The reason for this is that `info/3` calls other functions that may need to
+%% The reason for this is that `info/3' calls other functions that may need to
 %% check if a key is exported, so we must avoid infinite loops. We must, however,
 %% also return a consistent result in the case that only the info result is
 %% given, so we check for it in both cases.
@@ -919,61 +940,52 @@ is_exported(Msg, Dev, Key, Opts) ->
 	is_exported(info(Dev, Msg, Opts), Key).
 is_exported(_, info) -> true;
 is_exported(Info = #{ excludes := Excludes }, Key) ->
-    case lists:member(to_key(Key), lists:map(fun to_key/1, Excludes)) of
+    case lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Excludes)) of
         true -> false;
         false -> is_exported(maps:remove(excludes, Info), Key)
     end;
 is_exported(#{ exports := Exports }, Key) ->
-    lists:member(to_key(Key), lists:map(fun to_key/1, Exports));
+    lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Exports));
 is_exported(_Info, _Key) -> true.
 
-%% @doc Convert a key to an atom if it already exists in the Erlang atom table,
-%% or to a binary otherwise.
-to_key(Key) -> to_key(Key, #{ error_strategy => throw }).
-to_key(Key, _Opts) when byte_size(Key) == 43 -> Key;
-to_key(Key, Opts) ->
-    % If the `atom_keys' option is set, we try to convert the key to an atom.
-    % If this fails, we fall back to using the binary representation.
-    AtomKeys = hb_opts:get(atom_keys, true, Opts),
-    if AtomKeys ->
-        try to_atom_unsafe(Key)
-        catch _Type:_:_Trace -> key_to_binary(Key, Opts)
-        end;
-        true -> key_to_binary(Key, Opts)
+%% @doc Convert a key to a binary in normalized form.
+normalize_key(Key) -> normalize_key(Key, #{}).
+normalize_key(Key, _Opts) when ?IS_ID(Key) -> Key;
+normalize_key(Key, _Opts) when is_binary(Key) -> hb_util:to_lower(Key);
+normalize_key(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
+normalize_key(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
+normalize_key(Key, _Opts) when is_list(Key) ->
+    case hb_util:is_string_list(Key) of
+        true -> normalize_key(list_to_binary(Key));
+        false ->
+            iolist_to_binary(
+                lists:join(
+                    <<"/">>,
+                    lists:map(fun normalize_key/1, Key)
+                )
+            )
     end.
 
-%% @doc Convert a key to its binary representation.
-key_to_binary(Key) -> key_to_binary(Key, #{}).
-key_to_binary(Key, _Opts) when is_binary(Key) -> Key;
-key_to_binary(Key, _Opts) when is_atom(Key) -> atom_to_binary(Key);
-key_to_binary(Key, _Opts) when is_integer(Key) -> integer_to_binary(Key);
-key_to_binary(Key = [ASCII | _], _Opts) when is_integer(ASCII) -> list_to_binary(Key);
-key_to_binary(Key, _Opts) when is_list(Key) ->
-    iolist_to_binary(lists:join(<<"/">>, lists:map(fun key_to_binary/1, Key))).
-
-%% @doc Helper function for key_to_atom that does not check for errors.
-to_atom_unsafe(Key) when is_integer(Key) ->
-    integer_to_binary(Key);
-to_atom_unsafe(Key) when is_binary(Key) ->
-    binary_to_existing_atom(hb_util:to_lower(Key), utf8);
-to_atom_unsafe(Key) when is_list(Key) ->
-    FlattenedKey = lists:flatten(Key),
-    list_to_existing_atom(FlattenedKey);
-to_atom_unsafe(Key) when is_atom(Key) -> Key.
-
 %% @doc Ensure that a message is processable by the Converge resolver: No lists.
-ensure_message(Msg1) when is_list(Msg1) ->
-    maps:from_list(
+normalize_keys(Msg1) when is_list(Msg1) ->
+    normalize_keys(maps:from_list(
         lists:zip(
-            [
-                key_to_binary(Key)
-            ||
-                Key <- lists:seq(1, length(Msg1))
-            ],
+            lists:seq(1, length(Msg1)),
             Msg1
         )
+    ));
+normalize_keys(Map) when is_map(Map) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, Value}) when is_map(Value) ->
+                {hb_converge:normalize_key(Key), Value};
+            ({Key, Value}) ->
+                {hb_converge:normalize_key(Key), Value}
+            end,
+            maps:to_list(Map)
+        )
     );
-ensure_message(Msg) -> Msg.
+normalize_keys(Other) -> Other.
 
 %% @doc Load a device module from its name or a message ID.
 %% Returns {ok, Executable} where Executable is the device module. On error,
@@ -983,7 +995,7 @@ load_device(ID, _Opts) when is_atom(ID) ->
     try ID:module_info(), {ok, ID}
     catch _:_ -> {error, not_loadable}
     end;
-load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
+load_device(ID, Opts) when ?IS_ID(ID) ->
 	case hb_opts:get(load_remote_devices) of
 		true ->
 			{ok, Msg} = hb_cache:read(maps:get(store, Opts), ID),
@@ -992,20 +1004,15 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 					fun(Signer) ->
 						lists:member(Signer, hb_opts:get(trusted_device_signers))
 					end,
-					hb_message:signers(Msg)
+					hb_util:ok(dev_message:attestors(Msg), Opts)
 				),
 			case Trusted of
 				true ->
 					RelBin = erlang:system_info(otp_release),
-					case lists:keyfind(<<"Content-Type">>, 1, Msg#tx.tags) of
+					case maps:get(<<"content-type">>, Msg, undefined) of
 						<<"BEAM/", RelBin/bitstring>> ->
-							{_, ModNameBin} =
-								lists:keyfind(
-                                    <<"Module-Name">>,
-                                    1,
-                                    Msg#tx.tags
-                                ),
-							ModName = list_to_atom(binary_to_list(ModNameBin)),
+							ModNameBin = maps:get(<<"module-name">>, Msg, undefined),
+							ModName = binary_to_atom(ModNameBin),
 							case erlang:load_module(ModName, Msg#tx.data) of
 								{module, _} -> {ok, ModName};
 								{error, Reason} -> {error, Reason}
@@ -1017,7 +1024,12 @@ load_device(ID, Opts) when is_binary(ID) and byte_size(ID) == 43 ->
 			{error, remote_devices_disabled}
 	end;
 load_device(ID, Opts) ->
-    case maps:get(ID, hb_opts:get(preloaded_devices), unsupported) of
+    NormKey =
+        case is_atom(ID) of
+            true -> ID;
+            false -> normalize_key(ID)
+        end,
+    case maps:get(NormKey, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> load_device(Mod, Opts)
     end.

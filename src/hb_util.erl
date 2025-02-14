@@ -1,9 +1,10 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
--export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1]).
+-export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
+-export([is_string_list/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
@@ -32,10 +33,7 @@ id(Item) -> id(Item, unsigned).
 id(TX, Type) when is_record(TX, tx) ->
     encode(ar_bundles:id(TX, Type));
 id(Map, Type) when is_map(Map) ->
-    case Type of
-        unsigned -> hb_converge:get(unsigned_id, Map);
-        signed -> encode(hb_converge:get(id, Map))
-    end;
+    hb_message:id(Map, Type);
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin;
 id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
@@ -43,11 +41,13 @@ id(Bin, _) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 id(Data, Type) when is_list(Data) ->
     id(list_to_binary(Data), Type).
 
-%% @doc Convert a string to a lowercase.
-to_lower(Str) when is_list(Str) ->
-    string:to_lower(Str);
-to_lower(Bin) when is_binary(Bin) ->
-    list_to_binary(to_lower(binary_to_list(Bin))).
+%% @doc Convert a binary to a lowercase.
+to_lower(Str) ->
+    string:lowercase(Str).
+
+%% @doc Is the given term a string list?
+is_string_list(MaybeString) ->
+    lists:all(fun is_integer/1, MaybeString).
 
 %% @doc Convert a human readable ID to a native binary ID. If the ID is already
 %% a native binary ID, it is returned as is.
@@ -83,7 +83,9 @@ short_id(Bin) when byte_size(Bin) > 43 andalso byte_size(Bin) < 100 ->
     end;
 short_id(<< "/", SingleElemHashpath/binary >>) ->
     Enc = short_id(SingleElemHashpath),
-    << "/", Enc/binary >>;
+    if is_binary(Enc) -> << "/", Enc/binary >>;
+    true -> undefined
+    end;
 short_id(Key) when byte_size(Key) < 43 -> Key;
 short_id(_) -> undefined.
 
@@ -120,6 +122,16 @@ safe_decode(E) ->
         _:_ ->
         {error, invalid}
     end.
+
+%% @doc Convert a binary to a hex string. Do not use this for anything other than
+%% generating a lower-case, non-special character id. It should not become part of
+%% the core protocol. We use b64u for efficient encoding.
+to_hex(Bin) when is_binary(Bin) ->
+    to_lower(
+        iolist_to_binary(
+            [io_lib:format("~2.16.0B", [X]) || X <- binary_to_list(Bin)]
+        )
+    ).
 
 %% @doc Label a list of elements with a number.
 number(List) ->
@@ -158,23 +170,16 @@ message_to_numbered_list(Message, Opts) ->
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
 %% as well as a standard map of HyperBEAM runtime options.
-%% 
-%% If `error_strategy' is `throw', raise an exception if no integer keys are
-%% found. If `error_strategy' is `any', return `undefined' if no integer keys
-%% are found. By default, the function does not pass a `throw' execution
-%% strategy to `hb_converge:to_key/2', such that non-integer keys present in the
-%% message will not lead to an exception.
 hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    {ok, Keys} = hb_converge:resolve(Message, keys, #{}),
-    hd(Message, Keys, 1, ReturnType, Opts).
+    hd(Message, hb_converge:keys(Message, Opts), 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
 hd(_Map, [], _Index, _ReturnType, _Opts) -> undefined;
 hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
-    case hb_converge:to_key(Key, Opts#{ error_strategy => return }) of
+    case hb_converge:normalize_key(Key, Opts#{ error_strategy => return }) of
         undefined ->
             hd(Message, Rest, Index + 1, ReturnType, Opts);
         Key ->
@@ -248,7 +253,11 @@ format_debug_trace(Mod, Func, Line) ->
 debug_fmt(X) -> debug_fmt(X, 0).
 debug_fmt(X, Indent) ->
     try do_debug_fmt(X, Indent)
-    catch _:_ ->
+    catch A:B:C ->
+        eunit_print(
+            "~p:~p:~p",
+            [A, B, C]
+        ),
         case hb_opts:get(mode, prod) of
             prod ->
                 format_indented("[!PRINT FAIL!]", Indent);
@@ -376,7 +385,7 @@ format_binary(Bin) ->
             lists:flatten(io_lib:format("~s", [ShortID]))
     end.
 
-%% @doc Add `,` characters to a number every 3 digits to make it human readable.
+%% @doc Add `,' characters to a number every 3 digits to make it human readable.
 human_int(Int) ->
     lists:reverse(add_commas(lists:reverse(integer_to_list(Int)))).
 

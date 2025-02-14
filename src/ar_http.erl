@@ -16,11 +16,68 @@
 %%% ==================================================================
 
 start_link(Opts) ->
-    ?event(debug, {start_link, Opts}),
 	gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 req(Args, Opts) -> req(Args, false, Opts).
 req(Args, ReestablishedConnection, Opts) ->
+    case hb_opts:get(http_client, gun, Opts) of
+        gun -> gun_req(Args, ReestablishedConnection, Opts);
+        httpc -> httpc_req(Args, ReestablishedConnection, Opts)
+    end.
+
+httpc_req(Args, _, Opts) ->
+    #{
+        peer := Peer,
+        path := Path,
+        method := RawMethod,
+        headers := Headers,
+        body := Body
+    } = Args,
+    {Host, Port} = parse_peer(Peer, Opts),
+    Scheme = case Port of
+        443 -> "https";
+        _ -> "http"
+    end,
+    ?event(http, {httpc_req, Args}),
+    URL = binary_to_list(iolist_to_binary([Scheme, "://", Host, ":", integer_to_binary(Port), Path])),
+    FilteredHeaders = maps:remove(<<"content-type">>, Headers),
+    HeaderKV =
+        [ {binary_to_list(Key), binary_to_list(Value)} || {Key, Value} <- maps:to_list(FilteredHeaders) ],
+    Method = binary_to_existing_atom(hb_util:to_lower(RawMethod)),
+    ContentType = maps:get(<<"content-type">>, Headers, <<"application/octet-stream">>),
+    Request =
+        case Method of
+            get ->
+                {
+                    URL,
+                    HeaderKV
+                };
+            _ ->
+                {
+                    URL,
+                    HeaderKV,
+                    binary_to_list(ContentType),
+                    Body
+                }
+        end,
+    ?event(http, {httpc_req, Method, URL, Request}),
+    HTTPCOpts = [{full_result, true}, {body_format, binary}],
+    case httpc:request(Method, Request, [], HTTPCOpts) of
+        {ok, {{_, Status, _}, RawRespHeaders, RespBody}} ->
+            RespHeaders =
+                [
+                    {list_to_binary(Key), list_to_binary(Value)}
+                ||
+                    {Key, Value} <- RawRespHeaders
+                ],
+            ?event(http, {httpc_resp, Status, RespHeaders, RespBody}),
+            {ok, Status, RespHeaders, RespBody};
+        {error, Reason} ->
+            ?event(http, {httpc_error, Reason}),
+            {error, Reason}
+    end.
+
+gun_req(Args, ReestablishedConnection, Opts) ->
 	StartTime = erlang:monotonic_time(),
 	#{ peer := Peer, path := Path, method := Method } = Args,
 	Response =
@@ -103,7 +160,7 @@ init(Opts) ->
 		{help, "The total amount of bytes posted via HTTP, per remote endpoint"},
 		{labels, [route]}
 	]),
-    ?event(debug, started),
+    ?event(started),
 	{ok, #state{ opts = Opts }}.
 
 handle_call({get_connection, Args}, From,
@@ -121,7 +178,8 @@ handle_call({get_connection, Args}, From,
 					StatusByPID
                 ),
 			{
-                noreply,
+                reply,
+                {ok, PID},
                 State#state{
                     pid_by_peer = PIDPeer2,
                     status_by_pid = StatusByPID2
@@ -195,7 +253,7 @@ handle_info({gun_error, PID, Reason},
 					ok
 			end,
 			gun:shutdown(PID),
-			?event(debug, {connection_error, {reason, Reason}}),
+			?event({connection_error, {reason, Reason}}),
 			{noreply, State#state{ status_by_pid = StatusByPID2, pid_by_peer = PIDByPeer2 }}
 	end;
 
@@ -269,6 +327,7 @@ terminate(Reason, #state{ status_by_pid = StatusByPID }) ->
 
 open_connection(#{ peer := Peer }, Opts) ->
     {Host, Port} = parse_peer(Peer, Opts),
+    ?event(http, {parsed_peer, {peer, Peer}, {host, Host}, {port, Port}}),
 	ConnectTimeout =
 		hb_opts:get(http_connect_timeout, no_connect_timeout, Opts),
     BaseGunOpts =
@@ -285,13 +344,18 @@ open_connection(#{ peer := Peer }, Opts) ->
             retry => 0,
             connect_timeout => ConnectTimeout
         },
+    Transport =
+        case Port of
+            443 -> tls;
+            _ -> tcp
+        end,
+    % Fallback through earlier HTTP versions if the protocol is not supported.
     GunOpts =
         case Proto = hb_opts:get(protocol, no_proto, Opts) of
             http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
-            http2 -> BaseGunOpts#{protocols => [http2], transport => tcp};
-            http1 -> BaseGunOpts#{protocols => [http], transport => tcp}
+            _ -> BaseGunOpts
         end,
-    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}}),
+    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}, {transport, Transport}}),
 	gun:open(Host, Port, GunOpts).
 
 parse_peer(Peer, Opts) ->
@@ -304,7 +368,7 @@ parse_peer(Peer, Opts) ->
         [Host, Port] ->
             {binary_to_list(Host), parse_port(Port)};
         [Host] ->
-            {binary_to_list(Host), hb_opts:get(http_port, 443, Opts)}
+            {binary_to_list(Host), hb_opts:get(port, 443, Opts)}
     end.
 
 parse_port(Port) ->
@@ -400,8 +464,8 @@ await_response(Args, Opts) ->
                                 Opts
                             );
 						false ->
-							log(err, http_fetched_too_much_data, Args,
-									<<"Fetched too much data">>, Opts),
+							?event(error, {http_fetched_too_much_data, Args,
+									<<"Fetched too much data">>, Opts}),
 							{error, too_much_data}
 					end
 			end;

@@ -8,13 +8,13 @@
         stdlib,
         inets,
         ssl,
-        debugger,
         cowboy,
         prometheus,
         prometheus_cowboy,
         os_mon,
         rocksdb,
-        quicer
+        quicer,
+        gun
     ]},
     {env, []},
     {modules, []},

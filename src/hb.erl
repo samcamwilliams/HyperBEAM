@@ -83,6 +83,10 @@
 -module(hb).
 %%% Configuration and environment:
 -export([init/0, now/0, build/0]).
+%%% Base start configurations:
+-export([start_simple_pay/0, start_simple_pay/1, start_simple_pay/2]).
+-export([topup/3, topup/4]).
+-export([start_mainnet/0, start_mainnet/1, start_mainnet/2]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, event/4, event/5, event/6, no_prod/3]).
 -export([read/1, read/2, debug_wait/4, profile/1, benchmark/2, benchmark/3]).
@@ -97,6 +101,97 @@ init() ->
     Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
     ?event({old_system_stack_depth, Old}),
     ok.
+
+%% @doc Start a mainnet server without payments.
+start_mainnet() ->
+    start_mainnet(10000 + rand:uniform(50000)).
+start_mainnet(Port) ->
+    start_mainnet(Port, address()).
+start_mainnet(Port, Addr) ->
+    do_start_mainnet(#{ port => Port, operator => Addr }).
+
+do_start_mainnet(Opts) ->
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    hb_http_server:start_node(
+        Opts#{
+            store => {hb_store_fs, #{ prefix => "main-cache" }}
+        }
+    ),
+    io:format(
+        "Started mainnet node at http://localhost:~p~n"
+        "Operator: ~s~n",
+        [maps:get(port, Opts), address()]
+    ),
+    <<"http://localhost:", (integer_to_binary(maps:get(port, Opts)))/binary>>.
+
+%%% @doc Start a server with a `simple-pay@1.0` pre-processor.
+start_simple_pay() ->
+    start_simple_pay(address()).
+start_simple_pay(Addr) ->
+    rand:seed(default),
+    start_simple_pay(Addr, 10000 + rand:uniform(50000)).
+start_simple_pay(Addr, Port) ->
+    do_start_simple_pay(#{ port => Port, operator => Addr }).
+
+do_start_simple_pay(Opts) ->
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    Port = maps:get(port, Opts),
+    Processor =
+        #{
+            <<"device">> => <<"p4@1.0">>,
+            <<"ledger_device">> => <<"simple-pay@1.0">>,
+            <<"pricing_device">> => <<"simple-pay@1.0">>
+        },
+    hb_http_server:start_node(
+        Opts#{
+            preprocessor => Processor,
+            postprocessor => Processor
+        }
+    ),
+    io:format(
+        "Started simple-pay node at http://localhost:~p~n"
+        "Operator: ~s~n",
+        [Port, address()]
+    ),
+    <<"http://localhost:", (integer_to_binary(Port))/binary>>.
+
+%% @doc Helper for topping up a user's balance on a simple-pay node.
+topup(Node, Amount, Recipient) ->
+    topup(Node, Amount, Recipient, wallet()).
+topup(Node, Amount, Recipient, Wallet) ->
+    Message = hb_message:attest(
+        #{
+            <<"path">> => <<"/~simple-pay@1.0/topup">>,
+            <<"amount">> => Amount,
+            <<"recipient">> => Recipient
+        },
+        Wallet
+    ),
+    hb_http:get(Node, Message, #{}).
 
 wallet() ->
     wallet(hb_opts:get(key_location)).
@@ -128,11 +223,11 @@ event(Topic, X, Mod, Func, Line) -> event(Topic, X, Mod, Func, Line, #{}).
 event(Topic, X, Mod, undefined, Line, Opts) -> event(Topic, X, Mod, "", Line, Opts);
 event(Topic, X, Mod, Func, undefined, Opts) -> event(Topic, X, Mod, Func, "", Opts);
 event(Topic, X, ModAtom, Func, Line, Opts) when is_atom(ModAtom) ->
-    % Check if the module has the `hb_debug` attribute set to `print`.
+    % Check if the module has the `hb_debug' attribute set to `print'.
     case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
         true -> hb_util:debug_print(X, atom_to_list(ModAtom), Func, Line);
         false -> 
-            % Check if the module has the `hb_debug` attribute set to `no_print`.
+            % Check if the module has the `hb_debug' attribute set to `no_print'.
             case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
                 {hb_debug, [no_print]} -> X;
                 _ -> event(Topic, X, atom_to_list(ModAtom), Func, Line, Opts)
@@ -142,9 +237,12 @@ event(Topic, X, ModStr, Func, Line, Opts) ->
     % Check if the debug_print option has the topic in it if set.
     case hb_opts:get(debug_print, false, Opts) of
         ModList when is_list(ModList) ->
-            (lists:member(ModStr, ModList)
-                orelse lists:member(atom_to_list(Topic), ModList))
-                andalso hb_util:debug_print(X, ModStr, Func, Line);
+            case lists:member(ModStr, ModList)
+                orelse lists:member(atom_to_list(Topic), ModList)
+            of
+                true -> hb_util:debug_print(X, ModStr, Func, Line);
+                false -> X
+            end;
         true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
     end.
@@ -211,19 +309,22 @@ benchmark(Fun, TLen) ->
 %% @doc Run multiple instances of a function in parallel for a given amount of time.
 benchmark(Fun, TLen, Procs) ->
     Parent = self(),
+    receive X -> ?event(benchmark, {start_benchmark_worker, X}) end,
     StartWorker =
         fun(_) ->
             Ref = make_ref(),
-            link(spawn(fun() ->
+            ?event(benchmark, {start_benchmark_worker, Ref}),
+            spawn_link(fun() ->
                 Count = benchmark(Fun, TLen),
                 Parent ! {work_complete, Ref, Count}
-            end)),
+            end),
             Ref
         end,
     CollectRes =
         fun(R) ->
             receive
                 {work_complete, R, Count} ->
+                    ?event(benchmark, {work_complete, R, Count}),
                     Count
             end
         end,

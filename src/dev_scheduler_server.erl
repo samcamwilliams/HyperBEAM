@@ -2,19 +2,20 @@
 %%% It acts as a deliberate 'bottleneck' to prevent the server accidentally
 %%% assigning multiple messages to the same slot.
 -module(dev_scheduler_server).
--export([start/2, schedule/2]).
+-export([start/2, schedule/2, stop/1]).
 -export([info/1]).
 -include_lib("eunit/include/eunit.hrl").
-
 -include("include/hb.hrl").
 
 %% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
-    {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
-    spawn(
+    spawn_link(
         fun() ->
+            pg:join({dev_scheduler, ProcID}, self()),
+            ?event({starting_scheduling_server, {proc_id, ProcID}}),
+            {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
             ?event(
-                {starting_scheduling_server,
+                {scheduler_got_process_info,
                     {proc_id, ProcID},
                     {current, CurrentSlot},
                     {hash_chain, HashChain}
@@ -34,6 +35,7 @@ start(ProcID, Opts) ->
 
 %% @doc Get the current slot from the cache.
 slot_from_cache(ProcID, Opts) ->
+    ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
     case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
             ?event({no_assignments_in_cache, {proc_id, ProcID}}),
@@ -54,7 +56,7 @@ slot_from_cache(ProcID, Opts) ->
             {
                 AssignmentNum,
                 hb_converge:get(
-                    <<"Hash-Chain">>, Assignment, #{ hashpath => ignore })
+                    <<"hash-chain">>, Assignment, #{ hashpath => ignore })
             }
     end.
 
@@ -72,10 +74,11 @@ schedule(ErlangProcID, Message) ->
 info(ProcID) ->
     ?event({getting_info, {proc_id, ProcID}}),
     ProcID ! {info, self()},
-    receive
-        {info, Info} ->
-            Info
-    end.
+    receive {info, Info} -> Info end.
+
+stop(ProcID) ->
+    ?event({stopping_scheduling_server, {proc_id, ProcID}}),
+    ProcID ! stop.
 
 %% @doc The main loop of the server. Simply waits for messages to assign and
 %% returns the current slot.
@@ -85,7 +88,8 @@ server(State) ->
             server(assign(State, Message, Reply));
         {info, Reply} ->
             Reply ! {info, State},
-            server(State)
+            server(State);
+        stop -> ok
     end.
 
 %% @doc Assign a message to the next slot.
@@ -95,68 +99,79 @@ assign(State, Message, ReplyPID) ->
     catch
         _Class:Reason:Stack ->
             ?event({error_scheduling, Reason, Stack}),
-            {error, State}
+            State
     end.
 
 %% @doc Generate and store the actual assignment message.
 do_assign(State, Message, ReplyPID) ->
-    ?event(
-        {assigning_message,
-            {id, hb_converge:get(id, Message)},
-            {message, Message}
-        }
-    ),
     HashChain = next_hashchain(maps:get(hash_chain, State), Message),
     NextSlot = maps:get(current, State) + 1,
-    % Run the signing of the assignment and writes to the disk in a separate process
-    spawn(
+    % Run the signing of the assignment and writes to the disk in a separate
+    % process.
+    AssignFun =
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
-            Assignment = hb_message:sign(#{
-                <<"Data-Protocol">> => <<"ao">>,
-                <<"Variant">> => <<"ao.TN.2">>,
-                <<"Process">> => hb_util:id(maps:get(id, State)),
-                <<"Epoch">> => <<"0">>,
-                <<"Slot">> => NextSlot,
-                <<"Message">> => hb_converge:get(id, Message),
-                <<"Block-Height">> => Height,
-                <<"Block-Hash">> => Hash,
-                <<"Block-Timestamp">> => Timestamp,
+            Assignment = hb_message:attest(#{
+                <<"path">> =>
+                    case hb_path:from_message(request, Message) of
+                        undefined -> <<"compute">>;
+                        Path -> Path
+                    end,
+                <<"data-protocol">> => <<"ao">>,
+                <<"variant">> => <<"ao.N.1">>,
+                <<"process">> => hb_util:id(maps:get(id, State)),
+                <<"epoch">> => <<"0">>,
+                <<"slot">> => NextSlot,
+                <<"block-height">> => Height,
+                <<"block-hash">> => hb_util:human_id(Hash),
+                <<"block-timestamp">> => Timestamp,
                 % Note: Local time on the SU, not Arweave
-                <<"Timestamp">> => erlang:system_time(millisecond),
-                <<"Hash-Chain">> => hb_util:id(HashChain)
+                <<"timestamp">> => erlang:system_time(millisecond),
+                <<"hash-chain">> => hb_util:id(HashChain),
+                <<"body">> => Message
             }, maps:get(wallet, State)),
-            maybe_inform_recipient(aggressive, ReplyPID, Message, Assignment),
+            maybe_inform_recipient(
+                aggressive,
+                ReplyPID,
+                Message,
+                Assignment,
+                State
+            ),
             ?event(starting_message_write),
             dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
-            hb_cache:write(Message, maps:get(opts, State)),
             maybe_inform_recipient(
                 local_confirmation,
                 ReplyPID,
                 Message,
-                Assignment
+                Assignment,
+                State
             ),
             ?event(writes_complete),
             ?event(uploading_assignment),
             hb_client:upload(Assignment),
-            ?event(uploading_message),
-            hb_client:upload(Message),
             ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
                 ReplyPID,
                 Message,
-                Assignment
+                Assignment,
+                State
             )
-        end
-    ),
+        end,
+    case hb_opts:get(scheduling_mode, sync, maps:get(opts, State)) of
+        aggressive ->
+            spawn(AssignFun);
+        Other ->
+            ?event({scheduling_mode, Other}),
+            AssignFun()
+    end,
     State#{
         current := NextSlot,
         hash_chain := HashChain
     }.
 
-maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
-    case hb_opts:get(scheduling_mode, remote_confirmation) of
+maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
+    case hb_opts:get(scheduling_mode, remote_confirmation, maps:get(opts, State)) of
         Mode -> ReplyPID ! {scheduled, Message, Assignment};
         _ -> ok
     end.
@@ -164,9 +179,11 @@ maybe_inform_recipient(Mode, ReplyPID, Message, Assignment) ->
 %% @doc Create the next element in a chain of hashes that links this and prior
 %% assignments.
 next_hashchain(HashChain, Message) ->
+    ?event({creating_next_hashchain, {hash_chain, HashChain}, {message, Message}}),
+    ID = hb_message:id(Message, all),
     crypto:hash(
         sha256,
-        << HashChain/binary, (hb_util:id(Message, signed))/binary >>
+        << HashChain/binary, ID/binary >>
     ).
 
 %% TESTS
@@ -174,19 +191,19 @@ next_hashchain(HashChain, Message) ->
 %% @doc Test the basic functionality of the server.
 new_proc_test() ->
     Wallet = ar_wallet:new(),
-    SignedItem = hb_message:sign(
-        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+    SignedItem = hb_message:attest(
+        #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),
-    SignedItem2 = hb_message:sign(
-        #{ <<"Data">> => <<"test2">> },
+    SignedItem2 = hb_message:attest(
+        #{ <<"data">> => <<"test2">> },
         Wallet
     ),
-    SignedItem3 = hb_message:sign(
+    SignedItem3 = hb_message:attest(
         #{
-            <<"Data">> => <<"test2">>,
-            <<"Deep-Key">> =>
-                #{ <<"Data">> => <<"test3">> }
+            <<"data">> => <<"test2">>,
+            <<"deep-key">> =>
+                #{ <<"data">> => <<"test3">> }
         },
         Wallet
     ),
@@ -202,8 +219,8 @@ new_proc_test() ->
 benchmark_test() ->
     BenchTime = 1,
     Wallet = ar_wallet:new(),
-    SignedItem = hb_message:sign(
-        #{ <<"Data">> => <<"test">>, <<"Random-Key">> => rand:uniform(10000) },
+    SignedItem = hb_message:attest(
+        #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),
     dev_scheduler_registry:find(ID = hb_converge:get(id, SignedItem), true),
@@ -212,11 +229,11 @@ benchmark_test() ->
         fun(X) ->
             MsgX = #{
                 path => <<"Schedule">>,
-                <<"Method">> => <<"POST">>,
-                <<"Message">> =>
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
                     #{
-                        <<"Type">> => <<"Message">>,
-                        <<"Test-Val">> => X
+                        <<"type">> => <<"Message">>,
+                        <<"test-val">> => X
                     }
             },
             schedule(ID, MsgX)

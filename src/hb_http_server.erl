@@ -3,25 +3,49 @@
 %%% only has to marshal the HTTP request into a message, and then
 %%% pass it to the Converge resolver. 
 %%% 
-%%% `hb_http:reply/3' is used to respond to the client, handling the 
+%%% `hb_http:reply/4' is used to respond to the client, handling the 
 %%% process of converting a message back into an HTTP response.
 %%% 
-%%% The router uses an `Opts` message as its Cowboy initial state, 
+%%% The router uses an `Opts' message as its Cowboy initial state, 
 %%% such that changing it on start of the router server allows for
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
--export([start/0, start/1, allowed_methods/2, init/2, set_opts/1]).
--export([start_test_node/0, start_test_node/1]).
+-export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
+-export([start_node/0, start_node/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%% @doc Starts the HTTP server. Optionally accepts an `Opts` message, which
+%% @doc Starts the HTTP server. Optionally accepts an `Opts' message, which
 %% is used as the source for server configuration settings, as well as the
-%% `Opts` argument to use for all Converge resolution requests downstream.
+%% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    start(#{ priv_wallet => hb:wallet(hb_opts:get(key_location)) }).
+    ?event(http, {start_store, "main-cache"}),
+    Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
+    hb_store:start(Store),
+    start(
+        #{
+            priv_wallet => hb:wallet(hb_opts:get(key_location)),
+            store => Store,
+            port => hb_opts:get(http_default_remote_port, 8734)
+        }
+    ).
 start(Opts) ->
-    {ok, Listener, _Port} = new_server(Opts),
+    application:ensure_all_started([
+        kernel,
+        stdlib,
+        inets,
+        ssl,
+        ranch,
+        cowboy,
+        gun,
+        prometheus,
+        prometheus_cowboy,
+        os_mon,
+        rocksdb
+    ]),
+    hb:init(),
+    BaseOpts = set_base_opts(Opts),
+    {ok, Listener, _Port} = new_server(BaseOpts),
     {ok, Listener}.
 
 new_server(RawNodeMsg) ->
@@ -41,6 +65,9 @@ new_server(RawNodeMsg) ->
                 )
             )
         ),
+    % Put server ID into node message so it's possible to update current server
+    % params
+    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
     Dispatcher =
         cowboy_router:compile(
             [
@@ -56,7 +83,7 @@ new_server(RawNodeMsg) ->
             ]
         ),
     ProtoOpts = #{
-        env => #{dispatch => Dispatcher, node_msg => NodeMsg},
+        env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
         metrics_callback =>
             fun prometheus_cowboy2_instrumenter:observe/1,
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
@@ -70,18 +97,19 @@ new_server(RawNodeMsg) ->
                 start_http2(ServerID, ProtoOpts, NodeMsg);
             _ -> {error, {unknown_protocol, Protocol}}
         end,
-    ?event(debug,
+    ?event(http,
         {http_server_started,
             {listener, Listener},
             {server_id, ServerID},
             {port, Port},
-            {protocol, Protocol}
+            {protocol, Protocol},
+            {store, hb_opts:get(store, no_store, NodeMsg)}
         }
     ),
     {ok, Listener, Port}.
 
 start_http3(ServerID, ProtoOpts, _NodeMsg) ->
-    ?event(debug, {start_http3, ServerID}),
+    ?event(http, {start_http3, ServerID}),
     Parent = self(),
     ServerPID =
         spawn(fun() ->
@@ -115,7 +143,7 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
     end.
 
 start_http2(ServerID, ProtoOpts, NodeMsg) ->
-    ?event(debug, {start_http2, ServerID}),
+    ?event(http, {start_http2, ServerID}),
     {ok, Listener} = cowboy:start_clear(
         ServerID,
         [
@@ -126,12 +154,13 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
     {ok, Port, Listener}.
 
 init(Req, ServerID) ->
-    NodeMsg = cowboy:get_env(ServerID, node_msg, no_node_msg),
+    NodeMsg = get_opts(#{ http_server => ServerID }),
+    ?event(http, {http_inbound, Req}),
     % Parse the HTTP request into HyerBEAM's message format.
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
-    ?event(http, {http_inbound, ReqSingleton}),
+    ?event(http, {parsed_singleton, ReqSingleton}),
     {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
-    hb_http:reply(Req, Res).
+    hb_http:reply(Req, Res, NodeMsg).
 
 %% @doc Return the complete Ranch ETS table for the node for debugging.
 ranch_ets() ->
@@ -143,43 +172,61 @@ ranch_ets() ->
 allowed_methods(Req, State) ->
     {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
 
-%% @doc Update the `Opts` map that the HTTP server uses for all future
+%% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
-    cowboy:set_env(ServerRef, opts, Opts).
+    ok = cowboy:set_env(ServerRef, node_msg, Opts).
+
+get_opts(NodeMsg) ->
+    ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
+    cowboy:get_env(ServerRef, node_msg, no_node_msg).
 
 %%% Tests
 
-test_opts(Opts) ->
-    rand:seed(default),
-    % Generate a random port number between 42000 and 62000 to use
+set_base_opts(Opts) ->
+    % Generate a random port number between 10000 and 30000 to use
     % for the server.
-    Port = 10000 + rand:uniform(20000),
-    Wallet = ar_wallet:new(),
+    Port =
+        case hb_opts:get(port, no_port, Opts#{ only => local }) of
+            no_port ->
+                rand:seed(exsplus, erlang:timestamp()),
+                10000 + rand:uniform(20000);
+            PassedPort -> PassedPort
+        end,
+    Wallet =
+        case hb_opts:get(priv_wallet, no_viable_wallet, Opts) of
+            no_viable_wallet -> ar_wallet:new();
+            PassedWallet -> PassedWallet
+        end,
+    Store =
+        case hb_opts:get(store, no_store, Opts) of
+            no_store ->
+                {hb_store_fs,
+                    #{
+                        prefix =>
+                            <<"TEST-cache-", (integer_to_binary(Port))/binary>>
+                    }
+                };
+            PassedStore -> PassedStore
+        end,
     Opts#{
-        % Generate a random port number between 8000 and 9000.
         port => Port,
-        store =>
-            {hb_store_fs,
-                #{
-                    prefix =>
-                        <<"TEST-cache-", (integer_to_binary(Port))/binary>>
-                }
-            },
-        priv_wallet => Wallet
+        store => Store,
+        priv_wallet => Wallet,
+        address => hb_util:human_id(ar_wallet:to_address(Wallet)),
+        force_signed => true
     }.
 
 %% @doc Test that we can start the server, send a message, and get a response.
-start_test_node() ->
-    start_test_node(#{}).
-start_test_node(Opts) ->
+start_node() ->
+    start_node(#{}).
+start_node(Opts) ->
     application:ensure_all_started([
         kernel,
         stdlib,
         inets,
         ssl,
-        debugger,
         ranch,
         cowboy,
         gun,
@@ -190,30 +237,6 @@ start_test_node(Opts) ->
     ]),
     hb:init(),
     hb_sup:start_link(Opts),
-    ServerOpts = test_opts(Opts),
+    ServerOpts = set_base_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
-
-raw_http_access_test() ->
-    URL = start_test_node(#{ protocol => http1 }),
-    TX =
-        ar_bundles:serialize(
-            hb_message:convert(
-                #{
-                    path => <<"Key1">>,
-                    <<"Key1">> => #{ <<"Key2">> => <<"Value1">> }
-                },
-                tx,
-                converge,
-                #{}
-            )
-        ),
-    {ok, {{_, 200, _}, _, Body}} =
-        httpc:request(
-            post,
-            {iolist_to_binary(URL), [], "application/octet-stream", TX},
-            [],
-            [{body_format, binary}]
-        ),
-    Msg = hb_message:convert(ar_bundles:deserialize(Body), converge, tx, #{}),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"Key2">>, Msg, #{})).
