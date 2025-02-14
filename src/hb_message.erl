@@ -214,7 +214,12 @@ format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
         fun(<<"hashpath">>) ->
-            hb_private:get(<<"hashpath">>, Map, undefined, #{});
+            case Map of
+                #{ <<"priv">> := #{ <<"hashpath">> := HashPath } } ->
+                    hb_util:short_id(HashPath);
+                _ ->
+                    undefined
+            end;
         (Key) ->
             case dev_message:get(Key, Map) of
                 {ok, Val} ->
