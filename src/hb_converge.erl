@@ -1063,5 +1063,6 @@ internal_opts(Opts) ->
         topic => converge_internal,
         hashpath => ignore,
         cache_control => [<<"no-cache">>, <<"no-store">>],
-        spawn_worker => false
+        spawn_worker => false,
+        await_inprogress => false
     }).

@@ -137,8 +137,7 @@ default_message() ->
             #{
                 force_message => true,
                 store => {hb_store_fs, #{ prefix => "main-cache" }},
-                cache_control => [<<"always">>],
-                await_inprogress => false
+                cache_control => [<<"always">>]
             },
         % Should the node store all signed messages?
         store_all_signed => true,
