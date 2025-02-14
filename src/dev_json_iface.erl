@@ -33,7 +33,6 @@
 %%%         Generates:
 %%%             /Results/Outbox
 %%%             /Results/Data'''
-
 -module(dev_json_iface).
 -export([init/3, compute/3]).
 %%% Public interface helpers:

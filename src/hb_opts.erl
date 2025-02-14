@@ -102,6 +102,8 @@ default_message() ->
         wasm_allow_aot => false,
         %% Options for the relay device
         relay_http_client => httpc,
+        %% Options for the GraphQL device
+        graphql_http_client => httpc,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,
@@ -122,6 +124,11 @@ default_message() ->
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             }
         ],
+        graphql_urls =>
+            [
+                <<"https://arweave-search.goldsky.com/graphql">>,
+                <<"https://arweave.net/graphql">>
+            ],
         http_extra_opts =>
             #{
                 force_message => true,
