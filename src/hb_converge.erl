@@ -102,7 +102,7 @@
 -export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
 
--define(NON_RECURSIVE_OPTS, [add_key, force_message, cache_control]).
+-define(TEMP_OPTS, [add_key, force_message, cache_control]).
 
 %% @doc Get the value of a message's key by running its associated device
 %% function. Optionally, takes options that control the runtime environment. 
@@ -172,7 +172,7 @@ resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
 resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message.
     ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
-    Msg1b = set(Msg1, <<"device">>, DevID, Opts),
+    Msg1b = set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts)),
     ?event(converge_debug, {message_as, Msg1b, {executing_path, Msg2}}, Opts),
     % Recurse with the modified message. The hashpath will have been updated
     % to include the device ID, if requested. Simply return if the path is empty.
@@ -233,7 +233,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
     % the `dev_process' device 'groups' all calls to the same process onto
     % calls to a single executor. By default, `{Msg1, Msg2}' is used as the
     % group name.
-    case hb_persistent:find_or_register(Msg1, Msg2, Opts) of
+    case hb_persistent:find_or_register(Msg1, Msg2, maps:without(?TEMP_OPTS, Opts)) of
         {leader, ExecName} ->
             % We are the leader for this resolution. Continue to the next stage.
             case hb_opts:get(spawn_worker, false, Opts) of
@@ -257,11 +257,11 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
                         },
                         Opts
                     ),
-                    % Re-try again if the group leader already finished it's work
+                    % Re-try again if the group leader has died.
                     resolve_stage(4, Msg1, Msg2, Opts);
                 Res ->
                     % Now that we have the result, we can skip right to potential
-                    % recursion (step 11).
+                    % recursion (step 11) in the outer-wrapper.
                     Res
             end;
         {infinite_recursion, GroupName} ->
@@ -293,7 +293,8 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
     % execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
 		try
-			Key = hb_path:hd(Msg2, Opts),
+            UserOpts = maps:without(?TEMP_OPTS, Opts),
+			Key = hb_path:hd(Msg2, UserOpts),
 			% Try to load the device and get the function to call.
             ?event(
                 {
@@ -304,7 +305,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
                     {opts, Opts}
                 }
             ),
-			{Status, _Mod, Func} = message_to_fun(Msg1, Key, Opts),
+			{Status, _Mod, Func} = message_to_fun(Msg1, Key, UserOpts),
 			?event(
 				{found_func_for_exec,
                     {key, Key},
@@ -356,11 +357,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 =
-        maps:without(
-            ?NON_RECURSIVE_OPTS,
-            Opts
-        ),
+	UserOpts1 = maps:without(?TEMP_OPTS, Opts),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
