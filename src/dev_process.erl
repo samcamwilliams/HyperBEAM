@@ -64,7 +64,8 @@
 info(_Msg1) ->
     #{
         worker => fun dev_process_worker:server/3,
-        grouper => fun dev_process_worker:group/3
+        grouper => fun dev_process_worker:group/3,
+        await => fun dev_process_worker:await/5
     }.
 
 %% @doc Wraps functions in the Scheduler device.
@@ -189,6 +190,13 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                     ToProcess,
                     Opts
                 ),
+            % Notify any waiters that the result for a slot is now available.
+            dev_process_worker:notify_compute(
+                ProcID,
+                CurrentSlot,
+                {ok, Msg3},
+                Opts
+            ),
             % Cache the `Memory' key every `Cache-Frequency' slots.
             Freq =
                 hb_opts:get(
