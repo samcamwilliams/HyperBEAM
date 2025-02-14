@@ -11,7 +11,7 @@
 -module(hb_persistent).
 -export([find_or_register/3, unregister_notify/4, await/4, notify/4]).
 -export([group/3, start_worker/3, start_worker/2, forward_work/2]).
--export([default_grouper/3, default_worker/3]).
+-export([default_grouper/3, default_worker/3, default_await/5]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -87,13 +87,23 @@ unregister_groupname(Groupname, _Opts) ->
 %% we should register with them and wait for them to notify us of
 %% completion.
 await(Worker, Msg1, Msg2, Opts) ->
+    % Get the device's await function, if it exists.
+    AwaitFun =
+        maps:get(
+            await,
+            hb_converge:info(Msg1, Opts),
+            fun default_await/5
+        ),
     % Calculate the compute path that we will wait upon resolution of.
     % Register with the process.
     GroupName = group(Msg1, Msg2, Opts),
     % set monitor to a worker, so we know if it exits
     _Ref = erlang:monitor(process, Worker),
     Worker ! {resolve, self(), GroupName, Msg2, Opts},
-    worker_event(GroupName, await_resolution, Msg1, Msg2, Opts),
+    AwaitFun(Worker, GroupName, Msg1, Msg2, Opts).
+
+%% @doc Default await function that waits for a resolution from a worker.
+default_await(Worker, GroupName, Msg1, Msg2, Opts) ->
     % Wait for the result.
     receive
         {resolved, _, GroupName, Msg2, Res} ->
@@ -116,8 +126,15 @@ await(Worker, Msg1, Msg2, Opts) ->
 %% 1. Notify on group name alone.
 %% 2. Notify on group name and Msg2.
 notify(GroupName, Msg2, Msg3, Opts) ->
+    case is_binary(GroupName) of
+        true ->
+            ?event(debug_notify, {notifying_all, {group, GroupName}});
+        false ->
+            ok
+    end,
     receive
         {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
+            ?event({notifying_listener, {listener, Listener}, {group, GroupName}}),
             send_response(Listener, GroupName, Msg2, Msg3),
             notify(GroupName, Msg2, Msg3, Opts)
     after 0 ->
