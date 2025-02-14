@@ -13,18 +13,17 @@
 group(Msg1, undefined, Opts) ->
     hb_persistent:default_grouper(Msg1, undefined, Opts);
 group(Msg1, Msg2, Opts) ->
-    case hb_opts:get(persistent_processes, false, Opts) of
+    case hb_opts:get(process_workers, false, Opts) of
         false ->
-            ?event({not_using_persistent_processes, Msg1, Msg2}),
             hb_persistent:default_grouper(Msg1, Msg2, Opts);
         true ->
-            ?event({using_persistent_processes, Msg1, Msg2}),
             case Msg2 of
                 undefined ->
                     hb_persistent:default_grouper(Msg1, undefined, Opts);
                 _ ->
                     case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
                         true ->
+                            ?event({deduplicating_req, Msg1, Msg2}),
                             process_to_group_name(Msg1, Opts);
                         _ ->
                             hb_persistent:default_grouper(Msg1, Msg2, Opts)
@@ -72,9 +71,9 @@ grouper_test() ->
     M2 = #{ <<"path">> => <<"compute">>, <<"v">> => 1 },
     M3 = #{ <<"path">> => <<"compute">>, <<"v">> => 2 },
     M4 = #{ <<"path">> => <<"not-compute">>, <<"v">> => 3 },
-    G1 = hb_persistent:group(M1, M2, #{ persistent_processes => true }),
-    G2 = hb_persistent:group(M1, M3, #{ persistent_processes => true }),
-    G3 = hb_persistent:group(M1, M4, #{ persistent_processes => true }),
+    G1 = hb_persistent:group(M1, M2, #{ process_workers => true }),
+    G2 = hb_persistent:group(M1, M3, #{ process_workers => true }),
+    G3 = hb_persistent:group(M1, M4, #{ process_workers => true }),
     ?event({group_samples, {g1, G1}, {g2, G2}, {g3, G3}}),
     ?assertEqual(G1, G2),
     ?assertNotEqual(G1, G3).

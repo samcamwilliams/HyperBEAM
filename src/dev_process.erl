@@ -67,7 +67,6 @@ info(_Msg1) ->
         grouper => fun dev_process_worker:group/3
     }.
 
-
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
     run_as(<<"scheduler">>, Msg1, Msg2, Opts).

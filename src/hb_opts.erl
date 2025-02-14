@@ -32,8 +32,8 @@ default_message() ->
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
         scheduling_mode => local_confirmation,
-        %% Compute mode: Determines whether the CU should attempt to execute
-        %% more messages on a process after it has returned a result.
+        %% Compute mode: Determines whether the process device should attempt to 
+        %% execute more messages on a process after it has returned a result.
         %% Options: aggressive, lazy
         compute_mode => lazy,
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
@@ -81,6 +81,11 @@ default_message() ->
                 <<"compute-lite@1.0">> => dev_compute_lite,
                 <<"test-device@1.0">> => dev_test
             },
+        %% Default execution cache control options
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        cache_lookup_hueristics => false,
+        % Should we await in-progress executions, rather than re-running?
+        await_inprogress => true,
         %% Should the node attempt to access data from remote caches for
         %% client requests?
         access_remote_cache_for_client => false,
@@ -90,8 +95,6 @@ default_message() ->
         trusted_device_signers => [],
         %% What should the node do if a client error occurs?
         client_error_strategy => throw,
-        %% Default execution cache control options
-        cache_control => [<<"no-cache">>, <<"no-store">>],
         %% HTTP request options
         http_connect_timeout => 5000,
         http_response_timeout => 30000,
@@ -133,12 +136,13 @@ default_message() ->
             #{
                 force_message => true,
                 store => {hb_store_fs, #{ prefix => "main-cache" }},
-                cache_control => [<<"always">>]
+                cache_control => [<<"always">>],
+                await_inprogress => false
             },
         % Should the node store all signed messages?
         store_all_signed => true,
         % Should the node use persistent processes?
-        persistent_processes => true
+        process_workers => true
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

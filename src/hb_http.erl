@@ -320,7 +320,7 @@ reply(Req, Status, RawMessage, Opts) ->
                 }
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
-    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
+    Req3 = cowboy_req:stream_body(EncodedBody, fin, Req2),
     {ok, Req3, no_state}.
 
 %% @doc Generate the headers and body for a HTTP response message.

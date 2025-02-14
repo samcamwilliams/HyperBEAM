@@ -24,27 +24,30 @@ find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
     find_or_register(GroupName, Msg1, Msg2, Opts).
 find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
-    Self = self(),
-    case find_execution(GroupName, Opts) of
-        {ok, [Leader|_]} when Leader =/= Self ->
-            ?event({found_leader, GroupName, {leader, Leader}}),
-            {wait, Leader};
-        {ok, [Leader|_]} when Leader =:= Self ->
-            {infinite_recursion, GroupName};
-        _ ->
-            ?event(
-                worker,
-                {
-                    register_resolver,
-                    {group, GroupName}
-                },
-                Opts
-            ),
-            register_groupname(GroupName, Opts),
-            {leader, GroupName}
+    case hb_opts:get(await_inprogress, false, Opts) of
+        false -> {leader, ungrouped_exec};
+        true ->
+            Self = self(),
+            case find_execution(GroupName, Opts) of
+                {ok, [Leader|_]} when Leader =/= Self ->
+                    ?event({found_leader, GroupName, {leader, Leader}}),
+                    {wait, Leader};
+                {ok, [Leader|_]} when Leader =:= Self ->
+                    {infinite_recursion, GroupName};
+                _ ->
+                    ?event(
+                        {
+                            register_resolver,
+                            {group, GroupName}
+                        }
+                    ),
+                    register_groupname(GroupName, Opts),
+                    {leader, GroupName}
+            end
     end.
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
+unregister_notify(ungrouped_exec, _Msg2, _Msg3, _Opts) -> ok;
 unregister_notify(GroupName, Msg2, Msg3, Opts) ->
     unregister_groupname(GroupName, Opts),
     notify(GroupName, Msg2, Msg3, Opts).
@@ -90,34 +93,22 @@ await(Worker, Msg1, Msg2, Opts) ->
     % set monitor to a worker, so we know if it exits
     _Ref = erlang:monitor(process, Worker),
     Worker ! {resolve, self(), GroupName, Msg2, Opts},
-    ?event(worker,
-        {await_resolution,
-            {group, GroupName},
-            {worker, Worker},
-            {msg1, Msg1},
-            {msg2, Msg2},
-            {opts, Opts}
-        }
-    ),
+    worker_event(GroupName, await_resolution, Msg1, Msg2, Opts),
     % Wait for the result.
     receive
-        {'DOWN', _R, process, Worker, _Reason} ->
-            ?event(worker,
+        {resolved, _, GroupName, Msg2, Res} ->
+            worker_event(GroupName, {resolved_await, Res}, Msg1, Msg2, Opts),
+            Res;
+        {'DOWN', _R, process, Worker, Reason} ->
+            ?event(debug_leader,
                 {leader_died,
                     {group, GroupName},
-                    {leader, Worker}
-                }
-        ),
-            {error, leader_died};
-        {resolved, _, GroupName, Msg2, Res} ->
-            ?event(worker,
-                {resolved_await,
-                    {group, GroupName},
-                    {msg2, Msg2},
-                    {res, Res}
+                    {leader, Worker},
+                    {reason, Reason},
+                    {request, Msg2}
                 }
             ),
-            Res
+            {error, leader_died}
     end.
 
 %% @doc Check our inbox for processes that are waiting for the resolution
@@ -135,7 +126,7 @@ notify(GroupName, Msg2, Msg3, Opts) ->
     end.
 
 %% @doc Forward requests to a newly delegated execution process.
-forward_work(NewPID, _Opts) ->
+forward_work(NewPID, Opts) ->
     Gather =
         fun Gather() ->
             receive
@@ -152,10 +143,7 @@ forward_work(NewPID, _Opts) ->
     ),
     case length(ToForward) > 0 of
         true ->
-            ?event(
-                worker,
-                {fwded, {requests, length(ToForward)}, {pid, NewPID}}
-            );
+            ?event(debug_leader, {fwded, {reqs, length(ToForward)}, {pid, NewPID}}, Opts);
         false -> ok
     end,
     ok.
@@ -225,14 +213,7 @@ start_worker(GroupName, Msg, Opts) ->
 %% @doc A server function for handling persistent executions. 
 default_worker(GroupName, Msg1, Opts) ->
     Timeout = hb_opts:get(worker_timeout, 10000, Opts),
-    ?event(worker,
-        {
-            default_worker_waiting_for_req,
-            {group, GroupName},
-            {msg1, Msg1},
-            {opts, Opts}
-        }
-    ),
+    worker_event(GroupName, default_worker_waiting_for_req, Msg1, undefined, Opts),
     receive
         {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
             ?event(worker,
@@ -289,6 +270,15 @@ default_grouper(Msg1, Msg2, _Opts) ->
     % output range to avoid collisions.
     ?no_prod("Using a hash for group names is not secure."),
     erlang:phash2({Msg1, Msg2}).
+
+%% @doc Log an event with the worker process. If we used the default grouper
+%% function, we should also include the Msg1 and Msg2 in the event. If we did not,
+%% we assume that the group name expresses enough information to identify the
+%% request.
+worker_event(Group, Data, Msg1, Msg2, Opts) when is_integer(Group) ->
+    ?event(worker, {worker_event, Group, Data, {msg1, Msg1}, {msg2, Msg2}}, Opts);
+worker_event(Group, Data, _, _, Opts) ->
+    ?event(worker, {worker_event, Group, Data}, Opts).
 
 %%% Tests
 

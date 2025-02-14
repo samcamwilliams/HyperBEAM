@@ -24,7 +24,7 @@
 -export([read/2, read_output/3, write/2, write_binary/3, write_hashpath/2, link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
--include("src/include/hb.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% List all items in a directory, assuming they are numbered.
@@ -179,7 +179,7 @@ store_read(_Path, no_viable_store, _) ->
     not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
+    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}, Opts),
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
         no_viable_store -> not_found;
