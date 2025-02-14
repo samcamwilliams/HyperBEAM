@@ -119,6 +119,7 @@ default_message() ->
         short_trace_len => 5,
         debug_hide_metadata => false,
         debug_ids => false,
+        debug_hide_priv => true,
 		trusted => #{},
         % Routes for the compute-lite device to use a local CU, if requested.
         routes => [
