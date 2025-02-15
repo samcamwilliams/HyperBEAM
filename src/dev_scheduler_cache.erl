@@ -1,5 +1,5 @@
 -module(dev_scheduler_cache).
--export([write/2, read/3, list/2]).
+-export([write/2, read/3, list/2, latest/2]).
 -include("include/hb.hrl").
 
 %%% Assignment cache functions
@@ -60,3 +60,30 @@ list(ProcID, Opts) ->
         ]),
         Opts
     ).
+
+%% @doc Get the latest assignment from the cache.
+latest(ProcID, Opts) ->
+    ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
+    case dev_scheduler_cache:list(ProcID, Opts) of
+        [] ->
+            ?event({no_assignments_in_cache, {proc_id, ProcID}}),
+            {-1, <<>>};
+        Assignments ->
+            AssignmentNum = lists:max(Assignments),
+            ?event(
+                {found_assignment_from_cache,
+                    {proc_id, ProcID},
+                    {assignment_num, AssignmentNum}
+                }
+            ),
+            {ok, Assignment} = dev_scheduler_cache:read(
+                ProcID,
+                AssignmentNum,
+                Opts
+            ),
+            {
+                AssignmentNum,
+                hb_converge:get(
+                    <<"hash-chain">>, Assignment, #{ hashpath => ignore })
+            }
+    end.

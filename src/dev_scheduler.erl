@@ -294,11 +294,15 @@ get_schedule(Msg1, Msg2, Opts) ->
         case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
-                maps:get(current,
-                    dev_scheduler_server:info(
-                        dev_scheduler_registry:find(ProcID)
-                    )
-                );
+                case dev_scheduler_registry:find(ProcID) of
+                    not_found ->
+                        {Slot, _} = dev_scheduler_cache:latest(ProcID, Opts),
+                        Slot;
+                    Pid ->
+                        maps:get(current,
+                            dev_scheduler_server:info(Pid)
+                        )
+                end;
             ToRes -> ToRes
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),

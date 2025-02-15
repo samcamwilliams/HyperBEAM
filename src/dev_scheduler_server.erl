@@ -13,7 +13,7 @@ start(ProcID, Opts) ->
     spawn_link(
         fun() ->
             pg:join({dev_scheduler, ProcID}, self()),
-            {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
+            {CurrentSlot, HashChain} = dev_scheduler_cache:latest(ProcID, Opts),
             ?event(
                 {scheduler_got_process_info,
                     {proc_id, ProcID},
@@ -32,33 +32,6 @@ start(ProcID, Opts) ->
             )
         end
     ).
-
-%% @doc Get the current slot from the cache.
-slot_from_cache(ProcID, Opts) ->
-    ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
-    case dev_scheduler_cache:list(ProcID, Opts) of
-        [] ->
-            ?event({no_assignments_in_cache, {proc_id, ProcID}}),
-            {-1, <<>>};
-        Assignments ->
-            AssignmentNum = lists:max(Assignments),
-            ?event(
-                {found_assignment_from_cache,
-                    {proc_id, ProcID},
-                    {assignment_num, AssignmentNum}
-                }
-            ),
-            {ok, Assignment} = dev_scheduler_cache:read(
-                ProcID,
-                AssignmentNum,
-                Opts
-            ),
-            {
-                AssignmentNum,
-                hb_converge:get(
-                    <<"hash-chain">>, Assignment, #{ hashpath => ignore })
-            }
-    end.
 
 %% @doc Call the appropriate scheduling server to assign a message.
 schedule(AOProcID, Message) when is_binary(AOProcID) ->
