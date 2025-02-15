@@ -378,21 +378,29 @@ req_to_tabm_singleton(Req, Opts) ->
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
     {ok, Body} = read_body(Req),
     Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
-    {ok, SignedMsg} = remove_unsigned_fields(Msg, Opts),
-    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
-    Signers = hb_message:signers(SignedMsg),
-    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg, Signers) of
+    {ok, SignedMsg} =
+        dev_codec_httpsig:reset_hmac(
+            hb_util:ok(remove_unsigned_fields(Msg, Opts))
+        ),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, true, Opts),
+    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of
         true ->
-            ?event(http, {verified_signature, SignedMsg}),
+            ?event(http_verify, {verified_signature, SignedMsg}),
             case hb_opts:get(store_all_signed, false, Opts) of
                 true ->
-                    hb_cache:write(Msg, Opts);
+                    ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
+                    hb_cache:write(Msg,
+                        Opts#{
+                            store =>
+                                {hb_store_fs, #{ prefix => "store-inputs" }}
+                        }
+                    );
                 false ->
                     do_nothing
             end,
             maybe_add_unsigned(Req, SignedMsg, Opts);
         false ->
-            ?event(http,
+            ?event(http_verify,
                 {invalid_signature,
                     {raw, RawHeaders},
                     {signed, SignedMsg},
