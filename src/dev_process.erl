@@ -98,7 +98,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
             ),
             #{ <<"priv/additional-hashpaths">> =>
                     [
-                        hb_path:to_binary([ProcID, <<"Snapshot">>, Slot])
+                        hb_path:to_binary([ProcID, <<"snapshot">>, Slot])
                     ]
             },
             Opts
@@ -333,10 +333,10 @@ ensure_loaded(Msg1, Msg2, Opts) ->
     ?event({ensure_loaded, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case hb_converge:get(<<"initialized">>, Msg1, Opts) of
         <<"true">> ->
-            ?event({already_initialized, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+            ?event(already_initialized),
             {ok, Msg1};
         _ ->
-            ?event({not_initialized, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+            ?event(not_initialized),
             % Try to load the latest complete state from disk.
             LoadRes =
                 dev_process_cache:latest(
@@ -681,7 +681,7 @@ http_wasm_process_by_id_test() ->
     InitRes =
         hb_http:post(
             Node,
-            << "/", ProcID/binary, "/schedule" >>,
+            << "/schedule" >>,
             Proc,
             #{}
         ),
@@ -708,7 +708,7 @@ http_wasm_process_by_id_test() ->
             Node,
             #{
                 <<"path">> => << ProcID/binary, "/compute">>,
-                <<"slot">> => 0
+                <<"slot">> => 1
             },
             #{}
         ),
@@ -928,7 +928,7 @@ simple_wasm_persistent_worker_benchmark_test() ->
         hb_converge:resolve(
             Msg1,
             #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-            #{ spawn_worker => true }
+            #{ spawn_worker => true, process_workers => true }
         ),
     Iterations = hb:benchmark(
         fun(Iteration) ->
