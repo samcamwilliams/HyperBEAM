@@ -46,7 +46,54 @@ process_to_group_name(Msg1, Opts) ->
 %% execution of `hb_converge:resolve/3', so the state we are given is the
 %% already current.
 server(GroupName, Msg1, Opts) ->
-    hb_persistent:default_worker(GroupName, Msg1, Opts#{ static_worker => true }).
+    ServerOpts = Opts#{
+        await_inprogress => false,
+        spawn_worker => false
+    },
+    % The maximum amount of time the worker will wait for a request before
+    % checking the cache for a snapshot. Default: 5 minutes.
+    Timeout = hb_opts:get(process_worker_max_idle, 300_000, Opts),
+    ?event(worker, {waiting_for_req, {group, GroupName}, {msg1, Msg1}}),
+    receive
+        {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
+            TargetSlot = hb_converge:get(<<"slot">>, Msg2, Opts),
+            ?event(worker,
+                {work_received,
+                    {group, GroupName},
+                    {slot, TargetSlot},
+                    {listener, Listener}
+                }
+            ),
+            Res =
+                hb_converge:resolve(
+                    Msg1,
+                    #{ <<"path">> => <<"compute">>, <<"slot">> => TargetSlot },
+                    maps:merge(ListenerOpts, ServerOpts)
+                ),
+            ?event(worker, {resolved, {group, GroupName}, {msg2, Msg2}, {res, Res}}),
+            Listener ! {resolved, self(), GroupName, {slot, TargetSlot}, Res},
+            server(
+                GroupName,
+                case Res of
+                    {ok, Msg3} -> Msg3;
+                    _ -> Msg1
+                end,
+                Opts
+            );
+        stop ->
+            ?event(worker, {stopping, {group, GroupName}, {msg1, Msg1}}),
+            exit(normal)
+    after Timeout ->
+        % We have hit the in-memory persistence timeout. Generate a snapshot
+        % of the current process state and ensure it is cached.
+        hb_converge:resolve(
+            Msg1,
+            <<"snapshot">>,
+            ServerOpts#{ <<"cache-control">> => [<<"store">>] }
+        ),
+        % Return the current process state.
+        {ok, Msg1}
+    end.
 
 %% @doc Await a resolution from a worker executing the `process@1.0` device.
 await(Worker, GroupName, Msg1, Msg2, Opts) ->
