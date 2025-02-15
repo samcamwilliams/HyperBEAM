@@ -405,9 +405,8 @@ run_as(Key, Msg1, Msg2, Opts) ->
             },
             Opts
         ),
-    ?event({resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
     DeviceAsSet = hb_converge:get(<<"device">>, PreparedMsg, Opts),
-    ?event({device_set, DeviceAsSet}),
+    ?event({running_msg_as, {device, DeviceAsSet}, {msg2, Msg2}}),
     {Status, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,
@@ -431,7 +430,6 @@ as_process(Msg1, Opts) ->
 
 %% @doc Helper function to store a copy of the `process' key in the message.
 ensure_process_key(Msg1, Opts) ->
-    ?event({ensure_process_key_called, {msg1, Msg1}, {opts, Opts}}),
     case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
             hb_converge:set(
