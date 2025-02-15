@@ -476,8 +476,11 @@ test_wasm_process(WASMImage, Opts) ->
 %% @doc Generate a process message with a random number, and the 
 %% `dev_wasm' device for execution.
 test_aos_process() ->
-    Wallet = hb:wallet(),
-    WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>),
+    test_aos_process(#{}).
+test_aos_process(Opts) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+    WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
     hb_message:attest(maps:merge(WASMProc, #{
         <<"device-stack">> =>
             [
@@ -495,8 +498,8 @@ test_aos_process() ->
                 <<"snapshot">>,
                 <<"normalize">>
             ],
-        <<"scheduler">> => hb_util:human_id(hb:address()),
-        <<"authority">> => hb_util:human_id(hb:address())
+        <<"scheduler">> => Address,
+        <<"authority">> => Address
     }), Wallet).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
@@ -662,7 +665,7 @@ wasm_compute_from_id_test() ->
     ?event(process_compute, {computed_message, {msg3, Msg3}}),
     ?assertEqual([120.0], hb_converge:get(<<"results/output">>, Msg3, Opts)).
 
-wasm_full_http_run_cycle_test() ->
+http_wasm_process_by_id_test() ->
     rand:seed(default),
     SchedWallet = ar_wallet:new(),
     Node = hb_http_server:start_node(Opts = #{
@@ -729,6 +732,91 @@ aos_compute_test_() ->
         {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
         ?assertEqual(<<"4">>, hb_converge:get(<<"results/data">>, Msg5, #{})),
         {ok, Msg5}
+    end}.
+
+aos_browsable_state_test_() ->
+    {timeout, 30, fun() ->
+        init(),
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1,
+            <<"table.insert(ao.outbox.Messages, { Target = ao.id, ",
+                "Action = \"State\", ",
+                "Data = { Deep = 4, Bool = true } })">>
+        ),
+        Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
+        {ok, Msg3} =
+            hb_converge:resolve_many(
+                [Msg1, Msg2, <<"results">>, <<"outbox">>, 1, <<"data">>, <<"Deep">>],
+                #{ cache_control => <<"always">> }
+            ),
+        ID = hb_message:id(Msg1),
+        ?event(aos_debug, {computed_message, {id, {explicit, ID}}}),
+        ?assertEqual(4, Msg3)
+    end}.
+
+aos_state_access_via_http_test_() ->
+    {timeout, 60, fun() ->
+        rand:seed(default),
+        Wallet = ar_wallet:new(),
+        Node = hb_http_server:start_node(Opts = #{
+            port => 10000 + rand:uniform(10000),
+            priv_wallet => Wallet,
+            cache_control => <<"always">>,
+            store => {hb_store_fs, #{ prefix => "main-cache" }},
+            force_signed_requests => true
+        }),
+        Proc = test_aos_process(Opts),
+        ProcID = hb_util:human_id(hb_message:id(Proc, all)),
+        {ok, _InitRes} =
+            hb_http:post(
+                Node,
+                << "/schedule" >>,
+                Proc,
+                Opts
+            ),
+        Msg2 = hb_message:attest(#{
+            <<"data-prefix">> => <<"ao">>,
+            <<"variant">> => <<"ao.N.1">>,
+            <<"type">> => <<"Message">>,
+            <<"action">> => <<"Eval">>,
+            <<"data">> =>
+                <<"table.insert(ao.outbox.Messages, { Target = ao.id,",
+                    " Action = \"State\", Data = { ",
+                        "[\"content-type\"] = \"text/html\", ",
+                        "[\"body\"] = \"<h1>Hello, world!</h1>\"",
+                    "}})">>,
+            <<"target">> => ProcID
+        }, Wallet),
+        {ok, Msg3} =
+            hb_http:post(
+                Node,
+                << ProcID/binary, "/schedule">>,
+                Msg2,
+                Opts
+            ),
+        ?event(aos_debug, {schedule_msg_res, {msg3, Msg3}}),
+        {ok, Msg4} =
+            hb_http:get(
+                Node,
+                #{
+                    <<"path">> =>
+                        <<
+                            ProcID/binary,
+                            "/compute/results/outbox/1/data/body"
+                        >>,
+                    <<"slot">> => 1
+                },
+                Opts
+            ),
+        ?event(aos_debug, {compute_msg_res, {msg4, Msg4}}),
+        ?event(aos_debug,
+            {try_yourself,
+                {explicit,
+                    << Node/binary, "/", ProcID/binary, "/compute&slot=1/results/outbox/1/data">>}
+            }
+        ),
+        ?assertMatch(#{ <<"body">> := <<"<h1>Hello, world!</h1>">> }, Msg4),
+        ok
     end}.
 
 %% @doc Manually test state restoration without using the cache.
