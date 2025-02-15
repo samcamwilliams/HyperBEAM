@@ -144,21 +144,22 @@ compute(Msg1, Msg2, Opts) ->
             Opts
         ),
     ProcID = hb_converge:get(<<"process/id">>, Loaded, Opts),
-    Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
+    Slot = hb_util:int(hb_converge:get(<<"slot">>, Msg2, Opts)),
     ?event(push, {computing, {process_id, ProcID}, {slot, Slot}}),
     do_compute(
         ProcID,
         Normalized,
         Msg2,
-        hb_converge:get(<<"slot">>, Msg2, Opts),
+        Slot,
         Opts
     ).
 
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
 do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
-    ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
-    case hb_converge:get(<<"current-slot">>, Msg1, Opts) of
+    CurrentSlot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    ?event({do_compute_called, {target, TargetSlot}, {current, CurrentSlot}}),
+    case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
             throw(
                 {error,
@@ -255,7 +256,7 @@ now(RawMsg1, _Msg2, Opts) ->
 %% that does not lead to any further messages being scheduled.
 push(Msg1, Msg2, Opts) ->
     Wallet = hb:wallet(),
-    PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
+    PushMsgSlot = hb_util:int(hb_converge:get(<<"Slot">>, Msg2, Opts)),
     ID = hb_converge:get(<<"id">>, Msg1, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, PushMsgSlot}}),
     Result = hb_converge:resolve(

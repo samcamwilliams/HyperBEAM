@@ -1,5 +1,6 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
+-export([int/1, float/1, atom/1]).
 -export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
@@ -16,6 +17,34 @@
 -export([format_trace_short/1]).
 -export([count/2, mean/1, stddev/1, variance/1]).
 -include("include/hb.hrl").
+
+%%% Simple type coercion functions, useful for quickly turning inputs from the
+%%% HTTP API into the correct types for the HyperBEAM runtime, if they are not
+%%% annotated by the user.
+
+%% @doc Coerce a string to an integer.
+int(Str) when is_binary(Str) ->
+    list_to_integer(binary_to_list(Str));
+int(Str) when is_list(Str) ->
+    list_to_integer(Str);
+int(Int) when is_integer(Int) ->
+    Int.
+
+%% @doc Coerce a string to a float.
+float(Str) when is_binary(Str) ->
+    list_to_float(binary_to_list(Str));
+float(Str) when is_list(Str) ->
+    list_to_float(Str);
+float(Float) when is_float(Float) ->
+    Float.
+
+%% @doc Coerce a string to an atom.
+atom(Str) when is_binary(Str) ->
+    list_to_atom(binary_to_list(Str));
+atom(Str) when is_list(Str) ->
+    list_to_atom(Str);
+atom(Atom) when is_atom(Atom) ->
+    Atom.
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
 %% the value of the `error_strategy' option.
