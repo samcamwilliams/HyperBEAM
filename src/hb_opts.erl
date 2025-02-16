@@ -85,7 +85,8 @@ default_message() ->
         cache_control => [<<"no-cache">>, <<"no-store">>],
         cache_lookup_hueristics => false,
         % Should we await in-progress executions, rather than re-running?
-        await_inprogress => true,
+        % Has three settings: false, only `named` executions, or all executions.
+        await_inprogress => named,
         %% Should the node attempt to access data from remote caches for
         %% client requests?
         access_remote_cache_for_client => false,

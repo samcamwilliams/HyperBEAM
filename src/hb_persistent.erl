@@ -100,10 +100,12 @@ do_monitor(Group, Last) ->
 find_or_register(Msg1, Msg2, Opts) ->
     GroupName = group(Msg1, Msg2, Opts),
     find_or_register(GroupName, Msg1, Msg2, Opts).
+find_or_register(ungrouped_exec, _Msg1, _Msg2, _Opts) ->
+    {leader, ungrouped_exec};
 find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
     case hb_opts:get(await_inprogress, false, Opts) of
-        false -> {leader, ungrouped_exec};
-        true ->
+        false -> {leader, GroupName};
+        _ ->
             Self = self(),
             case find_execution(GroupName, Opts) of
                 {ok, Leader} when Leader =/= Self ->
@@ -356,14 +358,17 @@ default_worker(GroupName, Msg1, Opts) ->
     end.
 
 %% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
-default_grouper(Msg1, Msg2, _Opts) ->
+default_grouper(Msg1, Msg2, Opts) ->
     %?event({calculating_default_group_name, {msg1, Msg1}, {msg2, Msg2}}),
     % Use Erlang's `phash2` to hash the result of the Grouper function.
     % `phash2` is relatively fast and ensures that the group name is short for
     % storage in `pg`. In production we should only use a hash with a larger
     % output range to avoid collisions.
     ?no_prod("Using a hash for group names is not secure."),
-    erlang:phash2({Msg1, Msg2}).
+    case hb_opts:get(await_inprogress, true, Opts) of
+        named -> ungrouped_exec;
+        _ -> erlang:phash2({Msg1, Msg2})
+    end.
 
 %% @doc Log an event with the worker process. If we used the default grouper
 %% function, we should also include the Msg1 and Msg2 in the event. If we did not,
