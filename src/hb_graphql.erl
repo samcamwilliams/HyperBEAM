@@ -67,7 +67,7 @@ message_from_id(ID, Opts) ->
                     TX =
                         #tx {
                             format = ans104,
-                            id = hb_util:decode(hb_converge:get(<<"id">>, Res, GQLOpts)),
+                            id = hb_util:decode(ID),
                             last_tx = hb_util:decode(hb_converge:get(<<"anchor">>, Res, GQLOpts)),
                             signature = hb_util:decode(hb_converge:get(<<"signature">>, Res, GQLOpts)),
                             target = hb_util:decode(hb_converge:get(<<"recipient">>, Res, GQLOpts)),
