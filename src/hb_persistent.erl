@@ -9,6 +9,7 @@
 %%% manager.
 
 -module(hb_persistent).
+-export([start_monitor/0, start_monitor/1, stop_monitor/1]).
 -export([find_or_register/3, unregister_notify/4, await/4, notify/4]).
 -export([group/3, start_worker/3, start_worker/2, forward_work/2]).
 -export([default_grouper/3, default_worker/3, default_await/5]).
@@ -16,7 +17,83 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Ensure that the `pg' module is started.
-start() -> pg:start(pg).
+start() -> hb_name:start().
+
+%% @doc Start a monitor that prints the current members of the group every
+%% n seconds.
+start_monitor() ->
+    start_monitor(global).
+start_monitor(Group) ->
+    start(),
+    ?event({worker_monitor, {start_monitor, Group, hb_name:all()}}),
+    spawn(fun() -> do_monitor(Group) end).
+
+stop_monitor(PID) ->
+    PID ! stop.
+
+do_monitor(Group) ->
+    do_monitor(Group, #{}).
+do_monitor(Group, Last) ->
+    Groups = lists:map(fun({Name, _}) -> Name end, hb_name:all()),
+    New =
+        maps:from_list(
+            lists:map(
+                fun(G) ->
+                    Pid = hb_name:lookup(G),
+                    {
+                        G,
+                        #{
+                            pid => Pid,
+                            messages =>
+                                case Pid of
+                                    undefined -> 0;
+                                    _ ->
+                                        length(
+                                            element(2,
+                                                erlang:process_info(Pid, messages))
+                                        )
+                                end
+                        }
+                            
+                    }
+                end,
+                case Group of
+                    global -> Groups;
+                    TargetGroup ->
+                        case lists:member(TargetGroup, Groups) of
+                            true -> [TargetGroup];
+                            false -> []
+                        end
+                end
+            )
+        ),
+    Delta =
+        maps:filter(
+            fun(G, NewState) ->
+                case maps:get(G, Last, []) of
+                    NewState -> false;
+                    _ -> true
+                end
+            end,
+            New
+        ),
+    case maps:size(Delta) of
+        0 -> ok;
+        Deltas ->
+            io:format(standard_error, "== Sitrep ==> ~p named processes. ~p changes. ~n",
+                [maps:size(New), Deltas]),
+            maps:map(
+                fun(G, #{pid := P, messages := Msgs}) ->
+                    io:format(standard_error, "[~p: ~p] #M: ~p~n", [G, P, Msgs])
+                end,
+                Delta
+            ),
+            io:format(standard_error, "~n", [])
+    end,
+    timer:sleep(1000),
+    receive stop -> stopped
+    after 0 -> do_monitor(Group, New)
+    end.
 
 %% @doc Register the process to lead an execution if none is found, otherwise
 %% signal that we should await resolution.
@@ -29,10 +106,10 @@ find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
         true ->
             Self = self(),
             case find_execution(GroupName, Opts) of
-                {ok, [Leader|_]} when Leader =/= Self ->
+                {ok, Leader} when Leader =/= Self ->
                     ?event({found_leader, GroupName, {leader, Leader}}),
                     {wait, Leader};
-                {ok, [Leader|_]} when Leader =:= Self ->
+                {ok, Leader} when Leader =:= Self ->
                     {infinite_recursion, GroupName};
                 _ ->
                     ?event(
@@ -55,9 +132,9 @@ unregister_notify(GroupName, Msg2, Msg3, Opts) ->
 %% @doc Find a group with the given name.
 find_execution(Groupname, _Opts) ->
     start(),
-    case pg:get_local_members(Groupname) of
-        [] -> not_found;
-        Procs -> {ok, Procs}
+    case hb_name:lookup(Groupname) of
+        undefined -> not_found;
+        Pid -> {ok, Pid}
     end.
 
 %% @doc Calculate the group name for a Msg1 and Msg2 pair. Uses the Msg1's
@@ -73,7 +150,7 @@ group(Msg1, Msg2, Opts) ->
 %% @doc Register for performing a Converge resolution.
 register_groupname(Groupname, _Opts) ->
     ?event({registering_as, Groupname}),
-    pg:join(Groupname, self()).
+    hb_name:register(Groupname).
 
 %% @doc Unregister for being the leader on a Converge resolution.
 unregister(Msg1, Msg2, Opts) ->
@@ -81,7 +158,7 @@ unregister(Msg1, Msg2, Opts) ->
     unregister_groupname(group(Msg1, Msg2, Opts), Opts).
 unregister_groupname(Groupname, _Opts) ->
     ?event({unregister_resolver, {explicit, Groupname}}),
-    pg:leave(Groupname, self()).
+    hb_name:unregister(Groupname).
 
 %% @doc If there was already an Erlang process handling this execution,
 %% we should register with them and wait for them to notify us of

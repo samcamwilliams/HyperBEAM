@@ -463,6 +463,7 @@ register_new_process_test() ->
             #{}
         )
     ),
+    ?event({status_response, Msg1}),
     Procs = hb_converge:get(<<"processes">>, hb_converge:get(status, Msg1)),
     ?event({procs, Procs}),
     ?assert(

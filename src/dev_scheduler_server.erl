@@ -12,7 +12,7 @@ start(ProcID, Opts) ->
     ?event(scheduling, {starting_scheduling_server, {proc_id, ProcID}}),
     spawn_link(
         fun() ->
-            pg:join({dev_scheduler, ProcID}, self()),
+            hb_name:register({dev_scheduler, ProcID}),
             {CurrentSlot, HashChain} = dev_scheduler_cache:latest(ProcID, Opts),
             ?event(
                 {scheduler_got_process_info,
