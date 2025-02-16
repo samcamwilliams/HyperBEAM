@@ -118,7 +118,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => true,
+        debug_hide_metadata => false,
         debug_ids => false,
         debug_hide_priv => true,
 		trusted => #{},
@@ -131,8 +131,14 @@ default_message() ->
         ],
         graphql_urls =>
             [
-                <<"https://arweave-search.goldsky.com/graphql">>,
-                <<"https://arweave.net/graphql">>
+                #{
+                    url => <<"https://arweave-search.goldsky.com/graphql">>,
+                    opts => #{ http_client => httpc }
+                },
+                #{
+                    url => <<"https://arweave.net/graphql">>,
+                    opts => #{ http_client => gun }
+                }
             ],
         http_extra_opts =>
             #{
