@@ -174,10 +174,29 @@ read(Path, Opts) ->
     end.
 
 %% @doc List all of the subpaths of a given path, read each in turn, returning a
-%% flat map.
-store_read(_Path, no_viable_store, _) ->
-    not_found;
+%% flat map. We track the paths that we have already read to avoid circular
+%% links.
 store_read(Path, Store, Opts) ->
+    store_read(Path, Store, Opts, []).
+store_read(_Path, no_viable_store, _, _AlreadyRead) ->
+    not_found;
+store_read(Path, Store, Opts, AlreadyRead) ->
+    case lists:member(Path, AlreadyRead) of
+        true ->
+            ?event(read_error,
+                {circular_links_detected,
+                    {path, Path},
+                    {already_read, AlreadyRead}
+                }
+            ),
+            throw({circular_links_detected, Path, {already_read, AlreadyRead}});
+        false ->
+            do_read(Path, Store, Opts, AlreadyRead)
+    end.
+
+%% @doc Read a path from the store. Unsafe: May recurse indefinitely if circular
+%% links are present.
+do_read(Path, Store, Opts, AlreadyRead) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
     ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}, Opts),
     case hb_store:type(Store, ResolvedFullPath) of
@@ -201,7 +220,8 @@ store_read(Path, Store, Opts) ->
                                     {ok, Res} = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
-                                        Opts
+                                        Opts,
+                                        [ResolvedFullPath | AlreadyRead]
                                     ),
                                     {iolist_to_binary([Subpath]), Res}
                                 end,
