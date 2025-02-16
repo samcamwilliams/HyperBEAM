@@ -1,5 +1,6 @@
-%%% @doc A wrapper library for gun.
--module(ar_http).
+%%% @doc A wrapper library for gun. This module originates from the Arweave
+%%% project, and has been modified for use in HyperBEAM.
+-module(hb_http_client).
 -behaviour(gen_server).
 -include("include/hb.hrl").
 -export([start_link/1, req/2]).
@@ -136,7 +137,7 @@ init(Opts) ->
         {labels, [http_method, route, status_class]},
 		{
 			help,
-			"The total duration of an ar_http:req call. This includes more than"
+			"The total duration of an hb_http_client:req call. This includes more than"
             " just the GUN request itself (e.g. establishing a connection, "
             "throttling, etc...)"
 		}

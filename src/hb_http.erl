@@ -71,7 +71,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             RawMessage,
             Opts
         ),
-    case ar_http:req(Req, Opts) of
+    case hb_http_client:req(Req, Opts) of
         {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
             ?event(
                 {
