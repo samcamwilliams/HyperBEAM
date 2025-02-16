@@ -9,13 +9,16 @@
 
 %% @doc Initialize or normalize the compute-lite device. For now, we don't
 %% need to do anything special here.
-init(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
+init(Msg1, _Msg2, _Opts) ->
+    {ok, Msg1}.
 normalize(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 snapshot(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 
 compute(Msg1, Msg2, Opts) ->
-    OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
+    ProcessID = hb_converge:get(<<"process/id">>, Msg1, Opts),
     Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
+    ?event(push, {compute_lite_called, {process_id, ProcessID}, {slot, Slot}}),
+    OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
     Accept = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
     ProcessID =
         hb_converge:get_first(
@@ -26,7 +29,7 @@ compute(Msg1, Msg2, Opts) ->
             Opts
         ),
     {ok, JSONRes} = do_compute(ProcessID, Slot, Opts),
-    ?event(debug_res, {results, {accept, Accept}, {json_res, JSONRes}}),
+    ?event(push, {compute_lite_res, {process_id, ProcessID}, {slot, Slot}, {json_res, JSONRes}}),
     {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
     {ok,
         hb_converge:set(
@@ -41,6 +44,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Slot, Opts) ->
+    ?event(debug_leader, {do_compute_called, {process_id, ProcID}, {slot, Slot}}),
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">> }, #{
             <<"path">> => <<"call">>,
@@ -54,7 +58,7 @@ do_compute(ProcID, Slot, Opts) ->
             },
             Opts
         ),
-    ?event({res, Res}),
+    ?event(debug_leader, {res, Res}),
     {ok, Response} = Res,
     JSONRes = hb_converge:get(<<"body">>, Response, Opts),
     ?event({json_res, JSONRes}),

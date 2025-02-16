@@ -40,7 +40,7 @@ call(M1, RawM2, Opts) ->
             not_found -> BaseTarget;
             RPath ->
                 ?event({setting_path, {base_target, BaseTarget}, {relay_path, {explicit, RPath}}}),
-                hb_converge:set(BaseTarget, <<"path">>, RPath, Opts#{ topic => debug })
+                hb_converge:set(BaseTarget, <<"path">>, RPath, Opts)
         end,
     TargetMod2 =
         case hb_converge:get(<<"requires-sign">>, BaseTarget, false, Opts) of

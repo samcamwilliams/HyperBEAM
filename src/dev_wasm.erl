@@ -157,45 +157,68 @@ compute(RawM1, M2, Opts) ->
             % Extract the WASM Instance, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             WASMFunction =
-                case hb_converge:get(<<"body/wasm-function">>, M2, Opts) of
-                    not_found ->
-                        hb_converge:get(<<"wasm-function">>, M1, Opts);
-                    Func -> Func
-                end,
-            WASMParams =
-                case hb_converge:get(<<"body/wasm-params">>, M2, Opts) of
-                    not_found ->
-                        hb_converge:get(<<"wasm-params">>, M1, Opts);
-                    Params -> Params
-                end,
-            ?event(
-                {
-                    calling_wasm_executor,
-                    {prefix, Prefix},
-                    {wasm_function, {explicit, WASMFunction}},
-                    {wasm_params, WASMParams},
-                    {m1, M1},
-                    {m2, M2},
-                    {priv, hb_private:from_message(M1)}
-                }
-            ),
-            {ResType, Res, MsgAfterExecution} =
-                hb_beamr:call(
-                    instance(M1, M2, Opts),
-                    WASMFunction,
-                    WASMParams,
-                    hb_private:get(<<Prefix/binary, "/import-resolver">>, M1, Opts),
-                    M1,
+                hb_converge:get_first(
+                    [
+                        {M2, <<"body/wasm-function">>},
+                        {M2, <<"wasm-function">>},
+                        {M1, <<"wasm-function">>}
+                    ],
                     Opts
                 ),
-            {ok,
-                hb_converge:set(MsgAfterExecution,
-                    #{
-                        <<"results/", Prefix/binary, "/type">> => ResType,
-                        <<"results/", Prefix/binary, "/output">> => Res
+            WASMParams =
+                hb_converge:get_first(
+                    [
+                        {M2, <<"body/wasm-params">>},
+                        {M2, <<"wasm-params">>},
+                        {M1, <<"wasm-params">>}
+                    ],
+                    Opts
+                ),
+            case WASMFunction of
+                not_found ->
+                    ?event(
+                        {
+                            skipping_wasm_exec,
+                            {reason, wasm_function_not_provided},
+                            {prefix, Prefix},
+                            {m1, M1},
+                            {m2, M2}
+                        }
+                    ),
+                    {ok, M1};
+                _ ->
+                    ?event(
+                        {
+                            calling_wasm_executor,
+                            {prefix, Prefix},
+                            {wasm_function, {explicit, WASMFunction}},
+                            {wasm_params, WASMParams},
+                            {m1, M1},
+                            {m2, M2},
+                            {priv, hb_private:from_message(M1)}
+                        }
+                    ),
+                    {ResType, Res, MsgAfterExecution} =
+                        hb_beamr:call(
+                            instance(M1, M2, Opts),
+                            WASMFunction,
+                            case WASMParams of
+                                not_found -> [];
+                                Params -> Params
+                            end,
+                            hb_private:get(<<Prefix/binary, "/import-resolver">>, M1, Opts),
+                            M1,
+                            Opts
+                        ),
+                    {ok,
+                        hb_converge:set(MsgAfterExecution,
+                            #{
+                                <<"results/", Prefix/binary, "/type">> => ResType,
+                                <<"results/", Prefix/binary, "/output">> => Res
+                            }
+                        )
                     }
-                )
-            };
+            end;
         _ -> {ok, M1}
     end.
 

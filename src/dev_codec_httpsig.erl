@@ -271,12 +271,17 @@ reset_hmac(RawMsg) ->
             end,
             maps:to_list(Attestations)
         )),
-    HMacSigInfo = #{
-            <<"signature">> =>
-                bin(dev_codec_structured_conv:dictionary(AllSigs)),
-            <<"signature-input">> =>
-                bin(dev_codec_structured_conv:dictionary(AllInputs))
-    },
+    FlatInputs = lists:flatten(maps:values(AllInputs)),
+    HMacSigInfo =
+        case FlatInputs of
+            [] -> #{};
+            _ -> #{
+                <<"signature">> =>
+                    bin(dev_codec_structured_conv:dictionary(AllSigs)),
+                <<"signature-input">> =>
+                    bin(dev_codec_structured_conv:dictionary(AllInputs))
+            }
+        end,
     HMacInputMsg = maps:merge(Msg, HMacSigInfo),
     {ok, ID} = hmac(HMacInputMsg),
     Res = {

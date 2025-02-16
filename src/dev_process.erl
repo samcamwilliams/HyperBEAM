@@ -58,15 +58,15 @@
 
 %% The frequency at which the process state should be cached. Can be overridden
 %% with the `cache_frequency' option.
--define(DEFAULT_CACHE_FREQ, 10).
+-define(DEFAULT_CACHE_FREQ, 1).
 
 %% @doc When the info key is called, we should return the process exports.
 info(_Msg1) ->
     #{
         worker => fun dev_process_worker:server/3,
-        grouper => fun dev_process_worker:group/3
+        grouper => fun dev_process_worker:group/3,
+        await => fun dev_process_worker:await/5
     }.
-
 
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
@@ -87,7 +87,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         #{ <<"path">> => <<"snapshot">>, <<"mode">> => <<"Map">> },
         Opts#{ cache_control => [] }
     ),
-    ProcID = hb_converge:get(<<"id">>, Msg1, Opts),
+    ProcID = hb_message:id(Msg1, all),
     Slot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
     {ok,
         hb_private:set(
@@ -98,7 +98,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
             ),
             #{ <<"priv/additional-hashpaths">> =>
                     [
-                        hb_path:to_binary([ProcID, <<"Snapshot">>, Slot])
+                        hb_path:to_binary([ProcID, <<"snapshot">>, Slot])
                     ]
             },
             Opts
@@ -144,22 +144,31 @@ compute(Msg1, Msg2, Opts) ->
             Opts
         ),
     ProcID = hb_converge:get(<<"process/id">>, Loaded, Opts),
-    ?event({compute_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    Slot = hb_util:int(hb_converge:get(<<"slot">>, Msg2, Opts)),
+    ?event(push, {computing, {process_id, ProcID}, {slot, Slot}}),
     do_compute(
         ProcID,
         Normalized,
         Msg2,
-        hb_converge:get(<<"slot">>, Msg2, Opts),
+        Slot,
         Opts
     ).
 
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
 do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
-    ?event({do_compute_called, {target_slot, TargetSlot}, {msg1, Msg1}}),
-    case hb_converge:get(<<"current-slot">>, Msg1, Opts) of
+    CurrentSlot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    ?event({do_compute_called, {target, TargetSlot}, {current, CurrentSlot}}),
+    case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
-            throw({error, {already_calculated_slot, TargetSlot}});
+            throw(
+                {error,
+                    {already_calculated_slot,
+                        {target, TargetSlot},
+                        {current, CurrentSlot}
+                    }
+                }
+            );
         CurrentSlot when CurrentSlot == TargetSlot ->
             % We reached the target height so we return.
             ?event(process_compute, {reached_target_slot_returning_state, TargetSlot}),
@@ -182,6 +191,13 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                     ToProcess,
                     Opts
                 ),
+            % Notify any waiters that the result for a slot is now available.
+            dev_process_worker:notify_compute(
+                ProcID,
+                CurrentSlot,
+                {ok, Msg3},
+                Opts
+            ),
             % Cache the `Memory' key every `Cache-Frequency' slots.
             Freq =
                 hb_opts:get(
@@ -201,7 +217,7 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                             dev_process_cache:write(
                                 ProcID,
                                 CurrentSlot,
-                                Snapshot,
+                                maps:without([<<"snapshot">>], Snapshot),
                                 Opts
                             );
                         not_found ->
@@ -240,18 +256,17 @@ now(RawMsg1, _Msg2, Opts) ->
 %% that does not lead to any further messages being scheduled.
 push(Msg1, Msg2, Opts) ->
     Wallet = hb:wallet(),
-    PushMsgSlot = hb_converge:get(<<"Slot">>, Msg2, Opts),
-    {ok, Outbox} = hb_converge:resolve(
+    PushMsgSlot = hb_util:int(hb_converge:get(<<"Slot">>, Msg2, Opts)),
+    ID = hb_converge:get(<<"id">>, Msg1, Opts),
+    ?event(push, {push_computing_outbox, {process_id, ID}, {slot, PushMsgSlot}}),
+    Result = hb_converge:resolve(
         Msg1,
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => PushMsgSlot },
         Opts#{ hashpath => ignore }
     ),
-    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, {explicit, Outbox}}}),
-    case ?IS_EMPTY_MESSAGE(Outbox) of
-        true ->
-            ?event(push, {push_outbox_empty, {slot, PushMsgSlot}}),
-            {ok, #{}};
-        false ->
+    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, Result}}),
+    case Result of
+        {ok, Outbox} when not ?IS_EMPTY_MESSAGE(Outbox) ->
             {ok, maps:map(
                 fun(Key, MsgToPush) ->
                     case hb_converge:get(<<"target">>, MsgToPush, Opts) of
@@ -278,7 +293,7 @@ push(Msg1, Msg2, Opts) ->
                                 },
                                 Opts
                             ),
-                            PushedMsgID = hb_converge:get(<<"id">>, PushedMsg, Opts),
+                            PushedMsgID = hb_message:id(PushedMsg, all),
                             ?event(push,
                                 {push_scheduled,
                                     {assigned_slot, NextSlotOnProc},
@@ -299,7 +314,10 @@ push(Msg1, Msg2, Opts) ->
                     end
                 end,
                 maps:without([<<"hashpath">>], Outbox)
-            )}
+            )};
+        _ ->
+            ?event(push, {done, {slot, PushMsgSlot}}),
+            {ok, #{}}
     end.
 
 %% @doc Ensure that the process message we have in memory is live and
@@ -309,12 +327,16 @@ ensure_loaded(Msg1, Msg2, Opts) ->
     TargetSlot = hb_converge:get(<<"slot">>, Msg2, undefined, Opts),
     ProcID = 
         case hb_converge:get(<<"process/id">>, {as, dev_message, Msg1}, Opts) of
-            not_found ->
-                hb_converge:get(<<"id">>, Msg1, Opts);
+            not_found -> hb_message:id(Msg1, all);
             P -> P
         end,
-    case hb_converge:get(<<"initialized">>, Msg1, <<"false">>, Opts) of
-        <<"false">> ->
+    ?event({ensure_loaded, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    case hb_converge:get(<<"initialized">>, Msg1, Opts) of
+        <<"true">> ->
+            ?event(already_initialized),
+            {ok, Msg1};
+        _ ->
+            ?event(not_initialized),
             % Try to load the latest complete state from disk.
             LoadRes =
                 dev_process_cache:latest(
@@ -353,8 +375,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                         }
                     ),
                     init(Msg1, Msg2, Opts)
-            end;
-        <<"true">> -> {ok, Msg1}
+            end
     end.
 
 %% @doc Run a message against Msg1, with the device being swapped out for
@@ -385,9 +406,8 @@ run_as(Key, Msg1, Msg2, Opts) ->
             },
             Opts
         ),
-    ?event({resolving_proc, {msg1, PreparedMsg}, {msg2, Msg2}, {opts, Opts}}),
     DeviceAsSet = hb_converge:get(<<"device">>, PreparedMsg, Opts),
-    ?event({device_set, DeviceAsSet}),
+    ?event({running_msg_as, {device, DeviceAsSet}, {msg2, Msg2}}),
     {Status, BaseResult} =
         hb_converge:resolve(
             PreparedMsg,
@@ -411,7 +431,6 @@ as_process(Msg1, Opts) ->
 
 %% @doc Helper function to store a copy of the `process' key in the message.
 ensure_process_key(Msg1, Opts) ->
-    ?event({ensure_process_key_called, {msg1, Msg1}, {opts, Opts}}),
     case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
             hb_converge:set(
@@ -457,8 +476,11 @@ test_wasm_process(WASMImage, Opts) ->
 %% @doc Generate a process message with a random number, and the 
 %% `dev_wasm' device for execution.
 test_aos_process() ->
-    Wallet = hb:wallet(),
-    WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>),
+    test_aos_process(#{}).
+test_aos_process(Opts) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
+    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+    WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
     hb_message:attest(maps:merge(WASMProc, #{
         <<"device-stack">> =>
             [
@@ -476,8 +498,8 @@ test_aos_process() ->
                 <<"snapshot">>,
                 <<"normalize">>
             ],
-        <<"scheduler">> => hb_util:human_id(hb:address()),
-        <<"authority">> => hb_util:human_id(hb:address())
+        <<"scheduler">> => Address,
+        <<"authority">> => Address
     }), Wallet).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
@@ -643,7 +665,7 @@ wasm_compute_from_id_test() ->
     ?event(process_compute, {computed_message, {msg3, Msg3}}),
     ?assertEqual([120.0], hb_converge:get(<<"results/output">>, Msg3, Opts)).
 
-wasm_full_http_run_cycle_test() ->
+http_wasm_process_by_id_test() ->
     rand:seed(default),
     SchedWallet = ar_wallet:new(),
     Node = hb_http_server:start_node(Opts = #{
@@ -659,7 +681,7 @@ wasm_full_http_run_cycle_test() ->
     InitRes =
         hb_http:post(
             Node,
-            << "/", ProcID/binary, "/schedule" >>,
+            << "/schedule" >>,
             Proc,
             #{}
         ),
@@ -686,7 +708,7 @@ wasm_full_http_run_cycle_test() ->
             Node,
             #{
                 <<"path">> => << ProcID/binary, "/compute">>,
-                <<"slot">> => 0
+                <<"slot">> => 1
             },
             #{}
         ),
@@ -710,6 +732,91 @@ aos_compute_test_() ->
         {ok, Msg5} = hb_converge:resolve(Msg1, Msg4, #{}),
         ?assertEqual(<<"4">>, hb_converge:get(<<"results/data">>, Msg5, #{})),
         {ok, Msg5}
+    end}.
+
+aos_browsable_state_test_() ->
+    {timeout, 30, fun() ->
+        init(),
+        Msg1 = test_aos_process(),
+        schedule_aos_call(Msg1,
+            <<"table.insert(ao.outbox.Messages, { Target = ao.id, ",
+                "Action = \"State\", ",
+                "Data = { Deep = 4, Bool = true } })">>
+        ),
+        Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
+        {ok, Msg3} =
+            hb_converge:resolve_many(
+                [Msg1, Msg2, <<"results">>, <<"outbox">>, 1, <<"data">>, <<"Deep">>],
+                #{ cache_control => <<"always">> }
+            ),
+        ID = hb_message:id(Msg1),
+        ?event(aos_debug, {computed_message, {id, {explicit, ID}}}),
+        ?assertEqual(4, Msg3)
+    end}.
+
+aos_state_access_via_http_test_() ->
+    {timeout, 60, fun() ->
+        rand:seed(default),
+        Wallet = ar_wallet:new(),
+        Node = hb_http_server:start_node(Opts = #{
+            port => 10000 + rand:uniform(10000),
+            priv_wallet => Wallet,
+            cache_control => <<"always">>,
+            store => {hb_store_fs, #{ prefix => "main-cache" }},
+            force_signed_requests => true
+        }),
+        Proc = test_aos_process(Opts),
+        ProcID = hb_util:human_id(hb_message:id(Proc, all)),
+        {ok, _InitRes} =
+            hb_http:post(
+                Node,
+                << "/schedule" >>,
+                Proc,
+                Opts
+            ),
+        Msg2 = hb_message:attest(#{
+            <<"data-prefix">> => <<"ao">>,
+            <<"variant">> => <<"ao.N.1">>,
+            <<"type">> => <<"Message">>,
+            <<"action">> => <<"Eval">>,
+            <<"data">> =>
+                <<"table.insert(ao.outbox.Messages, { Target = ao.id,",
+                    " Action = \"State\", Data = { ",
+                        "[\"content-type\"] = \"text/html\", ",
+                        "[\"body\"] = \"<h1>Hello, world!</h1>\"",
+                    "}})">>,
+            <<"target">> => ProcID
+        }, Wallet),
+        {ok, Msg3} =
+            hb_http:post(
+                Node,
+                << ProcID/binary, "/schedule">>,
+                Msg2,
+                Opts
+            ),
+        ?event(aos_debug, {schedule_msg_res, {msg3, Msg3}}),
+        {ok, Msg4} =
+            hb_http:get(
+                Node,
+                #{
+                    <<"path">> =>
+                        <<
+                            ProcID/binary,
+                            "/compute/results/outbox/1/data/body"
+                        >>,
+                    <<"slot">> => 1
+                },
+                Opts
+            ),
+        ?event(aos_debug, {compute_msg_res, {msg4, Msg4}}),
+        ?event(aos_debug,
+            {try_yourself,
+                {explicit,
+                    << Node/binary, "/", ProcID/binary, "/compute&slot=1/results/outbox/1/data">>}
+            }
+        ),
+        ?assertMatch(#{ <<"body">> := <<"<h1>Hello, world!</h1>">> }, Msg4),
+        ok
     end}.
 
 %% @doc Manually test state restoration without using the cache.
@@ -821,7 +928,7 @@ simple_wasm_persistent_worker_benchmark_test() ->
         hb_converge:resolve(
             Msg1,
             #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-            #{ spawn_worker => true }
+            #{ spawn_worker => true, process_workers => true }
         ),
     Iterations = hb:benchmark(
         fun(Iteration) ->

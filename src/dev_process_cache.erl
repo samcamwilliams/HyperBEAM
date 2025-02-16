@@ -60,6 +60,7 @@ latest(ProcID, Opts) -> latest(ProcID, [], Opts).
 latest(ProcID, RequiredPath, Opts) ->
     latest(ProcID, RequiredPath, undefined, Opts).
 latest(ProcID, RawRequiredPath, Limit, Opts) ->
+    ?event({latest_called, {proc_id, ProcID}, {required_path, RawRequiredPath}, {limit, Limit}, {opts, Opts}}),
     % Convert the required path to a list of _binary_ keys.
     RequiredPath =
         case RawRequiredPath of
@@ -71,8 +72,10 @@ latest(ProcID, RawRequiredPath, Limit, Opts) ->
                     Opts
                 )
         end,
+    ?event({required_path_converted, {proc_id, ProcID}, {required_path, RequiredPath}}),
     Path = path(ProcID, slot_root, Opts),
     AllSlots = hb_cache:list_numbered(Path, Opts),
+    ?event({all_slots, {proc_id, ProcID}, {slots, AllSlots}}),
     CappedSlots =
         case Limit of
             undefined -> AllSlots;

@@ -19,7 +19,7 @@
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event({normalized_request, hb_converge:normalize_keys(NormRequest)}),
+    ?event(http_converge, {request, hb_converge:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
             embed_status(handle_initialize(NormRequest, NodeMsg));
@@ -149,7 +149,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
             ?event({res, Res}),
             AfterResolveOpts = hb_http_server:get_opts(NodeMsg),
             % Apply the post-processor to the result.
-            maybe_sign(
+            Output = maybe_sign(
                 embed_status(
                     resolve_processor(
                         <<"postprocess">>,
@@ -160,7 +160,9 @@ handle_converge(Req, Msgs, NodeMsg) ->
                     )
                 ),
                 NodeMsg
-            );
+            ),
+            ?event(http_converge, {response, Output}),
+            Output;
         Res -> embed_status(Res)
     end.
 

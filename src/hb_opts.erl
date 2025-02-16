@@ -32,8 +32,8 @@ default_message() ->
         %% that an assignment has been scheduled for a message.
         %% Options: aggressive(!), local_confirmation, remote_confirmation
         scheduling_mode => local_confirmation,
-        %% Compute mode: Determines whether the CU should attempt to execute
-        %% more messages on a process after it has returned a result.
+        %% Compute mode: Determines whether the process device should attempt to 
+        %% execute more messages on a process after it has returned a result.
         %% Options: aggressive, lazy
         compute_mode => lazy,
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
@@ -81,6 +81,12 @@ default_message() ->
                 <<"compute-lite@1.0">> => dev_compute_lite,
                 <<"test-device@1.0">> => dev_test
             },
+        %% Default execution cache control options
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        cache_lookup_hueristics => false,
+        % Should we await in-progress executions, rather than re-running?
+        % Has three settings: false, only `named` executions, or all executions.
+        await_inprogress => named,
         %% Should the node attempt to access data from remote caches for
         %% client requests?
         access_remote_cache_for_client => false,
@@ -90,8 +96,6 @@ default_message() ->
         trusted_device_signers => [],
         %% What should the node do if a client error occurs?
         client_error_strategy => throw,
-        %% Default execution cache control options
-        cache_control => [<<"no-cache">>, <<"no-store">>],
         %% HTTP request options
         http_connect_timeout => 5000,
         http_response_timeout => 30000,
@@ -102,6 +106,8 @@ default_message() ->
         wasm_allow_aot => false,
         %% Options for the relay device
         relay_http_client => httpc,
+        %% Options for the GraphQL device
+        graphql_http_client => httpc,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,
@@ -112,8 +118,9 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => false,
+        debug_hide_metadata => true,
         debug_ids => false,
+        debug_hide_priv => true,
 		trusted => #{},
         % Routes for the compute-lite device to use a local CU, if requested.
         routes => [
@@ -122,6 +129,11 @@ default_message() ->
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             }
         ],
+        graphql_urls =>
+            [
+                <<"https://arweave-search.goldsky.com/graphql">>,
+                <<"https://arweave.net/graphql">>
+            ],
         http_extra_opts =>
             #{
                 force_message => true,
@@ -131,7 +143,7 @@ default_message() ->
         % Should the node store all signed messages?
         store_all_signed => true,
         % Should the node use persistent processes?
-        persistent_processes => false
+        process_workers => true
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a

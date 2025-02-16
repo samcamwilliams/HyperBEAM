@@ -33,7 +33,6 @@
 %%%         Generates:
 %%%             /Results/Outbox
 %%%             /Results/Data'''
-
 -module(dev_json_iface).
 -export([init/3, compute/3]).
 %%% Public interface helpers:
@@ -112,7 +111,7 @@ denormalize_message(Message) ->
                 Message#{ <<"owner">> => Signer, <<"signature">> => Sig }
         end,
     NormOwnerMsg#{
-        <<"id">> => hb_converge:get(<<"id">>, {as, <<"message@1.0">>, Message})
+        <<"id">> => hb_message:id(Message, all)
     }.
 
 message_to_json_struct(RawMsg) ->

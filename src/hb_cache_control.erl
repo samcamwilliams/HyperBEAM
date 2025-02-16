@@ -156,11 +156,16 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
-% exec_likely_faster_heuristic(ID, _Msg2, _Opts) when ?IS_ID(ID) ->
-%     false;
-exec_likely_faster_heuristic(ID1, _Msg2, _Opts) when ?IS_ID(ID1) ->
-    false;
-exec_likely_faster_heuristic(Msg1, #{ <<"path">> := Key }, Opts) ->
+exec_likely_faster_heuristic(Msg1, Msg2, Opts) ->
+    case hb_opts:get(cache_lookup_hueristics, true, Opts) of
+        false -> false;
+        true ->
+            case ?IS_ID(Msg1) of
+                true -> false;
+                false -> is_explicit_lookup(Msg1, Msg2, Opts)
+            end
+    end.
+is_explicit_lookup(Msg1, #{ <<"path">> := Key }, Opts) ->
     % For now, just check whether the key is explicitly in the map. That is 
     % a good signal that we will likely be asked by the device to grab it.
     % If we have `only-if-cached' in the opts, we always force lookup, too.

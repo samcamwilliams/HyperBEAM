@@ -9,11 +9,11 @@
 
 %% @doc Start a scheduling server for a given computation.
 start(ProcID, Opts) ->
+    ?event(scheduling, {starting_scheduling_server, {proc_id, ProcID}}),
     spawn_link(
         fun() ->
-            pg:join({dev_scheduler, ProcID}, self()),
-            ?event({starting_scheduling_server, {proc_id, ProcID}}),
-            {CurrentSlot, HashChain} = slot_from_cache(ProcID, Opts),
+            hb_name:register({dev_scheduler, ProcID}),
+            {CurrentSlot, HashChain} = dev_scheduler_cache:latest(ProcID, Opts),
             ?event(
                 {scheduler_got_process_info,
                     {proc_id, ProcID},
@@ -32,33 +32,6 @@ start(ProcID, Opts) ->
             )
         end
     ).
-
-%% @doc Get the current slot from the cache.
-slot_from_cache(ProcID, Opts) ->
-    ?event({getting_assignments_from_cache, {proc_id, ProcID}, {opts, Opts}}),
-    case dev_scheduler_cache:list(ProcID, Opts) of
-        [] ->
-            ?event({no_assignments_in_cache, {proc_id, ProcID}}),
-            {-1, <<>>};
-        Assignments ->
-            AssignmentNum = lists:max(Assignments),
-            ?event(
-                {found_assignment_from_cache,
-                    {proc_id, ProcID},
-                    {assignment_num, AssignmentNum}
-                }
-            ),
-            {ok, Assignment} = dev_scheduler_cache:read(
-                ProcID,
-                AssignmentNum,
-                Opts
-            ),
-            {
-                AssignmentNum,
-                hb_converge:get(
-                    <<"hash-chain">>, Assignment, #{ hashpath => ignore })
-            }
-    end.
 
 %% @doc Call the appropriate scheduling server to assign a message.
 schedule(AOProcID, Message) when is_binary(AOProcID) ->
@@ -130,6 +103,14 @@ do_assign(State, Message, ReplyPID) ->
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
             }, maps:get(wallet, State)),
+            AssignmentID = hb_message:id(Assignment, all),
+            ?event(scheduling,
+                {assigned,
+                    {proc_id, maps:get(id, State)},
+                    {slot, NextSlot},
+                    {assignment, AssignmentID}
+                }
+            ),
             maybe_inform_recipient(
                 aggressive,
                 ReplyPID,

@@ -64,7 +64,7 @@ router(_, Msg1, Msg2, Opts) ->
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
-    ?event({scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event(next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     Schedule =
         hb_private:get(
             <<"priv/scheduler/assignments">>,
@@ -72,7 +72,7 @@ next(Msg1, Msg2, Opts) ->
             Opts
         ),
     LastProcessed = hb_converge:get(<<"current-slot">>, Msg1, Opts),
-    ?event({local_schedule_cache, {schedule, Schedule}}),
+    ?event(next, {local_schedule_cache, {schedule, Schedule}}),
     Assignments =
         case Schedule of
             X when is_map(X) and map_size(X) > 0 -> X;
@@ -96,13 +96,13 @@ next(Msg1, Msg2, Opts) ->
         ),
     % Remove assignments that are below the last processed slot.
     FilteredAssignments = maps:with(ValidKeys, Assignments),
-    ?event({filtered_assignments, FilteredAssignments}),
+    ?event(next, {filtered_assignments, FilteredAssignments}),
     Slot =
         case ValidKeys of
             [] -> LastProcessed;
             Slots -> lists:min(Slots)
         end,
-    ?event({next_slot_to_process, Slot, {last_processed, LastProcessed}}),
+    ?event(next, {next_slot_to_process, Slot, {last_processed, LastProcessed}}),
     case (LastProcessed + 1) == Slot of
         true ->
             NextMessage =
@@ -118,7 +118,7 @@ next(Msg1, Msg2, Opts) ->
                     hb_converge:remove(FilteredAssignments, Slot),
                     Opts
                 ),
-            ?event(
+            ?event(next,
                 {next_returning, {slot, Slot}, {message, NextMessage}}),
             {ok, #{ <<"body">> => NextMessage, <<"state">> => NextState }};
         false ->
@@ -165,7 +165,7 @@ post_schedule(Msg1, Msg2, Opts) ->
     ProcID =
         case hb_converge:get(<<"type">>, ToSched, not_found, Opts) of
             <<"Process">> ->
-                hb_converge:get(<<"id">>, ToSched, not_found, Opts);
+                hb_message:id(ToSched, all);
             _ ->
                 case hb_converge:get(<<"target">>, ToSched, not_found, Opts) of
                     not_found ->
@@ -294,11 +294,15 @@ get_schedule(Msg1, Msg2, Opts) ->
         case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
             not_found ->
                 ?event({getting_current_slot, {proc_id, ProcID}}),
-                maps:get(current,
-                    dev_scheduler_server:info(
-                        dev_scheduler_registry:find(ProcID)
-                    )
-                );
+                case dev_scheduler_registry:find(ProcID) of
+                    not_found ->
+                        {Slot, _} = dev_scheduler_cache:latest(ProcID, Opts),
+                        Slot;
+                    Pid ->
+                        maps:get(current,
+                            dev_scheduler_server:info(Pid)
+                        )
+                end;
             ToRes -> ToRes
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
@@ -324,7 +328,7 @@ find_schedule_id(Msg1, Msg2, Opts) ->
             case hb_converge:resolve(Msg2, <<"type">>, TempOpts) of
                 {ok, <<"Process">>} ->
                     % Msg2 is a Process, so the ID is at Msg2/id
-                    hb_converge:get(<<"id">>, Msg2, TempOpts);
+                    hb_message:id(Msg2, all);
                 _ ->
                     case hb_converge:resolve(Msg1, <<"process/id">>, TempOpts) of
                         {ok, ID} ->
@@ -335,10 +339,10 @@ find_schedule_id(Msg1, Msg2, Opts) ->
                         case hb_converge:get(<<"type">>, Msg1, TempOpts) of
                             <<"Process">> ->
                                 % Yes, so try Msg1/id
-                                hb_converge:get(<<"id">>, Msg1, TempOpts);
+                                hb_message:id(Msg1, all);
                             _ ->
                                 % No, so the ID is at Msg2/id
-                                hb_converge:get(<<"id">>, Msg2, TempOpts)
+                                hb_message:id(Msg2, all)
                         end
                 end
             end
@@ -459,6 +463,7 @@ register_new_process_test() ->
             #{}
         )
     ),
+    ?event({status_response, Msg1}),
     Procs = hb_converge:get(<<"processes">>, hb_converge:get(status, Msg1)),
     ?event({procs, Procs}),
     ?assert(

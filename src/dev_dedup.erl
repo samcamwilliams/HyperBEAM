@@ -23,7 +23,7 @@ handle(Key, M1, M2, Opts) ->
     ?event({dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
     case hb_converge:get(<<"pass">>, {as, dev_message, M1}, 1, Opts) of
         1 ->
-            Msg2ID = hb_converge:get(<<"id">>, M2, Opts),
+            Msg2ID = hb_message:id(M2, all),
             Dedup = hb_converge:get(<<"dedup">>, {as, dev_message, M1}, [], Opts),
             ?event({dedup_checking, {existing, Dedup}}),
             case lists:member(Msg2ID, Dedup) of

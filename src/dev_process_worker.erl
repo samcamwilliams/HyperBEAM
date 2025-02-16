@@ -3,7 +3,7 @@
 %%% calls. Implements the interface of `hb_converge' to receive and respond 
 %%% to computation requests regarding a process as a singleton.
 -module(dev_process_worker).
--export([server/3, stop/1, group/3]).
+-export([server/3, stop/1, group/3, await/5, notify_compute/4]).
 -include_lib("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -13,12 +13,10 @@
 group(Msg1, undefined, Opts) ->
     hb_persistent:default_grouper(Msg1, undefined, Opts);
 group(Msg1, Msg2, Opts) ->
-    case hb_opts:get(persistent_processes, false, Opts) of
+    case hb_opts:get(process_workers, false, Opts) of
         false ->
-            ?event({not_using_persistent_processes, Msg1, Msg2}),
             hb_persistent:default_grouper(Msg1, Msg2, Opts);
         true ->
-            ?event({using_persistent_processes, Msg1, Msg2}),
             case Msg2 of
                 undefined ->
                     hb_persistent:default_grouper(Msg1, undefined, Opts);
@@ -48,7 +46,96 @@ process_to_group_name(Msg1, Opts) ->
 %% execution of `hb_converge:resolve/3', so the state we are given is the
 %% already current.
 server(GroupName, Msg1, Opts) ->
-    hb_persistent:default_worker(GroupName, Msg1, Opts#{ static_worker => true }).
+    ServerOpts = Opts#{
+        await_inprogress => false,
+        spawn_worker => false
+    },
+    % The maximum amount of time the worker will wait for a request before
+    % checking the cache for a snapshot. Default: 5 minutes.
+    Timeout = hb_opts:get(process_worker_max_idle, 300_000, Opts),
+    ?event(worker, {waiting_for_req, {group, GroupName}, {msg1, Msg1}}),
+    receive
+        {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
+            TargetSlot = hb_converge:get(<<"slot">>, Msg2, Opts),
+            ?event(worker,
+                {work_received,
+                    {group, GroupName},
+                    {slot, TargetSlot},
+                    {listener, Listener}
+                }
+            ),
+            Res =
+                hb_converge:resolve(
+                    Msg1,
+                    #{ <<"path">> => <<"compute">>, <<"slot">> => TargetSlot },
+                    maps:merge(ListenerOpts, ServerOpts)
+                ),
+            ?event(worker, {resolved, {group, GroupName}, {msg2, Msg2}, {res, Res}}),
+            Listener ! {resolved, self(), GroupName, {slot, TargetSlot}, Res},
+            server(
+                GroupName,
+                case Res of
+                    {ok, Msg3} -> Msg3;
+                    _ -> Msg1
+                end,
+                Opts
+            );
+        stop ->
+            ?event(worker, {stopping, {group, GroupName}, {msg1, Msg1}}),
+            exit(normal)
+    after Timeout ->
+        % We have hit the in-memory persistence timeout. Generate a snapshot
+        % of the current process state and ensure it is cached.
+        hb_converge:resolve(
+            Msg1,
+            <<"snapshot">>,
+            ServerOpts#{ <<"cache-control">> => [<<"store">>] }
+        ),
+        % Return the current process state.
+        {ok, Msg1}
+    end.
+
+%% @doc Await a resolution from a worker executing the `process@1.0` device.
+await(Worker, GroupName, Msg1, Msg2, Opts) ->
+    case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
+        false -> 
+            hb_persistent:default_await(Worker, GroupName, Msg1, Msg2, Opts);
+        true ->
+            ?event({awaiting_compute, {worker, Worker}, {group, GroupName}, {target_slot, maps:get(<<"slot">>, Msg2, no_slot)}}),
+            TargetSlot = hb_converge:get(<<"slot">>, Msg2, Opts),
+            receive
+                {resolved, _, GroupName, {slot, TargetSlot}, Res} ->
+                    ?event({notified_of_resolution,
+                        {target, TargetSlot},
+                        {group, GroupName}
+                    }),
+                    Res;
+                {resolved, _, GroupName, {slot, RecvdSlot}, _Res} ->
+                    ?event({waiting_again, {target, TargetSlot}, {recvd, RecvdSlot}, {worker, Worker}, {group, GroupName}}),
+                    await(Worker, GroupName, Msg1, Msg2, Opts);
+                {'DOWN', _R, process, Worker, Reason} ->
+                    ?event(
+                        {leader_died,
+                            {group, GroupName},
+                            {leader, Worker},
+                            {reason, Reason},
+                            {request, Msg2}
+                        }
+                    ),
+                    {error, leader_died}
+            end
+    end.
+
+%% Notify any waiters for a specific slot of the computed result.
+notify_compute(GroupName, SlotToNotify, Msg3, Opts) ->
+    receive
+        {resolve, Listener, GroupName, #{ <<"slot">> := SlotToNotify }, _ListenerOpts} ->
+            ?event({notifying_listener, {listener, Listener}, {group, GroupName}}),
+            Listener ! {resolved, self(), GroupName, {slot, SlotToNotify}, Msg3},
+            notify_compute(GroupName, SlotToNotify, Msg3, Opts)
+    after 0 ->
+        ?event({no_waiters_for_slot, {group, GroupName}, {slot, SlotToNotify}})
+    end.
 
 %% @doc Stop a worker process.
 stop(Worker) ->
@@ -72,9 +159,9 @@ grouper_test() ->
     M2 = #{ <<"path">> => <<"compute">>, <<"v">> => 1 },
     M3 = #{ <<"path">> => <<"compute">>, <<"v">> => 2 },
     M4 = #{ <<"path">> => <<"not-compute">>, <<"v">> => 3 },
-    G1 = hb_persistent:group(M1, M2, #{ persistent_processes => true }),
-    G2 = hb_persistent:group(M1, M3, #{ persistent_processes => true }),
-    G3 = hb_persistent:group(M1, M4, #{ persistent_processes => true }),
+    G1 = hb_persistent:group(M1, M2, #{ process_workers => true }),
+    G2 = hb_persistent:group(M1, M3, #{ process_workers => true }),
+    G3 = hb_persistent:group(M1, M4, #{ process_workers => true }),
     ?event({group_samples, {g1, G1}, {g2, G2}, {g3, G3}}),
     ?assertEqual(G1, G2),
     ?assertNotEqual(G1, G3).

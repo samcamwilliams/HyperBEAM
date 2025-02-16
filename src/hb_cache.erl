@@ -24,7 +24,7 @@
 -export([read/2, read_output/3, write/2, write_binary/3, write_hashpath/2, link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
--include("src/include/hb.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% List all items in a directory, assuming they are numbered.
@@ -174,12 +174,31 @@ read(Path, Opts) ->
     end.
 
 %% @doc List all of the subpaths of a given path, read each in turn, returning a
-%% flat map.
-store_read(_Path, no_viable_store, _) ->
-    not_found;
+%% flat map. We track the paths that we have already read to avoid circular
+%% links.
 store_read(Path, Store, Opts) ->
+    store_read(Path, Store, Opts, []).
+store_read(_Path, no_viable_store, _, _AlreadyRead) ->
+    not_found;
+store_read(Path, Store, Opts, AlreadyRead) ->
+    case lists:member(Path, AlreadyRead) of
+        true ->
+            ?event(read_error,
+                {circular_links_detected,
+                    {path, Path},
+                    {already_read, AlreadyRead}
+                }
+            ),
+            throw({circular_links_detected, Path, {already_read, AlreadyRead}});
+        false ->
+            do_read(Path, Store, Opts, AlreadyRead)
+    end.
+
+%% @doc Read a path from the store. Unsafe: May recurse indefinitely if circular
+%% links are present.
+do_read(Path, Store, Opts, AlreadyRead) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
+    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}, Opts),
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
         no_viable_store -> not_found;
@@ -201,7 +220,8 @@ store_read(Path, Store, Opts) ->
                                     {ok, Res} = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
-                                        Opts
+                                        Opts,
+                                        [ResolvedFullPath | AlreadyRead]
                                     ),
                                     {iolist_to_binary([Subpath]), Res}
                                 end,

@@ -86,7 +86,9 @@ new_server(RawNodeMsg) ->
         env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
         metrics_callback =>
             fun prometheus_cowboy2_instrumenter:observe/1,
-        stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
+        stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
+        max_connections => infinity,
+        idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg)
     },
     {ok, Port, Listener} =
         case Protocol = hb_opts:get(protocol, no_proto, NodeMsg) of

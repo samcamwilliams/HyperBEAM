@@ -214,7 +214,12 @@ format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
         fun(<<"hashpath">>) ->
-            hb_private:get(<<"hashpath">>, Map, undefined, #{});
+            case Map of
+                #{ <<"priv">> := #{ <<"hashpath">> := HashPath } } ->
+                    hb_util:short_id(HashPath);
+                _ ->
+                    undefined
+            end;
         (Key) ->
             case dev_message:get(Key, Map) of
                 {ok, Val} ->
@@ -289,9 +294,9 @@ format(Map, Indent) when is_map(Map) ->
     % Put the path and device rows into the output at the _top_ of the map.
     PriorityKeys = [{<<"path">>, ValOrUndef(<<"path">>)}, {<<"device">>, ValOrUndef(<<"device">>)}],
     FooterKeys =
-        case hb_private:from_message(Map) of
-            PrivMap when map_size(PrivMap) == 0 -> [];
-            PrivMap -> [{<<"!Private!">>, PrivMap}]
+        case hb_opts:get(debug_hide_priv, false, #{}) andalso (map_size(maps:get(<<"priv">>, Map, #{})) > 0) of
+            true -> [];
+            false -> [{<<"!Private!">>, maps:get(<<"priv">>, Map, #{})}]
         end,
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =

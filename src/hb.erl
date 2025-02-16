@@ -96,7 +96,7 @@
 
 %% @doc Initialize system-wide settings for the hyperbeam node.
 init() ->
-    pg:start(pg),
+    hb_name:start(),
     ?event({setting_debug_stack_depth, hb_opts:get(debug_stack_depth)}),
     Old = erlang:system_flag(backtrace_depth, hb_opts:get(debug_stack_depth)),
     ?event({old_system_stack_depth, Old}),
@@ -129,10 +129,15 @@ do_start_mainnet(Opts) ->
             store => {hb_store_fs, #{ prefix => "main-cache" }}
         }
     ),
+    Address =
+        case hb_opts:get(priv_wallet, no_wallet, Opts) of
+            no_wallet -> <<"[ !!! no-wallet !!! ]">>;
+            Wallet -> ar_wallet:to_address(Wallet)
+        end,
     io:format(
         "Started mainnet node at http://localhost:~p~n"
         "Operator: ~s~n",
-        [maps:get(port, Opts), address()]
+        [maps:get(port, Opts), Address]
     ),
     <<"http://localhost:", (integer_to_binary(maps:get(port, Opts)))/binary>>.
 
