@@ -127,19 +127,30 @@ default_message() ->
             #{
                 <<"template">> => <<"/result/.*">>,
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            },
+            #{
+                <<"template">> => <<"/graphql">>,
+                <<"nodes">> =>
+                    [
+                        #{
+                            <<"prefix">> => <<"https://arweave-search.goldsky.com">>,
+                            <<"opts">> => #{ http_client => httpc }
+                        },
+                        #{
+                            <<"prefix">> => <<"https://arweave.net">>,
+                            <<"opts">> => #{ http_client => gun }
+                        }
+                    ]
+            },
+            #{
+                <<"template">> => <<"/raw">>,
+                <<"node">> =>
+                    #{
+                        <<"prefix">> => <<"https://arweave.net">>,
+                        <<"opts">> => #{ http_client => gun }
+                    }
             }
         ],
-        graphql_urls =>
-            [
-                #{
-                    url => <<"https://arweave-search.goldsky.com/graphql">>,
-                    opts => #{ http_client => httpc }
-                },
-                #{
-                    url => <<"https://arweave.net/graphql">>,
-                    opts => #{ http_client => gun }
-                }
-            ],
         http_extra_opts =>
             #{
                 force_message => true,

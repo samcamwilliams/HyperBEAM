@@ -294,9 +294,10 @@ format(Map, Indent) when is_map(Map) ->
     % Put the path and device rows into the output at the _top_ of the map.
     PriorityKeys = [{<<"path">>, ValOrUndef(<<"path">>)}, {<<"device">>, ValOrUndef(<<"device">>)}],
     FooterKeys =
-        case hb_opts:get(debug_hide_priv, false, #{}) andalso (map_size(maps:get(<<"priv">>, Map, #{})) > 0) of
-            true -> [];
-            false -> [{<<"!Private!">>, maps:get(<<"priv">>, Map, #{})}]
+        case {hb_opts:get(debug_hide_priv, false, #{}), maps:get(<<"priv">>, Map, #{})} of
+            {true, _} -> [];
+            {false, #{}} -> [];
+            {false, Priv} -> [{<<"!Private!">>, Priv}]
         end,
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =

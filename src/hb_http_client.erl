@@ -444,9 +444,9 @@ await_response(Args, Opts) ->
 			counter := Counter, acc := Acc, method := Method, path := Path } = Args,
 	case gun:await(PID, Ref, inet:timeout(Timer)) of
 		{response, fin, Status, Headers} ->
-			End = os:system_time(microsecond),
 			upload_metric(Args),
-			{ok, {{integer_to_binary(Status), <<>>}, Headers, <<>>, Start, End}};
+			?event(http, {gun_response, {status, Status}, {headers, Headers}, {body, none}}),
+			{ok, Status, Headers, <<>>};
 		{response, nofin, Status, Headers} ->
 			await_response(Args#{ status => Status, headers => Headers }, Opts);
 		{data, nofin, Data} ->
@@ -471,7 +471,6 @@ await_response(Args, Opts) ->
 					end
 			end;
 		{data, fin, Data} ->
-			End = os:system_time(microsecond),
 			FinData = iolist_to_binary([Acc | Data]),
 			download_metric(FinData, Args),
 			upload_metric(Args),

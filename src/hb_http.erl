@@ -59,9 +59,25 @@ request(Message, Opts) ->
     request(Method, Peer, Path, MessageToSend, Opts).
 request(Method, Peer, Path, Opts) ->
     request(Method, Peer, Path, #{}, Opts).
-request(Method, Config, Path, Message, Opts) when is_map(Config) ->
+request(Method, Config = #{ <<"nodes">> := Nodes }, Path, Message, Opts) when is_list(Nodes) ->
+    % The request has a `route` (see `dev_router` for more details), so we use the
+    % `multirequest` functionality, rather than a single request.
     multirequest(Config, Method, Path, Message, Opts);
+request(Method, #{ <<"opts">> := NodeOpts, <<"uri">> := URI }, _Path, Message, Opts) ->
+    % The request has a set of additional options, so we apply them to the
+    % request.
+    MergedOpts = maps:merge(Opts, NodeOpts),
+    % We also recalculate the request. The order of precidence here is subtle:
+    % We favor the args given to the function, but the URI rules take precidence
+    % over that.
+    {ok, NewMethod, Node, NewPath, NewMsg} =
+        message_to_request(
+            Message#{ <<"path">> => URI, <<"method">> => Method },
+            MergedOpts
+        ),
+    request(NewMethod, Node, NewPath, NewMsg, MergedOpts);
 request(Method, Peer, Path, RawMessage, Opts) ->
+    ?event(http, {request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
     Req =
         prepare_request(
             hb_opts:get(format, http, Opts),
@@ -71,6 +87,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             RawMessage,
             Opts
         ),
+    ?event(http, {req, Req}),
     case hb_http_client:req(Req, Opts) of
         {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
             ?event(
@@ -98,9 +115,13 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                         ar_bundles:deserialize(Body);
                     _ ->
                         hb_message:convert(
-                            HeaderMap#{
-                                <<"body">> => Body
-                            },
+                            maps:merge(
+                                HeaderMap#{ <<"status">> => hb_util:bin(Status) },
+                                case Body of
+                                    <<>> -> #{};
+                                    _ -> #{ <<"body">> => Body }
+                                end
+                            ),
                             <<"structured@1.0">>,
                             <<"httpsig@1.0">>,
                             Opts
@@ -126,7 +147,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             ?event(
                 {http_error,
                     {req, Req},
-                    {response, Response}
+                    {response, {explicit, Response}}
                 }
             ),
             Response
@@ -140,7 +161,7 @@ message_to_request(M, Opts) ->
     % the host should already be known to the caller.
     MsgWithoutMeta = maps:without([<<"path">>, <<"host">>], M),
     % Get the route for the message
-    case dev_router:route(#{}, M, Opts) of
+    case dev_router:route(M, Opts) of
         {ok, URL} when is_binary(URL) ->
             % The request is a direct HTTP URL, so we need to split the
             % URL into a host and path.
@@ -166,12 +187,13 @@ message_to_request(M, Opts) ->
                     Query -> [<<"?", Query/binary>>]
                 end,
             Path = iolist_to_binary(PathParts),
-            ?event(http, {relay, {node, Node}, {method, Method}, {path, Path}}),
+            ?event(http, {parsed_req, {node, Node}, {method, Method}, {path, Path}}),
             {ok, Method, Node, Path, MsgWithoutMeta};
-        {ok, Route} ->
+        {ok, Routes} ->
+            ?event(http, {found_routes, {req, M}, {routes, Routes}}),
             % The result is a route, so we leave it to `request` to handle it.
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
-            {ok, Method, Route, Path, MsgWithoutMeta};
+            {ok, Method, Routes, Path, MsgWithoutMeta};
         {error, Reason} ->
             {error, {no_viable_route, Reason, {message, M}}}
     end.
@@ -208,33 +230,84 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
 %%      /Stop-After: Should we stop after the required number of responses?
 %%      /Parallel: Should we run the requests in parallel?
 multirequest(Config, Method, Path, Message, Opts) ->
-    Nodes = hb_converge:get(<<"peers">>, Config, #{}, Opts),
-    Responses = hb_converge:get(<<"responses">>, Config, 1, Opts),
-    StopAfter = hb_converge:get(<<"stop-after">>, Config, true, Opts),
-    case hb_converge:get(<<"parallel">>, Config, false, Opts) of
-        false ->
-            serial_multirequest(
-                Nodes, Responses, Method, Path, Message, Opts);
-        true ->
+    MultiOpts = #{
+        nodes := Nodes,
+        responses := Responses,
+        stop_after := StopAfter,
+        accept_status := Statuses,
+        parallel := Parallel
+    } = multirequest_opts(Config, Message, Opts),
+    ?event(http,
+        {multirequest_opts_parsed,
+            {config, Config},
+            {message, Message},
+            {multirequest_opts, MultiOpts}
+        }),
+    AllResults =
+        if Parallel ->
             parallel_multirequest(
-                Nodes, Responses, StopAfter, Method, Path, Message, Opts)
+                Nodes, Responses, StopAfter, Method, Path, Message, Statuses, Opts);
+        true ->
+            serial_multirequest(
+                Nodes, Responses, Method, Path, Message, Statuses, Opts)
+        end,
+    ?event(http, {multirequest_results, {results, AllResults}}),
+    case AllResults of
+        [] -> {error, no_viable_responses};
+        Results -> if Responses == 1 -> hd(Results); true -> Results end
     end.
 
-serial_multirequest(_Nodes, 0, _Method, _Path, _Message, _Opts) -> [];
-serial_multirequest([Node | Nodes], Remaining, Method, Path, Message, Opts) ->
-    case request(Method, Node, Path, Message, Opts) of
-        {Status, Res} when Status == ok; Status == error ->
+%% @doc Get the multirequest options from the config or message. The options in 
+%% the message take precidence over the options in the config.
+multirequest_opts(Config, Message, Opts) ->
+    Opts#{
+        nodes =>
+            multirequest_opt(<<"nodes">>, Config, Message, #{}, Opts),
+        responses =>
+            multirequest_opt(<<"responses">>, Config, Message, 1, Opts),
+        stop_after =>
+            multirequest_opt(<<"stop-after">>, Config, Message, true, Opts),
+        accept_status =>
+            multirequest_opt(<<"accept-status">>, Config, Message, <<"All">>, Opts),
+        parallel =>
+            multirequest_opt(<<"parallel">>, Config, Message, false, Opts)
+    }.
+
+%% @doc Get a value for a multirequest option from the config or message.
+multirequest_opt(Key, Config, Message, Default, Opts) ->
+    hb_converge:get_first(
+        [
+            {Message, <<"multirequest-", Key/binary>>},
+            {Config, Key}
+        ],
+        Default,
+        Opts#{ hashpath => ignore }
+    ).
+
+%% @doc Serially request a message, collecting responses until the required
+%% number of responses have been gathered. Ensure that the statuses are
+%% allowed, according to the configuration.
+serial_multirequest(_Nodes, 0, _Method, _Path, _Message, _Statuses, _Opts) -> [];
+serial_multirequest([], _, _Method, _Path, _Message, _Statuses, _Opts) -> [];
+serial_multirequest([Node|Nodes], Remaining, Method, Path, Message, Statuses, Opts) ->
+    {ErlStatus, Res} = request(Method, Node, Path, Message, Opts),
+    BaseStatus = hb_converge:get(<<"status">>, Res, 200, Opts),
+    ?event(http, {running_admissible_status, {status, {explicit, BaseStatus}}, {statuses, {explicit, Statuses}}}),
+    case allowed_status(BaseStatus, Statuses) of
+        true ->
+            ?event(http, {admissible_status, {response, Res}}),
             [
-                {Status, Res}
+                {ErlStatus, Res}
             |
-                serial_multirequest(Nodes, Remaining - 1, Method, Path, Message, Opts)
+                serial_multirequest(Nodes, Remaining - 1, Method, Path, Message, Statuses, Opts)
             ];
-        _ ->
-            serial_multirequest(Nodes, Remaining, Method, Path, Message, Opts)
+        false ->
+            ?event(http, {inadmissible_status, {response, Res}}),
+            serial_multirequest(Nodes, Remaining, Method, Path, Message, Statuses, Opts)
     end.
 
 %% @doc Dispatch the same HTTP request to many nodes in parallel.
-parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message, Opts) ->
+parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message, Statuses, Opts) ->
     Ref = make_ref(),
     Parent = self(),
     Procs = lists:map(
@@ -250,38 +323,60 @@ parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message, Opts) 
         end,
         Nodes
     ),
-    parallel_responses([], Procs, Ref, Responses, StopAfter, Opts).
+    parallel_responses([], Procs, Ref, Responses, StopAfter, Statuses, Opts).
+
+%% @doc Check if a status is allowed, according to the configuration.
+allowed_status(_, <<"All">>) -> true;
+allowed_status(_ResponseMsg = #{ <<"status">> := Status }, Statuses) ->
+    allowed_status(Status, Statuses);
+allowed_status(Status, Statuses) when is_integer(Statuses) ->
+    allowed_status(Status, [Statuses]);
+allowed_status(Status, Statuses) when is_binary(Status) ->
+    allowed_status(binary_to_integer(Status), Statuses);
+allowed_status(Status, Statuses) when is_binary(Statuses) ->
+    % Convert the statuses to a list of integers.
+    allowed_status(
+        Status,
+        lists:map(fun binary_to_integer/1, binary:split(Statuses, <<",">>))
+    );
+allowed_status(Status, Statuses) when is_list(Statuses) ->
+    lists:member(Status, Statuses).
 
 %% @doc Collect the necessary number of responses, and stop workers if
 %% configured to do so.
-parallel_responses(Res, Procs, Ref, 0, false, _Opts) ->
+parallel_responses(Res, Procs, Ref, 0, false, _Statuses, _Opts) ->
     lists:foreach(fun(P) -> P ! no_reply end, Procs),
     empty_inbox(Ref),
     {ok, Res};
-parallel_responses(Res, Procs, Ref, 0, true, _Opts) ->
+parallel_responses(Res, Procs, Ref, 0, true, _Statuses, _Opts) ->
     lists:foreach(fun(P) -> exit(P, kill) end, Procs),
     empty_inbox(Ref),
     Res;
-parallel_responses(Res, Procs, Ref, Awaiting, StopAfter, Opts) ->
+parallel_responses(Res, Procs, Ref, Awaiting, StopAfter, Statuses, Opts) ->
     receive
-        {Ref, Pid, {Status, NewRes}} when Status == ok; Status == error ->
-            parallel_responses(
-                [NewRes | Res],
-                lists:delete(Pid, Procs),
-                Ref,
-                Awaiting - 1,
-                StopAfter,
-                Opts
-            );
-        {Ref, Pid, _} ->
-            parallel_responses(
-                Res,
-                lists:delete(Pid, Procs),
-                Ref,
-                Awaiting,
-                StopAfter,
-                Opts
-            )
+        {Ref, Pid, {Status, NewRes}} ->
+            case allowed_status(Status, Statuses) of
+                true ->
+                    parallel_responses(
+                        [NewRes | Res],
+                        lists:delete(Pid, Procs),
+                        Ref,
+                        Awaiting - 1,
+                        StopAfter,
+                        Statuses,
+                        Opts
+                    );
+                false ->
+                    parallel_responses(
+                        Res,
+                        lists:delete(Pid, Procs),
+                        Ref,
+                        Awaiting,
+                        StopAfter,
+                        Statuses,
+                        Opts
+                    )
+            end
     end.
 
 %% @doc Empty the inbox of the current process for all messages with the given
