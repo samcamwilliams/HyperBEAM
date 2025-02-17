@@ -1,12 +1,12 @@
--module(hb_store_remote_node).
--export([scope/1, type/2, read/2, resolve/2]).
--include("include/hb.hrl").
-
-%%% A store module that reads data from another AO node.
+%%% @doc A store module that reads data from another AO node.
 %%% Notably, this store only provides the _read_ side of the store interface.
 %%% The write side could be added, returning an attestation that the data has
 %%% been written to the remote node. In that case, the node would probably want
 %%% to upload it to an Arweave bundler to ensure persistence, too.
+-module(hb_store_remote_node).
+-export([scope/1, type/2, read/2, resolve/2]).
+-include("include/hb.hrl").
+
 
 scope(_) -> remote.
 
