@@ -132,7 +132,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             ?event(
                 {http_got_client_error,
                     {req, Req},
-                    {response, #{status => Status, body => Body}}
+                    {response, #{status => Status, body => {explicit, Body}}}
                 }),
             {error, Body};
         {ok, Status, _Headers, Body} when Status > 400 ->
@@ -291,9 +291,8 @@ serial_multirequest(_Nodes, 0, _Method, _Path, _Message, _Statuses, _Opts) -> []
 serial_multirequest([], _, _Method, _Path, _Message, _Statuses, _Opts) -> [];
 serial_multirequest([Node|Nodes], Remaining, Method, Path, Message, Statuses, Opts) ->
     {ErlStatus, Res} = request(Method, Node, Path, Message, Opts),
-    BaseStatus = hb_converge:get(<<"status">>, Res, 200, Opts),
-    ?event(http, {running_admissible_status, {status, {explicit, BaseStatus}}, {statuses, {explicit, Statuses}}}),
-    case allowed_status(BaseStatus, Statuses) of
+    BaseStatus = hb_converge:get(<<"status">>, Res, Opts),
+    case (ErlStatus == ok) andalso allowed_status(BaseStatus, Statuses) of
         true ->
             ?event(http, {admissible_status, {response, Res}}),
             [
