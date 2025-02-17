@@ -2,7 +2,7 @@
 -behaviour(supervisor).
 -export([start_link/0, start_link/1, init/1]).
 -define(SERVER, ?MODULE).
--include("src/include/hb.hrl").
+-include("include/hb.hrl").
 
 start_link() ->
     start_link(#{}).
@@ -25,12 +25,12 @@ init(Opts) ->
     StoreChildren = store_children(hb_opts:get(store, [], Opts)),
     GunChild =
         #{
-            id => ar_http,
-            start => {ar_http, start_link, [Opts]},
+            id => hb_http_client,
+            start => {hb_http_client, start_link, [Opts]},
             restart => permanent,
             shutdown => 5000,
             type => worker,
-            modules => [ar_http]
+            modules => [hb_http_client]
         },
     {ok, {SupFlags, [GunChild | StoreChildren]}}.
 
