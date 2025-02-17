@@ -7,7 +7,10 @@
 %%% GraphQL API. When gateways integrate serving in `httpsig@1.0' form, this
 %%% module will be deprecated.
 -module(hb_gateway_client).
+%% @doc Raw access primitives:
 -export([read/2, data/2]).
+%% @doc Application-specific data access functions:
+-export([scheduler_location/2]).
 -include_lib("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -36,17 +39,7 @@ read(ID, Opts) ->
                 <<
                     "query($transactionIds: [ID!]!) { ",
                         "transactions(ids: $transactionIds, first: 1){ ",
-                            "edges { node { ",
-                                "id ",
-                                "anchor ",
-                                "signature ",
-                                "recipient ",
-                                "owner { key } ",
-                                "fee { winston } ",
-                                "quantity { winston } ",
-                                "tags { name value } ",
-                                "data { size } "
-                            "} } ",
+                            "edges { ", (item_spec())/binary , " } ",
                         "} ",
                     "} "
                 >>,
@@ -60,50 +53,24 @@ read(ID, Opts) ->
         {ok, GqlMsg} ->
             case hb_converge:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
                 not_found -> {error, not_found};
-                Res = #{<<"id">> := ID} ->
-                    % We have the headers, so we can get the data.
-                    {ok, Data} = data(ID, Opts),
-                    ?event(gateway, {data, {id, ID}, {data, Data}}),
-                    % Convert the response to an ANS-104 message.
-                    GQLOpts = Opts#{ hashpath => ignore },
-                    TX =
-                        #tx {
-                            format = ans104,
-                            id = hb_util:decode(ID),
-                            last_tx =
-                                hb_util:decode(hb_converge:get(<<"anchor">>,
-                                    Res, GQLOpts)),
-                            signature =
-                                hb_util:decode(hb_converge:get(<<"signature">>,
-                                    Res, GQLOpts)),
-                            target =
-                                hb_util:decode(hb_converge:get(<<"recipient">>,
-                                    Res, GQLOpts)),
-                            owner =
-                                hb_util:decode(hb_converge:get(<<"owner/key">>,
-                                    Res, GQLOpts)),
-                            tags =
-                                [
-                                    {Name, Value}
-                                ||
-                                    #{<<"name">> := Name, <<"value">> := Value}
-                                        <- hb_converge:get(<<"tags">>, Res, GQLOpts)
-                                ],
-                            data_size =
-                                hb_util:int(hb_converge:get(<<"data/size">>,
-                                    Res, GQLOpts)
-                                ),
-                            data = Data
-                        },
-                    ?event({raw_ans104, {explicit, TX}}),
-                    ?event({ans104_form_response, TX}),
-                    TABM = dev_codec_ans104:from(TX),
-                    ?event({decoded_tabm, TABM}),
-                    Structured = dev_codec_structured:to(TABM),
-                    ?event({encoded_structured, Structured}),
-                    {ok, Structured}
+                Item = #{<<"id">> := ID} -> result_to_message(ID, Item, Opts)
             end
     end.
+
+%% @doc Gives the fields of a transaction that are needed to construct an
+%% ANS-104 message.
+item_spec() ->
+    <<"node { ",
+        "id ",
+        "anchor ",
+        "signature ",
+        "recipient ",
+        "owner { key } ",
+        "fee { winston } ",
+        "quantity { winston } ",
+        "tags { name value } ",
+        "data { size } "
+    "}">>.
 
 %% @doc Get the data associated with a transaction by its ID, using the node's
 %% Arweave `gateway' peers. The item is expected to be available in its 
@@ -130,6 +97,32 @@ data(ID, Opts) ->
         Res ->
             ?event(gateway, {request_error, {id, ID}, {response, Res}}),
             {error, no_viable_gateway}
+    end.
+
+%% @doc Find the location of the scheduler based on its ID, through GraphQL.
+scheduler_location(Address, Opts) ->
+    Query =
+        #{
+            <<"query">> =>
+                <<"query($SchedulerAddrs: [String!]!) { ",
+                    "transactions(owners: $SchedulerAddrs, tags: { name: \"Type\" values: [\"Scheduler-Location\"] }, first: 1){ ",
+                        "edges { ",
+                            (item_spec())/binary ,
+                        " } ",
+                    "} ",
+                "}">>,
+            <<"variables">> =>
+                #{
+                    <<"SchedulerAddrs">> => [Address]
+                }
+        },
+    case query(Query, Opts) of
+        {error, Reason} -> {error, Reason};
+        {ok, GqlMsg} ->
+            case hb_converge:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
+                not_found -> {error, not_found};
+                Item = #{ <<"id">> := ID } -> result_to_message(ID, Item, Opts)
+            end
     end.
         
 %% @doc Run a GraphQL request encoded as a binary. The node message may contain 
@@ -161,6 +154,51 @@ query(Query, Opts) ->
         {error, Reason} -> {error, Reason}
     end.
 
+%% @doc Takes a GraphQL item node, matches it with the appropriate data from a
+%% gateway, then returns `{ok, ParsedMsg}`.
+result_to_message(ExpectedID, Item, Opts) ->
+    % We have the headers, so we can get the data.
+    {ok, Data} = data(ExpectedID, Opts),
+    ?event(gateway, {data, {id, ExpectedID}, {data, Data}}),
+    % Convert the response to an ANS-104 message.
+    GQLOpts = Opts#{ hashpath => ignore },
+    TX =
+        #tx {
+            format = ans104,
+            id = hb_util:decode(ExpectedID),
+            last_tx =
+                hb_util:decode(hb_converge:get(<<"anchor">>,
+                    Item, GQLOpts)),
+            signature =
+                hb_util:decode(hb_converge:get(<<"signature">>,
+                    Item, GQLOpts)),
+            target =
+                hb_util:decode(hb_converge:get(<<"recipient">>,
+                    Item, GQLOpts)),
+            owner =
+                hb_util:decode(hb_converge:get(<<"owner/key">>,
+                    Item, GQLOpts)),
+            tags =
+                [
+                    {Name, Value}
+                ||
+                    #{<<"name">> := Name, <<"value">> := Value}
+                        <- hb_converge:get(<<"tags">>, Item, GQLOpts)
+                ],
+            data_size =
+                hb_util:int(hb_converge:get(<<"data/size">>,
+                    Item, GQLOpts)
+                ),
+            data = Data
+        },
+    ?event({raw_ans104, {explicit, TX}}),
+    ?event({ans104_form_response, TX}),
+    TABM = dev_codec_ans104:from(TX),
+    ?event({decoded_tabm, TABM}),
+    Structured = dev_codec_structured:to(TABM),
+    ?event({encoded_structured, Structured}),
+    {ok, Structured}.
+
 %%% Tests
 ans104_no_data_item_test() ->
     % Start a random node so that all of the services come up.
@@ -169,3 +207,15 @@ ans104_no_data_item_test() ->
     ?event(gateway, {get_ans104_test, Res}),
     ?event(gateway, {signer, hb_message:signers(Res)}),
     ?assert(hb_message:verify(Res)).
+
+%% @doc Test that we can get the scheduler location.
+scheduler_location_test() ->
+    % Start a random node so that all of the services come up.
+    _Node = hb_http_server:start_node(#{}),
+    {ok, Res} = scheduler_location(<<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>, #{}),
+    ?event(gateway, {get_scheduler_location_test, Res}),
+    ?assert(hb_message:verify(Res)),
+    ?assertEqual(<<"Scheduler-Location">>, hb_converge:get(<<"Type">>, Res, #{})),
+    ?event(gateway, {scheduler_location, {explicit, hb_converge:get(<<"url">>, Res, #{})}}),
+    % Will need updating when Legacynet terminates.
+    ?assertEqual(<<"https://su-router.ao-testnet.xyz">>, hb_converge:get(<<"url">>, Res, #{})).
