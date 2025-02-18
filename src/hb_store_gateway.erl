@@ -108,3 +108,20 @@ specific_route_test() ->
             Opts
         )
     ).
+
+%% @doc Test that the default node config allows for data to be accessed.
+external_http_access_test() ->
+    Node = hb_http_server:start_node(
+        #{
+            store => [{hb_store_gateway, #{}}, {hb_store_fs, #{ prefix => "test-cache" }}],
+            http_extra_opts => #{ force_message => true, cache_control => [<<"always">>] }
+        }
+    ),
+    ?assertMatch(
+        {ok, #{ <<"body">> := <<"Assignment">> }},
+        hb_http:get(
+            Node,
+            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE/type">>,
+            #{}
+        )
+    ).
