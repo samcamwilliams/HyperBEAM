@@ -7,7 +7,6 @@
 -export([scope/1, type/2, read/2, resolve/2]).
 -include("include/hb.hrl").
 
-
 scope(_) -> remote.
 
 resolve(#{ <<"node">> := Node }, Key) ->
