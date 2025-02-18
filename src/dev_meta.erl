@@ -205,11 +205,15 @@ maybe_sign(Res, NodeMsg) ->
     ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
-            hb_message:attest(
-                Res,
-                hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-                hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
-            );
+            case hb_message:signers(Res) of
+                [] ->
+                    hb_message:attest(
+                        Res,
+                        hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
+                        hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
+                    );
+                _ -> Res
+            end;
         false -> Res
     end.
 
