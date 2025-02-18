@@ -128,10 +128,10 @@ update_node_message(Request, NodeMsg) ->
 handle_converge(Req, Msgs, NodeMsg) ->
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
-        {ok, PreProcMsg} ->
+        {ok, PreProcessedMsg} ->
             ?event(
                 {result_after_preprocessing,
-                    hb_converge:normalize_keys(PreProcMsg)}
+                    hb_converge:normalize_keys(PreProcessedMsg)}
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
@@ -142,7 +142,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
             {ok, Res} =
                 embed_status(
                     hb_converge:resolve_many(
-                        PreProcMsg,
+                        PreProcessedMsg,
                         HTTPOpts#{ force_message => true }
                     )
                 ),
