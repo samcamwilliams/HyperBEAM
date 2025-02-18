@@ -187,22 +187,24 @@ get_opts(NodeMsg) ->
 %%% Tests
 
 set_base_opts(Opts) ->
+    % Create a temporary opts map that does not include the defaults.
+    TempOpts = Opts#{ only => local },
     % Generate a random port number between 10000 and 30000 to use
     % for the server.
     Port =
-        case hb_opts:get(port, no_port, Opts#{ only => local }) of
+        case hb_opts:get(port, no_port, TempOpts) of
             no_port ->
                 rand:seed(exsplus, erlang:timestamp()),
                 10000 + rand:uniform(20000);
             PassedPort -> PassedPort
         end,
     Wallet =
-        case hb_opts:get(priv_wallet, no_viable_wallet, Opts) of
+        case hb_opts:get(priv_wallet, no_viable_wallet, TempOpts) of
             no_viable_wallet -> ar_wallet:new();
             PassedWallet -> PassedWallet
         end,
     Store =
-        case hb_opts:get(store, no_store, Opts) of
+        case hb_opts:get(store, no_store, TempOpts) of
             no_store ->
                 {hb_store_fs,
                     #{
@@ -212,6 +214,7 @@ set_base_opts(Opts) ->
                 };
             PassedStore -> PassedStore
         end,
+    ?event({set_base_opts, TempOpts, Port, Store, Wallet}),
     Opts#{
         port => Port,
         store => Store,

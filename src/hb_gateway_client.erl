@@ -191,7 +191,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                 ),
             data = Data
         },
-    ?event({raw_ans104, {explicit, TX}}),
+    ?event({raw_ans104, TX}),
     ?event({ans104_form_response, TX}),
     TABM = dev_codec_ans104:from(TX),
     ?event({decoded_tabm, TABM}),

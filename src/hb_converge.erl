@@ -136,10 +136,23 @@ resolve(Msg1, Msg2, Opts) ->
 %% @doc Resolve a list of messages in sequence. Take the output of the first
 %% message as the input for the next message. Once the last message is resolved,
 %% return the result.
-resolve_many([Msg3], _Opts) ->
+%% A `resolve_many' call with only a single ID will attempt to read the message
+%% directly from the store. No execution is performed.
+resolve_many([ID], Opts) when ?IS_ID(ID) ->
+    ?event(converge_core, {stage, na, resolve_directly_to_id, ID}),
+    case hb_cache:read(ID, Opts) of
+        {ok, Msg3} ->
+            ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
+            {ok, Msg3};
+        {error, not_found} ->
+            {error, not_found}
+    end;
+resolve_many(MsgList, Opts) ->
+    do_resolve_many(MsgList, Opts).
+do_resolve_many([Msg3], _Opts) ->
     ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
     {ok, Msg3};
-resolve_many([Msg1, Msg2 | MsgList], Opts) ->
+do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(converge_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
         {ok, Msg3} ->
@@ -152,7 +165,7 @@ resolve_many([Msg1, Msg2 | MsgList], Opts) ->
                     {opts, Opts}
                 }
             ),
-            resolve_many([Msg3 | MsgList], Opts);
+            do_resolve_many([Msg3 | MsgList], Opts);
         Res ->
             ?event(converge_core, {stage, 11, resolve_many_terminating_early, Res}),
             Res
