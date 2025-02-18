@@ -71,6 +71,7 @@ default_message() ->
                 <<"compute@1.0">> => dev_cu,
                 <<"p4@1.0">> => dev_p4,
                 <<"faff@1.0">> => dev_faff,
+				<<"greenzone@1.0">> => dev_green_zone,
                 <<"simple-pay@1.0">> => dev_simple_pay,
                 <<"snp@1.0">> => dev_snp,
                 <<"httpsig@1.0">> => dev_codec_httpsig,

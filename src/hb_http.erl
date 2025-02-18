@@ -210,6 +210,9 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
             FullEncoding = #{ <<"body">> := Body } =
                 hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
             Headers = maps:without([<<"body">>], FullEncoding),
+
+			?event(http, {request_headers, {explicit, {headers, Headers}}}),
+			?event(http, {request_body, {explicit, {body, Body}}}),
             maps:merge(ReqBase, #{ headers => Headers, body => Body });
         ans104 ->
             ReqBase#{
