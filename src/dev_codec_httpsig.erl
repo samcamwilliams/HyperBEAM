@@ -130,7 +130,7 @@ attest(MsgToSign, _Req, Opts) ->
         end,
     EncWithoutBodyKeys =
         maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"converge-type-body-keys">>],
+            [<<"signature">>, <<"signature-input">>, <<"body-keys">>],
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
@@ -310,7 +310,7 @@ sig_name_from_dict(DictBin) ->
 hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
-    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>], Msg)),
+    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>, <<"ao-types">>], Msg)),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
     ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
@@ -318,16 +318,7 @@ hmac(Msg) ->
     {_, SignatureBase} = signature_base(
         #{
             component_identifiers => 
-                add_derived_specifiers(
-                    lists:sort(
-                        maps:keys(
-                            maps:without(
-                                [<<"body-keys">>, <<"converge-type-body-keys">>],
-                                MsgWithContentDigest
-                            )
-                        )
-                    )
-                ),
+                add_derived_specifiers(lists:sort(maps:keys(MsgWithContentDigest))),
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
@@ -380,7 +371,7 @@ verify(MsgToVerify, Req, _Opts) ->
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
-            EncWithoutBodyKeys = maps:without([<<"body-keys">>, <<"converge-type-body-keys">>], Enc),
+            EncWithoutBodyKeys = maps:without([<<"body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
                 EncWithoutBodyKeys#{
