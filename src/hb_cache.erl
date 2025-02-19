@@ -21,13 +21,13 @@
 %%% Binary Messages (TABMs), such that each of the keys in the message is
 %%% either a map or a direct binary.
 -module(hb_cache).
--export([read/2, read_output/3, write/2, write_binary/3, write_hashpath/2, link/3]).
+-export([read/2, read_resolved/3, write/2, write_binary/3, write_hashpath/2, link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% List all items in a directory, assuming they are numbered.
+%% @doc List all items in a directory, assuming they are numbered.
 list_numbered(Path, Opts) ->
     SlotDir = hb_store:path(hb_opts:get(store, no_viable_store, Opts), Path),
     [ to_integer(Name) || Name <- list(SlotDir, Opts) ].
@@ -234,16 +234,17 @@ do_read(Path, Store, Opts, AlreadyRead) ->
             end
     end.
 
-%% @doc Read the output of a computation, given Msg1, Msg2, and some options.
-read_output(MsgID1, MsgID2, Opts) when ?IS_ID(MsgID1) and ?IS_ID(MsgID2) ->
+%% @doc Read the output of a prior computation, given Msg1, Msg2, and some
+%% options.
+read_resolved(MsgID1, MsgID2, Opts) when ?IS_ID(MsgID1) and ?IS_ID(MsgID2) ->
     ?event({cache_lookup, {msg1, MsgID1}, {msg2, MsgID2}, {opts, Opts}}),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
-read_output(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
+read_resolved(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
     {ok, MsgID2} = dev_message:id(Msg2, #{ <<"attestors">> => <<"all">> }, Opts),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
-read_output(Msg1, Msg2, Opts) when is_map(Msg1) and is_map(Msg2) ->
+read_resolved(Msg1, Msg2, Opts) when is_map(Msg1) and is_map(Msg2) ->
     read(hb_path:hashpath(Msg1, Msg2, Opts), Opts);
-read_output(_, _, _) -> not_found.
+read_resolved(_, _, _) -> not_found.
 
 %% @doc Make a link from one path to another in the store.
 %% Note: Argument order is `link(Src, Dst, Opts)'.

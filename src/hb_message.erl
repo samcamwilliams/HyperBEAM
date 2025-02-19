@@ -176,7 +176,7 @@ verify(Msg, Attestors) ->
 %% @doc Return the unsigned version of a message in Converge format.
 unattested(Bin) when is_binary(Bin) -> Bin;
 unattested(Msg) ->
-    maps:remove([<<"attestations">>], Msg).
+    maps:remove(<<"attestations">>, Msg).
 
 %% @doc Return all of the attestors on a message that have 'normal', 256 bit, 
 %% addresses.
