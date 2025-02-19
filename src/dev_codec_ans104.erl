@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([to/1, from/1, attest/3, verify/3, attested/3]).
+-export([id/1, to/1, from/1, attest/3, verify/3, attested/3]).
 -include("include/hb.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
@@ -24,6 +24,10 @@
         <<"bundle-version">>
     ]
 ).
+
+%% @doc Return the ID of a message.
+id(Msg) ->
+    {ok, (to(Msg))#tx.id}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
 attest(Msg, _Req, Opts) ->

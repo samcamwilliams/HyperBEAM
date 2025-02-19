@@ -58,7 +58,7 @@ id(Base, Req, NodeOpts) ->
     ModBase =
         case maps:get(<<"attestors">>, Req, <<"none">>) of
             <<"all">> -> Base;
-            <<"none">> -> Base;
+            <<"none">> -> maps:without([<<"attestations">>], Base);
             [] -> Base;
             RawAttestorIDs ->
                 KeepIDs =
@@ -82,7 +82,13 @@ id(Base, Req, NodeOpts) ->
                         BaseWithAttestations
                 end
         end,
-    IDMod = maps:get(<<"id-device">>, ModBase, ?DEFAULT_ID_DEVICE),
+    % Find the ID device for the message.
+    IDMod =
+        case id_device(ModBase) of
+            {ok, IDDev} -> IDDev;
+            {error, Error} -> throw({id, Error})
+        end,
+    ?event({using_id_device, {idmod, IDMod}, {modbase, ModBase}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -98,10 +104,43 @@ id(Base, Req, NodeOpts) ->
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
     case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
-        {ok, Fun} -> apply(Fun, [ModBase, Req, NodeOpts]);
+        {ok, Fun} -> apply(Fun, hb_converge:truncate_args(Fun, [ModBase, Req, NodeOpts]));
         {error, not_found} ->
             throw({id, id_resolver_not_found_for_device, DevMod})
     end.
+
+%% @doc Locate the ID device of a message. The ID device is determined by the 
+%% `id-device` if found in the `/attestations/id/attestation-device` key, or the
+%% `device` set in _all_ of the attestations. If no attestations are present,
+%% the default device (`httpsig@1.0') is used.
+id_device(#{ <<"attestations">> := #{ <<"id">> := #{ <<"attestation-device">> := IDDev } } }) ->
+    {ok, IDDev};
+id_device(#{ <<"attestations">> := Attestations }) ->
+    % Get the device from the first attestation.
+    UnfilteredDevs =
+        maps:map(
+            fun(_, #{ <<"attestation-device">> := AttestationDev }) ->
+                AttestationDev;
+            (_, _) -> undefined
+            end,
+            Attestations
+        ),
+    % Filter out the undefined devices.
+    Devs = lists:filter(fun(Dev) -> Dev =/= undefined end, maps:values(UnfilteredDevs)),
+    % If there are no devices, return the default.
+    case Devs of
+        [] -> {ok, ?DEFAULT_ID_DEVICE};
+        [Dev] -> {ok, Dev};
+        [FirstDev|Rest] ->
+            % If there are multiple devices amongst the set, err.
+            MultiDeviceMessage = lists:all(fun(Dev) -> Dev =:= FirstDev end, Rest),
+            case MultiDeviceMessage of
+                false -> {error, {multiple_id_devices, Devs}};
+                true -> {ok, FirstDev}
+            end
+    end;
+id_device(_) ->
+    {ok, ?DEFAULT_ID_DEVICE}.
 
 %% @doc Return the attestors of a message that are present in the given request.
 attestors(Base) -> attestors(Base, #{}).
