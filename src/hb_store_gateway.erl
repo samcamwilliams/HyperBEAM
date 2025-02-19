@@ -125,10 +125,10 @@ external_http_access_test() ->
         }
     ),
     ?assertMatch(
-        {ok, #{ <<"body">> := <<"Assignment">> }},
+        {ok, #{ <<"type">> := <<"Assignment">> }},
         hb_http:get(
             Node,
-            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE/type">>,
+            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
             #{}
         )
     ).

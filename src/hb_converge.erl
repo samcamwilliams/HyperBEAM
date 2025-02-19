@@ -139,7 +139,7 @@ resolve(Msg1, Msg2, Opts) ->
 %% A `resolve_many' call with only a single ID will attempt to read the message
 %% directly from the store. No execution is performed.
 resolve_many([ID], Opts) when ?IS_ID(ID) ->
-    ?event(converge_core, {stage, na, resolve_directly_to_id, ID}),
+    ?event(converge_core, {stage, na, resolve_directly_to_id, ID, {opts, Opts}}, Opts),
     case hb_cache:read(ID, Opts) of
         {ok, Msg3} ->
             ?event(converge_core, {stage, 11, resolve_complete, Msg3}),

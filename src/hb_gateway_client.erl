@@ -159,7 +159,7 @@ query(Query, Opts) ->
 result_to_message(ExpectedID, Item, Opts) ->
     % We have the headers, so we can get the data.
     {ok, Data} = data(ExpectedID, Opts),
-    ?event(gateway, {data, {id, ExpectedID}, {data, Data}}),
+    ?event(gateway, {data, {id, ExpectedID}, {data, Data}}, Opts),
     % Convert the response to an ANS-104 message.
     GQLOpts = Opts#{ hashpath => ignore },
     TX =

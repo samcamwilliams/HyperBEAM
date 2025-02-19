@@ -154,7 +154,7 @@ default_message() ->
         http_extra_opts =>
             #{
                 force_message => true,
-                store => {hb_store_fs, #{ prefix => "main-cache" }},
+                store => [{hb_store_fs, #{ prefix => "main-cache" }}, {hb_store_gateway, #{}}],
                 cache_control => [<<"always">>]
             },
         % Should the node store all signed messages?
