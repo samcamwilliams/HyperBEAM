@@ -640,3 +640,11 @@ get_deep_signed_wasm_state_test() ->
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
+
+cors_get_test() ->
+    URL = hb_http_server:start_node(),
+    {ok, Res} = get(URL, <<"/~meta@1.0/info/address">>, #{}),
+    ?assertEqual(
+        <<"*">>,
+        hb_converge:get(<<"access-control-allow-origin">>, Res, #{})
+    ).
