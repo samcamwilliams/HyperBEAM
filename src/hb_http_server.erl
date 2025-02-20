@@ -170,8 +170,7 @@ cors_reply(Req, _ServerID) ->
     cowboy_req:reply(204, #{
         <<"access-control-allow-origin">> => <<"*">>,
         <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
-        <<"access-control-allow-headers">> =>
-            cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>)
+        <<"access-control-allow-headers">> => <<"*">>
     }, Req).
 
 %% @doc Handle all non-CORS preflight requests as Converge requests. Execution 
