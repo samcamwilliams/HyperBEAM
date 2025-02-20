@@ -49,8 +49,14 @@ filter(Modules, Filter) ->
     ).
 
 %% @doc Limit the store scope to only a specific (set of) option(s).
-%% Takes either a single scope or a list of scopes.
-scope(Store, Scope) ->
+%% Takes either an Opts message or store, and either a single scope or a list
+%% of scopes.
+scope(Scope, Opts) when is_map(Opts) ->
+    case hb_opts:get(store, no_viable_store, Opts) of
+        no_viable_store -> Opts;
+        Store -> Opts#{ store => scope(Scope, Store) }
+    end;
+scope(Scope, Store) ->
     filter(
         Store,
         fun(StoreScope, _) ->

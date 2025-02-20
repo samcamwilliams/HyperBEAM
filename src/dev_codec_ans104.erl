@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([to/1, from/1, attest/3, verify/3, attested/3]).
+-export([id/1, to/1, from/1, attest/3, verify/3, attested/3]).
 -include("include/hb.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
@@ -24,6 +24,10 @@
         <<"bundle-version">>
     ]
 ).
+
+%% @doc Return the ID of a message.
+id(Msg) ->
+    {ok, (to(Msg))#tx.id}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
 attest(Msg, _Req, Opts) ->
@@ -109,15 +113,10 @@ do_from(RawTX) ->
                 % into messages from their tx representations.
                 maps:merge(
                     MapWithoutData,
-                    maps:map(
-                        fun(_, InnerValue) -> from(InnerValue) end,
-                        Data
-                    )
+                    maps:map(fun(_, InnerValue) -> from(InnerValue) end, Data)
                 );
-            Data when Data == ?DEFAULT_DATA ->
-                MapWithoutData;
-            Data when is_binary(Data) ->
-                MapWithoutData#{ <<"data">> => Data };
+            Data when Data == ?DEFAULT_DATA -> MapWithoutData;
+            Data when is_binary(Data) -> MapWithoutData#{ <<"data">> => Data };
             Data ->
                 ?event({unexpected_data_type, {explicit, Data}}),
                 ?event({was_processing, {explicit, TX}}),
@@ -127,7 +126,33 @@ do_from(RawTX) ->
     % are not part of the message.
     NormalizedDataMap =
         hb_converge:normalize_keys(maps:merge(DataMap, MapWithoutData)),
-    maps:without(?FILTERED_TAGS, NormalizedDataMap).
+    %% Add the attestations to the message if the TX has a signature.
+    ?event({message_before_attestations, NormalizedDataMap}),
+    WithAttestations =
+        case TX#tx.signature of
+            ?DEFAULT_SIG ->
+                NormalizedDataMap;
+            _ ->
+                Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
+                WithoutBaseAttestation =
+                    maps:without(
+                        [<<"id">>, <<"owner">>, <<"signature">>, <<"attestation-device">>],
+                        NormalizedDataMap
+                    ),
+                WithoutBaseAttestation#{
+                    <<"attestations">> => #{
+                        Address => #{
+                            <<"attestation-device">> => <<"ans104@1.0">>,
+                            <<"id">> => TX#tx.id,
+                            <<"owner">> => TX#tx.owner,
+                            <<"signature">> => TX#tx.signature
+                        }
+                    }
+                }
+        end,
+    Res = maps:without(?FILTERED_TAGS, WithAttestations),
+    ?event({message_after_attestations, Res}),
+    Res.
 
 %% @doc Internal helper to translate a message to its #tx record representation,
 %% which can then be used by ar_bundles to serialize the message. We call the 
@@ -150,12 +175,19 @@ to(RawTABM) when is_map(RawTABM) ->
     % `priv/Converge/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
-    TABM = hb_converge:normalize_keys(RawTABM),
+    TABM = hb_converge:normalize_keys(maps:without([<<"attestations">>], RawTABM)),
+    Attestations = maps:get(<<"attestations">>, RawTABM, #{}),
+    TABMWithAtt =
+        case maps:keys(Attestations) of
+            [] -> TABM;
+            [Address] -> maps:merge(TABM, maps:get(Address, Attestations));
+            _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
+        end,
     M =
-        case {maps:find(<<"path">>, TABM), hb_private:from_message(TABM)} of
+        case {maps:find(<<"path">>, TABMWithAtt), hb_private:from_message(TABMWithAtt)} of
             {{ok, _}, #{ <<"converge">> := #{ <<"original-path">> := Path } }} ->
-                maps:put(<<"path">>, Path, TABM);
-            _ -> TABM
+                maps:put(<<"path">>, Path, TABMWithAtt);
+            _ -> TABMWithAtt
         end,
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply

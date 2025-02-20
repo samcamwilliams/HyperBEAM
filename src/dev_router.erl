@@ -25,7 +25,7 @@
 %%% '''
 -module(dev_router).
 %%% Device API:
--export([routes/3, route/3]).
+-export([routes/3, route/2, route/3]).
 %%% Public utilities:
 -export([match_routes/3]).
 -include_lib("eunit/include/eunit.hrl").
@@ -67,10 +67,15 @@ routes(M1, M2, Opts) ->
             {ok, Routes}
     end.
 
-%% @doc If we have a route that has multiple resolving nodes, check
+%% @doc Find the appropriate route for the given message. If we are able to 
+%% resolve to a single host+path, we return that directly. Otherwise, we return
+%% the matching route (including a list of nodes under ``) from the list of routes.
+%% 
+%% If we have a route that has multiple resolving nodes, check
 %% the load distribution strategy and choose a node. Supported strategies:
 %% ```
-%%       Random: Distribute load evenly across all nodes, non-deterministically.
+%%       All:     Return all nodes (default).
+%%       Random:  Distribute load evenly across all nodes, non-deterministically.
 %%       By-Base: According to the base message's hashpath.
 %%       Nearest: According to the distance of the node's wallet address to the
 %%                base message's hashpath.
@@ -90,42 +95,60 @@ route(_, Msg, Opts) ->
     case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
         false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
-        Node when is_map(Node) -> apply_node(Msg, Node);
+        Node when is_map(Node) -> apply_route(Msg, Node);
         not_found ->
-            Nodes = hb_converge:get(<<"peers">>, R, Opts),
+            ModR = apply_routes(Msg, R, Opts),
             case hb_converge:get(<<"strategy">>, R, Opts) of
-                not_found -> {ok, Nodes};
+                not_found -> {ok, ModR};
+                <<"All">> -> {ok, ModR};
                 Strategy ->
                     ChooseN = hb_converge:get(<<"choose">>, R, 1, Opts),
                     Hashpath = hb_path:from_message(hashpath, R),
+                    Nodes = hb_converge:get(<<"nodes">>, ModR, Opts),
                     Chosen = choose(ChooseN, Strategy, Hashpath, Nodes, Opts),
                     case Chosen of
                         [X] when is_map(X) ->
                             {ok, hb_converge:get(<<"host">>, X, Opts)};
                         [X] -> {ok, X};
                         _ ->
-                            {ok, hb_converge:set(<<"peers">>, Chosen, Opts)}
+                            {ok, hb_converge:set(<<"nodes">>, Chosen, Opts)}
                     end
             end
     end.
+
+%% @doc Generate a `uri` key for each node in a route.
+apply_routes(Msg, R, Opts) ->
+    Nodes = hb_converge:get(<<"nodes">>, R, Opts),
+    NodesWithRouteApplied =
+        if is_list(Nodes) ->
+            lists:map(
+                fun(N) -> N#{ <<"uri">> => hb_util:ok(apply_route(Msg, N)) } end,
+                Nodes
+            );
+        is_map(Nodes) ->
+            maps:map(
+                fun(_, N) -> N#{ <<"uri">> => hb_util:ok(apply_route(Msg, N)) } end,
+                Nodes
+            )
+        end,
+    R#{ <<"nodes">> => NodesWithRouteApplied }.
 
 %% @doc Apply a node map's rules for transforming the path of the message.
 %% Supports the following keys:
 %% - `prefix': The prefix to add to the path.
 %% - `suffix': The suffix to add to the path.
 %% - `replace': A regex to replace in the path.
-apply_node(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
+apply_route(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
     {ok, <<Prefix/binary, Path/binary>>};
-apply_node(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
+apply_route(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
     {ok, <<Path/binary, Suffix/binary>>};
-apply_node(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
+apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
     % Apply the regex to the path and replace the first occurrence.
     case re:replace(Path, Match, With, [global]) of
         NewPath when is_binary(NewPath) ->
             {ok, NewPath};
         _ -> {error, invalid_replace_args}
     end.
-
 
 %% @doc Find the first matching template in a list of known routes.
 match_routes(ToMatch, Routes, Opts) ->

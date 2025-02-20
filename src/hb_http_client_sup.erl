@@ -1,5 +1,5 @@
 %%% @doc The supervisor for the gun HTTP client wrapper.
--module(ar_http_sup).
+-module(hb_http_client_sup).
 -behaviour(supervisor).
 -export([start_link/1, init/1]).
 
@@ -16,4 +16,4 @@ start_link(Opts) ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, Opts).
 
 init(Opts) ->
-	{ok, {{one_for_one, 5, 10}, [?CHILD(ar_http, worker, Opts)]}}.
+	{ok, {{one_for_one, 5, 10}, [?CHILD(hb_http_client, worker, Opts)]}}.

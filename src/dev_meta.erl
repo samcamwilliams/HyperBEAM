@@ -128,10 +128,10 @@ update_node_message(Request, NodeMsg) ->
 handle_converge(Req, Msgs, NodeMsg) ->
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
-        {ok, PreProcMsg} ->
+        {ok, PreProcessedMsg} ->
             ?event(
                 {result_after_preprocessing,
-                    hb_converge:normalize_keys(PreProcMsg)}
+                    hb_converge:normalize_keys(PreProcessedMsg)}
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
@@ -142,7 +142,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
             {ok, Res} =
                 embed_status(
                     hb_converge:resolve_many(
-                        PreProcMsg,
+                        PreProcessedMsg,
                         HTTPOpts#{ force_message => true }
                     )
                 ),
@@ -205,11 +205,15 @@ maybe_sign(Res, NodeMsg) ->
     ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
-            hb_message:attest(
-                Res,
-                hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-                hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
-            );
+            case hb_message:signers(Res) of
+                [] ->
+                    hb_message:attest(
+                        Res,
+                        hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
+                        hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
+                    );
+                _ -> Res
+            end;
         false -> Res
     end.
 
