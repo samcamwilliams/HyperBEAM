@@ -360,7 +360,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 <<"signature">> => Sig,
                 <<"signature-input">> => SigInput
             };
-        not_found -> Enc2
+        _ -> Enc2
     end.
 
 % We need to generate a unique, reproducible boundary for the
