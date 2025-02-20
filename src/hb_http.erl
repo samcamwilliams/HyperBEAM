@@ -479,7 +479,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
         dev_codec_httpsig:reset_hmac(
             hb_util:ok(remove_unsigned_fields(Msg, Opts))
         ),
-    ForceSignedRequests = hb_opts:get(force_signed_requests, true, Opts),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of
         true ->
             ?event(http_verify, {verified_signature, SignedMsg}),

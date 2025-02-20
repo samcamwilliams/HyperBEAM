@@ -228,7 +228,10 @@ join_peer(Peer, _M1, _M2, Opts) ->
                 <<"message">> => <<"Node joined green zone successfully">>
             }};
         {error, Reason} ->
-            {error, #{<<"status">> => 400, <<"reason">> => Reason}}
+            {error, #{<<"status">> => 400, <<"reason">> => Reason}};
+		{unavailable, Reason} ->
+            ?event(green_zone, {join_error, peer_unavailable, Peer, Reason}),
+            {error, #{<<"status">> => 503, <<"reason">> => <<"Service unavailable">>}}
     end.
 
 %% @doc Validate an incoming join request.

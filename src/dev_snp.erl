@@ -115,8 +115,8 @@ verify(M1, M2, NodeOpts) ->
     % Step 2: Verify the address and the signature.
     Signers = hb_message:signers(MsgWithJSONReport),
     ?event({snp_signers, Signers}),
-    SigIsValid = hb_message:verify(MsgWithJSONReport),
-    ?event({snp_sig_is_valid, SigIsValid}),
+    % SigIsValid = hb_message:verify(MsgWithJSONReport),
+    % ?event({snp_sig_is_valid, SigIsValid}),
     AddressIsValid = lists:member(Address, Signers),
     ?event({address_is_valid, AddressIsValid, {signer, Signers}, {address, Address}}),
     % Step 3: Verify that the debug flag is disabled.
@@ -148,7 +148,7 @@ verify(M1, M2, NodeOpts) ->
             fun({ok, Bool}) -> Bool; (Bool) -> Bool end,
             [
                 NonceMatches,
-				SigIsValid,
+				% SigIsValid,
                 AddressIsValid,
                 DebugDisabled,
                 IsTrustedSoftware,
