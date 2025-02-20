@@ -391,7 +391,10 @@ reply(Req, Message, Opts) ->
     reply(Req, message_to_status(Message), Message, Opts).
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, EncodedHeaders, EncodedBody} = prepare_reply(Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Message, Opts),
+    % Get the CORS request headers from the message, if they exist.
+    ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
+    EncodedHeaders = add_cors_headers(HeadersBeforeCors, ReqHdr),
     ?event(http,
         {replying,
             {status, Status},
@@ -414,8 +417,22 @@ reply(Req, Status, RawMessage, Opts) ->
                 }
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
-    Req3 = cowboy_req:stream_body(EncodedBody, fin, Req2),
+    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
+
+%% @doc Add permissive CORS headers to a message, if the message has not already
+%% specified CORS headers.
+add_cors_headers(Msg, ReqHdr) ->
+    % Keys in the given message will overwrite the defaults listed below if 
+    % included, due to `maps:merge`'s precidence order.
+    maps:merge(
+        #{
+            <<"access-control-allow-origin">> => <<"*">>,
+            <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
+            <<"access-control-allow-headers">> => ReqHdr
+        },
+        Msg
+    ).
 
 %% @doc Generate the headers and body for a HTTP response message.
 prepare_reply(Message, Opts) ->
@@ -623,3 +640,11 @@ get_deep_signed_wasm_state_test() ->
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
+
+cors_get_test() ->
+    URL = hb_http_server:start_node(),
+    {ok, Res} = get(URL, <<"/~meta@1.0/info/address">>, #{}),
+    ?assertEqual(
+        <<"*">>,
+        hb_converge:get(<<"access-control-allow-origin">>, Res, #{})
+    ).
