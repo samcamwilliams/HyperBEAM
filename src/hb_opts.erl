@@ -78,7 +78,7 @@ default_message() ->
                 <<"flat@1.0">> => dev_codec_flat,
                 <<"structured@1.0">> => dev_codec_structured,
                 <<"lookup@1.0">> => dev_lookup,
-                <<"compute-lite@1.0">> => dev_compute_lite,
+                <<"genesis-wasm@1.0">> => dev_genesis_wasm,
                 <<"test-device@1.0">> => dev_test
             },
         %% Default execution cache control options
@@ -122,13 +122,14 @@ default_message() ->
         debug_ids => false,
         debug_hide_priv => true,
 		trusted => #{},
-        % Routes for the compute-lite device to use a local CU, if requested.
         routes => [
             #{
+                % Routes for the genesis-wasm device to use a local CU, if requested.
                 <<"template">> => <<"/result/.*">>,
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             },
             #{
+                % Routes for GraphQL requests to use a remote GraphQL API.
                 <<"template">> => <<"/graphql">>,
                 <<"nodes">> =>
                     [
@@ -143,6 +144,7 @@ default_message() ->
                     ]
             },
             #{
+                % Routes for raw data requests to use a remote gateway.
                 <<"template">> => <<"/raw">>,
                 <<"node">> =>
                     #{
