@@ -534,7 +534,7 @@ encode_http_msg(Httpsig) ->
 
 % All maps are encoded into the body of the HTTP message
 % to be further encoded later.
-field_to_http(Httpsig, {Name, Value}, _Opts) when is_map(Value) ->
+field_to_http(Httpsig, {Name, Value}, _Opts) when is_map(Value); Name == <<"data">> ->
     NormalizedName = hb_converge:normalize_key(Name),
     OldBody = maps:get(<<"body">>, Httpsig, #{}),
     Httpsig#{ <<"body">> => OldBody#{ NormalizedName => Value } };
