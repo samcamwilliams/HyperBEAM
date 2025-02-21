@@ -142,7 +142,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     {response, #{status => Status, body => Body}}
                 }
             ),
-            {unavailable, Body};
+            {error, Body};
         Response ->
             ?event(
                 {http_error,
@@ -394,6 +394,8 @@ reply(Req, Message, Opts) ->
             S-> S
         end,
     reply(Req, Status, Message, Opts).
+reply(Req, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
+    reply(Req, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
     {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Message, Opts),
@@ -402,7 +404,7 @@ reply(Req, Status, RawMessage, Opts) ->
     EncodedHeaders = add_cors_headers(HeadersBeforeCors, ReqHdr),
     ?event(http,
         {replying,
-            {status, Status},
+            {status, {explicit, Status}},
             {path, maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},
             {enc_headers, EncodedHeaders},

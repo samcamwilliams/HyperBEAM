@@ -186,10 +186,17 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     end.
 
 %% @doc Wrap the result of a device call in a status.
+embed_status({ErlStatus, Res}) when is_map(Res) ->
+    case lists:member(<<"status">>, hb_message:attested(Res)) of
+        false ->
+            HTTPCode = status_code({ErlStatus, Res}),
+            {ok, Res#{ <<"status">> => HTTPCode }};
+        true ->
+            {ok, Res}
+    end;
 embed_status({ErlStatus, Res}) ->
-    HTTPCore = status_code({ErlStatus, Res}),
-    ?event(http, {setting_status, {raw, HTTPCore}}),
-    {ok, Res#{ <<"status">> => HTTPCore }}.
+    HTTPCode = status_code({ErlStatus, Res}),
+    {ok, #{ <<"status">> => HTTPCode, <<"body">> => Res }}.
 
 %% @doc Calculate the appropriate HTTP status code for a Converge result.
 %% The order of precedence is:
@@ -284,7 +291,7 @@ priv_inaccessible_test() ->
 %% the owner of the node.
 unauthorized_set_node_msg_fails_test() ->
     Node = hb_http_server:start_node(#{ priv_wallet => ar_wallet:new() }),
-    {ok, SetRes} =
+    {error, _} =
         hb_http:post(
             Node,
             hb_message:attest(
@@ -296,9 +303,7 @@ unauthorized_set_node_msg_fails_test() ->
             ),
             #{}
         ),
-    ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?event({res, Res}),
     ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
 
 %% @doc Test that we can set the node message if the request is signed by the
@@ -362,7 +367,7 @@ permanent_node_message_test() ->
     {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
-    {ok, SetRes2} =
+    {error, SetRes2} =
         hb_http:post(
             Node,
             hb_message:attest(

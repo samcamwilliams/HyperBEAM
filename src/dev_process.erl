@@ -802,7 +802,7 @@ aos_state_access_via_http_test_() ->
                     <<"path">> =>
                         <<
                             ProcID/binary,
-                            "/compute/results/outbox/1/data/body"
+                            "/compute/results/outbox/1/data"
                         >>,
                     <<"slot">> => 1
                 },
