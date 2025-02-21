@@ -7,7 +7,7 @@
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
 -export([reply/3, reply/4]).
--export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
+-export([req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -142,7 +142,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     {response, #{status => Status, body => Body}}
                 }
             ),
-            {unavailable, Body};
+            {error, Body};
         Response ->
             ?event(
                 {http_error,
@@ -388,7 +388,14 @@ empty_inbox(Ref) ->
 
 %% @doc Reply to the client's HTTP request with a message.
 reply(Req, Message, Opts) ->
-    reply(Req, message_to_status(Message), Message, Opts).
+    Status =
+        case hb_converge:get(<<"status">>, Message, Opts) of
+            not_found -> 200;
+            S-> S
+        end,
+    reply(Req, Status, Message, Opts).
+reply(Req, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
+    reply(Req, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
     {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Message, Opts),
@@ -397,7 +404,7 @@ reply(Req, Status, RawMessage, Opts) ->
     EncodedHeaders = add_cors_headers(HeadersBeforeCors, ReqHdr),
     ?event(http,
         {replying,
-            {status, Status},
+            {status, {explicit, Status}},
             {path, maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},
             {enc_headers, EncodedHeaders},
@@ -457,24 +464,6 @@ prepare_reply(Message, Opts) ->
                 ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
             }
     end.
-
-%% @doc Get the HTTP status code from a transaction (if it exists).
-message_to_status(Item) ->
-    case dev_message:get(<<"status">>, Item) of
-        {ok, RawStatus} ->
-            case is_integer(RawStatus) of
-                true -> RawStatus;
-                false -> binary_to_integer(RawStatus)
-            end;
-        _ -> 200
-    end.
-
-%% @doc Convert an HTTP status code to an atom.
-status_code(ok) -> 200;
-status_code(error) -> 400;
-status_code(created) -> 201;
-status_code(unavailable) -> 503;
-status_code(Status) -> Status.
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->

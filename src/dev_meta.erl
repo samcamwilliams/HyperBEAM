@@ -186,17 +186,51 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     end.
 
 %% @doc Wrap the result of a device call in a status.
-embed_status({error, not_found}) ->
-    {ok,
-        #{
-            <<"status">> => hb_http:status_code(not_found),
-            <<"body">> => <<"Not found.">>
-        }
-    };
-embed_status({Status, Res}) when is_map(Res) ->
-    {ok, Res#{ <<"status">> => hb_http:status_code(Status) }};
-embed_status({Status, Res}) when is_binary(Res) ->
-    {ok, #{ <<"status">> => hb_http:status_code(Status), <<"body">> => Res }}.
+embed_status({ErlStatus, Res}) when is_map(Res) ->
+    case lists:member(<<"status">>, hb_message:attested(Res)) of
+        false ->
+            HTTPCode = status_code({ErlStatus, Res}),
+            {ok, Res#{ <<"status">> => HTTPCode }};
+        true ->
+            {ok, Res}
+    end;
+embed_status({ErlStatus, Res}) ->
+    HTTPCode = status_code({ErlStatus, Res}),
+    {ok, #{ <<"status">> => HTTPCode, <<"body">> => Res }}.
+
+%% @doc Calculate the appropriate HTTP status code for a Converge result.
+%% The order of precedence is:
+%% 1. The status code from the message.
+%% 2. The HTTP representation of the status code.
+%% 3. The default status code.
+status_code({ErlStatus, Msg}) ->
+    case message_to_status(Msg) of
+        default -> status_code(ErlStatus);
+        RawStatus -> RawStatus
+    end;
+status_code(ok) -> 200;
+status_code(error) -> 400;
+status_code(created) -> 201;
+status_code(not_found) -> 404;
+status_code(unavailable) -> 503.
+
+%% @doc Get the HTTP status code from a transaction (if it exists).
+message_to_status(#{ <<"body">> := Status }) when is_atom(Status) ->
+    status_code(Status);
+message_to_status(Item) when is_map(Item) ->
+    % Note: We use `dev_message` directly here, such that we do not cause 
+    % additional Converge calls for every request. This is particularly important
+    % if a remote server is being used for all Converge requests by a node.
+    case dev_message:get(<<"status">>, Item) of
+        {ok, RawStatus} when is_integer(RawStatus) -> RawStatus;
+        {ok, RawStatus} when is_atom(RawStatus) -> status_code(RawStatus);
+        {ok, RawStatus} -> binary_to_integer(RawStatus);
+        _ -> default
+    end;
+message_to_status(Item) when is_atom(Item) ->
+    status_code(Item);
+message_to_status(_Item) ->
+    default.
 
 %% @doc Sign the result of a device call if the node is configured to do so.
 maybe_sign({Status, Res}, NodeMsg) ->
@@ -257,7 +291,7 @@ priv_inaccessible_test() ->
 %% the owner of the node.
 unauthorized_set_node_msg_fails_test() ->
     Node = hb_http_server:start_node(#{ priv_wallet => ar_wallet:new() }),
-    {ok, SetRes} =
+    {error, _} =
         hb_http:post(
             Node,
             hb_message:attest(
@@ -269,9 +303,7 @@ unauthorized_set_node_msg_fails_test() ->
             ),
             #{}
         ),
-    ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?event({res, Res}),
     ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
 
 %% @doc Test that we can set the node message if the request is signed by the
@@ -335,7 +367,7 @@ permanent_node_message_test() ->
     {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
-    {ok, SetRes2} =
+    {error, SetRes2} =
         hb_http:post(
             Node,
             hb_message:attest(

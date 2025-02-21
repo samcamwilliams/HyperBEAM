@@ -159,18 +159,17 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
 %% the server ID, which can be used to lookup the node message.
 init(Req, ServerID) ->
     case cowboy_req:method(Req) of
-        <<"OPTIONS">> ->
-            cors_reply(Req, ServerID);
-        _ ->
-            handle_request(Req, ServerID)
+        <<"OPTIONS">> -> cors_reply(Req, ServerID);
+        _ -> handle_request(Req, ServerID)
     end.
 
 %% @doc Reply to CORS preflight requests.
 cors_reply(Req, _ServerID) ->
     cowboy_req:reply(204, #{
         <<"access-control-allow-origin">> => <<"*">>,
-        <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
-        <<"access-control-allow-headers">> => <<"*">>
+        <<"access-control-allow-headers">> => <<"*">>,
+        <<"access-control-allow-methods">> =>
+            <<"GET, POST, PUT, DELETE, OPTIONS">>
     }, Req).
 
 %% @doc Handle all non-CORS preflight requests as Converge requests. Execution 

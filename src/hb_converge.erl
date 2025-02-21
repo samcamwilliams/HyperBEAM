@@ -589,8 +589,12 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
 maybe_force_message({Status, Res}, Opts) ->
     case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
         true when is_list(Res) -> {Status, normalize_keys(Res)};
-        true -> {Status, #{ <<"body">> => Res }};
-        false -> {Status, Res}
+        true ->
+            % If the result is a literal, we wrap it in a message and signal the
+            % location of the result inside.
+            {Status, #{ <<"converge-result">> => <<"body">>, <<"body">> => Res }};
+        false ->
+            {Status, Res}
     end.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
