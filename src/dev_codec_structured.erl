@@ -9,7 +9,7 @@
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
--export([to/1, from/1, attest/3, verify/3]).
+-export([to/1, from/1, attest/3, attested/3, verify/3]).
 -export([decode_value/2, encode_value/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").

@@ -1057,6 +1057,32 @@ deeply_nested_attested_keys_test() ->
         )
     ).
 
+signed_with_inner_signed_message_test(Codec) ->
+    Wallet = hb:wallet(),
+    Msg = attest(#{
+        <<"a">> => 1,
+        <<"b">> =>
+            maps:merge(
+                attest(
+                    #{
+                        <<"c">> => #{ <<"d">> => << 0:(1024*1024) >> },
+                        <<"e">> => 5
+                    },
+                    Wallet,
+                    Codec
+                ),
+                #{
+                    <<"f">> => 6,
+                    <<"g">> => 7
+                }
+            )
+    }, Wallet, Codec),
+    ?event({msg, Msg}),
+    ?assert(verify(Msg)),
+    {ok, OnlyAttested} = with_only_attested(Msg),
+    ?event({only_attested, OnlyAttested}),
+    ?assert(verify(OnlyAttested)).
+
 large_body_attested_keys_test(Codec) ->
     case Codec of
         <<"ans104@1.0">> ->

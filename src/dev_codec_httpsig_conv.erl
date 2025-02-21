@@ -37,7 +37,7 @@
 -define(CRLF, <<"\r\n">>).
 -define(DOUBLE_CRLF, <<?CRLF/binary, ?CRLF/binary>>).
 
-%% @doc Convert an HTTP Message into a TABM.
+%% @doc Convert a HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
 from(HTTP) ->
@@ -121,13 +121,14 @@ from_body_parts (TABM, []) ->
     % 
     % This prevents needing to have exceptions for <<"body-keys">>
     % during parsing (it's just another binary)
-    WithEncodedBodyKeys = case maps:get(<<"body-keys">>, TABM, undefined) of
-        undefined -> TABM;
-        % Assume already encoded
-        Bin when is_binary(Bin) -> TABM;
-        List when is_list(List) ->
-            TABM#{ <<"body-keys">> => encode_body_keys(List) }
-    end,
+    WithEncodedBodyKeys =
+        case maps:get(<<"body-keys">>, TABM, undefined) of
+            undefined -> TABM;
+            % Assume already encoded
+            Bin when is_binary(Bin) -> TABM;
+            List when is_list(List) ->
+                TABM#{ <<"body-keys">> => encode_body_keys(List) }
+        end,
     {ok, WithEncodedBodyKeys};
 from_body_parts(TABM, [Part | Rest]) ->
     % Extract the Headers block and Body. Only split on the FIRST double CRLF
@@ -192,9 +193,10 @@ from_body_parts(TABM, [Part | Rest]) ->
                         % We need to recursively parse the sub part into its own TABM
                         from(RestHeaders#{ <<"body">> => RawBody })
                 end,
+            BodyKey = hd(binary:split(PartName, <<"/">>)),
             TABMNext = TABM#{
                 PartName => ParsedPart,
-                <<"body-keys">> => maps:get(<<"body-keys">>, TABM, []) ++ [PartName]
+                <<"body-keys">> => maps:get(<<"body-keys">>, TABM, []) ++ [BodyKey]
             },
             from_body_parts(TABMNext, Rest)
     end.
