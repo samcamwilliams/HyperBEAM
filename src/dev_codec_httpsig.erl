@@ -175,16 +175,22 @@ attested(Msg, _Req, _Opts) ->
     ),
     Signed =
         [<<"signature">>, <<"signature-input">>] ++
-            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
+            remove_derived_specifiers(BinComponentIdentifiers),
     case lists:member(<<"content-digest">>, Signed) of
         false -> {ok, Signed};
         true ->
             {ok,
                 Signed
                     ++ [<<"body">>]
-                    ++ normalize_body_keys(
-                        maps:get(<<"body-keys">>, Msg, [])
-                    )
+                    ++ case maps:get(<<"body-keys">>, Msg, []) of
+                        [] -> [];
+                        RawBodyKeys ->
+                            BodyKeysItems = dev_codec_structured_conv:parse_list(RawBodyKeys),
+                            normalize_body_keys(lists:map(
+                                fun({ item, {_, BodyKey }, _}) -> BodyKey end,
+                                BodyKeysItems
+                            ))
+                    end
             }
     end.
 
