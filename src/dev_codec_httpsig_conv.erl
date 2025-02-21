@@ -370,7 +370,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 <<"signature">> => Sig,
                 <<"signature-input">> => SigInput
             };
-        not_found -> Enc2
+        _ -> Enc2
     end.
 
 encode_body_keys(PartList) when is_list(PartList) ->

@@ -2,7 +2,7 @@
 %%% implementing the JSON-Iface. This can be used either as a standalone, to 
 %%% bring trusted results into the local node, or as the `Execution-Device' of
 %%% an AO process.
--module(dev_compute_lite).
+-module(dev_genesis_wasm).
 -export([init/3, compute/3, normalize/3, snapshot/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").

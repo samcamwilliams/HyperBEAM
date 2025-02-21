@@ -160,23 +160,42 @@ schedule(Msg1, Msg2, Opts) ->
 %% for this scheduler. If so, it schedules the message and returns the assignment.
 post_schedule(Msg1, Msg2, Opts) ->
     ?event(scheduling_message),
+    % Find the target message to schedule:
     ToSched = find_message_to_schedule(Msg1, Msg2, Opts),
     ?event({to_sched, ToSched}),
+    % Find the ProcessID of the target message:
+    % - If it is a Process, use the ID of the message.
+    % - If not, use the target as the ProcessID.
     ProcID =
         case hb_converge:get(<<"type">>, ToSched, not_found, Opts) of
-            <<"Process">> ->
-                hb_message:id(ToSched, all);
+            <<"Process">> -> hb_message:id(ToSched, all);
             _ ->
                 case hb_converge:get(<<"target">>, ToSched, not_found, Opts) of
-                    not_found ->
-                        find_schedule_id(Msg1, Msg2, Opts);
+                    not_found -> find_target_id(Msg1, Msg2, Opts);
                     Target -> Target
                 end
         end,
     ?event({proc_id, ProcID}),
+    % Filter all unsigned keys from the source message.
     case hb_message:with_only_attested(ToSched) of
-        {ok, Filtered} ->
-            do_post_schedule(ProcID, Filtered, Msg1, Opts);
+        {ok, OnlyAttested} ->
+            ?event(
+                {post_schedule,
+                    {schedule_id, ProcID},
+                    {message, ToSched}
+                }
+            ),
+            % Find the relevant scheduler server for the given process and
+            % message, start a new one if necessary, or return a redirect to the
+            % correct remote scheduler.
+            case find_server(ProcID, Msg1, ToSched, Opts) of
+                {local, PID} ->
+                    ?event({scheduling_message_locally, {proc_id, ProcID}, {pid, PID}}),
+                    do_post_schedule(ProcID, PID, OnlyAttested, Opts);
+                {redirect, Redirect} ->
+                    ?event({redirecting_to_scheduler, {redirect, Redirect}}),
+                    {ok, Redirect}
+            end;
         {error, _} ->
             {ok,
                 #{
@@ -186,59 +205,18 @@ post_schedule(Msg1, Msg2, Opts) ->
             }
     end.
 
-%% @doc Post schedule the message.
-do_post_schedule(ProcID, ToSched, Msg1, Opts) ->
-    PID =
-        case dev_scheduler_registry:find(ProcID, false, Opts) of
-            not_found ->
-                % Check if we are the scheduler for this process.
-                Address = hb_util:human_id(ar_wallet:to_address(
-                    hb_opts:get(priv_wallet, hb:wallet(), Opts))),
-                Proc = find_process(Msg1, Opts),
-                SchedLoc =
-                    hb_converge:get_first(
-                        [
-                            {Proc, <<"scheduler-location">>},
-                            {ToSched, <<"scheduler-location">>},
-                            {Proc, <<"scheduler">>},
-                            {ToSched, <<"scheduler">>}
-                        ],
-                        not_found,
-                        Opts#{ hashpath => ignore }
-                    ),
-                case SchedLoc of
-                    Address ->
-                        % Start the scheduler process if we are the scheduler.
-                        dev_scheduler_registry:find(ProcID, true, Opts);
-                    not_found ->
-                        throw(
-                            {scheduler_location_not_found,
-                                {proc_id, ProcID}
-                            }
-                        );
-                    ProcScheduler ->
-                        throw(
-                            {scheduler_location_mismatch,
-                                {local, Address},
-                                {required, ProcScheduler}
-                            }
-                        )
-                end;
-            Proc -> Proc
-        end,
-    ?event(
-        {post_schedule,
-            {schedule_id, ProcID},
-            {scheduler_pid, PID},
-            {message, ToSched}
-        }
-    ),
+%% @doc Post schedule the message. `Msg2` by this point has been refined to only
+%% attested keys, and to only include the `target' message that is to be
+%% scheduled.
+do_post_schedule(ProcID, PID, Msg2, Opts) ->
+    % Should we verify the message again before scheduling?
     Verified =
         case hb_opts:get(verify_assignments, true, Opts) of
-            true -> hb_message:verify(ToSched, signers);
+            true -> hb_message:verify(Msg2, signers);
             false -> true
         end,
-    case {Verified, hb_converge:get(type, ToSched)} of
+    % Handle scheduling of the message if the message is valid.
+    case {Verified, hb_converge:get(<<"type">>, Msg2, Opts)} of
         {false, _} ->
             {ok,
                 #{
@@ -247,8 +225,8 @@ do_post_schedule(ProcID, ToSched, Msg1, Opts) ->
                 }
             };
         {true, <<"Process">>} ->
-            hb_cache:write(ToSched, Opts),
-            spawn(fun() -> hb_client:upload(ToSched) end),
+            hb_cache:write(Msg2, Opts),
+            spawn(fun() -> hb_client:upload(Msg2) end),
             ?event(
                 {registering_new_process,
                     {proc_id, ProcID},
@@ -256,16 +234,108 @@ do_post_schedule(ProcID, ToSched, Msg1, Opts) ->
                     {is_alive, is_process_alive(PID)}
                 }
             ),
-            {ok, dev_scheduler_server:schedule(PID, ToSched)};
+            {ok, dev_scheduler_server:schedule(PID, Msg2)};
         {true, _} ->
             % If Message2 is not a process, use the ID of Message1 as the PID
-            {ok, dev_scheduler_server:schedule(PID, ToSched)}
+            {ok, dev_scheduler_server:schedule(PID, Msg2)}
+    end.
+
+%% @doc Locate the correct scheduling server for a given process.
+find_server(ProcID, Msg1, Opts) ->
+    find_server(ProcID, Msg1, undefined, Opts).
+find_server(ProcID, Msg1, ToSched, Opts) ->
+    case get_hint(ProcID, Opts) of
+        {ok, Hint} ->
+            ?event({found_hint_in_proc_id, Hint}),
+            generate_redirect(ProcID, Hint);
+        not_found ->
+            ?event({no_hint_in_proc_id, ProcID}),
+            case dev_scheduler_registry:find(ProcID, false, Opts) of
+                PID when is_pid(PID) ->
+                    ?event({found_pid_in_local_registry, PID}),
+                    {local, PID};
+                not_found ->
+                    ?event({no_pid_in_local_registry, ProcID}),
+                    % Find the process from the message.
+                    Proc = find_process(Msg1, Opts),
+                    ?event({found_process, Proc}),
+                    % Check if we are the scheduler for this process.
+                    Address = hb_util:human_id(ar_wallet:to_address(
+                        hb_opts:get(priv_wallet, hb:wallet(), Opts))),
+                    ?event({local_address, Address}),
+                    SchedLoc =
+                        hb_converge:get_first(
+                            [
+                                {Proc, <<"scheduler">>},
+                                {Proc, <<"scheduler-location">>}
+                            ] ++
+                            case ToSched of
+                                undefined -> [];
+                                _ -> [{ToSched, <<"scheduler-location">>}]
+                            end,
+                            not_found,
+                            Opts#{ hashpath => ignore }
+                        ),
+                    ?event({sched_loc, SchedLoc}),
+                    case SchedLoc of
+                        Address ->
+                            % We are the scheduler. Start the server if it has not already
+                            % been started.
+                            {local, dev_scheduler_registry:find(ProcID, true, Opts)};
+                        _ ->
+                            % We are not the scheduler. Find it and return a redirect.
+                            find_remote_scheduler(ProcID, SchedLoc, Opts)
+                    end
+            end
+    end.
+
+%% @doc If a hint is present in the string, return it. Else, return not_found.
+get_hint(Str, Opts) ->
+    case hb_opts:get(scheduler_follow_hints, true, Opts) of
+        true ->
+            case binary:split(Str, <<"?">>, [global]) of
+                [_, QS] ->
+                    QueryMap = maps:from_list(uri_string:dissect_query(QS)),
+                    case maps:get(<<"hint">>, QueryMap, not_found) of
+                        not_found -> not_found;
+                        Hint -> {ok, Hint}
+                    end;
+                _ -> not_found
+            end;
+        false -> not_found
+    end.
+
+%% @doc Generate a redirect message to a scheduler.
+generate_redirect(ProcID, URL) ->
+    {redirect,
+        #{
+            <<"status">> => 307,
+            <<"location">> => <<URL/binary, "/", ProcID/binary>>,
+            <<"method">> => <<"POST">>,
+            <<"body">> => <<"Redirecting to scheduler: ", URL/binary>>
+        }
+    }.
+
+%% @doc Use the SchedulerLocation to the remote path and return a redirect.
+find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
+    % Parse the SchedulerLocation to see if it has a hint. If there is a hint,
+    % we will use it to construct a redirect message.
+    case get_hint(SchedulerLocation, Opts) of
+        {ok, Hint} ->
+            % We have a hint. Construct a redirect message.
+            generate_redirect(ProcID, Hint);
+        not_found ->
+            {ok, SchedMsg} =
+                hb_gateway_client:scheduler_location(SchedulerLocation, Opts),
+            {ok, SchedURL} = hb_converge:resolve(SchedMsg, <<"url">>, Opts),
+            % We have a valid path. Construct a redirect message.
+            generate_redirect(ProcID, SchedURL)
     end.
 
 %% @doc Returns information about the current slot for a process.
 slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
-    ProcID = find_schedule_id(M1, M2, Opts),
+    ProcID = find_target_id(M1, M2, Opts),
     ?event({getting_current_slot, {proc_id, ProcID}}),
     {Timestamp, Hash, Height} = ar_timestamp:get(),
     #{ current := CurrentSlot, wallet := Wallet } =
@@ -282,8 +352,11 @@ slot(M1, M2, Opts) ->
         <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
     }}.
 
+%% @doc Generate and return a schedule for a process, optionally between
+%% two slots -- labelled as `from' and `to'. If the schedule is not local,
+%% we redirect to the remote scheduler or proxy based on the node opts.
 get_schedule(Msg1, Msg2, Opts) ->
-    ProcID = find_schedule_id(Msg1, Msg2, Opts),
+    ProcID = find_target_id(Msg1, Msg2, Opts),
     From =
         case hb_converge:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
@@ -298,15 +371,17 @@ get_schedule(Msg1, Msg2, Opts) ->
                     not_found ->
                         {Slot, _} = dev_scheduler_cache:latest(ProcID, Opts),
                         Slot;
-                    Pid ->
-                        maps:get(current,
-                            dev_scheduler_server:info(Pid)
-                        )
+                    Pid -> maps:get(current, dev_scheduler_server:info(Pid))
                 end;
             ToRes -> ToRes
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
-    gen_schedule(Format, ProcID, From, To, Opts).
+    case find_server(ProcID, Msg1, Opts) of
+        {local, _PID} ->
+            generate_local_schedule(Format, ProcID, From, To, Opts);
+        {redirect, Redirect} ->
+            {ok, Redirect}
+    end.
 
 %%% Private methods
 
@@ -318,7 +393,7 @@ get_schedule(Msg1, Msg2, Opts) ->
 %% 4. `Msg1/process/id'
 %% 5. `Msg1/id' when `Msg1' has `type: Process'
 %% 6. `Msg2/id'
-find_schedule_id(Msg1, Msg2, Opts) ->
+find_target_id(Msg1, Msg2, Opts) ->
     TempOpts = Opts#{ hashpath => ignore },
     Res = case hb_converge:resolve(Msg2, <<"target">>, TempOpts) of
         {ok, Target} ->
@@ -334,16 +409,16 @@ find_schedule_id(Msg1, Msg2, Opts) ->
                         {ok, ID} ->
                             % ID found at Msg1/process/id
                             ID;
-                    _ ->
-                        % Does the message have a type of Process?
-                        case hb_converge:get(<<"type">>, Msg1, TempOpts) of
-                            <<"Process">> ->
-                                % Yes, so try Msg1/id
-                                hb_message:id(Msg1, all);
-                            _ ->
-                                % No, so the ID is at Msg2/id
-                                hb_message:id(Msg2, all)
-                        end
+                        _ ->
+                            % Does the message have a type of Process?
+                            case hb_converge:get(<<"type">>, Msg1, TempOpts) of
+                                <<"Process">> ->
+                                    % Yes, so try Msg1/id
+                                    hb_message:id(Msg1, all);
+                                _ ->
+                                    % No, so the ID is at Msg2/id
+                                    hb_message:id(Msg2, all)
+                            end
                 end
             end
     end,
@@ -367,7 +442,7 @@ find_process(Msg, Opts) ->
     hb_converge:get(<<"process">>, Msg, Msg, Opts#{ hashpath => ignore }).
 
 %% @doc Generate a `GET /schedule' response for a process.
-gen_schedule(Format, ProcID, From, To, Opts) ->
+generate_local_schedule(Format, ProcID, From, To, Opts) ->
     ?event(
         {servicing_request_for_assignments,
             {proc_id, ProcID},
@@ -375,10 +450,11 @@ gen_schedule(Format, ProcID, From, To, Opts) ->
             {to, To}
         }
     ),
-    {Assignments, More} = get_assignments(ProcID, From, To, Opts),
+    ?event(generating_schedule_from_local_server),
+    {Assignments, More} = get_local_assignments(ProcID, From, To, Opts),
     ?event({got_assignments, length(Assignments), {more, More}}),
-    % Determine and apply the formatting function to use for generation of the
-    % response, based on the `Accept' header.
+    % Determine and apply the formatting function to use for generation 
+    % of the response, based on the `Accept' header.
     FormatterFun =
         case Format of
             <<"application/aos-2">> ->
@@ -391,14 +467,17 @@ gen_schedule(Format, ProcID, From, To, Opts) ->
     Res.
 
 %% @doc Get the assignments for a process, and whether the request was truncated.
-get_assignments(ProcID, From, RequestedTo, Opts) ->
+get_local_assignments(ProcID, From, RequestedTo, Opts) ->
     ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
     ComputedTo =
         case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
             true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
             false -> RequestedTo
         end,
-    {do_get_assignments(ProcID, From, ComputedTo, Opts), ComputedTo =/= RequestedTo }.
+    {
+        do_get_assignments(ProcID, From, ComputedTo, Opts),
+        ComputedTo =/= RequestedTo
+    }.
 
 %% @doc Get the assignments for a process.
 do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
@@ -427,12 +506,12 @@ checkpoint(State) -> {ok, State}.
 %% @doc Generate a _transformed_ process message, not as they are generated 
 %% by users. See `dev_process' for examples of AO process messages.
 test_process() -> test_process(hb:wallet()).
-test_process(Wallet) ->
-    Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+test_process(Wallet) when not is_binary(Wallet) ->
+    test_process(hb_util:human_id(ar_wallet:to_address(Wallet)));
+test_process(Address) ->
     #{
         <<"device">> => <<"scheduler@1.0">>,
-        <<"device-stack">> =>
-            [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
+        <<"device-stack">> => [<<"Cron@1.0">>, <<"WASM-64@1.0">>, <<"PODA@1.0">>],
         <<"image">> => <<"wasm-image-id">>,
         <<"type">> => <<"Process">>,
         <<"scheduler-location">> => Address,
@@ -498,7 +577,50 @@ schedule_message_and_get_slot_test() ->
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
 
-get_schedule_test() ->
+redirect_to_hint_test() ->
+    start(),
+    RandAddr = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    TestLoc = <<"http://test.computer">>,
+    Msg1 = test_process(<< RandAddr/binary, "?hint=", TestLoc/binary>>),
+    Msg2 = #{
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => Msg1
+    },
+    ?assertMatch(
+        {ok, #{ <<"location">> := Location }} when is_binary(Location),
+        hb_converge:resolve(Msg1, Msg2, #{ scheduler_follow_hints => true })).
+
+redirect_from_graphql_test() ->
+    start(),
+    Opts =
+        #{ store =>
+            [
+                {hb_store_fs, #{ prefix => "main-cache" }},
+                {hb_store_gateway, #{}}
+            ]
+        },
+    {ok, Msg} = hb_cache:read(<<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>, Opts),
+    ?assertMatch(
+        {ok, #{ <<"location">> := Location }} when is_binary(Location),
+        hb_converge:resolve(
+            Msg,
+            #{
+                <<"path">> => <<"schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                    hb_message:attest(#{
+                        <<"type">> => <<"Message">>,
+                        <<"target">> =>
+                            <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>,
+                        <<"test-key">> => <<"Test-Val">>
+                    }, hb:wallet())
+            },
+            #{}
+        )
+    ).
+
+get_local_schedule_test() ->
     start(),
     Msg1 = test_process(),
     Msg2 = #{
@@ -572,6 +694,20 @@ http_get_schedule(N, PMsg, From, To, Format) ->
         <<"to">> => To,
         <<"accept">> => Format
     }, Wallet), #{}).
+
+http_get_schedule_redirect_test() ->
+    Opts =
+        #{ store =>
+            [
+                {hb_store_fs, #{ prefix => "main-cache" }},
+                {hb_store_gateway, #{}}
+            ]
+        },
+    {N, _Wallet} = http_init(Opts),
+    start(),
+    ProcID = <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>,
+    Res = hb_http:get(N, <<"/", ProcID/binary, "/schedule">>, #{}),
+    ?assertMatch({ok, #{ <<"location">> := Location }} when is_binary(Location), Res).
 
 http_post_schedule_test() ->
     {N, W} = http_init(),

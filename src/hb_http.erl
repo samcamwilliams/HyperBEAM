@@ -7,7 +7,7 @@
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
 -export([reply/3, reply/4]).
--export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
+-export([req_to_tabm_singleton/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -142,7 +142,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     {response, #{status => Status, body => Body}}
                 }
             ),
-            {unavailable, Body};
+            {error, Body};
         Response ->
             ?event(
                 {http_error,
@@ -388,13 +388,23 @@ empty_inbox(Ref) ->
 
 %% @doc Reply to the client's HTTP request with a message.
 reply(Req, Message, Opts) ->
-    reply(Req, message_to_status(Message), Message, Opts).
+    Status =
+        case hb_converge:get(<<"status">>, Message, Opts) of
+            not_found -> 200;
+            S-> S
+        end,
+    reply(Req, Status, Message, Opts).
+reply(Req, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
+    reply(Req, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, EncodedHeaders, EncodedBody} = prepare_reply(Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Message, Opts),
+    % Get the CORS request headers from the message, if they exist.
+    ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
+    EncodedHeaders = add_cors_headers(HeadersBeforeCors, ReqHdr),
     ?event(http,
         {replying,
-            {status, Status},
+            {status, {explicit, Status}},
             {path, maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},
             {enc_headers, EncodedHeaders},
@@ -414,8 +424,22 @@ reply(Req, Status, RawMessage, Opts) ->
                 }
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
-    Req3 = cowboy_req:stream_body(EncodedBody, fin, Req2),
+    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
     {ok, Req3, no_state}.
+
+%% @doc Add permissive CORS headers to a message, if the message has not already
+%% specified CORS headers.
+add_cors_headers(Msg, ReqHdr) ->
+    % Keys in the given message will overwrite the defaults listed below if 
+    % included, due to `maps:merge`'s precidence order.
+    maps:merge(
+        #{
+            <<"access-control-allow-origin">> => <<"*">>,
+            <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>,
+            <<"access-control-allow-headers">> => ReqHdr
+        },
+        Msg
+    ).
 
 %% @doc Generate the headers and body for a HTTP response message.
 prepare_reply(Message, Opts) ->
@@ -440,24 +464,6 @@ prepare_reply(Message, Opts) ->
                 ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
             }
     end.
-
-%% @doc Get the HTTP status code from a transaction (if it exists).
-message_to_status(Item) ->
-    case dev_message:get(<<"status">>, Item) of
-        {ok, RawStatus} ->
-            case is_integer(RawStatus) of
-                true -> RawStatus;
-                false -> binary_to_integer(RawStatus)
-            end;
-        _ -> 200
-    end.
-
-%% @doc Convert an HTTP status code to an atom.
-status_code(ok) -> 200;
-status_code(error) -> 400;
-status_code(created) -> 201;
-status_code(unavailable) -> 503;
-status_code(Status) -> Status.
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->
@@ -623,3 +629,11 @@ get_deep_signed_wasm_state_test() ->
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
+
+cors_get_test() ->
+    URL = hb_http_server:start_node(),
+    {ok, Res} = get(URL, <<"/~meta@1.0/info/address">>, #{}),
+    ?assertEqual(
+        <<"*">>,
+        hb_converge:get(<<"access-control-allow-origin">>, Res, #{})
+    ).
