@@ -169,7 +169,7 @@ cors_reply(Req, _ServerID) ->
         <<"access-control-allow-origin">> => <<"*">>,
         <<"access-control-allow-headers">> => <<"*">>,
         <<"access-control-allow-methods">> =>
-            <<"GET, POST, PUT, DELETE, OPTIONS">>
+            <<"GET, POST, PUT, DELETE, OPTIONS, PATCH">>
     }, Req).
 
 %% @doc Handle all non-CORS preflight requests as Converge requests. Execution 
@@ -187,7 +187,7 @@ handle_request(Req, ServerID) ->
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->
-    {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>, <<"OPTIONS">>], Req, State}.
+    {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>, <<"OPTIONS">>, <<"PATCH">>], Req, State}.
 
 %% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.

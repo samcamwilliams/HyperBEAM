@@ -65,7 +65,8 @@ info(_Msg1) ->
     #{
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3,
-        await => fun dev_process_worker:await/5
+        await => fun dev_process_worker:await/5,
+        exclude => [<<"test">>]
     }.
 
 %% @doc Wraps functions in the Scheduler device.
@@ -383,7 +384,7 @@ ensure_loaded(Msg1, Msg2, Opts) ->
 %% to the original device if the device is the same as we left it.
 run_as(Key, Msg1, Msg2, Opts) ->
     BaseDevice = hb_converge:get(<<"device">>, {as, dev_message, Msg1}, Opts),
-    %?event({running_as, {key, Key}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event({running_as, {key, {explicit, Key}}, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok, PreparedMsg} =
         dev_message:set(
             ensure_process_key(Msg1, Opts),
@@ -478,17 +479,20 @@ test_wasm_process(WASMImage, Opts) ->
 test_aos_process() ->
     test_aos_process(#{}).
 test_aos_process(Opts) ->
+    test_aos_process(Opts, [
+        <<"WASI@1.0">>,
+        <<"JSON-Iface@1.0">>,
+        <<"WASM-64@1.0">>,
+        <<"Multipass@1.0">>
+    ]).
+test_aos_process(Opts, Stack) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
     hb_message:attest(maps:merge(WASMProc, #{
-        <<"device-stack">> =>
-            [
-                <<"WASI@1.0">>,
-                <<"JSON-Iface@1.0">>,
-                <<"WASM-64@1.0">>,
-                <<"Multipass@1.0">>
-            ],
+        <<"device-stack">> => Stack,
+        <<"execution-device">> => <<"stack@1.0">>,
+        <<"scheduler-device">> => <<"scheduler@1.0">>,
         <<"output-prefix">> => <<"wasm">>,
         <<"passes">> => 2,
         <<"stack-keys">> =>
@@ -817,6 +821,35 @@ aos_state_access_via_http_test_() ->
         ),
         ?assertMatch(#{ <<"body">> := <<"<h1>Hello, world!</h1>">> }, Msg4),
         ok
+    end}.
+
+aos_state_patch_test_() ->
+    {timeout, 30, fun() ->
+        Wallet = hb:wallet(),
+        init(),
+        Msg1 = test_aos_process(#{}, [
+            <<"WASI@1.0">>,
+            <<"JSON-Iface@1.0">>,
+            <<"WASM-64@1.0">>,
+            <<"patch@1.0">>,
+            <<"Multipass@1.0">>
+        ]),
+        ProcID = hb_message:id(Msg1),
+        Msg2 = (hb_message:attest(#{
+            <<"data-prefix">> => <<"ao">>,
+            <<"variant">> => <<"ao.N.1">>,
+            <<"target">> => ProcID,
+            <<"type">> => <<"Message">>,
+            <<"action">> => <<"Eval">>,
+            <<"data">> => <<"table.insert(ao.outbox.Messages, { method = \"PATCH\", x = \"banana\" })">>
+        }, Wallet))#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
+        {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}),
+        Msg3 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
+        {ok, Msg4} = hb_converge:resolve(Msg1, Msg3, #{}),
+        ?event({computed_message, {msg3, Msg4}}),
+        {ok, Data} = hb_converge:resolve(Msg4, <<"x">>, #{}),
+        ?event({computed_data, Data}),
+        ?assertEqual(<<"banana">>, Data)
     end}.
 
 %% @doc Manually test state restoration without using the cache.
