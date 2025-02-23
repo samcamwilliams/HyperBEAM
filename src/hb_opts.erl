@@ -42,9 +42,6 @@ default_message() ->
         bundler => <<"https://up.arweave.net">>,
         %% Location of the wallet keyfile on disk that this node will use.
         key_location => <<"hyperbeam-key.json">>,
-        %% Default page limit for pagination of results from the APIs.
-        %% Currently used in the SU devices.
-        default_page_limit => 5,
         %% The time-to-live that should be specified when we register
         %% ourselves as a scheduler on the network.
         scheduler_location_ttl => 60 * 60 * 24 * 30,
@@ -103,13 +100,10 @@ default_message() ->
         http_response_timeout => 30000,
         http_keepalive => 120000,
         http_request_send_timeout => 60000,
-        http_default_remote_port => 8734,
         port => 8734,
         wasm_allow_aot => false,
         %% Options for the relay device
         relay_http_client => httpc,
-        %% Options for the GraphQL device
-        graphql_http_client => httpc,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,
@@ -158,7 +152,7 @@ default_message() ->
         http_extra_opts =>
             #{
                 force_message => true,
-                store => [{hb_store_fs, #{ prefix => "main-cache" }}, {hb_store_gateway, #{}}],
+                store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}, {hb_store_gateway, #{}}],
                 cache_control => [<<"always">>]
             },
         % Should the node store all signed messages?
