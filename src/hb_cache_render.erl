@@ -1,26 +1,29 @@
 %%% @doc A module that helps to render given Key graphs into the .dot files
 -module(hb_cache_render).
-
--export([render/1, render/3]).
-
+-export([render/1, render/2, render/3]).
 % Preparing data for testing
--export([prepare_unsigned_data/0, prepare_signed_data/0, prepare_deeply_nested_complex_message/0]).
-
+-export([prepare_unsigned_data/0, prepare_signed_data/0,
+    prepare_deeply_nested_complex_message/0]).
 -include("src/include/hb.hrl").
--include_lib("kernel/include/file.hrl").
 
 % @doc Render the given Key into svg
-render("*") ->
-    Store = get_test_store(),
+render(StoreOrOpts) ->
+    render(all, StoreOrOpts).
+render(ToRender, StoreOrOpts) when is_map(StoreOrOpts) ->
+    Store = hb_opts:get(store, no_viable_store, StoreOrOpts),
+    render(ToRender, Store);
+render(InitPath, Store) when is_binary(InitPath) ->
+    {ok, Keys} = hb_store:list(Store, InitPath),
+    render(Keys, Store);
+render(all, Store) ->
     {ok, Keys} = hb_store:list(Store, "/"),
-    render(Keys);
-render(StartKeys) ->
-    Store = get_test_store(),
+    render(Keys, Store);
+render(Keys, Store) ->
     os:cmd("rm new_render_diagram.dot"),
     {ok, IoDevice} = file:open("new_render_diagram.dot", [write]),
     ok = file:write(IoDevice, <<"digraph filesystem {\n">>),
     ok = file:write(IoDevice, <<"  node [shape=circle];\n">>),
-    lists:foreach(fun(Key) -> render(IoDevice, Store, Key) end, StartKeys),
+    lists:foreach(fun(Key) -> render(IoDevice, Store, Key) end, Keys),
     ok = file:write(IoDevice, <<"}\n">>),
     file:close(IoDevice),
     os:cmd("dot -Tsvg new_render_diagram.dot -o new_render_diagram.svg"),
