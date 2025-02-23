@@ -145,18 +145,11 @@ compute(Msg1, Msg2, Opts) ->
             ),
             {ok, Result};
         not_found ->
-            {ok, Loaded} =
-                ensure_loaded(
-                    ProcBase,
-                    Msg2,
-                    Opts
-                ),
-            ?event(compute, {loaded, {process_id, ProcID}, {slot, Slot}, {loaded, Loaded}}, Opts),
-            {ok, Normalized} = run_as(<<"execution">>, Loaded, normalize, Opts),
+            {ok, Loaded} = ensure_loaded(ProcBase, Msg2, Opts),
             ?event(compute, {computing, {process_id, ProcID}, {slot, Slot}}, Opts),
             do_compute(
                 ProcID,
-                Normalized,
+                Loaded,
                 Msg2,
                 Slot,
                 Opts
@@ -363,7 +356,9 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this.
                     ?event(snapshot, {loaded_state_checkpoint, ProcID, LoadedSlot}),
-                    {ok, SnapshotMsg};
+                    {ok, Normalized} = run_as(<<"execution">>, SnapshotMsg, normalize, Opts),
+                    NormalizedWithoutSnapshot = maps:remove(<<"snapshot">>, Normalized),
+                    {ok, NormalizedWithoutSnapshot};
                 not_found ->
                     % If we do not have a checkpoint, initialize the
                     % process from scratch.
