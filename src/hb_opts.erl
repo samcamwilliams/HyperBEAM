@@ -37,11 +37,11 @@ default_message() ->
         %% Options: aggressive, lazy
         compute_mode => lazy,
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
-        http_host => <<"localhost">>,
+        host => <<"localhost">>,
         gateway => <<"https://arweave.net">>,
         bundler => <<"https://up.arweave.net">>,
         %% Location of the wallet keyfile on disk that this node will use.
-        key_location => <<"hyperbeam-key.json">>,
+        priv_key_location => <<"hyperbeam-key.json">>,
         %% The time-to-live that should be specified when we register
         %% ourselves as a scheduler on the network.
         scheduler_location_ttl => 60 * 60 * 24 * 30,
@@ -97,7 +97,6 @@ default_message() ->
         client_error_strategy => throw,
         %% HTTP request options
         http_connect_timeout => 5000,
-        http_response_timeout => 30000,
         http_keepalive => 120000,
         http_request_send_timeout => 60000,
         port => 8734,
@@ -204,7 +203,7 @@ get(Key, Default, Opts) ->
 
 -define(ENV_KEYS,
     #{
-        key_location => {"HB_KEY", "hyperbeam-key.json"},
+        priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
         port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
             {"HB_STORE",
