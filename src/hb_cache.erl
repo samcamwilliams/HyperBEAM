@@ -90,7 +90,9 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     % still have a group in the store.
     hb_store:make_group(Store, UnattestedID),
     maps:map(
-        fun(Key, Value) ->
+        fun(<<"device">>, Map) when is_map(Map) ->
+            throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
+        (Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
             KeyHashPath =
                 hb_path:hashpath(
@@ -386,3 +388,13 @@ cache_suite_test_() ->
         {"deeply nested complex message", fun test_deeply_nested_complex_message/1},
         {"message with message", fun test_message_with_message/1}
     ]).
+
+read_cycle_test() ->
+    Opts = #{ store => StoreOpts = [{hb_store_fs,#{prefix => "debug-cache"}}] },
+    hb_store:reset(StoreOpts),
+    Danger = #{ <<"device">> => #{}},
+    ID = hb_util:human_id(hb_message:id(Danger)),
+    IDEmpty = hb_util:human_id(hb_message:id(#{})),
+    IDDevice = hb_util:human_id(hb_message:id(#{ <<"device">> => #{ <<"device">> => #{}} })),
+    ?event({calculated_ids, {danger, ID}, {empty, IDEmpty}, {device, IDDevice}}),
+    ?assertThrow({device_map_cannot_be_written, {id, IDDevice}}, write(Danger, Opts)).
