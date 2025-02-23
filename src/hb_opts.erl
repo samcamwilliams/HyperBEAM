@@ -79,6 +79,8 @@ default_message() ->
                 <<"structured@1.0">> => dev_codec_structured,
                 <<"lookup@1.0">> => dev_lookup,
                 <<"genesis-wasm@1.0">> => dev_genesis_wasm,
+                <<"delegated-compute@1.0">> => dev_delegated_compute,
+                <<"patch@1.0">> => dev_patch,
                 <<"test-device@1.0">> => dev_test
             },
         %% Default execution cache control options
