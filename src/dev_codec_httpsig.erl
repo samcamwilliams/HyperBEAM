@@ -105,7 +105,6 @@ id(Msg, Params, Opts) ->
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
         _ ->
-            ?event(regenerating_id),
             {ok, ResetMsg} = reset_hmac(Msg),
             {ok, ID} = find_id(ResetMsg),
             {ok, ID}
