@@ -121,7 +121,7 @@ start_mainnet(Opts) ->
         os_mon,
         rocksdb
     ]),
-    Wallet = hb:wallet(hb_opts:get(key_location)),
+    Wallet = hb:wallet(hb_opts:get(priv_key_location)),
     BaseOpts = hb_http_server:set_default_opts(Opts),
     hb_http_server:start_node(
         FinalOpts =
@@ -200,7 +200,7 @@ topup(Node, Amount, Recipient, Wallet) ->
     hb_http:get(Node, Message, #{}).
 
 wallet() ->
-    wallet(hb_opts:get(key_location)).
+    wallet(hb_opts:get(priv_key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} ->
@@ -212,7 +212,7 @@ wallet(Location) ->
     end.
 
 %% @doc Get the address of a wallet. Defaults to the address of the wallet
-%% specified by the `key_location' configuration key. It can also take a
+%% specified by the `priv_key_location' configuration key. It can also take a
 %% wallet tuple as an argument.
 address() -> address(wallet()).
 address(Wallet) when is_tuple(Wallet) ->
