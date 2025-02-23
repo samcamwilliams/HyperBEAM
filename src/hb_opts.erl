@@ -13,7 +13,7 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, default_message/0]).
+-export([get/1, get/2, get/3, load/1, default_message/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -21,6 +21,7 @@
 default_message() ->
     #{
         %%%%%%%% Functional options %%%%%%%%
+        hb_config_location => <<"config.flat">>,
         initialized => true,
         %% What protocol should the node use for HTTP requests?
         %% Options: http1, http2, http3
@@ -204,6 +205,7 @@ get(Key, Default, Opts) ->
 -define(ENV_KEYS,
     #{
         priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
+        hb_config_location => {"HB_CONFIG", "config.flat"},
         port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
         store =>
             {"HB_STORE",
@@ -215,8 +217,7 @@ get(Key, Default, Opts) ->
                 end,
                 "TEST-cache"
             },
-        mode =>
-            {"HB_MODE", fun list_to_existing_atom/1},
+        mode => {"HB_MODE", fun list_to_existing_atom/1},
         debug_print =>
             {"HB_PRINT",
                 fun
@@ -248,6 +249,47 @@ global_get(Key, Default) ->
 %% configuration system.
 config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
 
+%% @doc Parse a `flat@1.0' encoded file into a map, matching the types of the 
+%% keys to those in the default message.
+load(Path) ->
+    case file:read_file(Path) of
+        {ok, Bin} ->
+            try dev_codec_flat:deserialize(Bin) of
+                Map -> {ok, mimic_default_types(Map)}
+            catch
+                error:B -> {error, B}
+            end;
+        _ -> {error, not_found}
+    end.
+
+%% @doc Mimic the types of the default message for a given map.
+mimic_default_types(Map) ->
+    Default = default_message(),
+    maps:from_list(lists:map(
+        fun({Key, Value}) ->
+            NewKey = key_to_atom(Key),
+            NewValue = 
+                case maps:get(NewKey, Default, not_found) of
+                    not_found -> Value;
+                    DefaultValue when is_atom(DefaultValue) ->
+                        binary_to_existing_atom(Value);
+                    DefaultValue when is_integer(DefaultValue) ->
+                        binary_to_integer(Value);
+                    DefaultValue when is_float(DefaultValue) ->
+                        binary_to_float(Value);
+                    DefaultValue when is_binary(DefaultValue) ->
+                        Value;
+                    _ -> Value
+                end,
+            {NewKey, NewValue}
+        end,
+        maps:to_list(Map)
+    )).
+
+%% @doc Convert keys in a map to atoms, lowering `-' to `_'.
+key_to_atom(Key) ->
+    binary_to_existing_atom(binary:replace(Key, <<"-">>, <<"_">>, [global]), utf8).
+    
 %%% Tests
 
 global_get_test() ->
@@ -278,3 +320,17 @@ global_preference_test() ->
     ?assertNotEqual(incorrect,
         ?MODULE:get(mode, undefined, Global#{ mode => incorrect })),
     ?assertNotEqual(undefined, ?MODULE:get(mode, undefined, Global)).
+
+load_test() ->
+    % File contents:
+    % port: 1234
+    % host: https://ao.computer
+    % await-inprogress: false
+    {ok, Conf} = load("test/config.flat"),
+    ?event({loaded, {explicit, Conf}}),
+    % Ensure we convert types as expected.
+    ?assertEqual(1234, maps:get(port, Conf)),
+    % A binary
+    ?assertEqual(<<"https://ao.computer">>, maps:get(host, Conf)),
+    % An atom, where the key contained a header-key `-' rather than a `_'.
+    ?assertEqual(false, maps:get(await_inprogress, Conf)).
