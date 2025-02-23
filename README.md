@@ -45,6 +45,11 @@ To begin using HyperBeam, you will need to install:
 
 - The Erlang runtime (OTP 27)
 - Rebar3
+- Git
+- Docker (optional, for containerized deployment)
+
+You will also need:
+- A wallet and it's keyfile(generate a new wallet and keyfile with https://www.wander.app)
 
 Then you can clone the HyperBEAM source and build it:
 
