@@ -95,6 +95,7 @@ key(_M1, _M2, Opts) ->
     % Retrieve the shared AES key and the node's wallet.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     {{KeyType, Priv, Pub}, _PubKey} = hb_opts:get(priv_wallet, undefined, Opts),
+	?event(green_zone, {get_key, wallet, hb_util:human_id(ar_wallet:to_address(Pub))}),
     case GreenZoneAES of
         undefined ->
             % Log error if no shared AES key is found.
@@ -111,6 +112,7 @@ key(_M1, _M2, Opts) ->
                 <<>>,
                 true
             ),
+			
             % Log successful encryption of the private key.
             ?event(green_zone, {get_key, encrypt, complete}),
             {ok, #{
@@ -166,12 +168,22 @@ become(M1, _M2, Opts) ->
                 Tag,
                 false
             ),
+			OldWallet = hb_opts:get(priv_wallet, undefined, Opts),
+			OldWalletAddr = hb_util:human_id(ar_wallet:to_address(OldWallet)),
+			?event(green_zone, {become, old_wallet, OldWalletAddr}),
+			% Print the decrypted binary
+			?event(green_zone, {become, decrypted_bin, DecryptedBin}),
             % 7. Convert the decrypted binary into the target node's keypair.
             {KeyType, Priv, Pub} = binary_to_term(DecryptedBin),
+			% Print the keypair
+			?event(green_zone, {become, keypair, Pub}),
             % 8. Update the local wallet with the target node's keypair, thereby cloning its identity.
             ok = hb_http_server:set_opts(Opts#{
                 priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
             }),
+			% Print the updated wallet address
+			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
+			?event(green_zone, {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}),
             ?event(green_zone, {become, update_wallet, complete}),
             {ok, #{
                 <<"status">> => 200,

@@ -49,7 +49,9 @@ info(_, Request, NodeMsg) ->
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
             ?event({get_config_req, Request, NodeMsg}),
-            embed_status({ok, filter_node_msg(add_dynamic_keys(NodeMsg))});
+			DynamicKeys = add_dynamic_keys(NodeMsg),	
+			?event(green_zone, {get_config, DynamicKeys}),
+            embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
             case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 <<"permanent">> ->
@@ -82,9 +84,9 @@ add_dynamic_keys(NodeMsg) ->
         no_viable_wallet ->
             NodeMsg;
         Wallet ->
-            maps:merge(NodeMsg, #{
-                <<"address">> => hb_util:id(ar_wallet:to_address(Wallet))
-            })
+            %% Create a new map with address and merge it (overwriting existing)
+			Address = hb_util:id(ar_wallet:to_address(Wallet)),
+            NodeMsg#{ address => Address, <<"address">> => Address }
     end.
 
 update_node_message(Request, NodeMsg) ->
