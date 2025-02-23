@@ -70,7 +70,13 @@ resolve(_, CurrPath, []) ->
     hb_store:join(CurrPath);
 resolve(Opts, CurrPath, [Next|Rest]) ->
     PathPart = hb_store:join([CurrPath, Next]),
-    ?event({resolving, {accumulated_path, CurrPath}, {next_segment, Next}, {generated_partial_path_to_test, PathPart}}),
+    ?event(
+        {resolving,
+            {accumulated_path, CurrPath},
+            {next_segment, Next},
+            {generated_partial_path_to_test, PathPart}
+        }
+    ),
     case file:read_link(add_prefix(Opts, PathPart)) of
         {ok, RawLink} ->
             Link = remove_prefix(Opts, RawLink),

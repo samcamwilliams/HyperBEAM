@@ -132,7 +132,6 @@ validate_attestation(Msg, Att, Opts) ->
     AttSigner = hb_util:encode(ar_bundles:signer(Att)),
     ?event({poda_attestation, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
     ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
-    ?no_prod(use_real_signature_verification),
     ValidSignature = ar_bundles:verify_item(Att),
     RelevantMsg = ar_bundles:id(Att, unsigned) == MsgID orelse
         (lists:keyfind(<<"attestation-for">>, 1, Att#tx.tags)
