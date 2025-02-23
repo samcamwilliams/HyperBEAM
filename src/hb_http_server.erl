@@ -20,18 +20,46 @@
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
     ?event(http, {start_store, "mainnet-cache"}),
-    Store = [{hb_store_fs, #{ prefix => "mainnet-cache" }}],
+    Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
+    Loaded =
+        case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>, #{})) of
+            {ok, Conf} ->
+                ?event(boot, {loaded_config, Loc, Conf}),
+                Conf;
+            {error, Reason} ->
+                ?event(boot, {failed_to_load_config, Loc, Reason}),
+                #{}
+        end,
+    PrivWallet =
+        hb:wallet(
+            hb_opts:get(
+                priv_key_location,
+                <<"hyperbeam-key.json">>,
+                Loaded
+            )
+        ),
+    FormattedConfig = hb_util:debug_fmt(Loaded),
     io:format(
-        "Started mainnet node at http://localhost:~p~n"
-        "Operator: ~s~n",
-        [hb_opts:get(port, 8734), hb_opts:get(address, no_address)]
+        "========================================================~n"
+        "== Started mainnet node at http://~s:~p~n"
+        "== Operator: ~s~n"
+        "--------------------------------------------------------~n"
+        "== Config:~n~s~n"
+        "========================================================~n",
+        [
+            hb_opts:get(host, <<"localhost">>, Loaded),
+            hb_opts:get(port, 8734, Loaded),
+            hb_util:human_id(ar_wallet:to_address(PrivWallet)),
+            FormattedConfig
+        ]
     ),
+    
     start(
-        #{
-            priv_wallet => hb:wallet(hb_opts:get(key_location)),
+        Loaded#{
+            priv_wallet => PrivWallet,
             store => Store,
-            port => hb_opts:get(port, 8734)
+            port => hb_opts:get(port, 8734, Loaded)
         }
     ).
 start(Opts) ->
