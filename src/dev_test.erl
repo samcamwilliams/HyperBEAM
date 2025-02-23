@@ -1,5 +1,6 @@
 -module(dev_test).
 -export([info/1, test_func/1, compute/3, init/3, restore/3, snapshot/3, mul/2]).
+-export([postprocess/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -76,6 +77,12 @@ mul(Msg1, Msg2) ->
 %% @doc Do nothing when asked to snapshot.
 snapshot(_Msg1, _Msg2, _Opts) ->
     {ok, #{}}.
+
+%% @doc Set the `postprocessor-called' key to true in the HTTP server.
+postprocess(_Msg, #{ <<"body">> := Msgs }, Opts) ->
+    ?event({postprocess_called, Opts}),
+    hb_http_server:set_opts(Opts#{ <<"postprocessor-called">> => true }),
+    {ok, Msgs}.
 
 %%% Tests
 

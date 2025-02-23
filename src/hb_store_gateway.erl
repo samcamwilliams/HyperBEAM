@@ -48,12 +48,19 @@ type(StoreOpts, Key) ->
             end
     end.
 
-%% @doc Read the data at the given key from the GraphQL route.
+%% @doc Read the data at the given key from the GraphQL route. Will only attempt
+%% to read the data if the key is an ID.
 read(StoreOpts, Key) ->
-    ?event({read, StoreOpts, Key}),
-    case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
-        {error, _} -> not_found;
-        {ok, Message} -> {ok, Message}
+    case hb_path:term_to_path_parts(Key) of
+        [ID] when ?IS_ID(ID) ->
+            ?event({read, StoreOpts, Key}),
+            case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
+                {error, _} -> not_found;
+                {ok, Message} -> {ok, Message}
+            end;
+        _ ->
+            ?event({ignoring_non_id, Key}),
+            not_found
     end.
 
 %% @doc Cache the data if the cache is enabled. The `cache` option may either

@@ -344,11 +344,7 @@ to(TABM, Opts) when is_map(TABM) ->
     % Add the content-digest to the HTTP message. `generate_content_digest/1'
     % will return a map with the `content-digest' key set, but the body removed,
     % so we merge the two maps together to maintain the body and the content-digest.
-    Enc2 =
-        maps:merge(
-            Enc1,
-            dev_codec_httpsig:add_content_digest(Enc1)
-        ),
+    Enc2 = maps:merge(Enc1, dev_codec_httpsig:add_content_digest(Enc1)),
     % Finally, add the signatures to the HTTP message
     case maps:get(<<"attestations">>, TABM, not_found) of
         #{ <<"hmac-sha256">> :=
