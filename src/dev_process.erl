@@ -249,7 +249,7 @@ now(RawMsg1, _Msg2, Opts) ->
     ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
     hb_converge:resolve(
         Msg1,
-        #{ <<"path">> => <<"compute/results">>, <<"slot">> => CurrentSlot },
+        #{ <<"path">> => <<"compute">>, <<"slot">> => CurrentSlot },
         Opts
     ).
 
@@ -891,7 +891,7 @@ now_results_test() ->
         Msg1 = test_aos_process(),
         schedule_aos_call(Msg1, <<"return 1+1">>),
         schedule_aos_call(Msg1, <<"return 2+2">>),
-        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"now/data">>, #{}))
+        ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"now/results/data">>, #{}))
     end}.
 
 full_push_test_() ->
@@ -913,7 +913,7 @@ full_push_test_() ->
         {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"now/data">>, #{})
+            hb_converge:resolve(Msg1, <<"now/results/data">>, #{})
         )
     end}.
 
