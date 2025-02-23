@@ -56,7 +56,7 @@ aos2_message_lookup_test() ->
 http_lookup_test() ->
     Store = {
         hb_store_fs,
-        #{ prefix => "main-cache" }
+        #{ prefix => "mainnet-cache" }
     },
     Opts = #{ store => Store },
     Msg = #{ <<"test-key">> => <<"test-value">>, <<"data">> => <<"test-data">> },

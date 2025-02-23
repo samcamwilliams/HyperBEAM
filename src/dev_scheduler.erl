@@ -596,7 +596,7 @@ redirect_from_graphql_test() ->
     Opts =
         #{ store =>
             [
-                {hb_store_fs, #{ prefix => "main-cache" }},
+                {hb_store_fs, #{ prefix => "mainnet-cache" }},
                 {hb_store_gateway, #{}}
             ]
         },
@@ -699,7 +699,7 @@ http_get_schedule_redirect_test() ->
     Opts =
         #{ store =>
             [
-                {hb_store_fs, #{ prefix => "main-cache" }},
+                {hb_store_fs, #{ prefix => "mainnet-cache" }},
                 {hb_store_gateway, #{}}
             ]
         },

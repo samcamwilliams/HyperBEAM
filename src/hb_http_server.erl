@@ -19,14 +19,19 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    ?event(http, {start_store, "main-cache"}),
-    Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
+    ?event(http, {start_store, "mainnet-cache"}),
+    Store = [{hb_store_fs, #{ prefix => "mainnet-cache" }}],
     hb_store:start(Store),
+    io:format(
+        "Started mainnet node at http://localhost:~p~n"
+        "Operator: ~s~n",
+        [hb_opts:get(port, 8734), hb_opts:get(address, no_address)]
+    ),
     start(
         #{
             priv_wallet => hb:wallet(hb_opts:get(key_location)),
             store => Store,
-            port => hb_opts:get(http_default_remote_port, 8734)
+            port => hb_opts:get(port, 8734)
         }
     ).
 start(Opts) ->
@@ -198,8 +203,6 @@ set_opts(Opts) ->
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
     cowboy:get_env(ServerRef, node_msg, no_node_msg).
-
-%%% Tests
 
 set_default_opts(Opts) ->
     % Create a temporary opts map that does not include the defaults.
