@@ -124,15 +124,19 @@ do_start_mainnet(Opts) ->
         os_mon,
         rocksdb
     ]),
+    Wallet = wallet(<<"mainnet-wallet.json">>),
+    BaseOpts = hb_http_server:set_default_opts(Opts),
     hb_http_server:start_node(
-        Opts#{
-            store => {hb_store_fs, #{ prefix => "main-cache" }}
-        }
+        FinalOpts =
+            BaseOpts#{
+                store => {hb_store_fs, #{ prefix => "main-cache" }},
+                priv_wallet => Wallet
+            }
     ),
     Address =
-        case hb_opts:get(priv_wallet, no_wallet, Opts) of
-            no_wallet -> <<"[ !!! no-wallet !!! ]">>;
-            Wallet -> ar_wallet:to_address(Wallet)
+        case hb_opts:get(address, no_address, FinalOpts) of
+            no_address -> <<"[ !!! no-address !!! ]">>;
+            Addr -> Addr
         end,
     io:format(
         "Started mainnet node at http://localhost:~p~n"

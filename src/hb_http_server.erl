@@ -11,7 +11,7 @@
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
 -export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
--export([start_node/0, start_node/1]).
+-export([start_node/0, start_node/1, set_default_opts/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -44,7 +44,7 @@ start(Opts) ->
         rocksdb
     ]),
     hb:init(),
-    BaseOpts = set_base_opts(Opts),
+    BaseOpts = set_default_opts(Opts),
     {ok, Listener, _Port} = new_server(BaseOpts),
     {ok, Listener}.
 
@@ -201,7 +201,7 @@ get_opts(NodeMsg) ->
 
 %%% Tests
 
-set_base_opts(Opts) ->
+set_default_opts(Opts) ->
     % Create a temporary opts map that does not include the defaults.
     TempOpts = Opts#{ only => local },
     % Generate a random port number between 10000 and 30000 to use
@@ -229,7 +229,12 @@ set_base_opts(Opts) ->
                 };
             PassedStore -> PassedStore
         end,
-    ?event({set_base_opts, TempOpts, Port, Store, Wallet}),
+    ?event({set_default_opts,
+        {given, TempOpts},
+        {port, Port},
+        {store, Store},
+        {wallet, Wallet}
+    }),
     Opts#{
         port => Port,
         store => Store,
@@ -257,6 +262,6 @@ start_node(Opts) ->
     ]),
     hb:init(),
     hb_sup:start_link(Opts),
-    ServerOpts = set_base_opts(Opts),
+    ServerOpts = set_default_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.
