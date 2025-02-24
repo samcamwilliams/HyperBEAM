@@ -43,6 +43,7 @@ info() ->
     #{
         exports =>
             [
+                register,
                 status,
                 next,
                 schedule,
@@ -150,7 +151,9 @@ status(_M1, _M2, _Opts) ->
 %% the new scheduler-location to the given registry, and return it to the caller.
 register(_Msg1, Req, Opts) ->
     % Ensure that the request is signed by the operator.
-    OnlyAttested = hb_message:with_only_attested(Req),
+    ?event({registering_scheduler, {msg1, _Msg1}, {req, Req}, {opts, Opts}}),
+    {ok, OnlyAttested} = hb_message:with_only_attested(Req),
+    ?event({only_attested, OnlyAttested}),
     Signers = hb_message:signers(OnlyAttested),
     Operator =
         hb_util:human_id(
@@ -158,17 +161,33 @@ register(_Msg1, Req, Opts) ->
                 hb_opts:get(priv_wallet, hb:wallet(), Opts)
             )
         ),
-    {ok, SchedulerLocation} = hb_gateway_client:scheduler_location(Operator, Opts),
-    ExistingNonce = hb_converge:get(<<"nonce">>, SchedulerLocation, 0, Opts),
-    case {lists:member(Operator, Signers), ExistingNonce} of
-        {true, NewNonce} when NewNonce > ExistingNonce ->
+    ExistingNonce = 
+        case hb_gateway_client:scheduler_location(Operator, Opts) of
+            {ok, SchedulerLocation} ->
+                hb_converge:get(<<"nonce">>, SchedulerLocation, 0, Opts);
+            {error, _} -> -1
+        end,
+    NewNonce = hb_converge:get(<<"nonce">>, OnlyAttested, 0, Opts),
+    case lists:member(Operator, Signers) andalso NewNonce > ExistingNonce of
+        false ->
+            {ok,
+                #{
+                    <<"status">> => 400,
+                    <<"body">> => <<"Invalid request.">>,
+                    <<"requested-nonce">> => NewNonce,
+                    <<"existing-nonce">> => ExistingNonce,
+                    <<"signers">> => Signers
+                }
+            };
+        true ->
             % The operator has asked to replace the scheduler location. Get the
             % details and register the new location.
-            TimeToLive =
-                hb_converge:get(
+            DefaultTTL = hb_opts:get(scheduler_location_ttl, 1000 * 60 * 60, Opts),
+            TimeToLive = hb_converge:get(
                     <<"time-to-live">>,
                     OnlyAttested,
-                    hb_opts:get(scheduler_location_ttl, Opts)
+                    DefaultTTL,
+                    Opts
                 ),
             URL =
                 case hb_converge:get(<<"url">>, OnlyAttested, Opts) of
@@ -185,7 +204,7 @@ register(_Msg1, Req, Opts) ->
                     GivenURL -> GivenURL
                 end,
             % Construct the new scheduler location message.
-            Codec = hb_converge:get(<<"codec-device">>, OnlyAttested, <<"httpsig@1.0">>, Opts),
+            Codec = hb_converge:get(<<"accept-codec">>, OnlyAttested, <<"httpsig@1.0">>, Opts),
             NewSchedulerLocation =
                 #{
                     <<"data-protocol">> => <<"ao">>,
@@ -200,15 +219,7 @@ register(_Msg1, Req, Opts) ->
             ?event({uploading_signed_scheduler_location, Signed}),
             Res = hb_client:upload(Signed, Opts),
             ?event({upload_response, Res}),
-            {ok, Signed};
-        {false, _} ->
-            % The operator is not in the signers list.
-            {ok,
-                #{
-                    <<"status">> => 400,
-                    <<"body">> => <<"Invalid signer.">>
-                }
-            }
+            {ok, Signed}
     end.
 
 %% @doc A router for choosing between getting the existing schedule, or
@@ -726,6 +737,19 @@ http_init(Opts) ->
     Wallet = ar_wallet:new(),
     Node = hb_http_server:start_node(Opts#{ priv_wallet => Wallet }),
     {Node, Wallet}.
+
+register_scheduler_test() ->
+    start(),
+    {Node, Wallet} = http_init(),
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/register">>,
+        <<"url">> => <<"https://hyperbeam-test-ignore.com">>,
+        <<"method">> => <<"POST">>,
+        <<"nonce">> => 1,
+        <<"accept-codec">> => <<"ans104@1.0">>
+    }, Wallet),
+    {ok, Res} = hb_http:get(Node, Msg1, #{}),
+    ?assertMatch(#{ <<"url">> := Location } when is_binary(Location), Res).
 
 http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
     Msg1 = hb_message:attest(#{
