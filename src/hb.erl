@@ -1,4 +1,4 @@
-%%% @doc Hyperbeam is a decentralized node implementating the Converge Protocol
+%%% @doc Hyperbeam is a decentralized node implementing the Converge Protocol
 %%% on top of Arweave.
 %%% 
 %%% This protocol offers a computation layer for executing arbitrary logic on 
@@ -86,7 +86,7 @@
 %%% Base start configurations:
 -export([start_simple_pay/0, start_simple_pay/1, start_simple_pay/2]).
 -export([topup/3, topup/4]).
--export([start_mainnet/0, start_mainnet/1, start_mainnet/2]).
+-export([start_mainnet/0, start_mainnet/1]).
 %%% Debugging tools:
 -export([event/1, event/2, event/3, event/4, event/5, event/6, no_prod/3]).
 -export([read/1, read/2, debug_wait/4, profile/1, benchmark/2, benchmark/3]).
@@ -104,13 +104,10 @@ init() ->
 
 %% @doc Start a mainnet server without payments.
 start_mainnet() ->
-    start_mainnet(10000 + rand:uniform(50000)).
+    start_mainnet(hb_opts:get(port)).
 start_mainnet(Port) ->
-    start_mainnet(Port, address()).
-start_mainnet(Port, Addr) ->
-    do_start_mainnet(#{ port => Port, operator => Addr }).
-
-do_start_mainnet(Opts) ->
+    start_mainnet(#{ port => Port });
+start_mainnet(Opts) ->
     application:ensure_all_started([
         kernel,
         stdlib,
@@ -124,12 +121,12 @@ do_start_mainnet(Opts) ->
         os_mon,
         rocksdb
     ]),
-    Wallet = wallet(<<"mainnet-wallet.json">>),
+    Wallet = hb:wallet(hb_opts:get(priv_key_location)),
     BaseOpts = hb_http_server:set_default_opts(Opts),
     hb_http_server:start_node(
         FinalOpts =
             BaseOpts#{
-                store => {hb_store_fs, #{ prefix => "main-cache" }},
+                store => {hb_store_fs, #{ prefix => "mainnet-cache" }},
                 priv_wallet => Wallet
             }
     ),
@@ -203,7 +200,7 @@ topup(Node, Amount, Recipient, Wallet) ->
     hb_http:get(Node, Message, #{}).
 
 wallet() ->
-    wallet(hb_opts:get(key_location)).
+    wallet(hb_opts:get(priv_key_location)).
 wallet(Location) ->
     case file:read_file_info(Location) of
         {ok, _} ->
@@ -215,7 +212,7 @@ wallet(Location) ->
     end.
 
 %% @doc Get the address of a wallet. Defaults to the address of the wallet
-%% specified by the `key_location' configuration key. It can also take a
+%% specified by the `priv_key_location' configuration key. It can also take a
 %% wallet tuple as an argument.
 address() -> address(wallet()).
 address(Wallet) when is_tuple(Wallet) ->

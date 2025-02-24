@@ -1,5 +1,7 @@
 -include("include/ar.hrl").
 
+-define(HYPERBEAM_VERSION, 0.8).
+
 %% @doc Macro for checking if a message is empty, ignoring its hashpath.
 -define(IS_EMPTY_MESSAGE(Msg), (map_size(Msg) == 0) orelse (map_size(Msg) == 1 andalso (is_map_key(priv, Msg) orelse is_map_key(<<"priv">>, Msg)))).
 %% @doc Macro usable in guards that validates whether a term is a

@@ -19,14 +19,74 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    ?event(http, {start_store, "main-cache"}),
-    Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
+    ?event(http, {start_store, "mainnet-cache"}),
+    Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
+    Loaded =
+        case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>, #{})) of
+            {ok, Conf} ->
+                ?event(boot, {loaded_config, Loc, Conf}),
+                Conf;
+            {error, Reason} ->
+                ?event(boot, {failed_to_load_config, Loc, Reason}),
+                #{}
+        end,
+    PrivWallet =
+        hb:wallet(
+            hb_opts:get(
+                priv_key_location,
+                <<"hyperbeam-key.json">>,
+                Loaded
+            )
+        ),
+    FormattedConfig = hb_util:debug_fmt(Loaded, 2),
+    io:format(
+        "===========================================================~n"
+        "==    ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗           ==~n"
+        "==    ██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗          ==~n"
+        "==    ███████║ ╚████╔╝ ██████╔╝█████╗  ██████╔╝          ==~n"
+        "==    ██╔══██║  ╚██╔╝  ██╔═══╝ ██╔══╝  ██╔══██╗          ==~n"
+        "==    ██║  ██║   ██║   ██║     ███████╗██║  ██║          ==~n"
+        "==    ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝╚═╝  ╚═╝          ==~n"
+        "==                                                       ==~n"
+        "==        ██████╗ ███████╗ █████╗ ███╗   ███╗ VERSION:   ==~n"
+        "==        ██╔══██╗██╔════╝██╔══██╗████╗ ████║      v~p. ==~n"
+        "==        ██████╔╝█████╗  ███████║██╔████╔██║            ==~n"
+        "==        ██╔══██╗██╔══╝  ██╔══██║██║╚██╔╝██║ EAT GLASS, ==~n"
+        "==        ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║ BUILD THE  ==~n"
+        "==        ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝    FUTURE. ==~n"
+        "===========================================================~n"
+        "== Node activate at: ~s ==~n"
+        "== Operator: ~s ==~n"
+        "===========================================================~n"
+        "== Config:                                               ==~n"
+        "===========================================================~n"
+        "   ~s~n"
+        "===========================================================~n",
+        [
+            ?HYPERBEAM_VERSION,
+            string:pad(
+                lists:flatten(
+                    io_lib:format(
+                        "http://~s:~p",
+                        [
+                            hb_opts:get(host, <<"localhost">>, Loaded),
+                            hb_opts:get(port, 8734, Loaded)
+                        ]
+                    )
+                ),
+                35, leading, $ 
+            ),
+            hb_util:human_id(ar_wallet:to_address(PrivWallet)),
+            FormattedConfig
+        ]
+    ),
+    
     start(
-        #{
-            priv_wallet => hb:wallet(hb_opts:get(key_location)),
+        Loaded#{
+            priv_wallet => PrivWallet,
             store => Store,
-            port => hb_opts:get(http_default_remote_port, 8734)
+            port => hb_opts:get(port, 8734, Loaded)
         }
     ).
 start(Opts) ->
@@ -198,8 +258,6 @@ set_opts(Opts) ->
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
     cowboy:get_env(ServerRef, node_msg, no_node_msg).
-
-%%% Tests
 
 set_default_opts(Opts) ->
     % Create a temporary opts map that does not include the defaults.

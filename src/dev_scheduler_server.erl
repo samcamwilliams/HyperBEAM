@@ -129,7 +129,7 @@ do_assign(State, Message, ReplyPID) ->
             ),
             ?event(writes_complete),
             ?event(uploading_assignment),
-            hb_client:upload(Assignment),
+            hb_client:upload(Assignment, maps:get(opts, State)),
             ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
