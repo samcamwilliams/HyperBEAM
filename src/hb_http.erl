@@ -117,7 +117,15 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 end,
                 case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
                     <<"ans104@1.0">> ->
-                        ar_bundles:deserialize(Body);
+                        Deserialized = ar_bundles:deserialize(Body),
+                        % We don't need to add the status to the message, because
+                        % it is already present in the encoded ANS-104 message.
+                        hb_message:convert(
+                            Deserialized,
+                            <<"structured@1.0">>,
+                            <<"ans104@1.0">>,
+                            Opts
+                        );
                     <<"httpsig@1.0">> ->
                         hb_message:convert(
                             maps:merge(
