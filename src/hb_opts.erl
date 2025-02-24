@@ -255,7 +255,7 @@ load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             try dev_codec_flat:deserialize(Bin) of
-                Map -> {ok, mimic_default_types(Map)}
+                Map -> {ok, mimic_default_types(Map, new_atoms)}
             catch
                 error:B -> {error, B}
             end;
@@ -263,11 +263,11 @@ load(Path) ->
     end.
 
 %% @doc Mimic the types of the default message for a given map.
-mimic_default_types(Map) ->
+mimic_default_types(Map, Mode) ->
     Default = default_message(),
     maps:from_list(lists:map(
         fun({Key, Value}) ->
-            NewKey = key_to_atom(Key),
+            NewKey = key_to_atom(Key, Mode),
             NewValue = 
                 case maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
@@ -287,8 +287,16 @@ mimic_default_types(Map) ->
     )).
 
 %% @doc Convert keys in a map to atoms, lowering `-' to `_'.
-key_to_atom(Key) ->
-    binary_to_existing_atom(binary:replace(Key, <<"-">>, <<"_">>, [global]), utf8).
+key_to_atom(Key, Mode) ->
+    WithoutDashes = binary:replace(Key, <<"-">>, <<"_">>, [global]),
+    case Mode of
+        new_atoms -> binary_to_atom(WithoutDashes, utf8);
+        _ ->
+            try binary_to_existing_atom(WithoutDashes, utf8)
+            catch
+                error:badarg -> WithoutDashes
+            end
+    end.
     
 %%% Tests
 

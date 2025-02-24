@@ -11,7 +11,7 @@
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
 -export([format_map/1, format_map/2, remove_trailing_noise/2]).
--export([debug_print/4, debug_fmt/1, eunit_print/2]).
+-export([debug_print/4, debug_fmt/1, debug_fmt/2, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
 -export([format_trace_short/1]).
