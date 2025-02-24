@@ -143,8 +143,7 @@ with_only_attested(Msg) ->
     % If the message is not a map, it cannot be signed.
     {ok, Msg}.
 
-%% @doc Sign a message with the given wallet. Only supports the `tx' format
-%% at the moment.
+%% @doc Sign a message with the given wallet.
 attest(Msg, WalletOrOpts) ->
     attest(Msg, WalletOrOpts, <<"httpsig@1.0">>).
 attest(Msg, Opts, Format) when is_map(Opts) ->
