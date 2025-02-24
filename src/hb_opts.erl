@@ -40,12 +40,13 @@ default_message() ->
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
         host => <<"localhost">>,
         gateway => <<"https://arweave.net">>,
-        bundler => <<"https://up.arweave.net">>,
+        bundler_ans104 => <<"https://up.arweave.net:443">>,
         %% Location of the wallet keyfile on disk that this node will use.
         priv_key_location => <<"hyperbeam-key.json">>,
         %% The time-to-live that should be specified when we register
         %% ourselves as a scheduler on the network.
-        scheduler_location_ttl => 60 * 60 * 24 * 30,
+        %% Default: 7 days.
+        scheduler_location_ttl => (60 * 60 * 24 * 7) * 1000,
         %% Preloaded devices for the node to use. These names override
         %% resolution of devices via ID to the default implementations.
         preloaded_devices =>

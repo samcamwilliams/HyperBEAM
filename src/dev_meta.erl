@@ -241,10 +241,11 @@ maybe_sign(Res, NodeMsg) ->
         true ->
             case hb_message:signers(Res) of
                 [] ->
+                    DefaultCodec = hb_opts:get(default_codec, <<"httpsig@1.0">>, NodeMsg),
                     hb_message:attest(
                         Res,
-                        hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-                        hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
+                        NodeMsg,
+                        hb_converge:get(<<"codec-device">>, Res, DefaultCodec, NodeMsg)
                     );
                 _ -> Res
             end;

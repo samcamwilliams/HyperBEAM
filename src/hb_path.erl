@@ -101,7 +101,7 @@ hashpath(RawMsg1, Opts) ->
         _ ->
             try hb_util:ok(dev_message:id(Msg1, #{ <<"attestors">> => <<"all">> }, Opts))
             catch
-                _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}})
+                _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}, _ST})
             end
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->

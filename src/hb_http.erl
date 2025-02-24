@@ -80,7 +80,12 @@ request(Method, Peer, Path, RawMessage, Opts) ->
     ?event(http, {request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
     Req =
         prepare_request(
-            hb_opts:get(format, http, Opts),
+            hb_converge:get(
+                <<"codec-device">>,
+                RawMessage,
+                <<"httpsig@1.0">>,
+                Opts
+            ),
             Method,
             Peer,
             Path,
@@ -110,10 +115,18 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     201 -> created;
                     _ -> ok
                 end,
-                case maps:get(<<"content-type">>, NormHeaderMap, undefined) of
-                    <<"application/x-ans-104">> ->
-                        ar_bundles:deserialize(Body);
-                    _ ->
+                case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
+                    <<"ans104@1.0">> ->
+                        Deserialized = ar_bundles:deserialize(Body),
+                        % We don't need to add the status to the message, because
+                        % it is already present in the encoded ANS-104 message.
+                        hb_message:convert(
+                            Deserialized,
+                            <<"structured@1.0">>,
+                            <<"ans104@1.0">>,
+                            Opts
+                        );
+                    <<"httpsig@1.0">> ->
                         hb_message:convert(
                             maps:merge(
                                 HeaderMap#{ <<"status">> => hb_util:bin(Status) },
@@ -206,15 +219,22 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
-        http ->
+        <<"httpsig@1.0">> ->
             FullEncoding = #{ <<"body">> := Body } =
                 hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
             Headers = maps:without([<<"body">>], FullEncoding),
             maps:merge(ReqBase, #{ headers => Headers, body => Body });
-        ans104 ->
+        <<"ans104@1.0">> ->
             ReqBase#{
-                headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
-                body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
+                headers =>
+                    #{
+                        <<"codec-device">> => <<"ans104@1.0">>,
+                        <<"content-type">> => <<"application/octet-stream">>
+                    },
+                body =>
+                    ar_bundles:serialize(
+                        hb_message:convert(Message, <<"ans104@1.0">>, Opts)
+                    )
             }
     end.
 
@@ -381,10 +401,7 @@ parallel_responses(Res, Procs, Ref, Awaiting, StopAfter, Statuses, Opts) ->
 %% @doc Empty the inbox of the current process for all messages with the given
 %% reference.
 empty_inbox(Ref) ->
-    receive
-        {Ref, _} -> empty_inbox(Ref)
-    after 0 -> ok
-    end.
+    receive {Ref, _} -> empty_inbox(Ref) after 0 -> ok end.
 
 %% @doc Reply to the client's HTTP request with a message.
 reply(Req, Message, Opts) ->
@@ -398,7 +415,7 @@ reply(Req, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
     reply(Req, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Req, Message, Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
     EncodedHeaders = add_cors_headers(HeadersBeforeCors, ReqHdr),
@@ -442,9 +459,26 @@ add_cors_headers(Msg, ReqHdr) ->
     ).
 
 %% @doc Generate the headers and body for a HTTP response message.
-prepare_reply(Message, Opts) ->
-    case hb_opts:get(format, http, Opts) of
-        http ->
+prepare_reply(Req, Message, Opts) ->
+    DefaultCodec = hb_opts:get(default_codec, <<"httpsig@1.0">>, Opts),
+    Accept = cowboy_req:header(<<"accept-codec">>, Req, DefaultCodec),
+    case Accept of
+        <<"ans104@1.0">> ->
+            {ok,
+                #{
+                    <<"content-type">> => <<"application/octet-stream">>,
+                    <<"codec-device">> => <<"ans104@1.0">>
+                },
+                ar_bundles:serialize(
+                    hb_message:convert(
+                        Message,
+                        <<"ans104@1.0">>,
+                        <<"structured@1.0">>,
+                        Opts
+                    )
+                )
+            };
+        <<"httpsig@1.0">> ->
             EncMessage =
                 hb_message:convert(
                     Message,
@@ -455,22 +489,16 @@ prepare_reply(Message, Opts) ->
             {ok,
                 maps:without([<<"body">>], EncMessage),
                 maps:get(<<"body">>, EncMessage, <<>>)
-            };
-        ans104 ->
-            {ok,
-                #{
-                    <<"content-type">> => <<"application/octet-stream">>
-                },
-                ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
             }
     end.
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Opts) ->
-    case cowboy_req:header(<<"content-type">>, Req) of
-        <<"application/x-ans-104">> ->
+    case cowboy_req:header(<<"codec-device">>, Req) of
+        <<"ans104@1.0">> ->
             {ok, Body} = read_body(Req),
-            hb_message:convert(ar_bundles:deserialize(Body), <<"structured@1.0">>, <<"ans104@1.0">>, Opts);
+            Deserialized = ar_bundles:deserialize(Body),
+            dev_codec_ans104:from(Deserialized);
         _ ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
@@ -637,3 +665,21 @@ cors_get_test() ->
         <<"*">>,
         hb_converge:get(<<"access-control-allow-origin">>, Res, #{})
     ).
+
+ans104_wasm_test() ->
+    URL = hb_http_server:start_node(#{force_signed => true}),
+    {ok, Bin} = file:read_file(<<"test/test-64.wasm">>),
+    Wallet = hb:wallet(),
+    Msg = hb_message:attest(#{
+        <<"path">> => <<"/init/compute/results">>,
+        <<"accept-codec">> => <<"ans104@1.0">>,
+        <<"codec-device">> => <<"ans104@1.0">>,
+        <<"device">> => <<"WASM-64@1.0">>,
+        <<"wasm-function">> => <<"fac">>,
+        <<"wasm-params">> => [3.0],
+        <<"body">> => Bin
+    }, Wallet, <<"ans104@1.0">>),
+    ?event({msg, Msg}),
+    {ok, Res} = post(URL, Msg, #{}),
+    ?event({res, Res}),
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).

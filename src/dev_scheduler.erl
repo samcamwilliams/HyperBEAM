@@ -18,7 +18,7 @@
 %%% Converge API functions:
 -export([info/0]).
 %%% Local scheduling functions:
--export([schedule/3, router/4]).
+-export([schedule/3, router/4, register/3]).
 %%% CU-flow functions:
 -export([slot/3, status/3, next/3]).
 -export([start/0, checkpoint/1]).
@@ -43,6 +43,7 @@ info() ->
     #{
         exports =>
             [
+                register,
                 status,
                 next,
                 schedule,
@@ -146,6 +147,81 @@ status(_M1, _M2, _Opts) ->
         }
     }.
 
+%% @doc Generate a new scheduler location record and register it. We both send 
+%% the new scheduler-location to the given registry, and return it to the caller.
+register(_Msg1, Req, Opts) ->
+    % Ensure that the request is signed by the operator.
+    ?event({registering_scheduler, {msg1, _Msg1}, {req, Req}, {opts, Opts}}),
+    {ok, OnlyAttested} = hb_message:with_only_attested(Req),
+    ?event({only_attested, OnlyAttested}),
+    Signers = hb_message:signers(OnlyAttested),
+    Operator =
+        hb_util:human_id(
+            ar_wallet:to_address(
+                hb_opts:get(priv_wallet, hb:wallet(), Opts)
+            )
+        ),
+    ExistingNonce = 
+        case hb_gateway_client:scheduler_location(Operator, Opts) of
+            {ok, SchedulerLocation} ->
+                hb_converge:get(<<"nonce">>, SchedulerLocation, 0, Opts);
+            {error, _} -> -1
+        end,
+    NewNonce = hb_converge:get(<<"nonce">>, OnlyAttested, 0, Opts),
+    case lists:member(Operator, Signers) andalso NewNonce > ExistingNonce of
+        false ->
+            {ok,
+                #{
+                    <<"status">> => 400,
+                    <<"body">> => <<"Invalid request.">>,
+                    <<"requested-nonce">> => NewNonce,
+                    <<"existing-nonce">> => ExistingNonce,
+                    <<"signers">> => Signers
+                }
+            };
+        true ->
+            % The operator has asked to replace the scheduler location. Get the
+            % details and register the new location.
+            DefaultTTL = hb_opts:get(scheduler_location_ttl, 1000 * 60 * 60, Opts),
+            TimeToLive = hb_converge:get(
+                    <<"time-to-live">>,
+                    OnlyAttested,
+                    DefaultTTL,
+                    Opts
+                ),
+            URL =
+                case hb_converge:get(<<"url">>, OnlyAttested, Opts) of
+                    not_found ->
+                        Port = hb_opts:get(port, 8734, Opts),
+                        Host = hb_opts:get(host, <<"localhost">>, Opts),
+                        Protocol = hb_opts:get(protocol, http1, Opts),
+                        ProtoStr =
+                            case Protocol of
+                                http1 -> <<"http">>;
+                                _ -> <<"https">>
+                            end,
+                        <<ProtoStr/binary, "://", Host/binary, ":", Port/binary>>;
+                    GivenURL -> GivenURL
+                end,
+            % Construct the new scheduler location message.
+            Codec = hb_converge:get(<<"accept-codec">>, OnlyAttested, <<"httpsig@1.0">>, Opts),
+            NewSchedulerLocation =
+                #{
+                    <<"data-protocol">> => <<"ao">>,
+                    <<"variant">> => <<"ao.N.1">>,
+                    <<"type">> => <<"scheduler-location">>,
+                    <<"url">> => URL,
+                    <<"nonce">> => NewNonce,
+                    <<"time-to-live">> => TimeToLive,
+                    <<"codec-device">> => Codec
+                },
+            Signed = hb_message:attest(NewSchedulerLocation, Opts, Codec),
+            ?event({uploading_signed_scheduler_location, Signed}),
+            Res = hb_client:upload(Signed, Opts),
+            ?event({upload_response, Res}),
+            {ok, Signed}
+    end.
+
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
@@ -226,7 +302,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
             };
         {true, <<"Process">>} ->
             hb_cache:write(Msg2, Opts),
-            spawn(fun() -> hb_client:upload(Msg2) end),
+            spawn(fun() -> hb_client:upload(Msg2, Opts) end),
             ?event(
                 {registering_new_process,
                     {proc_id, ProcID},
@@ -661,6 +737,19 @@ http_init(Opts) ->
     Wallet = ar_wallet:new(),
     Node = hb_http_server:start_node(Opts#{ priv_wallet => Wallet }),
     {Node, Wallet}.
+
+register_scheduler_test() ->
+    start(),
+    {Node, Wallet} = http_init(),
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/register">>,
+        <<"url">> => <<"https://hyperbeam-test-ignore.com">>,
+        <<"method">> => <<"POST">>,
+        <<"nonce">> => 1,
+        <<"accept-codec">> => <<"ans104@1.0">>
+    }, Wallet),
+    {ok, Res} = hb_http:get(Node, Msg1, #{}),
+    ?assertMatch(#{ <<"url">> := Location } when is_binary(Location), Res).
 
 http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
     Msg1 = hb_message:attest(#{
