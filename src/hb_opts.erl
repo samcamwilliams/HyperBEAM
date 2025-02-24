@@ -40,7 +40,7 @@ default_message() ->
         %% Choice of remote nodes for tasks that are not local to hyperbeam.
         host => <<"localhost">>,
         gateway => <<"https://arweave.net">>,
-        bundler_ans104 => <<"https://up.arweave.net">>,
+        bundler_ans104 => <<"https://up.arweave.net:443">>,
         %% Location of the wallet keyfile on disk that this node will use.
         priv_key_location => <<"hyperbeam-key.json">>,
         %% The time-to-live that should be specified when we register

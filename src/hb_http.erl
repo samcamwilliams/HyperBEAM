@@ -219,13 +219,14 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
         <<"ans104@1.0">> ->
             ReqBase#{
                 headers =>
-                    [
-                        {<<"codec-device">>, <<"ans104@1.0">>},
-                        {<<"content-type">>, <<"application/octet-stream">>}
-                    ],
-                body => ar_bundles:serialize(
-                    hb_message:convert(Message, <<"ans104@1.0">>, Opts)
-                )
+                    #{
+                        <<"codec-device">> => <<"ans104@1.0">>,
+                        <<"content-type">> => <<"application/octet-stream">>
+                    },
+                body =>
+                    ar_bundles:serialize(
+                        hb_message:convert(Message, <<"ans104@1.0">>, Opts)
+                    )
             }
     end.
 

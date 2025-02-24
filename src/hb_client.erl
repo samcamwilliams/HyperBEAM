@@ -109,7 +109,10 @@ upload(Msg, Opts) ->
                 hb_opts:get(bundler_ans104, not_found, Opts),
                 <<"/tx">>,
                 Msg,
-                Opts
+                Opts#{
+                    http_client =>
+                        hb_opts:get(bundler_ans104_http_client, httpc, Opts)
+                }
             )
     end.
 
