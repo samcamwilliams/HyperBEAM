@@ -46,11 +46,13 @@ from(HTTP) ->
     % are handled separately.
     Headers = maps:without([<<"body">>, <<"body-keys">>], HTTP),
     ContentType = maps:get(<<"content-type">>, Headers, undefined),
+    {_, InlinedKey} = inline_key(HTTP),
+    ?event({inlined_body_key, InlinedKey}),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
     MsgWithoutSigs = maps:without(
         [<<"signature">>, <<"signature-input">>, <<"attestations">>],
-        from_body(Headers, ContentType, Body)
+        from_body(Headers, InlinedKey, ContentType, Body)
     ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Extract all hashpaths from the attestations of the message
@@ -67,8 +69,8 @@ from(HTTP) ->
     ?event({message_without_atts, Res, Removed}),
     Res.
 
-from_body(TABM, _ContentType, <<>>) -> TABM;
-from_body(TABM, ContentType, Body) ->
+from_body(TABM, _InlinedKey, _ContentType, <<>>) -> TABM;
+from_body(TABM, InlinedKey, ContentType, Body) ->
     ?event({from_body, {from_headers, TABM}, {content_type, {explicit, ContentType}}, {body, Body}}),
     Params =
         case ContentType of
@@ -80,9 +82,9 @@ from_body(TABM, ContentType, Body) ->
         end,
     case lists:keyfind(<<"boundary">>, 1, Params) of
         false ->
-            % The body is not a multipart, so just set as is to the body key on
+            % The body is not a multipart, so just set as is to the Inlined key on
             % the TABM.
-            maps:put(<<"body">>, Body, TABM);
+            maps:put(InlinedKey, Body, TABM);
         {_, {_Type, Boundary}} ->
             % We need to manually parse the multipart body into key/values on the
             % TABM.
@@ -109,12 +111,12 @@ from_body(TABM, ContentType, Body) ->
             % Finally, for each part within the sub-part, we need to parse it,
             % potentially recursively as a sub-TABM, and then add it to the
             % current TABM
-            {ok, FlattendTABM} = from_body_parts(TABM, Parts),
+            {ok, FlattendTABM} = from_body_parts(TABM, InlinedKey, Parts),
             FullTABM = dev_codec_flat:from(FlattendTABM),
             FullTABM
     end.
 
-from_body_parts (TABM, []) ->
+from_body_parts (TABM, _InlinedKey, []) ->
     % Ensure the accumulated body keys, if any, are encoded
     % adhering to the TABM structure that all values must be
     % maps or binaries
@@ -130,7 +132,7 @@ from_body_parts (TABM, []) ->
                 TABM#{ <<"body-keys">> => encode_body_keys(List) }
         end,
     {ok, WithEncodedBodyKeys};
-from_body_parts(TABM, [Part | Rest]) ->
+from_body_parts(TABM, InlinedKey, [Part | Rest]) ->
     % Extract the Headers block and Body. Only split on the FIRST double CRLF
     [RawHeadersBlock, RawBody] =
         case binary:split(Part, [?DOUBLE_CRLF], []) of
@@ -168,7 +170,7 @@ from_body_parts(TABM, [Part | Rest]) ->
                 dev_codec_structured_conv:parse_item(RawDisposition),
             {ok, PartName} = case Disposition of
                 <<"inline">> ->
-                    {ok, inline_key(TABM)};
+                    {ok, InlinedKey};
                 _ ->
                     % Otherwise, we need to extract the name of the part
                     % from the Content-Disposition parameters
@@ -197,7 +199,7 @@ from_body_parts(TABM, [Part | Rest]) ->
                 PartName => ParsedPart,
                 <<"body-keys">> => maps:get(<<"body-keys">>, TABM, []) ++ [BodyKey]
             },
-            from_body_parts(TABMNext, Rest)
+            from_body_parts(TABMNext, InlinedKey, Rest)
     end.
 
 %% @doc Populate the `/attestations' key on the TABM with the dictionary of 
@@ -277,7 +279,7 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM) -> to(TABM, []).
 to(TABM, Opts) when is_map(TABM) ->
-    InlineKey = inline_key(TABM),
+    {InlineFieldPairs, InlineKey} = inline_key(TABM),
     % Calculate the initial encoding from the TABM
     Enc0 =
         maps:fold(
@@ -291,7 +293,9 @@ to(TABM, Opts) when is_map(TABM) ->
                 (Key, Value, AccMap) ->
                     field_to_http(AccMap, {Key, Value}, #{})
             end,
-            #{},
+            % Ensure the Encoded Msg has any fields that denote
+            % the inline-body-key
+            maps:from_list(InlineFieldPairs),
             maps:without([<<"attestations">>, <<"signature">>, <<"signature-input">>], TABM)
         ),
     ?event({prepared_body_map, {msg, Enc0}}),
@@ -512,24 +516,36 @@ encode_body_part(PartName, BodyPart, InlineKey) ->
             >>
     end.
 
+%% @doc given a message, returns a binary tuple:
+%% - A list of pairs to add to the msg, if any
+%% - the field name for the inlined key
+%%
+%% In order to preserve the field name of the inlined
+%% part, an additional field may need to be added
 inline_key(Msg) ->
     % The message can named a key whose value will be placed
     % in the body as the inline part
     % Otherwise, the Msg <<"body">> is used
     % Otherwise, the Msg <<"data">> is used
-    InlineBodyKey = maps:get(<<"inline-body-key">>, Msg, bad_match),
+    InlineBodyKey = maps:get(<<"inline-body-key">>, Msg, false),
+    ?event({inlined, InlineBodyKey}),
     case [
-        maps:is_key(InlineBodyKey, Msg),
+        InlineBodyKey,
         maps:is_key(<<"body">>, Msg),
         maps:is_key(<<"data">>, Msg)
     ] of
-        [true, _, _] -> InlineBodyKey;
-        [_, true, _] -> <<"body">>;
-        [_, _, true] -> <<"data">>;
+        % inline-body-key already exists, so no need to add one
+        [Explicit, _, _] when Explicit =/= false -> {[], InlineBodyKey};
+        % inline-body-key defaults to <<"body">> (see below)
+        % So no need to add one
+        [_, true, _] -> {[], <<"body">>};
+        % We need to preserve the inline-body-key, as the <<"data">> field,
+        % so that it is preserved during encoding and decoding
+        [_, _, true] -> {[{<<"inline-body-key">>, <<"data">>}], <<"data">>};
         % default to body being the inlined part.
         % This makes this utility compatible for both encoding
         % and decoding httpsig@1.0 messages
-        _ -> <<"body">>
+        _ -> {[], <<"body">>}
     end.
 
 %%% @doc Given a map or KVList, return a sorted list of its key-value pairs.

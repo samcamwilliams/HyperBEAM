@@ -183,28 +183,34 @@ attested(Msg, _Req, _Opts) ->
                     ++ [<<"body">>]
                     ++ case maps:get(<<"body-keys">>, Msg, []) of
                         [] -> [];
-                        RawBodyKeys ->
-                            BodyKeysItems = dev_codec_structured_conv:parse_list(RawBodyKeys),
-                            normalize_body_keys(lists:map(
-                                fun({ item, {_, BodyKey }, _}) -> BodyKey end,
-                                BodyKeysItems
-                            ))
+                        BodyKeys ->
+                            ParsedList = case BodyKeys of
+                                List when is_list(List) -> List;
+                                RawBodyKeys when is_binary(RawBodyKeys) ->
+                                    dev_codec_structured_conv:parse_list(RawBodyKeys) 
+                            end,
+                            % Ensure a list of binaries, extracting the binary
+                            % from the structured item if necessary
+                            ParsedBodyKeys = lists:map(
+                                fun
+                                    (BK) when is_binary(BK) -> BK;
+                                    ({ item, {_, BK }, _}) -> BK
+                                end,
+                                ParsedList   
+                            ),
+                            % Grab the top most field on the body key
+                            % because the top most being attested means all subsequent
+                            % fields are also attested
+                            Tops = lists:map(
+                                fun(BodyKey) ->
+                                    hd(hb_path:term_to_path_parts(BodyKey, #{}))
+                                end,
+                                ParsedBodyKeys
+                            ),
+                            lists:sort(lists:uniq(Tops))
                     end
             }
     end.
-
-%% @doc Normalize a body key to be a list of keys.
-normalize_body_keys(List) when is_list(List) ->
-    List;
-normalize_body_keys(Body) when is_binary(Body) ->
-    Items = dev_codec_structured_conv:parse_list(Body),
-    lists:map(
-        fun({item, {X, Key}, _}) when X =:= binary; X =:= string ->
-                hd(hb_path:term_to_path_parts(Key, #{}));
-            (Other) -> Other
-        end,
-        Items
-    ).
 
 %% @doc If the `body' key is present, replace it with a content-digest.
 add_content_digest(Msg) ->

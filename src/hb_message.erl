@@ -390,14 +390,14 @@ match(Map1, Map2, Mode) ->
         maps:keys(
             NormMap1 = minimize(
                 normalize(hb_converge:normalize_keys(Map1)),
-                [<<"content-type">>, <<"body-keys">>]
+                [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     Keys2 =
         maps:keys(
             NormMap2 = minimize(
                 normalize(hb_converge:normalize_keys(Map2)),
-                [<<"content-type">>, <<"body-keys">>]
+                [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     PrimaryKeysPresent =
