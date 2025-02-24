@@ -2,6 +2,7 @@
 %%% pushes the resulting messages to other processes. The `push'ing mechanism
 %%% continues until the there are no remaining messages to push.
 -module(dev_push).
+%%% Public API
 -export([push/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -50,7 +51,7 @@ do_push(Base, Assignment, Opts) ->
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
-    ?event(push, {push_got_outbox, {slot, Slot}, {outbox, Result}}),
+    ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
     case Result of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
             ?event(push, {done, {slot, Slot}}),
@@ -67,82 +68,76 @@ do_push(Base, Assignment, Opts) ->
     end.
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
-    case hb_converge:get(<<"target">>, MsgToPush, Opts) of
-        not_found ->
+    case target_process(MsgToPush, Opts) of
+        no_target ->
             ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
             #{};
-        Target ->
-            ?event(push, {pushing_child, {originates_from_slot, FromSlot}, {outbox_key, Key}}),
-            Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-            Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
+        TargetID ->
             ?event(push,
                 {pushing_child,
                     {originates_from_slot, FromSlot},
                     {outbox_key, Key},
-                    {push_address, Address}
+                    {target_id, TargetID}
                 }
             ),
-            {ok, NextSlotOnProc} = hb_converge:resolve(
-                Base,
-                #{
-                    <<"method">> => <<"POST">>,
-                    <<"path">> => <<"schedule/slot">>,
-                    <<"body">> =>
-                        PushedMsg = hb_message:attest(
-                            MsgToPush,
-                            Opts
-                        )
-                },
-                Opts
-            ),
-            PushedMsgID = hb_message:id(PushedMsg, all),
+            {ok, PushedMsgID, NextSlotOnProc} =
+                schedule_result(Base, TargetID, MsgToPush, Opts),
             ?event(push,
                 {push_scheduled,
-                    {process, Target},
+                    {process, TargetID},
                     {assigned_slot, NextSlotOnProc},
-                    {pushed_msg, PushedMsg}
+                    {pushed_msg, PushedMsgID}
                 }),
             {ok, Downstream} = hb_converge:resolve(
-                Base,
+                TargetID,
                 #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
-                Opts
+                Opts#{ cache_control => <<"always">> }
             ),
             #{
                 <<"id">> => PushedMsgID,
-                <<"target">> => Target,
+                <<"target">> => TargetID,
                 <<"slot">> => NextSlotOnProc,
                 <<"resulted-in">> => Downstream
             }
     end.
 
-schedule_result(Msg, Opts) ->
-    {ok, PushRes} = hb_converge:resolve(
-        Msg,
-        #{
-            <<"method">> => <<"POST">>,
-            <<"path">> => <<"schedule">>,
-            <<"body">> =>
-                PushedMsg = hb_message:attest(
-                    todo,
-                    Opts
-                )
-        },
-        Opts
+%% @doc Find the target process ID for a message to push.
+target_process(MsgToPush, Opts) ->
+    case hb_converge:get(<<"target">>, MsgToPush, Opts) of
+        not_found -> no_target;
+        RawTarget ->
+            case binary:split(RawTarget, [<<"?">>, <<"&">>], [global]) of
+                [Target|_] -> Target;
+                _ -> RawTarget
+            end
+    end.
+
+schedule_result(FromProc, TargetProc, MsgToPush, Opts) ->
+    ?event(push, {push_scheduling_result, {target, TargetProc}, {msg, MsgToPush}}),
+    Res = hb_converge:resolve_many(
+        [
+            TargetProc,
+            #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> =>
+                    PushedMsg = hb_message:attest(
+                        MsgToPush,
+                        Opts
+                    )
+            }
+        ],
+        Opts#{ cache_control => <<"always">> }
     ),
-    NextSlotOnProc =
-        case PushRes of
-            {ok, #{ <<"slot">> := NextSlot}} ->
-                PushedMsgID = hb_message:id(PushedMsg, all),
-                ?event(push,
-                    {push_scheduled,
-                    {assigned_slot, NextSlot},
-                    {pushed_msg, PushedMsgID}
-                }),
-                NextSlot;
-            {ok, #{ <<"status">> := 307 }} ->
-                not_found
-        end,
-    {ok, NextSlotOnProc}.
+    case Res of
+        {ok, #{ <<"slot">> := Slot}} ->
+            PushedMsgID = hb_message:id(PushedMsg, all),
+            {ok, PushedMsgID, Slot};
+        {ok, #{ <<"status">> := 307 }} ->
+            {error, <<"Received redirect response from scheduler.">>};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 %%% Tests
 
@@ -152,7 +147,7 @@ full_push_test_() ->
         Opts = #{ priv_wallet => hb:wallet() },
         Msg1 = dev_process:test_aos_process(),
         ?event(push, {msg1, Msg1}),
-        Script = dev_process:ping_ping_script(2),
+        Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
         ?event(push, {init_sched_result, Msg2}),
@@ -169,3 +164,84 @@ full_push_test_() ->
             hb_converge:resolve(Msg1, <<"now/results/data">>, Opts)
         )
     end}.
+
+multi_process_push_test_() ->
+    {timeout, 30, fun() ->
+        dev_process:init(),
+        Opts = #{
+            priv_wallet => hb:wallet(),
+            cache_control => <<"always">>
+        },
+        Proc1 = dev_process:test_aos_process(),
+        {ok, _} = dev_process:schedule_aos_call(Proc1, reply_script()),
+        Proc2 = dev_process:test_aos_process(),
+        ProcID1 =
+            hb_converge:get(
+                <<"process/id">>,
+                dev_process:ensure_process_key(Proc1, Opts),
+                Opts
+            ),
+        ProcID2 =
+            hb_converge:get(
+                <<"process/id">>,
+                dev_process:ensure_process_key(Proc2, Opts),
+                Opts
+            ),
+        ?event(push, {testing_with, {proc1_id, ProcID1}, {proc2_id, ProcID2}}),
+        {ok, ToPush} = dev_process:schedule_aos_call(
+            Proc2,
+            <<
+                "Handlers.add(\"Pong\",\n"
+                "   function (test) return true end,\n"
+                "   function(m)\n"
+                "       print(\"GOT PONG\")\n"
+                "   end\n"
+                ")\n"
+                "Send({ Target = \"", (ProcID1)/binary, "\", Action = \"Ping\" })\n"
+            >>
+        ),
+        SlotToPush = hb_converge:get(<<"slot">>, ToPush, Opts),
+        ?event(push, {slot_to_push_proc2, SlotToPush}),
+        Msg3 =
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => SlotToPush
+            },
+        {ok, PushResult} = hb_converge:resolve(Proc2, Msg3, Opts),
+        ?event(push, {push_result_proc2, PushResult}),
+        AfterPush = hb_converge:resolve(Proc2, <<"now/results/data">>, Opts),
+        ?event(push, {after_push, AfterPush}),
+        ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
+    end}.
+
+%%% Test helpers
+
+ping_pong_script(Limit) ->
+    <<
+        "Handlers.add(\"Ping\",\n"
+        "   function (test) return true end,\n"
+        "   function(m)\n"
+        "       C = tonumber(m.Count)\n"
+        "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
+        "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
+        "           print(\"Ping\", C + 1)\n"
+        "       else\n"
+        "           print(\"Done.\")\n"
+        "       end\n"
+        "   end\n"
+        ")\n"
+        "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
+    >>.
+
+reply_script() ->
+    <<
+        "Handlers.add(\"Reply\",\n"
+        "   function (test) return true end,\n"
+        "   function(m)\n"
+        "       print(\"Replying to...\")\n"
+        "       print(m.From)\n"
+        "       Send({ Target = m.From, Action = \"Reply\", Message = \"Pong!\" })\n"
+        "       print(\"Done.\")\n"
+        "   end\n"
+        ")\n"
+    >>.

@@ -53,7 +53,7 @@
 -export([as_process/2]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
--export([ping_ping_script/1, schedule_aos_call/2, init/0]).
+-export([schedule_aos_call/2, init/0]).
 %%% Tests
 -export([do_test_restore/0]).
 -include_lib("eunit/include/eunit.hrl").
@@ -506,7 +506,9 @@ schedule_test_message(Msg1, Text, MsgBase) ->
     {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
 
 schedule_aos_call(Msg1, Code) ->
-    Wallet = hb:wallet(),
+    schedule_aos_call(Msg1, Code, #{}).
+schedule_aos_call(Msg1, Code, Opts) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     ProcID = hb_message:id(Msg1, all),
     Msg2 = hb_message:attest(#{
         <<"action">> => <<"Eval">>,
@@ -987,36 +989,3 @@ aos_persistent_worker_benchmark_test_() ->
         ?assert(Iterations >= 2),
         ok
     end}.
-
-%%% Test helpers
-
-ping_ping_script(Limit) ->
-    % <<
-    %     "Handlers.add(\"Ping\",\n"
-    %     "   function(m)\n"
-    %     "       C = tonumber(m.Count)\n"
-    %     "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
-    %     "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
-    %     "           print(\"Ping\", C + 1)\n"
-    %     "       else\n"
-    %     "           print(\"Done.\")\n"
-    %     "       end\n"
-    %     "   end\n"
-    %     ")\n"
-    %     "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
-    % >>.
-    <<
-        "Handlers.add(\"Ping\",\n"
-        "   function (test) return true end,\n"
-        "   function(m)\n"
-        "       C = tonumber(m.Count)\n"
-        "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
-        "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
-        "           print(\"Ping\", C + 1)\n"
-        "       else\n"
-        "           print(\"Done.\")\n"
-        "       end\n"
-        "   end\n"
-        ")\n"
-        "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
-    >>.
