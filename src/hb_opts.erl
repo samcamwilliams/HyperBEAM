@@ -66,7 +66,7 @@ default_message() ->
                 <<"cron@1.0">> => dev_cron,
                 <<"poda@1.0">> => dev_poda,
                 <<"monitor@1.0">> => dev_monitor,
-                <<"push@1.0">> => dev_mu,
+                <<"push@1.0">> => dev_push,
                 <<"compute@1.0">> => dev_cu,
                 <<"p4@1.0">> => dev_p4,
                 <<"faff@1.0">> => dev_faff,

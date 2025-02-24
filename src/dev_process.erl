@@ -49,8 +49,11 @@
 %%% Public API
 -export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, snapshot/3]).
 -export([ensure_process_key/2]).
+%%% Public utilities
+-export([as_process/2]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
+-export([schedule_aos_call/2, init/0]).
 %%% Tests
 -export([do_test_restore/0]).
 -include_lib("eunit/include/eunit.hrl").
@@ -66,8 +69,31 @@ info(_Msg1) ->
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3,
         await => fun dev_process_worker:await/5,
-        exclude => [<<"test">>]
+        exclude => [
+            <<"test">>,
+            <<"init">>,
+            <<"ping_ping_script">>,
+            <<"schedule_aos_call">>,
+            <<"test_aos_process">>,
+            <<"dev_test_process">>,
+            <<"test_wasm_process">>
+        ]
     }.
+
+%% @doc Returns the default device for a given piece of functionality. Expects
+%% the `process/variant' key to be set in the message. The `execution-device'
+%% _must_ be set in all processes aside those marked with `ao.TN.1' variant.
+%% This is in order to ensure that post-mainnet processes do not default to
+%% using infrastructure that should not be present on nodes in the future.
+default_device(Msg1, Key, Opts) ->
+    NormKey = hb_converge:normalize_key(Key),
+    case {NormKey, hb_converge:get(<<"process/variant">>, {as, dev_message, Msg1}, Opts)} of
+        {<<"execution">>, <<"ao.TN.1">>} -> <<"genesis-wasm@1.0">>;
+        _ -> default_device_index(NormKey)
+    end.
+default_device_index(<<"scheduler">>) -> <<"scheduler@1.0">>;
+default_device_index(<<"execution">>) -> <<"genesis-wasm@1.0">>;
+default_device_index(<<"push">>) -> <<"push@1.0">>.
 
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
@@ -257,70 +283,8 @@ now(RawMsg1, _Msg2, Opts) ->
 %% @doc Recursively push messages to the scheduler until we find a message
 %% that does not lead to any further messages being scheduled.
 push(Msg1, Msg2, Opts) ->
-    Wallet = hb:wallet(),
-    PushMsgSlot = hb_util:int(hb_converge:get(<<"Slot">>, Msg2, Opts)),
-    ID = hb_converge:get(<<"id">>, Msg1, Opts),
-    ?event(push, {push_computing_outbox, {process_id, ID}, {slot, PushMsgSlot}}),
-    Result = hb_converge:resolve(
-        Msg1,
-        #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => PushMsgSlot },
-        Opts#{ hashpath => ignore }
-    ),
-    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, Result}}),
-    case Result of
-        {ok, Outbox} when not ?IS_EMPTY_MESSAGE(Outbox) ->
-            {ok, maps:map(
-                fun(Key, MsgToPush) ->
-                    case hb_converge:get(<<"target">>, MsgToPush, Opts) of
-                        not_found ->
-                            ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
-                            #{};
-                        Target ->
-                            ?event(push,
-                                {pushing_child,
-                                    {originates_from_slot, PushMsgSlot},
-                                    {outbox_key, Key}
-                                }
-                            ),
-                            {ok, NextSlotOnProc} = hb_converge:resolve(
-                                Msg1,
-                                #{
-                                    <<"method">> => <<"POST">>,
-                                    <<"path">> => <<"schedule/slot">>,
-                                    <<"body">> =>
-                                        PushedMsg = hb_message:attest(
-                                            MsgToPush,
-                                            Wallet
-                                        )
-                                },
-                                Opts
-                            ),
-                            PushedMsgID = hb_message:id(PushedMsg, all),
-                            ?event(push,
-                                {push_scheduled,
-                                    {assigned_slot, NextSlotOnProc},
-                                    {target, Target},
-                                    {pushed_msg, PushedMsg}
-                                }),
-                            {ok, Downstream} = hb_converge:resolve(
-                                Msg1,
-                                #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
-                                Opts
-                            ),
-                            #{
-                                <<"id">> => PushedMsgID,
-                                <<"target">> => Target,
-                                <<"slot">> => NextSlotOnProc,
-                                <<"resulted-in">> => Downstream
-                            }
-                    end
-                end,
-                maps:without([<<"hashpath">>], Outbox)
-            )};
-        _ ->
-            ?event(push, {done, {slot, PushMsgSlot}}),
-            {ok, #{}}
-    end.
+    ProcBase = ensure_process_key(Msg1, Opts),
+    run_as(<<"push">>, ProcBase, Msg2, Opts).
 
 %% @doc Ensure that the process message we have in memory is live and
 %% up-to-date.
@@ -347,7 +311,13 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     TargetSlot,
                     Opts
                 ),
-            ?event(compute, {snapshot_load_res, {proc_id, ProcID}, {res, LoadRes}, {target, TargetSlot}}),
+            ?event(compute,
+                {snapshot_load_res,
+                    {proc_id, ProcID},
+                    {res, LoadRes},
+                    {target, TargetSlot}
+                }
+            ),
             case LoadRes of
                 {ok, LoadedSlot, SnapshotMsg} ->
                     % Restore the devices in the executor stack with the
@@ -382,10 +352,11 @@ run_as(Key, Msg1, Msg2, Opts) ->
         dev_message:set(
             ensure_process_key(Msg1, Opts),
             #{
-                <<"device">> => 
+                <<"device">> =>
                     DeviceSet = hb_converge:get(
                         << Key/binary, "-device">>,
                         {as, dev_message, Msg1},
+                        default_device(Msg1, Key, Opts),
                         Opts
                     ),
                 <<"input-prefix">> =>
@@ -396,7 +367,10 @@ run_as(Key, Msg1, Msg2, Opts) ->
                 <<"output-prefixes">> =>
                     hb_converge:get(
                         <<Key/binary, "-output-prefixes">>,
-                        {as, dev_message, Msg1}, undefined, Opts)
+                        {as, dev_message, Msg1},
+                        undefined, % Undefined in set will be ignored.
+                        Opts
+                    )
             },
             Opts
         ),
@@ -426,7 +400,10 @@ ensure_process_key(Msg1, Opts) ->
     case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
             hb_converge:set(
-                Msg1, #{ <<"process">> => Msg1 }, Opts#{ hashpath => ignore });
+                Msg1,
+                #{ <<"process">> => Msg1 },
+                Opts#{ hashpath => ignore }
+            );
         _ -> Msg1
     end.
 
@@ -529,7 +506,9 @@ schedule_test_message(Msg1, Text, MsgBase) ->
     {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
 
 schedule_aos_call(Msg1, Code) ->
-    Wallet = hb:wallet(),
+    schedule_aos_call(Msg1, Code, #{}).
+schedule_aos_call(Msg1, Code, Opts) ->
+    Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     ProcID = hb_message:id(Msg1, all),
     Msg2 = hb_message:attest(#{
         <<"action">> => <<"Eval">>,
@@ -899,29 +878,6 @@ prior_results_accessible_test() ->
         )
     ).
 
-full_push_test_() ->
-    {timeout, 30, fun() ->
-        init(),
-        Msg1 = test_aos_process(),
-        ?event(push, {msg1, Msg1}),
-        Script = ping_ping_script(2),
-        ?event({script, Script}),
-        {ok, Msg2} = schedule_aos_call(Msg1, Script),
-        ?event(push, {init_sched_result, Msg2}),
-        {ok, StartingMsgSlot} =
-            hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, #{}),
-        Msg3 =
-            #{
-                <<"path">> => <<"push">>,
-                <<"slot">> => StartingMsgSlot
-            },
-        {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
-        ?assertEqual(
-            {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"now/results/data">>, #{})
-        )
-    end}.
-
 persistent_process_test() ->
     {timeout, 30, fun() ->
         init(),
@@ -1033,36 +989,3 @@ aos_persistent_worker_benchmark_test_() ->
         ?assert(Iterations >= 2),
         ok
     end}.
-
-%%% Test helpers
-
-ping_ping_script(Limit) ->
-    % <<
-    %     "Handlers.add(\"Ping\",\n"
-    %     "   function(m)\n"
-    %     "       C = tonumber(m.Count)\n"
-    %     "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
-    %     "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
-    %     "           print(\"Ping\", C + 1)\n"
-    %     "       else\n"
-    %     "           print(\"Done.\")\n"
-    %     "       end\n"
-    %     "   end\n"
-    %     ")\n"
-    %     "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
-    % >>.
-    <<
-        "Handlers.add(\"Ping\",\n"
-        "   function (test) return true end,\n"
-        "   function(m)\n"
-        "       C = tonumber(m.Count)\n"
-        "       if C <= ", (integer_to_binary(Limit))/binary, " then\n"
-        "           Send({ Target = ao.id, Action = \"Ping\", Count = C + 1 })\n"
-        "           print(\"Ping\", C + 1)\n"
-        "       else\n"
-        "           print(\"Done.\")\n"
-        "       end\n"
-        "   end\n"
-        ")\n"
-        "Send({ Target = ao.id, Action = \"Ping\", Count = 1 })\n"
-    >>.
