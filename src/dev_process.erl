@@ -49,8 +49,11 @@
 %%% Public API
 -export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, snapshot/3]).
 -export([ensure_process_key/2]).
+%%% Public utilities
+-export([as_process/2]).
 %%% Test helpers
 -export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
+-export([ping_ping_script/1, schedule_aos_call/2, init/0]).
 %%% Tests
 -export([do_test_restore/0]).
 -include_lib("eunit/include/eunit.hrl").
@@ -66,8 +69,31 @@ info(_Msg1) ->
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3,
         await => fun dev_process_worker:await/5,
-        exclude => [<<"test">>]
+        exclude => [
+            <<"test">>,
+            <<"init">>,
+            <<"ping_ping_script">>,
+            <<"schedule_aos_call">>,
+            <<"test_aos_process">>,
+            <<"dev_test_process">>,
+            <<"test_wasm_process">>
+        ]
     }.
+
+%% @doc Returns the default device for a given piece of functionality. Expects
+%% the `process/variant' key to be set in the message. The `execution-device'
+%% _must_ be set in all processes aside those marked with `ao.TN.1' variant.
+%% This is in order to ensure that post-mainnet processes do not default to
+%% using infrastructure that should not be present on nodes in the future.
+default_device(Msg1, Key, Opts) ->
+    NormKey = hb_converge:normalize_key(Key),
+    case {NormKey, hb_converge:get(<<"process/variant">>, {as, dev_message, Msg1}, Opts)} of
+        {<<"execution">>, <<"ao.TN.1">>} -> <<"genesis-wasm@1.0">>;
+        _ -> default_device_index(NormKey)
+    end.
+default_device_index(<<"scheduler">>) -> <<"scheduler@1.0">>;
+default_device_index(<<"execution">>) -> <<"genesis-wasm@1.0">>;
+default_device_index(<<"push">>) -> <<"push@1.0">>.
 
 %% @doc Wraps functions in the Scheduler device.
 schedule(Msg1, Msg2, Opts) ->
@@ -285,7 +311,13 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     TargetSlot,
                     Opts
                 ),
-            ?event(compute, {snapshot_load_res, {proc_id, ProcID}, {res, LoadRes}, {target, TargetSlot}}),
+            ?event(compute,
+                {snapshot_load_res,
+                    {proc_id, ProcID},
+                    {res, LoadRes},
+                    {target, TargetSlot}
+                }
+            ),
             case LoadRes of
                 {ok, LoadedSlot, SnapshotMsg} ->
                     % Restore the devices in the executor stack with the
@@ -320,10 +352,11 @@ run_as(Key, Msg1, Msg2, Opts) ->
         dev_message:set(
             ensure_process_key(Msg1, Opts),
             #{
-                <<"device">> => 
+                <<"device">> =>
                     DeviceSet = hb_converge:get(
                         << Key/binary, "-device">>,
                         {as, dev_message, Msg1},
+                        default_device(Msg1, Key, Opts),
                         Opts
                     ),
                 <<"input-prefix">> =>
@@ -334,7 +367,10 @@ run_as(Key, Msg1, Msg2, Opts) ->
                 <<"output-prefixes">> =>
                     hb_converge:get(
                         <<Key/binary, "-output-prefixes">>,
-                        {as, dev_message, Msg1}, undefined, Opts)
+                        {as, dev_message, Msg1},
+                        undefined, % Undefined in set will be ignored.
+                        Opts
+                    )
             },
             Opts
         ),
@@ -364,7 +400,10 @@ ensure_process_key(Msg1, Opts) ->
     case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
             hb_converge:set(
-                Msg1, #{ <<"process">> => Msg1 }, Opts#{ hashpath => ignore });
+                Msg1,
+                #{ <<"process">> => Msg1 },
+                Opts#{ hashpath => ignore }
+            );
         _ -> Msg1
     end.
 
