@@ -257,70 +257,8 @@ now(RawMsg1, _Msg2, Opts) ->
 %% @doc Recursively push messages to the scheduler until we find a message
 %% that does not lead to any further messages being scheduled.
 push(Msg1, Msg2, Opts) ->
-    Wallet = hb:wallet(),
-    PushMsgSlot = hb_util:int(hb_converge:get(<<"Slot">>, Msg2, Opts)),
-    ID = hb_converge:get(<<"id">>, Msg1, Opts),
-    ?event(push, {push_computing_outbox, {process_id, ID}, {slot, PushMsgSlot}}),
-    Result = hb_converge:resolve(
-        Msg1,
-        #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => PushMsgSlot },
-        Opts#{ hashpath => ignore }
-    ),
-    ?event(push, {push_got_outbox, {slot, PushMsgSlot}, {outbox, Result}}),
-    case Result of
-        {ok, Outbox} when not ?IS_EMPTY_MESSAGE(Outbox) ->
-            {ok, maps:map(
-                fun(Key, MsgToPush) ->
-                    case hb_converge:get(<<"target">>, MsgToPush, Opts) of
-                        not_found ->
-                            ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
-                            #{};
-                        Target ->
-                            ?event(push,
-                                {pushing_child,
-                                    {originates_from_slot, PushMsgSlot},
-                                    {outbox_key, Key}
-                                }
-                            ),
-                            {ok, NextSlotOnProc} = hb_converge:resolve(
-                                Msg1,
-                                #{
-                                    <<"method">> => <<"POST">>,
-                                    <<"path">> => <<"schedule/slot">>,
-                                    <<"body">> =>
-                                        PushedMsg = hb_message:attest(
-                                            MsgToPush,
-                                            Wallet
-                                        )
-                                },
-                                Opts
-                            ),
-                            PushedMsgID = hb_message:id(PushedMsg, all),
-                            ?event(push,
-                                {push_scheduled,
-                                    {assigned_slot, NextSlotOnProc},
-                                    {target, Target},
-                                    {pushed_msg, PushedMsg}
-                                }),
-                            {ok, Downstream} = hb_converge:resolve(
-                                Msg1,
-                                #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
-                                Opts
-                            ),
-                            #{
-                                <<"id">> => PushedMsgID,
-                                <<"target">> => Target,
-                                <<"slot">> => NextSlotOnProc,
-                                <<"resulted-in">> => Downstream
-                            }
-                    end
-                end,
-                maps:without([<<"hashpath">>], Outbox)
-            )};
-        _ ->
-            ?event(push, {done, {slot, PushMsgSlot}}),
-            {ok, #{}}
-    end.
+    ProcBase = ensure_process_key(Msg1, Opts),
+    run_as(<<"push">>, ProcBase, Msg2, Opts).
 
 %% @doc Ensure that the process message we have in memory is live and
 %% up-to-date.
@@ -898,29 +836,6 @@ prior_results_accessible_test() ->
             #{}
         )
     ).
-
-full_push_test_() ->
-    {timeout, 30, fun() ->
-        init(),
-        Msg1 = test_aos_process(),
-        ?event(push, {msg1, Msg1}),
-        Script = ping_ping_script(2),
-        ?event({script, Script}),
-        {ok, Msg2} = schedule_aos_call(Msg1, Script),
-        ?event(push, {init_sched_result, Msg2}),
-        {ok, StartingMsgSlot} =
-            hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, #{}),
-        Msg3 =
-            #{
-                <<"path">> => <<"push">>,
-                <<"slot">> => StartingMsgSlot
-            },
-        {ok, _} = hb_converge:resolve(Msg1, Msg3, #{}),
-        ?assertEqual(
-            {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"now/results/data">>, #{})
-        )
-    end}.
 
 persistent_process_test() ->
     {timeout, 30, fun() ->
