@@ -277,12 +277,17 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM) -> to(TABM, []).
 to(TABM, Opts) when is_map(TABM) ->
+    InlineKey = inline_key(TABM),
     % Calculate the initial encoding from the TABM
     Enc0 =
         maps:fold(
             fun
                 (<<"body">>, Value, AccMap) ->
-                    AccMap#{ <<"body">> => #{ <<"body">> => Value } };
+                    OldBody = maps:get(<<"body">>, AccMap, #{}),
+                    AccMap#{ <<"body">> => OldBody#{ <<"body">> => Value } };
+                (Key, Value, AccMap) when Key =:= InlineKey ->
+                    OldBody = maps:get(<<"body">>, AccMap, #{}),
+                    AccMap#{ <<"body">> => OldBody#{ InlineKey => Value } };
                 (Key, Value, AccMap) ->
                     field_to_http(AccMap, {Key, Value}, #{})
             end,
@@ -292,7 +297,6 @@ to(TABM, Opts) when is_map(TABM) ->
     ?event({prepared_body_map, {msg, Enc0}}),
     BodyMap = maps:get(<<"body">>, Enc0, #{}),
     FlattenedBodyMap = lift_maps(BodyMap),
-    InlineKey = inline_key(Enc0),
     Enc1 =
         case {FlattenedBodyMap, lists:member(sub_part, Opts)} of
             {X, _} when map_size(X) =:= 0 ->
@@ -300,7 +304,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 % corresponding empty binary.
                 ?event({encoding_empty_body, {msg, Enc0}}),
                 maps:put(<<"body">>, <<>>, Enc0);
-            {#{ <<"body">> := UserBody }, false}
+            {#{ <<InlineKey/binary>> := UserBody }, false}
                     when map_size(FlattenedBodyMap) =:= 1 andalso is_binary(UserBody) ->
                 % Simply set the sole body binary as the body of the
                 % HTTP message, no further encoding required
