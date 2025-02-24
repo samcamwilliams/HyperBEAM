@@ -27,7 +27,8 @@
 
 %% @doc Return the ID of a message.
 id(Msg) ->
-    {ok, (to(Msg))#tx.id}.
+    TABM = dev_codec_structured:from(Msg),
+    {ok, (to(TABM))#tx.id}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
 attest(Msg, _Req, Opts) ->
