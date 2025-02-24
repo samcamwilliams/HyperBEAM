@@ -24,7 +24,7 @@ find(ProcID, GenIfNotHosted, Opts) ->
     end.
 
 get_processes() ->
-    ?event(debug, {getting_processes, hb_name:all()}),
+    ?event({getting_processes, hb_name:all()}),
     [ ProcID || {{dev_scheduler, ProcID}, _} <- hb_name:all() ].
 
 maybe_new_proc(_ProcID, false, _Opts) -> not_found;
