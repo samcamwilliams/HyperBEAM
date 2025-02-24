@@ -502,7 +502,7 @@ encode_body_part(PartName, BodyPart, InlineKey) ->
                 Disposition,
                 BPMap
             ),
-            SubHttp = to(WithDisposition, [sub_part]),
+            SubHttp = to(WithDisposition),
             encode_http_msg(SubHttp);
         BPBin when is_binary(BPBin) ->
             % A properly encoded inlined body part MUST have a CRLF between
