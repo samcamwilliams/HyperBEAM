@@ -392,7 +392,6 @@ generate_redirect(ProcID, URL, SchedulerLocation, Opts) ->
         end,
     ProcWithoutHint = without_hint(ProcID),
     Sep = case binary:last(URL) of $/ -> <<"">>; _ -> <<"/">> end,
-    ?event(push, {seperator, Sep}, Opts),
     {redirect,
         #{
             <<"status">> => 307,
