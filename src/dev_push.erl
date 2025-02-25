@@ -223,7 +223,7 @@ push_with_redirect_hint_test_() ->
         Opts = #{ priv_wallet => hb:wallet() },
         % Setup the Pong server
         Client = dev_process:test_aos_process(),
-        PongServer = dev_process:test_aos_process(Opts),
+        PongServer = dev_process:test_aos_process(SchedOpts),
         PongServerID =
             hb_converge:get(
                 <<"process/id">>,
