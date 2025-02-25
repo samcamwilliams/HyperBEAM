@@ -496,11 +496,68 @@ get_schedule(Msg1, Msg2, Opts) ->
             ToRes -> ToRes
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
+    ?event(debug_scheduler, {parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
     case find_server(ProcID, Msg1, Opts) of
         {local, _PID} ->
             generate_local_schedule(Format, ProcID, From, To, Opts);
         {redirect, Redirect} ->
-            {ok, Redirect}
+            case hb_opts:get(scheduler_follow_redirects, true, Opts) of
+                true ->
+                    case get_remote_schedule(ProcID, From, To, Redirect, Opts) of
+                        {ok, Res} ->
+                            case Format of
+                                <<"application/aos-2">> ->
+                                    dev_scheduler_formats:assignments_to_aos2(
+                                        ProcID,
+                                        hb_converge:get(
+                                            <<"assignments">>, Res, [], Opts),
+                                        hb_converge:get(
+                                            <<"continues">>, Res, false, Opts),
+                                        Opts
+                                    );
+                                _ ->
+                                    {ok, Res}
+                            end;
+                        {error, Res} ->
+                            {error, Res}
+                    end;
+                false ->
+                    {ok, Redirect}
+            end
+    end.
+
+%% @doc Get a schedule from a remote scheduler.
+get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
+    Location = hb_converge:get(<<"location">>, Redirect, Opts),
+    Parsed = uri_string:parse(Location),
+    Node =
+        uri_string:recompose(
+            (maps:remove(query, Parsed))#{
+                path => <<"/">>
+            }
+        ),
+    ToBin = integer_to_binary(To),
+    FromBin = integer_to_binary(From),
+    Path = <<
+            ProcID/binary,
+            "/schedule?from+integer=",
+            FromBin/binary,
+            "&to+integer=",
+            ToBin/binary
+        >>,
+    case hb_http:get(Node, Path, Opts) of
+        {ok, Res} ->
+            ?event(push, {remote_schedule_result, {res, Res}}, Opts),
+            case hb_converge:get(<<"status">>, Res, 200, Opts) of
+                200 ->
+
+                    {ok, Res};
+                307 ->
+                    get_remote_schedule(ProcID, From, To, Redirect, Opts)
+            end;
+        {error, Res} ->
+            ?event(push, {remote_schedule_result, {res, Res}}, Opts),
+            {error, Res}
     end.
 
 %%% Private methods
