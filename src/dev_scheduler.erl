@@ -65,7 +65,7 @@ router(_, Msg1, Msg2, Opts) ->
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
-    ?event(next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event(next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}}),
     Schedule =
         hb_private:get(
             <<"priv/scheduler/assignments">>,
