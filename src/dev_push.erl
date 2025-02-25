@@ -9,24 +9,24 @@
 
 %% @doc Push either a message or an assigned slot number.
 push(Base, Req, Opts) ->
-    Mode = is_async(Base, Req, Opts),
     ModBase = dev_process:as_process(Base, Opts),
-    ToPush =
-        case hb_converge:get(<<"type">>, Base, Opts) of
-            Name when Name == <<"message">>; Name == <<"process">> ->
-                case hb_converge:resolve(Base, Req, Opts) of
-                    {ok, Assignment} ->
-                        Assignment;
-                    {error, _} ->
-                        {error, <<"Could not schedule initial message.">>}
-                end;
-            _ -> Req
-        end,
+    case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
+        no_slot ->
+            {ok, Assignment} = initial_push(ModBase, Req, Opts),
+            case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
+                <<"Message">> -> push_with_mode(ModBase, Assignment, Opts);
+                <<"Process">> -> {ok, Assignment}
+            end;
+        _ -> push_with_mode(ModBase, Req, Opts)
+    end.
+
+push_with_mode(Base, Req, Opts) ->
+    Mode = is_async(Base, Req, Opts),
     case Mode of
         <<"sync">> ->
-            do_push(ModBase, ToPush, Opts);
+            do_push(Base, Req, Opts);
         <<"async">> ->
-            spawn(fun() -> do_push(ModBase, ToPush, Opts) end)
+            spawn(fun() -> do_push(Base, Req, Opts) end)
     end.
 
 %% @doc Determine if the push is asynchronous.
@@ -68,9 +68,9 @@ do_push(Base, Assignment, Opts) ->
     end.
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
-    case target_process(MsgToPush, Opts) of
+    case hb_converge:get(<<"target">>, MsgToPush, undefined, Opts) of
         undefined ->
-            ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
+            ?event(push, {skip_no_target, {key, Key}, MsgToPush}, Opts),
             #{};
         TargetID ->
             ?event(push,
@@ -78,14 +78,12 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     {originates_from_slot, FromSlot},
                     {outbox_key, Key},
                     {target_id, TargetID}
-                }
+                },
+                Opts
             ),
-            {ok, PushedMsgID, NextSlotOnProc} =
-                schedule_result(
-                    TargetID,
-                    augment_message(MsgToPush, Base, Opts),
-                    Opts
-                ),
+            {ok, Assignment} = schedule_result(Base, MsgToPush, Opts),
+            NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
+            PushedMsgID = hb_converge:get(<<"body/id">>, Assignment, Opts),
             ?event(push,
                 {push_scheduled_message,
                     {process, TargetID},
@@ -106,7 +104,7 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
     end.
 
 %% @doc Augment the message with from-* keys, if it doesn't already have them.
-augment_message(MsgToPush, _Base, Opts) ->
+normalize_message(MsgToPush, Opts) ->
     hb_converge:set(
         MsgToPush,
         #{
@@ -136,41 +134,94 @@ split_target(RawTarget) ->
         _ -> {RawTarget, <<>>}
     end.
 
-schedule_result(TargetProc, MsgToPush, Opts) ->
-    schedule_result(local, TargetProc, MsgToPush, Opts).
-schedule_result(Node, TargetProc, MsgToPush, Opts) ->
-    ?event(push, {push_scheduling_result, {target, TargetProc}, {msg, MsgToPush}}),
+schedule_result(Base, MsgToPush, Opts) ->
+    ?event(push,
+        {push_scheduling_result,
+            {target, {explicit, Base}},
+            {msg, MsgToPush}},
+        Opts
+    ),
     SignedReq =
         #{
             <<"method">> => <<"POST">>,
+            <<"path">> => <<"schedule">>,
             <<"body">> =>
-                PushedMsg = hb_message:attest(
+                hb_message:attest(
                     MsgToPush,
                     Opts
                 )
         },
     {ErlStatus, Res} =
-        case Node of
-            local ->
-                hb_converge:resolve_many(
-                    [TargetProc, SignedReq#{ <<"path">> => <<"schedule">> }],
-                    Opts#{ cache_control => <<"always">> }
-                );
-            _ ->
-                hb_http:post(Node, <<"schedule">>, PushedMsg, Opts)
-        end,
+        hb_converge:resolve(
+            Base,
+            SignedReq,
+            Opts#{ cache_control => <<"always">> }
+        ),
+    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}}, Opts),
     case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
-        {ok, 200} ->
-            PushedMsgID = hb_message:id(PushedMsg, all),
-            Slot = hb_converge:get(<<"slot">>, Res, Opts),
-            {ok, PushedMsgID, Slot};
+        {ok, 200} -> {ok, Res};
         {ok, 307} ->
             Location = hb_converge:get(<<"location">>, Res, Opts),
             ?event(push, {redirect, {location, {explicit, Location}}}),
-            schedule_result(Location, TargetProc, MsgToPush, Opts);
+            NormMsg = normalize_message(MsgToPush, Opts),
+            SignedNormMsg = hb_message:attest(NormMsg, Opts),
+            remote_schedule_result(Location, SignedNormMsg, Opts);
         {error, _} ->
             {error, Res}
     end.
+
+%% @doc Push a message or a process, prior to pushing the resulting slot number.
+initial_push(Base, Req, Opts) ->
+    ModReq = Req#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
+    case hb_converge:resolve(Base, ModReq, Opts) of
+        {ok, Res} ->
+            case hb_converge:get(<<"status">>, Res, 200, Opts) of
+                200 -> {ok, Res};
+                307 ->
+                    Location = hb_converge:get(<<"location">>, Res, Opts),
+                    remote_schedule_result(Location, Req, Opts)
+            end;
+        {error, Res} ->
+            {error, Res}
+    end.
+
+remote_schedule_result(Location, SignedReq, Opts) ->
+    {Node, RedirectPath} = parse_redirect(Location),
+    Path =
+        case find_type(SignedReq, Opts) of
+            <<"Process">> -> <<"/schedule">>;
+            <<"Message">> -> RedirectPath
+        end,
+    case hb_http:post(Node, Path, SignedReq, Opts) of
+        {ok, Res} ->
+            case hb_converge:get(<<"status">>, Res, 200, Opts) of
+                200 -> {ok, Res};
+                307 ->
+                    NewLocation = hb_converge:get(<<"location">>, Res, Opts),
+                    remote_schedule_result(NewLocation, SignedReq, Opts)
+            end;
+        {error, Res} ->
+            {error, Res}
+    end.
+
+find_type(Req, Opts) ->
+    hb_converge:get_first(
+        [
+            {Req, <<"type">>},
+            {Req, <<"body/type">>}
+        ],
+        Opts
+    ).
+
+parse_redirect(Location) ->
+    Parsed = uri_string:parse(Location),
+    Node =
+        uri_string:recompose(
+            (maps:remove(query, Parsed))#{
+                path => <<"/schedule">>
+            }
+        ),
+    {Node, maps:get(path, Parsed)}.
 
 %%% Tests
 
@@ -251,27 +302,35 @@ push_with_redirect_hint_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Stores = [{hb_store_fs, #{ prefix => "TEST-cache" }}],
-        SchedOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
-        ExtScheduler = hb_http_server:start_node(SchedOpts),
-        ?event(push, {external_scheduler, {location, ExtScheduler}, {opts, SchedOpts}}),
-        Opts = #{ priv_wallet => hb:wallet(), store => Stores },
-        % Setup the Pong server
+        ExtOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
+        LocalOpts = #{ priv_wallet => hb:wallet(), store => Stores },
+        ExtScheduler = hb_http_server:start_node(ExtOpts),
+        ?event(push, {external_scheduler, {location, ExtScheduler}}),
+        % Create the Pong server and client
         Client = dev_process:test_aos_process(),
-        PongServer = dev_process:test_aos_process(SchedOpts),
-        hb_cache:write(Client, Opts),
-        hb_cache:write(PongServer, Opts),
+        PongServer = dev_process:test_aos_process(ExtOpts),
+        % Push the new processes
+        {ok, ServerSchedResp} = hb_http:post(ExtScheduler, <<"/push">>, PongServer, ExtOpts),
+        ?event(push, {pong_server_sched_resp, ServerSchedResp}),
+        {ok, ClientSchedResp} =
+            hb_converge:resolve(
+                Client,
+                #{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
+                LocalOpts
+            ),
+        ?event(push, {client_sched_resp, ClientSchedResp}),
+        % Get the IDs of the server process
         PongServerID =
             hb_converge:get(
                 <<"process/id">>,
-                dev_process:ensure_process_key(PongServer, Opts),
-                Opts
+                dev_process:ensure_process_key(PongServer, LocalOpts),
+                LocalOpts
             ),
-        % Setup the processes
-        PongServerScriptMsg =
-            hb_message:attest(
+        {ok, ServerScriptSchedResp} =
+            hb_http:post(
+                ExtScheduler,
+                <<PongServerID/binary, "/push">>,
                 #{
-                    <<"path">> => <<"schedule">>,
-                    <<"method">> => <<"POST">>,
                     <<"body">> =>
                         hb_message:attest(
                             #{
@@ -280,16 +339,10 @@ push_with_redirect_hint_test_() ->
                                 <<"type">> => <<"Message">>,
                                 <<"data">> => reply_script()
                             },
-                            SchedOpts
+                            ExtOpts
                         )
                 },
-                SchedOpts
-            ),
-        {ok, ServerScriptSchedResp} =
-            hb_converge:resolve(
-                PongServer,
-                PongServerScriptMsg,
-                SchedOpts
+                ExtOpts
             ),
         ?event(push, {pong_server_script_sched_resp, ServerScriptSchedResp}),
         {ok, ToPush} =
@@ -306,18 +359,15 @@ push_with_redirect_hint_test_() ->
                         (PongServerID)/binary, "?hint=",
                         (ExtScheduler)/binary,
                     "\", Action = \"Ping\" })\n"
-                >>
+                >>,
+                LocalOpts
             ),
-        SlotToPush = hb_converge:get(<<"slot">>, ToPush, Opts),
+        SlotToPush = hb_converge:get(<<"slot">>, ToPush, LocalOpts),
         ?event(push, {slot_to_push_client, SlotToPush}),
-        Msg3 =
-            #{
-                <<"path">> => <<"push">>,
-                <<"slot">> => SlotToPush
-            },
-        {ok, PushResult} = hb_converge:resolve(Client, Msg3, Opts),
+        Msg3 = #{ <<"path">> => <<"push">>, <<"slot">> => SlotToPush },
+        {ok, PushResult} = hb_converge:resolve(Client, Msg3, LocalOpts),
         ?event(push, {push_result_client, PushResult}),
-        AfterPush = hb_converge:resolve(Client, <<"now/results/data">>, Opts),
+        AfterPush = hb_converge:resolve(Client, <<"now/results/data">>, LocalOpts),
         ?event(push, {after_push, AfterPush}),
         % Note: This test currently only gets a reply that the message was not
         % trusted by the process. To fix this, we would have to add another 
