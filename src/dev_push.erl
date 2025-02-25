@@ -81,7 +81,11 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                 }
             ),
             {ok, PushedMsgID, NextSlotOnProc} =
-                schedule_result(Base, TargetID, MsgToPush, Opts),
+                schedule_result(
+                    TargetID,
+                    augment_message(MsgToPush, Base, Opts),
+                    Opts
+                ),
             ?event(push,
                 {push_scheduled,
                     {process, TargetID},
@@ -101,6 +105,10 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
             }
     end.
 
+%% @doc Augment the message with from-* keys, if it doesn't already have them.
+augment_message(MsgToPush, _Base, _Opts) ->
+    MsgToPush.
+
 %% @doc Find the target process ID for a message to push.
 target_process(MsgToPush, Opts) ->
     case hb_converge:get(<<"target">>, MsgToPush, Opts) of
@@ -112,29 +120,38 @@ target_process(MsgToPush, Opts) ->
             end
     end.
 
-schedule_result(FromProc, TargetProc, MsgToPush, Opts) ->
+schedule_result(TargetProc, MsgToPush, Opts) ->
+    schedule_result(local, TargetProc, MsgToPush, Opts).
+schedule_result(Node, TargetProc, MsgToPush, Opts) ->
     ?event(push, {push_scheduling_result, {target, TargetProc}, {msg, MsgToPush}}),
-    Res = hb_converge:resolve_many(
-        [
-            TargetProc,
-            #{
-                <<"method">> => <<"POST">>,
-                <<"path">> => <<"schedule">>,
-                <<"body">> =>
-                    PushedMsg = hb_message:attest(
-                        MsgToPush,
-                        Opts
-                    )
-            }
-        ],
-        Opts#{ cache_control => <<"always">> }
-    ),
-    case Res of
-        {ok, #{ <<"slot">> := Slot}} ->
+    SignedReq =
+        #{
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                PushedMsg = hb_message:attest(
+                    MsgToPush,
+                    Opts
+                )
+        },
+    {ErlStatus, Res} =
+        case Node of
+            local ->
+                hb_converge:resolve_many(
+                    [TargetProc, SignedReq#{ <<"path">> => <<"schedule">>}],
+                    Opts#{ cache_control => <<"always">> }
+                );
+            _ ->
+                hb_http:post(Node, <<"schedule">>, PushedMsg, Opts)
+        end,
+    case {ErlStatus, hb_converge:get(<<"status">>, Res, Opts)} of
+        {ok, 200} ->
             PushedMsgID = hb_message:id(PushedMsg, all),
+            Slot = hb_converge:get(<<"slot">>, Res, Opts),
             {ok, PushedMsgID, Slot};
-        {ok, #{ <<"status">> := 307 }} ->
-            {error, <<"Received redirect response from scheduler.">>};
+        {ok, 307} ->
+            Location = hb_converge:get(<<"location">>, Res, Opts),
+            ?event(push, {redirect, {location, {explicit, Location}}}),
+            schedule_result(Location, TargetProc, MsgToPush, Opts);
         {error, Error} ->
             {error, Error}
     end.
@@ -217,13 +234,16 @@ multi_process_push_test_() ->
 push_with_redirect_hint_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        SchedOpts = #{ priv_wallet => ar_wallet:new() },
+        Stores = [{hb_store_fs, #{ prefix => "TEST-cache" }}],
+        SchedOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
         ExtScheduler = hb_http_server:start_node(SchedOpts),
         ?event(push, {external_scheduler, {location, ExtScheduler}, {opts, SchedOpts}}),
-        Opts = #{ priv_wallet => hb:wallet() },
+        Opts = #{ priv_wallet => hb:wallet(), store => Stores },
         % Setup the Pong server
         Client = dev_process:test_aos_process(),
         PongServer = dev_process:test_aos_process(SchedOpts),
+        hb_cache:write(Client, Opts),
+        hb_cache:write(PongServer, Opts),
         PongServerID =
             hb_converge:get(
                 <<"process/id">>,
