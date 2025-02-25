@@ -360,20 +360,14 @@ open_connection(#{ peer := Peer }, Opts) ->
 	gun:open(Host, Port, GunOpts).
 
 parse_peer(Peer, Opts) ->
-    case binary:split(Peer, <<":">>, [global]) of
-        [_Protocol, <<"//", Host/binary>>, Port] ->
-            {
-                binary_to_list(Host),
-                parse_port(Port)
-            };
-        [Host, Port] ->
-            {binary_to_list(Host), parse_port(Port)};
-        [Host] ->
-            {binary_to_list(Host), hb_opts:get(port, 443, Opts)}
+    Parsed = uri_string:parse(Peer),
+    ?event(debug, {parsed, Parsed}),
+    case Parsed of
+        #{ host := Host, port := Port } ->
+            {hb_util:list(Host), Port};
+        #{ host := Host } ->
+            {hb_util:list(Host), hb_opts:get(port, 443, Opts)}
     end.
-
-parse_port(Port) ->
-    list_to_integer(hb_util:remove_trailing_noise(binary_to_list(Port), "/")).
 
 reply_error([], _Reason) ->
 	ok;
