@@ -214,6 +214,78 @@ multi_process_push_test_() ->
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
 
+push_with_redirect_hint_test_() ->
+    {timeout, 30, fun() ->
+        dev_process:init(),
+        SchedOpts = #{ priv_wallet => ar_wallet:new() },
+        ExtScheduler = hb_http_server:start_node(SchedOpts),
+        ?event(push, {external_scheduler, {location, ExtScheduler}, {opts, SchedOpts}}),
+        Opts = #{ priv_wallet => hb:wallet() },
+        % Setup the Pong server
+        Client = dev_process:test_aos_process(),
+        PongServer = dev_process:test_aos_process(Opts),
+        PongServerID =
+            hb_converge:get(
+                <<"process/id">>,
+                dev_process:ensure_process_key(PongServer, Opts),
+                Opts
+            ),
+        % Setup the processes
+        PongServerScriptMsg =
+            hb_message:attest(
+                #{
+                    <<"path">> => <<"schedule">>,
+                    <<"body">> =>
+                        hb_message:attest(
+                            #{
+                                <<"target">> => PongServerID,
+                                <<"action">> => <<"Eval">>,
+                                <<"type">> => <<"Message">>,
+                                <<"data">> => reply_script()
+                            },
+                            SchedOpts
+                        )
+                },
+                SchedOpts
+            ),
+        ?event(push, {pong_server_script_msg, PongServerScriptMsg}),
+        {ok, ServerScriptSchedResp} =
+            hb_converge:resolve(
+                PongServer,
+                PongServerScriptMsg,
+                SchedOpts
+            ),
+        ?event(push, {pong_server_script_sched_resp, ServerScriptSchedResp}),
+        {ok, ToPush} =
+            dev_process:schedule_aos_call(
+                Client,
+                <<
+                    "Handlers.add(\"Pong\",\n"
+                    "   function (test) return true end,\n"
+                    "   function(m)\n"
+                    "       print(\"GOT PONG\")\n"
+                    "   end\n"
+                    ")\n"
+                    "Send({ Target = \"",
+                        (PongServerID)/binary, "?hint=",
+                        (ExtScheduler)/binary,
+                    "\", Action = \"Ping\" })\n"
+                >>
+            ),
+        SlotToPush = hb_converge:get(<<"slot">>, ToPush, Opts),
+        ?event(push, {slot_to_push_client, SlotToPush}),
+        Msg3 =
+            #{
+                <<"path">> => <<"push">>,
+                <<"slot">> => SlotToPush
+            },
+        {ok, PushResult} = hb_converge:resolve(Client, Msg3, Opts),
+        ?event(push, {push_result_client, PushResult}),
+        AfterPush = hb_converge:resolve(Client, <<"now/results/data">>, Opts),
+        ?event(push, {after_push, AfterPush}),
+        ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
+    end}.
+
 %%% Test helpers
 
 ping_pong_script(Limit) ->

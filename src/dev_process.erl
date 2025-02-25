@@ -52,8 +52,8 @@
 %%% Public utilities
 -export([as_process/2]).
 %%% Test helpers
--export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
--export([schedule_aos_call/2, init/0]).
+-export([test_aos_process/0, test_aos_process/1, dev_test_process/0, test_wasm_process/1]).
+-export([schedule_aos_call/2, schedule_aos_call/3, init/0]).
 %%% Tests
 -export([do_test_restore/0]).
 -include_lib("eunit/include/eunit.hrl").

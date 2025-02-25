@@ -115,7 +115,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => false,
+        debug_hide_metadata => true,
         debug_ids => false,
         debug_hide_priv => true,
 		trusted => #{},

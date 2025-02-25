@@ -323,7 +323,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
     case get_hint(ProcID, Opts) of
         {ok, Hint} ->
             ?event({found_hint_in_proc_id, Hint}),
-            generate_redirect(ProcID, Hint);
+            generate_redirect(ProcID, Hint, Opts);
         not_found ->
             ?event({no_hint_in_proc_id, ProcID}),
             case dev_scheduler_registry:find(ProcID, false, Opts) of
@@ -382,13 +382,21 @@ get_hint(Str, Opts) ->
     end.
 
 %% @doc Generate a redirect message to a scheduler.
-generate_redirect(ProcID, URL) ->
+generate_redirect(ProcID, URL, Opts) ->
+    generate_redirect(ProcID, URL, #{}, Opts).
+generate_redirect(ProcID, URL, SchedulerLocation, Opts) ->
+    AcceptCodec =
+        case hb_converge:get(<<"variant">>, SchedulerLocation, <<"ao.N.1">>, Opts) of
+            <<"ao.N.1">> -> <<"httpsig@1.0">>;
+            <<"ao.TN.1">> -> <<"ans104@1.0">>
+        end,
     {redirect,
         #{
             <<"status">> => 307,
             <<"location">> => <<URL/binary, "/", ProcID/binary>>,
             <<"method">> => <<"POST">>,
-            <<"body">> => <<"Redirecting to scheduler: ", URL/binary>>
+            <<"body">> => <<"Redirecting to scheduler: ", URL/binary>>,
+            <<"accept-codec">> => AcceptCodec
         }
     }.
 
@@ -399,13 +407,13 @@ find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
     case get_hint(SchedulerLocation, Opts) of
         {ok, Hint} ->
             % We have a hint. Construct a redirect message.
-            generate_redirect(ProcID, Hint);
+            generate_redirect(ProcID, Hint, Opts);
         not_found ->
             {ok, SchedMsg} =
                 hb_gateway_client:scheduler_location(SchedulerLocation, Opts),
             {ok, SchedURL} = hb_converge:resolve(SchedMsg, <<"url">>, Opts),
             % We have a valid path. Construct a redirect message.
-            generate_redirect(ProcID, SchedURL)
+            generate_redirect(ProcID, SchedURL, SchedMsg, Opts)
     end.
 
 %% @doc Returns information about the current slot for a process.
