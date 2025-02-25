@@ -137,13 +137,13 @@ schedule_result(Node, TargetProc, MsgToPush, Opts) ->
         case Node of
             local ->
                 hb_converge:resolve_many(
-                    [TargetProc, SignedReq#{ <<"path">> => <<"schedule">>}],
+                    [TargetProc, SignedReq#{ <<"path">> => <<"schedule">> }],
                     Opts#{ cache_control => <<"always">> }
                 );
             _ ->
                 hb_http:post(Node, <<"schedule">>, PushedMsg, Opts)
         end,
-    case {ErlStatus, hb_converge:get(<<"status">>, Res, Opts)} of
+    case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
         {ok, 200} ->
             PushedMsgID = hb_message:id(PushedMsg, all),
             Slot = hb_converge:get(<<"slot">>, Res, Opts),
