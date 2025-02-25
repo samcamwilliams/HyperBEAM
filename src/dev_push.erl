@@ -14,8 +14,12 @@ push(Base, Req, Opts) ->
         no_slot ->
             {ok, Assignment} = initial_push(ModBase, Req, Opts),
             case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
-                <<"Message">> -> push_with_mode(ModBase, Assignment, Opts);
-                <<"Process">> -> {ok, Assignment}
+                <<"Message">> ->
+                    ?event(push, {pushing_message, {base, ModBase}, {assignment, Assignment}}, Opts),
+                    push_with_mode(ModBase, Assignment, Opts);
+                <<"Process">> ->
+                    ?event(push, {initializing_process, {base, ModBase}, {assignment, Assignment}}, Opts),
+                    {ok, Assignment}
             end;
         _ -> push_with_mode(ModBase, Req, Opts)
     end.
@@ -173,6 +177,7 @@ schedule_result(Base, MsgToPush, Opts) ->
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
 initial_push(Base, Req, Opts) ->
     ModReq = Req#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
+    ?event(push, {initial_push, {base, Base}, {req, ModReq}}, Opts),
     case hb_converge:resolve(Base, ModReq, Opts) of
         {ok, Res} ->
             case hb_converge:get(<<"status">>, Res, 200, Opts) of
@@ -186,14 +191,19 @@ initial_push(Base, Req, Opts) ->
     end.
 
 remote_schedule_result(Location, SignedReq, Opts) ->
+    ?event(push, {remote_schedule_result, {location, Location}, {req, SignedReq}}, Opts),
     {Node, RedirectPath} = parse_redirect(Location),
     Path =
         case find_type(SignedReq, Opts) of
             <<"Process">> -> <<"/schedule">>;
             <<"Message">> -> RedirectPath
         end,
-    case hb_http:post(Node, Path, SignedReq, Opts) of
+    % Store a copy of the message for ourselves.
+    hb_cache:write(SignedReq, Opts),
+    ?event(push, {remote_schedule_result, {path, Path}}, Opts),
+    case hb_http:post(Node, Path, maps:without([<<"path">>], SignedReq), Opts) of
         {ok, Res} ->
+            ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_converge:get(<<"status">>, Res, 200, Opts) of
                 200 -> {ok, Res};
                 307 ->
@@ -309,16 +319,9 @@ push_with_redirect_hint_test_() ->
         % Create the Pong server and client
         Client = dev_process:test_aos_process(),
         PongServer = dev_process:test_aos_process(ExtOpts),
-        % Push the new processes
+        % Push the new process that runs on the external scheduler
         {ok, ServerSchedResp} = hb_http:post(ExtScheduler, <<"/push">>, PongServer, ExtOpts),
         ?event(push, {pong_server_sched_resp, ServerSchedResp}),
-        {ok, ClientSchedResp} =
-            hb_converge:resolve(
-                Client,
-                #{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
-                LocalOpts
-            ),
-        ?event(push, {client_sched_resp, ClientSchedResp}),
         % Get the IDs of the server process
         PongServerID =
             hb_converge:get(
