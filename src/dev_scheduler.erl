@@ -96,7 +96,7 @@ next(Msg1, Msg2, Opts) ->
                 fun({Slot, Assignment}) ->
                     {hb_util:int(Slot), Assignment}
                 end,
-                maps:to_list(Assignments)
+                maps:to_list(maps:without([<<"priv">>, <<"attestations">>], Assignments))
             )
         ),
     ValidKeys =
@@ -511,8 +511,8 @@ get_schedule(Msg1, Msg2, Opts) ->
                                         ProcID,
                                         hb_converge:get(
                                             <<"assignments">>, Res, [], Opts),
-                                        hb_converge:get(
-                                            <<"continues">>, Res, false, Opts),
+                                        hb_util:atom(hb_converge:get(
+                                            <<"continues">>, Res, false, Opts)),
                                         Opts
                                     );
                                 _ ->
