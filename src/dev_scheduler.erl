@@ -536,11 +536,13 @@ get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
                 path => <<"/">>
             }
         ),
-    ToBin = integer_to_binary(To),
+    ?event(compute_debug, {getting_remote_schedule, {proc_id, ProcID}, {from, From}, {to, To}}),
+    ToBin = integer_to_binary(From+1),
     FromBin = integer_to_binary(From),
     Path = <<
             ProcID/binary,
-            "/schedule?from+integer=",
+            "/schedule"
+            "&from+integer=",
             FromBin/binary,
             "&to+integer=",
             ToBin/binary
