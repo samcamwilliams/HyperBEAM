@@ -390,15 +390,32 @@ generate_redirect(ProcID, URL, SchedulerLocation, Opts) ->
             <<"ao.N.1">> -> <<"httpsig@1.0">>;
             <<"ao.TN.1">> -> <<"ans104@1.0">>
         end,
+    ProcWithoutHint = without_hint(ProcID),
+    Sep = case binary:last(URL) of $/ -> <<"">>; _ -> <<"/">> end,
+    ?event(push, {seperator, Sep}, Opts),
     {redirect,
         #{
             <<"status">> => 307,
-            <<"location">> => <<URL/binary, "/", ProcID/binary>>,
-            <<"method">> => <<"POST">>,
+            <<"location">> =>
+                case AcceptCodec of
+                    <<"httpsig@1.0">> ->
+                        <<
+                            URL/binary, Sep/binary, ProcWithoutHint/binary,
+                            "/schedule"
+                        >>;
+                    <<"ans104@1.0">> ->
+                        <<
+                            URL/binary, Sep/binary, ProcWithoutHint/binary,
+                            "?proc-id=", ProcWithoutHint/binary
+                        >>
+                end,
             <<"body">> => <<"Redirecting to scheduler: ", URL/binary>>,
             <<"accept-codec">> => AcceptCodec
         }
     }.
+
+without_hint(Target) ->
+    hd(binary:split(Target, [<<"?">>, <<"&">>], [global])).
 
 %% @doc Use the SchedulerLocation to the remote path and return a redirect.
 find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
