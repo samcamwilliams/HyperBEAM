@@ -343,8 +343,17 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                 not_found ->
                     ?event({no_pid_in_local_registry, ProcID}),
                     % Find the process from the message.
-                    Proc = find_process(Msg1, Opts),
-                    ?event({found_process, Proc}),
+                    Proc =
+                        case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
+                            not_found ->
+                                ?event(debug_scheduler, {reading_cache, {proc_id, ProcID}}),
+                                case hb_cache:read(ProcID, Opts) of
+                                    {ok, P} -> P;
+                                    not_found -> Msg1
+                                end;
+                            P -> P
+                        end,
+                    ?event(debug_scheduler, {found_process, {process, Proc}, {msg1, Msg1}}, Opts),
                     % Check if we are the scheduler for this process.
                     Address = hb_util:human_id(ar_wallet:to_address(
                         hb_opts:get(priv_wallet, hb:wallet(), Opts))),
@@ -376,7 +385,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
     end.
 
 %% @doc If a hint is present in the string, return it. Else, return not_found.
-get_hint(Str, Opts) ->
+get_hint(Str, Opts) when is_binary(Str) ->
     case hb_opts:get(scheduler_follow_hints, true, Opts) of
         true ->
             case binary:split(Str, <<"?">>, [global]) of
@@ -389,7 +398,8 @@ get_hint(Str, Opts) ->
                 _ -> not_found
             end;
         false -> not_found
-    end.
+    end;
+get_hint(Str, _Opts) -> not_found.
 
 %% @doc Generate a redirect message to a scheduler.
 generate_redirect(ProcID, URL, Opts) ->
@@ -545,11 +555,6 @@ find_message_to_schedule(_Msg1, Msg2, Opts) ->
             Body;
         _ -> Msg2
     end.
-
-%% @doc Find the process from a given request. Check if it has a `process'
-%% field, and if so, return that. Otherwise, return the full message.
-find_process(Msg, Opts) ->
-    hb_converge:get(<<"process">>, Msg, Msg, Opts#{ hashpath => ignore }).
 
 %% @doc Generate a `GET /schedule' response for a process.
 generate_local_schedule(Format, ProcID, From, To, Opts) ->
