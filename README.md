@@ -67,7 +67,7 @@ docker build -t hyperbeam .
 ```
 
 If you intend to offer TEE-based computation of AO-Core devices, please see the
-[`HyperBEAM OS`]() repo for details on configuration and deployment.
+[`HyperBEAM OS`](https://github.com/permaweb/hb-os) repo for details on configuration and deployment.
 
 ## Configuration
 
@@ -151,7 +151,7 @@ native HTTP message format.
 
 - `~compute-lite@1.0`: The `~compute-lite@1.0` device is a lightweight device wrapping
 a local WASM executor, used for executing legacynet AO processes inside HyperBEAM.
-See the [HyperBEAM OS](https://github.com/PeterFarber/hb-os) repository for an 
+See the [HyperBEAM OS](https://github.com/permaweb/hb-os) repository for an 
 example setup with co-executing HyperBEAM and legacy-CU nodes.
 
 - `~snp@1.0`: The `~snp@1.0` device is used to generate and validate proofs that 
