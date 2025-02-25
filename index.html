@@ -1,10 +1,893 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <title>HyperBEAM Node</title>
-</head>
-<body>
-    <h1>Welcome to HyperBEAM</h1>
-	<p>Template HTML file for HyperBEAM Node</p>
-</body>
-</html> 
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="https://arweave.net/oTMNDjwfn-Mv0bJZPGmMpDPPYWqINH6lQeTVc92bwjA" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+      rel="stylesheet"
+    />
+    <title>HyperBEAM</title>
+    <style>
+      :root {
+        --bg-color: #ffffff;
+        --border-color: #959595;
+        --section-bg-color-primary: #ececec;
+        --section-bg-color-alt1: #f0f0f0;
+        --text-color-primary: #000000;
+        --text-color-alt1: #3a3a3a;
+        --link-color: #1a73e8;
+        --link-hover-color: #0c47a1;
+        --active-action-bg: #f8f8f8;
+        --indicator-color: #27d735;
+        --indicator-color-active: #23be30;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #1a1a1a;
+          --border-color: #595959;
+          --section-bg-color-primary: #232323;
+          --section-bg-color-alt1: #222222;
+          --text-color-primary: #ffffff;
+          --text-color-alt1: #dadada;
+          --link-color: #8ab4f8;
+          --link-hover-color: #4e8ef5;
+          --active-action-bg: #202020;
+          --indicator-color: #27d735;
+          --indicator-color-active: #23be30;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue",
+          sans-serif;
+        font-family: "Open Sans", sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 40px;
+        padding: 40px;
+        max-width: 1460px;
+        margin: 0 auto;
+        background: var(--bg-color);
+        color: var(--text-color-primary);
+      }
+
+      h1,
+      h2,
+      h3,
+      h4,
+      h5,
+      h6,
+      p,
+      ul,
+      li,
+      span {
+        margin: 0;
+        color: var(--text-color-primary);
+      }
+
+      button {
+        appearance: none;
+        outline: none;
+        border: none;
+        background: none;
+        padding: 0;
+        margin: 0;
+        transition: all 100ms;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue",
+          sans-serif;
+        font-family: "Open Sans", sans-serif;
+      }
+
+      h1 {
+        font-size: clamp(24px, 2.75vw, 32px);
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        color: var(--text-color-primary);
+      }
+
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      a {
+        text-decoration: none;
+        color: var(--link-color);
+        font-size: 14px;
+      }
+
+      a:hover {
+        text-decoration: underline;
+        text-decoration-thickness: 1.5px;
+        color: var(--link-hover-color);
+      }
+
+      .header {
+        width: 100%;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 60px 40px;
+        background: var(--section-bg-color-alt1);
+        border: 1px solid var(--border-color);
+        border-radius: 15px;
+      }
+
+      .header-logo {
+        height: 100%;
+        position: absolute;
+        left: -64.5px;
+      }
+
+      .header-main {
+        display: flex;
+        flex-direction: column;
+        gap: 7.5px;
+      }
+
+      .header-main h4 {
+        font-size: clamp(14px, 1.75vw, 16px);
+        font-weight: 400;
+        color: var(--text-color-alt1);
+      }
+
+      .header-logo img {
+        height: 100%;
+      }
+
+      .subheader {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        align-items: flex-end;
+        justify-content: flex-end;
+      }
+
+      .subheader-value {
+        display: flex;
+        align-items: center;
+        gap: 7.5px;
+      }
+
+      .subheader-value p {
+        font-size: clamp(14px, 1.75vw, 16px);
+        font-weight: 400;
+        color: var(--text-color-alt1);
+      }
+
+      .subheader-indicator-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 7.5px;
+      }
+
+      .subheader-indicator-wrapper p {
+        color: var(--text-color-primary);
+        font-weight: 600;
+      }
+
+      .subheader-indicator {
+        height: 13.5px;
+        width: 13.5px;
+        background: var(--indicator-color);
+        border-radius: 50%;
+        animation: pulse 1.075s infinite;
+      }
+
+      .subheader-value button {
+        letter-spacing: 0.5px;
+        padding: 0;
+        font-size: clamp(14px, 1.5vw, 15px);
+        font-weight: 600;
+        color: var(--text-color-primary);
+        text-decoration: underline;
+        text-decoration-thickness: 1.5px;
+      }
+
+      .subheader-value button:hover {
+        cursor: pointer;
+        color: var(--text-color-alt1);
+      }
+
+      .subheader-value button:disabled {
+        cursor: default;
+        color: var(--text-color-alt1);
+      }
+
+      .section-groups {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 40px;
+      }
+
+      .section-group {
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+      }
+
+      .section {
+        height: fit-content;
+        flex: 1;
+        border: 1px solid var(--border-color);
+        border-radius: 15px;
+      }
+
+      .section-header {
+        font-size: clamp(15px, 1.75vw, 18px);
+        font-weight: 500;
+        padding: 15px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-color-primary);
+      }
+
+      .key-metric-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 7.5px;
+        padding: 5px 15px 15px 15px;
+      }
+
+      .key-metric-header {
+        border-bottom: none;
+      }
+
+      .key-metric-value {
+        font-size: clamp(24px, 2.75vw, 32px);
+        font-weight: 600;
+        color: var(--indicator-color);
+      }
+
+      .key-metric-label {
+        font-size: clamp(12px, 1.5vw, 13px);
+        font-weight: 400;
+        color: var(--text-color-alt1);
+        text-transform: uppercase;
+      }
+
+      .metrics-section-header {
+        border-bottom: none;
+      }
+
+      .section-lines-header {
+        height: 35px;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--section-bg-color-alt1);
+      }
+
+      .metrics-section-lines-header {
+        border-top: 1px solid var(--border-color);
+      }
+
+      .section-lines-header p {
+        font-size: clamp(13px, 1.75vw, 14px);
+        font-weight: 500;
+        color: var(--text-color-alt1);
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .section-lines {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .section-line {
+        height: 35px;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .info-line:nth-child(even) {
+        background: var(--section-bg-color-primary);
+      }
+
+      .info-line:nth-child(odd) {
+        background: var(--bg-color);
+      }
+
+      .section-line:last-child {
+        border-bottom: none;
+        border-bottom-left-radius: 15px;
+        border-bottom-right-radius: 15px;
+      }
+
+      .section-line p {
+        font-size: clamp(13px, 1.75vw, 14px);
+        font-weight: 500;
+        max-width: 60%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #metrics-section {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .tabs-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 25px;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 30px;
+      }
+
+      .tab-button {
+        font-size: clamp(18px, 1.75vw, 20px);
+        font-weight: 600;
+        color: var(--text-color-alt1);
+        cursor: pointer;
+        position: relative;
+      }
+
+      .tab-button.active {
+        color: var(--text-color-primary);
+      }
+
+      .tab-button.active::after {
+        width: 100%;
+        content: "";
+        background: var(--indicator-color);
+        height: 3.5px;
+        border-radius: 5px;
+        display: block;
+        position: absolute;
+        bottom: -5.5px;
+      }
+
+      .tab-button:hover {
+        color: var(--text-color-primary);
+      }
+
+      .tab-content {
+        display: none;
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          background: var(--indicator-color);
+          transform: scale(1);
+        }
+        50% {
+          background: var(--indicator-color-active);
+          transform: scale(1.15);
+        }
+      }
+
+      @media (max-width: 1024px) {
+        .header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 40px;
+          padding: 20px;
+        }
+
+        .subheader {
+          align-items: flex-start;
+        }
+
+        .subheader-value {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .section-group {
+          flex-direction: column;
+        }
+
+        .section-line {
+          height: fit-content;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 15px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-main">
+        <h1>HyperBEAM</h1>
+        <h4>Node Overview</h4>
+      </div>
+      <div class="subheader">
+        <div class="subheader-value">
+          <p>Status:</p>
+          <div class="subheader-indicator-wrapper">
+            <div class="subheader-indicator"></div>
+            <p>Live</p>
+          </div>
+        </div>
+        <div class="subheader-value">
+          <p>Operator:</p>
+          <button
+            id="operator-action"
+            disabled="true"
+            onclick="copyToClipboard(this)"
+          >
+            Loading...
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-groups">
+      <div class="section-group">
+        <div class="section">
+          <h4 class="key-metric-header section-header">Uptime</h4>
+          <div class="key-metric-wrapper">
+            <h2 id="uptime-value" class="key-metric-value">-</h2>
+            <span class="key-metric-label">Seconds</span>
+          </div>
+        </div>
+        <div class="section">
+          <h4 class="key-metric-header section-header">Devices Loaded</h4>
+          <div class="key-metric-wrapper">
+            <h2 id="devices-value" class="key-metric-value">-</h2>
+            <span class="key-metric-label">Devices</span>
+          </div>
+        </div>
+        <div class="section">
+          <h4 class="key-metric-header section-header">System Load</h4>
+          <div class="key-metric-wrapper">
+            <h2 id="system-value" class="key-metric-value">-</h2>
+            <span class="key-metric-label">CPU Average</span>
+          </div>
+        </div>
+      </div>
+      <div class="section-group">
+        <div class="section">
+          <h4 class="key-metric-header section-header">
+            Read Requests Handled
+          </h4>
+          <div class="key-metric-wrapper">
+            <h2 id="read-value" class="key-metric-value">-</h2>
+            <span class="key-metric-label">Requests</span>
+          </div>
+        </div>
+        <div class="section">
+          <h4 class="key-metric-header section-header">
+            Write Requests Handled
+          </h4>
+          <div class="key-metric-wrapper">
+            <h2 id="write-value" class="key-metric-value">-</h2>
+            <span class="key-metric-label">Requests</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs-wrapper">
+      <div class="tabs">
+        <button class="tab-button active" onclick="showTab('devices-tab')">
+          Devices
+        </button>
+        <button class="tab-button" onclick="showTab('metrics-tab')">
+          Metrics
+        </button>
+      </div>
+
+      <div id="devices-tab" class="tab-content active">
+        <div id="info-section" class="section-group">
+          <div class="section">
+            <h4 class="section-header">Loaded Devices</h4>
+            <div id="info-section-lines-header" class="section-lines-header">
+              <p>Device Name</p>
+              <p>Module</p>
+            </div>
+            <div id="info-section-lines" class="section-lines">
+              <div class="info-line section-line">
+                <p>Loading...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="metrics-tab" class="tab-content">
+        <div id="metrics-section"></div>
+      </div>
+    </div>
+
+    <script>
+      const BASE_ROUTE = "http://localhost:10000/";
+
+
+      function parseInfo(text) {
+        const lines = text
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        let boundary = "";
+        for (const line of lines) {
+          if (line.startsWith("--")) {
+            boundary = line;
+            break;
+          }
+        }
+        if (!boundary) return [];
+
+        const parts = text.split(boundary);
+        const results = [];
+
+        parts.forEach((part) => {
+          part = part.trim();
+          if (!part || part === "--") return;
+          const sections = part.split("\r\n\r\n");
+          if (sections.length < 2) return;
+          const header = sections[0].trim();
+          const content = sections
+            .slice(1)
+            .join("\r\n\r\n")
+            .trim()
+            .replaceAll(`"`, "");
+          if (
+            content.toLowerCase().startsWith("atom") ||
+            !content.toLowerCase().startsWith("dev")
+          )
+            return;
+          const nameMatch = header.match(/name="([^"]+)"/);
+          if (!nameMatch) return;
+          const module = nameMatch[1];
+          results.push({
+            name: content.replaceAll(`"`, `''`),
+            content: module,
+          });
+        });
+
+        document.getElementById("devices-value").innerHTML = results.length;
+
+        return results;
+      }
+
+      function renderInfoGroups(groups) {
+        const container = document.getElementById("info-section-lines");
+        container.innerHTML = "";
+        groups.forEach((group) => {
+          const section = document.createElement("div");
+          section.classList.add("info-line");
+          section.classList.add("section-line");
+
+          const nameEl = document.createElement("p");
+          nameEl.textContent = group.content;
+          section.appendChild(nameEl);
+
+          const typeEl = document.createElement("p");
+          typeEl.textContent = group.name;
+          section.appendChild(typeEl);
+
+          container.appendChild(section);
+        });
+      }
+
+      function parseMetrics(text) {
+        const lines = text.split("\n");
+        const groups = {};
+        let currentMetric = null;
+
+        lines.forEach((line) => {
+          line = line.trim();
+          if (!line) return;
+
+          if (line.startsWith("# TYPE")) {
+            const parts = line.split(/\s+/);
+            const metricName = parts[2];
+            const metricType = parts[3];
+
+            if (!groups[metricType]) {
+              groups[metricType] = [];
+            }
+
+            currentMetric = {
+              name: metricName,
+              help: "",
+              values: [],
+            };
+
+            groups[metricType].push(currentMetric);
+          } else if (line.startsWith("# HELP")) {
+            const parts = line.split(/\s+/);
+            const metricName = parts[2];
+            const helpText = parts.slice(3).join(" ");
+            if (currentMetric && currentMetric.name === metricName) {
+              currentMetric.help = helpText;
+            }
+          } else if (line.startsWith("#")) {
+          } else {
+            if (currentMetric) {
+              const match = line.match(/(-?\d+(\.\d+)?)(\s*)$/);
+              if (match) {
+                let label = currentMetric.name;
+                const data = parseFloat(match[1]);
+
+                const inputMatch = line.match(/\{([^}]*)\}/);
+                if (inputMatch) {
+                  label = inputMatch[1];
+                }
+
+                if (label === `process_uptime_seconds`) {
+                  document.getElementById("uptime-value").innerHTML =
+                    formatDisplayAmount(data);
+                  startUpdatingUptime();
+                }
+                if (label === `system_load`)
+                  document.getElementById("system-value").innerHTML = data;
+
+                currentMetric.values.push({ label, data });
+              }
+            }
+          }
+        });
+
+        if (groups.counter) {
+          const spawnedProcesse = groups.counter.find(
+            (item) => item.name === "cowboy_spawned_processes_total"
+          );
+          
+          if (spawnedProcesse?.values) {
+            const readsHandled = spawnedProcesse.values.find(
+              (value) =>
+                value.label ===
+                `method="GET",reason="normal",status_class="success"`
+            )?.data || 0;
+            
+            const writesHandled = spawnedProcesse.values.find(
+              (value) =>
+                value.label ===
+                `method="POST",reason="normal",status_class="success"`
+            )?.data || 0;
+            
+            document.getElementById("read-value").innerHTML =
+              formatDisplayAmount(readsHandled);
+            document.getElementById("write-value").innerHTML =
+              formatDisplayAmount(writesHandled);
+          }
+        }
+
+        return groups;
+      }
+
+      function renderMetricGroups(groups) {
+        const container = document.getElementById("metrics-section");
+        container.innerHTML = "";
+        for (const group in groups) {
+          const section = document.createElement("div");
+          section.classList.add("section");
+
+          const header = document.createElement("h4");
+          header.textContent = group.charAt(0).toUpperCase() + group.slice(1);
+          header.classList.add("metrics-section-header");
+          header.classList.add("section-header");
+          section.appendChild(header);
+
+          groups[group].forEach((metric) => {
+            const metricContainer = document.createElement("div");
+
+            const subheader = document.createElement("div");
+            subheader.classList.add("metrics-section-lines-header");
+            subheader.classList.add("section-lines-header");
+
+            const subheaderValue = document.createElement("p");
+            subheaderValue.textContent = metric.name;
+            subheader.appendChild(subheaderValue);
+
+            metricContainer.appendChild(subheader);
+
+            const metricBody = document.createElement("div");
+            metricBody.classList.add("section-lines");
+            metricContainer.appendChild(metricBody);
+
+            if (metric.values.length > 0) {
+              metric.values.forEach((valueMap) => {
+                const metricLine = document.createElement("div");
+                metricLine.classList.add("section-line");
+
+                for (const key in valueMap) {
+                  const metricValue = document.createElement("p");
+
+                  switch (key) {
+                    case "data":
+                      metricValue.textContent = formatDisplayAmount(
+                        valueMap[key]
+                      );
+                      break;
+                    default:
+                      metricValue.textContent = valueMap[key];
+                      break;
+                  }
+
+                  metricLine.appendChild(metricValue);
+                }
+
+                metricContainer.appendChild(metricLine);
+              });
+            } else {
+              const metricLine = document.createElement("div");
+              metricLine.classList.add("section-line");
+              const metricValueLabel = document.createElement("p");
+              metricValueLabel.textContent = "No data";
+              metricLine.appendChild(metricValueLabel);
+              const metricValueData = document.createElement("p");
+              metricValueData.textContent = "-";
+              metricLine.appendChild(metricValueData);
+              metricContainer.appendChild(metricLine);
+            }
+
+            section.appendChild(metricContainer);
+          });
+
+          container.appendChild(section);
+        }
+      }
+
+      async function get(endpoint) {
+        return await (await fetch(`${BASE_ROUTE}${endpoint}`)).text();
+      }
+
+      function startUpdatingUptime() {
+        const uptimeElement = document.getElementById("uptime-value");
+        if (!uptimeElement) return;
+
+        const initialUptime =
+          parseFloat(uptimeElement.innerHTML.replaceAll(",", "")) || 0;
+        const startTime = Date.now();
+
+        function updateUptime() {
+          const elapsedSeconds = (Date.now() - startTime) / 1000;
+          const currentUptime = initialUptime + elapsedSeconds;
+
+          uptimeElement.innerHTML = formatDisplayAmount(
+            currentUptime.toFixed(2)
+          );
+          requestAnimationFrame(updateUptime);
+        }
+
+        updateUptime();
+      }
+
+      function showTab(tabId) {
+        document.querySelectorAll(".tab-content").forEach((content) => {
+          content.classList.remove("active");
+        });
+        document.querySelectorAll(".tab-button").forEach((button) => {
+          button.classList.remove("active");
+        });
+        document.getElementById(tabId).classList.add("active");
+        if (tabId === "devices-tab") {
+          document
+            .querySelector(".tab-button:nth-child(1)")
+            .classList.add("active");
+        } else if (tabId === "metrics-tab") {
+          document
+            .querySelector(".tab-button:nth-child(2)")
+            .classList.add("active");
+        }
+      }
+
+      function copyToClipboard(button) {
+        const text = button.innerHTML;
+
+        navigator.clipboard
+          .writeText(button.value)
+          .then(() => {
+            button.textContent = "Copied!";
+            button.disabled = true;
+
+            setTimeout(() => {
+              button.textContent = text;
+              button.disabled = false;
+            }, 2000);
+          })
+          .catch((err) => console.error("Error copying text: ", err));
+      }
+
+      function formatAddress(address, wrap) {
+        if (!address) return "";
+        const formattedAddress =
+          address.substring(0, 6) +
+          "..." +
+          address.substring(36, address.length);
+        return wrap ? `(${formattedAddress})` : formattedAddress;
+      }
+
+      function formatDisplayAmount(amount) {
+        if (amount === null) return "-";
+        if (amount.toString().includes(".")) {
+          let parts = amount.toString().split(".");
+          parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+          let firstTwoDecimals = parts[1].substring(0, 2);
+
+          if (firstTwoDecimals === "00") {
+            parts[1] = parts[1].substring(0, 6);
+          } else {
+            parts[1] = parts[1].substring(0, 4);
+          }
+
+          return parts.join(".");
+        } else {
+          return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+      }
+
+      async function fetchInfo() {
+        try {
+          const operatorAddress = await get("/~meta@1.0/info/address");
+          const operatorAction = document.getElementById("operator-action");
+          operatorAction.innerHTML = formatAddress(operatorAddress);
+          operatorAction.value = operatorAddress;
+          operatorAction.disabled = false;
+
+          const info = await get("/~meta@1.0/info");
+          const infoGroups = parseInfo(info);
+          renderInfoGroups(infoGroups);
+        } catch (error) {
+          console.error("Error fetching or parsing info:", error);
+        }
+      }
+
+      async function fetchMetrics() {
+        try {
+          const info = await get("/~meta@1.0/info");
+          const infoGroups = parseInfo(info);
+          renderInfoGroups(infoGroups);
+
+          const metrics = await get("metrics");
+          const metricGroups = parseMetrics(metrics);
+          renderMetricGroups(metricGroups);
+        } catch (error) {
+          console.error("Error fetching or parsing metrics:", error);
+        }
+      }
+
+      async function startFetchingMetrics() {
+        await fetchMetrics();
+
+        setInterval(fetchMetrics, 5000);
+      }
+
+      fetchInfo();
+      startFetchingMetrics();
+    </script>
+  </body>
+</html>
