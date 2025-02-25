@@ -69,7 +69,7 @@ do_push(Base, Assignment, Opts) ->
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
     case target_process(MsgToPush, Opts) of
-        no_target ->
+        undefined ->
             ?event(push, {skip_no_target, {key, Key}, MsgToPush}),
             #{};
         TargetID ->
@@ -87,9 +87,9 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     Opts
                 ),
             ?event(push,
-                {push_scheduled,
+                {push_scheduled_message,
                     {process, TargetID},
-                    {assigned_slot, NextSlotOnProc},
+                    {slot, NextSlotOnProc},
                     {pushed_msg, PushedMsgID}
                 }),
             {ok, Downstream} = hb_converge:resolve(
@@ -106,18 +106,34 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
     end.
 
 %% @doc Augment the message with from-* keys, if it doesn't already have them.
-augment_message(MsgToPush, _Base, _Opts) ->
-    MsgToPush.
+augment_message(MsgToPush, _Base, Opts) ->
+    hb_converge:set(
+        MsgToPush,
+        #{
+            <<"target">> => target_process(MsgToPush, Opts)
+        },
+        Opts#{ hashpath => ignore }
+    ).
 
 %% @doc Find the target process ID for a message to push.
 target_process(MsgToPush, Opts) ->
     case hb_converge:get(<<"target">>, MsgToPush, Opts) of
-        not_found -> no_target;
-        RawTarget ->
-            case binary:split(RawTarget, [<<"?">>, <<"&">>], [global]) of
-                [Target|_] -> Target;
-                _ -> RawTarget
-            end
+        not_found -> undefined;
+        RawTarget -> extract(target, RawTarget)
+    end.
+
+%% @doc Return either the `target' or the `hint'.
+extract(hint, Raw) ->
+    {_, Hint} = split_target(Raw),
+    Hint;
+extract(target, Raw) ->
+    {Target, _} = split_target(Raw),
+    Target.
+
+split_target(RawTarget) ->
+    case binary:split(RawTarget, [<<"?">>, <<"&">>]) of
+        [Target, QStr] -> {Target, QStr};
+        _ -> {RawTarget, <<>>}
     end.
 
 schedule_result(TargetProc, MsgToPush, Opts) ->
@@ -152,8 +168,8 @@ schedule_result(Node, TargetProc, MsgToPush, Opts) ->
             Location = hb_converge:get(<<"location">>, Res, Opts),
             ?event(push, {redirect, {location, {explicit, Location}}}),
             schedule_result(Location, TargetProc, MsgToPush, Opts);
-        {error, Error} ->
-            {error, Error}
+        {error, _} ->
+            {error, Res}
     end.
 
 %%% Tests
@@ -255,6 +271,7 @@ push_with_redirect_hint_test_() ->
             hb_message:attest(
                 #{
                     <<"path">> => <<"schedule">>,
+                    <<"method">> => <<"POST">>,
                     <<"body">> =>
                         hb_message:attest(
                             #{
@@ -268,7 +285,6 @@ push_with_redirect_hint_test_() ->
                 },
                 SchedOpts
             ),
-        ?event(push, {pong_server_script_msg, PongServerScriptMsg}),
         {ok, ServerScriptSchedResp} =
             hb_converge:resolve(
                 PongServer,
@@ -303,6 +319,10 @@ push_with_redirect_hint_test_() ->
         ?event(push, {push_result_client, PushResult}),
         AfterPush = hb_converge:resolve(Client, <<"now/results/data">>, Opts),
         ?event(push, {after_push, AfterPush}),
+        % Note: This test currently only gets a reply that the message was not
+        % trusted by the process. To fix this, we would have to add another 
+        % trusted authority to the `test_aos_process' call. For now, this is 
+        % enough to validate that redirects are pushed through correctly.
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
 
