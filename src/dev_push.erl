@@ -68,7 +68,10 @@ do_push(Base, Assignment, Opts) ->
                     end,
                     Outbox
                 ),
-            {ok, Downstream}
+            {ok, Downstream#{
+                <<"slot">> => Slot,
+                <<"process">> => ID
+            }}
     end.
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
