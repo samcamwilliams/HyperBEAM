@@ -325,14 +325,14 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this.
-                    ?event(snapshot, {loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     {ok, Normalized} = run_as(<<"execution">>, SnapshotMsg, normalize, Opts),
                     NormalizedWithoutSnapshot = maps:remove(<<"snapshot">>, Normalized),
                     {ok, NormalizedWithoutSnapshot};
                 not_found ->
                     % If we do not have a checkpoint, initialize the
                     % process from scratch.
-                    ?event(
+                    ?event(compute,
                         {no_checkpoint_found,
                             {process, ProcID},
                             {slot, TargetSlot}
