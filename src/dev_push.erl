@@ -59,7 +59,7 @@ do_push(Base, Assignment, Opts) ->
     case Result of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
             ?event(push, {done, {slot, Slot}}),
-            {ok, #{}};
+            {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =
                 maps:map(

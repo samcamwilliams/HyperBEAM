@@ -158,7 +158,7 @@ compute(Msg1, Msg2, Opts) ->
     % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
     ProcID = hb_converge:get(<<"process/id">>, ProcBase, Opts),
-    Slot = hb_util:int(hb_converge:get(<<"slot">>, Msg2, Opts)),
+    Slot = hb_util:int(hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts)),
     case dev_process_cache:read(ProcID, Slot, Opts) of
         {ok, Result} ->
             % The result is already cached, so we can return it.
