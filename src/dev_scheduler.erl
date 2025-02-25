@@ -72,7 +72,7 @@ next(Msg1, Msg2, Opts) ->
             Msg1,
             Opts
         ),
-    LastProcessed = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    LastProcessed = hb_util:int(hb_converge:get(<<"current-slot">>, Msg1, Opts)),
     ?event(next, {local_schedule_cache, {schedule, Schedule}}),
     Assignments =
         case Schedule of
@@ -86,24 +86,34 @@ next(Msg1, Msg2, Opts) ->
                             <<"path">> => <<"schedule/assignments">>,
                             <<"from">> => LastProcessed
                         },
-                        Opts
+                        Opts#{ scheduler_follow_redirects => true }
                     ),
                 RecvdAssignments
         end,
+    NormAssignments =
+        maps:from_list(
+            lists:map(
+                fun({Slot, Assignment}) ->
+                    {hb_util:int(Slot), Assignment}
+                end,
+                maps:to_list(Assignments)
+            )
+        ),
     ValidKeys =
         lists:filter(
             fun(Slot) -> Slot > LastProcessed end,
-            maps:keys(Assignments)
+            maps:keys(NormAssignments)
         ),
     % Remove assignments that are below the last processed slot.
-    FilteredAssignments = maps:with(ValidKeys, Assignments),
+    FilteredAssignments = maps:with(ValidKeys, NormAssignments),
     ?event(next, {filtered_assignments, FilteredAssignments}),
     Slot =
         case ValidKeys of
-            [] -> LastProcessed;
+            [] -> hb_util:int(LastProcessed);
             Slots -> lists:min(Slots)
         end,
-    ?event(next, {next_slot_to_process, Slot, {last_processed, LastProcessed}}),
+    ?event(next,
+        {next_slot_to_process, Slot, {last_processed, LastProcessed}}),
     case (LastProcessed + 1) == Slot of
         true ->
             NextMessage =
