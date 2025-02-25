@@ -55,7 +55,7 @@ Then you can clone the HyperBEAM source and build it:
 
 ```bash
 git clone https://github.com/permaweb/HyperBEAM.git
-cd hyperbeam
+cd HyperBEAM
 rebar3 compile
 ```
 
