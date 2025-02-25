@@ -40,6 +40,27 @@ assignments_to_bundle(ProcID, Assignments, More, Opts) ->
     }}.
 
 %%% Return legacy net-SU compatible results.
+assignments_to_aos2(ProcID, Assignments, More, Opts) when is_map(Assignments) ->
+    SortedKeys =
+        lists:sort(
+            lists:map(
+                fun hb_util:int/1,
+                maps:keys(
+                    maps:without(
+                        [<<"priv">>, <<"attestations">>],
+                        Assignments
+                    )
+                )
+            )
+        ),
+    ListAssignments =
+        lists:map(
+            fun(Key) ->
+                hb_converge:get(Key, Assignments, Opts)
+            end,
+            SortedKeys
+        ),
+    assignments_to_aos2(ProcID, ListAssignments, More, Opts);
 assignments_to_aos2(ProcID, Assignments, More, Opts) ->
     {Timestamp, Height, Hash} = ar_timestamp:get(),
     BodyStruct = 
