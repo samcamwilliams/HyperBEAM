@@ -1,6 +1,6 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
--export([int/1, float/1, atom/1, bin/1]).
+-export([int/1, float/1, atom/1, bin/1, list/1]).
 -export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
@@ -55,6 +55,11 @@ bin(Value) when is_float(Value) ->
     float_to_binary(Value, [{decimals, 10}, compact]);
 bin(Value) when is_binary(Value) ->
     Value.
+
+%% @doc Coerce a value to a list.
+list(Value) when is_binary(Value) ->
+    binary_to_list(Value);
+list(Value) when is_list(Value) -> Value.
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
 %% the value of the `error_strategy' option.

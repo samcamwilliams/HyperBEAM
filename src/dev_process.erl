@@ -52,8 +52,8 @@
 %%% Public utilities
 -export([as_process/2]).
 %%% Test helpers
--export([test_aos_process/0, dev_test_process/0, test_wasm_process/1]).
--export([schedule_aos_call/2, init/0]).
+-export([test_aos_process/0, test_aos_process/1, dev_test_process/0, test_wasm_process/1]).
+-export([schedule_aos_call/2, schedule_aos_call/3, init/0]).
 %%% Tests
 -export([do_test_restore/0]).
 -include_lib("eunit/include/eunit.hrl").
@@ -158,7 +158,7 @@ compute(Msg1, Msg2, Opts) ->
     % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
     ProcID = hb_converge:get(<<"process/id">>, ProcBase, Opts),
-    Slot = hb_util:int(hb_converge:get(<<"slot">>, Msg2, Opts)),
+    Slot = hb_util:int(hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts)),
     case dev_process_cache:read(ProcID, Slot, Opts) of
         {ok, Result} ->
             % The result is already cached, so we can return it.
@@ -325,14 +325,14 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this.
-                    ?event(snapshot, {loaded_state_checkpoint, ProcID, LoadedSlot}),
+                    ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     {ok, Normalized} = run_as(<<"execution">>, SnapshotMsg, normalize, Opts),
                     NormalizedWithoutSnapshot = maps:remove(<<"snapshot">>, Normalized),
                     {ok, NormalizedWithoutSnapshot};
                 not_found ->
                     % If we do not have a checkpoint, initialize the
                     % process from scratch.
-                    ?event(
+                    ?event(compute,
                         {no_checkpoint_found,
                             {process, ProcID},
                             {slot, TargetSlot}

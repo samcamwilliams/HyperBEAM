@@ -65,14 +65,14 @@ router(_, Msg1, Msg2, Opts) ->
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
-    ?event(next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event(next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}}),
     Schedule =
         hb_private:get(
             <<"priv/scheduler/assignments">>,
             Msg1,
             Opts
         ),
-    LastProcessed = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    LastProcessed = hb_util:int(hb_converge:get(<<"current-slot">>, Msg1, Opts)),
     ?event(next, {local_schedule_cache, {schedule, Schedule}}),
     Assignments =
         case Schedule of
@@ -86,24 +86,34 @@ next(Msg1, Msg2, Opts) ->
                             <<"path">> => <<"schedule/assignments">>,
                             <<"from">> => LastProcessed
                         },
-                        Opts
+                        Opts#{ scheduler_follow_redirects => true }
                     ),
                 RecvdAssignments
         end,
+    NormAssignments =
+        maps:from_list(
+            lists:map(
+                fun({Slot, Assignment}) ->
+                    {hb_util:int(Slot), Assignment}
+                end,
+                maps:to_list(maps:without([<<"priv">>, <<"attestations">>], Assignments))
+            )
+        ),
     ValidKeys =
         lists:filter(
             fun(Slot) -> Slot > LastProcessed end,
-            maps:keys(Assignments)
+            maps:keys(NormAssignments)
         ),
     % Remove assignments that are below the last processed slot.
-    FilteredAssignments = maps:with(ValidKeys, Assignments),
+    FilteredAssignments = maps:with(ValidKeys, NormAssignments),
     ?event(next, {filtered_assignments, FilteredAssignments}),
     Slot =
         case ValidKeys of
-            [] -> LastProcessed;
+            [] -> hb_util:int(LastProcessed);
             Slots -> lists:min(Slots)
         end,
-    ?event(next, {next_slot_to_process, Slot, {last_processed, LastProcessed}}),
+    ?event(next,
+        {next_slot_to_process, Slot, {last_processed, LastProcessed}}),
     case (LastProcessed + 1) == Slot of
         true ->
             NextMessage =
@@ -323,7 +333,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
     case get_hint(ProcID, Opts) of
         {ok, Hint} ->
             ?event({found_hint_in_proc_id, Hint}),
-            generate_redirect(ProcID, Hint);
+            generate_redirect(ProcID, Hint, Opts);
         not_found ->
             ?event({no_hint_in_proc_id, ProcID}),
             case dev_scheduler_registry:find(ProcID, false, Opts) of
@@ -333,8 +343,17 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                 not_found ->
                     ?event({no_pid_in_local_registry, ProcID}),
                     % Find the process from the message.
-                    Proc = find_process(Msg1, Opts),
-                    ?event({found_process, Proc}),
+                    Proc =
+                        case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
+                            not_found ->
+                                ?event(debug_scheduler, {reading_cache, {proc_id, ProcID}}),
+                                case hb_cache:read(ProcID, Opts) of
+                                    {ok, P} -> P;
+                                    not_found -> Msg1
+                                end;
+                            P -> P
+                        end,
+                    ?event(debug_scheduler, {found_process, {process, Proc}, {msg1, Msg1}}, Opts),
                     % Check if we are the scheduler for this process.
                     Address = hb_util:human_id(ar_wallet:to_address(
                         hb_opts:get(priv_wallet, hb:wallet(), Opts))),
@@ -366,7 +385,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
     end.
 
 %% @doc If a hint is present in the string, return it. Else, return not_found.
-get_hint(Str, Opts) ->
+get_hint(Str, Opts) when is_binary(Str) ->
     case hb_opts:get(scheduler_follow_hints, true, Opts) of
         true ->
             case binary:split(Str, <<"?">>, [global]) of
@@ -379,18 +398,43 @@ get_hint(Str, Opts) ->
                 _ -> not_found
             end;
         false -> not_found
-    end.
+    end;
+get_hint(Str, _Opts) -> not_found.
 
 %% @doc Generate a redirect message to a scheduler.
-generate_redirect(ProcID, URL) ->
+generate_redirect(ProcID, URL, Opts) ->
+    generate_redirect(ProcID, URL, #{}, Opts).
+generate_redirect(ProcID, URL, SchedulerLocation, Opts) ->
+    AcceptCodec =
+        case hb_converge:get(<<"variant">>, SchedulerLocation, <<"ao.N.1">>, Opts) of
+            <<"ao.N.1">> -> <<"httpsig@1.0">>;
+            <<"ao.TN.1">> -> <<"ans104@1.0">>
+        end,
+    ProcWithoutHint = without_hint(ProcID),
+    Sep = case binary:last(URL) of $/ -> <<"">>; _ -> <<"/">> end,
     {redirect,
         #{
             <<"status">> => 307,
-            <<"location">> => <<URL/binary, "/", ProcID/binary>>,
-            <<"method">> => <<"POST">>,
-            <<"body">> => <<"Redirecting to scheduler: ", URL/binary>>
+            <<"location">> =>
+                case AcceptCodec of
+                    <<"httpsig@1.0">> ->
+                        <<
+                            URL/binary, Sep/binary, ProcWithoutHint/binary,
+                            "/schedule"
+                        >>;
+                    <<"ans104@1.0">> ->
+                        <<
+                            URL/binary, Sep/binary, ProcWithoutHint/binary,
+                            "?proc-id=", ProcWithoutHint/binary
+                        >>
+                end,
+            <<"body">> => <<"Redirecting to scheduler: ", URL/binary>>,
+            <<"accept-codec">> => AcceptCodec
         }
     }.
+
+without_hint(Target) ->
+    hd(binary:split(Target, [<<"?">>, <<"&">>], [global])).
 
 %% @doc Use the SchedulerLocation to the remote path and return a redirect.
 find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
@@ -399,13 +443,13 @@ find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
     case get_hint(SchedulerLocation, Opts) of
         {ok, Hint} ->
             % We have a hint. Construct a redirect message.
-            generate_redirect(ProcID, Hint);
+            generate_redirect(ProcID, Hint, Opts);
         not_found ->
             {ok, SchedMsg} =
                 hb_gateway_client:scheduler_location(SchedulerLocation, Opts),
             {ok, SchedURL} = hb_converge:resolve(SchedMsg, <<"url">>, Opts),
             % We have a valid path. Construct a redirect message.
-            generate_redirect(ProcID, SchedURL)
+            generate_redirect(ProcID, SchedURL, SchedMsg, Opts)
     end.
 
 %% @doc Returns information about the current slot for a process.
@@ -452,11 +496,70 @@ get_schedule(Msg1, Msg2, Opts) ->
             ToRes -> ToRes
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
+    ?event(debug_scheduler, {parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
     case find_server(ProcID, Msg1, Opts) of
         {local, _PID} ->
             generate_local_schedule(Format, ProcID, From, To, Opts);
         {redirect, Redirect} ->
-            {ok, Redirect}
+            case hb_opts:get(scheduler_follow_redirects, true, Opts) of
+                true ->
+                    case get_remote_schedule(ProcID, From, To, Redirect, Opts) of
+                        {ok, Res} ->
+                            case Format of
+                                <<"application/aos-2">> ->
+                                    dev_scheduler_formats:assignments_to_aos2(
+                                        ProcID,
+                                        hb_converge:get(
+                                            <<"assignments">>, Res, [], Opts),
+                                        hb_util:atom(hb_converge:get(
+                                            <<"continues">>, Res, false, Opts)),
+                                        Opts
+                                    );
+                                _ ->
+                                    {ok, Res}
+                            end;
+                        {error, Res} ->
+                            {error, Res}
+                    end;
+                false ->
+                    {ok, Redirect}
+            end
+    end.
+
+%% @doc Get a schedule from a remote scheduler.
+get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
+    Location = hb_converge:get(<<"location">>, Redirect, Opts),
+    Parsed = uri_string:parse(Location),
+    Node =
+        uri_string:recompose(
+            (maps:remove(query, Parsed))#{
+                path => <<"/">>
+            }
+        ),
+    ?event(compute_debug, {getting_remote_schedule, {proc_id, ProcID}, {from, From}, {to, To}}),
+    ToBin = integer_to_binary(From+1),
+    FromBin = integer_to_binary(From),
+    Path = <<
+            ProcID/binary,
+            "/schedule"
+            "&from+integer=",
+            FromBin/binary,
+            "&to+integer=",
+            ToBin/binary
+        >>,
+    case hb_http:get(Node, Path, Opts) of
+        {ok, Res} ->
+            ?event(push, {remote_schedule_result, {res, Res}}, Opts),
+            case hb_converge:get(<<"status">>, Res, 200, Opts) of
+                200 ->
+
+                    {ok, Res};
+                307 ->
+                    get_remote_schedule(ProcID, From, To, Redirect, Opts)
+            end;
+        {error, Res} ->
+            ?event(push, {remote_schedule_result, {res, Res}}, Opts),
+            {error, Res}
     end.
 
 %%% Private methods
@@ -511,11 +614,6 @@ find_message_to_schedule(_Msg1, Msg2, Opts) ->
             Body;
         _ -> Msg2
     end.
-
-%% @doc Find the process from a given request. Check if it has a `process'
-%% field, and if so, return that. Otherwise, return the full message.
-find_process(Msg, Opts) ->
-    hb_converge:get(<<"process">>, Msg, Msg, Opts#{ hashpath => ignore }).
 
 %% @doc Generate a `GET /schedule' response for a process.
 generate_local_schedule(Format, ProcID, From, To, Opts) ->
