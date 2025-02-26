@@ -85,6 +85,17 @@ you could execute the following command:
 rebar3 shell --eval "hb:start_mainnet(#{ port => 9001, key_location => 'path/to/my/wallet.key' })."
 ```
 
+Node operators can also configure the environment using a `flat@1.0` encoded settings file. An 
+example configuration is found in the `config.flat` file of this repository. The format simply specifies 
+configuration options using HTTP header styling. For example, to set the port for the node and to specify
+whether it should use caching hueristics or always consult its local data store, the `config.flat` would
+be as follows:
+
+```
+port: 1337
+cache-lookup-hueristics: true
+```
+
 Additionally, if you would like to modify a running node's configuration, you can
 do so by sending a HTTP Signed Message using any RFC-9421 compatible client in 
 the following form:
