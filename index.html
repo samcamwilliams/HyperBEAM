@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -18,7 +19,7 @@
         --bg-color: #ffffff;
         --border-color: #959595;
         --section-bg-color-primary: #ececec;
-        --section-bg-color-alt1: #ffffff;
+        --section-bg-color-alt1: #f0f0f0;
         --text-color-primary: #000000;
         --text-color-alt1: #3a3a3a;
         --link-color: #1a73e8;
@@ -27,22 +28,6 @@
         --indicator-color: #27d735;
         --indicator-color-active: #23be30;
       }
-
-      /* @media (prefers-color-scheme: dark) {
-        :root {
-          --bg-color: #1a1a1a;
-          --border-color: #595959;
-          --section-bg-color-primary: #232323;
-          --section-bg-color-alt1: #222222;
-          --text-color-primary: #ffffff;
-          --text-color-alt1: #dadada;
-          --link-color: #8ab4f8;
-          --link-hover-color: #4e8ef5;
-          --active-action-bg: #202020;
-          --indicator-color: #27d735;
-          --indicator-color-active: #23be30;
-        }
-      } */
 
       * {
         box-sizing: border-box;
@@ -143,7 +128,6 @@
         flex-wrap: wrap;
         gap: 10px;
         padding: 0px 40px 0px 0px;
-        background: var(--section-bg-color-alt1);
         border: 1px solid var(--border-color);
         border-radius: 5px;
       }
@@ -360,8 +344,8 @@
 
       .section-line:last-child {
         border-bottom: none;
-        border-bottom-left-radius: 15px;
-        border-bottom-right-radius: 15px;
+        border-bottom-left-radius: 5px;
+        border-bottom-right-radius: 5px;
       }
 
       .section-line p {
@@ -704,7 +688,7 @@
       </div>
     </div>
     <script>
-      const BASE_ROUTE = "http://localhost:10000/";
+      const BASE_ROUTE = window.location.href;
 
 
       function parseInfo(text) {
