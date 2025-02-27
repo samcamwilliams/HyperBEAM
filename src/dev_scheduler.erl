@@ -884,11 +884,13 @@ http_get_schedule(N, PMsg, From, To, Format) ->
 
 http_get_schedule_redirect_test() ->
     Opts =
-        #{ store =>
-            [
-                {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{}}
-            ]
+        #{
+            store =>
+                [
+                    {hb_store_fs, #{ prefix => "mainnet-cache" }},
+                    {hb_store_gateway, #{}}
+                ],
+                scheduler_follow_redirects => false
         },
     {N, _Wallet} = http_init(Opts),
     start(),
