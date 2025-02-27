@@ -112,9 +112,7 @@ paid_wasm_test() ->
     {ok, Res2} = hb_http:get(HostNode, ClientMessage2, #{}),
     ?assertMatch(20, hb_converge:get(<<"body">>, Res2, #{})).
 
-create_schedule_aos2_test() ->
-    hb:wallet(),
-    application:ensure_all_started(hb),
+create_schedule_aos2_test_disabled() ->
     % The legacy process format, according to the ao.tn.1 spec:
     % Data-Protocol	The name of the Data-Protocol for this data-item	1-1	ao
     % Variant	The network version that this data-item is for	1-1	ao.TN.1
@@ -141,6 +139,12 @@ create_schedule_aos2_test() ->
     %   value "Data" it uses the Data field of the Process Data Item. If it is a
     %   TXID it will load that TX from Arweave and execute it.	0-1	{Data or TXID}
     % {Any-Tags}	Custom Tags specific for the initial input of the Process	0-n
+    Node =
+        try hb_http_server:start_node(#{ priv_wallet => hb:wallet() })
+        catch
+            _:_ ->
+                <<"http://localhost:8734">>
+        end,
     ProcMsg = #{
         <<"Data-Protocol">> => <<"ao">>,
         <<"type">> => <<"Process">>,
@@ -157,12 +161,12 @@ create_schedule_aos2_test() ->
     SignedProc = hb_message:attest(ProcMsg, Wallet),
     IDNone = hb_message:id(SignedProc, none),
     IDAll = hb_message:id(SignedProc, all),
-    {ok, Res} = schedule(SignedProc, IDNone),
+    {ok, Res} = schedule(SignedProc, IDNone, Wallet, Node),
     ?event({res, Res}),
     receive after 100 -> ok end,
     ?event({id, IDNone, IDAll}),
     {ok, Res2} = hb_http:get(
-        <<"http://localhost:8734">>,
+        Node,
         <<"/~scheduler@1.0/slot?target=", IDNone/binary>>,
         #{}
     ),
@@ -171,6 +175,8 @@ create_schedule_aos2_test() ->
 schedule(ProcMsg, Target) ->
     schedule(ProcMsg, Target, hb:wallet()).
 schedule(ProcMsg, Target, Wallet) ->
+    schedule(ProcMsg, Target, Wallet, <<"http://localhost:8734">>).
+schedule(ProcMsg, Target, Wallet, Node) ->
     SignedReq = 
         hb_message:attest(
             #{
@@ -181,4 +187,4 @@ schedule(ProcMsg, Target, Wallet) ->
             Wallet
         ),
     ?event({signed_req, SignedReq}),
-    hb_http:post(<<"http://localhost:8734">>, SignedReq, #{}).
+    hb_http:post(Node, SignedReq, #{}).

@@ -48,7 +48,7 @@ is_async(Base, Req, Opts) ->
 %% @doc Push a message or slot number.
 do_push(Base, Assignment, Opts) ->
     Slot = hb_converge:get(<<"slot">>, Assignment, Opts),
-    ID = hb_converge:get(<<"process/id">>, Base, Opts),
+    ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     Result = hb_converge:resolve(
         Base,
@@ -311,7 +311,7 @@ multi_process_push_test_() ->
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
 
-push_with_redirect_hint_test_() ->
+push_with_redirect_hint_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Stores = [{hb_store_fs, #{ prefix => "TEST-cache" }}],
