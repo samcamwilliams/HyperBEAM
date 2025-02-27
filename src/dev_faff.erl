@@ -33,7 +33,6 @@ estimate(_, Msg, NodeMsg) ->
         <<"post">> -> {ok, 0}
     end.
 
-
 %% @doc Check whether all of the signers of the request are in the allow-list.
 is_admissible(Msg, NodeMsg) ->
     AllowList = hb_opts:get(faff_allow_list, [], NodeMsg),

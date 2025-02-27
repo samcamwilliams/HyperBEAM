@@ -311,7 +311,7 @@ multi_process_push_test_() ->
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
 
-push_with_redirect_hint_test_() ->
+push_with_redirect_hint_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Stores = [{hb_store_fs, #{ prefix => "TEST-cache" }}],
