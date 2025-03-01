@@ -584,10 +584,10 @@ find_target_id(Msg1, Msg2, Opts) ->
                     % Msg2 is a Process, so the ID is at Msg2/id
                     hb_message:id(Msg2, all);
                 _ ->
-                    case hb_converge:resolve(Msg1, <<"process/id">>, TempOpts) of
-                        {ok, ID} ->
+                    case hb_converge:resolve(Msg1, <<"process">>, TempOpts) of
+                        {ok, Process} ->
                             % ID found at Msg1/process/id
-                            ID;
+                            hb_message:id(Process, all);
                         _ ->
                             % Does the message have a type of Process?
                             case hb_converge:get(<<"type">>, Msg1, TempOpts) of
@@ -884,11 +884,13 @@ http_get_schedule(N, PMsg, From, To, Format) ->
 
 http_get_schedule_redirect_test() ->
     Opts =
-        #{ store =>
-            [
-                {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{}}
-            ]
+        #{
+            store =>
+                [
+                    {hb_store_fs, #{ prefix => "mainnet-cache" }},
+                    {hb_store_gateway, #{}}
+                ],
+                scheduler_follow_redirects => false
         },
     {N, _Wallet} = http_init(Opts),
     start(),
@@ -982,7 +984,7 @@ single_converge(Opts) ->
     Msg3 = #{
         <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
-        <<"process">> => hb_util:id(Msg1)
+        <<"process">> => hb_util:human_id(hb_message:id(Msg1, all))
     },
     ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,

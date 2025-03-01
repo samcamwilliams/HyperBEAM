@@ -50,7 +50,7 @@
 -export([info/1, compute/3, schedule/3, slot/3, now/3, push/3, snapshot/3]).
 -export([ensure_process_key/2]).
 %%% Public utilities
--export([as_process/2]).
+-export([as_process/2, process_id/3]).
 %%% Test helpers
 -export([test_aos_process/0, test_aos_process/1, dev_test_process/0, test_wasm_process/1]).
 -export([schedule_aos_call/2, schedule_aos_call/3, init/0]).
@@ -132,6 +132,15 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         )
     }.
 
+%% @doc Returns the process ID of the current process.
+process_id(Msg1, Msg2, Opts) ->
+    case hb_converge:get(<<"process">>, Msg1, Opts) of
+        not_found ->
+            process_id(ensure_process_key(Msg1, Opts), Msg2, Opts);
+        Process ->
+            hb_message:id(Process, all)
+    end.
+
 %% @doc Before computation begins, a boot phase is required. This phase
 %% allows devices on the execution stack to initialize themselves. We set the
 %% `Initialized' key to `True' to indicate that the process has been
@@ -157,7 +166,7 @@ init(Msg1, _Msg2, Opts) ->
 compute(Msg1, Msg2, Opts) ->
     % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
-    ProcID = hb_converge:get(<<"process/id">>, ProcBase, Opts),
+    ProcID = process_id(ProcBase, #{}, Opts),
     Slot = hb_util:int(hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts)),
     case dev_process_cache:read(ProcID, Slot, Opts) of
         {ok, Result} ->
@@ -272,7 +281,7 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
 now(RawMsg1, _Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
     {ok, CurrentSlot} = hb_converge:resolve(Msg1, #{ <<"path">> => <<"slot/current-slot">> }, Opts),
-    ProcessID = hb_converge:get(<<"process/id">>, Msg1, Opts),
+    ProcessID = process_id(Msg1, #{}, Opts),
     ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
     hb_converge:resolve(
         Msg1,
@@ -291,11 +300,7 @@ push(Msg1, Msg2, Opts) ->
 ensure_loaded(Msg1, Msg2, Opts) ->
     % Get the nonce we are currently on and the inbound nonce.
     TargetSlot = hb_converge:get(<<"slot">>, Msg2, undefined, Opts),
-    ProcID = 
-        case hb_converge:get(<<"process/id">>, {as, dev_message, Msg1}, Opts) of
-            not_found -> hb_message:id(Msg1, all);
-            P -> P
-        end,
+    ProcID = process_id(Msg1, Msg2, Opts),
     ?event({ensure_loaded, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case hb_converge:get(<<"initialized">>, Msg1, Opts) of
         <<"true">> ->
