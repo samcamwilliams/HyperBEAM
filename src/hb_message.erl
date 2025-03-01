@@ -913,6 +913,11 @@ signed_deep_message_test(Codec) ->
         )
     ).
 
+signed_list_test(Codec) ->
+    Msg = hb_converge:normalize_keys([1]),
+    Signed = attest(Msg, hb:wallet(), Codec),
+    ?assert(verify(Signed)).
+
 unsigned_id_test(Codec) ->
     Msg = #{ <<"data">> => <<"TEST_DATA">> },
     Encoded = convert(Msg, Codec, #{}),
@@ -935,7 +940,7 @@ unsigned_id_test(Codec) ->
 %         hb_util:id(SignedMsg, signed)
 %     ).
 
-message_with_simple_list_test(Codec) ->
+message_with_simple_embedded_list_test(Codec) ->
     Msg = #{ <<"a">> => [<<"1">>, <<"2">>, <<"3">>] },
     Encoded = convert(Msg, Codec, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
@@ -1152,7 +1157,8 @@ message_suite_test_() ->
         {"nested structured fields test", fun nested_structured_fields_test/1},
         {"nested message with large keys test",
             fun nested_message_with_large_keys_test/1},
-        {"message with simple list test", fun message_with_simple_list_test/1},
+        {"message with simple embedded list test",
+            fun message_with_simple_embedded_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
         {"signed item to message and back test",
             fun signed_message_encode_decode_verify_test/1},
@@ -1163,5 +1169,9 @@ message_suite_test_() ->
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
         {"attested keys test", fun attested_keys_test/1},
-        {"large body attested keys test", fun large_body_attested_keys_test/1}
+        {"large body attested keys test", fun large_body_attested_keys_test/1},
+        {"signed list http response test", fun signed_list_test/1}
     ]).
+
+run_test() ->
+    signed_list_test(<<"httpsig@1.0">>).
