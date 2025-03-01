@@ -163,7 +163,7 @@ key_to_binary(Key) -> iolist_to_binary(Key).
 -spec parse_dictionary(binary()) -> sh_dictionary().
 parse_dictionary(<<>>) ->
     [];
-parse_dictionary(<<C, R/bits>>) when ?IS_LC_ALPHA(C) or (C =:= $*) ->
+parse_dictionary(<<C, R/bits>>) when ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or (C =:= $*) ->
     parse_dict_key(R, [], <<C>>).
 
 parse_dict_key(<<$=, $(, R0/bits>>, Acc, K) ->
