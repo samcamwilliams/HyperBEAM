@@ -143,7 +143,7 @@ attest(MsgToSign, _Req, Opts) ->
     % Calculate the id and place the signature into the `attestations' key of the message.
     Attestation =
         #{
-            <<"id">> => crypto:hash(sha256, Signature),
+            <<"id">> => hb_util:human_id(crypto:hash(sha256, Signature)),
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
             <<"signature">> =>
                 bin(dev_codec_structured_conv:dictionary(

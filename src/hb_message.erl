@@ -54,7 +54,7 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
+-export([convert/3, convert/4, unattested/1]).
 -export([verify/1, verify/2, attest/2, attest/3, signers/1, type/1, minimize/1]).
 -export([attested/1, attested/2, attested/3, with_only_attested/1]).
 -export([match/2, match/3, find_target/3]).
@@ -79,10 +79,14 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
+    OldPriv =
+        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
+           true -> #{}
+        end,
     TABM = to_tabm(Msg, SourceFormat, Opts),
     case TargetFormat of
-        tabm -> TABM;
-        _ -> from_tabm(TABM, TargetFormat, Opts)
+        tabm -> restore_priv(TABM, OldPriv);
+        _ -> from_tabm(TABM, TargetFormat, OldPriv, Opts)
     end.
 
 to_tabm(Msg, SourceFormat, Opts) ->
@@ -93,9 +97,22 @@ to_tabm(Msg, SourceFormat, Opts) ->
         OtherTypeRes -> OtherTypeRes
     end.
 
-from_tabm(Msg, TargetFormat, Opts) ->
+from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
-    TargetCodecMod:to(Msg).
+    case TargetCodecMod:to(Msg) of
+        TypicalMsg when is_map(TypicalMsg) ->
+            restore_priv(TypicalMsg, OldPriv);
+        OtherTypeRes -> OtherTypeRes
+    end.
+
+%% @doc Add the existing `priv` sub-map back to a converted message, honoring
+%% any existing `priv` sub-map that may already be present.
+restore_priv(Msg, OldPriv) ->
+    MsgPriv = maps:get(<<"priv">>, Msg, #{}),
+    ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
+    NewPriv = hb_converge:set(MsgPriv, OldPriv, #{}),
+    ?event({new_priv, NewPriv}),
+    Msg#{ <<"priv">> => NewPriv }.
 
 %% @doc Return the ID of a message.
 id(Msg) -> id(Msg, unattested).

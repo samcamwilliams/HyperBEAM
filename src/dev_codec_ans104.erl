@@ -45,7 +45,7 @@ attest(Msg, _Req, Opts) ->
     Attestation =
         #{
             <<"attestation-device">> => <<"ans104@1.0">>,
-            <<"id">> => ID,
+            <<"id">> => hb_util:human_id(ID),
             <<"owner">> => Owner,
             <<"signature">> => Sig
         },
@@ -144,7 +144,7 @@ do_from(RawTX) ->
                     <<"attestations">> => #{
                         Address => #{
                             <<"attestation-device">> => <<"ans104@1.0">>,
-                            <<"id">> => TX#tx.id,
+                            <<"id">> => hb_util:human_id(TX#tx.id),
                             <<"owner">> => TX#tx.owner,
                             <<"signature">> => TX#tx.signature
                         }

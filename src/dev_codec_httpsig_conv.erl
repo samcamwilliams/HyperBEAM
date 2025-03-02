@@ -262,7 +262,7 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
                                 #{ SigName => maps:get(SigName, SfInputs) }
                             )
                         ),
-                    <<"id">> => crypto:hash(sha256, UnencodedSig),
+                    <<"id">> => hb_util:human_id(crypto:hash(sha256, UnencodedSig)),
                     <<"attestation-device">> => <<"httpsig@1.0">>
                 }
             }
