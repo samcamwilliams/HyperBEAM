@@ -1124,6 +1124,19 @@ large_body_attested_keys_test(Codec) ->
             ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter)))
     end.
 
+priv_survives_conversion_test(<<"ans104@1.0">>) -> skip;
+priv_survives_conversion_test(Codec) ->
+    Msg = #{
+        <<"data">> => <<"TEST_DATA">>,
+        <<"priv">> => Priv = #{ <<"test_key">> => <<"TEST_VALUE">> }
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)),
+    ?assertEqual(Priv, maps:get(<<"priv">>, Decoded, #{})).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1187,7 +1200,9 @@ message_suite_test_() ->
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
         {"attested keys test", fun attested_keys_test/1},
         {"large body attested keys test", fun large_body_attested_keys_test/1},
-        {"signed list http response test", fun signed_list_test/1}
+        {"signed list http response test", fun signed_list_test/1},
+        {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
+        {"priv survives conversion test", fun priv_survives_conversion_test/1}
     ]).
 
 run_test() ->
