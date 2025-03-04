@@ -874,9 +874,9 @@ message_to_device(Msg, Opts) ->
             default_module();
         {ok, DevID} ->
             case load_device(DevID, Opts) of
-                {error, _} ->
+                {error, Reason} ->
                     % Error case: A device is specified, but it is not loadable.
-                    throw({error, {device_not_loadable, DevID}});
+                    throw({error, {device_not_loadable, DevID, Reason}});
                 {ok, DevMod} -> DevMod
             end
     end.
@@ -1010,32 +1010,62 @@ load_device(ID, _Opts) when is_atom(ID) ->
     catch _:_ -> {error, not_loadable}
     end;
 load_device(ID, Opts) when ?IS_ID(ID) ->
-	case hb_opts:get(load_remote_devices) of
+    ?event(device_load, {requested_load, {id, ID}}, Opts),
+	case hb_opts:get(load_remote_devices, false, Opts) of
+        false ->
+            {error, remote_devices_disabled};
 		true ->
-			{ok, Msg} = hb_cache:read(maps:get(store, Opts), ID),
+            ?event(device_load, {loading_from_cache, {id, ID}}, Opts),
+			{ok, Msg} = hb_cache:read(ID, Opts),
+            ?event(device_load, {received_device, {id, ID}, {msg, Msg}}, Opts),
+            TrustedSigners = hb_opts:get(trusted_device_signers, [], Opts),
 			Trusted =
 				lists:any(
 					fun(Signer) ->
-						lists:member(Signer, hb_opts:get(trusted_device_signers))
+						lists:member(Signer, TrustedSigners)
 					end,
-					hb_util:ok(dev_message:attestors(Msg), Opts)
+					hb_message:signers(Msg)
 				),
+            ?event(device_load,
+                {verifying_device_trust,
+                    {id, ID},
+                    {trusted, Trusted},
+                    {signers, hb_message:signers(Msg)}
+                },
+                Opts
+            ),
 			case Trusted of
+				false -> {error, device_signer_not_trusted};
 				true ->
-					RelBin = erlang:system_info(otp_release),
+                    ?event(device_load, {loading_device, {id, ID}}, Opts),
 					case maps:get(<<"content-type">>, Msg, undefined) of
-						<<"BEAM/", RelBin/bitstring>> ->
-							ModNameBin = maps:get(<<"module-name">>, Msg, undefined),
-							ModName = binary_to_atom(ModNameBin),
-							case erlang:load_module(ModName, Msg#tx.data) of
-								{module, _} -> {ok, ModName};
-								{error, Reason} -> {error, Reason}
-							end
-					end;
-				false -> {error, device_signer_not_trusted}
-			end;
-		false ->
-			{error, remote_devices_disabled}
+						<<"application/beam">> ->
+                            case verify_device_compatibility(Msg, Opts) of
+                                ok ->
+                                    ModName =
+                                        hb_util:key_to_atom(
+                                            maps:get(<<"module-name">>, Msg),
+                                            new_atoms
+                                        ),
+                                    case erlang:load_module(ModName, maps:get(<<"body">>, Msg)) of
+                                        {module, _} ->
+                                            {ok, ModName};
+                                        {error, Reason} ->
+                                            {error, {device_load_failed, Reason}}
+                                    end;
+                                {error, Reason} ->
+                                    {error, {device_load_failed, Reason}}
+                            end;
+                        Other ->
+                            {error,
+                                {device_load_failed,
+                                    {incompatible_content_type, Other},
+                                    {expected, <<"application/beam">>},
+                                    {found, Other}
+                                }
+                            }
+                    end
+			end
 	end;
 load_device(ID, Opts) ->
     NormKey =
@@ -1046,6 +1076,54 @@ load_device(ID, Opts) ->
     case maps:get(NormKey, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
         unsupported -> {error, module_not_admissable};
         Mod -> load_device(Mod, Opts)
+    end.
+
+%% @doc Verify that a device is compatible with the current machine.
+verify_device_compatibility(Msg, Opts) ->
+    ?event(device_load, {verifying_device_compatibility, {msg, Msg}}, Opts),
+    Required =
+        lists:filtermap(
+            fun({<<"requires-", Key/binary>>, Value}) ->
+                {true,
+                    {
+                        hb_util:key_to_atom(
+                            hb_converge:normalize_key(Key),
+                            new_atoms
+                        ),
+                        Value
+                    }
+                };
+            (_) -> false
+            end,
+            maps:to_list(Msg)
+        ),
+    ?event(device_load,
+        {discerned_requirements,
+            {required, Required},
+            {msg, Msg}
+        },
+        Opts
+    ),
+    FailedToMatch =
+        lists:filtermap(
+            fun({Property, Value}) ->
+                % The values of these properties are _not_ 'keys', but we normalize
+                % them as such in order to make them comparable.
+                SystemValue = erlang:system_info(Property),
+                Res = normalize_key(SystemValue) == normalize_key(Value),
+                % If the property matched, we remove it from the list of required
+                % properties. If it doesn't we return it with the found value, such
+                % that the caller knows which properties were not satisfied.
+                case Res of
+                    true -> false;
+                    false -> {true, {Property, Value}}
+                end
+            end,
+            Required
+        ),
+    case FailedToMatch of
+        [] -> ok;
+        _ -> {error, {failed_requirements, FailedToMatch}}
     end.
 
 %% @doc Get the info map for a device, optionally giving it a message if the

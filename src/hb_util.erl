@@ -2,6 +2,7 @@
 -module(hb_util).
 -export([int/1, float/1, atom/1, bin/1, list/1]).
 -export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
+-export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
@@ -92,6 +93,19 @@ to_lower(Str) ->
 %% @doc Is the given term a string list?
 is_string_list(MaybeString) ->
     lists:all(fun is_integer/1, MaybeString).
+
+%% @doc Convert keys in a map to atoms, lowering `-' to `_'.
+key_to_atom(Key, _Mode) when is_atom(Key) -> Key;
+key_to_atom(Key, Mode) ->
+    WithoutDashes = binary:replace(Key, <<"-">>, <<"_">>, [global]),
+    case Mode of
+        new_atoms -> binary_to_atom(WithoutDashes, utf8);
+        _ ->
+            try binary_to_existing_atom(WithoutDashes, utf8)
+            catch
+                error:badarg -> WithoutDashes
+            end
+    end.
 
 %% @doc Convert a human readable ID to a native binary ID. If the ID is already
 %% a native binary ID, it is returned as is.

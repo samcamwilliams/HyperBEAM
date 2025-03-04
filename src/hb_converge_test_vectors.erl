@@ -128,6 +128,67 @@ test_opts() ->
         }
     ].
 
+%%% Standalone test vectors
+
+%% @doc Ensure that we can read a device from the cache then execute it. By 
+%% extension, this will also allow us to load a device from Arweave due to the
+%% remote store implementations.
+exec_dummy_device(SigningWallet, Opts) ->
+    % Compile the test device and store it in an accessible cache to the execution
+    % environment.
+    {ok, ModName, Bin} = compile:file("test/dev_dummy.erl", [binary]),
+    DevMsg =
+        hb_message:attest(
+            hb_converge:normalize_keys(
+                #{
+                    <<"data-protocol">> => <<"ao">>,
+                    <<"variant">> => <<"ao.N.1">>,
+                    <<"content-type">> => <<"application/beam">>,
+                    <<"module-name">> => ModName,
+                    <<"requires-otp-release">> => erlang:system_info(otp_release),
+                    <<"body">> => Bin
+                }
+            ),
+            SigningWallet
+        ),
+    {ok, ID} = hb_cache:write(DevMsg, Opts),
+    ?assertEqual({ok, DevMsg}, hb_cache:read(ID, Opts)),
+    % Create a base message with the device ID, then request a dummy path from
+    % it.
+    hb_converge:resolve(
+        #{ <<"device">> => ID },
+        #{ <<"path">> => <<"echo/param">>, <<"param">> => <<"example">> },
+        Opts
+    ).
+
+load_device_test() ->
+    % Establish an execution environment which trusts the device author.
+    Wallet = ar_wallet:new(),
+    Opts = #{
+        load_remote_devices => true,
+        trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(Wallet))],
+        store => Store = {hb_store_fs, #{ prefix => "TEST-cache-fs" }},
+        priv_wallet => Wallet
+    },
+    hb_store:reset(Store),
+    ?assertEqual({ok, <<"example">>}, exec_dummy_device(Wallet, Opts)).
+
+untrusted_load_device_test() ->
+    % Establish an execution environment which does not trust the device author.
+    UntrustedWallet = ar_wallet:new(),
+    TrustedWallet = ar_wallet:new(),
+    Opts = #{
+        load_remote_devices => true,
+        trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(TrustedWallet))],
+        store => Store = {hb_store_fs, #{ prefix => "TEST-cache-fs" }},
+        priv_wallet => UntrustedWallet
+    },
+    hb_store:reset(Store),
+    ?assertThrow(
+        {error, {device_not_loadable, _, device_signer_not_trusted}},
+        exec_dummy_device(UntrustedWallet, Opts)
+    ).
+
 %%% Test vector suite
 
 resolve_simple_test(Opts) ->
