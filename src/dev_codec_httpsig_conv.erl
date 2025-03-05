@@ -77,7 +77,7 @@ from_body(TABM, InlinedKey, ContentType, Body) ->
             undefined -> [];
             _ ->
                 {item, {_, _XT}, XParams} =
-                    dev_codec_structured_conv:parse_item(ContentType),
+                    hb_structured_fields:parse_item(ContentType),
                 XParams
         end,
     case lists:keyfind(<<"boundary">>, 1, Params) of
@@ -167,7 +167,7 @@ from_body_parts(TABM, InlinedKey, [Part | Rest]) ->
         RawDisposition when is_binary(RawDisposition) ->
             % Extract the name 
             {item, {_, Disposition}, DispositionParams} =
-                dev_codec_structured_conv:parse_item(RawDisposition),
+                hb_structured_fields:parse_item(RawDisposition),
             {ok, PartName} = case Disposition of
                 <<"inline">> ->
                     {ok, InlinedKey};
@@ -208,8 +208,8 @@ attestations_from_signature(Map, _HPs, not_found, _RawSigInput) ->
     ?event({no_sigs_found_in_from, {msg, Map}}),
     {ok, maps:without([<<"attestations">>], Map)};
 attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
-    SfSigsKV = dev_codec_structured_conv:parse_dictionary(RawSig),
-    SfInputs = maps:from_list(dev_codec_structured_conv:parse_dictionary(RawSigInput)),
+    SfSigsKV = hb_structured_fields:parse_dictionary(RawSig),
+    SfInputs = maps:from_list(hb_structured_fields:parse_dictionary(RawSigInput)),
     ?event({adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
     % Build a Map for Signatures by gathering each Signature
     % with its corresponding Inputs.
@@ -225,7 +225,7 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
             Hashpath =
                 lists:filtermap(
                     fun ({item, BareItem, _}) ->
-                        case dev_codec_structured_conv:from_bare_item(BareItem) of
+                        case hb_structured_fields:from_bare_item(BareItem) of
                             HP = <<"hash", _/binary>> -> {true, HP};
                             _ -> false
                         end;
@@ -247,7 +247,7 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             ?event({calculated_name, {address, Address}, {sig, Signature}, {inputs, {explicit, SfInputs}, {implicit, Params}}}),
             SerializedSig = iolist_to_binary(
-                dev_codec_structured_conv:dictionary(
+                hb_structured_fields:dictionary(
                     #{ SigName => Signature }
                 )
             ),
@@ -258,7 +258,7 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
                     <<"signature">> => SerializedSig,
                     <<"signature-input">> =>
                         iolist_to_binary(
-                            dev_codec_structured_conv:dictionary(
+                            hb_structured_fields:dictionary(
                                 #{ SigName => maps:get(SigName, SfInputs) }
                             )
                         ),
@@ -386,7 +386,7 @@ to(TABM, Opts) when is_map(TABM) ->
     end.
 
 encode_body_keys(PartList) when is_list(PartList) ->
-    iolist_to_binary(dev_codec_structured_conv:list(lists:map(
+    iolist_to_binary(hb_structured_fields:list(lists:map(
         fun
             ({PartName, _}) -> {item, {string, PartName}, []};
             (PartName) when is_binary(PartName) -> {item, {string, PartName}, []}

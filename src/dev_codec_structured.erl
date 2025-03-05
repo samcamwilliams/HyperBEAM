@@ -68,10 +68,10 @@ from(Msg) when is_map(Msg) ->
     WithTypes = case Types of 
         [] -> Values;
         T ->
-            AoTypes = iolist_to_binary(dev_codec_structured_conv:dictionary(
+            AoTypes = iolist_to_binary(hb_structured_fields:dictionary(
                 lists:map(
                     fun({Key, Value}) ->
-                        {ok, Item} = dev_codec_structured_conv:to_item(Value),
+                        {ok, Item} = hb_structured_fields:to_item(Value),
                         {Key, Item}
                     end,
                     lists:reverse(T)
@@ -90,7 +90,7 @@ to(TABM0) ->
         Bin -> maps:from_list(
             lists:map(
                 fun({Key, {item, {_, Value}, _}}) -> {Key, Value} end,
-                dev_codec_structured_conv:parse_dictionary(Bin)    
+                hb_structured_fields:parse_dictionary(Bin)    
             )
         )
     end,
@@ -138,14 +138,14 @@ to(TABM0) ->
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
 encode_value(Value) when is_integer(Value) ->
-    [Encoded, _] = dev_codec_structured_conv:item({item, Value, []}),
+    [Encoded, _] = hb_structured_fields:item({item, Value, []}),
     {<<"integer">>, Encoded};
 encode_value(Value) when is_float(Value) ->
     ?no_prod("Must use structured field representation for floats!"),
     {<<"float">>, float_to_binary(Value)};
 encode_value(Value) when is_atom(Value) ->
     [EncodedIOList, _] =
-        dev_codec_structured_conv:item(
+        hb_structured_fields:item(
             {item, {string, atom_to_binary(Value, latin1)}, []}),
     Encoded = list_to_binary(EncodedIOList),
     {<<"atom">>, Encoded};
@@ -170,7 +170,7 @@ encode_value(Values) when is_list(Values) ->
             end,
             Values
         ),
-    EncodedList = dev_codec_structured_conv:list(EncodedValues),
+    EncodedList = hb_structured_fields:list(EncodedValues),
     {<<"list">>, iolist_to_binary(EncodedList)};
 encode_value(Value) when is_binary(Value) ->
     {<<"binary">>, Value};
@@ -189,31 +189,31 @@ decode_value(Type, Value) when is_binary(Type) ->
         Value
     );
 decode_value(integer, Value) ->
-    {item, Number, _} = dev_codec_structured_conv:parse_item(Value),
+    {item, Number, _} = hb_structured_fields:parse_item(Value),
     Number;
 decode_value(float, Value) ->
     binary_to_float(Value);
 decode_value(atom, Value) ->
     {item, {string, AtomString}, _} =
-        dev_codec_structured_conv:parse_item(Value),
+        hb_structured_fields:parse_item(Value),
     binary_to_existing_atom(AtomString);
 decode_value(list, Value) ->
     lists:map(
         fun({item, {string, <<"(ao-type-", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
             decode_value(Type, Item);
-           ({item, Item, _}) -> dev_codec_structured_conv:from_bare_item(Item)
+           ({item, Item, _}) -> hb_structured_fields:from_bare_item(Item)
         end,
-        dev_codec_structured_conv:parse_list(iolist_to_binary(Value))
+        hb_structured_fields:parse_list(iolist_to_binary(Value))
     );
 decode_value(map, Value) ->
     maps:from_list(
         lists:map(
             fun({Key, {item, Item, _}}) ->
                 ?event({decoded_item, {explicit, Key}, Item}),
-                {Key, dev_codec_structured_conv:from_bare_item(Item)}
+                {Key, hb_structured_fields:from_bare_item(Item)}
             end,
-            dev_codec_structured_conv:parse_dictionary(iolist_to_binary(Value))
+            hb_structured_fields:parse_dictionary(iolist_to_binary(Value))
         )
     );
 decode_value(BinType, Value) when is_binary(BinType) ->
