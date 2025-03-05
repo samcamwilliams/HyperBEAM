@@ -130,13 +130,16 @@ patch_to_submessage_test() ->
         <<"device">> => <<"patch@1.0">>,
         <<"results">> => #{
             <<"outbox">> => #{
-                <<"1">> => #{
-                    <<"method">> => <<"PATCH">>,
-                    <<"prices">> => #{
-                        <<"apple">> => 100,
-                        <<"banana">> => 200
-                    }
-                }
+                <<"1">> =>
+                    hb_message:attest(#{
+                        <<"method">> => <<"PATCH">>,
+                        <<"prices">> => #{
+                            <<"apple">> => 100,
+                            <<"banana">> => 200
+                        }
+                    },
+                    hb:wallet()
+                )
             }
         },
         <<"state">> => #{

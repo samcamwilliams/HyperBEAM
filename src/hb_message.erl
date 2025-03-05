@@ -309,11 +309,15 @@ format(Map, Indent) when is_map(Map) ->
         ),
     % Put the path and device rows into the output at the _top_ of the map.
     PriorityKeys = [{<<"path">>, ValOrUndef(<<"path">>)}, {<<"device">>, ValOrUndef(<<"device">>)}],
+    % Add private keys to the output if they are not hidden. Opt takes 3 forms:
+    % 1. `false' -- never show priv
+    % 2. `if_present' -- show priv only if there are keys inside
+    % 2. `always' -- always show priv
     FooterKeys =
-        case {hb_opts:get(debug_hide_priv, false, #{}), maps:get(<<"priv">>, Map, #{})} of
-            {true, _} -> [];
-            {false, #{}} -> [];
-            {false, Priv} -> [{<<"!Private!">>, Priv}]
+        case {hb_opts:get(debug_show_priv, false, #{}), maps:get(<<"priv">>, Map, #{})} of
+            {false, _} -> [];
+            {if_present, #{}} -> [];
+            {_, Priv} -> [{<<"!Private!">>, Priv}]
         end,
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =

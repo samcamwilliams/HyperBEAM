@@ -296,7 +296,7 @@ to(TABM, Opts) when is_map(TABM) ->
             % Ensure the Encoded Msg has any fields that denote
             % the inline-body-key
             maps:from_list(InlineFieldPairs),
-            maps:without([<<"attestations">>, <<"signature">>, <<"signature-input">>], TABM)
+            maps:without([<<"attestations">>, <<"signature">>, <<"signature-input">>, <<"priv">>], TABM)
         ),
     ?event({prepared_body_map, {msg, Enc0}}),
     BodyMap = maps:get(<<"body">>, Enc0, #{}),
@@ -394,24 +394,23 @@ encode_body_keys(PartList) when is_list(PartList) ->
         PartList
     ))).
 
-% Only lift maps to the top level
-% while preserving the hiearchy using keys compatible
-% with the flat@1.0 codec
+%% @doc Merge maps at the same level, if possible.
 lift_maps(Map) ->
     lift_maps(Map, <<>>, #{}).
 lift_maps(Map, Parent, Top) when is_map(Map) ->
+    ?event({lift_maps, {map, Map}, {parent, Parent}, {top, Top}}),
     {Flattened, NewTop} = maps:fold(
         fun(Key, Value, {CurMap, CurTop}) ->
             FlatK = case Parent of
                 <<>> -> Key;
                 _ -> <<Parent/binary, "/", Key/binary>>
             end,
-            
             case Value of
                 _ when is_map(Value) ->
                     NewTop = lift_maps(Value, FlatK, CurTop),
                     {CurMap, NewTop};
                 _ ->
+                    ?event({lift_maps, {key, Key}, {value, Value}}),
                     case byte_size(Value) > ?MAX_HEADER_LENGTH of
                         % the value is too large to be encoded as a header
                         % within a part, so instead lift it to be a top level
@@ -433,18 +432,21 @@ lift_maps(Map, Parent, Top) when is_map(Map) ->
         0 -> NewTop;
         _ -> case Parent of
             <<>> -> maps:merge(NewTop, Flattened);
-            _ -> NewTop#{ Parent => Flattened }
+            _ ->
+                Res = NewTop#{ Parent => Flattened },
+                ?event({returning_res, {res, Res}}),
+                Res
         end
     end.
 
 
-% We need to generate a unique, reproducible boundary for the
-% multipart body, however we cannot use the id of the message as
-% the boundary, as the id is not known until the message is
-% encoded. Subsequently, we generate each body part individually,
-% concatenate them, and apply a SHA2-256 hash to the result.
-% This ensures that the boundary is unique, reproducible, and
-% secure.
+%% @doc Generate a unique, reproducible boundary for the
+%% multipart body, however we cannot use the id of the message as
+%% the boundary, as the id is not known until the message is
+%% encoded. Subsequently, we generate each body part individually,
+%% concatenate them, and apply a SHA2-256 hash to the result.
+%% This ensures that the boundary is unique, reproducible, and
+%% secure.
 boundary_from_parts(PartList) ->
     BodyBin =
         iolist_to_binary(
@@ -624,7 +626,8 @@ lift_maps_test() ->
         <<"nested">> => #{
             <<"foo">> => <<"iiiiii">>,
             <<"here">> => #{
-                <<"bar">> => <<"adfasdlfkjsdfkjdlsajadsf">>
+                <<"bar">> => <<"baz">>,
+                <<"fizz">> => <<"buzz">>
             }
         }
     },
@@ -640,7 +643,7 @@ lift_maps_test() ->
             <<"c">> => #{<<"d">> => <<"30">>},
             <<"e">> => <<"2">>,
             <<"nested">> => #{<<"foo">> => <<"iiiiii">>},
-            <<"nested/here">> => #{<<"bar">> => <<"adfasdlfkjsdfkjdlsajadsf">>}
+            <<"nested/here">> => #{<<"bar">> => <<"baz">>, <<"fizz">> => <<"buzz">>}
         }
     ),
     ok.
@@ -675,7 +678,8 @@ lift_maps_flat_compatible_test() ->
         <<"nested">> => #{
             <<"foo">> => <<"iiiiii">>,
             <<"here">> => #{
-                <<"bar">> => <<"adfasdlfkjsdfkjdlsajadsf">>
+                <<"bar">> => <<"baz">>,
+                <<"fizz">> => <<"buzz">>
             }
         }
     },

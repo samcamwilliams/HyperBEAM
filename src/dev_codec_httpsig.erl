@@ -129,7 +129,7 @@ attest(MsgToSign, _Req, Opts) ->
         end,
     EncWithoutBodyKeys =
         maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"body-keys">>],
+            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"priv">>],
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
@@ -220,7 +220,6 @@ add_content_digest(Msg) ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
             ?event({add_content_digest, {body, Body}, {msg, Msg}}),
-            %io:format(standard_error, "Body pre-image:~n~s~n", [Body]),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(dev_codec_structured_conv:dictionary(

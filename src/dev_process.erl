@@ -729,7 +729,7 @@ aos_browsable_state_test_() ->
                 #{ cache_control => <<"always">> }
             ),
         ID = hb_message:id(Msg1),
-        ?event(aos_debug, {computed_message, {id, {explicit, ID}}}),
+        ?event({computed_message, {id, {explicit, ID}}}),
         ?assertEqual(4, Msg3)
     end}.
 
@@ -773,7 +773,7 @@ aos_state_access_via_http_test_() ->
                 Msg2,
                 Opts
             ),
-        ?event(aos_debug, {schedule_msg_res, {msg3, Msg3}}),
+        ?event({schedule_msg_res, {msg3, Msg3}}),
         {ok, Msg4} =
             hb_http:get(
                 Node,
@@ -787,8 +787,8 @@ aos_state_access_via_http_test_() ->
                 },
                 Opts
             ),
-        ?event(aos_debug, {compute_msg_res, {msg4, Msg4}}),
-        ?event(aos_debug,
+        ?event({compute_msg_res, {msg4, Msg4}}),
+        ?event(
             {try_yourself,
                 {explicit,
                     << Node/binary, "/", ProcID/binary, "/compute&slot=1/results/outbox/1/data">>}

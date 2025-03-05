@@ -521,3 +521,6 @@ verify_test() ->
             #{ hashpath => ignore }
         )
     ).
+
+run_test() ->
+    hb_message:deep_multisignature_test().

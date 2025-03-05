@@ -186,13 +186,13 @@ resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message.
     ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
     Msg1b = set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts)),
-    ?event(converge_debug, {message_as, Msg1b, {executing_path, Msg2}}, Opts),
+    ?event({message_as, Msg1b, {executing_path, Msg2}}, Opts),
     % Recurse with the modified message. The hashpath will have been updated
     % to include the device ID, if requested. Simply return if the path is empty.
     case hb_path:from_message(request, Msg2) of
         undefined -> {ok, Msg1b};
         _ -> 
-            ?event(converge_debug,
+            ?event(
                 {resolve_as_subpath,
                     {msg1, Msg1b},
                     {msg2, Msg2},

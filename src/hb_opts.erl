@@ -114,9 +114,9 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => true,
+        debug_hide_metadata => false,
         debug_ids => false,
-        debug_hide_priv => true,
+        debug_show_priv => always,
 		trusted => #{},
         routes => [
             #{
@@ -268,7 +268,7 @@ mimic_default_types(Map, Mode) ->
     maps:from_list(lists:map(
         fun({Key, Value}) ->
             NewKey = key_to_atom(Key, Mode),
-            NewValue = 
+            NewValue =
                 case maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
                     DefaultValue when is_atom(DefaultValue) ->

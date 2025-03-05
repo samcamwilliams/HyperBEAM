@@ -346,14 +346,14 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     Proc =
                         case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
                             not_found ->
-                                ?event(debug_scheduler, {reading_cache, {proc_id, ProcID}}),
+                                ?event({reading_cache, {proc_id, ProcID}}),
                                 case hb_cache:read(ProcID, Opts) of
                                     {ok, P} -> P;
                                     not_found -> Msg1
                                 end;
                             P -> P
                         end,
-                    ?event(debug_scheduler, {found_process, {process, Proc}, {msg1, Msg1}}, Opts),
+                    ?event({found_process, {process, Proc}, {msg1, Msg1}}, Opts),
                     % Check if we are the scheduler for this process.
                     Address = hb_util:human_id(ar_wallet:to_address(
                         hb_opts:get(priv_wallet, hb:wallet(), Opts))),
@@ -496,7 +496,7 @@ get_schedule(Msg1, Msg2, Opts) ->
             ToRes -> ToRes
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
-    ?event(debug_scheduler, {parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
+    ?event({parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
     case find_server(ProcID, Msg1, Opts) of
         {local, _PID} ->
             generate_local_schedule(Format, ProcID, From, To, Opts);
@@ -536,7 +536,7 @@ get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
                 path => <<"/">>
             }
         ),
-    ?event(compute_debug, {getting_remote_schedule, {proc_id, ProcID}, {from, From}, {to, To}}),
+    ?event({getting_remote_schedule, {proc_id, ProcID}, {from, From}, {to, To}}),
     ToBin = integer_to_binary(From+1),
     FromBin = integer_to_binary(From),
     Path = <<

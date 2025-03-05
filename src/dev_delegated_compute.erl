@@ -43,7 +43,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Slot, Opts) ->
-    ?event(debug_leader, {do_compute_called, {process_id, ProcID}, {slot, Slot}}),
+    ?event({do_compute_called, {process_id, ProcID}, {slot, Slot}}),
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">> }, #{
             <<"path">> => <<"call">>,
@@ -57,7 +57,7 @@ do_compute(ProcID, Slot, Opts) ->
             },
             Opts
         ),
-    ?event(debug_leader, {res, Res}),
+    ?event({res, Res}),
     {ok, Response} = Res,
     JSONRes = hb_converge:get(<<"body">>, Response, Opts),
     ?event({json_res, JSONRes}),

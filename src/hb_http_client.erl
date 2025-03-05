@@ -361,7 +361,6 @@ open_connection(#{ peer := Peer }, Opts) ->
 
 parse_peer(Peer, Opts) ->
     Parsed = uri_string:parse(Peer),
-    ?event(debug, {parsed, Parsed}),
     case Parsed of
         #{ host := Host, port := Port } ->
             {hb_util:list(Host), Port};
