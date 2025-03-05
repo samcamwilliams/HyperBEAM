@@ -39,3 +39,5 @@ TEST-cache**/**
 *.svg
 mainnet-cache/
 store-inputs/
+
+docs/site/site
