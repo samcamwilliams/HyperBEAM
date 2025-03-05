@@ -329,7 +329,9 @@ do_debug_fmt(Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}, Indent) ->
 do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
     format_address(Wallet, Indent);
 do_debug_fmt({explicit, X}, Indent) ->
-    format_indented("~p", [X], Indent);
+    format_indented("[Explicit=>] ~p", [X], Indent);
+do_debug_fmt({string, X}, Indent) ->
+    format_indented("[String=>] ~s", [X], Indent);
 do_debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Indent);
 do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
