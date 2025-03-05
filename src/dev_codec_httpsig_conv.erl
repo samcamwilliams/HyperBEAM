@@ -352,7 +352,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 FinalBody = iolist_to_binary(lists:join(?CRLF, lists:reverse(BodyList))),
                 % Ensure we append the Content-Type to be a multipart response
                 Enc0#{
-                    % TODO: is this needed here?
+                    % TODO: Is this needed here?
                     % We ought not be sending body-keys over the wire, so we either need
                     % to remove this here, or at the edge
                     <<"body-keys">> => encode_body_keys(PartList),
@@ -401,16 +401,19 @@ lift_maps(Map, Parent, Top) when is_map(Map) ->
     ?event({lift_maps, {map, Map}, {parent, Parent}, {top, Top}}),
     {Flattened, NewTop} = maps:fold(
         fun(Key, Value, {CurMap, CurTop}) ->
-            FlatK = case Parent of
-                <<>> -> Key;
-                _ -> <<Parent/binary, "/", Key/binary>>
-            end,
+            ?event({lift_maps, {key, Key}, {value, Value}}),
+            NormKey = hb_converge:normalize_key(Key),
+            FlatK =
+                case Parent of
+                    <<>> -> NormKey;
+                    _ -> <<Parent/binary, "/", NormKey/binary>>
+                end,
             case Value of
                 _ when is_map(Value) ->
                     NewTop = lift_maps(Value, FlatK, CurTop),
                     {CurMap, NewTop};
                 _ ->
-                    ?event({lift_maps, {key, Key}, {value, Value}}),
+                    ?event({lift_maps, {norm_key, NormKey}, {value, Value}}),
                     case byte_size(Value) > ?MAX_HEADER_LENGTH of
                         % the value is too large to be encoded as a header
                         % within a part, so instead lift it to be a top level
@@ -420,7 +423,7 @@ lift_maps(Map, Parent, Top) when is_map(Map) ->
                             {CurMap, NewTop};
                         % Encode the value in the current part
                         false ->
-                            NewCurMap = maps:put(Key, Value, CurMap),
+                            NewCurMap = maps:put(NormKey, Value, CurMap),
                             {NewCurMap, CurTop}
                     end
             end
