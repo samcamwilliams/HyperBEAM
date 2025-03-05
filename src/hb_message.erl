@@ -1099,7 +1099,7 @@ signed_with_inner_signed_message_test(Codec) ->
             maps:merge(
                 attest(
                     #{
-                        <<"c">> => #{ <<"d">> => << 0:(1024*1024) >> },
+                        <<"c">> => <<"abc">>,
                         <<"e">> => 5
                     },
                     Wallet,
@@ -1112,10 +1112,33 @@ signed_with_inner_signed_message_test(Codec) ->
             )
     }, Wallet, Codec),
     ?event({msg, Msg}),
+    % 1. Verify the outer message without changes.
     ?assert(verify(Msg)),
+    {ok, AttestedInner} = with_only_attested(maps:get(<<"b">>, Msg)),
+    ?event({attested_inner, AttestedInner}),
+    ?event({inner_attestors, hb_message:signers(AttestedInner)}),
+    % 2. Verify the inner message without changes.
+    ?assert(verify(AttestedInner, signers)),
+    % 3. Convert the message to the format and back.
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    ?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    % 4. Verify the converted message without changes.
+    ?assert(verify(Decoded)),
+    % 5. Verify the inner message from the converted message.
+    InnerDecoded = maps:get(<<"b">>, Decoded),
+    ?event({inner_decoded, InnerDecoded}),
+    ?assert(verify(InnerDecoded, signers)),
+    % 6. Verify the outer message after `only_with_attested`.
     {ok, OnlyAttested} = with_only_attested(Msg),
     ?event({only_attested, OnlyAttested}),
-    ?assert(verify(OnlyAttested)).
+    ?assert(verify(OnlyAttested, signers)),
+    % 7. Verify the inner message from the only_attested message.
+    AttestedInnerOnly = maps:get(<<"b">>, OnlyAttested),
+    ?event({attested_inner_only, AttestedInnerOnly}),
+    ?assert(verify(AttestedInnerOnly, signers)).
 
 large_body_attested_keys_test(Codec) ->
     case Codec of
@@ -1219,4 +1242,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_list_test(<<"httpsig@1.0">>).
+    signed_with_inner_signed_message_test(<<"httpsig@1.0">>).
