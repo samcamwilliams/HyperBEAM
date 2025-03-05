@@ -267,8 +267,8 @@ mimic_default_types(Map, Mode) ->
     Default = default_message(),
     maps:from_list(lists:map(
         fun({Key, Value}) ->
-            NewKey = key_to_atom(Key, Mode),
-            NewValue =
+            NewKey = hb_util:key_to_atom(Key, Mode),
+            NewValue = 
                 case maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
                     DefaultValue when is_atom(DefaultValue) ->
@@ -285,18 +285,6 @@ mimic_default_types(Map, Mode) ->
         end,
         maps:to_list(Map)
     )).
-
-%% @doc Convert keys in a map to atoms, lowering `-' to `_'.
-key_to_atom(Key, Mode) ->
-    WithoutDashes = binary:replace(Key, <<"-">>, <<"_">>, [global]),
-    case Mode of
-        new_atoms -> binary_to_atom(WithoutDashes, utf8);
-        _ ->
-            try binary_to_existing_atom(WithoutDashes, utf8)
-            catch
-                error:badarg -> WithoutDashes
-            end
-    end.
     
 %%% Tests
 
