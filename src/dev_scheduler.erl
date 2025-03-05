@@ -298,7 +298,9 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
     % Should we verify the message again before scheduling?
     Verified =
         case hb_opts:get(verify_assignments, true, Opts) of
-            true -> hb_message:verify(Msg2, signers);
+            true ->
+                ?event({verifying_message_before_scheduling, Msg2}),
+                hb_message:verify(Msg2, signers);
             false -> true
         end,
     % Handle scheduling of the message if the message is valid.
