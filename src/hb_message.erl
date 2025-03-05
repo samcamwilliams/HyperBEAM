@@ -83,7 +83,15 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
         if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
            true -> #{}
         end,
-    TABM = to_tabm(Msg, SourceFormat, Opts),
+    TABM =
+        to_tabm(
+            case is_map(Msg) of
+                true -> maps:without([<<"priv">>], Msg);
+                false -> Msg
+            end,
+            SourceFormat,
+            Opts
+        ),
     case TargetFormat of
         tabm -> restore_priv(TABM, OldPriv);
         _ -> from_tabm(TABM, TargetFormat, OldPriv, Opts)
@@ -107,6 +115,7 @@ from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
 
 %% @doc Add the existing `priv` sub-map back to a converted message, honoring
 %% any existing `priv` sub-map that may already be present.
+restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
 restore_priv(Msg, OldPriv) ->
     MsgPriv = maps:get(<<"priv">>, Msg, #{}),
     ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
