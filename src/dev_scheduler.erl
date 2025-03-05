@@ -353,7 +353,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                 end;
                             P -> P
                         end,
-                    ?event({found_process, {process, Proc}, {msg1, Msg1}}, Opts),
+                    ?event({found_process, {process, Proc}, {msg1, Msg1}}),
                     % Check if we are the scheduler for this process.
                     Address = hb_util:human_id(ar_wallet:to_address(
                         hb_opts:get(priv_wallet, hb:wallet(), Opts))),
