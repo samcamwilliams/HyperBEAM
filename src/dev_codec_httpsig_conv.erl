@@ -1,3 +1,4 @@
+
 %%% @doc A codec for the that marshals TABM encoded messages to and from the
 %%% "HTTP" message structure.
 %%% 
@@ -110,29 +111,6 @@ from_body(TABM, InlinedKey, ContentType, Body) ->
             % Finally, for each part within the sub-part, we need to parse it,
             % potentially recursively as a sub-TABM, and then add it to the
             % current TABM
-            
-            % Before processing, check if this multipart body contains 
-            % attestation parts which need special handling
-            HasAttestationParts = 
-                lists:any(
-                    fun(Part) ->
-                        binary:match(Part, <<"attestation-device">>) =/= nomatch orelse
-                        binary:match(Part, <<"attestations">>) =/= nomatch
-                    end, 
-                    Parts
-                ),
-                
-            % Add a flag to the processing context to indicate that attestation 
-            % signature data should be fully preserved if found
-            ProcessingContext = 
-                case HasAttestationParts of
-                    true -> 
-                        ?event({multipart_body_has_attestation_parts, {body_start, binary:part(Body, 0, min(100, byte_size(Body)))}}),
-                        #{preserve_attestations => true};
-                    false -> 
-                        #{}
-                end,
-            
             {ok, FlattendTABM} = from_body_parts(TABM, InlinedKey, Parts),
             FullTABM = dev_codec_flat:from(FlattendTABM),
             FullTABM
@@ -209,66 +187,12 @@ from_body_parts(TABM, InlinedKey, [Part | Rest]) ->
                         % So simply use the the raw body binary as the part
                         RawBody;
                     _ ->
-                        % Here's where we need to check if we're dealing with a nested message
-                        % that might have attestations we need to preserve
-                        % Check if this part is an attestation part
-                        PartNameBinary = 
-                            case is_binary(PartName) of
-                                true -> PartName;
-                                false -> list_to_binary(PartName)
-                            end,
-                        IsAttestationPart = binary:match(PartNameBinary, <<"attestations">>) =/= nomatch,
-                        
-                        % We need special handling for signature and signature-input
-                        % if this is an attestation part or contains one
-                        HasSignatureHeaders = maps:is_key(<<"signature">>, RestHeaders) orelse 
-                                             maps:is_key(<<"signature-input">>, RestHeaders),
-                        
-                        % For nested messages with attestations, we need to ensure complete
-                        % attestation data is preserved
-                        SubPart = from(RestHeaders#{ <<"body">> => RawBody }),
-                        
-                        % If this is an attestation part or has signature headers,
-                        % make sure to preserve all signature data
-                        case IsAttestationPart of
-                            true ->
-                                % Make sure all attestation data is preserved
-                                ?event({preserving_full_attestation_data, {part_name, PartName}}),
-                                
-                                % Check for signature and signature-input headers and add them to the SubPart
-                                % This is critical for inner message verification
-                                SubPartWithSigs = 
-                                    case {maps:get(<<"signature">>, RestHeaders, undefined),
-                                          maps:get(<<"signature-input">>, RestHeaders, undefined)} of
-                                        {undefined, _} -> 
-                                            % Check if the parent message has signature data we can use
-                                            case {maps:get(<<"signature">>, TABM, undefined),
-                                                  maps:get(<<"signature-input">>, TABM, undefined)} of
-                                                {undefined, _} -> SubPart;
-                                                {_, undefined} -> SubPart;
-                                                {ParentSig, ParentSigInput} ->
-                                                    % Add the parent's signature data to the attestation part
-                                                    ?event({adding_parent_signature_to_attestation_part, {part_name, PartName}}),
-                                                    maps:merge(SubPart, 
-                                                        #{
-                                                            <<"signature">> => ParentSig,
-                                                            <<"signature-input">> => ParentSigInput
-                                                        })
-                                            end;
-                                        {_, undefined} -> SubPart;
-                                        {Signature, SignatureInput} ->
-                                            % Add the signature headers to the SubPart
-                                            ?event({adding_signature_to_attestation_part, {part_name, PartName}}),
-                                            maps:merge(SubPart, 
-                                                #{
-                                                    <<"signature">> => Signature,
-                                                    <<"signature-input">> => SignatureInput
-                                                })
-                                    end,
-                                SubPartWithSigs;
-                            false ->
-                                SubPart
-                        end
+                        % TODO: this branch may no longer be needed
+                        % since we flatten the maps prior to HTTP encoding
+                        % 
+                        % For now, keeping recursive logic.
+                        % We need to recursively parse the sub part into its own TABM
+                        from(RestHeaders#{ <<"body">> => RawBody })
                 end,
             BodyKey = hd(binary:split(PartName, <<"/">>)),
             TABMNext = TABM#{
@@ -347,35 +271,8 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
     )),
     Msg = Map#{ <<"attestations">> => Attestations },
     ?event({adding_attestations, {msg, Msg}}),
-    
-    % Now also check for inner attestations in any nested parts
-    % This is crucial for nested signed messages
-    MsgWithNestedAttestations = 
-        case maps:get(<<"body">>, Map, not_found) of
-            not_found -> Msg;
-            Body when is_map(Body) ->
-                % Recursively check for nested attestations in body fields
-                maps:put(<<"body">>, 
-                    maps:map(
-                        fun(K, V) ->
-                            case is_map(V) andalso maps:is_key(<<"attestations">>, V) of
-                                true ->
-                                    ?event({preserving_nested_attestation, {key, K}}),
-                                    % Make sure all attestation data is preserved
-                                    V;
-                                false -> 
-                                    V
-                            end
-                        end,
-                        Body
-                    ),
-                    Msg
-                );
-            _ -> Msg
-        end,
-    
     % Finally place the attestations as a top-level message on the parent message
-    dev_codec_httpsig:reset_hmac(MsgWithNestedAttestations).
+    dev_codec_httpsig:reset_hmac(Msg).
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API
@@ -605,90 +502,12 @@ encode_body_part(PartName, BodyPart, InlineKey) ->
     % HB message field that resolves to the sub-message
     case BodyPart of
         BPMap when is_map(BPMap) ->
-            % Check if this is a nested message with attestations that need preserving
-            HasAttestations = maps:is_key(<<"attestations">>, BPMap),
-            
-            % Check if this is an attestation part that needs special handling
-            IsAttestationPart = binary:match(PartName, <<"attestations">>) =/= nomatch,
-            
             WithDisposition = maps:put(
                 <<"content-disposition">>,
                 Disposition,
                 BPMap
             ),
-            
-            % For nested messages with attestations, we need special handling
-            % to make sure all attestation data is properly preserved
-            SubHttp = 
-                case HasAttestations orelse IsAttestationPart of
-                    true ->
-                        ?event({encoding_nested_message_with_attestations, {part_name, PartName}}),
-                        % Make sure signature data is fully preserved
-                        
-                        % Check all attestations for signature data if this has attestations
-                        % We'll collect all signature headers that need to be preserved
-                        {HasSigData, SigHeaders} = 
-                            case HasAttestations of
-                                true ->
-                                    % Get the attestations and check for signature data
-                                    Attestations = maps:get(<<"attestations">>, BPMap, #{}),
-                                    maps:fold(
-                                        fun(AttestorId, AttData, {FoundSig, Headers}) ->
-                                            % Check if this attestation has signature data
-                                            HasSig = maps:is_key(<<"signature">>, AttData) andalso 
-                                                     maps:is_key(<<"signature-input">>, AttData),
-                                            
-                                            if 
-                                                HasSig ->
-                                                    % Found signature data, add it to headers
-                                                    Sig = maps:get(<<"signature">>, AttData),
-                                                    SigInput = maps:get(<<"signature-input">>, AttData),
-                                                    {true, maps:merge(Headers, #{
-                                                        <<"signature">> => Sig,
-                                                        <<"signature-input">> => SigInput
-                                                    })};
-                                                true ->
-                                                    % No signature data in this attestation
-                                                    {FoundSig, Headers}
-                                            end
-                                        end,
-                                        {false, #{}},
-                                        Attestations
-                                    );
-                                false ->
-                                    % Check if this is an attestation part that needs signature data
-                                    case IsAttestationPart of
-                                        true ->
-                                            % Check if the part itself has signature data
-                                            HasSig = maps:is_key(<<"signature">>, BPMap) andalso 
-                                                     maps:is_key(<<"signature-input">>, BPMap),
-                                            if
-                                                HasSig ->
-                                                    % Use the signature data from the part
-                                                    {true, #{
-                                                        <<"signature">> => maps:get(<<"signature">>, BPMap),
-                                                        <<"signature-input">> => maps:get(<<"signature-input">>, BPMap)
-                                                    }};
-                                                true ->
-                                                    % No signature data in this part
-                                                    {false, #{}}
-                                            end;
-                                        false ->
-                                            % Not an attestation part
-                                            {false, #{}}
-                                    end
-                            end,
-                        
-                        % If we found signature data, merge it with headers
-                        if 
-                            HasSigData ->
-                                to(maps:merge(WithDisposition, SigHeaders));
-                            true ->
-                                to(WithDisposition)
-                        end;
-                    false ->
-                        to(WithDisposition)
-                end,
+            SubHttp = to(WithDisposition),
             encode_http_msg(SubHttp);
         BPBin when is_binary(BPBin) ->
             % A properly encoded inlined body part MUST have a CRLF between

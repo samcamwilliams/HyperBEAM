@@ -215,41 +215,15 @@ verify(Self, Req, Opts) ->
                         {attestor, Attestor},
                         {target, Base}}
                 ),
-                % Use a case statement to handle potential errors instead of direct pattern matching
-                case exec_for_attestation(
+                {ok, Res} = exec_for_attestation(
                     verify,
                     Base,
                     maps:get(Attestor, Attestations),
                     Req#{ <<"attestor">> => Attestor },
                     Opts
-                ) of
-                    {ok, Res} ->
-                        ?event({verify_attestation_res, {attestor, Attestor}, {res, Res}}),
-                        Res;
-                    {error, no_signature_data_in_attestation} ->
-                        % Special case for inner message verification with signers option
-                        case maps:get(signers, Opts, false) of
-                            signers ->
-                                ?event({verify_attestation_skip_inner_message, {attestor, Attestor}}),
-                                true;
-                            _ ->
-                                ?event({verify_attestation_error, {attestor, Attestor}, {error, no_signature_data_in_attestation}}),
-                                false
-                        end;
-                    Error ->
-                        % If we're using the 'signers' option (for tests with nested messages),
-                        % we should handle errors gracefully
-                        case maps:get(signers, Opts, false) of
-                            signers ->
-                                ?event({verify_attestation_error_with_signers, {attestor, Attestor}, {error, Error}}),
-                                % For nested verifications with signers, auto-pass
-                                true;
-                            _ ->
-                                ?event({verify_attestation_error, {attestor, Attestor}, {error, Error}}),
-                                % For normal verification, propagate the error and fail
-                                false
-                        end
-                end
+                ),
+                ?event({verify_attestation_res, {attestor, Attestor}, {res, Res}}),
+                Res
             end,
             maps:keys(Attestations)
         ),
@@ -531,7 +505,7 @@ verify_test() ->
     ?event({signed, Signed}),
     BadSigned = Signed#{ <<"a">> => <<"c">> },
     ?event({bad_signed, BadSigned}),
-    ?assertEqual(true, hb_message:verify(BadSigned)),
+    ?assertEqual(false, hb_message:verify(BadSigned)),
     ?assertEqual({ok, true},
         hb_converge:resolve(
             #{ <<"device">> => <<"message@1.0">> },

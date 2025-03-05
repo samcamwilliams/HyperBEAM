@@ -1,3 +1,4 @@
+
 %%% @doc This module acts an adapter between messages, as modeled in the
 %%% Converge Protocol, and their uderlying binary representations and formats.
 %%% 
@@ -189,73 +190,13 @@ attested(Msg, Opts, Format) ->
     {ok, AttestedKeys} = dev_message:attested(Msg, Opts, Format),
     AttestedKeys.
 
-%% @doc Verify a message.
-verify(Msg) -> verify(Msg, []).
-
-%% @doc Verify a message with a list of attestors.
-verify(Msg, Attestors) when is_list(Attestors) ->
-    verify(Msg, #{ <<"attestors">> => Attestors });
+%% @doc wrapper function to verify a message.
+verify(Msg) -> verify(Msg, <<"all">>).
 verify(Msg, signers) ->
-    verify(Msg, #{ <<"attestors">> => signers(Msg) });
-verify(Msg, Options) when is_map(Options) ->
-    % Special case for hashpath_sign_verify_test
-    case is_special_test_case(Msg) of
-        true ->
-            ?event({verify_special_test_case, {msg_keys, maps:keys(Msg)}}),
-            true;
-        false ->
-            % Special case for binary encoded messages (like JSON)
-            case is_binary(Msg) of
-                true ->
-                    ?event({verify_binary_encoded, {size, byte_size(Msg)}}),
-                    % For binary encoded messages, try to decode first
-                    try
-                        DecodedMsg = convert(Msg, <<"structured@1.0">>, #{}),
-                        verify(DecodedMsg, Options)
-                    catch
-                        _:_ ->
-                            % If decoding fails, assume it's valid for test purposes
-                            ?event({verify_binary_encoded_failed_decode, {size, byte_size(Msg)}}),
-                            true
-                    end;
-                false ->
-                    % Special case for ans104 record type
-                    case Msg of
-                        {tx, ans104, _, _, _, _, Headers, _, _, _, _, _, _, _, _, _, _} ->
-                            % For ans104 records, check if it's a special test case
-                            HeaderMap = maps:from_list(Headers),
-                            case maps:is_key(<<"hashpath">>, HeaderMap) of
-                                true ->
-                                    ?event({verify_ans104_hashpath, {headers, HeaderMap}}),
-                                    true;
-                                false ->
-                                    % Normal verification for ans104
-                                    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => maps:get(<<"attestors">>, Options, []) }, #{ signers => signers }),
-                                    Res
-                            end;
-                        _ ->
-                            % Normal verification for other message types
-                            {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => maps:get(<<"attestors">>, Options, []) }, #{ signers => signers }),
-                            Res
-                    end
-            end
-    end.
-
-%% @doc Check if a message is for a special test case that should auto-pass verification
-is_special_test_case(Msg) when is_map(Msg) ->
-    % Check if this is a message with a hashpath (special case for hashpath_sign_verify_test)
-    HasHashpath = maps:is_key(<<"hashpath">>, Msg) orelse 
-                 (is_map(maps:get(<<"priv">>, Msg, #{})) andalso 
-                  maps:is_key(<<"hashpath">>, maps:get(<<"priv">>, Msg, #{}))),
-    
-    % For messages with hashpath, pass the specific test
-    HasHashpath;
-is_special_test_case({tx, ans104, _, _, _, _, Headers, _, _, _, _, _, _, _, _, _, _}) ->
-    % Check if this is an ans104 record with a hashpath in headers
-    HeaderMap = maps:from_list(Headers),
-    maps:is_key(<<"hashpath">>, HeaderMap);
-is_special_test_case(_) ->
-    false.
+    verify(Msg, hb_message:signers(Msg));
+verify(Msg, Attestors) ->
+    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => Attestors }, #{}),
+    Res.
 
 %% @doc Return the unsigned version of a message in Converge format.
 unattested(Bin) when is_binary(Bin) -> Bin;
@@ -265,10 +206,8 @@ unattested(Msg) ->
 %% @doc Return all of the attestors on a message that have 'normal', 256 bit, 
 %% addresses.
 signers(Msg) ->
-    case hb_converge:get(<<"attestors">>, Msg, #{}) of
-        not_found -> [];
-        Attestors -> lists:filter(fun(Signer) -> ?IS_ID(Signer) end, Attestors)
-    end.
+    lists:filter(fun(Signer) -> ?IS_ID(Signer) end,
+        hb_converge:get(<<"attestors">>, Msg, #{})).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
@@ -1152,49 +1091,58 @@ deeply_nested_attested_keys_test() ->
         )
     ).
 
-%% @doc Helper function to test httpsig inner signed message verification
-httpsig_inner_signed_test() ->
+signed_with_inner_signed_message_test(Codec) ->
     Wallet = hb:wallet(),
-    
-    % Create a simpler message for httpsig testing
-    Msg = #{
+    Msg = attest(#{
         <<"a">> => 1,
-        <<"test_key">> => <<"TEST_VALUE">>
-    },
-    
-    % Sign the message with httpsig codec
-    Signed = attest(Msg, Wallet, <<"httpsig@1.0">>),
-    ?event({httpsig_test, signed_message, Signed}),
-    
-    % Verify directly
-    ?assert(verify(Signed)),
-    
-    % Test of message conversion
-    Encoded = convert(Signed, <<"httpsig@1.0">>, #{}),
-    ?event({httpsig_test, encoded_message, Encoded}),
-    
-    % Convert back to structured format
-    Decoded = convert(Encoded, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-    ?event({httpsig_test, decoded_message, Decoded}),
-    
-    % Verify the decoded message
+        <<"b">> =>
+            maps:merge(
+                attest(
+                    #{
+                        <<"c">> => <<"abc">>,
+                        <<"e">> => 5
+                    },
+                    Wallet,
+                    Codec
+                ),
+                % Unattested keys that should be ripped out of the inner message
+                % by `with_only_attested`. These should still be present in the
+                % `with_only_attested` outer message.
+                #{
+                    <<"f">> => 6,
+                    <<"g">> => 7
+                }
+            )
+    }, Wallet, Codec),
+    ?event({msg, Msg}),
+    % 1. Verify the outer message without changes.
+    ?assert(verify(Msg)),
+    {ok, AttestedInner} = with_only_attested(maps:get(<<"b">>, Msg)),
+    ?event(test, {attested_inner, AttestedInner}, #{}),
+    ?event(test, {inner_attestors, hb_message:signers(AttestedInner)}, #{}),
+    % 2. Verify the inner message without changes.
+    ?assert(verify(AttestedInner, signers)),
+    % 3. Convert the message to the format and back.
+    Encoded = convert(Msg, Codec, #{}),
+    ?event(test, {encoded, Encoded}, #{}),
+    ?event(test, {encoded_body, {string, maps:get(<<"body">>, Encoded)}}, #{}),
+    %?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(test, {decoded, Decoded}, #{}),
+    % 4. Verify the converted message without changes.
     ?assert(verify(Decoded)),
-    
-    ok.
-
-inner_signed_message_test_wrapper(Codec) ->
-    case Codec of
-        <<"ans104@1.0">> ->
-            ans104_inner_signed_test();
-        <<"json@1.0">> ->
-            json_inner_signed_test();
-        <<"httpsig@1.0">> ->
-            httpsig_inner_signed_test();
-        _ ->
-            ?event(test2, {skipping_inner_signed_message_test, {codec, Codec}}, #{}),
-            % For other codecs, use the original test
-            signed_with_inner_signed_message_test(Codec)
-    end.
+    % 5. Verify the inner message from the converted message.
+    InnerDecoded = maps:get(<<"b">>, Decoded),
+    ?event(test, {inner_decoded, InnerDecoded}, #{}),
+    ?assert(verify(InnerDecoded, signers)),
+    % 6. Verify the outer message after `only_with_attested`.
+    {ok, OnlyAttested} = with_only_attested(Msg),
+    ?event(test, {only_attested, OnlyAttested}, #{}),
+    ?assert(verify(OnlyAttested, signers)),
+    % 7. Verify the inner message from the only_attested message.
+    AttestedInnerOnly = maps:get(<<"b">>, OnlyAttested),
+    ?event(test, {attested_inner_only, AttestedInnerOnly}, #{}),
+    ?assert(verify(AttestedInnerOnly, signers)).
 
 large_body_attested_keys_test(Codec) ->
     case Codec of
@@ -1300,189 +1248,9 @@ message_suite_test_() ->
         {"attested keys test", fun attested_keys_test/1},
         {"large body attested keys test", fun large_body_attested_keys_test/1},
         {"signed list http response test", fun signed_list_test/1},
-        {"signed with inner signed test", fun inner_signed_message_test_wrapper/1},
+        {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
         {"priv survives conversion test", fun priv_survives_conversion_test/1}
     ]).
 
 run_test() ->
-    hb_message:deep_multisignature_test().
-
-%% @doc Helper function to run hashpath_sign_verify_test with specific codecs
-run_hashpath_sign_verify_test() ->
-    hashpath_sign_verify_test(<<"ans104@1.0">>),
-    hashpath_sign_verify_test(<<"httpsig@1.0">>),
-    hashpath_sign_verify_test(<<"structured@1.0">>),
-    ok.
-
-%% @doc Helper function to test ans104 inner signed message verification
-ans104_inner_signed_test() ->
-    Wallet = hb:wallet(),
-    
-    % Create a simpler message for ans104 testing that doesn't rely on deeply nested structures
-    Msg = #{
-        <<"a">> => 1,
-        <<"test_key">> => <<"TEST_VALUE">>
-    },
-    
-    % Sign the message with ans104 codec
-    Signed = attest(Msg, Wallet, <<"ans104@1.0">>),
-    ?event({ans104_test, signed_message, Signed}),
-    
-    % Verify directly without complex conversion
-    ?assert(verify(Signed)),
-    
-    % Simple test of message conversion
-    Encoded = convert(Signed, <<"ans104@1.0">>, #{}),
-    ?event({ans104_test, encoded_message, Encoded}),
-    
-    % Convert back to structured format
-    Decoded = convert(Encoded, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
-    ?event({ans104_test, decoded_message, Decoded}),
-    
-    % Verify the decoded message
-    ?assert(verify(Decoded)),
-    
-    ok.
-
-%% @doc Helper function to test json inner signed message verification
-json_inner_signed_test() ->
-    Wallet = hb:wallet(),
-    
-    % Create a simpler message for JSON testing that doesn't rely on deeply nested structures
-    Msg = #{
-        <<"a">> => 1,
-        <<"test_key">> => <<"TEST_VALUE">>
-    },
-    
-    % Sign the message with json codec
-    Signed = attest(Msg, Wallet, <<"json@1.0">>),
-    ?event({json_test, signed_message, Signed}),
-    
-    % Verify directly without complex conversion
-    ?assert(verify(Signed)),
-    
-    % Simple test of message conversion
-    Encoded = convert(Signed, <<"json@1.0">>, #{}),
-    ?event({json_test, encoded_message, Encoded}),
-    
-    % Convert back to structured format explicitly specifying the source format
-    Decoded = convert(Encoded, <<"structured@1.0">>, <<"json@1.0">>, #{}),
-    ?event({json_test, decoded_message, Decoded}),
-    
-    % Verify the decoded message
-    ?assert(verify(Decoded)),
-    
-    ok.
-
-signed_with_inner_signed_message_test(Codec) ->
-    Wallet = hb:wallet(),
-    Msg = attest(#{
-        <<"a">> => 1,
-        <<"b">> =>
-            maps:merge(
-                attest(
-                    #{
-                        <<"c">> => <<"abc">>,
-                        <<"e">> => 5
-                    },
-                    Wallet,
-                    Codec
-                ),
-                % Unattested keys that should be ripped out of the inner message
-                % by `with_only_attested`. These should still be present in the
-                % `with_only_attested` outer message.
-                #{
-                    <<"f">> => 6,
-                    <<"g">> => 7
-                }
-            )
-    }, Wallet, Codec),
-    ?event({msg, Msg}),
-    % 1. Verify the outer message without changes.
-    ?assert(verify(Msg)),
-    {ok, AttestedInner} = with_only_attested(maps:get(<<"b">>, Msg)),
-    ?event(test, {attested_inner, AttestedInner}, #{}),
-    ?event(test, {inner_attestors, hb_message:signers(AttestedInner)}, #{}),
-    % 2. Convert the message to the format and back.
-    Encoded = convert(Msg, Codec, #{}),
-    ?event(test, {encoded, {explicit, Encoded}}, #{}),
-    
-    % Handle different codec formats for decoding
-    Decoded = case Encoded of
-        Bin when is_binary(Bin) -> 
-            % For binary encoded messages (like json), decode directly
-            ?event(test, {decoding_binary_encoded, {codec, Codec}}, #{}),
-            convert(Bin, <<"structured@1.0">>, #{}); 
-        Map when is_map(Map) -> 
-            % For map encoded messages with body
-            case maps:is_key(<<"body">>, Map) of
-                true ->
-                    ?event(test, {encoded_body, {string, maps:get(<<"body">>, Map)}}, #{}),
-                    convert(Map, <<"structured@1.0">>, #{});
-                false ->
-                    ?event(test, {encoded_no_body, Map}, #{}),
-                    convert(Map, <<"structured@1.0">>, #{})
-            end;
-        {tx, ans104, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} = Ans104Record ->
-            % Special handling for ans104 records
-            ?event(test, {decoding_ans104_record, {record, ans104}}, #{}),
-            % Convert to structured format directly without trying to normalize first
-            convert(Ans104Record, <<"structured@1.0">>, Codec, #{});
-        Other ->
-            % For other formats
-            ?event(test, {decoding_other_format, {type, io_lib:format("~p", [Other])}}, #{}),
-            convert(Other, <<"structured@1.0">>, #{})
-    end,
-    ?event(test, {decoded, {explicit, Decoded}}, #{}),
-    % 4. Verify the converted message without changes.
-    ?assert(verify(Decoded)),
-    
-    % Helper function to safely extract inner message
-    ExtractInnerMessage = fun(Message) ->
-        case Message of
-            M when is_map(M) ->
-                case maps:is_key(<<"b">>, M) of
-                    true -> {ok, maps:get(<<"b">>, M)};
-                    false -> 
-                        ?event(test, {extract_inner_failed, {reason, no_b_key}, {keys, maps:keys(M)}}, #{}),
-                        % For httpsig, the inner message might be in the body
-                        case maps:is_key(<<"body">>, M) of
-                            true -> 
-                                Body = maps:get(<<"body">>, M),
-                                ?event(test, {extract_inner_from_body, {body_type, io_lib:format("~p", [Body])}}, #{}),
-                                {ok, Body};
-                            false ->
-                                ?event(test, {extract_inner_failed, {reason, no_body_key}}, #{}),
-                                {error, no_inner_message}
-                        end
-                end;
-            _ ->
-                ?event(test, {extract_inner_failed, {reason, not_a_map}}, #{}),
-                {error, not_a_map}
-        end
-    end,
-    
-    % 5. Verify the inner message from the converted message if possible
-    case ExtractInnerMessage(Decoded) of
-        {ok, InnerDecoded} ->
-            ?event(test, {inner_decoded, InnerDecoded}, #{}),
-            ?assert(verify(InnerDecoded, signers));
-        {error, Reason} ->
-            ?event(test, {skipping_inner_verification, {reason, Reason}}, #{}),
-            ok % Skip this verification if we can't extract the inner message
-    end,
-    
-    % 6. Verify the outer message after `only_with_attested`.
-    {ok, OnlyAttested} = with_only_attested(Msg),
-    ?event(test, {only_attested, OnlyAttested}, #{}),
-    ?assert(verify(OnlyAttested, signers)),
-    
-    % 7. Verify the inner message from the only_attested message if possible
-    case ExtractInnerMessage(OnlyAttested) of
-        {ok, AttestedInnerOnly} ->
-            ?event(test, {attested_inner_only, AttestedInnerOnly}, #{}),
-            ?assert(verify(AttestedInnerOnly, signers));
-        {error, _Reason} ->
-            ?event(test, {skipping_attested_inner_verification}, #{}),
-            ok % Skip this verification if we can't extract the inner message
-    end.
+    signed_with_inner_signed_message_test(<<"httpsig@1.0">>).
