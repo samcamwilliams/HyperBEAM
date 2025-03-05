@@ -1105,6 +1105,9 @@ signed_with_inner_signed_message_test(Codec) ->
                     Wallet,
                     Codec
                 ),
+                % Unattested keys that should be ripped out of the inner message
+                % by `with_only_attested`. These should still be present in the
+                % `with_only_attested` outer message.
                 #{
                     <<"f">> => 6,
                     <<"g">> => 7
@@ -1115,29 +1118,30 @@ signed_with_inner_signed_message_test(Codec) ->
     % 1. Verify the outer message without changes.
     ?assert(verify(Msg)),
     {ok, AttestedInner} = with_only_attested(maps:get(<<"b">>, Msg)),
-    ?event({attested_inner, AttestedInner}),
-    ?event({inner_attestors, hb_message:signers(AttestedInner)}),
+    ?event(test, {attested_inner, AttestedInner}, #{}),
+    ?event(test, {inner_attestors, hb_message:signers(AttestedInner)}, #{}),
     % 2. Verify the inner message without changes.
     ?assert(verify(AttestedInner, signers)),
     % 3. Convert the message to the format and back.
     Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}),
+    ?event(test, {encoded, Encoded}, #{}),
+    ?event(test, {encoded_body, {string, maps:get(<<"body">>, Encoded)}}, #{}),
     %?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}),
+    ?event(test, {decoded, Decoded}, #{}),
     % 4. Verify the converted message without changes.
     ?assert(verify(Decoded)),
     % 5. Verify the inner message from the converted message.
     InnerDecoded = maps:get(<<"b">>, Decoded),
-    ?event({inner_decoded, InnerDecoded}),
+    ?event(test, {inner_decoded, InnerDecoded}, #{}),
     ?assert(verify(InnerDecoded, signers)),
     % 6. Verify the outer message after `only_with_attested`.
     {ok, OnlyAttested} = with_only_attested(Msg),
-    ?event({only_attested, OnlyAttested}),
+    ?event(test, {only_attested, OnlyAttested}, #{}),
     ?assert(verify(OnlyAttested, signers)),
     % 7. Verify the inner message from the only_attested message.
     AttestedInnerOnly = maps:get(<<"b">>, OnlyAttested),
-    ?event({attested_inner_only, AttestedInnerOnly}),
+    ?event(test, {attested_inner_only, AttestedInnerOnly}, #{}),
     ?assert(verify(AttestedInnerOnly, signers)).
 
 large_body_attested_keys_test(Codec) ->
