@@ -553,11 +553,8 @@ get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_converge:get(<<"status">>, Res, 200, Opts) of
-                200 ->
-
-                    {ok, Res};
-                307 ->
-                    get_remote_schedule(ProcID, From, To, Redirect, Opts)
+                200 -> {ok, Res};
+                307 -> get_remote_schedule(ProcID, From, To, Redirect, Opts)
             end;
         {error, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),

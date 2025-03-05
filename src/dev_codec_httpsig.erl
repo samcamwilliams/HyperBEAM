@@ -101,7 +101,7 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 	key => binary()
 }.
 
-id(Msg, Params, Opts) ->
+id(Msg, _Params, _Opts) ->
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
         _ ->
