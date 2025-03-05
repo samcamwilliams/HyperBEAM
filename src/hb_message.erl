@@ -1122,7 +1122,7 @@ signed_with_inner_signed_message_test(Codec) ->
     % 3. Convert the message to the format and back.
     Encoded = convert(Msg, Codec, #{}),
     ?event({encoded, Encoded}),
-    ?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}),
+    %?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, Decoded}),
     % 4. Verify the converted message without changes.
@@ -1142,11 +1142,9 @@ signed_with_inner_signed_message_test(Codec) ->
 
 large_body_attested_keys_test(Codec) ->
     case Codec of
-        <<"ans104@1.0">> ->
-            skip;
-        _ ->
+        <<"httpsig@1.0">> ->
             Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> } },
-            Encoded = convert(Msg, <<"httpsig@1.0">>, #{}),
+            Encoded = convert(Msg, Codec, #{}),
             ?event({encoded, Encoded}),
             Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
             ?event({decoded, Decoded}),
@@ -1157,10 +1155,13 @@ large_body_attested_keys_test(Codec) ->
             ?assert(lists:member(<<"b">>, AttestedKeys)),
             ?assert(lists:member(<<"c">>, AttestedKeys)),
             MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-            ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter)))
+            ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter)));
+        _ ->
+            skip
     end.
 
 priv_survives_conversion_test(<<"ans104@1.0">>) -> skip;
+priv_survives_conversion_test(<<"json@1.0">>) -> skip;
 priv_survives_conversion_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
@@ -1176,7 +1177,13 @@ priv_survives_conversion_test(Codec) ->
 %%% Test helpers
 
 test_codecs() ->
-    [<<"structured@1.0">>, <<"httpsig@1.0">>, <<"flat@1.0">>, <<"ans104@1.0">>].
+    [
+        <<"structured@1.0">>,
+        <<"httpsig@1.0">>,
+        <<"flat@1.0">>,
+        <<"ans104@1.0">>,
+        <<"json@1.0">>
+    ].
 
 generate_test_suite(Suite) ->
     lists:map(
