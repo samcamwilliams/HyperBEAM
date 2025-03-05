@@ -59,6 +59,7 @@ default_message() ->
             #{<<"name">> => <<"flat@1.0">>, <<"module">> => dev_codec_flat},
             #{<<"name">> => <<"genesis-wasm@1.0">>, <<"module">> => dev_genesis_wasm},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
+            #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
             #{<<"name">> => <<"lookup@1.0">>, <<"module">> => dev_lookup},
             #{<<"name">> => <<"message@1.0">>, <<"module">> => dev_message},
