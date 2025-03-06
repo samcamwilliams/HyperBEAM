@@ -157,7 +157,7 @@ with_only_attested(Msg) when is_map(Msg) ->
                 AttestedKeys = hb_message:attested(Dec),
                 % Add the inline-body-key to the attested list if it is not
                 % already present.
-                HasInlineBodyKey = maps:is_key(<<"inline-body-key">>, Dec),
+                HasInlineBodyKey = lists:member(<<"inline-body-key">>, AttestedKeys),
                 AttestedWithBodyKey =
                     case HasInlineBodyKey andalso maps:get(<<"inline-body-key">>, Dec, not_found) of
                         false -> AttestedKeys;
