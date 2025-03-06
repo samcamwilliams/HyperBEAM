@@ -395,7 +395,7 @@ verify(MsgToVerify, Req, _Opts) ->
             % verify correctly. If they do not match, then the signature will
             % fail to verify, as the signature bases will not be the same.
             EncWithDigest = add_content_digest(EncWithSig),
-            ?event({encoded_msg_for_verification, {explicit, EncWithDigest}}),
+            ?event({encoded_msg_for_verification, EncWithDigest}),
             Res = verify_auth(
                 #{
                     key => {{rsa, 65537}, PubKey},
@@ -583,7 +583,7 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
-    ?event({signature_base, {explicit, SignatureBase}}),
+    ?event({signature_base, {string, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->

@@ -515,11 +515,15 @@ schedule_aos_call(Msg1, Code) ->
 schedule_aos_call(Msg1, Code, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     ProcID = hb_message:id(Msg1, all),
-    Msg2 = hb_message:attest(#{
-        <<"action">> => <<"Eval">>,
-        <<"data">> => Code,
-        <<"target">> => ProcID
-    }, Wallet),
+    Msg2 =
+        hb_message:attest(
+            #{
+                <<"action">> => <<"Eval">>,
+                <<"data">> => Code,
+                <<"target">> => ProcID
+            },
+            Wallet
+        ),
     schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
 
 schedule_wasm_call(Msg1, FuncName, Params) ->

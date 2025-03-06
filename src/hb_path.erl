@@ -99,6 +99,8 @@ hashpath(RawMsg1, Opts) ->
     case hb_private:from_message(Msg1) of
         #{ <<"hashpath">> := HP } -> HP;
         _ ->
+            % Note: We do not use `hb_message:id' here because it will call
+            % hb_converge:resolve, which will call `hashpath' recursively.
             try hb_util:ok(dev_message:id(Msg1, #{ <<"attestors">> => <<"all">> }, Opts))
             catch
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}, _ST})
