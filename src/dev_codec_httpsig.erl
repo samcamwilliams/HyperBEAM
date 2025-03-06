@@ -337,7 +337,7 @@ hmac(Msg) ->
         #{},
         MsgWithContentDigest
     ),
-    ?event({explicit, {signature_base, SignatureBase}}),
+    ?event(signature_base, {signature_base, {string, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
 
