@@ -6,6 +6,7 @@
 
 to(Msg) -> iolist_to_binary(json:encode(Msg)).
 
+from(Map) when is_map(Map) -> Map;
 from(Json) -> json:decode(Json).
 
 attest(Msg, Req, Opts) -> dev_codec_httpsig:attest(Msg, Req, Opts).
