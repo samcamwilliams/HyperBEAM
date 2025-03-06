@@ -344,16 +344,16 @@ do_to(TABM, Opts) when is_map(TABM) ->
         ),
     ?event({prepared_body_map, {msg, Enc0}}),
     BodyMap = maps:get(<<"body">>, Enc0, #{}),
-    LiftedBodyMap = group_maps(BodyMap),
+    GroupedBodyMap = group_maps(BodyMap),
     Enc1 =
-        case LiftedBodyMap of
+        case GroupedBodyMap of
             EmptyBody when map_size(EmptyBody) =:= 0 ->
                 % If the body map is empty, then simply set the body to be a 
                 % corresponding empty binary.
                 ?event({encoding_empty_body, {msg, Enc0}}),
                 Enc0;
             #{ InlineKey := UserBody }
-                    when map_size(LiftedBodyMap) =:= 1 andalso is_binary(UserBody) ->
+                    when map_size(GroupedBodyMap) =:= 1 andalso is_binary(UserBody) ->
                 % Simply set the sole body binary as the body of the
                 % HTTP message, no further encoding required
                 % 
@@ -429,12 +429,12 @@ encode_body_keys(PartList) when is_list(PartList) ->
 
 %% @doc Merge maps at the same level, if possible.
 group_maps(Map) ->
-    lift_maps(Map, <<>>, #{}).
-lift_maps(Map, Parent, Top) when is_map(Map) ->
-    ?event({lift_maps, {map, Map}, {parent, Parent}, {top, Top}}),
+    group_maps(Map, <<>>, #{}).
+group_maps(Map, Parent, Top) when is_map(Map) ->
+    ?event({group_maps, {map, Map}, {parent, Parent}, {top, Top}}),
     {Flattened, NewTop} = maps:fold(
         fun(Key, Value, {CurMap, CurTop}) ->
-            ?event({lift_maps, {key, Key}, {value, Value}}),
+            ?event({group_maps, {key, Key}, {value, Value}}),
             NormKey = hb_converge:normalize_key(Key),
             FlatK =
                 case Parent of
@@ -443,10 +443,10 @@ lift_maps(Map, Parent, Top) when is_map(Map) ->
                 end,
             case Value of
                 _ when is_map(Value) ->
-                    NewTop = lift_maps(Value, FlatK, CurTop),
+                    NewTop = group_maps(Value, FlatK, CurTop),
                     {CurMap, NewTop};
                 _ ->
-                    ?event({lift_maps, {norm_key, NormKey}, {value, Value}}),
+                    ?event({group_maps, {norm_key, NormKey}, {value, Value}}),
                     case byte_size(Value) > ?MAX_HEADER_LENGTH of
                         % the value is too large to be encoded as a header
                         % within a part, so instead lift it to be a top level
