@@ -389,12 +389,15 @@ cache_suite_test_() ->
         {"message with message", fun test_message_with_message/1}
     ]).
 
-read_cycle_test() ->
-    Opts = #{ store => StoreOpts = [{hb_store_fs,#{prefix => "debug-cache"}}] },
-    hb_store:reset(StoreOpts),
-    Danger = #{ <<"device">> => #{}},
-    ID = hb_util:human_id(hb_message:id(Danger)),
-    IDEmpty = hb_util:human_id(hb_message:id(#{})),
-    IDDevice = hb_util:human_id(hb_message:id(#{ <<"device">> => #{ <<"device">> => #{}} })),
-    ?event({calculated_ids, {danger, ID}, {empty, IDEmpty}, {device, IDDevice}}),
-    ?assertThrow({device_map_cannot_be_written, {id, IDDevice}}, write(Danger, Opts)).
+%% @doc Test that message whose device is `#{}` cannot be written. If it were to
+%% be written, it would cause an infinite loop.
+test_device_map_cannot_be_written_test() ->
+    try
+        Opts = #{ store => StoreOpts = [{hb_store_fs,#{prefix => "debug-cache"}}] },
+        hb_store:reset(StoreOpts),
+        Danger = #{ <<"device">> => #{}},
+        write(Danger, Opts),
+        ?assert(false)
+    catch
+        _:_:_ -> ?assert(true)
+    end.
