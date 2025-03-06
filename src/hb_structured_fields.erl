@@ -198,7 +198,7 @@ parse_dict_before_member(<<$\s, R/bits>>, Acc) ->
     parse_dict_before_member(R, Acc);
 parse_dict_before_member(<<$\t, R/bits>>, Acc) ->
     parse_dict_before_member(R, Acc);
-parse_dict_before_member(<<C, R/bits>>, Acc) when ?IS_LC_ALPHA(C) or (C =:= $*) ->
+parse_dict_before_member(<<C, R/bits>>, Acc) when ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or (C =:= $*) ->
     parse_dict_key(R, Acc, <<C>>).
 
 %% @doc Parse a binary SF item to an SF `item'.
