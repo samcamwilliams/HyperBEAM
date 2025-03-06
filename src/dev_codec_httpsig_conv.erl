@@ -369,10 +369,25 @@ do_to(TABM, Opts) when is_map(TABM) ->
             _ ->
                 % Otherwise, we need to encode the body map as the
                 % multipart body of the HTTP message
-                ?event({encoding_multipart, {bodymap, {explicit, LiftedBodyMap}}}),
-                PartList = to_sorted_list(maps:map(
-                    fun(Key, Value) -> encode_body_part(Key, Value, InlineKey)  end,
-                    LiftedBodyMap)
+                ?event({encoding_multipart, {bodymap, {explicit, GroupedBodyMap}}}),
+                PartList = to_sorted_list(
+                    maps:map(
+                        fun(Key, M = #{ <<"body">> := _ }) when map_size(M) =:= 1 ->
+                            % If the map has only one key, and it is `body`,
+                            % then we must encode part name with the additional
+                            % `/body` suffix. This is because otherwise, the `body`
+                            % element will be assumed to be an inline part, removing
+                            % the necessary hierarchy.
+                            encode_body_part(
+                                <<Key/binary, "/body">>,
+                                M,
+                                <<"body">>
+                            );
+                           (Key, Value) ->
+                            encode_body_part(Key, Value, InlineKey)
+                        end,
+                        GroupedBodyMap
+                    )
                 ),
                 Boundary = boundary_from_parts(PartList),
                 % Transform body into a binary, delimiting each part with the
