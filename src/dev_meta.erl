@@ -111,10 +111,10 @@ update_node_message(Request, NodeMsg) ->
             embed_status({error, <<"Unauthorized">>});
         true ->
             ?event({set_node_message_success, Request}),
+            MergedOpts = hb_converge:set(NodeMsg, Request, NodeMsg),
             hb_http_server:set_opts(
-                Request#{
-                    http_server =>
-                        hb_opts:get(http_server, no_server, NodeMsg)
+                MergedOpts#{
+                    http_server => hb_opts:get(http_server, no_server, NodeMsg)
                 }
             ),
             embed_status({ok, <<"OK">>})
