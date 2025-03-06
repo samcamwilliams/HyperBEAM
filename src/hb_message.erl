@@ -172,14 +172,14 @@ with_only_attested(Msg) ->
 %% @doc Sign a message with the given wallet.
 attest(Msg, WalletOrOpts) ->
     attest(Msg, WalletOrOpts, <<"httpsig@1.0">>).
-attest(Msg, Opts, Format) when is_map(Opts) ->
-    attest(Msg, hb_opts:get(priv_wallet, no_viable_wallet, Opts), Format);
-attest(Msg, Wallet, Format) ->
+attest(Msg, Wallet, Format) when not is_map(Wallet) ->
+    attest(Msg, #{ priv_wallet => Wallet }, Format);
+attest(Msg, Opts, Format) ->
     {ok, Signed} =
         dev_message:attest(
             Msg,
             #{ <<"attestation-device">> => Format },
-            #{ priv_wallet => Wallet }
+            Opts
         ),
     Signed.
 
