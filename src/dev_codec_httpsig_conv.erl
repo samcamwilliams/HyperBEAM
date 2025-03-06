@@ -410,10 +410,12 @@ do_to(TABM, Opts) when is_map(TABM) ->
     % so we merge the two maps together to maintain the body and the content-digest.
     Enc2 = case maps:get(<<"body">>, Enc1, <<>>) of
         <<>> -> Enc1;
-        _ -> maps:merge(
-            Enc1,
-            dev_codec_httpsig:add_content_digest(Enc1)
-        )
+        _ ->
+            ?event({adding_content_digest, {msg, Enc1}}),
+            maps:merge(
+                Enc1,
+                dev_codec_httpsig:add_content_digest(Enc1)
+            )
     end,
     ?event({final_body_map, {msg, Enc2}}),
     Enc2.
