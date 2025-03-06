@@ -154,10 +154,19 @@ with_only_attested(Msg) when is_map(Msg) ->
                 ?event({enc, Enc}),
                 Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
                 ?event({dec, Dec}),
-                Attested = hb_message:attested(Dec),
-                ?event({attested, Attested}),
+                AttestedKeys = hb_message:attested(Dec),
+                % Add the inline-body-key to the attested list if it is not
+                % already present.
+                HasInlineBodyKey = maps:is_key(<<"inline-body-key">>, Dec),
+                AttestedWithBodyKey =
+                    case HasInlineBodyKey andalso maps:get(<<"inline-body-key">>, Dec, not_found) of
+                        false -> AttestedKeys;
+                        not_found -> AttestedKeys;
+                        InlinedKey -> [InlinedKey | AttestedKeys]
+                    end,
+                ?event({attested, AttestedWithBodyKey}),
                 {ok, maps:with(
-                    [<<"attestations">>] ++ Attested,
+                    [<<"attestations">>] ++ AttestedWithBodyKey,
                     Msg
                 )}
             catch _:_ ->
