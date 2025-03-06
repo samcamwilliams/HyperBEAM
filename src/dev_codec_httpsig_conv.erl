@@ -370,7 +370,7 @@ do_to(TABM, Opts) when is_map(TABM) ->
                 % Otherwise, we need to encode the body map as the
                 % multipart body of the HTTP message
                 ?event({encoding_multipart, {bodymap, {explicit, GroupedBodyMap}}}),
-                PartList = to_sorted_list(
+                PartList = hb_util:to_sorted_list(
                     maps:map(
                         fun(Key, M = #{ <<"body">> := _ }) when map_size(M) =:= 1 ->
                             % If the map has only one key, and it is `body`,
@@ -600,12 +600,6 @@ inline_key(Msg) ->
         % and decoding httpsig@1.0 messages
         _ -> {#{}, <<"body">>}
     end.
-
-%% @doc Given a map or KVList, return a sorted list of its key-value pairs.
-to_sorted_list(Msg) when is_map(Msg) ->
-    to_sorted_list(maps:to_list(Msg));
-to_sorted_list(Msg) when is_list(Msg) ->
-    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
 
 %% @doc Encode a HTTP message into a binary.
 encode_http_msg(Httpsig) ->

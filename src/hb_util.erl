@@ -6,7 +6,7 @@
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
--export([is_string_list/1]).
+-export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
@@ -93,6 +93,19 @@ to_lower(Str) ->
 %% @doc Is the given term a string list?
 is_string_list(MaybeString) ->
     lists:all(fun is_integer/1, MaybeString).
+
+%% @doc Given a map or KVList, return a deterministically sorted list of its
+%% key-value pairs.
+to_sorted_list(Msg) when is_map(Msg) ->
+    to_sorted_list(maps:to_list(Msg));
+to_sorted_list(Msg) when is_list(Msg) ->
+    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
+
+%% @doc Given a map or KVList, return a deterministically ordered list of its keys.
+to_sorted_keys(Msg) when is_map(Msg) ->
+    to_sorted_keys(maps:keys(Msg));
+to_sorted_keys(Msg) when is_list(Msg) ->
+    lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
 
 %% @doc Convert keys in a map to atoms, lowering `-' to `_'.
 key_to_atom(Key, _Mode) when is_atom(Key) -> Key;

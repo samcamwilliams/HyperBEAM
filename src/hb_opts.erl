@@ -117,7 +117,7 @@ default_message() ->
         short_trace_len => 5,
         debug_hide_metadata => false,
         debug_ids => false,
-        debug_show_priv => always,
+        debug_show_priv => if_present,
 		trusted => #{},
         routes => [
             #{

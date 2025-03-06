@@ -327,26 +327,31 @@ test_deeply_nested_complex_message(Opts) ->
     %% Create nested data
     Level3SignedSubmessage = test_signed([1,2,3], Wallet),
     Outer =
-        #{
-            <<"level1">> =>
-                hb_message:attest(
-                    #{
-                        <<"level2">> =>
-                            #{
-                                <<"level3">> => Level3SignedSubmessage,
-                                <<"e">> => <<"f">>,
-                                <<"z">> => [1,2,3]
-                            },
-                        <<"c">> => <<"d">>,
-                        <<"g">> => [<<"h">>, <<"i">>],
-                        <<"j">> => 1337
-                    },
-                    ar_wallet:new()
-                ),
-            <<"a">> => <<"b">>
-        },
+        hb_message:attest(
+            #{
+                <<"level1">> =>
+                    hb_message:attest(
+                        #{
+                            <<"level2">> =>
+                                #{
+                                    <<"level3">> => Level3SignedSubmessage,
+                                    <<"e">> => <<"f">>,
+                                    <<"z">> => [1,2,3]
+                                },
+                            <<"c">> => <<"d">>,
+                            <<"g">> => [<<"h">>, <<"i">>],
+                            <<"j">> => 1337
+                        },
+                        ar_wallet:new()
+                    ),
+                <<"a">> => <<"b">>
+            },
+            Wallet
+        ),
     {ok, UID} = dev_message:id(Outer, #{ <<"attestors">> => <<"none">> }, Opts),
+    ?event(test, {string, <<"================================================">>}),
     {ok, AttestedID} = dev_message:id(Outer, #{ <<"attestors">> => [Address] }, Opts),
+    ?event(test, {string, <<"================================================">>}),
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
@@ -367,6 +372,7 @@ test_deeply_nested_complex_message(Opts) ->
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assert(hb_message:match(Outer, OuterMsg)),
+    ?event(test, {reading_attested_outer, {id, AttestedID}, {expect, Outer}}),
     {ok, AttestedMsg} = read(hb_util:human_id(AttestedID), Opts),
     ?assert(hb_message:match(Outer, AttestedMsg)).
 
@@ -401,3 +407,7 @@ test_device_map_cannot_be_written_test() ->
     catch
         _:_:_ -> ?assert(true)
     end.
+
+run_test() ->
+    Opts = #{ store => [{hb_store_fs,#{prefix => "debug-cache"}}]},
+    test_deeply_nested_complex_message(Opts).

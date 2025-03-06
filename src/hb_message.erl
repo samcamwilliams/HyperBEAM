@@ -729,6 +729,14 @@ simple_nested_message_test(Codec) ->
         )
     ).
 
+nested_empty_map_test(Codec) ->
+    Msg = #{ <<"body">> => #{ <<"empty-map-test">> => #{}}},
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
@@ -1255,6 +1263,7 @@ message_suite_test_() ->
         {"nested message with large keys and content test",
             fun nested_message_with_large_keys_and_content_test/1},
         {"simple nested message test", fun simple_nested_message_test/1},
+        {"nested empty map test", fun nested_empty_map_test/1},
         {"nested message with large content test",
             fun nested_message_with_large_content_test/1},
         {"deeply nested message with content test",
@@ -1290,4 +1299,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_only_attested_data_field_test(<<"httpsig@1.0">>).
+    nested_empty_map_test(<<"httpsig@1.0">>).

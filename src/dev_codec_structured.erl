@@ -28,6 +28,12 @@ from(Msg) when is_map(Msg) ->
                 {ok, <<>>} ->
                     BinKey = hb_converge:normalize_key(Key),
                     {[{BinKey, <<"empty-binary">>} | Types], Values};
+                {ok, []} ->
+                    BinKey = hb_converge:normalize_key(Key),
+                    {[{BinKey, <<"empty-list">>} | Types], Values};
+                {ok, EmptyMap} when ?IS_EMPTY_MESSAGE(EmptyMap) ->
+                    BinKey = hb_converge:normalize_key(Key),
+                    {[{BinKey, <<"empty-message">>} | Types], Values};
                 {ok, Value} when is_binary(Value) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Map} when is_map(Map) ->
@@ -36,9 +42,6 @@ from(Msg) when is_map(Msg) ->
                     % We have a list of maps. Convert to a numbered map and
                     % recurse.
                     {Types, [{Key, from(hb_converge:normalize_keys(Msgs))} | Values]};
-                {ok, []} ->
-                    BinKey = hb_converge:normalize_key(Key),
-                    {[{BinKey, <<"empty-list">>} | Types], Values};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
                         or is_list(Value) or is_float(Value) ->
@@ -68,25 +71,26 @@ from(Msg) when is_map(Msg) ->
                 not lists:member(Key, ?REGEN_KEYS) andalso
                     not hb_private:is_private(Key)
             end,
-            maps:keys(Msg)
+            hb_util:to_sorted_keys(Msg)
         )
     ),
     % Encode the AoTypes as a structured dictionary
     % And include as a field on the produced TABM
-    WithTypes = case Types of 
-        [] -> Values;
-        T ->
-            AoTypes = iolist_to_binary(hb_structured_fields:dictionary(
-                lists:map(
-                    fun({Key, Value}) ->
-                        {ok, Item} = hb_structured_fields:to_item(Value),
-                        {Key, Item}
-                    end,
-                    lists:reverse(T)
-                )    
-            )),
-            [{<<"ao-types">>, AoTypes} | Values]
-    end,
+    WithTypes =
+        case Types of 
+            [] -> Values;
+            T ->
+                AoTypes = iolist_to_binary(hb_structured_fields:dictionary(
+                    lists:map(
+                        fun({Key, Value}) ->
+                            {ok, Item} = hb_structured_fields:to_item(Value),
+                            {Key, Item}
+                        end,
+                        lists:reverse(T)
+                    )    
+                )),
+                [{<<"ao-types">>, AoTypes} | Values]
+        end,
     maps:from_list(lists:reverse(WithTypes));
 from(Other) -> hb_path:to_binary(Other).
 
@@ -111,6 +115,7 @@ to(TABM0) ->
         maps:fold(
             fun (Key, <<"empty-binary">>, Acc) -> [{Key, <<>>} | Acc];
                 (Key, <<"empty-list">>, Acc) -> [{Key, []} | Acc];
+                (Key, <<"empty-message">>, Acc) -> [{Key, #{}} | Acc];
                 (_Key, _Value, Acc) -> Acc
             end,
             [],
