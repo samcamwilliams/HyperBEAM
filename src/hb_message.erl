@@ -615,6 +615,29 @@ single_layer_message_to_encoding_test(Codec) ->
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(hb_message:match(Msg, Decoded)).
 
+signed_only_attested_data_field_test(Codec) ->
+    Msg = attest(#{ <<"data">> => <<"DATA">> }, hb:wallet(), Codec),
+    {ok, OnlyAttested} = with_only_attested(Msg),
+    ?event(test, {only_attested, OnlyAttested}),
+    ?assert(verify(OnlyAttested)).
+
+signed_nested_data_key_test(Codec) ->
+    Msg = #{
+        <<"layer">> => <<"outer">>,
+        <<"body">> =>
+            attest(
+                #{
+                    <<"layer">> => <<"inner">>,
+                    <<"data">> => <<"DATA">>
+                },
+                #{ priv_wallet => hb:wallet() },
+                Codec
+            )
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?assert(hb_message:match(Msg, Decoded)).
+
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
 % key_encodings_to_tx_test() ->
@@ -763,17 +786,15 @@ deeply_nested_message_with_only_content(Codec) ->
             _ -> <<"body">>
         end,
     Msg = #{
-         <<"depth1">> => <<"outer">>,
+        <<"depth1">> => <<"outer">>,
         MainBodyKey => #{
-            <<"depth2">> => <<"middle">>,
             MainBodyKey => #{
-                MainBodyKey => <<"depth3-body">>
+                MainBodyKey => <<"depth2-body">>
             }
         }
     },
     Encoded = convert(Msg, Codec, #{}),
     ?event(test, {encoded, Encoded}),
-    ?event(test, {encoded_body, {string, maps:get(<<"body">>, Encoded, <<>>)}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event(test, {decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
@@ -954,9 +975,15 @@ signed_deep_message_test(Codec) ->
     ).
 
 signed_list_test(Codec) ->
-    Msg = hb_converge:normalize_keys([1]),
+    Msg = #{ <<"key-with-list">> => [1.0, 2.0, 3.0] },
     Signed = attest(Msg, hb:wallet(), Codec),
-    ?assert(verify(Signed)).
+    ?assert(verify(Signed)),
+    Encoded = convert(Signed, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(verify(Decoded)),
+    ?assert(match(Signed, Decoded)).
 
 unsigned_id_test(Codec) ->
     Msg = #{ <<"data">> => <<"TEST_DATA">> },
@@ -1249,6 +1276,8 @@ message_suite_test_() ->
             fun signed_message_encode_decode_verify_test/1},
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
+        {"nested data key test", fun signed_nested_data_key_test/1},
+        {"signed only attested data field test", fun signed_only_attested_data_field_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
@@ -1261,4 +1290,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_with_inner_signed_message_test(<<"httpsig@1.0">>).
+    signed_only_attested_data_field_test(<<"httpsig@1.0">>).
