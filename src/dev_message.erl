@@ -66,11 +66,28 @@ id(Base, Req, NodeOpts) ->
                         true -> maps:keys(RawAttestorIDs);
                         false -> RawAttestorIDs
                     end,
+                BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
                 % Add attestations with only the keys that are requested.
                 BaseWithAttestations = 
                     Base#{
                         <<"attestations">> =>
-                            maps:with(KeepIDs, maps:get(<<"attestations">>, Base, #{}))
+                            maps:from_list(
+                                lists:map(
+                                    fun(Att) ->
+                                        try {Att, maps:get(Att, BaseAttestations)}
+                                        catch _:_ ->
+                                            throw(
+                                                {
+                                                    attestor_not_found,
+                                                    Att,
+                                                    {attestations, BaseAttestations}
+                                                }
+                                            )
+                                        end
+                                    end,
+                                    KeepIDs
+                                )
+                            )
                     },
                 % Add the hashpath to the message if it is present.
                 case Base of
