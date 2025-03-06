@@ -102,6 +102,7 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 }.
 
 id(Msg, _Params, _Opts) ->
+    ?event(test, {calculating_id, {msg, Msg}}),
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
         _ ->
@@ -320,7 +321,7 @@ sig_name_from_dict(DictBin) ->
 hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
-    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>, <<"ao-types">>], Msg)),
+    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>], Msg)),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
     ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
