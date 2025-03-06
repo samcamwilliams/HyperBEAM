@@ -70,7 +70,7 @@ default_message() ->
             #{<<"name">> => <<"patch@1.0">>, <<"module">> => dev_patch},
             #{<<"name">> => <<"poda@1.0">>, <<"module">> => dev_poda},
             #{<<"name">> => <<"process@1.0">>, <<"module">> => dev_process},
-            #{<<"name">> => <<"push@1.0">>, <<"module">> => dev_mu},
+            #{<<"name">> => <<"push@1.0">>, <<"module">> => dev_push},
             #{<<"name">> => <<"relay@1.0">>, <<"module">> => dev_relay},
             #{<<"name">> => <<"router@1.0">>, <<"module">> => dev_router},
             #{<<"name">> => <<"scheduler@1.0">>, <<"module">> => dev_scheduler},
