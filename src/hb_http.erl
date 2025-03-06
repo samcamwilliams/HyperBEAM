@@ -419,7 +419,8 @@ reply(Req, Status, RawMessage, Opts) ->
     {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Req, Message, Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
-    EncodedHeaders = add_cors_headers(HeadersBeforeCors, ReqHdr),
+    HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr),
+    EncodedHeaders = hb_private:reset(HeadersWithCors),
     ?event(http,
         {replying,
             {status, {explicit, Status}},
