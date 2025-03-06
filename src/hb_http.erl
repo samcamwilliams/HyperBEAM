@@ -220,8 +220,9 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
         <<"httpsig@1.0">> ->
-            FullEncoding = #{ <<"body">> := Body } =
+            FullEncoding =
                 hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
+            Body = maps:get(<<"body">>, FullEncoding, <<>>),
             Headers = maps:without([<<"body">>], FullEncoding),
             maps:merge(ReqBase, #{ headers => Headers, body => Body });
         <<"ans104@1.0">> ->
