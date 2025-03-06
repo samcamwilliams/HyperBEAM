@@ -47,6 +47,14 @@ from(Msg) when is_map(Msg) ->
                     {[{BinKey, Type} | Types], [{BinKey, BinValue} | Values]};
                 {ok, {resolve, Operations}} when is_list(Operations) ->
                     {Types, [{Key, {resolve, Operations}} | Values]};
+                {ok, Function} when is_function(Function) ->
+                    % We have a function. Convert to a binary string representation.
+                    % This value is unique to the specific byte code of the module
+                    % that generated the function, so it is reproducible (assuming
+                    % the same module is used) but cannot be used to resolve the
+                    % function at runtime.
+                    FuncRef = list_to_binary(erlang:fun_to_list(Function)),
+                    {Types, [{Key, FuncRef} | Values]};
                 {ok, _UnsupportedValue} ->
                     {Types, Values}
             end
