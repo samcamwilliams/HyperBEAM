@@ -154,7 +154,7 @@ with_only_attested(Msg) when is_map(Msg) ->
                 ?event({enc, Enc}),
                 Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
                 ?event({dec, Dec}),
-                AttestedKeys = hb_message:attested(Dec),
+                AttestedKeys = hb_message:attested(Dec) ++ hb_message:attested(Msg),
                 % Add the inline-body-key to the attested list if it is not
                 % already present.
                 HasInlineBodyKey = lists:member(<<"inline-body-key">>, AttestedKeys),
