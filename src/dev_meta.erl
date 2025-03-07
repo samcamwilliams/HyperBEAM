@@ -100,10 +100,8 @@ update_node_message(Request, NodeMsg) ->
         ),
     EncOperator =
         case Operator of
-            unclaimed ->
-                unclaimed;
-            Val ->
-                hb_util:human_id(Val)
+            unclaimed -> unclaimed;
+            NativeAddress -> hb_util:human_id(NativeAddress)
         end,
     case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
         false ->
@@ -313,7 +311,7 @@ authorized_set_node_msg_succeeds_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
         #{
-            operator => ar_wallet:to_address(Owner),
+            operator => hb_util:human_id(ar_wallet:to_address(Owner)),
             test_config_item => <<"test">>
         }
     ),
@@ -401,17 +399,16 @@ claim_node_test() ->
             hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
-                    <<"operator">> => Address
+                    <<"operator">> => hb_util:human_id(Address)
                 },
                 Owner
             ),
             #{}
         ),
     ?event({res, SetRes}),
-    timer:sleep(100),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(Address, hb_converge:get(<<"operator">>, Res, #{})),
+    ?assertEqual(hb_util:human_id(Address), hb_converge:get(<<"operator">>, Res, #{})),
     {ok, SetRes2} =
         hb_http:post(
             Node,
