@@ -502,8 +502,12 @@ req_to_tabm_singleton(Req, Opts) ->
     case cowboy_req:header(<<"codec-device">>, Req) of
         <<"ans104@1.0">> ->
             {ok, Body} = read_body(Req),
-            Deserialized = ar_bundles:deserialize(Body),
-            dev_codec_ans104:from(Deserialized);
+            hb_message:convert(
+                ar_bundles:deserialize(Body),
+                <<"structured@1.0">>,
+                <<"ans104@1.0">>,
+                Opts
+            );
         _ ->
             http_sig_to_tabm_singleton(Req, Opts)
     end.
