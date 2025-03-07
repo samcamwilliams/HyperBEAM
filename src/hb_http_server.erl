@@ -221,7 +221,17 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
 init(Req, ServerID) ->
     case cowboy_req:method(Req) of
         <<"OPTIONS">> -> cors_reply(Req, ServerID);
-        _ -> handle_request(Req, ServerID)
+        _ ->
+            {ok, Body} = read_body(Req),
+            handle_request(Req, Body, ServerID)
+    end.
+
+%% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
+read_body(Req) -> read_body(Req, <<>>).
+read_body(Req0, Acc) ->
+    case cowboy_req:read_body(Req0) of
+        {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
+        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
 
 %% @doc Reply to CORS preflight requests.
@@ -237,11 +247,11 @@ cors_reply(Req, _ServerID) ->
 %% starts by parsing the HTTP request into HyerBEAM's message format, then
 %% passing the message directly to `meta@1.0` which handles calling Converge in
 %% the appropriate way.
-handle_request(Req, ServerID) ->
+handle_request(Req, Body, ServerID) ->
     NodeMsg = get_opts(#{ http_server => ServerID }),
     ?event(http, {http_inbound, Req}),
     % Parse the HTTP request into HyerBEAM's message format.
-    ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
+    ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
     ?event(http, {parsed_singleton, ReqSingleton}),
     {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
     hb_http:reply(Req, Res, NodeMsg).

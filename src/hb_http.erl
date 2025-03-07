@@ -7,7 +7,7 @@
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
 -export([reply/3, reply/4]).
--export([req_to_tabm_singleton/2]).
+-export([req_to_tabm_singleton/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -498,23 +498,28 @@ prepare_reply(Req, Message, Opts) ->
     end.
 
 %% @doc Convert a cowboy request to a normalized message.
-req_to_tabm_singleton(Req, Opts) ->
+req_to_tabm_singleton(Req, Body, Opts) ->
     case cowboy_req:header(<<"codec-device">>, Req) of
-        <<"ans104@1.0">> ->
-            {ok, Body} = read_body(Req),
+        Codec when Codec == <<"httpsig@1.0">> orelse Codec == undefined ->
+            http_sig_to_tabm_singleton(Req, Body, Opts);
+        Codec ->
             hb_message:convert(
                 ar_bundles:deserialize(Body),
                 <<"structured@1.0">>,
-                <<"ans104@1.0">>,
+                Codec,
                 Opts
-            );
-        _ ->
-            http_sig_to_tabm_singleton(Req, Opts)
+            )
     end.
 
-http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
-    {ok, Body} = read_body(Req),
-    Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
+%% @doc HTTPSig messages are inherently mixed into the transport layer, so they
+%% require special handling in order to be converted to a normalized message.
+%% In particular, the signatures are verified if present and required by the 
+%% node configuration. Additionally, non-attested fields are removed from the
+%% message if it is signed, with the exception of the `path` and `method` fields.
+http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
+    Msg = dev_codec_httpsig_conv:from(
+        RawHeaders#{ <<"body">> => Body }
+    ),
     {ok, SignedMsg} =
         dev_codec_httpsig:reset_hmac(
             hb_util:ok(remove_unsigned_fields(Msg, Opts))
@@ -579,14 +584,6 @@ remove_unsigned_fields(Msg, _Opts) ->
     case hb_message:signers(Msg) of
         [] -> {ok, Msg};
         _ -> hb_message:with_only_attested(Msg)
-    end.
-
-%% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
-read_body(Req) -> read_body(Req, <<>>).
-read_body(Req0, Acc) ->
-    case cowboy_req:read_body(Req0) of
-        {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
-        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
     end.
 
 %%% Tests
