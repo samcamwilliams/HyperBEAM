@@ -39,3 +39,4 @@ TEST-cache**/**
 *.svg
 mainnet-cache/
 store-inputs/
+debug-cache/
