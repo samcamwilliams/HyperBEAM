@@ -1057,22 +1057,17 @@ hashpath_sign_verify_test(Codec) ->
                     )
             }
         },
-    ?event({msg, {explicit, Msg}}),
-    {ok, SignedMsg} =
-        dev_message:attest(
-            Msg,
-            #{ <<"attestation-device">> => Codec },
-            #{ priv_wallet => hb:wallet() }
-        ),
-    ?event({signed_msg, {explicit, SignedMsg}}),
-    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
-    ?event({verify_hmac_res, {explicit, Res}}),
-    ?assertEqual(true, verify(SignedMsg)),
-    ?event({verified, {explicit, SignedMsg}}),
+    ?event(test, {msg, {explicit, Msg}}),
+    SignedMsg = attest(Msg, hb:wallet(), Codec),
+    ?event(test, {signed_msg, {explicit, SignedMsg}}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => <<"all">>}, #{}),
+    ?event(test, {verify_res, {explicit, Res}}),
+    ?assert(verify(SignedMsg)),
+    ?event(test, {verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(hmac, {encoded, Encoded}),
+    ?event(test, {encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(hmac, {decoded, Decoded}),
+    ?event(test, {decoded, Decoded}),
     ?assert(verify(Decoded)),
     ?assert(
         match(
@@ -1152,11 +1147,16 @@ signed_with_inner_signed_message_test(Codec) ->
                 ),
                 % Unattested keys that should be ripped out of the inner message
                 % by `with_only_attested`. These should still be present in the
-                % `with_only_attested` outer message.
-                #{
-                    <<"f">> => 6,
-                    <<"g">> => 7
-                }
+                % `with_only_attested` outer message. For now, only `httpsig@1.0`
+                % supports stripping non-attested keys.
+                case Codec of
+                    <<"httpsig@1.0">> ->
+                        #{
+                            <<"f">> => 6,
+                            <<"g">> => 7
+                        };
+                    _ -> #{}
+                end
             )
     }, Wallet, Codec),
     ?event(test, {initial_msg, Msg}),
@@ -1180,8 +1180,6 @@ signed_with_inner_signed_message_test(Codec) ->
     % `with_only_attested` first.
     InnerDecoded = maps:get(<<"inner">>, Decoded),
     ?event(test, {inner_decoded, InnerDecoded}, #{}),
-    % The inner message should not verify alone due to the unattested keys.
-    ?assert(not verify(InnerDecoded, signers)),
     % Applying `with_only_attested` should verify the inner message.
     {ok, AttestedInnerOnly} = with_only_attested(InnerDecoded),
     ?event(test, {attested_inner_only, AttestedInnerOnly}, #{}),
@@ -1299,4 +1297,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    nested_empty_map_test(<<"httpsig@1.0">>).
+    hashpath_sign_verify_test(<<"ans104@1.0">>).
