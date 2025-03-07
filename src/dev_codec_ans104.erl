@@ -33,7 +33,7 @@ id(Msg) ->
 %% @doc Sign a message using the `priv_wallet' key in the options.
 attest(Msg, _Req, Opts) ->
     Signed = ar_bundles:sign_item(
-        to(Msg),
+        to(hb_private:reset(Msg)),
         Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
     ),
     ID = Signed#tx.id,
@@ -75,7 +75,7 @@ attested(Msg, Req, Opts) ->
 
 %% @doc Verify an ANS-104 attestation.
 verify(Msg, _Req, _Opts) ->
-    MsgWithoutAttestations = maps:without([<<"attestations">>], Msg),
+    MsgWithoutAttestations = maps:without([<<"attestations">>], hb_private:reset(Msg)),
     TX = to(MsgWithoutAttestations),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
