@@ -1163,26 +1163,26 @@ signed_with_inner_signed_message_test(Codec) ->
     % 1. Verify the outer message without changes.
     ?assert(verify(Msg)),
     {ok, AttestedInner} = with_only_attested(maps:get(<<"inner">>, Msg)),
-    ?event({attested_inner, AttestedInner}, #{}),
-    ?event({inner_attestors, hb_message:signers(AttestedInner)}, #{}),
+    ?event({attested_inner, AttestedInner}),
+    ?event({inner_attestors, hb_message:signers(AttestedInner)}),
     % 2. Verify the inner message without changes.
     ?assert(verify(AttestedInner, signers)),
     % 3. Convert the message to the format and back.
     Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}, #{}),
+    ?event({encoded, Encoded}),
     %?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}, #{}),
+    ?event({decoded, Decoded}),
     % 4. Verify the outer message after decode.
     ?assert(match(Msg, Decoded)),
     ?assert(verify(Decoded)),
     % 5. Verify the inner message from the converted message, applying
     % `with_only_attested` first.
     InnerDecoded = maps:get(<<"inner">>, Decoded),
-    ?event({inner_decoded, InnerDecoded}, #{}),
+    ?event({inner_decoded, InnerDecoded}),
     % Applying `with_only_attested` should verify the inner message.
     {ok, AttestedInnerOnly} = with_only_attested(InnerDecoded),
-    ?event({attested_inner_only, AttestedInnerOnly}, #{}),
+    ?event({attested_inner_only, AttestedInnerOnly}),
     ?assert(verify(AttestedInnerOnly, signers)).
 
 large_body_attested_keys_test(Codec) ->
