@@ -102,7 +102,7 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 }.
 
 id(Msg, _Params, _Opts) ->
-    ?event(test, {calculating_id, {msg, Msg}}),
+    ?event({calculating_id, {msg, Msg}}),
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
         _ ->

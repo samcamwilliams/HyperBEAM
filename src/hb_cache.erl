@@ -349,9 +349,9 @@ test_deeply_nested_complex_message(Opts) ->
             Wallet
         ),
     {ok, UID} = dev_message:id(Outer, #{ <<"attestors">> => <<"none">> }, Opts),
-    ?event(test, {string, <<"================================================">>}),
+    ?event({string, <<"================================================">>}),
     {ok, AttestedID} = dev_message:id(Outer, #{ <<"attestors">> => [Address] }, Opts),
-    ?event(test, {string, <<"================================================">>}),
+    ?event({string, <<"================================================">>}),
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
@@ -372,7 +372,7 @@ test_deeply_nested_complex_message(Opts) ->
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assert(hb_message:match(Outer, OuterMsg)),
-    ?event(test, {reading_attested_outer, {id, AttestedID}, {expect, Outer}}),
+    ?event({reading_attested_outer, {id, AttestedID}, {expect, Outer}}),
     {ok, AttestedMsg} = read(hb_util:human_id(AttestedID), Opts),
     ?assert(hb_message:match(Outer, AttestedMsg)).
 

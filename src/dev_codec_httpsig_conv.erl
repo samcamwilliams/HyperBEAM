@@ -273,10 +273,10 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
     % Reset the HMAC on the message if none is present
     case maps:get(<<"hmac-sha256">>, Attestations, not_found) of
         not_found ->
-            ?event(test, {resetting_hmac, {msg, Msg}}),
+            ?event({resetting_hmac, {msg, Msg}}),
             dev_codec_httpsig:reset_hmac(Msg);
         _ ->
-            ?event(test, {hmac_already_present, {msg, Msg}}),
+            ?event({hmac_already_present, {msg, Msg}}),
             Msg
     end.
 
