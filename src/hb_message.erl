@@ -169,8 +169,8 @@ with_only_attested(Msg) when is_map(Msg) ->
                     [<<"attestations">>] ++ AttestedWithBodyKey,
                     Msg
                 )}
-            catch _:_ ->
-                {error, {could_not_normalize, Msg}}
+            catch _:_:St ->
+                {error, {could_not_normalize, Msg, St}}
             end;
         false -> {ok, Msg}
     end;
