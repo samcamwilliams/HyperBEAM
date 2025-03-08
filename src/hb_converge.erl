@@ -191,7 +191,7 @@ resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     case hb_path:from_message(request, Msg2) of
         undefined -> {ok, Msg1b};
         _ -> 
-            ?event(
+            ?event(converge_core,
                 {resolve_as_subpath,
                     {msg1, Msg1b},
                     {msg2, Msg2},
