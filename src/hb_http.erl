@@ -534,7 +534,7 @@ accept_to_codec(TABMReq, Opts) ->
         maps:get(
             <<"accept-codec">>,
             TABMReq,
-            maps:get(<<"accept">>, TABMReq, not_specified)
+            mime_to_codec(maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts)
         ),
     ?event(http, {accept_to_codec, AcceptCodec}),
     case AcceptCodec of
@@ -543,20 +543,23 @@ accept_to_codec(TABMReq, Opts) ->
             % message before calling `hb_opts:get/3`, as it is comparatively
             % expensive.
             default_codec(Opts);
-        << "application/", RawName/binary >> ->
-            % The user may not specify a version, so we add `@1.0` if necessary.
-            Name =
-                case binary:match(RawName, <<"@">>) of
-                    nomatch -> << RawName/binary, "@1.0" >>;
-                    _ -> RawName
-                end,
-            try hb_converge:message_to_device(#{ <<"device">> => Name }, Opts)
-            catch _:Error ->
-                ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
-                default_codec(Opts)
-            end;
         _ -> AcceptCodec
     end.
+
+%% @doc Find a codec name from a mime-type.
+mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
+    Name =
+        case binary:match(Mime, <<"@">>) of
+            nomatch -> << Mime/binary, "@1.0" >>;
+            _ -> Mime
+        end,
+    try hb_converge:message_to_device(#{ <<"device">> => Name }, Opts)
+    catch _:Error ->
+        ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
+        default_codec(Opts)
+    end;
+mime_to_codec(<<"device/", Name/binary>>, _Opts) -> Name;
+mime_to_codec(_, _Opts) -> not_specified.
 
 %% @doc Return the default codec for the given options.
 default_codec(Opts) ->
