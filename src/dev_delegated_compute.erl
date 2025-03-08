@@ -34,7 +34,11 @@ compute(Msg1, Msg2, Opts) ->
             Msg1,
             #{
                 <<OutputPrefix/binary, "/results">> => Msg,
-                <<OutputPrefix/binary, "/results/json">> => JSONRes
+                <<OutputPrefix/binary, "/results/json">> =>
+                    #{
+                        <<"content-type">> => <<"application/json">>,
+                        <<"body">> => JSONRes
+                    }
             },
             Opts
         )
