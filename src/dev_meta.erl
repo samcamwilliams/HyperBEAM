@@ -87,6 +87,8 @@ add_dynamic_keys(NodeMsg) ->
             })
     end.
 
+%% @doc Validate that the request is signed by the operator of the node, then
+%% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
     {ok, RequestSigners} = dev_message:attestors(Request),
     Operator =
@@ -234,17 +236,11 @@ message_to_status(_Item) ->
 maybe_sign({Status, Res}, NodeMsg) ->
     {Status, maybe_sign(Res, NodeMsg)};
 maybe_sign(Res, NodeMsg) ->
-    ?event({maybe_sign, Res, NodeMsg}),
+    ?event(http, {maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
             case hb_message:signers(Res) of
-                [] ->
-                    DefaultCodec = hb_opts:get(default_codec, <<"httpsig@1.0">>, NodeMsg),
-                    hb_message:attest(
-                        Res,
-                        NodeMsg,
-                        hb_converge:get(<<"codec-device">>, Res, DefaultCodec, NodeMsg)
-                    );
+                [] -> hb_message:attest(Res, NodeMsg);
                 _ -> Res
             end;
         false -> Res

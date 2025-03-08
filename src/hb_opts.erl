@@ -105,6 +105,8 @@ default_message() ->
         wasm_allow_aot => false,
         %% Options for the relay device
         relay_http_client => httpc,
+        %% The default codec to use for attestation signatures.
+        attestation_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
         debug_stack_depth => 40,

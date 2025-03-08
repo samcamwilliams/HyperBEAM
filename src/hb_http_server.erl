@@ -249,12 +249,17 @@ cors_reply(Req, _ServerID) ->
 %% the appropriate way.
 handle_request(Req, Body, ServerID) ->
     NodeMsg = get_opts(#{ http_server => ServerID }),
-    ?event(http, {http_inbound, Req}),
+    ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
     % Parse the HTTP request into HyerBEAM's message format.
     ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-    ?event(http, {parsed_singleton, ReqSingleton}),
-    {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
-    hb_http:reply(Req, Res, NodeMsg).
+    AttestationCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+    ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, AttestationCodec}}),
+    {ok, Res} =
+        dev_meta:handle(
+            NodeMsg#{ attestation_device => AttestationCodec },
+            ReqSingleton
+        ),
+    hb_http:reply(Req, ReqSingleton, Res, NodeMsg).
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->

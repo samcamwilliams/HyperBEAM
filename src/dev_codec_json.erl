@@ -2,7 +2,10 @@
 %%% message as TABM and returns an encoded JSON string representation.
 %%% This codec utilizes the httpsig@1.0 codec for signing and verifying.
 -module(dev_codec_json).
--export([to/1, from/1, attest/3, verify/3, attested/1]).
+-export([to/1, from/1, attest/3, verify/3, attested/1, content_type/1]).
+
+%% @doc Return the content type for the codec.
+content_type(_) -> {ok, <<"application/json">>}.
 
 to(Msg) -> iolist_to_binary(json:encode(Msg)).
 

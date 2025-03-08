@@ -54,7 +54,7 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, unattested/1]).
+-export([convert/3, convert/4, unattested/1, with_only_attestors/2]).
 -export([verify/1, verify/2, attest/2, attest/3, signers/1, type/1, minimize/1]).
 -export([attested/1, attested/2, attested/3, with_only_attested/1]).
 -export([match/2, match/3, find_target/3]).
@@ -178,9 +178,28 @@ with_only_attested(Msg) ->
     % If the message is not a map, it cannot be signed.
     {ok, Msg}.
 
+%% @doc Return the message with only the specified attestors attached.
+with_only_attestors(Msg, Attestors) when is_map(Msg) ->
+    OriginalAttestations = maps:get(<<"attestations">>, Msg, #{}),
+    NewAttestations = maps:with(Attestors, OriginalAttestations),
+    maps:put(<<"attestations">>, NewAttestations, Msg);
+with_only_attestors(Msg, _Attestors) ->
+    throw({unsupported_message_type, Msg}).
+
 %% @doc Sign a message with the given wallet.
 attest(Msg, WalletOrOpts) ->
-    attest(Msg, WalletOrOpts, <<"httpsig@1.0">>).
+    attest(
+        Msg,
+        WalletOrOpts,
+        hb_opts:get(
+            attestation_device,
+            no_viable_attestation_device,
+            case is_map(WalletOrOpts) of
+                true -> WalletOrOpts;
+                false -> #{ priv_wallet => WalletOrOpts }
+            end
+        )
+    ).
 attest(Msg, Wallet, Format) when not is_map(Wallet) ->
     attest(Msg, #{ priv_wallet => Wallet }, Format);
 attest(Msg, Opts, Format) ->

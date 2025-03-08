@@ -194,7 +194,12 @@ attestors(Base, _, _NodeOpts) ->
 attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
-    AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
+    AttDev =
+        case maps:get(<<"attestation-device">>, Req, not_specified) of
+            not_specified ->
+                hb_opts:get(attestation_device, no_viable_attestation_device, Opts);
+            Dev -> Dev
+        end,
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.

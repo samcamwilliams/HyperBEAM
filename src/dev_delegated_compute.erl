@@ -19,7 +19,6 @@ compute(Msg1, Msg2, Opts) ->
     Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
     ?event(push, {compute_lite_called, {process_id, RawProcessID}, {slot, Slot}}),
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
-    Accept = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
     ProcessID =
         case RawProcessID of
             not_found ->

@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([id/1, to/1, from/1, attest/3, verify/3, attested/3]).
+-export([id/1, to/1, from/1, attest/3, verify/3, attested/3, content_type/1]).
 -include("include/hb.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
@@ -24,6 +24,9 @@
         <<"bundle-version">>
     ]
 ).
+
+%% @doc Return the content type for the codec.
+content_type(_) -> {ok, <<"application/ans104">>}.
 
 %% @doc Return the ID of a message.
 id(Msg) ->

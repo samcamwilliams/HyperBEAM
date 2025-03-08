@@ -6,7 +6,7 @@
 -module(hb_http).
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
--export([reply/3, reply/4]).
+-export([reply/4, accept_to_codec/2]).
 -export([req_to_tabm_singleton/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -230,7 +230,7 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                 headers =>
                     #{
                         <<"codec-device">> => <<"ans104@1.0">>,
-                        <<"content-type">> => <<"application/octet-stream">>
+                        <<"content-type">> => <<"application/ans104">>
                     },
                 body =>
                     ar_bundles:serialize(
@@ -405,18 +405,18 @@ empty_inbox(Ref) ->
     receive {Ref, _} -> empty_inbox(Ref) after 0 -> ok end.
 
 %% @doc Reply to the client's HTTP request with a message.
-reply(Req, Message, Opts) ->
+reply(Req, TABMReq, Message, Opts) ->
     Status =
         case hb_converge:get(<<"status">>, Message, Opts) of
             not_found -> 200;
             S-> S
         end,
-    reply(Req, Status, Message, Opts).
-reply(Req, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
-    reply(Req, binary_to_integer(BinStatus), RawMessage, Opts);
-reply(Req, Status, RawMessage, Opts) ->
+    reply(Req, TABMReq, Status, Message, Opts).
+reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
+    reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
+reply(Req, TABMReq, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, HeadersBeforeCors, EncodedBody} = prepare_reply(Req, Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(TABMReq, Message, Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr),
@@ -464,25 +464,18 @@ add_cors_headers(Msg, ReqHdr) ->
     maps:merge(WithAllowHeaders, Msg).
 
 %% @doc Generate the headers and body for a HTTP response message.
-prepare_reply(Req, Message, Opts) ->
-    DefaultCodec = hb_opts:get(default_codec, <<"httpsig@1.0">>, Opts),
-    Accept = cowboy_req:header(<<"accept-codec">>, Req, DefaultCodec),
-    case Accept of
-        <<"ans104@1.0">> ->
-            {ok,
-                #{
-                    <<"content-type">> => <<"application/octet-stream">>,
-                    <<"codec-device">> => <<"ans104@1.0">>
-                },
-                ar_bundles:serialize(
-                    hb_message:convert(
-                        Message,
-                        <<"ans104@1.0">>,
-                        <<"structured@1.0">>,
-                        Opts
-                    )
-                )
-            };
+encode_reply(TABMReq, Message, Opts) ->
+    Codec = accept_to_codec(TABMReq, Opts),
+    ?event(http, {encoding_reply, {codec, Codec}, {message, Message}}),
+    BaseHdrs =
+        case codec_to_content_type(Codec, Opts) of
+            undefined -> #{};
+            CT -> #{ <<"content-type">> => CT, <<"codec-device">> => Codec }
+        end,
+    % Codecs generally do not need to specify headers outside of the content-type,
+    % aside the default `httpsig@1.0` codec, which expresses its form in HTTP
+    % documents, and subsequently must set its own headers.
+    case Codec of
         <<"httpsig@1.0">> ->
             EncMessage =
                 hb_message:convert(
@@ -491,16 +484,104 @@ prepare_reply(Req, Message, Opts) ->
                     <<"structured@1.0">>,
                     #{ topic => converge_internal }
                 ),
-            {ok,
+            {
+                ok,
                 maps:without([<<"body">>], EncMessage),
                 maps:get(<<"body">>, EncMessage, <<>>)
+            };
+        <<"ans104@1.0">> ->
+            % The `ans104@1.0` codec is a binary format, so we must serialize
+            % the message to a binary before sending it.
+            {
+                ok,
+                #{ <<"codec-device">> => <<"ans104@1.0">> },
+                ar_bundles:serialize(
+                    hb_message:convert(
+                        hb_message:with_only_attestors(
+                            Message,
+                            hb_message:signers(Message)
+                        ),
+                        <<"ans104@1.0">>,
+                        <<"structured@1.0">>,
+                        Opts#{ topic => converge_internal }
+                    )
+                )
+            };
+        _ ->
+            % Other codecs are already in binary format, so we can just convert
+            % the message to the codec.
+            {ok,
+                BaseHdrs,
+                hb_message:convert(
+                    Message,
+                    Codec,
+                    <<"structured@1.0">>,
+                    Opts#{ topic => converge_internal }
+                )
             }
+    end.
+
+%% @doc Calculate the codec name to use for a reply given its initiating Cowboy
+%% request, the parsed TABM request, and the response message. The precidence
+%% order for finding the codec is:
+%% 1. The `accept-codec` field in the message
+%% 2. The `accept` field in the request headers
+%% 3. The default codec
+%% Options can be specified in mime-type format (`application/*`) or in
+%% AO device format (`device@1.0').
+accept_to_codec(TABMReq, Opts) ->
+    AcceptCodec =
+        maps:get(
+            <<"accept-codec">>,
+            TABMReq,
+            maps:get(<<"accept">>, TABMReq, not_specified)
+        ),
+    ?event(http, {accept_to_codec, AcceptCodec}),
+    case AcceptCodec of
+        not_specified ->
+            % We hold off until confirming that the codec is not directly in the
+            % message before calling `hb_opts:get/3`, as it is comparatively
+            % expensive.
+            default_codec(Opts);
+        << "application/", RawName/binary >> ->
+            % The user may not specify a version, so we add `@1.0` if necessary.
+            Name =
+                case binary:match(RawName, <<"@">>) of
+                    nomatch -> << RawName/binary, "@1.0" >>;
+                    _ -> RawName
+                end,
+            try hb_converge:message_to_device(#{ <<"device">> => Name }, Opts)
+            catch _:Error ->
+                ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
+                default_codec(Opts)
+            end;
+        _ -> AcceptCodec
+    end.
+
+%% @doc Return the default codec for the given options.
+default_codec(Opts) ->
+    hb_opts:get(default_codec, <<"httpsig@1.0">>, Opts).
+
+%% @doc Call the `content-type` key on a message with the given codec, using
+%% a fast-path for options that are not needed for this one-time lookup.
+codec_to_content_type(Codec, Opts) ->
+    FastOpts =
+        Opts#{
+            hashpath => ignore,
+            cache_control => [<<"no-cache">>, <<"no-store">>],
+            cache_lookup_hueristics => false,
+            load_remote_devices => false,
+            error_strategy => continue
+        },
+    case hb_converge:get(<<"content-type">>, #{ <<"device">> => Codec }, FastOpts) of
+        not_found -> undefined;
+        CT -> CT
     end.
 
 %% @doc Convert a cowboy request to a normalized message.
 req_to_tabm_singleton(Req, Body, Opts) ->
-    case cowboy_req:header(<<"codec-device">>, Req) of
-        Codec when Codec == <<"httpsig@1.0">> orelse Codec == undefined ->
+    case cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>) of
+        <<"httpsig@1.0">> ->
             http_sig_to_tabm_singleton(Req, Body, Opts);
         Codec ->
             hb_message:convert(
