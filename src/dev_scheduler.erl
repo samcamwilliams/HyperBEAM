@@ -458,21 +458,24 @@ find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
 slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
     ProcID = find_target_id(M1, M2, Opts),
-    ?event({getting_current_slot, {proc_id, ProcID}}),
-    {Timestamp, Hash, Height} = ar_timestamp:get(),
-    #{ current := CurrentSlot, wallet := Wallet } =
-        dev_scheduler_server:info(
-            dev_scheduler_registry:find(ProcID)
-        ),
-    {ok, #{
-        <<"process">> => ProcID,
-        <<"current-slot">> => CurrentSlot,
-        <<"timestamp">> => Timestamp,
-        <<"block-height">> => Height,
-        <<"block-hash">> => Hash,
-        <<"cache-control">> => <<"no-store">>,
-        <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
-    }}.
+    case find_server(ProcID, M1, Opts) of
+        {local, PID} ->
+            ?event({getting_current_slot, {proc_id, ProcID}}),
+            {Timestamp, Hash, Height} = ar_timestamp:get(),
+            #{ current := CurrentSlot, wallet := Wallet } =
+                dev_scheduler_server:info(PID),
+            {ok, #{
+                <<"process">> => ProcID,
+                <<"current-slot">> => CurrentSlot,
+                <<"timestamp">> => Timestamp,
+                <<"block-height">> => Height,
+                <<"block-hash">> => Hash,
+                <<"cache-control">> => <<"no-store">>,
+                <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
+            }};
+        {redirect, Redirect} ->
+            {ok, Redirect}
+    end.
 
 %% @doc Generate and return a schedule for a process, optionally between
 %% two slots -- labelled as `from' and `to'. If the schedule is not local,
