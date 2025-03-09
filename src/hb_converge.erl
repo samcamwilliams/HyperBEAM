@@ -144,7 +144,7 @@ resolve_many([ID], Opts) when ?IS_ID(ID) ->
         {ok, Msg3} ->
             ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
             {ok, Msg3};
-        {error, not_found} ->
+        not_found ->
             {error, not_found}
     end;
 resolve_many(MsgList, Opts) ->

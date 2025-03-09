@@ -36,20 +36,23 @@ debit(_, RawReq, NodeMsg) ->
         <<"pre">> ->
             ?event(payment, {debit_preprocessing, RawReq}),
             Req = hb_converge:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
-            Signer = hd(hb_message:signers(Req)),
-            UserBalance = get_balance(Signer, NodeMsg),
-            Price = hb_converge:get(<<"amount">>, RawReq, 0, NodeMsg),
-            ?event(payment,
-                {debit,
-                    {user, Signer},
-                    {balance, UserBalance},
-                    {price, Price}
-                }),
-            case UserBalance >= Price of
-                true ->
-                    set_balance(Signer, UserBalance - Price, NodeMsg),
-                    {ok, true};
-                false -> {ok, false}
+            case hb_message:signers(Req) of
+                [] -> {ok, false};
+                [Signer] ->
+                    UserBalance = get_balance(Signer, NodeMsg),
+                    Price = hb_converge:get(<<"amount">>, RawReq, 0, NodeMsg),
+                    ?event(payment,
+                        {debit,
+                            {user, Signer},
+                            {balance, UserBalance},
+                            {price, Price}
+                        }),
+                    case UserBalance >= Price of
+                        true ->
+                            set_balance(Signer, UserBalance - Price, NodeMsg),
+                            {ok, true};
+                        false -> {ok, false}
+                    end
             end
     end.
 

@@ -494,7 +494,7 @@ encode_reply(TABMReq, Message, Opts) ->
             % the message to a binary before sending it.
             {
                 ok,
-                #{ <<"codec-device">> => <<"ans104@1.0">> },
+                BaseHdrs,
                 ar_bundles:serialize(
                     hb_message:convert(
                         hb_message:with_only_attestors(
@@ -509,9 +509,11 @@ encode_reply(TABMReq, Message, Opts) ->
             };
         _ ->
             % Other codecs are already in binary format, so we can just convert
-            % the message to the codec.
+            % the message to the codec. We also include all of the top-level 
+            % fields in the message and return them as headers.
+            ExtraHdrs = maps:filter(fun(_, V) -> not is_map(V) end, Message),
             {ok,
-                BaseHdrs,
+                maps:merge(BaseHdrs, ExtraHdrs),
                 hb_message:convert(
                     Message,
                     Codec,
