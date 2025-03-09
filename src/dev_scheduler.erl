@@ -280,7 +280,10 @@ post_schedule(Msg1, Msg2, Opts) ->
                     do_post_schedule(ProcID, PID, OnlyAttested, Opts);
                 {redirect, Redirect} ->
                     ?event({redirecting_to_scheduler, {redirect, Redirect}}),
-                    {ok, Redirect}
+                    {ok, Redirect};
+                {error, Error} ->
+                    ?event({error_finding_scheduler, {error, Error}}),
+                    {error, Error}
             end;
         {error, _} ->
             {ok,
@@ -375,6 +378,8 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                         ),
                     ?event({sched_loc, SchedLoc}),
                     case SchedLoc of
+                        not_found ->
+                            {error, <<"No scheduler information provided.">>};
                         Address ->
                             % We are the scheduler. Start the server if it has not already
                             % been started.
@@ -486,7 +491,7 @@ get_schedule(Msg1, Msg2, Opts) ->
         case hb_converge:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
             X when X < 0 -> 0;
-            FromRes -> FromRes
+            FromRes -> hb_util:int(FromRes)
         end,
     To =
         case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
@@ -498,7 +503,7 @@ get_schedule(Msg1, Msg2, Opts) ->
                         Slot;
                     Pid -> maps:get(current, dev_scheduler_server:info(Pid))
                 end;
-            ToRes -> ToRes
+            ToRes -> hb_util:int(ToRes)
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
     ?event({parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
