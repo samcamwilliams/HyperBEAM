@@ -161,6 +161,8 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
+exec_likely_faster_heuristic({as, _, Msg1}, Msg2, Opts) ->
+    exec_likely_faster_heuristic(Msg1, Msg2, Opts);
 exec_likely_faster_heuristic(Msg1, Msg2, Opts) ->
     case hb_opts:get(cache_lookup_hueristics, true, Opts) of
         false -> false;

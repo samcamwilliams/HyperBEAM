@@ -101,7 +101,8 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 	key => binary()
 }.
 
-id(Msg, Params, Opts) ->
+id(Msg, _Params, _Opts) ->
+    ?event({calculating_id, {msg, Msg}}),
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
         _ ->
@@ -129,28 +130,28 @@ attest(MsgToSign, _Req, Opts) ->
         end,
     EncWithoutBodyKeys =
         maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"converge-type-body-keys">>],
+            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"priv">>],
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
     ?event({encoded_to_httpsig_for_attestation, Enc}),
     Authority = authority(lists:sort(maps:keys(Enc)), SigParams, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
-    [ParsedSignatureInput] = dev_codec_structured_conv:parse_list(SignatureInput),
+    [ParsedSignatureInput] = hb_structured_fields:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
     Attestor = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
     SigName = address_to_sig_name(Address),
     % Calculate the id and place the signature into the `attestations' key of the message.
     Attestation =
         #{
-            <<"id">> => crypto:hash(sha256, Signature),
+            <<"id">> => hb_util:human_id(crypto:hash(sha256, Signature)),
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
             <<"signature">> =>
-                bin(dev_codec_structured_conv:dictionary(
+                bin(hb_structured_fields:dictionary(
                     #{ SigName => {item, {binary, Signature}, []} }
                 )),
             <<"signature-input">> =>
-                bin(dev_codec_structured_conv:dictionary(
+                bin(hb_structured_fields:dictionary(
                     #{ SigName => ParsedSignatureInput }
                 )),
             <<"attestation-device">> => <<"httpsig@1.0">>
@@ -164,7 +165,7 @@ attest(MsgToSign, _Req, Opts) ->
 %% had the `attestations` key removed and the signature inputs added to the
 %% root. Subsequently, we can parse that to get the list of attested keys.
 attested(Msg, _Req, _Opts) ->
-    [{_SigInputName, SigInput} | _] = dev_codec_structured_conv:parse_dictionary(
+    [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
         maps:get(<<"signature-input">>, Msg)
     ),
     {list, ComponentIdentifiers, _SigParams} = SigInput,
@@ -174,31 +175,43 @@ attested(Msg, _Req, _Opts) ->
     ),
     Signed =
         [<<"signature">>, <<"signature-input">>] ++
-            dev_codec_httpsig:remove_derived_specifiers(BinComponentIdentifiers),
+            remove_derived_specifiers(BinComponentIdentifiers),
     case lists:member(<<"content-digest">>, Signed) of
         false -> {ok, Signed};
         true ->
             {ok,
                 Signed
                     ++ [<<"body">>]
-                    ++ normalize_body_keys(
-                        maps:get(<<"body-keys">>, Msg, [])
-                    )
+                    ++ case maps:get(<<"body-keys">>, Msg, []) of
+                        [] -> [];
+                        BodyKeys ->
+                            ParsedList = case BodyKeys of
+                                List when is_list(List) -> List;
+                                RawBodyKeys when is_binary(RawBodyKeys) ->
+                                    hb_structured_fields:parse_list(RawBodyKeys) 
+                            end,
+                            % Ensure a list of binaries, extracting the binary
+                            % from the structured item if necessary
+                            ParsedBodyKeys = lists:map(
+                                fun
+                                    (BK) when is_binary(BK) -> BK;
+                                    ({ item, {_, BK }, _}) -> BK
+                                end,
+                                ParsedList   
+                            ),
+                            % Grab the top most field on the body key
+                            % because the top most being attested means all subsequent
+                            % fields are also attested
+                            Tops = lists:map(
+                                fun(BodyKey) ->
+                                    hd(hb_path:term_to_path_parts(BodyKey, #{}))
+                                end,
+                                ParsedBodyKeys
+                            ),
+                            lists:sort(lists:uniq(Tops))
+                    end
             }
     end.
-
-%% @doc Normalize a body key to be a list of keys.
-normalize_body_keys(List) when is_list(List) ->
-    List;
-normalize_body_keys(Body) when is_binary(Body) ->
-    Items = dev_codec_structured_conv:parse_list(Body),
-    lists:map(
-        fun({item, {X, Key}, _}) when X =:= binary; X =:= string ->
-                hd(hb_path:term_to_path_parts(Key, #{}));
-            (Other) -> Other
-        end,
-        Items
-    ).
 
 %% @doc If the `body' key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
@@ -208,10 +221,9 @@ add_content_digest(Msg) ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
             ?event({add_content_digest, {body, Body}, {msg, Msg}}),
-            %io:format(standard_error, "Body pre-image:~n~s~n", [Body]),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
-                    iolist_to_binary(dev_codec_structured_conv:dictionary(
+                    iolist_to_binary(hb_structured_fields:dictionary(
                         #{
                             <<"sha-256">> =>
                                 {item, {binary, hb_crypto:sha256(Body)}, []}
@@ -253,7 +265,7 @@ reset_hmac(RawMsg) ->
                 SigBin =
                     maps:get(SigNameFromDict,
                         maps:from_list(
-                            dev_codec_structured_conv:parse_dictionary(Signature)
+                            hb_structured_fields:parse_dictionary(Signature)
                         )
                     ),
                 {SigNameFromDict, SigBin}
@@ -264,7 +276,7 @@ reset_hmac(RawMsg) ->
         maps:from_list(lists:map(
             fun ({_Attestor, #{ <<"signature-input">> := Inputs }}) ->
                 SigNameFromDict = sig_name_from_dict(Inputs),
-                Res = dev_codec_structured_conv:parse_dictionary(Inputs),
+                Res = hb_structured_fields:parse_dictionary(Inputs),
                 SingleSigInput = maps:get(SigNameFromDict, maps:from_list(Res)),
                 {SigNameFromDict, SingleSigInput}
             end,
@@ -276,9 +288,9 @@ reset_hmac(RawMsg) ->
             [] -> #{};
             _ -> #{
                 <<"signature">> =>
-                    bin(dev_codec_structured_conv:dictionary(AllSigs)),
+                    bin(hb_structured_fields:dictionary(AllSigs)),
                 <<"signature-input">> =>
-                    bin(dev_codec_structured_conv:dictionary(AllInputs))
+                    bin(hb_structured_fields:dictionary(AllInputs))
             }
         end,
     HMacInputMsg = maps:merge(Msg, HMacSigInfo),
@@ -301,7 +313,7 @@ reset_hmac(RawMsg) ->
     Res.
 
 sig_name_from_dict(DictBin) ->
-    [{SigNameFromDict, _}] = dev_codec_structured_conv:parse_dictionary(DictBin),
+    [{SigNameFromDict, _}] = hb_structured_fields:parse_dictionary(DictBin),
     SigNameFromDict.
 
 %% @doc Generate the ID of the message, with the current signature and signature
@@ -317,16 +329,7 @@ hmac(Msg) ->
     {_, SignatureBase} = signature_base(
         #{
             component_identifiers => 
-                add_derived_specifiers(
-                    lists:sort(
-                        maps:keys(
-                            maps:without(
-                                [<<"body-keys">>, <<"converge-type-body-keys">>],
-                                MsgWithContentDigest
-                            )
-                        )
-                    )
-                ),
+                add_derived_specifiers(lists:sort(maps:keys(MsgWithContentDigest))),
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
@@ -335,7 +338,7 @@ hmac(Msg) ->
         #{},
         MsgWithContentDigest
     ),
-    ?event({explicit, {signature_base, SignatureBase}}),
+    ?event(signature_base, {signature_base, {string, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     {ok, HMacValue}.
 
@@ -366,7 +369,7 @@ verify(MsgToVerify, Req, _Opts) ->
         maps:get(
             SigName,
             maps:from_list(
-                dev_codec_structured_conv:parse_dictionary(
+                hb_structured_fields:parse_dictionary(
                     maps:get(<<"signature-input">>, MsgToVerify)
                 )
             )
@@ -379,7 +382,7 @@ verify(MsgToVerify, Req, _Opts) ->
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
-            EncWithoutBodyKeys = maps:without([<<"body-keys">>, <<"converge-type-body-keys">>], Enc),
+            EncWithoutBodyKeys = maps:without([<<"body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
                 EncWithoutBodyKeys#{
@@ -393,7 +396,7 @@ verify(MsgToVerify, Req, _Opts) ->
             % verify correctly. If they do not match, then the signature will
             % fail to verify, as the signature bases will not be the same.
             EncWithDigest = add_content_digest(EncWithSig),
-            ?event({encoded_msg_for_verification, {explicit, EncWithDigest}}),
+            ?event({encoded_msg_for_verification, EncWithDigest}),
             Res = verify_auth(
                 #{
                     key => {{rsa, 65537}, PubKey},
@@ -420,7 +423,7 @@ public_keys(Attestation) ->
                     false
             end
         end,
-        dev_codec_structured_conv:parse_dictionary(SigInputs)
+        hb_structured_fields:parse_dictionary(SigInputs)
     ).
 
 %%% @doc A helper to validate and produce an "Authority" State
@@ -531,7 +534,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % The signature may be encoded ie. as binary, so we need to parse it
             % further as a structured field
             {item, {_, Signature}, _} =
-                dev_codec_structured_conv:parse_item(EncodedSignature),
+                hb_structured_fields:parse_item(EncodedSignature),
             % The value encoded within signature input is also a structured field,
             % specifically an inner list that encodes the ComponentIdentifiers
             % and the Signature Params.
@@ -539,7 +542,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % So we must parse this value, and then use it to construct the 
             % signature base
             [{list, ComponentIdentifiers, SigParams}] =
-                dev_codec_structured_conv:parse_list(SignatureInput),
+                hb_structured_fields:parse_list(SignatureInput),
             SigParamsMap = lists:foldl(
                 % TODO: does not support SF decimal params
                 fun
@@ -581,7 +584,7 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
-    ?event({signature_base, {explicit, SignatureBase}}),
+    ?event({signature_base, {string, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
@@ -615,7 +618,7 @@ signature_components_line(ComponentIdentifiers, Req, Res) ->
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.3.2.4
 signature_params_line(ComponentIdentifiers, SigParams) ->
 	SfList = sf_signature_params(ComponentIdentifiers, SigParams),
-	Res = dev_codec_structured_conv:list(SfList),
+	Res = hb_structured_fields:list(SfList),
 	bin(Res).
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
@@ -672,7 +675,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 		_ ->
 			Lowered = lower_bin(IParsed),
 			NormalizedItem =
-                dev_codec_structured_conv:item(
+                hb_structured_fields:item(
                     {item, {string, Lowered}, IParams}
                 ),
             IsRequestIdentifier = find_request_param(IParams),
@@ -811,7 +814,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 		_ ->
 			Lowered = lower_bin(IParsed),
 			NormalizedItem =
-                dev_codec_structured_conv:item(
+                hb_structured_fields:item(
                     {item, {string, Lowered}, IParams}
                 ),
 			Result =
@@ -989,9 +992,9 @@ sf_signature_params(ComponentIdentifiers, SigParams) when is_list(SigParams) ->
 sf_parse(Raw) when is_list(Raw) -> sf_parse(list_to_binary(Raw));
 sf_parse(Raw) when is_binary(Raw) ->
 	Parsers = [
-		fun dev_codec_structured_conv:parse_list/1,
-		fun dev_codec_structured_conv:parse_dictionary/1,
-		fun dev_codec_structured_conv:parse_item/1
+		fun hb_structured_fields:parse_list/1,
+		fun hb_structured_fields:parse_dictionary/1,
+		fun hb_structured_fields:parse_item/1
 	],
 	sf_parse(Parsers, Raw).
 
@@ -1009,9 +1012,9 @@ sf_parse([Parser | Rest], Raw) ->
 sf_encode(StructuredField = {list, _, _}) ->
 	% The value is an inner_list, and so needs to be wrapped with an outer list
 	% before being serialized
-	sf_encode(fun dev_codec_structured_conv:list/1, [StructuredField]);
+	sf_encode(fun hb_structured_fields:list/1, [StructuredField]);
 sf_encode(StructuredField = {item, _, _}) ->
-	sf_encode(fun dev_codec_structured_conv:item/1, StructuredField);
+	sf_encode(fun hb_structured_fields:item/1, StructuredField);
 sf_encode(StructuredField = [Elem | _Rest]) ->
 	sf_encode(
 		% Both an sf list and dictionary is represented in Erlang as a List of
@@ -1019,9 +1022,9 @@ sf_encode(StructuredField = [Elem | _Rest]) ->
 		% is a binary, so we can match on that to determine which serializer to use
 		case Elem of
 			{Name, _} when is_binary(Name) ->
-                fun dev_codec_structured_conv:dictionary/1;
+                fun hb_structured_fields:dictionary/1;
 			_ ->
-                fun dev_codec_structured_conv:list/1
+                fun hb_structured_fields:list/1
 		end,
 		StructuredField
 	).

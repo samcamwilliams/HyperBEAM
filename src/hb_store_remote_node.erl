@@ -51,7 +51,6 @@ read_test() ->
     Node =
         hb_http_server:start_node(
             #{
-                port => 11000,
                 store => LocalStore
             }
         ),

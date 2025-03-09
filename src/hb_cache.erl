@@ -62,7 +62,7 @@ write(RawMsg, Opts) ->
     % _tabm_ format for writing to the store.
     case hb_message:with_only_attested(RawMsg) of
         {ok, Msg} ->
-            ?event(debug_store, {storing, Msg}),
+            ?event({storing, Msg}),
             do_write_message(
                 hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
                 calculate_alt_ids(RawMsg, Opts),
@@ -150,7 +150,7 @@ write_hashpath(MsgWithoutHP, Opts) ->
     write(MsgWithoutHP, Opts).
 write_hashpath(HP, Msg, Opts) when is_binary(HP) or is_list(HP) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
-    ?event(cache_debug, {writing_hashpath, {hashpath, HP}, {msg, Msg}, {store, Store}}),
+    ?event({writing_hashpath, {hashpath, HP}, {msg, Msg}, {store, Store}}),
     {ok, Path} = write(Msg, Opts),
     hb_store:make_link(Store, Path, HP),
     {ok, Path}.
@@ -200,7 +200,7 @@ store_read(Path, Store, Opts, AlreadyRead) ->
 %% links are present.
 do_read(Path, Store, Opts, AlreadyRead) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event(read_debug, {reading, {path, PathToBin}, {resolved, ResolvedFullPath}}, Opts),
+    ?event({reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
         no_viable_store -> not_found;
@@ -218,7 +218,7 @@ do_read(Path, Store, Opts, AlreadyRead) ->
                         maps:from_list(
                             lists:map(
                                 fun(Subpath) ->
-                                    ?event(read_debug, {reading_subpath, {path, Subpath}, {store, Store}}),
+                                    ?event({reading_subpath, {path, Subpath}, {store, Store}}),
                                     {ok, Res} = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
@@ -327,26 +327,31 @@ test_deeply_nested_complex_message(Opts) ->
     %% Create nested data
     Level3SignedSubmessage = test_signed([1,2,3], Wallet),
     Outer =
-        #{
-            <<"level1">> =>
-                hb_message:attest(
-                    #{
-                        <<"level2">> =>
-                            #{
-                                <<"level3">> => Level3SignedSubmessage,
-                                <<"e">> => <<"f">>,
-                                <<"z">> => [1,2,3]
-                            },
-                        <<"c">> => <<"d">>,
-                        <<"g">> => [<<"h">>, <<"i">>],
-                        <<"j">> => 1337
-                    },
-                    ar_wallet:new()
-                ),
-            <<"a">> => <<"b">>
-        },
+        hb_message:attest(
+            #{
+                <<"level1">> =>
+                    hb_message:attest(
+                        #{
+                            <<"level2">> =>
+                                #{
+                                    <<"level3">> => Level3SignedSubmessage,
+                                    <<"e">> => <<"f">>,
+                                    <<"z">> => [1,2,3]
+                                },
+                            <<"c">> => <<"d">>,
+                            <<"g">> => [<<"h">>, <<"i">>],
+                            <<"j">> => 1337
+                        },
+                        ar_wallet:new()
+                    ),
+                <<"a">> => <<"b">>
+            },
+            Wallet
+        ),
     {ok, UID} = dev_message:id(Outer, #{ <<"attestors">> => <<"none">> }, Opts),
+    ?event({string, <<"================================================">>}),
     {ok, AttestedID} = dev_message:id(Outer, #{ <<"attestors">> => [Address] }, Opts),
+    ?event({string, <<"================================================">>}),
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
@@ -367,6 +372,7 @@ test_deeply_nested_complex_message(Opts) ->
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assert(hb_message:match(Outer, OuterMsg)),
+    ?event({reading_attested_outer, {id, AttestedID}, {expect, Outer}}),
     {ok, AttestedMsg} = read(hb_util:human_id(AttestedID), Opts),
     ?assert(hb_message:match(Outer, AttestedMsg)).
 
@@ -389,12 +395,19 @@ cache_suite_test_() ->
         {"message with message", fun test_message_with_message/1}
     ]).
 
-read_cycle_test() ->
-    Opts = #{ store => StoreOpts = [{hb_store_fs,#{prefix => "debug-cache"}}] },
-    hb_store:reset(StoreOpts),
-    Danger = #{ <<"device">> => #{}},
-    ID = hb_util:human_id(hb_message:id(Danger)),
-    IDEmpty = hb_util:human_id(hb_message:id(#{})),
-    IDDevice = hb_util:human_id(hb_message:id(#{ <<"device">> => #{ <<"device">> => #{}} })),
-    ?event({calculated_ids, {danger, ID}, {empty, IDEmpty}, {device, IDDevice}}),
-    ?assertThrow({device_map_cannot_be_written, {id, IDDevice}}, write(Danger, Opts)).
+%% @doc Test that message whose device is `#{}` cannot be written. If it were to
+%% be written, it would cause an infinite loop.
+test_device_map_cannot_be_written_test() ->
+    try
+        Opts = #{ store => StoreOpts = [{hb_store_fs,#{prefix => "debug-cache"}}] },
+        hb_store:reset(StoreOpts),
+        Danger = #{ <<"device">> => #{}},
+        write(Danger, Opts),
+        ?assert(false)
+    catch
+        _:_:_ -> ?assert(true)
+    end.
+
+run_test() ->
+    Opts = #{ store => [{hb_store_fs,#{prefix => "debug-cache"}}]},
+    test_deeply_nested_complex_message(Opts).

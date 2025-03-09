@@ -105,7 +105,7 @@ init() ->
 %% @doc Start a mainnet server without payments.
 start_mainnet() ->
     start_mainnet(hb_opts:get(port)).
-start_mainnet(Port) ->
+start_mainnet(Port) when is_integer(Port) ->
     start_mainnet(#{ port => Port });
 start_mainnet(Opts) ->
     application:ensure_all_started([
@@ -121,7 +121,7 @@ start_mainnet(Opts) ->
         os_mon,
         rocksdb
     ]),
-    Wallet = hb:wallet(hb_opts:get(priv_key_location)),
+    Wallet = hb:wallet(hb_opts:get(priv_key_location, no_viable_wallet_path, Opts)),
     BaseOpts = hb_http_server:set_default_opts(Opts),
     hb_http_server:start_node(
         FinalOpts =

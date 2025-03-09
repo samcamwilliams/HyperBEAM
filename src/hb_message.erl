@@ -54,7 +54,7 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, to_tabm/3, from_tabm/3, unattested/1]).
+-export([convert/3, convert/4, unattested/1, with_only_attestors/2]).
 -export([verify/1, verify/2, attest/2, attest/3, signers/1, type/1, minimize/1]).
 -export([attested/1, attested/2, attested/3, with_only_attested/1]).
 -export([match/2, match/3, find_target/3]).
@@ -79,10 +79,22 @@
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
-    TABM = to_tabm(Msg, SourceFormat, Opts),
+    OldPriv =
+        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
+           true -> #{}
+        end,
+    TABM =
+        to_tabm(
+            case is_map(Msg) of
+                true -> maps:without([<<"priv">>], Msg);
+                false -> Msg
+            end,
+            SourceFormat,
+            Opts
+        ),
     case TargetFormat of
-        tabm -> TABM;
-        _ -> from_tabm(TABM, TargetFormat, Opts)
+        tabm -> restore_priv(TABM, OldPriv);
+        _ -> from_tabm(TABM, TargetFormat, OldPriv, Opts)
     end.
 
 to_tabm(Msg, SourceFormat, Opts) ->
@@ -93,9 +105,23 @@ to_tabm(Msg, SourceFormat, Opts) ->
         OtherTypeRes -> OtherTypeRes
     end.
 
-from_tabm(Msg, TargetFormat, Opts) ->
+from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
-    TargetCodecMod:to(Msg).
+    case TargetCodecMod:to(Msg) of
+        TypicalMsg when is_map(TypicalMsg) ->
+            restore_priv(TypicalMsg, OldPriv);
+        OtherTypeRes -> OtherTypeRes
+    end.
+
+%% @doc Add the existing `priv` sub-map back to a converted message, honoring
+%% any existing `priv` sub-map that may already be present.
+restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
+restore_priv(Msg, OldPriv) ->
+    MsgPriv = maps:get(<<"priv">>, Msg, #{}),
+    ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
+    NewPriv = hb_converge:set(MsgPriv, OldPriv, #{}),
+    ?event({new_priv, NewPriv}),
+    Msg#{ <<"priv">> => NewPriv }.
 
 %% @doc Return the ID of a message.
 id(Msg) -> id(Msg, unattested).
@@ -128,14 +154,23 @@ with_only_attested(Msg) when is_map(Msg) ->
                 ?event({enc, Enc}),
                 Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
                 ?event({dec, Dec}),
-                Attested = hb_message:attested(Dec),
-                ?event({attested, Attested}),
+                AttestedKeys = hb_message:attested(Dec) ++ hb_message:attested(Msg),
+                % Add the inline-body-key to the attested list if it is not
+                % already present.
+                HasInlineBodyKey = lists:member(<<"inline-body-key">>, AttestedKeys),
+                AttestedWithBodyKey =
+                    case HasInlineBodyKey andalso maps:get(<<"inline-body-key">>, Dec, not_found) of
+                        false -> AttestedKeys;
+                        not_found -> AttestedKeys;
+                        InlinedKey -> [InlinedKey | AttestedKeys]
+                    end,
+                ?event({attested, AttestedWithBodyKey}),
                 {ok, maps:with(
-                    [<<"attestations">>] ++ Attested,
+                    [<<"attestations">>] ++ AttestedWithBodyKey,
                     Msg
                 )}
-            catch _:_ ->
-                {error, {could_not_normalize, Msg}}
+            catch _:_:St ->
+                {error, {could_not_normalize, Msg, St}}
             end;
         false -> {ok, Msg}
     end;
@@ -143,17 +178,36 @@ with_only_attested(Msg) ->
     % If the message is not a map, it cannot be signed.
     {ok, Msg}.
 
+%% @doc Return the message with only the specified attestors attached.
+with_only_attestors(Msg, Attestors) when is_map(Msg) ->
+    OriginalAttestations = maps:get(<<"attestations">>, Msg, #{}),
+    NewAttestations = maps:with(Attestors, OriginalAttestations),
+    maps:put(<<"attestations">>, NewAttestations, Msg);
+with_only_attestors(Msg, _Attestors) ->
+    throw({unsupported_message_type, Msg}).
+
 %% @doc Sign a message with the given wallet.
 attest(Msg, WalletOrOpts) ->
-    attest(Msg, WalletOrOpts, <<"httpsig@1.0">>).
-attest(Msg, Opts, Format) when is_map(Opts) ->
-    attest(Msg, hb_opts:get(priv_wallet, no_viable_wallet, Opts), Format);
-attest(Msg, Wallet, Format) ->
+    attest(
+        Msg,
+        WalletOrOpts,
+        hb_opts:get(
+            attestation_device,
+            no_viable_attestation_device,
+            case is_map(WalletOrOpts) of
+                true -> WalletOrOpts;
+                false -> #{ priv_wallet => WalletOrOpts }
+            end
+        )
+    ).
+attest(Msg, Wallet, Format) when not is_map(Wallet) ->
+    attest(Msg, #{ priv_wallet => Wallet }, Format);
+attest(Msg, Opts, Format) ->
     {ok, Signed} =
         dev_message:attest(
             Msg,
             #{ <<"attestation-device">> => Format },
-            #{ priv_wallet => Wallet }
+            Opts
         ),
     Signed.
 
@@ -292,11 +346,15 @@ format(Map, Indent) when is_map(Map) ->
         ),
     % Put the path and device rows into the output at the _top_ of the map.
     PriorityKeys = [{<<"path">>, ValOrUndef(<<"path">>)}, {<<"device">>, ValOrUndef(<<"device">>)}],
+    % Add private keys to the output if they are not hidden. Opt takes 3 forms:
+    % 1. `false' -- never show priv
+    % 2. `if_present' -- show priv only if there are keys inside
+    % 2. `always' -- always show priv
     FooterKeys =
-        case {hb_opts:get(debug_hide_priv, false, #{}), maps:get(<<"priv">>, Map, #{})} of
-            {true, _} -> [];
-            {false, #{}} -> [];
-            {false, Priv} -> [{<<"!Private!">>, Priv}]
+        case {hb_opts:get(debug_show_priv, false, #{}), maps:get(<<"priv">>, Map, #{})} of
+            {false, _} -> [];
+            {if_present, #{}} -> [];
+            {_, Priv} -> [{<<"!Private!">>, Priv}]
         end,
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
@@ -334,7 +392,7 @@ format(Map, Indent) when is_map(Map) ->
                     lists:flatten([KeyStr]),
                     case Val of
                         NextMap when is_map(NextMap) ->
-                            hb_util:format_map(NextMap, Indent + 2);
+                            hb_util:format_maybe_multiline(NextMap, Indent + 2);
                         _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
                             Short = hb_util:short_id(Val),
                             io_lib:format("~s [*]", [Short]);
@@ -390,14 +448,14 @@ match(Map1, Map2, Mode) ->
         maps:keys(
             NormMap1 = minimize(
                 normalize(hb_converge:normalize_keys(Map1)),
-                [<<"content-type">>, <<"body-keys">>]
+                [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     Keys2 =
         maps:keys(
             NormMap2 = minimize(
                 normalize(hb_converge:normalize_keys(Map2)),
-                [<<"content-type">>, <<"body-keys">>]
+                [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     PrimaryKeysPresent =
@@ -576,6 +634,29 @@ single_layer_message_to_encoding_test(Codec) ->
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?assert(hb_message:match(Msg, Decoded)).
 
+signed_only_attested_data_field_test(Codec) ->
+    Msg = attest(#{ <<"data">> => <<"DATA">> }, hb:wallet(), Codec),
+    {ok, OnlyAttested} = with_only_attested(Msg),
+    ?event({only_attested, OnlyAttested}),
+    ?assert(verify(OnlyAttested)).
+
+signed_nested_data_key_test(Codec) ->
+    Msg = #{
+        <<"layer">> => <<"outer">>,
+        <<"body">> =>
+            attest(
+                #{
+                    <<"layer">> => <<"inner">>,
+                    <<"data">> => <<"DATA">>
+                },
+                #{ priv_wallet => hb:wallet() },
+                Codec
+            )
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?assert(hb_message:match(Msg, Decoded)).
+
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
 % key_encodings_to_tx_test() ->
@@ -667,6 +748,14 @@ simple_nested_message_test(Codec) ->
         )
     ).
 
+nested_empty_map_test(Codec) ->
+    Msg = #{ <<"body">> => #{ <<"empty-map-test">> => #{}}},
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
@@ -724,11 +813,10 @@ deeply_nested_message_with_only_content(Codec) ->
             _ -> <<"body">>
         end,
     Msg = #{
-         <<"depth1">> => <<"outer">>,
+        <<"depth1">> => <<"outer">>,
         MainBodyKey => #{
-            <<"depth2">> => <<"middle">>,
             MainBodyKey => #{
-                MainBodyKey => <<"DATA">>    
+                MainBodyKey => <<"depth2-body">>
             }
         }
     },
@@ -768,9 +856,9 @@ signed_message_encode_decode_verify_test(Codec) ->
         ),
     ?event({signed_msg, {explicit, SignedMsg}}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event(test, {verified, {explicit, SignedMsg}}),
+    ?event({verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(test, {msg_encoded_as_codec, {explicit, Encoded}}),
+    ?event({msg_encoded_as_codec, {explicit, Encoded}}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, {explicit, Decoded}}),
     ?assertEqual(true, verify(Decoded)),
@@ -913,6 +1001,17 @@ signed_deep_message_test(Codec) ->
         )
     ).
 
+signed_list_test(Codec) ->
+    Msg = #{ <<"key-with-list">> => [1.0, 2.0, 3.0] },
+    Signed = attest(Msg, hb:wallet(), Codec),
+    ?assert(verify(Signed)),
+    Encoded = convert(Signed, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(verify(Decoded)),
+    ?assert(match(Signed, Decoded)).
+
 unsigned_id_test(Codec) ->
     Msg = #{ <<"data">> => <<"TEST_DATA">> },
     Encoded = convert(Msg, Codec, #{}),
@@ -935,7 +1034,7 @@ unsigned_id_test(Codec) ->
 %         hb_util:id(SignedMsg, signed)
 %     ).
 
-message_with_simple_list_test(Codec) ->
+message_with_simple_embedded_list_test(Codec) ->
     Msg = #{ <<"a">> => [<<"1">>, <<"2">>, <<"3">>] },
     Encoded = convert(Msg, Codec, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
@@ -978,21 +1077,16 @@ hashpath_sign_verify_test(Codec) ->
             }
         },
     ?event({msg, {explicit, Msg}}),
-    {ok, SignedMsg} =
-        dev_message:attest(
-            Msg,
-            #{ <<"attestation-device">> => Codec },
-            #{ priv_wallet => hb:wallet() }
-        ),
+    SignedMsg = attest(Msg, hb:wallet(), Codec),
     ?event({signed_msg, {explicit, SignedMsg}}),
-    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => [<<"hmac-sha256">>]}, #{}),
-    ?event({verify_hmac_res, {explicit, Res}}),
-    ?assertEqual(true, verify(SignedMsg)),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"attestors">> => <<"all">>}, #{}),
+    ?event({verify_res, {explicit, Res}}),
+    ?assert(verify(SignedMsg)),
     ?event({verified, {explicit, SignedMsg}}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event(hmac, {encoded, Encoded}),
+    ?event({encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(hmac, {decoded, Decoded}),
+    ?event({decoded, Decoded}),
     ?assert(verify(Decoded)),
     ?assert(
         match(
@@ -1056,13 +1150,65 @@ deeply_nested_attested_keys_test() ->
         )
     ).
 
+signed_with_inner_signed_message_test(Codec) ->
+    Wallet = hb:wallet(),
+    Msg = attest(#{
+        <<"a">> => 1,
+        <<"inner">> =>
+            maps:merge(
+                attest(
+                    #{
+                        <<"c">> => <<"abc">>,
+                        <<"e">> => 5
+                    },
+                    Wallet,
+                    Codec
+                ),
+                % Unattested keys that should be ripped out of the inner message
+                % by `with_only_attested`. These should still be present in the
+                % `with_only_attested` outer message. For now, only `httpsig@1.0`
+                % supports stripping non-attested keys.
+                case Codec of
+                    <<"httpsig@1.0">> ->
+                        #{
+                            <<"f">> => 6,
+                            <<"g">> => 7
+                        };
+                    _ -> #{}
+                end
+            )
+    }, Wallet, Codec),
+    ?event({initial_msg, Msg}),
+    % 1. Verify the outer message without changes.
+    ?assert(verify(Msg)),
+    {ok, AttestedInner} = with_only_attested(maps:get(<<"inner">>, Msg)),
+    ?event({attested_inner, AttestedInner}),
+    ?event({inner_attestors, hb_message:signers(AttestedInner)}),
+    % 2. Verify the inner message without changes.
+    ?assert(verify(AttestedInner, signers)),
+    % 3. Convert the message to the format and back.
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    %?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    % 4. Verify the outer message after decode.
+    ?assert(match(Msg, Decoded)),
+    ?assert(verify(Decoded)),
+    % 5. Verify the inner message from the converted message, applying
+    % `with_only_attested` first.
+    InnerDecoded = maps:get(<<"inner">>, Decoded),
+    ?event({inner_decoded, InnerDecoded}),
+    % Applying `with_only_attested` should verify the inner message.
+    {ok, AttestedInnerOnly} = with_only_attested(InnerDecoded),
+    ?event({attested_inner_only, AttestedInnerOnly}),
+    ?assert(verify(AttestedInnerOnly, signers)).
+
 large_body_attested_keys_test(Codec) ->
     case Codec of
-        <<"ans104@1.0">> ->
-            skip;
-        _ ->
+        <<"httpsig@1.0">> ->
             Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> } },
-            Encoded = convert(Msg, <<"httpsig@1.0">>, #{}),
+            Encoded = convert(Msg, Codec, #{}),
             ?event({encoded, Encoded}),
             Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
             ?event({decoded, Decoded}),
@@ -1073,13 +1219,35 @@ large_body_attested_keys_test(Codec) ->
             ?assert(lists:member(<<"b">>, AttestedKeys)),
             ?assert(lists:member(<<"c">>, AttestedKeys)),
             MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-            ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter)))
+            ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter)));
+        _ ->
+            skip
     end.
+
+priv_survives_conversion_test(<<"ans104@1.0">>) -> skip;
+priv_survives_conversion_test(<<"json@1.0">>) -> skip;
+priv_survives_conversion_test(Codec) ->
+    Msg = #{
+        <<"data">> => <<"TEST_DATA">>,
+        <<"priv">> => Priv = #{ <<"test_key">> => <<"TEST_VALUE">> }
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)),
+    ?assertEqual(Priv, maps:get(<<"priv">>, Decoded, #{})).
 
 %%% Test helpers
 
 test_codecs() ->
-    [<<"structured@1.0">>, <<"httpsig@1.0">>, <<"flat@1.0">>, <<"ans104@1.0">>].
+    [
+        <<"structured@1.0">>,
+        <<"httpsig@1.0">>,
+        <<"flat@1.0">>,
+        <<"ans104@1.0">>,
+        <<"json@1.0">>
+    ].
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -1112,6 +1280,7 @@ message_suite_test_() ->
         {"nested message with large keys and content test",
             fun nested_message_with_large_keys_and_content_test/1},
         {"simple nested message test", fun simple_nested_message_test/1},
+        {"nested empty map test", fun nested_empty_map_test/1},
         {"nested message with large content test",
             fun nested_message_with_large_content_test/1},
         {"deeply nested message with content test",
@@ -1126,16 +1295,25 @@ message_suite_test_() ->
         {"nested structured fields test", fun nested_structured_fields_test/1},
         {"nested message with large keys test",
             fun nested_message_with_large_keys_test/1},
-        {"message with simple list test", fun message_with_simple_list_test/1},
+        {"message with simple embedded list test",
+            fun message_with_simple_embedded_list_test/1},
         {"empty string in tag test", fun empty_string_in_tag_test/1},
         {"signed item to message and back test",
             fun signed_message_encode_decode_verify_test/1},
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
+        {"nested data key test", fun signed_nested_data_key_test/1},
+        {"signed only attested data field test", fun signed_only_attested_data_field_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
         {"attested keys test", fun attested_keys_test/1},
-        {"large body attested keys test", fun large_body_attested_keys_test/1}
+        {"large body attested keys test", fun large_body_attested_keys_test/1},
+        {"signed list http response test", fun signed_list_test/1},
+        {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
+        {"priv survives conversion test", fun priv_survives_conversion_test/1}
     ]).
+
+run_test() ->
+    hashpath_sign_verify_test(<<"ans104@1.0">>).

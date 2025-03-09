@@ -99,7 +99,18 @@ hashpath(RawMsg1, Opts) ->
     case hb_private:from_message(Msg1) of
         #{ <<"hashpath">> := HP } -> HP;
         _ ->
-            try hb_util:ok(dev_message:id(Msg1, #{ <<"attestors">> => <<"all">> }, Opts))
+            % Note: We do not use `hb_message:id' here because it will call
+            % hb_converge:resolve, which will call `hashpath' recursively.
+            try
+                hb_util:human_id(
+                    hb_util:ok(
+                        dev_message:id(
+                            Msg1,
+                            #{ <<"attestors">> => <<"all">> },
+                            Opts
+                        )
+                    )
+                )
             catch
                 _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}, _ST})
             end
@@ -126,9 +137,10 @@ hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
             hashpath(Msg1, hb_util:human_id(Msg2ID), HashpathAlg, Opts)
     end;
 hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, _Opts) ->
+    ?event(test, {hashpath, {msg1hp, {explicit, Msg1Hashpath}}, {msg2id, {explicit, HumanMsg2ID}}}),
     HP = 
         case term_to_path_parts(Msg1Hashpath) of
-            [_] -> 
+            [_] ->
                 << Msg1Hashpath/binary, "/", HumanMsg2ID/binary >>;
             [Prev1, Prev2] ->
                 % Calculate the new base of the hashpath. We check whether the key is

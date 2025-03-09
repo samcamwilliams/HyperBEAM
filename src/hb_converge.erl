@@ -139,16 +139,24 @@ resolve(Msg1, Msg2, Opts) ->
 %% A `resolve_many' call with only a single ID will attempt to read the message
 %% directly from the store. No execution is performed.
 resolve_many([ID], Opts) when ?IS_ID(ID) ->
+    % Note: This case is necessary to place specifically here for two reasons:
+    % 1. It is not in `do_resolve_many' because we need to handle the case
+    %    where a result from a prior invocation is an ID itself. We should not
+    %    attempt to resolve such IDs further.
+    % 2. The main converge core logic looks for linkages between message input
+    %    pairs and outputs. With only a single ID, there is not a valid pairing
+    %    to use in looking up a cached result.
     ?event(converge_core, {stage, na, resolve_directly_to_id, ID, {opts, Opts}}, Opts),
-    case hb_cache:read(ID, Opts) of
-        {ok, Msg3} ->
-            ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
-            {ok, Msg3};
-        {error, not_found} ->
-            {error, not_found}
+    try {ok, ensure_loaded(ID, Opts)}
+    catch _:_:_ -> {error, not_found}
     end;
+resolve_many({as, DevID, Msg}, Opts) ->
+    subresolve(#{}, DevID, Msg, Opts);
 resolve_many(MsgList, Opts) ->
-    do_resolve_many(MsgList, Opts).
+    ?event(converge_req, {resolve_many, MsgList}, Opts),
+    Res = do_resolve_many(MsgList, Opts),
+    ?event(converge_req, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
+    Res.
 do_resolve_many([Msg3], _Opts) ->
     ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
     {ok, Msg3};
@@ -171,6 +179,51 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
             Res
     end.
 
+resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Msg2, Opts) when ?IS_ID(ID) ->
+    % If the first message is an `as' with an ID, we should load the message and
+    % apply the non-path elements of the sub-request to it.
+    ?event(converge_core, {stage, 1, subresolving_with_load, {dev, DevID}, {id, ID}}, Opts),
+    RemMsg1 = maps:without([<<"path">>], Raw),
+    ?event(subresolution, {loading_message, {id, ID}, {params, RemMsg1}}, Opts),
+    Msg1b = ensure_loaded(ID, Opts),
+    ?event(subresolution, {loaded_message, {msg, Msg1b}}, Opts),
+    Msg1c = maps:merge(Msg1b, RemMsg1),
+    ?event(subresolution, {merged_message, {msg, Msg1c}}, Opts),
+    Msg1d = set(Msg1c, <<"device">>, DevID, Opts),
+    ?event(subresolution, {loaded_parameterized_message, {msg, Msg1d}}, Opts),
+    resolve_stage(1, Msg1d, Msg2, Opts);
+resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
+    % Set the device of the message to the specified one and resolve the sub-path.
+    % As this is the first message, we will then continue to execute the request
+    % on the result.
+    ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}}, Opts),
+    case subresolve(#{}, DevID, SubReq, Opts) of
+        {ok, SubRes} ->
+            % The subresolution has returned a new message. Continue with it.
+            ?event(subresolution,
+                {continuing_with_subresolved_message, {msg1, SubRes}},
+                Opts
+            ),
+            resolve_stage(1, SubRes, Msg2, Opts);
+        OtherRes ->
+            % The subresolution has returned an error. Return it.
+            ?event(subresolution,
+                {subresolution_error, {msg1, Raw}, {res, OtherRes}},
+                Opts
+            ),
+            OtherRes
+    end;
+resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} }, Opts) ->
+    % Set the device to the specified `DevID' and resolve the message. Merging
+    % the `Msg2Inner' into the `Msg2Outer' message first. We return the result
+    % of the sub-resolution directly.
+    ?event(converge_core, {stage, 1, subresolving_from_request, {dev, DevID}}, Opts),
+    Msg2 =
+        maps:merge(
+            Msg2Outer,
+            if is_map(Msg2Inner) -> Msg2Inner; true -> #{ <<"path">> => Msg2Inner } end
+        ),
+    subresolve(RawMsg1, DevID, Msg2, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
     % Normalize lists to numbered maps (base=1) if necessary.
     ?event(converge_core, {stage, 1, list_normalize}, Opts),
@@ -182,25 +235,6 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
 resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
     ?event(converge_core, {stage, 1, path_normalize}),
     resolve_stage(1, Msg1, #{ <<"path">> => NonMapMsg2 }, Opts);
-resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
-    % Set the device to the specified `DevID' and resolve the message.
-    ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
-    Msg1b = set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts)),
-    ?event(converge_debug, {message_as, Msg1b, {executing_path, Msg2}}, Opts),
-    % Recurse with the modified message. The hashpath will have been updated
-    % to include the device ID, if requested. Simply return if the path is empty.
-    case hb_path:from_message(request, Msg2) of
-        undefined -> {ok, Msg1b};
-        _ -> 
-            ?event(converge_debug,
-                {resolve_as_subpath,
-                    {msg1, Msg1b},
-                    {msg2, Msg2},
-                    {opts, Opts}},
-                Opts
-            ),
-            resolve(Msg1b, Msg2, Opts)
-    end;
 resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
@@ -399,8 +433,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                     {exec_name, ExecName},
                     {msg1, Msg1},
                     {msg2, Msg2},
-                    {msg3, MsgRes},
-                    {opts, Opts}
+                    {msg3, MsgRes}
                 },
                 Opts
             ),
@@ -509,6 +542,64 @@ resolve_stage(10, _Msg1, _Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
 resolve_stage(10, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
     OtherRes.
+
+%% @doc Execute a sub-resolution.
+subresolve(RawMsg1, DevID, ReqPath, Opts) when is_binary(ReqPath) ->
+    % If the request is a binary, we assume that it is a path.
+    subresolve(RawMsg1, DevID, #{ <<"path">> => ReqPath }, Opts);
+subresolve(RawMsg1, DevID, Req, Opts) ->
+    % First, ensure that the message is loaded from the cache.
+    Msg1 = ensure_loaded(RawMsg1, Opts),
+    ?event(subresolution,
+        {subresolving, {msg1, Msg1}, {dev, DevID}, {req, Req}},
+        Opts
+    ),
+    % Next, set the device ID if it is given.
+    Msg1b =
+        case DevID of
+            undefined -> Msg1;
+            _ -> set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts))
+        end,
+    % If there is no path but there are elements to the request, we set these on
+    % the base message. If there is a path, we do not modify the base message 
+    % and instead apply the request message directly.
+    case hb_path:from_message(request, Req) of
+        undefined ->
+            Msg1c =
+                case map_size(maps:without([<<"path">>], Req)) of
+                    0 -> Msg1b;
+                    _ ->
+                        set(Msg1b, maps:without([<<"path">>], Req), Opts#{ force_message => false })
+                end,
+            ?event(subresolution,
+                {subresolve_modified_base, Msg1c},
+                Opts
+            ),
+            {ok, Msg1c};
+        Path ->
+            ?event(subresolution,
+                {exec_subrequest_on_base, {mod_base, Msg1b}, {req, Path}},
+                Opts
+            ),
+            Res = resolve(Msg1b, Req, Opts),
+            ?event(subresolution,
+                {subresolved_with_new_device, {res, Res}},
+                Opts
+            ),
+            Res
+    end.
+
+%% @doc Ensure that the message is loaded from the cache if it is an ID. If is
+%% not loadable or already present, we raise an error.
+ensure_loaded(Msg, Opts) when ?IS_ID(Msg) ->
+    case hb_cache:read(Msg, Opts) of
+        {ok, LoadedMsg} ->
+            LoadedMsg;
+        not_found ->
+            throw({necessary_message_not_found, {msg, Msg}})
+    end;
+ensure_loaded(Msg, _Opts) ->
+    Msg.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
@@ -642,7 +733,23 @@ get_first([{Base, Path}|Msgs], Default, Opts) ->
 keys(Msg) -> keys(Msg, #{}).
 keys(Msg, Opts) -> keys(Msg, Opts, keep).
 keys(Msg, Opts, keep) ->
-    try lists:map(fun normalize_key/1, get(<<"keys">>, Msg, Opts))
+    % There is quite a lot of Converge-specific machinery here. We:
+    % 1. `get' the keys from the message, via Converge in order to trigger the
+    %    `keys' function on its device.
+    % 2. Ensure that the result is normalized to a message (not just a list)
+    %    with `normalize_keys'.
+    % 3. Now we have a map of the original keys, so we can use `maps:values' to
+    %    get a list of them.
+    % 4. Normalize each of those keys in turn.
+    try
+        lists:map(
+            fun normalize_key/1,
+            maps:values(
+                normalize_keys(
+                    get(<<"keys">>, Msg, Opts)
+                )
+            )
+        )
     catch
         A:B:C ->
             throw({cannot_get_keys, {msg, Msg}, {opts, Opts}, {error, {A, B}}})
@@ -1073,9 +1180,12 @@ load_device(ID, Opts) ->
             true -> ID;
             false -> normalize_key(ID)
         end,
-    case maps:get(NormKey, hb_opts:get(preloaded_devices, #{}, Opts), unsupported) of
-        unsupported -> {error, module_not_admissable};
-        Mod -> load_device(Mod, Opts)
+    case lists:search(
+        fun (#{ <<"name">> := Name }) -> Name =:= NormKey end,
+        hb_opts:get(preloaded_devices, [], Opts)
+    ) of
+        false -> {error, module_not_admissable};
+        {value, #{ <<"module">> := Mod }} -> load_device(Mod, Opts)
     end.
 
 %% @doc Verify that a device is compatible with the current machine.

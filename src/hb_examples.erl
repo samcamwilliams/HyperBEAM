@@ -110,7 +110,7 @@ paid_wasm_test() ->
             ClientWallet
         ),
     {ok, Res2} = hb_http:get(HostNode, ClientMessage2, #{}),
-    ?assertMatch(20, hb_converge:get(<<"body">>, Res2, #{})).
+    ?assertMatch(40, hb_converge:get(<<"body">>, Res2, #{})).
 
 create_schedule_aos2_test_disabled() ->
     % The legacy process format, according to the ao.tn.1 spec:

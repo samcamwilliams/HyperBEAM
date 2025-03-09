@@ -17,7 +17,7 @@
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
 %% other messages are routed to the `handle_converge/2' function.
 handle(NodeMsg, RawRequest) ->
-    ?event({singleton_request, RawRequest}),
+    ?event({singleton_tabm_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
     ?event(http_short, {request, hb_converge:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
@@ -87,6 +87,8 @@ add_dynamic_keys(NodeMsg) ->
             })
     end.
 
+%% @doc Validate that the request is signed by the operator of the node, then
+%% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
     {ok, RequestSigners} = dev_message:attestors(Request),
     Operator =
@@ -100,10 +102,8 @@ update_node_message(Request, NodeMsg) ->
         ),
     EncOperator =
         case Operator of
-            unclaimed ->
-                unclaimed;
-            Val ->
-                hb_util:human_id(Val)
+            unclaimed -> unclaimed;
+            NativeAddress -> hb_util:human_id(NativeAddress)
         end,
     case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
         false ->
@@ -111,10 +111,10 @@ update_node_message(Request, NodeMsg) ->
             embed_status({error, <<"Unauthorized">>});
         true ->
             ?event({set_node_message_success, Request}),
+            MergedOpts = hb_converge:set(NodeMsg, Request, NodeMsg),
             hb_http_server:set_opts(
-                Request#{
-                    http_server =>
-                        hb_opts:get(http_server, no_server, NodeMsg)
+                MergedOpts#{
+                    http_server => hb_opts:get(http_server, no_server, NodeMsg)
                 }
             ),
             embed_status({ok, <<"OK">>})
@@ -240,13 +240,7 @@ maybe_sign(Res, NodeMsg) ->
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
             case hb_message:signers(Res) of
-                [] ->
-                    DefaultCodec = hb_opts:get(default_codec, <<"httpsig@1.0">>, NodeMsg),
-                    hb_message:attest(
-                        Res,
-                        NodeMsg,
-                        hb_converge:get(<<"codec-device">>, Res, DefaultCodec, NodeMsg)
-                    );
+                [] -> hb_message:attest(Res, NodeMsg);
                 _ -> Res
             end;
         false -> Res
@@ -313,7 +307,7 @@ authorized_set_node_msg_succeeds_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
         #{
-            operator => ar_wallet:to_address(Owner),
+            operator => hb_util:human_id(ar_wallet:to_address(Owner)),
             test_config_item => <<"test">>
         }
     ),
@@ -401,17 +395,16 @@ claim_node_test() ->
             hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
-                    <<"operator">> => Address
+                    <<"operator">> => hb_util:human_id(Address)
                 },
                 Owner
             ),
             #{}
         ),
     ?event({res, SetRes}),
-    timer:sleep(100),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(Address, hb_converge:get(<<"operator">>, Res, #{})),
+    ?assertEqual(hb_util:human_id(Address), hb_converge:get(<<"operator">>, Res, #{})),
     {ok, SetRes2} =
         hb_http:post(
             Node,

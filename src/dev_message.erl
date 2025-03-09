@@ -66,11 +66,28 @@ id(Base, Req, NodeOpts) ->
                         true -> maps:keys(RawAttestorIDs);
                         false -> RawAttestorIDs
                     end,
+                BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
                 % Add attestations with only the keys that are requested.
                 BaseWithAttestations = 
                     Base#{
                         <<"attestations">> =>
-                            maps:with(KeepIDs, maps:get(<<"attestations">>, Base, #{}))
+                            maps:from_list(
+                                lists:map(
+                                    fun(Att) ->
+                                        try {Att, maps:get(Att, BaseAttestations)}
+                                        catch _:_ ->
+                                            throw(
+                                                {
+                                                    attestor_not_found,
+                                                    Att,
+                                                    {attestations, BaseAttestations}
+                                                }
+                                            )
+                                        end
+                                    end,
+                                    KeepIDs
+                                )
+                            )
                     },
                 % Add the hashpath to the message if it is present.
                 case Base of
@@ -177,7 +194,12 @@ attestors(Base, _, _NodeOpts) ->
 attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
-    AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
+    AttDev =
+        case maps:get(<<"attestation-device">>, Req, not_specified) of
+            not_specified ->
+                hb_opts:get(attestation_device, no_viable_attestation_device, Opts);
+            Dev -> Dev
+        end,
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.
@@ -521,3 +543,6 @@ verify_test() ->
             #{ hashpath => ignore }
         )
     ).
+
+run_test() ->
+    hb_message:deep_multisignature_test().

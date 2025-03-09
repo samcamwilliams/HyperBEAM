@@ -361,7 +361,6 @@ open_connection(#{ peer := Peer }, Opts) ->
 
 parse_peer(Peer, Opts) ->
     Parsed = uri_string:parse(Peer),
-    ?event(debug, {parsed, Parsed}),
     case Parsed of
         #{ host := Host, port := Port } ->
             {hb_util:list(Host), Port};
@@ -434,7 +433,7 @@ request(PID, Args, Opts) ->
 	Response.
 
 await_response(Args, Opts) ->
-	#{ pid := PID, stream_ref := Ref, timer := Timer, start := Start, limit := Limit,
+	#{ pid := PID, stream_ref := Ref, timer := Timer, limit := Limit,
 			counter := Counter, acc := Acc, method := Method, path := Path } = Args,
 	case gun:await(PID, Ref, inet:timeout(Timer)) of
 		{response, fin, Status, Headers} ->

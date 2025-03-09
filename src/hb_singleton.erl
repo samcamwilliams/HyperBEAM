@@ -182,6 +182,7 @@ path_messages(RawBin) when is_binary(RawBin) ->
 %% @doc Normalize the base path.
 normalize_base([]) -> [];
 normalize_base([First|Rest]) when ?IS_ID(First) -> [First|Rest];
+normalize_base([{as, DevID, First}|Rest]) -> [{as, DevID, First}|Rest];
 normalize_base(Rest) -> [#{}|Rest].
 
 %% @doc Split the path into segments, filtering out empty segments and
@@ -278,6 +279,15 @@ build_messages(Msgs, ScopedModifications) ->
     do_build(1, Msgs, ScopedModifications).
 
 do_build(_, [], _ScopedKeys) -> [];
+do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys) ->
+    ScopedKey = lists:nth(I, ScopedKeys),
+    StepMsg = hb_message:convert(
+        Merged = maps:merge(Msg, ScopedKey),
+        <<"structured@1.0">>,
+        #{ topic => converge_internal }
+    ),
+    ?event(debug, {merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
+    [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys)];
 do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
     [Msg | do_build(I + 1, Rest, ScopedKeys)];
 do_build(I, [Msg | Rest], ScopedKeys) ->

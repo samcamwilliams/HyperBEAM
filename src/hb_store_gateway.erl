@@ -127,7 +127,6 @@ specific_route_test() ->
 external_http_access_test() ->
     Node = hb_http_server:start_node(
         #{
-            port => 10001,
             store => [{hb_store_fs, #{ prefix => "test-cache" }}, {hb_store_gateway, #{}}],
             http_extra_opts => #{ force_message => true, cache_control => [<<"always">>] }
         }

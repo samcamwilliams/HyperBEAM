@@ -1,10 +1,6 @@
--module(dev_codec_structured_conv).
--export([parse_dictionary/1, parse_item/1, parse_list/1, parse_bare_item/1]).
--export([dictionary/1, item/1, list/1, bare_item/1, from_bare_item/1]).
--export([to_dictionary/1, to_list/1, to_item/1, to_item/2]).
--include_lib("eunit/include/eunit.hrl").
--include("include/hb_http.hrl").
-
+%%% @doc A module for parsing and converting between Erlang and HTTP Structured
+%%% Fields, as described in RFC-9651.
+%%% 
 %%% The mapping between Erlang and structured headers types is as follow:
 %%%
 %%% List: list()
@@ -20,6 +16,12 @@
 %%% Token: {token, binary()}
 %%% Byte sequence: {binary, binary()}
 %%% Boolean: boolean()
+-module(hb_structured_fields).
+-export([parse_dictionary/1, parse_item/1, parse_list/1, parse_bare_item/1]).
+-export([dictionary/1, item/1, list/1, bare_item/1, from_bare_item/1]).
+-export([to_dictionary/1, to_list/1, to_item/1, to_item/2]).
+-include_lib("eunit/include/eunit.hrl").
+-include("include/hb_http.hrl").
 
 -type sh_list() :: [sh_item() | sh_inner_list()].
 -type sh_inner_list() :: {list, [sh_item()], sh_params()}.
@@ -42,9 +44,7 @@
         (C =:= $z)
 ).
 
-%% Mapping
-
-% Dictionary
+%% @doc Convert a map to a dictionary.
 to_dictionary(Map) when is_map(Map) ->
    to_dictionary(maps:to_list(Map));
 to_dictionary(Pairs) when is_list(Pairs) ->
@@ -60,7 +60,7 @@ to_dictionary(Dict, [{Name, Value} | Rest]) ->
         E -> E
     end.
 
-% Item
+%% @doc Convert an item to a dictionary.
 to_item({item, Kind, Params}) when is_list(Params) ->
     {ok, {item, to_bare_item(Kind), [to_param(Pair) || Pair <- Params] }};
 to_item(Item) ->
@@ -68,7 +68,7 @@ to_item(Item) ->
 to_item(Item, Params) when is_list(Params) ->
     to_item({ item, to_bare_item(Item), Params}).
 
-% List
+%% @doc Convert a list to an SF term.
 to_list(List) when is_list(List) ->
     to_list([], List).
 to_list(Acc, []) ->
@@ -80,15 +80,13 @@ to_list(Acc, [ItemOrInner | Rest]) ->
         E -> E
     end.
 
-% Inner List
+%% @doc Convert an inner list to an SF term.
 to_inner_list({list, Inner, Params}) when is_list(Inner) andalso is_list(Params) ->
     {ok, {list, [to_inner_item(I) || I <-- Inner], [to_param(Pair) || Pair <- Params]}};
 to_inner_list(Inner) ->
     to_inner_list(Inner, []).
-
 to_inner_list(Inner, Params) when is_list(Inner) andalso is_list(Params) ->
     to_inner_list([], Inner, Params).
-
 to_inner_list(Inner, [], Params) when is_list(Params) ->
     {ok, {list, lists:reverse(Inner), [to_param(Param) || Param <- Params]}};
 to_inner_list(_List, [Item | _Rest], _Params) when is_list(Item) orelse is_map(Item) ->
@@ -99,6 +97,7 @@ to_inner_list(Inner, [Item | Rest], Params) ->
         E -> E
     end.
 
+%% @doc Convert an Erlang term to an SF `item' or `inner_list'.
 to_item_or_inner_list(ItemOrInner) ->
     case ItemOrInner of
         Map when is_map(Map) -> {too_deep, Map};
@@ -108,6 +107,7 @@ to_item_or_inner_list(ItemOrInner) ->
         Inner when is_list(Inner) -> to_inner_list(Inner)
     end.
 
+%% @doc Convert an Erlang term to an SF `item'.
 to_inner_item(Item) when is_list(Item) ->
     {too_deep, Item};
 to_inner_item(Item) ->
@@ -116,12 +116,12 @@ to_inner_item(Item) ->
         E -> E
     end.
 
-% Parameters
+%% @doc Convert an Erlang term to an SF `parameter'.
 to_param({Name, Value}) ->
     NormalizedName = key_to_binary(Name),
     {NormalizedName, to_bare_item(Value)}.
 
-% Bare Items
+%% @doc Convert an Erlang term to an SF `bare_item'.
 to_bare_item(BareItem) ->
      case BareItem of
         % Assume tuple is already parsed
@@ -138,6 +138,7 @@ to_bare_item(BareItem) ->
         S when is_binary(S) or is_list(S) -> {string, iolist_to_binary(S)}
     end.
 
+%% @doc Convert an SF `bare_item' to an Erlang term.
 from_bare_item(BareItem) ->
     case BareItem of
         I when is_integer(I) -> I;
@@ -155,15 +156,15 @@ from_bare_item(BareItem) ->
         {binary, B} -> B
     end.
 
+%% @doc Convert an Erlang term to a binary key.
 key_to_binary(Key) when is_atom(Key) -> atom_to_binary(Key);
 key_to_binary(Key) -> iolist_to_binary(Key).
 
-%% Parsing.
-
+%% @doc Parse a binary SF dictionary.
 -spec parse_dictionary(binary()) -> sh_dictionary().
 parse_dictionary(<<>>) ->
     [];
-parse_dictionary(<<C, R/bits>>) when ?IS_LC_ALPHA(C) or (C =:= $*) ->
+parse_dictionary(<<C, R/bits>>) when ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or (C =:= $*) ->
     parse_dict_key(R, [], <<C>>).
 
 parse_dict_key(<<$=, $(, R0/bits>>, Acc, K) ->
@@ -173,9 +174,8 @@ parse_dict_key(<<$=, R0/bits>>, Acc, K) ->
     {Item, R} = parse_item1(R0),
     parse_dict_before_sep(R, lists:keystore(K, 1, Acc, {K, Item}));
 parse_dict_key(<<C, R/bits>>, Acc, K) when
-    ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or
-        (C =:= $_) or (C =:= $-) or (C =:= $.) or (C =:= $*)
-->
+        ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or
+        (C =:= $_) or (C =:= $-) or (C =:= $.) or (C =:= $*) ->
     parse_dict_key(R, Acc, <<K/binary, C>>);
 parse_dict_key(<<$;, R0/bits>>, Acc, K) ->
     {Params, R} = parse_before_param(R0, []),
@@ -183,6 +183,7 @@ parse_dict_key(<<$;, R0/bits>>, Acc, K) ->
 parse_dict_key(R, Acc, K) ->
     parse_dict_before_sep(R, lists:keystore(K, 1, Acc, {K, {item, true, []}})).
 
+%% @doc Parse a binary SF dictionary before a separator.
 parse_dict_before_sep(<<$\s, R/bits>>, Acc) ->
     parse_dict_before_sep(R, Acc);
 parse_dict_before_sep(<<$\t, R/bits>>, Acc) ->
@@ -192,13 +193,15 @@ parse_dict_before_sep(<<C, R/bits>>, Acc) when C =:= $, ->
 parse_dict_before_sep(<<>>, Acc) ->
     Acc.
 
+%% @doc Parse a binary SF dictionary before a member.
 parse_dict_before_member(<<$\s, R/bits>>, Acc) ->
     parse_dict_before_member(R, Acc);
 parse_dict_before_member(<<$\t, R/bits>>, Acc) ->
     parse_dict_before_member(R, Acc);
-parse_dict_before_member(<<C, R/bits>>, Acc) when ?IS_LC_ALPHA(C) or (C =:= $*) ->
+parse_dict_before_member(<<C, R/bits>>, Acc) when ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or (C =:= $*) ->
     parse_dict_key(R, Acc, <<C>>).
 
+%% @doc Parse a binary SF item to an SF `item'.
 -spec parse_item(binary()) -> sh_item().
 parse_item(Bin) ->
     {Item, <<>>} = parse_item1(Bin),
@@ -213,12 +216,14 @@ parse_item1(Bin) ->
             {{item, Item, []}, Rest}
     end.
 
+%% @doc Parse a binary SF list.
 -spec parse_list(binary()) -> sh_list().
 parse_list(<<>>) ->
     [];
 parse_list(Bin) ->
     parse_list_before_member(Bin, []).
 
+%% @doc Parse a binary SF list before a member.
 parse_list_member(<<$(, R0/bits>>, Acc) ->
     {Item, R} = parse_inner_list(R0, []),
     parse_list_before_sep(R, [Item | Acc]);
@@ -226,6 +231,7 @@ parse_list_member(R0, Acc) ->
     {Item, R} = parse_item1(R0),
     parse_list_before_sep(R, [Item | Acc]).
 
+%% @doc Parse a binary SF list before a separator.
 parse_list_before_sep(<<$\s, R/bits>>, Acc) ->
     parse_list_before_sep(R, Acc);
 parse_list_before_sep(<<$\t, R/bits>>, Acc) ->
@@ -235,6 +241,7 @@ parse_list_before_sep(<<$,, R/bits>>, Acc) ->
 parse_list_before_sep(<<>>, Acc) ->
     lists:reverse(Acc).
 
+%% @doc Parse a binary SF list before a member.
 parse_list_before_member(<<$\s, R/bits>>, Acc) ->
     parse_list_before_member(R, Acc);
 parse_list_before_member(<<$\t, R/bits>>, Acc) ->
@@ -242,7 +249,7 @@ parse_list_before_member(<<$\t, R/bits>>, Acc) ->
 parse_list_before_member(R, Acc) ->
     parse_list_member(R, Acc).
 
-%% Internal.
+%%% Internal functions.
 
 parse_inner_list(<<$\s, R/bits>>, Acc) ->
     parse_inner_list(R, Acc);
@@ -272,25 +279,31 @@ parse_param(<<$=, R0/bits>>, Acc, K) ->
     end;
 parse_param(<<C, R/bits>>, Acc, K) when
     ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or
-        (C =:= $_) or (C =:= $-) or (C =:= $.) or (C =:= $*)
-->
+        (C =:= $_) or (C =:= $-) or (C =:= $.) or (C =:= $*) ->
     parse_param(R, Acc, <<K/binary, C>>);
 parse_param(R, Acc, K) ->
     {lists:keystore(K, 1, Acc, {K, true}), R}.
 
-%% Integer or decimal.
+%% @doc Parse an integer or decimal.
 parse_bare_item(<<$-, R/bits>>) -> parse_number(R, 0, <<$->>);
 parse_bare_item(<<C, R/bits>>) when ?IS_DIGIT(C) -> parse_number(R, 1, <<C>>);
-%% String.
-parse_bare_item(<<$", R/bits>>) -> parse_string(R, <<>>);
-%% Token.
-parse_bare_item(<<C, R/bits>>) when ?IS_ALPHA(C) or (C =:= $*) -> parse_token(R, <<C>>);
-%% Byte sequence.
-parse_bare_item(<<$:, R/bits>>) -> parse_binary(R, <<>>);
-%% Boolean.
-parse_bare_item(<<"?0", R/bits>>) -> {false, R};
-parse_bare_item(<<"?1", R/bits>>) -> {true, R}.
+parse_bare_item(<<$", R/bits>>) ->
+    % Parse a string.
+    parse_string(R, <<>>);
+parse_bare_item(<<C, R/bits>>) when ?IS_ALPHA(C) or (C =:= $*) ->
+    % Parse a token.
+    parse_token(R, <<C>>);
+parse_bare_item(<<$:, R/bits>>) ->
+    % Parse a byte sequence.
+    parse_binary(R, <<>>);
+parse_bare_item(<<"?0", R/bits>>) ->
+    % Parse a boolean false.
+    {false, R};
+parse_bare_item(<<"?1", R/bits>>) ->
+    % Parse a boolean true.
+    {true, R}.
 
+%% @doc Parse an integer or decimal binary.
 parse_number(<<C, R/bits>>, L, Acc) when ?IS_DIGIT(C) ->
     parse_number(R, L + 1, <<Acc/binary, C>>);
 parse_number(<<$., R/bits>>, L, Acc) ->
@@ -298,6 +311,7 @@ parse_number(<<$., R/bits>>, L, Acc) ->
 parse_number(R, L, Acc) when L =< 15 ->
     {binary_to_integer(Acc), R}.
 
+%% @doc Parse a decimal binary.
 parse_decimal(<<C, R/bits>>, L1, L2, IntAcc, FracAcc) when ?IS_DIGIT(C) ->
     parse_decimal(R, L1, L2 + 1, IntAcc, <<FracAcc/binary, C>>);
 parse_decimal(R, L1, L2, IntAcc, FracAcc0) when L1 =< 12, L2 >= 1, L2 =< 3 ->
@@ -329,6 +343,7 @@ parse_decimal(R, L1, L2, IntAcc, FracAcc0) when L1 =< 12, L2 >= 1, L2 =< 3 ->
         end,
     {{decimal, {Int * Mul + Frac, -byte_size(FracAcc)}}, R}.
 
+%% @doc Parse a string binary.
 parse_string(<<$\\, $", R/bits>>, Acc) ->
     parse_string(R, <<Acc/binary, $">>);
 parse_string(<<$\\, $\\, R/bits>>, Acc) ->
@@ -336,17 +351,18 @@ parse_string(<<$\\, $\\, R/bits>>, Acc) ->
 parse_string(<<$", R/bits>>, Acc) ->
     {{string, Acc}, R};
 parse_string(<<C, R/bits>>, Acc) when
-    C >= 16#20, C =< 16#21;
-    C >= 16#23, C =< 16#5b;
-    C >= 16#5d, C =< 16#7e
-->
+        C >= 16#20, C =< 16#21;
+        C >= 16#23, C =< 16#5b;
+        C >= 16#5d, C =< 16#7e ->
     parse_string(R, <<Acc/binary, C>>).
 
+%% @doc Parse a token binary.
 parse_token(<<C, R/bits>>, Acc) when ?IS_TOKEN(C) or (C =:= $:) or (C =:= $/) ->
     parse_token(R, <<Acc/binary, C>>);
 parse_token(R, Acc) ->
     {{token, Acc}, R}.
 
+%% @doc Parse a byte sequence binary.
 parse_binary(<<$:, R/bits>>, Acc) ->
     {{binary, base64:decode(Acc)}, R};
 parse_binary(<<C, R/bits>>, Acc) when ?IS_ALPHANUM(C) or (C =:= $+) or (C =:= $/) or (C =:= $=) ->
@@ -404,7 +420,8 @@ parse_struct_hd_test_() ->
                 } <- Tests
             ]
         end
-    || File <- Files
+    ||
+        File <- Files
     ]).
 
 %% The tests JSON use arrays for almost everything. Identifying
@@ -416,14 +433,11 @@ parse_struct_hd_test_() ->
 %% inner-list: [[ [items...], params]]
 %% item: [bare, params]
 
-%% Item.
 expected_to_term([Bare, []]) when
-    is_boolean(Bare); is_number(Bare); is_binary(Bare); is_map(Bare)
-->
+        is_boolean(Bare); is_number(Bare); is_binary(Bare); is_map(Bare) ->
     {item, e2tb(Bare), []};
 expected_to_term([Bare, Params = [[<<_/bits>>, _] | _]]) when
-    is_boolean(Bare); is_number(Bare); is_binary(Bare); is_map(Bare)
-->
+        is_boolean(Bare); is_number(Bare); is_binary(Bare); is_map(Bare) ->
     {item, e2tb(Bare), e2tp(Params)};
 %% Empty list or dictionary.
 expected_to_term([]) ->
@@ -437,14 +451,14 @@ expected_to_term(Dict = [[<<_/bits>>, V] | _]) when V =/= [] ->
     e2t(Dict);
 %% Outer list.
 expected_to_term(List) when is_list(List) ->
-    [e2t(E) || E <- List].
+    [ e2t(E) || E <- List ].
 
 %% Dictionary.
 e2t(Dict = [[<<_/bits>>, _] | _]) ->
     [{K, e2t(V)} || [K, V] <- Dict];
 %% Inner list.
 e2t([List, Params]) when is_list(List) ->
-    {list, [e2t(E) || E <- List], e2tp(Params)};
+    {list, [ e2t(E) || E <- List ], e2tp(Params)};
 %% Item.
 e2t([Bare, Params]) ->
     {item, e2tb(Bare), e2tp(Params)}.
@@ -695,7 +709,7 @@ to_dictionary_test() ->
         lists:keyfind(<<"empty">>, 1, SfDictionary)
     ),
     ?assertEqual(
-        {<<"inner">>, {list , [{item, {string, <<"a">>}, []}, {item, {token, <<"b">>}, []}, {item, true, []}, {item, 3, []}], []}},
+        {<<"inner">>, {list, [{item, {string, <<"a">>}, []}, {item, {token, <<"b">>}, []}, {item, true, []}, {item, 3, []}], []}},
         lists:keyfind(<<"inner">>, 1, SfDictionary)
     ),
     ?assertEqual(

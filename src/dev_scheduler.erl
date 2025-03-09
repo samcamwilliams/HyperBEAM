@@ -280,7 +280,10 @@ post_schedule(Msg1, Msg2, Opts) ->
                     do_post_schedule(ProcID, PID, OnlyAttested, Opts);
                 {redirect, Redirect} ->
                     ?event({redirecting_to_scheduler, {redirect, Redirect}}),
-                    {ok, Redirect}
+                    {ok, Redirect};
+                {error, Error} ->
+                    ?event({error_finding_scheduler, {error, Error}}),
+                    {error, Error}
             end;
         {error, _} ->
             {ok,
@@ -298,7 +301,9 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
     % Should we verify the message again before scheduling?
     Verified =
         case hb_opts:get(verify_assignments, true, Opts) of
-            true -> hb_message:verify(Msg2, signers);
+            true ->
+                ?event({verifying_message_before_scheduling, Msg2}),
+                hb_message:verify(Msg2, signers);
             false -> true
         end,
     % Handle scheduling of the message if the message is valid.
@@ -346,14 +351,14 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     Proc =
                         case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
                             not_found ->
-                                ?event(debug_scheduler, {reading_cache, {proc_id, ProcID}}),
+                                ?event({reading_cache, {proc_id, ProcID}}),
                                 case hb_cache:read(ProcID, Opts) of
                                     {ok, P} -> P;
                                     not_found -> Msg1
                                 end;
                             P -> P
                         end,
-                    ?event(debug_scheduler, {found_process, {process, Proc}, {msg1, Msg1}}, Opts),
+                    ?event({found_process, {process, Proc}, {msg1, Msg1}}),
                     % Check if we are the scheduler for this process.
                     Address = hb_util:human_id(ar_wallet:to_address(
                         hb_opts:get(priv_wallet, hb:wallet(), Opts))),
@@ -373,6 +378,8 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                         ),
                     ?event({sched_loc, SchedLoc}),
                     case SchedLoc of
+                        not_found ->
+                            {error, <<"No scheduler information provided.">>};
                         Address ->
                             % We are the scheduler. Start the server if it has not already
                             % been started.
@@ -456,21 +463,24 @@ find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
 slot(M1, M2, Opts) ->
     ?event({getting_current_slot, {msg, M1}}),
     ProcID = find_target_id(M1, M2, Opts),
-    ?event({getting_current_slot, {proc_id, ProcID}}),
-    {Timestamp, Hash, Height} = ar_timestamp:get(),
-    #{ current := CurrentSlot, wallet := Wallet } =
-        dev_scheduler_server:info(
-            dev_scheduler_registry:find(ProcID)
-        ),
-    {ok, #{
-        <<"process">> => ProcID,
-        <<"current-slot">> => CurrentSlot,
-        <<"timestamp">> => Timestamp,
-        <<"block-height">> => Height,
-        <<"block-hash">> => Hash,
-        <<"cache-control">> => <<"no-store">>,
-        <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
-    }}.
+    case find_server(ProcID, M1, Opts) of
+        {local, PID} ->
+            ?event({getting_current_slot, {proc_id, ProcID}}),
+            {Timestamp, Hash, Height} = ar_timestamp:get(),
+            #{ current := CurrentSlot, wallet := Wallet } =
+                dev_scheduler_server:info(PID),
+            {ok, #{
+                <<"process">> => ProcID,
+                <<"current-slot">> => CurrentSlot,
+                <<"timestamp">> => Timestamp,
+                <<"block-height">> => Height,
+                <<"block-hash">> => Hash,
+                <<"cache-control">> => <<"no-store">>,
+                <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
+            }};
+        {redirect, Redirect} ->
+            {ok, Redirect}
+    end.
 
 %% @doc Generate and return a schedule for a process, optionally between
 %% two slots -- labelled as `from' and `to'. If the schedule is not local,
@@ -481,7 +491,7 @@ get_schedule(Msg1, Msg2, Opts) ->
         case hb_converge:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
             X when X < 0 -> 0;
-            FromRes -> FromRes
+            FromRes -> hb_util:int(FromRes)
         end,
     To =
         case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
@@ -493,10 +503,10 @@ get_schedule(Msg1, Msg2, Opts) ->
                         Slot;
                     Pid -> maps:get(current, dev_scheduler_server:info(Pid))
                 end;
-            ToRes -> ToRes
+            ToRes -> hb_util:int(ToRes)
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
-    ?event(debug_scheduler, {parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
+    ?event({parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
     case find_server(ProcID, Msg1, Opts) of
         {local, _PID} ->
             generate_local_schedule(Format, ProcID, From, To, Opts);
@@ -536,7 +546,7 @@ get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
                 path => <<"/">>
             }
         ),
-    ?event(compute_debug, {getting_remote_schedule, {proc_id, ProcID}, {from, From}, {to, To}}),
+    ?event({getting_remote_schedule, {proc_id, ProcID}, {from, From}, {to, To}}),
     ToBin = integer_to_binary(From+1),
     FromBin = integer_to_binary(From),
     Path = <<
@@ -551,11 +561,8 @@ get_remote_schedule(ProcID, From, To, Redirect, Opts) ->
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_converge:get(<<"status">>, Res, 200, Opts) of
-                200 ->
-
-                    {ok, Res};
-                307 ->
-                    get_remote_schedule(ProcID, From, To, Redirect, Opts)
+                200 -> {ok, Res};
+                307 -> get_remote_schedule(ProcID, From, To, Redirect, Opts)
             end;
         {error, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
@@ -853,8 +860,14 @@ http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
     Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
-        <<"process">> => ProcessMsg,
-        <<"body">> => hb_message:attest(Msg, Wallet)
+        <<"body">> =>
+            hb_message:attest(
+                Msg#{
+                    <<"target">> => hb_util:human_id(hb_message:id(ProcessMsg)),
+                    <<"type">> => <<"Message">>
+                },
+                Wallet
+            )
     }, Wallet),
     hb_http:post(Node, Msg1, #{}).
 
@@ -901,15 +914,21 @@ http_get_schedule_redirect_test() ->
 http_post_schedule_test() ->
     {N, W} = http_init(),
     PMsg = hb_message:attest(test_process(W), W),
-    {ok, Res} =
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => PMsg
+    }, W),
+    {ok, Res} = hb_http:post(N, Msg1, #{}),
+    {ok, Res2} =
         http_post_schedule_sign(
             N,
             #{ <<"inner">> => <<"test-message">> },
             PMsg,
             W
         ),
-    ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res, #{})),
-    ?assertMatch({ok, #{ <<"current-slot">> := 0 }}, http_get_slot(N, PMsg)).
+    ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res2, #{})),
+    ?assertMatch({ok, #{ <<"current-slot">> := 1 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test() ->
     {Node, Wallet} = http_init(),
@@ -917,12 +936,16 @@ http_get_schedule_test() ->
     Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
-        <<"process">> => PMsg,
-        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => PMsg
+    }, Wallet),
+    Msg2 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => PMsg
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
     lists:foreach(
-        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
         lists:seq(1, 10)
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
@@ -939,12 +962,25 @@ http_get_json_schedule_test() ->
     Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
-        <<"process">> => PMsg,
-        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => PMsg
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
+    Msg2 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> =>
+            hb_message:attest(
+                #{
+                    <<"inner">> => <<"test">>,
+                    <<"target">> => hb_util:human_id(hb_message:id(PMsg, all))
+                },
+                Wallet
+            )
+        },
+        Wallet
+    ),
     lists:foreach(
-        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
         lists:seq(1, 10)
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
