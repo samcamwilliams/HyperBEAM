@@ -8,8 +8,8 @@
 %% Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
-%% run_test() ->
-%%     hb_test_utils:run(normal, as, test_suite(), test_opts()).
+run_test() ->
+    hb_test_utils:run(start_as, normal, test_suite(), test_opts()).
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
@@ -22,8 +22,16 @@ test_suite() ->
             fun resolve_simple_test/1},
         {resolve_id, "resolve id",
             fun resolve_id_test/1},
-        {as, "as",
-            fun as_test/1},
+        {start_as, "start as",
+            fun start_as_test/1},
+        {start_as_with_parameters, "start as with parameters",
+            fun start_as_with_parameters_test/1},
+        {load_as, "load as",
+            fun load_as_test/1},
+        {as_path, "as path",
+            fun as_path_test/1},
+        {continue_as, "continue as",
+            fun continue_as_test/1},
         {resolve_key_twice, "resolve key twice",
             fun resolve_key_twice_test/1},
         {resolve_from_multiple_keys, "resolve from multiple keys",
@@ -80,7 +88,7 @@ test_opts() ->
                 spawn_worker => false,
                 store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
             },
-            skip => []
+            skip => [load_as]
         },
         #{
             name => only_store,
@@ -93,7 +101,8 @@ test_opts() ->
             },
             skip => [
                 denormalized_device_key,
-                deep_set_with_device
+                deep_set_with_device,
+                load_as
             ],
             reset => false
         },
@@ -123,7 +132,9 @@ test_opts() ->
         #{
             name => normal,
             desc => "Default opts",
-            opts => #{},
+            opts => #{
+                cache_lookup_hueristics => false
+            },
             skip => []
         }
     ].
@@ -660,7 +671,54 @@ list_transform_test(Opts) ->
     ?assertEqual(<<"D">>, hb_converge:get(4, Msg, Opts)),
     ?assertEqual(<<"E">>, hb_converge:get(5, Msg, Opts)).
 
-as_test(Opts) ->
+start_as_test(Opts) ->
+    ?assertEqual(
+        {ok, <<"GOOD_FUNCTION">>},
+        hb_converge:resolve_many(
+            [
+                {as, <<"test-device@1.0">>, #{ <<"path">> => <<>> }},
+                #{ <<"path">> => <<"test_func">> }
+            ],
+            Opts
+        )
+    ).
+start_as_with_parameters_test(Opts) ->
+    % Resolve a key on a message that has its device set with `as'.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
+    },
+    ?assertEqual(
+        {ok, <<"GOOD_FUNCTION">>},
+        hb_converge:resolve_many(
+            [
+                {as, <<"message@1.0">>, Msg},
+                #{ <<"path">> => <<"test_func">> }
+            ],
+            Opts
+        )
+    ).
+
+load_as_test(Opts) ->
+    % Load a message as a device with the `as' keyword.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
+    },
+    {ok, ID} = hb_cache:write(Msg, Opts),
+    ?assertEqual(
+        {ok, <<"MESSAGE">>},
+        hb_converge:resolve_many(
+            [
+                {as, <<"message@1.0">>, #{ <<"path">> => <<ID/binary>> }},
+                <<"test_func">>,
+                <<"test_key">>
+            ],
+            Opts
+        )
+    ).
+
+as_path_test(Opts) ->
     % Create a message with the test device, which implements the test_func
     % function. It normally returns `GOOD_FUNCTION'.
     Msg = #{
@@ -676,8 +734,14 @@ as_test(Opts) ->
             {as, <<"message@1.0">>, #{ <<"path">> => <<"test_func">> }},
             Opts
         )
-    ),
+    ).
+
+continue_as_test(Opts) ->
     % Resolve a list of messages in sequence, swapping the device in the middle.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
+    },
     ?assertEqual(
         {ok, <<"MESSAGE">>},
         hb_converge:resolve_many(

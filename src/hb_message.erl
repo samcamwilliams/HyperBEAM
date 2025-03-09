@@ -392,7 +392,7 @@ format(Map, Indent) when is_map(Map) ->
                     lists:flatten([KeyStr]),
                     case Val of
                         NextMap when is_map(NextMap) ->
-                            hb_util:format_map(NextMap, Indent + 2);
+                            hb_util:format_maybe_multiline(NextMap, Indent + 2);
                         _ when (byte_size(Val) == 32) or (byte_size(Val) == 43) ->
                             Short = hb_util:short_id(Val),
                             io_lib:format("~s [*]", [Short]);

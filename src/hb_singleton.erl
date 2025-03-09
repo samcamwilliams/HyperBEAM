@@ -182,6 +182,7 @@ path_messages(RawBin) when is_binary(RawBin) ->
 %% @doc Normalize the base path.
 normalize_base([]) -> [];
 normalize_base([First|Rest]) when ?IS_ID(First) -> [First|Rest];
+normalize_base([{as, DevID, First}|Rest]) -> [{as, DevID, First}|Rest];
 normalize_base(Rest) -> [#{}|Rest].
 
 %% @doc Split the path into segments, filtering out empty segments and
