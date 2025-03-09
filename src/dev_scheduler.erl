@@ -860,8 +860,14 @@ http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
     Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
-        <<"process">> => ProcessMsg,
-        <<"body">> => hb_message:attest(Msg, Wallet)
+        <<"body">> =>
+            hb_message:attest(
+                Msg#{
+                    <<"target">> => hb_util:human_id(hb_message:id(ProcessMsg)),
+                    <<"type">> => <<"Message">>
+                },
+                Wallet
+            )
     }, Wallet),
     hb_http:post(Node, Msg1, #{}).
 
@@ -908,15 +914,21 @@ http_get_schedule_redirect_test() ->
 http_post_schedule_test() ->
     {N, W} = http_init(),
     PMsg = hb_message:attest(test_process(W), W),
-    {ok, Res} =
+    Msg1 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => PMsg
+    }, W),
+    {ok, Res} = hb_http:post(N, Msg1, #{}),
+    {ok, Res2} =
         http_post_schedule_sign(
             N,
             #{ <<"inner">> => <<"test-message">> },
             PMsg,
             W
         ),
-    ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res, #{})),
-    ?assertMatch({ok, #{ <<"current-slot">> := 0 }}, http_get_slot(N, PMsg)).
+    ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res2, #{})),
+    ?assertMatch({ok, #{ <<"current-slot">> := 1 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test() ->
     {Node, Wallet} = http_init(),
@@ -924,12 +936,16 @@ http_get_schedule_test() ->
     Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
-        <<"process">> => PMsg,
-        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => PMsg
+    }, Wallet),
+    Msg2 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => PMsg
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
     lists:foreach(
-        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
         lists:seq(1, 10)
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
@@ -946,12 +962,25 @@ http_get_json_schedule_test() ->
     Msg1 = hb_message:attest(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
-        <<"process">> => PMsg,
-        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => PMsg
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
+    Msg2 = hb_message:attest(#{
+        <<"path">> => <<"/~scheduler@1.0/schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> =>
+            hb_message:attest(
+                #{
+                    <<"inner">> => <<"test">>,
+                    <<"target">> => hb_util:human_id(hb_message:id(PMsg, all))
+                },
+                Wallet
+            )
+        },
+        Wallet
+    ),
     lists:foreach(
-        fun(_) -> {ok, _} = hb_http:post(Node, Msg1, #{}) end,
+        fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
         lists:seq(1, 10)
     ),
     ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
