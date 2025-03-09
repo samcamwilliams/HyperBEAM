@@ -139,16 +139,21 @@ resolve(Msg1, Msg2, Opts) ->
 %% A `resolve_many' call with only a single ID will attempt to read the message
 %% directly from the store. No execution is performed.
 resolve_many([ID], Opts) when ?IS_ID(ID) ->
+    % Note: This case is necessary to place specifically here for two reasons:
+    % 1. It is not in `do_resolve_many' because we need to handle the case
+    %    where a result from a prior invocation is an ID itself. We should not
+    %    attempt to resolve such IDs further.
+    % 2. The main converge core logic looks for linkages between message input
+    %    pairs and outputs. With only a single ID, there is not a valid pairing
+    %    to use in looking up a cached result.
     ?event(converge_core, {stage, na, resolve_directly_to_id, ID, {opts, Opts}}, Opts),
-    case hb_cache:read(ID, Opts) of
-        {ok, Msg3} ->
-            ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
-            {ok, Msg3};
-        not_found ->
-            {error, not_found}
+    try {ok, ensure_loaded(ID, Opts)}
+    catch _:_:_ -> {error, not_found}
     end;
 resolve_many(MsgList, Opts) ->
-    do_resolve_many(MsgList, Opts).
+    Res = do_resolve_many(MsgList, Opts),
+    ?event(converge_req, {resolve_complete, Res, {req, normalize_keys(MsgList)}}),
+    Res.
 do_resolve_many([Msg3], _Opts) ->
     ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
     {ok, Msg3};
@@ -182,9 +187,18 @@ resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
 resolve_stage(1, Msg1, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
     ?event(converge_core, {stage, 1, path_normalize}),
     resolve_stage(1, Msg1, #{ <<"path">> => NonMapMsg2 }, Opts);
-resolve_stage(1, Msg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
+resolve_stage(1, {as, DevID, RawMsg1}, Msg2, Opts) ->
+    % Set the device of the first message to the specified one.
+    Msg1 = ensure_loaded(RawMsg1, Opts),
+    Msg1b = set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts)),
+    % We do not execute a path on the first message if it is an `as', as the 
+    % `hb_singleton:from' function will not allow such messages to exist.
+    resolve_stage(1, Msg1b, Msg2, Opts);
+resolve_stage(1, RawMsg1, #{ <<"path">> := {as, DevID, Msg2} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message.
     ?event(converge_core, {stage, 1, setting_device, {dev, DevID}}, Opts),
+    % First, if the message is an ID, load it from the cache.
+    Msg1 = ensure_loaded(RawMsg1, Opts),
     Msg1b = set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts)),
     % Recurse with the modified message. The hashpath will have been updated
     % to include the device ID, if requested. Simply return if the path is empty.
@@ -398,8 +412,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                     {exec_name, ExecName},
                     {msg1, Msg1},
                     {msg2, Msg2},
-                    {msg3, MsgRes},
-                    {opts, Opts}
+                    {msg3, MsgRes}
                 },
                 Opts
             ),
@@ -508,6 +521,18 @@ resolve_stage(10, _Msg1, _Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
 resolve_stage(10, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
     ?event(converge_core, {stage, 10, ExecName, abnormal_status_skip_spawning}, Opts),
     OtherRes.
+
+%% @doc Ensure that the message is loaded from the cache if it is an ID. If is
+%% not loadable or already present, we raise an error.
+ensure_loaded(Msg, Opts) when ?IS_ID(Msg) ->
+    case hb_cache:read(Msg, Opts) of
+        {ok, LoadedMsg} ->
+            LoadedMsg;
+        not_found ->
+            throw({necessary_message_not_found, {msg, Msg}})
+    end;
+ensure_loaded(Msg, _Opts) ->
+    Msg.
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
