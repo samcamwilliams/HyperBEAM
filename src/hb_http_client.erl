@@ -364,8 +364,14 @@ parse_peer(Peer, Opts) ->
     case Parsed of
         #{ host := Host, port := Port } ->
             {hb_util:list(Host), Port};
-        #{ host := Host } ->
-            {hb_util:list(Host), hb_opts:get(port, 443, Opts)}
+        URI = #{ host := Host } ->
+            {
+                hb_util:list(Host),
+                case maps:get(scheme, URI, undefined) of
+                    <<"https">> -> 443;
+                    _ -> hb_opts:get(port, 8734, Opts)
+                end
+            }
     end.
 
 reply_error([], _Reason) ->

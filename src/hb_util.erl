@@ -388,7 +388,7 @@ do_debug_fmt(MsgList, Indent) when is_list(MsgList) ->
         format_indented("List [~w] {~n", [length(MsgList)], Indent+1) ++
         lists:map(
             fun({N, Msg}) ->
-                format_indented("~w => ~s~n",
+                format_indented("~w => ~n~s~n",
                     [N, debug_fmt(Msg, Indent + 3)],
                     Indent + 2
                 )

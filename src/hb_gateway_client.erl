@@ -8,7 +8,7 @@
 %%% module will be deprecated.
 -module(hb_gateway_client).
 %% @doc Raw access primitives:
--export([read/2, data/2]).
+-export([read/2, data/2, result_to_message/2]).
 %% @doc Application-specific data access functions:
 -export([scheduler_location/2]).
 -include_lib("include/hb.hrl").
@@ -156,25 +156,48 @@ query(Query, Opts) ->
 
 %% @doc Takes a GraphQL item node, matches it with the appropriate data from a
 %% gateway, then returns `{ok, ParsedMsg}`.
+result_to_message(Item, Opts) ->
+    case hb_converge:get(<<"id">>, Item, Opts) of
+        ExpectedID when is_binary(ExpectedID) ->
+            result_to_message(ExpectedID, Item, Opts);
+        _ ->
+            result_to_message(undefined, Item, Opts)
+    end.
 result_to_message(ExpectedID, Item, Opts) ->
+    GQLOpts = Opts#{ hashpath => ignore },
     % We have the headers, so we can get the data.
-    {ok, Data} = data(ExpectedID, Opts),
+    Data =
+        case hb_converge:get(<<"data">>, Item, GQLOpts) of
+            BinData when is_binary(BinData) -> BinData;
+            _ ->
+                {ok, Bytes} = data(ExpectedID, Opts),
+                Bytes
+        end,
+    DataSize = byte_size(Data),
     ?event(gateway, {data, {id, ExpectedID}, {data, Data}}, Opts),
     % Convert the response to an ANS-104 message.
-    GQLOpts = Opts#{ hashpath => ignore },
     TX =
         #tx {
             format = ans104,
             id = hb_util:decode(ExpectedID),
             last_tx =
-                hb_util:decode(hb_converge:get(<<"anchor">>,
-                    Item, GQLOpts)),
+                decode_or_null(
+                    hb_converge:get(<<"anchor">>,
+                        Item, GQLOpts)
+                ),
             signature =
                 hb_util:decode(hb_converge:get(<<"signature">>,
                     Item, GQLOpts)),
             target =
-                hb_util:decode(hb_converge:get(<<"recipient">>,
-                    Item, GQLOpts)),
+                decode_or_null(
+                    hb_converge:get_first(
+                        [
+                            {Item, <<"recipient">>},
+                            {Item, <<"target">>}
+                        ],
+                        GQLOpts
+                    )
+                ),
             owner =
                 hb_util:decode(hb_converge:get(<<"owner/key">>,
                     Item, GQLOpts)),
@@ -185,10 +208,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                     #{<<"name">> := Name, <<"value">> := Value}
                         <- hb_converge:get(<<"tags">>, Item, GQLOpts)
                 ],
-            data_size =
-                hb_util:int(hb_converge:get(<<"data/size">>,
-                    Item, GQLOpts)
-                ),
+            data_size = DataSize,
             data = Data
         },
     ?event({raw_ans104, TX}),
@@ -198,6 +218,11 @@ result_to_message(ExpectedID, Item, Opts) ->
     Structured = dev_codec_structured:to(TABM),
     ?event({encoded_structured, Structured}),
     {ok, Structured}.
+
+decode_or_null(Bin) when is_binary(Bin) ->
+    hb_util:decode(Bin);
+decode_or_null(_) ->
+    <<>>.
 
 %%% Tests
 ans104_no_data_item_test() ->
