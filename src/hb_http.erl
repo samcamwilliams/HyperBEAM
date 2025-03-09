@@ -468,10 +468,15 @@ encode_reply(TABMReq, Message, Opts) ->
     Codec = accept_to_codec(TABMReq, Opts),
     ?event(http, {encoding_reply, {codec, Codec}, {message, Message}}),
     BaseHdrs =
-        case codec_to_content_type(Codec, Opts) of
-            undefined -> #{};
-            CT -> #{ <<"content-type">> => CT, <<"codec-device">> => Codec }
-        end,
+        maps:merge(
+            #{
+                <<"codec-device">> => Codec
+            },
+            case codec_to_content_type(Codec, Opts) of
+                    undefined -> #{};
+                    CT -> #{ <<"content-type">> => CT }
+            end
+        ),
     % Codecs generally do not need to specify headers outside of the content-type,
     % aside the default `httpsig@1.0` codec, which expresses its form in HTTP
     % documents, and subsequently must set its own headers.
@@ -512,6 +517,7 @@ encode_reply(TABMReq, Message, Opts) ->
             % the message to the codec. We also include all of the top-level 
             % fields in the message and return them as headers.
             ExtraHdrs = maps:filter(fun(_, V) -> not is_map(V) end, Message),
+            ?event(debug, {extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
             {ok,
                 maps:merge(BaseHdrs, ExtraHdrs),
                 hb_message:convert(
