@@ -236,7 +236,7 @@ message_to_status(_Item) ->
 maybe_sign({Status, Res}, NodeMsg) ->
     {Status, maybe_sign(Res, NodeMsg)};
 maybe_sign(Res, NodeMsg) ->
-    ?event(http, {maybe_sign, Res, NodeMsg}),
+    ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
             case hb_message:signers(Res) of

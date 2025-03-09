@@ -732,7 +732,23 @@ get_first([{Base, Path}|Msgs], Default, Opts) ->
 keys(Msg) -> keys(Msg, #{}).
 keys(Msg, Opts) -> keys(Msg, Opts, keep).
 keys(Msg, Opts, keep) ->
-    try lists:map(fun normalize_key/1, get(<<"keys">>, Msg, Opts))
+    % There is quite a lot of Converge-specific machinery here. We:
+    % 1. `get' the keys from the message, via Converge in order to trigger the
+    %    `keys' function on its device.
+    % 2. Ensure that the result is normalized to a message (not just a list)
+    %    with `normalize_keys'.
+    % 3. Now we have a map of the original keys, so we can use `maps:values' to
+    %    get a list of them.
+    % 4. Normalize each of those keys in turn.
+    try
+        lists:map(
+            fun normalize_key/1,
+            maps:values(
+                normalize_keys(
+                    get(<<"keys">>, Msg, Opts)
+                )
+            )
+        )
     catch
         A:B:C ->
             throw({cannot_get_keys, {msg, Msg}, {opts, Opts}, {error, {A, B}}})
