@@ -11,7 +11,7 @@
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
--export([format_map/1, format_map/2, remove_trailing_noise/2]).
+-export([format_maybe_multiline/2, remove_trailing_noise/2]).
 -export([debug_print/4, debug_fmt/1, debug_fmt/2, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
@@ -342,9 +342,15 @@ do_debug_fmt(Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}, Indent) ->
 do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
     format_address(Wallet, Indent);
 do_debug_fmt({explicit, X}, Indent) ->
-    format_indented("[Explicit=>] ~p", [X], Indent);
+    format_indented("[Explicit:] ~p", [X], Indent);
 do_debug_fmt({string, X}, Indent) ->
-    format_indented("[String=>] ~s", [X], Indent);
+    format_indented("[String:] ~s", [X], Indent);
+do_debug_fmt({as, undefined, Msg}, Indent) ->
+    "\n" ++ format_indented("Subresolve => ", [], Indent) ++
+        format_maybe_multiline(Msg, Indent + 1);
+do_debug_fmt({as, DevID, Msg}, Indent) ->
+    "\n" ++ format_indented("Subresolve as ~s => ", [DevID], Indent) ++
+        format_maybe_multiline(Msg, Indent + 1);
 do_debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Indent);
 do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
@@ -353,7 +359,7 @@ do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
         Indent
     );
 do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
-    Formatted = hb_util:format_map(Y, Indent + 1),
+    Formatted = format_maybe_multiline(Y, Indent + 1),
     HasNewline = lists:member($\n, Formatted),
     format_indented("~p~s",
         [
@@ -368,13 +374,28 @@ do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
 do_debug_fmt({X, Y}, Indent) ->
     format_indented("~s: ~s", [debug_fmt(X, Indent), debug_fmt(Y, Indent)], Indent);
 do_debug_fmt(Map, Indent) when is_map(Map) ->
-    hb_util:format_map(Map, Indent);
+    format_maybe_multiline(Map, Indent);
 do_debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
 do_debug_fmt(X, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Indent);
 do_debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     format_indented("~s", [Str], Indent);
+do_debug_fmt([], Indent) ->
+    format_indented("[]", [], Indent);
+do_debug_fmt(MsgList, Indent) when is_list(MsgList) ->
+    "\n" ++
+        format_indented("List [~w] {~n", [length(MsgList)], Indent+1) ++
+        lists:map(
+            fun({N, Msg}) ->
+                format_indented("~w => ~s~n",
+                    [N, debug_fmt(Msg, Indent + 3)],
+                    Indent + 2
+                )
+            end,
+            lists:zip(lists:seq(1, length(MsgList)), MsgList)
+        ) ++
+        format_indented("}", [], Indent+1);
 do_debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
 
@@ -467,13 +488,12 @@ add_commas(List) -> List.
 
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
-format_map(Map) -> format_map(Map, 0).
-format_map(Map, Indent) ->
+format_maybe_multiline(X, Indent) ->
     MaxLen = hb_opts:get(debug_print_map_line_threshold),
-    SimpleFmt = io_lib:format("~p", [Map]),
+    SimpleFmt = io_lib:format("~p", [X]),
     case lists:flatlength(SimpleFmt) of
         Len when Len > MaxLen ->
-            "\n" ++ lists:flatten(hb_message:format(Map, Indent));
+            "\n" ++ lists:flatten(hb_message:format(X, Indent));
         _ -> SimpleFmt
     end.
 
