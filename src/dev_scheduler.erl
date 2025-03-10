@@ -595,86 +595,75 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
     Parsed = uri_string:parse(Location),
     Node = uri_string:recompose((maps:remove(query, Parsed))#{path => <<"/">>}),
     Variant = hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
-    Path =
-        case Variant of
-            <<"ao.N.1">> ->
-                << ProcID/binary, "/schedule">>;
-            <<"ao.TN.1">> ->
-                << "" >>
-        end,
-    Body =
-        case Variant of
-            <<"ao.N.1">> ->
-                OnlyAttested;
-            <<"ao.TN.1">> ->
-                Item = #tx { tags = Tags } =
-                    hb_message:convert(
-                        OnlyAttested,
-                        <<"ans104@1.0">>,
-                        Opts
-                    ),
-                ?no_prod("CAUTION: Modifying raw ANS-104 `Type' tag to match legacy SU."),
-                {<<"type">>, TypeVal} = lists:keyfind(<<"type">>, 1, Tags),
-                Tags1 = lists:keyreplace(<<"type">>, 1, Tags, {<<"Type">>, TypeVal}),
-                Tags2 =
-                    lists:keyreplace(
-                        <<"data-protocol">>, 1, Tags1,
-                        {<<"Data-Protocol">>, <<"ao">>}
-                    ),
-                ar_bundles:serialize(Item#tx { tags = Tags2 })
-        end,
-    PostMsg = #{
-        <<"path">> => Path,
-        <<"body">> => Body,
-        <<"method">> => <<"POST">>
-    },
-    ?event(debug, {posting_remote_schedule, PostMsg}),
     case Variant of
         <<"ao.N.1">> ->
+            PostMsg = #{
+                <<"path">> => << ProcID/binary, "/schedule">>,
+                <<"body">> => OnlyAttested,
+                <<"method">> => <<"POST">>
+            },
             hb_http:post(Node, PostMsg, RemoteOpts);
         <<"ao.TN.1">> ->
-            case hb_http:post(Node, PostMsg, RemoteOpts) of
-                {ok, Res} ->
-                    ?event(debug, {remote_schedule_result, Res}),
-                    JSONRes =
-                        jiffy:decode(
-                            hb_converge:get(<<"body">>, Res, Opts),
-                            [return_maps]
+            Encoded =
+                try
+                    Item =
+                        hb_message:convert(
+                            OnlyAttested,
+                            <<"ans104@1.0">>,
+                            Opts
                         ),
-                    % Legacy SUs return only the ID of the assignment, so we need
-                    % to read and return it.
-                    ID = maps:get(<<"id">>, JSONRes),
-                    ?event(debug, {remote_schedule_result_id, ID, {json, JSONRes}}),
-                    case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, RemoteOpts) of
-                        {ok, AssignmentRes} ->
-                            ?event(debug, {received_full_assignment, AssignmentRes}),
-                            AssignmentJSON =
-                                jiffy:decode(
-                                    hb_converge:get(<<"body">>, AssignmentRes, Opts),
-                                    [return_maps]
-                                ),
-                            Assignment =
-                                dev_scheduler_formats:aos2_to_assignment(
-                                    AssignmentJSON,
-                                    Opts
-                                ),
-                            {ok, Assignment};
-                        {error, Res} -> {error, Res}
-                    end;
-                {error, Res} ->
-                    {error,
-                        #{
-                            <<"status">> => 422,
-                            <<"body">> =>
-                                <<
-                                    "Failed to post schedule on ", Node/binary,
-                                    " for ", ProcID/binary, ". Try different encoding?",
-                                    "Error: ", Res/binary
-                                >>,
-                            <<"details">> => Res
+                    {ok, ar_bundles:serialize(Item)}
+                catch
+                    _:_ ->
+                        {error,
+                            #{
+                                <<"status">> => 422,
+                                <<"body">> =>
+                                    <<
+                                        "Failed to post schedule on ", Node/binary,
+                                        " for ", ProcID/binary, ". Try different encoding?"
+                                    >>
+                            }
                         }
-                    }
-            end
+                end,
+        case Encoded of
+            {ok, Body} ->
+                PostMsg = #{
+                    <<"path">> => << ProcID/binary, "?proc-id=", ProcID/binary>>,
+                    <<"body">> => Body,
+                    <<"method">> => <<"POST">>
+                },
+                case hb_http:post(Node, PostMsg, RemoteOpts) of
+                    {ok, PostRes} ->
+                        ?event(debug, {remote_schedule_result, PostRes}),
+                        JSONRes =
+                            jiffy:decode(
+                                hb_converge:get(<<"body">>, PostRes, Opts),
+                                [return_maps]
+                            ),
+                        % Legacy SUs return only the ID of the assignment, so we need
+                        % to read and return it.
+                        ID = maps:get(<<"id">>, JSONRes),
+                        ?event(debug, {remote_schedule_result_id, ID, {json, JSONRes}}),
+                        case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, RemoteOpts) of
+                            {ok, AssignmentRes} ->
+                                ?event(debug, {received_full_assignment, AssignmentRes}),
+                                AssignmentJSON =
+                                    jiffy:decode(
+                                        hb_converge:get(<<"body">>, AssignmentRes, Opts),
+                                        [return_maps]
+                                    ),
+                                Assignment =
+                                    dev_scheduler_formats:aos2_to_assignment(
+                                        AssignmentJSON,
+                                        Opts
+                                    ),
+                                {ok, Assignment};
+                            {error, PostErr} -> {error, PostErr}
+                        end;
+                    {error, PostRes} -> {error, PostRes}
+                end
+        end
     end.
 
 %%% Private methods

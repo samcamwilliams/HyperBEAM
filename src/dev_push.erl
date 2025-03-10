@@ -10,6 +10,7 @@
 %% @doc Push either a message or an assigned slot number.
 push(Base, Req, Opts) ->
     ModBase = dev_process:as_process(Base, Opts),
+    ?event(push, {push_base, {base, ModBase}, {req, Req}}, Opts),
     case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
         no_slot ->
             {ok, Assignment} = initial_push(ModBase, Req, Opts),
@@ -200,6 +201,7 @@ initial_push(Base, Req, Opts) ->
                     remote_schedule_result(Location, Req, Opts)
             end;
         {error, Res} ->
+            ?event(push, {initial_push_error, {error, Res}}, Opts),
             {error, Res}
     end.
 
