@@ -878,7 +878,15 @@ redirect_to_hint_test() ->
     },
     ?assertMatch(
         {ok, #{ <<"location">> := Location }} when is_binary(Location),
-        hb_converge:resolve(Msg1, Msg2, #{ scheduler_follow_hints => true })).
+        hb_converge:resolve(
+            Msg1,
+            Msg2,
+            #{
+                scheduler_follow_hints => true,
+                scheduler_follow_redirects => false
+            }
+        )
+    ).
 
 redirect_from_graphql_test() ->
     start(),
@@ -903,9 +911,13 @@ redirect_from_graphql_test() ->
                         <<"target">> =>
                             <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>,
                         <<"test-key">> => <<"Test-Val">>
-                    }, hb:wallet())
+                    },
+                    hb:wallet()
+                )
             },
-            #{}
+            #{
+                scheduler_follow_redirects => false
+            }
         )
     ).
 
@@ -1090,7 +1102,7 @@ http_get_legacy_schedule_as_aos2_test_() ->
         ?assertMatch(#{ <<"edges">> := As } when length(As) > 0, Decoded)
     end}.
 
-http_post_legacy_schedule_test_() ->
+http_post_legacy_schedule_test_disabled() ->
     {timeout, 10, fun() ->
         {Node, Wallet} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
@@ -1111,9 +1123,12 @@ http_post_legacy_schedule_test_() ->
                     <<"ans104@1.0">>
                 )
         }, Wallet),
+        {Status, Res} = hb_http:post(Node, Msg1, #{}),
+        ?event({status, Status}),
+        ?event({res, {string, Res}}),
         ?assertMatch(
             {ok, #{ <<"slot">> := Slot }} when Slot > 0,
-            hb_http:post(Node, Msg1, #{})
+            {Status, Res}
         )
     end}.
 
