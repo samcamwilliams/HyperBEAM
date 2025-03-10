@@ -13,14 +13,17 @@ push(Base, Req, Opts) ->
     ?event(push, {push_base, {base, ModBase}, {req, Req}}, Opts),
     case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
         no_slot ->
-            {ok, Assignment} = initial_push(ModBase, Req, Opts),
-            case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
-                <<"Message">> ->
-                    ?event(push, {pushing_message, {base, ModBase}, {assignment, Assignment}}, Opts),
-                    push_with_mode(ModBase, Assignment, Opts);
-                <<"Process">> ->
-                    ?event(push, {initializing_process, {base, ModBase}, {assignment, Assignment}}, Opts),
-                    {ok, Assignment}
+            case initial_push(ModBase, Req, Opts) of
+                {ok, Assignment} ->
+                    case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
+                        <<"Message">> ->
+                            ?event(push, {pushing_message, {base, ModBase}, {assignment, Assignment}}, Opts),
+                            push_with_mode(ModBase, Assignment, Opts);
+                        <<"Process">> ->
+                            ?event(push, {initializing_process, {base, ModBase}, {assignment, Assignment}}, Opts),
+                            {ok, Assignment}
+                    end;
+                {error, Res} -> {error, Res}
             end;
         _ -> push_with_mode(ModBase, Req, Opts)
     end.

@@ -627,6 +627,7 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
                         }
                 end,
         case Encoded of
+            {error, EncodingErr} -> {error, EncodingErr};
             {ok, Body} ->
                 PostMsg = #{
                     <<"path">> => << ProcID/binary, "?proc-id=", ProcID/binary>>,
