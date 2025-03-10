@@ -140,7 +140,8 @@ aos2_to_assignments(ProcID, Body, Opts) ->
 %% @doc Create and normalize an assignment from an AOS2-style JSON structure.
 %% NOTE: This method is destructive to the verifiability of the assignment.
 aos2_to_assignment(A, Opts) ->
-    Node = maps:get(<<"node">>, A),
+    % Unwrap the node if it is provided
+    Node = maps:get(<<"node">>, A, A),
     {ok, Message} =
         hb_gateway_client:result_to_message(
             aos2_normalize_data(maps:get(<<"message">>, Node)),

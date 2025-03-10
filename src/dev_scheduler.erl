@@ -643,8 +643,8 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
                         ),
                     % Legacy SUs return only the ID of the assignment, so we need
                     % to read and return it.
-                    ID = hb_converge:get(<<"id">>, JSONRes, Opts),
-                    ?event(debug, {remote_schedule_result_id, ID}),
+                    ID = maps:get(<<"id">>, JSONRes),
+                    ?event(debug, {remote_schedule_result_id, ID, {json, JSONRes}}),
                     case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, RemoteOpts) of
                         {ok, AssignmentRes} ->
                             ?event(debug, {received_full_assignment, AssignmentRes}),
@@ -659,11 +659,21 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
                                     Opts
                                 ),
                             {ok, Assignment};
-                        {error, Res} ->
-                            {error, Res}
+                        {error, Res} -> {error, Res}
                     end;
                 {error, Res} ->
-                    {error, Res}
+                    {error,
+                        #{
+                            <<"status">> => 422,
+                            <<"body">> =>
+                                <<
+                                    "Failed to post schedule on ", Node/binary,
+                                    " for ", ProcID/binary, ". Try different encoding?",
+                                    "Error: ", Res/binary
+                                >>,
+                            <<"details">> => Res
+                        }
+                    }
             end
     end.
 
