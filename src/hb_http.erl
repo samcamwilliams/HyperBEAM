@@ -517,7 +517,7 @@ encode_reply(TABMReq, Message, Opts) ->
             % the message to the codec. We also include all of the top-level 
             % fields in the message and return them as headers.
             ExtraHdrs = maps:filter(fun(_, V) -> not is_map(V) end, Message),
-            ?event(debug, {extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
+            ?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
             {ok,
                 maps:merge(BaseHdrs, ExtraHdrs),
                 hb_message:convert(

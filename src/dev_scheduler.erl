@@ -279,8 +279,12 @@ post_schedule(Msg1, Msg2, Opts) ->
                     ?event({scheduling_message_locally, {proc_id, ProcID}, {pid, PID}}),
                     do_post_schedule(ProcID, PID, OnlyAttested, Opts);
                 {redirect, Redirect} ->
-                    ?event({redirecting_to_scheduler, {redirect, Redirect}}),
-                    {ok, Redirect};
+                    ?event({process_is_remote, {redirect, Redirect}}),
+                    case hb_opts:get(scheduler_follow_redirects, true, Opts) of
+                        true ->
+                            post_remote_schedule(ProcID, Redirect, OnlyAttested, Opts);
+                        false -> {ok, Redirect}
+                    end;
                 {error, Error} ->
                     ?event({error_finding_scheduler, {error, Error}}),
                     {error, Error}
@@ -582,6 +586,85 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
         {error, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             {error, Res}
+    end.
+
+post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
+    RemoteOpts = Opts#{ http_client => httpc },
+    ProcID = without_hint(RawProcID),
+    Location = hb_converge:get(<<"location">>, Redirect, Opts),
+    Parsed = uri_string:parse(Location),
+    Node = uri_string:recompose((maps:remove(query, Parsed))#{path => <<"/">>}),
+    Variant = hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
+    Path =
+        case Variant of
+            <<"ao.N.1">> ->
+                << ProcID/binary, "/schedule">>;
+            <<"ao.TN.1">> ->
+                << "" >>
+        end,
+    Body =
+        case Variant of
+            <<"ao.N.1">> ->
+                OnlyAttested;
+            <<"ao.TN.1">> ->
+                Item = #tx { tags = Tags } =
+                    hb_message:convert(
+                        OnlyAttested,
+                        <<"ans104@1.0">>,
+                        Opts
+                    ),
+                ?no_prod("CAUTION: Modifying raw ANS-104 `Type' tag to match legacy SU."),
+                {<<"type">>, TypeVal} = lists:keyfind(<<"type">>, 1, Tags),
+                Tags1 = lists:keyreplace(<<"type">>, 1, Tags, {<<"Type">>, TypeVal}),
+                Tags2 =
+                    lists:keyreplace(
+                        <<"data-protocol">>, 1, Tags1,
+                        {<<"Data-Protocol">>, <<"ao">>}
+                    ),
+                ar_bundles:serialize(Item#tx { tags = Tags2 })
+        end,
+    PostMsg = #{
+        <<"path">> => Path,
+        <<"body">> => Body,
+        <<"method">> => <<"POST">>
+    },
+    ?event(debug, {posting_remote_schedule, PostMsg}),
+    case Variant of
+        <<"ao.N.1">> ->
+            hb_http:post(Node, PostMsg, RemoteOpts);
+        <<"ao.TN.1">> ->
+            case hb_http:post(Node, PostMsg, RemoteOpts) of
+                {ok, Res} ->
+                    ?event(debug, {remote_schedule_result, Res}),
+                    JSONRes =
+                        jiffy:decode(
+                            hb_converge:get(<<"body">>, Res, Opts),
+                            [return_maps]
+                        ),
+                    % Legacy SUs return only the ID of the assignment, so we need
+                    % to read and return it.
+                    ID = hb_converge:get(<<"id">>, JSONRes, Opts),
+                    ?event(debug, {remote_schedule_result_id, ID}),
+                    case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, RemoteOpts) of
+                        {ok, AssignmentRes} ->
+                            ?event(debug, {received_full_assignment, AssignmentRes}),
+                            AssignmentJSON =
+                                jiffy:decode(
+                                    hb_converge:get(<<"body">>, AssignmentRes, Opts),
+                                    [return_maps]
+                                ),
+                            Assignment =
+                                dev_scheduler_formats:aos2_to_assignment(
+                                    AssignmentJSON,
+                                    Opts
+                                ),
+                            {ok, Assignment};
+                        {error, Res} ->
+                            {error, Res}
+                    end;
+                {error, Res} ->
+                    {error, Res}
+            end
     end.
 
 %%% Private methods
@@ -995,6 +1078,33 @@ http_get_legacy_schedule_as_aos2_test_() ->
             ),
         Decoded = jiffy:decode(hb_converge:get(<<"body">>, Res, #{}), [return_maps]),
         ?assertMatch(#{ <<"edges">> := As } when length(As) > 0, Decoded)
+    end}.
+
+http_post_legacy_schedule_test_() ->
+    {timeout, 10, fun() ->
+        {Node, Wallet} = http_init(),
+        Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
+        Msg1 = hb_message:attest(#{
+            <<"path">> => <<"/~scheduler@1.0/schedule">>,
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                hb_message:attest(
+                    #{
+                        <<"data-protocol">> => <<"ao">>,
+                        <<"variant">> => <<"ao.TN.1">>,
+                        <<"type">> => <<"Message">>,
+                        <<"action">> => <<"ping">>,
+                        <<"target">> => Target,
+                        <<"test-from">> => hb_util:human_id(hb:address())
+                    },
+                    Wallet,
+                    <<"ans104@1.0">>
+                )
+        }, Wallet),
+        ?assertMatch(
+            {ok, #{ <<"slot">> := Slot }} when Slot > 0,
+            hb_http:post(Node, Msg1, #{})
+        )
     end}.
 
 http_get_json_schedule_test() ->

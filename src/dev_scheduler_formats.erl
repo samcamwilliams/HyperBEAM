@@ -8,7 +8,7 @@
 %%% new integrations of the AO protocol.
 -module(dev_scheduler_formats).
 -export([assignments_to_bundle/4, assignments_to_aos2/4]).
--export([aos2_to_assignments/3]).
+-export([aos2_to_assignments/3, aos2_to_assignment/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
