@@ -142,6 +142,8 @@ split_target(RawTarget) ->
     end.
 
 schedule_result(Base, MsgToPush, Opts) ->
+    schedule_result(Base, MsgToPush, <<"httpsig@1.0">>, Opts).
+schedule_result(Base, MsgToPush, Codec, Opts) ->
     ?event(push,
         {push_scheduling_result,
             {target, {explicit, Base}},
@@ -173,6 +175,14 @@ schedule_result(Base, MsgToPush, Opts) ->
             NormMsg = normalize_message(MsgToPush, Opts),
             SignedNormMsg = hb_message:attest(NormMsg, Opts),
             remote_schedule_result(Location, SignedNormMsg, Opts);
+        {error, 422} ->
+            ?event(push, {unacceptable_request, {422, Res}, {codec, Codec}}, Opts),
+            case Codec of
+                <<"ans104@1.0">> ->
+                    {error, Res};
+                <<"httpsig@1.0">> ->
+                    schedule_result(Base, MsgToPush, <<"ans104@1.0">>, Opts)
+            end;
         {error, _} ->
             {error, Res}
     end.
