@@ -119,12 +119,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         end,
     case maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
         Key when is_binary(Key) ->
-            Msg =
-                hb_message:convert(
-                    NormHeaderMap#{ <<"body">> => Body },
-                    <<"structured@1.0">>,
-                    Opts
-                ),
+            Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
             ?event(http, {result_is_single_key, {key, Key}, {msg, Msg}}),
             case maps:get(Key, Msg, undefined) of
                 undefined -> {failure, result_key_not_found};
@@ -136,18 +131,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     ?event(http, {result_is_httpsig, {body, Body}}),
                     {
                         BaseStatus,
-                        hb_message:convert(
-                            maps:merge(
-                                HeaderMap#{ <<"status">> => hb_util:bin(Status) },
-                                case Body of
-                                    <<>> -> #{};
-                                    _ -> #{ <<"body">> => Body }
-                                end
-                            ),
-                            <<"structured@1.0">>,
-                            <<"httpsig@1.0">>,
-                            Opts
-                        )
+                        http_response_to_httpsig(Status, NormHeaderMap, Body, Opts)
                     };
                 <<"ans104@1.0">> ->
                     ?event(http, {result_is_ans104, {body, Body}}),
@@ -165,6 +149,21 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     }
             end
     end.
+
+%% @doc Convert a HTTP response to a httpsig message.
+http_response_to_httpsig(Status, HeaderMap, Body, Opts) ->
+    (hb_message:convert(
+        maps:merge(
+            HeaderMap#{ <<"status">> => hb_util:bin(Status) },
+            case Body of
+                <<>> -> #{};
+                _ -> #{ <<"body">> => Body }
+            end
+        ),
+        <<"structured@1.0">>,
+        <<"httpsig@1.0">>,
+        Opts
+    ))#{ <<"status">> => hb_util:int(Status) }.
 
 %% @doc Given a message, return the information needed to make the request.
 message_to_request(M, Opts) ->
