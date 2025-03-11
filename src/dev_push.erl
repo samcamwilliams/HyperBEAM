@@ -17,10 +17,21 @@ push(Base, Req, Opts) ->
                 {ok, Assignment} ->
                     case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
                         <<"Message">> ->
-                            ?event(push, {pushing_message, {base, ModBase}, {assignment, Assignment}}, Opts),
+                            ?event(push,
+                                {pushing_message,
+                                    {base, ModBase},
+                                    {assignment, Assignment}
+                                },
+                                Opts
+                            ),
                             push_with_mode(ModBase, Assignment, Opts);
                         <<"Process">> ->
-                            ?event(push, {initializing_process, {base, ModBase}, {assignment, Assignment}}, Opts),
+                            ?event(push,
+                                {initializing_process,
+                                    {base, ModBase},
+                                    {assignment, Assignment}},
+                                Opts
+                            ),
                             {ok, Assignment}
                     end;
                 {error, Res} -> {error, Res}
@@ -180,7 +191,7 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
             SignedNormMsg = hb_message:attest(NormMsg, Opts),
             remote_schedule_result(Location, SignedNormMsg, Opts);
         {error, 422} ->
-            ?event(push, {unacceptable_request, {422, Res}, {codec, Codec}}, Opts),
+            ?event(push, {downgrading_to_ans104, {422, Res}, {codec, Codec}}, Opts),
             case Codec of
                 <<"ans104@1.0">> ->
                     {error, Res};
@@ -203,6 +214,9 @@ initial_push(Base, Req, Opts) ->
                     Location = hb_converge:get(<<"location">>, Res, Opts),
                     remote_schedule_result(Location, Req, Opts)
             end;
+        {error, Res = #{ <<"status">> := 422 }} ->
+            ?event(push, {initial_push_wrong_format, {error, Res}}, Opts),
+            {error, Res};
         {error, Res} ->
             ?event(push, {initial_push_error, {error, Res}}, Opts),
             {error, Res}

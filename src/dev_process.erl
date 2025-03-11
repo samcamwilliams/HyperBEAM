@@ -213,17 +213,24 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
         CurrentSlot ->
             NextSlot = CurrentSlot + 1,
             % Get the next input from the scheduler device.
-            {ok, #{ <<"body">> := ToProcess, <<"state">> := State }} =
+            {ok, #{ <<"body">> := RawInputMsg, <<"state">> := State }} =
                 next(Msg1, Msg2, Opts),
             % Ensure that the next slot is the slot that we are expecting, just
             % in case there is a scheduler device error.
-            NextSlot = hb_util:int(hb_converge:get(<<"slot">>, ToProcess, Opts)),
-            ?event(compute, {executing, {slot, NextSlot}, {req, ToProcess}}, Opts),
+            NextSlot = hb_util:int(hb_converge:get(<<"slot">>, RawInputMsg, Opts)),
+            % If the input message does not have a path, set it to `compute'.
+            InputMsg =
+                case hb_path:from_message(request, RawInputMsg) of
+                    undefined -> RawInputMsg#{ <<"path">> => <<"compute">> };
+                    _ -> RawInputMsg
+                end,
+            ?event({input_msg, InputMsg}),
+            ?event(compute, {executing, {slot, NextSlot}, {req, InputMsg}}, Opts),
             {ok, Msg3} =
                 run_as(
                     <<"execution">>,
                     State,
-                    ToProcess,
+                    InputMsg,
                     Opts
                 ),
             % We have now transformed slot n -> n + 1. Increment the current slot.
