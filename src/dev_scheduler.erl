@@ -636,7 +636,7 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
                 },
                 case hb_http:post(Node, PostMsg, RemoteOpts) of
                     {ok, PostRes} ->
-                        ?event(debug, {remote_schedule_result, PostRes}),
+                        ?event({remote_schedule_result, PostRes}),
                         JSONRes =
                             jiffy:decode(
                                 hb_converge:get(<<"body">>, PostRes, Opts),
@@ -645,10 +645,10 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
                         % Legacy SUs return only the ID of the assignment, so we need
                         % to read and return it.
                         ID = maps:get(<<"id">>, JSONRes),
-                        ?event(debug, {remote_schedule_result_id, ID, {json, JSONRes}}),
+                        ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
                         case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, RemoteOpts) of
                             {ok, AssignmentRes} ->
-                                ?event(debug, {received_full_assignment, AssignmentRes}),
+                                ?event({received_full_assignment, AssignmentRes}),
                                 AssignmentJSON =
                                     jiffy:decode(
                                         hb_converge:get(<<"body">>, AssignmentRes, Opts),
