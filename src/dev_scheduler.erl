@@ -282,6 +282,10 @@ post_schedule(Msg1, Msg2, Opts) ->
                     ?event({process_is_remote, {redirect, Redirect}}),
                     case hb_opts:get(scheduler_follow_redirects, true, Opts) of
                         true ->
+                            ?event({proxying_to_remote_scheduler,
+                                {redirect, Redirect},
+                                {msg, OnlyAttested}
+                            }),
                             post_remote_schedule(ProcID, Redirect, OnlyAttested, Opts);
                         false -> {ok, Redirect}
                     end;
@@ -604,67 +608,85 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
             },
             hb_http:post(Node, PostMsg, RemoteOpts);
         <<"ao.TN.1">> ->
-            Encoded =
-                try
-                    Item =
-                        hb_message:convert(
-                            OnlyAttested,
-                            <<"ans104@1.0">>,
-                            Opts
+            post_legacy_schedule(ProcID, OnlyAttested, Node, RemoteOpts)
+    end.
+
+post_legacy_schedule(ProcID, OnlyAttested, Node, Opts) ->
+    ?event({encoding_for_legacy_scheduler, {node, {string, Node}}}),
+    Encoded =
+        try
+            Item =
+                hb_message:convert(
+                    OnlyAttested,
+                    <<"ans104@1.0">>,
+                    Opts
+                ),
+            ?event({encoded_for_legacy_scheduler, {item, {explicit, Item}}}),
+            {ok, ar_bundles:serialize(Item)}
+        catch
+            _:_ ->
+                {error,
+                    #{
+                        <<"status">> => 422,
+                        <<"body">> =>
+                            <<
+                                "Failed to post schedule on ", Node/binary,
+                                " for ", ProcID/binary, ". Try different encoding?"
+                            >>
+                    }
+                }
+        end,
+    case Encoded of
+        {error, EncodingErr} ->
+            ?event({could_not_encode_for_legacy_scheduler, {error, EncodingErr}}),
+            {error, #{
+                <<"status">> => 422,
+                <<"body">> =>
+                    <<"Incorrect encoding. Scheduler has variant: ao.TN.1">>
+                }
+            };
+        {ok, Body} ->
+            PostMsg = #{
+                <<"path">> => P = <<"?proc-id=", ProcID/binary>>,
+                <<"body">> => Body,
+                <<"method">> => <<"POST">>
+            },
+            ?event({posting_to_remote_legacy_scheduler, {string, P}}),
+            case hb_http:post(Node, PostMsg, Opts) of
+                {ok, PostRes} ->
+                    ?event({remote_schedule_result, PostRes}),
+                    JSONRes =
+                        jiffy:decode(
+                            hb_converge:get(<<"body">>, PostRes, Opts),
+                            [return_maps]
                         ),
-                    {ok, ar_bundles:serialize(Item)}
-                catch
-                    _:_ ->
-                        {error,
-                            #{
-                                <<"status">> => 422,
-                                <<"body">> =>
-                                    <<
-                                        "Failed to post schedule on ", Node/binary,
-                                        " for ", ProcID/binary, ". Try different encoding?"
-                                    >>
-                            }
-                        }
-                end,
-        case Encoded of
-            {error, EncodingErr} -> {error, EncodingErr};
-            {ok, Body} ->
-                PostMsg = #{
-                    <<"path">> => << ProcID/binary, "?proc-id=", ProcID/binary>>,
-                    <<"body">> => Body,
-                    <<"method">> => <<"POST">>
-                },
-                case hb_http:post(Node, PostMsg, RemoteOpts) of
-                    {ok, PostRes} ->
-                        ?event({remote_schedule_result, PostRes}),
-                        JSONRes =
-                            jiffy:decode(
-                                hb_converge:get(<<"body">>, PostRes, Opts),
-                                [return_maps]
-                            ),
-                        % Legacy SUs return only the ID of the assignment, so we need
-                        % to read and return it.
-                        ID = maps:get(<<"id">>, JSONRes),
-                        ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
-                        case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, RemoteOpts) of
-                            {ok, AssignmentRes} ->
-                                ?event({received_full_assignment, AssignmentRes}),
-                                AssignmentJSON =
-                                    jiffy:decode(
-                                        hb_converge:get(<<"body">>, AssignmentRes, Opts),
-                                        [return_maps]
-                                    ),
-                                Assignment =
-                                    dev_scheduler_formats:aos2_to_assignment(
-                                        AssignmentJSON,
-                                        Opts
-                                    ),
-                                {ok, Assignment};
-                            {error, PostErr} -> {error, PostErr}
-                        end;
-                    {error, PostRes} -> {error, PostRes}
-                end
-        end
+                    % Legacy SUs return only the ID of the assignment, so we need
+                    % to read and return it.
+                    ID = maps:get(<<"id">>, JSONRes),
+                    ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
+                    case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, Opts) of
+                        {ok, AssignmentRes} ->
+                            ?event({received_full_assignment, AssignmentRes}),
+                            AssignmentJSON =
+                                jiffy:decode(
+                                    hb_converge:get(<<"body">>, AssignmentRes, Opts),
+                                    [return_maps]
+                                ),
+                            Assignment =
+                                dev_scheduler_formats:aos2_to_assignment(
+                                    AssignmentJSON,
+                                    Opts
+                                ),
+                            {ok, Assignment};
+                        {error, PostErr} -> {error, PostErr}
+                    end;
+                {error, Resp = #{ <<"status">> := 404 }} ->
+                    ?event({legacy_scheduler_not_found, {url, {string, P}}, {resp, Resp}}),
+                    {error, Resp};
+                {error, PostRes} ->
+                    ?event({remote_schedule_proxy_error, {error, {explicit, PostRes}}}),
+                    {error, PostRes}
+            end
     end.
 
 %%% Private methods
@@ -1092,7 +1114,7 @@ http_get_legacy_schedule_as_aos2_test_() ->
         ?assertMatch(#{ <<"edges">> := As } when length(As) > 0, Decoded)
     end}.
 
-http_post_legacy_schedule_test_disabled() ->
+http_post_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
         {Node, Wallet} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
@@ -1115,7 +1137,7 @@ http_post_legacy_schedule_test_disabled() ->
         }, Wallet),
         {Status, Res} = hb_http:post(Node, Msg1, #{}),
         ?event({status, Status}),
-        ?event({res, {string, Res}}),
+        ?event({res, Res}),
         ?assertMatch(
             {ok, #{ <<"slot">> := Slot }} when Slot > 0,
             {Status, Res}
