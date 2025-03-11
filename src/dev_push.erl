@@ -397,6 +397,43 @@ push_with_redirect_hint_test_disabled() ->
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
 
+push_prompts_encoding_change_test() ->
+    dev_process:init(),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store =>
+            [
+                {hb_store_fs, #{ prefix => "TEST-cache" }},
+                % Include a gateway store so that we can get the legacynet 
+                % process when needed.
+                {hb_store_gateway,
+                    #{
+                        cache_gateway_store =>
+                            {hb_store_fs, #{ prefix => "TEST-cache" }}
+                    }
+                }
+            ]
+    },
+    Msg = hb_message:attest(#{
+        <<"path">> => <<"push">>,
+        <<"method">> => <<"POST">>,
+        <<"target">> => <<"QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0">>,
+        <<"action">> => <<"Eval">>,
+        <<"data">> => <<"print(\"Please ignore!\")">>
+    }, Opts),
+    ?event(push, {msg1, Msg}),
+    Res =
+        hb_converge:resolve_many(
+            [
+                <<"QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0">>,
+                {as, <<"process@1.0">>, <<>>},
+                Msg
+            ],
+            Opts
+        ),
+    ?assertMatch({error, #{ <<"status">> := 422 }}, Res).
+
 %%% Test helpers
 
 ping_pong_script(Limit) ->
