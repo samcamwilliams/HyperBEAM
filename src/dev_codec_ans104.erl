@@ -71,9 +71,14 @@ attest(Msg, _Req, Opts) ->
 %% @doc Return an empty list if the message as given does not validate, as
 %% ANS-104 messages do not keep a list of attested keys.
 attested(Msg, Req, Opts) ->
-    case verify(Msg, Req, Opts) of
-        {ok, true} -> {ok, maps:keys(Msg)};
-        _ -> {ok, []}
+    case hb_opts:get(ans104_verify_only_attested, true, Opts) of
+        true ->
+            case verify(Msg, Req, Opts) of
+                {ok, true} -> {ok, maps:keys(Msg)};
+                _ -> {ok, []}
+            end;
+        false ->
+            {ok, maps:keys(Msg)}
     end.
 
 %% @doc Verify an ANS-104 attestation.

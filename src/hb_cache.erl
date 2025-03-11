@@ -60,12 +60,15 @@ list(Path, Store) ->
 write(RawMsg, Opts) ->
     % Use the _structured_ format for calculating alternative IDs, but the
     % _tabm_ format for writing to the store.
-    case hb_message:with_only_attested(RawMsg) of
+    case hb_message:with_only_attested(RawMsg, Opts) of
         {ok, Msg} ->
-            ?event({storing, Msg}),
+            AltIDs = calculate_alt_ids(RawMsg, Opts),
+            ?event({writing_full_message, {alt_ids, AltIDs}, {msg, Msg}}),
+            Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
+            ?event({tabm, Tabm}),
             do_write_message(
-                hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
-                calculate_alt_ids(RawMsg, Opts),
+                Tabm,
+                AltIDs,
                 hb_opts:get(store, no_viable_store, Opts),
                 Opts
             );
