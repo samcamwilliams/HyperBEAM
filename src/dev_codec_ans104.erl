@@ -2,6 +2,7 @@
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
 -export([id/1, to/1, from/1, attest/3, verify/3, attested/3, content_type/1]).
+-export([serialize/1, deserialize/1]).
 -include("include/hb.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
@@ -27,6 +28,18 @@
 
 %% @doc Return the content type for the codec.
 content_type(_) -> {ok, <<"application/ans104">>}.
+
+%% @doc Serialize a message or TX to a binary.
+serialize(Msg) when is_map(Msg) ->
+    ar_bundles:serialize(to(Msg));
+serialize(TX) when is_record(TX, tx) ->
+    {ok, ar_bundles:serialize(TX)}.
+
+%% @doc Deserialize a binary ans104 message to a TABM.
+deserialize(Binary) when is_binary(Binary) ->
+    from(ar_bundles:deserialize(Binary));
+deserialize(TX) when is_record(TX, tx) ->
+    {ok, from(TX)}.
 
 %% @doc Return the ID of a message.
 id(Msg) ->
