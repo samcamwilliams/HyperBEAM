@@ -189,7 +189,14 @@ to(RawTABM) when is_map(RawTABM) ->
     TABMWithAtt =
         case maps:keys(Attestations) of
             [] -> TABM;
-            [Address] -> maps:merge(TABM, maps:get(Address, Attestations));
+            [Address] ->
+                maps:merge(
+                    TABM,
+                    maps:without(
+                        [<<"attestation-device">>],
+                        maps:get(Address, Attestations)
+                    )
+                );
             _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
         end,
     M =
