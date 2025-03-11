@@ -258,7 +258,7 @@ load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             try dev_codec_flat:deserialize(Bin) of
-                Map -> {ok, mimic_default_types(Map, new_atoms)}
+                {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
             catch
                 error:B -> {error, B}
             end;

@@ -31,13 +31,15 @@ content_type(_) -> {ok, <<"application/ans104">>}.
 
 %% @doc Serialize a message or TX to a binary.
 serialize(Msg) when is_map(Msg) ->
-    ar_bundles:serialize(to(Msg));
+    serialize(to(Msg));
 serialize(TX) when is_record(TX, tx) ->
     {ok, ar_bundles:serialize(TX)}.
 
 %% @doc Deserialize a binary ans104 message to a TABM.
+deserialize(#{ <<"body">> := Binary }) ->
+    deserialize(Binary);
 deserialize(Binary) when is_binary(Binary) ->
-    from(ar_bundles:deserialize(Binary));
+    deserialize(ar_bundles:deserialize(Binary));
 deserialize(TX) when is_record(TX, tx) ->
     {ok, from(TX)}.
 
