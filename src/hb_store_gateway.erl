@@ -36,7 +36,6 @@ type(StoreOpts, Key) ->
     case read(StoreOpts, Key) of
         not_found -> not_found;
         {ok, Data} ->
-            maybe_cache(StoreOpts, Data),
             ?event({type, hb_private:reset(hb_message:unattested(Data))}),
             IsFlat = lists:all(
                 fun({_, Value}) -> not is_map(Value) end,
@@ -56,7 +55,10 @@ read(StoreOpts, Key) ->
             ?event({read, StoreOpts, Key}),
             case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
                 {error, _} -> not_found;
-                {ok, Message} -> {ok, Message}
+                {ok, Message} ->
+                    ?event({got_message_from_gateway, Message}),
+                    maybe_cache(StoreOpts, Message),
+                    {ok, Message}
             end;
         _ ->
             ?event({ignoring_non_id, Key}),
@@ -68,10 +70,11 @@ read(StoreOpts, Key) ->
 %% cache.
 maybe_cache(StoreOpts, Data) ->
     ?event({maybe_cache, StoreOpts, Data}),
-    case hb_opts:get(cache, false, StoreOpts) of
+    case hb_opts:get(store, false, StoreOpts) of
         false -> do_nothing;
         Store ->
-            case hb_cache:write(#{ store => Store}, Data) of
+            ?event({writing_message_to_local_cache, Data}),
+            case hb_cache:write(Data, #{ store => Store}) of
                 ok -> Data;
                 Other -> Other
             end
@@ -102,6 +105,59 @@ graphql_from_cache_test() ->
         )
     ).
 
+manual_local_cache_test() ->
+    hb_http_server:start_node(#{}),
+    Local = {hb_store_fs, #{ prefix => "TEST-GATEWAY-cache" }},
+    hb_store:reset(Local),
+    Gateway = {hb_store_gateway, #{ store => false }},
+    {ok, FromRemote} =
+        hb_cache:read(
+            <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
+            #{ store => Gateway }
+        ),
+    ?event({writing_recvd_to_local, FromRemote}),
+    {ok, _} =
+        hb_cache:write(
+            FromRemote,
+            #{
+                store => Local,
+                ans104_verify_only_attested => false
+            }
+        ),
+    {ok, Read} =
+        hb_cache:read(
+            <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
+            #{ store => Local }
+        ),
+    ?assert(hb_message:match(Read, FromRemote)).
+
+%% @doc Ensure that saving to the gateway store works.
+cache_read_message_test() ->
+    hb_http_server:start_node(#{}),
+    WriteOpts = #{ store =>
+        [
+            {hb_store_gateway,
+                #{
+                    % Set a local store to write to, so that we can test the
+                    % cache read.
+                    store =>
+                        Local = {hb_store_fs, #{ prefix => "TEST-GATEWAY-cache" }}
+                }
+            }
+        ]
+    },
+    {ok, Written} =
+        hb_cache:read(
+            <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
+            WriteOpts
+        ),
+    {ok, Read} =
+        hb_cache:read(
+            <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
+            #{ store => Local }
+        ),
+    ?assert(hb_message:match(Read, Written)).
+
 %% @doc Routes can be specified in the options, overriding the default routes.
 %% We test this by inversion: If the above cache read test works, then we know 
 %% that the default routes allow access to the item. If the test below were to
@@ -127,8 +183,11 @@ specific_route_test() ->
 external_http_access_test() ->
     Node = hb_http_server:start_node(
         #{
-            store => [{hb_store_fs, #{ prefix => "test-cache" }}, {hb_store_gateway, #{}}],
-            http_extra_opts => #{ force_message => true, cache_control => [<<"always">>] }
+            store =>
+                [
+                    {hb_store_fs, #{ prefix => "test-cache" }},
+                    {hb_store_gateway, #{}}
+                ]
         }
     ),
     ?assertMatch(

@@ -199,7 +199,7 @@ generate_test_suite(Suite, Stores) ->
     lists:map(
         fun(Store = {Mod, _Opts}) ->
             {foreach,
-                fun() -> hb_store:start(Store) end,
+                fun() -> hb_store:start(Store), hb_store:reset(Store) end,
                 fun(_) -> hb_store:reset(Store) end,
                 [
                     {atom_to_list(Mod) ++ ": " ++ Desc,
