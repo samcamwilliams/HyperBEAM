@@ -93,40 +93,49 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             Opts
         ),
     ?event(http, {req, Req}),
-    case hb_http_client:req(Req, Opts) of
-        {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
-            ?event(
-                {
-                    http_response,
-                    {req, Req},
-                    {response,
-                        #{
-                            status => Status,
-                            headers => Headers,
-                            body => Body
-                        }
-                    }
+    {_ErlStatus, Status, Headers, Body} = hb_http_client:req(Req, Opts),
+    ?event(
+        {
+            http_response,
+            {req, Req},
+            {response,
+                #{
+                    status => Status,
+                    headers => Headers,
+                    body => Body
                 }
-            ),
-            HeaderMap = maps:from_list(Headers),
-            NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
-            {
-                case Status of
-                    201 -> created;
-                    _ -> ok
-                end,
-                case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
-                    <<"ans104@1.0">> ->
-                        Deserialized = ar_bundles:deserialize(Body),
-                        % We don't need to add the status to the message, because
-                        % it is already present in the encoded ANS-104 message.
-                        hb_message:convert(
-                            Deserialized,
-                            <<"structured@1.0">>,
-                            <<"ans104@1.0">>,
-                            Opts
-                        );
-                    <<"httpsig@1.0">> ->
+            }
+        }
+    ),
+    HeaderMap = maps:from_list(Headers),
+    NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
+    ?event(http, {normalized_response_headers, {norm_header_map, NormHeaderMap}}),
+    BaseStatus =
+        case Status of
+            201 -> created;
+            X when X < 400 -> ok;
+            X when X < 500 -> error;
+            _ -> failure
+        end,
+    case maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
+        Key when is_binary(Key) ->
+            Msg =
+                hb_message:convert(
+                    NormHeaderMap#{ <<"body">> => Body },
+                    <<"structured@1.0">>,
+                    Opts
+                ),
+            ?event(http, {result_is_single_key, {key, Key}, {msg, Msg}}),
+            case maps:get(Key, Msg, undefined) of
+                undefined -> {failure, result_key_not_found};
+                Value -> {BaseStatus, Value}
+            end;
+        undefined ->
+            case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
+                <<"httpsig@1.0">> ->
+                    ?event(http, {result_is_httpsig, {body, Body}}),
+                    {
+                        BaseStatus,
                         hb_message:convert(
                             maps:merge(
                                 HeaderMap#{ <<"status">> => hb_util:bin(Status) },
@@ -139,31 +148,22 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                             <<"httpsig@1.0">>,
                             Opts
                         )
-                end
-            };
-        {ok, Status, _Headers, Body} when Status == 400 ->
-            ?event(
-                {http_got_client_error,
-                    {req, Req},
-                    {response, #{status => Status, body => {explicit, Body}}}
-                }),
-            {error, Body};
-        {ok, Status, _Headers, Body} when Status > 400 ->
-            ?event(
-                {http_got_server_error,
-                    {req, Req},
-                    {response, #{status => Status, body => Body}}
-                }
-            ),
-            {error, Body};
-        Response ->
-            ?event(
-                {http_error,
-                    {req, Req},
-                    {response, {explicit, Response}}
-                }
-            ),
-            Response
+                    };
+                <<"ans104@1.0">> ->
+                    ?event(http, {result_is_ans104, {body, Body}}),
+                    Deserialized = ar_bundles:deserialize(Body),
+                    % We don't need to add the status to the message, because
+                    % it is already present in the encoded ANS-104 message.
+                    {
+                        BaseStatus,
+                        hb_message:convert(
+                            Deserialized,
+                            <<"structured@1.0">>,
+                            <<"ans104@1.0">>,
+                            Opts
+                        )
+                    }
+            end
     end.
 
 %% @doc Given a message, return the information needed to make the request.
@@ -683,8 +683,7 @@ remove_unsigned_fields(Msg, _Opts) ->
 simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    {ok, Res} = post(URL, TestMsg, #{}),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual({ok, <<"Value1">>}, post(URL, TestMsg, #{})).
 
 simple_converge_resolve_signed_test() ->
     URL = hb_http_server:start_node(),
@@ -696,7 +695,7 @@ simple_converge_resolve_signed_test() ->
             hb_message:attest(TestMsg, Wallet),
             #{}
         ),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(<<"Value1">>, Res).
 
 nested_converge_resolve_test() ->
     URL = hb_http_server:start_node(),
@@ -715,7 +714,7 @@ nested_converge_resolve_test() ->
             }, Wallet),
             #{}
         ),
-    ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(<<"Value2">>, Res).
 
 wasm_compute_request(ImageFile, Func, Params) ->
     wasm_compute_request(ImageFile, Func, Params, <<"">>).
@@ -758,7 +757,7 @@ get_deep_signed_wasm_state_test() ->
 
 cors_get_test() ->
     URL = hb_http_server:start_node(),
-    {ok, Res} = get(URL, <<"/~meta@1.0/info/address">>, #{}),
+    {ok, Res} = get(URL, <<"/~meta@1.0/info">>, #{}),
     ?assertEqual(
         <<"*">>,
         hb_converge:get(<<"access-control-allow-origin">>, Res, #{})

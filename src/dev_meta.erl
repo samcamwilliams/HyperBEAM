@@ -22,7 +22,15 @@ handle(NodeMsg, RawRequest) ->
     ?event(http_short, {request, hb_converge:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
-            embed_status(handle_initialize(NormRequest, NodeMsg));
+            Res =
+                embed_status(
+                    hb_converge:force_message(
+                        handle_initialize(NormRequest, NodeMsg),
+                        NodeMsg
+                    )
+                ),
+            ?event(debug_meta, {res, Res}),
+            Res;
         true ->
             handle_converge(RawRequest, NormRequest, NodeMsg);
         _ ->
@@ -163,7 +171,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
             ),
             ?event(http_short, {response, Output}),
             Output;
-        Res -> embed_status(Res)
+        Res -> embed_status(hb_converge:force_message(Res, NodeMsg))
     end.
 
 %% @doc execute a message from the node message upon the user's request.
@@ -473,8 +481,7 @@ modify_request_test() ->
                 }
         }),
     {ok, Res} = hb_http:get(Node, <<"/added">>, #{}),
-    ?event({res, Res}),
-    ?assertEqual(<<"value">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(<<"value">>, Res).
 
 %% @doc Test that we can use a postprocessor upon a request. Calls the `test@1.0'
 %% device's postprocessor, which sets the `postprocessor-called' key to true in

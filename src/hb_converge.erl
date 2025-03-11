@@ -94,6 +94,7 @@
 -export([resolve/2, resolve/3, resolve_many/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 -export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
+-export([force_message/2]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
@@ -676,17 +677,31 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
     end.
 
 %% @doc Force the result of a device call into a message if the result is not
-%% requested by the `Opts'.
+%% requested by the `Opts'. If the result is a literal, we wrap it in a message
+%% and signal the location of the result inside. We also similarly handle ao-result
+%% when the result is a single value and an explicit status code.
 maybe_force_message({Status, Res}, Opts) ->
-    case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
-        true when is_list(Res) -> {Status, normalize_keys(Res)};
-        true ->
-            % If the result is a literal, we wrap it in a message and signal the
-            % location of the result inside.
-            {Status, #{ <<"converge-result">> => <<"body">>, <<"body">> => Res }};
-        false ->
-            {Status, Res}
+    case hb_opts:get(force_message, false, Opts) of
+        true -> force_message({Status, Res}, Opts);
+        false -> {Status, Res}
     end.
+
+force_message({Status, Res}, Opts) when is_list(Res) ->
+    force_message({Status, normalize_keys(Res)}, Opts);
+force_message({Status, Literal}, _Opts) when not is_map(Literal) ->
+    ?event(debug, {force_message_from_literal, Literal}),
+    {Status, #{ <<"ao-result">> => <<"body">>, <<"body">> => Literal }};
+force_message({Status, M = #{ <<"status">> := Status, <<"body">> := Body }}, _Opts)
+        when map_size(M) == 2 ->
+    ?event(debug, {force_message_from_literal_with_status, M}),
+    {Status, #{
+        <<"status">> => Status,
+        <<"ao-result">> => <<"body">>,
+        <<"body">> => Body
+    }};
+force_message({Status, Map}, _Opts) ->
+    ?event(debug, {force_message_from_map, Map}),
+    {Status, Map}.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
