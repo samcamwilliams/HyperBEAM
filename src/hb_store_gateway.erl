@@ -56,7 +56,7 @@ read(StoreOpts, Key) ->
             case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
                 {error, _} -> not_found;
                 {ok, Message} ->
-                    ?event({got_message_from_gateway, Message}),
+                    ?event(remote_read, {got_message_from_gateway, Message}),
                     maybe_cache(StoreOpts, Message),
                     {ok, Message}
             end;
@@ -200,3 +200,36 @@ external_http_access_test() ->
             #{}
         )
     ).
+
+%% Ensure that we can get data from the gateway and execute upon it.
+resolve_on_gateway_test_() ->
+    {timeout, 10, fun() ->
+        TestProc = <<"p45HPD-ENkLS7Ykqrx6p_DYGbmeHDeeF8LJ09N2K53g">>,
+        hb_http_server:start_node(#{}),
+        Opts = #{
+            store =>
+                [
+                    {hb_store_gateway, #{ store => false }}
+                ],
+            cache_control => <<"cache">>
+        },
+        ?assertMatch(
+            {ok, #{ <<"type">> := <<"Process">> }},
+            hb_cache:read(TestProc, Opts)
+        ),
+        % TestProc is an AO Legacynet process: No device tag, so we start by resolving
+        % only an explicit key.
+        ?assertMatch(
+            {ok, <<"Process">>},
+            hb_converge:resolve(TestProc, <<"type">>, Opts)
+        ),
+        % Next, we resolve the schedule key on the message, as a `process@1.0`
+        % message.
+        {ok, X} =
+            hb_converge:resolve(
+                {as, <<"process@1.0">>, TestProc},
+                <<"schedule">>,
+                Opts
+            ),
+        ?assertMatch(#{ <<"assignments">> := _ }, X)
+    end}.
