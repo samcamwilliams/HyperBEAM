@@ -41,3 +41,5 @@
 %% module.
 -define(trace(), hb_util:trace_macro_helper(fun hb_util:print_trace/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(trace_short(), hb_util:trace_macro_helper(fun hb_util:print_trace_short/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
+%% @doc Draw a horizontal line in the logs.
+-define(hr(), io:format(standard_error, "--------------------------------------------------------------------------------~n", [])).
