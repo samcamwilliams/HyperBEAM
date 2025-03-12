@@ -152,10 +152,17 @@ default_message() ->
                     }
             }
         ],
+        store =>
+            [
+                {hb_store_fs, #{ prefix => "mainnet-cache" }},
+                {hb_store_gateway, #{
+                    store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}]
+                }}
+            ],
+        ans104_verify_only_attested => false,
         http_extra_opts =>
             #{
                 force_message => true,
-                store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}, {hb_store_gateway, #{}}],
                 cache_control => [<<"always">>]
             },
         % Should the node store all signed messages?
@@ -210,16 +217,6 @@ get(Key, Default, Opts) ->
         priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
         hb_config_location => {"HB_CONFIG", "config.flat"},
         port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
-        store =>
-            {"HB_STORE",
-                fun(Dir) ->
-                    {
-                        hb_store_fs,
-                        #{ prefix => Dir }
-                    }
-                end,
-                "TEST-cache"
-            },
         mode => {"HB_MODE", fun list_to_existing_atom/1},
         debug_print =>
             {"HB_PRINT",

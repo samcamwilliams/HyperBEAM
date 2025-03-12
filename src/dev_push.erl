@@ -66,7 +66,7 @@ do_push(Base, Assignment, Opts) ->
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     Result = hb_converge:resolve(
-        Base,
+        {as, <<"process@1.0">>, Base},
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
@@ -78,8 +78,26 @@ do_push(Base, Assignment, Opts) ->
         {ok, Outbox} ->
             Downstream =
                 maps:map(
-                    fun(Key, MsgToPush) ->
-                        push_result_message(Base, Slot, Key, MsgToPush, Opts)
+                    fun(Key, MsgToPush = #{ <<"target">> := Target }) ->
+                        case hb_cache:read(Target, Opts) of
+                            {ok, PushBase} ->
+                                push_result_message(PushBase, Slot, Key, MsgToPush, Opts);
+                            {error, _} ->
+                                #{
+                                    <<"response">> => <<"error">>,
+                                    <<"status">> => 404,
+                                    <<"target">> => Target,
+                                    <<"reason">> => <<"Could not access target process!">>
+                                }
+                        end;
+                       (Key, Msg) ->
+                            #{
+                                <<"response">> => <<"error">>,
+                                <<"status">> => 422,
+                                <<"outbox-index">> => Key,
+                                <<"reason">> => <<"No target process found.">>,
+                                <<"message">> => Msg
+                            }
                     end,
                     Outbox
                 ),
@@ -103,26 +121,38 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                 },
                 Opts
             ),
-            {ok, Assignment} = schedule_result(Base, MsgToPush, Opts),
-            NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
-            PushedMsgID = hb_converge:get(<<"body/id">>, Assignment, Opts),
-            ?event(push,
-                {push_scheduled_message,
-                    {process, TargetID},
-                    {slot, NextSlotOnProc},
-                    {pushed_msg, PushedMsgID}
-                }),
-            {ok, Downstream} = hb_converge:resolve(
-                TargetID,
-                #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
-                Opts#{ cache_control => <<"always">> }
-            ),
-            #{
-                <<"id">> => PushedMsgID,
-                <<"target">> => TargetID,
-                <<"slot">> => NextSlotOnProc,
-                <<"resulted-in">> => Downstream
-            }
+            case schedule_result(Base, MsgToPush, Opts) of
+                {ok, Assignment} ->
+                    NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
+                    PushedMsg = hb_converge:get(<<"body">>, Assignment, Opts),
+                    PushedMsgID = hb_message:id(PushedMsg, all, Opts),
+                    ?event(push,
+                        {push_scheduled_message,
+                            {process, TargetID},
+                            {slot, NextSlotOnProc},
+                            {pushed_msg, PushedMsgID}
+                        }
+                    ),
+                    {ok, TargetBase} = hb_cache:read(TargetID, Opts),
+                    {ok, Downstream} = hb_converge:resolve(
+                        {as, <<"process@1.0">>, TargetBase},
+                        #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
+                        Opts#{ cache_control => <<"always">> }
+                    ),
+                    #{
+                        <<"id">> => PushedMsgID,
+                        <<"target">> => TargetID,
+                        <<"slot">> => NextSlotOnProc,
+                        <<"resulted-in">> => Downstream
+                    };
+                {error, Error} ->
+                    ?event(push, {push_failed, {error, Error}}, Opts),
+                    #{
+                        <<"response">> => <<"error">>,
+                        <<"target">> => TargetID,
+                        <<"reason">> => Error
+                    }
+            end
     end.
 
 %% @doc Augment the message with from-* keys, if it doesn't already have them.
@@ -159,31 +189,32 @@ split_target(RawTarget) ->
 schedule_result(Base, MsgToPush, Opts) ->
     schedule_result(Base, MsgToPush, <<"httpsig@1.0">>, Opts).
 schedule_result(Base, MsgToPush, Codec, Opts) ->
+    Target = hb_converge:get(<<"target">>, MsgToPush, Opts),
     ?event(push,
         {push_scheduling_result,
-            {target, {explicit, Base}},
-            {msg, MsgToPush}},
+            {target, {explicit, Target}},
+            {target_process, Base},
+            {msg, MsgToPush},
+            {codec, Codec}
+        },
         Opts
     ),
     SignedReq =
         #{
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
-            <<"body">> =>
-                hb_message:attest(
-                    MsgToPush,
-                    Opts
-                )
+            <<"body">> => hb_message:attest(MsgToPush, Opts, Codec)
         },
     {ErlStatus, Res} =
         hb_converge:resolve(
-            Base,
+            {as, <<"process@1.0">>, Base},
             SignedReq,
             Opts#{ cache_control => <<"always">> }
         ),
-    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}}, Opts),
+    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}, {used_opts, Opts}}, Opts),
     case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
-        {ok, 200} -> {ok, Res};
+        {ok, 200} ->
+            {ok, Res};
         {ok, 307} ->
             Location = hb_converge:get(<<"location">>, Res, Opts),
             ?event(push, {redirect, {location, {explicit, Location}}}),
@@ -191,11 +222,12 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
             SignedNormMsg = hb_message:attest(NormMsg, Opts),
             remote_schedule_result(Location, SignedNormMsg, Opts);
         {error, 422} ->
-            ?event(push, {downgrading_to_ans104, {422, Res}, {codec, Codec}}, Opts),
+            ?event(push, {received_wrong_format, {422, Res}, {codec, Codec}}, Opts),
             case Codec of
                 <<"ans104@1.0">> ->
                     {error, Res};
                 <<"httpsig@1.0">> ->
+                    ?event(push, {downgrading_to_ans104, {422, Res}, {codec, Codec}}, Opts),
                     schedule_result(Base, MsgToPush, <<"ans104@1.0">>, Opts)
             end;
         {error, _} ->

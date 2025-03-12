@@ -45,7 +45,7 @@ read(ID, Opts) ->
                 >>,
             <<"variables">> =>
                 #{
-                    <<"transactionIds">> => [ID]
+                    <<"transactionIds">> => [hb_util:human_id(ID)]
                 }
         },
     case query(Query, Opts) of
@@ -174,20 +174,15 @@ result_to_message(ExpectedID, Item, Opts) ->
                 Bytes
         end,
     DataSize = byte_size(Data),
-    ?event(gateway, {data, {id, ExpectedID}, {data, Data}}, Opts),
+    ?event(gateway, {data, {id, ExpectedID}, {data, Data}, {item, Item}}, Opts),
     % Convert the response to an ANS-104 message.
     TX =
         #tx {
             format = ans104,
             id = hb_util:decode(ExpectedID),
-            last_tx =
-                decode_or_null(
-                    hb_converge:get(<<"anchor">>,
-                        Item, GQLOpts)
-                ),
+            last_tx = normalize_null(hb_converge:get(<<"anchor">>, Item, GQLOpts)),
             signature =
-                hb_util:decode(hb_converge:get(<<"signature">>,
-                    Item, GQLOpts)),
+                hb_util:decode(hb_converge:get(<<"signature">>, Item, GQLOpts)),
             target =
                 decode_or_null(
                     hb_converge:get_first(
@@ -216,8 +211,15 @@ result_to_message(ExpectedID, Item, Opts) ->
     TABM = dev_codec_ans104:from(TX),
     ?event({decoded_tabm, TABM}),
     Structured = dev_codec_structured:to(TABM),
-    ?event({encoded_structured, Structured}),
     {ok, Structured}.
+
+normalize_null(null) -> <<>>;
+normalize_null(Bin) when is_binary(Bin) -> Bin.
+
+decode_id_or_null(Bin) when byte_size(Bin) > 0 ->
+    hb_util:human_id(Bin);
+decode_id_or_null(_) ->
+    <<>>.
 
 decode_or_null(Bin) when is_binary(Bin) ->
     hb_util:decode(Bin);
