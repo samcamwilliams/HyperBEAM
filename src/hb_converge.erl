@@ -689,18 +689,18 @@ maybe_force_message({Status, Res}, Opts) ->
 force_message({Status, Res}, Opts) when is_list(Res) ->
     force_message({Status, normalize_keys(Res)}, Opts);
 force_message({Status, Literal}, _Opts) when not is_map(Literal) ->
-    ?event(debug, {force_message_from_literal, Literal}),
+    ?event({force_message_from_literal, Literal}),
     {Status, #{ <<"ao-result">> => <<"body">>, <<"body">> => Literal }};
 force_message({Status, M = #{ <<"status">> := Status, <<"body">> := Body }}, _Opts)
         when map_size(M) == 2 ->
-    ?event(debug, {force_message_from_literal_with_status, M}),
+    ?event({force_message_from_literal_with_status, M}),
     {Status, #{
         <<"status">> => Status,
         <<"ao-result">> => <<"body">>,
         <<"body">> => Body
     }};
 force_message({Status, Map}, _Opts) ->
-    ?event(debug, {force_message_from_map, Map}),
+    ?event({force_message_from_map, Map}),
     {Status, Map}.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is

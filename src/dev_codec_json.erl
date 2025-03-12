@@ -7,8 +7,10 @@
 %% @doc Return the content type for the codec.
 content_type(_) -> {ok, <<"application/json">>}.
 
+%% @doc Encode a message to a JSON string.
 to(Msg) -> iolist_to_binary(json:encode(Msg)).
 
+%% @doc Decode a JSON string to a message.
 from(Map) when is_map(Map) -> Map;
 from(Json) -> json:decode(Json).
 

@@ -69,7 +69,7 @@ lookup(Msg1, Msg2, Opts) ->
                     ),
                     {ok, Msg3};
                 not_found ->
-                    ?event(caching, {cache_miss, Msg1, Msg2}),
+                    ?event(caching, {result_cache_miss, Msg1, Msg2}),
                     case Settings of
                         #{ <<"only-if-cached">> := true } ->
                             only_if_cached_not_found_error(Msg1, Msg2, Opts);
