@@ -180,6 +180,9 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
             Res
     end.
 
+resolve_stage(1, {as, DevID, ID}, Msg2, Opts) when ?IS_ID(ID) ->
+    % Normalize `as' requests with a raw ID as the path.
+    resolve_stage(1, {as, DevID, #{ <<"path">> => ID }}, Msg2, Opts);
 resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Msg2, Opts) when ?IS_ID(ID) ->
     % If the first message is an `as' with an ID, we should load the message and
     % apply the non-path elements of the sub-request to it.
@@ -197,7 +200,7 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
     % Set the device of the message to the specified one and resolve the sub-path.
     % As this is the first message, we will then continue to execute the request
     % on the result.
-    ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}}, Opts),
+    ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
     case subresolve(#{}, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
