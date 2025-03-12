@@ -362,7 +362,11 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                                 ?event({reading_cache, {proc_id, ProcID}}),
                                 case hb_cache:read(ProcID, Opts) of
                                     {ok, P} -> P;
-                                    not_found -> Msg1
+                                    not_found ->
+                                        case hb_message:id(Msg1, all) of
+                                            ProcID -> Msg1;
+                                            _ -> throw({process_not_available, ProcID})
+                                        end
                                 end;
                             P -> P
                         end,
