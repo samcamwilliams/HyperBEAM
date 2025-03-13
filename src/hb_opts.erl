@@ -159,7 +159,7 @@ default_message() ->
                     store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}]
                 }}
             ],
-        ans104_verify_only_attested => false,
+        ans104_verify_only_attested => true,
         http_extra_opts =>
             #{
                 force_message => true,
