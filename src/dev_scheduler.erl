@@ -359,14 +359,26 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     Proc =
                         case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
                             not_found ->
-                                ?event({reading_cache, {proc_id, ProcID}}),
-                                case hb_cache:read(ProcID, Opts) of
-                                    {ok, P} -> P;
-                                    not_found ->
+                                case (ToSched == undefined) andalso (hb_message:id(ToSched, all) == ProcID) of
+                                    true -> ToSched;
+                                    false ->
+                                        ?event(
+                                            {reading_cache,
+                                                {proc_id, ProcID},
+                                                {store, hb_opts:get(store, Opts)}
+                                            }
+                                        ),
                                         case hb_message:id(Msg1, all) of
                                             ProcID -> Msg1;
+                                            _ ->
+                                                case hb_cache:read(ProcID, Opts) of
+                                                    {ok, P} -> P;
+                                                    not_found ->
+                                                        throw({process_not_available, ProcID})
+                                                end;
                                             _ -> throw({process_not_available, ProcID})
-                                        end
+                                        end;
+                                    _ -> throw({process_not_available, ProcID})
                                 end;
                             P -> P
                         end,
@@ -1096,7 +1108,7 @@ http_get_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
         Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
         {Node, _Wallet} = http_init(),
-        Res = hb_http:get(Node, <<"/~scheduler@1.0/schedule?target=", Target/binary>>, #{}),
+        Res = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary>>, #{}),
         ?assertMatch({ok, #{ <<"assignments">> := As }} when map_size(As) > 0, Res)
     end}.
 
