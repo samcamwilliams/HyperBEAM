@@ -155,11 +155,9 @@ default_message() ->
         store =>
             [
                 {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{
-                    store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}]
-                }}
+                {hb_store_gateway, #{ store => false }}
             ],
-        ans104_verify_only_attested => true,
+        ans104_verify_only_attested => false,
         http_extra_opts =>
             #{
                 force_message => true,
