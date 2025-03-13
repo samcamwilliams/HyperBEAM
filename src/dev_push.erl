@@ -206,7 +206,12 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
         #{
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
-            <<"body">> => hb_message:attest(MsgToPush, Opts, Codec)
+            <<"body">> =>
+                hb_message:attest(
+                    maps:merge(MsgToPush, additional_keys(Base, MsgToPush, Opts)),
+                    Opts,
+                    Codec
+                )
         },
     {ErlStatus, Res} =
         hb_converge:resolve(
@@ -236,6 +241,20 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
         {error, _} ->
             {error, Res}
     end.
+
+%% @doc Set the necessary keys in order for the recipient to know where the
+%% message came from.
+additional_keys(FromMsg, ToSched, Opts) ->
+    hb_converge:set(
+        ToSched,
+        #{
+            <<"Data-Protocol">> => <<"ao">>,
+            <<"Variant">> => <<"ao.N.1">>,
+            <<"Type">> => <<"Message">>,
+            <<"From-Process">> => hb_message:id(FromMsg, all, Opts)
+        },
+        Opts
+    ).
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
 initial_push(Base, Req, Opts) ->
