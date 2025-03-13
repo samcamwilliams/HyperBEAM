@@ -922,7 +922,7 @@ redirect_from_graphql_test() ->
         #{ store =>
             [
                 {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{}}
+                {hb_store_gateway, #{ store => false }}
             ]
         },
     {ok, Msg} = hb_cache:read(<<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>, Opts),
@@ -988,7 +988,14 @@ http_init() -> http_init(#{}).
 http_init(Opts) ->
     start(),
     Wallet = ar_wallet:new(),
-    Node = hb_http_server:start_node(Opts#{ priv_wallet => Wallet }),
+    Node = hb_http_server:start_node(
+        Opts#{
+            priv_wallet => Wallet,
+            store => [
+                {hb_store_fs, #{ prefix => "mainnet-cache" }},
+                {hb_store_gateway, #{ store => false }}
+            ]
+        }),
     {Node, Wallet}.
 
 register_scheduler_test() ->
