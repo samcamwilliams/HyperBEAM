@@ -66,7 +66,7 @@ do_push(Base, Assignment, Opts) ->
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     Result = hb_converge:resolve(
-        {as, <<"process@1.0">>, Base},
+        {as, <<"process@1.0">>, ID},
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
@@ -134,8 +134,11 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                         }
                     ),
                     {ok, TargetBase} = hb_cache:read(TargetID, Opts),
+                    TargetAsProcess = dev_process:ensure_process_key(TargetBase, Opts),
+                    RecvdID = hb_message:id(TargetBase, all),
+                    ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
                     {ok, Downstream} = hb_converge:resolve(
-                        {as, <<"process@1.0">>, TargetBase},
+                        {as, <<"process@1.0">>, TargetAsProcess},
                         #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
                         Opts#{ cache_control => <<"always">> }
                     ),

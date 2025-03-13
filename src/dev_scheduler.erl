@@ -744,7 +744,7 @@ find_target_id(Msg1, Msg2, Opts) ->
                 end
             end
     end,
-    ?event({found_id, {id, Res}}),
+    ?event({found_id, {id, Res}, {msg1, Msg1}, {msg2, Msg2}}),
     Res.
 
 %% @doc Search the given base and request message pair to find the message to
