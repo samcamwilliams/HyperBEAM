@@ -359,7 +359,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     Proc =
                         case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
                             not_found ->
-                                case (ToSched == undefined) andalso (hb_message:id(ToSched, all) == ProcID) of
+                                case (ToSched =/= undefined) andalso (hb_message:id(ToSched, all) == ProcID) of
                                     true -> ToSched;
                                     false ->
                                         ?event(
