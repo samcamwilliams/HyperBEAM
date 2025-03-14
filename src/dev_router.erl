@@ -212,13 +212,11 @@ choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
             fun(Node) ->
                 Wallet = hb_converge:get(<<"Wallet">>, Node, Opts),
                 DistanceScore =
-                    hb_crypto:sha256(
-                        <<
-                            Wallet/binary,
-                            BareHashPath/binary
-                        >>
+                    field_distance(
+                        hb_util:native_id(Wallet),
+                        BareHashPath
                     ),
-                {Node, binary_to_bignum(DistanceScore)}
+                {Node, DistanceScore}
             end,
             Nodes
         ),
@@ -234,6 +232,17 @@ choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
             )
         )
     ).
+
+%% @doc Calculate the minimum distance between two numbers
+%% (either progressing backwards or forwards), assuming a
+%% 256-bit field.
+field_distance(A, B) when is_binary(A) ->
+    field_distance(binary_to_bignum(A), B);
+field_distance(A, B) when is_binary(B) ->
+    field_distance(A, binary_to_bignum(B));
+field_distance(A, B) ->
+    AbsDiff = abs(A - B),
+    min(AbsDiff, (1 bsl 256) - AbsDiff).
 
 %% @doc Find the node with the lowest distance to the given hashpath.
 lowest_distance(Nodes) -> lowest_distance(Nodes, {undefined, infinity}).

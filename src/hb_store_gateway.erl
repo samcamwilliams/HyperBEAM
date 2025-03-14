@@ -1,13 +1,19 @@
 %%% @doc A store module that reads data from the nodes Arweave gateway and 
 %%% GraphQL routes, additionally including additional store-specific routes.
 -module(hb_store_gateway).
--export([scope/1, type/2, read/2, resolve/2]).
+-export([scope/1, type/2, read/2, resolve/2, list/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc The scope of a GraphQL store is always remote, due to performance.
 scope(_) -> remote.
 resolve(_, Key) -> Key.
+
+list(StoreOpts, Key) ->
+    case read(StoreOpts, Key) of
+        {error, _} -> not_found;
+        {ok, Message} -> {ok, maps:keys(Message)}
+    end.
 
 %% @doc Normalize the store options, adding the routes if specified.
 %% If no routes are specified, the default routes are used.
@@ -31,6 +37,7 @@ type(StoreOpts, Key) ->
         not_found -> not_found;
         {ok, Data} ->
             maybe_cache(StoreOpts, Data),
+            ?event({type, hb_private:reset(hb_message:unattested(Data))}),
             IsFlat = lists:all(
                 fun({_, Value}) -> not is_map(Value) end,
                 maps:to_list(hb_private:reset(hb_message:unattested(Data)))
@@ -41,12 +48,19 @@ type(StoreOpts, Key) ->
             end
     end.
 
-%% @doc Read the data at the given key from the GraphQL route.
+%% @doc Read the data at the given key from the GraphQL route. Will only attempt
+%% to read the data if the key is an ID.
 read(StoreOpts, Key) ->
-    ?event({read, StoreOpts, Key}),
-    case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
-        {error, _} -> not_found;
-        {ok, Message} -> {ok, Message}
+    case hb_path:term_to_path_parts(Key) of
+        [ID] when ?IS_ID(ID) ->
+            ?event({read, StoreOpts, Key}),
+            case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
+                {error, _} -> not_found;
+                {ok, Message} -> {ok, Message}
+            end;
+        _ ->
+            ?event({ignoring_non_id, Key}),
+            not_found
     end.
 
 %% @doc Cache the data if the cache is enabled. The `cache` option may either
@@ -113,15 +127,15 @@ specific_route_test() ->
 external_http_access_test() ->
     Node = hb_http_server:start_node(
         #{
-            store => [{hb_store_gateway, #{}}, {hb_store_fs, #{ prefix => "test-cache" }}],
+            store => [{hb_store_fs, #{ prefix => "test-cache" }}, {hb_store_gateway, #{}}],
             http_extra_opts => #{ force_message => true, cache_control => [<<"always">>] }
         }
     ),
     ?assertMatch(
-        {ok, #{ <<"body">> := <<"Assignment">> }},
+        {ok, #{ <<"type">> := <<"Assignment">> }},
         hb_http:get(
             Node,
-            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE/type">>,
+            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
             #{}
         )
     ).

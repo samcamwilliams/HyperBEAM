@@ -11,7 +11,7 @@
 %%% the execution parameters of all downstream requests to be controlled.
 -module(hb_http_server).
 -export([start/0, start/1, allowed_methods/2, init/2, set_opts/1, get_opts/1]).
--export([start_node/0, start_node/1]).
+-export([start_node/0, start_node/1, set_default_opts/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -19,14 +19,74 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    ?event(http, {start_store, "main-cache"}),
-    Store = [{hb_store_fs, #{ prefix => "main-cache" }}],
+    ?event(http, {start_store, "mainnet-cache"}),
+    Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
+    Loaded =
+        case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>, #{})) of
+            {ok, Conf} ->
+                ?event(boot, {loaded_config, Loc, Conf}),
+                Conf;
+            {error, Reason} ->
+                ?event(boot, {failed_to_load_config, Loc, Reason}),
+                #{}
+        end,
+    PrivWallet =
+        hb:wallet(
+            hb_opts:get(
+                priv_key_location,
+                <<"hyperbeam-key.json">>,
+                Loaded
+            )
+        ),
+    FormattedConfig = hb_util:debug_fmt(Loaded, 2),
+    io:format("~n"
+        "===========================================================~n"
+        "==    ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗           ==~n"
+        "==    ██║  ██║╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗          ==~n"
+        "==    ███████║ ╚████╔╝ ██████╔╝█████╗  ██████╔╝          ==~n"
+        "==    ██╔══██║  ╚██╔╝  ██╔═══╝ ██╔══╝  ██╔══██╗          ==~n"
+        "==    ██║  ██║   ██║   ██║     ███████╗██║  ██║          ==~n"
+        "==    ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝╚═╝  ╚═╝          ==~n"
+        "==                                                       ==~n"
+        "==        ██████╗ ███████╗ █████╗ ███╗   ███╗ VERSION:   ==~n"
+        "==        ██╔══██╗██╔════╝██╔══██╗████╗ ████║      v~p. ==~n"
+        "==        ██████╔╝█████╗  ███████║██╔████╔██║            ==~n"
+        "==        ██╔══██╗██╔══╝  ██╔══██║██║╚██╔╝██║ EAT GLASS, ==~n"
+        "==        ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║ BUILD THE  ==~n"
+        "==        ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝    FUTURE. ==~n"
+        "===========================================================~n"
+        "== Node activate at: ~s ==~n"
+        "== Operator: ~s ==~n"
+        "===========================================================~n"
+        "== Config:                                               ==~n"
+        "===========================================================~n"
+        "   ~s~n"
+        "===========================================================~n",
+        [
+            ?HYPERBEAM_VERSION,
+            string:pad(
+                lists:flatten(
+                    io_lib:format(
+                        "http://~s:~p",
+                        [
+                            hb_opts:get(host, <<"localhost">>, Loaded),
+                            hb_opts:get(port, 8734, Loaded)
+                        ]
+                    )
+                ),
+                35, leading, $ 
+            ),
+            hb_util:human_id(ar_wallet:to_address(PrivWallet)),
+            FormattedConfig
+        ]
+    ),
+    
     start(
-        #{
-            priv_wallet => hb:wallet(hb_opts:get(key_location)),
+        Loaded#{
+            priv_wallet => PrivWallet,
             store => Store,
-            port => hb_opts:get(http_default_remote_port, 8734)
+            port => hb_opts:get(port, 8734, Loaded)
         }
     ).
 start(Opts) ->
@@ -44,7 +104,7 @@ start(Opts) ->
         rocksdb
     ]),
     hb:init(),
-    BaseOpts = set_base_opts(Opts),
+    BaseOpts = set_default_opts(Opts),
     {ok, Listener, _Port} = new_server(BaseOpts),
     {ok, Listener}.
 
@@ -73,6 +133,7 @@ new_server(RawNodeMsg) ->
             [
                 % {HostMatch, list({PathMatch, Handler, InitialState})}
                 {'_', [
+                    {"/", cowboy_static, {priv_file, hb, "index.html"}},
                     {
                         "/metrics/[:registry]",
                         prometheus_cowboy2_handler,
@@ -156,24 +217,54 @@ start_http2(ServerID, ProtoOpts, NodeMsg) ->
     ),
     {ok, Port, Listener}.
 
+%% @doc Entrypoint for all HTTP requests. Receives the Cowboy request option and
+%% the server ID, which can be used to lookup the node message.
 init(Req, ServerID) ->
-    NodeMsg = get_opts(#{ http_server => ServerID }),
-    ?event(http, {http_inbound, Req}),
-    % Parse the HTTP request into HyerBEAM's message format.
-    ReqSingleton = hb_http:req_to_tabm_singleton(Req, NodeMsg),
-    ?event(http, {parsed_singleton, ReqSingleton}),
-    {ok, Res} = dev_meta:handle(NodeMsg, ReqSingleton),
-    hb_http:reply(Req, Res, NodeMsg).
-
-%% @doc Return the complete Ranch ETS table for the node for debugging.
-ranch_ets() ->
-    case ets:info(ranch_server) of
-        undefined -> [];
-        _ -> ets:tab2list(ranch_server)
+    case cowboy_req:method(Req) of
+        <<"OPTIONS">> -> cors_reply(Req, ServerID);
+        _ ->
+            {ok, Body} = read_body(Req),
+            handle_request(Req, Body, ServerID)
     end.
 
+%% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
+read_body(Req) -> read_body(Req, <<>>).
+read_body(Req0, Acc) ->
+    case cowboy_req:read_body(Req0) of
+        {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
+        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
+    end.
+
+%% @doc Reply to CORS preflight requests.
+cors_reply(Req, _ServerID) ->
+    cowboy_req:reply(204, #{
+        <<"access-control-allow-origin">> => <<"*">>,
+        <<"access-control-allow-headers">> => <<"*">>,
+        <<"access-control-allow-methods">> =>
+            <<"GET, POST, PUT, DELETE, OPTIONS, PATCH">>
+    }, Req).
+
+%% @doc Handle all non-CORS preflight requests as Converge requests. Execution 
+%% starts by parsing the HTTP request into HyerBEAM's message format, then
+%% passing the message directly to `meta@1.0` which handles calling Converge in
+%% the appropriate way.
+handle_request(Req, Body, ServerID) ->
+    NodeMsg = get_opts(#{ http_server => ServerID }),
+    ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
+    % Parse the HTTP request into HyerBEAM's message format.
+    ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
+    AttestationCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+    ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, AttestationCodec}}),
+    {ok, Res} =
+        dev_meta:handle(
+            NodeMsg#{ attestation_device => AttestationCodec },
+            ReqSingleton
+        ),
+    hb_http:reply(Req, ReqSingleton, Res, NodeMsg).
+
+%% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->
-    {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>], Req, State}.
+    {[<<"GET">>, <<"POST">>, <<"PUT">>, <<"DELETE">>, <<"OPTIONS">>, <<"PATCH">>], Req, State}.
 
 %% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
@@ -185,9 +276,7 @@ get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
     cowboy:get_env(ServerRef, node_msg, no_node_msg).
 
-%%% Tests
-
-set_base_opts(Opts) ->
+set_default_opts(Opts) ->
     % Create a temporary opts map that does not include the defaults.
     TempOpts = Opts#{ only => local },
     % Generate a random port number between 10000 and 30000 to use
@@ -215,7 +304,12 @@ set_base_opts(Opts) ->
                 };
             PassedStore -> PassedStore
         end,
-    ?event({set_base_opts, TempOpts, Port, Store, Wallet}),
+    ?event({set_default_opts,
+        {given, TempOpts},
+        {port, Port},
+        {store, Store},
+        {wallet, Wallet}
+    }),
     Opts#{
         port => Port,
         store => Store,
@@ -243,6 +337,6 @@ start_node(Opts) ->
     ]),
     hb:init(),
     hb_sup:start_link(Opts),
-    ServerOpts = set_base_opts(Opts),
+    ServerOpts = set_default_opts(Opts),
     {ok, _Listener, Port} = new_server(ServerOpts),
     <<"http://localhost:", (integer_to_binary(Port))/binary, "/">>.

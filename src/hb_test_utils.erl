@@ -1,6 +1,6 @@
 %%% @doc Simple utilities for testing HyperBEAM.
 -module(hb_test_utils).
--export([suite_with_opts/2]).
+-export([suite_with_opts/2, run/4]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 

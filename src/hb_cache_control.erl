@@ -49,7 +49,12 @@ lookup(Msg1, Msg2, Opts) ->
     case derive_cache_settings([Msg1, Msg2], Opts) of
         #{ <<"lookup">> := false } -> {continue, Msg1, Msg2};
         Settings = #{ <<"lookup">> := true } ->
-            case hb_cache:read_output(Msg1, Msg2, Opts) of
+            OutputScopedOpts = 
+                hb_store:scope(
+                    hb_opts:get(store_scope_resolved, local, Opts),
+                    Opts
+                ),
+            case hb_cache:read_resolved(Msg1, Msg2, OutputScopedOpts) of
                 {ok, Msg3} ->
                     ?event(caching,
                         {cache_hit,
@@ -156,6 +161,8 @@ necessary_messages_not_found_error(Msg1, Msg2, Opts) ->
 
 %% @doc Determine whether we are likely to be faster looking up the result in
 %% our cache (hoping we have it), or executing it directly.
+exec_likely_faster_heuristic({as, _, Msg1}, Msg2, Opts) ->
+    exec_likely_faster_heuristic(Msg1, Msg2, Opts);
 exec_likely_faster_heuristic(Msg1, Msg2, Opts) ->
     case hb_opts:get(cache_lookup_hueristics, true, Opts) of
         false -> false;

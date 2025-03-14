@@ -176,13 +176,13 @@ postprocess(State, RawResponse, NodeMsg) ->
 
 %% @doc Get the balance of a user in the ledger.
 balance(_, Req, NodeMsg) ->
-    LedgerDevice =
-        hb_converge:get(
-            <<"preprocessor/ledger_device">>,
-            NodeMsg,
-            false,
+    Preprocessor =
+        hb_opts:get(
+            <<"preprocessor">>,
+            preprocessor_not_set,
             NodeMsg
         ),
+    LedgerDevice = hb_converge:get(<<"ledger_device">>, Preprocessor, false, NodeMsg),
     LedgerMsg = #{ <<"device">> => LedgerDevice },
     LedgerReq = #{
         <<"path">> => <<"balance">>,

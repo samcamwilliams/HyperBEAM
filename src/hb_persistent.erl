@@ -189,7 +189,7 @@ default_await(Worker, GroupName, Msg1, Msg2, Opts) ->
             worker_event(GroupName, {resolved_await, Res}, Msg1, Msg2, Opts),
             Res;
         {'DOWN', _R, process, Worker, Reason} ->
-            ?event(debug_leader,
+            ?event(
                 {leader_died,
                     {group, GroupName},
                     {leader, Worker},
@@ -207,7 +207,7 @@ default_await(Worker, GroupName, Msg1, Msg2, Opts) ->
 notify(GroupName, Msg2, Msg3, Opts) ->
     case is_binary(GroupName) of
         true ->
-            ?event(debug_notify, {notifying_all, {group, GroupName}});
+            ?event({notifying_all, {group, GroupName}});
         false ->
             ok
     end,
@@ -239,7 +239,7 @@ forward_work(NewPID, Opts) ->
     ),
     case length(ToForward) > 0 of
         true ->
-            ?event(debug_leader, {fwded, {reqs, length(ToForward)}, {pid, NewPID}}, Opts);
+            ?event({fwded, {reqs, length(ToForward)}, {pid, NewPID}}, Opts);
         false -> ok
     end,
     ok.

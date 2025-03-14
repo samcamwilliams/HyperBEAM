@@ -4,7 +4,7 @@
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
--export([upload/1, download/1]).
+-export([upload/2, download/1]).
 
 -include("include/hb.hrl").
 
@@ -93,29 +93,28 @@ download(ID) ->
     end.
 
 %% @doc Upload a data item to the bundler node.
-upload(HyperbeamMsg) ->
-    todo.
-    % ?event({uploading_item, Item}),
-    % case
-    %     httpc:request(
-    %         post,
-    %         {
-    %             <<(hb_opts:get(bundler))/binary, "/tx">>,
-    %             [],
-    %             "application/octet-stream",
-    %             ar_bundles:serialize(Item)
-    %         },
-    %         [],
-    %         []
-    %     )
-    % of
-    %     {ok, {{_, 200, _}, _, Body}} ->
-    %         ?event(upload_success),
-    %         {ok, jiffy:decode(Body, [return_maps])};
-    %     Response ->
-    %         ?event(upload_error),
-    %         {error, bundler_http_error, Response}
-    % end.
+upload(Msg, Opts) ->
+    case hb_converge:get(<<"codec-device">>, Msg, <<"httpsig@1.0">>, Opts) of
+        <<"httpsig@1.0">> ->
+            case hb_opts:get(bundler_httpsig, not_found, Opts) of
+                not_found ->
+                    {error, no_httpsig_bundler};
+                Bundler ->
+                    ?event({uploading_item, Msg}),
+                    hb_http:post(Bundler, <<"/tx">>, Msg, Opts)
+            end;
+        <<"ans104@1.0">> ->
+            ?event({uploading_item, Msg}),
+            hb_http:post(
+                hb_opts:get(bundler_ans104, not_found, Opts),
+                <<"/tx">>,
+                Msg,
+                Opts#{
+                    http_client =>
+                        hb_opts:get(bundler_ans104_http_client, httpc, Opts)
+                }
+            )
+    end.
 
 %%% Utility functions
 

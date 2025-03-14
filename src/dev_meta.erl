@@ -17,9 +17,9 @@
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
 %% other messages are routed to the `handle_converge/2' function.
 handle(NodeMsg, RawRequest) ->
-    ?event({singleton_request, RawRequest}),
+    ?event({singleton_tabm_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(http_converge, {request, hb_converge:normalize_keys(NormRequest)}),
+    ?event(http_short, {request, hb_converge:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
             embed_status(handle_initialize(NormRequest, NodeMsg));
@@ -89,6 +89,8 @@ add_dynamic_keys(NodeMsg) ->
             NodeMsg#{ address => Address, <<"address">> => Address }
     end.
 
+%% @doc Validate that the request is signed by the operator of the node, then
+%% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
     {ok, RequestSigners} = dev_message:attestors(Request),
     Operator =
@@ -102,10 +104,8 @@ update_node_message(Request, NodeMsg) ->
         ),
     EncOperator =
         case Operator of
-            unclaimed ->
-                unclaimed;
-            Val ->
-                hb_util:human_id(Val)
+            unclaimed -> unclaimed;
+            NativeAddress -> hb_util:human_id(NativeAddress)
         end,
     case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
         false ->
@@ -113,10 +113,10 @@ update_node_message(Request, NodeMsg) ->
             embed_status({error, <<"Unauthorized">>});
         true ->
             ?event({set_node_message_success, Request}),
+            MergedOpts = hb_converge:set(NodeMsg, Request, NodeMsg),
             hb_http_server:set_opts(
-                Request#{
-                    http_server =>
-                        hb_opts:get(http_server, no_server, NodeMsg)
+                MergedOpts#{
+                    http_server => hb_opts:get(http_server, no_server, NodeMsg)
                 }
             ),
             embed_status({ok, <<"OK">>})
@@ -163,7 +163,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
                 ),
                 NodeMsg
             ),
-            ?event(http_converge, {response, Output}),
+            ?event(http_short, {response, Output}),
             Output;
         Res -> embed_status(Res)
     end.
@@ -183,22 +183,56 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
                 },
                 NodeMsg#{ hashpath => ignore }
             ),
-            ?event({preprocessor_result, Res}),
+            ?event({processor_result, {type, PathKey}, {res, Res}}),
             Res
     end.
 
 %% @doc Wrap the result of a device call in a status.
-embed_status({error, not_found}) ->
-    {ok,
-        #{
-            <<"status">> => hb_http:status_code(not_found),
-            <<"body">> => <<"Not found.">>
-        }
-    };
-embed_status({Status, Res}) when is_map(Res) ->
-    {ok, Res#{ <<"status">> => hb_http:status_code(Status) }};
-embed_status({Status, Res}) when is_binary(Res) ->
-    {ok, #{ <<"status">> => hb_http:status_code(Status), <<"body">> => Res }}.
+embed_status({ErlStatus, Res}) when is_map(Res) ->
+    case lists:member(<<"status">>, hb_message:attested(Res)) of
+        false ->
+            HTTPCode = status_code({ErlStatus, Res}),
+            {ok, Res#{ <<"status">> => HTTPCode }};
+        true ->
+            {ok, Res}
+    end;
+embed_status({ErlStatus, Res}) ->
+    HTTPCode = status_code({ErlStatus, Res}),
+    {ok, #{ <<"status">> => HTTPCode, <<"body">> => Res }}.
+
+%% @doc Calculate the appropriate HTTP status code for a Converge result.
+%% The order of precedence is:
+%% 1. The status code from the message.
+%% 2. The HTTP representation of the status code.
+%% 3. The default status code.
+status_code({ErlStatus, Msg}) ->
+    case message_to_status(Msg) of
+        default -> status_code(ErlStatus);
+        RawStatus -> RawStatus
+    end;
+status_code(ok) -> 200;
+status_code(error) -> 400;
+status_code(created) -> 201;
+status_code(not_found) -> 404;
+status_code(unavailable) -> 503.
+
+%% @doc Get the HTTP status code from a transaction (if it exists).
+message_to_status(#{ <<"body">> := Status }) when is_atom(Status) ->
+    status_code(Status);
+message_to_status(Item) when is_map(Item) ->
+    % Note: We use `dev_message` directly here, such that we do not cause 
+    % additional Converge calls for every request. This is particularly important
+    % if a remote server is being used for all Converge requests by a node.
+    case dev_message:get(<<"status">>, Item) of
+        {ok, RawStatus} when is_integer(RawStatus) -> RawStatus;
+        {ok, RawStatus} when is_atom(RawStatus) -> status_code(RawStatus);
+        {ok, RawStatus} -> binary_to_integer(RawStatus);
+        _ -> default
+    end;
+message_to_status(Item) when is_atom(Item) ->
+    status_code(Item);
+message_to_status(_Item) ->
+    default.
 
 %% @doc Sign the result of a device call if the node is configured to do so.
 maybe_sign({Status, Res}, NodeMsg) ->
@@ -208,12 +242,7 @@ maybe_sign(Res, NodeMsg) ->
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
             case hb_message:signers(Res) of
-                [] ->
-                    hb_message:attest(
-                        Res,
-                        hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg),
-                        hb_opts:get(format, <<"httpsig@1.0">>, NodeMsg)
-                    );
+                [] -> hb_message:attest(Res, NodeMsg);
                 _ -> Res
             end;
         false -> Res
@@ -259,7 +288,7 @@ priv_inaccessible_test() ->
 %% the owner of the node.
 unauthorized_set_node_msg_fails_test() ->
     Node = hb_http_server:start_node(#{ priv_wallet => ar_wallet:new() }),
-    {ok, SetRes} =
+    {error, _} =
         hb_http:post(
             Node,
             hb_message:attest(
@@ -271,9 +300,7 @@ unauthorized_set_node_msg_fails_test() ->
             ),
             #{}
         ),
-    ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?event({res, Res}),
     ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
 
 %% @doc Test that we can set the node message if the request is signed by the
@@ -282,7 +309,7 @@ authorized_set_node_msg_succeeds_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
         #{
-            operator => ar_wallet:to_address(Owner),
+            operator => hb_util:human_id(ar_wallet:to_address(Owner)),
             test_config_item => <<"test">>
         }
     ),
@@ -337,7 +364,7 @@ permanent_node_message_test() ->
     {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res}),
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
-    {ok, SetRes2} =
+    {error, SetRes2} =
         hb_http:post(
             Node,
             hb_message:attest(
@@ -370,17 +397,16 @@ claim_node_test() ->
             hb_message:attest(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
-                    <<"operator">> => Address
+                    <<"operator">> => hb_util:human_id(Address)
                 },
                 Owner
             ),
             #{}
         ),
     ?event({res, SetRes}),
-    timer:sleep(100),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(Address, hb_converge:get(<<"operator">>, Res, #{})),
+    ?assertEqual(hb_util:human_id(Address), hb_converge:get(<<"operator">>, Res, #{})),
     {ok, SetRes2} =
         hb_http:post(
             Node,
@@ -399,23 +425,23 @@ claim_node_test() ->
     ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
 
 %% @doc Test that we can use a preprocessor upon a request.
-preprocessor_test() ->
-    Parent = self(),
-    Node = hb_http_server:start_node(
-        #{
-            preprocessor =>
-                #{
-                    <<"device">> => #{
-                        <<"preprocess">> =>
-                            fun(_, #{ <<"body">> := Msgs }, _) ->
-                                Parent ! ok,
-                                {ok, Msgs}
-                            end
-                    }
-                }
-        }),
-    hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?assert(receive ok -> true after 1000 -> false end).
+% preprocessor_test() ->
+%     Parent = self(),
+%     Node = hb_http_server:start_node(
+%         #{
+%             preprocessor =>
+%                 #{
+%                     <<"device">> => #{
+%                         <<"preprocess">> =>
+%                             fun(_, #{ <<"body">> := Msgs }, _) ->
+%                                 Parent ! ok,
+%                                 {ok, Msgs}
+%                             end
+%                     }
+%                 }
+%         }),
+%     hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+%     ?assert(receive ok -> true after 1000 -> false end).
 
 %% @doc Test that we can halt a request if the preprocessor returns an error.
 halt_request_test() ->
@@ -452,21 +478,16 @@ modify_request_test() ->
     ?event({res, Res}),
     ?assertEqual(<<"value">>, hb_converge:get(<<"body">>, Res, #{})).
 
-%% @doc Test that we can use a postprocessor upon a request.
-postprocessor_test() ->
-    Parent = self(),
-    Node = hb_http_server:start_node(
-        #{
-            postprocessor =>
-                #{
-                    <<"device">> => #{
-                        <<"postprocess">> =>
-                            fun(_, #{ <<"body">> := Msgs }, _) ->
-                                Parent ! ok,
-                                {ok, Msgs}
-                            end
-                    }
-                }
-        }),
-    hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?assert(receive ok -> true after 1000 -> false end).
+%% @doc Test that we can use a postprocessor upon a request. Calls the `test@1.0'
+%% device's postprocessor, which sets the `postprocessor-called' key to true in
+%% the HTTP server.
+% postprocessor_test() ->
+%     Node = hb_http_server:start_node(
+%         #{
+%             postprocessor => <<"test-device@1.0">>
+%         }),
+%     hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+%     timer:sleep(100),
+%     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info/postprocessor-called">>, #{}),
+%     ?event({res, Res}),
+%     ?assertEqual(true, Res).

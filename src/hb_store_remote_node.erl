@@ -6,6 +6,7 @@
 -module(hb_store_remote_node).
 -export([scope/1, type/2, read/2, resolve/2]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 scope(_) -> remote.
 
@@ -14,26 +15,45 @@ resolve(#{ <<"node">> := Node }, Key) ->
     Key.
 
 type(Opts = #{ <<"node">> := Node }, Key) ->
-    ?no_prod("No need to get the whole message in order to get its type..."),
     ?event({remote_type, Node, Key}),
     case read(Opts, Key) of
         not_found -> not_found;
-        #tx { data = Map } when is_map(Map) -> composite;
         _ -> simple
     end.
 
-read(Opts, Key) when is_binary(Key) ->
-    read(Opts, binary_to_list(Key));
 read(Opts = #{ <<"node">> := Node }, Key) ->
-    Path = Node ++ "/data?Subpath=" ++ uri_string:quote(hb_store:join(Key)),
-    ?event({reading, Key, Path, Opts}),
-    case hb_http:get_binary(Path) of
-        {ok, Bundle} ->
-            case lists:keyfind(<<"status">>, 1, Bundle#tx.tags) of
-                {<<"status">>, <<"404">>} ->
-                    not_found;
-                _ ->
-                    {ok, Bundle}
-            end;
-        Error -> Error
+    ?event({reading, Key, Opts}),
+    case hb_http:get(Node, Key, Opts) of
+        {ok, Res} ->
+            {ok, Msg} = hb_message:with_only_attested(Res),
+            {ok, Msg};
+        {error, Err} ->
+            ?event({read_error, Key, Err}),
+            not_found
     end.
+
+%%% Tests
+
+%% @doc Test that we can create a store, write a random message to it, then start
+%% a remote node with that store, and read the message from it.
+read_test() ->
+    rand:seed(default),
+    LocalStore = {hb_store_fs, #{ prefix => "mainnet-cache" }},
+    hb_store:reset(LocalStore),
+    M = #{ <<"test-key">> => Rand = rand:uniform(1337) },
+    ID = hb_message:id(M),
+    {ok, ID} =
+        hb_cache:write(
+            M,
+            #{ store => LocalStore }
+        ),
+    ?event({wrote, ID}),
+    Node =
+        hb_http_server:start_node(
+            #{
+                store => LocalStore
+            }
+        ),
+    RemoteStore = [{hb_store_remote_node, #{ <<"node">> => Node }}],
+    {ok, RetrievedMsg} = hb_cache:read(ID, #{ store => RemoteStore }),
+    ?assertMatch(#{ <<"test-key">> := Rand }, RetrievedMsg).

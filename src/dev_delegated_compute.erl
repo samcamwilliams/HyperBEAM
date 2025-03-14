@@ -2,7 +2,7 @@
 %%% implementing the JSON-Iface. This can be used either as a standalone, to 
 %%% bring trusted results into the local node, or as the `Execution-Device' of
 %%% an AO process.
--module(dev_compute_lite).
+-module(dev_delegated_compute).
 -export([init/3, compute/3, normalize/3, snapshot/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -15,19 +15,17 @@ normalize(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 snapshot(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 
 compute(Msg1, Msg2, Opts) ->
-    ProcessID = hb_converge:get(<<"process/id">>, Msg1, Opts),
+    RawProcessID = dev_process:process_id(Msg1, #{}, Opts),
     Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
-    ?event(push, {compute_lite_called, {process_id, ProcessID}, {slot, Slot}}),
+    ?event(push, {compute_lite_called, {process_id, RawProcessID}, {slot, Slot}}),
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
-    Accept = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
     ProcessID =
-        hb_converge:get_first(
-            [
-                {Msg1, <<"process/id">>},
-                {Msg2, <<"process-id">>}
-            ],
-            Opts
-        ),
+        case RawProcessID of
+            not_found ->
+                hb_converge:get(<<"process-id">>, Msg2, Opts);
+            ProcID ->
+                ProcID
+        end,
     {ok, JSONRes} = do_compute(ProcessID, Slot, Opts),
     ?event(push, {compute_lite_res, {process_id, ProcessID}, {slot, Slot}, {json_res, JSONRes}}),
     {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
@@ -36,7 +34,11 @@ compute(Msg1, Msg2, Opts) ->
             Msg1,
             #{
                 <<OutputPrefix/binary, "/results">> => Msg,
-                <<OutputPrefix/binary, "/results/json">> => JSONRes
+                <<OutputPrefix/binary, "/results/json">> =>
+                    #{
+                        <<"content-type">> => <<"application/json">>,
+                        <<"body">> => JSONRes
+                    }
             },
             Opts
         )
@@ -44,7 +46,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Slot, Opts) ->
-    ?event(debug_leader, {do_compute_called, {process_id, ProcID}, {slot, Slot}}),
+    ?event({do_compute_called, {process_id, ProcID}, {slot, Slot}}),
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">> }, #{
             <<"path">> => <<"call">>,
@@ -58,7 +60,7 @@ do_compute(ProcID, Slot, Opts) ->
             },
             Opts
         ),
-    ?event(debug_leader, {res, Res}),
+    ?event({res, Res}),
     {ok, Response} = Res,
     JSONRes = hb_converge:get(<<"body">>, Response, Opts),
     ?event({json_res, JSONRes}),
