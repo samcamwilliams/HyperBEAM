@@ -850,8 +850,8 @@ nested_message_with_large_keys_test(Codec) ->
 
 signed_message_encode_decode_verify_test(Codec) ->
     Msg = #{
-        <<"test_data">> => <<"TEST_DATA">>,
-        <<"test_key">> => <<"TEST_VALUE">>
+        <<"test-data">> => <<"TEST DATA">>,
+        <<"test-key">> => <<"TEST VALUE">>
     },
     {ok, SignedMsg} =
         dev_message:attest(
@@ -859,13 +859,13 @@ signed_message_encode_decode_verify_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event({signed_msg, {explicit, SignedMsg}}),
+    ?event({signed_msg, SignedMsg}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event({verified, {explicit, SignedMsg}}),
+    ?event({verified, SignedMsg}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event({msg_encoded_as_codec, {explicit, Encoded}}),
+    ?event({msg_encoded_as_codec, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, {explicit, Decoded}}),
+    ?event({decoded, Decoded}),
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
@@ -1321,4 +1321,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    hashpath_sign_verify_test(<<"ans104@1.0">>).
+    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).
