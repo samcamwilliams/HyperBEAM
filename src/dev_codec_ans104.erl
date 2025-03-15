@@ -4,6 +4,7 @@
 -export([id/1, to/1, from/1, attest/3, verify/3, attested/3, content_type/1]).
 -export([serialize/1, deserialize/1]).
 -include("include/hb.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 %% The size at which a value should be made into a body item, instead of a
 %% tag.
@@ -115,6 +116,7 @@ from(TX) when is_record(TX, tx) ->
 do_from(RawTX) ->
     % Ensure the TX is fully deserialized.
     TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)), % <- Is norm necessary?
+    OriginalTagMap = encoded_tags_to_map(TX#tx.tags),
     % Get the raw fields and values of the tx record and pair them. Then convert 
     % the list of key-value pairs into a map, removing irrelevant fields.
     TXKeysMap =
@@ -128,6 +130,14 @@ do_from(RawTX) ->
                 )
             )
         ),
+    TagsFromTX = hb_converge:normalize_keys(maps:from_list(TX#tx.tags)),
+    ?event({tags_from_tx, {explicit, TagsFromTX}}),
+    % Check that the original tags did not contain any duplicated keys after 
+    % normalization.
+    case maps:size(TagsFromTX) =/= maps:size(OriginalTagMap) of
+        true -> throw({unsupported_ans104, tag_duplication});
+        false -> ok
+    end,
     % Generate a TABM from the tags.
     MapWithoutData = maps:merge(TXKeysMap, maps:from_list(TX#tx.tags)),
     DataMap =
@@ -155,12 +165,22 @@ do_from(RawTX) ->
     WithAttestations =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
-                NormalizedDataMap;
+                NormalizedDataMap#{
+                    <<"ans-104-unsigned">> => #{
+                        <<"original-tags">> => OriginalTagMap
+                    }
+                };
             _ ->
                 Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
                 WithoutBaseAttestation =
                     maps:without(
-                        [<<"id">>, <<"owner">>, <<"signature">>, <<"attestation-device">>],
+                        [
+                            <<"id">>,
+                            <<"owner">>,
+                            <<"signature">>,
+                            <<"attestation-device">>,
+                            <<"original-tags">>
+                        ],
                         NormalizedDataMap
                     ),
                 WithoutBaseAttestation#{
@@ -169,7 +189,8 @@ do_from(RawTX) ->
                             <<"attestation-device">> => <<"ans104@1.0">>,
                             <<"id">> => hb_util:human_id(TX#tx.id),
                             <<"owner">> => TX#tx.owner,
-                            <<"signature">> => TX#tx.signature
+                            <<"signature">> => TX#tx.signature,
+                            <<"original-tags">> => OriginalTagMap
                         }
                     }
                 }
@@ -177,6 +198,34 @@ do_from(RawTX) ->
     Res = maps:without(?FILTERED_TAGS, WithAttestations),
     ?event({message_after_attestations, Res}),
     Res.
+
+%% @doc Convert an ANS-104 encoded tag list into a HyperBEAM-compatible map.
+encoded_tags_to_map(Tags) ->
+    hb_util:list_to_numbered_map(
+        lists:map(
+            fun({Key, Value}) ->
+                #{
+                    <<"name">> => Key,
+                    <<"value">> => Value
+                }
+            end,
+            Tags
+        )
+    ).
+
+%% @doc Convert a HyperBEAM-compatible map into an ANS-104 encoded tag list,
+%% recreating the original order of the tags.
+tag_map_to_encoded_tags(TagMap) ->
+    OrderedList =
+        hb_util:message_to_ordered_list(
+            maps:without([<<"priv">>], TagMap)),
+    ?event({ordered_list, {explicit, OrderedList}}),
+    lists:map(
+        fun(#{ <<"name">> := Key, <<"value">> := Value }) ->
+            {Key, Value}
+        end,
+        OrderedList
+    ).
 
 %% @doc Internal helper to translate a message to its #tx record representation,
 %% which can then be used by ar_bundles to serialize the message. We call the 
@@ -214,11 +263,16 @@ to(RawTABM) when is_map(RawTABM) ->
                 );
             _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
         end,
+    OriginalTagMap = maps:get(<<"original-tags">>, TABMWithAtt, #{}),
+    OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
+    TABMNoOrigTags = maps:without([<<"original-tags">>], TABMWithAtt),
+    % TODO: Is this necessary now? Do we want to pursue `original-path` as the
+    % mechanism for restoring original tags?
     M =
-        case {maps:find(<<"path">>, TABMWithAtt), hb_private:from_message(TABMWithAtt)} of
+        case {maps:find(<<"path">>, TABMNoOrigTags), hb_private:from_message(TABMNoOrigTags)} of
             {{ok, _}, #{ <<"converge">> := #{ <<"original-path">> := Path } }} ->
-                maps:put(<<"path">>, Path, TABMWithAtt);
-            _ -> TABMWithAtt
+                maps:put(<<"path">>, Path, TABMNoOrigTags);
+            _ -> TABMNoOrigTags
         end,
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
@@ -259,7 +313,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % Rebuild the tx record from the new list of fields and values.
     TXWithoutTags = list_to_tuple([tx | lists:reverse(BaseTXList)]),
     % Calculate which set of the remaining keys will be used as tags.
-    {Tags, RawDataItems} =
+    {Remaining, RawDataItems} =
         lists:partition(
             fun({_Key, Value}) when is_binary(Value) ->
                     case unicode:characters_to_binary(Value) of
@@ -274,9 +328,34 @@ to(RawTABM) when is_map(RawTABM) ->
                     Key <- maps:keys(RemainingMap)
             ]
         ),
-    % We don't let the user set the tags directly, but they can instead set any
-    % number of keys to short binary values, which will be included as tags.
-    TX = TXWithoutTags#tx { tags = Tags },
+    ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
+    ?event({original_tags, {explicit, OriginalTags}}),
+    % Restore the original tags into the tx record.
+    % First, we check that the value of the original tags matches the expected
+    % values.
+    lists:all(
+        fun({OriginalKey, OriginalValue}) ->
+            NormOriginalKey = hb_converge:normalize_key(OriginalKey),
+            Value = maps:get(NormOriginalKey, RemainingMap, undefined),
+            ?event({validating_original_tag,
+                {key, OriginalKey}, {expecting, OriginalValue}, {actual, Value}}),
+            case Value of
+                OriginalValue -> true;
+                undefined ->
+                    throw({original_tag_missing, OriginalKey, RemainingMap});
+                OtherValue ->
+                    throw(
+                        {original_tag_mismatch,
+                            OriginalKey,
+                            {original, OriginalValue},
+                            {actual, OtherValue}
+                        }
+                    )
+            end
+        end,
+        OriginalTags
+    ),
+    TX = TXWithoutTags#tx { tags = OriginalTags },
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
@@ -313,3 +392,58 @@ to(RawTABM) when is_map(RawTABM) ->
     Res;
 to(Other) ->
     throw(invalid_tx).
+
+%%% ANS-104-specific testing cases.
+
+conversion_maintains_tag_name_case_test() ->
+    TX = #tx {
+        tags = [
+            {<<"Test-Tag">>, <<"test-value">>}
+        ]
+    },
+    SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
+    ?event({signed_tx, SignedTX}),
+    ?assert(ar_bundles:verify_item(SignedTX)),
+    TABM = from(SignedTX),
+    ?event({tabm, TABM}),
+    ConvertedTX = to(TABM),
+    ?event({converted_tx, ConvertedTX}),
+    ?assert(ar_bundles:verify_item(ConvertedTX)),
+    ?assertEqual(ConvertedTX, ar_bundles:normalize(SignedTX)).
+
+restore_tag_name_case_from_cache_test() ->
+    TX = #tx {
+        tags = [
+            {<<"Test-Tag">>, <<"test-value">>}
+        ]
+    },
+    SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
+    SignedMsg =
+        hb_message:convert(
+            SignedTX,
+            <<"structured@1.0">>,
+            <<"ans104@1.0">>,
+            #{}
+        ),
+    ?event({signed_msg, SignedMsg}),
+    {ok, ID} = hb_cache:write(SignedMsg, #{}),
+    ?event({id, ID}),
+    {ok, ReadMsg} = hb_cache:read(ID, #{}),
+    ?event({restored_msg, ReadMsg}),
+    ReadTX = to(ReadMsg),
+    ?event({restored_tx, ReadTX}),
+    ?assert(hb_message:match(ReadMsg, SignedMsg)),
+    ?assert(ar_bundles:verify_item(ReadTX)).
+
+unsupported_same_name_tag_test() ->
+    TX = #tx {
+        tags = [
+            {<<"Test-Tag">>, <<"test-value">>},
+            {<<"test-tag">>, <<"test-value-2">>}
+        ]
+    },
+    ?assertThrow(
+        {unsupported_ans104, tag_duplication},
+        from(TX)
+    ).
+    
