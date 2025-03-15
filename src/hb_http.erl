@@ -593,13 +593,23 @@ req_to_tabm_singleton(Req, Body, Opts) ->
     case cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>) of
         <<"httpsig@1.0">> ->
             http_sig_to_tabm_singleton(Req, Body, Opts);
-        Codec ->
-            hb_message:convert(
-                ar_bundles:deserialize(Body),
-                <<"structured@1.0">>,
-                Codec,
-                Opts
-            )
+        <<"ans104@1.0">> ->
+            Item = ar_bundles:deserialize(Body),
+            ?event(ans104, {item, Item}),
+            case ar_bundles:verify_item(Item) of
+                true ->
+                    ?event(ans104, {valid_ans104_signature, Item}),
+                    ANS104 =
+                        hb_message:convert(
+                            Item,
+                            <<"structured@1.0">>,
+                            <<"ans104@1.0">>,
+                            Opts
+                        ),
+                    maybe_add_unsigned(Req, ANS104, Opts);
+                false ->
+                    throw({invalid_ans104_signature, Item})
+            end
     end.
 
 %% @doc HTTPSig messages are inherently mixed into the transport layer, so they
