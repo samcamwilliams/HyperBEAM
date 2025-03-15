@@ -61,6 +61,8 @@ attest(Msg, _Req, Opts) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % Gather the prior attestations.
     PriorAttestations = maps:get(<<"attestations">>, Msg, #{}),
+    PriorUnsigned = maps:get(<<"ans104-unsigned">>, PriorAttestations, #{}),
+    PriorOriginalTags = maps:get(<<"original-tags">>, PriorUnsigned, undefined),
     Attestation =
         #{
             <<"attestation-device">> => <<"ans104@1.0">>,
@@ -68,17 +70,22 @@ attest(Msg, _Req, Opts) ->
             <<"owner">> => Owner,
             <<"signature">> => Sig
         },
+    AttestationWithOriginalTags =
+        case PriorOriginalTags of
+            undefined -> Attestation;
+            OriginalTags -> Attestation#{ <<"original-tags">> => OriginalTags }
+        end,
     AttestationWithHP =
         case Msg of
             #{ <<"hashpath">> := Hashpath } ->
-                Attestation#{ <<"hashpath">> => Hashpath };
-            _ -> Attestation
+                AttestationWithOriginalTags#{ <<"hashpath">> => Hashpath };
+            _ -> AttestationWithOriginalTags
         end,
     MsgWithoutHP = maps:without([<<"hashpath">>], Msg),
     {ok,
         MsgWithoutHP#{
             <<"attestations">> =>
-                PriorAttestations#{
+                (maps:without([<<"ans104-unsigned">>], PriorAttestations))#{
                     Address => AttestationWithHP
                 }
         }
@@ -165,11 +172,17 @@ do_from(RawTX) ->
     WithAttestations =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
-                NormalizedDataMap#{
-                    <<"ans-104-unsigned">> => #{
-                        <<"original-tags">> => OriginalTagMap
-                    }
-                };
+                case normal_tags(TX#tx.tags) of
+                    true -> NormalizedDataMap;
+                    false ->
+                        NormalizedDataMap#{
+                            <<"attestations">> => #{
+                                <<"ans-104-unsigned">> => #{
+                                    <<"original-tags">> => OriginalTagMap
+                                }
+                            }
+                        }
+                end;
             _ ->
                 Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
                 WithoutBaseAttestation =
@@ -183,21 +196,34 @@ do_from(RawTX) ->
                         ],
                         NormalizedDataMap
                     ),
+                Attestation = #{
+                    <<"attestation-device">> => <<"ans104@1.0">>,
+                    <<"id">> => hb_util:human_id(TX#tx.id),
+                    <<"owner">> => TX#tx.owner,
+                    <<"signature">> => TX#tx.signature
+                },
                 WithoutBaseAttestation#{
                     <<"attestations">> => #{
-                        Address => #{
-                            <<"attestation-device">> => <<"ans104@1.0">>,
-                            <<"id">> => hb_util:human_id(TX#tx.id),
-                            <<"owner">> => TX#tx.owner,
-                            <<"signature">> => TX#tx.signature,
-                            <<"original-tags">> => OriginalTagMap
-                        }
+                        Address =>
+                            case normal_tags(TX#tx.tags) of
+                                true -> Attestation;
+                                false -> Attestation#{ <<"original-tags">> => OriginalTagMap }
+                            end
                     }
                 }
         end,
     Res = maps:without(?FILTERED_TAGS, WithAttestations),
     ?event({message_after_attestations, Res}),
     Res.
+
+%% @doc Check whether a list of key-value pairs contains only normalized keys.
+normal_tags(Tags) ->
+    lists:all(
+        fun({Key, _}) ->
+            hb_converge:normalize_key(Key) =:= Key
+        end,
+        Tags
+    ).
 
 %% @doc Convert an ANS-104 encoded tag list into a HyperBEAM-compatible map.
 encoded_tags_to_map(Tags) ->
@@ -219,7 +245,7 @@ tag_map_to_encoded_tags(TagMap) ->
     OrderedList =
         hb_util:message_to_ordered_list(
             maps:without([<<"priv">>], TagMap)),
-    ?event({ordered_list, {explicit, OrderedList}}),
+    %?event({ordered_list, {explicit, OrderedList}, {input, {explicit, Input}}}),
     lists:map(
         fun(#{ <<"name">> := Key, <<"value">> := Value }) ->
             {Key, Value}
@@ -337,8 +363,6 @@ to(RawTABM) when is_map(RawTABM) ->
         fun({OriginalKey, OriginalValue}) ->
             NormOriginalKey = hb_converge:normalize_key(OriginalKey),
             Value = maps:get(NormOriginalKey, RemainingMap, undefined),
-            ?event({validating_original_tag,
-                {key, OriginalKey}, {expecting, OriginalValue}, {actual, Value}}),
             case Value of
                 OriginalValue -> true;
                 undefined ->
@@ -355,7 +379,12 @@ to(RawTABM) when is_map(RawTABM) ->
         end,
         OriginalTags
     ),
-    TX = TXWithoutTags#tx { tags = OriginalTags },
+    TX = TXWithoutTags#tx {
+        tags = case OriginalTags of
+            [] -> Remaining;
+            _ -> OriginalTags
+        end
+    },
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
@@ -395,7 +424,18 @@ to(Other) ->
 
 %%% ANS-104-specific testing cases.
 
-conversion_maintains_tag_name_case_test() ->
+normal_tags_test() ->
+    Msg = #{
+        <<"first-tag">> => <<"first-value">>,
+        <<"second-tag">> => <<"second-value">>
+    },
+    Encoded = to(Msg),
+    ?event({encoded, Encoded}),
+    Decoded = from(Encoded),
+    ?event({decoded, Decoded}),
+    ?assert(hb_message:match(Msg, Decoded)).
+
+from_maintains_tag_name_case_test() ->
     TX = #tx {
         tags = [
             {<<"Test-Tag">>, <<"test-value">>}
@@ -417,7 +457,7 @@ restore_tag_name_case_from_cache_test() ->
             {<<"Test-Tag">>, <<"test-value">>}
         ]
     },
-    SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
+    SignedTX = ar_bundles:sign_item(TX, ar_wallet:new()),
     SignedMsg =
         hb_message:convert(
             SignedTX,
@@ -425,17 +465,18 @@ restore_tag_name_case_from_cache_test() ->
             <<"ans104@1.0">>,
             #{}
         ),
+    SignedID = hb_message:id(SignedMsg, all),
     ?event({signed_msg, SignedMsg}),
     {ok, ID} = hb_cache:write(SignedMsg, #{}),
     ?event({id, ID}),
-    {ok, ReadMsg} = hb_cache:read(ID, #{}),
+    {ok, ReadMsg} = hb_cache:read(SignedID, #{}),
     ?event({restored_msg, ReadMsg}),
     ReadTX = to(ReadMsg),
     ?event({restored_tx, ReadTX}),
     ?assert(hb_message:match(ReadMsg, SignedMsg)),
     ?assert(ar_bundles:verify_item(ReadTX)).
 
-unsupported_same_name_tag_test() ->
+unsupported_duplicated_name_tag_test() ->
     TX = #tx {
         tags = [
             {<<"Test-Tag">>, <<"test-value">>},
@@ -447,3 +488,13 @@ unsupported_same_name_tag_test() ->
         from(TX)
     ).
     
+simple_to_conversion_test() ->
+    Msg = #{
+        <<"first-tag">> => <<"first-value">>,
+        <<"second-tag">> => <<"second-value">>
+    },
+    Encoded = to(Msg),
+    ?event({encoded, Encoded}),
+    Decoded = from(Encoded),
+    ?event({decoded, Decoded}),
+    ?assert(hb_message:match(Msg, hb_message:unattested(Decoded))).
