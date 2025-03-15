@@ -21,13 +21,17 @@ compute(Msg1, Msg2, Opts) ->
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
     ProcessID =
         case RawProcessID of
-            not_found ->
-                hb_converge:get(<<"process-id">>, Msg2, Opts);
-            ProcID ->
-                ProcID
+            not_found -> hb_converge:get(<<"process-id">>, Msg2, Opts);
+            ProcID -> ProcID
         end,
     {ok, JSONRes} = do_compute(ProcessID, Slot, Opts),
-    ?event(push, {compute_lite_res, {process_id, ProcessID}, {slot, Slot}, {json_res, JSONRes}}),
+    ?event(push,
+        {compute_lite_res,
+            {process_id, ProcessID},
+            {slot, Slot},
+            {json_res, {string, JSONRes}}
+        }
+    ),
     {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
     {ok,
         hb_converge:set(

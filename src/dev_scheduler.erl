@@ -435,7 +435,7 @@ get_hint(_Str, _Opts) -> not_found.
 %% @doc Generate a redirect message to a scheduler.
 generate_redirect(ProcID, SchedulerLocation, Opts) ->
     Variant = hb_converge:get(<<"variant">>, SchedulerLocation, <<"ao.N.1">>, Opts),
-    ?event({generating_redirect, {proc_id, ProcID}, {variant, {string, Variant}}}),
+    ?event({generating_redirect, {proc_id, ProcID}, {variant, Variant}}),
     RedirectLocation =
         case is_binary(SchedulerLocation) of
             true -> SchedulerLocation;
