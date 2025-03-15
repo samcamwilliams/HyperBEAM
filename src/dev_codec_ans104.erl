@@ -91,17 +91,20 @@ attest(Msg, _Req, Opts) ->
         }
     }.
 
-%% @doc Return an empty list if the message as given does not validate, as
-%% ANS-104 messages do not keep a list of attested keys.
+%% @doc Return a list of attested keys from an ANS-104 message.
 attested(Msg, Req, Opts) ->
-    case hb_opts:get(ans104_verify_only_attested, true, Opts) of
-        true ->
-            case verify(Msg, Req, Opts) of
-                {ok, true} -> {ok, maps:keys(Msg)};
-                _ -> {ok, []}
-            end;
-        false ->
-            {ok, maps:keys(Msg)}
+    case verify(Msg, Req, Opts) of
+        {ok, true} ->
+            % The message validates, so we can trust that the keys are all
+            % present.
+            Encoded = to(Msg),
+            % Get the immediate (first-level) keys from the encoded message.
+            TagKeys = [ hb_converge:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
+            % Get the nested keys from the original message.
+            NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            % Return the immediate and nested keys.
+            {ok, TagKeys ++ NestedKeys};
+        _ -> {ok, []}
     end.
 
 %% @doc Verify an ANS-104 attestation.
