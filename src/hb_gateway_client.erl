@@ -227,7 +227,8 @@ result_to_message(ExpectedID, Item, Opts) ->
                         ?event(warning, {gql_verify_failed, returning_unverifiable_tx}),
                         Structured;
                     true ->
-                        % It does, so we add the explicit keys as attested fields.
+                        % The node trusts the GraphQL API, so we add the explicit
+                        % keys as attested fields.
                         ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
                         Atts = maps:get(<<"attestations">>, Structured),
                         AttName = hd(maps:keys(Atts)),

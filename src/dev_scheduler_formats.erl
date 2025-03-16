@@ -174,11 +174,10 @@ aos2_normalize_data(JSONStruct) ->
 %% necessary for gaining compatibility with the AOS2-style scheduling API.
 aos2_normalize_types(Msg = #{ <<"timestamp">> := TS }) when is_binary(TS) ->
     aos2_normalize_types(Msg#{ <<"timestamp">> => hb_util:int(TS) });
-aos2_normalize_types(Msg = #{ <<"block-height">> := BH }) when is_binary(BH) ->
-    aos2_normalize_types(Msg#{ <<"block-height">> => hb_util:int(BH) });
-aos2_normalize_types(Msg = #{ <<"nonce">> := Nonce }) when is_binary(Nonce) ->
+aos2_normalize_types(Msg = #{ <<"nonce">> := Nonce })
+        when is_binary(Nonce) and not is_map_key(<<"slot">>, Msg) ->
     aos2_normalize_types(
-        maps:remove(<<"nonce">>, Msg#{ <<"slot">> => hb_util:int(Nonce) })
+        Msg#{ <<"slot">> => hb_util:int(Nonce) }
     );
 aos2_normalize_types(Msg = #{ <<"epoch">> := DS }) when is_binary(DS) ->
     aos2_normalize_types(Msg#{ <<"epoch">> => hb_util:int(DS) });
