@@ -505,14 +505,7 @@ get_schedule(Msg1, Msg2, Opts) ->
         end,
     To =
         case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
-            not_found ->
-                ?event({getting_current_slot, {proc_id, ProcID}}),
-                case dev_scheduler_registry:find(ProcID) of
-                    not_found ->
-                        {Slot, _} = dev_scheduler_cache:latest(ProcID, Opts),
-                        Slot;
-                    Pid -> maps:get(current, dev_scheduler_server:info(Pid))
-                end;
+            not_found -> undefined;
             ToRes -> hb_util:int(ToRes)
         end,
     Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
@@ -528,14 +521,18 @@ get_schedule(Msg1, Msg2, Opts) ->
                         {ok, Res} ->
                             case Format of
                                 <<"application/aos-2">> ->
-                                    dev_scheduler_formats:assignments_to_aos2(
+                                    {ok, Formatted} = dev_scheduler_formats:assignments_to_aos2(
                                         ProcID,
                                         hb_converge:get(
                                             <<"assignments">>, Res, [], Opts),
                                         hb_util:atom(hb_converge:get(
                                             <<"continues">>, Res, false, Opts)),
                                         Opts
-                                    );
+                                    ),
+                                    ?event(debug, {formatted_assignments,
+                                        {body, {string, hb_converge:get(<<"body">>, Formatted, Opts)}},
+                                        {full, Formatted}}),
+                                    {ok, Formatted};
                                 _ ->
                                     {ok, Res}
                             end;
@@ -562,18 +559,23 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
             {to, To}
         }
     ),
-    ToBin = integer_to_binary(From+1),
     FromBin = integer_to_binary(From),
+    ToParam =
+        case To of
+            undefined -> <<>>;
+            ToInt -> <<"&to=", (integer_to_binary(ToInt))/binary>>
+        end,
     Path =
         case Variant of
             <<"ao.N.1">> ->
                 <<
                     ProcID/binary,
-                    "/schedule?from=", FromBin/binary, "&to=", ToBin/binary
+                    "/schedule?from=", FromBin/binary, ToParam
                 >>;
             <<"ao.TN.1">> ->
                 <<
                     ProcID/binary, "?proc-id=", ProcID/binary
+                    % The SU does not support to and from nonce parameters yet.
                     % "&from=", FromBin/binary, "&to=", ToBin/binary
                 >>
         end,
@@ -587,8 +589,7 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
                         <<"ao.N.1">> ->
                             {ok, Res};
                         <<"ao.TN.1">> ->
-                            dev_scheduler_formats:aos2_to_assignments(
-                                ProcID,
+                            JSONRes =
                                 jiffy:decode(
                                     hb_converge:get(
                                         <<"body">>,
@@ -598,6 +599,11 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
                                     ),
                                     [return_maps]
                                 ),
+                            ?event(debug, {remote_schedule_result, {json, JSONRes}}),
+                            Filtered = filter_json_assignments(JSONRes, To, From),
+                            dev_scheduler_formats:aos2_to_assignments(
+                                ProcID,
+                                Filtered,
                                 Opts
                             )
                     end;
@@ -607,6 +613,32 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             {error, Res}
     end.
+
+%% @doc Filter JSON assignment results from a remote legacy scheduler.
+filter_json_assignments(JSONRes, To, From) ->
+    Edges = maps:get(<<"edges">>, JSONRes, []),
+    Filtered =
+        lists:filter(
+            fun(Edge) ->
+                Node = maps:get(<<"node">>, Edge),
+                Assignment = maps:get(<<"assignment">>, Node),
+                Tags = maps:get(<<"tags">>, Assignment),
+                Nonces = 
+                    lists:filtermap(
+                        fun(#{ <<"name">> := <<"Nonce">>, <<"value">> := Nonce }) ->
+                            {true, hb_util:int(Nonce)};
+                           (_) -> false
+                    end,
+                    Tags
+                ),
+                Nonce = hd(Nonces),
+                ?event({filter, {nonce, Nonce}, {from, From}, {to, To}}),
+                Nonce >= From andalso Nonce =< To
+            end,
+            Edges
+        ),
+    ?event({filtered, {length, length(Filtered)}, {edges, Filtered}}),
+    JSONRes#{ <<"edges">> => Filtered }.
 
 post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
     RemoteOpts = Opts#{ http_client => httpc },
@@ -784,31 +816,39 @@ generate_local_schedule(Format, ProcID, From, To, Opts) ->
     Res.
 
 %% @doc Get the assignments for a process, and whether the request was truncated.
+get_local_assignments(ProcID, From, undefined, Opts) ->
+    case dev_scheduler_cache:latest(ProcID, Opts) of
+        not_found ->
+            % No assignments in cache.
+            [];
+        {Slot, _} ->
+            get_local_assignments(ProcID, From, Slot, Opts)
+    end;
 get_local_assignments(ProcID, From, RequestedTo, Opts) ->
-    ?event({handling_req_to_get_assignments, ProcID, From, RequestedTo}),
+    ?event({handling_req_to_get_assignments, ProcID, {from, From}, {to, RequestedTo}}),
     ComputedTo =
         case (RequestedTo - From) > ?MAX_ASSIGNMENT_QUERY_LEN of
-            true -> RequestedTo + ?MAX_ASSIGNMENT_QUERY_LEN;
+            true -> From + ?MAX_ASSIGNMENT_QUERY_LEN;
             false -> RequestedTo
         end,
     {
         do_get_assignments(ProcID, From, ComputedTo, Opts),
-        ComputedTo =/= RequestedTo
+        ComputedTo < RequestedTo
     }.
 
 %% @doc Get the assignments for a process.
 do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
     [];
-do_get_assignments(ProcID, From, To, Opts) ->
-    case dev_scheduler_cache:read(ProcID, From, Opts) of
+do_get_assignments(ProcID, CurrentSlot, To, Opts) ->
+    case dev_scheduler_cache:read(ProcID, CurrentSlot, Opts) of
         not_found ->
-            [];
+            throw(assignment_not_found);
         {ok, Assignment} ->
             [
                 Assignment
                 | do_get_assignments(
                     ProcID,
-                    From + 1,
+                    CurrentSlot + 1,
                     To,
                     Opts
                 )

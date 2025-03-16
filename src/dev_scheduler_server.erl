@@ -13,7 +13,15 @@ start(ProcID, Opts) ->
     spawn_link(
         fun() ->
             hb_name:register({dev_scheduler, ProcID}),
-            {CurrentSlot, HashChain} = dev_scheduler_cache:latest(ProcID, Opts),
+            {CurrentSlot, HashChain} =
+                case dev_scheduler_cache:latest(ProcID, Opts) of
+                    not_found ->
+                        ?event({starting_new_schedule, {proc_id, ProcID}}),
+                        {-1, <<>>};
+                    {Slot, Chain} ->
+                        ?event({continuing_schedule, {proc_id, ProcID}, {current_slot, Slot}}),
+                        {Slot, Chain}
+                end,
             ?event(
                 {scheduler_got_process_info,
                     {proc_id, ProcID},
