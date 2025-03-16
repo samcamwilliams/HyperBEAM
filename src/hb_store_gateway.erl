@@ -109,7 +109,7 @@ graphql_from_cache_test() ->
 
 manual_local_cache_test() ->
     hb_http_server:start_node(#{}),
-    Local = {hb_store_fs, #{ prefix => "TEST-GATEWAY-cache" }},
+    Local = {hb_store_fs, #{ prefix => "TEST-cache" }},
     hb_store:reset(Local),
     Gateway = {hb_store_gateway, #{ store => false }},
     {ok, FromRemote} =
@@ -130,7 +130,7 @@ manual_local_cache_test() ->
 %% @doc Ensure that saving to the gateway store works.
 cache_read_message_test() ->
     hb_http_server:start_node(#{}),
-    Local = {hb_store_fs, #{ prefix => "TEST-GATEWAY-cache" }},
+    Local = {hb_store_fs, #{ prefix => "TEST-cache" }},
     hb_store:reset(Local),
     WriteOpts = #{ store =>
         [
