@@ -352,7 +352,7 @@ do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
 do_debug_fmt({explicit, X}, Indent) ->
     format_indented("[Explicit:] ~p", [X], Indent);
 do_debug_fmt({string, X}, Indent) ->
-    format_indented("[String:] ~s", [X], Indent);
+    format_indented("~s", [X], Indent);
 do_debug_fmt({as, undefined, Msg}, Indent) ->
     "\n" ++ format_indented("Subresolve => ", [], Indent) ++
         format_maybe_multiline(Msg, Indent + 1);
