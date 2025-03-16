@@ -51,10 +51,12 @@ id(Msg) ->
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
 attest(Msg, _Req, Opts) ->
+    ?event({attesting, {input, Msg}}),
     Signed = ar_bundles:sign_item(
         to(hb_private:reset(Msg)),
         Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
     ),
+    ?event({signed_tx, Signed}),
     ID = Signed#tx.id,
     Owner = Signed#tx.owner,
     Sig = Signed#tx.signature,
@@ -93,18 +95,33 @@ attest(Msg, _Req, Opts) ->
 
 %% @doc Return a list of attested keys from an ANS-104 message.
 attested(Msg, Req, Opts) ->
-    case verify(Msg, Req, Opts) of
+    ?event({running_attested, {input, Msg}}),
+    % Remove the attestation that was 'promoted' to the base layer of the message
+    % by `message@1.0/attested'. This is safe because `to' will only proceed if 
+    % there is a single signature on the message. Subsequently, we can trust that
+    % the keys signed by that single attestation speak for 'all' of the 
+    % attestations.
+    MsgLessGivenAtt = maps:without([<<"attestations">>], Msg),
+    ?event({to_verify, {input, MsgLessGivenAtt}}),
+    case verify(MsgLessGivenAtt, Req, Opts) of
         {ok, true} ->
-            % The message validates, so we can trust that the keys are all
-            % present.
+            % The message validates, so we can trust that the original keys are
+            % all present in the message in its converted state.
             Encoded = to(Msg),
+            ?event({verified_tx, Encoded}),
             % Get the immediate (first-level) keys from the encoded message.
+            % This is safe because we know that the message is valid. We normalize
+            % the keys such that callers can rely on the keys being in a canonical
+            % form.
             TagKeys = [ hb_converge:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
             % Get the nested keys from the original message.
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
-            % Return the immediate and nested keys.
-            {ok, TagKeys ++ NestedKeys};
-        _ -> {ok, []}
+            % Return the immediate and nested keys. The `data' field is always
+            % attested, so we include it in the list of keys.
+            {ok, TagKeys ++ NestedKeys ++ [<<"data">>]};
+        _ ->
+            ?event({could_not_verify, {msg, MsgLessGivenAtt}}),
+            {ok, []}
     end.
 
 %% @doc Verify an ANS-104 attestation.
@@ -210,7 +227,9 @@ do_from(RawTX) ->
                         Address =>
                             case normal_tags(TX#tx.tags) of
                                 true -> Attestation;
-                                false -> Attestation#{ <<"original-tags">> => OriginalTagMap }
+                                false -> Attestation#{
+                                    <<"original-tags">> => OriginalTagMap
+                                }
                             end
                     }
                 }
