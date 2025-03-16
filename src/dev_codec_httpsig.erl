@@ -165,9 +165,7 @@ attest(MsgToSign, _Req, Opts) ->
 %% had the `attestations` key removed and the signature inputs added to the
 %% root. Subsequently, we can parse that to get the list of attested keys.
 attested(RawMsg, _Req, _Opts) ->
-    ?event(debug, {finding_attested, {msg, RawMsg}}),
     Msg = to(RawMsg),
-    ?event(debug, {finding_attested, {encoded, Msg}}),
     [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
         maps:get(<<"signature-input">>, Msg)
     ),
