@@ -166,7 +166,7 @@ with_only_attested(Msg, Opts) when is_map(Msg) ->
                 % already present.
                 ?event({attested_keys, AttestedKeys, {msg, Msg}}),
                 {ok, maps:with(
-                    AttestedKeys,
+                    AttestedKeys ++ [<<"attestations">>],
                     Msg
                 )}
             catch _:_:St ->
