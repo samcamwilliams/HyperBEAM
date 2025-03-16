@@ -146,32 +146,27 @@ id(Msg, RawAttestors, Opts) ->
         ),
     hb_util:human_id(ID).
 
-%% @doc Return a message with only the attested keys.
+%% @doc Return a message with only the attested keys. If no attestations are
+%% present, the message is returned unchanged. This means that you need to
+%% check if the message is:
+%% - Attested
+%% - Verifies
+%% ...before using the output of this function as the 'canonical' message. This
+%% is such that expensive operations like signature verification are not
+%% performed unless necessary.
 with_only_attested(Msg) ->
     with_only_attested(Msg, #{}).
 with_only_attested(Msg, Opts) when is_map(Msg) ->
-    case is_map(Msg) andalso maps:is_key(<<"attestations">>, Msg) of
+    Atts = maps:get(<<"attestations">>, Msg, not_found),
+    case is_map(Msg) andalso Atts /= not_found of
         true ->
             try
-                Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, Opts),
-                ?event({enc, Enc}),
-                Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, Opts),
-                ?event({dec, Dec}),
-                AttestedKeys =
-                    hb_message:attested(Dec, Opts)
-                    ++ hb_message:attested(Msg, Opts),
+                AttestedKeys = hb_message:attested(Msg, Opts),
                 % Add the inline-body-key to the attested list if it is not
                 % already present.
-                HasInlineBodyKey = lists:member(<<"inline-body-key">>, AttestedKeys),
-                AttestedWithBodyKey =
-                    case HasInlineBodyKey andalso maps:get(<<"inline-body-key">>, Dec, not_found) of
-                        false -> AttestedKeys;
-                        not_found -> AttestedKeys;
-                        InlinedKey -> [InlinedKey | AttestedKeys]
-                    end,
-                ?event({attested, AttestedWithBodyKey}),
+                ?event({attested_keys, AttestedKeys, {msg, Msg}}),
                 {ok, maps:with(
-                    [<<"attestations">>] ++ AttestedWithBodyKey,
+                    AttestedKeys,
                     Msg
                 )}
             catch _:_:St ->
@@ -641,6 +636,7 @@ single_layer_message_to_encoding_test(Codec) ->
 
 signed_only_attested_data_field_test(Codec) ->
     Msg = attest(#{ <<"data">> => <<"DATA">> }, hb:wallet(), Codec),
+    ?event({signed_msg, Msg}),
     {ok, OnlyAttested} = with_only_attested(Msg),
     ?event({only_attested, OnlyAttested}),
     ?assert(verify(OnlyAttested)).
@@ -1133,6 +1129,7 @@ attested_keys_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     Signed = attest(Msg, hb:wallet(), Codec),
     AttestedKeys = attested(Signed),
+    ?assert(verify(Signed)),
     ?assert(lists:member(<<"a">>, AttestedKeys)),
     ?assert(lists:member(<<"b">>, AttestedKeys)),
     ?assert(lists:member(<<"c">>, AttestedKeys)),
@@ -1321,4 +1318,5 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).
+    attested_keys_test(<<"ans104@1.0">>),
+    signed_only_attested_data_field_test(<<"ans104@1.0">>).
