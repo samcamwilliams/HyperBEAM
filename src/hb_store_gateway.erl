@@ -118,32 +118,27 @@ manual_local_cache_test() ->
             #{ store => Gateway }
         ),
     ?event({writing_recvd_to_local, FromRemote}),
-    {ok, _} =
-        hb_cache:write(
-            FromRemote,
-            #{
-                store => Local,
-                ans104_verify_only_attested => false
-            }
-        ),
+    {ok, _} = hb_cache:write(FromRemote, #{ store => Local }),
     {ok, Read} =
         hb_cache:read(
             <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
             #{ store => Local }
         ),
+    ?event({read_from_local, Read}),
     ?assert(hb_message:match(Read, FromRemote)).
 
 %% @doc Ensure that saving to the gateway store works.
 cache_read_message_test() ->
     hb_http_server:start_node(#{}),
+    Local = {hb_store_fs, #{ prefix => "TEST-GATEWAY-cache" }},
+    hb_store:reset(Local),
     WriteOpts = #{ store =>
         [
             {hb_store_gateway,
                 #{
                     % Set a local store to write to, so that we can test the
                     % cache read.
-                    store =>
-                        Local = {hb_store_fs, #{ prefix => "TEST-GATEWAY-cache" }}
+                    store => Local
                 }
             }
         ]

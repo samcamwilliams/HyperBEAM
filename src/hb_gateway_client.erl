@@ -176,6 +176,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     DataSize = byte_size(Data),
     ?event(gateway, {data, {id, ExpectedID}, {data, Data}, {item, Item}}, Opts),
     % Convert the response to an ANS-104 message.
+    Tags = hb_converge:get(<<"tags">>, Item, GQLOpts),
     TX =
         #tx {
             format = ans104,
@@ -200,8 +201,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                 [
                     {Name, Value}
                 ||
-                    #{<<"name">> := Name, <<"value">> := Value}
-                        <- hb_converge:get(<<"tags">>, Item, GQLOpts)
+                    #{<<"name">> := Name, <<"value">> := Value} <- Tags
                 ],
             data_size = DataSize,
             data = Data
@@ -211,7 +211,47 @@ result_to_message(ExpectedID, Item, Opts) ->
     TABM = dev_codec_ans104:from(TX),
     ?event({decoded_tabm, TABM}),
     Structured = dev_codec_structured:to(TABM),
-    {ok, Structured}.
+    % Some graphql nodes do not grant the `anchor' or `last_tx' fields, so we
+    % verify the data item and optionally add the explicit keys as attested
+    % fields _if_ the node desires it.
+    Embedded =
+        case ar_bundles:verify_item(TX) of
+            true ->
+                ?event({gql_verify_succeeded, Structured}),
+                Structured;
+            _ ->
+                % The item does not verify on its own, but does the node choose
+                % to trust the GraphQL API anyway?
+                case hb_opts:get(ans104_trust_gql, false, Opts) of
+                    false ->
+                        ?event(warning, {gql_verify_failed, returning_unverifiable_tx}),
+                        Structured;
+                    true ->
+                        % It does, so we add the explicit keys as attested fields.
+                        ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
+                        Atts = maps:get(<<"attestations">>, Structured),
+                        AttName = hd(maps:keys(Atts)),
+                        Att = maps:get(AttName, Atts),
+                        Structured#{
+                            <<"attestations">> => #{
+                                AttName =>
+                                    Att#{
+                                        <<"trusted-keys">> =>
+                                            hb_converge:normalize_keys([
+                                                    hb_converge:normalize_key(Name)
+                                                ||
+                                                    #{ <<"name">> := Name } <-
+                                                        maps:values(
+                                                            hb_converge:normalize_keys(Tags)
+                                                        )
+                                                ]
+                                            )
+                                    }
+                            }
+                        }
+                end
+        end,
+    {ok, Embedded}.
 
 normalize_null(null) -> <<>>;
 normalize_null(Bin) when is_binary(Bin) -> Bin.

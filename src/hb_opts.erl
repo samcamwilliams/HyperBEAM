@@ -157,7 +157,10 @@ default_message() ->
                 {hb_store_fs, #{ prefix => "mainnet-cache" }},
                 {hb_store_gateway, #{ store => false }}
             ],
-        ans104_verify_only_attested => false,
+        % Should we trust the GraphQL API when converting to ANS-104? Some GQL
+        % services do not provide the `anchor' or `last_tx' fields, so their
+        % responses are not verifiable.
+        ans104_trust_gql => true,
         http_extra_opts =>
             #{
                 force_message => true,

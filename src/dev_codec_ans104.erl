@@ -94,6 +94,21 @@ attest(Msg, _Req, Opts) ->
     }.
 
 %% @doc Return a list of attested keys from an ANS-104 message.
+attested(Msg = #{ <<"trusted-keys">> := TKeys, <<"attestations">> := Atts }, _Req, _Opts) ->
+    % If the message has a `trusted-keys' field in the immediate layer, we validate
+    % that it also exists in the attestation's sub-map. If it exists there (which
+    % cannot be written to directly by users), we can trust that the stated keys
+    % are present in the message.
+    case hb_converge:get(hd(hb_converge:keys(Atts)), Atts, #{}) of
+        #{ <<"trusted-keys">> := TKeys } ->
+            NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            {ok, maps:values(hb_converge:normalize_keys(TKeys))
+                ++ NestedKeys ++ [<<"data">>]};
+        _ ->
+            % If the key is not repeated, we cannot trust that the message has
+            % the keys in the attestation so we return an error.
+            {error, []}
+    end;
 attested(Msg, Req, Opts) ->
     ?event({running_attested, {input, Msg}}),
     % Remove the attestation that was 'promoted' to the base layer of the message
