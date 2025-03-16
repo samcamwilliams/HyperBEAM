@@ -19,7 +19,7 @@
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_tabm_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(http_short, {request, hb_converge:normalize_keys(NormRequest)}),
+    ?event(http, {request, hb_converge:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
             Res =
@@ -169,7 +169,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
                 ),
                 NodeMsg
             ),
-            ?event(http_short, {response, Output}),
+            ?event(http, {response, Output}),
             Output;
         Res -> embed_status(hb_converge:force_message(Res, NodeMsg))
     end.
