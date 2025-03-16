@@ -207,7 +207,7 @@ decode_value(integer, Value) ->
 decode_value(float, Value) ->
     binary_to_float(Value);
 decode_value(atom, Value) ->
-    {item, {string, AtomString}, _} =
+    {item, {_, AtomString}, _} =
         hb_structured_fields:parse_item(Value),
     binary_to_existing_atom(AtomString);
 decode_value(list, Value) ->
