@@ -259,6 +259,18 @@ handle_request(Req, Body, ServerID) ->
             NodeMsg#{ attestation_device => AttestationCodec },
             ReqSingleton
         ),
+    ?event(http_short,
+        {response,
+            {status, hb_converge:get(<<"status">>, Res, no_status, NodeMsg)},
+            {method, hb_converge:get(<<"method">>, ReqSingleton, no_method, NodeMsg)},
+            {path,
+                {string,
+                    uri_string:percent_decode(
+                    hb_converge:get(<<"path">>, ReqSingleton, <<"[NO PATH]">>, NodeMsg)
+                )}
+            }
+        }
+    ),
     hb_http:reply(Req, ReqSingleton, Res, NodeMsg).
 
 %% @doc Return the list of allowed methods for the HTTP server.
