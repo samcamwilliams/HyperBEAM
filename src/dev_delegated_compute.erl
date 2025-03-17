@@ -76,6 +76,6 @@ do_compute(ProcID, Slot, Opts) ->
                 {req, maps:without([<<"body">>], Response)}
             }),
             {ok, JSONRes};
-        {error, Error} ->
+        {Err, Error} when Err == error; Err == failure ->
             {error, Error}
     end.

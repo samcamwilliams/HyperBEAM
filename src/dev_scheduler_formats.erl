@@ -187,4 +187,11 @@ aos2_normalize_types(Msg) when not is_map_key(<<"block-hash">>, Msg) ->
     ?event({missing_block_hash, Msg}),
     aos2_normalize_types(Msg#{ <<"block-hash">> => hb_util:encode(<<0:256>>) });
 aos2_normalize_types(Msg) ->
+    ?event(
+        {
+            aos2_normalized_types,
+            {msg, Msg},
+            {anchor, hb_converge:get(<<"anchor">>, Msg, #{})}
+        }
+    ),
     Msg.

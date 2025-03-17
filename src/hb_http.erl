@@ -130,6 +130,13 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 Value -> {BaseStatus, Value}
             end;
         undefined ->
+            ?event(http_outbound_short, {
+                outbound_http_response,
+                {status, Status},
+                {peer, Peer},
+                {path, Path},
+                {response, {body, byte_size(Body)}}
+            }, Opts),
             case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
                 <<"httpsig@1.0">> ->
                     ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),

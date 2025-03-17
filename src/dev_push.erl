@@ -104,7 +104,8 @@ do_push(Base, Assignment, Opts) ->
             {ok, Downstream#{
                 <<"slot">> => Slot,
                 <<"process">> => ID
-            }}
+            }};
+        {Err, Error} when Err == error; Err == failure -> {error, Error}
     end.
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
@@ -137,17 +138,27 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     TargetAsProcess = dev_process:ensure_process_key(TargetBase, Opts),
                     RecvdID = hb_message:id(TargetBase, all),
                     ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
-                    {ok, Downstream} = hb_converge:resolve(
+                    Resurse = hb_converge:resolve(
                         {as, <<"process@1.0">>, TargetAsProcess},
                         #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
                         Opts#{ cache_control => <<"always">> }
                     ),
-                    #{
-                        <<"id">> => PushedMsgID,
-                        <<"target">> => TargetID,
-                        <<"slot">> => NextSlotOnProc,
-                        <<"resulted-in">> => Downstream
-                    };
+                    case Resurse of
+                        {ok, Downstream} ->
+                            #{
+                                <<"id">> => PushedMsgID,
+                                <<"target">> => TargetID,
+                                <<"slot">> => NextSlotOnProc,
+                                <<"resulted-in">> => Downstream
+                            };
+                        {error, Error} ->
+                            ?event(push, {push_failed, {error, Error}}, Opts),
+                            #{
+                                <<"response">> => <<"error">>,
+                                <<"target">> => TargetID,
+                                <<"reason">> => Error
+                            }
+                    end;
                 {error, Error} ->
                     ?event(push, {push_failed, {error, Error}}, Opts),
                     #{
