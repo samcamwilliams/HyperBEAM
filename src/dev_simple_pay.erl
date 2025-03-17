@@ -171,7 +171,7 @@ get_balance_and_top_up_test() ->
             ),
             #{}
         ),
-    ?assertEqual(80, hb_converge:get(<<"body">>, Res, #{})),
+    ?assertEqual(80, Res),
     {ok, NewBalance} =
         hb_http:post(
             Node,
@@ -185,7 +185,7 @@ get_balance_and_top_up_test() ->
             ),
             #{}
         ),
-    ?assertEqual(180, hb_converge:get(<<"body">>, NewBalance, #{})),
+    ?assertEqual(180, NewBalance),
     {ok, Res2} =
         hb_http:get(
             Node,
@@ -195,4 +195,4 @@ get_balance_and_top_up_test() ->
             ),
             #{}
         ),
-    ?assertEqual(160, hb_converge:get(<<"body">>, Res2, #{})).
+    ?assertEqual(160, Res2).

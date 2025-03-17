@@ -59,13 +59,21 @@ to(Map) when is_map(Map) ->
 
 serialize(Map) when is_map(Map) ->
     Flattened = hb_message:convert(Map, <<"flat@1.0">>, #{}),
-    iolist_to_binary(lists:foldl(
-        fun(Key, Acc) ->
-            [Acc, hb_path:to_binary(Key), <<": ">>, maps:get(Key, Flattened), <<"\n">>]
-        end,
-        <<>>,
-        maps:keys(Flattened)
-    )).
+    {ok,
+        iolist_to_binary(lists:foldl(
+                fun(Key, Acc) ->
+                    [
+                        Acc,
+                        hb_path:to_binary(Key),
+                        <<": ">>,
+                        maps:get(Key, Flattened), <<"\n">>
+                    ]
+                end,
+                <<>>,
+                maps:keys(Flattened)
+            )
+        )
+    }.
 
 deserialize(Bin) when is_binary(Bin) ->
     Flat = lists:foldl(
@@ -80,7 +88,7 @@ deserialize(Bin) when is_binary(Bin) ->
         #{},
         binary:split(Bin, <<"\n">>, [global])
     ),
-    hb_message:convert(Flat, <<"structured@1.0">>, <<"flat@1.0">>, #{}).
+    {ok, hb_message:convert(Flat, <<"structured@1.0">>, <<"flat@1.0">>, #{})}.
 
 %%% Tests
 

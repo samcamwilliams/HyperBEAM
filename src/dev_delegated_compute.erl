@@ -17,36 +17,44 @@ snapshot(Msg1, _Msg2, _Opts) -> {ok, Msg1}.
 compute(Msg1, Msg2, Opts) ->
     RawProcessID = dev_process:process_id(Msg1, #{}, Opts),
     Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
-    ?event(push, {compute_lite_called, {process_id, RawProcessID}, {slot, Slot}}),
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
     ProcessID =
         case RawProcessID of
-            not_found ->
-                hb_converge:get(<<"process-id">>, Msg2, Opts);
-            ProcID ->
-                ProcID
+            not_found -> hb_converge:get(<<"process-id">>, Msg2, Opts);
+            ProcID -> ProcID
         end,
-    {ok, JSONRes} = do_compute(ProcessID, Slot, Opts),
-    ?event(push, {compute_lite_res, {process_id, ProcessID}, {slot, Slot}, {json_res, JSONRes}}),
-    {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
-    {ok,
-        hb_converge:set(
-            Msg1,
-            #{
-                <<OutputPrefix/binary, "/results">> => Msg,
-                <<OutputPrefix/binary, "/results/json">> =>
+    Res = do_compute(ProcessID, Slot, Opts),
+    case Res of
+        {ok, JSONRes} ->
+            ?event(
+                {compute_lite_res,
+                    {process_id, ProcessID},
+                    {slot, Slot},
+                    {json_res, {string, JSONRes}},
+                    {req, Msg2}
+                }
+            ),
+            {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
+            {ok,
+                hb_converge:set(
+                    Msg1,
                     #{
-                        <<"content-type">> => <<"application/json">>,
-                        <<"body">> => JSONRes
-                    }
-            },
-            Opts
-        )
-    }.
+                        <<OutputPrefix/binary, "/results">> => Msg,
+                        <<OutputPrefix/binary, "/results/json">> =>
+                            #{
+                                <<"content-type">> => <<"application/json">>,
+                                <<"body">> => JSONRes
+                            }
+                    },
+                    Opts
+                )
+            };
+        {error, Error} ->
+            {error, Error}
+    end.
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Slot, Opts) ->
-    ?event({do_compute_called, {process_id, ProcID}, {slot, Slot}}),
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">> }, #{
             <<"path">> => <<"call">>,
@@ -60,8 +68,14 @@ do_compute(ProcID, Slot, Opts) ->
             },
             Opts
         ),
-    ?event({res, Res}),
-    {ok, Response} = Res,
-    JSONRes = hb_converge:get(<<"body">>, Response, Opts),
-    ?event({json_res, JSONRes}),
-    {ok, JSONRes}.
+    case Res of
+        {ok, Response} ->
+            JSONRes = hb_converge:get(<<"body">>, Response, Opts),
+            ?event({
+                delegated_compute_res_metadata,
+                {req, maps:without([<<"body">>], Response)}
+            }),
+            {ok, JSONRes};
+        {Err, Error} when Err == error; Err == failure ->
+            {error, Error}
+    end.

@@ -286,7 +286,7 @@ do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys) ->
         <<"structured@1.0">>,
         #{ topic => converge_internal }
     ),
-    ?event(debug, {merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
+    ?event({merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
     [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys)];
 do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
     [Msg | do_build(I + 1, Rest, ScopedKeys)];

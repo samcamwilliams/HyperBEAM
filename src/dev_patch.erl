@@ -70,12 +70,12 @@ compute(Msg1, Msg2, Opts) ->
             <<"/">> -> PatchedSubmessage;
             _ -> hb_converge:set(Msg1, PatchTo, PatchedSubmessage, Opts)
         end,
-    % Return the patched message.
+    % Return the patched message and the source, less the patches.
     Res = {
         ok,
         hb_converge:set(
             PatchedState,
-            <<"/results/outbox">>,
+            PatchFrom,
             OutboxWithoutPatches,
             Opts
         )

@@ -164,7 +164,8 @@ attest(MsgToSign, _Req, Opts) ->
 %% @doc Return the list of attested keys from a message. The message will have
 %% had the `attestations` key removed and the signature inputs added to the
 %% root. Subsequently, we can parse that to get the list of attested keys.
-attested(Msg, _Req, _Opts) ->
+attested(RawMsg, _Req, _Opts) ->
+    Msg = to(RawMsg),
     [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
         maps:get(<<"signature-input">>, Msg)
     ),
@@ -181,7 +182,17 @@ attested(Msg, _Req, _Opts) ->
         true ->
             {ok,
                 Signed
-                    ++ [<<"body">>]
+                    % Body and inline-body-key are always attested if the
+                    % content-digest is present.
+                    ++ [<<"body">>, <<"inline-body-key">>]
+                    % If the inline-body-key is present, add it to the list of
+                    % attested keys.
+                    ++ case maps:get(<<"inline-body-key">>, Msg, []) of
+                        [] -> [];
+                        InlineBodyKey -> [InlineBodyKey]
+                    end
+                    % If the body-keys are present, add them to the list of
+                    % attested keys.
                     ++ case maps:get(<<"body-keys">>, Msg, []) of
                         [] -> [];
                         BodyKeys ->

@@ -182,7 +182,7 @@ compute(Msg1, Msg2, Opts) ->
         not_found ->
             {ok, Loaded} = ensure_loaded(ProcBase, Msg2, Opts),
             ?event(compute, {computing, {process_id, ProcID}, {slot, Slot}}, Opts),
-            do_compute(
+            compute_to_slot(
                 ProcID,
                 Loaded,
                 Msg2,
@@ -193,11 +193,15 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
-do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
+compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
     CurrentSlot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
     ?event({starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
     case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
+            % The cache should already have the result, so we should never end up
+            % here. Depending on the type of process, 'rewinding' may require
+            % re-computing from a significantly earlier checkpoint, so for now
+            % we throw an error.
             throw(
                 {error,
                     {already_calculated_slot,
@@ -211,21 +215,65 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
             ?event(compute, {reached_target_slot_returning_state, TargetSlot}),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
+            % Compute the next state transition.
             NextSlot = CurrentSlot + 1,
-            % Get the next input from the scheduler device.
-            {ok, #{ <<"body">> := ToProcess, <<"state">> := State }} =
-                next(Msg1, Msg2, Opts),
-            % Ensure that the next slot is the slot that we are expecting, just
-            % in case there is a scheduler device error.
-            NextSlot = hb_util:int(hb_converge:get(<<"slot">>, ToProcess, Opts)),
-            ?event(compute, {executing, {slot, NextSlot}, {req, ToProcess}}, Opts),
-            {ok, Msg3} =
-                run_as(
-                    <<"execution">>,
-                    State,
-                    ToProcess,
-                    Opts
-                ),
+            % Get the next input message from the scheduler device.
+            case next(Msg1, Msg2, Opts) of
+                {error, Res} ->
+                    % If the scheduler device cannot provide a next message,
+                    % we return its error details, along with the current slot.
+                    {error, Res#{
+                        <<"phase">> => <<"get-schedule">>,
+                        <<"attempted-slot">> => NextSlot
+                    }};
+                {ok, #{ <<"body">> := SlotMsg, <<"state">> := State }} ->
+                    % Compute the next single state transition.
+                    case compute_slot(ProcID, State, SlotMsg, Msg2, Opts) of
+                        {ok, NewState} ->
+                            % Continue computing to the target slot.
+                            compute_to_slot(
+                                ProcID,
+                                NewState,
+                                Msg2,
+                                TargetSlot,
+                                Opts
+                            );
+                        {error, Error} ->
+                            % If the compute_slot function returns an error,
+                            % we return the error details, along with the current slot.
+                            {error,
+                                Error#{
+                                    <<"phase">> => <<"compute">>,
+                                    <<"attempted-slot">> => NextSlot
+                                }
+                            }
+                    end
+            end
+    end.
+
+%% @doc Compute a single slot for a process, given an initialized state.
+compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
+    % Ensure that the next slot is the slot that we are expecting, just
+    % in case there is a scheduler device error.
+    NextSlot = hb_util:int(hb_converge:get(<<"slot">>, RawInputMsg, Opts)),
+    % If the input message does not have a path, set it to `compute'.
+    InputMsg =
+        case hb_path:from_message(request, RawInputMsg) of
+            undefined -> RawInputMsg#{ <<"path">> => <<"compute">> };
+            _ -> RawInputMsg
+        end,
+    ?event({input_msg, InputMsg}),
+    ?event(compute, {executing, {slot, NextSlot}, {req, InputMsg}}, Opts),
+    Res =
+        run_as(
+            <<"execution">>,
+            State,
+            InputMsg,
+            Opts
+        ),
+    case Res of
+        {ok, Msg3} ->
+            ?event(compute_short, {executed, {slot, NextSlot}, {proc_id, ProcID}}, Opts),
             % We have now transformed slot n -> n + 1. Increment the current slot.
             Msg3SlotAfter = hb_converge:set(Msg3, #{ <<"current-slot">> => NextSlot }, Opts),
             % Notify any waiters that the result for a slot is now available.
@@ -236,19 +284,11 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 Opts
             ),
             ?event(compute, {writing_cache, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
-            store_result(ProcID, NextSlot, Msg3, Msg2, Opts),
+            store_result(ProcID, NextSlot, Msg3SlotAfter, ReqMsg, Opts),
             ?event(compute, {wrote_cache, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
-            do_compute(
-                ProcID,
-                hb_converge:set(
-                    Msg3,
-                    #{ <<"current-slot">> => NextSlot },
-                    Opts
-                ),
-                Msg2,
-                TargetSlot,
-                Opts
-            )
+            {ok, Msg3SlotAfter};
+        {error, Error} ->
+            {error, Error}
     end.
 
 %% @doc Store the resulting state in the cache, potentially with the snapshot

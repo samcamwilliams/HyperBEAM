@@ -47,7 +47,9 @@ maybe_lookup(Msg1, Msg2, Opts) ->
 
 lookup(Msg1, Msg2, Opts) ->
     case derive_cache_settings([Msg1, Msg2], Opts) of
-        #{ <<"lookup">> := false } -> {continue, Msg1, Msg2};
+        #{ <<"lookup">> := false } ->
+            ?event(caching, {skip_cache_check, lookup_disabled}),
+            {continue, Msg1, Msg2};
         Settings = #{ <<"lookup">> := true } ->
             OutputScopedOpts = 
                 hb_store:scope(
@@ -69,7 +71,7 @@ lookup(Msg1, Msg2, Opts) ->
                     ),
                     {ok, Msg3};
                 not_found ->
-                    ?event(caching, {cache_miss, Msg1, Msg2}),
+                    ?event(caching, {result_cache_miss, Msg1, Msg2}),
                     case Settings of
                         #{ <<"only-if-cached">> := true } ->
                             only_if_cached_not_found_error(Msg1, Msg2, Opts);

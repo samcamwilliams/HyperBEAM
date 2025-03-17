@@ -4,8 +4,9 @@
 %% Arweave node API
 -export([arweave_timestamp/0]).
 %% Arweave bundling and data access API
--export([upload/2, download/1]).
-
+-export([upload/2]).
+%% Tests
+-include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
 %%% Converge API and HyperBEAM Built-In Devices
@@ -84,92 +85,91 @@ arweave_timestamp() ->
 
 %%% Bundling and data access API
 
-%% @doc Download the data associated with a given ID. See TODO below.
-download(ID) ->
-    % TODO: Need to recreate full data items, not just data...
-    case httpc:request(hb_opts:get(gateway) ++ "/" ++ ID) of
-        {ok, {{_, 200, _}, _, Body}} -> #tx{data = Body};
-        _Rest -> throw({id_get_failed, ID})
-    end.
-
 %% @doc Upload a data item to the bundler node.
 upload(Msg, Opts) ->
-    case hb_converge:get(<<"codec-device">>, Msg, <<"httpsig@1.0">>, Opts) of
-        <<"httpsig@1.0">> ->
-            case hb_opts:get(bundler_httpsig, not_found, Opts) of
-                not_found ->
-                    {error, no_httpsig_bundler};
-                Bundler ->
-                    ?event({uploading_item, Msg}),
-                    hb_http:post(Bundler, <<"/tx">>, Msg, Opts)
-            end;
-        <<"ans104@1.0">> ->
+    upload(Msg, Opts, hb_converge:get(<<"codec-device">>, Msg, <<"httpsig@1.0">>, Opts)).
+upload(Msg, Opts, <<"httpsig@1.0">>) ->
+    case hb_opts:get(bundler_httpsig, not_found, Opts) of
+        not_found ->
+            {error, no_httpsig_bundler};
+        Bundler ->
             ?event({uploading_item, Msg}),
-            hb_http:post(
-                hb_opts:get(bundler_ans104, not_found, Opts),
-                <<"/tx">>,
-                Msg,
-                Opts#{
-                    http_client =>
-                        hb_opts:get(bundler_ans104_http_client, httpc, Opts)
-                }
-            )
-    end.
+            hb_http:post(Bundler, <<"/tx">>, Msg, Opts)
+    end;
+upload(Msg, Opts, <<"ans104@1.0">>) when is_map(Msg) ->
+    ?event({msg_to_convert, Msg}),
+    Converted = hb_message:convert(Msg, <<"ans104@1.0">>, Opts),
+    ?event({msg_to_tx_res, {converted, Converted}}),
+    Serialized = ar_bundles:serialize(Converted),
+    ?event({converted_msg_to_tx, Serialized}),
+    upload(Serialized, Opts, <<"ans104@1.0">>);
+upload(Serialized, Opts, <<"ans104@1.0">>) when is_binary(Serialized) ->
+    ?event({uploading_item, Serialized}),
+    hb_http:post(
+        hb_opts:get(bundler_ans104, not_found, Opts),
+        #{
+            <<"path">> => <<"/tx">>,
+            <<"content-type">> => <<"application/octet-stream">>,
+            <<"body">> => Serialized
+        },
+        Opts#{
+            http_client =>
+                hb_opts:get(bundler_ans104_http_client, httpc, Opts)
+        }
+    ).
 
-%%% Utility functions
+%%% Tests
 
-%% @doc Convert a map of parameters into a query string, starting with the
-%% given separator.
-path_opts(EmptyMap, _Sep) when map_size(EmptyMap) == 0 -> "";
-path_opts(Opts, Sep) ->
-    PathParts = tl(lists:flatten(lists:map(
-        fun({Key, Val}) ->
-            "&" ++ format_path_opt(Key) ++ "=" ++ format_path_opt(Val)
-        end,
-        maps:to_list(Opts)
-    ))),
-    Sep ++ PathParts.
+upload_empty_raw_ans104_test() ->
+    Serialized = ar_bundles:serialize(
+        ar_bundles:sign_item(#tx{
+            data = <<"TEST">>
+        }, hb:wallet())
+    ),
+    ?event({uploading_item, Serialized}),
+    Result = upload(Serialized, #{}, <<"ans104@1.0">>),
+    ?event({upload_result, Result}),
+    ?assertMatch({ok, _}, Result).
 
-format_path_opt(Val) when is_atom(Val) ->
-    atom_to_list(Val);
-format_path_opt(Val) when is_binary(Val) ->
-    binary_to_list(Val);
-format_path_opt(Val) when is_integer(Val) ->
-    integer_to_list(Val).
+upload_raw_ans104_test() ->
+    Serialized = ar_bundles:serialize(
+        ar_bundles:sign_item(#tx{
+            data = <<"TEST">>,
+            tags = [{<<"test-tag">>, <<"test-value">>}]
+        }, hb:wallet())
+    ),
+    ?event({uploading_item, Serialized}),
+    Result = upload(Serialized, #{}, <<"ans104@1.0">>),
+    ?event({upload_result, Result}),
+    ?assertMatch({ok, _}, Result).
 
-parse_result_set(Body) ->
-    {JSONStruct} = jiffy:decode(Body),
-    {_, {PageInfoStruct}} = lists:keyfind(<<"pageInfo">>, 1, JSONStruct),
-    {_, HasNextPage} = lists:keyfind(<<"hasNextPage">>, 1, PageInfoStruct),
-    {_, EdgesStruct} = lists:keyfind(<<"edges">>, 1, JSONStruct),
-    {HasNextPage, lists:map(fun json_struct_to_result/1, EdgesStruct)}.
+upload_raw_ans104_with_anchor_test() ->
+    Serialized = ar_bundles:serialize(
+        ar_bundles:sign_item(#tx{
+            data = <<"TEST">>,
+            last_tx = crypto:strong_rand_bytes(32),
+            tags = [{<<"test-tag">>, <<"test-value">>}]
+        }, hb:wallet())
+    ),
+    ?event({uploading_item, Serialized}),
+    Result = upload(Serialized, #{}, <<"ans104@1.0">>),
+    ?event({upload_result, Result}),
+    ?assertMatch({ok, _}, Result).
 
-%% Parse a CU result into a #result record. If the result is in the form of a
-%% stream, then the cursor is returned in the #result record as well.
-json_struct_to_result(NodeStruct) ->
-    json_struct_to_result(NodeStruct, #result{}).
-json_struct_to_result({NodeStruct}, Res) ->
-    json_struct_to_result(NodeStruct, Res);
-json_struct_to_result(Struct, Res) ->
-    case lists:keyfind(<<"node">>, 1, Struct) of
-        false ->
-            Res#result{
-                messages = lists:map(
-                    fun ar_bundles:json_struct_to_item/1,
-                    hb_util:find_value(<<"messages">>, Struct, [])
-                ),
-                assignments = hb_util:find_value(<<"assignments">>, Struct, []),
-                spawns = lists:map(
-                    fun ar_bundles:json_struct_to_item/1,
-                    hb_util:find_value(<<"spawns">>, Struct, [])
-                ),
-                output = hb_util:find_value(<<"output">>, Struct, [])
-            };
-        {_, {NodeStruct}} ->
-            json_struct_to_result(
-                NodeStruct,
-                Res#result{
-                    cursor = hb_util:find_value(<<"cursor">>, Struct, undefined)
-                }
-            )
-    end.
+upload_empty_message_test() ->
+    Msg = #{ <<"data">> => <<"TEST">> },
+    Attested = hb_message:attest(Msg, hb:wallet(), <<"ans104@1.0">>),
+    Result = upload(Attested, #{}, <<"ans104@1.0">>),
+    ?event({upload_result, Result}),
+    ?assertMatch({ok, _}, Result).
+
+upload_single_layer_message_test() ->
+    Msg = #{
+        <<"data">> => <<"TEST">>,
+        <<"basic">> => <<"value">>,
+        <<"integer">> => 1
+    },
+    Attested = hb_message:attest(Msg, hb:wallet(), <<"ans104@1.0">>),
+    Result = upload(Attested, #{}, <<"ans104@1.0">>),
+    ?event({upload_result, Result}),
+    ?assertMatch({ok, _}, Result).

@@ -56,7 +56,8 @@
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, unattested/1, with_only_attestors/2]).
 -export([verify/1, verify/2, attest/2, attest/3, signers/1, type/1, minimize/1]).
--export([attested/1, attested/2, attested/3, with_only_attested/1]).
+-export([attested/1, attested/2, attested/3]).
+-export([with_only_attested/1, with_only_attested/2]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -145,28 +146,27 @@ id(Msg, RawAttestors, Opts) ->
         ),
     hb_util:human_id(ID).
 
-%% @doc Return a message with only the attested keys.
-with_only_attested(Msg) when is_map(Msg) ->
-    case is_map(Msg) andalso maps:is_key(<<"attestations">>, Msg) of
+%% @doc Return a message with only the attested keys. If no attestations are
+%% present, the message is returned unchanged. This means that you need to
+%% check if the message is:
+%% - Attested
+%% - Verifies
+%% ...before using the output of this function as the 'canonical' message. This
+%% is such that expensive operations like signature verification are not
+%% performed unless necessary.
+with_only_attested(Msg) ->
+    with_only_attested(Msg, #{}).
+with_only_attested(Msg, Opts) when is_map(Msg) ->
+    Atts = maps:get(<<"attestations">>, Msg, not_found),
+    case is_map(Msg) andalso Atts /= not_found of
         true ->
             try
-                Enc = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
-                ?event({enc, Enc}),
-                Dec = hb_message:convert(Enc, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
-                ?event({dec, Dec}),
-                AttestedKeys = hb_message:attested(Dec) ++ hb_message:attested(Msg),
+                AttestedKeys = hb_message:attested(Msg, Opts),
                 % Add the inline-body-key to the attested list if it is not
                 % already present.
-                HasInlineBodyKey = lists:member(<<"inline-body-key">>, AttestedKeys),
-                AttestedWithBodyKey =
-                    case HasInlineBodyKey andalso maps:get(<<"inline-body-key">>, Dec, not_found) of
-                        false -> AttestedKeys;
-                        not_found -> AttestedKeys;
-                        InlinedKey -> [InlinedKey | AttestedKeys]
-                    end,
-                ?event({attested, AttestedWithBodyKey}),
+                ?event({attested_keys, AttestedKeys, {msg, Msg}}),
                 {ok, maps:with(
-                    [<<"attestations">>] ++ AttestedWithBodyKey,
+                    AttestedKeys ++ [<<"attestations">>],
                     Msg
                 )}
             catch _:_:St ->
@@ -174,7 +174,7 @@ with_only_attested(Msg) when is_map(Msg) ->
             end;
         false -> {ok, Msg}
     end;
-with_only_attested(Msg) ->
+with_only_attested(Msg, _) ->
     % If the message is not a map, it cannot be signed.
     {ok, Msg}.
 
@@ -215,7 +215,7 @@ attest(Msg, Opts, Format) ->
 attested(Msg) -> attested(Msg, #{ <<"attestors">> => <<"all">> }, #{}).
 attested(Msg, Opts) -> attested(Msg, Opts, #{}).
 attested(Msg, Opts, Format) ->
-    {ok, AttestedKeys} = dev_message:attested(Msg, Opts, Format),
+    {ok, AttestedKeys} = dev_message:attested(Msg, Format, Opts),
     AttestedKeys.
 
 %% @doc wrapper function to verify a message.
@@ -636,6 +636,7 @@ single_layer_message_to_encoding_test(Codec) ->
 
 signed_only_attested_data_field_test(Codec) ->
     Msg = attest(#{ <<"data">> => <<"DATA">> }, hb:wallet(), Codec),
+    ?event({signed_msg, Msg}),
     {ok, OnlyAttested} = with_only_attested(Msg),
     ?event({only_attested, OnlyAttested}),
     ?assert(verify(OnlyAttested)).
@@ -845,8 +846,8 @@ nested_message_with_large_keys_test(Codec) ->
 
 signed_message_encode_decode_verify_test(Codec) ->
     Msg = #{
-        <<"test_data">> => <<"TEST_DATA">>,
-        <<"test_key">> => <<"TEST_VALUE">>
+        <<"test-data">> => <<"TEST DATA">>,
+        <<"test-key">> => <<"TEST VALUE">>
     },
     {ok, SignedMsg} =
         dev_message:attest(
@@ -854,13 +855,13 @@ signed_message_encode_decode_verify_test(Codec) ->
             #{ <<"attestation-device">> => Codec },
             #{ priv_wallet => hb:wallet() }
         ),
-    ?event({signed_msg, {explicit, SignedMsg}}),
+    ?event({signed_msg, SignedMsg}),
     ?assertEqual(true, verify(SignedMsg)),
-    ?event({verified, {explicit, SignedMsg}}),
+    ?event({verified, SignedMsg}),
     Encoded = convert(SignedMsg, Codec, #{}),
-    ?event({msg_encoded_as_codec, {explicit, Encoded}}),
+    ?event({msg_encoded_as_codec, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, {explicit, Decoded}}),
+    ?event({decoded, Decoded}),
     ?assertEqual(true, verify(Decoded)),
     ?assert(match(SignedMsg, Decoded)).
 
@@ -1128,6 +1129,7 @@ attested_keys_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     Signed = attest(Msg, hb:wallet(), Codec),
     AttestedKeys = attested(Signed),
+    ?assert(verify(Signed)),
     ?assert(lists:member(<<"a">>, AttestedKeys)),
     ?assert(lists:member(<<"b">>, AttestedKeys)),
     ?assert(lists:member(<<"c">>, AttestedKeys)),
@@ -1316,4 +1318,5 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    hashpath_sign_verify_test(<<"ans104@1.0">>).
+    attested_keys_test(<<"ans104@1.0">>),
+    signed_only_attested_data_field_test(<<"ans104@1.0">>).

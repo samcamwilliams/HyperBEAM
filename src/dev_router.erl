@@ -439,7 +439,7 @@ get_routes_test() ->
     Res = hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{}),
     ?event({get_routes_test, Res}),
     {ok, Recvd} = Res,
-    ?assertMatch(#{ <<"body">> := <<"our_node">> }, Recvd).
+    ?assertMatch(<<"our_node">>, Recvd).
 
 add_route_test() ->
     Owner = ar_wallet:new(),
@@ -471,11 +471,11 @@ add_route_test() ->
             #{}
         ),
     ?event({post_res, Res}),
-    ?assertMatch({ok, #{ <<"body">> := <<"Route added.">> }}, Res),
+    ?assertMatch({ok, <<"Route added.">>}, Res),
     GetRes = hb_http:get(Node, <<"/~router@1.0/routes/2/node">>, #{}),
     ?event({get_res, GetRes}),
     {ok, Recvd} = GetRes,
-    ?assertMatch(#{ <<"body">> := <<"new">> }, Recvd).
+    ?assertMatch(<<"new">>, Recvd).
 
 %%% Statistical test utilities
 

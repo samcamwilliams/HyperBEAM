@@ -118,7 +118,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => false,
+        debug_hide_metadata => true,
         debug_ids => false,
         debug_show_priv => if_present,
 		trusted => #{},
@@ -153,10 +153,23 @@ default_message() ->
                     }
             }
         ],
+        store =>
+            [
+                {hb_store_fs, #{ prefix => "mainnet-cache" }},
+                {hb_store_gateway, #{
+                    store =>
+                        [
+                            {hb_store_fs, #{ prefix => "mainnet-cache" }}
+                        ]
+                }}
+            ],
+        % Should we trust the GraphQL API when converting to ANS-104? Some GQL
+        % services do not provide the `anchor' or `last_tx' fields, so their
+        % responses are not verifiable.
+        ans104_trust_gql => true,
         http_extra_opts =>
             #{
                 force_message => true,
-                store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}, {hb_store_gateway, #{}}],
                 cache_control => [<<"always">>]
             },
         % Should the node store all signed messages?
@@ -211,16 +224,6 @@ get(Key, Default, Opts) ->
         priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
         hb_config_location => {"HB_CONFIG", "config.flat"},
         port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
-        store =>
-            {"HB_STORE",
-                fun(Dir) ->
-                    {
-                        hb_store_fs,
-                        #{ prefix => Dir }
-                    }
-                end,
-                "TEST-cache"
-            },
         mode => {"HB_MODE", fun list_to_existing_atom/1},
         debug_print =>
             {"HB_PRINT",
@@ -259,7 +262,7 @@ load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             try dev_codec_flat:deserialize(Bin) of
-                Map -> {ok, mimic_default_types(Map, new_atoms)}
+                {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
             catch
                 error:B -> {error, B}
             end;

@@ -259,7 +259,7 @@ faff_test() ->
     ?event({req, BadSignedReq}),
     {ok, Res} = hb_http:get(Node, GoodSignedReq, #{}),
     ?event(payment, {res, Res}),
-    ?assertEqual(<<"Hello, world!">>, hb_converge:get(<<"body">>, Res, #{})),
+    ?assertEqual(<<"Hello, world!">>, Res),
     ?assertMatch({error, _}, hb_http:get(Node, BadSignedReq, #{})).
 
 %% @doc Test that a non-chargable route is not charged for.
@@ -289,7 +289,7 @@ non_chargable_route_test() ->
     GoodSignedReq = hb_message:attest(Req, Wallet),
     Res = hb_http:get(Node, GoodSignedReq, #{}),
     ?event({res1, Res}),
-    ?assertMatch({ok, #{ <<"body">> := 0 }}, Res),
+    ?assertMatch({ok, 0}, Res),
     Req2 = #{ <<"path">> => <<"/~meta@1.0/info">> },
     GoodSignedReq2 = hb_message:attest(Req2, Wallet),
     Res2 = hb_http:get(Node, GoodSignedReq2, #{}),

@@ -44,7 +44,7 @@ render(IoDevice, Store, Key) ->
                     % Add link (old node) -> add actual data node (with resolved path)
                     add_link(IoDevice, JoinedPath, JoinedPath),
                     add_data(IoDevice, ResolvedPath),
-                    insert_arc(IoDevice, JoinedPath, ResolvedPath, "links-to")
+                    insert_arc(IoDevice, JoinedPath, ResolvedPath, <<"links-to">>)
                 end;
         composite ->
             add_dir(IoDevice, JoinedPath),
@@ -54,13 +54,19 @@ render(IoDevice, Store, Key) ->
                     {ok, SubItems} = hb_store:list(Store, Key),
                     lists:foreach(
                         fun(SubItem) ->
-                            insert_arc(IoDevice, hb_store:join(Key), hb_store:join([Key, SubItem]), "contains"),
+                            insert_arc(
+                                IoDevice,
+                                hb_store:join(Key),
+                                hb_store:join([Key, SubItem]),
+                                SubItem
+                            ),
                             render(IoDevice, Store, [Key, SubItem])
                         end,
-                        SubItems);
+                        SubItems
+                    );
                 true ->
                     add_link(IoDevice, JoinedPath, JoinedPath),
-                    insert_arc(IoDevice, JoinedPath, ResolvedPath, "links-to"),
+                    insert_arc(IoDevice, JoinedPath, ResolvedPath, <<"links-to">>),
                     render(IoDevice, Store, ResolvedPath)
             end;
         no_viable_store ->
@@ -74,19 +80,28 @@ get_test_store() ->
 
 % Helper functions
 add_link(IoDevice, Id, Label) ->
-    insert_circle(IoDevice, Id, Label, "green").
+    insert_circle(IoDevice, Id, Label, "lightgreen").
 
 add_data(IoDevice, Id) ->
-    insert_circle(IoDevice, Id, Id, "blue").
+    insert_circle(IoDevice, Id, Id, "lightblue").
 
 add_dir(IoDevice, Id) ->
-    insert_circle(IoDevice, Id, Id, "yellow").
+    insert_circle(IoDevice, Id, Id, "lightcoral").
 
 insert_arc(IoDevice, ID1, ID2, Label) ->
-    ok = io:format(IoDevice, "  \"~s\" -> \"~s\" [label=\"~s\"];~n", [ID1, ID2, Label]).
+    ?event({insert_arc, {id1, ID1}, {id2, ID2}, {label, Label}}),
+    ok = io:format(
+        IoDevice,
+        <<"  \"~s\" -> \"~s\" [label=\"~s\"];~n">>,
+        [ID1, ID2, hb_util:short_id(hb_util:bin(Label))]
+    ).
 
 insert_circle(IoDevice, ID, Label, Color) ->
-    ok = io:format(IoDevice, "  \"~s\" [label=\"~s\", color=~s, style=filled];~n", [ID, Label, Color]).
+    ok = io:format(
+        IoDevice,
+        <<"  \"~s\" [label=\"~s\", color=~s, style=filled];~n">>,
+        [ID, hb_util:short_id(hb_util:bin(Label)), Color]
+    ).
 
 % Preparing the test data
 prepare_unsigned_data() ->
@@ -104,7 +119,6 @@ prepare_signed_data() ->
 prepare_deeply_nested_complex_message() ->
     Opts = #{store => {hb_store_fs,#{prefix => "TEST-cache-fs"}}},
     Wallet = ar_wallet:new(),
-
     %% Create nested data
     Level3SignedSubmessage = test_signed([1,2,3], Wallet),
     Outer =

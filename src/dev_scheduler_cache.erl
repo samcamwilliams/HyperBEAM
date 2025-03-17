@@ -67,7 +67,7 @@ latest(ProcID, Opts) ->
     case dev_scheduler_cache:list(ProcID, Opts) of
         [] ->
             ?event({no_assignments_in_cache, {proc_id, ProcID}}),
-            {-1, <<>>};
+            not_found;
         Assignments ->
             AssignmentNum = lists:max(Assignments),
             ?event(
