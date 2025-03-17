@@ -13,7 +13,7 @@ push(Base, Req, Opts) ->
     ?event(push, {push_base, {base, ModBase}, {req, Req}}, Opts),
     case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
         no_slot ->
-            case initial_push(ModBase, Req, Opts) of
+            case schedule_initial_message(ModBase, Req, Opts) of
                 {ok, Assignment} ->
                     case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
                         <<"Message">> ->
@@ -73,7 +73,7 @@ do_push(Base, Assignment, Opts) ->
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
     case Result of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
-            ?event(push, {done, {slot, Slot}}),
+            ?event(push_short, {push_complete, {process, ID}, {slot, Slot}}),
             {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =
@@ -127,11 +127,10 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
                     PushedMsg = hb_converge:get(<<"body">>, Assignment, Opts),
                     PushedMsgID = hb_message:id(PushedMsg, all, Opts),
-                    ?event(push,
-                        {push_scheduled_message,
+                    ?event(push_short,
+                        {pushed_message_to,
                             {process, TargetID},
-                            {slot, NextSlotOnProc},
-                            {pushed_msg, PushedMsgID}
+                            {slot, NextSlotOnProc}
                         }
                     ),
                     {ok, TargetBase} = hb_cache:read(TargetID, Opts),
@@ -268,7 +267,7 @@ additional_keys(FromMsg, ToSched, Opts) ->
     ).
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
-initial_push(Base, Req, Opts) ->
+schedule_initial_message(Base, Req, Opts) ->
     ModReq = Req#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
     ?event(push, {initial_push, {base, Base}, {req, ModReq}}, Opts),
     case hb_converge:resolve(Base, ModReq, Opts) of

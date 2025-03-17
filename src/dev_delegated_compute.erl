@@ -26,7 +26,7 @@ compute(Msg1, Msg2, Opts) ->
     Res = do_compute(ProcessID, Slot, Opts),
     case Res of
         {ok, JSONRes} ->
-            ?event(push,
+            ?event(
                 {compute_lite_res,
                     {process_id, ProcessID},
                     {slot, Slot},
@@ -71,7 +71,7 @@ do_compute(ProcID, Slot, Opts) ->
     case Res of
         {ok, Response} ->
             JSONRes = hb_converge:get(<<"body">>, Response, Opts),
-            ?event(push, {
+            ?event({
                 delegated_compute_res_metadata,
                 {req, maps:without([<<"body">>], Response)}
             }),
