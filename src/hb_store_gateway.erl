@@ -180,6 +180,7 @@ specific_route_test() ->
 external_http_access_test() ->
     Node = hb_http_server:start_node(
         #{
+            cache_control => <<"cache">>,
             store =>
                 [
                     {hb_store_fs, #{ prefix => "test-cache" }},
@@ -191,7 +192,7 @@ external_http_access_test() ->
         {ok, #{ <<"type">> := <<"Assignment">> }},
         hb_http:get(
             Node,
-            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
+            <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
             #{}
         )
     ).
