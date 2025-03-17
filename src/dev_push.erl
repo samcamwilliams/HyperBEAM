@@ -205,7 +205,7 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
     Target = hb_converge:get(<<"target">>, MsgToPush, Opts),
     ?event(push,
         {push_scheduling_result,
-            {target, {explicit, Target}},
+            {target, {string, Target}},
             {target_process, Base},
             {msg, MsgToPush},
             {codec, Codec}
@@ -217,19 +217,25 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
             <<"body">> =>
-                hb_message:attest(
-                    maps:merge(MsgToPush, additional_keys(Base, MsgToPush, Opts)),
+                SignedMsg = hb_message:attest(
+                    additional_keys(Base, MsgToPush, Opts),
                     Opts,
                     Codec
                 )
         },
+    ?event(
+        {push_scheduling_result,
+            {signed_req, SignedReq},
+            {verifies, hb_message:verify(SignedMsg, signers)}
+        }
+    ),
     {ErlStatus, Res} =
         hb_converge:resolve(
             {as, <<"process@1.0">>, Base},
             SignedReq,
             Opts#{ cache_control => <<"always">> }
         ),
-    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}, {used_opts, Opts}}, Opts),
+    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}}, Opts),
     case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
         {ok, 200} ->
             {ok, Res};
@@ -263,7 +269,7 @@ additional_keys(FromMsg, ToSched, Opts) ->
             <<"Type">> => <<"Message">>,
             <<"From-Process">> => hb_message:id(FromMsg, all, Opts)
         },
-        Opts
+        Opts#{ hashpath => ignore }
     ).
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
@@ -334,9 +340,18 @@ parse_redirect(Location) ->
 full_push_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        Opts = #{ priv_wallet => hb:wallet() },
-        Msg1 = dev_process:test_aos_process(),
-        ?event(push, {msg1, Msg1}),
+        Opts = #{
+            priv_wallet => hb:wallet(),
+            cache_control => <<"always">>,
+            store => [
+                {hb_store_fs, #{ prefix => "TEST-cache" }},
+                {hb_store_gateway, #{
+                    store => [
+                        {hb_store_fs, #{ prefix => "TEST-cache" }}
+                    ]
+                }}
+            ]
+        },
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
@@ -365,6 +380,8 @@ multi_process_push_test_() ->
         Proc1 = dev_process:test_aos_process(),
         {ok, _} = dev_process:schedule_aos_call(Proc1, reply_script()),
         Proc2 = dev_process:test_aos_process(),
+        hb_cache:write(Proc1, Opts),
+        hb_cache:write(Proc2, Opts),
         ProcID1 =
             hb_converge:get(
                 <<"process/id">>,
