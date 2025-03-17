@@ -114,8 +114,9 @@ verify(M1, M2, NodeOpts) ->
     ?event({nonce_matches, NonceMatches}),
     % Step 2: Verify the address and the signature.
     Signers = hb_message:signers(MsgWithJSONReport),
-    ?event({snp_signers, Signers}),
-    SigIsValid = hb_message:verify(MsgWithJSONReport),
+    ?event({snp_signers, {explicit, Signers}}),
+    ?event({msg_with_json_report, {explicit, MsgWithJSONReport}}),
+    SigIsValid = hb_message:verify(MsgWithJSONReport, Signers),
     ?event({snp_sig_is_valid, SigIsValid}),
     AddressIsValid = lists:member(Address, Signers),
     ?event({address_is_valid, AddressIsValid, {signer, Signers}, {address, Address}}),
@@ -164,14 +165,17 @@ verify(M1, M2, NodeOpts) ->
 %% message ID), as well as the expected measurement (firmware, kernel, and VMSAs
 %% hashes).
 generate(_M1, _M2, Opts) ->
+	?event({generate_opts, {explicit, Opts}}),
+
     Wallet = hb_opts:get(priv_wallet, no_valid_wallet, Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % ?event({snp_wallet, Wallet}),
     % Remove the `priv*' keys from the options.
+	FilteredOpts = maps:without([store, preloaded_devices], Opts),
+	
     {ok, PublicNodeMsgID} =
         dev_message:id(
-            NodeMsg =
-                hb_private:reset(Opts),
+            	NodeMsg = #{<<"test_options">> => <<"test_value">>},
                 #{ <<"attestors">> => <<"none">> },
                 Opts
             ),
@@ -197,6 +201,8 @@ generate(_M1, _M2, Opts) ->
         <<"node-message">> => NodeMsg,
 		<<"report">> => ReportJSON
     }, Wallet),
+
+	?event({verify_res, hb_message:verify(ReportMsg)}),
 	?event({snp_report_msg, ReportMsg}),
     {ok, ReportMsg}.
 
@@ -226,16 +232,16 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
                 <<"key">> => ReportKey,
                 <<"body">> => ReportVal
             },
-            ?event({is_trusted_query, {base, ModM1}, {query, QueryMsg}}),
+            % ?event({is_trusted_query, {base, ModM1}, {query, QueryMsg}}),
             % Resolve the query message against the modified base message.
             {ok, KeyIsTrusted} = hb_converge:resolve(ModM1, QueryMsg, NodeOpts),
-            ?event(
-                {is_software_component_trusted,
-                    {key, ReportKey},
-                    {trusted, ReportKey},
-                    {result, KeyIsTrusted}
-                }
-            ),
+            % ?event(
+            %     {is_software_component_trusted,
+            %         {key, ReportKey},
+            %         {trusted, ReportKey},
+            %         {result, KeyIsTrusted}
+            %     }
+            % ),
             KeyIsTrusted
         end,
 		?ATTESTED_PARAMETERS
@@ -252,7 +258,7 @@ trusted(_Msg1, Msg2, NodeOpts) ->
     %% Ensure Trusted is always a map
     TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
     PropertyName = hb_converge:get(Key, TrustedSoftware, not_found, NodeOpts),
-    ?event({trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
+    % ?event({trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
     %% Final trust validation
     {ok, PropertyName == Body}.
 

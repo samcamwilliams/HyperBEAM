@@ -606,6 +606,7 @@ codec_to_content_type(Codec, Opts) ->
 req_to_tabm_singleton(Req, Body, Opts) ->
     case cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>) of
         <<"httpsig@1.0">> ->
+			?event({req_to_tabm_singleton, {request, {explicit, Req}, {body, {string, Body}}}}),
             http_sig_to_tabm_singleton(Req, Body, Opts);
         <<"ans104@1.0">> ->
             Item = ar_bundles:deserialize(Body),

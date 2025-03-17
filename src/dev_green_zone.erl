@@ -216,11 +216,16 @@ join_peer(Peer, _M1, _M2, Opts) ->
     Wallet = hb_opts:get(priv_wallet, undefined, Opts),
     {ok, Report} = dev_snp:generate(#{}, #{}, Opts),
     WalletPub = element(2, Wallet),
-    MergedReq = maps:merge(Report, #{
-        <<"public-key">> => base64:encode(term_to_binary(WalletPub))
-    }),
+    MergedReq = hb_converge:set(
+		Report, 
+        <<"public-key">>,
+		base64:encode(term_to_binary(WalletPub)),
+		Opts
+    ),
     % Create an attested join request using the wallet.
     Req = hb_message:attest(MergedReq, Wallet),
+	?event({join_req, Req}),
+	?event({verify_res, hb_message:verify(Req)}),
     % Log that the attestation report is being sent to the peer.
     ?event(green_zone, {join, sending_attestation_report, Peer, Req}),
     case hb_http:post(Peer, <<"/~greenzone@1.0/join">>, Req, Opts) of
