@@ -77,7 +77,7 @@ request(Method, #{ <<"opts">> := NodeOpts, <<"uri">> := URI }, _Path, Message, O
         ),
     request(NewMethod, Node, NewPath, NewMsg, MergedOpts);
 request(Method, Peer, Path, RawMessage, Opts) ->
-    ?event(http, {request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
+    ?event({request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
     Req =
         prepare_request(
             hb_converge:get(
@@ -92,9 +92,9 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             RawMessage,
             Opts
         ),
-    ?event(http, {req, Req}),
+    ?event(http_outbound, {req, Req}, Opts),
     {_ErlStatus, Status, Headers, Body} = hb_http_client:req(Req, Opts),
-    ?event(
+    ?event(http_outbound,
         {
             http_response,
             {req, Req},
@@ -105,11 +105,15 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                     body => Body
                 }
             }
-        }
+        },
+        Opts
     ),
     HeaderMap = maps:from_list(Headers),
     NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
-    ?event(http, {normalized_response_headers, {norm_header_map, NormHeaderMap}}),
+    ?event(http_outbound,
+        {normalized_response_headers, {norm_header_map, NormHeaderMap}},
+        Opts
+    ),
     BaseStatus =
         case Status of
             201 -> created;
@@ -120,7 +124,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
     case maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
         Key when is_binary(Key) ->
             Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
-            ?event(http, {result_is_single_key, {key, Key}, {msg, Msg}}),
+            ?event(http_outbound, {result_is_single_key, {key, Key}, {msg, Msg}}, Opts),
             case maps:get(Key, Msg, undefined) of
                 undefined -> {failure, result_key_not_found};
                 Value -> {BaseStatus, Value}
@@ -128,13 +132,13 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         undefined ->
             case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
                 <<"httpsig@1.0">> ->
-                    ?event(http, {result_is_httpsig, {body, Body}}),
+                    ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),
                     {
                         BaseStatus,
                         http_response_to_httpsig(Status, NormHeaderMap, Body, Opts)
                     };
                 <<"ans104@1.0">> ->
-                    ?event(http, {result_is_ans104, {body, Body}}),
+                    ?event(http_outbound, {result_is_ans104, {body, Body}}, Opts),
                     Deserialized = ar_bundles:deserialize(Body),
                     % We don't need to add the status to the message, because
                     % it is already present in the encoded ANS-104 message.
@@ -178,7 +182,7 @@ message_to_request(M, Opts) ->
             % The request is a direct HTTP URL, so we need to split the
             % URL into a host and path.
             URI = uri_string:parse(URL),
-            ?event(http, {parsed_uri, {uri, {explicit, URI}}}),
+            ?event(http_outbound, {parsed_uri, {uri, {explicit, URI}}}),
             Port =
                 case maps:get(port, URI, undefined) of
                     undefined ->
@@ -199,10 +203,10 @@ message_to_request(M, Opts) ->
                     Query -> [<<"?", Query/binary>>]
                 end,
             Path = iolist_to_binary(PathParts),
-            ?event(http, {parsed_req, {node, Node}, {method, Method}, {path, Path}}),
+            ?event(http_outbound, {parsed_req, {node, Node}, {method, Method}, {path, Path}}),
             {ok, Method, Node, Path, MsgWithoutMeta};
         {ok, Routes} ->
-            ?event(http, {found_routes, {req, M}, {routes, Routes}}),
+            ?event(http_outbound, {found_routes, {req, M}, {routes, Routes}}),
             % The result is a route, so we leave it to `request` to handle it.
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Routes, Path, MsgWithoutMeta};
@@ -595,7 +599,12 @@ req_to_tabm_singleton(Req, Body, Opts) ->
             http_sig_to_tabm_singleton(Req, Body, Opts);
         <<"ans104@1.0">> ->
             Item = ar_bundles:deserialize(Body),
-            ?event(ans104, {item, Item}),
+            ?event(ans104,
+                {deserialized_ans104,
+                    {item, Item},
+                    {exact, {explicit, Item}}
+                }
+            ),
             case ar_bundles:verify_item(Item) of
                 true ->
                     ?event(ans104, {valid_ans104_signature, Item}),
