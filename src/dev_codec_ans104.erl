@@ -9,7 +9,8 @@
 %% The size at which a value should be made into a body item, instead of a
 %% tag.
 -define(MAX_TAG_VAL, 128).
-%% The list of TX fields that users can set directly.
+%% The list of TX fields that users can set directly. Data is excluded because
+%% it may be set by the codec in order to support nested messages.
 -define(TX_KEYS,
     [
         <<"id">>,
@@ -19,6 +20,11 @@
         <<"signature">>
     ]
 ).
+%% The list of tags that a user is explicitly attesting to when they sign an
+%% ANS-104 message.
+-define(ATTESTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
+%% List of tags that should be removed during `to'. These relate to the nested
+%% ar_bundles format that is used by the `ans104@1.0' codec.
 -define(FILTERED_TAGS,
     [
         <<"bundle-format">>,
@@ -103,7 +109,7 @@ attested(Msg = #{ <<"trusted-keys">> := TKeys, <<"attestations">> := Atts }, _Re
         #{ <<"trusted-keys">> := TKeys } ->
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
             {ok, maps:values(hb_converge:normalize_keys(TKeys))
-                ++ NestedKeys ++ [<<"data">>]};
+                ++ NestedKeys ++ ?ATTESTED_TAGS};
         _ ->
             % If the key is not repeated, we cannot trust that the message has
             % the keys in the attestation so we return an error.
@@ -133,7 +139,7 @@ attested(Msg, Req, Opts) ->
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
             % Return the immediate and nested keys. The `data' field is always
             % attested, so we include it in the list of keys.
-            {ok, TagKeys ++ NestedKeys ++ [<<"data">>]};
+            {ok, TagKeys ++ NestedKeys ++ ?ATTESTED_TAGS};
         _ ->
             ?event({could_not_verify, {msg, MsgLessGivenAtt}}),
             {ok, []}
@@ -177,7 +183,15 @@ do_from(RawTX) ->
     % Check that the original tags did not contain any duplicated keys after 
     % normalization.
     case maps:size(TagsFromTX) =/= maps:size(OriginalTagMap) of
-        true -> throw({unsupported_ans104, tag_duplication});
+        true ->
+            ?event(warning,
+                {unsupported_ans104, tag_duplication,
+                    {tx, TX},
+                    {original_tag_map, OriginalTagMap},
+                    {tags_from_tx, TagsFromTX}
+                }
+            ),
+            throw({unsupported_ans104, tag_duplication});
         false -> ok
     end,
     % Generate a TABM from the tags.
@@ -535,3 +549,21 @@ simple_to_conversion_test() ->
     Decoded = from(Encoded),
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, hb_message:unattested(Decoded))).
+
+only_attested_maintains_target_test() ->
+    TX = ar_bundles:sign_item(#tx {
+        target = crypto:strong_rand_bytes(32),
+        tags = [
+            {<<"test-tag">>, <<"test-value">>},
+            {<<"test-tag-2">>, <<"test-value-2">>}
+        ],
+        data = <<"test-data">>
+    }, ar_wallet:new()),
+    ?event({tx, TX}),
+    Decoded = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({decoded, Decoded}),
+    {ok, OnlyAttested} = hb_message:with_only_attested(Decoded),
+    ?event({only_attested, OnlyAttested}),
+    Encoded = hb_message:convert(OnlyAttested, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    ?event({encoded, Encoded}),
+    ?assertEqual(TX, Encoded).
