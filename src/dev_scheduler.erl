@@ -293,11 +293,13 @@ post_schedule(Msg1, Msg2, Opts) ->
                     ?event({error_finding_scheduler, {error, Error}}),
                     {error, Error}
             end;
-        {error, _} ->
-            {ok,
+        {error, Err} ->
+            {error,
                 #{
                     <<"status">> => 400,
-                    <<"body">> => <<"Message is not valid.">>
+                    <<"body">> => <<"Message invalid: ",
+                        "Attested components cannot be validated.">>,
+                    <<"reason">> => Err
                 }
             }
     end.
@@ -310,17 +312,18 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
     Verified =
         case hb_opts:get(verify_assignments, true, Opts) of
             true ->
-                ?event({verifying_message_before_scheduling, Msg2}),
+                ?event(debug, {verifying_message_before_scheduling, Msg2}),
                 hb_message:verify(Msg2, signers);
             false -> true
         end,
     % Handle scheduling of the message if the message is valid.
     case {Verified, hb_converge:get(<<"type">>, Msg2, Opts)} of
         {false, _} ->
-            {ok,
+            {error,
                 #{
                     <<"status">> => 400,
-                    <<"body">> => <<"Message is not valid.">>
+                    <<"body">> => <<"Message is not valid.">>,
+                    <<"reason">> => <<"Given message does not correctly validate.">>
                 }
             };
         {true, <<"Process">>} ->
@@ -832,7 +835,7 @@ get_local_assignments(ProcID, From, undefined, Opts) ->
     case dev_scheduler_cache:latest(ProcID, Opts) of
         not_found ->
             % No assignments in cache.
-            [];
+            {[], false};
         {Slot, _} ->
             get_local_assignments(ProcID, From, Slot, Opts)
     end;
