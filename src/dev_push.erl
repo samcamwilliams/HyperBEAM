@@ -66,7 +66,7 @@ do_push(Base, Assignment, Opts) ->
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     Result = hb_converge:resolve(
-        {as, <<"process@1.0">>, ID},
+        {as, <<"process@1.0">>, Base},
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
@@ -352,12 +352,24 @@ full_push_test_() ->
                 }}
             ]
         },
+        Msg1 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Msg1, Opts),
+        {ok, SchedInit} =
+            hb_converge:resolve(Msg1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+        ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
-        ?event(push, {init_sched_result, Msg2}),
+        ?event(push, {msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+        ?event({starting_msg_slot, StartingMsgSlot}),
         Msg3 =
             #{
                 <<"path">> => <<"push">>,
@@ -377,11 +389,27 @@ multi_process_push_test_() ->
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>
         },
-        Proc1 = dev_process:test_aos_process(),
-        {ok, _} = dev_process:schedule_aos_call(Proc1, reply_script()),
-        Proc2 = dev_process:test_aos_process(),
+        Proc1 = dev_process:test_aos_process(Opts),
         hb_cache:write(Proc1, Opts),
+        {ok, _SchedInit1} =
+            hb_converge:resolve(Proc1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Proc1
+            },
+            Opts
+        ),
+        {ok, _} = dev_process:schedule_aos_call(Proc1, reply_script()),
+        Proc2 = dev_process:test_aos_process(Opts),
         hb_cache:write(Proc2, Opts),
+        {ok, _SchedInit2} =
+            hb_converge:resolve(Proc2, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Proc2
+            },
+            Opts
+        ),
         ProcID1 =
             hb_converge:get(
                 <<"process/id">>,
