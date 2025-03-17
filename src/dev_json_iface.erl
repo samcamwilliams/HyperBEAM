@@ -164,7 +164,7 @@ message_to_json_struct(RawMsg, Features) ->
     Fields = [
         {<<"Id">>, safe_to_id(ID)},
         % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, safe_to_id(Last)},
+        {<<"Anchor">>, Last},
         % NOTE: When sent to ao "Owner" is the wallet address
         {<<"Owner">>, hb_util:encode(Owner)},
         {<<"From">>, case ?IS_ID(From) of true -> safe_to_id(From); false -> From end},
