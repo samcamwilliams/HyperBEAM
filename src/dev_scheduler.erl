@@ -451,8 +451,13 @@ generate_redirect(ProcID, SchedulerLocation, Opts) ->
         }
     }.
 
+without_hint(Target) when ?IS_ID(Target) ->
+    hb_util:human_id(Target);
 without_hint(Target) ->
-    hd(binary:split(Target, [<<"?">>, <<"&">>], [global])).
+    case binary:split(Target, [<<"?">>, <<"&">>], [global]) of
+        [ProcID] when ?IS_ID(ProcID) -> hb_util:human_id(ProcID);
+        _ -> throw({invalid_operation_target, Target})
+    end.
 
 %% @doc Use the SchedulerLocation to the remote path and return a redirect.
 find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
@@ -529,9 +534,12 @@ get_schedule(Msg1, Msg2, Opts) ->
                                             <<"continues">>, Res, false, Opts)),
                                         Opts
                                     ),
-                                    ?event(debug, {formatted_assignments,
-                                        {body, {string, hb_converge:get(<<"body">>, Formatted, Opts)}},
-                                        {full, Formatted}}),
+                                    ?event({formatted_assignments,
+                                        {body,
+                                            {string, hb_converge:get(<<"body">>, Formatted, Opts)}
+                                        },
+                                        {full, Formatted}}
+                                    ),
                                     {ok, Formatted};
                                 _ ->
                                     {ok, Res}
@@ -599,7 +607,6 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
                                     ),
                                     [return_maps]
                                 ),
-                            ?event(debug, {remote_schedule_result, {json, JSONRes}}),
                             Filtered = filter_json_assignments(JSONRes, To, From),
                             dev_scheduler_formats:aos2_to_assignments(
                                 ProcID,
@@ -669,7 +676,7 @@ post_legacy_schedule(ProcID, OnlyAttested, Node, Opts) ->
                     <<"ans104@1.0">>,
                     Opts
                 ),
-            ?event({encoded_for_legacy_scheduler, {item, {explicit, Item}}}),
+            ?event(ans104, {encoded_for_legacy_scheduler, {item, Item}, {exact, {explicit, Item}}}),
             {ok, ar_bundles:serialize(Item)}
         catch
             _:_ ->
@@ -694,12 +701,17 @@ post_legacy_schedule(ProcID, OnlyAttested, Node, Opts) ->
                 }
             };
         {ok, Body} ->
+            ?event({encoded_for_legacy_scheduler, {encoded, Body}}),
             PostMsg = #{
-                <<"path">> => P = <<"?proc-id=", ProcID/binary>>,
+                <<"path">> => P = <<"/?proc-id=", ProcID/binary>>,
                 <<"body">> => Body,
                 <<"method">> => <<"POST">>
             },
-            ?event({posting_to_remote_legacy_scheduler, {string, P}}),
+            ?event({posting_to_remote_legacy_scheduler,
+                {node, {string, Node}},
+                {path, {string, P}},
+                {process_id, {string, ProcID}}
+            }),
             case hb_http:post(Node, PostMsg, Opts) of
                 {ok, PostRes} ->
                     ?event({remote_schedule_result, PostRes}),
@@ -732,7 +744,7 @@ post_legacy_schedule(ProcID, OnlyAttested, Node, Opts) ->
                     ?event({legacy_scheduler_not_found, {url, {string, P}}, {resp, Resp}}),
                     {error, Resp};
                 {error, PostRes} ->
-                    ?event({remote_schedule_proxy_error, {error, {explicit, PostRes}}}),
+                    ?event({remote_schedule_proxy_error, {error, PostRes}}),
                     {error, PostRes}
             end
     end.
