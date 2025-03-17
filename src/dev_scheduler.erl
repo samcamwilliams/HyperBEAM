@@ -312,7 +312,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
     Verified =
         case hb_opts:get(verify_assignments, true, Opts) of
             true ->
-                ?event(debug, {verifying_message_before_scheduling, Msg2}),
+                ?event({verifying_message_before_scheduling, Msg2}),
                 hb_message:verify(Msg2, signers);
             false -> true
         end,
