@@ -155,13 +155,13 @@ default_message() ->
         ],
         store =>
             [
-                {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{
-                    store =>
+                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => <<"hb_store_gateway">>,
+                    <<"store">> =>
                         [
-                            {hb_store_fs, #{ prefix => "mainnet-cache" }}
+                            #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> }
                         ]
-                }}
+                }
             ],
         % Should we trust the GraphQL API when converting to ANS-104? Some GQL
         % services do not provide the `anchor' or `last_tx' fields, so their

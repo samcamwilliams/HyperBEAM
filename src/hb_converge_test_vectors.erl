@@ -86,7 +86,7 @@ test_opts() ->
                 hashpath => ignore,
                 cache_control => [<<"no-cache">>, <<"no-store">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+                store => #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache-fs">> }
             },
             skip => [load_as]
         },
@@ -97,7 +97,7 @@ test_opts() ->
                 hashpath => update,
                 cache_control => [<<"no-cache">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+                store => #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache-fs">> }
             },
             skip => [
                 denormalized_device_key,
@@ -113,7 +113,7 @@ test_opts() ->
                 hashpath => ignore,
                 cache_control => [<<"only-if-cached">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+                store => #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache-fs">> }
             },
             skip => [
                 % Exclude tests that return a list on its own for now, as raw 
@@ -178,7 +178,7 @@ load_device_test() ->
     Opts = #{
         load_remote_devices => true,
         trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(Wallet))],
-        store => Store = {hb_store_fs, #{ prefix => "TEST-cache-fs" }},
+        store => Store = #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache-fs">> },
         priv_wallet => Wallet
     },
     hb_store:reset(Store),
@@ -191,7 +191,7 @@ untrusted_load_device_test() ->
     Opts = #{
         load_remote_devices => true,
         trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(TrustedWallet))],
-        store => Store = {hb_store_fs, #{ prefix => "TEST-cache-fs" }},
+        store => Store = #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache-fs">> },
         priv_wallet => UntrustedWallet
     },
     hb_store:reset(Store),

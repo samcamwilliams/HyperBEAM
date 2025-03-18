@@ -23,11 +23,13 @@
 
 -type value_type() :: link | raw | group.
 
-start_link({hb_store_rocksdb, #{ prefix := Dir}}) ->
+start_link(#{ <<"store-module">> := <<"hb_store_rocksdb">>, <<"prefix">> := Dir}) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Dir, []);
 start_link(Stores) when is_list(Stores) ->
-    case lists:keyfind(hb_store_rocksdb, 1, Stores) of
-        Store = {hb_store_rocksdb, _} ->
+    case lists:keyfind(<<"store-module">>, 1, 
+            [Store || Store = #{ <<"store-module">> := Module } <- Stores, 
+             Module =:= <<"hb_store_rocksdb">>]) of
+        Store = #{ <<"store-module">> := <<"hb_store_rocksdb">> } ->
             start_link(Store);
         _ -> ignore
     end;
@@ -35,8 +37,10 @@ start_link(Store) ->
     ?event(rocksdb, {invalid_store_config, Store}),
     ignore.
 
+start(Opts = #{ <<"store-module">> := <<"hb_store_rocksdb">>, <<"prefix">> := _Dir}) ->
+    start_link(Opts);
 start(Opts) ->
-    start_link({hb_store_rocksdb, Opts}).
+    start_link(Opts).
 
 -spec stop(any()) -> ok.
 stop(_Opts) ->
@@ -154,6 +158,8 @@ type(Opts, RawKey) ->
     Opts :: any(),
     Key :: binary(),
     Result :: ok | {error, already_added}.
+make_group(#{ <<"prefix">> := _DataDir }, Key) ->
+    gen_server:call(?MODULE, {make_group, Key}, ?TIMEOUT);
 make_group(_Opts, Key) ->
     gen_server:call(?MODULE, {make_group, Key}, ?TIMEOUT).
 
@@ -370,7 +376,7 @@ maybe_append_key_to_group(Key, CurrentDirContents) ->
 
 get_or_start_server() ->
     % Store = lists:keyfind(hb_store_rocksdb2, 1, hb_store:test_stores()),
-    case start_link({hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }}) of
+    case start_link(#{ <<"store-module">> => <<"hb_store_rocksdb">>, <<"prefix">> => "TEST-cache-rocks" }) of
         {ok, Pid} ->
             Pid;
         {error, {already_started, Pid}} ->
