@@ -231,7 +231,7 @@ add_content_digest(Msg) ->
         Body ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
-            ?event({add_content_digest, {body, Body}, {msg, Msg}}),
+            ?event(content_digest, {add_content_digest, {string, Body}}),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(hb_structured_fields:dictionary(

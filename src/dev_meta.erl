@@ -29,7 +29,6 @@ handle(NodeMsg, RawRequest) ->
                         NodeMsg
                     )
                 ),
-            ?event(debug_meta, {res, Res}),
             Res;
         _ -> handle_converge(RawRequest, NormRequest, NodeMsg)
     end.

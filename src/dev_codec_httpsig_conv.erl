@@ -168,17 +168,18 @@ from_body_parts(TABM, InlinedKey, [Part | Rest]) ->
             % Extract the name 
             {item, {_, Disposition}, DispositionParams} =
                 hb_structured_fields:parse_item(RawDisposition),
-            {ok, PartName} = case Disposition of
-                <<"inline">> ->
-                    {ok, InlinedKey};
-                _ ->
-                    % Otherwise, we need to extract the name of the part
-                    % from the Content-Disposition parameters
-                    case lists:keyfind(<<"name">>, 1, DispositionParams) of
-                        {_, {_type, PN}} -> {ok, PN};
-                        false -> no_part_name_found
-                    end
-            end,
+            {ok, PartName} =
+                case Disposition of
+                    <<"inline">> ->
+                        {ok, InlinedKey};
+                    _ ->
+                        % Otherwise, we need to extract the name of the part
+                        % from the Content-Disposition parameters
+                        case lists:keyfind(<<"name">>, 1, DispositionParams) of
+                            {_, {_type, PN}} -> {ok, PN};
+                            false -> no_part_name_found
+                        end
+                end,
             RestHeaders = maps:without([<<"content-disposition">>], Headers),
             ParsedPart =
                 case maps:size(RestHeaders) of
