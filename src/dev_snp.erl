@@ -174,7 +174,7 @@ generate(_M1, _M2, Opts) ->
 	
     {ok, PublicNodeMsgID} =
         dev_message:id(
-            	NodeMsg = #{<<"test_options">> => <<"test_value">>},
+            	NodeMsg = hb_private:reset(Opts),
                 #{ <<"attestors">> => <<"none">> },
                 Opts
             ),
