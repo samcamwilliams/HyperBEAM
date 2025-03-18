@@ -1226,6 +1226,68 @@ large_body_attested_keys_test(Codec) ->
             skip
     end.
 
+sign_node_message_test(Codec) ->
+    Msg = hb_message:attest(hb_opts:default_message(), hb:wallet(), Codec),
+    ?event({attested, Msg}),
+    ?assert(verify(Msg)),
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)),
+    ?assert(verify(Decoded)).
+
+nested_body_list_test(Codec) ->
+    Msg = #{
+        <<"body">> =>
+            [
+                #{
+                    <<"test-key">> =>
+                        <<"TEST VALUE #", (integer_to_binary(X))/binary>>
+                }
+            ||
+                X <- lists:seq(1, 3)
+            ]
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event(encoded, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
+
+recursive_nested_list_test(Codec) ->
+    % This test is to ensure that the codec can handle arbitrarily deep nested
+    % lists.
+    Msg = #{
+        <<"body">> =>
+            [
+                [
+                    [
+                        <<
+                            "TEST VALUE #",
+                            (integer_to_binary(X))/binary,
+                            "-",
+                            (integer_to_binary(Y))/binary,
+                            "-",
+                            (integer_to_binary(Z))/binary
+                        >>
+                    ||
+                        Z <- lists:seq(1, 3)
+                    ]
+                ||
+                    Y <- lists:seq(1, 3)
+                ]
+            ||
+                X <- lists:seq(1, 3)
+            ]
+    },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event(encoded, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
 priv_survives_conversion_test(<<"ans104@1.0">>) -> skip;
 priv_survives_conversion_test(<<"json@1.0">>) -> skip;
 priv_survives_conversion_test(Codec) ->
@@ -1314,9 +1376,11 @@ message_suite_test_() ->
         {"large body attested keys test", fun large_body_attested_keys_test/1},
         {"signed list http response test", fun signed_list_test/1},
         {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
-        {"priv survives conversion test", fun priv_survives_conversion_test/1}
+        {"priv survives conversion test", fun priv_survives_conversion_test/1},
+        {"sign node message test", fun sign_node_message_test/1},
+        {"nested list test", fun nested_body_list_test/1},
+        {"recursive nested list test", fun recursive_nested_list_test/1}
     ]).
 
 run_test() ->
-    attested_keys_test(<<"ans104@1.0">>),
-    signed_only_attested_data_field_test(<<"ans104@1.0">>).
+    recursive_nested_list_test(<<"flat@1.0">>).
