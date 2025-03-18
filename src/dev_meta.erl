@@ -31,10 +31,7 @@ handle(NodeMsg, RawRequest) ->
                 ),
             ?event(debug_meta, {res, Res}),
             Res;
-        true ->
-            handle_converge(RawRequest, NormRequest, NodeMsg);
-        _ ->
-            embed_status({error, <<"`initialized` not found in node message.">>})
+        _ -> handle_converge(RawRequest, NormRequest, NodeMsg)
     end.
 
 handle_initialize([Base = #{ <<"device">> := Device}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
@@ -60,7 +57,7 @@ info(_, Request, NodeMsg) ->
             embed_status({ok, filter_node_msg(add_dynamic_keys(NodeMsg))});
         <<"POST">> ->
             case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
-                <<"permanent">> ->
+                permanent ->
                     embed_status(
                         {error,
                             <<"The node message of this machine is already "
