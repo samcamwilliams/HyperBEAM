@@ -157,20 +157,7 @@ call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
     no_viable_store;
-call_function([{Mod, Opts} | Rest], Function, Args) ->
-    ?event({calling, Mod, Function, Args}),
-    try apply(Mod, Function, [Opts | Args]) of
-        not_found ->
-            call_function(Rest, Function, Args);
-        Result ->
-            Result
-    catch
-        Class:Reason:Stacktrace ->
-            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
-            call_function(Rest, Function, Args)
-    end;
-call_function([Store = #{<<"store-module">> := ModBin} | Rest], Function, Args) ->
-    Mod = binary_to_atom(ModBin, utf8),
+call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     ?event({calling, Mod, Function, Args}),
     try apply(Mod, Function, [Store | Args]) of
         not_found ->
@@ -188,17 +175,7 @@ call_all(X, _Function, _Args) when not is_list(X) ->
     call_all([X], _Function, _Args);
 call_all([], _Function, _Args) ->
     ok;
-call_all([{Mod, Opts} | Rest], Function, Args) ->
-    try
-        apply(Mod, Function, [Opts | Args])
-    catch
-        Class:Reason:Stacktrace ->
-            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
-            ok
-    end,
-    call_all(Rest, Function, Args);
-call_all([Store = #{<<"store-module">> := ModBin} | Rest], Function, Args) ->
-    Mod = binary_to_atom(ModBin, utf8),
+call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     try
         apply(Mod, Function, [Store | Args])
     catch
@@ -212,8 +189,8 @@ call_all([Store = #{<<"store-module">> := ModBin} | Rest], Function, Args) ->
 
 test_stores() ->
     [
-        #{ <<"store-module">> => <<"hb_store_rocksdb">>, <<"prefix">> => <<"TEST-cache-rocks">> },
-        #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache-fs">> }
+        #{ <<"store-module">> => hb_store_rocksdb, <<"prefix">> => <<"TEST-cache-rocks">> },
+        #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache-fs">> }
     ].
 
 generate_test_suite(Suite) ->
@@ -225,7 +202,7 @@ generate_test_suite(Suite, Stores) ->
 				fun() -> hb_store:start(Store), hb_store:reset(Store) end,
 				fun(_) -> hb_store:reset(Store) end,
                 [
-                    {binary_to_list(Mod) ++ ": " ++ Desc,
+                    {atom_to_list(Mod) ++ ": " ++ Desc,
                         fun() -> 
                             TestResult = Test(Store),
                             TestResult

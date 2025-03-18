@@ -15,29 +15,6 @@ list(StoreOpts, Key) ->
         {ok, Message} -> {ok, maps:keys(Message)}
     end.
 
-%% @doc Normalize the store options, adding the routes if specified.
-%% If no routes are specified, the default routes are used.
-normalize_opts(StoreOpts) when is_map(StoreOpts) ->
-    % Check for routes directly
-    DirectRoutes = maps:get(<<"routes">>, StoreOpts, not_found),
-    % Also check in the legacy opts map for backward compatibility
-    NestedRoutes = case maps:get(<<"opts">>, StoreOpts, #{}) of
-        Opts when is_map(Opts) -> maps:get(routes, Opts, not_found);
-        _ -> not_found
-    end,
-    % Determine which routes to use
-    Routes = case {DirectRoutes, NestedRoutes} of
-        {not_found, not_found} -> hb_opts:get(routes, [], #{});
-        {not_found, {only, R}} -> R;
-        {not_found, R} when is_list(R) -> R ++ hb_opts:get(routes, [], #{});
-        {{only, R}, _} -> R;
-        {R, _} when is_list(R) -> R ++ hb_opts:get(routes, [], #{})
-    end,
-    % Create a new map with the routes
-    StoreOpts#{ routes => Routes };
-normalize_opts(StoreOpts) ->
-    StoreOpts.
-
 %% @doc Get the type of the data at the given key. We potentially cache the
 %% result, so that we don't have to read the data from the GraphQL route
 %% multiple times.
@@ -63,7 +40,7 @@ read(StoreOpts, Key) ->
     case hb_path:term_to_path_parts(Key) of
         [ID] when ?IS_ID(ID) ->
             ?event({read, StoreOpts, Key}),
-            case hb_gateway_client:read(Key, normalize_opts(StoreOpts)) of
+            case hb_gateway_client:read(Key, StoreOpts) of
                 {error, _} -> not_found;
                 {ok, Message} ->
                     ?event(remote_read, {got_message_from_gateway, Message}),
@@ -110,7 +87,7 @@ graphql_as_store_test() ->
     ?assertMatch(
         {ok, #{ <<"type">> := <<"Assignment">> }},
         hb_store:read(
-            [#{ <<"store-module">> => <<"hb_store_gateway">>, <<"opts">> => #{} }],
+            [#{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }],
             <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>
         )
     ).
@@ -118,7 +95,7 @@ graphql_as_store_test() ->
 %% @doc Stored messages are accessible via `hb_cache` accesses.
 graphql_from_cache_test() ->
     hb_http_server:start_node(#{}),
-    Opts = #{ store => [#{ <<"store-module">> => <<"hb_store_gateway">>, <<"opts">> => #{} }] },
+    Opts = #{ store => [#{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }] },
     ?assertMatch(
         {ok, #{ <<"type">> := <<"Assignment">> }},
         hb_cache:read(
@@ -129,9 +106,9 @@ graphql_from_cache_test() ->
 
 manual_local_cache_test() ->
     hb_http_server:start_node(#{}),
-    Local = #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> },
+    Local = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> },
     hb_store:reset(Local),
-    Gateway = #{ <<"store-module">> => <<"hb_store_gateway">>, <<"store">> => false },
+    Gateway = #{ <<"store-module">> => hb_store_gateway, <<"store">> => false },
     {ok, FromRemote} =
         hb_cache:read(
             <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
@@ -150,11 +127,11 @@ manual_local_cache_test() ->
 %% @doc Ensure that saving to the gateway store works.
 cache_read_message_test() ->
     hb_http_server:start_node(#{}),
-    Local = #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> },
+    Local = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> },
     hb_store:reset(Local),
     WriteOpts = #{ store =>
         [
-            #{ <<"store-module">> => <<"hb_store_gateway">>,
+            #{ <<"store-module">> => hb_store_gateway,
                 <<"store">> => [Local]
             }
         ]
@@ -181,8 +158,9 @@ specific_route_test() ->
     Opts = #{
         store =>
             [
-                #{ <<"store-module">> => <<"hb_store_gateway">>, 
-                   <<"routes">> => {only, []}
+                #{ <<"store-module">> => hb_store_gateway, 
+                   <<"routes">> => [],
+                   <<"only">> => local
                 }
             ]
     },
@@ -198,18 +176,19 @@ specific_route_test() ->
 external_http_access_test() ->
     Node = hb_http_server:start_node(
         #{
+            cache_control => <<"cache">>,
             store =>
                 [
-                    #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"test-cache">> },
-                    #{ <<"store-module">> => <<"hb_store_gateway">>, <<"opts">> => #{} }
+                    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"test-cache">> },
+                    #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
                 ]
         }
     ),
     ?assertMatch(
-        {ok, #{ <<"type">> := <<"Assignment">> }},
+        {ok, #{ <<"data-protocol">> := <<"ao">> }},
         hb_http:get(
             Node,
-            <<"/0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>,
+            <<"p45HPD-ENkLS7Ykqrx6p_DYGbmeHDeeF8LJ09N2K53g">>,
             #{}
         )
     ).
@@ -222,7 +201,7 @@ resolve_on_gateway_test_() ->
         Opts = #{
             store =>
                 [
-                    #{ <<"store-module">> => <<"hb_store_gateway">>, <<"store">> => false }
+                    #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
                 ],
             cache_control => <<"cache">>
         },

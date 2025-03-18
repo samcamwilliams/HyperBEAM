@@ -695,7 +695,7 @@ http_wasm_process_by_id_test() ->
         port => 10000 + rand:uniform(10000),
         priv_wallet => SchedWallet,
         cache_control => <<"always">>,
-        store => #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> }
+        store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> }
     }),
     Wallet = ar_wallet:new(),
     Proc = test_wasm_process(<<"test/test-64.wasm">>, Opts),
@@ -785,7 +785,7 @@ aos_state_access_via_http_test_() ->
             port => 10000 + rand:uniform(10000),
             priv_wallet => Wallet,
             cache_control => <<"always">>,
-            store => #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
+            store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
             force_signed_requests => true
         }),
         Proc = test_aos_process(Opts),

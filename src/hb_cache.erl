@@ -427,7 +427,8 @@ cache_suite_test_() ->
 %% be written, it would cause an infinite loop.
 test_device_map_cannot_be_written_test() ->
     try
-        Opts = #{ store => StoreOpts = [#{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> }] },
+        Opts = #{ store => StoreOpts =
+            [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> }] },
         hb_store:reset(StoreOpts),
         Danger = #{ <<"device">> => #{}},
         write(Danger, Opts),
@@ -437,5 +438,7 @@ test_device_map_cannot_be_written_test() ->
     end.
 
 run_test() ->
-    Opts = #{ store => [#{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> }]},
-    test_store_ans104_message(Opts).
+    Opts = #{ store => StoreOpts = 
+        [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> }]},
+    test_store_ans104_message(Opts),
+    hb_store:reset(StoreOpts).

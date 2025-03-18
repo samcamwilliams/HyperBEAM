@@ -38,14 +38,18 @@ from(Msg) when is_map(Msg) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Map} when is_map(Map) ->
                     {Types, [{Key, from(Map)} | Values]};
-                {ok, Msgs = [Msg1|_]} when is_map(Msg1) ->
+                {ok, MsgList = [Msg1|_]} when is_map(Msg1) or is_list(Msg1) ->
                     % We have a list of maps. Convert to a numbered map and
                     % recurse.
-                    {Types, [{Key, from(hb_converge:normalize_keys(Msgs))} | Values]};
+                    BinKey = hb_converge:normalize_key(Key),
+                    % Convert the list of maps into a numbered map and recurse
+                    NumberedMap = from(hb_converge:normalize_keys(MsgList)),
+                    {[{BinKey, <<"list">>} | Types], [{BinKey, NumberedMap} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
                         or is_list(Value) or is_float(Value) ->
                     BinKey = hb_converge:normalize_key(Key),
+                    ?event(debug_opts, {encode_value, Value}),
                     {Type, BinValue} = encode_value(Value),
                     {[{BinKey, Type} | Types], [{BinKey, BinValue} | Values]};
                 {ok, {resolve, Operations}} when is_list(Operations) ->
@@ -138,7 +142,21 @@ to(TABM0) ->
                     Acc#{ RawKey => Decoded }
             end;
         (RawKey, ChildTABM, Acc) when is_map(ChildTABM) ->
-            Acc#{ RawKey => to(ChildTABM)};
+            % Decode the child TABM
+            ChildDecoded = to(ChildTABM),
+            Acc#{
+                RawKey =>
+                    case maps:find(RawKey, Types) of
+                        error ->
+                            % The value is a map, so we return it as is
+                            ChildDecoded;
+                        {ok, <<"list">>} ->
+                            % The child is a list of maps, so we need to convert the
+                            % map into a list, while maintaining the correct order
+                            % of the keys
+                            hb_util:message_to_ordered_list(ChildDecoded)
+                    end
+            };
         (RawKey, Value, Acc) ->
             % We encountered a key that already has a converted type.
             % We can just return it as is.

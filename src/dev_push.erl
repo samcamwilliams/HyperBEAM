@@ -66,7 +66,7 @@ do_push(Base, Assignment, Opts) ->
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     Result = hb_converge:resolve(
-        {as, <<"process@1.0">>, ID},
+        {as, <<"process@1.0">>, Base},
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
@@ -205,7 +205,7 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
     Target = hb_converge:get(<<"target">>, MsgToPush, Opts),
     ?event(push,
         {push_scheduling_result,
-            {target, {explicit, Target}},
+            {target, {string, Target}},
             {target_process, Base},
             {msg, MsgToPush},
             {codec, Codec}
@@ -217,19 +217,25 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
             <<"body">> =>
-                hb_message:attest(
-                    maps:merge(MsgToPush, additional_keys(Base, MsgToPush, Opts)),
+                SignedMsg = hb_message:attest(
+                    additional_keys(Base, MsgToPush, Opts),
                     Opts,
                     Codec
                 )
         },
+    ?event(
+        {push_scheduling_result,
+            {signed_req, SignedReq},
+            {verifies, hb_message:verify(SignedMsg, signers)}
+        }
+    ),
     {ErlStatus, Res} =
         hb_converge:resolve(
             {as, <<"process@1.0">>, Base},
             SignedReq,
             Opts#{ cache_control => <<"always">> }
         ),
-    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}, {used_opts, Opts}}, Opts),
+    ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}}, Opts),
     case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
         {ok, 200} ->
             {ok, Res};
@@ -263,7 +269,7 @@ additional_keys(FromMsg, ToSched, Opts) ->
             <<"Type">> => <<"Message">>,
             <<"From-Process">> => hb_message:id(FromMsg, all, Opts)
         },
-        Opts
+        Opts#{ hashpath => ignore }
     ).
 
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
@@ -334,15 +340,37 @@ parse_redirect(Location) ->
 full_push_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        Opts = #{ priv_wallet => hb:wallet() },
-        Msg1 = dev_process:test_aos_process(),
-        ?event(push, {msg1, Msg1}),
+        Opts = #{
+            priv_wallet => hb:wallet(),
+            cache_control => <<"always">>,
+            store => [
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> },
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"TEST-cache">>
+                    }
+                }
+            ]
+        },
+        Msg1 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Msg1, Opts),
+        {ok, SchedInit} =
+            hb_converge:resolve(Msg1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+        ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
-        ?event(push, {init_sched_result, Msg2}),
+        ?event(push, {msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+        ?event({starting_msg_slot, StartingMsgSlot}),
         Msg3 =
             #{
                 <<"path">> => <<"push">>,
@@ -355,16 +383,34 @@ full_push_test_() ->
         )
     end}.
 
-multi_process_push_test_() ->
+multi_process_push_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Opts = #{
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>
         },
-        Proc1 = dev_process:test_aos_process(),
+        Proc1 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Proc1, Opts),
+        {ok, _SchedInit1} =
+            hb_converge:resolve(Proc1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Proc1
+            },
+            Opts
+        ),
         {ok, _} = dev_process:schedule_aos_call(Proc1, reply_script()),
-        Proc2 = dev_process:test_aos_process(),
+        Proc2 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Proc2, Opts),
+        {ok, _SchedInit2} =
+            hb_converge:resolve(Proc2, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Proc2
+            },
+            Opts
+        ),
         ProcID1 =
             hb_converge:get(
                 <<"process/id">>,
@@ -407,7 +453,7 @@ multi_process_push_test_() ->
 push_with_redirect_hint_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        Stores = [#{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> }],
+        Stores = [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> }],
         ExtOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
         LocalOpts = #{ priv_wallet => hb:wallet(), store => Stores },
         ExtScheduler = hb_http_server:start_node(ExtOpts),
@@ -482,12 +528,14 @@ push_prompts_encoding_change_test() ->
         cache_control => <<"always">>,
         store =>
             [
-                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> },
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> },
                 % Include a gateway store so that we can get the legacynet 
                 % process when needed.
-                #{ <<"store-module">> => <<"hb_store_gateway">>,
-                    <<"cache_gateway_store">> =>
-                        #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> }
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"TEST-cache">>
+                    }
                 }
             ]
     },

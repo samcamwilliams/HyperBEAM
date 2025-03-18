@@ -21,14 +21,8 @@ stop(#{ <<"prefix">> := _DataDir }) ->
 scope(_) -> local.
 
 reset(#{ <<"prefix">> := DataDir }) ->
-    % Convert binary to string if needed
-    DirStr = case is_binary(DataDir) of
-        true -> binary_to_list(DataDir);
-        false -> DataDir
-    end,
     % Use pattern that completely removes directory then recreates it
-    os:cmd("rm -Rf " ++ DirStr),
-    ok = filelib:ensure_dir(DirStr),
+    os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
     ?event({reset_store, {path, DataDir}}).
 
 %% @doc Read a key from the store, following symlinks as needed.

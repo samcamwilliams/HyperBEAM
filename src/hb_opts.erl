@@ -13,7 +13,7 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, load/1, default_message/0]).
+-export([get/1, get/2, get/3, load/1, default_message/0, mimic_default_types/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -155,11 +155,14 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
-                #{ <<"store-module">> => <<"hb_store_gateway">>,
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
-                            #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> }
+                            #{
+                                <<"store-module">> => hb_store_fs,
+                                <<"prefix">> => <<"mainnet-cache">>
+                            }
                         ]
                 }
             ],
@@ -193,6 +196,10 @@ get(Key, Default, Opts) when is_binary(Key) ->
     catch
         error:badarg -> Default
     end;
+get(Key, Default, Opts = #{ <<"only">> := Only }) ->
+    get(Key, Default, maps:remove(<<"only">>, Opts#{ only => Only }));
+get(Key, Default, Opts = #{ <<"prefer">> := Prefer }) ->
+    get(Key, Default, maps:remove(<<"prefer">>, Opts#{ prefer => Prefer }));
 get(Key, Default, Opts = #{ only := local }) ->
     case maps:find(Key, Opts) of
         {ok, Value} -> Value;

@@ -29,12 +29,8 @@ handle(NodeMsg, RawRequest) ->
                         NodeMsg
                     )
                 ),
-            ?event(debug_meta, {res, Res}),
             Res;
-        true ->
-            handle_converge(RawRequest, NormRequest, NodeMsg);
-        _ ->
-            embed_status({error, <<"`initialized` not found in node message.">>})
+        _ -> handle_converge(RawRequest, NormRequest, NodeMsg)
     end.
 
 handle_initialize([Base = #{ <<"device">> := Device}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
@@ -62,7 +58,7 @@ info(_, Request, NodeMsg) ->
             embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
             case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
-                <<"permanent">> ->
+                permanent ->
                     embed_status(
                         {error,
                             <<"The node message of this machine is already "
@@ -121,7 +117,11 @@ update_node_message(Request, NodeMsg) ->
             embed_status({error, <<"Unauthorized">>});
         true ->
             ?event({set_node_message_success, Request}),
-            MergedOpts = hb_converge:set(NodeMsg, Request, NodeMsg),
+            MergedOpts =
+                maps:merge(
+                    hb_message:unattested(NodeMsg),
+                    hb_opts:mimic_default_types(Request, new_atoms)
+                ),
             hb_http_server:set_opts(
                 MergedOpts#{
                     http_server => hb_opts:get(http_server, no_server, NodeMsg)
