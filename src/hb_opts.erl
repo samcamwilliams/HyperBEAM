@@ -158,7 +158,10 @@ default_message() ->
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
-                            #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> }
+                            #{
+                                <<"store-module">> => hb_store_fs,
+                                <<"prefix">> => <<"mainnet-cache">>
+                            }
                         ]
                 }
             ],
