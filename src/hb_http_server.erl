@@ -307,7 +307,7 @@ set_default_opts(Opts) ->
     Store =
         case hb_opts:get(store, no_store, TempOpts) of
             no_store ->
-                #{ <<"store-module">> => <<"hb_store_fs">>,
+                #{ <<"store-module">> => hb_store_fs,
                     <<"prefix">> =>
                         <<"TEST-cache-", (integer_to_binary(Port))/binary>>
                 };

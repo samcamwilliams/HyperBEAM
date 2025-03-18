@@ -1200,9 +1200,9 @@ load_device(ID, Opts) ->
         end,
     case lists:search(
         fun (#{ <<"name">> := Name }) -> Name =:= NormKey end,
-        hb_opts:get(preloaded_devices, [], Opts)
+        Preloaded = hb_opts:get(preloaded_devices, [], Opts)
     ) of
-        false -> {error, module_not_admissable};
+        false -> {error, {module_not_admissable, NormKey, Preloaded}};
         {value, #{ <<"module">> := Mod }} -> load_device(Mod, Opts)
     end.
 

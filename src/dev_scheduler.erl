@@ -976,8 +976,8 @@ redirect_from_graphql_test() ->
     Opts =
         #{ store =>
             [
-                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
-                #{ <<"store-module">> => <<"hb_store_gateway">>, <<"store">> => false }
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
             ]
         },
     {ok, Msg} = hb_cache:read(<<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>, Opts),
@@ -1047,8 +1047,8 @@ http_init(Opts) ->
         Opts#{
             priv_wallet => Wallet,
             store => [
-                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
-                #{ <<"store-module">> => <<"hb_store_gateway">>, <<"store">> => false }
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
             ]
         }),
     {Node, Wallet}.
@@ -1110,8 +1110,8 @@ http_get_schedule_redirect_test() ->
         #{
             store =>
                 [
-                    #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
-                    #{ <<"store-module">> => <<"hb_store_gateway">>, <<"opts">> => #{} }
+                    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                    #{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }
                 ],
                 scheduler_follow_redirects => false
         },
@@ -1338,7 +1338,7 @@ benchmark_suite_test_() ->
         #{
             name => fs,
             opts => #{
-                store => #{ <<"store-module">> => <<"hb_store_fs">>, 
+                store => #{ <<"store-module">> => hb_store_fs, 
                     <<"prefix">> => <<"TEST-cache/fs-",
                         (integer_to_binary(Port))/binary>> 
                 },
@@ -1350,7 +1350,7 @@ benchmark_suite_test_() ->
         #{
             name => fs_aggressive,
             opts => #{
-                store => #{ <<"store-module">> => <<"hb_store_fs">>, 
+                store => #{ <<"store-module">> => hb_store_fs, 
                     <<"prefix">> => <<"TEST-cache/fs-",
                         (integer_to_binary(Port+1))/binary>> 
                 },
@@ -1362,7 +1362,7 @@ benchmark_suite_test_() ->
         #{
             name => rocksdb,
             opts => #{
-                store => #{ <<"store-module">> => <<"hb_store_rocksdb">>, 
+                store => #{ <<"store-module">> => hb_store_rocksdb, 
                     <<"prefix">> => <<"TEST-cache-rocksdb-",
                         (integer_to_binary(Port+1))/binary>> 
                 },
@@ -1374,7 +1374,7 @@ benchmark_suite_test_() ->
         #{
             name => rocksdb_aggressive,
             opts => #{
-                store => #{ <<"store-module">> => <<"hb_store_rocksdb">>, 
+                store => #{ <<"store-module">> => hb_store_rocksdb, 
                     <<"prefix">> => <<"TEST-cache-rocksdb-",
                         (integer_to_binary(Port+2))/binary>> 
                 },
@@ -1386,7 +1386,7 @@ benchmark_suite_test_() ->
         % #{
         %     name => rocksdb_extreme_aggressive_h3,
         %     opts => #{
-        %         store => #{ <<"store-module">> => <<"hb_store_rocksdb">>, 
+        %         store => #{ <<"store-module">> => hb_store_rocksdb, 
         %             <<"prefix">> => <<"TEST-cache-rocksdb-",
         %                 (integer_to_binary(Port+3))/binary>> 
         %         },
