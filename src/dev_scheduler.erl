@@ -61,7 +61,7 @@ router(_, Msg1, Msg2, Opts) ->
     schedule(Msg1, Msg2, Opts).
 
 %% @doc Load the schedule for a process into the cache, then return the next
-%% assignment. Assumes that Msg1 is a `dev_process` or similar message, having
+%% assignment. Assumes that Msg1 is a `dev_process' or similar message, having
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
@@ -976,8 +976,8 @@ redirect_from_graphql_test() ->
     Opts =
         #{ store =>
             [
-                {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{ store => false }}
+                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => <<"hb_store_gateway">>, <<"store">> => false }
             ]
         },
     {ok, Msg} = hb_cache:read(<<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>, Opts),
@@ -1047,8 +1047,8 @@ http_init(Opts) ->
         Opts#{
             priv_wallet => Wallet,
             store => [
-                {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                {hb_store_gateway, #{ store => false }}
+                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => <<"hb_store_gateway">>, <<"store">> => false }
             ]
         }),
     {Node, Wallet}.
@@ -1110,8 +1110,8 @@ http_get_schedule_redirect_test() ->
         #{
             store =>
                 [
-                    {hb_store_fs, #{ prefix => "mainnet-cache" }},
-                    {hb_store_gateway, #{}}
+                    #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"mainnet-cache">> },
+                    #{ <<"store-module">> => <<"hb_store_gateway">>, <<"opts">> => #{} }
                 ],
                 scheduler_follow_redirects => false
         },
@@ -1338,10 +1338,10 @@ benchmark_suite_test_() ->
         #{
             name => fs,
             opts => #{
-                store => {hb_store_fs, #{
-                    prefix => <<"TEST-cache/fs-",
-                        (integer_to_binary(Port))/binary>>
-                }},
+                store => #{ <<"store-module">> => <<"hb_store_fs">>, 
+                    <<"prefix">> => <<"TEST-cache/fs-",
+                        (integer_to_binary(Port))/binary>> 
+                },
                 scheduling_mode => local_confirmation,
                 port => Port
             },
@@ -1350,10 +1350,10 @@ benchmark_suite_test_() ->
         #{
             name => fs_aggressive,
             opts => #{
-                store => {hb_store_fs, #{
-                    prefix => <<"TEST-cache/fs-",
-                        (integer_to_binary(Port))/binary>>
-                }},
+                store => #{ <<"store-module">> => <<"hb_store_fs">>, 
+                    <<"prefix">> => <<"TEST-cache/fs-",
+                        (integer_to_binary(Port+1))/binary>> 
+                },
                 scheduling_mode => aggressive,
                 port => Port + 1
             },
@@ -1362,10 +1362,10 @@ benchmark_suite_test_() ->
         #{
             name => rocksdb,
             opts => #{
-                store => {hb_store_rocksdb, #{
-                    prefix => <<"TEST-cache-rocksdb-",
-                        (integer_to_binary(Port+1))/binary>>
-                }},
+                store => #{ <<"store-module">> => <<"hb_store_rocksdb">>, 
+                    <<"prefix">> => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+1))/binary>> 
+                },
                 scheduling_mode => local_confirmation,
                 port => Port + 2
             },
@@ -1374,10 +1374,10 @@ benchmark_suite_test_() ->
         #{
             name => rocksdb_aggressive,
             opts => #{
-                store => {hb_store_rocksdb, #{
-                    prefix => <<"TEST-cache-rocksdb-",
-                        (integer_to_binary(Port+2))/binary>>
-                }},
+                store => #{ <<"store-module">> => <<"hb_store_rocksdb">>, 
+                    <<"prefix">> => <<"TEST-cache-rocksdb-",
+                        (integer_to_binary(Port+2))/binary>> 
+                },
                 scheduling_mode => aggressive,
                 port => Port + 3
             },
@@ -1386,10 +1386,10 @@ benchmark_suite_test_() ->
         % #{
         %     name => rocksdb_extreme_aggressive_h3,
         %     opts => #{
-        %         store => {hb_store_rocksdb, #{
-        %             prefix => <<"TEST-cache-rocksdb-",
-        %                 (integer_to_binary(Port+3))/binary>>
-        %         }},
+        %         store => #{ <<"store-module">> => <<"hb_store_rocksdb">>, 
+        %             <<"prefix">> => <<"TEST-cache-rocksdb-",
+        %                 (integer_to_binary(Port+3))/binary>> 
+        %         },
         %         scheduling_mode => aggressive,
         %         protocol => http3,
         %         workers => 100

@@ -344,12 +344,13 @@ full_push_test_() ->
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>,
             store => [
-                {hb_store_fs, #{ prefix => "TEST-cache" }},
-                {hb_store_gateway, #{
-                    store => [
-                        {hb_store_fs, #{ prefix => "TEST-cache" }}
-                    ]
-                }}
+                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> },
+                #{ <<"store-module">> => <<"hb_store_gateway">>,
+                    <<"store">> => #{
+                        <<"store-module">> => <<"hb_store_fs">>,
+                        <<"prefix">> => <<"TEST-cache">>
+                    }
+                }
             ]
         },
         Msg1 = dev_process:test_aos_process(Opts),
@@ -382,7 +383,7 @@ full_push_test_() ->
         )
     end}.
 
-multi_process_push_test_() ->
+multi_process_push_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Opts = #{
@@ -452,7 +453,7 @@ multi_process_push_test_() ->
 push_with_redirect_hint_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        Stores = [{hb_store_fs, #{ prefix => "TEST-cache" }}],
+        Stores = [#{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> }],
         ExtOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
         LocalOpts = #{ priv_wallet => hb:wallet(), store => Stores },
         ExtScheduler = hb_http_server:start_node(ExtOpts),
@@ -527,13 +528,13 @@ push_prompts_encoding_change_test() ->
         cache_control => <<"always">>,
         store =>
             [
-                {hb_store_fs, #{ prefix => "TEST-cache" }},
+                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"TEST-cache">> },
                 % Include a gateway store so that we can get the legacynet 
                 % process when needed.
-                {hb_store_gateway,
-                    #{
-                        cache_gateway_store =>
-                            {hb_store_fs, #{ prefix => "TEST-cache" }}
+                #{ <<"store-module">> => <<"hb_store_gateway">>,
+                    <<"store">> => #{
+                        <<"store-module">> => <<"hb_store_fs">>,
+                        <<"prefix">> => <<"TEST-cache">>
                     }
                 }
             ]

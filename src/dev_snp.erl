@@ -168,6 +168,7 @@ generate(_M1, _M2, Opts) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     ?event({snp_wallet, Wallet}),
     % Remove the `priv*' keys from the options.
+	
     {ok, PublicNodeMsgID} =
         dev_message:id(
             NodeMsg =

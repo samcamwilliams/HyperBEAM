@@ -651,7 +651,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
                     hb_cache:write(Msg,
                         Opts#{
                             store =>
-                                {hb_store_fs, #{ prefix => "store-inputs" }}
+                                #{ <<"store-module">> => <<"hb_store_fs">>, <<"prefix">> => <<"store-inputs">> }
                         }
                     );
                 false ->
