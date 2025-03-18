@@ -215,6 +215,10 @@ handle_cast(_Request, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
+handle_call(Request, From, #{ db_handle := undefined, dir := Dir } = State) ->
+    % Re-initialize the DB handle if it's not set.
+    {ok, DBHandle} = open_rockdb(Dir),
+    handle_call(Request, From, State#{db_handle => DBHandle});
 handle_call({do_write, Key, Value}, _From, #{db_handle := DBHandle} = State) ->
     BaseName = filename:basename(Key),
     rocksdb:put(DBHandle, Key, Value, #{}),
@@ -240,12 +244,11 @@ handle_call({do_read, Key}, _From, #{db_handle := DBHandle} = State) ->
                 Err
         end,
     {reply, Response, State};
-handle_call(reset, _From, #{db_handle := DBHandle, dir := Dir}) ->
+handle_call(reset, _From, State = #{db_handle := DBHandle, dir := Dir}) ->
     ok = rocksdb:close(DBHandle),
-    ok = rocksdb:destroy(ensure_list(Dir), []),
-    {ok, NewDBHandle} = open_rockdb(Dir),
-    NewState = #{db_handle => NewDBHandle, dir => Dir},
-    {reply, ok, NewState};
+    ok = rocksdb:destroy(DirStr = ensure_list(Dir), []),
+    os:cmd(binary_to_list(<< "rm -Rf ", (list_to_binary(DirStr))/binary >>)),
+    {reply, ok, State#{ db_handle := undefined }};
 handle_call(list, _From, State = #{db_handle := DBHandle}) ->
     {ok, Iterator} = rocksdb:iterator(DBHandle, []),
     Items = collect(Iterator),
