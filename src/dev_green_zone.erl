@@ -8,21 +8,54 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
+%% @doc The default required options for a green zone. These are intended as
+%% sane basic requirements for a green zone:
+%% - The node will not load remote devices (or trust extra peers).
+%% - The node will use only the default preloaded devices (found on the
+%%   initiating machine).
+%% - The node uses the default store configuration.
+%% - The node will not change its routes from the defaults.
+%% - The peer's preprocessor and postprocessor are the same as the local node's.
+%% - The node will not schedule messages. Without coordination, peers in the 
+%%   green zone will schedule messages without regard for avoiding
+%%   double-assignment of slots.
+%% - The node must be in a permanent state (no further configuration changes
+%%   being allowed).
+%% Each of these options is derived from the present node's configuration.
+default_zone_required_opts(Opts) ->
+	#{
+		trusted_device_signers => hb_opts:get(trusted_device_signers, Opts),
+        load_remote_devices => hb_opts:get(load_remote_devices, Opts),
+        preload_devices => hb_opts:get(preload_devices, Opts),
+        store => hb_opts:get(store, Opts),
+        routes => hb_opts:get(routes, Opts),
+        preprocessor => hb_opts:get(preprocessor, Opts),
+        postprocessor => hb_opts:get(postprocessor, Opts),
+        scheduling_mode => disabled,
+        initialized => permanent
+	}.
+
 %% @doc Initialize the green zone.
 %% Sets up the node's cryptographic identity by ensuring that a wallet (keypair)
 %% exists and generating a shared AES key for secure communication. The wallet,
 %% AES key, and an empty trusted nodes list are stored in the node's configuration.
 %% @param M1 Ignored parameter.
-%% @param M2 Ignored parameter.
+%% @param M2 Optionally contains a `required-config' map. If not provided, the
+%%           default required config (derived from the nodes base configuration)
+%%           will be used.
 %% @param Opts A map containing configuration options. If the wallet is not already
 %%             provided (under key `priv_wallet'), a new one will be created.
 %% @returns {ok, Msg} where Msg is a binary confirmation message.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()}.
 init(_M1, M2, Opts) ->
     ?event(green_zone, {init, start}),
-
-	RequiredConfig = hb_converge:get(<<"required-config">>, M2, #{}, Opts),
-
+	RequiredConfig =
+        hb_converge:get(
+            <<"required-config">>,
+            M2,
+            default_zone_required_opts(Opts),
+            Opts
+        ),
     % Check if a wallet exists; create one if absent.
     NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
         undefined -> 
@@ -56,19 +89,25 @@ init(_M1, M2, Opts) ->
 
 %% @doc Initiate the join process for a node (Node B).
 %%
-%% When Node B wishes to join an existing green zone, it sends a GET request to its local join endpoint.
+%% When Node B wishes to join an existing green zone, it sends a GET request to
+%% its local join endpoint.
 %% This request includes a header with the target peer's address (Node A).
 %%
 %% Based on the presence of a peer address:
-%%   - If the target peer is specified, Node B internally routes the request to the join_peer flow,
-%%     where it generates an attestation report and prepares a POST request to forward to Node A.
-%%   - If no peer address is present, the join request is processed locally via the validate_join flow.
+%%   - If the target peer is specified, Node B internally routes the request to 
+%%     the join_peer flow, where it generates an attestation report and prepares
+%%     a POST request to forward to Node A.
+%%   - If no peer address is present, the join request is processed locally via
+%%     the validate_join flow.
 %%
-%% @param M1 The join request message containing a header with the target peer's address.
+%% @param M1 The join request message containing a header with the target peer's
+%%           address.
 %% @param M2 Ignored parameter.
 %% @param Opts A map of configuration options.
-%% @returns {ok, Map} on success with join response details, or {error, Reason} on failure.
--spec join(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, map()} | {error, binary()}.
+%% @returns {ok, Map} on success with join response details, or {error, Reason}
+%% on failure.
+-spec join(M1 :: term(), M2 :: term(), Opts :: map()) ->
+        {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
 	Peer = hb_converge:get(<<"node">>, M1, undefined, Opts),
@@ -82,8 +121,9 @@ join(M1, M2, Opts) ->
 
 
 %% @doc Retrieve and encrypt the node's private key.
-%% Encrypts the node's private key using the shared AES key in AES-256-GCM mode. It returns the
-%% encrypted key along with the initialization vector (IV) needed for decryption.
+%% Encrypts the node's private key using the shared AES key in AES-256-GCM mode. 
+%% It returns the encrypted key along with the initialization vector (IV) needed
+%% for decryption.
 %% @param M1 Ignored parameter.
 %% @param M2 Ignored parameter.
 %% @param Opts A map of configuration options. Must include keys `priv_wallet'
@@ -127,9 +167,9 @@ key(_M1, _M2, Opts) ->
     end.
 
 %% @doc Clone the identity of a target node.
-%% Allows a node to adopt the identity of a target node by retrieving the target node's encrypted
-%% private key and IV, decrypting it using the shared AES key, and updating the local node's wallet
-%% with the target node's keypair.
+%% Allows a node to adopt the identity of a target node by retrieving the target
+%% node's encrypted private key and IV, decrypting it using the shared AES key,
+%% and updating the local node's wallet with the target node's keypair.
 %% @param M1 The message containing the target node's encrypted private key and IV.
 %% @param M2 Ignored parameter.
 %% @param Opts A map of configuration options. Must include `priv_green_zone_aes'.
@@ -138,7 +178,8 @@ key(_M1, _M2, Opts) ->
 %%           - message: confirmation text
 %%           - node: the target node's address
 %%          Returns {error, Reason} if the node is not part of the green zone.
--spec become(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, map()} | {error, binary()}.
+-spec become(M1 :: term(), M2 :: term(), Opts :: map()) ->
+        {ok, map()} | {error, binary()}.
 become(M1, _M2, Opts) ->
     ?event(green_zone, {become, start}),
     % 1. Retrieve the target node's address from the incoming message.
@@ -155,12 +196,15 @@ become(M1, _M2, Opts) ->
             ?event(green_zone, {become, getting_key, Node}),
             {ok, KeyResp} = hb_http:get(Node, <<"/~greenzone@1.0/key">>, Opts),
             % 4. Decode the response to obtain the encrypted key and IV.
-            Combined = base64:decode(hb_converge:get(<<"encrypted_key">>, KeyResp, Opts)),
+            Combined =
+                base64:decode(
+                    hb_converge:get(<<"encrypted_key">>, KeyResp, Opts)),
             IV = base64:decode(hb_converge:get(<<"iv">>, KeyResp, Opts)),
             % 5. Separate the ciphertext and the authentication tag.
             CipherLen = byte_size(Combined) - 16,
             <<Ciphertext:CipherLen/binary, Tag:16/binary>> = Combined,
-            % 6. Decrypt the ciphertext using AES-256-GCM with the shared AES key and IV.
+            % 6. Decrypt the ciphertext using AES-256-GCM with the shared AES
+            %    key and IV.
             DecryptedBin = crypto:crypto_one_time_aead(
                 aes_256_gcm,
                 GreenZoneAES,
@@ -179,13 +223,16 @@ become(M1, _M2, Opts) ->
             {KeyType, Priv, Pub} = binary_to_term(DecryptedBin),
 			% Print the keypair
 			?event(green_zone, {become, keypair, Pub}),
-            % 8. Update the local wallet with the target node's keypair, thereby cloning its identity.
+            % 8. Update the local wallet with the target node's keypair, thereby
+            %    cloning its identity.
             ok = hb_http_server:set_opts(Opts#{
                 priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
             }),
 			% Print the updated wallet address
 			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-			?event(green_zone, {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}),
+			?event(green_zone,
+                {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}
+            ),
             ?event(green_zone, {become, update_wallet, complete}),
             {ok, #{
                 <<"status">> => 200,
@@ -203,15 +250,17 @@ become(M1, _M2, Opts) ->
 %% In this flow (executed on Node B):
 %%   1. Node B generates an attestation report and prepares a POST request.
 %%   2. It then forwards the POST request to Node A's join endpoint.
-%%   3. Upon receiving a response from Node A, Node B decrypts the returned zone-key (an encrypted shared AES key)
-%%      using its local private key, then updates its configuration with the shared AES key.
+%%   3. Upon receiving a response from Node A, Node B decrypts the returned 
+%%      zone-key (an encrypted shared AES key) using its local private key, then
+%%      updates its configuration with the shared AES key.
 %%
 %% @param Peer The target peer's (Node A's) address.
 %% @param M1 Ignored parameter.
 %% @param M2 Ignored parameter.
 %% @param Opts A map of configuration options.
 %% @returns {ok, Map} on success with a confirmation message, or {error, Map} on failure.
--spec join_peer(Peer :: binary(), M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, map()} | {error, map()}.
+-spec join_peer(Peer :: binary(), M1 :: term(), M2 :: term(), Opts :: map()) ->
+    {ok, map()} | {error, map()}.
 join_peer(Peer, _M1, _M2, Opts) ->
 	% Check here if the node is already part of a green zone.
 	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
@@ -236,7 +285,8 @@ join_peer(Peer, _M1, _M2, Opts) ->
 				{ok, Resp} ->
 					% Log the response received from the peer.
 					?event(green_zone, {join, join_response, Peer, Resp}),
-					% Extract the encrypted shared AES key (zone-key) from the response.
+					% Extract the encrypted shared AES key (zone-key) from the
+                    % response.
 					ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
 					% Decrypt the zone key using the local node's private key.
 					{ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
@@ -252,7 +302,10 @@ join_peer(Peer, _M1, _M2, Opts) ->
 					{error, #{<<"status">> => 400, <<"reason">> => Reason}};
 				{unavailable, Reason} ->
 					?event(green_zone, {join_error, peer_unavailable, Peer, Reason}),
-					{error, #{<<"status">> => 503, <<"reason">> => <<"Service unavailable">>}}
+					{error, #{
+                        <<"status">> => 503,
+                        <<"reason">> => <<"Service unavailable">>
+                    }}
 			end;
 		_ ->
 			?event(green_zone, {join, already_joined}),
@@ -264,23 +317,26 @@ join_peer(Peer, _M1, _M2, Opts) ->
 %% @doc Validate an incoming join request.
 %%
 %% When Node A receives a POST join request from Node B, this routine is executed:
-%%   1. It extracts the attestation report, the requesting node's address, and the encoded public key.
+%%   1. It extracts the attestation report, the requesting node's address, and 
+%%      the encoded public key.
 %%   2. It verifies the attestation report included in the request.
 %%   3. If the report is valid, Node A adds Node B to its list of trusted nodes.
-%%   4. Node A then encrypts the shared AES key (zone-key) with Node B's public key and returns it along with its public key.
+%%   4. Node A then encrypts the shared AES key (zone-key) with Node B's public 
+%%      key and returns it along with its public key.
 %%
 %% @param M1 Ignored parameter.
-%% @param Req The join request message containing the attestation report and other join details.
+%% @param Req The join request message containing the attestation report and 
+%%          other join details.
 %% @param Opts A map of configuration options.
-%% @returns {ok, Map} on success with join response details, or {error, Reason} if verification fails.
--spec validate_join(M1 :: term(), Req :: map(), Opts :: map()) -> {ok, map()} | {error, binary()}.
+%% @returns {ok, Map} on success with join response details, or {error, Reason}
+%%          if verification fails.
+-spec validate_join(M1 :: term(), Req :: map(), Opts :: map()) ->
+        {ok, map()} | {error, binary()}.
 validate_join(_M1, Req, Opts) ->
 	case validate_peer_opts(Req, Opts) of
 		true -> do_nothing;
-		false ->
-			throw(invalid_join_request)
+		false -> throw(invalid_join_request)
 	end,
-
 	?event(green_zone, {join, start}),
     % Retrieve the attestation report and address from the join request.
     Report = hb_converge:get(<<"report">>, Req, Opts),
@@ -328,23 +384,36 @@ validate_join(_M1, Req, Opts) ->
     end.
 
 validate_peer_opts(Req, Opts) ->
-	% Get the required config from the node's configuration.
-	% Check if the node-message contains the required config.
-	% Also check if the NodeMessage/node_message_modifications is empty or has only one item.
-	RequiredConfig = hb_opts:get(green_zone_required_opts, #{}, Opts),
-	RequiredConfig#{
-		green_zone_required_opts => hb_converge:get(<<"green_zone_required_opts">>, Req, undefined, Opts),
-	} =:= RequiredConfig,
-	NodeMessage = hb_converge:get(<<"node-message">>, Req, undefined, Opts),
+	% Get the required config from the local node's configuration.
+	RequiredConfig =
+        hb_converge:normalize_keys(
+            hb_opts:get(green_zone_required_opts, #{}, Opts)),
+    PeerOpts =
+        hb_converge:normalize_keys(
+            hb_converge:get(<<"node-message">>, Req, undefined, Opts)),
+    % Add the required config itself to the required options of the peer. This
+    % enforces that the new peer will also enforce the required config on peers
+    % that join them.
+	FullRequiredOpts = RequiredConfig#{
+		green_zone_required_opts => RequiredConfig
+	},
+    % Check if the peer opts match the required config and if the peer has not
+    % modified their node message more than once.
+	hb_message:match(PeerOpts, FullRequiredOpts, only_present) andalso
+        length(hb_converge:get(<<"node_history">>, PeerOpts, Opts)) =< 1.
 
 %% @doc Add a joining node's details to the trusted nodes list.
-%% Updates the local configuration with the new trusted node's attestation report and public key.
+%% Updates the local configuration with the new trusted node's attestation report
+%% and public key.
 %% @param NodeAddr The joining node's address.
 %% @param Report The attestation report provided by the joining node.
 %% @param RequesterPubKey The joining node's public key.
 %% @param Opts A map of configuration options.
 %% @returns ok.
--spec add_trusted_node(NodeAddr :: binary(), Report :: map(), RequesterPubKey :: term(), Opts :: map()) -> ok.
+-spec add_trusted_node(
+    NodeAddr :: binary(),
+    Report :: map(),
+    RequesterPubKey :: term(), Opts :: map()) -> ok.
 add_trusted_node(NodeAddr, Report, RequesterPubKey, Opts) ->
 	% Retrieve the current trusted nodes map.
 	TrustedNodes = hb_opts:get(trusted_nodes, #{}, Opts),
@@ -359,8 +428,9 @@ add_trusted_node(NodeAddr, Report, RequesterPubKey, Opts) ->
 	}).
 
 %% @doc Encrypt the shared AES key with the requester's RSA public key.
-%% Encrypts the shared AES key using the RSA public key provided by the joining node. The RSA public key
-%% is extracted from a tuple and converted into a record suitable for encryption.
+%% Encrypts the shared AES key using the RSA public key provided by the joining
+%% node. The RSA public key is extracted from a tuple and converted into a
+%% record suitable for encryption.
 %% @param AESKey The shared AES key (256-bit binary).
 %% @param RequesterPubKey The requester's public RSA key.
 %% @returns The AES key encrypted with the RSA public key.
@@ -378,11 +448,13 @@ encrypt_payload(AESKey, RequesterPubKey) ->
     Encrypted.
 
 %% @doc Decrypt the zone AES key using the node's RSA private key.
-%% Decrypts the encrypted zone AES key using the RSA private key from the node's wallet.
+%% Decrypts the encrypted zone AES key using the RSA private key from the node's
+%% wallet.
 %% @param EncZoneKey The encrypted zone AES key (Base64 encoded or binary).
 %% @param Opts A map of configuration options.
 %% @returns {ok, DecryptedKey} on success, where DecryptedKey is the shared AES key.
--spec decrypt_zone_key(EncZoneKey :: binary(), Opts :: map()) -> {ok, binary()} | {error, binary()}.
+-spec decrypt_zone_key(EncZoneKey :: binary(), Opts :: map()) ->
+        {ok, binary()} | {error, binary()}.
 decrypt_zone_key(EncZoneKey, Opts) ->
     % Decode if necessary
     RawEncKey = case is_binary(EncZoneKey) of
@@ -390,7 +462,7 @@ decrypt_zone_key(EncZoneKey, Opts) ->
         false -> EncZoneKey
     end,
     % Get wallet and extract key components
-    {{_KeyType = {rsa, E}, Priv, Pub}, _PubKey} = hb_opts:get(priv_wallet, undefined, Opts),
+    {{_KeyType = {rsa, E}, Priv, Pub}, _PubKey} = hb_opts:get(priv_wallet, #{}, Opts),
     % Create RSA private key record
     RSAPrivKey = #'RSAPrivateKey'{
         publicExponent = E,
@@ -403,9 +475,10 @@ decrypt_zone_key(EncZoneKey, Opts) ->
 
 
 %% @doc Test RSA operations with the existing wallet structure.
-%% This test function verifies that encryption and decryption using the RSA keys from the wallet
-%% work correctly. It creates a new wallet, encrypts a test message with the RSA public key, and
-%% then decrypts it with the RSA private key, asserting that the decrypted message matches the original.
+%% This test function verifies that encryption and decryption using the RSA keys
+%% from the wallet work correctly. It creates a new wallet, encrypts a test
+%% message with the RSA public key, and then decrypts it with the RSA private
+%% key, asserting that the decrypted message matches the original.
 rsa_wallet_integration_test() ->
     % Create a new wallet using ar_wallet
     Wallet = ar_wallet:new(),
