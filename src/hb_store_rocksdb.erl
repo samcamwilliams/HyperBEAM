@@ -383,7 +383,11 @@ maybe_append_key_to_group(Key, CurrentDirContents) ->
 
 get_or_start_server() ->
     % Store = lists:keyfind(hb_store_rocksdb2, 1, hb_store:test_stores()),
-    case start_link(#{ <<"store-module">> => hb_store_rocksdb, <<"prefix">> => "TEST-cache-rocks" }) of
+    Opts = #{
+        <<"store-module">> => hb_store_rocksdb,
+        <<"prefix">> => <<"cache-TEST/rocksdb">>
+    },
+    case start_link(Opts) of
         {ok, Pid} ->
             Pid;
         {error, {already_started, Pid}} ->

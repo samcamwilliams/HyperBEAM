@@ -234,6 +234,9 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
                 hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
             Body = maps:get(<<"body">>, FullEncoding, <<>>),
             Headers = maps:without([<<"body">>], FullEncoding),
+
+			?event(http, {request_headers, {explicit, {headers, Headers}}}),
+			?event(http, {request_body, {explicit, {body, Body}}}),
             maps:merge(ReqBase, #{ headers => Headers, body => Body });
         <<"ans104@1.0">> ->
             ReqBase#{
@@ -603,6 +606,7 @@ codec_to_content_type(Codec, Opts) ->
 req_to_tabm_singleton(Req, Body, Opts) ->
     case cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>) of
         <<"httpsig@1.0">> ->
+			?event({req_to_tabm_singleton, {request, {explicit, Req}, {body, {string, Body}}}}),
             http_sig_to_tabm_singleton(Req, Body, Opts);
         <<"ans104@1.0">> ->
             Item = ar_bundles:deserialize(Body),
@@ -641,7 +645,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
         dev_codec_httpsig:reset_hmac(
             hb_util:ok(remove_unsigned_fields(Msg, Opts))
         ),
-    ForceSignedRequests = hb_opts:get(force_signed_requests, true, Opts),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of
         true ->
             ?event(http_verify, {verified_signature, SignedMsg}),
@@ -651,7 +655,7 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
                     hb_cache:write(Msg,
                         Opts#{
                             store =>
-                                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"store-inputs">> }
+                                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-http">> }
                         }
                     );
                 false ->

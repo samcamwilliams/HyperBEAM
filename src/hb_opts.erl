@@ -31,7 +31,8 @@ default_message() ->
         http_client => gun,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
-        %% Options: aggressive(!), local_confirmation, remote_confirmation
+        %% Options: aggressive(!), local_confirmation, remote_confirmation,
+        %%          disabled
         scheduling_mode => local_confirmation,
         %% Compute mode: Determines whether the process device should attempt to 
         %% execute more messages on a process after it has returned a result.
@@ -58,6 +59,7 @@ default_message() ->
             #{<<"name">> => <<"faff@1.0">>, <<"module">> => dev_faff},
             #{<<"name">> => <<"flat@1.0">>, <<"module">> => dev_codec_flat},
             #{<<"name">> => <<"genesis-wasm@1.0">>, <<"module">> => dev_genesis_wasm},
+            #{<<"name">> => <<"greenzone@1.0">>, <<"module">> => dev_green_zone},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
@@ -109,6 +111,9 @@ default_message() ->
         attestation_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
+        % Every modification to `Opts` called directly by the node operator
+        % should be recorded here.
+		node_history => [],
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
@@ -154,13 +159,13 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
                             #{
                                 <<"store-module">> => hb_store_fs,
-                                <<"prefix">> => <<"mainnet-cache">>
+                                <<"prefix">> => <<"cache-mainnet">>
                             }
                         ]
                 }

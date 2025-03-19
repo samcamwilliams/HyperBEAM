@@ -428,7 +428,7 @@ cache_suite_test_() ->
 test_device_map_cannot_be_written_test() ->
     try
         Opts = #{ store => StoreOpts =
-            [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> }] },
+            [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }] },
         hb_store:reset(StoreOpts),
         Danger = #{ <<"device">> => #{}},
         write(Danger, Opts),
@@ -439,6 +439,6 @@ test_device_map_cannot_be_written_test() ->
 
 run_test() ->
     Opts = #{ store => StoreOpts = 
-        [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache">> }]},
+        [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
     test_store_ans104_message(Opts),
     hb_store:reset(StoreOpts).

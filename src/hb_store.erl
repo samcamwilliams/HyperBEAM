@@ -189,8 +189,16 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 
 test_stores() ->
     [
-        #{ <<"store-module">> => hb_store_rocksdb, <<"prefix">> => <<"TEST-cache-rocks">> },
-        #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache-fs">> }
+        #{
+            <<"store-module">> =>
+            hb_store_rocksdb,
+            <<"prefix">> => <<"cache-TEST/rocksdb">>
+        },
+        #{
+            <<"store-module">> =>
+            hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/fs">>
+        }
     ].
 
 generate_test_suite(Suite) ->
