@@ -18,8 +18,11 @@
 %%             provided (under key `priv_wallet'), a new one will be created.
 %% @returns {ok, Msg} where Msg is a binary confirmation message.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()}.
-init(_M1, _M2, Opts) ->
+init(_M1, M2, Opts) ->
     ?event(green_zone, {init, start}),
+
+	RequiredConfig = hb_converge:get(<<"required-config">>, M2, #{}, Opts),
+
     % Check if a wallet exists; create one if absent.
     NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
         undefined -> 
@@ -45,7 +48,8 @@ init(_M1, _M2, Opts) ->
     ok = hb_http_server:set_opts(Opts#{
         priv_wallet => NodeWallet,
         priv_green_zone_aes => GreenZoneAES,
-        trusted_nodes => #{}
+        trusted_nodes => #{},
+		green_zone_required_opts => RequiredConfig
     }),
     ?event(green_zone, {init, complete}),
     {ok, <<"Green zone initialized successfully.">>}.
@@ -136,8 +140,6 @@ key(_M1, _M2, Opts) ->
 %%          Returns {error, Reason} if the node is not part of the green zone.
 -spec become(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, map()} | {error, binary()}.
 become(M1, _M2, Opts) ->
-    % TODO: Guard that the node is not already part of the green zone and that
-    % the caller is the physical operator.
     ?event(green_zone, {become, start}),
     % 1. Retrieve the target node's address from the incoming message.
     Node = hb_converge:get(<<"node">>, M1, Opts),
@@ -211,45 +213,53 @@ become(M1, _M2, Opts) ->
 %% @returns {ok, Map} on success with a confirmation message, or {error, Map} on failure.
 -spec join_peer(Peer :: binary(), M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, map()} | {error, map()}.
 join_peer(Peer, _M1, _M2, Opts) ->
-    % TODO: Validate that the node is not already part of the green zone and that the caller is the physical operator by checking if the priv_green_zone_aes is set.
-    % Generate an attestation report and embed the node's public key.
-    Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-    {ok, Report} = dev_snp:generate(#{}, #{}, Opts),
-    WalletPub = element(2, Wallet),
-    MergedReq = hb_converge:set(
-		Report, 
-        <<"public-key">>,
-		base64:encode(term_to_binary(WalletPub)),
-		Opts
-    ),
-    % Create an attested join request using the wallet.
-    Req = hb_message:attest(MergedReq, Wallet),
-	?event({join_req, Req}),
-	?event({verify_res, hb_message:verify(Req)}),
-    % Log that the attestation report is being sent to the peer.
-    ?event(green_zone, {join, sending_attestation_report, Peer, Req}),
-    case hb_http:post(Peer, <<"/~greenzone@1.0/join">>, Req, Opts) of
-        {ok, Resp} ->
-            % Log the response received from the peer.
-            ?event(green_zone, {join, join_response, Peer, Resp}),
-            % Extract the encrypted shared AES key (zone-key) from the response.
-            ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
-            % Decrypt the zone key using the local node's private key.
-            {ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
-            % Update local configuration with the retrieved shared AES key.
-            hb_http_server:set_opts(Opts#{
-                priv_green_zone_aes => AESKey
-            }),
-            {ok, #{
-                <<"status">>  => 200,
-                <<"message">> => <<"Node joined green zone successfully">>
-            }};
-        {error, Reason} ->
-            {error, #{<<"status">> => 400, <<"reason">> => Reason}};
-		{unavailable, Reason} ->
-            ?event(green_zone, {join_error, peer_unavailable, Peer, Reason}),
-            {error, #{<<"status">> => 503, <<"reason">> => <<"Service unavailable">>}}
-    end.
+	% Check here if the node is already part of a green zone.
+	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
+	case GreenZoneAES of
+		undefined ->
+			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
+			{ok, Report} = dev_snp:generate(#{}, #{}, Opts),
+			WalletPub = element(2, Wallet),
+			MergedReq = hb_converge:set(
+				Report, 
+				<<"public-key">>,
+				base64:encode(term_to_binary(WalletPub)),
+				Opts
+			),
+			% Create an attested join request using the wallet.
+			Req = hb_message:attest(MergedReq, Wallet),
+			?event({join_req, Req}),
+			?event({verify_res, hb_message:verify(Req)}),
+			% Log that the attestation report is being sent to the peer.
+			?event(green_zone, {join, sending_attestation_report, Peer, Req}),
+			case hb_http:post(Peer, <<"/~greenzone@1.0/join">>, Req, Opts) of
+				{ok, Resp} ->
+					% Log the response received from the peer.
+					?event(green_zone, {join, join_response, Peer, Resp}),
+					% Extract the encrypted shared AES key (zone-key) from the response.
+					ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
+					% Decrypt the zone key using the local node's private key.
+					{ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
+					% Update local configuration with the retrieved shared AES key.
+					hb_http_server:set_opts(Opts#{
+						priv_green_zone_aes => AESKey
+					}),
+					{ok, #{
+						<<"status">>  => 200,
+						<<"message">> => <<"Node joined green zone successfully">>
+					}};
+				{error, Reason} ->
+					{error, #{<<"status">> => 400, <<"reason">> => Reason}};
+				{unavailable, Reason} ->
+					?event(green_zone, {join_error, peer_unavailable, Peer, Reason}),
+					{error, #{<<"status">> => 503, <<"reason">> => <<"Service unavailable">>}}
+			end;
+		_ ->
+			?event(green_zone, {join, already_joined}),
+			{error, <<"Node already part of green zone">>}
+	end.
+
+    
 
 %% @doc Validate an incoming join request.
 %%
@@ -265,6 +275,12 @@ join_peer(Peer, _M1, _M2, Opts) ->
 %% @returns {ok, Map} on success with join response details, or {error, Reason} if verification fails.
 -spec validate_join(M1 :: term(), Req :: map(), Opts :: map()) -> {ok, map()} | {error, binary()}.
 validate_join(_M1, Req, Opts) ->
+	case validate_peer_opts(Req, Opts) of
+		true -> do_nothing;
+		false ->
+			throw(invalid_join_request)
+	end,
+
 	?event(green_zone, {join, start}),
     % Retrieve the attestation report and address from the join request.
     Report = hb_converge:get(<<"report">>, Req, Opts),
@@ -310,6 +326,16 @@ validate_join(_M1, Req, Opts) ->
             ?event(green_zone, {join, attestation, error, Error}),
             Error
     end.
+
+validate_peer_opts(Req, Opts) ->
+	% Get the required config from the node's configuration.
+	% Check if the node-message contains the required config.
+	% Also check if the NodeMessage/node_message_modifications is empty or has only one item.
+	RequiredConfig = hb_opts:get(green_zone_required_opts, #{}, Opts),
+	RequiredConfig#{
+		green_zone_required_opts => hb_converge:get(<<"green_zone_required_opts">>, Req, undefined, Opts),
+	} =:= RequiredConfig,
+	NodeMessage = hb_converge:get(<<"node-message">>, Req, undefined, Opts),
 
 %% @doc Add a joining node's details to the trusted nodes list.
 %% Updates the local configuration with the new trusted node's attestation report and public key.

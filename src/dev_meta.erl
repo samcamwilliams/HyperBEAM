@@ -117,14 +117,16 @@ update_node_message(Request, NodeMsg) ->
             embed_status({error, <<"Unauthorized">>});
         true ->
             ?event({set_node_message_success, Request}),
+			Modifications = hb_opts:get(node_message_modifications, [], NodeMsg),
             MergedOpts =
                 maps:merge(
-                    hb_message:unattested(NodeMsg),
-                    hb_opts:mimic_default_types(Request, new_atoms)
+                    NodeMsg,
+                    hb_opts:mimic_default_types(hb_message:unattested(Request), new_atoms)
                 ),
             hb_http_server:set_opts(
                 MergedOpts#{
-                    http_server => hb_opts:get(http_server, no_server, NodeMsg)
+                    http_server => hb_opts:get(http_server, no_server, NodeMsg),
+                    node_message_modifications => [Request|Modifications]
                 }
             ),
             embed_status({ok, <<"OK">>})

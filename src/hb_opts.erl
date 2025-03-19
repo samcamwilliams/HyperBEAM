@@ -110,6 +110,7 @@ default_message() ->
         attestation_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
+		node_message_modifications => [],
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
