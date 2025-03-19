@@ -110,13 +110,13 @@ init(_M1, M2, Opts) ->
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-	Peer = hb_converge:get(<<"node">>, M1, undefined, Opts),
-	?event(green_zone, {join, peer, Peer}),
-	case Peer of
-		undefined ->
-			validate_join(M1, M2, Opts);
-		Peer_ ->
-			join_peer(Peer_, M1, M2, Opts)
+	PeerLocation = hb_converge:get(<<"node">>, M1, undefined, Opts),
+	PeerID = hb_converge:get(<<"node">>, M1, undefined, Opts),
+	?event(green_zone, {join_peer, PeerLocation, PeerID}),
+	if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
+		validate_join(M1, M2, Opts);
+	true ->
+		join_peer(PeerLocation, PeerID, M1, M2, Opts)
 	end.
 
 
@@ -143,8 +143,8 @@ key(_M1, _M2, Opts) ->
     case GreenZoneAES of
         undefined ->
             % Log error if no shared AES key is found.
-            ?event(green_zone, {get_key, error, "no aes key"}),
-            {error, <<"Node not part of green zone">>};
+            ?event(green_zone, {get_key, error, <<"no aes key">>}),
+            {error, <<"Node not part of a green zone.">>};
         _ ->
             % Generate an IV and encrypt the node's private key using AES-256-GCM.
             IV = crypto:strong_rand_bytes(16),
@@ -189,8 +189,8 @@ become(M1, _M2, Opts) ->
     case GreenZoneAES of
         undefined ->
             % Shared AES key not found: node is not part of a green zone.
-            ?event(green_zone, {become, error, "no aes key"}),
-            {error, <<"Node not part of green zone">>};
+            ?event(green_zone, {become, error, <<"no aes key">>}),
+            {error, <<"Node not part of a green zone.">>};
         _ ->
             % 3. Request the target node's encrypted key from its key endpoint.
             ?event(green_zone, {become, getting_key, Node}),
@@ -259,9 +259,13 @@ become(M1, _M2, Opts) ->
 %% @param M2 Ignored parameter.
 %% @param Opts A map of configuration options.
 %% @returns {ok, Map} on success with a confirmation message, or {error, Map} on failure.
--spec join_peer(Peer :: binary(), M1 :: term(), M2 :: term(), Opts :: map()) ->
-    {ok, map()} | {error, map()}.
-join_peer(Peer, _M1, _M2, Opts) ->
+-spec join_peer(
+    PeerLocation :: binary(),
+    PeerID :: binary(),
+    M1 :: term(),
+    M2 :: term(),
+    Opts :: map()) -> {ok, map()} | {error, map()}.
+join_peer(PeerLocation, PeerID, _M1, _M2, Opts) ->
 	% Check here if the node is already part of a green zone.
 	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
 	case GreenZoneAES of
@@ -280,39 +284,49 @@ join_peer(Peer, _M1, _M2, Opts) ->
 			?event({join_req, Req}),
 			?event({verify_res, hb_message:verify(Req)}),
 			% Log that the attestation report is being sent to the peer.
-			?event(green_zone, {join, sending_attestation_report, Peer, Req}),
-			case hb_http:post(Peer, <<"/~greenzone@1.0/join">>, Req, Opts) of
+			?event(green_zone, {join, sending_attestation, PeerLocation, PeerID, Req}),
+			case hb_http:post(PeerLocation, <<"/~greenzone@1.0/join">>, Req, Opts) of
 				{ok, Resp} ->
 					% Log the response received from the peer.
-					?event(green_zone, {join, join_response, Peer, Resp}),
-					% Extract the encrypted shared AES key (zone-key) from the
-                    % response.
-					ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
-					% Decrypt the zone key using the local node's private key.
-					{ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
-					% Update local configuration with the retrieved shared AES key.
-					hb_http_server:set_opts(Opts#{
-						priv_green_zone_aes => AESKey
-					}),
-					{ok, #{
-						<<"status">>  => 200,
-						<<"message">> => <<"Node joined green zone successfully">>
-					}};
+					?event(green_zone, {join, join_response, PeerLocation, PeerID, Resp}),
+                    % Ensure that the response is from the expected peer, avoiding
+                    % the risk of a man-in-the-middle attack.
+                    Signers = hb_message:signers(Resp),
+                    case hb_message:verify(Resp, Signers) and lists:member(PeerID, Signers) of
+                        false ->
+                            % The response is not from the expected peer.
+                            {failure, <<"Received incorrect response from peer!">>};
+                        true ->
+                            % Extract the encrypted shared AES key (zone-key) from the
+                            % response.
+                            ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
+                            % Decrypt the zone key using the local node's private key.
+                            {ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
+                            % Update local configuration with the retrieved shared AES key.
+                            hb_http_server:set_opts(Opts#{
+                                priv_green_zone_aes => AESKey
+                            }),
+                            {ok, <<"Node joined green zone successfully.">>}
+                    end;
 				{error, Reason} ->
 					{error, #{<<"status">> => 400, <<"reason">> => Reason}};
 				{unavailable, Reason} ->
-					?event(green_zone, {join_error, peer_unavailable, Peer, Reason}),
+					?event(green_zone, {
+                        join_error,
+                        peer_unavailable,
+                        PeerLocation,
+                        PeerID,
+                        Reason
+                    }),
 					{error, #{
                         <<"status">> => 503,
-                        <<"reason">> => <<"Service unavailable">>
+                        <<"body">> => <<"Peer node is unreachable.">>
                     }}
 			end;
 		_ ->
 			?event(green_zone, {join, already_joined}),
-			{error, <<"Node already part of green zone">>}
+			{error, <<"Node already part of green zone.">>}
 	end.
-
-    
 
 %% @doc Validate an incoming join request.
 %%
@@ -367,8 +381,7 @@ validate_join(_M1, Req, Opts) ->
             % Log completion of AES key encryption.
             ?event(green_zone, {join, encrypt, aes_key, complete}),
             {ok, #{
-                <<"status">>       => 200,
-                <<"message">>      => <<"Node joined green zone successfully">>,
+                <<"body">>         => <<"Node joined green zone successfully.">>,
                 <<"node-address">> => NodeAddr,
                 <<"zone-key">>     => base64:encode(EncryptedPayload),
                 <<"public-key">>   => WalletPubKey
@@ -376,7 +389,7 @@ validate_join(_M1, Req, Opts) ->
         {ok, false} ->
             % Attestation failed.
             ?event(green_zone, {join, attestation, failed}),
-            {error, <<"Invalid attestation report">>};
+            {error, <<"Received invalid attestation report.">>};
         Error ->
             % Error during attestation verification.
             ?event(green_zone, {join, attestation, error, Error}),
@@ -484,7 +497,7 @@ rsa_wallet_integration_test() ->
     Wallet = ar_wallet:new(),
     {{KeyType, Priv, Pub}, {KeyType, Pub}} = Wallet,
     % Create test message
-    PlainText = <<"HyperBEAM integration test message">>,
+    PlainText = <<"HyperBEAM integration test message.">>,
     % Create RSA public key record for encryption
     RsaPubKey = #'RSAPublicKey'{
         publicExponent = 65537,
