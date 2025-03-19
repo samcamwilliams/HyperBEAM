@@ -31,7 +31,8 @@ default_message() ->
         http_client => gun,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
-        %% Options: aggressive(!), local_confirmation, remote_confirmation
+        %% Options: aggressive(!), local_confirmation, remote_confirmation,
+        %%          disabled
         scheduling_mode => local_confirmation,
         %% Compute mode: Determines whether the process device should attempt to 
         %% execute more messages on a process after it has returned a result.
@@ -110,7 +111,9 @@ default_message() ->
         attestation_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
-		node_message_modifications => [],
+        % Every modification to `Opts` called directly by the node operator
+        % should be recorded here.
+		node_history => [],
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,

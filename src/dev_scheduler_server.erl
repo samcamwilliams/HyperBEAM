@@ -12,6 +12,11 @@ start(ProcID, Opts) ->
     ?event(scheduling, {starting_scheduling_server, {proc_id, ProcID}}),
     spawn_link(
         fun() ->
+            case hb_opts:get(scheduling_mode, disabled, Opts) of
+                disabled ->
+                    throw({scheduling_disabled_on_node, {requested_for, ProcID}});
+                _ -> ok
+            end,
             hb_name:register({dev_scheduler, ProcID}),
             {CurrentSlot, HashChain} =
                 case dev_scheduler_cache:latest(ProcID, Opts) of

@@ -117,19 +117,33 @@ update_node_message(Request, NodeMsg) ->
             embed_status({error, <<"Unauthorized">>});
         true ->
             ?event({set_node_message_success, Request}),
-			Modifications = hb_opts:get(node_message_modifications, [], NodeMsg),
             MergedOpts =
                 maps:merge(
                     NodeMsg,
                     hb_opts:mimic_default_types(hb_message:unattested(Request), new_atoms)
                 ),
+            % Ensure that the node history is updated and the http_server ID is
+            % not overridden.
             hb_http_server:set_opts(
                 MergedOpts#{
                     http_server => hb_opts:get(http_server, no_server, NodeMsg),
-                    node_message_modifications => [Request|Modifications]
+                    node_history => NewH = [Request|hb_opts:get(node_history, [], NodeMsg)]
                 }
             ),
-            embed_status({ok, <<"OK">>})
+            embed_status(
+                {ok,
+                    #{
+                        <<"body">> =>
+                            iolist_to_binary(
+                                io_lib:format(
+                                    "Node message updated. History: ~p updates.",
+                                    [length(NewH)]
+                                )
+                            ),
+                        <<"history-length">> => length(NewH)
+                    }
+                }
+            )
     end.
 
 %% @doc Handle a Converge request, which is a list of messages. We apply
@@ -311,7 +325,8 @@ unauthorized_set_node_msg_fails_test() ->
             #{}
         ),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
+    ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})),
+    ?assertEqual(0, length(hb_converge:get(<<"node_history">>, Res, [], #{}))).
 
 %% @doc Test that we can set the node message if the request is signed by the
 %% owner of the node.
@@ -338,7 +353,8 @@ authorized_set_node_msg_succeeds_test() ->
     ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(1, length(hb_converge:get(<<"node_history">>, Res, [], #{}))).
 
 %% @doc Test that an uninitialized node will not run computation.
 uninitialized_node_test() ->
@@ -389,7 +405,8 @@ permanent_node_message_test() ->
     ?event({set_res, SetRes2}),
     {ok, Res2} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res2}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})),
+    ?assertEqual(1, length(hb_converge:get(<<"node_history">>, Res2, [], #{}))).
 
 %% @doc Test that we can claim the node correctly and set the node message after.
 claim_node_test() ->
@@ -432,7 +449,8 @@ claim_node_test() ->
     ?event({res, SetRes2}),
     {ok, Res2} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res2}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})),
+    ?assertEqual(2, length(hb_converge:get(<<"node_history">>, Res2, [], #{}))).
 
 %% @doc Test that we can use a preprocessor upon a request.
 % preprocessor_test() ->
