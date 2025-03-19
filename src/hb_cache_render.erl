@@ -76,7 +76,15 @@ render(IoDevice, Store, Key) ->
     end.
 
 get_test_store() ->
-    hb_opts:get(store, no_viable_store, #{store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache-fs">> }}).
+    hb_opts:get(store,
+        no_viable_store,
+        #{
+            store => #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST/render-fs">>
+            }
+        }
+    ).
 
 % Helper functions
 add_link(IoDevice, Id, Label) ->
@@ -105,19 +113,34 @@ insert_circle(IoDevice, ID, Label, Color) ->
 
 % Preparing the test data
 prepare_unsigned_data() ->
-    Opts = #{store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache-fs">> }},
+    Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/render-fs">>
+        }
+    },
     Item = test_unsigned(#{ <<"key">> => <<"Simple unsigned data item">> }),
     {ok, _Path} = hb_cache:write(Item, Opts).
 
 prepare_signed_data() ->
-    Opts = #{store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache-fs">> }},
+    Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/render-fs">>
+        }
+    },
     Wallet = ar_wallet:new(),
     Item = test_signed(#{ <<"l2-test-key">> => <<"l2-test-value">> }, Wallet),
     %% Write the simple unsigned item
     {ok, _Path} = hb_cache:write(Item, Opts).
 
 prepare_deeply_nested_complex_message() ->
-    Opts = #{store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"TEST-cache-fs">> }},
+    Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/render-fs">>
+        }
+    },
     Wallet = ar_wallet:new(),
     %% Create nested data
     Level3SignedSubmessage = test_signed([1,2,3], Wallet),

@@ -976,7 +976,7 @@ redirect_from_graphql_test() ->
     Opts =
         #{ store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
                 #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
             ]
         },
@@ -1047,7 +1047,7 @@ http_init(Opts) ->
         Opts#{
             priv_wallet => Wallet,
             store => [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
                 #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
             ]
         }),
@@ -1110,7 +1110,7 @@ http_get_schedule_redirect_test() ->
         #{
             store =>
                 [
-                    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+                    #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
                     #{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }
                 ],
                 scheduler_follow_redirects => false
@@ -1330,17 +1330,20 @@ many_clients(Opts) ->
 benchmark_suite_test_() ->
     rand:seed(exsplus, erlang:timestamp()),
     Port = 30000 + rand:uniform(10000),
+    PortBin = integer_to_binary(Port),
     Bench = [
         {benchmark, "benchmark", fun single_converge/1},
         {multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
     ],
+    filelib:ensure_dir(
+        binary_to_list(Base = <<"cache-TEST/run-">>)
+    ),
     OptSpecs = [
         #{
             name => fs,
             opts => #{
                 store => #{ <<"store-module">> => hb_store_fs, 
-                    <<"prefix">> => <<"TEST-cache/fs-",
-                        (integer_to_binary(Port))/binary>> 
+                    <<"prefix">> => <<Base/binary, PortBin/binary, "-A">>
                 },
                 scheduling_mode => local_confirmation,
                 port => Port
@@ -1351,8 +1354,7 @@ benchmark_suite_test_() ->
             name => fs_aggressive,
             opts => #{
                 store => #{ <<"store-module">> => hb_store_fs, 
-                    <<"prefix">> => <<"TEST-cache/fs-",
-                        (integer_to_binary(Port+1))/binary>> 
+                    <<"prefix">> => <<Base/binary, PortBin/binary, "-B">>
                 },
                 scheduling_mode => aggressive,
                 port => Port + 1
@@ -1363,8 +1365,7 @@ benchmark_suite_test_() ->
             name => rocksdb,
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
-                    <<"prefix">> => <<"TEST-cache-rocksdb-",
-                        (integer_to_binary(Port+1))/binary>> 
+                    <<"prefix">> => <<Base/binary, PortBin/binary, "-C">>
                 },
                 scheduling_mode => local_confirmation,
                 port => Port + 2
@@ -1375,8 +1376,7 @@ benchmark_suite_test_() ->
             name => rocksdb_aggressive,
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
-                    <<"prefix">> => <<"TEST-cache-rocksdb-",
-                        (integer_to_binary(Port+2))/binary>> 
+                    <<"prefix">> => <<Base/binary, PortBin/binary, "-D">>
                 },
                 scheduling_mode => aggressive,
                 port => Port + 3
@@ -1387,8 +1387,7 @@ benchmark_suite_test_() ->
         %     name => rocksdb_extreme_aggressive_h3,
         %     opts => #{
         %         store => #{ <<"store-module">> => hb_store_rocksdb, 
-        %             <<"prefix">> => <<"TEST-cache-rocksdb-",
-        %                 (integer_to_binary(Port+3))/binary>> 
+        %             <<"prefix">> => <<Base/binary, "run-", (integer_to_binary(Port+4))/binary>>
         %         },
         %         scheduling_mode => aggressive,
         %         protocol => http3,

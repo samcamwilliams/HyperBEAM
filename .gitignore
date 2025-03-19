@@ -31,12 +31,7 @@ native/hb_beamr/*.d
 
 priv/*
 .DS_STORE
-TEST-data*
-test-cache/*
-TEST-cache**/**
+cache-*
 
 *.dot
 *.svg
-mainnet-cache/
-store-inputs/
-debug-cache/

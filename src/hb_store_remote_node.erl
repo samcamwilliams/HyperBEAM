@@ -38,7 +38,7 @@ read(Opts = #{ <<"node">> := Node }, Key) ->
 %% a remote node with that store, and read the message from it.
 read_test() ->
     rand:seed(default),
-    LocalStore = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"mainnet-cache">> },
+    LocalStore = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
     hb_store:reset(LocalStore),
     M = #{ <<"test-key">> => Rand = rand:uniform(1337) },
     ID = hb_message:id(M),

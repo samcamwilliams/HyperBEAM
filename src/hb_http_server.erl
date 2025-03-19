@@ -19,7 +19,7 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    ?event(http, {start_store, "mainnet-cache"}),
+    ?event(http, {start_store, "cache-mainnet"}),
     Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
     Loaded =
@@ -308,10 +308,9 @@ set_default_opts(Opts) ->
     Store =
         case hb_opts:get(store, no_store, TempOpts) of
             no_store ->
-                #{ <<"store-module">> => hb_store_fs,
-                    <<"prefix">> =>
-                        <<"TEST-cache-", (integer_to_binary(Port))/binary>>
-                };
+                TestDir = <<"cache-TEST/run-fs-", (integer_to_binary(Port))/binary>>,
+                filelib:ensure_dir(binary_to_list(TestDir)),
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => TestDir };
             PassedStore -> PassedStore
         end,
     ?event({set_default_opts,
