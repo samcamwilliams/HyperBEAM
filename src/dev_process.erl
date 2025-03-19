@@ -274,7 +274,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
             _ -> RawInputMsg
         end,
     ?event({input_msg, InputMsg}),
-    ?event(compute, {executing, {slot, NextSlot}, {req, InputMsg}}, Opts),
+    ?event(compute, {executing, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
     Res =
         run_as(
             <<"execution">>,
@@ -584,8 +584,8 @@ dev_test_process() ->
     Wallet = hb:wallet(),
     hb_message:attest(
         maps:merge(test_base_process(), #{
-            <<"execution-device">> => <<"Stack@1.0">>,
-            <<"device-stack">> => [<<"Test-Device@1.0">>, <<"Test-Device@1.0">>]
+            <<"execution-device">> => <<"stack@1.0">>,
+            <<"device-stack">> => [<<"test-device@1.0">>, <<"test-device@1.0">>]
         }),
         Wallet
     ).

@@ -14,7 +14,7 @@
 
 %%% Public API
 
-%% @doc Write a resulting M3 message to the cache if requested. The precidence
+%% @doc Write a resulting M3 message to the cache if requested. The precedence
 %% order of cache control sources is as follows:
 %% 1. The `Opts' map (letting the node operator have the final say).
 %% 2. The `Msg3' results message (granted by Msg1's device).
