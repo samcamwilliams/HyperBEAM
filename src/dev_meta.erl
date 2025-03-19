@@ -7,11 +7,22 @@
 %%% resolver. Additionally, a post-processor can be set, which is executed after
 %%% the Converge resolver has returned a result.
 -module(dev_meta).
--export([handle/2, info/3]).
+-export([info/1, info/3, handle/2, adopt_node_message/2]).
 %%% Helper functions for processors
 -export([all_attestors/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Ensure that the helper function `adopt_node_message/2' is not exported.
+%% The naming of this method carefully avoids a clash with the exported `info/3'
+%% function. We would like the node information to be easily accessible via the
+%% `info' endpoint, but Converge also uses `info' as the name of the function
+%% that grants device information. The device call takes two or fewer arguments,
+%% so we are safe to use the name for both purposes in this case, as the user 
+%% info call will match the three-argument version of the function. If in the 
+%% future the `request' is added as an argument to Converge's internal `info'
+%% function, we will need to find a different approach.
+info(_) -> #{ exports => [info] }.
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
@@ -116,34 +127,50 @@ update_node_message(Request, NodeMsg) ->
             ?event({set_node_message_fail, Request}),
             embed_status({error, <<"Unauthorized">>});
         true ->
-            ?event({set_node_message_success, Request}),
-            MergedOpts =
-                maps:merge(
-                    NodeMsg,
-                    hb_opts:mimic_default_types(hb_message:unattested(Request), new_atoms)
-                ),
-            % Ensure that the node history is updated and the http_server ID is
-            % not overridden.
+            case adopt_node_message(Request, NodeMsg) of
+                {ok, NewNodeMsg} ->
+                    NewH = hb_opts:get(node_history, [], NewNodeMsg),
+                    embed_status(
+                        {ok,
+                            #{
+                                <<"body">> =>
+                                    iolist_to_binary(
+                                        io_lib:format(
+                                            "Node message updated. History: ~p updates.",
+                                            [length(NewH)]
+                                        )
+                                    ),
+                                <<"history-length">> => length(NewH)
+                            }
+                        }
+                    );
+                {error, Reason} ->
+                    ?event({set_node_message_fail, Request, Reason}),
+                    embed_status({error, Reason})
+            end
+    end.
+
+%% @doc Attempt to adopt changes to a node message.
+adopt_node_message(Request, NodeMsg) ->
+    ?event({set_node_message_success, Request}),
+    MergedOpts =
+        maps:merge(
+            NodeMsg,
+            hb_opts:mimic_default_types(hb_message:unattested(Request), new_atoms)
+        ),
+    % Ensure that the node history is updated and the http_server ID is
+    % not overridden.
+    case hb_opts:get(initialized, permanent, NodeMsg) of
+        permanent ->
+            {error, <<"Node message is already permanent.">>};
+        _ ->
             hb_http_server:set_opts(
                 MergedOpts#{
                     http_server => hb_opts:get(http_server, no_server, NodeMsg),
-                    node_history => NewH = [Request|hb_opts:get(node_history, [], NodeMsg)]
+                    node_history => [Request|hb_opts:get(node_history, [], NodeMsg)]
                 }
             ),
-            embed_status(
-                {ok,
-                    #{
-                        <<"body">> =>
-                            iolist_to_binary(
-                                io_lib:format(
-                                    "Node message updated. History: ~p updates.",
-                                    [length(NewH)]
-                                )
-                            ),
-                        <<"history-length">> => length(NewH)
-                    }
-                }
-            )
+            {ok, MergedOpts}
     end.
 
 %% @doc Handle a Converge request, which is a list of messages. We apply
