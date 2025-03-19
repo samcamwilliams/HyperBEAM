@@ -170,6 +170,8 @@ default_message() ->
                         ]
                 }
             ],
+        % Should we use the latest cached state of a process when computing?
+        process_now_from_cache => false,
         % Should we trust the GraphQL API when converting to ANS-104? Some GQL
         % services do not provide the `anchor' or `last_tx' fields, so their
         % responses are not verifiable.
