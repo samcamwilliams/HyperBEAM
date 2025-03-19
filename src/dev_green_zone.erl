@@ -110,8 +110,8 @@ init(_M1, M2, Opts) ->
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-	PeerLocation = hb_converge:get(<<"node">>, M1, undefined, Opts),
-	PeerID = hb_converge:get(<<"node">>, M1, undefined, Opts),
+	PeerLocation = hb_converge:get(<<"peer-location">>, M1, undefined, Opts),
+	PeerID = hb_converge:get(<<"peer-id">>, M1, undefined, Opts),
 	?event(green_zone, {join_peer, PeerLocation, PeerID}),
 	if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
 		validate_join(M1, M2, Opts);
@@ -180,10 +180,11 @@ key(_M1, _M2, Opts) ->
 %%          Returns {error, Reason} if the node is not part of the green zone.
 -spec become(M1 :: term(), M2 :: term(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
-become(M1, _M2, Opts) ->
+become(_M1, M2, Opts) ->
     ?event(green_zone, {become, start}),
     % 1. Retrieve the target node's address from the incoming message.
-    Node = hb_converge:get(<<"node">>, M1, Opts),
+    NodeLocation = hb_converge:get(<<"peer-location">>, M2, Opts),
+    NodeID = hb_converge:get(<<"peer-id">>, M2, Opts),
     % 2. Check if the local node has a valid shared AES key.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     case GreenZoneAES of
@@ -193,53 +194,64 @@ become(M1, _M2, Opts) ->
             {error, <<"Node not part of a green zone.">>};
         _ ->
             % 3. Request the target node's encrypted key from its key endpoint.
-            ?event(green_zone, {become, getting_key, Node}),
-            {ok, KeyResp} = hb_http:get(Node, <<"/~greenzone@1.0/key">>, Opts),
-            % 4. Decode the response to obtain the encrypted key and IV.
-            Combined =
-                base64:decode(
-                    hb_converge:get(<<"encrypted_key">>, KeyResp, Opts)),
-            IV = base64:decode(hb_converge:get(<<"iv">>, KeyResp, Opts)),
-            % 5. Separate the ciphertext and the authentication tag.
-            CipherLen = byte_size(Combined) - 16,
-            <<Ciphertext:CipherLen/binary, Tag:16/binary>> = Combined,
-            % 6. Decrypt the ciphertext using AES-256-GCM with the shared AES
-            %    key and IV.
-            DecryptedBin = crypto:crypto_one_time_aead(
-                aes_256_gcm,
-                GreenZoneAES,
-                IV,
-                Ciphertext,
-                <<>>,
-                Tag,
-                false
-            ),
-			OldWallet = hb_opts:get(priv_wallet, undefined, Opts),
-			OldWalletAddr = hb_util:human_id(ar_wallet:to_address(OldWallet)),
-			?event(green_zone, {become, old_wallet, OldWalletAddr}),
-			% Print the decrypted binary
-			?event(green_zone, {become, decrypted_bin, DecryptedBin}),
-            % 7. Convert the decrypted binary into the target node's keypair.
-            {KeyType, Priv, Pub} = binary_to_term(DecryptedBin),
-			% Print the keypair
-			?event(green_zone, {become, keypair, Pub}),
-            % 8. Update the local wallet with the target node's keypair, thereby
-            %    cloning its identity.
-            ok = hb_http_server:set_opts(Opts#{
-                priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
-            }),
-			% Print the updated wallet address
-			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
-			?event(green_zone,
-                {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}
-            ),
-            ?event(green_zone, {become, update_wallet, complete}),
-            {ok, #{
-                <<"status">> => 200,
-                <<"message">> => <<"Successfully adopted target node identity">>,
-                <<"node">> => Node
-            }}
+            ?event(green_zone, {become, getting_key, NodeLocation, NodeID}),
+            {ok, KeyResp} = hb_http:get(NodeLocation, <<"/~greenzone@1.0/key">>, Opts),
+            Signers = hb_message:signers(KeyResp),
+            case hb_message:verify(KeyResp, Signers) and lists:member(NodeID, Signers) of
+                false ->
+                    % The response is not from the expected peer.
+                    {failure, <<"Received incorrect response from peer!">>};
+                true ->
+                    finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts)
+            end
     end.
+
+finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
+    % 4. Decode the response to obtain the encrypted key and IV.
+    Combined =
+        base64:decode(
+            hb_converge:get(<<"encrypted_key">>, KeyResp, Opts)),
+    IV = base64:decode(hb_converge:get(<<"iv">>, KeyResp, Opts)),
+    % 5. Separate the ciphertext and the authentication tag.
+    CipherLen = byte_size(Combined) - 16,
+    <<Ciphertext:CipherLen/binary, Tag:16/binary>> = Combined,
+    % 6. Decrypt the ciphertext using AES-256-GCM with the shared AES
+    %    key and IV.
+    DecryptedBin = crypto:crypto_one_time_aead(
+        aes_256_gcm,
+        GreenZoneAES,
+        IV,
+        Ciphertext,
+        <<>>,
+        Tag,
+        false
+    ),
+    OldWallet = hb_opts:get(priv_wallet, undefined, Opts),
+    OldWalletAddr = hb_util:human_id(ar_wallet:to_address(OldWallet)),
+    ?event(green_zone, {become, old_wallet, OldWalletAddr}),
+    % Print the decrypted binary
+    ?event(green_zone, {become, decrypted_bin, DecryptedBin}),
+    % 7. Convert the decrypted binary into the target node's keypair.
+    {KeyType, Priv, Pub} = binary_to_term(DecryptedBin),
+    % Print the keypair
+    ?event(green_zone, {become, keypair, Pub}),
+    % 8. Update the local wallet with the target node's keypair, thereby
+    %    cloning its identity.
+    ok = hb_http_server:set_opts(Opts#{
+        priv_wallet => {{KeyType, Priv, Pub}, {KeyType, Pub}}
+    }),
+    % Print the updated wallet address
+    Wallet = hb_opts:get(priv_wallet, undefined, Opts),
+    ?event(green_zone,
+        {become, wallet, hb_util:human_id(ar_wallet:to_address(Wallet))}
+    ),
+    ?event(green_zone, {become, update_wallet, complete}),
+    {ok, #{
+        <<"status">> => 200,
+        <<"message">> => <<"Successfully adopted target node identity">>,
+        <<"peer-location">> => NodeLocation,
+        <<"peer-id">> => NodeID
+    }}.
 
 %%%--------------------------------------------------------------------
 %%% Internal Functions
@@ -265,11 +277,12 @@ become(M1, _M2, Opts) ->
     M1 :: term(),
     M2 :: term(),
     Opts :: map()) -> {ok, map()} | {error, map()}.
-join_peer(PeerLocation, PeerID, _M1, _M2, Opts) ->
+join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 	% Check here if the node is already part of a green zone.
-	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
-	case GreenZoneAES of
-		undefined ->
+	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, InitOpts),
+	case (GreenZoneAES == undefined) andalso maybe_set_zone_opts(PeerLocation, PeerID, M2, InitOpts) of
+		{ok, NewOpts} ->
+			Opts = NewOpts,
 			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
 			{ok, Report} = dev_snp:generate(#{}, #{}, Opts),
 			WalletPub = element(2, Wallet),
@@ -297,12 +310,14 @@ join_peer(PeerLocation, PeerID, _M1, _M2, Opts) ->
                             % The response is not from the expected peer.
                             {failure, <<"Received incorrect response from peer!">>};
                         true ->
-                            % Extract the encrypted shared AES key (zone-key) from the
-                            % response.
+                            % Extract the encrypted shared AES key (zone-key) 
+                            % from the response.
                             ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
-                            % Decrypt the zone key using the local node's private key.
+                            % Decrypt the zone key using the local node's
+                            % private key.
                             {ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
-                            % Update local configuration with the retrieved shared AES key.
+                            % Update local configuration with the retrieved
+                            % shared AES key.
                             hb_http_server:set_opts(Opts#{
                                 priv_green_zone_aes => AESKey
                             }),
@@ -323,10 +338,79 @@ join_peer(PeerLocation, PeerID, _M1, _M2, Opts) ->
                         <<"body">> => <<"Peer node is unreachable.">>
                     }}
 			end;
-		_ ->
+		false ->
 			?event(green_zone, {join, already_joined}),
-			{error, <<"Node already part of green zone.">>}
+			{error, <<"Node already part of green zone.">>};
+        {error, Reason} ->
+            % Log the error and return the initial options.
+            ?event(green_zone, {join, error, Reason}),
+            {error, Reason}
 	end.
+
+%% @doc If the operator requests it, the node can automatically adopt the 
+%% necessary configuration to join a green zone. `adopt-config' can be a boolean,
+%% a list of fields that should be included in the node message, alongside the
+%% required config of the green zone they are joining.
+maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
+    case hb_converge:get(<<"adopt-config">>, Req, true, InitOpts) of
+        false ->
+            % The node operator does not want to adopt the peer's config. Return
+            % the initial options unchanged.
+            {ok, InitOpts};
+        AdoptConfig ->
+            % Request the required config from the peer.
+            RequiredConfigRes =
+                hb_http:get(
+                    PeerLocation,
+                    <<"/~meta@1.0/green_zone_required_opts">>,
+                    InitOpts
+                ),
+            Signers = hb_message:signers(RequiredConfigRes),
+            case hb_message:verify(RequiredConfigRes, [PeerID]) and lists:member(PeerID, Signers) of
+                false ->
+                    % The response is not from the expected peer.
+                    {failure, <<"Received incorrect response from peer!">>};
+                true ->
+                    % Ensure the message 
+                    case RequiredConfigRes of
+                        {ok, RequiredConfig} ->
+                        % Generate the node message that should be set prior to 
+                        % joining a green zone.
+                        NodeMessage =
+                            calculate_node_message(RequiredConfig, Req, AdoptConfig),
+                        % Adopt the node message.
+                        dev_meta:adopt_node_message(NodeMessage, InitOpts);
+                    {error, Reason} ->
+                        % Log the error and return the initial options.
+                        ?event(green_zone, {join, error, Reason}),
+                        InitOpts
+                    end
+            end
+    end.
+
+%% @doc Generate the node message that should be set prior to joining a green zone.
+%% This function takes a required opts message, a request message, and an `adopt-config'
+%% value. The `adopt-config' value can be a boolean, a list of fields that should be
+%% included in the node message from the request, or a binary string of fields to
+%% include, separated by commas.
+calculate_node_message(RequiredOpts, Req, true) ->
+    % Remove irrelevant fields from the request.
+    StrippedReq =
+        maps:without(
+            [
+                <<"adopt-config">>, <<"peer-location">>,
+                <<"peer-id">>, <<"path">>, <<"method">>
+            ],
+            hb_message:unattested(Req)
+        ),
+    % The required config should override the request, if necessary.
+    maps:merge(StrippedReq, RequiredOpts);
+calculate_node_message(RequiredOpts, Req, <<"true">>) ->
+    calculate_node_message(RequiredOpts, Req, true);
+calculate_node_message(RequiredOpts, Req, List) when is_list(List) ->
+    calculate_node_message(RequiredOpts, maps:with(List, Req), true);
+calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
+    calculate_node_message(RequiredOpts, hb_util:list(BinList), Req).
 
 %% @doc Validate an incoming join request.
 %%
