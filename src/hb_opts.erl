@@ -290,11 +290,11 @@ mimic_default_types(Map, Mode) ->
                 case maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
                     DefaultValue when is_atom(DefaultValue) ->
-                        binary_to_existing_atom(Value);
+                        hb_util:atom(Value);
                     DefaultValue when is_integer(DefaultValue) ->
-                        binary_to_integer(Value);
+                        hb_util:int(Value);
                     DefaultValue when is_float(DefaultValue) ->
-                        binary_to_float(Value);
+                        hb_util:float(Value);
                     DefaultValue when is_binary(DefaultValue) ->
                         Value;
                     _ -> Value

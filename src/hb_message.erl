@@ -468,8 +468,8 @@ match(Map1, Map2, Mode) ->
         true ->
             lists:all(
                 fun(Key) ->
-                    Val1 = maps:get(Key, NormMap1, not_found),
-                    Val2 = maps:get(Key, NormMap2, not_found),
+                    Val1 = hb_converge:normalize_keys(maps:get(Key, NormMap1, not_found)),
+                    Val2 = hb_converge:normalize_keys(maps:get(Key, NormMap2, not_found)),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
@@ -540,10 +540,12 @@ minimize(Map, ExtraKeys) ->
 
 %% @doc Return a map with only the keys that necessary, without those that can
 %% be regenerated.
-normalize(Map) ->
+normalize(Map) when is_map(Map) orelse is_list(Map) ->
     NormalizedMap = hb_converge:normalize_keys(Map),
     FilteredMap = filter_default_keys(NormalizedMap),
-    maps:with(matchable_keys(FilteredMap), FilteredMap).
+    maps:with(matchable_keys(FilteredMap), FilteredMap);
+normalize(Other) ->
+    Other.
 
 %% @doc Remove keys from a map that have the default values found in the tx
 %% record.
