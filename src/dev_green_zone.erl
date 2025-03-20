@@ -24,13 +24,13 @@
 %% Each of these options is derived from the present node's configuration.
 default_zone_required_opts(Opts) ->
 	#{
-		trusted_device_signers => hb_opts:get(trusted_device_signers, Opts),
-        load_remote_devices => hb_opts:get(load_remote_devices, Opts),
-        preload_devices => hb_opts:get(preload_devices, Opts),
-        store => hb_opts:get(store, Opts),
-        routes => hb_opts:get(routes, Opts),
-        preprocessor => hb_opts:get(preprocessor, Opts),
-        postprocessor => hb_opts:get(postprocessor, Opts),
+		trusted_device_signers => hb_opts:get(trusted_device_signers, [], Opts),
+        load_remote_devices => hb_opts:get(load_remote_devices, false, Opts),
+        preload_devices => hb_opts:get(preload_devices, [], Opts),
+        store => hb_opts:get(store, [], Opts),
+        routes => hb_opts:get(routes, [], Opts),
+        preprocessor => hb_opts:get(preprocessor, undefined, Opts),
+        postprocessor => hb_opts:get(postprocessor, undefined, Opts),
         scheduling_mode => disabled,
         initialized => permanent
 	}.
@@ -200,7 +200,7 @@ become(_M1, M2, Opts) ->
             case hb_message:verify(KeyResp, Signers) and lists:member(NodeID, Signers) of
                 false ->
                     % The response is not from the expected peer.
-                    {failure, <<"Received incorrect response from peer!">>};
+                    {error, <<"Received incorrect response from peer!">>};
                 true ->
                     finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts)
             end
@@ -281,8 +281,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 	% Check here if the node is already part of a green zone.
 	GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, InitOpts),
 	case (GreenZoneAES == undefined) andalso maybe_set_zone_opts(PeerLocation, PeerID, M2, InitOpts) of
-		{ok, NewOpts} ->
-			Opts = NewOpts,
+		{ok, Opts} ->
 			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
 			{ok, Report} = dev_snp:generate(#{}, #{}, Opts),
 			WalletPub = element(2, Wallet),
@@ -305,10 +304,15 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                     % Ensure that the response is from the expected peer, avoiding
                     % the risk of a man-in-the-middle attack.
                     Signers = hb_message:signers(Resp),
-                    case hb_message:verify(Resp, Signers) and lists:member(PeerID, Signers) of
+					?event(green_zone, {join, signers, Signers}),
+					IsVerified = hb_message:verify(Resp, Signers),
+					?event(green_zone, {join, verify, IsVerified}),
+					IsPeerSigner = lists:member(PeerID, Signers),
+					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
+                    case IsPeerSigner of
                         false ->
                             % The response is not from the expected peer.
-                            {failure, <<"Received incorrect response from peer!">>};
+                            {error, <<"Received incorrect response from peer!">>};
                         true ->
                             % Extract the encrypted shared AES key (zone-key) 
                             % from the response.
@@ -318,10 +322,13 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                             {ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
                             % Update local configuration with the retrieved
                             % shared AES key.
+                            ?event(green_zone, {oldOpts, {explicit, InitOpts}}),
+                            ?event(green_zone, {newOpts, {explicit, Opts}}),
                             hb_http_server:set_opts(Opts#{
                                 priv_green_zone_aes => AESKey
                             }),
-                            {ok, <<"Node joined green zone successfully.">>}
+							?event(successfully_joined_greenzone),
+                            {ok, #{ <<"body">> => <<"Node joined green zone successfully.">>, <<"status">> => 200}}
                     end;
 				{error, Reason} ->
 					{error, #{<<"status">> => 400, <<"reason">> => Reason}};
@@ -358,34 +365,42 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
             % the initial options unchanged.
             {ok, InitOpts};
         AdoptConfig ->
+			?event(green_zone, {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}),
             % Request the required config from the peer.
             RequiredConfigRes =
                 hb_http:get(
                     PeerLocation,
-                    <<"/~meta@1.0/green_zone_required_opts">>,
+                    <<"/~meta@1.0/info/green_zone_required_opts">>,
                     InitOpts
                 ),
-            Signers = hb_message:signers(RequiredConfigRes),
-            case hb_message:verify(RequiredConfigRes, [PeerID]) and lists:member(PeerID, Signers) of
-                false ->
-                    % The response is not from the expected peer.
-                    {failure, <<"Received incorrect response from peer!">>};
-                true ->
-                    % Ensure the message 
-                    case RequiredConfigRes of
-                        {ok, RequiredConfig} ->
-                        % Generate the node message that should be set prior to 
-                        % joining a green zone.
-                        NodeMessage =
-                            calculate_node_message(RequiredConfig, Req, AdoptConfig),
-                        % Adopt the node message.
-                        dev_meta:adopt_node_message(NodeMessage, InitOpts);
-                    {error, Reason} ->
-                        % Log the error and return the initial options.
-                        ?event(green_zone, {join, error, Reason}),
-                        InitOpts
-                    end
-            end
+			% Ensure the response is okay.
+			?event({req_opts_get_result, RequiredConfigRes}),
+			case RequiredConfigRes of
+				{error, Reason} ->
+					% Log the error and return the initial options.
+					?event(green_zone, {join_error, get_req_opts_failed, Reason}),
+					{error, <<"Could not get required config from peer.">>};
+				{ok, RequiredConfig} ->
+					% Print the required config response.
+					Signers = hb_message:signers(RequiredConfig),
+					?event(green_zone, {req_conf_signers, {explicit, Signers}}),
+					% Extract and log the verification steps
+					IsVerified = hb_message:verify(RequiredConfig, Signers),
+					?event(green_zone, {req_opts, {verified, IsVerified}, {signers, Signers}}),
+					% Combined check
+					case lists:member(PeerID, Signers) of % and IsVerified of
+						false ->
+							% The response is not from the expected peer.
+							{error, <<"Peer gave invalid signature for required config.">>};
+						true ->
+							% Generate the node message that should be set prior to 
+							% joining a green zone.
+							NodeMessage =
+								calculate_node_message(RequiredConfig, Req, AdoptConfig),
+							% Adopt the node message.
+							dev_meta:adopt_node_message(NodeMessage, InitOpts)
+					end
+			end
     end.
 
 %% @doc Generate the node message that should be set prior to joining a green zone.
@@ -403,6 +418,7 @@ calculate_node_message(RequiredOpts, Req, true) ->
             ],
             hb_message:unattested(Req)
         ),
+	% Convert atoms to binaries in RequiredOpts to prevent binary_to_existing_atom errors
     % The required config should override the request, if necessary.
     maps:merge(StrippedReq, RequiredOpts);
 calculate_node_message(RequiredOpts, Req, <<"true">>) ->
@@ -481,23 +497,55 @@ validate_join(_M1, Req, Opts) ->
     end.
 
 validate_peer_opts(Req, Opts) ->
+    ?event(green_zone, {validate_peer_opts, start, Req}),
 	% Get the required config from the local node's configuration.
 	RequiredConfig =
         hb_converge:normalize_keys(
             hb_opts:get(green_zone_required_opts, #{}, Opts)),
+    ?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
+    
     PeerOpts =
         hb_converge:normalize_keys(
             hb_converge:get(<<"node-message">>, Req, undefined, Opts)),
+    ?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
+    
     % Add the required config itself to the required options of the peer. This
     % enforces that the new peer will also enforce the required config on peers
     % that join them.
 	FullRequiredOpts = RequiredConfig#{
 		green_zone_required_opts => RequiredConfig
 	},
-    % Check if the peer opts match the required config and if the peer has not
-    % modified their node message more than once.
-	hb_message:match(PeerOpts, FullRequiredOpts, only_present) andalso
-        length(hb_converge:get(<<"node_history">>, PeerOpts, Opts)) =< 1.
+    ?event(green_zone, {validate_peer_opts, full_required_opts, FullRequiredOpts}),
+    
+    % Debug: Check if PeerOpts is a map
+    ?event(green_zone, {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
+    
+    % Debug: Get node_history safely
+    NodeHistory = hb_converge:get(<<"node_history">>, PeerOpts, [], Opts),
+    ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
+    
+    % Debug: Check length of node_history
+    HistoryCheck = case is_list(NodeHistory) of
+        true -> length(NodeHistory) =< 1;
+        false -> {error, not_a_list}
+    end,
+    ?event(green_zone, {validate_peer_opts, history_check, HistoryCheck}),
+    
+    % Debug: Try the match check separately
+    MatchCheck = try
+        Result = hb_message:match(PeerOpts, FullRequiredOpts, only_present),
+        ?event(green_zone, {validate_peer_opts, match_check, Result}),
+        Result
+    catch
+        Error:Reason:Stacktrace ->
+            ?event(green_zone, {validate_peer_opts, match_error, {Error, Reason, Stacktrace}}),
+            false
+    end,
+    
+    % Final result
+    FinalResult = MatchCheck andalso (HistoryCheck =:= true),
+    ?event(green_zone, {validate_peer_opts, final_result, FinalResult}),
+    FinalResult.
 
 %% @doc Add a joining node's details to the trusted nodes list.
 %% Updates the local configuration with the new trusted node's attestation report
