@@ -32,8 +32,9 @@ group(Msg1, Msg2, Opts) ->
 
 process_to_group_name(Msg1, Opts) ->
     Initialized = dev_process:ensure_process_key(Msg1, Opts),
-    ID = hb_message:id(Initialized, all),
-    ?event({process_to_group_name, {id, ID}}),
+    ProcMsg = hb_converge:get(<<"process">>, Initialized, Opts#{ hashpath => ignore }),
+    ID = hb_message:id(ProcMsg, all),
+    ?event({process_to_group_name, {id, ID}, {msg1, Msg1}}),
     hb_util:human_id(ID).
 
 %% @doc Spawn a new worker process. This is called after the end of the first
@@ -42,7 +43,8 @@ process_to_group_name(Msg1, Opts) ->
 server(GroupName, Msg1, Opts) ->
     ServerOpts = Opts#{
         await_inprogress => false,
-        spawn_worker => false
+        spawn_worker => false,
+        process_workers => false
     },
     % The maximum amount of time the worker will wait for a request before
     % checking the cache for a snapshot. Default: 5 minutes.
@@ -64,8 +66,8 @@ server(GroupName, Msg1, Opts) ->
                     #{ <<"path">> => <<"compute">>, <<"slot">> => TargetSlot },
                     maps:merge(ListenerOpts, ServerOpts)
                 ),
-            ?event(worker, {resolved, {group, GroupName}, {msg2, Msg2}, {res, Res}}),
-            Listener ! {resolved, self(), GroupName, {slot, TargetSlot}, Res},
+            ?event(worker, {work_done, {group, GroupName}, {req, Msg2}, {res, Res}}),
+            send_notification(Listener, GroupName, TargetSlot, Res),
             server(
                 GroupName,
                 case Res of
@@ -129,7 +131,7 @@ await(Worker, GroupName, Msg1, Msg2, Opts) ->
             end
     end.
 
-%% Notify any waiters for a specific slot of the computed result.
+%% @doc Notify any waiters for a specific slot of the computed results.
 notify_compute(GroupName, SlotToNotify, Msg3, Opts) ->
     notify_compute(GroupName, SlotToNotify, Msg3, Opts, 0).
 notify_compute(GroupName, SlotToNotify, Msg3, Opts, Count) ->
