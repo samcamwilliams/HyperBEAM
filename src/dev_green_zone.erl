@@ -388,7 +388,7 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
 					IsVerified = hb_message:verify(RequiredConfig, Signers),
 					?event(green_zone, {req_opts, {verified, IsVerified}, {signers, Signers}}),
 					% Combined check
-					case lists:member(PeerID, Signers) of % and IsVerified of
+					case lists:member(PeerID, Signers) of % andalso IsVerified of
 						false ->
 							% The response is not from the expected peer.
 							{error, <<"Peer gave invalid signature for required config.">>};
