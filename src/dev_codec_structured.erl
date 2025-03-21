@@ -10,7 +10,7 @@
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
 -export([to/1, from/1, attest/3, attested/3, verify/3]).
--export([decode_value/2, encode_value/1]).
+-export([decode_value/2, encode_value/1, implicit_keys/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -22,9 +22,10 @@ attested(Msg, Req, Opts) -> dev_codec_httpsig:attested(Msg, Req, Opts).
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;
 from(Msg) when is_map(Msg) ->
+    NormKeysMap = hb_converge:normalize_keys(Msg),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
-            case maps:find(Key, Msg) of
+            case maps:find(Key, NormKeysMap) of
                 {ok, <<>>} ->
                     BinKey = hb_converge:normalize_key(Key),
                     {[{BinKey, <<"empty-binary">>} | Types], Values};
@@ -75,7 +76,7 @@ from(Msg) when is_map(Msg) ->
                 not lists:member(Key, ?REGEN_KEYS) andalso
                     not hb_private:is_private(Key)
             end,
-            hb_util:to_sorted_keys(Msg)
+            hb_util:to_sorted_keys(NormKeysMap)
         )
     ),
     % Encode the AoTypes as a structured dictionary
@@ -91,7 +92,7 @@ from(Msg) when is_map(Msg) ->
                             {Key, Item}
                         end,
                         lists:reverse(T)
-                    )    
+                    )
                 )),
                 [{<<"ao-types">>, AoTypes} | Values]
         end,
@@ -103,12 +104,7 @@ to(Bin) when is_binary(Bin) -> Bin;
 to(TABM0) ->
     Types = case maps:get(<<"ao-types">>, TABM0, <<>>) of
         <<>> -> #{};
-        Bin -> maps:from_list(
-            lists:map(
-                fun({Key, {item, {_, Value}, _}}) -> {Key, Value} end,
-                hb_structured_fields:parse_dictionary(Bin)    
-            )
-        )
+        Bin -> parse_ao_types(Bin)
     end,
     % "empty values" will each have a type, but no corresponding value
     % (because its empty)
@@ -165,6 +161,29 @@ to(TABM0) ->
         TABM1,
         TABM0
     )).
+
+%% @doc Parse the `ao-types' field of a TABM and return a map of keys and their
+%% types
+parse_ao_types(Msg) when is_map(Msg) ->
+    parse_ao_types(maps:get(<<"ao-types">>, Msg, <<>>));
+parse_ao_types(Bin) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, {item, {_, Value}, _}}) -> {Key, Value} end,
+            hb_structured_fields:parse_dictionary(Bin)    
+        )
+    ).
+
+%% @doc Find the implicit keys of a TABM.
+implicit_keys(Req) ->
+    maps:keys(
+        maps:filtermap(
+            fun(_Key, Val = <<"empty-", _/binary>>) -> {true, Val};
+            (_Key, _Val) -> false
+            end,
+            parse_ao_types(Req)
+        )
+    ).
 
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
