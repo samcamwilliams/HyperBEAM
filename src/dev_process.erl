@@ -338,7 +338,7 @@ now(RawMsg1, Msg2, Opts) ->
             {ok, CurrentSlot} =
                 hb_converge:resolve(
                     Msg1,
-                    #{ <<"path">> => <<"slot/current-slot">> },
+                    #{ <<"path">> => <<"slot/current">> },
                     Opts
                 ),
             ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
@@ -673,7 +673,7 @@ get_scheduler_slot_test() ->
         <<"method">> => <<"GET">>
     },
     ?assertMatch(
-        {ok, #{ <<"current-slot">> := CurrentSlot }} when CurrentSlot > 0,
+        {ok, #{ <<"current">> := CurrentSlot }} when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
 
@@ -684,7 +684,7 @@ recursive_path_resolution_test() ->
     CurrentSlot =
         hb_converge:resolve(
             Msg1,
-            #{ <<"path">> => <<"slot/current-slot">> },
+            #{ <<"path">> => <<"slot/current">> },
             #{ <<"hashpath">> => ignore }
         ),
     ?event({resolved_current_slot, CurrentSlot}),

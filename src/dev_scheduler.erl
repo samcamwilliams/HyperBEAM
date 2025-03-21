@@ -442,7 +442,15 @@ generate_redirect(ProcID, SchedulerLocation, Opts) ->
     RedirectLocation =
         case is_binary(SchedulerLocation) of
             true -> SchedulerLocation;
-            false -> hb_converge:get(<<"url">>, SchedulerLocation, <<"">>, Opts)
+            false ->
+                hb_converge:get_first(
+                    [
+                        {SchedulerLocation, <<"url">>},
+                        {SchedulerLocation, <<"location">>}
+                    ],
+                    <<"/">>,
+                    Opts
+                )
         end,
     {redirect,
         #{
@@ -454,6 +462,8 @@ generate_redirect(ProcID, SchedulerLocation, Opts) ->
         }
     }.
 
+%% @doc Take a process ID or target with a potential hint and return just the
+%% process ID.
 without_hint(Target) when ?IS_ID(Target) ->
     hb_util:human_id(Target);
 without_hint(Target) ->
@@ -489,7 +499,7 @@ slot(M1, M2, Opts) ->
                 dev_scheduler_server:info(PID),
             {ok, #{
                 <<"process">> => ProcID,
-                <<"current-slot">> => CurrentSlot,
+                <<"current">> => CurrentSlot,
                 <<"timestamp">> => Timestamp,
                 <<"block-height">> => Height,
                 <<"block-hash">> => Hash,
@@ -497,7 +507,79 @@ slot(M1, M2, Opts) ->
                 <<"wallet-address">> => hb_util:human_id(ar_wallet:to_address(Wallet))
             }};
         {redirect, Redirect} ->
-            {ok, Redirect}
+            case hb_opts:get(scheduler_follow_redirects, true, Opts) of
+                false -> {ok, Redirect};
+                true -> remote_slot(ProcID, Redirect, Opts)
+            end
+    end.
+
+%% @doc Get the current slot from a remote scheduler.
+remote_slot(ProcID, Redirect, Opts) ->
+    ?event({getting_remote_slot, {proc_id, ProcID}, {redirect, {explicit, Redirect}}}),
+    Node = node_from_redirect(Redirect, Opts),
+    ?event({getting_slot_from_node, {string, Node}}),
+    remote_slot(
+        hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
+        ProcID,
+        Node,
+        Opts
+    ).
+
+%% @doc Get the current slot from a remote scheduler, based on the variant of
+%% the process's scheduler.
+remote_slot(<<"ao.N.1">>, ProcID, Node, Opts) ->
+    % The process is running on a mainnet AO-Core scheduler, so we can just
+    % use the `/slot' endpoint to get the current slot.
+    ?event({getting_slot_from_ao_core_remote,
+        {path, {string, <<"/", ProcID/binary, "/slot">>}}}),
+    hb_http:get(Node, <<ProcID/binary, "/slot">>, Opts);
+remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
+    % The process is running on a testnet AO-Core scheduler, so we need to use
+    % `/processes/procID/latest` to get the current slot.
+    Path = << ProcID/binary, "/latest?proc-id=", ProcID/binary>>,
+    ?event({getting_slot_from_ao_core_remote, {path, {string, Path}}}),
+    case hb_http:get(Node, Path, Opts#{ http_client => httpc }) of
+        {ok, Res} ->
+            ?event(debug_sched, {remote_slot_result, {res, Res}}),
+            case hb_util:int(hb_converge:get(<<"status">>, Res, 200, Opts)) of
+                200 ->
+                    Body = hb_converge:get(<<"body">>, Res, Opts),
+                    JSON = jiffy:decode(Body, [return_maps]),
+                    ?event({got_slot_response, {json, JSON}}),
+                    % Convert the JSON object for the latest assignment into the
+                    % standardized `~scheduler@1.0` format.
+                    A =
+                        dev_scheduler_formats:aos2_to_assignment(
+                            JSON,
+                            Opts
+                        ),
+                    ?event({got_slot_response, {assignment, A}}),
+                    {ok, #{
+                        <<"process">> => ProcID,
+                        <<"current">> => maps:get(<<"slot">>, A),
+                        <<"timestamp">> => maps:get(<<"timestamp">>, A),
+                        <<"block-height">> => maps:get(<<"block-height">>, A),
+                        <<"block-hash">> => hb_util:encode(<<0:256>>),
+                        <<"cache-control">> => <<"no-store">>
+                    }};
+                307 ->
+                    ?event({generating_new_redirect, {redirect, Res}}),
+                    % Maintain the same variant, but generate the redirect using
+                    % the new location.
+                    NewRedirect =
+                        generate_redirect(
+                            ProcID,
+                            Res#{ <<"variant">> => <<"ao.TN.1">> },
+                            Opts
+                        ),
+                    ?event({recursing_on_new_redirect, {redirect, NewRedirect}}),
+                    remote_slot(ProcID, NewRedirect, Opts);
+                _ ->
+                    {error, Res}
+            end;
+        {error, Res} ->
+            ?event(debug_sched, {remote_slot_error, {error, Res}}),
+            {error, Res}
     end.
 
 %% @doc Generate and return a schedule for a process, optionally between
@@ -558,9 +640,7 @@ get_schedule(Msg1, Msg2, Opts) ->
 %% @doc Get a schedule from a remote scheduler.
 get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
     ProcID = without_hint(RawProcID),
-    Location = hb_converge:get(<<"location">>, Redirect, Opts),
-    Parsed = uri_string:parse(Location),
-    Node = uri_string:recompose((maps:remove(query, Parsed))#{path => <<"/">>}),
+    Node = node_from_redirect(Redirect, Opts),
     Variant = hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     ?event(
         {getting_remote_schedule,
@@ -570,11 +650,35 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
             {to, To}
         }
     ),
-    FromBin = integer_to_binary(From),
+    MaybeNonce =
+        if Variant == <<"ao.TN.1">> -> <<"-nonce">>;
+        true -> <<>>
+        end,
+    FromBin =
+        case From of
+            undefined -> <<>>;
+            From ->
+                % The legacy scheduler gives us the slots _after_ the stated 
+                % nonce. So we need to subtract one from the nonce to get the
+                % correct slot.
+                ModFrom =
+                    if Variant == <<"ao.TN.1">> -> From - 1;
+                    true -> From
+                    end,
+                <<
+                    "&from",
+                    MaybeNonce/binary,
+                    "=",
+                    (integer_to_binary(ModFrom))/binary
+                >>
+        end,
     ToParam =
         case To of
             undefined -> <<>>;
-            ToInt -> <<"&to=", (integer_to_binary(ToInt))/binary>>
+            To ->
+                <<
+                    "&to", MaybeNonce/binary, "=", (integer_to_binary(To))/binary
+                >>
         end,
     Path =
         case Variant of
@@ -585,9 +689,8 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
                 >>;
             <<"ao.TN.1">> ->
                 <<
-                    ProcID/binary, "?proc-id=", ProcID/binary
-                    % The SU does not support to and from nonce parameters yet.
-                    % "&from=", FromBin/binary, "&to=", ToBin/binary
+                    ProcID/binary, "?proc-id=", ProcID/binary,
+                    FromBin/binary, ToParam/binary
                 >>
         end,
     ?event({getting_remote_schedule, {node, {string, Node}}, {path, {string, Path}}}),
@@ -617,12 +720,30 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
                                 Opts
                             )
                     end;
-                307 -> get_remote_schedule(ProcID, From, To, Redirect, Opts)
+                307 ->
+                    % NOTE: Shouldn't this be using the `Res' location key to
+                    % regenerate the redirect and recurse on that, instead of
+                    % just using the same redirect?
+                    ?event({recursing_on_same_redirect, {redirect, Redirect}}),
+                    get_remote_schedule(ProcID, From, To, Redirect, Opts)
             end;
         {error, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             {error, Res}
     end.
+
+%% @doc Get the node URL from a redirect.
+node_from_redirect(Redirect, Opts) ->
+    uri_string:recompose(
+        (
+            maps:remove(
+                query,
+                uri_string:parse(
+                    hb_converge:get(<<"location">>, Redirect, Opts)
+                )
+            )
+        )#{path => <<"/">>}
+    ).
 
 %% @doc Filter JSON assignment results from a remote legacy scheduler.
 filter_json_assignments(JSONRes, To, From) ->
@@ -945,7 +1066,7 @@ schedule_message_and_get_slot_test() ->
     },
     ?event({pg, dev_scheduler_registry:get_processes()}),
     ?event({getting_schedule, {msg, Msg3}}),
-    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
+    ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg3, #{})).
 
@@ -1138,7 +1259,7 @@ http_post_schedule_test() ->
             W
         ),
     ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res2, #{})),
-    ?assertMatch({ok, #{ <<"current-slot">> := 1 }}, http_get_slot(N, PMsg)).
+    ?assertMatch({ok, #{ <<"current">> := 1 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test() ->
     {Node, Wallet} = http_init(),
@@ -1158,7 +1279,7 @@ http_get_schedule_test() ->
         fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
         lists:seq(1, 10)
     ),
-    ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
+    ?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
     {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
     Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
     ?assertEqual(
@@ -1172,6 +1293,24 @@ http_get_legacy_schedule_test_() ->
         {Node, _Wallet} = http_init(),
         Res = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary>>, #{}),
         ?assertMatch({ok, #{ <<"assignments">> := As }} when map_size(As) > 0, Res)
+    end}.
+
+http_get_legacy_slot_test_() ->
+    {timeout, 10, fun() ->
+        Target = <<"CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM">>,
+        {Node, _Wallet} = http_init(),
+        Res = hb_http:get(Node, <<"/~scheduler@1.0/slot&target=", Target/binary>>, #{}),
+        ?assertMatch({ok, #{ <<"current">> := Slot }} when Slot > 0, Res)
+    end}.
+
+http_get_legacy_schedule_slot_range_test_() ->
+    {timeout, 10, fun() ->
+        Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
+        {Node, _Wallet} = http_init(),
+        Res = hb_http:get(Node, <<"/~scheduler@1.0/schedule&target=", Target/binary,
+            "&from=0&to=10">>, #{}),
+        ?event({res, Res}),
+        ?assertMatch({ok, #{ <<"assignments">> := As }} when map_size(As) == 11, Res)
     end}.
 
 http_get_legacy_schedule_as_aos2_test_() ->
@@ -1249,7 +1388,7 @@ http_get_json_schedule_test() ->
         fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
         lists:seq(1, 10)
     ),
-    ?assertMatch({ok, #{ <<"current-slot">> := 10 }}, http_get_slot(Node, PMsg)),
+    ?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
     {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
     ?event({schedule, Schedule}),
     JSON = hb_converge:get(<<"body">>, Schedule, #{}),
@@ -1288,7 +1427,7 @@ single_converge(Opts) ->
         <<"method">> => <<"GET">>,
         <<"process">> => hb_util:human_id(hb_message:id(Msg1, all))
     },
-    ?assertMatch({ok, #{ <<"current-slot">> := CurrentSlot }}
+    ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
         hb_converge:resolve(Msg1, Msg3, Opts)),
     ?event(bench, {res, Iterations - 1}),
