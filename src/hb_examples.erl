@@ -170,7 +170,7 @@ create_schedule_aos2_test_disabled() ->
         <<"/~scheduler@1.0/slot?target=", IDNone/binary>>,
         #{}
     ),
-    ?assertMatch(Slot when Slot >= 0, hb_converge:get(<<"current-slot">>, Res2, #{})).
+    ?assertMatch(Slot when Slot >= 0, hb_converge:get(<<"at-slot">>, Res2, #{})).
 
 schedule(ProcMsg, Target) ->
     schedule(ProcMsg, Target, hb:wallet()).

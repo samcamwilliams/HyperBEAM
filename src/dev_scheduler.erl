@@ -72,7 +72,7 @@ next(Msg1, Msg2, Opts) ->
             Msg1,
             Opts
         ),
-    LastProcessed = hb_util:int(hb_converge:get(<<"current-slot">>, Msg1, Opts)),
+    LastProcessed = hb_util:int(hb_converge:get(<<"at-slot">>, Msg1, Opts)),
     ?event(next, {local_schedule_cache, {schedule, Schedule}}),
     Assignments =
         case Schedule of

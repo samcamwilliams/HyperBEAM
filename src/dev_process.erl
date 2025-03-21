@@ -115,7 +115,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         Opts#{ cache_control => [] }
     ),
     ProcID = hb_message:id(Msg1, all),
-    Slot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    Slot = hb_converge:get(<<"at-slot">>, Msg1, Opts),
     {ok,
         hb_private:set(
             hb_converge:set(
@@ -155,7 +155,7 @@ init(Msg1, _Msg2, Opts) ->
             Initialized,
             #{
                 <<"initialized">> => <<"true">>,
-                <<"current-slot">> => -1
+                <<"at-slot">> => -1
             },
             Opts
         )
@@ -205,7 +205,7 @@ compute(Msg1, Msg2, Opts) ->
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
 compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
-    CurrentSlot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    CurrentSlot = hb_converge:get(<<"at-slot">>, Msg1, Opts),
     ?event({starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
     case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
@@ -286,7 +286,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
         {ok, Msg3} ->
             ?event(compute_short, {executed, {slot, NextSlot}, {proc_id, ProcID}}, Opts),
             % We have now transformed slot n -> n + 1. Increment the current slot.
-            Msg3SlotAfter = hb_converge:set(Msg3, #{ <<"current-slot">> => NextSlot }, Opts),
+            Msg3SlotAfter = hb_converge:set(Msg3, #{ <<"at-slot">> => NextSlot }, Opts),
             % Notify any waiters that the result for a slot is now available.
             dev_process_worker:notify_compute(
                 ProcID,
