@@ -100,14 +100,15 @@ attest(Msg, _Req, Opts) ->
     }.
 
 %% @doc Return a list of attested keys from an ANS-104 message.
-attested(Msg = #{ <<"trusted-keys">> := TKeys, <<"attestations">> := Atts }, _Req, _Opts) ->
+attested(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"attestations">> := Atts }, _Req, _Opts) ->
     % If the message has a `trusted-keys' field in the immediate layer, we validate
     % that it also exists in the attestation's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
     % are present in the message.
     case hb_converge:get(hd(hb_converge:keys(Atts)), Atts, #{}) of
-        #{ <<"trusted-keys">> := TKeys } ->
+        #{ <<"trusted-keys">> := RawTKeys } ->
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            TKeys = maps:values(hb_converge:normalize_keys(RawTKeys)),
             Implicit =
                 case lists:member(<<"ao-types">>, TKeys) of
                     true -> dev_codec_structured:implicit_keys(Msg);
