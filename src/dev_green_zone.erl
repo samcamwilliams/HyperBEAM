@@ -309,7 +309,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 					?event(green_zone, {join, verify, IsVerified}),
 					IsPeerSigner = lists:member(PeerID, Signers),
 					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
-                    case IsPeerSigner of
+                    case IsPeerSigner andalso IsVerified of
                         false ->
                             % The response is not from the expected peer.
                             {error, <<"Received incorrect response from peer!">>};
@@ -388,7 +388,7 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
 					IsVerified = hb_message:verify(RequiredConfig, Signers),
 					?event(green_zone, {req_opts, {verified, IsVerified}, {signers, Signers}}),
 					% Combined check
-					case lists:member(PeerID, Signers) of % andalso IsVerified of
+					case lists:member(PeerID, Signers) andalso IsVerified of
 						false ->
 							% The response is not from the expected peer.
 							{error, <<"Peer gave invalid signature for required config.">>};
