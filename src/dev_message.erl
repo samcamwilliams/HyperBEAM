@@ -288,7 +288,13 @@ exec_for_attestation(Func, Base, Attestation, Req, Opts) ->
 attested(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    Attestators = maps:keys(Attestations = maps:get(<<"attestations">>, Base, #{})),
+    Attestations = maps:get(<<"attestations">>, Base, #{}),
+    Attestors =
+        case maps:get(<<"attestors">>, Req, <<"all">>) of
+            <<"none">> -> [];
+            <<"all">> -> maps:keys(Attestations);
+            AttestorIDs -> AttestorIDs
+        end,
     % Get the list of attested keys from each attestor.
     AttestationKeys =
         lists:map(
@@ -304,7 +310,7 @@ attested(Self, Req, Opts) ->
                     ),
                 AttestedKeys
             end,
-            Attestators
+            Attestors
         ),
     % Remove attestations that are not in *every* attestor's list.
     % To start, we need to create the super-set of attested keys.

@@ -161,7 +161,12 @@ with_only_attested(Msg, Opts) when is_map(Msg) ->
     case is_map(Msg) andalso Atts /= not_found of
         true ->
             try
-                AttestedKeys = hb_message:attested(Msg, Opts),
+                AttestedKeys =
+                    hb_message:attested(
+                        Msg,
+                        #{ <<"attestors">> => <<"all">> },
+                        Opts
+                    ),
                 % Add the inline-body-key to the attested list if it is not
                 % already present.
                 ?event({attested_keys, AttestedKeys, {msg, Msg}}),
@@ -212,10 +217,14 @@ attest(Msg, Opts, Format) ->
     Signed.
 
 %% @doc Return the list of attested keys from a message.
-attested(Msg) -> attested(Msg, #{ <<"attestors">> => <<"all">> }, #{}).
-attested(Msg, Opts) -> attested(Msg, Opts, #{}).
-attested(Msg, Opts, Format) ->
-    {ok, AttestedKeys} = dev_message:attested(Msg, Format, Opts),
+attested(Msg) -> attested(Msg, all).
+attested(Msg, Attestors) -> attested(Msg, Attestors, #{}).
+attested(Msg, all, Opts) ->
+    attested(Msg, #{ <<"attestors">> => <<"all">> }, Opts);
+attested(Msg, List, Opts) when is_list(List) ->
+    attested(Msg, #{ <<"attestors">> => List }, Opts);
+attested(Msg, AttestorsMsg, Opts) ->
+    {ok, AttestedKeys} = dev_message:attested(Msg, AttestorsMsg, Opts),
     AttestedKeys.
 
 %% @doc wrapper function to verify a message.
@@ -1138,6 +1147,22 @@ attested_keys_test(Codec) ->
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
     ?assert(not lists:member(<<"bad-key">>, attested(MsgToFilter))).
 
+attested_empty_keys_test(Codec) ->
+    Msg = #{
+        <<"very">> => <<>>,
+        <<"exciting">> => #{},
+        <<"values">> => [],
+        <<"non-empty">> => <<"TEST">>
+    },
+    Signed = attest(Msg, hb:wallet(), Codec),
+    ?assert(verify(Signed)),
+    AttestedKeys = attested(Signed),
+    ?event(debug, {attested_keys, AttestedKeys}),
+    ?assert(lists:member(<<"very">>, AttestedKeys)),
+    ?assert(lists:member(<<"exciting">>, AttestedKeys)),
+    ?assert(lists:member(<<"values">>, AttestedKeys)),
+    ?assert(lists:member(<<"non-empty">>, AttestedKeys)).
+
 deeply_nested_attested_keys_test() ->
     Msg = #{
         <<"a">> => 1,
@@ -1375,6 +1400,7 @@ message_suite_test_() ->
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
         {"attested keys test", fun attested_keys_test/1},
+        {"attested empty keys test", fun attested_empty_keys_test/1},
         {"large body attested keys test", fun large_body_attested_keys_test/1},
         {"signed list http response test", fun signed_list_test/1},
         {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
@@ -1385,4 +1411,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    recursive_nested_list_test(<<"flat@1.0">>).
+    attested_empty_keys_test(<<"httpsig@1.0">>).

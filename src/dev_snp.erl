@@ -166,12 +166,10 @@ verify(M1, M2, NodeOpts) ->
 %% hashes).
 generate(_M1, _M2, Opts) ->
 	?event({generate_opts, {explicit, Opts}}),
-
-    Wallet = hb_opts:get(priv_wallet, no_valid_wallet, Opts),
+    Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % ?event({snp_wallet, Wallet}),
     % Remove the `priv*' keys from the options.
-	
     {ok, PublicNodeMsgID} =
         dev_message:id(
             	NodeMsg = hb_private:reset(Opts),

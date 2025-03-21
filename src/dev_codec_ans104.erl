@@ -100,15 +100,22 @@ attest(Msg, _Req, Opts) ->
     }.
 
 %% @doc Return a list of attested keys from an ANS-104 message.
-attested(Msg = #{ <<"trusted-keys">> := TKeys, <<"attestations">> := Atts }, _Req, _Opts) ->
+attested(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"attestations">> := Atts }, _Req, _Opts) ->
     % If the message has a `trusted-keys' field in the immediate layer, we validate
     % that it also exists in the attestation's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
     % are present in the message.
     case hb_converge:get(hd(hb_converge:keys(Atts)), Atts, #{}) of
-        #{ <<"trusted-keys">> := TKeys } ->
+        #{ <<"trusted-keys">> := RawTKeys } ->
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            TKeys = maps:values(hb_converge:normalize_keys(RawTKeys)),
+            Implicit =
+                case lists:member(<<"ao-types">>, TKeys) of
+                    true -> dev_codec_structured:implicit_keys(Msg);
+                    false -> []
+                end,
             {ok, maps:values(hb_converge:normalize_keys(TKeys))
+                ++ Implicit
                 ++ NestedKeys ++ ?ATTESTED_TAGS};
         _ ->
             % If the key is not repeated, we cannot trust that the message has
@@ -137,9 +144,14 @@ attested(Msg, Req, Opts) ->
             TagKeys = [ hb_converge:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
             % Get the nested keys from the original message.
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            Implicit =
+                case lists:member(<<"ao-types">>, maps:keys(Msg)) of
+                    true -> dev_codec_structured:implicit_keys(Msg);
+                    false -> []
+                end,
             % Return the immediate and nested keys. The `data' field is always
             % attested, so we include it in the list of keys.
-            {ok, TagKeys ++ NestedKeys ++ ?ATTESTED_TAGS};
+            {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?ATTESTED_TAGS};
         _ ->
             ?event({could_not_verify, {msg, MsgLessGivenAtt}}),
             {ok, []}

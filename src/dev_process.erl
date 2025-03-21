@@ -776,13 +776,7 @@ http_wasm_process_by_id_test() ->
         },
         Wallet
     ),
-    {ok, Msg3} =
-        hb_http:post(
-            Node,
-            << ProcID/binary, "/schedule">>,
-            ExecMsg,
-            #{}
-        ),
+    {ok, Msg3} = hb_http:post(Node, << ProcID/binary, "/schedule">>, ExecMsg, #{}),
     ?event({schedule_msg_res, {msg3, Msg3}}),
     {ok, Msg4} =
         hb_http:get(
@@ -843,18 +837,15 @@ aos_state_access_via_http_test_() ->
             port => 10000 + rand:uniform(10000),
             priv_wallet => Wallet,
             cache_control => <<"always">>,
-            store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+            store => #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-mainnet">>
+            },
             force_signed_requests => true
         }),
         Proc = test_aos_process(Opts),
         ProcID = hb_util:human_id(hb_message:id(Proc, all)),
-        {ok, _InitRes} =
-            hb_http:post(
-                Node,
-                << "/schedule" >>,
-                Proc,
-                Opts
-            ),
+        {ok, _InitRes} = hb_http:post(Node, <<"/schedule">>, Proc, Opts),
         Msg2 = hb_message:attest(#{
             <<"data-prefix">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
@@ -868,23 +859,13 @@ aos_state_access_via_http_test_() ->
                     "}})">>,
             <<"target">> => ProcID
         }, Wallet),
-        {ok, Msg3} =
-            hb_http:post(
-                Node,
-                << ProcID/binary, "/schedule">>,
-                Msg2,
-                Opts
-            ),
+        {ok, Msg3} = hb_http:post(Node, << ProcID/binary, "/schedule">>, Msg2, Opts),
         ?event({schedule_msg_res, {msg3, Msg3}}),
         {ok, Msg4} =
             hb_http:get(
                 Node,
                 #{
-                    <<"path">> =>
-                        <<
-                            ProcID/binary,
-                            "/compute/results/outbox/1/data"
-                        >>,
+                    <<"path">> => << ProcID/binary, "/compute/results/outbox/1/data" >>,
                     <<"slot">> => 1
                 },
                 Opts
@@ -893,7 +874,13 @@ aos_state_access_via_http_test_() ->
         ?event(
             {try_yourself,
                 {explicit,
-                    << Node/binary, "/", ProcID/binary, "/compute&slot=1/results/outbox/1/data">>}
+                    <<
+                        Node/binary,
+                        "/",
+                        ProcID/binary,
+                        "/compute&slot=1/results/outbox/1/data"
+                    >>
+                }
             }
         ),
         ?assertMatch(#{ <<"body">> := <<"<h1>Hello, world!</h1>">> }, Msg4),
@@ -904,13 +891,14 @@ aos_state_patch_test_() ->
     {timeout, 30, fun() ->
         Wallet = hb:wallet(),
         init(),
-        Msg1 = test_aos_process(#{}, [
+        Msg1Raw = test_aos_process(#{}, [
             <<"WASI@1.0">>,
             <<"JSON-Iface@1.0">>,
             <<"WASM-64@1.0">>,
             <<"patch@1.0">>,
             <<"Multipass@1.0">>
         ]),
+        {ok, Msg1} = hb_message:with_only_attested(Msg1Raw),
         ProcID = hb_message:id(Msg1),
         Msg2 = (hb_message:attest(#{
             <<"data-prefix">> => <<"ao">>,
