@@ -149,8 +149,8 @@ new_server(RawNodeMsg) ->
             fun prometheus_cowboy2_instrumenter:observe/1,
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
         max_connections => infinity,
-        idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg),
-		max_header_value_length => 1000000 % Testing with a larger value to see if it fixes the issue with the large header value 431 response
+        idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg)
+		% max_header_value_length => 1000000 % Testing with a larger value to see if it fixes the issue with the large header value 431 response
     },
     {ok, Port, Listener} =
         case Protocol = hb_opts:get(protocol, no_proto, NodeMsg) of
