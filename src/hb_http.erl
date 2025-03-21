@@ -456,8 +456,9 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
                 }
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
-    Req3 = cowboy_req:stream_body(EncodedBody, nofin, Req2),
-    {ok, Req3, no_state}.
+    cowboy_req:stream_body(EncodedBody, nofin, Req2),
+    ?event(http, {reply_headers, {explicit, {ok, Req2, no_state}}}),
+    {ok, Req2, no_state}.
 
 %% @doc Add permissive CORS headers to a message, if the message has not already
 %% specified CORS headers.
@@ -649,13 +650,17 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
     case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of
         true ->
             ?event(http_verify, {verified_signature, SignedMsg}),
-            case hb_opts:get(store_all_signed, false, Opts) of
+            Signers = hb_message:signers(SignedMsg),
+            case Signers =/= [] andalso hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
                     hb_cache:write(Msg,
                         Opts#{
                             store =>
-                                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-http">> }
+                                #{
+                                    <<"store-module">> => hb_store_fs,
+                                    <<"prefix">> => <<"cache-http">>
+                                }
                         }
                     );
                 false ->

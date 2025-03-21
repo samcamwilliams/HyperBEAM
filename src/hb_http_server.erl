@@ -19,7 +19,7 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    ?event(http, {start_store, "cache-mainnet"}),
+    ?event(http, {start_store, <<"cache-mainnet">>}),
     Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
     Loaded =
@@ -237,12 +237,14 @@ read_body(Req0, Acc) ->
 
 %% @doc Reply to CORS preflight requests.
 cors_reply(Req, _ServerID) ->
-    cowboy_req:reply(204, #{
+    Req2 = cowboy_req:reply(204, #{
         <<"access-control-allow-origin">> => <<"*">>,
         <<"access-control-allow-headers">> => <<"*">>,
         <<"access-control-allow-methods">> =>
             <<"GET, POST, PUT, DELETE, OPTIONS, PATCH">>
-    }, Req).
+    }, Req),
+    ?event(http_debug, {cors_reply, {req, Req}, {req2, Req2}}),
+    {ok, Req2, no_state}.
 
 %% @doc Handle all non-CORS preflight requests as Converge requests. Execution 
 %% starts by parsing the HTTP request into HyerBEAM's message format, then

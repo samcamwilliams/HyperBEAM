@@ -170,6 +170,8 @@ default_message() ->
                         ]
                 }
             ],
+        % Should we use the latest cached state of a process when computing?
+        process_now_from_cache => false,
         % Should we trust the GraphQL API when converting to ANS-104? Some GQL
         % services do not provide the `anchor' or `last_tx' fields, so their
         % responses are not verifiable.
@@ -182,7 +184,7 @@ default_message() ->
         % Should the node store all signed messages?
         store_all_signed => true,
         % Should the node use persistent processes?
-        process_workers => true
+        process_workers => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
