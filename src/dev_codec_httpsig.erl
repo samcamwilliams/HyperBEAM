@@ -177,11 +177,18 @@ attested(RawMsg, _Req, _Opts) ->
     Signed =
         [<<"signature">>, <<"signature-input">>] ++
             remove_derived_specifiers(BinComponentIdentifiers),
-    case lists:member(<<"content-digest">>, Signed) of
-        false -> {ok, Signed};
+    % Extract the implicit keys from the `ao-types' of the encoded message if
+    % the types key itself was signed.
+    SignedWithImplicit = Signed ++
+        case lists:member(<<"ao-types">>, Signed) of
+            true -> dev_codec_structured:implicit_keys(Msg);
+            false -> []
+        end,
+    case lists:member(<<"content-digest">>, SignedWithImplicit) of
+        false -> {ok, SignedWithImplicit};
         true ->
             {ok,
-                Signed
+                SignedWithImplicit
                     % Body and inline-body-key are always attested if the
                     % content-digest is present.
                     ++ [<<"body">>, <<"inline-body-key">>]

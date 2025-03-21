@@ -108,7 +108,13 @@ attested(Msg = #{ <<"trusted-keys">> := TKeys, <<"attestations">> := Atts }, _Re
     case hb_converge:get(hd(hb_converge:keys(Atts)), Atts, #{}) of
         #{ <<"trusted-keys">> := TKeys } ->
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            Implicit =
+                case lists:member(<<"ao-types">>, TKeys) of
+                    true -> dev_codec_structured:implicit_keys(Msg);
+                    false -> []
+                end,
             {ok, maps:values(hb_converge:normalize_keys(TKeys))
+                ++ Implicit
                 ++ NestedKeys ++ ?ATTESTED_TAGS};
         _ ->
             % If the key is not repeated, we cannot trust that the message has
@@ -137,9 +143,14 @@ attested(Msg, Req, Opts) ->
             TagKeys = [ hb_converge:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
             % Get the nested keys from the original message.
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            Implicit =
+                case lists:member(<<"ao-types">>, maps:keys(Msg)) of
+                    true -> dev_codec_structured:implicit_keys(Msg);
+                    false -> []
+                end,
             % Return the immediate and nested keys. The `data' field is always
             % attested, so we include it in the list of keys.
-            {ok, TagKeys ++ NestedKeys ++ ?ATTESTED_TAGS};
+            {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?ATTESTED_TAGS};
         _ ->
             ?event({could_not_verify, {msg, MsgLessGivenAtt}}),
             {ok, []}
