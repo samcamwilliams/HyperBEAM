@@ -10,38 +10,38 @@
 %%% can be swapped out easily. The default implementation is a file-based
 %%% store.
 
-start(#{ prefix := DataDir }) ->
+start(#{ <<"prefix">> := DataDir }) ->
     ok = filelib:ensure_dir(DataDir).
 
-stop(#{ prefix := _DataDir }) ->
+stop(#{ <<"prefix">> := _DataDir }) ->
     ok.
 
 %% @doc The file-based store is always local, for now. In the future, we may
 %% want to allow that an FS store is shared across a cluster and thus remote.
 scope(_) -> local.
 
-reset(#{ prefix := DataDir }) ->
-    os:cmd("rm -Rf " ++ DataDir),
-    ok = filelib:ensure_dir(DataDir),
+reset(#{ <<"prefix">> := DataDir }) ->
+    % Use pattern that completely removes directory then recreates it
+    os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
     ?event({reset_store, {path, DataDir}}).
 
 %% @doc Read a key from the store, following symlinks as needed.
 read(Opts, Key) ->
     read(add_prefix(Opts, resolve(Opts, Key))).
 read(Path) ->
-    ?event({read, Path}),
-    case file:read_file_info(Path) of
-        {ok, #file_info{type = regular}} ->
-            {ok, _} = file:read_file(Path);
-        _ ->
-            case file:read_link(Path) of
-                {ok, Link} ->
-                    ?event({link_found, Path, Link}),
-                    read(Link);
-                _ ->
-                    not_found
-            end
-    end.
+	?event({read, Path}),
+	case file:read_file_info(Path) of
+		{ok, #file_info{type = regular}} ->
+			{ok, _} = file:read_file(Path);
+		_ ->
+			case file:read_link(Path) of
+				{ok, Link} ->
+					?event({link_found, Path, Link}),
+					read(Link);
+				_ ->
+					not_found
+			end
+	end.
 
 write(Opts, PathComponents, Value) ->
     Path = add_prefix(Opts, PathComponents),
@@ -101,13 +101,13 @@ type(Path) ->
             end
     end.
 
-make_group(#{ prefix := DataDir }, Path) ->
-    P = hb_store:join([DataDir, Path]),
+make_group(Opts = #{ <<"prefix">> := _DataDir }, Path) ->
+    P = add_prefix(Opts, Path),
     ?event({making_group, P}),
     % We need to ensure that the parent directory exists, so that we can
     % make the group.
     filelib:ensure_dir(P),
-    case file:make_dir(P) of
+   case file:make_dir(P) of
         ok -> ok;
         {error, eexist} -> ok
     end.
@@ -115,8 +115,8 @@ make_group(#{ prefix := DataDir }, Path) ->
 make_link(_, Link, Link) -> ok;
 make_link(Opts, Existing, New) ->
     ?event({symlink,
-        add_prefix(Opts, Existing),
-        P2 = add_prefix(Opts, New)}),
+		add_prefix(Opts, Existing),
+		P2 = add_prefix(Opts, New)}),
     filelib:ensure_dir(P2),
     file:make_symlink(
         add_prefix(Opts, Existing),
@@ -124,9 +124,9 @@ make_link(Opts, Existing, New) ->
     ).
 
 %% @doc Add the directory prefix to a path.
-add_prefix(#{ prefix := Prefix }, Path) ->
+add_prefix(#{ <<"prefix">> := Prefix }, Path) ->
     hb_store:join([Prefix, Path]).
 
 %% @doc Remove the directory prefix from a path.
-remove_prefix(#{ prefix := Prefix }, Path) ->
+remove_prefix(#{ <<"prefix">> := Prefix }, Path) ->
     hb_util:remove_common(Path, Prefix).

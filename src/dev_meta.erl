@@ -7,11 +7,22 @@
 %%% resolver. Additionally, a post-processor can be set, which is executed after
 %%% the Converge resolver has returned a result.
 -module(dev_meta).
--export([handle/2, info/3]).
+-export([info/1, info/3, handle/2, adopt_node_message/2]).
 %%% Helper functions for processors
 -export([all_attestors/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Ensure that the helper function `adopt_node_message/2' is not exported.
+%% The naming of this method carefully avoids a clash with the exported `info/3'
+%% function. We would like the node information to be easily accessible via the
+%% `info' endpoint, but Converge also uses `info' as the name of the function
+%% that grants device information. The device call takes two or fewer arguments,
+%% so we are safe to use the name for both purposes in this case, as the user 
+%% info call will match the three-argument version of the function. If in the 
+%% future the `request' is added as an argument to Converge's internal `info'
+%% function, we will need to find a different approach.
+info(_) -> #{ exports => [info] }.
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
@@ -19,14 +30,18 @@
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_tabm_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(http_short, {request, hb_converge:normalize_keys(NormRequest)}),
+    ?event(http, {request, hb_converge:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
-            embed_status(handle_initialize(NormRequest, NodeMsg));
-        true ->
-            handle_converge(RawRequest, NormRequest, NodeMsg);
-        _ ->
-            embed_status({error, <<"`initialized` not found in node message.">>})
+            Res =
+                embed_status(
+                    hb_converge:force_message(
+                        handle_initialize(NormRequest, NodeMsg),
+                        NodeMsg
+                    )
+                ),
+            Res;
+        _ -> handle_converge(RawRequest, NormRequest, NodeMsg)
     end.
 
 handle_initialize([Base = #{ <<"device">> := Device}, Req = #{ <<"path">> := Path }|_], NodeMsg) ->
@@ -49,10 +64,12 @@ info(_, Request, NodeMsg) ->
     case hb_converge:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
             ?event({get_config_req, Request, NodeMsg}),
-            embed_status({ok, filter_node_msg(add_dynamic_keys(NodeMsg))});
+			DynamicKeys = add_dynamic_keys(NodeMsg),	
+			?event(green_zone, {get_config, DynamicKeys}),
+            embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
             case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
-                <<"permanent">> ->
+                permanent ->
                     embed_status(
                         {error,
                             <<"The node message of this machine is already "
@@ -82,9 +99,9 @@ add_dynamic_keys(NodeMsg) ->
         no_viable_wallet ->
             NodeMsg;
         Wallet ->
-            maps:merge(NodeMsg, #{
-                <<"address">> => hb_util:id(ar_wallet:to_address(Wallet))
-            })
+            %% Create a new map with address and merge it (overwriting existing)
+			Address = hb_util:id(ar_wallet:to_address(Wallet)),
+            NodeMsg#{ address => Address, <<"address">> => Address }
     end.
 
 %% @doc Validate that the request is signed by the operator of the node, then
@@ -110,14 +127,50 @@ update_node_message(Request, NodeMsg) ->
             ?event({set_node_message_fail, Request}),
             embed_status({error, <<"Unauthorized">>});
         true ->
-            ?event({set_node_message_success, Request}),
-            MergedOpts = hb_converge:set(NodeMsg, Request, NodeMsg),
+            case adopt_node_message(Request, NodeMsg) of
+                {ok, NewNodeMsg} ->
+                    NewH = hb_opts:get(node_history, [], NewNodeMsg),
+                    embed_status(
+                        {ok,
+                            #{
+                                <<"body">> =>
+                                    iolist_to_binary(
+                                        io_lib:format(
+                                            "Node message updated. History: ~p updates.",
+                                            [length(NewH)]
+                                        )
+                                    ),
+                                <<"history-length">> => length(NewH)
+                            }
+                        }
+                    );
+                {error, Reason} ->
+                    ?event({set_node_message_fail, Request, Reason}),
+                    embed_status({error, Reason})
+            end
+    end.
+
+%% @doc Attempt to adopt changes to a node message.
+adopt_node_message(Request, NodeMsg) ->
+    ?event({set_node_message_success, Request}),
+    MergedOpts =
+        maps:merge(
+            NodeMsg,
+            hb_opts:mimic_default_types(hb_message:unattested(Request), new_atoms)
+        ),
+    % Ensure that the node history is updated and the http_server ID is
+    % not overridden.
+    case hb_opts:get(initialized, permanent, NodeMsg) of
+        permanent ->
+            {error, <<"Node message is already permanent.">>};
+        _ ->
             hb_http_server:set_opts(
                 MergedOpts#{
-                    http_server => hb_opts:get(http_server, no_server, NodeMsg)
+                    http_server => hb_opts:get(http_server, no_server, NodeMsg),
+                    node_history => [Request|hb_opts:get(node_history, [], NodeMsg)]
                 }
             ),
-            embed_status({ok, <<"OK">>})
+            {ok, MergedOpts}
     end.
 
 %% @doc Handle a Converge request, which is a list of messages. We apply
@@ -161,9 +214,9 @@ handle_converge(Req, Msgs, NodeMsg) ->
                 ),
                 NodeMsg
             ),
-            ?event(http_short, {response, Output}),
+            ?event(http, {response, Output}),
             Output;
-        Res -> embed_status(Res)
+        Res -> embed_status(hb_converge:force_message(Res, NodeMsg))
     end.
 
 %% @doc execute a message from the node message upon the user's request.
@@ -299,7 +352,8 @@ unauthorized_set_node_msg_fails_test() ->
             #{}
         ),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})).
+    ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})),
+    ?assertEqual(0, length(hb_converge:get(<<"node_history">>, Res, [], #{}))).
 
 %% @doc Test that we can set the node message if the request is signed by the
 %% owner of the node.
@@ -326,7 +380,8 @@ authorized_set_node_msg_succeeds_test() ->
     ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(1, length(hb_converge:get(<<"node_history">>, Res, [], #{}))).
 
 %% @doc Test that an uninitialized node will not run computation.
 uninitialized_node_test() ->
@@ -377,7 +432,8 @@ permanent_node_message_test() ->
     ?event({set_res, SetRes2}),
     {ok, Res2} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res2}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})),
+    ?assertEqual(1, length(hb_converge:get(<<"node_history">>, Res2, [], #{}))).
 
 %% @doc Test that we can claim the node correctly and set the node message after.
 claim_node_test() ->
@@ -420,7 +476,8 @@ claim_node_test() ->
     ?event({res, SetRes2}),
     {ok, Res2} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res2}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})).
+    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})),
+    ?assertEqual(2, length(hb_converge:get(<<"node_history">>, Res2, [], #{}))).
 
 %% @doc Test that we can use a preprocessor upon a request.
 % preprocessor_test() ->
@@ -473,8 +530,7 @@ modify_request_test() ->
                 }
         }),
     {ok, Res} = hb_http:get(Node, <<"/added">>, #{}),
-    ?event({res, Res}),
-    ?assertEqual(<<"value">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(<<"value">>, Res).
 
 %% @doc Test that we can use a postprocessor upon a request. Calls the `test@1.0'
 %% device's postprocessor, which sets the `postprocessor-called' key to true in

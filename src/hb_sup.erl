@@ -38,7 +38,7 @@ init(Opts) ->
 store_children(Store) when not is_list(Store) ->
     store_children([Store]);
 store_children([]) -> [];
-store_children([RocksDBOpts = {hb_store_rocksdb, _} | Rest]) ->
+store_children([RocksDBOpts = #{ <<"store-module">> := hb_store_rocksdb } | Rest]) ->
     [
         #{
             id => hb_store_rocksdb,

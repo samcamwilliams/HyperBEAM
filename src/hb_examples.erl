@@ -40,7 +40,7 @@ relay_with_payments_test() ->
         ),
     % Relay the message.
     Res = hb_http:get(HostNode, ClientMessage1, #{}),
-    ?assertEqual({error, <<"Insufficient funds">>}, Res),
+    ?assertMatch({error, #{ <<"body">> := <<"Insufficient funds">> }}, Res),
     % Topup the client's balance.
     % Note: The fields must be in the headers, for now.
     TopupMessage =
@@ -110,7 +110,7 @@ paid_wasm_test() ->
             ClientWallet
         ),
     {ok, Res2} = hb_http:get(HostNode, ClientMessage2, #{}),
-    ?assertMatch(40, hb_converge:get(<<"body">>, Res2, #{})).
+    ?assertMatch(40, Res2).
 
 create_schedule_aos2_test_disabled() ->
     % The legacy process format, according to the ao.tn.1 spec:
@@ -170,7 +170,7 @@ create_schedule_aos2_test_disabled() ->
         <<"/~scheduler@1.0/slot?target=", IDNone/binary>>,
         #{}
     ),
-    ?assertMatch(Slot when Slot >= 0, hb_converge:get(<<"current-slot">>, Res2, #{})).
+    ?assertMatch(Slot when Slot >= 0, hb_converge:get(<<"at-slot">>, Res2, #{})).
 
 schedule(ProcMsg, Target) ->
     schedule(ProcMsg, Target, hb:wallet()).

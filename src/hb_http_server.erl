@@ -19,7 +19,7 @@
 %% is used as the source for server configuration settings, as well as the
 %% `Opts' argument to use for all Converge resolution requests downstream.
 start() ->
-    ?event(http, {start_store, "mainnet-cache"}),
+    ?event(http, {start_store, <<"cache-mainnet">>}),
     Store = hb_opts:get(store, no_store, #{}),
     hb_store:start(Store),
     Loaded =
@@ -150,6 +150,7 @@ new_server(RawNodeMsg) ->
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
         max_connections => infinity,
         idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg)
+		% max_header_value_length => 1000000 % Testing with a larger value to see if it fixes the issue with the large header value 431 response
     },
     {ok, Port, Listener} =
         case Protocol = hb_opts:get(protocol, no_proto, NodeMsg) of
@@ -236,12 +237,14 @@ read_body(Req0, Acc) ->
 
 %% @doc Reply to CORS preflight requests.
 cors_reply(Req, _ServerID) ->
-    cowboy_req:reply(204, #{
+    Req2 = cowboy_req:reply(204, #{
         <<"access-control-allow-origin">> => <<"*">>,
         <<"access-control-allow-headers">> => <<"*">>,
         <<"access-control-allow-methods">> =>
             <<"GET, POST, PUT, DELETE, OPTIONS, PATCH">>
-    }, Req).
+    }, Req),
+    ?event(http_debug, {cors_reply, {req, Req}, {req2, Req2}}),
+    {ok, Req2, no_state}.
 
 %% @doc Handle all non-CORS preflight requests as Converge requests. Execution 
 %% starts by parsing the HTTP request into HyerBEAM's message format, then
@@ -259,6 +262,18 @@ handle_request(Req, Body, ServerID) ->
             NodeMsg#{ attestation_device => AttestationCodec },
             ReqSingleton
         ),
+    ?event(http_short,
+        {response,
+            {status, hb_converge:get(<<"status">>, Res, no_status, NodeMsg)},
+            {method, hb_converge:get(<<"method">>, ReqSingleton, no_method, NodeMsg)},
+            {path,
+                {string,
+                    uri_string:percent_decode(
+                    hb_converge:get(<<"path">>, ReqSingleton, <<"[NO PATH]">>, NodeMsg)
+                )}
+            }
+        }
+    ),
     hb_http:reply(Req, ReqSingleton, Res, NodeMsg).
 
 %% @doc Return the list of allowed methods for the HTTP server.
@@ -295,12 +310,9 @@ set_default_opts(Opts) ->
     Store =
         case hb_opts:get(store, no_store, TempOpts) of
             no_store ->
-                {hb_store_fs,
-                    #{
-                        prefix =>
-                            <<"TEST-cache-", (integer_to_binary(Port))/binary>>
-                    }
-                };
+                TestDir = <<"cache-TEST/run-fs-", (integer_to_binary(Port))/binary>>,
+                filelib:ensure_dir(binary_to_list(TestDir)),
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => TestDir };
             PassedStore -> PassedStore
         end,
     ?event({set_default_opts,

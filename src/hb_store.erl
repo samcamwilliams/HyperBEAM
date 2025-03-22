@@ -157,9 +157,9 @@ call_function(X, _Function, _Args) when not is_list(X) ->
     call_function([X], _Function, _Args);
 call_function([], _Function, _Args) ->
     no_viable_store;
-call_function([{Mod, Opts} | Rest], Function, Args) ->
+call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     ?event({calling, Mod, Function, Args}),
-    try apply(Mod, Function, [Opts | Args]) of
+    try apply(Mod, Function, [Store | Args]) of
         not_found ->
             call_function(Rest, Function, Args);
         Result ->
@@ -175,9 +175,9 @@ call_all(X, _Function, _Args) when not is_list(X) ->
     call_all([X], _Function, _Args);
 call_all([], _Function, _Args) ->
     ok;
-call_all([{Mod, Opts} | Rest], Function, Args) ->
+call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
     try
-        apply(Mod, Function, [Opts | Args])
+        apply(Mod, Function, [Store | Args])
     catch
         Class:Reason:Stacktrace ->
             ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
@@ -189,21 +189,32 @@ call_all([{Mod, Opts} | Rest], Function, Args) ->
 
 test_stores() ->
     [
-        {hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }},
-        {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+        #{
+            <<"store-module">> =>
+            hb_store_rocksdb,
+            <<"prefix">> => <<"cache-TEST/rocksdb">>
+        },
+        #{
+            <<"store-module">> =>
+            hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/fs">>
+        }
     ].
 
 generate_test_suite(Suite) ->
     generate_test_suite(Suite, test_stores()).
 generate_test_suite(Suite, Stores) ->
     lists:map(
-        fun(Store = {Mod, _Opts}) ->
+        fun(Store = #{ <<"store-module">> := Mod }) ->
             {foreach,
-                fun() -> hb_store:start(Store) end,
-                fun(_) -> hb_store:reset(Store) end,
+				fun() -> hb_store:start(Store), hb_store:reset(Store) end,
+				fun(_) -> hb_store:reset(Store) end,
                 [
                     {atom_to_list(Mod) ++ ": " ++ Desc,
-                        fun() -> Test(#{ store => Store }) end}
+                        fun() -> 
+                            TestResult = Test(Store),
+                            TestResult
+                        end}
                 ||
                     {Desc, Test} <- Suite
                 ]
@@ -231,7 +242,7 @@ resursive_path_resolution_test(Opts) ->
 
 %% @doc Ensure that we can resolve links through a directory.
 hierarchical_path_resolution_test(Opts) ->
-    Store = hb_opts:get(store, no_viable_store, Opts),
+    Store = Opts,
     hb_store:make_group(Store, <<"test-dir1">>),
     hb_store:write(Store, [<<"test-dir1">>, <<"test-file">>], <<"test-data">>),
     hb_store:make_link(Store, [<<"test-dir1">>], <<"test-link">>),

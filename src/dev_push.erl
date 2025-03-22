@@ -10,16 +10,31 @@
 %% @doc Push either a message or an assigned slot number.
 push(Base, Req, Opts) ->
     ModBase = dev_process:as_process(Base, Opts),
+    ?event(push, {push_base, {base, ModBase}, {req, Req}}, Opts),
     case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
         no_slot ->
-            {ok, Assignment} = initial_push(ModBase, Req, Opts),
-            case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
-                <<"Message">> ->
-                    ?event(push, {pushing_message, {base, ModBase}, {assignment, Assignment}}, Opts),
-                    push_with_mode(ModBase, Assignment, Opts);
-                <<"Process">> ->
-                    ?event(push, {initializing_process, {base, ModBase}, {assignment, Assignment}}, Opts),
-                    {ok, Assignment}
+            case schedule_initial_message(ModBase, Req, Opts) of
+                {ok, Assignment} ->
+                    case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
+                        <<"Message">> ->
+                            ?event(push,
+                                {pushing_message,
+                                    {base, ModBase},
+                                    {assignment, Assignment}
+                                },
+                                Opts
+                            ),
+                            push_with_mode(ModBase, Assignment, Opts);
+                        <<"Process">> ->
+                            ?event(push,
+                                {initializing_process,
+                                    {base, ModBase},
+                                    {assignment, Assignment}},
+                                Opts
+                            ),
+                            {ok, Assignment}
+                    end;
+                {error, Res} -> {error, Res}
             end;
         _ -> push_with_mode(ModBase, Req, Opts)
     end.
@@ -51,27 +66,46 @@ do_push(Base, Assignment, Opts) ->
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
     Result = hb_converge:resolve(
-        Base,
+        {as, <<"process@1.0">>, Base},
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
     case Result of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
-            ?event(push, {done, {slot, Slot}}),
+            ?event(push_short, {push_complete, {process, ID}, {slot, Slot}}),
             {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =
                 maps:map(
-                    fun(Key, MsgToPush) ->
-                        push_result_message(Base, Slot, Key, MsgToPush, Opts)
+                    fun(Key, MsgToPush = #{ <<"target">> := Target }) ->
+                        case hb_cache:read(Target, Opts) of
+                            {ok, PushBase} ->
+                                push_result_message(PushBase, Slot, Key, MsgToPush, Opts);
+                            {error, _} ->
+                                #{
+                                    <<"response">> => <<"error">>,
+                                    <<"status">> => 404,
+                                    <<"target">> => Target,
+                                    <<"reason">> => <<"Could not access target process!">>
+                                }
+                        end;
+                       (Key, Msg) ->
+                            #{
+                                <<"response">> => <<"error">>,
+                                <<"status">> => 422,
+                                <<"outbox-index">> => Key,
+                                <<"reason">> => <<"No target process found.">>,
+                                <<"message">> => Msg
+                            }
                     end,
                     Outbox
                 ),
             {ok, Downstream#{
                 <<"slot">> => Slot,
                 <<"process">> => ID
-            }}
+            }};
+        {Err, Error} when Err == error; Err == failure -> {error, Error}
     end.
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
@@ -88,26 +122,50 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                 },
                 Opts
             ),
-            {ok, Assignment} = schedule_result(Base, MsgToPush, Opts),
-            NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
-            PushedMsgID = hb_converge:get(<<"body/id">>, Assignment, Opts),
-            ?event(push,
-                {push_scheduled_message,
-                    {process, TargetID},
-                    {slot, NextSlotOnProc},
-                    {pushed_msg, PushedMsgID}
-                }),
-            {ok, Downstream} = hb_converge:resolve(
-                TargetID,
-                #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
-                Opts#{ cache_control => <<"always">> }
-            ),
-            #{
-                <<"id">> => PushedMsgID,
-                <<"target">> => TargetID,
-                <<"slot">> => NextSlotOnProc,
-                <<"resulted-in">> => Downstream
-            }
+            case schedule_result(Base, MsgToPush, Opts) of
+                {ok, Assignment} ->
+                    NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
+                    PushedMsg = hb_converge:get(<<"body">>, Assignment, Opts),
+                    PushedMsgID = hb_message:id(PushedMsg, all, Opts),
+                    ?event(push_short,
+                        {pushed_message_to,
+                            {process, TargetID},
+                            {slot, NextSlotOnProc}
+                        }
+                    ),
+                    {ok, TargetBase} = hb_cache:read(TargetID, Opts),
+                    TargetAsProcess = dev_process:ensure_process_key(TargetBase, Opts),
+                    RecvdID = hb_message:id(TargetBase, all),
+                    ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
+                    Resurse = hb_converge:resolve(
+                        {as, <<"process@1.0">>, TargetAsProcess},
+                        #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
+                        Opts#{ cache_control => <<"always">> }
+                    ),
+                    case Resurse of
+                        {ok, Downstream} ->
+                            #{
+                                <<"id">> => PushedMsgID,
+                                <<"target">> => TargetID,
+                                <<"slot">> => NextSlotOnProc,
+                                <<"resulted-in">> => Downstream
+                            };
+                        {error, Error} ->
+                            ?event(push, {push_failed, {error, Error}}, Opts),
+                            #{
+                                <<"response">> => <<"error">>,
+                                <<"target">> => TargetID,
+                                <<"reason">> => Error
+                            }
+                    end;
+                {error, Error} ->
+                    ?event(push, {push_failed, {error, Error}}, Opts),
+                    #{
+                        <<"response">> => <<"error">>,
+                        <<"target">> => TargetID,
+                        <<"reason">> => Error
+                    }
+            end
     end.
 
 %% @doc Augment the message with from-* keys, if it doesn't already have them.
@@ -142,10 +200,16 @@ split_target(RawTarget) ->
     end.
 
 schedule_result(Base, MsgToPush, Opts) ->
+    schedule_result(Base, MsgToPush, <<"httpsig@1.0">>, Opts).
+schedule_result(Base, MsgToPush, Codec, Opts) ->
+    Target = hb_converge:get(<<"target">>, MsgToPush, Opts),
     ?event(push,
         {push_scheduling_result,
-            {target, {explicit, Base}},
-            {msg, MsgToPush}},
+            {target, {string, Target}},
+            {target_process, Base},
+            {msg, MsgToPush},
+            {codec, Codec}
+        },
         Opts
     ),
     SignedReq =
@@ -153,32 +217,63 @@ schedule_result(Base, MsgToPush, Opts) ->
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
             <<"body">> =>
-                hb_message:attest(
-                    MsgToPush,
-                    Opts
+                SignedMsg = hb_message:attest(
+                    additional_keys(Base, MsgToPush, Opts),
+                    Opts,
+                    Codec
                 )
         },
+    ?event(
+        {push_scheduling_result,
+            {signed_req, SignedReq},
+            {verifies, hb_message:verify(SignedMsg, signers)}
+        }
+    ),
     {ErlStatus, Res} =
         hb_converge:resolve(
-            Base,
+            {as, <<"process@1.0">>, Base},
             SignedReq,
             Opts#{ cache_control => <<"always">> }
         ),
     ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}}, Opts),
     case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
-        {ok, 200} -> {ok, Res};
+        {ok, 200} ->
+            {ok, Res};
         {ok, 307} ->
             Location = hb_converge:get(<<"location">>, Res, Opts),
             ?event(push, {redirect, {location, {explicit, Location}}}),
             NormMsg = normalize_message(MsgToPush, Opts),
             SignedNormMsg = hb_message:attest(NormMsg, Opts),
             remote_schedule_result(Location, SignedNormMsg, Opts);
+        {error, 422} ->
+            ?event(push, {received_wrong_format, {422, Res}, {codec, Codec}}, Opts),
+            case Codec of
+                <<"ans104@1.0">> ->
+                    {error, Res};
+                <<"httpsig@1.0">> ->
+                    ?event(push, {downgrading_to_ans104, {422, Res}, {codec, Codec}}, Opts),
+                    schedule_result(Base, MsgToPush, <<"ans104@1.0">>, Opts)
+            end;
         {error, _} ->
             {error, Res}
     end.
 
+%% @doc Set the necessary keys in order for the recipient to know where the
+%% message came from.
+additional_keys(FromMsg, ToSched, Opts) ->
+    hb_converge:set(
+        ToSched,
+        #{
+            <<"Data-Protocol">> => <<"ao">>,
+            <<"Variant">> => <<"ao.N.1">>,
+            <<"Type">> => <<"Message">>,
+            <<"From-Process">> => hb_message:id(FromMsg, all, Opts)
+        },
+        Opts#{ hashpath => ignore }
+    ).
+
 %% @doc Push a message or a process, prior to pushing the resulting slot number.
-initial_push(Base, Req, Opts) ->
+schedule_initial_message(Base, Req, Opts) ->
     ModReq = Req#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
     ?event(push, {initial_push, {base, Base}, {req, ModReq}}, Opts),
     case hb_converge:resolve(Base, ModReq, Opts) of
@@ -189,7 +284,11 @@ initial_push(Base, Req, Opts) ->
                     Location = hb_converge:get(<<"location">>, Res, Opts),
                     remote_schedule_result(Location, Req, Opts)
             end;
+        {error, Res = #{ <<"status">> := 422 }} ->
+            ?event(push, {initial_push_wrong_format, {error, Res}}, Opts),
+            {error, Res};
         {error, Res} ->
+            ?event(push, {initial_push_error, {error, Res}}, Opts),
             {error, Res}
     end.
 
@@ -241,15 +340,37 @@ parse_redirect(Location) ->
 full_push_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        Opts = #{ priv_wallet => hb:wallet() },
-        Msg1 = dev_process:test_aos_process(),
-        ?event(push, {msg1, Msg1}),
+        Opts = #{
+            priv_wallet => hb:wallet(),
+            cache_control => <<"always">>,
+            store => [
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-TEST">>
+                    }
+                }
+            ]
+        },
+        Msg1 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Msg1, Opts),
+        {ok, SchedInit} =
+            hb_converge:resolve(Msg1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Msg1
+            },
+            Opts
+        ),
+        ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
-        ?event(push, {init_sched_result, Msg2}),
+        ?event(push, {msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+        ?event({starting_msg_slot, StartingMsgSlot}),
         Msg3 =
             #{
                 <<"path">> => <<"push">>,
@@ -262,16 +383,34 @@ full_push_test_() ->
         )
     end}.
 
-multi_process_push_test_() ->
+multi_process_push_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Opts = #{
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>
         },
-        Proc1 = dev_process:test_aos_process(),
+        Proc1 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Proc1, Opts),
+        {ok, _SchedInit1} =
+            hb_converge:resolve(Proc1, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Proc1
+            },
+            Opts
+        ),
         {ok, _} = dev_process:schedule_aos_call(Proc1, reply_script()),
-        Proc2 = dev_process:test_aos_process(),
+        Proc2 = dev_process:test_aos_process(Opts),
+        hb_cache:write(Proc2, Opts),
+        {ok, _SchedInit2} =
+            hb_converge:resolve(Proc2, #{
+                <<"method">> => <<"POST">>,
+                <<"path">> => <<"schedule">>,
+                <<"body">> => Proc2
+            },
+            Opts
+        ),
         ProcID1 =
             hb_converge:get(
                 <<"process/id">>,
@@ -314,7 +453,7 @@ multi_process_push_test_() ->
 push_with_redirect_hint_test_disabled() ->
     {timeout, 30, fun() ->
         dev_process:init(),
-        Stores = [{hb_store_fs, #{ prefix => "TEST-cache" }}],
+        Stores = [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }],
         ExtOpts = #{ priv_wallet => ar_wallet:new(), store => Stores },
         LocalOpts = #{ priv_wallet => hb:wallet(), store => Stores },
         ExtScheduler = hb_http_server:start_node(ExtOpts),
@@ -381,6 +520,43 @@ push_with_redirect_hint_test_disabled() ->
         % enough to validate that redirects are pushed through correctly.
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
+
+push_prompts_encoding_change_test() ->
+    dev_process:init(),
+    Opts = #{
+        priv_wallet => hb:wallet(),
+        cache_control => <<"always">>,
+        store =>
+            [
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> },
+                % Include a gateway store so that we can get the legacynet 
+                % process when needed.
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> => #{
+                        <<"store-module">> => hb_store_fs,
+                        <<"prefix">> => <<"cache-TEST">>
+                    }
+                }
+            ]
+    },
+    Msg = hb_message:attest(#{
+        <<"path">> => <<"push">>,
+        <<"method">> => <<"POST">>,
+        <<"target">> => <<"QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0">>,
+        <<"action">> => <<"Eval">>,
+        <<"data">> => <<"print(\"Please ignore!\")">>
+    }, Opts),
+    ?event(push, {msg1, Msg}),
+    Res =
+        hb_converge:resolve_many(
+            [
+                <<"QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0">>,
+                {as, <<"process@1.0">>, <<>>},
+                Msg
+            ],
+            Opts
+        ),
+    ?assertMatch({error, #{ <<"status">> := 422 }}, Res).
 
 %%% Test helpers
 

@@ -10,7 +10,7 @@
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
 -export([to/1, from/1, attest/3, attested/3, verify/3]).
--export([decode_value/2, encode_value/1]).
+-export([decode_value/2, encode_value/1, implicit_keys/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -22,9 +22,10 @@ attested(Msg, Req, Opts) -> dev_codec_httpsig:attested(Msg, Req, Opts).
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;
 from(Msg) when is_map(Msg) ->
+    NormKeysMap = hb_converge:normalize_keys(Msg),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
-            case maps:find(Key, Msg) of
+            case maps:find(Key, NormKeysMap) of
                 {ok, <<>>} ->
                     BinKey = hb_converge:normalize_key(Key),
                     {[{BinKey, <<"empty-binary">>} | Types], Values};
@@ -38,14 +39,18 @@ from(Msg) when is_map(Msg) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Map} when is_map(Map) ->
                     {Types, [{Key, from(Map)} | Values]};
-                {ok, Msgs = [Msg1|_]} when is_map(Msg1) ->
+                {ok, MsgList = [Msg1|_]} when is_map(Msg1) or is_list(Msg1) ->
                     % We have a list of maps. Convert to a numbered map and
                     % recurse.
-                    {Types, [{Key, from(hb_converge:normalize_keys(Msgs))} | Values]};
+                    BinKey = hb_converge:normalize_key(Key),
+                    % Convert the list of maps into a numbered map and recurse
+                    NumberedMap = from(hb_converge:normalize_keys(MsgList)),
+                    {[{BinKey, <<"list">>} | Types], [{BinKey, NumberedMap} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
                         or is_list(Value) or is_float(Value) ->
                     BinKey = hb_converge:normalize_key(Key),
+                    ?event(debug_opts, {encode_value, Value}),
                     {Type, BinValue} = encode_value(Value),
                     {[{BinKey, Type} | Types], [{BinKey, BinValue} | Values]};
                 {ok, {resolve, Operations}} when is_list(Operations) ->
@@ -71,7 +76,7 @@ from(Msg) when is_map(Msg) ->
                 not lists:member(Key, ?REGEN_KEYS) andalso
                     not hb_private:is_private(Key)
             end,
-            hb_util:to_sorted_keys(Msg)
+            hb_util:to_sorted_keys(NormKeysMap)
         )
     ),
     % Encode the AoTypes as a structured dictionary
@@ -87,7 +92,7 @@ from(Msg) when is_map(Msg) ->
                             {Key, Item}
                         end,
                         lists:reverse(T)
-                    )    
+                    )
                 )),
                 [{<<"ao-types">>, AoTypes} | Values]
         end,
@@ -99,12 +104,7 @@ to(Bin) when is_binary(Bin) -> Bin;
 to(TABM0) ->
     Types = case maps:get(<<"ao-types">>, TABM0, <<>>) of
         <<>> -> #{};
-        Bin -> maps:from_list(
-            lists:map(
-                fun({Key, {item, {_, Value}, _}}) -> {Key, Value} end,
-                hb_structured_fields:parse_dictionary(Bin)    
-            )
-        )
+        Bin -> parse_ao_types(Bin)
     end,
     % "empty values" will each have a type, but no corresponding value
     % (because its empty)
@@ -138,7 +138,21 @@ to(TABM0) ->
                     Acc#{ RawKey => Decoded }
             end;
         (RawKey, ChildTABM, Acc) when is_map(ChildTABM) ->
-            Acc#{ RawKey => to(ChildTABM)};
+            % Decode the child TABM
+            ChildDecoded = to(ChildTABM),
+            Acc#{
+                RawKey =>
+                    case maps:find(RawKey, Types) of
+                        error ->
+                            % The value is a map, so we return it as is
+                            ChildDecoded;
+                        {ok, <<"list">>} ->
+                            % The child is a list of maps, so we need to convert the
+                            % map into a list, while maintaining the correct order
+                            % of the keys
+                            hb_util:message_to_ordered_list(ChildDecoded)
+                    end
+            };
         (RawKey, Value, Acc) ->
             % We encountered a key that already has a converted type.
             % We can just return it as is.
@@ -147,6 +161,29 @@ to(TABM0) ->
         TABM1,
         TABM0
     )).
+
+%% @doc Parse the `ao-types' field of a TABM and return a map of keys and their
+%% types
+parse_ao_types(Msg) when is_map(Msg) ->
+    parse_ao_types(maps:get(<<"ao-types">>, Msg, <<>>));
+parse_ao_types(Bin) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, {item, {_, Value}, _}}) -> {Key, Value} end,
+            hb_structured_fields:parse_dictionary(Bin)    
+        )
+    ).
+
+%% @doc Find the implicit keys of a TABM.
+implicit_keys(Req) ->
+    maps:keys(
+        maps:filtermap(
+            fun(_Key, Val = <<"empty-", _/binary>>) -> {true, Val};
+            (_Key, _Val) -> false
+            end,
+            parse_ao_types(Req)
+        )
+    ).
 
 %% @doc Convert a term to a binary representation, emitting its type for
 %% serialization as a separate tag.
@@ -207,7 +244,7 @@ decode_value(integer, Value) ->
 decode_value(float, Value) ->
     binary_to_float(Value);
 decode_value(atom, Value) ->
-    {item, {string, AtomString}, _} =
+    {item, {_, AtomString}, _} =
         hb_structured_fields:parse_item(Value),
     binary_to_existing_atom(AtomString);
 decode_value(list, Value) ->

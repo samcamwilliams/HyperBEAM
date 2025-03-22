@@ -126,7 +126,7 @@ start_mainnet(Opts) ->
     hb_http_server:start_node(
         FinalOpts =
             BaseOpts#{
-                store => {hb_store_fs, #{ prefix => "mainnet-cache" }},
+                store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
                 priv_wallet => Wallet
             }
     ),

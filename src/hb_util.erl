@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
+-export([number/1, list_to_numbered_map/1, message_to_ordered_list/1]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
@@ -54,6 +54,8 @@ bin(Value) when is_integer(Value) ->
     integer_to_binary(Value);
 bin(Value) when is_float(Value) ->
     float_to_binary(Value, [{decimals, 10}, compact]);
+bin(Value) when is_list(Value) ->
+    list_to_binary(Value);
 bin(Value) when is_binary(Value) ->
     Value.
 
@@ -218,25 +220,31 @@ list_to_numbered_map(List) ->
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer and a value. Optionally, it takes a
 %% standard map of HyperBEAM runtime options.
-message_to_numbered_list(Message) ->
-    message_to_numbered_list(Message, #{}).
-message_to_numbered_list(Message, Opts) ->
-    {ok, Keys} = hb_converge:keys(Message, Opts),
-    KeyValList =
-        lists:filtermap(
-            fun(Key) ->
-                case string:to_integer(Key) of
-                    {Int, ""} ->
-                        {
-                            true,
-                            {Int, hb_converge:get(Key, Message, Opts)}
-                        };
-                    _ -> false
-                end
-            end,
-            Keys
-        ),
-    lists:sort(KeyValList).
+message_to_ordered_list(Message) ->
+    message_to_ordered_list(Message, #{}).
+message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
+    [];
+message_to_ordered_list(Message, Opts) ->
+    Keys = hb_converge:keys(Message, Opts),
+    IntKeys = lists:map(fun int/1, Keys),
+    message_to_ordered_list(Message, IntKeys, lists:min(IntKeys), Opts).
+message_to_ordered_list(_Message, [], _Key, _Opts) ->
+    [];
+message_to_ordered_list(Message, Keys, Key, Opts) ->
+    case hb_converge:get(Key, Message, Opts#{ hashpath => ignore }) of
+        undefined -> throw({missing_key, Key, {remaining_keys, Keys}});
+        Value ->
+            [
+                Value
+            |
+                message_to_ordered_list(
+                    Message,
+                    lists:delete(Key, Keys),
+                    Key + 1,
+                    Opts
+                )
+            ]
+    end.
 
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
@@ -344,7 +352,7 @@ do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
 do_debug_fmt({explicit, X}, Indent) ->
     format_indented("[Explicit:] ~p", [X], Indent);
 do_debug_fmt({string, X}, Indent) ->
-    format_indented("[String:] ~s", [X], Indent);
+    format_indented("~s", [X], Indent);
 do_debug_fmt({as, undefined, Msg}, Indent) ->
     "\n" ++ format_indented("Subresolve => ", [], Indent) ++
         format_maybe_multiline(Msg, Indent + 1);
@@ -388,7 +396,7 @@ do_debug_fmt(MsgList, Indent) when is_list(MsgList) ->
         format_indented("List [~w] {~n", [length(MsgList)], Indent+1) ++
         lists:map(
             fun({N, Msg}) ->
-                format_indented("~w => ~s~n",
+                format_indented("~w => ~n~s~n",
                     [N, debug_fmt(Msg, Indent + 3)],
                     Indent + 2
                 )

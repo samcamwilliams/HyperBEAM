@@ -105,11 +105,24 @@ id(Msg, _Params, _Opts) ->
     ?event({calculating_id, {msg, Msg}}),
     case find_id(Msg) of
         {ok, ID} -> {ok, ID};
-        _ ->
-            {ok, ResetMsg} = reset_hmac(Msg),
-            {ok, ID} = find_id(ResetMsg),
+        {not_found, MsgToID} ->
+            {ok, MsgAfterReset} = reset_hmac(MsgToID),
+            {ok, ID} = find_id(MsgAfterReset),
             {ok, ID}
     end.
+
+%% @doc Find the ID of the message, which is the hmac of the fields referenced in
+%% the signature and signature input. If the message already has a signature-input,
+%% directly, it is treated differently: We relabel the 
+find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
+    {ok, ID};
+find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }) ->
+    {not_found, (maps:without([<<"signature-input">>], AttMsg))#{
+        <<"user-signature-input">> => UserSigInput
+    }};
+find_id(Msg) ->
+    ?event(debug, {no_id, Msg}),
+    {not_found, Msg}.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 attest(MsgToSign, _Req, Opts) ->
@@ -164,7 +177,8 @@ attest(MsgToSign, _Req, Opts) ->
 %% @doc Return the list of attested keys from a message. The message will have
 %% had the `attestations` key removed and the signature inputs added to the
 %% root. Subsequently, we can parse that to get the list of attested keys.
-attested(Msg, _Req, _Opts) ->
+attested(RawMsg, _Req, _Opts) ->
+    Msg = to(RawMsg),
     [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
         maps:get(<<"signature-input">>, Msg)
     ),
@@ -176,12 +190,29 @@ attested(Msg, _Req, _Opts) ->
     Signed =
         [<<"signature">>, <<"signature-input">>] ++
             remove_derived_specifiers(BinComponentIdentifiers),
-    case lists:member(<<"content-digest">>, Signed) of
-        false -> {ok, Signed};
+    % Extract the implicit keys from the `ao-types' of the encoded message if
+    % the types key itself was signed.
+    SignedWithImplicit = Signed ++
+        case lists:member(<<"ao-types">>, Signed) of
+            true -> dev_codec_structured:implicit_keys(Msg);
+            false -> []
+        end,
+    case lists:member(<<"content-digest">>, SignedWithImplicit) of
+        false -> {ok, SignedWithImplicit};
         true ->
             {ok,
-                Signed
-                    ++ [<<"body">>]
+                SignedWithImplicit
+                    % Body and inline-body-key are always attested if the
+                    % content-digest is present.
+                    ++ [<<"body">>, <<"inline-body-key">>]
+                    % If the inline-body-key is present, add it to the list of
+                    % attested keys.
+                    ++ case maps:get(<<"inline-body-key">>, Msg, []) of
+                        [] -> [];
+                        InlineBodyKey -> [InlineBodyKey]
+                    end
+                    % If the body-keys are present, add them to the list of
+                    % attested keys.
                     ++ case maps:get(<<"body-keys">>, Msg, []) of
                         [] -> [];
                         BodyKeys ->
@@ -220,7 +251,7 @@ add_content_digest(Msg) ->
         Body ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
-            ?event({add_content_digest, {body, Body}, {msg, Msg}}),
+            ?event(content_digest, {add_content_digest, {string, Body}}),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(hb_structured_fields:dictionary(
@@ -239,12 +270,6 @@ address_to_sig_name(Address) when ?IS_ID(Address) ->
     <<"http-sig-", (hb_util:to_hex(binary:part(hb_util:native_id(Address), 1, 8)))/binary>>;
 address_to_sig_name(OtherRef) ->
     OtherRef.
-
-%% @doc Find the ID of the message, which is the hmac of the signature and signature input.
-find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
-    {ok, ID};
-find_id(_) ->
-    {error, no_id}.
 
 %%@doc Ensure that the attestations and hmac are properly encoded
 reset_hmac(RawMsg) ->
@@ -283,6 +308,7 @@ reset_hmac(RawMsg) ->
             maps:to_list(Attestations)
         )),
     FlatInputs = lists:flatten(maps:values(AllInputs)),
+    ?event(debug, {hmac_inputs_should_be, FlatInputs}),
     HMacSigInfo =
         case FlatInputs of
             [] -> #{};
@@ -293,6 +319,7 @@ reset_hmac(RawMsg) ->
                     bin(hb_structured_fields:dictionary(AllInputs))
             }
         end,
+    ?event(debug, {pre_hmac_sig_input, {string, maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
     HMacInputMsg = maps:merge(Msg, HMacSigInfo),
     {ok, ID} = hmac(HMacInputMsg),
     Res = {
@@ -321,15 +348,33 @@ sig_name_from_dict(DictBin) ->
 hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
-    EncodedMsg = to(maps:without([<<"attestations">>, <<"body-keys">>], Msg)),
+    EncodedMsg =
+        maps:without(
+            [<<"body-keys">>],
+            to(maps:without([<<"attestations">>, <<"body-keys">>], Msg))
+        ),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
-    ?event(hmac, {msg_before_hmac, MsgWithContentDigest}),
+    % Find the keys to use for the hmac. These should be set by the signature
+    % input, but if that is not present, then use all the keys from the encoded
+    % message.
+    HMacKeys =
+        case maps:get(<<"signature-input">>, Msg, none) of
+            none -> 
+                ?event(debug_ids, no_sig_input_found),
+                maps:keys(MsgWithContentDigest);
+            SigInput ->
+                ?event(debug_ids, sig_input_found),
+                [{_, {list, Items, _}}|_]
+                    = hb_structured_fields:parse_dictionary(SigInput),
+                ?event(debug, {parsed_sig_input_dict, {explicit, Items}}),
+                [ Name || {item, {_, Name}, _} <- Items ]
+        end,
+    HMACSpecifiers = normalize_component_identifiers(HMacKeys),
     % Generate the signature base
     {_, SignatureBase} = signature_base(
         #{
-            component_identifiers => 
-                add_derived_specifiers(lists:sort(maps:keys(MsgWithContentDigest))),
+            component_identifiers => HMACSpecifiers,
             sig_params => #{
                 keyid => <<"ao">>,
                 alg => <<"hmac-sha256">>
@@ -338,8 +383,10 @@ hmac(Msg) ->
         #{},
         MsgWithContentDigest
     ),
-    ?event(signature_base, {signature_base, {string, SignatureBase}}),
+    ?event({hmac_keys, {explicit, HMacKeys}}),
+    ?event(hmac_base, {hmac_base, {string, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
+    ?event({hmac_result, {string, hb_util:human_id(HMacValue)}}),
     {ok, HMacValue}.
 
 %% @doc Verify different forms of httpsig attested messages. `dev_message:verify'
@@ -351,7 +398,7 @@ verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
     {ok, Recalculated} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
     case find_id(Recalculated) of
-        {error, no_id} -> {error, could_not_calculate_id};
+        {not_found, _} -> {error, could_not_calculate_id};
         {ok, ExpectedID} ->
             ?event({hmac_verified, {id, ExpectedID}}),
             {ok, true};
@@ -450,9 +497,20 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 		key_pair => KeyPair
 	}.
 
+%% @doc Takes a list of keys that will be used in the signature inputs and 
+%% ensures that they have deterministic sorting, as well as the coorect
+%% component identifiers if applicable.
+normalize_component_identifiers(ComponentIdentifiers) ->
+    Stripped =
+        lists:map(
+            fun(<<"@", Key/binary>>) -> Key; (Key) -> Key end,
+            ComponentIdentifiers
+        ),
+    lists:sort(add_derived_specifiers(Stripped)).
+
 %% @doc Normalize key parameters to ensure their names are correct.
 add_derived_specifiers(ComponentIdentifiers) ->
-    Res = lists:flatten(
+    lists:flatten(
         lists:map(
             fun(Key) ->
                 case lists:member(Key, ?DERIVED_COMPONENTS) of
@@ -462,8 +520,7 @@ add_derived_specifiers(ComponentIdentifiers) ->
             end,
             ComponentIdentifiers
         )
-    ),
-    Res.
+    ).
 
 %% @doc Remove derived specifiers from a list of component identifiers.
 remove_derived_specifiers(ComponentIdentifiers) ->
@@ -484,7 +541,8 @@ sign_auth(Authority, Req, Res) ->
 	{SignatureInput, SignatureBase} =
         signature_base(AuthorityWithSigParams, Req, Res),
     % Now perform the actual signing
-    ?event({signing, {signature_base, hb_util:encode(hb_crypto:sha256(SignatureBase))}}),
+    ?event(signing_base,
+        {signature_base_for_signing, {string, SignatureBase}}),
 	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
 	{ok, {SignatureInput, Signature}}.
 
@@ -556,6 +614,8 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % Construct the signature base using the parsed parameters
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
             {_, SignatureBase} = signature_base(Authority, Req, Res),
+            ?event(signing_base,
+                {signature_base_for_verification, {string, SignatureBase}}),
             {_Priv, Pub} = maps:get(key_pair, Authority),
             % Now verify the signature base signed with the provided key matches
             % the signature
@@ -584,7 +644,7 @@ signature_base(Authority, Req, Res) when is_map(Authority) ->
             ComponentIdentifiers,
             maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
-    ?event({signature_base, {string, SignatureBase}}),
+    ?event(signature_base, {signature_base, {string, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
 
 join_signature_base(ComponentsLine, ParamsLine) ->
@@ -1119,6 +1179,49 @@ trim_ws_end(Value, N) ->
 %%% TESTS
 %%%
 
+%%% Integration Tests
+
+%% @doc Ensure that we can validate a signature on an extremely large and complex
+%% message that is sent over HTTP, signed with the codec.
+validate_large_message_from_http_test() ->
+    Node = hb_http_server:start_node(#{
+        force_signed => true,
+        attestation_device => <<"httpsig@1.0">>,
+        extra =>
+            [
+                [
+                    [
+                        #{
+                            <<"n">> => N,
+                            <<"m">> => M,
+                            <<"o">> => O
+                        }
+                    ||
+                        O <- lists:seq(1, 3)
+                    ]
+                ||
+                    M <- lists:seq(1, 3)
+                ]
+            ||
+                N <- lists:seq(1, 3)
+            ]
+    }),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
+    Signers = hb_message:signers(Res),
+    ?event(debug, {received, {signers, Signers}, {res, Res}}),
+    ?assert(length(Signers) == 1),
+    ?assert(hb_message:verify(Res, Signers)),
+    ?event(debug, {sig_verifies, Signers}),
+    ?assert(hb_message:verify(Res, [<<"hmac-sha256">>])),
+    ?event(debug, {hmac_verifies, <<"hmac-sha256">>}),
+    {ok, OnlyAttested} = hb_message:with_only_attested(Res),
+    ?event(debug, {msg_with_only_attested, OnlyAttested}),
+    ?assert(hb_message:verify(OnlyAttested, Signers)),
+    ?event(debug, {msg_with_only_attested_verifies, Signers}),
+    ?assert(hb_message:verify(OnlyAttested, [<<"hmac-sha256">>])),
+    ?event(debug, {msg_with_only_attested_verifies_hmac, <<"hmac-sha256">>}).
+
+%%% Unit Tests
 trim_ws_test() ->
 	?assertEqual(<<"hello world">>, trim_ws(<<"      hello world      ">>)),
 	?assertEqual(<<>>, trim_ws(<<"">>)),

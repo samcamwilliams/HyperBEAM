@@ -137,7 +137,7 @@ hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
             hashpath(Msg1, hb_util:human_id(Msg2ID), HashpathAlg, Opts)
     end;
 hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, _Opts) ->
-    ?event(test, {hashpath, {msg1hp, {explicit, Msg1Hashpath}}, {msg2id, {explicit, HumanMsg2ID}}}),
+    ?event({hashpath, {msg1hp, {explicit, Msg1Hashpath}}, {msg2id, {explicit, HumanMsg2ID}}}),
     HP = 
         case term_to_path_parts(Msg1Hashpath) of
             [_] ->

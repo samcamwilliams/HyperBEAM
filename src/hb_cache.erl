@@ -60,12 +60,15 @@ list(Path, Store) ->
 write(RawMsg, Opts) ->
     % Use the _structured_ format for calculating alternative IDs, but the
     % _tabm_ format for writing to the store.
-    case hb_message:with_only_attested(RawMsg) of
+    case hb_message:with_only_attested(RawMsg, Opts) of
         {ok, Msg} ->
-            ?event({storing, Msg}),
+            AltIDs = calculate_alt_ids(RawMsg, Opts),
+            ?event({writing_full_message, {alt_ids, AltIDs}, {msg, Msg}}),
+            Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
+            ?event({tabm, Tabm}),
             do_write_message(
-                hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
-                calculate_alt_ids(RawMsg, Opts),
+                Tabm,
+                AltIDs,
                 hb_opts:get(store, no_viable_store, Opts),
                 Opts
             );
@@ -81,7 +84,7 @@ do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
 do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     % Get the ID of the unsigned message.
     {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
-    ?event({writing_message_with_unsigned_id, UnattestedID}),
+    ?event({writing_message_with_unsigned_id, UnattestedID, {alts, AltIDs}}),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
     hb_store:make_group(Store, UnattestedID),
     % Write the keys of the message into the store, rolling the keys into
@@ -91,6 +94,7 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     hb_store:make_group(Store, UnattestedID),
     maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
+            ?event(error, {request_to_write_device_map, {id, hb_message:id(Map)}}),
             throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
         (Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
@@ -122,6 +126,10 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     % unattested message.
     lists:map(
         fun(AltID) ->
+            ?event({linking_attestation,
+                {unattested_id, UnattestedID},
+                {attested_id, AltID}
+            }),
             hb_store:make_link(Store, UnattestedID, AltID)
         end,
         AltIDs
@@ -130,17 +138,21 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
 
 %% @doc Calculate the alternative IDs for a message.
 calculate_alt_ids(Bin, _Opts) when is_binary(Bin) -> [];
-calculate_alt_ids(Msg, Opts) ->
-    Attestors = maps:keys(maps:get(<<"attestors">>, Msg, #{})),
-    lists:map(
+calculate_alt_ids(Msg, _Opts) ->
+    Attestations =
+        maps:without(
+            [<<"priv">>],
+            maps:get(<<"attestations">>, Msg, #{})
+        ),
+    lists:filtermap(
         fun(Attestor) ->
-            hb_converge:get(
-                [<<"attestations">>, Attestor, <<"id">>],
-                Msg,
-                Opts
-            )
+            Att = maps:get(Attestor, Attestations, #{}),
+            case maps:get(<<"id">>, Att, undefined) of
+                undefined -> false;
+                ID -> {true, ID}
+            end
         end,
-        Attestors
+        maps:keys(Attestations)
     ).
 
 %% @doc Write a hashpath and its message to the store and link it.
@@ -163,15 +175,15 @@ write_binary(Hashpath, Bin, Store, Opts) ->
     {ok, Path} = do_write_message(Bin, [Hashpath], Store, Opts),
     {ok, Path}.
 
-%% @doc Read the message at a path. Returns in 'structured@1.0' format: Either a
+%% @doc Read the message at a path. Returns in `structured@1.0' format: Either a
 %% richly typed map or a direct binary.
 read(Path, Opts) ->
     case store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts) of
         not_found -> not_found;
         {ok, Res} ->
-            ?event({read_encoded_message, Res}),
+            ?event({applying_types_to_read_message, Res}),
             Structured = dev_codec_structured:to(Res),
-            ?event({read_structured_message, Structured}),
+            ?event({finished_read, Structured}),
             {ok, Structured}
     end.
 
@@ -298,6 +310,21 @@ test_store_simple_unsigned_message(Opts) ->
     ?assert(hb_message:match(Item, RetrievedItem)),
     ok.
 
+test_store_ans104_message(Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:reset(Store),
+    Item = #{ <<"type">> => <<"ANS104">>, <<"content">> => <<"Hello, world!">> },
+    Attested = hb_message:attest(Item, hb:wallet()),
+    {ok, _Path} = write(Attested, Opts),
+    AttestedID = hb_util:human_id(hb_message:id(Attested, all)),
+    UnattestedID = hb_util:human_id(hb_message:id(Attested, none)),
+    ?event({test_message_ids, {unattested, UnattestedID}, {attested, AttestedID}}),
+    {ok, RetrievedItem} = read(AttestedID, Opts),
+    {ok, RetrievedItemU} = read(UnattestedID, Opts),
+    ?assert(hb_message:match(Attested, RetrievedItem)),
+    ?assert(hb_message:match(Attested, RetrievedItemU)),
+    ok.
+
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_signed_message(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
@@ -352,6 +379,7 @@ test_deeply_nested_complex_message(Opts) ->
     ?event({string, <<"================================================">>}),
     {ok, AttestedID} = dev_message:id(Outer, #{ <<"attestors">> => [Address] }, Opts),
     ?event({string, <<"================================================">>}),
+    ?event({test_message_ids, {unattested, UID}, {attested, AttestedID}}),
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
@@ -399,7 +427,8 @@ cache_suite_test_() ->
 %% be written, it would cause an infinite loop.
 test_device_map_cannot_be_written_test() ->
     try
-        Opts = #{ store => StoreOpts = [{hb_store_fs,#{prefix => "debug-cache"}}] },
+        Opts = #{ store => StoreOpts =
+            [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }] },
         hb_store:reset(StoreOpts),
         Danger = #{ <<"device">> => #{}},
         write(Danger, Opts),
@@ -409,5 +438,7 @@ test_device_map_cannot_be_written_test() ->
     end.
 
 run_test() ->
-    Opts = #{ store => [{hb_store_fs,#{prefix => "debug-cache"}}]},
-    test_deeply_nested_complex_message(Opts).
+    Opts = #{ store => StoreOpts = 
+        [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
+    test_store_ans104_message(Opts),
+    hb_store:reset(StoreOpts).

@@ -8,7 +8,7 @@
 %%% module will be deprecated.
 -module(hb_gateway_client).
 %% @doc Raw access primitives:
--export([read/2, data/2]).
+-export([read/2, data/2, result_to_message/2]).
 %% @doc Application-specific data access functions:
 -export([scheduler_location/2]).
 -include_lib("include/hb.hrl").
@@ -45,7 +45,7 @@ read(ID, Opts) ->
                 >>,
             <<"variables">> =>
                 #{
-                    <<"transactionIds">> => [ID]
+                    <<"transactionIds">> => [hb_util:human_id(ID)]
                 }
         },
     case query(Query, Opts) of
@@ -156,25 +156,44 @@ query(Query, Opts) ->
 
 %% @doc Takes a GraphQL item node, matches it with the appropriate data from a
 %% gateway, then returns `{ok, ParsedMsg}`.
+result_to_message(Item, Opts) ->
+    case hb_converge:get(<<"id">>, Item, Opts) of
+        ExpectedID when is_binary(ExpectedID) ->
+            result_to_message(ExpectedID, Item, Opts);
+        _ ->
+            result_to_message(undefined, Item, Opts)
+    end.
 result_to_message(ExpectedID, Item, Opts) ->
-    % We have the headers, so we can get the data.
-    {ok, Data} = data(ExpectedID, Opts),
-    ?event(gateway, {data, {id, ExpectedID}, {data, Data}}, Opts),
-    % Convert the response to an ANS-104 message.
     GQLOpts = Opts#{ hashpath => ignore },
+    % We have the headers, so we can get the data.
+    Data =
+        case hb_converge:get(<<"data">>, Item, GQLOpts) of
+            BinData when is_binary(BinData) -> BinData;
+            _ ->
+                {ok, Bytes} = data(ExpectedID, Opts),
+                Bytes
+        end,
+    DataSize = byte_size(Data),
+    ?event(gateway, {data, {id, ExpectedID}, {data, Data}, {item, Item}}, Opts),
+    % Convert the response to an ANS-104 message.
+    Tags = hb_converge:get(<<"tags">>, Item, GQLOpts),
     TX =
         #tx {
             format = ans104,
             id = hb_util:decode(ExpectedID),
-            last_tx =
-                hb_util:decode(hb_converge:get(<<"anchor">>,
-                    Item, GQLOpts)),
+            last_tx = normalize_null(hb_converge:get(<<"anchor">>, Item, GQLOpts)),
             signature =
-                hb_util:decode(hb_converge:get(<<"signature">>,
-                    Item, GQLOpts)),
+                hb_util:decode(hb_converge:get(<<"signature">>, Item, GQLOpts)),
             target =
-                hb_util:decode(hb_converge:get(<<"recipient">>,
-                    Item, GQLOpts)),
+                decode_or_null(
+                    hb_converge:get_first(
+                        [
+                            {Item, <<"recipient">>},
+                            {Item, <<"target">>}
+                        ],
+                        GQLOpts
+                    )
+                ),
             owner =
                 hb_util:decode(hb_converge:get(<<"owner/key">>,
                     Item, GQLOpts)),
@@ -182,13 +201,9 @@ result_to_message(ExpectedID, Item, Opts) ->
                 [
                     {Name, Value}
                 ||
-                    #{<<"name">> := Name, <<"value">> := Value}
-                        <- hb_converge:get(<<"tags">>, Item, GQLOpts)
+                    #{<<"name">> := Name, <<"value">> := Value} <- Tags
                 ],
-            data_size =
-                hb_util:int(hb_converge:get(<<"data/size">>,
-                    Item, GQLOpts)
-                ),
+            data_size = DataSize,
             data = Data
         },
     ?event({raw_ans104, TX}),
@@ -196,8 +211,61 @@ result_to_message(ExpectedID, Item, Opts) ->
     TABM = dev_codec_ans104:from(TX),
     ?event({decoded_tabm, TABM}),
     Structured = dev_codec_structured:to(TABM),
-    ?event({encoded_structured, Structured}),
-    {ok, Structured}.
+    % Some graphql nodes do not grant the `anchor' or `last_tx' fields, so we
+    % verify the data item and optionally add the explicit keys as attested
+    % fields _if_ the node desires it.
+    Embedded =
+        case ar_bundles:verify_item(TX) of
+            true ->
+                ?event({gql_verify_succeeded, Structured}),
+                Structured;
+            _ ->
+                % The item does not verify on its own, but does the node choose
+                % to trust the GraphQL API anyway?
+                case hb_opts:get(ans104_trust_gql, false, Opts) of
+                    false ->
+                        ?event(warning, {gql_verify_failed, returning_unverifiable_tx}),
+                        Structured;
+                    true ->
+                        % The node trusts the GraphQL API, so we add the explicit
+                        % keys as attested fields.
+                        ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
+                        Atts = maps:get(<<"attestations">>, Structured),
+                        AttName = hd(maps:keys(Atts)),
+                        Att = maps:get(AttName, Atts),
+                        Structured#{
+                            <<"attestations">> => #{
+                                AttName =>
+                                    Att#{
+                                        <<"trusted-keys">> =>
+                                            hb_converge:normalize_keys([
+                                                    hb_converge:normalize_key(Name)
+                                                ||
+                                                    #{ <<"name">> := Name } <-
+                                                        maps:values(
+                                                            hb_converge:normalize_keys(Tags)
+                                                        )
+                                                ]
+                                            )
+                                    }
+                            }
+                        }
+                end
+        end,
+    {ok, Embedded}.
+
+normalize_null(null) -> <<>>;
+normalize_null(Bin) when is_binary(Bin) -> Bin.
+
+decode_id_or_null(Bin) when byte_size(Bin) > 0 ->
+    hb_util:human_id(Bin);
+decode_id_or_null(_) ->
+    <<>>.
+
+decode_or_null(Bin) when is_binary(Bin) ->
+    hb_util:decode(Bin);
+decode_or_null(_) ->
+    <<>>.
 
 %%% Tests
 ans104_no_data_item_test() ->

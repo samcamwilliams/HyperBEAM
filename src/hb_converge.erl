@@ -94,6 +94,7 @@
 -export([resolve/2, resolve/3, resolve_many/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 -export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
+-export([force_message/2]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
@@ -179,6 +180,9 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
             Res
     end.
 
+resolve_stage(1, {as, DevID, ID}, Msg2, Opts) when ?IS_ID(ID) ->
+    % Normalize `as' requests with a raw ID as the path.
+    resolve_stage(1, {as, DevID, #{ <<"path">> => ID }}, Msg2, Opts);
 resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Msg2, Opts) when ?IS_ID(ID) ->
     % If the first message is an `as' with an ID, we should load the message and
     % apply the non-path elements of the sub-request to it.
@@ -196,7 +200,7 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
     % Set the device of the message to the specified one and resolve the sub-path.
     % As this is the first message, we will then continue to execute the request
     % on the result.
-    ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}}, Opts),
+    ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
     case subresolve(#{}, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
@@ -676,17 +680,31 @@ error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) -
     end.
 
 %% @doc Force the result of a device call into a message if the result is not
-%% requested by the `Opts'.
+%% requested by the `Opts'. If the result is a literal, we wrap it in a message
+%% and signal the location of the result inside. We also similarly handle ao-result
+%% when the result is a single value and an explicit status code.
 maybe_force_message({Status, Res}, Opts) ->
-    case hb_opts:get(force_message, false, Opts) and not is_map(Res) of
-        true when is_list(Res) -> {Status, normalize_keys(Res)};
-        true ->
-            % If the result is a literal, we wrap it in a message and signal the
-            % location of the result inside.
-            {Status, #{ <<"converge-result">> => <<"body">>, <<"body">> => Res }};
-        false ->
-            {Status, Res}
+    case hb_opts:get(force_message, false, Opts) of
+        true -> force_message({Status, Res}, Opts);
+        false -> {Status, Res}
     end.
+
+force_message({Status, Res}, Opts) when is_list(Res) ->
+    force_message({Status, normalize_keys(Res)}, Opts);
+force_message({Status, Literal}, _Opts) when not is_map(Literal) ->
+    ?event({force_message_from_literal, Literal}),
+    {Status, #{ <<"ao-result">> => <<"body">>, <<"body">> => Literal }};
+force_message({Status, M = #{ <<"status">> := Status, <<"body">> := Body }}, _Opts)
+        when map_size(M) == 2 ->
+    ?event({force_message_from_literal_with_status, M}),
+    {Status, #{
+        <<"status">> => Status,
+        <<"ao-result">> => <<"body">>,
+        <<"body">> => Body
+    }};
+force_message({Status, Map}, _Opts) ->
+    ?event({force_message_from_map, Map}),
+    {Status, Map}.
 
 %% @doc Shortcut for resolving a key in a message without its status if it is
 %% `ok'. This makes it easier to write complex logic on top of messages while
@@ -1182,9 +1200,9 @@ load_device(ID, Opts) ->
         end,
     case lists:search(
         fun (#{ <<"name">> := Name }) -> Name =:= NormKey end,
-        hb_opts:get(preloaded_devices, [], Opts)
+        Preloaded = hb_opts:get(preloaded_devices, [], Opts)
     ) of
-        false -> {error, module_not_admissable};
+        false -> {error, {module_not_admissable, NormKey, Preloaded}};
         {value, #{ <<"module">> := Mod }} -> load_device(Mod, Opts)
     end.
 

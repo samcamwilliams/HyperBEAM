@@ -115,7 +115,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         Opts#{ cache_control => [] }
     ),
     ProcID = hb_message:id(Msg1, all),
-    Slot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+    Slot = hb_converge:get(<<"at-slot">>, Msg1, Opts),
     {ok,
         hb_private:set(
             hb_converge:set(
@@ -155,7 +155,7 @@ init(Msg1, _Msg2, Opts) ->
             Initialized,
             #{
                 <<"initialized">> => <<"true">>,
-                <<"current-slot">> => -1
+                <<"at-slot">> => -1
             },
             Opts
         )
@@ -167,37 +167,52 @@ compute(Msg1, Msg2, Opts) ->
     % If we do not have a live state, restore or initialize one.
     ProcBase = ensure_process_key(Msg1, Opts),
     ProcID = process_id(ProcBase, #{}, Opts),
-    Slot = hb_util:int(hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts)),
-    case dev_process_cache:read(ProcID, Slot, Opts) of
-        {ok, Result} ->
-            % The result is already cached, so we can return it.
-            ?event(
-                {compute_result_cached,
-                    {proc_id, ProcID},
-                    {slot, Slot},
-                    {result, Result}
-                }
-            ),
-            {ok, Result};
+    case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Msg2}, Opts) of
         not_found ->
-            {ok, Loaded} = ensure_loaded(ProcBase, Msg2, Opts),
-            ?event(compute, {computing, {process_id, ProcID}, {slot, Slot}}, Opts),
-            do_compute(
-                ProcID,
-                Loaded,
-                Msg2,
-                Slot,
-                Opts
-            )
+            % The slot is not set, so we need to serve the latest known state.
+            % We do this by setting the `process_now_from_cache' option to `true'.
+            now(Msg1, Msg2, Opts#{ process_now_from_cache => true });
+        RawSlot ->
+            Slot = hb_util:int(RawSlot),
+            case dev_process_cache:read(ProcID, Slot, Opts) of
+                {ok, Result} ->
+                    % The result is already cached, so we can return it.
+                    ?event(
+                        {compute_result_cached,
+                            {proc_id, ProcID},
+                            {slot, Slot},
+                            {result, Result}
+                        }
+                    ),
+                    {ok, Result};
+                not_found ->
+                    {ok, Loaded} = ensure_loaded(ProcBase, Msg2, Opts),
+                    ?event(compute,
+                        {computing, {process_id, ProcID},
+                        {slot, Slot}},
+                        Opts
+                    ),
+                    compute_to_slot(
+                        ProcID,
+                        Loaded,
+                        Msg2,
+                        Slot,
+                        Opts
+                    )
+            end
     end.
 
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
-do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
-    CurrentSlot = hb_converge:get(<<"current-slot">>, Msg1, Opts),
+compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
+    CurrentSlot = hb_converge:get(<<"at-slot">>, Msg1, Opts),
     ?event({starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
     case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
+            % The cache should already have the result, so we should never end up
+            % here. Depending on the type of process, 'rewinding' may require
+            % re-computing from a significantly earlier checkpoint, so for now
+            % we throw an error.
             throw(
                 {error,
                     {already_calculated_slot,
@@ -211,23 +226,67 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
             ?event(compute, {reached_target_slot_returning_state, TargetSlot}),
             {ok, as_process(Msg1, Opts)};
         CurrentSlot ->
+            % Compute the next state transition.
             NextSlot = CurrentSlot + 1,
-            % Get the next input from the scheduler device.
-            {ok, #{ <<"body">> := ToProcess, <<"state">> := State }} =
-                next(Msg1, Msg2, Opts),
-            % Ensure that the next slot is the slot that we are expecting, just
-            % in case there is a scheduler device error.
-            NextSlot = hb_util:int(hb_converge:get(<<"slot">>, ToProcess, Opts)),
-            ?event(compute, {executing, {slot, NextSlot}, {req, ToProcess}}, Opts),
-            {ok, Msg3} =
-                run_as(
-                    <<"execution">>,
-                    State,
-                    ToProcess,
-                    Opts
-                ),
+            % Get the next input message from the scheduler device.
+            case next(Msg1, Msg2, Opts) of
+                {error, Res} ->
+                    % If the scheduler device cannot provide a next message,
+                    % we return its error details, along with the current slot.
+                    {error, Res#{
+                        <<"phase">> => <<"get-schedule">>,
+                        <<"attempted-slot">> => NextSlot
+                    }};
+                {ok, #{ <<"body">> := SlotMsg, <<"state">> := State }} ->
+                    % Compute the next single state transition.
+                    case compute_slot(ProcID, State, SlotMsg, Msg2, Opts) of
+                        {ok, NewState} ->
+                            % Continue computing to the target slot.
+                            compute_to_slot(
+                                ProcID,
+                                NewState,
+                                Msg2,
+                                TargetSlot,
+                                Opts
+                            );
+                        {error, Error} ->
+                            % If the compute_slot function returns an error,
+                            % we return the error details, along with the current slot.
+                            {error,
+                                Error#{
+                                    <<"phase">> => <<"compute">>,
+                                    <<"attempted-slot">> => NextSlot
+                                }
+                            }
+                    end
+            end
+    end.
+
+%% @doc Compute a single slot for a process, given an initialized state.
+compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
+    % Ensure that the next slot is the slot that we are expecting, just
+    % in case there is a scheduler device error.
+    NextSlot = hb_util:int(hb_converge:get(<<"slot">>, RawInputMsg, Opts)),
+    % If the input message does not have a path, set it to `compute'.
+    InputMsg =
+        case hb_path:from_message(request, RawInputMsg) of
+            undefined -> RawInputMsg#{ <<"path">> => <<"compute">> };
+            _ -> RawInputMsg
+        end,
+    ?event({input_msg, InputMsg}),
+    ?event(compute, {executing, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
+    Res =
+        run_as(
+            <<"execution">>,
+            State,
+            InputMsg,
+            Opts
+        ),
+    case Res of
+        {ok, Msg3} ->
+            ?event(compute_short, {executed, {slot, NextSlot}, {proc_id, ProcID}}, Opts),
             % We have now transformed slot n -> n + 1. Increment the current slot.
-            Msg3SlotAfter = hb_converge:set(Msg3, #{ <<"current-slot">> => NextSlot }, Opts),
+            Msg3SlotAfter = hb_converge:set(Msg3, #{ <<"at-slot">> => NextSlot }, Opts),
             % Notify any waiters that the result for a slot is now available.
             dev_process_worker:notify_compute(
                 ProcID,
@@ -236,19 +295,11 @@ do_compute(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
                 Opts
             ),
             ?event(compute, {writing_cache, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
-            store_result(ProcID, NextSlot, Msg3, Msg2, Opts),
+            store_result(ProcID, NextSlot, Msg3SlotAfter, ReqMsg, Opts),
             ?event(compute, {wrote_cache, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
-            do_compute(
-                ProcID,
-                hb_converge:set(
-                    Msg3,
-                    #{ <<"current-slot">> => NextSlot },
-                    Opts
-                ),
-                Msg2,
-                TargetSlot,
-                Opts
-            )
+            {ok, Msg3SlotAfter};
+        {error, Error} ->
+            {error, Error}
     end.
 
 %% @doc Store the resulting state in the cache, potentially with the snapshot
@@ -277,17 +328,64 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
         end,
     dev_process_cache:write(ProcID, Slot, Msg3MaybeWithSnapshot, Opts).
 
-%% @doc Returns the `/Results' key of the latest computed message.
-now(RawMsg1, _Msg2, Opts) ->
+%% @doc Returns the known state of the process at either the current slot, or
+%% the latest slot in the cache depending on the `process_now_from_cache' option.
+now(RawMsg1, Msg2, Opts) ->
     Msg1 = ensure_process_key(RawMsg1, Opts),
-    {ok, CurrentSlot} = hb_converge:resolve(Msg1, #{ <<"path">> => <<"slot/current-slot">> }, Opts),
     ProcessID = process_id(Msg1, #{}, Opts),
-    ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
-    hb_converge:resolve(
-        Msg1,
-        #{ <<"path">> => <<"compute">>, <<"slot">> => CurrentSlot },
-        Opts
-    ).
+    case hb_opts:get(process_now_from_cache, false, Opts) of
+        false ->
+            {ok, CurrentSlot} =
+                hb_converge:resolve(
+                    Msg1,
+                    #{ <<"path">> => <<"slot/current">> },
+                    Opts
+                ),
+            ?event({now_called, {process, ProcessID}, {slot, CurrentSlot}}),
+            hb_converge:resolve(
+                Msg1,
+                #{ <<"path">> => <<"compute">>, <<"slot">> => CurrentSlot },
+                Opts
+            );
+        CacheParam ->
+            % We are serving the latest known state from the cache, rather
+            % than computing it.
+            LatestKnown = dev_process_cache:latest(ProcessID, [], Opts),
+            case LatestKnown of
+                {ok, LatestSlot, LatestMsg} ->
+                    ?event(compute_short,
+                        {serving_latest_cached_state,
+                            {proc_id, ProcessID},
+                            {slot, LatestSlot}
+                        },
+                        Opts
+                    ),
+                    ?event(
+                        {serving_from_cache,
+                            {proc_id, ProcessID},
+                            {slot, LatestSlot},
+                            {msg, LatestMsg}
+                    }),
+                    dev_process_worker:notify_compute(
+                        ProcessID,
+                        LatestSlot,
+                        {ok, LatestMsg},
+                        Opts
+                    ),
+                    {ok, LatestMsg};
+                _ ->
+                    if CacheParam =/= always ->
+                        % The node is configured to use the cache if possible,
+                        % but forcing computation is also admissible. Subsequently,
+                        % as no other option is available, we compute the state.
+                        now(Msg1, Msg2, Opts#{ process_now_from_cache => false });
+                    true ->
+                        % The node is configured to only serve the latest known
+                        % state from the cache, so we return the latest slot.
+                        {failure, <<"No cached state available.">>}
+                    end
+            end
+    end.
 
 %% @doc Recursively push messages to the scheduler until we find a message
 %% that does not lead to any further messages being scheduled.
@@ -486,8 +584,8 @@ dev_test_process() ->
     Wallet = hb:wallet(),
     hb_message:attest(
         maps:merge(test_base_process(), #{
-            <<"execution-device">> => <<"Stack@1.0">>,
-            <<"device-stack">> => [<<"Test-Device@1.0">>, <<"Test-Device@1.0">>]
+            <<"execution-device">> => <<"stack@1.0">>,
+            <<"device-stack">> => [<<"test-device@1.0">>, <<"test-device@1.0">>]
         }),
         Wallet
     ).
@@ -575,7 +673,7 @@ get_scheduler_slot_test() ->
         <<"method">> => <<"GET">>
     },
     ?assertMatch(
-        {ok, #{ <<"current-slot">> := CurrentSlot }} when CurrentSlot > 0,
+        {ok, #{ <<"current">> := CurrentSlot }} when CurrentSlot > 0,
         hb_converge:resolve(Msg1, Msg2, #{})
     ).
 
@@ -586,7 +684,7 @@ recursive_path_resolution_test() ->
     CurrentSlot =
         hb_converge:resolve(
             Msg1,
-            #{ <<"path">> => <<"slot/current-slot">> },
+            #{ <<"path">> => <<"slot/current">> },
             #{ <<"hashpath">> => ignore }
         ),
     ?event({resolved_current_slot, CurrentSlot}),
@@ -655,7 +753,7 @@ http_wasm_process_by_id_test() ->
         port => 10000 + rand:uniform(10000),
         priv_wallet => SchedWallet,
         cache_control => <<"always">>,
-        store => {hb_store_fs, #{ prefix => "mainnet-cache" }}
+        store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> }
     }),
     Wallet = ar_wallet:new(),
     Proc = test_wasm_process(<<"test/test-64.wasm">>, Opts),
@@ -678,13 +776,7 @@ http_wasm_process_by_id_test() ->
         },
         Wallet
     ),
-    {ok, Msg3} =
-        hb_http:post(
-            Node,
-            << ProcID/binary, "/schedule">>,
-            ExecMsg,
-            #{}
-        ),
+    {ok, Msg3} = hb_http:post(Node, << ProcID/binary, "/schedule">>, ExecMsg, #{}),
     ?event({schedule_msg_res, {msg3, Msg3}}),
     {ok, Msg4} =
         hb_http:get(
@@ -745,18 +837,15 @@ aos_state_access_via_http_test_() ->
             port => 10000 + rand:uniform(10000),
             priv_wallet => Wallet,
             cache_control => <<"always">>,
-            store => {hb_store_fs, #{ prefix => "mainnet-cache" }},
+            store => #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-mainnet">>
+            },
             force_signed_requests => true
         }),
         Proc = test_aos_process(Opts),
         ProcID = hb_util:human_id(hb_message:id(Proc, all)),
-        {ok, _InitRes} =
-            hb_http:post(
-                Node,
-                << "/schedule" >>,
-                Proc,
-                Opts
-            ),
+        {ok, _InitRes} = hb_http:post(Node, <<"/schedule">>, Proc, Opts),
         Msg2 = hb_message:attest(#{
             <<"data-prefix">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
@@ -770,23 +859,13 @@ aos_state_access_via_http_test_() ->
                     "}})">>,
             <<"target">> => ProcID
         }, Wallet),
-        {ok, Msg3} =
-            hb_http:post(
-                Node,
-                << ProcID/binary, "/schedule">>,
-                Msg2,
-                Opts
-            ),
+        {ok, Msg3} = hb_http:post(Node, << ProcID/binary, "/schedule">>, Msg2, Opts),
         ?event({schedule_msg_res, {msg3, Msg3}}),
         {ok, Msg4} =
             hb_http:get(
                 Node,
                 #{
-                    <<"path">> =>
-                        <<
-                            ProcID/binary,
-                            "/compute/results/outbox/1/data"
-                        >>,
+                    <<"path">> => << ProcID/binary, "/compute/results/outbox/1/data" >>,
                     <<"slot">> => 1
                 },
                 Opts
@@ -795,7 +874,13 @@ aos_state_access_via_http_test_() ->
         ?event(
             {try_yourself,
                 {explicit,
-                    << Node/binary, "/", ProcID/binary, "/compute&slot=1/results/outbox/1/data">>}
+                    <<
+                        Node/binary,
+                        "/",
+                        ProcID/binary,
+                        "/compute&slot=1/results/outbox/1/data"
+                    >>
+                }
             }
         ),
         ?assertMatch(#{ <<"body">> := <<"<h1>Hello, world!</h1>">> }, Msg4),
@@ -806,13 +891,14 @@ aos_state_patch_test_() ->
     {timeout, 30, fun() ->
         Wallet = hb:wallet(),
         init(),
-        Msg1 = test_aos_process(#{}, [
+        Msg1Raw = test_aos_process(#{}, [
             <<"WASI@1.0">>,
             <<"JSON-Iface@1.0">>,
             <<"WASM-64@1.0">>,
             <<"patch@1.0">>,
             <<"Multipass@1.0">>
         ]),
+        {ok, Msg1} = hb_message:with_only_attested(Msg1Raw),
         ProcID = hb_message:id(Msg1),
         Msg2 = (hb_message:attest(#{
             <<"data-prefix">> => <<"ao">>,

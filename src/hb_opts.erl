@@ -13,7 +13,7 @@
 %%% deterministic behavior impossible, the caller should fail the execution 
 %%% with a refusal to execute.
 -module(hb_opts).
--export([get/1, get/2, get/3, load/1, default_message/0]).
+-export([get/1, get/2, get/3, load/1, default_message/0, mimic_default_types/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -31,7 +31,8 @@ default_message() ->
         http_client => gun,
         %% Scheduling mode: Determines when the SU should inform the recipient
         %% that an assignment has been scheduled for a message.
-        %% Options: aggressive(!), local_confirmation, remote_confirmation
+        %% Options: aggressive(!), local_confirmation, remote_confirmation,
+        %%          disabled
         scheduling_mode => local_confirmation,
         %% Compute mode: Determines whether the process device should attempt to 
         %% execute more messages on a process after it has returned a result.
@@ -58,6 +59,7 @@ default_message() ->
             #{<<"name">> => <<"faff@1.0">>, <<"module">> => dev_faff},
             #{<<"name">> => <<"flat@1.0">>, <<"module">> => dev_codec_flat},
             #{<<"name">> => <<"genesis-wasm@1.0">>, <<"module">> => dev_genesis_wasm},
+            #{<<"name">> => <<"greenzone@1.0">>, <<"module">> => dev_green_zone},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
@@ -109,6 +111,9 @@ default_message() ->
         attestation_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
+        % Every modification to `Opts` called directly by the node operator
+        % should be recorded here.
+		node_history => [],
         debug_stack_depth => 40,
         debug_print_map_line_threshold => 30,
         debug_print_binary_max => 60,
@@ -117,7 +122,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => false,
+        debug_hide_metadata => true,
         debug_ids => false,
         debug_show_priv => if_present,
 		trusted => #{},
@@ -152,16 +157,34 @@ default_message() ->
                     }
             }
         ],
+        store =>
+            [
+                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+                #{ <<"store-module">> => hb_store_gateway,
+                    <<"store">> =>
+                        [
+                            #{
+                                <<"store-module">> => hb_store_fs,
+                                <<"prefix">> => <<"cache-mainnet">>
+                            }
+                        ]
+                }
+            ],
+        % Should we use the latest cached state of a process when computing?
+        process_now_from_cache => false,
+        % Should we trust the GraphQL API when converting to ANS-104? Some GQL
+        % services do not provide the `anchor' or `last_tx' fields, so their
+        % responses are not verifiable.
+        ans104_trust_gql => true,
         http_extra_opts =>
             #{
                 force_message => true,
-                store => [{hb_store_fs, #{ prefix => "mainnet-cache" }}, {hb_store_gateway, #{}}],
                 cache_control => [<<"always">>]
             },
         % Should the node store all signed messages?
         store_all_signed => true,
         % Should the node use persistent processes?
-        process_workers => true
+        process_workers => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
@@ -179,6 +202,10 @@ get(Key, Default, Opts) when is_binary(Key) ->
     catch
         error:badarg -> Default
     end;
+get(Key, Default, Opts = #{ <<"only">> := Only }) ->
+    get(Key, Default, maps:remove(<<"only">>, Opts#{ only => Only }));
+get(Key, Default, Opts = #{ <<"prefer">> := Prefer }) ->
+    get(Key, Default, maps:remove(<<"prefer">>, Opts#{ prefer => Prefer }));
 get(Key, Default, Opts = #{ only := local }) ->
     case maps:find(Key, Opts) of
         {ok, Value} -> Value;
@@ -210,16 +237,6 @@ get(Key, Default, Opts) ->
         priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
         hb_config_location => {"HB_CONFIG", "config.flat"},
         port => {"HB_PORT", fun erlang:list_to_integer/1, "8734"},
-        store =>
-            {"HB_STORE",
-                fun(Dir) ->
-                    {
-                        hb_store_fs,
-                        #{ prefix => Dir }
-                    }
-                end,
-                "TEST-cache"
-            },
         mode => {"HB_MODE", fun list_to_existing_atom/1},
         debug_print =>
             {"HB_PRINT",
@@ -258,7 +275,7 @@ load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             try dev_codec_flat:deserialize(Bin) of
-                Map -> {ok, mimic_default_types(Map, new_atoms)}
+                {ok, Map} -> {ok, mimic_default_types(Map, new_atoms)}
             catch
                 error:B -> {error, B}
             end;
@@ -275,11 +292,11 @@ mimic_default_types(Map, Mode) ->
                 case maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
                     DefaultValue when is_atom(DefaultValue) ->
-                        binary_to_existing_atom(Value);
+                        hb_util:atom(Value);
                     DefaultValue when is_integer(DefaultValue) ->
-                        binary_to_integer(Value);
+                        hb_util:int(Value);
                     DefaultValue when is_float(DefaultValue) ->
-                        binary_to_float(Value);
+                        hb_util:float(Value);
                     DefaultValue when is_binary(DefaultValue) ->
                         Value;
                     _ -> Value

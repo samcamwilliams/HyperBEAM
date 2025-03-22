@@ -34,6 +34,7 @@ httpc_req(Args, _, Opts) ->
         headers := Headers,
         body := Body
     } = Args,
+    ?event({httpc_req, Args}),
     {Host, Port} = parse_peer(Peer, Opts),
     Scheme = case Port of
         443 -> "https";
@@ -328,7 +329,7 @@ terminate(Reason, #state{ status_by_pid = StatusByPID }) ->
 
 open_connection(#{ peer := Peer }, Opts) ->
     {Host, Port} = parse_peer(Peer, Opts),
-    ?event(http, {parsed_peer, {peer, Peer}, {host, Host}, {port, Port}}),
+    ?event(http_outbound, {parsed_peer, {peer, Peer}, {host, Host}, {port, Port}}),
 	ConnectTimeout =
 		hb_opts:get(http_connect_timeout, no_connect_timeout, Opts),
     BaseGunOpts =
@@ -356,7 +357,14 @@ open_connection(#{ peer := Peer }, Opts) ->
             http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
             _ -> BaseGunOpts
         end,
-    ?event(http, {gun_open, {host, Host}, {port, Port}, {protocol, Proto}, {transport, Transport}}),
+    ?event(http_outbound,
+        {gun_open,
+            {host, Host},
+            {port, Port},
+            {protocol, Proto},
+            {transport, Transport}
+        }
+    ),
 	gun:open(Host, Port, GunOpts).
 
 parse_peer(Peer, Opts) ->
@@ -364,8 +372,14 @@ parse_peer(Peer, Opts) ->
     case Parsed of
         #{ host := Host, port := Port } ->
             {hb_util:list(Host), Port};
-        #{ host := Host } ->
-            {hb_util:list(Host), hb_opts:get(port, 443, Opts)}
+        URI = #{ host := Host } ->
+            {
+                hb_util:list(Host),
+                case maps:get(scheme, URI, undefined) of
+                    <<"https">> -> 443;
+                    _ -> hb_opts:get(port, 8734, Opts)
+                end
+            }
     end.
 
 reply_error([], _Reason) ->

@@ -164,7 +164,7 @@ message_to_json_struct(RawMsg, Features) ->
     Fields = [
         {<<"Id">>, safe_to_id(ID)},
         % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, safe_to_id(Last)},
+        {<<"Anchor">>, Last},
         % NOTE: When sent to ao "Owner" is the wallet address
         {<<"Owner">>, hb_util:encode(Owner)},
         {<<"From">>, case ?IS_ID(From) of true -> safe_to_id(From); false -> From end},
@@ -205,19 +205,22 @@ message_to_json_struct(RawMsg, Features) ->
 json_to_message(JSON, Opts) when is_binary(JSON) ->
     json_to_message(jiffy:decode(JSON, [return_maps]), Opts);
 json_to_message(Resp, Opts) when is_map(Resp) ->
-    {ok, Data, Messages} = normalize_results(Resp),
+    {ok, Data, Messages, Patches} = normalize_results(Resp),
     Output = 
         #{
             <<"outbox">> =>
-                maps:from_list([
-                    {MessageNum, preprocess_results(Msg, Opts)}
-                ||
-                    {MessageNum, Msg} <-
-                        lists:zip(
-                            lists:seq(1, length(Messages)),
-                            Messages
-                        )
-                ]),
+                maps:from_list(
+                    [
+                        {MessageNum, preprocess_results(Msg, Opts)}
+                    ||
+                        {MessageNum, Msg} <-
+                            lists:zip(
+                                lists:seq(1, length(Messages)),
+                                Messages
+                            )
+                    ]
+                ),
+            <<"patches">> => lists:map(fun tags_to_map/1, Patches),
             <<"data">> => Data
         },
     {ok, Output};
@@ -332,10 +335,10 @@ results(M1, _M2, Opts) ->
 
 %% @doc Normalize the results of an evaluation.
 normalize_results(
-    #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages }) ->
-    {ok, Data, Messages};
+    Msg = #{ <<"Output">> := #{<<"data">> := Data}, <<"Messages">> := Messages}) ->
+    {ok, Data, Messages, maps:get(<<"patches">>, Msg, [])};
 normalize_results(#{ <<"Error">> := Error }) ->
-    {ok, Error, []};
+    {ok, Error, [], []};
 normalize_results(Other) ->
     throw({invalid_results, Other}).
 
@@ -343,18 +346,11 @@ normalize_results(Other) ->
 %% signing node needs to add some tags to each message and spawn such that
 %% the target process knows these messages are created by a process.
 preprocess_results(Msg, _Opts) ->
-    NormMsg = hb_converge:normalize_keys(Msg),
-    RawTags = maps:get(<<"tags">>, NormMsg, []),
-    TagList =
-        [
-            {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
-        ||
-            Tag <- RawTags ],
-    Tags = maps:from_list(TagList),
+    Tags = tags_to_map(Msg),
     FilteredMsg =
         maps:without(
             [<<"from-process">>, <<"from-image">>, <<"anchor">>, <<"tags">>],
-            NormMsg
+            Msg
         ),
     maps:merge(
         maps:from_list(
@@ -367,6 +363,18 @@ preprocess_results(Msg, _Opts) ->
         ),
         Tags
     ).
+
+%% @doc Convert a message with tags into a map of their key-value pairs.
+tags_to_map(Msg) ->
+    NormMsg = hb_converge:normalize_keys(Msg),
+    RawTags = maps:get(<<"tags">>, NormMsg, []),
+    TagList =
+        [
+            {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
+        ||
+            Tag <- RawTags
+        ],
+    maps:from_list(TagList).
 
 %% @doc Post-process messages in the outbox to add the correct `from-process'
 %% and `from-image' tags.

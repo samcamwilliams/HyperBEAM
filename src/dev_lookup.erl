@@ -54,11 +54,11 @@ aos2_message_lookup_test() ->
     ?assertEqual(<<"test-data">>, hb_converge:get(<<"data">>, Decoded, #{})).
 
 http_lookup_test() ->
-    Store = {
-        hb_store_fs,
-        #{ prefix => "mainnet-cache" }
+    Store = #{
+        <<"store-module">> => hb_store_fs,
+        <<"prefix">> => <<"cache-mainnet">>
     },
-    Opts = #{ store => Store },
+    Opts = #{ store => [Store] },
     Msg = #{ <<"test-key">> => <<"test-value">>, <<"data">> => <<"test-data">> },
     {ok, ID} = hb_cache:write(Msg, Opts),
     Node = hb_http_server:start_node(Opts),
