@@ -740,7 +740,7 @@ wasm_compute_from_id_test() ->
     Opts = #{ cache_control => <<"always">> },
     Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
     schedule_wasm_call(Msg1, <<"fac">>, [5.0], Opts),
-    Msg1ID = hb_message:id(Msg1),
+    Msg1ID = hb_message:id(Msg1, all),
     Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
     {ok, Msg3} = hb_converge:resolve(Msg1ID, Msg2, Opts),
     ?event(process_compute, {computed_message, {msg3, Msg3}}),
@@ -753,12 +753,15 @@ http_wasm_process_by_id_test() ->
         port => 10000 + rand:uniform(10000),
         priv_wallet => SchedWallet,
         cache_control => <<"always">>,
-        store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> }
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-mainnet">>
+        }
     }),
     Wallet = ar_wallet:new(),
     Proc = test_wasm_process(<<"test/test-64.wasm">>, Opts),
     hb_cache:write(Proc, Opts),
-    ProcID = hb_util:human_id(hb_message:id(Proc)),
+    ProcID = hb_util:human_id(hb_message:id(Proc, all)),
     InitRes =
         hb_http:post(
             Node,
@@ -899,14 +902,18 @@ aos_state_patch_test_() ->
             <<"Multipass@1.0">>
         ]),
         {ok, Msg1} = hb_message:with_only_attested(Msg1Raw),
-        ProcID = hb_message:id(Msg1),
+        ProcID = hb_message:id(Msg1, all),
         Msg2 = (hb_message:attest(#{
             <<"data-prefix">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"target">> => ProcID,
             <<"type">> => <<"Message">>,
             <<"action">> => <<"Eval">>,
-            <<"data">> => <<"table.insert(ao.outbox.Messages, { method = \"PATCH\", x = \"banana\" })">>
+            <<"data">> =>
+                <<
+                    "table.insert(ao.outbox.Messages, "
+                        "{ method = \"PATCH\", x = \"banana\" })"
+                >>
         }, Wallet))#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
         {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}),
         Msg3 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },

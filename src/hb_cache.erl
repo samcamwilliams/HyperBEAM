@@ -94,8 +94,8 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     hb_store:make_group(Store, UnattestedID),
     maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
-            ?event(error, {request_to_write_device_map, {id, hb_message:id(Map)}}),
-            throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
+            ?event(error, {request_to_write_device_map, Map}),
+            throw({device_map_cannot_be_written, Map});
         (Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
             KeyHashPath =

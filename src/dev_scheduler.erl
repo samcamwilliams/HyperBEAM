@@ -1194,7 +1194,8 @@ http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
         <<"body">> =>
             hb_message:attest(
                 Msg#{
-                    <<"target">> => hb_util:human_id(hb_message:id(ProcessMsg)),
+                    <<"target">> =>
+                        hb_util:human_id(hb_message:id(ProcessMsg, all)),
                     <<"type">> => <<"Message">>
                 },
                 Wallet
