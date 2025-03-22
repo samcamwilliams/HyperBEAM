@@ -113,15 +113,39 @@ id(Msg, _Params, _Opts) ->
 
 %% @doc Find the ID of the message, which is the hmac of the fields referenced in
 %% the signature and signature input. If the message already has a signature-input,
-%% directly, it is treated differently: We relabel the 
+%% directly, it is treated differently: We relabel it as `x-signature-input' to
+%% avoid key collisions.
+find_id(#{ <<"attestations">> := Atts }) when map_size(Atts) > 1 ->
+    AttsWithoutHmac = maps:without([<<"hmac-sha256">>], Atts),
+    IDs = lists:map(
+        fun({_, #{ <<"id">> := ID }}) -> ID end,
+        maps:to_list(AttsWithoutHmac)
+    ),
+    case IDs of
+        [] -> throw({could_not_find_ids, AttsWithoutHmac});
+        [ID] ->
+            ?event({returning_single_id, ID}),
+            {ok, ID};
+        _ ->
+            ?event({multiple_ids, IDs}),
+            SortedIDs =
+                [
+                    {item, {string, hb_util:human_id(ID)}, []}
+                ||
+                    ID <- lists:sort(IDs)
+                ],
+            SFList = iolist_to_binary(hb_structured_fields:list(SortedIDs)),
+            ?event({sorted_ids, SortedIDs, {sf_list, SFList}}),
+            {ok, hb_util:human_id(crypto:hash(sha256, SFList))}
+    end;
 find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
     {ok, ID};
 find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }) ->
     {not_found, (maps:without([<<"signature-input">>], AttMsg))#{
-        <<"user-signature-input">> => UserSigInput
+        <<"x-signature-input">> => UserSigInput
     }};
 find_id(Msg) ->
-    ?event(debug, {no_id, Msg}),
+    ?event({no_id, Msg}),
     {not_found, Msg}.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
@@ -308,7 +332,6 @@ reset_hmac(RawMsg) ->
             maps:to_list(Attestations)
         )),
     FlatInputs = lists:flatten(maps:values(AllInputs)),
-    ?event(debug, {hmac_inputs_should_be, FlatInputs}),
     HMacSigInfo =
         case FlatInputs of
             [] -> #{};
@@ -319,7 +342,8 @@ reset_hmac(RawMsg) ->
                     bin(hb_structured_fields:dictionary(AllInputs))
             }
         end,
-    ?event(debug, {pre_hmac_sig_input, {string, maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
+    ?event({pre_hmac_sig_input,
+        {string, maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
     HMacInputMsg = maps:merge(Msg, HMacSigInfo),
     {ok, ID} = hmac(HMacInputMsg),
     Res = {
@@ -367,7 +391,7 @@ hmac(Msg) ->
                 ?event(debug_ids, sig_input_found),
                 [{_, {list, Items, _}}|_]
                     = hb_structured_fields:parse_dictionary(SigInput),
-                ?event(debug, {parsed_sig_input_dict, {explicit, Items}}),
+                ?event({parsed_sig_input_dict, {explicit, Items}}),
                 [ Name || {item, {_, Name}, _} <- Items ]
         end,
     HMACSpecifiers = normalize_component_identifiers(HMacKeys),
@@ -396,14 +420,16 @@ verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
     % Verify a hmac on the message
     ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
-    {ok, Recalculated} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
-    case find_id(Recalculated) of
-        {not_found, _} -> {error, could_not_calculate_id};
-        {ok, ExpectedID} ->
+    {ok, ResetMsg} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
+    case maps:get(<<"attestations">>, ResetMsg, no_attestations) of
+        no_attestations -> {error, could_not_calculate_id};
+        #{ <<"hmac-sha256">> := #{ <<"id">> := ExpectedID } } ->
             ?event({hmac_verified, {id, ExpectedID}}),
             {ok, true};
-        {ok, ActualID} ->
-            ?event({hmac_failed_verification, {calculated_id, ActualID}, {expected, ExpectedID}}),
+        #{ <<"hmac-sha256">> := #{ <<"id">> := RecalculatedID } } ->
+            ?event({hmac_failed_verification,
+                {recalculated_id, RecalculatedID},
+                {expected, ExpectedID}}),
             {ok, false}
     end;
 verify(MsgToVerify, Req, _Opts) ->
@@ -1208,18 +1234,45 @@ validate_large_message_from_http_test() ->
     }),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     Signers = hb_message:signers(Res),
-    ?event(debug, {received, {signers, Signers}, {res, Res}}),
+    ?event({received, {signers, Signers}, {res, Res}}),
     ?assert(length(Signers) == 1),
     ?assert(hb_message:verify(Res, Signers)),
-    ?event(debug, {sig_verifies, Signers}),
+    ?event({sig_verifies, Signers}),
     ?assert(hb_message:verify(Res, [<<"hmac-sha256">>])),
-    ?event(debug, {hmac_verifies, <<"hmac-sha256">>}),
+    ?event({hmac_verifies, <<"hmac-sha256">>}),
     {ok, OnlyAttested} = hb_message:with_only_attested(Res),
-    ?event(debug, {msg_with_only_attested, OnlyAttested}),
+    ?event({msg_with_only_attested, OnlyAttested}),
     ?assert(hb_message:verify(OnlyAttested, Signers)),
-    ?event(debug, {msg_with_only_attested_verifies, Signers}),
+    ?event({msg_with_only_attested_verifies, Signers}),
     ?assert(hb_message:verify(OnlyAttested, [<<"hmac-sha256">>])),
-    ?event(debug, {msg_with_only_attested_verifies_hmac, <<"hmac-sha256">>}).
+    ?event({msg_with_only_attested_verifies_hmac, <<"hmac-sha256">>}).
+
+attested_id_test() ->
+    Msg = #{ <<"basic">> => <<"value">> },
+    Signed = hb_message:attest(Msg, hb:wallet()),
+    ?event({signed_msg, Signed}),
+    UnsignedID = hb_message:id(Signed, none),
+    SignedID = hb_message:id(Signed, all),
+    ?event({ids, {unsigned_id, UnsignedID}, {signed_id, SignedID}}),
+    ?assertNotEqual(UnsignedID, SignedID).
+
+multiattested_id_test() ->
+    Msg = #{ <<"basic">> => <<"value">> },
+    Signed1 = hb_message:attest(Msg, Wallet1 = ar_wallet:new()),
+    Signed2 = hb_message:attest(Signed1, Wallet2 = ar_wallet:new()),
+    Addr1 = hb_util:human_id(ar_wallet:to_address(Wallet1)),
+    Addr2 = hb_util:human_id(ar_wallet:to_address(Wallet2)),
+    ?event({signed_msg, Signed2}),
+    UnsignedID = hb_message:id(Signed2, none),
+    SignedID = hb_message:id(Signed2, all),
+    ?event({ids, {unsigned_id, UnsignedID}, {signed_id, SignedID}}),
+    ?assertNotEqual(UnsignedID, SignedID),
+    ?assert(hb_message:verify(Signed2, [<<"hmac-sha256">>])),
+    ?assert(hb_message:verify(Signed2, [Addr1])),
+    ?assert(hb_message:verify(Signed2, [Addr2])),
+    ?assert(hb_message:verify(Signed2, [Addr1, Addr2])),
+    ?assert(hb_message:verify(Signed2, [Addr2, Addr1])),
+    ?assert(hb_message:verify(Signed2, all)).
 
 %%% Unit Tests
 trim_ws_test() ->
