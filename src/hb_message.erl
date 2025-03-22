@@ -134,7 +134,7 @@ id(Msg, RawAttestors, Opts) ->
             unsigned -> <<"none">>;
             none -> <<"none">>;
             all -> <<"all">>;
-            signed -> <<"all">>;
+            signed -> signers(Msg);
             List -> List
         end,
     ?event({getting_id, {msg, Msg}, {attestors, Attestors}}),
@@ -1166,7 +1166,7 @@ attested_empty_keys_test(Codec) ->
     Signed = attest(Msg, hb:wallet(), Codec),
     ?assert(verify(Signed)),
     AttestedKeys = attested(Signed),
-    ?event(debug, {attested_keys, AttestedKeys}),
+    ?event({attested_keys, AttestedKeys}),
     ?assert(lists:member(<<"very">>, AttestedKeys)),
     ?assert(lists:member(<<"exciting">>, AttestedKeys)),
     ?assert(lists:member(<<"values">>, AttestedKeys)),
