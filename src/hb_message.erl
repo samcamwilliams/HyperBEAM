@@ -232,7 +232,16 @@ verify(Msg) -> verify(Msg, <<"all">>).
 verify(Msg, signers) ->
     verify(Msg, hb_message:signers(Msg));
 verify(Msg, Attestors) ->
-    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => Attestors }, #{}),
+    {ok, Res} =
+        dev_message:verify(
+            Msg,
+            #{ <<"attestors">> =>
+                case is_list(Attestors) of
+                    true -> Attestors;
+                    false -> [Attestors]
+                end
+            },
+            #{}),
     Res.
 
 %% @doc Return the unsigned version of a message in Converge format.

@@ -217,12 +217,14 @@ verify(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Get the attestations to verify.
     Attestations =
-        case maps:get(<<"attestors">>, Req, <<"all">>) of
+        case hb_converge:normalize_key(maps:get(<<"attestors">>, Req, <<"all">>)) of
             <<"none">> -> [];
             <<"all">> -> maps:get(<<"attestations">>, Base, #{});
             AttestorIDs ->
                 maps:with(
-                    AttestorIDs,
+                    if is_list(AttestorIDs) -> AttestorIDs;
+                       true -> [AttestorIDs]
+                    end,
                     maps:get(<<"attestations">>, Base, #{})
                 )
         end,
