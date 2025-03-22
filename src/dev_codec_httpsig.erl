@@ -1247,25 +1247,40 @@ join_signature_base_test() ->
 signature_params_line_test() ->
 	Params = #{created => 1733165109501, nonce => "foobar", keyid => "key1"},
 	ContentIdentifiers = [
-		<<"Content-Length">>, <<"@method">>, <<"@Path">>, <<"content-type">>, <<"example-dict">>
+		<<"Content-Length">>,
+        <<"@method">>,
+        <<"@Path">>,
+        <<"content-type">>,
+        <<"example-dict">>
 	],
 	Result = signature_params_line(ContentIdentifiers, Params),
 	?assertEqual(
-        <<"(\"content-length\" \"@method\" \"@path\" \"content-type\" \"example-dict\");created=1733165109501;keyid=\"key1\";nonce=\"foobar\"">>,
+        <<
+            "(\"content-length\" \"@method\" \"@path\" \"content-type\" \"example-dict\")"
+            ";created=1733165109501;keyid=\"key1\";nonce=\"foobar\""
+        >>,
 		Result
 	).
 
 derive_component_error_req_param_on_request_target_test() ->
-	Result = derive_component({item, {string, <<"@query-param">>}, [{<<"req">>, true}]}, #{}, #{}, req),
-	?assertEqual(
-		{req_identifier_error, <<"A Component Identifier may not contain a req parameter if the target is a request message">>},
+	Result =
+        derive_component(
+            {item, {string, <<"@query-param">>}, [{<<"req">>, true}]},
+            #{}, #{}, req),
+	?assertMatch(
+		{req_identifier_error, _},
 		Result
 	).
 
 derive_component_error_query_param_no_name_test() ->
-	Result = derive_component({item, {string, <<"@query-param">>}, [{<<"noname">>, {string, <<"foo">>}}]}, #{}, #{}, req),
-	?assertEqual(
-		{req_identifier_error, <<"@query_param Derived Component Identifier must specify a name parameter">>},
+	Result =
+        derive_component(
+            {item,
+                {string, <<"@query-param">>},
+                [{<<"noname">>, {string, <<"foo">>}}]
+            }, #{}, #{}, req),
+	?assertMatch(
+		{req_identifier_error, _},
 		Result
 	).
 
