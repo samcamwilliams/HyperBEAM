@@ -457,7 +457,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
     cowboy_req:stream_body(EncodedBody, nofin, Req2),
-    ?event(http, {reply_headers, {explicit, {ok, Req2, no_state}}}),
+    ?event(http, {terminated_req, Req2}),
     {ok, Req2, no_state}.
 
 %% @doc Add permissive CORS headers to a message, if the message has not already
