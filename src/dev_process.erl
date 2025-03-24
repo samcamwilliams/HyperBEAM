@@ -502,11 +502,29 @@ as_process(Msg1, Opts) ->
 ensure_process_key(Msg1, Opts) ->
     case hb_converge:get(<<"process">>, Msg1, Opts) of
         not_found ->
-            hb_converge:set(
+            % If the message has lost its signers, we need to re-read it from
+            % the cache. This can happen if the message was 'cast' to a different
+            % device, leading the signers to be unset.
+            ProcessMsg =
+                case hb_message:signers(Msg1) of
+                    [] ->
+                        case hb_cache:read(hb_message:id(Msg1, all), Opts) of
+                            {ok, Proc} -> Proc;
+                            {error, _} ->
+                                % Fallback to the original message if we cannot
+                                % read it from the cache.
+                                Msg1
+                        end;
+                    _ -> Msg1
+                end,
+            {ok, Attested} = hb_message:with_only_attested(ProcessMsg, Opts),
+            Res = hb_converge:set(
                 Msg1,
-                #{ <<"process">> => Msg1 },
+                #{ <<"process">> => Attested },
                 Opts#{ hashpath => ignore }
-            );
+            ),
+            ?event(debug, {set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
+            Res;
         _ -> Msg1
     end.
 
