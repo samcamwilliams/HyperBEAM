@@ -385,9 +385,12 @@ to(RawTABM) when is_map(RawTABM) ->
                 case maps:find(NormKey, NormalizedMsgKeyMap) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
+                        % NOTE: Do we really want to do this type coercion?
                         {
                             maps:remove(NormKey, RemMap),
-                            [hb_util:native_id(Value)|Acc]
+                            [
+                                try hb_util:native_id(Value) catch _:_ -> Value end
+                            |Acc]
                         };
                     {ok, Value} ->
                         {
