@@ -595,12 +595,12 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
 
 %% @doc Ensure that the message is loaded from the cache if it is an ID. If is
 %% not loadable or already present, we raise an error.
-ensure_loaded(Msg, Opts) when ?IS_ID(Msg) ->
-    case hb_cache:read(Msg, Opts) of
+ensure_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
+    case hb_cache:read(MsgID, Opts) of
         {ok, LoadedMsg} ->
             LoadedMsg;
         not_found ->
-            throw({necessary_message_not_found, {msg, Msg}})
+            throw({necessary_message_not_found, MsgID})
     end;
 ensure_loaded(Msg, _Opts) ->
     Msg.

@@ -192,14 +192,28 @@ handle_converge(Req, Msgs, NodeMsg) ->
                 AfterPreprocOpts,
                 hb_opts:get(http_extra_opts, #{}, NodeMsg)
             ),
-            {ok, Res} =
-                embed_status(
+            Res =
+                try
                     hb_converge:resolve_many(
                         PreProcessedMsg,
                         HTTPOpts#{ force_message => true }
                     )
+                catch
+                    throw:{necessary_message_not_found, MsgID} ->
+                        ID = hb_util:human_id(MsgID),
+                        {error, #{
+                            <<"status">> => 404,
+                            <<"unavilable">> => ID,
+                            <<"body">> =>
+                                <<"Message necessary to resolve request not found: ",
+                                    ID/binary>>
+                        }}
+                end,
+            {ok, StatusEmbeddedRes} =
+                embed_status(
+                    Res
                 ),
-            ?event({res, Res}),
+            ?event({res, StatusEmbeddedRes}),
             AfterResolveOpts = hb_http_server:get_opts(NodeMsg),
             % Apply the post-processor to the result.
             Output = maybe_sign(
@@ -208,7 +222,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
                         <<"postprocess">>,
                         postprocessor,
                         Req,
-                        Res,
+                        StatusEmbeddedRes,
                         AfterResolveOpts
                     )
                 ),
