@@ -379,14 +379,14 @@ format(Map, Indent) when is_map(Map) ->
         FilterUndef(PriorityKeys) ++
         maps:to_list(
             minimize(Map,
-                case hb_opts:get(debug_hide_metadata, false, #{}) of
-                    true ->
+                case hb_opts:get(debug_metadata, false, #{}) of
+                    false ->
                         [
                             <<"attestations">>,
                             <<"path">>,
                             <<"device">>
                         ];
-                    false -> [
+                    true -> [
                         <<"path">>,
                         <<"device">>
                     ]
