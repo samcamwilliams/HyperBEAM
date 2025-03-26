@@ -275,10 +275,12 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
         end,
     ?event({input_msg, InputMsg}),
     ?event(compute, {executing, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
+    % Unset the previous results.
+    UnsetResults = hb_converge:set(State, #{ <<"results">> => unset }, Opts),
     Res =
         run_as(
             <<"execution">>,
-            State,
+            UnsetResults,
             InputMsg,
             Opts
         ),
@@ -542,8 +544,8 @@ test_base_process(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     hb_message:attest(#{
-        <<"device">> => <<"Process@1.0">>,
-        <<"scheduler-device">> => <<"Scheduler@1.0">>,
+        <<"device">> => <<"process@1.0">>,
+        <<"scheduler-device">> => <<"scheduler@1.0">>,
         <<"scheduler-location">> => Address,
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
@@ -556,7 +558,7 @@ test_wasm_process(WASMImage, Opts) ->
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:attest(
         maps:merge(test_base_process(Opts), #{
-            <<"execution-device">> => <<"Stack@1.0">>,
+            <<"execution-device">> => <<"stack@1.0">>,
             <<"device-stack">> => [<<"WASM-64@1.0">>],
             <<"image">> => WASMImageID
         }),
