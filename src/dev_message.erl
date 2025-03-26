@@ -372,36 +372,63 @@ set(Message1, NewValuesMsg, _Opts) ->
             end,
             maps:keys(Message1)
         ),
-    % Calculate if we need to remove the attestations from the message.
-    WithoutAtts =
-        case UnsetKeys ++ ConflictingKeys of
-            [] -> [];
-            _ -> [<<"attestations">>]
-        end,
-	{
-		ok,
-		maps:merge(
-			maps:without(ConflictingKeys ++ UnsetKeys ++ WithoutAtts, Message1),
-			maps:from_list(
-				lists:filtermap(
-					fun(Key) ->
-                        case maps:get(Key, NewValuesMsg, undefined) of
-                            undefined -> false;
-                            unset -> false;
-                            Value -> {true, {Key, Value}}
-                        end
-					end,
-					KeysToSet
-				)
-			)
-		)
-	}.
+    % Base message with keys-to-unset removed
+    BaseValues = maps:without(UnsetKeys, Message1),
+    ?event(
+        {performing_set,
+            {conflicting_keys, ConflictingKeys},
+            {keys_to_unset, UnsetKeys},
+            {new_values, NewValuesMsg},
+            {original_message, Message1}
+        }
+    ),
+    % Create the map of new values
+    NewValues = maps:from_list(
+        lists:filtermap(
+            fun(Key) ->
+                case maps:get(Key, NewValuesMsg, undefined) of
+                    undefined -> false;
+                    unset -> false;
+                    Value -> {true, {Key, Value}}
+                end
+            end,
+            KeysToSet
+        )
+    ),
+    % Combine with deep_merge
+    Merged = deep_merge(BaseValues, NewValues),
+    % If the merged message matches the original, return the original. This 
+    % maintains the attestations if either the keys to set are nil, or the 
+    % values have not changed.
+    % Otherwise, return the merged message with the attestations removed.
+    case hb_message:match(Merged, Message1) of
+        true -> {ok, Message1};
+        false -> {ok, maps:without([<<"attestations">>], Merged)}
+    end.
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
 %% for Converge to know the key to evaluate in requests.
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
+
+%% @doc Deep merge two maps, recursively merging nested maps
+deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
+    maps:fold(
+        fun(Key, Value2, AccMap) ->
+            case maps:find(Key, AccMap) of
+                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+                    % Both values are maps, recursively merge them
+                    AccMap#{Key => deep_merge(Value1, Value2)};
+                _ ->
+                    % Either the key doesn't exist in Map1 or at least one of 
+                    % the values isn't a map. Simply use the value from Map2
+                    AccMap#{ Key => Value2 }
+            end
+        end,
+        Map1,
+        Map2
+    ).
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ <<"item">> := Key }) ->

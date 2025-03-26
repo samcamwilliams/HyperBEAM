@@ -122,7 +122,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_metadata => false,
+        debug_metadata => true,
         debug_ids => true,
         debug_show_priv => if_present,
 		trusted => #{},
@@ -244,7 +244,8 @@ get(Key, Default, Opts) ->
                     (Str) when Str == "1" -> true;
                     (Str) when Str == "true" -> true;
                     (Str) -> string:tokens(Str, ",")
-                end
+                end,
+                "http_short,compute_short,push_short"
             }
     }
 ).

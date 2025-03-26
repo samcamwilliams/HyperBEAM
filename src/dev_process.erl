@@ -510,7 +510,7 @@ ensure_process_key(Msg1, Opts) ->
                     [] ->
                         case hb_cache:read(hb_message:id(Msg1, all), Opts) of
                             {ok, Proc} -> Proc;
-                            {error, _} ->
+                            not_found ->
                                 % Fallback to the original message if we cannot
                                 % read it from the cache.
                                 Msg1

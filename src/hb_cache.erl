@@ -216,7 +216,11 @@ do_read(Path, Store, Opts, AlreadyRead) ->
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
         no_viable_store -> not_found;
-        simple -> hb_store:read(Store, ResolvedFullPath);
+        simple ->
+            case hb_store:read(Store, ResolvedFullPath) of
+                {ok, Bin} -> {ok, Bin};
+                {error, _} -> not_found
+            end;
         _ ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, Subpaths} ->
