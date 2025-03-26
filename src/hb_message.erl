@@ -229,8 +229,7 @@ attested(Msg, AttestorsMsg, Opts) ->
 
 %% @doc wrapper function to verify a message.
 verify(Msg) -> verify(Msg, <<"all">>).
-verify(Msg, signers) ->
-    verify(Msg, hb_message:signers(Msg));
+verify(Msg, signers) -> verify(Msg, hb_message:signers(Msg));
 verify(Msg, Attestors) ->
     {ok, Res} =
         dev_message:verify(

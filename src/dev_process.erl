@@ -523,7 +523,7 @@ ensure_process_key(Msg1, Opts) ->
                 #{ <<"process">> => Attested },
                 Opts#{ hashpath => ignore }
             ),
-            ?event(debug, {set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
+            ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
             Res;
         _ -> Msg1
     end.

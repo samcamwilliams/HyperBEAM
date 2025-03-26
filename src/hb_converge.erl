@@ -201,6 +201,7 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
     % As this is the first message, we will then continue to execute the request
     % on the result.
     ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
+    ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {msg2, Msg2}}, Opts),
     case subresolve(#{}, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
@@ -1283,7 +1284,7 @@ default_module() -> dev_message.
 %% when calling itself.
 internal_opts(Opts) ->
     maps:merge(Opts, #{
-        topic => converge_internal,
+        topic => hb_opts:get(topic, converge_internal, Opts),
         hashpath => ignore,
         cache_control => [<<"no-cache">>, <<"no-store">>],
         spawn_worker => false,

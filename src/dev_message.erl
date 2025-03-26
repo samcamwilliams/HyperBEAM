@@ -342,7 +342,8 @@ attested(Self, Req, Opts) ->
     ?event({only_attested_keys, OnlyAttestedKeys}),
     {ok, OnlyAttestedKeys}.
 
-set(Message1, NewValuesMsg, _Opts) ->
+set(Message1, NewValuesMsg, Opts) ->
+    OriginalPriv = hb_private:from_message(Message1),
 	% Filter keys that are in the default device (this one).
     {ok, NewValuesKeys} = keys(NewValuesMsg),
 	KeysToSet =
@@ -395,15 +396,36 @@ set(Message1, NewValuesMsg, _Opts) ->
             KeysToSet
         )
     ),
+    % Caclulate if the keys to be set conflict with any attested keys.
+    {ok, Attestors} = attestors(Message1, #{}, Opts),
+    {ok, AttestedKeys} =
+        attested(
+            Message1,
+            #{ <<"attestors">> =>
+                lists:filter(fun(Att) -> ?IS_ID(Att) end, Attestors)
+            },
+            Opts
+        ),
+    ?event(set, {setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}}, Opts),
+    OverwrittenAttestedKeys =
+        sets:to_list(
+            sets:intersection(
+                sets:from_list(AttestedKeys),
+                sets:from_list(KeysToSet)
+            )
+        ),
+    ?event(set, {setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}, Opts),
     % Combine with deep_merge
-    Merged = deep_merge(BaseValues, NewValues),
-    % If the merged message matches the original, return the original. This 
-    % maintains the attestations if either the keys to set are nil, or the 
-    % values have not changed.
-    % Otherwise, return the merged message with the attestations removed.
-    case hb_message:match(Merged, Message1) of
-        true -> {ok, Message1};
-        false -> {ok, maps:without([<<"attestations">>], Merged)}
+    Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
+    case OverwrittenAttestedKeys of
+        [] -> {ok, Merged};
+        _ ->
+            % We did overwrite some keys, but do their values match the original?
+            % If not, we must remove the attestations.
+            case hb_message:match(Merged, Message1) of
+                true -> {ok, Merged};
+                false -> {ok, maps:without([<<"attestations">>], Merged)}
+            end
     end.
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
