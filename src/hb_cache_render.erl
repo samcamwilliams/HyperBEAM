@@ -1,6 +1,6 @@
 %%% @doc A module that helps to render given Key graphs into the .dot files
 -module(hb_cache_render).
--export([render/1, render/2]).
+-export([render/1, render/2, cache_path_to_dot/2, dot_to_svg/1]).
 % Preparing data for testing
 -export([prepare_unsigned_data/0, prepare_signed_data/0,
     prepare_deeply_nested_complex_message/0]).
@@ -9,26 +9,30 @@
 %% @doc Render the given Key into svg
 render(StoreOrOpts) ->
     render(all, StoreOrOpts).
-render(ToRender, StoreOrOpts) when is_map(StoreOrOpts) ->
-    Store = hb_opts:get(store, no_viable_store, StoreOrOpts),
-    render(ToRender, Store);
-render(all, Store) ->
-    {ok, Keys} = hb_store:list(Store, "/"),
-    render(Keys, Store);
-render(InitPath, Store) when is_binary(InitPath) ->
-    {ok, Keys} = hb_store:list(Store, InitPath),
-    render(Keys, Store);
-render(Keys, Store) ->
+render(ToRender, StoreOrOpts) ->
     % Collect graph elements (nodes and arcs) by traversing the store
-    Graph = collect_graph(Store, Keys),
     % Generate and view the graph visualization
-    generate_dot_file(Graph),
-    os:cmd("dot -Tsvg new_render_diagram.dot -o new_render_diagram.svg"),
+    % Write SVG to file and open it
+    file:write_file("new_render_diagram.svg",
+        dot_to_svg(cache_path_to_dot(ToRender, StoreOrOpts))),
     os:cmd("open new_render_diagram.svg"),
     ok.
 
+%% @doc Generate a dot file from a cache path and options/store
+cache_path_to_dot(ToRender, StoreOrOpts) ->
+    graph_to_dot(cache_path_to_graph(ToRender, StoreOrOpts)).
+
 %% @doc Main function to collect graph elements
-collect_graph(Store, RootKeys) ->
+cache_path_to_graph(ToRender, StoreOrOpts) when is_map(StoreOrOpts) ->
+    Store = hb_opts:get(store, no_viable_store, StoreOrOpts),
+    cache_path_to_graph(ToRender, Store);
+cache_path_to_graph(all, Store) ->
+    {ok, Keys} = hb_store:list(Store, "/"),
+    cache_path_to_graph(Store, Keys);
+cache_path_to_graph(InitPath, Store) when is_binary(InitPath) ->
+    {ok, Keys} = hb_store:list(Store, InitPath),
+    cache_path_to_graph(Store, Keys);
+cache_path_to_graph(Store, RootKeys) ->
     % Use a map to track nodes, arcs and visited paths (to avoid cycles)
     EmptyGraph = #{nodes => #{}, arcs => #{}, visited => #{}},
     % Process all root keys and get the final graph
@@ -121,48 +125,66 @@ extract_label(Path) ->
     end.
 
 %% @doc Generate the DOT file from the graph
-generate_dot_file(Graph) ->
-    os:cmd("rm new_render_diagram.dot"),
-    {ok, IoDevice} = file:open("new_render_diagram.dot", [write]),
-    % Write graph header
-    ok = file:write(IoDevice, <<"digraph filesystem {\n">>),
-    ok = file:write(IoDevice, <<"  node [shape=circle];\n">>),
-    % Write all nodes
-    maps:foreach(
-        fun(ID, {Label, Color}) ->
-            io:format(
-                IoDevice,
-                <<"  \"~s\" [label=\"~s\", color=~s, style=filled];~n">>,
-                [ID, hb_util:short_id(hb_util:bin(Label)), Color]
-            )
+graph_to_dot(Graph) ->
+    % Create graph header
+    Header = [
+        <<"digraph filesystem {\n">>,
+        <<"  node [shape=circle];\n">>
+    ],
+    % Create nodes section
+    Nodes = maps:fold(
+        fun(ID, {Label, Color}, Acc) ->
+            [
+                Acc,
+                io_lib:format(
+                    <<"  \"~s\" [label=\"~s\", color=~s, style=filled];~n">>,
+                    [ID, hb_util:short_id(hb_util:bin(Label)), Color]
+                )
+            ]
         end,
+        [],
         maps:get(nodes, Graph, #{})
     ),
-    % Write all arcs
-    maps:foreach(
-        fun({From, To, Label}, _) ->
-            io:format(
-                IoDevice,
-                <<"  \"~s\" -> \"~s\" [label=\"~s\"];~n">>,
-                [From, To, hb_util:short_id(hb_util:bin(Label))]
-            )
+    % Create arcs section
+    Arcs = maps:fold(
+        fun({From, To, Label}, _, Acc) ->
+            [
+                Acc,
+                io_lib:format(
+                    <<"  \"~s\" -> \"~s\" [label=\"~s\"];~n">>,
+                    [From, To, hb_util:short_id(hb_util:bin(Label))]
+                )
+            ]
         end,
+        [],
         maps:get(arcs, Graph, #{})
     ),
-    % Write graph footer
-    ok = file:write(IoDevice, <<"}\n">>),
-    file:close(IoDevice).
+    % Create graph footer
+    Footer = <<"}\n">>,
+    % Combine all parts and convert to binary
+    iolist_to_binary([Header, Nodes, Arcs, Footer]).
 
-get_test_store() ->
-    hb_opts:get(store,
-        no_viable_store,
-        #{
-            store => #{
-                <<"store-module">> => hb_store_fs,
-                <<"prefix">> => <<"cache-TEST/render-fs">>
-            }
-        }
-    ).
+%% @doc Convert a dot graph to SVG format
+dot_to_svg(DotInput) ->
+    % Create a port to the dot command
+    Port = open_port({spawn, "dot -Tsvg"}, [binary, use_stdio, stderr_to_stdout]),
+    % Send the dot content to the process
+    true = port_command(Port, iolist_to_binary(DotInput)),
+    % Get the SVG output
+    collect_output(Port, []).
+
+%% @doc Helper function to collect output from port
+collect_output(Port, Acc) ->
+    receive
+        {Port, {data, Data}} ->
+            collect_output(Port, [Data | Acc]);
+        {Port, eof} ->
+            port_close(Port),
+            iolist_to_binary(lists:reverse(Acc))
+    after 5000 ->
+        port_close(Port),
+        erlang:error(dot_command_timeout)
+    end.
 
 % Test data preparation functions
 prepare_unsigned_data() ->
@@ -225,6 +247,5 @@ test_unsigned(Data) ->
         <<"data">> => Data
     }.
 
-% test_signed(Data) -> test_signed(Data, ar_wallet:new()).
 test_signed(Data, Wallet) ->
     hb_message:attest(test_unsigned(Data), Wallet).
