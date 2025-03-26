@@ -78,9 +78,17 @@ write(RawMsg, Opts) ->
 do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
-    ok = hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin),
-    lists:map(fun(AltID) -> hb_store:make_link(Store, Path, AltID) end, AltIDs),
-    {ok, Path};
+    case hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin) of
+	  ok ->
+		lists:map(fun(AltID) -> hb_store:make_link(Store, Path, AltID) end, AltIDs),
+		{ok, Path};
+	{ok, RemotePath} ->	
+		?event(pete, {remote_path, RemotePath}),
+		{ok, RemotePath};
+	{error, Err} ->
+		{error, Err}
+	end;
+
 do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     % Get the ID of the unsigned message.
     {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
@@ -173,6 +181,7 @@ write_binary(Hashpath, Bin, Opts) ->
 write_binary(Hashpath, Bin, Store, Opts) ->
     ?event({writing_binary, {hashpath, Hashpath}, {bin, Bin}, {store, Store}}),
     {ok, Path} = do_write_message(Bin, [Hashpath], Store, Opts),
+	?event(pete, {write_binary_path, Path}),
     {ok, Path}.
 
 %% @doc Read the message at a path. Returns in `structured@1.0' format: Either a

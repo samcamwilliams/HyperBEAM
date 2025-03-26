@@ -4,16 +4,21 @@
 %%% been written to the remote node. In that case, the node would probably want
 %%% to upload it to an Arweave bundler to ensure persistence, too.
 -module(hb_store_remote_node).
--export([scope/1, type/2, read/2, resolve/2]).
+-export([scope/1, type/2, read/2, write/3, resolve/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+%% @doc Returns the scope of this store, which is always 'remote'.
 scope(_) -> remote.
 
+%% @doc Resolves a key path in the remote store context.
+%% For the remote node store, the key is returned as-is.
 resolve(#{ <<"node">> := Node }, Key) ->
     ?event({resolving_to_self, Node, Key}),
     Key.
 
+%% @doc Determines the type of value at the given key.
+%% Remote nodes only support 'simple' type or 'not_found'.
 type(Opts = #{ <<"node">> := Node }, Key) ->
     ?event({remote_type, Node, Key}),
     case read(Opts, Key) of
@@ -21,15 +26,49 @@ type(Opts = #{ <<"node">> := Node }, Key) ->
         _ -> simple
     end.
 
+%% @doc Reads a key from the remote node.
+%% Makes an HTTP request to the remote node and returns the attested message.
 read(Opts = #{ <<"node">> := Node }, Key) ->
     ?event({reading, Key, Opts}),
     case hb_http:get(Node, Key, Opts) of
         {ok, Res} ->
             {ok, Msg} = hb_message:with_only_attested(Res),
+			?event({read_success, Key, Msg}),
             {ok, Msg};
         {error, Err} ->
             ?event({read_error, Key, Err}),
             not_found
+    end.
+
+%% @doc Writes a key to the remote node.
+write(Opts = #{ <<"node">> := Node }, Key, Value) ->
+    ?event({writing, Key, Value, Opts}),
+    % Create a write request message
+    WriteMsg = #{
+        <<"path">> => <<"/~cache@1.0/write">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> => Value
+    },
+    
+    % Sign the message if wallet is provided
+    Wallet = hb:wallet(),
+    SignedMsg = case Wallet of
+        undefined -> WriteMsg;
+        _ -> hb_message:attest(WriteMsg, Wallet)
+    end,
+    
+    % Send the write request
+    case hb_http:post(Node, SignedMsg, Opts) of
+        {ok, Response} -> 
+			?event({write_success_remote, Response}),
+            Status = hb_converge:get(<<"status">>, Response, 0, #{}),
+			Path = hb_converge:get(<<"path">>, Response, <<>>, #{}),
+			?event({write_success_remote_path, Path}),
+            case Status of
+                200 -> {ok, Path};
+                _ -> {error, {unexpected_status, Status}}
+            end;
+        {error, Err} -> {error, Err}
     end.
 
 %%% Tests

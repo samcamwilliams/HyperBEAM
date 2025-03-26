@@ -53,6 +53,7 @@ default_message() ->
         preloaded_devices => [
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
+            #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
             #{<<"name">> => <<"cron@1.0">>, <<"module">> => dev_cron},
             #{<<"name">> => <<"dedup@1.0">>, <<"module">> => dev_dedup},
             #{<<"name">> => <<"delegated-compute@1.0">>, <<"module">> => dev_delegated_compute},
@@ -159,16 +160,17 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
-                #{ <<"store-module">> => hb_store_gateway,
-                    <<"store">> =>
-                        [
-                            #{
-                                <<"store-module">> => hb_store_fs,
-                                <<"prefix">> => <<"cache-mainnet">>
-                            }
-                        ]
-                }
+				#{ <<"store-module">> => hb_store_remote_node, <<"node">> => <<"http://localhost:10001/">> }
+                % #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+                % #{ <<"store-module">> => hb_store_gateway,
+                %     <<"store">> =>
+                %         [
+                %             #{
+                %                 <<"store-module">> => hb_store_fs,
+                %                 <<"prefix">> => <<"cache-mainnet">>
+                %             }
+                %         ]
+                % }
             ],
         % Should we use the latest cached state of a process when computing?
         process_now_from_cache => false,
