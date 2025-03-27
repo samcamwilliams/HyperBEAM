@@ -29,14 +29,11 @@ type(Opts = #{ <<"node">> := Node }, Key) ->
 %% @doc Reads a key from the remote node.
 %% Makes an HTTP request to the remote node and returns the attested message.
 read(Opts = #{ <<"node">> := Node }, Key) ->
-    ?event({reading, Key, Opts}),
     case hb_http:get(Node, Key, Opts) of
         {ok, Res} ->
             {ok, Msg} = hb_message:with_only_attested(Res),
-			?event({read_success, Key, Msg}),
             {ok, Msg};
-        {error, Err} ->
-            ?event({read_error, Key, Err}),
+        {error, _Err} ->
             not_found
     end.
 
@@ -60,10 +57,8 @@ write(Opts = #{ <<"node">> := Node }, Key, Value) ->
     % Send the write request
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} -> 
-			?event({write_success_remote, Response}),
             Status = hb_converge:get(<<"status">>, Response, 0, #{}),
 			Path = hb_converge:get(<<"path">>, Response, <<>>, #{}),
-			?event({write_success_remote_path, Path}),
             case Status of
                 200 -> {ok, Path};
                 _ -> {error, {unexpected_status, Status}}

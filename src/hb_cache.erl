@@ -83,66 +83,79 @@ do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
 		lists:map(fun(AltID) -> hb_store:make_link(Store, Path, AltID) end, AltIDs),
 		{ok, Path};
 	{ok, RemotePath} ->	
-		?event(pete, {remote_path, RemotePath}),
 		{ok, RemotePath};
 	{error, Err} ->
 		{error, Err}
 	end;
 
 do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
-    % Get the ID of the unsigned message.
-    {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
-    ?event({writing_message_with_unsigned_id, UnattestedID, {alts, AltIDs}}),
-    MsgHashpathAlg = hb_path:hashpath_alg(Msg),
-    hb_store:make_group(Store, UnattestedID),
-    % Write the keys of the message into the store, rolling the keys into
-    % hashpaths (having only two parts) as we do so.
-    % We start by writing the group, such that if the message is empty, we
-    % still have a group in the store.
-    hb_store:make_group(Store, UnattestedID),
-    maps:map(
-        fun(<<"device">>, Map) when is_map(Map) ->
-            ?event(error, {request_to_write_device_map, {id, hb_message:id(Map)}}),
-            throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
-        (Key, Value) ->
-            ?event({writing_subkey, {key, Key}, {value, Value}}),
-            KeyHashPath =
-                hb_path:hashpath(
-                    UnattestedID,
-                    hb_path:to_binary(Key),
-                    MsgHashpathAlg,
-                    Opts
-                ),
-            ?event({key_hashpath_from_unsigned, KeyHashPath}),
-            % Note: We do not pass the AltIDs here, as we cannot calculate them
-            % based on the TABM that we have in-memory at this point. We could
-            % turn the TABM back into a structured message, but this is
-            % expensive.
-            {ok, Path} = do_write_message(Value, [], Store, Opts),
-            hb_store:make_link(Store, Path, KeyHashPath),
-            ?event(
-                {
-                    {link, KeyHashPath},
-                    {data_path, Path}
-                }
+    % Check if store is hb_store_remote_node
+    case is_list(Store) andalso length(Store) > 0 andalso 
+         maps:get(<<"store-module">>, hd(Store), undefined) == hb_store_remote_node of
+        true ->
+            % For remote node stores, write the message directly
+			Hashpath = hb_path:hashpath(Msg, Opts),
+			case hb_store:write(Store, <<"data/", Hashpath/binary>>, Msg) of
+                {ok, RemotePath} -> 
+                    {ok, RemotePath};
+                {error, Err} -> 
+                    {error, Err}
+            end;
+        false ->
+            % Get the ID of the unsigned message.
+            {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
+            ?event({writing_message_with_unsigned_id, UnattestedID, {alts, AltIDs}}),
+            MsgHashpathAlg = hb_path:hashpath_alg(Msg),
+            hb_store:make_group(Store, UnattestedID),
+            % Write the keys of the message into the store, rolling the keys into
+            % hashpaths (having only two parts) as we do so.
+            % We start by writing the group, such that if the message is empty, we
+            % still have a group in the store.
+            hb_store:make_group(Store, UnattestedID),
+            maps:map(
+                fun(<<"device">>, Map) when is_map(Map) ->
+                    ?event(error, {request_to_write_device_map, {id, hb_message:id(Map)}}),
+                    throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
+                (Key, Value) ->
+                    ?event({writing_subkey, {key, Key}, {value, Value}}),
+                    KeyHashPath =
+                        hb_path:hashpath(
+                            UnattestedID,
+                            hb_path:to_binary(Key),
+                            MsgHashpathAlg,
+                            Opts
+                        ),
+                    ?event({key_hashpath_from_unsigned, KeyHashPath}),
+                    % Note: We do not pass the AltIDs here, as we cannot calculate them
+                    % based on the TABM that we have in-memory at this point. We could
+                    % turn the TABM back into a structured message, but this is
+                    % expensive.
+                    {ok, Path} = do_write_message(Value, [], Store, Opts),
+                    hb_store:make_link(Store, Path, KeyHashPath),
+                    ?event(
+                        {
+                            {link, KeyHashPath},
+                            {data_path, Path}
+                        }
+                    ),
+                    Path
+                end,
+                hb_private:reset(Msg)
             ),
-            Path
-        end,
-        hb_private:reset(Msg)
-    ),
-    % Write the attestations to the store, linking each attestation ID to the
-    % unattested message.
-    lists:map(
-        fun(AltID) ->
-            ?event({linking_attestation,
-                {unattested_id, UnattestedID},
-                {attested_id, AltID}
-            }),
-            hb_store:make_link(Store, UnattestedID, AltID)
-        end,
-        AltIDs
-    ),
-    {ok, UnattestedID}.
+            % Write the attestations to the store, linking each attestation ID to the
+            % unattested message.
+            lists:map(
+                fun(AltID) ->
+                    ?event({linking_attestation,
+                        {unattested_id, UnattestedID},
+                        {attested_id, AltID}
+                    }),
+                    hb_store:make_link(Store, UnattestedID, AltID)
+                end,
+                AltIDs
+            ),
+            {ok, UnattestedID}
+    end.
 
 %% @doc Calculate the alternative IDs for a message.
 calculate_alt_ids(Bin, _Opts) when is_binary(Bin) -> [];
@@ -180,9 +193,7 @@ write_binary(Hashpath, Bin, Opts) ->
     write_binary(Hashpath, Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
 write_binary(Hashpath, Bin, Store, Opts) ->
     ?event({writing_binary, {hashpath, Hashpath}, {bin, Bin}, {store, Store}}),
-    {ok, Path} = do_write_message(Bin, [Hashpath], Store, Opts),
-	?event(pete, {write_binary_path, Path}),
-    {ok, Path}.
+    do_write_message(Bin, [Hashpath], Store, Opts).
 
 %% @doc Read the message at a path. Returns in `structured@1.0' format: Either a
 %% richly typed map or a direct binary.
