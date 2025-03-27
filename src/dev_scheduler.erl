@@ -646,13 +646,22 @@ get_schedule(Msg1, Msg2, Opts) ->
 %% @doc Get a schedule from a remote scheduler, but first read all of the 
 %% assignments from the local cache that we already know about.
 get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
+    % If we are responding to a legacy scheduler request we must add one to the
+    % `from' slot to account for the fact that the legacy scheduler gives us
+    % the slots _after_ the stated nonce.
     ProcID = without_hint(RawProcID),
     {FromLocalCache, _} = get_local_assignments(ProcID, From, To, Opts),
-    ?event(debug_sched, {from_local_cache, {from, From}, {to, To}, {read, length(FromLocalCache)}}),
+    ?event(debug_sched,
+        {from_local_cache,
+            {from, From},
+            {to, To},
+            {read, length(FromLocalCache)}
+        }
+    ),
     do_get_remote_schedule(
         ProcID,
         FromLocalCache,
-        length(FromLocalCache),
+        From + length(FromLocalCache),
         To,
         Redirect,
         Opts
@@ -660,7 +669,8 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
 
 %% @doc Get a schedule from a remote scheduler, unless we already have already
 %% read all of the assignments from the local cache.
-do_get_remote_schedule(ProcID, LocalAssignments, From, To, _, Opts) when From > To ->
+do_get_remote_schedule(ProcID, LocalAssignments, From, To, _, Opts)
+        when (From > To) orelse ((To == undefined) and (length(LocalAssignments) > 0)) ->
     % We already have all of the assignments from the local cache. Return them
     % as a bundle. We set the 'more' to `undefined' to indicate that there may
     % be more assignments to fetch, but we don't know for sure.
@@ -671,7 +681,12 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, _, Opts) when From > 
             undefined,
             Opts
         ),
-    ?event(debug_sched, {returning_remote_schedule_from_only_cache, Res}),
+    ?event(debug_sched,
+        {returning_remote_schedule_from_only_cache,
+            {length, length(LocalAssignments)},
+            {from_after_local_cache, From},
+            {original_to, To}
+        }),
     Res;
 do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
     % We don't have all of the assignments from the local cache, so we need to
