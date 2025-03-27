@@ -49,7 +49,21 @@ read(ProcID, Slot, Opts) ->
             ])
         ),
     ?event({resolved_path, {p1, P1}, {p2, P2}, {resolved, ResolvedPath}}),
-    hb_cache:read(ResolvedPath, Opts).
+    case hb_cache:read(ResolvedPath, Opts) of
+        {ok, Assignment} ->
+            % If the slot key is not present, the format of the assignment is
+            % AOS2, so we need to convert it to the canonical format.
+            case hb_converge:get(<<"slot">>, Assignment, Opts) of
+                not_found ->
+                    Norm = dev_scheduler_formats:aos2_normalize_types(Assignment),
+                    {ok, Norm};
+                _ ->
+                    {ok, Assignment}
+            end;
+        not_found ->
+            ?event(debug_sched, {read_assignment, {res, not_found}}),
+            not_found
+    end.
 
 %% @doc Get the assignments for a process.
 list(ProcID, Opts) ->

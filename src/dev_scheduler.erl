@@ -73,7 +73,7 @@ next(Msg1, Msg2, Opts) ->
             Opts
         ),
     LastProcessed = hb_util:int(hb_converge:get(<<"at-slot">>, Msg1, Opts)),
-    ?event(next, {local_schedule_cache, {schedule, Schedule}}),
+    ?event(next, {in_message_cache, {schedule, Schedule}}),
     Assignments =
         case Schedule of
             X when is_map(X) and map_size(X) > 0 -> X;
@@ -99,6 +99,7 @@ next(Msg1, Msg2, Opts) ->
                 maps:to_list(maps:without([<<"priv">>, <<"attestations">>], Assignments))
             )
         ),
+    ?event(next, {norm_assignments, {assignments, NormAssignments}}),
     ValidKeys =
         lists:filter(
             fun(Slot) -> Slot > LastProcessed end,
@@ -106,14 +107,19 @@ next(Msg1, Msg2, Opts) ->
         ),
     % Remove assignments that are below the last processed slot.
     FilteredAssignments = maps:with(ValidKeys, NormAssignments),
-    ?event(next, {filtered_assignments, FilteredAssignments}),
+    ?event(next, {filtered_slots, {explicit, ValidKeys}}),
     Slot =
         case ValidKeys of
             [] -> hb_util:int(LastProcessed);
             Slots -> lists:min(Slots)
         end,
     ?event(next,
-        {next_slot_to_process, Slot, {last_processed, LastProcessed}}),
+        {calculating_next_from_assignments,
+            {last_processed, LastProcessed},
+            {next_slot, LastProcessed + 1},
+            {minimum_slot_received, Slot},
+            {assignments_received, maps:size(FilteredAssignments)}
+        }),
     case (LastProcessed + 1) == Slot of
         true ->
             NextMessage =
@@ -540,7 +546,7 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
     ?event({getting_slot_from_ao_core_remote, {path, {string, Path}}}),
     case hb_http:get(Node, Path, Opts#{ http_client => httpc }) of
         {ok, Res} ->
-            ?event(debug_sched, {remote_slot_result, {res, Res}}),
+            ?event({remote_slot_result, {res, Res}}),
             case hb_util:int(hb_converge:get(<<"status">>, Res, 200, Opts)) of
                 200 ->
                     Body = hb_converge:get(<<"body">>, Res, Opts),
@@ -578,7 +584,7 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
                     {error, Res}
             end;
         {error, Res} ->
-            ?event(debug_sched, {remote_slot_error, {error, Res}}),
+            ?event({remote_slot_error, {error, Res}}),
             {error, Res}
     end.
 
@@ -637,9 +643,39 @@ get_schedule(Msg1, Msg2, Opts) ->
             end
     end.
 
-%% @doc Get a schedule from a remote scheduler.
+%% @doc Get a schedule from a remote scheduler, but first read all of the 
+%% assignments from the local cache that we already know about.
 get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
     ProcID = without_hint(RawProcID),
+    {FromLocalCache, _} = get_local_assignments(ProcID, From, To, Opts),
+    ?event(debug_sched, {from_local_cache, {from, From}, {to, To}, {read, length(FromLocalCache)}}),
+    do_get_remote_schedule(
+        ProcID,
+        FromLocalCache,
+        length(FromLocalCache),
+        To,
+        Redirect,
+        Opts
+    ).
+
+%% @doc Get a schedule from a remote scheduler, unless we already have already
+%% read all of the assignments from the local cache.
+do_get_remote_schedule(ProcID, LocalAssignments, From, To, _, Opts) when From > To ->
+    % We already have all of the assignments from the local cache. Return them
+    % as a bundle. We set the 'more' to `undefined' to indicate that there may
+    % be more assignments to fetch, but we don't know for sure.
+    Res = 
+        dev_scheduler_formats:assignments_to_bundle(
+            ProcID,
+            LocalAssignments,
+            undefined,
+            Opts
+        ),
+    ?event(debug_sched, {returning_remote_schedule_from_only_cache, Res}),
+    Res;
+do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
+    % We don't have all of the assignments from the local cache, so we need to
+    % fetch the rest from the remote scheduler.
     Node = node_from_redirect(Redirect, Opts),
     Variant = hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     ?event(
@@ -699,38 +735,91 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_util:int(hb_converge:get(<<"status">>, Res, 200, Opts)) of
                 200 ->
-                    case Variant of
-                        <<"ao.N.1">> ->
-                            {ok, Res};
-                        <<"ao.TN.1">> ->
-                            JSONRes =
-                                jiffy:decode(
-                                    hb_converge:get(
-                                        <<"body">>,
-                                        Res,
-                                        <<"">>,
-                                        Opts
+                    {ok, NormSched} = 
+                        case Variant of
+                            <<"ao.N.1">> ->
+                                {ok, Res};
+                            <<"ao.TN.1">> ->
+                                JSONRes =
+                                    jiffy:decode(
+                                        hb_converge:get(
+                                            <<"body">>,
+                                            Res,
+                                            <<"">>,
+                                            Opts
+                                        ),
+                                        [return_maps]
                                     ),
-                                    [return_maps]
-                                ),
-                            Filtered = filter_json_assignments(JSONRes, To, From),
-                            dev_scheduler_formats:aos2_to_assignments(
-                                ProcID,
-                                Filtered,
-                                Opts
+                                Filtered = filter_json_assignments(JSONRes, To, From),
+                                dev_scheduler_formats:aos2_to_assignments(
+                                    ProcID,
+                                    Filtered,
+                                    Opts
+                                )
+                        end,
+                    cache_remote_schedule(NormSched, Opts),
+                    % Add existing local assignments we read to the remote schedule.
+                    % In order to do this, we need to first convert the remote
+                    % assignments to a list, maintaining the order of the keys.
+                    RemoteAssignments =
+                        hb_util:message_to_ordered_list(
+                            hb_converge:normalize_keys(
+                                hb_converge:get(
+                                    <<"assignments">>,
+                                    NormSched,
+                                    Opts
+                                )
                             )
-                    end;
+                        ),
+                    % Merge the local assignments with the remote assignments,
+                    % and normalize the keys.
+                    Merged =
+                        dev_scheduler_formats:assignments_to_bundle(
+                            ProcID,
+                            MergedAssignments = LocalAssignments ++ RemoteAssignments,
+                            hb_converge:get(<<"continues">>, NormSched, false, Opts),
+                            Opts
+                        ),
+                    ?event(debug_sched,
+                        {returning_remote_schedule,
+                            {length, length(MergedAssignments)},
+                            {from_local_cache, length(LocalAssignments)},
+                            {from_remote_cache, length(RemoteAssignments)}
+                        }
+                    ),
+                    Merged;
                 307 ->
                     % NOTE: Shouldn't this be using the `Res' location key to
                     % regenerate the redirect and recurse on that, instead of
                     % just using the same redirect?
                     ?event({recursing_on_same_redirect, {redirect, Redirect}}),
-                    get_remote_schedule(ProcID, From, To, Redirect, Opts)
+                    do_get_remote_schedule(
+                        ProcID,
+                        LocalAssignments,
+                        From,
+                        To,
+                        Redirect,
+                        Opts
+                    )
             end;
         {error, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             {error, Res}
     end.
+
+%% @doc Cache a schedule received from a remote scheduler.
+cache_remote_schedule(Schedule, Opts) ->
+    Assignments = hb_converge:get(<<"assignments">>, Schedule, Opts),
+    lists:foreach(
+        fun(Assignment) ->
+            dev_scheduler_cache:write(Assignment, Opts)
+        end,
+        AssignmentList =
+            maps:values(
+                maps:without([<<"priv">>], hb_converge:normalize_keys(Assignments))
+            )
+    ),
+    ?event(debug_sched, {caching_remote_schedule, {assignments, length(AssignmentList)}}).
 
 %% @doc Get the node URL from a redirect.
 node_from_redirect(Redirect, Opts) ->
@@ -968,21 +1057,22 @@ get_local_assignments(ProcID, From, RequestedTo, Opts) ->
             false -> RequestedTo
         end,
     {
-        do_get_assignments(ProcID, From, ComputedTo, Opts),
+        read_local_assignments(ProcID, From, ComputedTo, Opts),
         ComputedTo < RequestedTo
     }.
 
 %% @doc Get the assignments for a process.
-do_get_assignments(_ProcID, From, To, _Opts) when From > To ->
+read_local_assignments(_ProcID, From, To, _Opts) when From > To ->
     [];
-do_get_assignments(ProcID, CurrentSlot, To, Opts) ->
+read_local_assignments(ProcID, CurrentSlot, To, Opts) ->
     case dev_scheduler_cache:read(ProcID, CurrentSlot, Opts) of
         not_found ->
-            throw(assignment_not_found);
+            % No assignment found in cache.
+            [];
         {ok, Assignment} ->
             [
                 Assignment
-                | do_get_assignments(
+                | read_local_assignments(
                     ProcID,
                     CurrentSlot + 1,
                     To,
