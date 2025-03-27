@@ -21,7 +21,9 @@
 %%% Binary Messages (TABMs), such that each of the keys in the message is
 %%% either a map or a direct binary.
 -module(hb_cache).
--export([read/2, read_resolved/3, write/2, write_binary/3, write_hashpath/2, link/3]).
+-export([read/2, read_resolved/3]).
+-export([write/2, write_binary/3, write_hashpath/2]).
+-export([link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
 -include("include/hb.hrl").
@@ -121,57 +123,123 @@ write(RawMsg, Opts) ->
 %% @param Opts A map of configuration options.
 %% @returns {ok, Path} on success or {error, Reason} on failure.
 do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
-    ?event(hb_cache, {do_write_message_binary, {start, Bin}, {alt_ids, AltIDs}, {store, Store}}),
+    ?event(hb_cache, 
+		{do_write_message_binary, 
+			{start, Bin}, 
+			{alt_ids, AltIDs},
+			{store, Store}
+		}
+	),
     Hashpath = hb_path:hashpath(Bin, Opts),
     ?event(hb_cache, {do_write_message_binary, {hashpath, Hashpath}}),
     case hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin) of
         ok ->
-            ?event(hb_cache, {do_write_message_binary, {write_result, ok}, {path, Path}}),
+            ?event(hb_cache, 
+				{do_write_message_binary, 
+					{write_result, ok}, {path, Path}
+				}
+			),
             lists:map(
                 fun(AltID) ->
-                    ?event(hb_cache, {do_write_message_binary, {making_link, {alt_id, AltID}, {path, Path}}}),
+                    ?event(hb_cache, 
+						{do_write_message_binary, 
+							{making_link, 
+								{alt_id, AltID}, 
+								{path, Path}
+							}
+						}
+					),
                     hb_store:make_link(Store, Path, AltID)
                 end,
                 AltIDs
             ),
             {ok, Path};
         {ok, RemotePath} ->
-            ?event(hb_cache, {do_write_message_binary, {write_result, {ok, RemotePath}}}),
+            ?event(hb_cache, 
+				{do_write_message_binary, 
+					{write_result, {ok, RemotePath}}
+				}
+			),
             {ok, RemotePath};
         {error, Err} ->
-            ?event(hb_cache, {do_write_message_binary, {write_result, {error, Err}}}),
+            ?event(hb_cache, 
+				{do_write_message_binary, 
+					{write_result, {error, Err}}
+				}
+			),
             {error, Err}
     end;
 
 do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
-    ?event(hb_cache, {do_write_message_map, {start, Msg}, {alt_ids, AltIDs}, {store, Store}}),
-    case is_list(Store) andalso length(Store) > 0 andalso 
-         maps:get(<<"store-module">>, hd(Store), undefined) == hb_store_remote_node of
+    ?event(hb_cache, 
+		{do_write_message_map, 
+			{start, Msg}, 
+			{alt_ids, AltIDs}, 
+			{store, Store}
+		}
+	),
+    case is_list(Store) andalso 
+		length(Store) > 0 andalso 
+		maps:get(
+			<<"store-module">>, 
+			hd(Store), undefined
+		) == hb_store_remote_node of
         true ->
             ?event(hb_cache, {do_write_message_map, {remote_store, true}}),
             Hashpath = hb_path:hashpath(Msg, Opts),
             ?event(hb_cache, {do_write_message_map, {hashpath, Hashpath}}),
             case hb_store:write(Store, <<"data/", Hashpath/binary>>, Msg) of
                 {ok, RemotePath} ->
-                    ?event(hb_cache, {do_write_message_map, {remote_write_success, RemotePath}}),
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{remote_write_success, RemotePath}
+						}
+					),
                     {ok, RemotePath};
                 {error, Err} ->
-                    ?event(hb_cache, {do_write_message_map, {remote_write_error, Err}}),
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{remote_write_error, Err}
+						}
+					),
                     {error, Err}
             end;
         false ->
             ?event(hb_cache, {do_write_message_map, {remote_store, false}}),
-            {ok, UnattestedID} = dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
-            ?event(hb_cache, {do_write_message_map, {unsigned_id, UnattestedID}, {alt_ids, AltIDs}}),
+            {ok, UnattestedID} = 
+				dev_message:id(Msg, #{ <<"attestors">> => <<"none">> }, Opts),
+            ?event(hb_cache, 
+				{do_write_message_map, 
+					{unsigned_id, UnattestedID}, 
+					{alt_ids, AltIDs}
+				}
+			),
             MsgHashpathAlg = hb_path:hashpath_alg(Msg),
             hb_store:make_group(Store, UnattestedID),
             hb_store:make_group(Store, UnattestedID),
             maps:map(
                 fun(<<"device">>, Map) when is_map(Map) ->
-                    ?event(hb_cache, {do_write_message_map, {error, "device_map_cannot_be_written"}, {id, hb_message:id(Map)}}),
-                    throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{error, "device_map_cannot_be_written"}, 
+							{id, hb_message:id(Map)}
+						}
+					),
+                    throw(
+						{
+							device_map_cannot_be_written, 
+							{id, hb_message:id(Map)}
+						}
+					);
                 (Key, Value) ->
-                    ?event(hb_cache, {do_write_message_map, {writing_subkey, {key, Key}, {value, Value}}}),
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{writing_subkey, 
+								{key, Key}, 
+								{value, Value}
+							}
+						}
+					),
                     KeyHashPath =
                         hb_path:hashpath(
                             UnattestedID,
@@ -179,23 +247,41 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
                             MsgHashpathAlg,
                             Opts
                         ),
-                    ?event(hb_cache, {do_write_message_map, {key_hashpath, KeyHashPath}}),
-					% Note: We do not pass the AltIDs here, as we cannot calculate them
-                    % based on the TABM that we have in-memory at this point. We could
-                    % turn the TABM back into a structured message, but this is
-                    % expensive.
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{key_hashpath, KeyHashPath}
+							}
+						),
+					% Note: We do not pass the AltIDs here, as we cannot 
+					% calculate them based on the TABM that we have in-memory
+                    % at this point. We could turn the TABM back into a
+                    % structured message, but this is expensive.
                     {ok, Path} = do_write_message(Value, [], Store, Opts),
                     hb_store:make_link(Store, Path, KeyHashPath),
-                    ?event(hb_cache, {do_write_message_map, {link_created, {key_hashpath, KeyHashPath}, {data_path, Path}}}),
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{link_created, 
+								{key_hashpath, KeyHashPath}, 
+								{data_path, Path}
+							}
+						}
+					),
                     Path
                 end,
                 hb_private:reset(Msg)
             ),
-			% Write the attestations to the store, linking each attestation ID to the
-            % unattested message.
+			% Write the attestations to the store, linking each 
+			% attestation ID to the unattested message.
             lists:map(
                 fun(AltID) ->
-                    ?event(hb_cache, {do_write_message_map, {linking_attestation, {unattested_id, UnattestedID}, {attested_id, AltID}}}),
+                    ?event(hb_cache, 
+						{do_write_message_map, 
+							{linking_attestation, 
+								{unattested_id, UnattestedID}, 
+								{attested_id, AltID}
+							}
+						}
+					),
                     hb_store:make_link(Store, UnattestedID, AltID)
                 end,
                 AltIDs
@@ -227,10 +313,20 @@ calculate_alt_ids(Msg, _Opts) ->
             Att = maps:get(Attestor, Attestations, #{}),
             case maps:get(<<"id">>, Att, undefined) of
                 undefined ->
-                    ?event(hb_cache, {calculate_alt_ids, {attestor, Attestor}, {result, undefined}}),
+                    ?event(hb_cache, 
+						{calculate_alt_ids, 
+							{attestor, Attestor}, 
+							{result, undefined}
+						}
+					),
                     false;
                 ID ->
-                    ?event(hb_cache, {calculate_alt_ids, {attestor, Attestor}, {result, ID}}),
+                    ?event(hb_cache, 
+						{calculate_alt_ids, 
+							{attestor, Attestor}, 
+							{result, ID}
+						}
+					),
                     {true, ID}
             end
         end,
@@ -241,8 +337,8 @@ calculate_alt_ids(Msg, _Opts) ->
 
 %% @doc Write a hashpath and its message to the store and create a link.
 %%
-%% If the message contains a hashpath in its private data, that hashpath is used.
-%% Otherwise, the message is written normally.
+%% If the message contains a hashpath in its private data, that hashpath is
+%% used. Otherwise, the message is written normally.
 %%
 %% @param Msg A map representing the message to be written.
 %% @param Opts A map of configuration options.
@@ -256,30 +352,58 @@ write_hashpath(MsgWithoutHP, Opts) ->
 
 write_hashpath(HP, Msg, Opts) when is_binary(HP) or is_list(HP) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
-    ?event(hb_cache, {write_hashpath, {writing_hashpath, HP}, {msg, Msg}, {store, Store}}),
+    ?event(hb_cache, 
+		{write_hashpath, 
+			{writing_hashpath, HP}, 
+			{msg, Msg}, 
+			{store, Store}
+		}
+	),
     {ok, Path} = write(Msg, Opts),
     hb_store:make_link(Store, Path, HP),
     {ok, Path}.
 
-%% @doc Write a raw binary key into the store and create a link at a given hashpath.
+%% @doc Write a raw binary key into the store and create a link at a given
+%% hashpath.
 %%
 %% @param Hashpath The hashpath at which to write the binary.
 %% @param Bin The binary data to be stored.
 %% @param Opts A map of configuration options.
 %% @returns The result of writing the binary.
 write_binary(Hashpath, Bin, Opts) ->
-    ?event(hb_cache, {write_binary, {start, {hashpath, Hashpath}, {bin, Bin}, {opts, Opts}}}),
-    write_binary(Hashpath, Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
+    ?event(hb_cache, 
+		{write_binary, 
+			{start, 
+				{hashpath, Hashpath}, 
+				{bin, Bin}, 
+				{opts, Opts}
+			}
+		}
+	),
+    write_binary(
+		Hashpath, 
+		Bin, 
+		hb_opts:get(store, no_viable_store, Opts), 
+		Opts
+	).
 
 write_binary(Hashpath, Bin, Store, Opts) ->
-    ?event(hb_cache, {write_binary, {start_with_store, {hashpath, Hashpath}, {bin, Bin}, {store, Store}}}),
+    ?event(hb_cache, 
+		{write_binary, 
+			{start_with_store, 
+				{hashpath, Hashpath}, 
+				{bin, Bin}, 
+				{store, Store}
+			}
+		}
+	),
     do_write_message(Bin, [Hashpath], Store, Opts).
 
 
 %% @doc Read the message at a given path.
 %%
-%% Retrieves the message in `structured@1.0' format, which may be a richly typed map
-%% or a direct binary.
+%% Retrieves the message in `structured@1.0' format, which may be a richly
+%% typed map or a direct binary.
 %%
 %% @param Path The path or key to read.
 %% @param Opts A map of configuration options.
@@ -299,14 +423,23 @@ read(Path, Opts) ->
             {ok, Structured}
     end.
 
-%% @doc Recursively read a path from the store, tracking visited paths to avoid circular links.
+%% @doc Recursively read a path from the store, tracking visited paths to
+%% avoid circular links.
 %%
 %% @param Path The path to be read.
 %% @param Store The store configuration.
 %% @param Opts A map of configuration options.
 %% @returns {ok, Result} on success, or not_found if the path cannot be read.
 store_read(Path, Store, Opts) ->
-    ?event(hb_cache, {store_read, {start, {path, Path}, {store, Store}, {opts, Opts}}}),
+    ?event(hb_cache, 
+		{store_read, 
+			{start, 
+				{path, Path}, 
+				{store, Store},
+				{opts, Opts}
+			}
+		}
+	),
     store_read(Path, Store, Opts, []).
 
 store_read(_Path, no_viable_store, _, _AlreadyRead) ->
@@ -331,7 +464,8 @@ store_read(Path, Store, Opts, AlreadyRead) ->
 
 %% @doc Read a path from the store.
 %%
-%% This function is unsafe as it may recurse indefinitely if circular links are present.
+%% This function is unsafe as it may recurse indefinitely if circular links
+%% are present.
 %%
 %% @param Path The path to read.
 %% @param Store The store configuration.
@@ -339,8 +473,14 @@ store_read(Path, Store, Opts, AlreadyRead) ->
 %% @param AlreadyRead A list of paths already visited.
 %% @returns The read result, or not_found if unsuccessful.
 do_read(Path, Store, Opts, AlreadyRead) ->
-    ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
-    ?event(hb_cache, {do_read, {path, PathToBin}, {resolved, ResolvedFullPath}}),
+    ResolvedFullPath = 
+		hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
+    ?event(hb_cache, 
+		{do_read, 
+			{path, PathToBin}, 
+			{resolved, ResolvedFullPath}
+		}
+	),
     case hb_store:type(Store, ResolvedFullPath) of
         not_found ->
             ?event(hb_cache, {do_read, {result, not_found}}),
@@ -366,7 +506,14 @@ do_read(Path, Store, Opts, AlreadyRead) ->
 					maps:from_list(
 					lists:map(
 						fun(Subpath) ->
-							?event(hb_cache, {do_read, {reading_subpath, {path, Subpath}, {store, Store}}}),
+							?event(hb_cache, 
+								{do_read, 
+									{reading_subpath, 
+										{path, Subpath}, 
+										{store, Store}
+									}
+								}
+							),
 							{ok, Res} = store_read(
 								[ResolvedFullPath, Subpath],
 								 Store, 
@@ -386,19 +533,28 @@ do_read(Path, Store, Opts, AlreadyRead) ->
 		end
     end.
 
-%% @doc Read the output of a prior computation given two message identifiers or messages.
+%% @doc Read the output of a prior computation given two message identifiers
+%% or messages.
 %%
-%% Constructs a composite path from the provided message IDs (or messages) and retrieves the result.
+%% Constructs a composite path from the provided message IDs (or messages)
+%% and retrieves the result.
 %%
 %% @param MsgID1 The first message ID or message.
 %% @param MsgID2 The second message ID or message.
 %% @param Opts A map of configuration options.
 %% @returns The resolved message, or not_found if not available.
 read_resolved(MsgID1, MsgID2, Opts) when ?IS_ID(MsgID1) and ?IS_ID(MsgID2) ->
-    ?event(hb_cache, {read_resolved, {msg1, MsgID1}, {msg2, MsgID2}, {opts, Opts}}),
+    ?event(hb_cache, 
+		{read_resolved, 
+			{msg1, MsgID1}, 
+			{msg2, MsgID2}, 
+			{opts, Opts}
+		}
+	),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
 read_resolved(MsgID1, Msg2, Opts) when ?IS_ID(MsgID1) and is_map(Msg2) ->
-    {ok, MsgID2} = dev_message:id(Msg2, #{ <<"attestors">> => <<"all">> }, Opts),
+    {ok, MsgID2} = 
+		dev_message:id(Msg2, #{ <<"attestors">> => <<"all">> }, Opts),
     ?event(hb_cache, {read_resolved, {derived_msgid2, MsgID2}}),
     read(<<MsgID1/binary, "/", MsgID2/binary>>, Opts);
 read_resolved(Msg1, Msg2, Opts) when is_map(Msg1) and is_map(Msg2) ->
@@ -477,12 +633,16 @@ test_store_simple_unsigned_message(Opts) ->
 test_store_ans104_message(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:reset(Store),
-    Item = #{ <<"type">> => <<"ANS104">>, <<"content">> => <<"Hello, world!">> },
+    Item = 
+		#{ <<"type">> => <<"ANS104">>, <<"content">> => <<"Hello, world!">> },
     Attested = hb_message:attest(Item, hb:wallet()),
     {ok, _Path} = write(Attested, Opts),
     AttestedID = hb_util:human_id(hb_message:id(Attested, all)),
     UnattestedID = hb_util:human_id(hb_message:id(Attested, none)),
-    ?event({test_message_ids, {unattested, UnattestedID}, {attested, AttestedID}}),
+    ?event({test_message_ids, 
+		{unattested, UnattestedID}, 
+		{attested, AttestedID}
+	}),
     {ok, RetrievedItem} = read(AttestedID, Opts),
     {ok, RetrievedItemU} = read(UnattestedID, Opts),
     ?assert(hb_message:match(Attested, RetrievedItem)),
@@ -502,9 +662,13 @@ test_store_simple_signed_message(Opts) ->
     %% Read the item back
     {ok, UID} = dev_message:id(Item, #{ <<"attestors">> => <<"none">> }, Opts),
     {ok, RetrievedItemU} = read(UID, Opts),
-    ?event({retreived_unsigned_message, {expected, Item}, {got, RetrievedItemU}}),
+    ?event({retreived_unsigned_message, 
+		{expected, Item}, 
+		{got, RetrievedItemU}
+	}),
     ?assert(hb_message:match(Item, RetrievedItemU)),
-    {ok, AttestedID} = dev_message:id(Item, #{ <<"attestors">> => [Address] }, Opts),
+    {ok, AttestedID} = 
+		dev_message:id(Item, #{ <<"attestors">> => [Address] }, Opts),
     {ok, RetrievedItemS} = read(AttestedID, Opts),
     ?assert(hb_message:match(Item, RetrievedItemS)),
     ok.
@@ -541,7 +705,8 @@ test_deeply_nested_complex_message(Opts) ->
         ),
     {ok, UID} = dev_message:id(Outer, #{ <<"attestors">> => <<"none">> }, Opts),
     ?event({string, <<"================================================">>}),
-    {ok, AttestedID} = dev_message:id(Outer, #{ <<"attestors">> => [Address] }, Opts),
+    {ok, AttestedID} = 
+		dev_message:id(Outer, #{ <<"attestors">> => [Address] }, Opts),
     ?event({string, <<"================================================">>}),
     ?event({test_message_ids, {unattested, UID}, {attested, AttestedID}}),
     %% Write the nested item
@@ -560,7 +725,10 @@ test_deeply_nested_complex_message(Opts) ->
     ?event({deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_converge:get(<<"deep-test-key">>, DeepMsg)),
-    ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
+    ?event({deep_message_match, 
+		{read, DeepMsg}, 
+		{write, Level3SignedSubmessage}
+	}),
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),
     ?assert(hb_message:match(Outer, OuterMsg)),
@@ -579,12 +747,18 @@ test_message_with_message(Opts) ->
 
 cache_suite_test_() ->
     hb_store:generate_test_suite([
-        {"store unsigned empty message", fun test_store_unsigned_empty_message/1},
-        {"store binary", fun test_store_binary/1},
-        {"store simple unsigned message", fun test_store_simple_unsigned_message/1},
-        {"store simple signed message", fun test_store_simple_signed_message/1},
-        {"deeply nested complex message", fun test_deeply_nested_complex_message/1},
-        {"message with message", fun test_message_with_message/1}
+        {"store unsigned empty message", 
+			fun test_store_unsigned_empty_message/1},
+        {"store binary", 
+			fun test_store_binary/1},
+        {"store simple unsigned message", 
+			fun test_store_simple_unsigned_message/1},
+        {"store simple signed message", 
+			fun test_store_simple_signed_message/1},
+        {"deeply nested complex message", 
+			fun test_deeply_nested_complex_message/1},
+        {"message with message", 
+			fun test_message_with_message/1}
     ]).
 
 %% @doc Test that message whose device is `#{}` cannot be written. If it were to
@@ -592,7 +766,11 @@ cache_suite_test_() ->
 test_device_map_cannot_be_written_test() ->
     try
         Opts = #{ store => StoreOpts =
-            [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }] },
+            [#{ 
+				<<"store-module">> => hb_store_fs, 
+				<<"prefix">> => <<"cache-TEST">> 
+			}] 
+		},
         hb_store:reset(StoreOpts),
         Danger = #{ <<"device">> => #{}},
         write(Danger, Opts),
@@ -603,6 +781,10 @@ test_device_map_cannot_be_written_test() ->
 
 run_test() ->
     Opts = #{ store => StoreOpts = 
-        [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
+        [#{
+			<<"store-module">> => hb_store_fs, 
+			<<"prefix">> => <<"cache-TEST">> 
+		}]
+	},
     test_store_ans104_message(Opts),
     hb_store:reset(StoreOpts).

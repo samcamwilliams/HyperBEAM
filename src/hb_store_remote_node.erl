@@ -105,11 +105,14 @@ write(Opts = #{ <<"node">> := Node }, Key, Value) ->
 %%% Tests
 %%%--------------------------------------------------------------------
 
-%% @doc Test that we can create a store, write a random message to it, then start
-%% a remote node with that store, and read the message from it.
+%% @doc Test that we can create a store, write a random message to it, then
+%% start a remote node with that store, and read the message from it.
 read_test() ->
     rand:seed(default),
-    LocalStore = #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+    LocalStore = #{ 
+		<<"store-module">> => hb_store_fs,
+		<<"prefix">> => <<"cache-mainnet">> 
+	},
     hb_store:reset(LocalStore),
     M = #{ <<"test-key">> => Rand = rand:uniform(1337) },
     ID = hb_message:id(M),
@@ -125,6 +128,8 @@ read_test() ->
                 store => LocalStore
             }
         ),
-    RemoteStore = [#{ <<"store-module">> => hb_store_remote_node, <<"node">> => Node }],
+    RemoteStore = [
+		#{ <<"store-module">> => hb_store_remote_node, <<"node">> => Node }
+	],
     {ok, RetrievedMsg} = hb_cache:read(ID, #{ store => RemoteStore }),
     ?assertMatch(#{ <<"test-key">> := Rand }, RetrievedMsg).
