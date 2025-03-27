@@ -1,5 +1,5 @@
 -module(dev_scheduler_cache).
--export([write/2, read/3, list/2, latest/2]).
+-export([write/2, read/3, list/2, latest/2, read_location/2, write_location/2]).
 -include("include/hb.hrl").
 
 %%% Assignment cache functions
@@ -101,3 +101,45 @@ latest(ProcID, Opts) ->
                     <<"hash-chain">>, Assignment, #{ hashpath => ignore })
             }
     end.
+
+%% @doc Read the latest known scheduler location for an address.
+read_location(Address, Opts) ->
+    Res = hb_cache:read(
+        hb_store:path(hb_opts:get(store, no_viable_store, Opts), [
+            "scheduler-locations",
+            hb_util:human_id(Address)
+        ]),
+        Opts
+    ),
+    ?event(debug_sched, {read_location_msg, {address, Address}, {res, Res}}),
+    Res.
+
+%% @doc Write the latest known scheduler location for an address.
+write_location(LocationMsg, Opts) ->
+    {ok, RootPath} = hb_cache:write(LocationMsg, Opts),
+    Signers = hb_message:signers(LocationMsg),
+    ?event(debug_sched,
+        {writing_location_msg,
+            {signers, Signers},
+            {path, RootPath},
+            {location_msg, LocationMsg}
+        }
+    ),
+    lists:foreach(
+        fun(Signer) ->
+            hb_store:make_link(
+                hb_opts:get(store, no_viable_store, Opts),
+                RootPath,
+                hb_store:path(
+                    hb_opts:get(store, no_viable_store, Opts),
+                    [
+                        "scheduler-locations",
+                        hb_util:human_id(Signer)
+                    ]
+                )
+            ),
+            ok
+        end,
+        Signers
+    ),
+    ok.

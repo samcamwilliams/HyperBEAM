@@ -479,18 +479,36 @@ without_hint(Target) ->
     end.
 
 %% @doc Use the SchedulerLocation to the remote path and return a redirect.
-find_remote_scheduler(ProcID, SchedulerLocation, Opts) ->
-    % Parse the SchedulerLocation to see if it has a hint. If there is a hint,
+find_remote_scheduler(ProcID, Scheduler, Opts) ->
+    % Parse the scheduler location to see if it has a hint. If there is a hint,
     % we will use it to construct a redirect message.
-    case get_hint(SchedulerLocation, Opts) of
+    case get_hint(Scheduler, Opts) of
         {ok, Hint} ->
             % We have a hint. Construct a redirect message.
             generate_redirect(ProcID, Hint, Opts);
         not_found ->
-            {ok, SchedMsg} =
-                hb_gateway_client:scheduler_location(SchedulerLocation, Opts),
-            % We have a valid path. Construct a redirect message.
-            generate_redirect(ProcID, SchedMsg, Opts)
+            case dev_scheduler_cache:read_location(Scheduler, Opts) of
+                {ok, SchedMsg} ->
+                    % We have a cached scheduler location. Use it to construct a
+                    % redirect message.
+                    generate_redirect(ProcID, SchedMsg, Opts);
+                not_found ->
+                    % We have not yet cached the location for this address.
+                    % Find it via the gateway.
+                    case hb_gateway_client:scheduler_location(Scheduler, Opts) of
+                        {ok, SchedMsg} ->
+                            % We have found the location. Cache it and use it to
+                            % construct a redirect message.
+                            dev_scheduler_cache:write_location(
+                                SchedMsg,
+                                Opts
+                            ),
+                            generate_redirect(ProcID, SchedMsg, Opts);
+                        {error, Res} ->
+                            ?event({error_finding_scheduler, {error, Res}}),
+                            {error, Res}
+                    end
+            end
     end.
 
 %% @doc Returns information about the current slot for a process.
