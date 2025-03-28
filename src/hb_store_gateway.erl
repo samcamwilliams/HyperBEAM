@@ -74,7 +74,7 @@ maybe_cache(StoreOpts, Data) ->
             case hb_cache:write(Data, #{ store => Store}) of
                 {ok, _} -> Data;
                 {error, Err} ->
-                    ?event(warning, {error_writing_to_local_gteway_cache, Err}),
+                    ?event(warning, {error_writing_to_local_gateway_cache, Err}),
                     Data
             end
     end.

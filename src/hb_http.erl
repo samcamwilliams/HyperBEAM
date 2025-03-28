@@ -674,15 +674,16 @@ http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
             case Signers =/= [] andalso hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
-                    hb_cache:write(Msg,
-                        Opts#{
-                            store =>
-                                #{
-                                    <<"store-module">> => hb_store_fs,
-                                    <<"prefix">> => <<"cache-http">>
-                                }
-                        }
-                    );
+                    {ok, _} =
+                        hb_cache:write(Msg,
+                            Opts#{
+                                store =>
+                                    #{
+                                        <<"store-module">> => hb_store_fs,
+                                        <<"prefix">> => <<"cache-http">>
+                                    }
+                            }
+                        );
                 false ->
                     do_nothing
             end,

@@ -342,7 +342,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
                 }
             };
         {true, <<"Process">>} ->
-            hb_cache:write(Msg2, Opts),
+            {ok, _} = hb_cache:write(Msg2, Opts),
             spawn(fun() -> hb_client:upload(Msg2, Opts) end),
             ?event(
                 {registering_new_process,
