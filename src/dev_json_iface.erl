@@ -124,6 +124,7 @@ message_to_json_struct(RawMsg, Features) ->
             #{}
         ),
     ID = hb_message:id(RawMsg, all),
+    ?event(next_debug, {encoding, {id, ID}, {msg, RawMsg}}),
     Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
 	Owner =
         case hb_message:signers(RawMsg) of

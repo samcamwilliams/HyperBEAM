@@ -111,20 +111,18 @@ read_location(Address, Opts) ->
         ]),
         Opts
     ),
-    ?event(debug_sched, {read_location_msg, {address, Address}, {res, Res}}),
+    ?event({read_location_msg, {address, Address}, {res, Res}}),
     Res.
 
 %% @doc Write the latest known scheduler location for an address.
 write_location(LocationMsg, Opts) ->
     {ok, RootPath} = hb_cache:write(LocationMsg, Opts),
     Signers = hb_message:signers(LocationMsg),
-    ?event(debug_sched,
-        {writing_location_msg,
-            {signers, Signers},
-            {path, RootPath},
-            {location_msg, LocationMsg}
-        }
-    ),
+    ?event({writing_location_msg,
+        {signers, Signers},
+        {path, RootPath},
+        {location_msg, LocationMsg}
+    }),
     lists:foreach(
         fun(Signer) ->
             hb_store:make_link(

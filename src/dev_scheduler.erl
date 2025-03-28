@@ -78,17 +78,26 @@ next(Msg1, Msg2, Opts) ->
         case Schedule of
             X when is_map(X) and map_size(X) > 0 -> X;
             _ ->
-                {ok, RecvdAssignments} =
-                    hb_converge:resolve(
-                        Msg1,
+                ProcID = dev_process:process_id(Msg1, Msg2, Opts),
+                case dev_scheduler_cache:read(ProcID, New = LastProcessed + 1, Opts) of
+                    not_found ->
+                        {ok, RecvdAssignments} =
+                            hb_converge:resolve(
+                                Msg1,
+                                #{
+                                    <<"method">> => <<"GET">>,
+                                    <<"path">> => <<"schedule/assignments">>,
+                                    <<"from">> => LastProcessed
+                                },
+                                Opts#{ scheduler_follow_redirects => true }
+                            ),
+                        RecvdAssignments;
+                    {ok, Assignment} ->
+                        ?event(next_debug, {in_cache, {slot, New}, {assignment, Assignment}}),
                         #{
-                            <<"method">> => <<"GET">>,
-                            <<"path">> => <<"schedule/assignments">>,
-                            <<"from">> => LastProcessed
-                        },
-                        Opts#{ scheduler_follow_redirects => true }
-                    ),
-                RecvdAssignments
+                            New => Assignment
+                        }
+                end
         end,
     NormAssignments =
         maps:from_list(
@@ -688,7 +697,7 @@ get_remote_schedule(RawProcID, From, To, Redirect, Opts) ->
 %% @doc Get a schedule from a remote scheduler, unless we already have already
 %% read all of the assignments from the local cache.
 do_get_remote_schedule(ProcID, LocalAssignments, From, To, _, Opts)
-        when (From > To) orelse ((To == undefined) and (length(LocalAssignments) > 0)) ->
+        when (To =/= undefined) andalso (From >= To) ->
     % We already have all of the assignments from the local cache. Return them
     % as a bundle. We set the 'more' to `undefined' to indicate that there may
     % be more assignments to fetch, but we don't know for sure.

@@ -92,8 +92,10 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             RawMessage,
             Opts
         ),
-    ?event(http_outbound, {req, Req}, Opts),
+    ?event(debug_cu, {req, Req}, Opts),
+    StartTime = os:system_time(millisecond),
     {_ErlStatus, Status, Headers, Body} = hb_http_client:req(Req, Opts),
+    EndTime = os:system_time(millisecond),
     ?event(http_outbound,
         {
             http_response,
@@ -121,6 +123,15 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             X when X < 500 -> error;
             _ -> failure
         end,
+    ?event(http_short,
+        {received,
+            {status, Status},
+            {duration, EndTime - StartTime},
+            {method, Method},
+            {peer, Peer},
+            {path, {string, Path}},
+            {body_size, byte_size(Body)}
+        }),
     case maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
         Key when is_binary(Key) ->
             Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
@@ -130,13 +141,6 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 Value -> {BaseStatus, Value}
             end;
         undefined ->
-            ?event(http_outbound_short, {
-                outbound_http_response,
-                {status, Status},
-                {peer, Peer},
-                {path, Path},
-                {response, {body, byte_size(Body)}}
-            }, Opts),
             case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
                 <<"httpsig@1.0">> ->
                     ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),
@@ -457,7 +461,23 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
     cowboy_req:stream_body(EncodedBody, nofin, Req2),
+    EndTime = os:system_time(millisecond),
     ?event(http, {reply_headers, {explicit, {ok, Req2, no_state}}}),
+    ?event(http_short,
+        {sent,
+            {status, Status},
+            {duration, EndTime - maps:get(start_time, Req)},
+            {method, cowboy_req:method(Req)},
+            {path,
+                {string,
+                    uri_string:percent_decode(
+                        hb_converge:get(<<"path">>, TABMReq, <<"[NO PATH]">>, Opts)
+                    )
+                }
+            },
+            {body_size, byte_size(EncodedBody)}
+        }
+    ),
     {ok, Req2, no_state}.
 
 %% @doc Add permissive CORS headers to a message, if the message has not already
