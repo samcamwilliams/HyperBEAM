@@ -128,21 +128,7 @@ new_server(RawNodeMsg) ->
     % Put server ID into node message so it's possible to update current server
     % params
     NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
-    Dispatcher =
-        cowboy_router:compile(
-            [
-                % {HostMatch, list({PathMatch, Handler, InitialState})}
-                {'_', [
-                    {"/", cowboy_static, {priv_file, hb, "index.html"}},
-                    {
-                        "/metrics/[:registry]",
-                        prometheus_cowboy2_handler,
-                        #{}
-                    },
-                    {'_', ?MODULE, ServerID}
-                ]}
-            ]
-        ),
+    Dispatcher = cowboy_router:compile([{'_', [{'_', ?MODULE, ServerID}]}]),
     ProtoOpts = #{
         env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
         metrics_callback =>
@@ -150,7 +136,6 @@ new_server(RawNodeMsg) ->
         stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
         max_connections => infinity,
         idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg)
-		% max_header_value_length => 1000000 % Testing with a larger value to see if it fixes the issue with the large header value 431 response
     },
     {ok, Port, Listener} =
         case Protocol = hb_opts:get(protocol, no_proto, NodeMsg) of
@@ -250,31 +235,43 @@ cors_reply(Req, _ServerID) ->
 %% starts by parsing the HTTP request into HyerBEAM's message format, then
 %% passing the message directly to `meta@1.0` which handles calling Converge in
 %% the appropriate way.
-handle_request(Req, Body, ServerID) ->
+handle_request(RawReq, Body, ServerID) ->
+    % Insert the start time into the request so that it can be used by the
+    % `hb_http' module to calculate the duration of the request.
+    StartTime = os:system_time(millisecond),
+    Req = RawReq#{ start_time => StartTime },
     NodeMsg = get_opts(#{ http_server => ServerID }),
-    ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
-    % Parse the HTTP request into HyerBEAM's message format.
-    ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-    AttestationCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
-    ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, AttestationCodec}}),
-    {ok, Res} =
-        dev_meta:handle(
-            NodeMsg#{ attestation_device => AttestationCodec },
-            ReqSingleton
-        ),
-    ?event(http_short,
-        {response,
-            {status, hb_converge:get(<<"status">>, Res, no_status, NodeMsg)},
-            {method, hb_converge:get(<<"method">>, ReqSingleton, no_method, NodeMsg)},
-            {path,
-                {string,
-                    uri_string:percent_decode(
-                    hb_converge:get(<<"path">>, ReqSingleton, <<"[NO PATH]">>, NodeMsg)
-                )}
-            }
-        }
-    ),
-    hb_http:reply(Req, ReqSingleton, Res, NodeMsg).
+    case cowboy_req:path(RawReq) of
+        <<"/">> ->
+            % If the request is for the root path, serve a redirect to the default 
+            % request of the node.
+            cowboy_req:reply(
+                302,
+                #{
+                    <<"location">> =>
+                        hb_opts:get(
+                            default_req,
+                            <<"/~hyperbuddy@1.0/index">>,
+                            NodeMsg
+                        )
+                },
+                RawReq
+            );
+        _ ->
+            % The request is of normal AO-Core form, so we parse it and invoke
+            % the meta@1.0 device to handle it.
+            ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
+            % Parse the HTTP request into HyerBEAM's message format.
+            ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
+            AttestationCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+            ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, AttestationCodec}}),
+            {ok, Res} =
+                dev_meta:handle(
+                    NodeMsg#{ attestation_device => AttestationCodec },
+                    ReqSingleton
+                ),
+            hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
+    end.
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->
