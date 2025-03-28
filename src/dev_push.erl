@@ -301,7 +301,7 @@ remote_schedule_result(Location, SignedReq, Opts) ->
             <<"Message">> -> RedirectPath
         end,
     % Store a copy of the message for ourselves.
-    hb_cache:write(SignedReq, Opts),
+    {ok, _} = hb_cache:write(SignedReq, Opts),
     ?event(push, {remote_schedule_result, {path, Path}}, Opts),
     case hb_http:post(Node, Path, maps:without([<<"path">>], SignedReq), Opts) of
         {ok, Res} ->
