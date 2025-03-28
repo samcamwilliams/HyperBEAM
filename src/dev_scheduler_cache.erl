@@ -17,22 +17,27 @@ write(Assignment, Opts) ->
             {assignment, Assignment}
         }
     ),
-    {ok, RootPath} = hb_cache:write(Assignment, Opts),
-    % Create symlinks from the message on the process and the 
-    % slot on the process to the underlying data.
-    hb_store:make_link(
-        Store,
-        RootPath,
-        hb_store:path(
-            Store,
-            [
-                <<"assignments">>,
-                hb_util:human_id(ProcID),
-                hb_converge:normalize_key(Slot)
-            ]
-        )
-    ),
-    ok.
+    case hb_cache:write(Assignment, Opts) of
+        {ok, RootPath} ->
+            % Create symlinks from the message on the process and the 
+            % slot on the process to the underlying data.
+            hb_store:make_link(
+                Store,
+                RootPath,
+                hb_store:path(
+                    Store,
+                    [
+                        <<"assignments">>,
+                        hb_util:human_id(ProcID),
+                        hb_converge:normalize_key(Slot)
+                    ]
+                )
+            ),
+            ok;
+        {error, Reason} ->
+            ?event(error, {failed_to_write_assignment, {reason, Reason}}),
+            {error, Reason}
+    end.
 
 %% @doc Get an assignment message from the cache.
 read(ProcID, Slot, Opts) when is_integer(Slot) ->
@@ -116,28 +121,31 @@ read_location(Address, Opts) ->
 
 %% @doc Write the latest known scheduler location for an address.
 write_location(LocationMsg, Opts) ->
-    {ok, RootPath} = hb_cache:write(LocationMsg, Opts),
     Signers = hb_message:signers(LocationMsg),
     ?event({writing_location_msg,
         {signers, Signers},
-        {path, RootPath},
         {location_msg, LocationMsg}
     }),
-    lists:foreach(
-        fun(Signer) ->
-            hb_store:make_link(
-                hb_opts:get(store, no_viable_store, Opts),
-                RootPath,
-                hb_store:path(
-                    hb_opts:get(store, no_viable_store, Opts),
-                    [
-                        "scheduler-locations",
-                        hb_util:human_id(Signer)
-                    ]
-                )
+    case hb_cache:write(LocationMsg, Opts) of
+        {ok, RootPath} ->
+            lists:foreach(
+                fun(Signer) ->
+                    hb_store:make_link(
+                        hb_opts:get(store, no_viable_store, Opts),
+                        RootPath,
+                        hb_store:path(
+                            hb_opts:get(store, no_viable_store, Opts),
+                            [
+                                "scheduler-locations",
+                                hb_util:human_id(Signer)
+                            ]
+                        )
+                    )
+                end,
+                Signers
             ),
-            ok
-        end,
-        Signers
-    ),
-    ok.
+            ok;
+        {error, Reason} ->
+            ?event(warning, {failed_to_cache_location_msg, {reason, Reason}}),
+            {error, Reason}
+    end.

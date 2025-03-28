@@ -854,6 +854,8 @@ cache_remote_schedule(Schedule, Opts) ->
     Assignments = hb_converge:get(<<"assignments">>, Schedule, Opts),
     lists:foreach(
         fun(Assignment) ->
+            % We do not care about the result of the write because it is only
+            % an additional cache.
             dev_scheduler_cache:write(Assignment, Opts)
         end,
         AssignmentList =
