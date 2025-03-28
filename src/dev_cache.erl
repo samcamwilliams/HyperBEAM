@@ -3,7 +3,7 @@
 %%% supports writing messages to the store, if the node message has the
 %%% writer's address in its `cache_writers' key.
 -module(dev_cache).
--export([read/3, write/3]).
+-export([read/3, write/3, link/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -22,11 +22,11 @@
 %%          not_found if the key does not exist,
 %%          {error, Reason} on failure.
 read(_M1, M2, Opts) ->
-    ID = hb_converge:get(<<"target">>, M2, Opts),
-    ?event(dev_cache, {read, {key_extracted, ID}}),
-    case hb_cache:read(ID, Opts) of
+    Location = hb_converge:get(<<"target">>, M2, Opts),
+    ?event({read, {key_extracted, Location}}),
+    case hb_cache:read(Location, Opts) of
         {ok, Res} ->
-            ?event(dev_cache, {read, {cache_result, ok, Res}}),
+            ?event({read, {cache_result, ok, Res}}),
             case hb_converge:get(<<"accept">>, M2, Opts) of
                 <<"application/aos-2">> ->
                     ?event(dev_cache, 
@@ -46,8 +46,11 @@ read(_M1, M2, Opts) ->
                     {ok, Res}
             end;
         not_found ->
-            ?event(dev_cache, {read, {cache_result, not_found}}),
-            {error, not_found}
+            % The cache does not have this ID,but it may still be an explicit
+            % `data/` path.
+            Store = hb_opts:get(store, [], Opts),
+            ?event(dev_cache, {read, {location, Location}, {store, Store}}),
+            hb_store:read(Store, Location)
     end.
 
 %% @doc Write data to the cache.
@@ -100,6 +103,21 @@ write(_M1, M2, Opts) ->
             }
     end.
 
+%% @doc Link a source to a destination in the cache.
+link(_Base, Req, Opts) ->
+    case is_trusted_writer(Req, Opts) of
+        true ->
+            Source = hb_converge:get(<<"source">>, Req, Opts),
+            Destination = hb_converge:get(<<"destination">>, Req, Opts),
+            write_single(#{
+                <<"operation">> => <<"link">>,
+                <<"source">> => Source,
+                <<"destination">> => Destination
+            }, Opts);
+        false ->
+            {error, not_authorized}
+    end.
+
 %% @doc Helper function to write a single data item to the cache.
 %% Extracts the body, location, and operation from the message.
 %% Depending on the type of data (map or binary) or if a link operation is
@@ -125,18 +143,15 @@ write_single(Msg, Opts) ->
                     <<"body">> => <<"No body to write.">>
                 }
             };
-        {<<"write">>, Map, _Location} when is_map(Map) ->
-            ?event(dev_cache, {write_single, {processing_map, Map}}),
-            {ok, Path} = hb_cache:write(Map, Opts),
-            ?event(dev_cache, {write_single, {map_written, Path}}),
-            {ok, #{ <<"status">> => 200, <<"path">> => Path }};
-        {<<"write">>, Binary, Location} when is_binary(Binary) ->
+        {<<"write">>, Binary, not_found} when is_binary(Binary) ->
+            % When asked to write only a binary, we do not calculate any
+            % alternative IDs.
             ?event(dev_cache, 
 				{write_single, 
 					{processing_binary, Binary, Location}
 				}
 			),
-            {ok, Path} = hb_cache:write_binary(Location, Binary, Opts),
+            {ok, Path} = hb_cache:write(Binary, Opts),
             ?event(dev_cache, {write_single, {binary_written, Path}}),
             {ok, #{ <<"status">> => 200, <<"path">> => Path }};
         {<<"link">>, _, _} ->
@@ -152,7 +167,7 @@ write_single(Msg, Opts) ->
             ?event(dev_cache, {write_single, {link_success}}),
             {ok, #{ <<"status">> => 200 }};
         _ ->
-            ?event(dev_cache, {write_single, {error, "Invalid write type"}}),
+            ?event(dev_cache, {write_single, {error, <<"Invalid write type">>}}),
             {error,
                 #{
                     <<"status">> => 400,
@@ -171,14 +186,14 @@ write_single(Msg, Opts) ->
 %%          otherwise.
 is_trusted_writer(Req, Opts) ->
     Signers = hb_message:signers(Req),
-    ?event(dev_cache, {is_trusted_writer, {signers, Signers}}),
+    ?event(dev_cache, {is_trusted_writer, {signers, Signers}, {req, Req}}),
     CacheWriters = hb_opts:get(cache_writers, [], Opts),
     ?event(dev_cache, {is_trusted_writer, {cache_writers, CacheWriters}}),
-    case Signers of
-        [Signer] ->
-            Trusted = lists:member(Signer, CacheWriters),
-            ?event(dev_cache, {is_trusted_writer, {trusted, Trusted}}),
-            Trusted;
+    AnyTrusted = lists:any(fun(Signer) -> lists:member(Signer, CacheWriters) end, Signers),
+    case AnyTrusted of
+        true ->
+            ?event(dev_cache, {is_trusted_writer, {trusted, true}}),
+            true;
         _ ->
             ?event(dev_cache, {is_trusted_writer, {trusted, false}}),
             false
@@ -195,8 +210,10 @@ is_trusted_writer(Req, Opts) ->
 %% writer configuration.
 %%
 %% @param StorePrefix A binary specifying the prefix for the local store.
-%% @returns {LocalStore, Wallet, Address, Node}
-setup_test_env(StorePrefix) ->
+%% @returns {ok, TestOpts, [LocalStore, Wallet, Address, Node]}
+setup_test_env() ->
+    Timestamp = integer_to_binary(os:system_time(millisecond)),
+    StorePrefix = <<"cache-TEST/remote-", Timestamp/binary>>,
     ?event(dev_cache, {setup_test_env, {start, StorePrefix}}),
     application:ensure_all_started(hb),
     ?event(dev_cache, {setup_test_env, {hb_started}}),
@@ -209,15 +226,27 @@ setup_test_env(StorePrefix) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     ?event(dev_cache, {setup_test_env, {address, Address}}),
     Node = hb_http_server:start_node(#{ 
+        cache_control => [<<"no-cache">>, <<"no-store">>],
         store => LocalStore,
         cache_writers => [
 			Address,
 			hb_util:human_id(ar_wallet:to_address(hb:wallet()))
 		],
-        port => 10001
+        store_all_signed => false
     }),
     ?event(dev_cache, {setup_test_env, {node_started, Node}}),
-    {LocalStore, Wallet, Address, Node}.
+    TestOpts = #{
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        store_all_signed => false,
+        store => [
+            #{
+                <<"store-module">> => hb_store_remote_node,
+                <<"node">> => Node,
+                priv_wallet => Wallet
+            }
+	    ]
+    },
+    {ok, TestOpts, [LocalStore, Wallet, Address, Node]}.
 
 %% @doc Write data to the cache via HTTP.
 %% Constructs a write request message with the provided data, signs it with the
@@ -288,62 +317,32 @@ read_from_cache(Node, Path) ->
 %%% Tests
 %%%--------------------------------------------------------------------
 
-%% @doc Test writing a map to the cache and then reading it back.
-%% This test writes a nested map to the cache, reads it back,
-%% and verifies that the written data matches the retrieved data.
-cache_write_read_map_test() ->
-    ?event({cache_write_test, start}),
-    {LocalStore, _Wallet, _Address, _Node} = 
-		setup_test_env(<<"cache-TEST-WRITE">>),
+%% @doc Test that the cache can be written to and read from using the hb_cache
+%% API.
+cache_write_message_test() ->
+    ?event(dev_cache, {cache_api_test, {start}}),
+    {ok, Opts, _} = setup_test_env(),
     TestData = #{
-        <<"test_key">> => <<"test_value">>,
-        <<"nested">> => #{
-            <<"key1">> => <<"value1">>,
-            <<"key2">> => 42
-        }
+        <<"test_key">> => <<"test_value">>
     },
-    ?event(dev_cache, {cache_write_read_map_test, {test_data, TestData}}),
-    {_WriteResponse, Path} = 
-		write_to_cache("http://localhost:10000/", TestData, hb:wallet()),
-    ?event(dev_cache, {cache_write_read_map_test, {data_written, Path}}),
-    ReadResponse = read_from_cache("http://localhost:10000/", Path),
-    ?event(dev_cache, {cache_write_read_map_test, {data_read, ReadResponse}}),
-    ExpectedValue = hb_converge:get(<<"test_key">>, TestData, not_found, #{}),
-    TestValue = hb_converge:get(<<"test_key">>, ReadResponse, not_found, #{}),
-    ?assertEqual(ExpectedValue, TestValue),
-    ExpectedNested = hb_converge:get(<<"nested">>, TestData, not_found, #{}),
-    NestedResponse = 
-		hb_converge:get(<<"nested">>, ReadResponse, not_found, #{}),
-    ?assertNotEqual(not_found, NestedResponse),
-    ExpectedKey1 = hb_converge:get(<<"key1">>, ExpectedNested, not_found, #{}),
-    Key1 = hb_converge:get(<<"key1">>, NestedResponse, not_found, #{}),
-    ?assertEqual(ExpectedKey1, Key1),
-    ExpectedKey2 = hb_converge:get(<<"key2">>, ExpectedNested, not_found, #{}),
-    Key2 = hb_converge:get(<<"key2">>, NestedResponse, not_found, #{}),
-    ?assertEqual(ExpectedKey2, Key2),
-    hb_store:reset(LocalStore),
-    ?event(dev_cache, {cache_write_read_map_test}),
+    ?event(dev_cache, {cache_api_test, {opts, Opts}}),
+    {ok, Path} = hb_cache:write(TestData, Opts),
+    ?event(dev_cache, {cache_api_test, {data_written, Path}}),
+    {ok, ReadData} = hb_cache:read(Path, Opts),
+    ?event(dev_cache, {cache_api_test, {data_read, ReadData}}),
+    ?assert(hb_message:match(TestData, ReadData, only_present)),
+    ?event(dev_cache, {cache_api_test}),
     ok.
 
-%% @doc Test writing binary data to the cache and then reading it back.
-%% This test writes binary data, reads it from the cache,
-%% and asserts that the retrieved data matches the original.
-cache_write_read_binary_test() ->
-    ?event(dev_cache, {cache_write_read_binary_test, {start}}),
-    {LocalStore, _Wallet, _Address, _Node} = 
-		setup_test_env(<<"cache-TEST-WRITE">>),
-    TestData = <<"test_value">>,
-    ?event(dev_cache, {cache_write_read_binary_test, {test_data, TestData}}),
-    {_WriteResponse, Path} = 
-		write_to_cache("http://localhost:10000/", TestData, hb:wallet()),
-    ?event(dev_cache, {cache_write_read_binary_test, {data_written, Path}}),
-    ReadResponse = read_from_cache("http://localhost:10000/", Path),
-    ?event(dev_cache, 
-		{cache_write_read_binary_test, 
-			{data_read, ReadResponse}
-		}
-	),
-    ?assertEqual(TestData, ReadResponse),
-    hb_store:reset(LocalStore),
-    ?event(dev_cache, {cache_write_read_binary_test}),
+%% @doc Ensure that we can write direct binaries to the cache.
+cache_write_binary_test() ->
+    ?event(dev_cache, {cache_api_test, {start}}),
+    {ok, Opts, _} = setup_test_env(),
+    TestData = <<"test_binary">>,
+    {ok, Path} = hb_cache:write(TestData, Opts),
+    ?event(dev_cache, {cache_api_test, {data_written, Path}}),
+    {ok, ReadData} = hb_cache:read(Path, Opts),
+    ?event(dev_cache, {cache_api_test, {data_read, ReadData}}),
+    ?assertEqual(TestData, ReadData),
+    ?event(dev_cache, {cache_api_test}),
     ok.

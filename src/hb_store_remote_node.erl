@@ -4,7 +4,7 @@
 %%% been written to the remote node. In that case, the node would probably want
 %%% to upload it to an Arweave bundler to ensure persistence, too.
 -module(hb_store_remote_node).
--export([scope/1, type/2, read/2, write/3, resolve/2]).
+-export([scope/1, type/2, read/2, write/3, make_link/3, resolve/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -15,7 +15,7 @@
 %% @param Arg An arbitrary parameter (ignored).
 %% @returns remote.
 scope(Arg) ->
-    ?event(hb_store_remote_node, {scope, {arg, Arg}}),
+    ?event({remote_scope, {arg, Arg}}),
     remote.
 
 %% @doc Resolve a key path in the remote store.
@@ -26,7 +26,7 @@ scope(Arg) ->
 %% @param Key The key to resolve.
 %% @returns The resolved key.
 resolve(#{ <<"node">> := Node }, Key) ->
-    ?event(hb_store_remote_node, {resolve, {node, Node}, {key, Key}}),
+    ?event({remote_resolve, {node, Node}, {key, Key}}),
     Key.
 
 %% @doc Determine the type of value at a given key.
@@ -37,7 +37,7 @@ resolve(#{ <<"node">> := Node }, Key) ->
 %% @param Key The key whose value type is determined.
 %% @returns simple if found, or not_found otherwise.
 type(Opts = #{ <<"node">> := Node }, Key) ->
-    ?event(hb_store_remote_node, {type, {node, Node}, {key, Key}}),
+    ?event({remote_type, {node, Node}, {key, Key}}),
     case read(Opts, Key) of
         not_found -> not_found;
         _ -> simple
@@ -52,14 +52,14 @@ type(Opts = #{ <<"node">> := Node }, Key) ->
 %% @param Key The key to read.
 %% @returns {ok, Msg} on success or not_found if the key is missing.
 read(Opts = #{ <<"node">> := Node }, Key) ->
-    ?event(hb_store_remote_node, {read, {node, Node}, {key, Key}}),
-    case hb_http:get(Node, Key, Opts) of
+    ?event({remote_read, {node, Node}, {key, Key}}),
+    case hb_http:get(Node, #{ <<"path">> => <<"/~cache@1.0/read">>, <<"target">> => Key }, Opts) of
         {ok, Res} ->
             {ok, Msg} = hb_message:with_only_attested(Res),
-            ?event(hb_store_remote_node, {read, {result, Msg}}),
+            ?event({read, {result, Msg}}),
             {ok, Msg};
         {error, _Err} ->
-            ?event(hb_store_remote_node, {read, {result, not_found}}),
+            ?event({read, {result, not_found}}),
             not_found
     end.
 
@@ -74,30 +74,53 @@ read(Opts = #{ <<"node">> := Node }, Key) ->
 %% @param Value The value to store.
 %% @returns {ok, Path} on success or {error, Reason} on failure.
 write(Opts = #{ <<"node">> := Node }, Key, Value) ->
-    ?event(hb_store_remote_node, {write, {node, Node},
-                                  {key, Key}, {value, Value}}),
+    ?event({write, {node, Node}, {key, Key}, {value, Value}}),
     WriteMsg = #{
         <<"path">> => <<"/~cache@1.0/write">>,
         <<"method">> => <<"POST">>,
         <<"body">> => Value
     },
-    Wallet = hb:wallet(),
-    SignedMsg = case Wallet of
-        undefined -> WriteMsg;
-        _ -> hb_message:attest(WriteMsg, Wallet)
-    end,
-    ?event(hb_store_remote_node, {write, {signed, SignedMsg}}),
+    SignedMsg = hb_message:attest(WriteMsg, Opts),
+    ?event({write, {signed, SignedMsg}}),
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->
             Status = hb_converge:get(<<"status">>, Response, 0, #{}),
-            Path = hb_converge:get(<<"path">>, Response, <<>>, #{}),
-            ?event(hb_store_remote_node, {write, {response, Response}}),
+            ?event({write, {response, Response}}),
             case Status of
-                200 -> {ok, Path};
+                200 -> ok;
                 _ -> {error, {unexpected_status, Status}}
             end;
         {error, Err} ->
-            ?event(hb_store_remote_node, {write, {error, Err}}),
+            ?event({write, {error, Err}}),
+            {error, Err}
+    end.
+
+%% @doc Link a source to a destination in the remote node.
+%%
+%% Constructs an HTTP POST link request. If a wallet is provided,
+%% the message is signed. Returns {ok, Path} on HTTP 200, or
+%% {error, Reason} on failure.
+make_link(Opts = #{ <<"node">> := Node }, Source, Destination) ->
+    ?event({make_remote_link, {node, Node}, {source, Source},
+                                  {destination, Destination}}),
+    LinkMsg = #{
+        <<"path">> => <<"/~cache@1.0/link">>,
+        <<"method">> => <<"POST">>,
+        <<"source">> => Source,
+        <<"destination">> => Destination
+    },
+    SignedMsg = hb_message:attest(LinkMsg, Opts),
+    ?event({make_remote_link, {signed, SignedMsg}}),
+    case hb_http:post(Node, SignedMsg, Opts) of
+        {ok, Response} ->
+            Status = hb_converge:get(<<"status">>, Response, 0, #{}),
+            ?event({make_remote_link, {response, Response}}),
+            case Status of
+                200 -> ok;
+                _ -> {error, {unexpected_status, Status}}
+            end;
+        {error, Err} ->
+            ?event({make_remote_link, {error, Err}}),
             {error, Err}
     end.
 
@@ -111,7 +134,7 @@ read_test() ->
     rand:seed(default),
     LocalStore = #{ 
 		<<"store-module">> => hb_store_fs,
-		<<"prefix">> => <<"cache-mainnet">> 
+		<<"prefix">> => <<"cache-mainnet">>
 	},
     hb_store:reset(LocalStore),
     M = #{ <<"test-key">> => Rand = rand:uniform(1337) },
