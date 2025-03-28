@@ -31,7 +31,8 @@ call(M1, RawM2, Opts) ->
         hb_converge:get_first(
             [
                 {RawM2, <<"relay-path">>},
-                {M1, <<"relay-path">>}
+                {M1, <<"relay-path">>},
+                {M1, <<"path">>}
             ],
             Opts
         ),
