@@ -57,7 +57,7 @@ list(Path, Store) ->
 %% outer message (which does not include its attestations) will be built upon
 %% the attestations of the inner messages. We do not, however, store the IDs from
 %% attestations on signed _inner_ messages. We may wish to revisit this.
-write(RawMsg, Opts) ->
+write(RawMsg, Opts) when is_map(RawMsg) ->
     % Use the _structured_ format for calculating alternative IDs, but the
     % _tabm_ format for writing to the store.
     case hb_message:with_only_attested(RawMsg, Opts) of
@@ -66,15 +66,31 @@ write(RawMsg, Opts) ->
             ?event({writing_full_message, {alt_ids, AltIDs}, {msg, Msg}}),
             Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
             ?event({tabm, Tabm}),
-            do_write_message(
+            try do_write_message(
                 Tabm,
                 AltIDs,
                 hb_opts:get(store, no_viable_store, Opts),
                 Opts
-            );
+            )
+            catch
+                Type:Reason:Stacktrace ->
+                    ?event(error,
+                        {cache_write_error,
+                            {type, Type},
+                            {reason, Reason},
+                            {stacktrace, Stacktrace}
+                        },
+                        Opts
+                    ),
+                    {error, no_viable_store}
+            end;
         {error, Err} ->
             {error, Err}
-    end.
+    end;
+write(Bin, Opts) when is_binary(Bin) ->
+    % When asked to write only a binary, we do not calculate any alternative IDs.
+    do_write_message(Bin, [], hb_opts:get(store, no_viable_store, Opts), Opts).
+
 do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),

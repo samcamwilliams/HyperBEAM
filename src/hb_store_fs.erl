@@ -10,9 +10,11 @@
 %%% can be swapped out easily. The default implementation is a file-based
 %%% store.
 
+%% @doc Initialize the file system store with the given data directory.
 start(#{ <<"prefix">> := DataDir }) ->
     ok = filelib:ensure_dir(DataDir).
 
+%% @doc Stop the file system store. Currently a no-op.
 stop(#{ <<"prefix">> := _DataDir }) ->
     ok.
 
@@ -20,6 +22,7 @@ stop(#{ <<"prefix">> := _DataDir }) ->
 %% want to allow that an FS store is shared across a cluster and thus remote.
 scope(_) -> local.
 
+%% @doc Reset the store by completely removing its directory and recreating it.
 reset(#{ <<"prefix">> := DataDir }) ->
     % Use pattern that completely removes directory then recreates it
     os:cmd(binary_to_list(<< "rm -Rf ", DataDir/binary >>)),
@@ -43,12 +46,14 @@ read(Path) ->
 			end
 	end.
 
+%% @doc Write a value to the specified path in the store.
 write(Opts, PathComponents, Value) ->
     Path = add_prefix(Opts, PathComponents),
     ?event({writing, Path, byte_size(Value)}),
     filelib:ensure_dir(Path),
     ok = file:write_file(Path, Value).
 
+%% @doc List contents of a directory in the store.
 list(Opts, Path) ->
     file:list_dir(add_prefix(Opts, Path)).
 
@@ -85,6 +90,7 @@ resolve(Opts, CurrPath, [Next|Rest]) ->
             resolve(Opts, PathPart, Rest)
     end.
 
+%% @doc Determine the type of a key in the store.
 type(Opts, Key) ->
     type(add_prefix(Opts, Key)).
 type(Path) ->
@@ -101,6 +107,7 @@ type(Path) ->
             end
     end.
 
+%% @doc Create a directory (group) in the store.
 make_group(Opts = #{ <<"prefix">> := _DataDir }, Path) ->
     P = add_prefix(Opts, Path),
     ?event({making_group, P}),
@@ -112,6 +119,7 @@ make_group(Opts = #{ <<"prefix">> := _DataDir }, Path) ->
         {error, eexist} -> ok
     end.
 
+%% @doc Create a symlink, handling the case where the link would point to itself.
 make_link(_, Link, Link) -> ok;
 make_link(Opts, Existing, New) ->
     ?event({symlink,

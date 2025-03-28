@@ -9,6 +9,7 @@
 -module(dev_scheduler_formats).
 -export([assignments_to_bundle/4, assignments_to_aos2/4]).
 -export([aos2_to_assignments/3, aos2_to_assignment/2]).
+-export([aos2_normalize_types/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -21,7 +22,7 @@ assignments_to_bundle(ProcID, Assignments, More, TimeInfo, Opts) ->
     {ok, #{
         <<"type">> => <<"schedule">>,
         <<"process">> => hb_util:human_id(ProcID),
-        <<"continues">> => atom_to_binary(More, utf8),
+        <<"continues">> => hb_util:atom(More),
         <<"timestamp">> => hb_util:int(Timestamp),
         <<"block-height">> => hb_util:int(Height),
         <<"block-hash">> => hb_util:human_id(Hash),

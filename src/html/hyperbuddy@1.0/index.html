@@ -664,6 +664,9 @@
         <button class="tab-button" onclick="showTab('metrics-tab')">
           Metrics
         </button>
+        <button class="tab-button" onclick="showTab('console-tab')">
+          Console
+        </button>
       </div>
 
       <div id="devices-tab" class="tab-content active">
@@ -672,7 +675,7 @@
             <h4 class="section-header">Loaded Devices</h4>
             <div id="info-section-lines-header" class="section-lines-header">
               <p>Device Name</p>
-              <p>Module</p>
+              <p>Variant</p>
             </div>
             <div id="info-section-lines" class="section-lines">
               <div class="info-line section-line">
@@ -685,6 +688,10 @@
 
       <div id="metrics-tab" class="tab-content">
         <div id="metrics-section"></div>
+      </div>
+
+      <div id="console-tab" class="tab-content">
+        <div id="console-section"></div>
       </div>
     </div>
     <script>
@@ -739,24 +746,27 @@
         return results;
       }
 
-      function renderInfoGroups(groups) {
+      function renderInfoGroups(groups, devicesStr) {
+        const devices = JSON.parse(devicesStr);
         const container = document.getElementById("info-section-lines");
         container.innerHTML = "";
-        groups.forEach((group) => {
+        for (const [key, device] of Object.entries(devices)) {
+          if(key == "device") continue;
+          const [name, variant] = device.name.split("@");
           const section = document.createElement("div");
           section.classList.add("info-line");
           section.classList.add("section-line");
 
           const nameEl = document.createElement("p");
-          nameEl.textContent = group.content;
+          nameEl.textContent = name;
           section.appendChild(nameEl);
 
           const typeEl = document.createElement("p");
-          typeEl.textContent = group.name;
+          typeEl.textContent = variant;
           section.appendChild(typeEl);
 
           container.appendChild(section);
-        });
+        }
       }
 
       function parseMetrics(text) {
@@ -960,6 +970,10 @@
           document
             .querySelector(".tab-button:nth-child(2)")
             .classList.add("active");
+        } else if (tabId === "console-tab") {
+          document
+            .querySelector(".tab-button:nth-child(3)")
+            .classList.add("active");
         }
       }
 
@@ -1018,8 +1032,10 @@
           operatorAction.disabled = false;
 
           const info = await get("/~meta@1.0/info");
+          const deviceInfo =
+            await get("/~meta@1.0/info/preloaded_devices/serialize~json@1.0");
           const infoGroups = parseInfo(info);
-          renderInfoGroups(infoGroups);
+          renderInfoGroups(infoGroups, deviceInfo);
         } catch (error) {
           console.error("Error fetching or parsing info:", error);
         }
@@ -1028,10 +1044,12 @@
       async function fetchMetrics() {
         try {
           const info = await get("/~meta@1.0/info");
+          const deviceInfo =
+            await get("/~meta@1.0/info/preloaded_devices/serialize~json@1.0");
           const infoGroups = parseInfo(info);
-          renderInfoGroups(infoGroups);
+          renderInfoGroups(infoGroups, deviceInfo);
 
-          const metrics = await get("metrics");
+          const metrics = await get("/~hyperbuddy@1.0/metrics");
           const metricGroups = parseMetrics(metrics);
           renderMetricGroups(metricGroups);
         } catch (error) {
@@ -1045,8 +1063,19 @@
         setInterval(fetchMetrics, 5000);
       }
 
+      function addConsole() {
+        const container = document.getElementById("console-section");
+        const consoleContainer = document.createElement("iframe");
+        consoleContainer.style.width = "100%";
+        consoleContainer.style.minHeight = "500px";
+        consoleContainer.style.border = "none";
+        consoleContainer.src = "/~hyperbuddy@1.0/console";
+        container.appendChild(consoleContainer);
+      }
+
       fetchInfo();
       startFetchingMetrics();
+      addConsole();
     </script>
   </body>
 </html>
