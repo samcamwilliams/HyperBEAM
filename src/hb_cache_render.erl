@@ -67,16 +67,21 @@ traverse_store(Store, Key, Parent, Graph) ->
 %% @doc Process a simple (leaf) node
 process_simple_node(Store, _Key, Parent, ResolvedPath, JoinedPath, Graph) ->
     % Add the node to the graph
-    Graph1 = add_node(Graph, ResolvedPath, "lightblue"),
-    % If we have a parent, add an arc from parent to this node
-    case Parent of
-        undefined -> Graph1;
-        ParentPath -> 
-            Label = extract_label(JoinedPath),
-            add_arc(Graph1, ParentPath, ResolvedPath, Label)
-    end.
+    % Graph1 = add_node(Graph, ResolvedPath, "lightblue"),
+    % % If we have a parent, add an arc from parent to this node
+    % case Parent of
+    %     undefined -> Graph1;
+    %     ParentPath -> 
+    %         Label = extract_label(JoinedPath),
+    %         add_arc(Graph1, ParentPath, ResolvedPath, Label)
+    % end.
+    Graph.
 
 %% @doc Process a composite (directory) node
+process_composite_node(_Store, "data", _Parent, _ResolvedPath, _JoinedPath, Graph) ->
+    % Data is a special case: It contains every binary item in the store.
+    % We don't need to render it.
+    Graph;
 process_composite_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph) ->
     % Add the node to the graph
     Graph1 = add_node(Graph, ResolvedPath, "lightcoral"),
@@ -177,13 +182,17 @@ dot_to_svg(DotInput) ->
 collect_output(Port, Acc) ->
     receive
         {Port, {data, Data}} ->
-            collect_output(Port, [Data | Acc]);
+            case binary:part(Data, byte_size(Data) - 7, 7) of
+                <<"</svg>\n">> ->
+                    port_close(Port),
+                    iolist_to_binary(lists:reverse([Data | Acc]));
+                _ -> collect_output(Port, [Data | Acc])
+            end;
         {Port, eof} ->
             port_close(Port),
             iolist_to_binary(lists:reverse(Acc))
-    after 5000 ->
-        port_close(Port),
-        erlang:error(dot_command_timeout)
+    after 10000 ->
+        {error, timeout}
     end.
 
 % Test data preparation functions
