@@ -66,12 +66,24 @@ write(RawMsg, Opts) ->
             ?event({writing_full_message, {alt_ids, AltIDs}, {msg, Msg}}),
             Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
             ?event({tabm, Tabm}),
-            do_write_message(
+            try do_write_message(
                 Tabm,
                 AltIDs,
                 hb_opts:get(store, no_viable_store, Opts),
                 Opts
-            );
+            )
+            catch
+                Type:Reason:Stacktrace ->
+                    ?event(error,
+                        {cache_write_error,
+                            {type, Type},
+                            {reason, Reason},
+                            {stacktrace, Stacktrace}
+                        },
+                        Opts
+                    ),
+                    {error, no_viable_store}
+            end;
         {error, Err} ->
             {error, Err}
     end.
