@@ -8,7 +8,17 @@
 %% the cache set by the `target' key in the request.
 dot(_, Req, Opts) ->
     Target = hb_converge:get(<<"target">>, Req, all, Opts),
-    Dot = hb_cache_render:cache_path_to_dot(Target, Opts),
+    Dot =
+        hb_cache_render:cache_path_to_dot(
+            Target,
+            #{
+                render_data =>
+                    hb_util:atom(
+                        hb_converge:get(<<"render-data">>, Req, false, Opts)
+                    )
+            },
+            Opts
+        ),
     {ok, #{ <<"content-type">> => <<"text/vnd.graphviz">>, <<"body">> => Dot }}.
 
 %% @doc Output the SVG representation of the cache, or a specific path within

@@ -1,6 +1,6 @@
 %%% @doc A module that helps to render given Key graphs into the .dot files
 -module(hb_cache_render).
--export([render/1, render/2, cache_path_to_dot/2, dot_to_svg/1]).
+-export([render/1, render/2, cache_path_to_dot/2, cache_path_to_dot/3, dot_to_svg/1]).
 % Preparing data for testing
 -export([prepare_unsigned_data/0, prepare_signed_data/0,
     prepare_deeply_nested_complex_message/0]).
@@ -20,21 +20,23 @@ render(ToRender, StoreOrOpts) ->
 
 %% @doc Generate a dot file from a cache path and options/store
 cache_path_to_dot(ToRender, StoreOrOpts) ->
-    graph_to_dot(cache_path_to_graph(ToRender, StoreOrOpts)).
+    cache_path_to_dot(ToRender, #{}, StoreOrOpts).
+cache_path_to_dot(ToRender, RenderOpts, StoreOrOpts) ->
+    graph_to_dot(cache_path_to_graph(ToRender, RenderOpts, StoreOrOpts)).
 
 %% @doc Main function to collect graph elements
-cache_path_to_graph(ToRender, StoreOrOpts) when is_map(StoreOrOpts) ->
+cache_path_to_graph(ToRender, GraphOpts, StoreOrOpts) when is_map(StoreOrOpts) ->
     Store = hb_opts:get(store, no_viable_store, StoreOrOpts),
-    cache_path_to_graph(ToRender, Store);
-cache_path_to_graph(all, Store) ->
+    cache_path_to_graph(ToRender, GraphOpts, Store);
+cache_path_to_graph(all, GraphOpts, Store) ->
     {ok, Keys} = hb_store:list(Store, "/"),
-    cache_path_to_graph(Store, Keys);
-cache_path_to_graph(InitPath, Store) when is_binary(InitPath) ->
+    cache_path_to_graph(Store, GraphOpts, Keys);
+cache_path_to_graph(InitPath, GraphOpts, Store) when is_binary(InitPath) ->
     {ok, Keys} = hb_store:list(Store, InitPath),
-    cache_path_to_graph(Store, Keys);
-cache_path_to_graph(Store, RootKeys) ->
+    cache_path_to_graph(Store, GraphOpts, Keys);
+cache_path_to_graph(Store, GraphOpts, RootKeys) ->
     % Use a map to track nodes, arcs and visited paths (to avoid cycles)
-    EmptyGraph = #{nodes => #{}, arcs => #{}, visited => #{}},
+    EmptyGraph = GraphOpts#{ nodes => #{}, arcs => #{}, visited => #{} },
     % Process all root keys and get the final graph
     lists:foldl(
         fun(Key, Acc) -> traverse_store(Store, Key, undefined, Acc) end,
@@ -65,17 +67,20 @@ traverse_store(Store, Key, Parent, Graph) ->
     end.
 
 %% @doc Process a simple (leaf) node
-process_simple_node(Store, _Key, Parent, ResolvedPath, JoinedPath, Graph) ->
+process_simple_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph) ->
     % Add the node to the graph
-    % Graph1 = add_node(Graph, ResolvedPath, "lightblue"),
-    % % If we have a parent, add an arc from parent to this node
-    % case Parent of
-    %     undefined -> Graph1;
-    %     ParentPath -> 
-    %         Label = extract_label(JoinedPath),
-    %         add_arc(Graph1, ParentPath, ResolvedPath, Label)
-    % end.
-    Graph.
+    case maps:get(render_data, Graph, true) of
+        false -> Graph;
+        true ->
+            Graph1 = add_node(Graph, ResolvedPath, "lightblue"),
+            % If we have a parent, add an arc from parent to this node
+            case Parent of
+                undefined -> Graph1;
+                ParentPath -> 
+                    Label = extract_label(JoinedPath),
+                    add_arc(Graph1, ParentPath, ResolvedPath, Label)
+            end
+    end.
 
 %% @doc Process a composite (directory) node
 process_composite_node(_Store, "data", _Parent, _ResolvedPath, _JoinedPath, Graph) ->
