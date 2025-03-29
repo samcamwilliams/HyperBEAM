@@ -317,6 +317,7 @@ test_store_unsigned_empty_message(Opts) ->
     Item = #{},
     {ok, Path} = write(Item, Opts),
     {ok, RetrievedItem} = read(Path, Opts),
+    ?event({retrieved_item, {path, {string, Path}}, {item, RetrievedItem}}),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple unsigned item
@@ -460,5 +461,4 @@ test_device_map_cannot_be_written_test() ->
 run_test() ->
     Opts = #{ store => StoreOpts = 
         [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
-    test_store_ans104_message(Opts),
-    hb_store:reset(StoreOpts).
+    test_store_unsigned_empty_message(Opts).

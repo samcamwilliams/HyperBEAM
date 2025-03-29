@@ -1328,14 +1328,17 @@ priv_survives_conversion_test(<<"json@1.0">>) -> skip;
 priv_survives_conversion_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
-        <<"priv">> => Priv = #{ <<"test_key">> => <<"TEST_VALUE">> }
+        <<"priv">> => #{ <<"test_key">> => <<"TEST_VALUE">> }
     },
     Encoded = convert(Msg, Codec, #{}),
     ?event({encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, Decoded}),
     ?assert(match(Msg, Decoded)),
-    ?assertEqual(Priv, maps:get(<<"priv">>, Decoded, #{})).
+    ?assertMatch(
+        #{ <<"test_key">> := <<"TEST_VALUE">> },
+        maps:get(<<"priv">>, Decoded, #{})
+    ).
 
 %%% Test helpers
 

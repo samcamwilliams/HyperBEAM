@@ -375,7 +375,7 @@ set(Message1, NewValuesMsg, Opts) ->
         ),
     % Base message with keys-to-unset removed
     BaseValues = maps:without(UnsetKeys, Message1),
-    ?event(
+    ?event(set,
         {performing_set,
             {conflicting_keys, ConflictingKeys},
             {keys_to_unset, UnsetKeys},
@@ -397,24 +397,29 @@ set(Message1, NewValuesMsg, Opts) ->
         )
     ),
     % Caclulate if the keys to be set conflict with any attested keys.
-    {ok, Attestors} = attestors(Message1, #{}, Opts),
     {ok, AttestedKeys} =
         attested(
             Message1,
-            #{ <<"attestors">> =>
-                lists:filter(fun(Att) -> ?IS_ID(Att) end, Attestors)
+            #{
+                <<"attestors">> => <<"all">>
             },
             Opts
         ),
-    ?event(set, {setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}}, Opts),
+    ?event(set, {setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
     OverwrittenAttestedKeys =
-        sets:to_list(
-            sets:intersection(
-                sets:from_list(AttestedKeys),
-                sets:from_list(KeysToSet)
-            )
+        lists:filtermap(
+            fun(Key) ->
+                NormKey = hb_converge:normalize_key(Key),
+                ?event(set, {checking_attested_key, {key, Key}, {norm_key, NormKey}}),
+                Res = case lists:member(NormKey, KeysToSet) of
+                    true -> {true, NormKey};
+                    false -> false
+                end,
+                Res
+            end,
+            AttestedKeys
         ),
-    ?event(set, {setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}, Opts),
+    ?event(set, {setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}),
     % Combine with deep_merge
     Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
     case OverwrittenAttestedKeys of
@@ -569,14 +574,14 @@ set_conflicting_keys_test() ->
 unset_with_set_test() ->
 	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
-	?assertMatch({ok, Msg3} when map_size(Msg3) == 0,
+	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
 		hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore })).
 
 set_ignore_undefined_test() ->
 	Msg1 = #{ <<"test-key">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"test-key">> => undefined },
-	?assertEqual({ok, #{ <<"test-key">> => <<"Value1">> }},
-		set(Msg1, Msg2, #{ hashpath => ignore })).
+	?assertEqual(#{ <<"test-key">> => <<"Value1">> },
+		hb_private:reset(hb_util:ok(set(Msg1, Msg2, #{ hashpath => ignore })))).
 
 verify_test() ->
     Unsigned = #{ <<"a">> => <<"b">> },

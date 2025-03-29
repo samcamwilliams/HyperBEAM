@@ -73,7 +73,7 @@ do_push(Base, Assignment, Opts) ->
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
     case Result of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
-            ?event(push_short, {push_complete, {process, ID}, {slot, Slot}}),
+            ?event(push_short, {push_complete, {process, {string, ID}}, {slot, Slot}}),
             {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =

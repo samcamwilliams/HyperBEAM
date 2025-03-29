@@ -328,6 +328,7 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
             _ -> 
                 Msg3
         end,
+    ?event(debug, {writing_cache, {proc_id, ProcID}, {slot, Slot}, {msg, Msg3MaybeWithSnapshot}}),
     dev_process_cache:write(ProcID, Slot, Msg3MaybeWithSnapshot, Opts).
 
 %% @doc Returns the known state of the process at either the current slot, or
@@ -502,7 +503,7 @@ as_process(Msg1, Opts) ->
 
 %% @doc Helper function to store a copy of the `process' key in the message.
 ensure_process_key(Msg1, Opts) ->
-    case hb_converge:get(<<"process">>, Msg1, Opts) of
+    case hb_converge:get(<<"process">>, Msg1, Opts#{ hashpath => ignore }) of
         not_found ->
             % If the message has lost its signers, we need to re-read it from
             % the cache. This can happen if the message was 'cast' to a different
@@ -510,6 +511,7 @@ ensure_process_key(Msg1, Opts) ->
             ProcessMsg =
                 case hb_message:signers(Msg1) of
                     [] ->
+                        ?event(debug, {process_key_not_found_no_signers, {msg1, Msg1}}),
                         case hb_cache:read(hb_message:id(Msg1, all), Opts) of
                             {ok, Proc} -> Proc;
                             not_found ->
@@ -517,7 +519,14 @@ ensure_process_key(Msg1, Opts) ->
                                 % read it from the cache.
                                 Msg1
                         end;
-                    _ -> Msg1
+                    Signers ->
+                        ?event(debug,
+                            {process_key_not_found_but_signers_present,
+                                {signers, Signers},
+                                {msg1, Msg1}
+                            }
+                        ),
+                        Msg1
                 end,
             {ok, Attested} = hb_message:with_only_attested(ProcessMsg, Opts),
             Res = hb_converge:set(
