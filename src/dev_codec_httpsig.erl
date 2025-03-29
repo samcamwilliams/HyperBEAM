@@ -199,12 +199,19 @@ attest(MsgToSign, _Req, Opts) ->
     }).
 
 %% @doc Return the list of attested keys from a message. The message will have
-%% had the `attestations` key removed and the signature inputs added to the
+%% had the `attestations' key removed and the signature inputs added to the
 %% root. Subsequently, we can parse that to get the list of attested keys.
-attested(RawMsg, _Req, _Opts) ->
+attested(RawMsg, Req, Opts) ->
     Msg = to(RawMsg),
+    case maps:get(<<"signature-input">>, Msg, none) of
+        none -> {ok, []};
+        SigInput ->
+            do_attested(SigInput, Msg, Req, Opts)
+    end.
+
+do_attested(SigInputStr, Msg, _Req, _Opts) ->
     [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
-        maps:get(<<"signature-input">>, Msg)
+        SigInputStr
     ),
     {list, ComponentIdentifiers, _SigParams} = SigInput,
     BinComponentIdentifiers = lists:map(
@@ -223,50 +230,51 @@ attested(RawMsg, _Req, _Opts) ->
         end,
     case lists:member(<<"content-digest">>, SignedWithImplicit) of
         false -> {ok, SignedWithImplicit};
-        true ->
-            {ok,
-                SignedWithImplicit
-                    % Body and inline-body-key are always attested if the
-                    % content-digest is present.
-                    ++ [<<"body">>, <<"inline-body-key">>]
-                    % If the inline-body-key is present, add it to the list of
-                    % attested keys.
-                    ++ case maps:get(<<"inline-body-key">>, Msg, []) of
-                        [] -> [];
-                        InlineBodyKey -> [InlineBodyKey]
-                    end
-                    % If the body-keys are present, add them to the list of
-                    % attested keys.
-                    ++ case maps:get(<<"body-keys">>, Msg, []) of
-                        [] -> [];
-                        BodyKeys ->
-                            ParsedList = case BodyKeys of
-                                List when is_list(List) -> List;
-                                RawBodyKeys when is_binary(RawBodyKeys) ->
-                                    hb_structured_fields:parse_list(RawBodyKeys) 
-                            end,
-                            % Ensure a list of binaries, extracting the binary
-                            % from the structured item if necessary
-                            ParsedBodyKeys = lists:map(
-                                fun
-                                    (BK) when is_binary(BK) -> BK;
-                                    ({ item, {_, BK }, _}) -> BK
-                                end,
-                                ParsedList   
-                            ),
-                            % Grab the top most field on the body key
-                            % because the top most being attested means all subsequent
-                            % fields are also attested
-                            Tops = lists:map(
-                                fun(BodyKey) ->
-                                    hd(hb_path:term_to_path_parts(BodyKey, #{}))
-                                end,
-                                ParsedBodyKeys
-                            ),
-                            lists:sort(lists:uniq(Tops))
-                    end
-            }
+        true -> {ok, SignedWithImplicit ++ attested_from_body(Msg)}
     end.
+
+%% @doc Return the list of attested keys from a message that are derived from
+%% the body components.
+attested_from_body(Msg) ->
+    % Body and inline-body-key are always attested if the
+    % content-digest is present.
+    [<<"body">>, <<"inline-body-key">>] ++
+        % If the inline-body-key is present, add it to the list of
+        % attested keys.
+        case maps:get(<<"inline-body-key">>, Msg, []) of
+            [] -> [];
+            InlineBodyKey -> [InlineBodyKey]
+        end
+        % If the body-keys are present, add them to the list of
+        % attested keys.
+        ++ case maps:get(<<"body-keys">>, Msg, []) of
+            [] -> [];
+            BodyKeys ->
+                ParsedList = case BodyKeys of
+                    List when is_list(List) -> List;
+                    RawBodyKeys when is_binary(RawBodyKeys) ->
+                        hb_structured_fields:parse_list(RawBodyKeys) 
+                end,
+                % Ensure a list of binaries, extracting the binary
+                % from the structured item if necessary
+                ParsedBodyKeys = lists:map(
+                    fun
+                        (BK) when is_binary(BK) -> BK;
+                        ({ item, {_, BK }, _}) -> BK
+                    end,
+                    ParsedList   
+                ),
+                % Grab the top most field on the body key
+                % because the top most being attested means all subsequent
+                % fields are also attested
+                Tops = lists:map(
+                    fun(BodyKey) ->
+                        hd(hb_path:term_to_path_parts(BodyKey, #{}))
+                    end,
+                    ParsedBodyKeys
+                ),
+                lists:sort(lists:uniq(Tops))
+        end.
 
 %% @doc If the `body' key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
@@ -385,10 +393,10 @@ hmac(Msg) ->
     HMacKeys =
         case maps:get(<<"signature-input">>, Msg, none) of
             none -> 
-                ?event(debug_ids, no_sig_input_found),
+                ?event(no_sig_input_found),
                 maps:keys(MsgWithContentDigest);
             SigInput ->
-                ?event(debug_ids, sig_input_found),
+                ?event(sig_input_found),
                 [{_, {list, Items, _}}|_]
                     = hb_structured_fields:parse_dictionary(SigInput),
                 ?event({parsed_sig_input_dict, {explicit, Items}}),
