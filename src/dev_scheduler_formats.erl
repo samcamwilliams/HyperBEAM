@@ -17,7 +17,8 @@
 assignments_to_bundle(ProcID, Assignments, More, Opts) ->
     TimeInfo = ar_timestamp:get(),
     assignments_to_bundle(ProcID, Assignments, More, TimeInfo, Opts).
-assignments_to_bundle(ProcID, Assignments, More, TimeInfo, Opts) ->
+assignments_to_bundle(ProcID, Assignments, More, TimeInfo, RawOpts) ->
+    Opts = format_opts(RawOpts),
     {Timestamp, Height, Hash} = TimeInfo,
     {ok, #{
         <<"type">> => <<"schedule">>,
@@ -45,7 +46,8 @@ assignments_to_bundle(ProcID, Assignments, More, TimeInfo, Opts) ->
     }}.
 
 %%% Return legacy net-SU compatible results.
-assignments_to_aos2(ProcID, Assignments, More, Opts) when is_map(Assignments) ->
+assignments_to_aos2(ProcID, Assignments, More, RawOpts) when is_map(Assignments) ->
+    Opts = format_opts(RawOpts),
     SortedKeys =
         lists:sort(
             lists:map(
@@ -66,7 +68,8 @@ assignments_to_aos2(ProcID, Assignments, More, Opts) when is_map(Assignments) ->
             SortedKeys
         ),
     assignments_to_aos2(ProcID, ListAssignments, More, Opts);
-assignments_to_aos2(ProcID, Assignments, More, Opts) ->
+assignments_to_aos2(ProcID, Assignments, More, RawOpts) ->
+    Opts = format_opts(RawOpts),
     {Timestamp, Height, Hash} = ar_timestamp:get(),
     BodyStruct = 
         {[
@@ -100,11 +103,13 @@ assignments_to_aos2(ProcID, Assignments, More, Opts) ->
 %% @doc Generate a cursor for an assignment. This should be the slot number, at
 %% least in the case of mainnet `ao.N.1' assignments. In the case of legacynet
 %% (`ao.TN.1') assignments, we may want to use the assignment ID.
-cursor(Assignment, Opts) ->
-    hb_converge:get(<<"slot">>, Assignment, Opts#{ hashpath => ignore }).
+cursor(Assignment, RawOpts) ->
+    Opts = format_opts(RawOpts),
+    hb_converge:get(<<"slot">>, Assignment, Opts).
 
 %% @doc Convert an assignment to an AOS2-compatible JSON structure.
-assignment_to_aos2(Assignment, Opts) ->
+assignment_to_aos2(Assignment, RawOpts) ->
+    Opts = format_opts(RawOpts),
     Message = hb_converge:get(<<"body">>, Assignment, Opts),
     AssignmentWithoutBody = maps:without([<<"body">>], Assignment),
     {[
@@ -116,7 +121,8 @@ assignment_to_aos2(Assignment, Opts) ->
 
 %% @doc Convert an AOS2-style JSON structure to a normalized HyperBEAM
 %% assignments response.
-aos2_to_assignments(ProcID, Body, Opts) ->
+aos2_to_assignments(ProcID, Body, RawOpts) ->
+    Opts = format_opts(RawOpts),
     Assignments = maps:get(<<"edges">>, Body, Opts),
     ?event({raw_assignments, Assignments}),
     ParsedAssignments =
@@ -140,7 +146,8 @@ aos2_to_assignments(ProcID, Body, Opts) ->
 
 %% @doc Create and normalize an assignment from an AOS2-style JSON structure.
 %% NOTE: This method is destructive to the verifiability of the assignment.
-aos2_to_assignment(A, Opts) ->
+aos2_to_assignment(A, RawOpts) ->
+    Opts = format_opts(RawOpts),
     % Unwrap the node if it is provided
     Node = maps:get(<<"node">>, A, A),
     {ok, Message} =
@@ -196,3 +203,12 @@ aos2_normalize_types(Msg) ->
         }
     ),
     Msg.
+
+%% @doc For all scheduler format operations, we do not calculate hashpaths,
+%% perform cache lookups, or await inprogress results.
+format_opts(Opts) ->
+    Opts#{
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>],
+        await_inprogress => false
+    }.
