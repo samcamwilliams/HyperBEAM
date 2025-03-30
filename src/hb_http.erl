@@ -439,7 +439,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr),
     EncodedHeaders = hb_private:reset(HeadersWithCors),
     ?event(http,
-        {replying,
+        {http_replying,
             {status, {explicit, Status}},
             {path, maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},

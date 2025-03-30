@@ -48,7 +48,7 @@ maybe_lookup(Msg1, Msg2, Opts) ->
 lookup(Msg1, Msg2, Opts) ->
     case derive_cache_settings([Msg1, Msg2], Opts) of
         #{ <<"lookup">> := false } ->
-            ?event(caching, {skip_cache_check, lookup_disabled}),
+            ?event({skip_cache_check, lookup_disabled}),
             {continue, Msg1, Msg2};
         Settings = #{ <<"lookup">> := true } ->
             OutputScopedOpts = 

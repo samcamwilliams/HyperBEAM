@@ -620,10 +620,10 @@
           </div>
         </div>
         <div class="section">
-          <h4 class="key-metric-header section-header">Devices Loaded</h4>
+          <h4 class="key-metric-header section-header">AO-Core Executions</h4>
           <div class="key-metric-wrapper">
-            <h2 id="devices-value" class="key-metric-value">-</h2>
-            <span class="key-metric-label">Devices</span>
+            <h2 id="executions-value" class="key-metric-value">-</h2>
+            <span class="key-metric-label">Executions</span>
           </div>
         </div>
         <div class="section">
@@ -741,8 +741,6 @@
           });
         });
 
-        document.getElementById("devices-value").innerHTML = results.length;
-
         return results;
       }
 
@@ -819,9 +817,21 @@
                     formatDisplayAmount(data);
                   startUpdatingUptime();
                 }
-                if (label === `system_load`)
+                else if (label === `system_load`) {
                   document.getElementById("system-value").innerHTML = data;
-
+                }
+                else if (label === `topic="converge_result",event="converge_result"`) {
+                  document.getElementById("executions-value").innerHTML = data;
+                }
+                else {
+                    const labelParts = label.split(",");
+                    let labels = {};
+                    for (const part of labelParts) {
+                        const [key, value] = part.split("=");
+                        labels[key] = value;
+                    }
+                    console.log(labels);
+                }
                 currentMetric.values.push({ label, data });
               }
             }

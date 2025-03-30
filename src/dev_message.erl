@@ -375,7 +375,7 @@ set(Message1, NewValuesMsg, Opts) ->
         ),
     % Base message with keys-to-unset removed
     BaseValues = maps:without(UnsetKeys, Message1),
-    ?event(set,
+    ?event(
         {performing_set,
             {conflicting_keys, ConflictingKeys},
             {keys_to_unset, UnsetKeys},
@@ -405,12 +405,12 @@ set(Message1, NewValuesMsg, Opts) ->
             },
             Opts
         ),
-    ?event(set, {setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
+    ?event({setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
     OverwrittenAttestedKeys =
         lists:filtermap(
             fun(Key) ->
                 NormKey = hb_converge:normalize_key(Key),
-                ?event(set, {checking_attested_key, {key, Key}, {norm_key, NormKey}}),
+                ?event({checking_attested_key, {key, Key}, {norm_key, NormKey}}),
                 Res = case lists:member(NormKey, KeysToSet) of
                     true -> {true, NormKey};
                     false -> false
@@ -419,7 +419,7 @@ set(Message1, NewValuesMsg, Opts) ->
             end,
             AttestedKeys
         ),
-    ?event(set, {setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}),
+    ?event({setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}),
     % Combine with deep_merge
     Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
     case OverwrittenAttestedKeys of

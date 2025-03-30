@@ -24,19 +24,20 @@
 
 %%% Functional macros that pass the current module and line number to the
 %%% underlying function.
--define(event(X), hb:event(?MODULE, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
--define(event(Topic, X), hb:event(Topic, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
--define(event(Topic, X, Opts), hb:event(maps:get(topic, Opts, Topic), X, ?MODULE, ?FUNCTION_NAME, ?LINE), Opts).
+-define(event(X), hb_event:log(global, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(event(Topic, X), hb_event:log(Topic, X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(event(Topic, X, Opts), hb_event:log(maps:get(topic, Opts, Topic), X, ?MODULE, ?FUNCTION_NAME, ?LINE), Opts).
 -define(debug_wait(T), hb:debug_wait(T, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(debug_print(X), hb_util:debug_print(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(no_prod(X), hb:no_prod(X, ?MODULE, ?LINE)).
 
 %%% Macro shortcuts for debugging.
 %% @doc A macro for marking that you got 'here'.
--define(h(), hb:event("[Debug point reached.]", ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(h(), hb_event:log("[Debug point reached.]", ?MODULE, ?FUNCTION_NAME, ?LINE)).
 %% @doc Quickly print a value in the logs. Currently uses the event
 %% function, but should be moved to a debug-specific function once we
 %% build out better logging infrastructure.
--define(p(X), hb:event(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
+-define(p(X), hb_event:log(X, ?MODULE, ?FUNCTION_NAME, ?LINE)).
 %% @doc Print the trace of the current stack, up to the first non-hyperbeam
 %% module.
 -define(trace(), hb_util:trace_macro_helper(fun hb_util:print_trace/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
