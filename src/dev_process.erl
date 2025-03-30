@@ -312,6 +312,8 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
     Msg3MaybeWithSnapshot =
         case Slot rem Freq of
             0 ->
+                ?event(compute_debug,
+                    {snapshotting, {proc_id, ProcID}, {slot, Slot}}, Opts),
                 {ok, Snapshot} = snapshot(Msg3, Msg2, Opts),
 				?event(snapshot,
 					{got_snapshot,
@@ -319,12 +321,25 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
 						{snapshot, Snapshot}
 					}
 				),
+                ?event(compute_debug,
+                    {snapshot_generated, {proc_id, ProcID}, {slot, Slot}}, Opts),
 				Msg3#{ <<"snapshot">> => Snapshot };
             _ -> 
                 Msg3
         end,
-    ?event(debug, {writing_cache, {proc_id, ProcID}, {slot, Slot}, {msg, Msg3MaybeWithSnapshot}}),
-    dev_process_cache:write(ProcID, Slot, Msg3MaybeWithSnapshot, Opts).
+    ?event(compute, {caching_result, {proc_id, ProcID}, {slot, Slot}}, Opts),
+    Writer = 
+        fun() ->
+            dev_process_cache:write(ProcID, Slot, Msg3MaybeWithSnapshot, Opts)
+        end,
+    case hb_opts:get(process_async_cache, true, Opts) of
+        true ->
+            spawn(Writer),
+            ?event(compute, {caching_delegated, {proc_id, ProcID}, {slot, Slot}}, Opts);
+        false ->
+            Writer(),
+            ?event(compute, {caching_completed, {proc_id, ProcID}, {slot, Slot}}, Opts)
+    end.
 
 %% @doc Returns the known state of the process at either the current slot, or
 %% the latest slot in the cache depending on the `process_now_from_cache' option.
