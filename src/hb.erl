@@ -88,7 +88,7 @@
 -export([topup/3, topup/4]).
 -export([start_mainnet/0, start_mainnet/1]).
 %%% Debugging tools:
--export([event/1, event/2, event/3, event/4, event/5, event/6, no_prod/3]).
+-export([no_prod/3]).
 -export([read/1, read/2, debug_wait/4, profile/1, benchmark/2, benchmark/3]).
 %%% Node wallet and address management:
 -export([address/0, wallet/0, wallet/1]).
@@ -218,42 +218,6 @@ address() -> address(wallet()).
 address(Wallet) when is_tuple(Wallet) ->
     hb_util:encode(ar_wallet:to_address(Wallet));
 address(Location) -> address(wallet(Location)).
-
-%% @doc Debugging event logging function. For now, it just prints to standard
-%% error.
-event(X) -> event(global, X).
-event(Topic, X) -> event(Topic, X, "").
-event(Topic, X, Mod) -> event(Topic, X, Mod, undefined).
-event(Topic, X, Mod, Func) -> event(Topic, X, Mod, Func, undefined).
-event(Topic, X, Mod, Func, Line) -> event(Topic, X, Mod, Func, Line, #{}).
-event(Topic, X, Mod, undefined, Line, Opts) -> event(Topic, X, Mod, "", Line, Opts);
-event(Topic, X, Mod, Func, undefined, Opts) -> event(Topic, X, Mod, Func, "", Opts);
-event(Topic, X, ModAtom, Func, Line, Opts) when is_atom(ModAtom) ->
-    % Increment by message adding Topic as label
-    hb_event_counts:increment(X, Topic),
-    % Check if the module has the `hb_debug' attribute set to `print'.
-    case lists:member({hb_debug, [print]}, ModAtom:module_info(attributes)) of
-        true -> hb_util:debug_print(X, atom_to_list(ModAtom), Func, Line);
-        false -> 
-            % Check if the module has the `hb_debug' attribute set to `no_print'.
-            case lists:keyfind(hb_debug, 1, ModAtom:module_info(attributes)) of
-                {hb_debug, [no_print]} -> X;
-                _ -> event(Topic, X, atom_to_list(ModAtom), Func, Line, Opts)
-            end
-    end;
-event(Topic, X, ModStr, Func, Line, Opts) ->
-    % Check if the debug_print option has the topic in it if set.
-    case hb_opts:get(debug_print, false, Opts) of
-        ModList when is_list(ModList) ->
-            case lists:member(ModStr, ModList)
-                orelse lists:member(atom_to_list(Topic), ModList)
-            of
-                true -> hb_util:debug_print(X, ModStr, Func, Line);
-                false -> X
-            end;
-        true -> hb_util:debug_print(X, ModStr, Func, Line);
-        false -> X
-    end.
 
 %% @doc Debugging function to read a message from the cache.
 %% Specify either a scope atom (local or remote) or a store tuple
