@@ -515,7 +515,7 @@ to(RawTABM) when is_map(RawTABM) ->
     end,
     %?event({result, {explicit, Res}}),
     Res;
-to(Other) ->
+to(_Other) ->
     throw(invalid_tx).
 
 %%% ANS-104-specific testing cases.

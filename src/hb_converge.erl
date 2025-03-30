@@ -770,7 +770,7 @@ keys(Msg, Opts, keep) ->
             )
         )
     catch
-        A:B:C ->
+        A:B:_C ->
             throw({cannot_get_keys, {msg, Msg}, {opts, Opts}, {error, {A, B}}})
     end;
 keys(Msg, Opts, remove) ->
