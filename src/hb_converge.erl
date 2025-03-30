@@ -154,9 +154,9 @@ resolve_many([ID], Opts) when ?IS_ID(ID) ->
 resolve_many({as, DevID, Msg}, Opts) ->
     subresolve(#{}, DevID, Msg, Opts);
 resolve_many(MsgList, Opts) ->
-    ?event(converge_req, {resolve_many, MsgList}, Opts),
+    ?event(converge_core, {resolve_many, MsgList}, Opts),
     Res = do_resolve_many(MsgList, Opts),
-    ?event(converge_req, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
+    ?event(converge_core, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
     Res.
 do_resolve_many([Msg3], _Opts) ->
     ?event(converge_core, {stage, 11, resolve_complete, Msg3}),
@@ -434,7 +434,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
             ?event(
                 converge_result,
                 {
-                    result,
+                    converge_result,
                     {exec_name, ExecName},
                     {msg1, Msg1},
                     {msg2, Msg2},

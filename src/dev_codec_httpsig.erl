@@ -283,7 +283,7 @@ add_content_digest(Msg) ->
         Body ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
-            ?event(content_digest, {add_content_digest, {string, Body}}),
+            ?event({add_content_digest, {string, Body}}),
             (maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(hb_structured_fields:dictionary(
@@ -416,7 +416,7 @@ hmac(Msg) ->
         MsgWithContentDigest
     ),
     ?event({hmac_keys, {explicit, HMacKeys}}),
-    ?event(hmac_base, {hmac_base, {string, SignatureBase}}),
+    ?event({hmac_base, {string, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     ?event({hmac_result, {string, hb_util:human_id(HMacValue)}}),
     {ok, HMacValue}.
@@ -575,7 +575,7 @@ sign_auth(Authority, Req, Res) ->
 	{SignatureInput, SignatureBase} =
         signature_base(AuthorityWithSigParams, Req, Res),
     % Now perform the actual signing
-    ?event(signing_base,
+    ?event(signature_base,
         {signature_base_for_signing, {string, SignatureBase}}),
 	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
 	{ok, {SignatureInput, Signature}}.
@@ -648,7 +648,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             % Construct the signature base using the parsed parameters
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
             {_, SignatureBase} = signature_base(Authority, Req, Res),
-            ?event(signing_base,
+            ?event(signature_base,
                 {signature_base_for_verification, {string, SignatureBase}}),
             {_Priv, Pub} = maps:get(key_pair, Authority),
             % Now verify the signature base signed with the provided key matches
