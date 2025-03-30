@@ -65,21 +65,30 @@ router(_, Msg1, Msg2, Opts) ->
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
 next(Msg1, Msg2, Opts) ->
-    ?event(next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}}),
-    Schedule =
-        hb_private:get(
-            <<"priv/scheduler/assignments">>,
-            Msg1,
-            Opts
+    ?event(debug_next, {scheduler_next_called, {msg1, Msg1}, {msg2, Msg2}}),
+    ?event(next, started_next),
+    Schedule = message_cached_assignments(Msg1, Opts),
+    LastProcessed =
+        hb_util:int(
+            hb_converge:get(
+                <<"at-slot">>,
+                Msg1,
+                Opts#{ hashpath => ignore }
+            )
         ),
-    LastProcessed = hb_util:int(hb_converge:get(<<"at-slot">>, Msg1, Opts)),
-    ?event(next, {in_message_cache, {schedule, Schedule}}),
-    Assignments =
+    ?event(debug_next, {in_message_cache, {schedule, Schedule}}),
+    ?event(next, {last_processed, LastProcessed, {message_cache, length(Schedule)}}),
+    % Get the assignments from the message cache, local cache, or fetch from
+    % the SU. Returns an ordered list of assignments.
+    [NextAssignment|Assignments] =
         case Schedule of
-            X when is_map(X) and map_size(X) > 0 -> X;
+            [_Next|_] -> Schedule;
             _ ->
                 ProcID = dev_process:process_id(Msg1, Msg2, Opts),
                 case dev_scheduler_cache:read(ProcID, New = LastProcessed + 1, Opts) of
+                    {ok, Assignment} ->
+                        ?event(next_debug, {in_cache, {slot, New}, {assignment, Assignment}}),
+                        [Assignment];
                     not_found ->
                         {ok, RecvdAssignments} =
                             hb_converge:resolve(
@@ -91,63 +100,57 @@ next(Msg1, Msg2, Opts) ->
                                 },
                                 Opts#{ scheduler_follow_redirects => true }
                             ),
-                        RecvdAssignments;
-                    {ok, Assignment} ->
-                        ?event(next_debug, {in_cache, {slot, New}, {assignment, Assignment}}),
-                        #{
-                            New => Assignment
-                        }
+                        % Convert the assignments to an ordered list of messages,
+                        % after removing all keys before the last processed slot.
+                        hb_util:message_to_ordered_list(
+                            maps:filter(
+                                fun(<<"priv">>, _) -> false;
+                                   (<<"attestations">>, _) -> false;
+                                   (Slot, _) -> hb_util:int(Slot) > LastProcessed
+                                end,
+                                RecvdAssignments
+                            )
+                        )
                 end
         end,
-    NormAssignments =
-        maps:from_list(
-            lists:map(
-                fun({Slot, Assignment}) ->
-                    {hb_util:int(Slot), Assignment}
-                end,
-                maps:to_list(maps:without([<<"priv">>, <<"attestations">>], Assignments))
+    % Paranoia: Get the slot of the next assignment, to ensure that it is the
+    % last processed slot + 1.
+    NextAssignmentSlot =
+        try hb_util:int(
+            hb_converge:get(
+                <<"slot">>,
+                NextAssignment,
+                Opts#{ hashpath => ignore }
             )
-        ),
-    ?event(next, {norm_assignments, {assignments, NormAssignments}}),
-    ValidKeys =
-        lists:filter(
-            fun(Slot) -> Slot > LastProcessed end,
-            maps:keys(NormAssignments)
-        ),
-    % Remove assignments that are below the last processed slot.
-    FilteredAssignments = maps:with(ValidKeys, NormAssignments),
-    ?event(next, {filtered_slots, {explicit, ValidKeys}}),
-    Slot =
-        case ValidKeys of
-            [] -> hb_util:int(LastProcessed);
-            Slots -> lists:min(Slots)
+        )
+        catch
+            error:badarg -> invalid_slot
         end,
-    ?event(next,
+    ?event(debug_next, {norm_assignments, Assignments}),
+    ?event(next, {assignments_to_cache, length(Assignments)}),
+    % Remove assignments that are below the last processed slot.
+    ?event(debug_next,
         {calculating_next_from_assignments,
             {last_processed, LastProcessed},
-            {next_slot, LastProcessed + 1},
-            {minimum_slot_received, Slot},
-            {assignments_received, maps:size(FilteredAssignments)}
+            {next_slot_from_assignment, NextAssignmentSlot},
+            {assignments_received, length(Assignments)}
         }),
-    case (LastProcessed + 1) == Slot of
-        true ->
-            NextMessage =
-                hb_converge:get(
-                    Slot,
-                    FilteredAssignments,
-                    Opts
-                ),
+    ExpectedSlot = LastProcessed + 1,
+    case NextAssignmentSlot of
+        ExpectedSlot ->
+            ?event(next, {setting_cache, {assignments, length(Assignments)}}),
             NextState =
                 hb_private:set(
                     Msg1,
-                    <<"schedule/assignments">>,
-                    hb_converge:remove(FilteredAssignments, Slot),
+                    <<"scheduler@1.0/assignments">>,
+                    Assignments,
                     Opts
                 ),
-            ?event(next,
-                {next_returning, {slot, Slot}, {message, NextMessage}}),
-            {ok, #{ <<"body">> => NextMessage, <<"state">> => NextState }};
-        false ->
+            ?event(debug_next,
+                {next_returning, {slot, NextAssignmentSlot}, {message, NextAssignment}}),
+            ?event(next, {next_returning, {slot, NextAssignmentSlot}}),
+            {ok, #{ <<"body">> => NextAssignment, <<"state">> => NextState }};
+        _ ->
             {error,
                 #{
                     <<"status">> => 503,
@@ -155,6 +158,16 @@ next(Msg1, Msg2, Opts) ->
                 }
             }
     end.
+
+%% @doc Non-device exported helper to get the cached assignments held in a
+%% process.
+message_cached_assignments(Msg, Opts) ->
+    hb_private:get(
+        <<"scheduler@1.0/assignments">>,
+        Msg,
+        [],
+        Opts
+    ).
 
 %% @doc Returns information about the entire scheduler.
 status(_M1, _M2, _Opts) ->
@@ -766,7 +779,8 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
             <<"ao.TN.1">> ->
                 <<
                     ProcID/binary, "?proc-id=", ProcID/binary,
-                    FromBin/binary, ToParam/binary
+                    FromBin/binary, ToParam/binary,
+                    "&limit=1000"
                 >>
         end,
     ?event({getting_remote_schedule, {node, {string, Node}}, {path, {string, Path}}}),
@@ -786,7 +800,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                             <<"body">>,
                                             Res,
                                             <<"">>,
-                                            Opts
+                                            Opts#{ hashpath => ignore }
                                         ),
                                         [return_maps]
                                     ),
@@ -849,19 +863,39 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
 
 %% @doc Cache a schedule received from a remote scheduler.
 cache_remote_schedule(Schedule, Opts) ->
-    Assignments = hb_converge:get(<<"assignments">>, Schedule, Opts),
-    lists:foreach(
-        fun(Assignment) ->
-            % We do not care about the result of the write because it is only
-            % an additional cache.
-            dev_scheduler_cache:write(Assignment, Opts)
-        end,
-        AssignmentList =
-            maps:values(
-                maps:without([<<"priv">>], hb_converge:normalize_keys(Assignments))
+    Cacher =
+        fun() ->
+            ?event(debug_sched, {caching_remote_schedule, {schedule, Schedule}}),
+            Assignments =
+                hb_converge:get(
+                    <<"assignments">>,
+                    Schedule,
+                    Opts#{ hashpath => ignore }
+                ),
+            lists:foreach(
+                fun(Assignment) ->
+                    % We do not care about the result of the write because it is only
+                    % an additional cache.
+                    ?event(debug_sched,
+                        {writing_assignment,
+                            {assignment, maps:get(<<"slot">>, Assignment)}
+                        }
+                    ),
+                    dev_scheduler_cache:write(Assignment, Opts)
+                end,
+                AssignmentList =
+                    hb_util:message_to_ordered_list(
+                        maps:without([<<"priv">>], hb_converge:normalize_keys(Assignments))
+                    )
+            ),
+            ?event(debug_sched,
+                {caching_remote_schedule, {assignments, length(AssignmentList)}}
             )
-    ),
-    ?event(debug_sched, {caching_remote_schedule, {assignments, length(AssignmentList)}}).
+        end,
+    case hb_opts:get(scheduler_async_remote_cache, true, Opts) of
+        true -> spawn(Cacher);
+        false -> Cacher()
+    end.
 
 %% @doc Get the node URL from a redirect.
 node_from_redirect(Redirect, Opts) ->
