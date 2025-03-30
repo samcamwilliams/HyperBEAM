@@ -50,7 +50,8 @@ do_monitor(Group, Last) ->
                                     _ ->
                                         length(
                                             element(2,
-                                                erlang:process_info(Pid, messages))
+                                                erlang:process_info(Pid, messages)
+                                            )
                                         )
                                 end
                         }
@@ -114,12 +115,7 @@ find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
                 {ok, Leader} when Leader =:= Self ->
                     {infinite_recursion, GroupName};
                 _ ->
-                    ?event(
-                        {
-                            register_resolver,
-                            {group, GroupName}
-                        }
-                    ),
+                    ?event({register_resolver, {group, GroupName}}),
                     register_groupname(GroupName, Opts),
                     {leader, GroupName}
             end
@@ -366,8 +362,14 @@ default_grouper(Msg1, Msg2, Opts) ->
     % output range to avoid collisions.
     ?no_prod("Using a hash for group names is not secure."),
     case hb_opts:get(await_inprogress, true, Opts) of
-        named -> ungrouped_exec;
-        _ -> erlang:phash2({Msg1, Msg2})
+        true ->
+            erlang:phash2(
+                {
+                    maps:without([<<"priv">>], Msg1),
+                    maps:without([<<"priv">>], Msg2)
+                }
+            );
+        _ -> ungrouped_exec
     end.
 
 %% @doc Log an event with the worker process. If we used the default grouper
