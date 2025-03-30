@@ -54,7 +54,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Msg2, Opts) ->
-    ?event(debug_cu, {do_compute_msg, {msg2, Msg2}}),
+    ?event({do_compute_msg, {msg2, Msg2}}),
     Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
     {ok, AOS2 = #{ <<"body">> := Body }} =
         dev_scheduler_formats:assignments_to_aos2(
@@ -65,7 +65,7 @@ do_compute(ProcID, Msg2, Opts) ->
             false,
             Opts
         ),
-    ?event(debug_cu, {do_compute_msg, {aos2, {string, Body}}}),
+    ?event({do_compute_msg, {aos2, {string, Body}}}),
     Res = 
         hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">>, <<"content-type">> => <<"application/json">> },
             AOS2#{
@@ -81,7 +81,10 @@ do_compute(ProcID, Msg2, Opts) ->
                     >>,
                 <<"content-type">> => <<"application/json">>
             },
-            Opts
+            Opts#{
+                hashpath => ignore,
+                cache_control => [<<"no-store">>, <<"no-cache">>]
+            }
         ),
     case Res of
         {ok, Response} ->
