@@ -6,8 +6,8 @@
 -module(hb_http).
 -export([start/0]).
 -export([get/2, get/3, post/3, post/4, request/2, request/4, request/5]).
--export([reply/3, reply/4]).
--export([message_to_status/1, status_code/1, req_to_tabm_singleton/2]).
+-export([reply/4, accept_to_codec/2]).
+-export([req_to_tabm_singleton/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -77,81 +77,108 @@ request(Method, #{ <<"opts">> := NodeOpts, <<"uri">> := URI }, _Path, Message, O
         ),
     request(NewMethod, Node, NewPath, NewMsg, MergedOpts);
 request(Method, Peer, Path, RawMessage, Opts) ->
-    ?event(http, {request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
+    ?event({request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
     Req =
         prepare_request(
-            hb_opts:get(format, http, Opts),
+            hb_converge:get(
+                <<"codec-device">>,
+                RawMessage,
+                <<"httpsig@1.0">>,
+                Opts
+            ),
             Method,
             Peer,
             Path,
             RawMessage,
             Opts
         ),
-    ?event(http, {req, Req}),
-    case hb_http_client:req(Req, Opts) of
-        {ok, Status, Headers, Body} when Status >= 200, Status < 400 ->
-            ?event(
-                {
-                    http_response,
-                    {req, Req},
-                    {response,
-                        #{
-                            status => Status,
-                            headers => Headers,
-                            body => Body
-                        }
-                    }
+    ?event(debug_cu, {req, Req}, Opts),
+    StartTime = os:system_time(millisecond),
+    {_ErlStatus, Status, Headers, Body} = hb_http_client:req(Req, Opts),
+    EndTime = os:system_time(millisecond),
+    ?event(http_outbound,
+        {
+            http_response,
+            {req, Req},
+            {response,
+                #{
+                    status => Status,
+                    headers => Headers,
+                    body => Body
                 }
-            ),
-            HeaderMap = maps:from_list(Headers),
-            NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
-            {
-                case Status of
-                    201 -> created;
-                    _ -> ok
-                end,
-                case maps:get(<<"content-type">>, NormHeaderMap, undefined) of
-                    <<"application/x-ans-104">> ->
-                        ar_bundles:deserialize(Body);
-                    _ ->
+            }
+        },
+        Opts
+    ),
+    HeaderMap = maps:from_list(Headers),
+    NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
+    ?event(http_outbound,
+        {normalized_response_headers, {norm_header_map, NormHeaderMap}},
+        Opts
+    ),
+    BaseStatus =
+        case Status of
+            201 -> created;
+            X when X < 400 -> ok;
+            X when X < 500 -> error;
+            _ -> failure
+        end,
+    ?event(http_short,
+        {received,
+            {status, Status},
+            {duration, EndTime - StartTime},
+            {method, Method},
+            {peer, Peer},
+            {path, {string, Path}},
+            {body_size, byte_size(Body)}
+        }),
+    case maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
+        Key when is_binary(Key) ->
+            Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
+            ?event(http_outbound, {result_is_single_key, {key, Key}, {msg, Msg}}, Opts),
+            case maps:get(Key, Msg, undefined) of
+                undefined -> {failure, result_key_not_found};
+                Value -> {BaseStatus, Value}
+            end;
+        undefined ->
+            case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
+                <<"httpsig@1.0">> ->
+                    ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),
+                    {
+                        BaseStatus,
+                        http_response_to_httpsig(Status, NormHeaderMap, Body, Opts)
+                    };
+                <<"ans104@1.0">> ->
+                    ?event(http_outbound, {result_is_ans104, {body, Body}}, Opts),
+                    Deserialized = ar_bundles:deserialize(Body),
+                    % We don't need to add the status to the message, because
+                    % it is already present in the encoded ANS-104 message.
+                    {
+                        BaseStatus,
                         hb_message:convert(
-                            maps:merge(
-                                HeaderMap#{ <<"status">> => hb_util:bin(Status) },
-                                case Body of
-                                    <<>> -> #{};
-                                    _ -> #{ <<"body">> => Body }
-                                end
-                            ),
+                            Deserialized,
                             <<"structured@1.0">>,
-                            <<"httpsig@1.0">>,
+                            <<"ans104@1.0">>,
                             Opts
                         )
-                end
-            };
-        {ok, Status, _Headers, Body} when Status == 400 ->
-            ?event(
-                {http_got_client_error,
-                    {req, Req},
-                    {response, #{status => Status, body => {explicit, Body}}}
-                }),
-            {error, Body};
-        {ok, Status, _Headers, Body} when Status > 400 ->
-            ?event(
-                {http_got_server_error,
-                    {req, Req},
-                    {response, #{status => Status, body => Body}}
-                }
-            ),
-            {unavailable, Body};
-        Response ->
-            ?event(
-                {http_error,
-                    {req, Req},
-                    {response, {explicit, Response}}
-                }
-            ),
-            Response
+                    }
+            end
     end.
+
+%% @doc Convert a HTTP response to a httpsig message.
+http_response_to_httpsig(Status, HeaderMap, Body, Opts) ->
+    (hb_message:convert(
+        maps:merge(
+            HeaderMap#{ <<"status">> => hb_util:bin(Status) },
+            case Body of
+                <<>> -> #{};
+                _ -> #{ <<"body">> => Body }
+            end
+        ),
+        <<"structured@1.0">>,
+        <<"httpsig@1.0">>,
+        Opts
+    ))#{ <<"status">> => hb_util:int(Status) }.
 
 %% @doc Given a message, return the information needed to make the request.
 message_to_request(M, Opts) ->
@@ -166,7 +193,7 @@ message_to_request(M, Opts) ->
             % The request is a direct HTTP URL, so we need to split the
             % URL into a host and path.
             URI = uri_string:parse(URL),
-            ?event(http, {parsed_uri, {uri, {explicit, URI}}}),
+            ?event(http_outbound, {parsed_uri, {uri, {explicit, URI}}}),
             Port =
                 case maps:get(port, URI, undefined) of
                     undefined ->
@@ -187,10 +214,10 @@ message_to_request(M, Opts) ->
                     Query -> [<<"?", Query/binary>>]
                 end,
             Path = iolist_to_binary(PathParts),
-            ?event(http, {parsed_req, {node, Node}, {method, Method}, {path, Path}}),
+            ?event(http_outbound, {parsed_req, {node, Node}, {method, Method}, {path, Path}}),
             {ok, Method, Node, Path, MsgWithoutMeta};
         {ok, Routes} ->
-            ?event(http, {found_routes, {req, M}, {routes, Routes}}),
+            ?event(http_outbound, {found_routes, {req, M}, {routes, Routes}}),
             % The result is a route, so we leave it to `request` to handle it.
             Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Routes, Path, MsgWithoutMeta};
@@ -206,15 +233,26 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
     case Format of
-        http ->
-            FullEncoding = #{ <<"body">> := Body } =
+        <<"httpsig@1.0">> ->
+            FullEncoding =
                 hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
+            Body = maps:get(<<"body">>, FullEncoding, <<>>),
             Headers = maps:without([<<"body">>], FullEncoding),
+
+			?event(http, {request_headers, {explicit, {headers, Headers}}}),
+			?event(http, {request_body, {explicit, {body, Body}}}),
             maps:merge(ReqBase, #{ headers => Headers, body => Body });
-        ans104 ->
+        <<"ans104@1.0">> ->
             ReqBase#{
-                headers => [{<<"content-type">>, <<"application/x-ans-104">>}],
-                body => ar_bundles:serialize(hb_message:convert(Message, tx, #{}))
+                headers =>
+                    #{
+                        <<"codec-device">> => <<"ans104@1.0">>,
+                        <<"content-type">> => <<"application/ans104">>
+                    },
+                body =>
+                    ar_bundles:serialize(
+                        hb_message:convert(Message, <<"ans104@1.0">>, Opts)
+                    )
             }
     end.
 
@@ -381,20 +419,28 @@ parallel_responses(Res, Procs, Ref, Awaiting, StopAfter, Statuses, Opts) ->
 %% @doc Empty the inbox of the current process for all messages with the given
 %% reference.
 empty_inbox(Ref) ->
-    receive
-        {Ref, _} -> empty_inbox(Ref)
-    after 0 -> ok
-    end.
+    receive {Ref, _} -> empty_inbox(Ref) after 0 -> ok end.
 
 %% @doc Reply to the client's HTTP request with a message.
-reply(Req, Message, Opts) ->
-    reply(Req, message_to_status(Message), Message, Opts).
-reply(Req, Status, RawMessage, Opts) ->
+reply(Req, TABMReq, Message, Opts) ->
+    Status =
+        case hb_converge:get(<<"status">>, Message, Opts) of
+            not_found -> 200;
+            S-> S
+        end,
+    reply(Req, TABMReq, Status, Message, Opts).
+reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
+    reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
+reply(Req, TABMReq, Status, RawMessage, Opts) ->
     Message = hb_converge:normalize_keys(RawMessage),
-    {ok, EncodedHeaders, EncodedBody} = prepare_reply(Message, Opts),
+    {ok, HeadersBeforeCors, EncodedBody} = encode_reply(TABMReq, Message, Opts),
+    % Get the CORS request headers from the message, if they exist.
+    ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
+    HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr),
+    EncodedHeaders = hb_private:reset(HeadersWithCors),
     ?event(http,
         {replying,
-            {status, Status},
+            {status, {explicit, Status}},
             {path, maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},
             {enc_headers, EncodedHeaders},
@@ -414,13 +460,62 @@ reply(Req, Status, RawMessage, Opts) ->
                 }
         end,
     Req2 = cowboy_req:stream_reply(Status, #{}, SetCookiesReq),
-    Req3 = cowboy_req:stream_body(EncodedBody, fin, Req2),
-    {ok, Req3, no_state}.
+    cowboy_req:stream_body(EncodedBody, nofin, Req2),
+    EndTime = os:system_time(millisecond),
+    ?event(http, {reply_headers, {explicit, {ok, Req2, no_state}}}),
+    ?event(http_short,
+        {sent,
+            {status, Status},
+            {duration, EndTime - maps:get(start_time, Req)},
+            {method, cowboy_req:method(Req)},
+            {path,
+                {string,
+                    uri_string:percent_decode(
+                        hb_converge:get(<<"path">>, TABMReq, <<"[NO PATH]">>, Opts)
+                    )
+                }
+            },
+            {body_size, byte_size(EncodedBody)}
+        }
+    ),
+    {ok, Req2, no_state}.
+
+%% @doc Add permissive CORS headers to a message, if the message has not already
+%% specified CORS headers.
+add_cors_headers(Msg, ReqHdr) ->
+    CorHeaders = #{
+        <<"access-control-allow-origin">> => <<"*">>,
+        <<"access-control-allow-methods">> => <<"GET, POST, PUT, DELETE, OPTIONS">>
+    },
+     WithAllowHeaders = case ReqHdr of
+        <<>> -> CorHeaders;
+        _ -> CorHeaders#{
+             <<"access-control-allow-headers">> => ReqHdr
+        }
+    end,
+    % Keys in the given message will overwrite the defaults listed below if 
+    % included, due to `maps:merge`'s precidence order.
+    maps:merge(WithAllowHeaders, Msg).
 
 %% @doc Generate the headers and body for a HTTP response message.
-prepare_reply(Message, Opts) ->
-    case hb_opts:get(format, http, Opts) of
-        http ->
+encode_reply(TABMReq, Message, Opts) ->
+    Codec = accept_to_codec(TABMReq, Opts),
+    ?event(http, {encoding_reply, {codec, Codec}, {message, Message}}),
+    BaseHdrs =
+        maps:merge(
+            #{
+                <<"codec-device">> => Codec
+            },
+            case codec_to_content_type(Codec, Opts) of
+                    undefined -> #{};
+                    CT -> #{ <<"content-type">> => CT }
+            end
+        ),
+    % Codecs generally do not need to specify headers outside of the content-type,
+    % aside the default `httpsig@1.0` codec, which expresses its form in HTTP
+    % documents, and subsequently must set its own headers.
+    case Codec of
+        <<"httpsig@1.0">> ->
             EncMessage =
                 hb_message:convert(
                     Message,
@@ -428,67 +523,167 @@ prepare_reply(Message, Opts) ->
                     <<"structured@1.0">>,
                     #{ topic => converge_internal }
                 ),
-            {ok,
+            {
+                ok,
                 maps:without([<<"body">>], EncMessage),
                 maps:get(<<"body">>, EncMessage, <<>>)
             };
-        ans104 ->
+        <<"ans104@1.0">> ->
+            % The `ans104@1.0` codec is a binary format, so we must serialize
+            % the message to a binary before sending it.
+            {
+                ok,
+                BaseHdrs,
+                ar_bundles:serialize(
+                    hb_message:convert(
+                        hb_message:with_only_attestors(
+                            Message,
+                            hb_message:signers(Message)
+                        ),
+                        <<"ans104@1.0">>,
+                        <<"structured@1.0">>,
+                        Opts#{ topic => converge_internal }
+                    )
+                )
+            };
+        _ ->
+            % Other codecs are already in binary format, so we can just convert
+            % the message to the codec. We also include all of the top-level 
+            % fields in the message and return them as headers.
+            ExtraHdrs = maps:filter(fun(_, V) -> not is_map(V) end, Message),
+            ?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
             {ok,
-                #{
-                    <<"content-type">> => <<"application/octet-stream">>
-                },
-                ar_bundles:serialize(hb_message:convert(Message, tx, Opts))
+                maps:merge(BaseHdrs, ExtraHdrs),
+                hb_message:convert(
+                    Message,
+                    Codec,
+                    <<"structured@1.0">>,
+                    Opts#{ topic => converge_internal }
+                )
             }
     end.
 
-%% @doc Get the HTTP status code from a transaction (if it exists).
-message_to_status(Item) ->
-    case dev_message:get(<<"status">>, Item) of
-        {ok, RawStatus} ->
-            case is_integer(RawStatus) of
-                true -> RawStatus;
-                false -> binary_to_integer(RawStatus)
-            end;
-        _ -> 200
+%% @doc Calculate the codec name to use for a reply given its initiating Cowboy
+%% request, the parsed TABM request, and the response message. The precidence
+%% order for finding the codec is:
+%% 1. The `accept-codec` field in the message
+%% 2. The `accept` field in the request headers
+%% 3. The default codec
+%% Options can be specified in mime-type format (`application/*`) or in
+%% AO device format (`device@1.0').
+accept_to_codec(TABMReq, Opts) ->
+    AcceptCodec =
+        maps:get(
+            <<"accept-codec">>,
+            TABMReq,
+            mime_to_codec(maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts)
+        ),
+    ?event(http, {accept_to_codec, AcceptCodec}),
+    case AcceptCodec of
+        not_specified ->
+            % We hold off until confirming that the codec is not directly in the
+            % message before calling `hb_opts:get/3`, as it is comparatively
+            % expensive.
+            default_codec(Opts);
+        _ -> AcceptCodec
     end.
 
-%% @doc Convert an HTTP status code to an atom.
-status_code(ok) -> 200;
-status_code(error) -> 400;
-status_code(created) -> 201;
-status_code(unavailable) -> 503;
-status_code(Status) -> Status.
+%% @doc Find a codec name from a mime-type.
+mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
+    Name =
+        case binary:match(Mime, <<"@">>) of
+            nomatch -> << Mime/binary, "@1.0" >>;
+            _ -> Mime
+        end,
+    try hb_converge:message_to_device(#{ <<"device">> => Name }, Opts)
+    catch _:Error ->
+        ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
+        default_codec(Opts)
+    end;
+mime_to_codec(<<"device/", Name/binary>>, _Opts) -> Name;
+mime_to_codec(_, _Opts) -> not_specified.
+
+%% @doc Return the default codec for the given options.
+default_codec(Opts) ->
+    hb_opts:get(default_codec, <<"httpsig@1.0">>, Opts).
+
+%% @doc Call the `content-type` key on a message with the given codec, using
+%% a fast-path for options that are not needed for this one-time lookup.
+codec_to_content_type(Codec, Opts) ->
+    FastOpts =
+        Opts#{
+            hashpath => ignore,
+            cache_control => [<<"no-cache">>, <<"no-store">>],
+            cache_lookup_hueristics => false,
+            load_remote_devices => false,
+            error_strategy => continue
+        },
+    case hb_converge:get(<<"content-type">>, #{ <<"device">> => Codec }, FastOpts) of
+        not_found -> undefined;
+        CT -> CT
+    end.
 
 %% @doc Convert a cowboy request to a normalized message.
-req_to_tabm_singleton(Req, Opts) ->
-    case cowboy_req:header(<<"content-type">>, Req) of
-        <<"application/x-ans-104">> ->
-            {ok, Body} = read_body(Req),
-            hb_message:convert(ar_bundles:deserialize(Body), <<"structured@1.0">>, <<"ans104@1.0">>, Opts);
-        _ ->
-            http_sig_to_tabm_singleton(Req, Opts)
+req_to_tabm_singleton(Req, Body, Opts) ->
+    case cowboy_req:header(<<"codec-device">>, Req, <<"httpsig@1.0">>) of
+        <<"httpsig@1.0">> ->
+			?event({req_to_tabm_singleton, {request, {explicit, Req}, {body, {string, Body}}}}),
+            http_sig_to_tabm_singleton(Req, Body, Opts);
+        <<"ans104@1.0">> ->
+            Item = ar_bundles:deserialize(Body),
+            ?event(ans104,
+                {deserialized_ans104,
+                    {item, Item},
+                    {exact, {explicit, Item}}
+                }
+            ),
+            case ar_bundles:verify_item(Item) of
+                true ->
+                    ?event(ans104, {valid_ans104_signature, Item}),
+                    ANS104 =
+                        hb_message:convert(
+                            Item,
+                            <<"structured@1.0">>,
+                            <<"ans104@1.0">>,
+                            Opts
+                        ),
+                    maybe_add_unsigned(Req, ANS104, Opts);
+                false ->
+                    throw({invalid_ans104_signature, Item})
+            end
     end.
 
-http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Opts) ->
-    {ok, Body} = read_body(Req),
-    Msg = dev_codec_httpsig_conv:from(RawHeaders#{ <<"body">> => Body }),
+%% @doc HTTPSig messages are inherently mixed into the transport layer, so they
+%% require special handling in order to be converted to a normalized message.
+%% In particular, the signatures are verified if present and required by the 
+%% node configuration. Additionally, non-attested fields are removed from the
+%% message if it is signed, with the exception of the `path` and `method` fields.
+http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
+    Msg = dev_codec_httpsig_conv:from(
+        RawHeaders#{ <<"body">> => Body }
+    ),
     {ok, SignedMsg} =
         dev_codec_httpsig:reset_hmac(
             hb_util:ok(remove_unsigned_fields(Msg, Opts))
         ),
-    ForceSignedRequests = hb_opts:get(force_signed_requests, true, Opts),
+    ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of
         true ->
             ?event(http_verify, {verified_signature, SignedMsg}),
-            case hb_opts:get(store_all_signed, false, Opts) of
+            Signers = hb_message:signers(SignedMsg),
+            case Signers =/= [] andalso hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
-                    hb_cache:write(Msg,
-                        Opts#{
-                            store =>
-                                {hb_store_fs, #{ prefix => "store-inputs" }}
-                        }
-                    );
+                    {ok, _} =
+                        hb_cache:write(Msg,
+                            Opts#{
+                                store =>
+                                    #{
+                                        <<"store-module">> => hb_store_fs,
+                                        <<"prefix">> => <<"cache-http">>
+                                    }
+                            }
+                        );
                 false ->
                     do_nothing
             end,
@@ -538,21 +733,12 @@ remove_unsigned_fields(Msg, _Opts) ->
         _ -> hb_message:with_only_attested(Msg)
     end.
 
-%% @doc Helper to grab the full body of a HTTP request, even if it's chunked.
-read_body(Req) -> read_body(Req, <<>>).
-read_body(Req0, Acc) ->
-    case cowboy_req:read_body(Req0) of
-        {ok, Data, _Req} -> {ok, << Acc/binary, Data/binary >>};
-        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
-    end.
-
 %%% Tests
 
 simple_converge_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
-    {ok, Res} = post(URL, TestMsg, #{}),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual({ok, <<"Value1">>}, post(URL, TestMsg, #{})).
 
 simple_converge_resolve_signed_test() ->
     URL = hb_http_server:start_node(),
@@ -564,7 +750,7 @@ simple_converge_resolve_signed_test() ->
             hb_message:attest(TestMsg, Wallet),
             #{}
         ),
-    ?assertEqual(<<"Value1">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(<<"Value1">>, Res).
 
 nested_converge_resolve_test() ->
     URL = hb_http_server:start_node(),
@@ -583,7 +769,7 @@ nested_converge_resolve_test() ->
             }, Wallet),
             #{}
         ),
-    ?assertEqual(<<"Value2">>, hb_converge:get(<<"body">>, Res, #{})).
+    ?assertEqual(<<"Value2">>, Res).
 
 wasm_compute_request(ImageFile, Func, Params) ->
     wasm_compute_request(ImageFile, Func, Params, <<"">>).
@@ -623,3 +809,29 @@ get_deep_signed_wasm_state_test() ->
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
     ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
+
+cors_get_test() ->
+    URL = hb_http_server:start_node(),
+    {ok, Res} = get(URL, <<"/~meta@1.0/info">>, #{}),
+    ?assertEqual(
+        <<"*">>,
+        hb_converge:get(<<"access-control-allow-origin">>, Res, #{})
+    ).
+
+ans104_wasm_test() ->
+    URL = hb_http_server:start_node(#{force_signed => true}),
+    {ok, Bin} = file:read_file(<<"test/test-64.wasm">>),
+    Wallet = hb:wallet(),
+    Msg = hb_message:attest(#{
+        <<"path">> => <<"/init/compute/results">>,
+        <<"accept-codec">> => <<"ans104@1.0">>,
+        <<"codec-device">> => <<"ans104@1.0">>,
+        <<"device">> => <<"WASM-64@1.0">>,
+        <<"wasm-function">> => <<"fac">>,
+        <<"wasm-params">> => [3.0],
+        <<"body">> => Bin
+    }, Wallet, <<"ans104@1.0">>),
+    ?event({msg, Msg}),
+    {ok, Res} = post(URL, Msg, #{}),
+    ?event({res, Res}),
+    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).

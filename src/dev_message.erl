@@ -58,7 +58,7 @@ id(Base, Req, NodeOpts) ->
     ModBase =
         case maps:get(<<"attestors">>, Req, <<"none">>) of
             <<"all">> -> Base;
-            <<"none">> -> Base;
+            <<"none">> -> maps:without([<<"attestations">>], Base);
             [] -> Base;
             RawAttestorIDs ->
                 KeepIDs =
@@ -66,11 +66,28 @@ id(Base, Req, NodeOpts) ->
                         true -> maps:keys(RawAttestorIDs);
                         false -> RawAttestorIDs
                     end,
+                BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
                 % Add attestations with only the keys that are requested.
                 BaseWithAttestations = 
                     Base#{
                         <<"attestations">> =>
-                            maps:with(KeepIDs, maps:get(<<"attestations">>, Base, #{}))
+                            maps:from_list(
+                                lists:map(
+                                    fun(Att) ->
+                                        try {Att, maps:get(Att, BaseAttestations)}
+                                        catch _:_ ->
+                                            throw(
+                                                {
+                                                    attestor_not_found,
+                                                    Att,
+                                                    {attestations, BaseAttestations}
+                                                }
+                                            )
+                                        end
+                                    end,
+                                    KeepIDs
+                                )
+                            )
                     },
                 % Add the hashpath to the message if it is present.
                 case Base of
@@ -82,7 +99,13 @@ id(Base, Req, NodeOpts) ->
                         BaseWithAttestations
                 end
         end,
-    IDMod = maps:get(<<"id-device">>, ModBase, ?DEFAULT_ID_DEVICE),
+    % Find the ID device for the message.
+    IDMod =
+        case id_device(ModBase) of
+            {ok, IDDev} -> IDDev;
+            {error, Error} -> throw({id, Error})
+        end,
+    ?event({using_id_device, {idmod, IDMod}, {modbase, ModBase}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -98,10 +121,42 @@ id(Base, Req, NodeOpts) ->
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
     case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
-        {ok, Fun} -> apply(Fun, [ModBase, Req, NodeOpts]);
-        {error, not_found} ->
-            throw({id, id_resolver_not_found_for_device, DevMod})
+        {ok, Fun} -> apply(Fun, hb_converge:truncate_args(Fun, [ModBase, Req, NodeOpts]));
+        not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
+
+%% @doc Locate the ID device of a message. The ID device is determined by the 
+%% `id-device` if found in the `/attestations/id/attestation-device` key, or the
+%% `device` set in _all_ of the attestations. If no attestations are present,
+%% the default device (`httpsig@1.0') is used.
+id_device(#{ <<"attestations">> := #{ <<"id">> := #{ <<"attestation-device">> := IDDev } } }) ->
+    {ok, IDDev};
+id_device(#{ <<"attestations">> := Attestations }) ->
+    % Get the device from the first attestation.
+    UnfilteredDevs =
+        maps:map(
+            fun(_, #{ <<"attestation-device">> := AttestationDev }) ->
+                AttestationDev;
+            (_, _) -> undefined
+            end,
+            Attestations
+        ),
+    % Filter out the undefined devices.
+    Devs = lists:filter(fun(Dev) -> Dev =/= undefined end, maps:values(UnfilteredDevs)),
+    % If there are no devices, return the default.
+    case Devs of
+        [] -> {ok, ?DEFAULT_ID_DEVICE};
+        [Dev] -> {ok, Dev};
+        [FirstDev|Rest] ->
+            % If there are multiple devices amongst the set, err.
+            MultiDeviceMessage = lists:all(fun(Dev) -> Dev =:= FirstDev end, Rest),
+            case MultiDeviceMessage of
+                false -> {error, {multiple_id_devices, Devs}};
+                true -> {ok, FirstDev}
+            end
+    end;
+id_device(_) ->
+    {ok, ?DEFAULT_ID_DEVICE}.
 
 %% @doc Return the attestors of a message that are present in the given request.
 attestors(Base) -> attestors(Base, #{}).
@@ -139,7 +194,12 @@ attestors(Base, _, _NodeOpts) ->
 attest(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
-    AttDev = maps:get(<<"attestation-device">>, Req, ?DEFAULT_ATT_DEVICE),
+    AttDev =
+        case maps:get(<<"attestation-device">>, Req, not_specified) of
+            not_specified ->
+                hb_opts:get(attestation_device, no_viable_attestation_device, Opts);
+            Dev -> Dev
+        end,
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the attestation. Instead, we find the device module's `attest`
     % function and apply it.
@@ -157,12 +217,14 @@ verify(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Get the attestations to verify.
     Attestations =
-        case maps:get(<<"attestors">>, Req, <<"all">>) of
+        case hb_converge:normalize_key(maps:get(<<"attestors">>, Req, <<"all">>)) of
             <<"none">> -> [];
             <<"all">> -> maps:get(<<"attestations">>, Base, #{});
             AttestorIDs ->
                 maps:with(
-                    AttestorIDs,
+                    if is_list(AttestorIDs) -> AttestorIDs;
+                       true -> [AttestorIDs]
+                    end,
                     maps:get(<<"attestations">>, Base, #{})
                 )
         end,
@@ -228,7 +290,13 @@ exec_for_attestation(Func, Base, Attestation, Req, Opts) ->
 attested(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    Attestators = maps:keys(Attestations = maps:get(<<"attestations">>, Base, #{})),
+    Attestations = maps:get(<<"attestations">>, Base, #{}),
+    Attestors =
+        case maps:get(<<"attestors">>, Req, <<"all">>) of
+            <<"none">> -> [];
+            <<"all">> -> maps:keys(Attestations);
+            AttestorIDs -> AttestorIDs
+        end,
     % Get the list of attested keys from each attestor.
     AttestationKeys =
         lists:map(
@@ -244,7 +312,7 @@ attested(Self, Req, Opts) ->
                     ),
                 AttestedKeys
             end,
-            Attestators
+            Attestors
         ),
     % Remove attestations that are not in *every* attestor's list.
     % To start, we need to create the super-set of attested keys.
@@ -274,7 +342,8 @@ attested(Self, Req, Opts) ->
     ?event({only_attested_keys, OnlyAttestedKeys}),
     {ok, OnlyAttestedKeys}.
 
-set(Message1, NewValuesMsg, _Opts) ->
+set(Message1, NewValuesMsg, Opts) ->
+    OriginalPriv = hb_private:from_message(Message1),
 	% Filter keys that are in the default device (this one).
     {ok, NewValuesKeys} = keys(NewValuesMsg),
 	KeysToSet =
@@ -304,36 +373,89 @@ set(Message1, NewValuesMsg, _Opts) ->
             end,
             maps:keys(Message1)
         ),
-    % Calculate if we need to remove the attestations from the message.
-    WithoutAtts =
-        case UnsetKeys ++ ConflictingKeys of
-            [] -> [];
-            _ -> [<<"attestations">>]
-        end,
-	{
-		ok,
-		maps:merge(
-			maps:without(ConflictingKeys ++ UnsetKeys ++ WithoutAtts, Message1),
-			maps:from_list(
-				lists:filtermap(
-					fun(Key) ->
-                        case maps:get(Key, NewValuesMsg, undefined) of
-                            undefined -> false;
-                            unset -> false;
-                            Value -> {true, {Key, Value}}
-                        end
-					end,
-					KeysToSet
-				)
-			)
-		)
-	}.
+    % Base message with keys-to-unset removed
+    BaseValues = maps:without(UnsetKeys, Message1),
+    ?event(set,
+        {performing_set,
+            {conflicting_keys, ConflictingKeys},
+            {keys_to_unset, UnsetKeys},
+            {new_values, NewValuesMsg},
+            {original_message, Message1}
+        }
+    ),
+    % Create the map of new values
+    NewValues = maps:from_list(
+        lists:filtermap(
+            fun(Key) ->
+                case maps:get(Key, NewValuesMsg, undefined) of
+                    undefined -> false;
+                    unset -> false;
+                    Value -> {true, {Key, Value}}
+                end
+            end,
+            KeysToSet
+        )
+    ),
+    % Caclulate if the keys to be set conflict with any attested keys.
+    {ok, AttestedKeys} =
+        attested(
+            Message1,
+            #{
+                <<"attestors">> => <<"all">>
+            },
+            Opts
+        ),
+    ?event(set, {setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
+    OverwrittenAttestedKeys =
+        lists:filtermap(
+            fun(Key) ->
+                NormKey = hb_converge:normalize_key(Key),
+                ?event(set, {checking_attested_key, {key, Key}, {norm_key, NormKey}}),
+                Res = case lists:member(NormKey, KeysToSet) of
+                    true -> {true, NormKey};
+                    false -> false
+                end,
+                Res
+            end,
+            AttestedKeys
+        ),
+    ?event(set, {setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}),
+    % Combine with deep_merge
+    Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
+    case OverwrittenAttestedKeys of
+        [] -> {ok, Merged};
+        _ ->
+            % We did overwrite some keys, but do their values match the original?
+            % If not, we must remove the attestations.
+            case hb_message:match(Merged, Message1) of
+                true -> {ok, Merged};
+                false -> {ok, maps:without([<<"attestations">>], Merged)}
+            end
+    end.
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
 %% for Converge to know the key to evaluate in requests.
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
+
+%% @doc Deep merge two maps, recursively merging nested maps
+deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
+    maps:fold(
+        fun(Key, Value2, AccMap) ->
+            case maps:find(Key, AccMap) of
+                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+                    % Both values are maps, recursively merge them
+                    AccMap#{Key => deep_merge(Value1, Value2)};
+                _ ->
+                    % Either the key doesn't exist in Map1 or at least one of 
+                    % the values isn't a map. Simply use the value from Map2
+                    AccMap#{ Key => Value2 }
+            end
+        end,
+        Map1,
+        Map2
+    ).
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ <<"item">> := Key }) ->
@@ -452,14 +574,14 @@ set_conflicting_keys_test() ->
 unset_with_set_test() ->
 	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
-	?assertMatch({ok, Msg3} when map_size(Msg3) == 0,
+	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
 		hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore })).
 
 set_ignore_undefined_test() ->
 	Msg1 = #{ <<"test-key">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"test-key">> => undefined },
-	?assertEqual({ok, #{ <<"test-key">> => <<"Value1">> }},
-		set(Msg1, Msg2, #{ hashpath => ignore })).
+	?assertEqual(#{ <<"test-key">> => <<"Value1">> },
+		hb_private:reset(hb_util:ok(set(Msg1, Msg2, #{ hashpath => ignore })))).
 
 verify_test() ->
     Unsigned = #{ <<"a">> => <<"b">> },
@@ -483,3 +605,6 @@ verify_test() ->
             #{ hashpath => ignore }
         )
     ).
+
+run_test() ->
+    hb_message:deep_multisignature_test().

@@ -1,17 +1,18 @@
 %% @doc A collection of utility functions for building with HyperBEAM.
 -module(hb_util).
--export([int/1, float/1, atom/1, bin/1]).
+-export([int/1, float/1, atom/1, bin/1, list/1]).
 -export([id/1, id/2, native_id/1, human_id/1, short_id/1, human_int/1, to_hex/1]).
+-export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([number/1, list_to_numbered_map/1, message_to_numbered_list/1]).
--export([is_string_list/1]).
+-export([number/1, list_to_numbered_map/1, message_to_ordered_list/1]).
+-export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
 -export([format_indented/2, format_indented/3, format_binary/1]).
--export([format_map/1, format_map/2, remove_trailing_noise/2]).
--export([debug_print/4, debug_fmt/1, eunit_print/2]).
+-export([format_maybe_multiline/2, remove_trailing_noise/2]).
+-export([debug_print/4, debug_fmt/1, debug_fmt/2, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2]).
 -export([format_trace_short/1]).
@@ -53,8 +54,15 @@ bin(Value) when is_integer(Value) ->
     integer_to_binary(Value);
 bin(Value) when is_float(Value) ->
     float_to_binary(Value, [{decimals, 10}, compact]);
+bin(Value) when is_list(Value) ->
+    list_to_binary(Value);
 bin(Value) when is_binary(Value) ->
     Value.
+
+%% @doc Coerce a value to a list.
+list(Value) when is_binary(Value) ->
+    binary_to_list(Value);
+list(Value) when is_list(Value) -> Value.
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
 %% the value of the `error_strategy' option.
@@ -87,6 +95,32 @@ to_lower(Str) ->
 %% @doc Is the given term a string list?
 is_string_list(MaybeString) ->
     lists:all(fun is_integer/1, MaybeString).
+
+%% @doc Given a map or KVList, return a deterministically sorted list of its
+%% key-value pairs.
+to_sorted_list(Msg) when is_map(Msg) ->
+    to_sorted_list(maps:to_list(Msg));
+to_sorted_list(Msg) when is_list(Msg) ->
+    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
+
+%% @doc Given a map or KVList, return a deterministically ordered list of its keys.
+to_sorted_keys(Msg) when is_map(Msg) ->
+    to_sorted_keys(maps:keys(Msg));
+to_sorted_keys(Msg) when is_list(Msg) ->
+    lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
+
+%% @doc Convert keys in a map to atoms, lowering `-' to `_'.
+key_to_atom(Key, _Mode) when is_atom(Key) -> Key;
+key_to_atom(Key, Mode) ->
+    WithoutDashes = binary:replace(Key, <<"-">>, <<"_">>, [global]),
+    case Mode of
+        new_atoms -> binary_to_atom(WithoutDashes, utf8);
+        _ ->
+            try binary_to_existing_atom(WithoutDashes, utf8)
+            catch
+                error:badarg -> WithoutDashes
+            end
+    end.
 
 %% @doc Convert a human readable ID to a native binary ID. If the ID is already
 %% a native binary ID, it is returned as is.
@@ -133,8 +167,7 @@ is_human_binary(Bin) when is_binary(Bin) ->
     case unicode:characters_to_binary(Bin) of
         {error, _, _} -> false;
         _ -> true
-    end;
-is_human_binary(_) -> false.
+    end.
 
 %% @doc Encode a binary to URL safe base64 binary string.
 encode(Bin) ->
@@ -186,25 +219,33 @@ list_to_numbered_map(List) ->
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer and a value. Optionally, it takes a
 %% standard map of HyperBEAM runtime options.
-message_to_numbered_list(Message) ->
-    message_to_numbered_list(Message, #{}).
-message_to_numbered_list(Message, Opts) ->
-    {ok, Keys} = hb_converge:keys(Message, Opts),
-    KeyValList =
-        lists:filtermap(
-            fun(Key) ->
-                case string:to_integer(Key) of
-                    {Int, ""} ->
-                        {
-                            true,
-                            {Int, hb_converge:get(Key, Message, Opts)}
-                        };
-                    _ -> false
-                end
-            end,
-            Keys
-        ),
-    lists:sort(KeyValList).
+message_to_ordered_list(Message) ->
+    message_to_ordered_list(Message, #{}).
+message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
+    [];
+message_to_ordered_list(Message, Opts) ->
+    Keys = hb_converge:keys(Message, Opts),
+    IntKeys = lists:sort(lists:map(fun int/1, Keys)),
+    message_to_ordered_list(Message, IntKeys, erlang:hd(IntKeys), Opts).
+message_to_ordered_list(_Message, [], _Key, _Opts) ->
+    [];
+message_to_ordered_list(Message, [Key|Keys], Key, Opts) ->
+    case hb_converge:get(Key, Message, Opts#{ hashpath => ignore }) of
+        undefined -> throw({missing_key, Key, {remaining_keys, Keys}});
+        Value ->
+            [
+                Value
+            |
+                message_to_ordered_list(
+                    Message,
+                    Keys,
+                    Key + 1,
+                    Opts
+                )
+            ]
+    end;
+message_to_ordered_list(_Message, [Key|_Keys], ExpectedKey, _Opts) ->
+    throw({missing_key, {expected, ExpectedKey, {next, Key}}}).
 
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
@@ -301,7 +342,11 @@ debug_fmt(X, Indent) ->
             prod ->
                 format_indented("[!PRINT FAIL!]", Indent);
             _ ->
-                format_indented("[PRINT FAIL:] ~80p", [X], Indent)
+                format_indented(
+                    "[PRINT FAIL:] ~80p~n===== PRINT ERROR WAS ~p:~p =====~n~p",
+                    [X, A, B, format_trace(C, hb_opts:get(stack_print_prefixes, [], #{}))],
+                    Indent
+                )
         end
     end.
 
@@ -310,7 +355,15 @@ do_debug_fmt(Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}, Indent) ->
 do_debug_fmt({_, Wallet = {{rsa, _PublicExpnt}, _Priv, _Pub}}, Indent) ->
     format_address(Wallet, Indent);
 do_debug_fmt({explicit, X}, Indent) ->
-    format_indented("~p", [X], Indent);
+    format_indented("[Explicit:] ~p", [X], Indent);
+do_debug_fmt({string, X}, Indent) ->
+    format_indented("~s", [X], Indent);
+do_debug_fmt({as, undefined, Msg}, Indent) ->
+    "\n" ++ format_indented("Subresolve => ", [], Indent) ++
+        format_maybe_multiline(Msg, Indent + 1);
+do_debug_fmt({as, DevID, Msg}, Indent) ->
+    "\n" ++ format_indented("Subresolve as ~s => ", [DevID], Indent) ++
+        format_maybe_multiline(Msg, Indent + 1);
 do_debug_fmt({X, Y}, Indent) when is_atom(X) and is_atom(Y) ->
     format_indented("~p: ~p", [X, Y], Indent);
 do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
@@ -319,7 +372,7 @@ do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
         Indent
     );
 do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
-    Formatted = hb_util:format_map(Y, Indent + 1),
+    Formatted = format_maybe_multiline(Y, Indent + 1),
     HasNewline = lists:member($\n, Formatted),
     format_indented("~p~s",
         [
@@ -334,13 +387,28 @@ do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
 do_debug_fmt({X, Y}, Indent) ->
     format_indented("~s: ~s", [debug_fmt(X, Indent), debug_fmt(Y, Indent)], Indent);
 do_debug_fmt(Map, Indent) when is_map(Map) ->
-    hb_util:format_map(Map, Indent);
+    format_maybe_multiline(Map, Indent);
 do_debug_fmt(Tuple, Indent) when is_tuple(Tuple) ->
     format_tuple(Tuple, Indent);
 do_debug_fmt(X, Indent) when is_binary(X) ->
     format_indented("~s", [format_binary(X)], Indent);
 do_debug_fmt(Str = [X | _], Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     format_indented("~s", [Str], Indent);
+do_debug_fmt([], Indent) ->
+    format_indented("[]", [], Indent);
+do_debug_fmt(MsgList, Indent) when is_list(MsgList) ->
+    "\n" ++
+        format_indented("List [~w] {~n", [length(MsgList)], Indent+1) ++
+        lists:map(
+            fun({N, Msg}) ->
+                format_indented("~w => ~n~s~n",
+                    [N, debug_fmt(Msg, Indent + 3)],
+                    Indent + 2
+                )
+            end,
+            lists:zip(lists:seq(1, length(MsgList)), MsgList)
+        ) ++
+        format_indented("}", [], Indent+1);
 do_debug_fmt(X, Indent) ->
     format_indented("~80p", [X], Indent).
 
@@ -433,13 +501,12 @@ add_commas(List) -> List.
 
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
-format_map(Map) -> format_map(Map, 0).
-format_map(Map, Indent) ->
+format_maybe_multiline(X, Indent) ->
     MaxLen = hb_opts:get(debug_print_map_line_threshold),
-    SimpleFmt = io_lib:format("~p", [Map]),
+    SimpleFmt = io_lib:format("~p", [X]),
     case lists:flatlength(SimpleFmt) of
         Len when Len > MaxLen ->
-            "\n" ++ lists:flatten(hb_message:format(Map, Indent));
+            "\n" ++ lists:flatten(hb_message:format(X, Indent));
         _ -> SimpleFmt
     end.
 

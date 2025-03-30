@@ -212,13 +212,11 @@ choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
             fun(Node) ->
                 Wallet = hb_converge:get(<<"Wallet">>, Node, Opts),
                 DistanceScore =
-                    hb_crypto:sha256(
-                        <<
-                            Wallet/binary,
-                            BareHashPath/binary
-                        >>
+                    field_distance(
+                        hb_util:native_id(Wallet),
+                        BareHashPath
                     ),
-                {Node, binary_to_bignum(DistanceScore)}
+                {Node, DistanceScore}
             end,
             Nodes
         ),
@@ -234,6 +232,17 @@ choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
             )
         )
     ).
+
+%% @doc Calculate the minimum distance between two numbers
+%% (either progressing backwards or forwards), assuming a
+%% 256-bit field.
+field_distance(A, B) when is_binary(A) ->
+    field_distance(binary_to_bignum(A), B);
+field_distance(A, B) when is_binary(B) ->
+    field_distance(A, binary_to_bignum(B));
+field_distance(A, B) ->
+    AbsDiff = abs(A - B),
+    min(AbsDiff, (1 bsl 256) - AbsDiff).
 
 %% @doc Find the node with the lowest distance to the given hashpath.
 lowest_distance(Nodes) -> lowest_distance(Nodes, {undefined, infinity}).
@@ -430,7 +439,7 @@ get_routes_test() ->
     Res = hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{}),
     ?event({get_routes_test, Res}),
     {ok, Recvd} = Res,
-    ?assertMatch(#{ <<"body">> := <<"our_node">> }, Recvd).
+    ?assertMatch(<<"our_node">>, Recvd).
 
 add_route_test() ->
     Owner = ar_wallet:new(),
@@ -462,11 +471,11 @@ add_route_test() ->
             #{}
         ),
     ?event({post_res, Res}),
-    ?assertMatch({ok, #{ <<"body">> := <<"Route added.">> }}, Res),
+    ?assertMatch({ok, <<"Route added.">>}, Res),
     GetRes = hb_http:get(Node, <<"/~router@1.0/routes/2/node">>, #{}),
     ?event({get_res, GetRes}),
     {ok, Recvd} = GetRes,
-    ?assertMatch(#{ <<"body">> := <<"new">> }, Recvd).
+    ?assertMatch(<<"new">>, Recvd).
 
 %%% Statistical test utilities
 

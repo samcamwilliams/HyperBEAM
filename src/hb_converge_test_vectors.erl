@@ -8,8 +8,8 @@
 %% Easy hook to make a test executable via the command line:
 %% `rebar3 eunit --test hb_converge_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
-%% run_test() ->
-%%     hb_test_utils:run(normal, as, test_suite(), test_opts()).
+run_test() ->
+    hb_test_utils:run(start_as, normal, test_suite(), test_opts()).
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
@@ -22,8 +22,16 @@ test_suite() ->
             fun resolve_simple_test/1},
         {resolve_id, "resolve id",
             fun resolve_id_test/1},
-        {as, "as",
-            fun as_test/1},
+        {start_as, "start as",
+            fun start_as_test/1},
+        {start_as_with_parameters, "start as with parameters",
+            fun start_as_with_parameters_test/1},
+        {load_as, "load as",
+            fun load_as_test/1},
+        {as_path, "as path",
+            fun as_path_test/1},
+        {continue_as, "continue as",
+            fun continue_as_test/1},
         {resolve_key_twice, "resolve key twice",
             fun resolve_key_twice_test/1},
         {resolve_from_multiple_keys, "resolve from multiple keys",
@@ -78,9 +86,12 @@ test_opts() ->
                 hashpath => ignore,
                 cache_control => [<<"no-cache">>, <<"no-store">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+                store => #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-TEST/fs">>
+                }
             },
-            skip => []
+            skip => [load_as]
         },
         #{
             name => only_store,
@@ -89,11 +100,15 @@ test_opts() ->
                 hashpath => update,
                 cache_control => [<<"no-cache">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+                store => #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-TEST/fs">>
+                }
             },
             skip => [
                 denormalized_device_key,
-                deep_set_with_device
+                deep_set_with_device,
+                load_as
             ],
             reset => false
         },
@@ -104,7 +119,10 @@ test_opts() ->
                 hashpath => ignore,
                 cache_control => [<<"only-if-cached">>],
                 spawn_worker => false,
-                store => {hb_store_fs, #{ prefix => "TEST-cache-fs" }}
+                store => #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-TEST/fs">>
+                }
             },
             skip => [
                 % Exclude tests that return a list on its own for now, as raw 
@@ -123,10 +141,79 @@ test_opts() ->
         #{
             name => normal,
             desc => "Default opts",
-            opts => #{},
+            opts => #{
+                cache_lookup_hueristics => false
+            },
             skip => []
         }
     ].
+
+%%% Standalone test vectors
+
+%% @doc Ensure that we can read a device from the cache then execute it. By 
+%% extension, this will also allow us to load a device from Arweave due to the
+%% remote store implementations.
+exec_dummy_device(SigningWallet, Opts) ->
+    % Compile the test device and store it in an accessible cache to the execution
+    % environment.
+    {ok, ModName, Bin} = compile:file("test/dev_dummy.erl", [binary]),
+    DevMsg =
+        hb_message:attest(
+            hb_converge:normalize_keys(
+                #{
+                    <<"data-protocol">> => <<"ao">>,
+                    <<"variant">> => <<"ao.N.1">>,
+                    <<"content-type">> => <<"application/beam">>,
+                    <<"module-name">> => ModName,
+                    <<"requires-otp-release">> => erlang:system_info(otp_release),
+                    <<"body">> => Bin
+                }
+            ),
+            SigningWallet
+        ),
+    {ok, ID} = hb_cache:write(DevMsg, Opts),
+    ?assertEqual({ok, DevMsg}, hb_cache:read(ID, Opts)),
+    % Create a base message with the device ID, then request a dummy path from
+    % it.
+    hb_converge:resolve(
+        #{ <<"device">> => ID },
+        #{ <<"path">> => <<"echo/param">>, <<"param">> => <<"example">> },
+        Opts
+    ).
+
+load_device_test() ->
+    % Establish an execution environment which trusts the device author.
+    Wallet = ar_wallet:new(),
+    Opts = #{
+        load_remote_devices => true,
+        trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(Wallet))],
+        store => Store = #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/fs">>
+        },
+        priv_wallet => Wallet
+    },
+    hb_store:reset(Store),
+    ?assertEqual({ok, <<"example">>}, exec_dummy_device(Wallet, Opts)).
+
+untrusted_load_device_test() ->
+    % Establish an execution environment which does not trust the device author.
+    UntrustedWallet = ar_wallet:new(),
+    TrustedWallet = ar_wallet:new(),
+    Opts = #{
+        load_remote_devices => true,
+        trusted_device_signers => [hb_util:human_id(ar_wallet:to_address(TrustedWallet))],
+        store => Store = #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/fs">>
+        },
+        priv_wallet => UntrustedWallet
+    },
+    hb_store:reset(Store),
+    ?assertThrow(
+        {error, {device_not_loadable, _, device_signer_not_trusted}},
+        exec_dummy_device(UntrustedWallet, Opts)
+    ).
 
 %%% Test vector suite
 
@@ -599,7 +686,54 @@ list_transform_test(Opts) ->
     ?assertEqual(<<"D">>, hb_converge:get(4, Msg, Opts)),
     ?assertEqual(<<"E">>, hb_converge:get(5, Msg, Opts)).
 
-as_test(Opts) ->
+start_as_test(Opts) ->
+    ?assertEqual(
+        {ok, <<"GOOD_FUNCTION">>},
+        hb_converge:resolve_many(
+            [
+                {as, <<"test-device@1.0">>, #{ <<"path">> => <<>> }},
+                #{ <<"path">> => <<"test_func">> }
+            ],
+            Opts
+        )
+    ).
+start_as_with_parameters_test(Opts) ->
+    % Resolve a key on a message that has its device set with `as'.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
+    },
+    ?assertEqual(
+        {ok, <<"GOOD_FUNCTION">>},
+        hb_converge:resolve_many(
+            [
+                {as, <<"message@1.0">>, Msg},
+                #{ <<"path">> => <<"test_func">> }
+            ],
+            Opts
+        )
+    ).
+
+load_as_test(Opts) ->
+    % Load a message as a device with the `as' keyword.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
+    },
+    {ok, ID} = hb_cache:write(Msg, Opts),
+    ?assertEqual(
+        {ok, <<"MESSAGE">>},
+        hb_converge:resolve_many(
+            [
+                {as, <<"message@1.0">>, #{ <<"path">> => <<ID/binary>> }},
+                <<"test_func">>,
+                <<"test_key">>
+            ],
+            Opts
+        )
+    ).
+
+as_path_test(Opts) ->
     % Create a message with the test device, which implements the test_func
     % function. It normally returns `GOOD_FUNCTION'.
     Msg = #{
@@ -615,8 +749,14 @@ as_test(Opts) ->
             {as, <<"message@1.0">>, #{ <<"path">> => <<"test_func">> }},
             Opts
         )
-    ),
+    ).
+
+continue_as_test(Opts) ->
     % Resolve a list of messages in sequence, swapping the device in the middle.
+    Msg = #{
+        <<"device">> => <<"test-device@1.0">>,
+        <<"test_func">> => #{ <<"test_key">> => <<"MESSAGE">> }
+    },
     ?assertEqual(
         {ok, <<"MESSAGE">>},
         hb_converge:resolve_many(

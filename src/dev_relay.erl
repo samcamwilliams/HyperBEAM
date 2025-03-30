@@ -31,17 +31,36 @@ call(M1, RawM2, Opts) ->
         hb_converge:get_first(
             [
                 {RawM2, <<"relay-path">>},
-                {M1, <<"relay-path">>}
+                {M1, <<"relay-path">>},
+                {M1, <<"path">>}
             ],
             Opts
         ),
-    TargetMod1 =
-        case RelayPath of
-            not_found -> BaseTarget;
-            RPath ->
-                ?event({setting_path, {base_target, BaseTarget}, {relay_path, {explicit, RPath}}}),
-                hb_converge:set(BaseTarget, <<"path">>, RPath, Opts)
-        end,
+    RelayMethod =
+        hb_converge:get_first(
+            [
+                {RawM2, <<"relay-method">>},
+                {M1, <<"relay-method">>},
+                {RawM2, <<"method">>},
+                {M1, <<"method">>}
+            ],
+            Opts
+        ),
+    RelayBody =
+        hb_converge:get_first(
+            [
+                {RawM2, <<"relay-body">>},
+                {M1, <<"relay-body">>},
+                {RawM2, <<"body">>},
+                {M1, <<"body">>}
+            ],
+            Opts
+        ),
+    TargetMod1 = BaseTarget#{
+        <<"method">> => RelayMethod,
+        <<"body">> => RelayBody,
+        <<"path">> => RelayPath
+    },
     TargetMod2 =
         case hb_converge:get(<<"requires-sign">>, BaseTarget, false, Opts) of
             true -> hb_message:attest(TargetMod1, Opts);

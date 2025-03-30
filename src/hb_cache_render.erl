@@ -1,107 +1,236 @@
 %%% @doc A module that helps to render given Key graphs into the .dot files
 -module(hb_cache_render).
-
--export([render/1, render/3]).
-
+-export([render/1, render/2, cache_path_to_dot/2, cache_path_to_dot/3, dot_to_svg/1]).
 % Preparing data for testing
--export([prepare_unsigned_data/0, prepare_signed_data/0, prepare_deeply_nested_complex_message/0]).
-
+-export([prepare_unsigned_data/0, prepare_signed_data/0,
+    prepare_deeply_nested_complex_message/0]).
 -include("src/include/hb.hrl").
--include_lib("kernel/include/file.hrl").
 
-% @doc Render the given Key into svg
-render("*") ->
-    Store = get_test_store(),
-    {ok, Keys} = hb_store:list(Store, "/"),
-    render(Keys);
-render(StartKeys) ->
-    Store = get_test_store(),
-    os:cmd("rm new_render_diagram.dot"),
-    {ok, IoDevice} = file:open("new_render_diagram.dot", [write]),
-    ok = file:write(IoDevice, <<"digraph filesystem {\n">>),
-    ok = file:write(IoDevice, <<"  node [shape=circle];\n">>),
-    lists:foreach(fun(Key) -> render(IoDevice, Store, Key) end, StartKeys),
-    ok = file:write(IoDevice, <<"}\n">>),
-    file:close(IoDevice),
-    os:cmd("dot -Tsvg new_render_diagram.dot -o new_render_diagram.svg"),
+%% @doc Render the given Key into svg
+render(StoreOrOpts) ->
+    render(all, StoreOrOpts).
+render(ToRender, StoreOrOpts) ->
+    % Collect graph elements (nodes and arcs) by traversing the store
+    % Generate and view the graph visualization
+    % Write SVG to file and open it
+    file:write_file("new_render_diagram.svg",
+        dot_to_svg(cache_path_to_dot(ToRender, StoreOrOpts))),
     os:cmd("open new_render_diagram.svg"),
     ok.
 
-render(IoDevice, Store, Key) ->
-    ResolvedPath = hb_store:resolve(Store, Key),
+%% @doc Generate a dot file from a cache path and options/store
+cache_path_to_dot(ToRender, StoreOrOpts) ->
+    cache_path_to_dot(ToRender, #{}, StoreOrOpts).
+cache_path_to_dot(ToRender, RenderOpts, StoreOrOpts) ->
+    graph_to_dot(cache_path_to_graph(ToRender, RenderOpts, StoreOrOpts)).
+
+%% @doc Main function to collect graph elements
+cache_path_to_graph(ToRender, GraphOpts, StoreOrOpts) when is_map(StoreOrOpts) ->
+    Store = hb_opts:get(store, no_viable_store, StoreOrOpts),
+    cache_path_to_graph(ToRender, GraphOpts, Store);
+cache_path_to_graph(all, GraphOpts, Store) ->
+    {ok, Keys} = hb_store:list(Store, "/"),
+    cache_path_to_graph(Store, GraphOpts, Keys);
+cache_path_to_graph(InitPath, GraphOpts, Store) when is_binary(InitPath) ->
+    {ok, Keys} = hb_store:list(Store, InitPath),
+    cache_path_to_graph(Store, GraphOpts, Keys);
+cache_path_to_graph(Store, GraphOpts, RootKeys) ->
+    % Use a map to track nodes, arcs and visited paths (to avoid cycles)
+    EmptyGraph = GraphOpts#{ nodes => #{}, arcs => #{}, visited => #{} },
+    % Process all root keys and get the final graph
+    lists:foldl(
+        fun(Key, Acc) -> traverse_store(Store, Key, undefined, Acc) end,
+        EmptyGraph,
+        RootKeys
+    ).
+
+%% @doc Traverse the store recursively to build the graph
+traverse_store(Store, Key, Parent, Graph) ->
+    % Get the path and check if we've already visited it
     JoinedPath = hb_store:join(Key),
-    IsLink = ResolvedPath /= JoinedPath,
-    case hb_store:type(Store, Key) of
-        simple ->
-            case IsLink of
-                false ->
-                    % just add the data node
-                    add_data(IoDevice, ResolvedPath);
-                true ->
-                    % Add link (old node) -> add actual data node (with resolved path)
-                    add_link(IoDevice, JoinedPath, JoinedPath),
-                    add_data(IoDevice, ResolvedPath),
-                    insert_arc(IoDevice, JoinedPath, ResolvedPath, "links-to")
-                end;
-        composite ->
-            add_dir(IoDevice, JoinedPath),
-            % Composite item also can be a link to another folder
-            case IsLink of
-                false ->
-                    {ok, SubItems} = hb_store:list(Store, Key),
-                    lists:foreach(
-                        fun(SubItem) ->
-                            insert_arc(IoDevice, hb_store:join(Key), hb_store:join([Key, SubItem]), "contains"),
-                            render(IoDevice, Store, [Key, SubItem])
-                        end,
-                        SubItems);
-                true ->
-                    add_link(IoDevice, JoinedPath, JoinedPath),
-                    insert_arc(IoDevice, JoinedPath, ResolvedPath, "links-to"),
-                    render(IoDevice, Store, ResolvedPath)
-            end;
-        no_viable_store ->
-            ignore;
-        _OtherType ->
-            ignore
+    ResolvedPath = hb_store:resolve(Store, Key),
+    % Skip if we've already processed this node
+    case maps:get(visited, Graph, #{}) of
+        #{JoinedPath := _} -> Graph;
+        _ ->
+            % Mark as visited to avoid cycles
+            Graph1 = Graph#{visited => maps:put(JoinedPath, true, maps:get(visited, Graph, #{}))},
+            % Process node based on its type
+            case hb_store:type(Store, Key) of
+                simple -> 
+                    process_simple_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph1);
+                composite -> 
+                    process_composite_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph1);
+                _ -> 
+                    Graph1
+            end
     end.
 
-get_test_store() ->
-    hb_opts:get(store, no_viable_store,  #{store => {hb_store_fs,#{prefix => "TEST-cache-fs"}}}).
+%% @doc Process a simple (leaf) node
+process_simple_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph) ->
+    % Add the node to the graph
+    case maps:get(render_data, Graph, true) of
+        false -> Graph;
+        true ->
+            Graph1 = add_node(Graph, ResolvedPath, "lightblue"),
+            % If we have a parent, add an arc from parent to this node
+            case Parent of
+                undefined -> Graph1;
+                ParentPath -> 
+                    Label = extract_label(JoinedPath),
+                    add_arc(Graph1, ParentPath, ResolvedPath, Label)
+            end
+    end.
 
-% Helper functions
-add_link(IoDevice, Id, Label) ->
-    insert_circle(IoDevice, Id, Label, "green").
+%% @doc Process a composite (directory) node
+process_composite_node(_Store, "data", _Parent, _ResolvedPath, _JoinedPath, Graph) ->
+    % Data is a special case: It contains every binary item in the store.
+    % We don't need to render it.
+    Graph;
+process_composite_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph) ->
+    % Add the node to the graph
+    Graph1 = add_node(Graph, ResolvedPath, "lightcoral"),
+    % If we have a parent, add an arc from parent to this node
+    Graph2 = case Parent of
+        undefined -> Graph1;
+        ParentPath -> 
+            Label = extract_label(JoinedPath),
+            add_arc(Graph1, ParentPath, ResolvedPath, Label)
+    end,
+    % Process children recursively
+    case hb_store:list(Store, ResolvedPath) of
+        {ok, SubItems} ->
+            lists:foldl(
+                fun(SubItem, Acc) ->
+                    ChildKey = [ResolvedPath, SubItem],
+                    traverse_store(Store, ChildKey, ResolvedPath, Acc)
+                end,
+                Graph2,
+                SubItems
+            );
+        _ -> Graph2
+    end.
 
-add_data(IoDevice, Id) ->
-    insert_circle(IoDevice, Id, Id, "blue").
+%% @doc Add a node to the graph
+add_node(Graph, ID, Color) ->
+    Nodes = maps:get(nodes, Graph, #{}),
+    Graph#{nodes => maps:put(ID, {ID, Color}, Nodes)}.
 
-add_dir(IoDevice, Id) ->
-    insert_circle(IoDevice, Id, Id, "yellow").
+%% @doc Add an arc to the graph
+add_arc(Graph, From, To, Label) ->
+    ?event({insert_arc, {id1, From}, {id2, To}, {label, Label}}),
+    Arcs = maps:get(arcs, Graph, #{}),
+    Graph#{arcs => maps:put({From, To, Label}, true, Arcs)}.
 
-insert_arc(IoDevice, ID1, ID2, Label) ->
-    ok = io:format(IoDevice, "  \"~s\" -> \"~s\" [label=\"~s\"];~n", [ID1, ID2, Label]).
+%% @doc Extract a label from a path
+extract_label(Path) ->
+    case binary:split(Path, <<"/">>, [global]) of
+        [] -> Path;
+        Parts -> 
+            FilteredParts = [P || P <- Parts, P /= <<>>],
+            case FilteredParts of
+                [] -> Path;
+                _ -> lists:last(FilteredParts)
+            end
+    end.
 
-insert_circle(IoDevice, ID, Label, Color) ->
-    ok = io:format(IoDevice, "  \"~s\" [label=\"~s\", color=~s, style=filled];~n", [ID, Label, Color]).
+%% @doc Generate the DOT file from the graph
+graph_to_dot(Graph) ->
+    % Create graph header
+    Header = [
+        <<"digraph filesystem {\n">>,
+        <<"  node [shape=circle];\n">>
+    ],
+    % Create nodes section
+    Nodes = maps:fold(
+        fun(ID, {Label, Color}, Acc) ->
+            [
+                Acc,
+                io_lib:format(
+                    <<"  \"~s\" [label=\"~s\", color=~s, style=filled];~n">>,
+                    [ID, hb_util:short_id(hb_util:bin(Label)), Color]
+                )
+            ]
+        end,
+        [],
+        maps:get(nodes, Graph, #{})
+    ),
+    % Create arcs section
+    Arcs = maps:fold(
+        fun({From, To, Label}, _, Acc) ->
+            [
+                Acc,
+                io_lib:format(
+                    <<"  \"~s\" -> \"~s\" [label=\"~s\"];~n">>,
+                    [From, To, hb_util:short_id(hb_util:bin(Label))]
+                )
+            ]
+        end,
+        [],
+        maps:get(arcs, Graph, #{})
+    ),
+    % Create graph footer
+    Footer = <<"}\n">>,
+    % Combine all parts and convert to binary
+    iolist_to_binary([Header, Nodes, Arcs, Footer]).
 
-% Preparing the test data
+%% @doc Convert a dot graph to SVG format
+dot_to_svg(DotInput) ->
+    % Create a port to the dot command
+    Port = open_port({spawn, "dot -Tsvg"}, [binary, use_stdio, stderr_to_stdout]),
+    % Send the dot content to the process
+    true = port_command(Port, iolist_to_binary(DotInput)),
+    % Get the SVG output
+    collect_output(Port, []).
+
+%% @doc Helper function to collect output from port
+collect_output(Port, Acc) ->
+    receive
+        {Port, {data, Data}} ->
+            case binary:part(Data, byte_size(Data) - 7, 7) of
+                <<"</svg>\n">> ->
+                    port_close(Port),
+                    iolist_to_binary(lists:reverse([Data | Acc]));
+                _ -> collect_output(Port, [Data | Acc])
+            end;
+        {Port, eof} ->
+            port_close(Port),
+            iolist_to_binary(lists:reverse(Acc))
+    after 10000 ->
+        {error, timeout}
+    end.
+
+% Test data preparation functions
 prepare_unsigned_data() ->
-    Opts = #{store => {hb_store_fs,#{prefix => "TEST-cache-fs"}}},
+    Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/render-fs">>
+        }
+    },
     Item = test_unsigned(#{ <<"key">> => <<"Simple unsigned data item">> }),
     {ok, _Path} = hb_cache:write(Item, Opts).
 
 prepare_signed_data() ->
-    Opts = #{store => {hb_store_fs,#{prefix => "TEST-cache-fs"}}},
+    Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/render-fs">>
+        }
+    },
     Wallet = ar_wallet:new(),
     Item = test_signed(#{ <<"l2-test-key">> => <<"l2-test-value">> }, Wallet),
     %% Write the simple unsigned item
     {ok, _Path} = hb_cache:write(Item, Opts).
 
 prepare_deeply_nested_complex_message() ->
-    Opts = #{store => {hb_store_fs,#{prefix => "TEST-cache-fs"}}},
+    Opts = #{
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/render-fs">>
+        }
+    },
     Wallet = ar_wallet:new(),
-
     %% Create nested data
     Level3SignedSubmessage = test_signed([1,2,3], Wallet),
     Outer =
@@ -132,6 +261,5 @@ test_unsigned(Data) ->
         <<"data">> => Data
     }.
 
-% test_signed(Data) -> test_signed(Data, ar_wallet:new()).
 test_signed(Data, Wallet) ->
     hb_message:attest(test_unsigned(Data), Wallet).

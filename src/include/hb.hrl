@@ -1,5 +1,7 @@
 -include("include/ar.hrl").
 
+-define(HYPERBEAM_VERSION, 0.8).
+
 %% @doc Macro for checking if a message is empty, ignoring its hashpath.
 -define(IS_EMPTY_MESSAGE(Msg), (map_size(Msg) == 0) orelse (map_size(Msg) == 1 andalso (is_map_key(priv, Msg) orelse is_map_key(<<"priv">>, Msg)))).
 %% @doc Macro usable in guards that validates whether a term is a
@@ -39,3 +41,5 @@
 %% module.
 -define(trace(), hb_util:trace_macro_helper(fun hb_util:print_trace/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
 -define(trace_short(), hb_util:trace_macro_helper(fun hb_util:print_trace_short/4, catch error(test), ?MODULE, ?FUNCTION_NAME, ?LINE)).
+%% @doc Draw a horizontal line in the logs.
+-define(hr(), io:format(standard_error, "--------------------------------------------------------------------------------~n", [])).

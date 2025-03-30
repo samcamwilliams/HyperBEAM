@@ -50,7 +50,8 @@ do_monitor(Group, Last) ->
                                     _ ->
                                         length(
                                             element(2,
-                                                erlang:process_info(Pid, messages))
+                                                erlang:process_info(Pid, messages)
+                                            )
                                         )
                                 end
                         }
@@ -114,12 +115,7 @@ find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
                 {ok, Leader} when Leader =:= Self ->
                     {infinite_recursion, GroupName};
                 _ ->
-                    ?event(
-                        {
-                            register_resolver,
-                            {group, GroupName}
-                        }
-                    ),
+                    ?event({register_resolver, {group, GroupName}}),
                     register_groupname(GroupName, Opts),
                     {leader, GroupName}
             end
@@ -189,7 +185,7 @@ default_await(Worker, GroupName, Msg1, Msg2, Opts) ->
             worker_event(GroupName, {resolved_await, Res}, Msg1, Msg2, Opts),
             Res;
         {'DOWN', _R, process, Worker, Reason} ->
-            ?event(debug_leader,
+            ?event(
                 {leader_died,
                     {group, GroupName},
                     {leader, Worker},
@@ -207,7 +203,7 @@ default_await(Worker, GroupName, Msg1, Msg2, Opts) ->
 notify(GroupName, Msg2, Msg3, Opts) ->
     case is_binary(GroupName) of
         true ->
-            ?event(debug_notify, {notifying_all, {group, GroupName}});
+            ?event({notifying_all, {group, GroupName}});
         false ->
             ok
     end,
@@ -239,7 +235,7 @@ forward_work(NewPID, Opts) ->
     ),
     case length(ToForward) > 0 of
         true ->
-            ?event(debug_leader, {fwded, {reqs, length(ToForward)}, {pid, NewPID}}, Opts);
+            ?event({fwded, {reqs, length(ToForward)}, {pid, NewPID}}, Opts);
         false -> ok
     end,
     ok.
@@ -366,8 +362,14 @@ default_grouper(Msg1, Msg2, Opts) ->
     % output range to avoid collisions.
     ?no_prod("Using a hash for group names is not secure."),
     case hb_opts:get(await_inprogress, true, Opts) of
-        named -> ungrouped_exec;
-        _ -> erlang:phash2({Msg1, Msg2})
+        true ->
+            erlang:phash2(
+                {
+                    maps:without([<<"priv">>], Msg1),
+                    maps:without([<<"priv">>], Msg2)
+                }
+            );
+        _ -> ungrouped_exec
     end.
 
 %% @doc Log an event with the worker process. If we used the default grouper

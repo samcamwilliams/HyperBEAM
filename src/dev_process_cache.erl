@@ -29,7 +29,7 @@ write(ProcID, Slot, Msg, Opts) ->
             ID = hb_util:human_id(hb_converge:get(id, Msg)),
             Opts
         ),
-    ?event({linking_id, {proc_id, ProcID}, {id, ID}, {path, MsgIDPath}}),
+    ?event({linking_id, {proc_id, ProcID}, {slot, Slot}, {id, ID}, {path, MsgIDPath}}),
     hb_cache:link(Root, MsgIDPath, Opts),
     % Return the slot number path.
     {ok, SlotNumPath}.
@@ -166,7 +166,7 @@ test_write_and_read_output(Opts) ->
         read(ProcID, hb_util:human_id(hb_converge:get(id, Item1)), Opts),
     ?assert(hb_message:match(Item1, ReadItem1ByID)),
     {ok, ReadItem2ByID} =
-        read(ProcID, hb_util:human_id(hb_message:id(Item2, none)), Opts),
+        read(ProcID, hb_util:human_id(hb_message:id(Item2, all)), Opts),
     ?assert(hb_message:match(Item2, ReadItem2ByID)).
 
 %% @doc Test for retrieving the latest computed output for a process.

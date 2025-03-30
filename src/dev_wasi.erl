@@ -279,11 +279,8 @@ vfs_is_serializable_test() ->
 
 wasi_stack_is_serializable_test() ->
     Msg = generate_wasi_stack("test/test-print.wasm", <<"hello">>, []),
-    Msg2 = hb_message:convert(
-        hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
-        <<"structured@1.0">>,
-        <<"httpsig@1.0">>,
-        #{}),
+    HTTPSigMsg = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
+    Msg2 = hb_message:convert(HTTPSigMsg, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
     ?assert(hb_message:match(Msg, Msg2)).
 
 basic_aos_exec_test() ->

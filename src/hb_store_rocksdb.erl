@@ -23,20 +23,28 @@
 
 -type value_type() :: link | raw | group.
 
-start_link({hb_store_rocksdb, #{ prefix := Dir}}) ->
+start_link(#{ <<"store-module">> := hb_store_rocksdb, <<"prefix">> := Dir}) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Dir, []);
 start_link(Stores) when is_list(Stores) ->
-    case lists:keyfind(hb_store_rocksdb, 1, Stores) of
-        Store = {hb_store_rocksdb, _} ->
-            start_link(Store);
+    RocksStores =
+        [
+            Store
+        ||
+            Store = #{ <<"store-module">> := Module } <- Stores, 
+             Module =:= hb_store_rocksdb
+        ],
+    case RocksStores of
+        [Store] -> start_link(Store);
         _ -> ignore
     end;
 start_link(Store) ->
     ?event(rocksdb, {invalid_store_config, Store}),
     ignore.
 
+start(Opts = #{ <<"store-module">> := hb_store_rocksdb, <<"prefix">> := _Dir}) ->
+    start_link(Opts);
 start(Opts) ->
-    start_link({hb_store_rocksdb, Opts}).
+    start_link(Opts).
 
 -spec stop(any()) -> ok.
 stop(_Opts) ->
@@ -154,6 +162,8 @@ type(Opts, RawKey) ->
     Opts :: any(),
     Key :: binary(),
     Result :: ok | {error, already_added}.
+make_group(#{ <<"prefix">> := _DataDir }, Key) ->
+    gen_server:call(?MODULE, {make_group, Key}, ?TIMEOUT);
 make_group(_Opts, Key) ->
     gen_server:call(?MODULE, {make_group, Key}, ?TIMEOUT).
 
@@ -205,6 +215,10 @@ handle_cast(_Request, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
+handle_call(Request, From, #{ db_handle := undefined, dir := Dir } = State) ->
+    % Re-initialize the DB handle if it's not set.
+    {ok, DBHandle} = open_rockdb(Dir),
+    handle_call(Request, From, State#{db_handle => DBHandle});
 handle_call({do_write, Key, Value}, _From, #{db_handle := DBHandle} = State) ->
     BaseName = filename:basename(Key),
     rocksdb:put(DBHandle, Key, Value, #{}),
@@ -230,12 +244,11 @@ handle_call({do_read, Key}, _From, #{db_handle := DBHandle} = State) ->
                 Err
         end,
     {reply, Response, State};
-handle_call(reset, _From, #{db_handle := DBHandle, dir := Dir}) ->
+handle_call(reset, _From, State = #{db_handle := DBHandle, dir := Dir}) ->
     ok = rocksdb:close(DBHandle),
-    ok = rocksdb:destroy(ensure_list(Dir), []),
-    {ok, NewDBHandle} = open_rockdb(Dir),
-    NewState = #{db_handle => NewDBHandle, dir => Dir},
-    {reply, ok, NewState};
+    ok = rocksdb:destroy(DirStr = ensure_list(Dir), []),
+    os:cmd(binary_to_list(<< "rm -Rf ", (list_to_binary(DirStr))/binary >>)),
+    {reply, ok, State#{ db_handle := undefined }};
 handle_call(list, _From, State = #{db_handle := DBHandle}) ->
     {ok, Iterator} = rocksdb:iterator(DBHandle, []),
     Items = collect(Iterator),
@@ -370,7 +383,11 @@ maybe_append_key_to_group(Key, CurrentDirContents) ->
 
 get_or_start_server() ->
     % Store = lists:keyfind(hb_store_rocksdb2, 1, hb_store:test_stores()),
-    case start_link({hb_store_rocksdb, #{ prefix => "TEST-cache-rocks" }}) of
+    Opts = #{
+        <<"store-module">> => hb_store_rocksdb,
+        <<"prefix">> => <<"cache-TEST/rocksdb">>
+    },
+    case start_link(Opts) of
         {ok, Pid} ->
             Pid;
         {error, {already_started, Pid}} ->
