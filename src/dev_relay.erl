@@ -71,7 +71,7 @@ call(M1, RawM2, Opts) ->
             not_found -> hb_opts:get(relay_http_client, Opts);
             RequestedClient -> RequestedClient
         end,
-    ?event(debug_cu, {relaying_message, TargetMod2}),
+    ?event({relaying_message, TargetMod2}),
     % Let `hb_http:request/2' handle finding the peer and dispatching the request.
     hb_http:request(TargetMod2, Opts#{ http_client => Client }).
 

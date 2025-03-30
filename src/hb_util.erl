@@ -225,11 +225,11 @@ message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
     [];
 message_to_ordered_list(Message, Opts) ->
     Keys = hb_converge:keys(Message, Opts),
-    IntKeys = lists:map(fun int/1, Keys),
-    message_to_ordered_list(Message, IntKeys, lists:min(IntKeys), Opts).
+    IntKeys = lists:sort(lists:map(fun int/1, Keys)),
+    message_to_ordered_list(Message, IntKeys, erlang:hd(IntKeys), Opts).
 message_to_ordered_list(_Message, [], _Key, _Opts) ->
     [];
-message_to_ordered_list(Message, Keys, Key, Opts) ->
+message_to_ordered_list(Message, [Key|Keys], Key, Opts) ->
     case hb_converge:get(Key, Message, Opts#{ hashpath => ignore }) of
         undefined -> throw({missing_key, Key, {remaining_keys, Keys}});
         Value ->
@@ -238,12 +238,14 @@ message_to_ordered_list(Message, Keys, Key, Opts) ->
             |
                 message_to_ordered_list(
                     Message,
-                    lists:delete(Key, Keys),
+                    Keys,
                     Key + 1,
                     Opts
                 )
             ]
-    end.
+    end;
+message_to_ordered_list(_Message, [Key|_Keys], ExpectedKey, _Opts) ->
+    throw({missing_key, {expected, ExpectedKey, {next, Key}}}).
 
 %% @doc Get the first element (the lowest integer key >= 1) of a numbered map.
 %% Optionally, it takes a specifier of whether to return the key or the value,
