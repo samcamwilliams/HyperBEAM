@@ -217,12 +217,14 @@ verify(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Get the attestations to verify.
     Attestations =
-        case maps:get(<<"attestors">>, Req, <<"all">>) of
+        case hb_converge:normalize_key(maps:get(<<"attestors">>, Req, <<"all">>)) of
             <<"none">> -> [];
             <<"all">> -> maps:get(<<"attestations">>, Base, #{});
             AttestorIDs ->
                 maps:with(
-                    AttestorIDs,
+                    if is_list(AttestorIDs) -> AttestorIDs;
+                       true -> [AttestorIDs]
+                    end,
                     maps:get(<<"attestations">>, Base, #{})
                 )
         end,
@@ -340,7 +342,8 @@ attested(Self, Req, Opts) ->
     ?event({only_attested_keys, OnlyAttestedKeys}),
     {ok, OnlyAttestedKeys}.
 
-set(Message1, NewValuesMsg, _Opts) ->
+set(Message1, NewValuesMsg, Opts) ->
+    OriginalPriv = hb_private:from_message(Message1),
 	% Filter keys that are in the default device (this one).
     {ok, NewValuesKeys} = keys(NewValuesMsg),
 	KeysToSet =
@@ -370,36 +373,89 @@ set(Message1, NewValuesMsg, _Opts) ->
             end,
             maps:keys(Message1)
         ),
-    % Calculate if we need to remove the attestations from the message.
-    WithoutAtts =
-        case UnsetKeys ++ ConflictingKeys of
-            [] -> [];
-            _ -> [<<"attestations">>]
-        end,
-	{
-		ok,
-		maps:merge(
-			maps:without(ConflictingKeys ++ UnsetKeys ++ WithoutAtts, Message1),
-			maps:from_list(
-				lists:filtermap(
-					fun(Key) ->
-                        case maps:get(Key, NewValuesMsg, undefined) of
-                            undefined -> false;
-                            unset -> false;
-                            Value -> {true, {Key, Value}}
-                        end
-					end,
-					KeysToSet
-				)
-			)
-		)
-	}.
+    % Base message with keys-to-unset removed
+    BaseValues = maps:without(UnsetKeys, Message1),
+    ?event(set,
+        {performing_set,
+            {conflicting_keys, ConflictingKeys},
+            {keys_to_unset, UnsetKeys},
+            {new_values, NewValuesMsg},
+            {original_message, Message1}
+        }
+    ),
+    % Create the map of new values
+    NewValues = maps:from_list(
+        lists:filtermap(
+            fun(Key) ->
+                case maps:get(Key, NewValuesMsg, undefined) of
+                    undefined -> false;
+                    unset -> false;
+                    Value -> {true, {Key, Value}}
+                end
+            end,
+            KeysToSet
+        )
+    ),
+    % Caclulate if the keys to be set conflict with any attested keys.
+    {ok, AttestedKeys} =
+        attested(
+            Message1,
+            #{
+                <<"attestors">> => <<"all">>
+            },
+            Opts
+        ),
+    ?event(set, {setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
+    OverwrittenAttestedKeys =
+        lists:filtermap(
+            fun(Key) ->
+                NormKey = hb_converge:normalize_key(Key),
+                ?event(set, {checking_attested_key, {key, Key}, {norm_key, NormKey}}),
+                Res = case lists:member(NormKey, KeysToSet) of
+                    true -> {true, NormKey};
+                    false -> false
+                end,
+                Res
+            end,
+            AttestedKeys
+        ),
+    ?event(set, {setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}),
+    % Combine with deep_merge
+    Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
+    case OverwrittenAttestedKeys of
+        [] -> {ok, Merged};
+        _ ->
+            % We did overwrite some keys, but do their values match the original?
+            % If not, we must remove the attestations.
+            case hb_message:match(Merged, Message1) of
+                true -> {ok, Merged};
+                false -> {ok, maps:without([<<"attestations">>], Merged)}
+            end
+    end.
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
 %% for Converge to know the key to evaluate in requests.
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
+
+%% @doc Deep merge two maps, recursively merging nested maps
+deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
+    maps:fold(
+        fun(Key, Value2, AccMap) ->
+            case maps:find(Key, AccMap) of
+                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+                    % Both values are maps, recursively merge them
+                    AccMap#{Key => deep_merge(Value1, Value2)};
+                _ ->
+                    % Either the key doesn't exist in Map1 or at least one of 
+                    % the values isn't a map. Simply use the value from Map2
+                    AccMap#{ Key => Value2 }
+            end
+        end,
+        Map1,
+        Map2
+    ).
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ <<"item">> := Key }) ->
@@ -518,14 +574,14 @@ set_conflicting_keys_test() ->
 unset_with_set_test() ->
 	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
-	?assertMatch({ok, Msg3} when map_size(Msg3) == 0,
+	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
 		hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore })).
 
 set_ignore_undefined_test() ->
 	Msg1 = #{ <<"test-key">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"test-key">> => undefined },
-	?assertEqual({ok, #{ <<"test-key">> => <<"Value1">> }},
-		set(Msg1, Msg2, #{ hashpath => ignore })).
+	?assertEqual(#{ <<"test-key">> => <<"Value1">> },
+		hb_private:reset(hb_util:ok(set(Msg1, Msg2, #{ hashpath => ignore })))).
 
 verify_test() ->
     Unsigned = #{ <<"a">> => <<"b">> },

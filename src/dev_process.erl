@@ -275,10 +275,12 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
         end,
     ?event({input_msg, InputMsg}),
     ?event(compute, {executing, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
+    % Unset the previous results.
+    UnsetResults = hb_converge:set(State, #{ <<"results">> => unset }, Opts),
     Res =
         run_as(
             <<"execution">>,
-            State,
+            UnsetResults,
             InputMsg,
             Opts
         ),
@@ -326,6 +328,7 @@ store_result(ProcID, Slot, Msg3, Msg2, Opts) ->
             _ -> 
                 Msg3
         end,
+    ?event(debug, {writing_cache, {proc_id, ProcID}, {slot, Slot}, {msg, Msg3MaybeWithSnapshot}}),
     dev_process_cache:write(ProcID, Slot, Msg3MaybeWithSnapshot, Opts).
 
 %% @doc Returns the known state of the process at either the current slot, or
@@ -500,13 +503,39 @@ as_process(Msg1, Opts) ->
 
 %% @doc Helper function to store a copy of the `process' key in the message.
 ensure_process_key(Msg1, Opts) ->
-    case hb_converge:get(<<"process">>, Msg1, Opts) of
+    case hb_converge:get(<<"process">>, Msg1, Opts#{ hashpath => ignore }) of
         not_found ->
-            hb_converge:set(
+            % If the message has lost its signers, we need to re-read it from
+            % the cache. This can happen if the message was 'cast' to a different
+            % device, leading the signers to be unset.
+            ProcessMsg =
+                case hb_message:signers(Msg1) of
+                    [] ->
+                        ?event(debug, {process_key_not_found_no_signers, {msg1, Msg1}}),
+                        case hb_cache:read(hb_message:id(Msg1, all), Opts) of
+                            {ok, Proc} -> Proc;
+                            not_found ->
+                                % Fallback to the original message if we cannot
+                                % read it from the cache.
+                                Msg1
+                        end;
+                    Signers ->
+                        ?event(debug,
+                            {process_key_not_found_but_signers_present,
+                                {signers, Signers},
+                                {msg1, Msg1}
+                            }
+                        ),
+                        Msg1
+                end,
+            {ok, Attested} = hb_message:with_only_attested(ProcessMsg, Opts),
+            Res = hb_converge:set(
                 Msg1,
-                #{ <<"process">> => Msg1 },
+                #{ <<"process">> => Attested },
                 Opts#{ hashpath => ignore }
-            );
+            ),
+            ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
+            Res;
         _ -> Msg1
     end.
 
@@ -524,8 +553,8 @@ test_base_process(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     hb_message:attest(#{
-        <<"device">> => <<"Process@1.0">>,
-        <<"scheduler-device">> => <<"Scheduler@1.0">>,
+        <<"device">> => <<"process@1.0">>,
+        <<"scheduler-device">> => <<"scheduler@1.0">>,
         <<"scheduler-location">> => Address,
         <<"type">> => <<"Process">>,
         <<"test-random-seed">> => rand:uniform(1337)
@@ -538,7 +567,7 @@ test_wasm_process(WASMImage, Opts) ->
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:attest(
         maps:merge(test_base_process(Opts), #{
-            <<"execution-device">> => <<"Stack@1.0">>,
+            <<"execution-device">> => <<"stack@1.0">>,
             <<"device-stack">> => [<<"WASM-64@1.0">>],
             <<"image">> => WASMImageID
         }),
@@ -740,7 +769,7 @@ wasm_compute_from_id_test() ->
     Opts = #{ cache_control => <<"always">> },
     Msg1 = test_wasm_process(<<"test/test-64.wasm">>),
     schedule_wasm_call(Msg1, <<"fac">>, [5.0], Opts),
-    Msg1ID = hb_message:id(Msg1),
+    Msg1ID = hb_message:id(Msg1, all),
     Msg2 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
     {ok, Msg3} = hb_converge:resolve(Msg1ID, Msg2, Opts),
     ?event(process_compute, {computed_message, {msg3, Msg3}}),
@@ -753,12 +782,15 @@ http_wasm_process_by_id_test() ->
         port => 10000 + rand:uniform(10000),
         priv_wallet => SchedWallet,
         cache_control => <<"always">>,
-        store => #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> }
+        store => #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-mainnet">>
+        }
     }),
     Wallet = ar_wallet:new(),
     Proc = test_wasm_process(<<"test/test-64.wasm">>, Opts),
     hb_cache:write(Proc, Opts),
-    ProcID = hb_util:human_id(hb_message:id(Proc)),
+    ProcID = hb_util:human_id(hb_message:id(Proc, all)),
     InitRes =
         hb_http:post(
             Node,
@@ -899,14 +931,18 @@ aos_state_patch_test_() ->
             <<"Multipass@1.0">>
         ]),
         {ok, Msg1} = hb_message:with_only_attested(Msg1Raw),
-        ProcID = hb_message:id(Msg1),
+        ProcID = hb_message:id(Msg1, all),
         Msg2 = (hb_message:attest(#{
             <<"data-prefix">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"target">> => ProcID,
             <<"type">> => <<"Message">>,
             <<"action">> => <<"Eval">>,
-            <<"data">> => <<"table.insert(ao.outbox.Messages, { method = \"PATCH\", x = \"banana\" })">>
+            <<"data">> =>
+                <<
+                    "table.insert(ao.outbox.Messages, "
+                        "{ method = \"PATCH\", x = \"banana\" })"
+                >>
         }, Wallet))#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
         {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}),
         Msg3 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },

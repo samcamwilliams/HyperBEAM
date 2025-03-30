@@ -134,7 +134,7 @@ id(Msg, RawAttestors, Opts) ->
             unsigned -> <<"none">>;
             none -> <<"none">>;
             all -> <<"all">>;
-            signed -> <<"all">>;
+            signed -> signers(Msg);
             List -> List
         end,
     ?event({getting_id, {msg, Msg}, {attestors, Attestors}}),
@@ -229,10 +229,18 @@ attested(Msg, AttestorsMsg, Opts) ->
 
 %% @doc wrapper function to verify a message.
 verify(Msg) -> verify(Msg, <<"all">>).
-verify(Msg, signers) ->
-    verify(Msg, hb_message:signers(Msg));
+verify(Msg, signers) -> verify(Msg, hb_message:signers(Msg));
 verify(Msg, Attestors) ->
-    {ok, Res} = dev_message:verify(Msg, #{ <<"attestors">> => Attestors }, #{}),
+    {ok, Res} =
+        dev_message:verify(
+            Msg,
+            #{ <<"attestors">> =>
+                case is_list(Attestors) of
+                    true -> Attestors;
+                    false -> [Attestors]
+                end
+            },
+            #{}),
     Res.
 
 %% @doc Return the unsigned version of a message in Converge format.
@@ -370,14 +378,14 @@ format(Map, Indent) when is_map(Map) ->
         FilterUndef(PriorityKeys) ++
         maps:to_list(
             minimize(Map,
-                case hb_opts:get(debug_hide_metadata, false, #{}) of
-                    true ->
+                case hb_opts:get(debug_metadata, false, #{}) of
+                    false ->
                         [
                             <<"attestations">>,
                             <<"path">>,
                             <<"device">>
                         ];
-                    false -> [
+                    true -> [
                         <<"path">>,
                         <<"device">>
                     ]
@@ -1157,7 +1165,7 @@ attested_empty_keys_test(Codec) ->
     Signed = attest(Msg, hb:wallet(), Codec),
     ?assert(verify(Signed)),
     AttestedKeys = attested(Signed),
-    ?event(debug, {attested_keys, AttestedKeys}),
+    ?event({attested_keys, AttestedKeys}),
     ?assert(lists:member(<<"very">>, AttestedKeys)),
     ?assert(lists:member(<<"exciting">>, AttestedKeys)),
     ?assert(lists:member(<<"values">>, AttestedKeys)),
@@ -1320,14 +1328,17 @@ priv_survives_conversion_test(<<"json@1.0">>) -> skip;
 priv_survives_conversion_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
-        <<"priv">> => Priv = #{ <<"test_key">> => <<"TEST_VALUE">> }
+        <<"priv">> => #{ <<"test_key">> => <<"TEST_VALUE">> }
     },
     Encoded = convert(Msg, Codec, #{}),
     ?event({encoded, Encoded}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, Decoded}),
     ?assert(match(Msg, Decoded)),
-    ?assertEqual(Priv, maps:get(<<"priv">>, Decoded, #{})).
+    ?assertMatch(
+        #{ <<"test_key">> := <<"TEST_VALUE">> },
+        maps:get(<<"priv">>, Decoded, #{})
+    ).
 
 %%% Test helpers
 

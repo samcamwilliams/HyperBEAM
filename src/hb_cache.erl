@@ -110,8 +110,8 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     hb_store:make_group(Store, UnattestedID),
     maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
-            ?event(error, {request_to_write_device_map, {id, hb_message:id(Map)}}),
-            throw({device_map_cannot_be_written, {id, hb_message:id(Map)}});
+            ?event(error, {request_to_write_device_map, Map}),
+            throw({device_map_cannot_be_written, Map});
         (Key, Value) ->
             ?event({writing_subkey, {key, Key}, {value, Value}}),
             KeyHashPath =
@@ -232,7 +232,11 @@ do_read(Path, Store, Opts, AlreadyRead) ->
     case hb_store:type(Store, ResolvedFullPath) of
         not_found -> not_found;
         no_viable_store -> not_found;
-        simple -> hb_store:read(Store, ResolvedFullPath);
+        simple ->
+            case hb_store:read(Store, ResolvedFullPath) of
+                {ok, Bin} -> {ok, Bin};
+                {error, _} -> not_found
+            end;
         _ ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, Subpaths} ->
@@ -313,6 +317,7 @@ test_store_unsigned_empty_message(Opts) ->
     Item = #{},
     {ok, Path} = write(Item, Opts),
     {ok, RetrievedItem} = read(Path, Opts),
+    ?event({retrieved_item, {path, {string, Path}}, {item, RetrievedItem}}),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple unsigned item
@@ -456,5 +461,4 @@ test_device_map_cannot_be_written_test() ->
 run_test() ->
     Opts = #{ store => StoreOpts = 
         [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
-    test_store_ans104_message(Opts),
-    hb_store:reset(StoreOpts).
+    test_store_unsigned_empty_message(Opts).

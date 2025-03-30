@@ -201,6 +201,7 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Msg2, Opts) ->
     % As this is the first message, we will then continue to execute the request
     % on the result.
     ?event(converge_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
+    ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {msg2, Msg2}}, Opts),
     case subresolve(#{}, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
@@ -595,12 +596,12 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
 
 %% @doc Ensure that the message is loaded from the cache if it is an ID. If is
 %% not loadable or already present, we raise an error.
-ensure_loaded(Msg, Opts) when ?IS_ID(Msg) ->
-    case hb_cache:read(Msg, Opts) of
+ensure_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
+    case hb_cache:read(MsgID, Opts) of
         {ok, LoadedMsg} ->
             LoadedMsg;
         not_found ->
-            throw({necessary_message_not_found, {msg, Msg}})
+            throw({necessary_message_not_found, MsgID})
     end;
 ensure_loaded(Msg, _Opts) ->
     Msg.
@@ -1283,7 +1284,7 @@ default_module() -> dev_message.
 %% when calling itself.
 internal_opts(Opts) ->
     maps:merge(Opts, #{
-        topic => converge_internal,
+        topic => hb_opts:get(topic, converge_internal, Opts),
         hashpath => ignore,
         cache_control => [<<"no-cache">>, <<"no-store">>],
         spawn_worker => false,

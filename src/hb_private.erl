@@ -65,6 +65,9 @@ set(Msg, PrivMap, Opts) ->
     set_priv(Msg, NewPriv).
 
 %% @doc Helper function for setting the complete private element of a message.
+set_priv(Msg, PrivMap)
+        when map_size(PrivMap) =:= 0 andalso not is_map_key(<<"priv">>, Msg) ->
+    Msg;
 set_priv(Msg, PrivMap) ->
     Msg#{ <<"priv">> => PrivMap }.
 

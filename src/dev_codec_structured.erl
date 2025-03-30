@@ -50,7 +50,7 @@ from(Msg) when is_map(Msg) ->
                         is_atom(Value) or is_integer(Value)
                         or is_list(Value) or is_float(Value) ->
                     BinKey = hb_converge:normalize_key(Key),
-                    ?event(debug_opts, {encode_value, Value}),
+                    ?event({encode_value, Value}),
                     {Type, BinValue} = encode_value(Value),
                     {[{BinKey, Type} | Types], [{BinKey, BinValue} | Values]};
                 {ok, {resolve, Operations}} when is_list(Operations) ->

@@ -341,7 +341,11 @@ debug_fmt(X, Indent) ->
             prod ->
                 format_indented("[!PRINT FAIL!]", Indent);
             _ ->
-                format_indented("[PRINT FAIL:] ~80p", [X], Indent)
+                format_indented(
+                    "[PRINT FAIL:] ~80p~n===== PRINT ERROR WAS ~p:~p =====~n~p",
+                    [X, A, B, format_trace(C, hb_opts:get(stack_print_prefixes, [], #{}))],
+                    Indent
+                )
         end
     end.
 

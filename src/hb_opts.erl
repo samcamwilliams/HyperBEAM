@@ -54,6 +54,7 @@ default_message() ->
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
+            #{<<"name">> => <<"cacheviz@1.0">>, <<"module">> => dev_cacheviz},
             #{<<"name">> => <<"cron@1.0">>, <<"module">> => dev_cron},
             #{<<"name">> => <<"dedup@1.0">>, <<"module">> => dev_dedup},
             #{<<"name">> => <<"delegated-compute@1.0">>, <<"module">> => dev_delegated_compute},
@@ -62,6 +63,7 @@ default_message() ->
             #{<<"name">> => <<"genesis-wasm@1.0">>, <<"module">> => dev_genesis_wasm},
             #{<<"name">> => <<"greenzone@1.0">>, <<"module">> => dev_green_zone},
             #{<<"name">> => <<"httpsig@1.0">>, <<"module">> => dev_codec_httpsig},
+            #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
             #{<<"name">> => <<"lookup@1.0">>, <<"module">> => dev_lookup},
@@ -75,7 +77,6 @@ default_message() ->
             #{<<"name">> => <<"process@1.0">>, <<"module">> => dev_process},
             #{<<"name">> => <<"push@1.0">>, <<"module">> => dev_push},
             #{<<"name">> => <<"relay@1.0">>, <<"module">> => dev_relay},
-            #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"router@1.0">>, <<"module">> => dev_router},
             #{<<"name">> => <<"scheduler@1.0">>, <<"module">> => dev_scheduler},
             #{<<"name">> => <<"simple-pay@1.0">>, <<"module">> => dev_simple_pay},
@@ -124,7 +125,7 @@ default_message() ->
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 5,
-        debug_hide_metadata => true,
+        debug_metadata => true,
         debug_ids => false,
         debug_show_priv => if_present,
 		trusted => #{},
@@ -246,7 +247,8 @@ get(Key, Default, Opts) ->
                     (Str) when Str == "1" -> true;
                     (Str) when Str == "true" -> true;
                     (Str) -> string:tokens(Str, ",")
-                end
+                end,
+                "http_short,compute_short,push_short"
             }
     }
 ).
