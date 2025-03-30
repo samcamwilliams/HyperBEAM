@@ -112,7 +112,10 @@ snapshot(RawMsg1, _Msg2, Opts) ->
         <<"Execution">>,
         Msg1,
         #{ <<"path">> => <<"snapshot">>, <<"mode">> => <<"Map">> },
-        Opts#{ cache_control => [] }
+        Opts#{
+            cache_control => [<<"no-cache">>, <<"no-store">>],
+            hashpath => ignore
+        }
     ),
     ProcID = hb_message:id(Msg1, all),
     Slot = hb_converge:get(<<"at-slot">>, Msg1, Opts),
@@ -134,7 +137,7 @@ snapshot(RawMsg1, _Msg2, Opts) ->
 
 %% @doc Returns the process ID of the current process.
 process_id(Msg1, Msg2, Opts) ->
-    case hb_converge:get(<<"process">>, Msg1, Opts) of
+    case hb_converge:get(<<"process">>, Msg1, Opts#{ hashpath => ignore }) of
         not_found ->
             process_id(ensure_process_key(Msg1, Opts), Msg2, Opts);
         Process ->
@@ -189,7 +192,7 @@ compute(Msg1, Msg2, Opts) ->
                     {ok, Loaded} = ensure_loaded(ProcBase, Msg2, Opts),
                     ?event(compute,
                         {computing, {process_id, ProcID},
-                        {slot, Slot}},
+                        {to_slot, Slot}},
                         Opts
                     ),
                     compute_to_slot(
@@ -205,8 +208,8 @@ compute(Msg1, Msg2, Opts) ->
 %% @doc Continually get and apply the next assignment from the scheduler until
 %% we reach the target slot that the user has requested.
 compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) ->
-    CurrentSlot = hb_converge:get(<<"at-slot">>, Msg1, Opts),
-    ?event({starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
+    CurrentSlot = hb_converge:get(<<"at-slot">>, Msg1, Opts#{ hashpath => ignore }),
+    ?event(compute, {starting_compute, {current, CurrentSlot}, {target, TargetSlot}}),
     case CurrentSlot of
         CurrentSlot when CurrentSlot > TargetSlot ->
             % The cache should already have the result, so we should never end up
@@ -277,13 +280,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
     ?event(compute, {executing, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
     % Unset the previous results.
     UnsetResults = hb_converge:set(State, #{ <<"results">> => unset }, Opts),
-    Res =
-        run_as(
-            <<"execution">>,
-            UnsetResults,
-            InputMsg,
-            Opts
-        ),
+    Res = run_as(<<"execution">>, UnsetResults, InputMsg, Opts),
     case Res of
         {ok, Msg3} ->
             ?event(compute_short, {executed, {slot, NextSlot}, {proc_id, ProcID}}, Opts),
@@ -296,9 +293,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
                 {ok, Msg3SlotAfter},
                 Opts
             ),
-            ?event(compute, {writing_cache, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
             store_result(ProcID, NextSlot, Msg3SlotAfter, ReqMsg, Opts),
-            ?event(compute, {wrote_cache, {proc_id, ProcID}, {slot, NextSlot}}, Opts),
             {ok, Msg3SlotAfter};
         {error, Error} ->
             {error, Error}
@@ -440,15 +435,27 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % loaded state. This allows the devices to load any
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
-                    % Do not update the hashpath while we do this.
+                    % Do not update the hashpath while we do this, and remove
+                    % the snapshot key after we have normalized the message.
                     ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
-                    {ok, Normalized} = run_as(<<"execution">>, SnapshotMsg, normalize, Opts),
+                    {ok, Normalized} =
+                        run_as(
+                            <<"execution">>,
+                            SnapshotMsg,
+                            normalize,
+                            Opts#{ hashpath => ignore }
+                        ),
                     NormalizedWithoutSnapshot = maps:remove(<<"snapshot">>, Normalized),
+                    ?event({loaded_state_checkpoint_result,
+                        {proc_id, ProcID},
+                        {slot, LoadedSlot},
+                        {after_normalization, NormalizedWithoutSnapshot}
+                    }),
                     {ok, NormalizedWithoutSnapshot};
                 not_found ->
                     % If we do not have a checkpoint, initialize the
                     % process from scratch.
-                    ?event(compute,
+                    ?event(
                         {no_checkpoint_found,
                             {process, ProcID},
                             {slot, TargetSlot}
@@ -521,7 +528,7 @@ ensure_process_key(Msg1, Opts) ->
             ProcessMsg =
                 case hb_message:signers(Msg1) of
                     [] ->
-                        ?event(debug, {process_key_not_found_no_signers, {msg1, Msg1}}),
+                        ?event({process_key_not_found_no_signers, {msg1, Msg1}}),
                         case hb_cache:read(hb_message:id(Msg1, all), Opts) of
                             {ok, Proc} -> Proc;
                             not_found ->
@@ -530,7 +537,7 @@ ensure_process_key(Msg1, Opts) ->
                                 Msg1
                         end;
                     Signers ->
-                        ?event(debug,
+                        ?event(
                             {process_key_not_found_but_signers_present,
                                 {signers, Signers},
                                 {msg1, Msg1}
