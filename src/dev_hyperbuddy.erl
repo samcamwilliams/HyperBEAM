@@ -1,15 +1,17 @@
 %%% @doc A device that renders a REPL-like interface for AO-Core via HTML.
 -module(dev_hyperbuddy).
--export([index/3, console/3, format/3, metrics/3]).
+-export([info/0, format/3, metrics/3]).
 -include_lib("include/hb.hrl").
 
-%% @doc Render the dashboard for a node as a HTML page.
-index(_, _, _Opts) ->
-    return_file("index").
-
-%% @doc The main HTML page for the REPL device.
-console(_, _, _Opts) ->
-    return_file("console").
+%% @doc Export an explicit list of files via http.
+info() ->
+    #{
+        default => fun serve/4,
+        routes => #{
+            <<"index">> => <<"index.html">>,
+            <<"console">> => <<"console.html">>
+        }
+    }.
 
 %% @doc The main HTML page for the REPL device.
 metrics(_, Req, Opts) ->
@@ -27,12 +29,35 @@ metrics(_, Req, Opts) ->
     Headers = maps:map(fun(_, Value) -> hb_util:bin(Value) end, RawHeaderMap),
     {ok, Headers#{ <<"body">> => Body }}.
 
+%% @doc Employ HyperBEAM's internal pretty printer to format a message.
 format(Base, _, _) ->
     {ok, #{ <<"body">> => hb_util:bin(hb_message:format(Base)) }}.
 
+%% @doc Serve a file from the priv directory. Only serves files that are explicitly
+%% listed in the `routes' field of the `info/0' return value.
+serve(<<"keys">>, M1, _M2, _Opts) -> dev_message:keys(M1);
+serve(<<"set">>, M1, M2, Opts) -> dev_message:set(M1, M2, Opts);
+serve(Key, _, _, _) ->
+    ?event({hyperbuddy_serving, Key}),
+    case maps:get(Key, maps:get(routes, info(), no_routes), undefined) of
+        undefined -> {error, not_found};
+        Filename -> return_file(Filename)
+    end.
+
+%% @doc Read a file from disk and serve it as a static HTML page.
 return_file(Name) ->
-    {ok, Body} = file:read_file(code:priv_dir(hb) ++ "/html/hyperbuddy@1.0/" ++ Name ++ ".html"),
+    Base = hb_util:bin(code:priv_dir(hb)),
+    Filename = <<Base/binary, "/html/hyperbuddy@1.0/", Name/binary >>,
+    ?event({hyperbuddy_serving, Filename}),
+    {ok, Body} = file:read_file(Filename),
     {ok, #{
         <<"body">> => Body,
-        <<"content-type">> => <<"text/html">>
+        <<"content-type">> =>
+            case filename:extension(Filename) of
+                <<".html">> -> <<"text/html">>;
+                <<".js">> -> <<"text/javascript">>;
+                <<".css">> -> <<"text/css">>;
+                <<".png">> -> <<"image/png">>;
+                <<".ico">> -> <<"image/x-icon">>
+            end
     }}.
