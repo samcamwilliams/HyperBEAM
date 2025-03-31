@@ -34,11 +34,11 @@ read(_M1, M2, Opts) ->
 							{accept_header, <<"application/aos-2">>}
 						}
 					),
-                    Struct = dev_json_iface:message_to_json_struct(Res),
-                    ?event(dev_cache, {read, {json_struct, Struct}}),
+                    JSONMsg = dev_json_iface:message_to_json_struct(Res),
+                    ?event(dev_cache, {read, {json_message, JSONMsg}}),
                     {ok,
                         #{
-                            <<"body">> => jiffy:encode(Struct),
+                            <<"body">> => hb_json:encode(JSONMsg),
                             <<"content-type">> => <<"application/aos-2">>
                         }
 					};

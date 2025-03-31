@@ -588,7 +588,7 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
             case hb_util:int(hb_converge:get(<<"status">>, Res, 200, Opts)) of
                 200 ->
                     Body = hb_converge:get(<<"body">>, Res, Opts),
-                    JSON = jiffy:decode(Body, [return_maps]),
+                    JSON = hb_json:decode(Body),
                     ?event({got_slot_response, {json, JSON}}),
                     % Convert the JSON object for the latest assignment into the
                     % standardized `~scheduler@1.0` format.
@@ -795,14 +795,13 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                 {ok, Res};
                             <<"ao.TN.1">> ->
                                 JSONRes =
-                                    jiffy:decode(
+                                    hb_json:decode(
                                         hb_converge:get(
                                             <<"body">>,
                                             Res,
                                             <<"">>,
                                             Opts#{ hashpath => ignore }
-                                        ),
-                                        [return_maps]
+                                        )
                                     ),
                                 Filtered = filter_json_assignments(JSONRes, To, From),
                                 dev_scheduler_formats:aos2_to_assignments(
@@ -1005,9 +1004,8 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                 {ok, PostRes} ->
                     ?event({remote_schedule_result, PostRes}),
                     JSONRes =
-                        jiffy:decode(
-                            hb_converge:get(<<"body">>, PostRes, Opts),
-                            [return_maps]
+                        hb_json:decode(
+                            hb_converge:get(<<"body">>, PostRes, Opts)
                         ),
                     % Legacy SUs return only the ID of the assignment, so we need
                     % to read and return it.
@@ -1017,9 +1015,8 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                         {ok, AssignmentRes} ->
                             ?event({received_full_assignment, AssignmentRes}),
                             AssignmentJSON =
-                                jiffy:decode(
-                                    hb_converge:get(<<"body">>, AssignmentRes, Opts),
-                                    [return_maps]
+                                hb_json:decode(
+                                    hb_converge:get(<<"body">>, AssignmentRes, Opts)
                                 ),
                             Assignment =
                                 dev_scheduler_formats:aos2_to_assignment(
@@ -1494,7 +1491,7 @@ http_get_legacy_schedule_as_aos2_test_() ->
                 },
                 #{}
             ),
-        Decoded = jiffy:decode(hb_converge:get(<<"body">>, Res, #{}), [return_maps]),
+        Decoded = hb_json:decode(hb_converge:get(<<"body">>, Res, #{})),
         ?assertMatch(#{ <<"edges">> := As } when length(As) > 0, Decoded)
     end}.
 
@@ -1559,7 +1556,7 @@ http_get_json_schedule_test() ->
     {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
     ?event({schedule, Schedule}),
     JSON = hb_converge:get(<<"body">>, Schedule, #{}),
-    Assignments = jiffy:decode(JSON, [return_maps]),
+    Assignments = hb_json:decode(JSON),
     ?assertEqual(
         11, % +1 for the hashpath
         length(maps:get(<<"edges">>, Assignments))

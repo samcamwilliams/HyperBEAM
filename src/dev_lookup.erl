@@ -16,7 +16,7 @@ read(_M1, M2, Opts) ->
                     Struct = dev_json_iface:message_to_json_struct(Res),
                     {ok,
                         #{
-                            <<"body">> => jiffy:encode(Struct),
+                            <<"body">> => hb_json:encode(Struct),
                             <<"content-type">> => <<"application/aos-2">>
                         }};
                 _ ->
@@ -50,7 +50,7 @@ aos2_message_lookup_test() ->
             #{ <<"target">> => ID, <<"accept">> => <<"application/aos-2">> },
             #{}
         ),
-    Decoded = jiffy:decode(hb_converge:get(<<"body">>, RetrievedMsg, #{}), [return_maps]),
+    Decoded = hb_json:decode(hb_converge:get(<<"body">>, RetrievedMsg, #{})),
     ?assertEqual(<<"test-data">>, hb_converge:get(<<"data">>, Decoded, #{})).
 
 http_lookup_test() ->
@@ -69,5 +69,5 @@ http_lookup_test() ->
         <<"accept">> => <<"application/aos-2">>
     }, Wallet),
     {ok, Res} = hb_http:post(Node, Req, Opts),
-    Decoded = jiffy:decode(hb_converge:get(<<"body">>, Res, Opts), [return_maps]),
+    Decoded = hb_json:decode(hb_converge:get(<<"body">>, Res, Opts)),
     ?assertEqual(<<"test-data">>, hb_converge:get(<<"data">>, Decoded, Opts)).

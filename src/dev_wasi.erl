@@ -305,7 +305,7 @@ basic_aos_exec_test() ->
     {ok, Output} = hb_beamr_io:read_string(Instance, Ptr),
     ?event({got_output, Output}),
     #{ <<"response">> := #{ <<"Output">> := #{ <<"data">> := Data }} }
-        = jiffy:decode(Output, [return_maps]),
+        = hb_json:decode(Output),
     ?assertEqual(<<"2">>, Data).
 
 %%% Test Helpers
