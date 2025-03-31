@@ -1,5 +1,16 @@
 import { get, formatDisplayAmount, copyToClipboard } from '/~hyperbuddy@1.0/utils.js';
 
+// Set up global message handler for console communications
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.action) {
+    if (event.data.action === 'expandConsole') {
+      expandConsole();
+    } else if (event.data.action === 'exitExpandedConsole') {
+      exitExpandedConsole();
+    }
+  }
+});
+
 /**
  * Parse info data from the server response
  * @param {string} text - The raw info text
@@ -150,7 +161,90 @@ function addConsole() {
   consoleContainer.style.minHeight = "500px";
   consoleContainer.style.border = "none";
   consoleContainer.src = "/~hyperbuddy@1.0/console";
+  consoleContainer.id = "console-iframe";
   container.appendChild(consoleContainer);
+}
+
+/**
+ * Expand the console to take over the entire screen
+ */
+function expandConsole() {
+  const consoleIframe = document.getElementById("console-iframe");
+  if (!consoleIframe) {
+    return;
+  }
+  
+  // Save original position and size
+  if (!consoleIframe.dataset.originalStyles) {
+    consoleIframe.dataset.originalStyles = JSON.stringify({
+      width: consoleIframe.style.width,
+      height: consoleIframe.style.height,
+      minHeight: consoleIframe.style.minHeight,
+      position: consoleIframe.style.position,
+      top: consoleIframe.style.top,
+      left: consoleIframe.style.left,
+      zIndex: consoleIframe.style.zIndex
+    });
+  }
+  
+  // Apply fullscreen styles directly to the iframe
+  consoleIframe.style.position = "fixed";
+  consoleIframe.style.top = "0";
+  consoleIframe.style.left = "0";
+  consoleIframe.style.width = "100%";
+  consoleIframe.style.height = "100%";
+  consoleIframe.style.minHeight = "100%";
+  consoleIframe.style.zIndex = "9999";
+  
+  // Notify the iframe that it's now expanded
+  setTimeout(() => {
+    if (consoleIframe.contentWindow) {
+      consoleIframe.contentWindow.postMessage({
+        consoleState: 'expanded'
+      }, '*');
+    }
+  }, 100); // Short delay to ensure iframe is ready
+}
+
+/**
+ * Exit the expanded console view and return to normal layout
+ */
+function exitExpandedConsole() {
+  const consoleIframe = document.getElementById("console-iframe");
+  
+  if (!consoleIframe) {
+    return;
+  }
+  
+  // Restore original position and size
+  if (consoleIframe.dataset.originalStyles) {
+    const originalStyles = JSON.parse(consoleIframe.dataset.originalStyles);
+    consoleIframe.style.position = originalStyles.position;
+    consoleIframe.style.top = originalStyles.top;
+    consoleIframe.style.left = originalStyles.left;
+    consoleIframe.style.width = originalStyles.width;
+    consoleIframe.style.height = originalStyles.height;
+    consoleIframe.style.minHeight = originalStyles.minHeight || "500px";
+    consoleIframe.style.zIndex = originalStyles.zIndex;
+  } else {
+    // Fallback if original styles weren't saved
+    consoleIframe.style.position = "";
+    consoleIframe.style.top = "";
+    consoleIframe.style.left = "";
+    consoleIframe.style.width = "100%";
+    consoleIframe.style.height = "";
+    consoleIframe.style.minHeight = "500px";
+    consoleIframe.style.zIndex = "";
+  }
+  
+  // Notify the iframe that it's now in normal mode
+  setTimeout(() => {
+    if (consoleIframe.contentWindow) {
+      consoleIframe.contentWindow.postMessage({
+        consoleState: 'normal'
+      }, '*');
+    }
+  }, 100); // Short delay to ensure iframe is ready
 }
 
 // Export functions for use in other modules
@@ -158,5 +252,7 @@ export {
   parseInfo,
   renderInfoGroups,
   fetchInfo,
-  addConsole
+  addConsole,
+  expandConsole,
+  exitExpandedConsole
 }; 
