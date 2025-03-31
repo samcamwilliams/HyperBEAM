@@ -137,8 +137,13 @@ new_server(RawNodeMsg) ->
         max_connections => infinity,
         idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg)
     },
+    DefaultProto =
+        case hb_features:http3() of
+            true -> http3;
+            false -> http2
+        end,
     {ok, Port, Listener} =
-        case Protocol = hb_opts:get(protocol, no_proto, NodeMsg) of
+        case Protocol = hb_opts:get(protocol, DefaultProto, NodeMsg) of
             http3 ->
                 start_http3(ServerID, ProtoOpts, NodeMsg);
             Pro when Pro =:= http2; Pro =:= http1 ->
@@ -162,6 +167,7 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
     Parent = self(),
     ServerPID =
         spawn(fun() ->
+            application:ensure_all_started(quicer),
             {ok, Listener} = cowboy:start_quic(
                 ServerID, 
                 TransOpts = #{

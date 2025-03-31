@@ -12,7 +12,6 @@
         prometheus,
         prometheus_cowboy,
         os_mon,
-        quicer,
         gun
     ]},
     {env, []},

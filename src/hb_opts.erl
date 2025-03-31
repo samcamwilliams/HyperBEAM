@@ -23,9 +23,6 @@ default_message() ->
         %%%%%%%% Functional options %%%%%%%%
         hb_config_location => <<"config.flat">>,
         initialized => true,
-        %% What protocol should the node use for HTTP requests?
-        %% Options: http1, http2, http3
-        protocol => http2,
         %% What HTTP client should the node use?
         %% Options: gun, httpc
         http_client => gun,

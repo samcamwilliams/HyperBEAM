@@ -351,9 +351,14 @@ open_connection(#{ peer := Peer }, Opts) ->
             443 -> tls;
             _ -> tcp
         end,
+    DefaultProto =
+        case hb_features:http3() of
+            true -> http3;
+            false -> http2
+        end,
     % Fallback through earlier HTTP versions if the protocol is not supported.
     GunOpts =
-        case Proto = hb_opts:get(protocol, no_proto, Opts) of
+        case Proto = hb_opts:get(protocol, DefaultProto, Opts) of
             http3 -> BaseGunOpts#{protocols => [http3], transport => quic};
             _ -> BaseGunOpts
         end,

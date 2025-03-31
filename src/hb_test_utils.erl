@@ -47,12 +47,16 @@ satisfies_requirements(Requirements) when is_map(Requirements) ->
 satisfies_requirements(Requirements) ->
     lists:all(
         fun(Req) ->
-            case code:is_loaded(Req) of
-                false -> false;
-                {file, _} ->
-                    case erlang:function_exported(Req, enabled, 0) of
-                        true -> Req:enabled();
-                        false -> true
+            case hb_features:enabled(Req) of
+                true -> true;
+                false ->
+                    case code:is_loaded(Req) of
+                        false -> false;
+                        {file, _} ->
+                            case erlang:function_exported(Req, enabled, 0) of
+                                true -> Req:enabled();
+                                false -> true
+                            end
                     end
             end
         end,

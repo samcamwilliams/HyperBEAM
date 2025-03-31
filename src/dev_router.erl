@@ -210,7 +210,7 @@ choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
     NodesWithDistances =
         lists:map(
             fun(Node) ->
-                Wallet = hb_converge:get(<<"Wallet">>, Node, Opts),
+                Wallet = hb_converge:get(<<"wallet">>, Node, Opts),
                 DistanceScore =
                     field_distance(
                         hb_util:native_id(Wallet),

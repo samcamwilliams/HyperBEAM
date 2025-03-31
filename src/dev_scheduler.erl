@@ -964,7 +964,7 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                     <<"ans104@1.0">>,
                     Opts
                 ),
-            ?event(ans104, {encoded_for_legacy_scheduler, {item, Item}, {exact, {explicit, Item}}}),
+            ?event({encoded_for_legacy_scheduler, {item, Item}, {exact, {explicit, Item}}}),
             {ok, ar_bundles:serialize(Item)}
         catch
             _:_ ->
