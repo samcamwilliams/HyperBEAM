@@ -187,19 +187,27 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
 
 %%% Test helpers
 
+-ifdef(ENABLE_ROCKSDB).
 test_stores() ->
     [
         #{
-            <<"store-module">> =>
-            hb_store_rocksdb,
+            <<"store-module">> => hb_store_rocksdb,
             <<"prefix">> => <<"cache-TEST/rocksdb">>
         },
         #{
-            <<"store-module">> =>
-            hb_store_fs,
+            <<"store-module">> => hb_store_fs,
             <<"prefix">> => <<"cache-TEST/fs">>
         }
     ].
+-else.
+test_stores() ->
+    [
+        #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST/fs">>
+        }
+    ].
+-endif.
 
 generate_test_suite(Suite) ->
     generate_test_suite(Suite, test_stores()).

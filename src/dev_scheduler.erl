@@ -1633,7 +1633,6 @@ many_clients(Opts) ->
 benchmark_suite_test_() ->
     rand:seed(exsplus, erlang:timestamp()),
     Port = 30000 + rand:uniform(10000),
-    PortBin = integer_to_binary(Port),
     Bench = [
         {benchmark, "benchmark", fun single_converge/1},
         {multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
@@ -1641,9 +1640,14 @@ benchmark_suite_test_() ->
     filelib:ensure_dir(
         binary_to_list(Base = <<"cache-TEST/run-">>)
     ),
-    OptSpecs = [
+    hb_test_utils:suite_with_opts(Bench, benchmark_suite(Port, Base)).
+
+benchmark_suite(Port, Base) ->
+    PortBin = integer_to_binary(Port),
+    [
         #{
             name => fs,
+            requires => [hb_store_fs],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_fs, 
                     <<"prefix">> => <<Base/binary, PortBin/binary, "-A">>
@@ -1655,6 +1659,7 @@ benchmark_suite_test_() ->
         },
         #{
             name => fs_aggressive,
+            requires => [hb_store_fs],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_fs, 
                     <<"prefix">> => <<Base/binary, PortBin/binary, "-B">>
@@ -1666,6 +1671,7 @@ benchmark_suite_test_() ->
         },
         #{
             name => rocksdb,
+            requires => [hb_store_rocksdb],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
                     <<"prefix">> => <<Base/binary, PortBin/binary, "-C">>
@@ -1677,6 +1683,7 @@ benchmark_suite_test_() ->
         },
         #{
             name => rocksdb_aggressive,
+            requires => [hb_store_rocksdb],
             opts => #{
                 store => #{ <<"store-module">> => hb_store_rocksdb, 
                     <<"prefix">> => <<Base/binary, PortBin/binary, "-D">>
@@ -1685,18 +1692,23 @@ benchmark_suite_test_() ->
                 port => Port + 3
             },
             desc => "RocksDB store, aggressive conf."
+        },
+        #{
+            name => rocksdb_extreme_aggressive_h3,
+            requires => [http3],
+            opts => #{
+                store => #{ <<"store-module">> => hb_store_rocksdb, 
+                    <<"prefix">> =>
+                          <<
+                              Base/binary,
+                              "run-",
+                              (integer_to_binary(Port+4))/binary
+                          >>
+                },
+                scheduling_mode => aggressive,
+                protocol => http3,
+                workers => 100
+            },
+            desc => "100xRocksDB store, aggressive conf, http/3."
         }
-        % #{
-        %     name => rocksdb_extreme_aggressive_h3,
-        %     opts => #{
-        %         store => #{ <<"store-module">> => hb_store_rocksdb, 
-        %             <<"prefix">> => <<Base/binary, "run-", (integer_to_binary(Port+4))/binary>>
-        %         },
-        %         scheduling_mode => aggressive,
-        %         protocol => http3,
-        %         workers => 100
-        %     },
-        %     desc => "100xRocksDB store, aggressive conf, http/3."
-        % }
-    ],
-    hb_test_utils:suite_with_opts(Bench, OptSpecs).
+    ].

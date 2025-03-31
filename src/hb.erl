@@ -118,8 +118,7 @@ start_mainnet(Opts) ->
         gun,
         prometheus,
         prometheus_cowboy,
-        os_mon,
-        rocksdb
+        os_mon
     ]),
     Wallet = hb:wallet(hb_opts:get(priv_key_location, no_viable_wallet_path, Opts)),
     BaseOpts = hb_http_server:set_default_opts(Opts),
@@ -162,8 +161,7 @@ do_start_simple_pay(Opts) ->
         gun,
         prometheus,
         prometheus_cowboy,
-        os_mon,
-        rocksdb
+        os_mon
     ]),
     Port = maps:get(port, Opts),
     Processor =

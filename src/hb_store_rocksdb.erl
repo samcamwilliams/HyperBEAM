@@ -9,7 +9,7 @@
 -module(hb_store_rocksdb).
 -behaviour(gen_server).
 -behaviour(hb_store).
--export([start/1, start_link/1, stop/1, scope/1]).
+-export([enabled/0, start/1, start_link/1, stop/1, scope/1]).
 -export([read/2, write/3, list/2, reset/1, list/0]).
 -export([make_link/3, make_group/2, type/2, add_path/3, path/2, resolve/2]).
 -export([init/1, terminate/2, handle_cast/2, handle_info/2, handle_call/3]).
@@ -23,7 +23,18 @@
 
 -type value_type() :: link | raw | group.
 
+%% @doc Returns whether the RocksDB store is enabled.
+-ifdef(ENABLE_ROCKSDB).
+enabled() -> true.
+-else.
+enabled() -> false.
+-endif.
+
+-ifdef(ENABLE_ROCKSDB).
+%% @doc Start the RocksDB store.
 start_link(#{ <<"store-module">> := hb_store_rocksdb, <<"prefix">> := Dir}) ->
+    ?event(rocksdb, {starting, Dir}),
+    application:ensure_all_started(rocksdb),
     gen_server:start_link({local, ?MODULE}, ?MODULE, Dir, []);
 start_link(Stores) when is_list(Stores) ->
     RocksStores =
@@ -40,6 +51,12 @@ start_link(Stores) when is_list(Stores) ->
 start_link(Store) ->
     ?event(rocksdb, {invalid_store_config, Store}),
     ignore.
+
+-else.
+%% @doc HyperBEAM was not compiled with RocksDB support, so we ignore the store.
+start_link(_Opts) -> ignore.
+
+-endif.
 
 start(Opts = #{ <<"store-module">> := hb_store_rocksdb, <<"prefix">> := _Dir}) ->
     start_link(Opts);
@@ -377,6 +394,7 @@ maybe_append_key_to_group(Key, CurrentDirContents) ->
 %%% Tests
 %%%=============================================================================
 
+-ifdef(ENABLE_ROCKSDB).
 -ifdef(TEST).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -588,4 +606,5 @@ api_test_() ->
             }
         ]}.
 
+-endif.
 -endif.
