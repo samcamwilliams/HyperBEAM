@@ -158,7 +158,7 @@ exec_dummy_device(SigningWallet, Opts) ->
     % environment.
     {ok, ModName, Bin} = compile:file("test/dev_dummy.erl", [binary]),
     DevMsg =
-        hb_message:attest(
+        hb_message:commit(
             hb_converge:normalize_keys(
                 #{
                     <<"data-protocol">> => <<"ao">>,

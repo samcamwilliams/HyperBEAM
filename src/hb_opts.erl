@@ -110,8 +110,8 @@ default_message() ->
         wasm_allow_aot => false,
         %% Options for the relay device
         relay_http_client => httpc,
-        %% The default codec to use for attestation signatures.
-        attestation_device => <<"httpsig@1.0">>,
+        %% The default codec to use for commitment signatures.
+        commitment_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
         % Every modification to `Opts` called directly by the node operator

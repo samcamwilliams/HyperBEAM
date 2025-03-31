@@ -54,7 +54,7 @@ assignments_to_aos2(ProcID, Assignments, More, RawOpts) when is_map(Assignments)
                 fun hb_util:int/1,
                 maps:keys(
                     maps:without(
-                        [<<"priv">>, <<"attestations">>],
+                        [<<"priv">>, <<"commitments">>],
                         Assignments
                     )
                 )

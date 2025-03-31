@@ -126,7 +126,7 @@ patch_to_submessage_test() ->
         <<"results">> => #{
             <<"outbox">> => #{
                 <<"1">> =>
-                    hb_message:attest(#{
+                    hb_message:commit(#{
                         <<"method">> => <<"PATCH">>,
                         <<"prices">> => #{
                             <<"apple">> => 100,

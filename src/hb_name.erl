@@ -61,7 +61,10 @@ unregister(Name) ->
 %%% @doc Lookup a name -> PID.
 lookup(Name) when is_atom(Name) ->
     case whereis(Name) of
-        undefined -> ets_lookup(Name); % Check ETS for atom-based names
+        undefined ->
+            % Check ETS for atom-based names
+            start(),
+            ets_lookup(Name);
         Pid -> Pid
     end;
 lookup(Name) ->

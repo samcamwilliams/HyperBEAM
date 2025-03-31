@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([id/1, to/1, from/1, attest/3, verify/3, attested/3, content_type/1]).
+-export([id/1, to/1, from/1, commit/3, verify/3, commited/3, content_type/1]).
 -export([serialize/1, deserialize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -20,9 +20,9 @@
         <<"signature">>
     ]
 ).
-%% The list of tags that a user is explicitly attesting to when they sign an
+%% The list of tags that a user is explicitly committing to when they sign an
 %% ANS-104 message.
--define(ATTESTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
+-define(COMMITTED_TAGS, ?TX_KEYS ++ [<<"data">>]).
 %% List of tags that should be removed during `to'. These relate to the nested
 %% ar_bundles format that is used by the `ans104@1.0' codec.
 -define(FILTERED_TAGS,
@@ -56,8 +56,8 @@ id(Msg) ->
     {ok, (to(TABM))#tx.id}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
-attest(Msg, _Req, Opts) ->
-    ?event({attesting, {input, Msg}}),
+commit(Msg, _Req, Opts) ->
+    ?event({committing, {input, Msg}}),
     Signed = ar_bundles:sign_item(
         to(hb_private:reset(Msg)),
         Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
@@ -67,57 +67,57 @@ attest(Msg, _Req, Opts) ->
     Owner = Signed#tx.owner,
     Sig = Signed#tx.signature,
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    % Gather the prior attestations.
-    PriorAttestations = maps:get(<<"attestations">>, Msg, #{}),
-    PriorUnsigned = maps:get(<<"ans104-unsigned">>, PriorAttestations, #{}),
+    % Gather the prior commitments.
+    PriorCommitments = maps:get(<<"commitments">>, Msg, #{}),
+    PriorUnsigned = maps:get(<<"ans104-unsigned">>, PriorCommitments, #{}),
     PriorOriginalTags = maps:get(<<"original-tags">>, PriorUnsigned, undefined),
-    Attestation =
+    Commitment =
         #{
-            <<"attestation-device">> => <<"ans104@1.0">>,
+            <<"commitment-device">> => <<"ans104@1.0">>,
             <<"id">> => hb_util:human_id(ID),
             <<"owner">> => Owner,
             <<"signature">> => Sig
         },
-    AttestationWithOriginalTags =
+    CommitmentWithOriginalTags =
         case PriorOriginalTags of
-            undefined -> Attestation;
-            OriginalTags -> Attestation#{ <<"original-tags">> => OriginalTags }
+            undefined -> Commitment;
+            OriginalTags -> Commitment#{ <<"original-tags">> => OriginalTags }
         end,
-    AttestationWithHP =
+    CommitmentWithHP =
         case Msg of
             #{ <<"hashpath">> := Hashpath } ->
-                AttestationWithOriginalTags#{ <<"hashpath">> => Hashpath };
-            _ -> AttestationWithOriginalTags
+                CommitmentWithOriginalTags#{ <<"hashpath">> => Hashpath };
+            _ -> CommitmentWithOriginalTags
         end,
     MsgWithoutHP = maps:without([<<"hashpath">>], Msg),
     {ok,
         MsgWithoutHP#{
-            <<"attestations">> =>
-                (maps:without([<<"ans104-unsigned">>], PriorAttestations))#{
-                    Address => AttestationWithHP
+            <<"commitments">> =>
+                (maps:without([<<"ans104-unsigned">>], PriorCommitments))#{
+                    Address => CommitmentWithHP
                 }
         }
     }.
 
-%% @doc Return a list of attested keys from an ANS-104 message.
-attested(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"attestations">> := Atts }, _Req, Opts) ->
+%% @doc Return a list of commited keys from an ANS-104 message.
+commited(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, _Req, Opts) ->
     % If the message has a `trusted-keys' field in the immediate layer, we validate
-    % that it also exists in the attestation's sub-map. If it exists there (which
+    % that it also exists in the commitment's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
     % are present in the message.
-    case hb_converge:get(hd(hb_converge:keys(Atts)), Atts, #{}) of
+    case hb_converge:get(hd(hb_converge:keys(Comms)), Comms, #{}) of
         #{ <<"trusted-keys">> := RawTKeys } ->
-            attested_from_trusted_keys(Msg, RawTKeys, Opts);
+            committed_from_trusted_keys(Msg, RawTKeys, Opts);
         _ ->
             % If the key is not repeated, we cannot trust that the message has
-            % the keys in the attestation so we return an error.
-            throw({trusted_keys_not_found_in_attestation, Msg})
+            % the keys in the commitment so we return an error.
+            throw({trusted_keys_not_found_in_commitment, Msg})
     end;
-attested(Msg = #{ <<"original-tags">> := TagMap, <<"attestations">> := Atts }, _Req, Opts) ->
-    % If the message has an `original-tags' field, the attested fields are only
+commited(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _Req, Opts) ->
+    % If the message has an `original-tags' field, the commited fields are only
     % those keys, and maps that are nested in the `data' field.
-    ?event({attested_from_original_tags, {input, Msg}}),
-    case hb_converge:get(hd(hb_converge:keys(Atts)), Atts, #{}) of
+    ?event({committed_from_original_tags, {input, Msg}}),
+    case hb_converge:get(hd(hb_converge:keys(Comms)), Comms, #{}) of
         #{ <<"original-tags">> := TagMap } ->
             TrustedKeys =
                 [
@@ -125,21 +125,21 @@ attested(Msg = #{ <<"original-tags">> := TagMap, <<"attestations">> := Atts }, _
                 ||
                     Tag <- maps:values(hb_converge:normalize_keys(TagMap))
                 ],
-            attested_from_trusted_keys(Msg, TrustedKeys, Opts);
+            committed_from_trusted_keys(Msg, TrustedKeys, Opts);
         _ ->
             % Message appears to be tampered with.
-            throw({original_tags_not_found_in_attestation, Msg})
+            throw({original_tags_not_found_in_commitment, Msg})
     end;
-attested(Msg, Req, Opts) ->
-    ?event({running_attested, {input, Msg}}),
-    % Remove the attestation that was 'promoted' to the base layer of the message
-    % by `message@1.0/attested'. This is safe because `to' will only proceed if 
+commited(Msg, Req, Opts) ->
+    ?event({running_committed, {input, Msg}}),
+    % Remove the commitment that was 'promoted' to the base layer of the message
+    % by `message@1.0/commited'. This is safe because `to' will only proceed if 
     % there is a single signature on the message. Subsequently, we can trust that
-    % the keys signed by that single attestation speak for 'all' of the 
-    % attestations.
-    MsgLessGivenAtt = maps:without([<<"attestations">>], Msg),
-    ?event({to_verify, {input, MsgLessGivenAtt}}),
-    case verify(MsgLessGivenAtt, Req, Opts) of
+    % the keys signed by that single commitment speak for 'all' of the 
+    % commitments.
+    MsgLessGivenComm = maps:without([<<"commitments">>], Msg),
+    ?event({to_verify, {input, MsgLessGivenComm}}),
+    case verify(MsgLessGivenComm, Req, Opts) of
         {ok, true} ->
             % The message validates, so we can trust that the original keys are
             % all present in the message in its converted state.
@@ -158,15 +158,15 @@ attested(Msg, Req, Opts) ->
                     false -> []
                 end,
             % Return the immediate and nested keys. The `data' field is always
-            % attested, so we include it in the list of keys.
-            {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?ATTESTED_TAGS};
+            % commited, so we include it in the list of keys.
+            {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?COMMITTED_TAGS};
         _ ->
-            ?event({could_not_verify, {msg, MsgLessGivenAtt}}),
+            ?event({could_not_verify, {msg, MsgLessGivenComm}}),
             {ok, []}
     end.
 
-attested_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
-    ?event({attested_from_trusted_keys, {trusted_keys, TrustedKeys}, {input, Msg}}),
+committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
+    ?event({committed_from_trusted_keys, {trusted_keys, TrustedKeys}, {input, Msg}}),
     NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
     TKeys = maps:values(hb_converge:normalize_keys(TrustedKeys)),
     Implicit =
@@ -179,13 +179,13 @@ attested_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
         lists:map(fun hb_converge:normalize_key/1, TKeys)
             ++ Implicit
             ++ NestedKeys
-            ++ ?ATTESTED_TAGS
+            ++ ?COMMITTED_TAGS
     }.
 
-%% @doc Verify an ANS-104 attestation.
+%% @doc Verify an ANS-104 commitment.
 verify(Msg, _Req, _Opts) ->
-    MsgWithoutAttestations = maps:without([<<"attestations">>], hb_private:reset(Msg)),
-    TX = to(MsgWithoutAttestations),
+    MsgWithoutCommitments = maps:without([<<"commitments">>], hb_private:reset(Msg)),
+    TX = to(MsgWithoutCommitments),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
 
@@ -253,16 +253,16 @@ do_from(RawTX) ->
     % are not part of the message.
     NormalizedDataMap =
         hb_converge:normalize_keys(maps:merge(DataMap, MapWithoutData)),
-    %% Add the attestations to the message if the TX has a signature.
-    ?event({message_before_attestations, NormalizedDataMap}),
-    WithAttestations =
+    %% Add the commitments to the message if the TX has a signature.
+    ?event({message_before_commitments, NormalizedDataMap}),
+    WithCommitments =
         case TX#tx.signature of
             ?DEFAULT_SIG ->
                 case normal_tags(TX#tx.tags) of
                     true -> NormalizedDataMap;
                     false ->
                         NormalizedDataMap#{
-                            <<"attestations">> => #{
+                            <<"commitments">> => #{
                                 <<"ans-104-unsigned">> => #{
                                     <<"original-tags">> => OriginalTagMap
                                 }
@@ -271,37 +271,37 @@ do_from(RawTX) ->
                 end;
             _ ->
                 Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
-                WithoutBaseAttestation =
+                WithoutBaseCommitment =
                     maps:without(
                         [
                             <<"id">>,
                             <<"owner">>,
                             <<"signature">>,
-                            <<"attestation-device">>,
+                            <<"commitment-device">>,
                             <<"original-tags">>
                         ],
                         NormalizedDataMap
                     ),
-                Attestation = #{
-                    <<"attestation-device">> => <<"ans104@1.0">>,
+                Commitment = #{
+                    <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"id">> => hb_util:human_id(TX#tx.id),
                     <<"owner">> => TX#tx.owner,
                     <<"signature">> => TX#tx.signature
                 },
-                WithoutBaseAttestation#{
-                    <<"attestations">> => #{
+                WithoutBaseCommitment#{
+                    <<"commitments">> => #{
                         Address =>
                             case normal_tags(TX#tx.tags) of
-                                true -> Attestation;
-                                false -> Attestation#{
+                                true -> Commitment;
+                                false -> Commitment#{
                                     <<"original-tags">> => OriginalTagMap
                                 }
                             end
                     }
                 }
         end,
-    Res = maps:without(?FILTERED_TAGS, WithAttestations),
-    ?event({message_after_attestations, Res}),
+    Res = maps:without(?FILTERED_TAGS, WithCommitments),
+    ?event({message_after_commitments, Res}),
     Res.
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
@@ -362,24 +362,24 @@ to(RawTABM) when is_map(RawTABM) ->
     % `priv/Converge/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
-    TABM = hb_converge:normalize_keys(maps:without([<<"attestations">>], RawTABM)),
-    Attestations = maps:get(<<"attestations">>, RawTABM, #{}),
-    TABMWithAtt =
-        case maps:keys(Attestations) of
+    TABM = hb_converge:normalize_keys(maps:without([<<"commitments">>], RawTABM)),
+    Commitments = maps:get(<<"commitments">>, RawTABM, #{}),
+    TABMWithComm =
+        case maps:keys(Commitments) of
             [] -> TABM;
             [Address] ->
                 maps:merge(
                     TABM,
                     maps:without(
-                        [<<"attestation-device">>],
-                        maps:get(Address, Attestations)
+                        [<<"commitment-device">>],
+                        maps:get(Address, Commitments)
                     )
                 );
             _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
         end,
-    OriginalTagMap = maps:get(<<"original-tags">>, TABMWithAtt, #{}),
+    OriginalTagMap = maps:get(<<"original-tags">>, TABMWithComm, #{}),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
-    TABMNoOrigTags = maps:without([<<"original-tags">>], TABMWithAtt),
+    TABMNoOrigTags = maps:without([<<"original-tags">>], TABMWithComm),
     % TODO: Is this necessary now? Do we want to pursue `original-path` as the
     % mechanism for restoring original tags?
     M =
@@ -564,8 +564,8 @@ restore_tag_name_case_from_cache_test() ->
         ),
     SignedID = hb_message:id(SignedMsg, all),
     ?event({signed_msg, SignedMsg}),
-    OnlyAttested = hb_message:with_only_attested(SignedMsg),
-    ?event({only_attested, OnlyAttested}),
+    OnlyCommitted = hb_message:with_only_committed(SignedMsg),
+    ?event({only_committed, OnlyCommitted}),
     {ok, ID} = hb_cache:write(SignedMsg, #{}),
     ?event({id, ID}),
     {ok, ReadMsg} = hb_cache:read(SignedID, #{}),
@@ -596,9 +596,9 @@ simple_to_conversion_test() ->
     ?event({encoded, Encoded}),
     Decoded = from(Encoded),
     ?event({decoded, Decoded}),
-    ?assert(hb_message:match(Msg, hb_message:unattested(Decoded))).
+    ?assert(hb_message:match(Msg, hb_message:uncommitted(Decoded))).
 
-only_attested_maintains_target_test() ->
+only_committed_maintains_target_test() ->
     TX = ar_bundles:sign_item(#tx {
         target = crypto:strong_rand_bytes(32),
         tags = [
@@ -610,8 +610,8 @@ only_attested_maintains_target_test() ->
     ?event({tx, TX}),
     Decoded = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
     ?event({decoded, Decoded}),
-    {ok, OnlyAttested} = hb_message:with_only_attested(Decoded),
-    ?event({only_attested, OnlyAttested}),
-    Encoded = hb_message:convert(OnlyAttested, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Decoded),
+    ?event({only_committed, OnlyCommitted}),
+    Encoded = hb_message:convert(OnlyCommitted, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
     ?event({encoded, Encoded}),
     ?assertEqual(TX, Encoded).

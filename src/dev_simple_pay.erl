@@ -165,7 +165,7 @@ get_balance_and_top_up_test() ->
     {ok, Res} =
         hb_http:get(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
                 ClientWallet
             ),
@@ -175,7 +175,7 @@ get_balance_and_top_up_test() ->
     {ok, NewBalance} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~simple-pay@1.0/topup">>,
                     <<"amount">> => 100,
@@ -189,7 +189,7 @@ get_balance_and_top_up_test() ->
     {ok, Res2} =
         hb_http:get(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{<<"path">> => <<"/~simple-pay@1.0/balance">>},
                 ClientWallet
             ),

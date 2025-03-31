@@ -217,7 +217,7 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
             <<"body">> =>
-                SignedMsg = hb_message:attest(
+                SignedMsg = hb_message:commit(
                     additional_keys(Base, MsgToPush, Opts),
                     Opts,
                     Codec
@@ -243,7 +243,7 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
             Location = hb_converge:get(<<"location">>, Res, Opts),
             ?event(push, {redirect, {location, {explicit, Location}}}),
             NormMsg = normalize_message(MsgToPush, Opts),
-            SignedNormMsg = hb_message:attest(NormMsg, Opts),
+            SignedNormMsg = hb_message:commit(NormMsg, Opts),
             remote_schedule_result(Location, SignedNormMsg, Opts);
         {error, 422} ->
             ?event(push, {received_wrong_format, {422, Res}, {codec, Codec}}, Opts),
@@ -477,7 +477,7 @@ push_with_redirect_hint_test_disabled() ->
                 <<PongServerID/binary, "/push">>,
                 #{
                     <<"body">> =>
-                        hb_message:attest(
+                        hb_message:commit(
                             #{
                                 <<"target">> => PongServerID,
                                 <<"action">> => <<"Eval">>,
@@ -539,7 +539,7 @@ push_prompts_encoding_change_test() ->
                 }
             ]
     },
-    Msg = hb_message:attest(#{
+    Msg = hb_message:commit(#{
         <<"path">> => <<"push">>,
         <<"method">> => <<"POST">>,
         <<"target">> => <<"QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0">>,

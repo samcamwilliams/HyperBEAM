@@ -16,13 +16,13 @@ prior to execution. These state-space `links` are represented as Merklized lists
 programs inputs and initial states.
 2. A unified data structure for representing program states as HTTP documents,
 as described in the [HTTP Semantics RFC](https://www.rfc-editor.org/rfc/rfc9110.html).
-3. A unified protocol for expressing `attestations` of the `states` found at
-particular `hashpaths`. These attestations allow nodes to participate in varied
+3. A unified protocol for expressing `commitments` of the `states` found at
+particular `hashpaths`. These commitments allow nodes to participate in varied
 economic and cryptographic mechanisms to prove and challenge each-other's
 representations regarding the programs that operate inside the AO-Core protocol.
 4. A meta-VM that allows any number of different virtual machines and computational
 models (`devices`) to be executed inside the AO-Core protocol, while enabling their
-states and inputs to be calculated and attested to in a unified format.
+states and inputs to be calculated and committed to in a unified format.
 
 ## What is HyperBeam?
 
@@ -169,7 +169,7 @@ example setup with co-executing HyperBEAM and legacy-CU nodes.
 the local node, or another node in the network, is executing inside a [Trusted Execution
 Environment (TEE)](https://en.wikipedia.org/wiki/Trusted_execution_environment).
 Nodes executing inside these environments use an ephemeral key pair, provably
-only existing inside the TEE, and can be sign attestations of AO-Core executions
+only existing inside the TEE, and can be signed commitments of AO-Core executions
 in a trust-minimized way.
 
 - `p4@1.0`: The `p4@1.0` device runs as a `pre-processor` and `post-processor` in

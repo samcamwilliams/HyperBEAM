@@ -439,7 +439,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     HeadersWithCors = add_cors_headers(HeadersBeforeCors, ReqHdr),
     EncodedHeaders = hb_private:reset(HeadersWithCors),
     ?event(http,
-        {replying,
+        {http_replying,
             {status, {explicit, Status}},
             {path, maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},
@@ -536,7 +536,7 @@ encode_reply(TABMReq, Message, Opts) ->
                 BaseHdrs,
                 ar_bundles:serialize(
                     hb_message:convert(
-                        hb_message:with_only_attestors(
+                        hb_message:with_only_committers(
                             Message,
                             hb_message:signers(Message)
                         ),
@@ -656,7 +656,7 @@ req_to_tabm_singleton(Req, Body, Opts) ->
 %% @doc HTTPSig messages are inherently mixed into the transport layer, so they
 %% require special handling in order to be converted to a normalized message.
 %% In particular, the signatures are verified if present and required by the 
-%% node configuration. Additionally, non-attested fields are removed from the
+%% node configuration. Additionally, non-commited fields are removed from the
 %% message if it is signed, with the exception of the `path` and `method` fields.
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
     Msg = dev_codec_httpsig_conv:from(
@@ -730,7 +730,7 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
 remove_unsigned_fields(Msg, _Opts) ->
     case hb_message:signers(Msg) of
         [] -> {ok, Msg};
-        _ -> hb_message:with_only_attested(Msg)
+        _ -> hb_message:with_only_committed(Msg)
     end.
 
 %%% Tests
@@ -747,7 +747,7 @@ simple_converge_resolve_signed_test() ->
     {ok, Res} =
         post(
             URL,
-            hb_message:attest(TestMsg, Wallet),
+            hb_message:commit(TestMsg, Wallet),
             #{}
         ),
     ?assertEqual(<<"Value1">>, Res).
@@ -758,7 +758,7 @@ nested_converge_resolve_test() ->
     {ok, Res} =
         post(
             URL,
-            hb_message:attest(#{
+            hb_message:commit(#{
                 <<"path">> => <<"/key1/key2/key3">>,
                 <<"key1">> =>
                     #{<<"key2">> =>
@@ -776,7 +776,7 @@ wasm_compute_request(ImageFile, Func, Params) ->
 wasm_compute_request(ImageFile, Func, Params, ResultPath) ->
     {ok, Bin} = file:read_file(ImageFile),
     Wallet = hb:wallet(),
-    hb_message:attest(#{
+    hb_message:commit(#{
         <<"path">> => <<"/init/compute/results", ResultPath/binary>>,
         <<"device">> => <<"WASM-64@1.0">>,
         <<"wasm-function">> => Func,
@@ -822,7 +822,7 @@ ans104_wasm_test() ->
     URL = hb_http_server:start_node(#{force_signed => true}),
     {ok, Bin} = file:read_file(<<"test/test-64.wasm">>),
     Wallet = hb:wallet(),
-    Msg = hb_message:attest(#{
+    Msg = hb_message:commit(#{
         <<"path">> => <<"/init/compute/results">>,
         <<"accept-codec">> => <<"ans104@1.0">>,
         <<"codec-device">> => <<"ans104@1.0">>,

@@ -51,14 +51,14 @@ from(HTTP) ->
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
     MsgWithoutSigs = maps:without(
-        [<<"signature">>, <<"signature-input">>, <<"attestations">>],
+        [<<"signature">>, <<"signature-input">>, <<"commitments">>],
         from_body(Headers, InlinedKey, ContentType, Body)
     ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
-    % Extract all hashpaths from the attestations of the message
+    % Extract all hashpaths from the commitments of the message
     HPs = extract_hashpaths(HTTP),
     % Finally, we need to add the signatures to the TABM
-    {ok, MsgWithSigs} = attestations_from_signature(
+    {ok, MsgWithSigs} = commitments_from_signature(
         maps:without(maps:keys(HPs), MsgWithoutSigs),
         HPs,
         maps:get(<<"signature">>, Headers, not_found),
@@ -201,12 +201,12 @@ from_body_parts(TABM, InlinedKey, [Part | Rest]) ->
             from_body_parts(TABMNext, InlinedKey, Rest)
     end.
 
-%% @doc Populate the `/attestations' key on the TABM with the dictionary of 
+%% @doc Populate the `/commitments' key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
-attestations_from_signature(Map, _HPs, not_found, _RawSigInput) ->
+commitments_from_signature(Map, _HPs, not_found, _RawSigInput) ->
     ?event({no_sigs_found_in_from, {msg, Map}}),
-    {ok, maps:without([<<"attestations">>], Map)};
-attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
+    {ok, maps:without([<<"commitments">>], Map)};
+commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
     SfSigsKV = hb_structured_fields:parse_dictionary(RawSig),
     SfInputs = maps:from_list(hb_structured_fields:parse_dictionary(RawSigInput)),
     ?event({adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
@@ -214,13 +214,13 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
     % with its corresponding Inputs.
     % 
     % Inputs are merged as fields on the Signature Map
-    Attestations = maps:from_list(lists:map(
+    Commitments = maps:from_list(lists:map(
         fun ({SigName, Signature}) ->
-            ?event({adding_attestation, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
+            ?event({adding_commitment, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
             {list, SigInputs, ParamsKVList} = maps:get(SigName, SfInputs, #{}),
             ?event({inputs, {signame, SigName}, {inputs, SigInputs}, {params, ParamsKVList}}),
             % Find all hashpaths from the signature and add them to the 
-            % attestations message.
+            % commitments message.
             Hashpath =
                 lists:filtermap(
                     fun ({item, BareItem, _}) ->
@@ -262,17 +262,17 @@ attestations_from_signature(Map, HPs, RawSig, RawSigInput) ->
                             )
                         ),
                     <<"id">> => hb_util:human_id(crypto:hash(sha256, UnencodedSig)),
-                    <<"attestation-device">> => <<"httpsig@1.0">>
+                    <<"commitment-device">> => <<"httpsig@1.0">>
                 }
             }
         end,
         SfSigsKV
     )),
-    % Place the attestations as a top-level message on the parent message
-    ?event({adding_attestations, {msg, Map}, {attestations, Attestations}}),
-    Msg = Map#{ <<"attestations">> => Attestations },
+    % Place the commitments as a top-level message on the parent message
+    ?event({adding_commitments, {msg, Map}, {commitments, Commitments}}),
+    Msg = Map#{ <<"commitments">> => Commitments },
     % Reset the HMAC on the message if none is present
-    case maps:get(<<"hmac-sha256">>, Attestations, not_found) of
+    case maps:get(<<"hmac-sha256">>, Commitments, not_found) of
         not_found ->
             ?event({resetting_hmac, {msg, Msg}}),
             dev_codec_httpsig:reset_hmac(Msg);
@@ -289,7 +289,7 @@ to(TABM, Opts) when is_map(TABM) ->
     Stripped =
         maps:without(
             [
-                <<"attestations">>,
+                <<"commitments">>,
                 <<"signature">>,
                 <<"signature-input">>,
                 <<"priv">>
@@ -300,7 +300,7 @@ to(TABM, Opts) when is_map(TABM) ->
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
     Intermediate = do_to(Stripped, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
     % Finally, add the signatures to the HTTP message
-    case maps:get(<<"attestations">>, TABM, not_found) of
+    case maps:get(<<"commitments">>, TABM, not_found) of
         #{ <<"hmac-sha256">> :=
                 #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
             HPs = hashpaths_from_message(TABM),
@@ -513,17 +513,17 @@ boundary_from_parts(PartList) ->
     RawBoundary = crypto:hash(sha256, BodyBin),
     hb_util:encode(RawBoundary).
 
-%% Extract all hashpaths from the attestations of a given message
+%% Extract all hashpaths from the commitments of a given message
 hashpaths_from_message(Msg) ->
     maps:fold(
-        fun (_, Att, Acc) ->
-            maps:merge(Acc, extract_hashpaths(Att))
+        fun (_, Comm, Acc) ->
+            maps:merge(Acc, extract_hashpaths(Comm))
         end,
         #{},
-        maps:get(<<"attestations">>, Msg, #{})
+        maps:get(<<"commitments">>, Msg, #{})
     ).
 
-%% @doc Extract all keys labelled `hashpath*' from the attestations, and add them
+%% @doc Extract all keys labelled `hashpath*' from the commitments, and add them
 %% to the HTTP message as `hashpath*' keys.
 extract_hashpaths(Map) ->
     maps:filter(

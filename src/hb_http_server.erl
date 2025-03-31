@@ -264,11 +264,11 @@ handle_request(RawReq, Body, ServerID) ->
             ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
             % Parse the HTTP request into HyerBEAM's message format.
             ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-            AttestationCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
-            ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, AttestationCodec}}),
+            CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+            ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, CommitmentCodec}}),
             {ok, Res} =
                 dev_meta:handle(
-                    NodeMsg#{ attestation_device => AttestationCodec },
+                    NodeMsg#{ commitment_device => CommitmentCodec },
                     ReqSingleton
                 ),
             hb_http:reply(Req, ReqSingleton, Res, NodeMsg)

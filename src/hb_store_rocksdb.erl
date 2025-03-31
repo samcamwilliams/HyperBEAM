@@ -541,13 +541,13 @@ api_test_() ->
                 "make_group/2 does not override folder contents",
                 fun() ->
                     write(#{}, <<"messages/id">>, <<"1">>),
-                    write(#{}, <<"messages/attestations">>, <<"2">>),
+                    write(#{}, <<"messages/commitments">>, <<"2">>),
 
                     ?assertEqual(ok, make_group(#{}, <<"messages">>)),
 
                     ?assertEqual(
                         list(#{}, <<"messages">>),
-                        {ok, [<<"attestations">>, <<"id">>]}
+                        {ok, [<<"id">>, <<"commitments">>]}
                     )
                 end
             },

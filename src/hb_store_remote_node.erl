@@ -1,6 +1,6 @@
 %%% @doc A store module that reads data from another AO node.
 %%% Notably, this store only provides the _read_ side of the store interface.
-%%% The write side could be added, returning an attestation that the data has
+%%% The write side could be added, returning an commitment that the data has
 %%% been written to the remote node. In that case, the node would probably want
 %%% to upload it to an Arweave bundler to ensure persistence, too.
 -module(hb_store_remote_node).
@@ -46,7 +46,7 @@ type(Opts = #{ <<"node">> := Node }, Key) ->
 %% @doc Read a key from the remote node.
 %%
 %% Makes an HTTP GET request to the remote node and returns the
-%% attested message.
+%% commited message.
 %%
 %% @param Opts A map of options (including node configuration).
 %% @param Key The key to read.
@@ -55,7 +55,7 @@ read(Opts = #{ <<"node">> := Node }, Key) ->
     ?event({remote_read, {node, Node}, {key, Key}}),
     case hb_http:get(Node, #{ <<"path">> => <<"/~cache@1.0/read">>, <<"target">> => Key }, Opts) of
         {ok, Res} ->
-            {ok, Msg} = hb_message:with_only_attested(Res),
+            {ok, Msg} = hb_message:with_only_committed(Res),
             ?event({read, {result, Msg}}),
             {ok, Msg};
         {error, _Err} ->
@@ -80,7 +80,7 @@ write(Opts = #{ <<"node">> := Node }, Key, Value) ->
         <<"method">> => <<"POST">>,
         <<"body">> => Value
     },
-    SignedMsg = hb_message:attest(WriteMsg, Opts),
+    SignedMsg = hb_message:commit(WriteMsg, Opts),
     ?event({write, {signed, SignedMsg}}),
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->
@@ -109,7 +109,7 @@ make_link(Opts = #{ <<"node">> := Node }, Source, Destination) ->
         <<"source">> => Source,
         <<"destination">> => Destination
     },
-    SignedMsg = hb_message:attest(LinkMsg, Opts),
+    SignedMsg = hb_message:commit(LinkMsg, Opts),
     ?event({make_remote_link, {signed, SignedMsg}}),
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->

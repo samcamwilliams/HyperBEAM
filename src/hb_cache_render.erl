@@ -236,7 +236,7 @@ prepare_deeply_nested_complex_message() ->
     Outer =
         #{
             <<"level1">> =>
-                hb_message:attest(
+                hb_message:commit(
                     #{
                         <<"level2">> =>
                             #{
@@ -262,4 +262,4 @@ test_unsigned(Data) ->
     }.
 
 test_signed(Data, Wallet) ->
-    hb_message:attest(test_unsigned(Data), Wallet).
+    hb_message:commit(test_unsigned(Data), Wallet).

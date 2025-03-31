@@ -265,7 +265,7 @@ write_to_cache(Node, Data, Wallet) ->
         <<"body">> => Data
     },
     ?event(dev_cache, {write_to_cache, {message_created, WriteMsg}}),
-    SignedMsg = hb_message:attest(WriteMsg, Wallet),
+    SignedMsg = hb_message:commit(WriteMsg, Wallet),
     ?event(dev_cache, {write_to_cache, {message_signed}}),
     WriteResult = hb_http:post(Node, SignedMsg, #{}),
     ?event(dev_cache, {write_to_cache, {http_post, WriteResult}}),

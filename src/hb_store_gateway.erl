@@ -23,10 +23,10 @@ type(StoreOpts, Key) ->
     case read(StoreOpts, Key) of
         not_found -> not_found;
         {ok, Data} ->
-            ?event({type, hb_private:reset(hb_message:unattested(Data))}),
+            ?event({type, hb_private:reset(hb_message:uncommitted(Data))}),
             IsFlat = lists:all(
                 fun({_, Value}) -> not is_map(Value) end,
-                maps:to_list(hb_private:reset(hb_message:unattested(Data)))
+                maps:to_list(hb_private:reset(hb_message:uncommitted(Data)))
             ),
             if
                 IsFlat -> simple;

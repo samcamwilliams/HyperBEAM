@@ -97,7 +97,7 @@ do_assign(State, Message, ReplyPID) ->
     AssignFun =
         fun() ->
             {Timestamp, Height, Hash} = ar_timestamp:get(),
-            Assignment = hb_message:attest(#{
+            Assignment = hb_message:commit(#{
                 <<"path">> =>
                     case hb_path:from_message(request, Message) of
                         undefined -> <<"compute">>;
@@ -185,15 +185,15 @@ next_hashchain(HashChain, Message) ->
 %% @doc Test the basic functionality of the server.
 new_proc_test() ->
     Wallet = ar_wallet:new(),
-    SignedItem = hb_message:attest(
+    SignedItem = hb_message:commit(
         #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
         Wallet
     ),
-    SignedItem2 = hb_message:attest(
+    SignedItem2 = hb_message:commit(
         #{ <<"data">> => <<"test2">> },
         Wallet
     ),
-    SignedItem3 = hb_message:attest(
+    SignedItem3 = hb_message:commit(
         #{
             <<"data">> => <<"test2">>,
             <<"deep-key">> =>
@@ -213,7 +213,7 @@ new_proc_test() ->
 % benchmark_test() ->
 %     BenchTime = 1,
 %     Wallet = ar_wallet:new(),
-%     SignedItem = hb_message:attest(
+%     SignedItem = hb_message:commit(
 %         #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
 %         Wallet
 %     ),

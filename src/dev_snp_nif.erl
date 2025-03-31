@@ -33,7 +33,7 @@ generate_attestation_report_test() ->
 	%% Call check_support() to determine if SNP is supported
 	case dev_snp_nif:check_snp_support() of
 		{ok, true} ->
-			%% SNP is supported, generate unique data and test attestation report
+			%% SNP is supported, generate unique data and test commitment report
 			UniqueData = crypto:strong_rand_bytes(64),
 			VMPL = 1,
 			?assertEqual(
