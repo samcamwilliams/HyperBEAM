@@ -1,16 +1,16 @@
 %%% @doc The identity device: For non-reserved keys, it simply returns a key 
 %%% from the message as it is found in the message's underlying Erlang map. 
 %%% Private keys (`priv[.*]') are not included.
-%%% Reserved keys are: `id', `attestations', `attestors', `keys', `path', 
+%%% Reserved keys are: `id', `commitments', `committers', `keys', `path', 
 %%% `set', `remove', `get', and `verify'. Their function comments describe the 
 %%% behaviour of the device when these keys are set.
 -module(dev_message).
 %%% Base Converge reserved keys:
 -export([info/0, keys/1]).
 -export([set/3, set_path/3, remove/2, get/2, get/3]).
-%%% Attestation-specific keys:
+%%% Commitment-specific keys:
 -export([id/1, id/2, id/3]).
--export([attest/3, attested/3, attestors/1, attestors/2, attestors/3, verify/3]).
+-export([commit/3, commited/3, committers/1, committers/2, committers/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -19,8 +19,8 @@
 %% The list of keys that are exported by this device.
 -define(DEVICE_KEYS, [
     <<"id">>,
-    <<"attestations">>,
-    <<"attestors">>,
+    <<"commitments">>,
+    <<"committers">>,
     <<"keys">>,
     <<"path">>,
     <<"set">>,
@@ -35,11 +35,11 @@ info() ->
         %exports => ?DEVICE_KEYS
     }.
 
-%% @doc Return the ID of a message, using the `attestors' list if it exists.
-%% If the `attestors' key is `all', return the ID including all known 
-%% attestations -- `none' yields the ID without any attestations. If the 
-%% `attestors' key is a list/map, return the ID including only the specified 
-%% attestations.
+%% @doc Return the ID of a message, using the `committers' list if it exists.
+%% If the `committers' key is `all', return the ID including all known 
+%% commitments -- `none' yields the ID without any commitments. If the 
+%% `committers' key is a list/map, return the ID including only the specified 
+%% commitments.
 %% 
 %% The `id-device' key in the message can be used to specify the device that
 %% should be used to calculate the ID. If it is not set, the default device
@@ -56,31 +56,31 @@ id(Base, _, NodeOpts) when not is_map(Base) ->
     {ok, hb_util:native_id(hb_path:hashpath(Base, NodeOpts))};
 id(Base, Req, NodeOpts) ->
     ModBase =
-        case maps:get(<<"attestors">>, Req, <<"none">>) of
+        case maps:get(<<"committers">>, Req, <<"none">>) of
             <<"all">> -> Base;
-            <<"none">> -> maps:without([<<"attestations">>], Base);
+            <<"none">> -> maps:without([<<"commitments">>], Base);
             [] -> Base;
-            RawAttestorIDs ->
+            RawCommitterIDs ->
                 KeepIDs =
-                    case is_map(RawAttestorIDs) of
-                        true -> maps:keys(RawAttestorIDs);
-                        false -> RawAttestorIDs
+                    case is_map(RawCommitterIDs) of
+                        true -> maps:keys(RawCommitterIDs);
+                        false -> RawCommitterIDs
                     end,
-                BaseAttestations = maps:get(<<"attestations">>, Base, #{}),
-                % Add attestations with only the keys that are requested.
-                BaseWithAttestations = 
+                BaseCommitments = maps:get(<<"commitments">>, Base, #{}),
+                % Add commitments with only the keys that are requested.
+                BaseWithCommitments = 
                     Base#{
-                        <<"attestations">> =>
+                        <<"commitments">> =>
                             maps:from_list(
                                 lists:map(
-                                    fun(Att) ->
-                                        try {Att, maps:get(Att, BaseAttestations)}
+                                    fun(Comm) ->
+                                        try {Comm, maps:get(Comm, BaseCommitments)}
                                         catch _:_ ->
                                             throw(
                                                 {
-                                                    attestor_not_found,
-                                                    Att,
-                                                    {attestations, BaseAttestations}
+                                                    committer_not_found,
+                                                    Comm,
+                                                    {commitments, BaseCommitments}
                                                 }
                                             )
                                         end
@@ -92,11 +92,11 @@ id(Base, Req, NodeOpts) ->
                 % Add the hashpath to the message if it is present.
                 case Base of
                     #{ <<"priv">> := #{ <<"hashpath">> := Hashpath }} ->
-                        BaseWithAttestations#{
+                        BaseWithCommitments#{
                             <<"hashpath">> => Hashpath
                         };
                     _ ->
-                        BaseWithAttestations
+                        BaseWithCommitments
                 end
         end,
     % Find the ID device for the message.
@@ -126,20 +126,20 @@ id(Base, Req, NodeOpts) ->
     end.
 
 %% @doc Locate the ID device of a message. The ID device is determined by the 
-%% `id-device` if found in the `/attestations/id/attestation-device` key, or the
-%% `device` set in _all_ of the attestations. If no attestations are present,
+%% `id-device` if found in the `/commitments/id/commitment-device` key, or the
+%% `device` set in _all_ of the commitments. If no commitments are present,
 %% the default device (`httpsig@1.0') is used.
-id_device(#{ <<"attestations">> := #{ <<"id">> := #{ <<"attestation-device">> := IDDev } } }) ->
+id_device(#{ <<"commitments">> := #{ <<"id">> := #{ <<"commitment-device">> := IDDev } } }) ->
     {ok, IDDev};
-id_device(#{ <<"attestations">> := Attestations }) ->
-    % Get the device from the first attestation.
+id_device(#{ <<"commitments">> := Commitments }) ->
+    % Get the device from the first commitment.
     UnfilteredDevs =
         maps:map(
-            fun(_, #{ <<"attestation-device">> := AttestationDev }) ->
-                AttestationDev;
+            fun(_, #{ <<"commitment-device">> := CommitmentDev }) ->
+                CommitmentDev;
             (_, _) -> undefined
             end,
-            Attestations
+            Commitments
         ),
     % Filter out the undefined devices.
     Devs = lists:filter(fun(Dev) -> Dev =/= undefined end, maps:values(UnfilteredDevs)),
@@ -158,29 +158,29 @@ id_device(#{ <<"attestations">> := Attestations }) ->
 id_device(_) ->
     {ok, ?DEFAULT_ID_DEVICE}.
 
-%% @doc Return the attestors of a message that are present in the given request.
-attestors(Base) -> attestors(Base, #{}).
-attestors(Base, Req) -> attestors(Base, Req, #{}).
-attestors(Base, _, _NodeOpts) ->
-    {ok, maps:keys(maps:get(<<"attestations">>, Base, #{}))}.
+%% @doc Return the committers of a message that are present in the given request.
+committers(Base) -> committers(Base, #{}).
+committers(Base, Req) -> committers(Base, Req, #{}).
+committers(Base, _, _NodeOpts) ->
+    {ok, maps:keys(maps:get(<<"commitments">>, Base, #{}))}.
 
-% %% @doc Return a device that resolves a given path to a specific attestation.
-% attestations(Base, _Req, _NodeOpts) ->
+% %% @doc Return a device that resolves a given path to a specific commitment.
+% commitments(Base, _Req, _NodeOpts) ->
 %     {ok,
 %         Base#{
 %             <<"device">> =>
 %                 #{
 %                     info =>
 %                         fun(Msg, MsgWithPath, _NodeOpts2) ->
-%                             Attestor = maps:get(<<"path">>, MsgWithPath),
-%                             Attestation = maps:get(Attestor, Msg),
-%                             % 'Promote' the keys of the attestation to the root
+%                             Committer = maps:get(<<"path">>, MsgWithPath),
+%                             Commitment = maps:get(Committer, Msg),
+%                             % 'Promote' the keys of the commitment to the root
 %                             % of the message.
 %                             {
 %                                 ok,
 %                                 maps:merge(
-%                                     maps:without([<<"attestations">>], Msg),
-%                                     Attestation
+%                                     maps:without([<<"commitments">>], Msg),
+%                                     Commitment
 %                                 )
 %                             }
 %                         end
@@ -188,84 +188,84 @@ attestors(Base, _, _NodeOpts) ->
 %         }
 %     }.
 
-%% @doc Attest to a message, using the `attestation-device' key to specify the
-%% device that should be used to attest to the message. If the key is not set,
+%% @doc Commit to a message, using the `commitment-device' key to specify the
+%% device that should be used to commit to the message. If the key is not set,
 %% the default device (`httpsig@1.0') is used.
-attest(Self, Req, Opts) ->
+commit(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
     AttDev =
-        case maps:get(<<"attestation-device">>, Req, not_specified) of
+        case maps:get(<<"commitment-device">>, Req, not_specified) of
             not_specified ->
-                hb_opts:get(attestation_device, no_viable_attestation_device, Opts);
+                hb_opts:get(commitment_device, no_viable_commitment_device, Opts);
             Dev -> Dev
         end,
     % We _do not_ set the `device` key in the message, as the device will be
-    % part of the attestation. Instead, we find the device module's `attest`
+    % part of the commitment. Instead, we find the device module's `commit`
     % function and apply it.
     AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
-    {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, attest, 3, Opts),
+    {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, commit, 3, Opts),
     Encoded = hb_message:convert(Base, tabm, Opts),
-    {ok, Attested} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
-    {ok, hb_message:convert(Attested, <<"structured@1.0">>, Opts)}.
+    {ok, Commited} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
+    {ok, hb_message:convert(Commited, <<"structured@1.0">>, Opts)}.
 
-%% @doc Verify a message nested in the body. As with `id', the `attestors'
-%% key in the request can be used to specify which attestations should be
+%% @doc Verify a message nested in the body. As with `id', the `committers'
+%% key in the request can be used to specify which commitments should be
 %% verified. 
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    % Get the attestations to verify.
-    Attestations =
-        case hb_converge:normalize_key(maps:get(<<"attestors">>, Req, <<"all">>)) of
+    % Get the commitments to verify.
+    Commitments =
+        case hb_converge:normalize_key(maps:get(<<"committers">>, Req, <<"all">>)) of
             <<"none">> -> [];
-            <<"all">> -> maps:get(<<"attestations">>, Base, #{});
-            AttestorIDs ->
+            <<"all">> -> maps:get(<<"commitments">>, Base, #{});
+            CommitterIDs ->
                 maps:with(
-                    if is_list(AttestorIDs) -> AttestorIDs;
-                       true -> [AttestorIDs]
+                    if is_list(CommitterIDs) -> CommitterIDs;
+                       true -> [CommitterIDs]
                     end,
-                    maps:get(<<"attestations">>, Base, #{})
+                    maps:get(<<"commitments">>, Base, #{})
                 )
         end,
-    % Remove the attestations from the base message.
-    ?event({verifying_attestations, Attestations}),
-    % Verify the attestations. Stop execution if any fail.
+    % Remove the commitments from the base message.
+    ?event({verifying_commitments, Commitments}),
+    % Verify the commitments. Stop execution if any fail.
     Res =
         lists:all(
-            fun(Attestor) ->
+            fun(Committer) ->
                 ?event(
-                    {verify_attestation,
-                        {attestor, Attestor},
+                    {verify_commitment,
+                        {committer, Committer},
                         {target, Base}}
                 ),
-                {ok, Res} = exec_for_attestation(
+                {ok, Res} = exec_for_commitment(
                     verify,
                     Base,
-                    maps:get(Attestor, Attestations),
-                    Req#{ <<"attestor">> => Attestor },
+                    maps:get(Committer, Commitments),
+                    Req#{ <<"committer">> => Committer },
                     Opts
                 ),
-                ?event({verify_attestation_res, {attestor, Attestor}, {res, Res}}),
+                ?event({verify_commitment_res, {committer, Committer}, {res, Res}}),
                 Res
             end,
-            maps:keys(Attestations)
+            maps:keys(Commitments)
         ),
     ?event({verify_res, Res}),
     {ok, Res}.
 
-%% @doc Execute a function for a single attestation in the context of its
+%% @doc Execute a function for a single commitment in the context of its
 %% parent message.
-%% Note: Assumes that the `attestations' key has already been removed from the
+%% Note: Assumes that the `commitments' key has already been removed from the
 %% message if applicable.
-exec_for_attestation(Func, Base, Attestation, Req, Opts) ->
-    ?event({executing_for_attestation, {func, Func}, {base, Base}, {attestation, Attestation}, {req, Req}}),
-    AttestionMessage =
-        maps:merge(Base, maps:without([<<"attestation-device">>], Attestation)),
+exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
+    ?event({executing_for_commitment, {func, Func}, {base, Base}, {commitment, Commitment}, {req, Req}}),
+    CommitmentMessage =
+        maps:merge(Base, maps:without([<<"commitment-device">>], Commitment)),
     AttDev =
         maps:get(
-            <<"attestation-device">>,
-            Attestation,
+            <<"commitment-device">>,
+            Commitment,
             ?DEFAULT_ATT_DEVICE
         ),
     AttMod =
@@ -275,48 +275,48 @@ exec_for_attestation(Func, Base, Attestation, Req, Opts) ->
         ),
     {ok, AttFun} =
         hb_converge:find_exported_function(
-            AttestionMessage,
+            CommitmentMessage,
             AttMod,
             Func,
             3,
             Opts
         ),
-    Encoded = hb_message:convert(AttestionMessage, tabm, Opts),
+    Encoded = hb_message:convert(CommitmentMessage, tabm, Opts),
     apply(AttFun, [Encoded, Req, Opts]).
 
-%% @doc Return the list of attested keys from a message.
+%% @doc Return the list of commited keys from a message.
 %% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
 %% the message, overwriting any existing values.
-attested(Self, Req, Opts) ->
+commited(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    Attestations = maps:get(<<"attestations">>, Base, #{}),
-    Attestors =
-        case maps:get(<<"attestors">>, Req, <<"all">>) of
+    Commitments = maps:get(<<"commitments">>, Base, #{}),
+    Committers =
+        case maps:get(<<"committers">>, Req, <<"all">>) of
             <<"none">> -> [];
-            <<"all">> -> maps:keys(Attestations);
-            AttestorIDs -> AttestorIDs
+            <<"all">> -> maps:keys(Commitments);
+            CommitterIDs -> CommitterIDs
         end,
-    % Get the list of attested keys from each attestor.
-    AttestationKeys =
+    % Get the list of commited keys from each committer.
+    CommitmentKeys =
         lists:map(
-            fun(Attestor) ->
-                Attestion = maps:get(Attestor, Attestations),
-                {ok, AttestedKeys} =
-                    exec_for_attestation(
-                        attested,
+            fun(Committer) ->
+                Commitment = maps:get(Committer, Commitments),
+                {ok, CommittedKeys} =
+                    exec_for_commitment(
+                        commited,
                         Base,
-                        Attestion,
-                        #{ <<"attestor">> => Attestor },
+                        Commitment,
+                        #{ <<"committer">> => Committer },
                         Opts
                     ),
-                AttestedKeys
+                CommittedKeys
             end,
-            Attestors
+            Committers
         ),
-    % Remove attestations that are not in *every* attestor's list.
-    % To start, we need to create the super-set of attested keys.
-    AllAttestedKeys =
+    % Remove commitments that are not in *every* committer's list.
+    % To start, we need to create the super-set of commited keys.
+    AllCommittedKeys =
         lists:foldl(
             fun(Key, Acc) ->
                 case lists:member(Key, Acc) of
@@ -325,22 +325,22 @@ attested(Self, Req, Opts) ->
                 end
             end,
             [],
-            lists:flatten(AttestationKeys)
+            lists:flatten(CommitmentKeys)
         ),
-    % Next, we filter the list of all attested keys to only include those that
-    % are present in every attestor's list.
-    OnlyAttestedKeys =
+    % Next, we filter the list of all commited keys to only include those that
+    % are present in every committer's list.
+    OnlyCommittedKeys =
         lists:filter(
             fun(Key) ->
                 lists:all(
-                    fun(AttestedKeys) -> lists:member(Key, AttestedKeys) end,
-                    AttestationKeys
+                    fun(CommittedKeys) -> lists:member(Key, CommittedKeys) end,
+                    CommitmentKeys
                 )
             end,
-            AllAttestedKeys
+            AllCommittedKeys
         ),
-    ?event({only_attested_keys, OnlyAttestedKeys}),
-    {ok, OnlyAttestedKeys}.
+    ?event({only_committed_keys, OnlyCommittedKeys}),
+    {ok, OnlyCommittedKeys}.
 
 set(Message1, NewValuesMsg, Opts) ->
     OriginalPriv = hb_private:from_message(Message1),
@@ -396,40 +396,40 @@ set(Message1, NewValuesMsg, Opts) ->
             KeysToSet
         )
     ),
-    % Caclulate if the keys to be set conflict with any attested keys.
-    {ok, AttestedKeys} =
-        attested(
+    % Caclulate if the keys to be set conflict with any commited keys.
+    {ok, CommittedKeys} =
+        commited(
             Message1,
             #{
-                <<"attestors">> => <<"all">>
+                <<"committers">> => <<"all">>
             },
             Opts
         ),
-    ?event({setting, {attested_keys, AttestedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
-    OverwrittenAttestedKeys =
+    ?event({setting, {committed_keys, CommittedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
+    OverwrittenCommittedKeys =
         lists:filtermap(
             fun(Key) ->
                 NormKey = hb_converge:normalize_key(Key),
-                ?event({checking_attested_key, {key, Key}, {norm_key, NormKey}}),
+                ?event({checking_committed_key, {key, Key}, {norm_key, NormKey}}),
                 Res = case lists:member(NormKey, KeysToSet) of
                     true -> {true, NormKey};
                     false -> false
                 end,
                 Res
             end,
-            AttestedKeys
+            CommittedKeys
         ),
-    ?event({setting, {overwritten_attested_keys, OverwrittenAttestedKeys}}),
+    ?event({setting, {overwritten_committed_keys, OverwrittenCommittedKeys}}),
     % Combine with deep_merge
     Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
-    case OverwrittenAttestedKeys of
+    case OverwrittenCommittedKeys of
         [] -> {ok, Merged};
         _ ->
             % We did overwrite some keys, but do their values match the original?
-            % If not, we must remove the attestations.
+            % If not, we must remove the commitments.
             case hb_message:match(Merged, Message1) of
                 true -> {ok, Merged};
-                false -> {ok, maps:without([<<"attestations">>], Merged)}
+                false -> {ok, maps:without([<<"commitments">>], Merged)}
             end
     end.
 
@@ -585,7 +585,7 @@ set_ignore_undefined_test() ->
 
 verify_test() ->
     Unsigned = #{ <<"a">> => <<"b">> },
-    Signed = hb_message:attest(Unsigned, hb:wallet()),
+    Signed = hb_message:commit(Unsigned, hb:wallet()),
     ?event({signed, Signed}),
     BadSigned = Signed#{ <<"a">> => <<"c">> },
     ?event({bad_signed, BadSigned}),

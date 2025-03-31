@@ -545,10 +545,10 @@ ensure_process_key(Msg1, Opts) ->
                         ),
                         Msg1
                 end,
-            {ok, Attested} = hb_message:with_only_attested(ProcessMsg, Opts),
+            {ok, Commited} = hb_message:with_only_committed(ProcessMsg, Opts),
             Res = hb_converge:set(
                 Msg1,
-                #{ <<"process">> => Attested },
+                #{ <<"process">> => Commited },
                 Opts#{ hashpath => ignore }
             ),
             ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
@@ -569,7 +569,7 @@ test_base_process() ->
 test_base_process(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    hb_message:attest(#{
+    hb_message:commit(#{
         <<"device">> => <<"process@1.0">>,
         <<"scheduler-device">> => <<"scheduler@1.0">>,
         <<"scheduler-location">> => Address,
@@ -582,7 +582,7 @@ test_wasm_process(WASMImage) ->
 test_wasm_process(WASMImage, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
-    hb_message:attest(
+    hb_message:commit(
         maps:merge(test_base_process(Opts), #{
             <<"execution-device">> => <<"stack@1.0">>,
             <<"device-stack">> => [<<"WASM-64@1.0">>],
@@ -606,7 +606,7 @@ test_aos_process(Opts, Stack) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
-    hb_message:attest(maps:merge(WASMProc, #{
+    hb_message:commit(maps:merge(WASMProc, #{
         <<"device-stack">> => Stack,
         <<"execution-device">> => <<"stack@1.0">>,
         <<"scheduler-device">> => <<"scheduler@1.0">>,
@@ -628,7 +628,7 @@ test_aos_process(Opts, Stack) ->
 %% `Already-Seen' elements for each assigned slot.
 dev_test_process() ->
     Wallet = hb:wallet(),
-    hb_message:attest(
+    hb_message:commit(
         maps:merge(test_base_process(), #{
             <<"execution-device">> => <<"stack@1.0">>,
             <<"device-stack">> => [<<"test-device@1.0">>, <<"test-device@1.0">>]
@@ -640,11 +640,11 @@ schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
-    Msg2 = hb_message:attest(#{
+    Msg2 = hb_message:commit(#{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(
+            hb_message:commit(
                 MsgBase#{
                     <<"type">> => <<"Message">>,
                     <<"test-label">> => Text
@@ -660,7 +660,7 @@ schedule_aos_call(Msg1, Code, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     ProcID = hb_message:id(Msg1, all),
     Msg2 =
-        hb_message:attest(
+        hb_message:commit(
             #{
                 <<"action">> => <<"Eval">>,
                 <<"data">> => Code,
@@ -674,11 +674,11 @@ schedule_wasm_call(Msg1, FuncName, Params) ->
     schedule_wasm_call(Msg1, FuncName, Params, #{}).
 schedule_wasm_call(Msg1, FuncName, Params, Opts) ->
     Wallet = hb:wallet(),
-    Msg2 = hb_message:attest(#{
+    Msg2 = hb_message:commit(#{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"type">> => <<"Message">>,
                     <<"wasm-function">> => FuncName,
@@ -817,7 +817,7 @@ http_wasm_process_by_id_test() ->
         ),
     ?event({schedule_proc_res, InitRes}),
     ExecMsg =
-        hb_message:attest(#{
+        hb_message:commit(#{
             <<"target">> => ProcID,
             <<"type">> => <<"Message">>,
             <<"wasm-function">> => <<"fac">>,
@@ -895,7 +895,7 @@ aos_state_access_via_http_test_() ->
         Proc = test_aos_process(Opts),
         ProcID = hb_util:human_id(hb_message:id(Proc, all)),
         {ok, _InitRes} = hb_http:post(Node, <<"/schedule">>, Proc, Opts),
-        Msg2 = hb_message:attest(#{
+        Msg2 = hb_message:commit(#{
             <<"data-prefix">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"type">> => <<"Message">>,
@@ -947,9 +947,9 @@ aos_state_patch_test_() ->
             <<"patch@1.0">>,
             <<"Multipass@1.0">>
         ]),
-        {ok, Msg1} = hb_message:with_only_attested(Msg1Raw),
+        {ok, Msg1} = hb_message:with_only_committed(Msg1Raw),
         ProcID = hb_message:id(Msg1, all),
-        Msg2 = (hb_message:attest(#{
+        Msg2 = (hb_message:commit(#{
             <<"data-prefix">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"target">> => ProcID,

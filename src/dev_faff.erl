@@ -42,7 +42,7 @@ is_admissible(Msg, NodeMsg) ->
             fun(Signer) when not ?IS_ID(Signer) -> false;
                (Signer) -> {true, hb_util:human_id(Signer)}
             end,
-            hb_converge:get(<<"attestors">>, Req, undefined, NodeMsg)
+            hb_converge:get(<<"committers">>, Req, undefined, NodeMsg)
         ),
     ?event(payment, {is_admissible, {signers, Signers}, {allow_list, AllowList}}),
     lists:all(

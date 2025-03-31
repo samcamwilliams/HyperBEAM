@@ -1,12 +1,12 @@
 %%% @doc This module implements HTTP Message Signatures as described in RFC-9421
 %%% (https://datatracker.ietf.org/doc/html/rfc9421), as a Converge device.
 %%% It implements the codec standard (from/1, to/1), as well as the optional
-%%% attestation functions (id/3, sign/3, verify/3). The attestation functions
+%%% commitment functions (id/3, sign/3, verify/3). The commitment functions
 %%% are found in this module, while the codec functions are relayed to the 
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, attest/3, attested/3, verify/3, reset_hmac/1, public_keys/1]).
+-export([id/3, commit/3, commited/3, verify/3, reset_hmac/1, public_keys/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
 %%% Public API functions
@@ -115,14 +115,14 @@ id(Msg, _Params, _Opts) ->
 %% the signature and signature input. If the message already has a signature-input,
 %% directly, it is treated differently: We relabel it as `x-signature-input' to
 %% avoid key collisions.
-find_id(#{ <<"attestations">> := Atts }) when map_size(Atts) > 1 ->
-    AttsWithoutHmac = maps:without([<<"hmac-sha256">>], Atts),
+find_id(#{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
+    CommsWithoutHmac = maps:without([<<"hmac-sha256">>], Comms),
     IDs = lists:map(
         fun({_, #{ <<"id">> := ID }}) -> ID end,
-        maps:to_list(AttsWithoutHmac)
+        maps:to_list(CommsWithoutHmac)
     ),
     case IDs of
-        [] -> throw({could_not_find_ids, AttsWithoutHmac});
+        [] -> throw({could_not_find_ids, CommsWithoutHmac});
         [ID] ->
             ?event({returning_single_id, ID}),
             {ok, ID};
@@ -138,7 +138,7 @@ find_id(#{ <<"attestations">> := Atts }) when map_size(Atts) > 1 ->
             ?event({sorted_ids, SortedIDs, {sf_list, SFList}}),
             {ok, hb_util:human_id(crypto:hash(sha256, SFList))}
     end;
-find_id(#{ <<"attestations">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
+find_id(#{ <<"commitments">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
     {ok, ID};
 find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }) ->
     {not_found, (maps:without([<<"signature-input">>], AttMsg))#{
@@ -149,14 +149,14 @@ find_id(Msg) ->
     {not_found, Msg}.
 
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
-attest(MsgToSign, _Req, Opts) ->
+commit(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     NormMsg = hb_converge:normalize_keys(MsgToSign),
     % The hashpath, if present, is encoded as a HTTP Sig tag,
-    % added as a field on the attestation, and then the field is removed from the Msg,
+    % added as a field on the commitment, and then the field is removed from the Msg,
     % so that it is not included in the actual signature matierial.
     %
-    % In this sense, the hashpath is a property of the attestation
+    % In this sense, the hashpath is a property of the commitment
     % and the signature metadata, not the message itself, being signed
     % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
     {SigParams, MsgWithoutHP} =
@@ -171,15 +171,15 @@ attest(MsgToSign, _Req, Opts) ->
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
-    ?event({encoded_to_httpsig_for_attestation, Enc}),
+    ?event({encoded_to_httpsig_for_commitment, Enc}),
     Authority = authority(lists:sort(maps:keys(Enc)), SigParams, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = hb_structured_fields:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
-    Attestor = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
+    Committer = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
     SigName = address_to_sig_name(Address),
-    % Calculate the id and place the signature into the `attestations' key of the message.
-    Attestation =
+    % Calculate the id and place the signature into the `commitments' key of the message.
+    Commitment =
         #{
             <<"id">> => hb_util:human_id(crypto:hash(sha256, Signature)),
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
@@ -191,25 +191,25 @@ attest(MsgToSign, _Req, Opts) ->
                 bin(hb_structured_fields:dictionary(
                     #{ SigName => ParsedSignatureInput }
                 )),
-            <<"attestation-device">> => <<"httpsig@1.0">>
+            <<"commitment-device">> => <<"httpsig@1.0">>
         },
-    OldAttestations = maps:get(<<"attestations">>, NormMsg, #{}),
-    reset_hmac(MsgWithoutHP#{<<"attestations">> =>
-        OldAttestations#{ Attestor => Attestation }
+    OldCommitments = maps:get(<<"commitments">>, NormMsg, #{}),
+    reset_hmac(MsgWithoutHP#{<<"commitments">> =>
+        OldCommitments#{ Committer => Commitment }
     }).
 
-%% @doc Return the list of attested keys from a message. The message will have
-%% had the `attestations' key removed and the signature inputs added to the
-%% root. Subsequently, we can parse that to get the list of attested keys.
-attested(RawMsg, Req, Opts) ->
+%% @doc Return the list of commited keys from a message. The message will have
+%% had the `commitments' key removed and the signature inputs added to the
+%% root. Subsequently, we can parse that to get the list of commited keys.
+commited(RawMsg, Req, Opts) ->
     Msg = to(RawMsg),
     case maps:get(<<"signature-input">>, Msg, none) of
         none -> {ok, []};
         SigInput ->
-            do_attested(SigInput, Msg, Req, Opts)
+            do_committed(SigInput, Msg, Req, Opts)
     end.
 
-do_attested(SigInputStr, Msg, _Req, _Opts) ->
+do_committed(SigInputStr, Msg, _Req, _Opts) ->
     [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
         SigInputStr
     ),
@@ -230,23 +230,23 @@ do_attested(SigInputStr, Msg, _Req, _Opts) ->
         end,
     case lists:member(<<"content-digest">>, SignedWithImplicit) of
         false -> {ok, SignedWithImplicit};
-        true -> {ok, SignedWithImplicit ++ attested_from_body(Msg)}
+        true -> {ok, SignedWithImplicit ++ committed_from_body(Msg)}
     end.
 
-%% @doc Return the list of attested keys from a message that are derived from
+%% @doc Return the list of commited keys from a message that are derived from
 %% the body components.
-attested_from_body(Msg) ->
-    % Body and inline-body-key are always attested if the
+committed_from_body(Msg) ->
+    % Body and inline-body-key are always commited if the
     % content-digest is present.
     [<<"body">>, <<"inline-body-key">>] ++
         % If the inline-body-key is present, add it to the list of
-        % attested keys.
+        % commited keys.
         case maps:get(<<"inline-body-key">>, Msg, []) of
             [] -> [];
             InlineBodyKey -> [InlineBodyKey]
         end
         % If the body-keys are present, add them to the list of
-        % attested keys.
+        % commited keys.
         ++ case maps:get(<<"body-keys">>, Msg, []) of
             [] -> [];
             BodyKeys ->
@@ -265,8 +265,8 @@ attested_from_body(Msg) ->
                     ParsedList   
                 ),
                 % Grab the top most field on the body key
-                % because the top most being attested means all subsequent
-                % fields are also attested
+                % because the top most being commited means all subsequent
+                % fields are also commited
                 Tops = lists:map(
                     fun(BodyKey) ->
                         hd(hb_path:term_to_path_parts(BodyKey, #{}))
@@ -303,20 +303,20 @@ address_to_sig_name(Address) when ?IS_ID(Address) ->
 address_to_sig_name(OtherRef) ->
     OtherRef.
 
-%%@doc Ensure that the attestations and hmac are properly encoded
+%%@doc Ensure that the commitments and hmac are properly encoded
 reset_hmac(RawMsg) ->
     Msg = hb_message:convert(RawMsg, tabm, #{}),
-    Attestations =
+    Commitments =
         maps:without(
             [<<"hmac-sha256">>],
-            maps:get(<<"attestations">>, Msg, #{})
+            maps:get(<<"commitments">>, Msg, #{})
         ),
     AllSigs =
         maps:from_list(lists:map(
-            fun ({Attestor, #{ <<"signature">> := Signature }}) ->
+            fun ({Committer, #{ <<"signature">> := Signature }}) ->
                 SigNameFromDict = sig_name_from_dict(Signature),
                 ?event({name_options,
-                    {attestor, Attestor},
+                    {committer, Committer},
                     {sig_name_from_dict, SigNameFromDict}}
                 ),
                 SigBin =
@@ -327,17 +327,17 @@ reset_hmac(RawMsg) ->
                     ),
                 {SigNameFromDict, SigBin}
             end,
-            maps:to_list(Attestations)
+            maps:to_list(Commitments)
         )),
     AllInputs =
         maps:from_list(lists:map(
-            fun ({_Attestor, #{ <<"signature-input">> := Inputs }}) ->
+            fun ({_Committer, #{ <<"signature-input">> := Inputs }}) ->
                 SigNameFromDict = sig_name_from_dict(Inputs),
                 Res = hb_structured_fields:parse_dictionary(Inputs),
                 SingleSigInput = maps:get(SigNameFromDict, maps:from_list(Res)),
                 {SigNameFromDict, SingleSigInput}
             end,
-            maps:to_list(Attestations)
+            maps:to_list(Commitments)
         )),
     FlatInputs = lists:flatten(maps:values(AllInputs)),
     HMacSigInfo =
@@ -357,12 +357,12 @@ reset_hmac(RawMsg) ->
     Res = {
         ok,
         maps:put(
-            <<"attestations">>,
-            Attestations#{
+            <<"commitments">>,
+            Commitments#{
                 <<"hmac-sha256">> =>
                     HMacSigInfo#{
                         <<"id">> => hb_util:human_id(ID),
-                        <<"attestation-device">> => <<"httpsig@1.0">>
+                        <<"commitment-device">> => <<"httpsig@1.0">>
                     }
             },
             Msg
@@ -383,7 +383,7 @@ hmac(Msg) ->
     EncodedMsg =
         maps:without(
             [<<"body-keys">>],
-            to(maps:without([<<"attestations">>, <<"body-keys">>], Msg))
+            to(maps:without([<<"commitments">>, <<"body-keys">>], Msg))
         ),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
@@ -421,16 +421,16 @@ hmac(Msg) ->
     ?event({hmac_result, {string, hb_util:human_id(HMacValue)}}),
     {ok, HMacValue}.
 
-%% @doc Verify different forms of httpsig attested messages. `dev_message:verify'
-%% already places the keys from the attestation message into the root of the
+%% @doc Verify different forms of httpsig commited messages. `dev_message:verify'
+%% already places the keys from the commitment message into the root of the
 %% message.
-verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
+verify(MsgToVerify, #{ <<"committer">> := <<"hmac-sha256">> }, _Opts) ->
     % Verify a hmac on the message
     ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
     {ok, ResetMsg} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
-    case maps:get(<<"attestations">>, ResetMsg, no_attestations) of
-        no_attestations -> {error, could_not_calculate_id};
+    case maps:get(<<"commitments">>, ResetMsg, no_commitments) of
+        no_commitments -> {error, could_not_calculate_id};
         #{ <<"hmac-sha256">> := #{ <<"id">> := ExpectedID } } ->
             ?event({hmac_verified, {id, ExpectedID}}),
             {ok, true};
@@ -441,11 +441,11 @@ verify(MsgToVerify, #{ <<"attestor">> := <<"hmac-sha256">> }, _Opts) ->
             {ok, false}
     end;
 verify(MsgToVerify, Req, _Opts) ->
-    % Validate a signed attestation.
+    % Validate a signed commitment.
     ?event({verify, {target, MsgToVerify}, {req, Req}}),
     % Parse the signature parameters into a map.
-    Attestor = maps:get(<<"attestor">>, Req),
-    SigName = address_to_sig_name(Attestor),
+    Committer = maps:get(<<"committer">>, Req),
+    SigName = address_to_sig_name(Committer),
     {list, _SigInputs, ParamsKVList} =
         maps:get(
             SigName,
@@ -491,8 +491,8 @@ verify(MsgToVerify, Req, _Opts) ->
             {error, {unsupported_alg, Alg}}
     end.
 
-public_keys(Attestation) ->
-    SigInputs = maps:get(<<"signature-input">>, Attestation),
+public_keys(Commitment) ->
+    SigInputs = maps:get(<<"signature-input">>, Commitment),
     lists:filtermap(
         fun ({_SigName, {list, _, ParamsKVList}}) ->
             case maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)) of
@@ -1220,7 +1220,7 @@ trim_ws_end(Value, N) ->
 validate_large_message_from_http_test() ->
     Node = hb_http_server:start_node(#{
         force_signed => true,
-        attestation_device => <<"httpsig@1.0">>,
+        commitment_device => <<"httpsig@1.0">>,
         extra =>
             [
                 [
@@ -1248,26 +1248,26 @@ validate_large_message_from_http_test() ->
     ?event({sig_verifies, Signers}),
     ?assert(hb_message:verify(Res, [<<"hmac-sha256">>])),
     ?event({hmac_verifies, <<"hmac-sha256">>}),
-    {ok, OnlyAttested} = hb_message:with_only_attested(Res),
-    ?event({msg_with_only_attested, OnlyAttested}),
-    ?assert(hb_message:verify(OnlyAttested, Signers)),
-    ?event({msg_with_only_attested_verifies, Signers}),
-    ?assert(hb_message:verify(OnlyAttested, [<<"hmac-sha256">>])),
-    ?event({msg_with_only_attested_verifies_hmac, <<"hmac-sha256">>}).
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Res),
+    ?event({msg_with_only_committed, OnlyCommitted}),
+    ?assert(hb_message:verify(OnlyCommitted, Signers)),
+    ?event({msg_with_only_committed_verifies, Signers}),
+    ?assert(hb_message:verify(OnlyCommitted, [<<"hmac-sha256">>])),
+    ?event({msg_with_only_committed_verifies_hmac, <<"hmac-sha256">>}).
 
-attested_id_test() ->
+committed_id_test() ->
     Msg = #{ <<"basic">> => <<"value">> },
-    Signed = hb_message:attest(Msg, hb:wallet()),
+    Signed = hb_message:commit(Msg, hb:wallet()),
     ?event({signed_msg, Signed}),
     UnsignedID = hb_message:id(Signed, none),
     SignedID = hb_message:id(Signed, all),
     ?event({ids, {unsigned_id, UnsignedID}, {signed_id, SignedID}}),
     ?assertNotEqual(UnsignedID, SignedID).
 
-multiattested_id_test() ->
+multicommitted_id_test() ->
     Msg = #{ <<"basic">> => <<"value">> },
-    Signed1 = hb_message:attest(Msg, Wallet1 = ar_wallet:new()),
-    Signed2 = hb_message:attest(Signed1, Wallet2 = ar_wallet:new()),
+    Signed1 = hb_message:commit(Msg, Wallet1 = ar_wallet:new()),
+    Signed2 = hb_message:commit(Signed1, Wallet2 = ar_wallet:new()),
     Addr1 = hb_util:human_id(ar_wallet:to_address(Wallet1)),
     Addr2 = hb_util:human_id(ar_wallet:to_address(Wallet2)),
     ?event({signed_msg, Signed2}),

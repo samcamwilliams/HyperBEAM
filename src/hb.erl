@@ -17,7 +17,7 @@
 %%% 	`Hyperbeam(Message1, Message2) => Message3'
 %%% 
 %%% When Hyperbeam executes a message, it will return a new message containing
-%%% the result of that execution, as well as signed attestations of its
+%%% the result of that execution, as well as signed commitments of its
 %%% correctness. If the computation that is executed is deterministic, recipients
 %%% of the new message are able to verify that the computation was performed
 %%% correctly. The new message may be stored back to Arweave if desired,
@@ -189,7 +189,7 @@ do_start_simple_pay(Opts) ->
 topup(Node, Amount, Recipient) ->
     topup(Node, Amount, Recipient, wallet()).
 topup(Node, Amount, Recipient, Wallet) ->
-    Message = hb_message:attest(
+    Message = hb_message:commit(
         #{
             <<"path">> => <<"/~simple-pay@1.0/topup">>,
             <<"amount">> => Amount,

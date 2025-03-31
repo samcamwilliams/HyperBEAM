@@ -63,7 +63,7 @@ call(M1, RawM2, Opts) ->
     },
     TargetMod2 =
         case hb_converge:get(<<"requires-sign">>, BaseTarget, false, Opts) of
-            true -> hb_message:attest(TargetMod1, Opts);
+            true -> hb_message:commit(TargetMod1, Opts);
             false -> TargetMod1
         end,
     Client =

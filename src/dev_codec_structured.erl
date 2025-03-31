@@ -9,15 +9,15 @@
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
--export([to/1, from/1, attest/3, attested/3, verify/3]).
+-export([to/1, from/1, commit/3, commited/3, verify/3]).
 -export([decode_value/2, encode_value/1, implicit_keys/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%% Route signature functions to the `dev_codec_httpsig' module
-attest(Msg, Req, Opts) -> dev_codec_httpsig:attest(Msg, Req, Opts).
+commit(Msg, Req, Opts) -> dev_codec_httpsig:commit(Msg, Req, Opts).
 verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
-attested(Msg, Req, Opts) -> dev_codec_httpsig:attested(Msg, Req, Opts).
+commited(Msg, Req, Opts) -> dev_codec_httpsig:commited(Msg, Req, Opts).
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;

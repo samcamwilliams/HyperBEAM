@@ -105,7 +105,7 @@ next(Msg1, Msg2, Opts) ->
                         hb_util:message_to_ordered_list(
                             maps:filter(
                                 fun(<<"priv">>, _) -> false;
-                                   (<<"attestations">>, _) -> false;
+                                   (<<"commitments">>, _) -> false;
                                    (Slot, _) -> hb_util:int(Slot) > LastProcessed
                                 end,
                                 RecvdAssignments
@@ -190,9 +190,9 @@ status(_M1, _M2, _Opts) ->
 register(_Msg1, Req, Opts) ->
     % Ensure that the request is signed by the operator.
     ?event({registering_scheduler, {msg1, _Msg1}, {req, Req}, {opts, Opts}}),
-    {ok, OnlyAttested} = hb_message:with_only_attested(Req),
-    ?event({only_attested, OnlyAttested}),
-    Signers = hb_message:signers(OnlyAttested),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Req),
+    ?event({only_committed, OnlyCommitted}),
+    Signers = hb_message:signers(OnlyCommitted),
     Operator =
         hb_util:human_id(
             ar_wallet:to_address(
@@ -205,7 +205,7 @@ register(_Msg1, Req, Opts) ->
                 hb_converge:get(<<"nonce">>, SchedulerLocation, 0, Opts);
             {error, _} -> -1
         end,
-    NewNonce = hb_converge:get(<<"nonce">>, OnlyAttested, 0, Opts),
+    NewNonce = hb_converge:get(<<"nonce">>, OnlyCommitted, 0, Opts),
     case lists:member(Operator, Signers) andalso NewNonce > ExistingNonce of
         false ->
             {ok,
@@ -223,12 +223,12 @@ register(_Msg1, Req, Opts) ->
             DefaultTTL = hb_opts:get(scheduler_location_ttl, 1000 * 60 * 60, Opts),
             TimeToLive = hb_converge:get(
                     <<"time-to-live">>,
-                    OnlyAttested,
+                    OnlyCommitted,
                     DefaultTTL,
                     Opts
                 ),
             URL =
-                case hb_converge:get(<<"url">>, OnlyAttested, Opts) of
+                case hb_converge:get(<<"url">>, OnlyCommitted, Opts) of
                     not_found ->
                         Port = hb_opts:get(port, 8734, Opts),
                         Host = hb_opts:get(host, <<"localhost">>, Opts),
@@ -242,7 +242,7 @@ register(_Msg1, Req, Opts) ->
                     GivenURL -> GivenURL
                 end,
             % Construct the new scheduler location message.
-            Codec = hb_converge:get(<<"accept-codec">>, OnlyAttested, <<"httpsig@1.0">>, Opts),
+            Codec = hb_converge:get(<<"accept-codec">>, OnlyCommitted, <<"httpsig@1.0">>, Opts),
             NewSchedulerLocation =
                 #{
                     <<"data-protocol">> => <<"ao">>,
@@ -253,7 +253,7 @@ register(_Msg1, Req, Opts) ->
                     <<"time-to-live">> => TimeToLive,
                     <<"codec-device">> => Codec
                 },
-            Signed = hb_message:attest(NewSchedulerLocation, Opts, Codec),
+            Signed = hb_message:commit(NewSchedulerLocation, Opts, Codec),
             ?event({uploading_signed_scheduler_location, Signed}),
             Res = hb_client:upload(Signed, Opts),
             ?event({upload_response, Res}),
@@ -291,8 +291,8 @@ post_schedule(Msg1, Msg2, Opts) ->
         end,
     ?event({proc_id, ProcID}),
     % Filter all unsigned keys from the source message.
-    case hb_message:with_only_attested(ToSched) of
-        {ok, OnlyAttested} ->
+    case hb_message:with_only_committed(ToSched) of
+        {ok, OnlyCommitted} ->
             ?event(
                 {post_schedule,
                     {schedule_id, ProcID},
@@ -305,16 +305,16 @@ post_schedule(Msg1, Msg2, Opts) ->
             case find_server(ProcID, Msg1, ToSched, Opts) of
                 {local, PID} ->
                     ?event({scheduling_message_locally, {proc_id, ProcID}, {pid, PID}}),
-                    do_post_schedule(ProcID, PID, OnlyAttested, Opts);
+                    do_post_schedule(ProcID, PID, OnlyCommitted, Opts);
                 {redirect, Redirect} ->
                     ?event({process_is_remote, {redirect, Redirect}}),
                     case hb_opts:get(scheduler_follow_redirects, true, Opts) of
                         true ->
                             ?event({proxying_to_remote_scheduler,
                                 {redirect, Redirect},
-                                {msg, OnlyAttested}
+                                {msg, OnlyCommitted}
                             }),
-                            post_remote_schedule(ProcID, Redirect, OnlyAttested, Opts);
+                            post_remote_schedule(ProcID, Redirect, OnlyCommitted, Opts);
                         false -> {ok, Redirect}
                     end;
                 {error, Error} ->
@@ -326,14 +326,14 @@ post_schedule(Msg1, Msg2, Opts) ->
                 #{
                     <<"status">> => 400,
                     <<"body">> => <<"Message invalid: ",
-                        "Attested components cannot be validated.">>,
+                        "Commited components cannot be validated.">>,
                     <<"reason">> => Err
                 }
             }
     end.
 
 %% @doc Post schedule the message. `Msg2` by this point has been refined to only
-%% attested keys, and to only include the `target' message that is to be
+%% commited keys, and to only include the `target' message that is to be
 %% scheduled.
 do_post_schedule(ProcID, PID, Msg2, Opts) ->
     % Should we verify the message again before scheduling?
@@ -936,7 +936,7 @@ filter_json_assignments(JSONRes, To, From) ->
     ?event({filtered, {length, length(Filtered)}, {edges, Filtered}}),
     JSONRes#{ <<"edges">> => Filtered }.
 
-post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
+post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
     RemoteOpts = Opts#{ http_client => httpc },
     ProcID = without_hint(RawProcID),
     Location = hb_converge:get(<<"location">>, Redirect, Opts),
@@ -947,21 +947,21 @@ post_remote_schedule(RawProcID, Redirect, OnlyAttested, Opts) ->
         <<"ao.N.1">> ->
             PostMsg = #{
                 <<"path">> => << ProcID/binary, "/schedule">>,
-                <<"body">> => OnlyAttested,
+                <<"body">> => OnlyCommitted,
                 <<"method">> => <<"POST">>
             },
             hb_http:post(Node, PostMsg, RemoteOpts);
         <<"ao.TN.1">> ->
-            post_legacy_schedule(ProcID, OnlyAttested, Node, RemoteOpts)
+            post_legacy_schedule(ProcID, OnlyCommitted, Node, RemoteOpts)
     end.
 
-post_legacy_schedule(ProcID, OnlyAttested, Node, Opts) ->
+post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
     ?event({encoding_for_legacy_scheduler, {node, {string, Node}}}),
     Encoded =
         try
             Item =
                 hb_message:convert(
-                    OnlyAttested,
+                    OnlyCommitted,
                     <<"ans104@1.0">>,
                     Opts
                 ),
@@ -1218,7 +1218,7 @@ schedule_message_and_get_slot_test() ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(#{
+            hb_message:commit(#{
                 <<"type">> => <<"Message">>,
                 <<"test-key">> => <<"true">>
             }, hb:wallet())
@@ -1276,7 +1276,7 @@ redirect_from_graphql_test() ->
                 <<"path">> => <<"schedule">>,
                 <<"method">> => <<"POST">>,
                 <<"body">> =>
-                    hb_message:attest(#{
+                    hb_message:commit(#{
                         <<"type">> => <<"Message">>,
                         <<"target">> =>
                             <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>,
@@ -1298,7 +1298,7 @@ get_local_schedule_test() ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(#{
+            hb_message:commit(#{
                 <<"type">> => <<"Message">>,
                 <<"test-key">> => <<"Test-Val">>
             }, hb:wallet())
@@ -1307,7 +1307,7 @@ get_local_schedule_test() ->
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(#{
+            hb_message:commit(#{
                 <<"type">> => <<"Message">>,
                 <<"test-key">> => <<"Test-Val-2">>
             }, hb:wallet())
@@ -1343,7 +1343,7 @@ http_init(Opts) ->
 register_scheduler_test() ->
     start(),
     {Node, Wallet} = http_init(),
-    Msg1 = hb_message:attest(#{
+    Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/register">>,
         <<"url">> => <<"https://hyperbeam-test-ignore.com">>,
         <<"method">> => <<"POST">>,
@@ -1354,11 +1354,11 @@ register_scheduler_test() ->
     ?assertMatch(#{ <<"url">> := Location } when is_binary(Location), Res).
 
 http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
-    Msg1 = hb_message:attest(#{
+    Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(
+            hb_message:commit(
                 Msg#{
                     <<"target">> =>
                         hb_util:human_id(hb_message:id(ProcessMsg, all)),
@@ -1372,7 +1372,7 @@ http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) ->
 http_get_slot(N, PMsg) ->
     ID = hb_message:id(PMsg, all),
     Wallet = hb:wallet(),
-    {ok, _} = hb_http:get(N, hb_message:attest(#{
+    {ok, _} = hb_http:get(N, hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/slot">>,
         <<"method">> => <<"GET">>,
         <<"target">> => ID
@@ -1384,7 +1384,7 @@ http_get_schedule(N, PMsg, From, To) ->
 http_get_schedule(N, PMsg, From, To, Format) ->
     ID = hb_message:id(PMsg, all),
     Wallet = hb:wallet(),
-    {ok, _} = hb_http:get(N, hb_message:attest(#{
+    {ok, _} = hb_http:get(N, hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"GET">>,
         <<"target">> => hb_util:human_id(ID),
@@ -1411,8 +1411,8 @@ http_get_schedule_redirect_test() ->
 
 http_post_schedule_test() ->
     {N, W} = http_init(),
-    PMsg = hb_message:attest(test_process(W), W),
-    Msg1 = hb_message:attest(#{
+    PMsg = hb_message:commit(test_process(W), W),
+    Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => PMsg
@@ -1430,13 +1430,13 @@ http_post_schedule_test() ->
 
 http_get_schedule_test() ->
     {Node, Wallet} = http_init(),
-    PMsg = hb_message:attest(test_process(Wallet), Wallet),
-    Msg1 = hb_message:attest(#{
+    PMsg = hb_message:commit(test_process(Wallet), Wallet),
+    Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => PMsg
     }, Wallet),
-    Msg2 = hb_message:attest(#{
+    Msg2 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => PMsg
@@ -1502,11 +1502,11 @@ http_post_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
         {Node, Wallet} = http_init(),
         Target = <<"zrhm4OpfW85UXfLznhdD-kQ7XijXM-s2fAboha0V5GY">>,
-        Msg1 = hb_message:attest(#{
+        Msg1 = hb_message:commit(#{
             <<"path">> => <<"/~scheduler@1.0/schedule">>,
             <<"method">> => <<"POST">>,
             <<"body">> =>
-                hb_message:attest(
+                hb_message:commit(
                     #{
                         <<"data-protocol">> => <<"ao">>,
                         <<"variant">> => <<"ao.TN.1">>,
@@ -1530,18 +1530,18 @@ http_post_legacy_schedule_test_() ->
 
 http_get_json_schedule_test() ->
     {Node, Wallet} = http_init(),
-    PMsg = hb_message:attest(test_process(Wallet), Wallet),
-    Msg1 = hb_message:attest(#{
+    PMsg = hb_message:commit(test_process(Wallet), Wallet),
+    Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => PMsg
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, #{}),
-    Msg2 = hb_message:attest(#{
+    Msg2 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"inner">> => <<"test">>,
                     <<"target">> => hb_util:human_id(hb_message:id(PMsg, all))
@@ -1573,7 +1573,7 @@ single_converge(Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Msg1 = test_process(Wallet),
     ?event({benchmark_start, ?MODULE}),
-    MsgToSchedule = hb_message:attest(#{
+    MsgToSchedule = hb_message:commit(#{
         <<"type">> => <<"Message">>,
         <<"test-key">> => <<"test-val">>
     }, Wallet),
@@ -1608,12 +1608,12 @@ many_clients(Opts) ->
     BenchTime = 1,
     Processes = hb_opts:get(workers, 25, Opts),
     {Node, Wallet} = http_init(Opts),
-    PMsg = hb_message:attest(test_process(Wallet), Wallet),
-    Msg1 = hb_message:attest(#{
+    PMsg = hb_message:commit(test_process(Wallet), Wallet),
+    Msg1 = hb_message:commit(#{
         <<"path">> => <<"/~scheduler@1.0/schedule">>,
         <<"method">> => <<"POST">>,
         <<"process">> => PMsg,
-        <<"body">> => hb_message:attest(#{ <<"inner">> => <<"test">> }, Wallet)
+        <<"body">> => hb_message:commit(#{ <<"inner">> => <<"test">> }, Wallet)
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, Opts),
     Iterations = hb:benchmark(

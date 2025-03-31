@@ -40,7 +40,7 @@ routes(M1, M2, Opts) ->
         <<"POST">> ->
             Owner = hb_opts:get(operator, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
-            {ok, Signers} = dev_message:attestors(M2),
+            {ok, Signers} = dev_message:committers(M2),
             IsTrusted =
                 lists:any(
                     fun(Signer) -> lists:member(Signer, Signers) end,
@@ -459,7 +459,7 @@ add_route_test() ->
     Res =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~router@1.0/routes">>,
                     <<"template">> => <<"/some/new/path">>,

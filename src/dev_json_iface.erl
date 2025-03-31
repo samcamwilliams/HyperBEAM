@@ -97,7 +97,7 @@ denormalize_message(Message) ->
     Signers =
         lists:filter(
             fun(ID) -> ?IS_ID(ID) end,
-            hb_converge:get(<<"attestors">>, {as, <<"message@1.0">>, Message})
+            hb_converge:get(<<"committers">>, {as, <<"message@1.0">>, Message})
         ),
     NormOwnerMsg =
         case Signers of
@@ -105,7 +105,7 @@ denormalize_message(Message) ->
             [Signer|_] ->
                 Sig =
                     hb_converge:get(
-                        <<"attestations/", Signer/binary, "/signature">>,
+                        <<"commitments/", Signer/binary, "/signature">>,
                         {as, <<"message@1.0">>, Message}
                     ),
                 Message#{ <<"owner">> => Signer, <<"signature">> => Sig }
@@ -119,7 +119,7 @@ message_to_json_struct(RawMsg) ->
 message_to_json_struct(RawMsg, Features) ->
     Message = 
         hb_message:convert(
-            hb_private:reset(maps:without([<<"attestations">>], RawMsg)),
+            hb_private:reset(maps:without([<<"commitments">>], RawMsg)),
             tabm,
             #{}
         ),
@@ -133,17 +133,17 @@ message_to_json_struct(RawMsg, Features) ->
                 case lists:member(owner_as_address, Features) of
                     true -> hb_util:native_id(Signer);
                     false ->
-                        Attestation =
+                        Commitment =
                             hb_converge:get(
-                                <<"attestations/", Signer/binary>>,
+                                <<"commitments/", Signer/binary>>,
                                 {as, <<"message@1.0">>, RawMsg},
                                 #{}
                             ),
-                        case hb_converge:get(<<"owner">>, Attestation, #{}) of
+                        case hb_converge:get(<<"owner">>, Commitment, #{}) of
                             not_found ->
                                 % The signature is likely a HTTPsig, so we need 
                                 % to extract the owner from the signature.
-                                case dev_codec_httpsig:public_keys(Attestation) of
+                                case dev_codec_httpsig:public_keys(Commitment) of
                                     [] -> <<>>;
                                     [PubKey|_] -> PubKey
                                 end;
@@ -183,7 +183,7 @@ message_to_json_struct(RawMsg, Features) ->
                     maps:without(
                         [
                             <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
-                            <<"target">>, <<"signature">>, <<"attestations">>
+                            <<"target">>, <<"signature">>, <<"commitments">>
                         ],
                         Message
                     )
@@ -425,7 +425,7 @@ generate_stack(File, _Mode) ->
         <<"passes">> => 2,
         <<"stack-keys">> => [<<"init">>, <<"compute">>],
         <<"process">> => 
-            hb_message:attest(#{
+            hb_message:commit(#{
                 <<"type">> => <<"Process">>,
                 <<"image">> => Image,
                 <<"scheduler">> => hb:address(),
@@ -437,10 +437,10 @@ generate_stack(File, _Mode) ->
 
 generate_aos_msg(ProcID, Code) ->
     Wallet = hb:wallet(),
-    hb_message:attest(#{
+    hb_message:commit(#{
         <<"path">> => <<"compute">>,
         <<"body">> => 
-            hb_message:attest(#{
+            hb_message:commit(#{
                 <<"Action">> => <<"Eval">>,
                 <<"Data">> => Code,
                 <<"Target">> => ProcID

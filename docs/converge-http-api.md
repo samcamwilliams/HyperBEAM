@@ -112,9 +112,9 @@ curl http://host:port/Init+Device=WASM-64/1.0+Image=ID/Compute+ \
     WASM-Function=fac+WASM-Params=[10]/Compute+WASM-Function=fac&WASM-Params=[11]
 ```
 
-Gather the node's known attestations (including its own) on a process output:
+Gather the node's known commitments (including its own) on a process output:
 ```
-curl http://host:port/ProcID/Compute+Slot=1/Results/Attestations
+curl http://host:port/ProcID/Compute+Slot=1/Results/Commitments
 ```
 
 Dry-run a message on top of an AO process state:

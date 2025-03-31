@@ -9,7 +9,7 @@
 -module(dev_meta).
 -export([info/1, info/3, handle/2, adopt_node_message/2]).
 %%% Helper functions for processors
--export([all_attestors/1]).
+-export([all_committers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -107,7 +107,7 @@ add_dynamic_keys(NodeMsg) ->
 %% @doc Validate that the request is signed by the operator of the node, then
 %% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
-    {ok, RequestSigners} = dev_message:attestors(Request),
+    {ok, RequestSigners} = dev_message:committers(Request),
     Operator =
         hb_opts:get(
             operator,
@@ -156,7 +156,7 @@ adopt_node_message(Request, NodeMsg) ->
     MergedOpts =
         maps:merge(
             NodeMsg,
-            hb_opts:mimic_default_types(hb_message:unattested(Request), new_atoms)
+            hb_opts:mimic_default_types(hb_message:uncommitted(Request), new_atoms)
         ),
     % Ensure that the node history is updated and the http_server ID is
     % not overridden.
@@ -254,7 +254,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({ErlStatus, Res}) when is_map(Res) ->
-    case lists:member(<<"status">>, hb_message:attested(Res)) of
+    case lists:member(<<"status">>, hb_message:commited(Res)) of
         false ->
             HTTPCode = status_code({ErlStatus, Res}),
             {ok, Res#{ <<"status">> => HTTPCode }};
@@ -307,7 +307,7 @@ maybe_sign(Res, NodeMsg) ->
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
             case hb_message:signers(Res) of
-                [] -> hb_message:attest(Res, NodeMsg);
+                [] -> hb_message:commit(Res, NodeMsg);
                 _ -> Res
             end;
         false -> Res
@@ -316,12 +316,12 @@ maybe_sign(Res, NodeMsg) ->
 %%% External helpers
 
 %% @doc Return the signers of a list of messages.
-all_attestors(Msgs) ->
+all_committers(Msgs) ->
     lists:foldl(
         fun(Msg, Acc) ->
-            Attestors =
-                hb_converge:get(<<"attestors">>, Msg, #{}, #{ hashpath => ignore }),
-            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Attestors))
+            Committers =
+                hb_converge:get(<<"committers">>, Msg, #{}, #{ hashpath => ignore }),
+            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Committers))
         end,
         [],
         Msgs
@@ -356,7 +356,7 @@ unauthorized_set_node_msg_fails_test() ->
     {error, _} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"evil_config_item">> => <<"BAD">>
@@ -382,7 +382,7 @@ authorized_set_node_msg_succeeds_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>
@@ -417,7 +417,7 @@ permanent_node_message_test() ->
     {ok, SetRes1} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>,
@@ -434,7 +434,7 @@ permanent_node_message_test() ->
     {error, SetRes2} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"bad_value">>
@@ -462,7 +462,7 @@ claim_node_test() ->
     {ok, SetRes} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"operator">> => hb_util:human_id(Address)
@@ -478,7 +478,7 @@ claim_node_test() ->
     {ok, SetRes2} =
         hb_http:post(
             Node,
-            hb_message:attest(
+            hb_message:commit(
                 #{
                     <<"path">> => <<"/~meta@1.0/info">>,
                     <<"test_config_item">> => <<"test2">>

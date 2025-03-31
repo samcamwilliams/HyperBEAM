@@ -1,7 +1,7 @@
 %%% @doc The green zone device, which provides secure communication and identity
 %%% management between trusted nodes. It handles node initialization, joining
 %%% existing green zones, key exchange, and node identity cloning. All operations
-%%% are protected by hardware attestation and encryption.
+%%% are protected by hardware commitment and encryption.
 -module(dev_green_zone).
 -export([join/3, init/3, become/3, key/3]).
 -include("include/hb.hrl").
@@ -95,7 +95,7 @@ init(_M1, M2, Opts) ->
 %%
 %% Based on the presence of a peer address:
 %%   - If the target peer is specified, Node B internally routes the request to 
-%%     the join_peer flow, where it generates an attestation report and prepares
+%%     the join_peer flow, where it generates an commitment report and prepares
 %%     a POST request to forward to Node A.
 %%   - If no peer address is present, the join request is processed locally via
 %%     the validate_join flow.
@@ -260,7 +260,7 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
 %% @doc Process an internal join request when a target peer is specified.
 %%
 %% In this flow (executed on Node B):
-%%   1. Node B generates an attestation report and prepares a POST request.
+%%   1. Node B generates an commitment report and prepares a POST request.
 %%   2. It then forwards the POST request to Node A's join endpoint.
 %%   3. Upon receiving a response from Node A, Node B decrypts the returned 
 %%      zone-key (an encrypted shared AES key) using its local private key, then
@@ -291,12 +291,12 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 				base64:encode(term_to_binary(WalletPub)),
 				Opts
 			),
-			% Create an attested join request using the wallet.
-			Req = hb_message:attest(MergedReq, Wallet),
+			% Create an commited join request using the wallet.
+			Req = hb_message:commit(MergedReq, Wallet),
 			?event({join_req, Req}),
 			?event({verify_res, hb_message:verify(Req)}),
-			% Log that the attestation report is being sent to the peer.
-			?event(green_zone, {join, sending_attestation, PeerLocation, PeerID, Req}),
+			% Log that the commitment report is being sent to the peer.
+			?event(green_zone, {join, sending_commitment, PeerLocation, PeerID, Req}),
 			case hb_http:post(PeerLocation, <<"/~greenzone@1.0/join">>, Req, Opts) of
 				{ok, Resp} ->
 					% Log the response received from the peer.
@@ -416,7 +416,7 @@ calculate_node_message(RequiredOpts, Req, true) ->
                 <<"adopt-config">>, <<"peer-location">>,
                 <<"peer-id">>, <<"path">>, <<"method">>
             ],
-            hb_message:unattested(Req)
+            hb_message:uncommitted(Req)
         ),
 	% Convert atoms to binaries in RequiredOpts to prevent binary_to_existing_atom errors
     % The required config should override the request, if necessary.
@@ -431,15 +431,15 @@ calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
 %% @doc Validate an incoming join request.
 %%
 %% When Node A receives a POST join request from Node B, this routine is executed:
-%%   1. It extracts the attestation report, the requesting node's address, and 
+%%   1. It extracts the commitment report, the requesting node's address, and 
 %%      the encoded public key.
-%%   2. It verifies the attestation report included in the request.
+%%   2. It verifies the commitment report included in the request.
 %%   3. If the report is valid, Node A adds Node B to its list of trusted nodes.
 %%   4. Node A then encrypts the shared AES key (zone-key) with Node B's public 
 %%      key and returns it along with its public key.
 %%
 %% @param M1 Ignored parameter.
-%% @param Req The join request message containing the attestation report and 
+%% @param Req The join request message containing the commitment report and 
 %%          other join details.
 %% @param Opts A map of configuration options.
 %% @returns {ok, Map} on success with join response details, or {error, Reason}
@@ -452,7 +452,7 @@ validate_join(_M1, Req, Opts) ->
 		false -> throw(invalid_join_request)
 	end,
 	?event(green_zone, {join, start}),
-    % Retrieve the attestation report and address from the join request.
+    % Retrieve the commitment report and address from the join request.
     Report = hb_converge:get(<<"report">>, Req, Opts),
     NodeAddr = hb_converge:get(<<"address">>, Req, Opts),
     ?event(green_zone, {join, extract, {node_addr, NodeAddr}}),
@@ -463,11 +463,11 @@ validate_join(_M1, Req, Opts) ->
         Encoded -> binary_to_term(base64:decode(Encoded))
     end,
     ?event(green_zone, {join, public_key, ok}),
-    % Verify the attestation report provided in the join request.
+    % Verify the commitment report provided in the join request.
     case dev_snp:verify(Req, #{<<"target">> => <<"self">>}, Opts) of
         {ok, true} ->
-            % Attestation verified.
-            ?event(green_zone, {join, attestation, verified}),
+            % Commitment verified.
+            ?event(green_zone, {join, commitment, verified}),
             % Retrieve the shared AES key used for encryption.
             GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
             % Retrieve the local node's wallet to extract its public key.
@@ -487,12 +487,12 @@ validate_join(_M1, Req, Opts) ->
                 <<"public-key">>   => WalletPubKey
             }};
         {ok, false} ->
-            % Attestation failed.
-            ?event(green_zone, {join, attestation, failed}),
-            {error, <<"Received invalid attestation report.">>};
+            % Commitment failed.
+            ?event(green_zone, {join, commitment, failed}),
+            {error, <<"Received invalid commitment report.">>};
         Error ->
-            % Error during attestation verification.
-            ?event(green_zone, {join, attestation, error, Error}),
+            % Error during commitment verification.
+            ?event(green_zone, {join, commitment, error, Error}),
             Error
     end.
 
@@ -548,10 +548,10 @@ validate_peer_opts(Req, Opts) ->
     FinalResult.
 
 %% @doc Add a joining node's details to the trusted nodes list.
-%% Updates the local configuration with the new trusted node's attestation report
+%% Updates the local configuration with the new trusted node's commitment report
 %% and public key.
 %% @param NodeAddr The joining node's address.
-%% @param Report The attestation report provided by the joining node.
+%% @param Report The commitment report provided by the joining node.
 %% @param RequesterPubKey The joining node's public key.
 %% @param Opts A map of configuration options.
 %% @returns ok.

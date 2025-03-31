@@ -70,6 +70,7 @@ increment(Topic, Message, _Opts) ->
     end.
 
 server() ->
+    application:ensure_all_started([prometheus, prometheus_cowboy]),
     prometheus_counter:declare(
         [
             {name, <<"event">>},

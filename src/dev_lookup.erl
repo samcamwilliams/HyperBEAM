@@ -63,7 +63,7 @@ http_lookup_test() ->
     {ok, ID} = hb_cache:write(Msg, Opts),
     Node = hb_http_server:start_node(Opts),
     Wallet = hb:wallet(),
-    Req = hb_message:attest(#{
+    Req = hb_message:commit(#{
         <<"path">> => <<"/~lookup@1.0/read?target=", ID/binary>>,
         <<"device">> => <<"lookup@1.0">>,
         <<"accept">> => <<"application/aos-2">>
