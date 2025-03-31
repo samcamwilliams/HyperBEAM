@@ -9,7 +9,12 @@ info() ->
         default => fun serve/4,
         routes => #{
             <<"index">> => <<"index.html">>,
-            <<"console">> => <<"console.html">>
+            <<"console">> => <<"console.html">>,
+			<<"styles.css">> => <<"styles.css">>,
+			<<"metrics.js">> => <<"metrics.js">>,
+			<<"devices.js">> => <<"devices.js">>,
+			<<"utils.js">> => <<"utils.js">>,
+			<<"main.js">> => <<"main.js">>
         }
     }.
 
