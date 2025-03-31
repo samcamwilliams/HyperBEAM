@@ -63,18 +63,21 @@ commit(Msg, _Req, Opts) ->
         Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
     ),
     ?event({signed_tx, Signed}),
-    ID = Signed#tx.id,
+    ID = hb_util:human_id(Signed#tx.id),
     Owner = Signed#tx.owner,
     Sig = Signed#tx.signature,
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    % Gather the prior commitments.
-    PriorCommitments = maps:get(<<"commitments">>, Msg, #{}),
-    PriorUnsigned = maps:get(<<"ans104-unsigned">>, PriorCommitments, #{}),
-    PriorOriginalTags = maps:get(<<"original-tags">>, PriorUnsigned, undefined),
+    % Get the prior original tags from the commitment, if it exists.
+    PriorOriginalTags =
+        case hb_message:commitment(#{ <<"alg">> => <<"unsigned">> }, Msg) of
+            {ok, _, #{ <<"original-tags">> := OrigTags }} -> OrigTags;
+            _ -> undefined
+        end,
     Commitment =
         #{
             <<"commitment-device">> => <<"ans104@1.0">>,
-            <<"id">> => hb_util:human_id(ID),
+            <<"committer">> => Address,
+            <<"alg">> => <<"rsa-pss">>,
             <<"owner">> => Owner,
             <<"signature">> => Sig
         },
@@ -91,11 +94,16 @@ commit(Msg, _Req, Opts) ->
         end,
     MsgWithoutHP = maps:without([<<"hashpath">>], Msg),
     {ok,
-        MsgWithoutHP#{
-            <<"commitments">> =>
-                (maps:without([<<"ans104-unsigned">>], PriorCommitments))#{
-                    Address => CommitmentWithHP
-                }
+        (hb_message:without_commitments(
+            #{
+                <<"commitment-device">> => <<"ans104@1.0">>,
+                <<"alg">> => <<"unsigned">>
+            },
+            MsgWithoutHP
+        ))#{
+            <<"commitments">> => #{
+                ID => CommitmentWithHP
+            }
         }
     }.
 
@@ -132,7 +140,7 @@ commited(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _
     end;
 commited(Msg, Req, Opts) ->
     ?event({running_committed, {input, Msg}}),
-    % Remove the commitment that was 'promoted' to the base layer of the message
+    % Remove other commitments that were not 'promoted' to the base layer message
     % by `message@1.0/commited'. This is safe because `to' will only proceed if 
     % there is a single signature on the message. Subsequently, we can trust that
     % the keys signed by that single commitment speak for 'all' of the 
@@ -184,7 +192,15 @@ committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
 
 %% @doc Verify an ANS-104 commitment.
 verify(Msg, _Req, _Opts) ->
-    MsgWithoutCommitments = maps:without([<<"commitments">>], hb_private:reset(Msg)),
+    MsgWithoutCommitments =
+        maps:without(
+            [
+                <<"commitments">>,
+                <<"committer">>,
+                <<"alg">>
+            ],
+            hb_private:reset(Msg)
+        ),
     TX = to(MsgWithoutCommitments),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
@@ -261,9 +277,12 @@ do_from(RawTX) ->
                 case normal_tags(TX#tx.tags) of
                     true -> NormalizedDataMap;
                     false ->
+                        ID = hb_util:human_id(TX#tx.id),
                         NormalizedDataMap#{
                             <<"commitments">> => #{
-                                <<"ans-104-unsigned">> => #{
+                                ID => #{
+                                    <<"commitment-device">> => <<"ans104@1.0">>,
+                                    <<"alg">> => <<"unsigned">>,
                                     <<"original-tags">> => OriginalTagMap
                                 }
                             }
@@ -278,19 +297,23 @@ do_from(RawTX) ->
                             <<"owner">>,
                             <<"signature">>,
                             <<"commitment-device">>,
+                            <<"committer">>,
+                            <<"alg">>,
                             <<"original-tags">>
                         ],
                         NormalizedDataMap
                     ),
+                ID = hb_util:human_id(TX#tx.id),
                 Commitment = #{
                     <<"commitment-device">> => <<"ans104@1.0">>,
-                    <<"id">> => hb_util:human_id(TX#tx.id),
+                    <<"alg">> => <<"rsa-pss">>,
+                    <<"committer">> => Address,
                     <<"owner">> => TX#tx.owner,
                     <<"signature">> => TX#tx.signature
                 },
                 WithoutBaseCommitment#{
                     <<"commitments">> => #{
-                        Address =>
+                        ID =>
                             case normal_tags(TX#tx.tags) of
                                 true -> Commitment;
                                 false -> Commitment#{
@@ -367,14 +390,17 @@ to(RawTABM) when is_map(RawTABM) ->
     TABMWithComm =
         case maps:keys(Commitments) of
             [] -> TABM;
-            [Address] ->
-                maps:merge(
-                    TABM,
-                    maps:without(
-                        [<<"commitment-device">>],
-                        maps:get(Address, Commitments)
-                    )
-                );
+            [ID] ->
+                TABMWithoutCommitmentKeys =
+                    maps:merge(
+                        TABM,
+                        maps:without(
+                            [<<"commitment-device">>, <<"committer">>, <<"alg">>],
+                            maps:get(ID, Commitments)
+                        )
+                    ),
+                ?event({tabm_without_commitment_keys, TABMWithoutCommitmentKeys}),
+                TABMWithoutCommitmentKeys;
             _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
         end,
     OriginalTagMap = maps:get(<<"original-tags">>, TABMWithComm, #{}),
@@ -396,7 +422,7 @@ to(RawTABM) when is_map(RawTABM) ->
     MsgKeyMap =
         maps:map(
             fun(_Key, Msg) when is_map(Msg) -> to(Msg);
-            (_Key, Value) -> Value
+               (_Key, Value) -> Value
             end,
             M
         ),
@@ -415,7 +441,9 @@ to(RawTABM) when is_map(RawTABM) ->
                             maps:remove(NormKey, RemMap),
                             [
                                 try hb_util:native_id(Value) catch _:_ -> Value end
-                            |Acc]
+                            |
+                                Acc
+                            ]
                         };
                     {ok, Value} ->
                         {
@@ -503,16 +531,17 @@ to(RawTABM) when is_map(RawTABM) ->
                 TX#tx { data = DataItems#{ <<"data">> => to(Data) } }
         end,
     % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
-    Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
-    catch
-        _:Error ->
-            ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
-            ?event({prepared_tx_before_ids,
-                {tags, {explicit, TXWithData#tx.tags}},
-                {data, TXWithData#tx.data}
-            }),
-            throw(Error)
-    end,
+    Res =
+        try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
+        catch
+            _:Error ->
+                ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
+                ?event({prepared_tx_before_ids,
+                    {tags, {explicit, TXWithData#tx.tags}},
+                    {data, TXWithData#tx.data}
+                }),
+                throw(Error)
+        end,
     %?event({result, {explicit, Res}}),
     Res;
 to(_Other) ->

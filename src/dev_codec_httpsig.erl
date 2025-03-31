@@ -115,12 +115,13 @@ id(Msg, _Params, _Opts) ->
 %% the signature and signature input. If the message already has a signature-input,
 %% directly, it is treated differently: We relabel it as `x-signature-input' to
 %% avoid key collisions.
-find_id(#{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
-    CommsWithoutHmac = maps:without([<<"hmac-sha256">>], Comms),
-    IDs = lists:map(
-        fun({_, #{ <<"id">> := ID }}) -> ID end,
-        maps:to_list(CommsWithoutHmac)
-    ),
+find_id(Msg = #{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
+    #{ <<"commitments">> := CommsWithoutHmac } =
+        hb_message:without_commitments(
+            #{ <<"alg">> => <<"hmac-sha256">> },
+            Msg
+        ),
+    IDs = maps:keys(CommsWithoutHmac),
     case IDs of
         [] -> throw({could_not_find_ids, CommsWithoutHmac});
         [ID] ->
@@ -138,8 +139,8 @@ find_id(#{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
             ?event({sorted_ids, SortedIDs, {sf_list, SFList}}),
             {ok, hb_util:human_id(crypto:hash(sha256, SFList))}
     end;
-find_id(#{ <<"commitments">> := #{ <<"hmac-sha256">> := #{ <<"id">> := ID } } }) ->
-    {ok, ID};
+find_id(#{ <<"commitments">> := CommitmentMap }) ->
+    {ok, hd(maps:keys(CommitmentMap))};
 find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }) ->
     {not_found, (maps:without([<<"signature-input">>], AttMsg))#{
         <<"x-signature-input">> => UserSigInput
@@ -176,12 +177,15 @@ commit(MsgToSign, _Req, Opts) ->
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = hb_structured_fields:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
-    Committer = hb_util:human_id(Address = ar_wallet:to_address(Wallet)),
+    ID = hb_util:human_id(crypto:hash(sha256, Signature)),
+    Address = ar_wallet:to_address(Wallet),
     SigName = address_to_sig_name(Address),
     % Calculate the id and place the signature into the `commitments' key of the message.
     Commitment =
         #{
-            <<"id">> => hb_util:human_id(crypto:hash(sha256, Signature)),
+            <<"commitment-device">> => <<"httpsig@1.0">>,
+            <<"alg">> => <<"rsa-pss-sha512">>,
+            <<"committer">> => hb_util:human_id(Address),
             % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
             <<"signature">> =>
                 bin(hb_structured_fields:dictionary(
@@ -190,12 +194,11 @@ commit(MsgToSign, _Req, Opts) ->
             <<"signature-input">> =>
                 bin(hb_structured_fields:dictionary(
                     #{ SigName => ParsedSignatureInput }
-                )),
-            <<"commitment-device">> => <<"httpsig@1.0">>
+                ))
         },
     OldCommitments = maps:get(<<"commitments">>, NormMsg, #{}),
     reset_hmac(MsgWithoutHP#{<<"commitments">> =>
-        OldCommitments#{ Committer => Commitment }
+        OldCommitments#{ ID => Commitment }
     }).
 
 %% @doc Return the list of commited keys from a message. The message will have
@@ -306,11 +309,15 @@ address_to_sig_name(OtherRef) ->
 %%@doc Ensure that the commitments and hmac are properly encoded
 reset_hmac(RawMsg) ->
     Msg = hb_message:convert(RawMsg, tabm, #{}),
-    Commitments =
-        maps:without(
-            [<<"hmac-sha256">>],
-            maps:get(<<"commitments">>, Msg, #{})
+    WithoutHmac =
+        hb_message:without_commitments(
+            #{
+                <<"commitment-device">> => <<"httpsig@1.0">>,
+                <<"alg">> => <<"hmac-sha256">>
+            },
+            Msg
         ),
+    Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
     AllSigs =
         maps:from_list(lists:map(
             fun ({Committer, #{ <<"signature">> := Signature }}) ->
@@ -353,16 +360,17 @@ reset_hmac(RawMsg) ->
     ?event({pre_hmac_sig_input,
         {string, maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
     HMacInputMsg = maps:merge(Msg, HMacSigInfo),
-    {ok, ID} = hmac(HMacInputMsg),
+    {ok, RawID} = hmac(HMacInputMsg),
+    ID = hb_util:human_id(RawID),
     Res = {
         ok,
         maps:put(
             <<"commitments">>,
             Commitments#{
-                <<"hmac-sha256">> =>
+                ID =>
                     HMacSigInfo#{
-                        <<"id">> => hb_util:human_id(ID),
-                        <<"commitment-device">> => <<"httpsig@1.0">>
+                        <<"commitment-device">> => <<"httpsig@1.0">>,
+                        <<"alg">> => <<"hmac-sha256">>
                     }
             },
             Msg
@@ -424,28 +432,34 @@ hmac(Msg) ->
 %% @doc Verify different forms of httpsig commited messages. `dev_message:verify'
 %% already places the keys from the commitment message into the root of the
 %% message.
-verify(MsgToVerify, #{ <<"committer">> := <<"hmac-sha256">> }, _Opts) ->
+verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha256">> }, _Opts) ->
     % Verify a hmac on the message
-    ExpectedID = maps:get(<<"id">>, MsgToVerify, not_set),
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
     {ok, ResetMsg} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
     case maps:get(<<"commitments">>, ResetMsg, no_commitments) of
         no_commitments -> {error, could_not_calculate_id};
-        #{ <<"hmac-sha256">> := #{ <<"id">> := ExpectedID } } ->
+        #{ ExpectedID := #{ <<"alg">> := <<"hmac-sha256">> } } ->
             ?event({hmac_verified, {id, ExpectedID}}),
             {ok, true};
-        #{ <<"hmac-sha256">> := #{ <<"id">> := RecalculatedID } } ->
+        _ ->
             ?event({hmac_failed_verification,
-                {recalculated_id, RecalculatedID},
-                {expected, ExpectedID}}),
+                {recalculated_commitments,
+                    maps:keys(maps:get(<<"commitments">>, ResetMsg, #{}))
+                },
+                {expected_id, ExpectedID}}),
             {ok, false}
     end;
 verify(MsgToVerify, Req, _Opts) ->
     % Validate a signed commitment.
     ?event({verify, {target, MsgToVerify}, {req, Req}}),
     % Parse the signature parameters into a map.
-    Committer = maps:get(<<"committer">>, Req),
-    SigName = address_to_sig_name(Committer),
+    CommitmentID = maps:get(<<"commitment">>, Req),
+    Commitment =
+        maps:get(
+            CommitmentID,
+            maps:get(<<"commitments">>, MsgToVerify, #{})
+        ),
+    SigName = address_to_sig_name(maps:get(<<"committer">>, Commitment)),
     {list, _SigInputs, ParamsKVList} =
         maps:get(
             SigName,
@@ -455,9 +469,15 @@ verify(MsgToVerify, Req, _Opts) ->
                 )
             )
         ),
-    Alg = maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)),
+    {string, Alg} = maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)),
+    AlgFromCommitment = maps:get(<<"alg">>, Commitment),
     case Alg of
-        {string, <<"rsa-pss-sha512">>} ->
+        _ when AlgFromCommitment =/= Alg ->
+            {error, {commitment_alg_mismatch,
+                {from_commitment_message, AlgFromCommitment},
+                {from_signature_params, Alg}
+            }};
+        <<"rsa-pss-sha512">> when AlgFromCommitment =:= Alg ->
             {string, KeyID} = maps:get(<<"keyid">>, Params),
             PubKey = hb_util:decode(KeyID),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
@@ -1246,13 +1266,13 @@ validate_large_message_from_http_test() ->
     ?assert(length(Signers) == 1),
     ?assert(hb_message:verify(Res, Signers)),
     ?event({sig_verifies, Signers}),
-    ?assert(hb_message:verify(Res, [<<"hmac-sha256">>])),
+    ?assert(hb_message:verify(Res)),
     ?event({hmac_verifies, <<"hmac-sha256">>}),
     {ok, OnlyCommitted} = hb_message:with_only_committed(Res),
     ?event({msg_with_only_committed, OnlyCommitted}),
     ?assert(hb_message:verify(OnlyCommitted, Signers)),
     ?event({msg_with_only_committed_verifies, Signers}),
-    ?assert(hb_message:verify(OnlyCommitted, [<<"hmac-sha256">>])),
+    ?assert(hb_message:verify(OnlyCommitted)),
     ?event({msg_with_only_committed_verifies_hmac, <<"hmac-sha256">>}).
 
 committed_id_test() ->
@@ -1275,7 +1295,7 @@ multicommitted_id_test() ->
     SignedID = hb_message:id(Signed2, all),
     ?event({ids, {unsigned_id, UnsignedID}, {signed_id, SignedID}}),
     ?assertNotEqual(UnsignedID, SignedID),
-    ?assert(hb_message:verify(Signed2, [<<"hmac-sha256">>])),
+    ?assert(hb_message:verify(Signed2, [])),
     ?assert(hb_message:verify(Signed2, [Addr1])),
     ?assert(hb_message:verify(Signed2, [Addr2])),
     ?assert(hb_message:verify(Signed2, [Addr1, Addr2])),

@@ -62,13 +62,13 @@ write(RawMsg, Opts) when is_map(RawMsg) ->
     % _tabm_ format for writing to the store.
     case hb_message:with_only_committed(RawMsg, Opts) of
         {ok, Msg} ->
-            AltIDs = calculate_alt_ids(RawMsg, Opts),
-            ?event({writing_full_message, {alt_ids, AltIDs}, {msg, Msg}}),
+            AllIDs = calculate_all_ids(RawMsg, Opts),
+            ?event({writing_full_message, {all_ids, AllIDs}, {msg, Msg}}),
             Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
             ?event({tabm, Tabm}),
             try do_write_message(
                 Tabm,
-                AltIDs,
+                AllIDs,
                 hb_opts:get(store, no_viable_store, Opts),
                 Opts
             )
@@ -91,16 +91,17 @@ write(Bin, Opts) when is_binary(Bin) ->
     % When asked to write only a binary, we do not calculate any alternative IDs.
     do_write_message(Bin, [], hb_opts:get(store, no_viable_store, Opts), Opts).
 
-do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
+do_write_message(Bin, AllIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
     ok = hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin),
-    lists:map(fun(AltID) -> hb_store:make_link(Store, Path, AltID) end, AltIDs),
+    lists:map(fun(ID) -> hb_store:make_link(Store, Path, ID) end, AllIDs),
     {ok, Path};
-do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
+do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % Get the ID of the unsigned message.
     {ok, UncommittedID} = dev_message:id(Msg, #{ <<"committers">> => <<"none">> }, Opts),
-    ?event({writing_message_with_unsigned_id, UncommittedID, {alts, AltIDs}}),
+    AltIDs = AllIDs -- [UncommittedID],
+    ?event({writing_message_with_unsigned_id, UncommittedID, {alt_ids, AltIDs}}),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
     hb_store:make_group(Store, UncommittedID),
     % Write the keys of the message into the store, rolling the keys into
@@ -122,11 +123,8 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
                     Opts
                 ),
             ?event({key_hashpath_from_unsigned, KeyHashPath}),
-            % Note: We do not pass the AltIDs here, as we cannot calculate them
-            % based on the TABM that we have in-memory at this point. We could
-            % turn the TABM back into a structured message, but this is
-            % expensive.
-            {ok, Path} = do_write_message(Value, [], Store, Opts),
+            ValueAltIDs = calculate_all_ids(Value, Opts),
+            {ok, Path} = do_write_message(Value, ValueAltIDs, Store, Opts),
             hb_store:make_link(Store, Path, KeyHashPath),
             ?event(
                 {
@@ -152,24 +150,15 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     ),
     {ok, UncommittedID}.
 
-%% @doc Calculate the alternative IDs for a message.
-calculate_alt_ids(Bin, _Opts) when is_binary(Bin) -> [];
-calculate_alt_ids(Msg, _Opts) ->
+%% @doc Calculate the IDs for a message.
+calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
+calculate_all_ids(Msg, _Opts) ->
     Commitments =
         maps:without(
             [<<"priv">>],
             maps:get(<<"commitments">>, Msg, #{})
         ),
-    lists:filtermap(
-        fun(Committer) ->
-            Comm = maps:get(Committer, Commitments, #{}),
-            case maps:get(<<"id">>, Comm, undefined) of
-                undefined -> false;
-                ID -> {true, ID}
-            end
-        end,
-        maps:keys(Commitments)
-    ).
+    maps:keys(Commitments).
 
 %% @doc Write a hashpath and its message to the store and link it.
 write_hashpath(Msg = #{ <<"priv">> := #{ <<"hashpath">> := HP } }, Opts) ->
@@ -299,7 +288,7 @@ to_integer(Value) when is_binary(Value) ->
 test_unsigned(Data) ->
     #{
         <<"base-test-key">> => <<"base-test-value">>,
-        <<"deep-test-key">> => Data
+        <<"other-test-key">> => Data
     }.
 
 %% Helper function to create signed #tx items.
@@ -322,7 +311,7 @@ test_store_unsigned_empty_message(Opts) ->
 
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_unsigned_message(Opts) ->
-    Item = test_unsigned(#{ <<"key">> => <<"Simple unsigned data item">> }),
+    Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
     {ok, _Path} = write(Item, Opts),
     %% Read the item back
@@ -416,7 +405,7 @@ test_deeply_nested_complex_message(Opts) ->
         ),
     ?event({deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_converge:get(<<"deep-test-key">>, DeepMsg)),
+    ?assertEqual([1,2,3], hb_converge:get(<<"other-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),

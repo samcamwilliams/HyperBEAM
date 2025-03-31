@@ -225,7 +225,7 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
                 lists:filtermap(
                     fun ({item, BareItem, _}) ->
                         case hb_structured_fields:from_bare_item(BareItem) of
-                            HP = <<"hash", _/binary>> -> {true, HP};
+                            HP = <<"hashpath", _/binary>> -> {true, HP};
                             _ -> false
                         end;
                     (_) -> false
@@ -242,9 +242,15 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
             ?event({hashpaths, Hashpaths}),
             Params = maps:from_list(ParamsKVList),
             {string, EncPubKey} = maps:get(<<"keyid">>, Params),
+            {string, Alg} = maps:get(<<"alg">>, Params),
             PubKey = hb_util:decode(EncPubKey),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
-            ?event({calculated_name, {address, Address}, {sig, Signature}, {inputs, {explicit, SfInputs}, {implicit, Params}}}),
+            ?event({calculated_name,
+                {address, Address},
+                {sig, Signature},
+                {inputs, {explicit, SfInputs},
+                {implicit, Params}}
+            }),
             SerializedSig = iolist_to_binary(
                 hb_structured_fields:dictionary(
                     #{ SigName => Signature }
@@ -252,17 +258,18 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
             ),
             {item, {binary, UnencodedSig}, _} = Signature,
             {
-                Address,
+                hb_util:human_id(crypto:hash(sha256, UnencodedSig)),
                 Hashpaths#{
+                    <<"commitment-device">> => <<"httpsig@1.0">>,
+                    <<"committer">> => Address,
+                    <<"alg">> => Alg,
                     <<"signature">> => SerializedSig,
                     <<"signature-input">> =>
                         iolist_to_binary(
                             hb_structured_fields:dictionary(
                                 #{ SigName => maps:get(SigName, SfInputs) }
                             )
-                        ),
-                    <<"id">> => hb_util:human_id(crypto:hash(sha256, UnencodedSig)),
-                    <<"commitment-device">> => <<"httpsig@1.0">>
+                        )
                 }
             }
         end,
@@ -272,8 +279,8 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
     ?event({adding_commitments, {msg, Map}, {commitments, Commitments}}),
     Msg = Map#{ <<"commitments">> => Commitments },
     % Reset the HMAC on the message if none is present
-    case maps:get(<<"hmac-sha256">>, Commitments, not_found) of
-        not_found ->
+    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, Msg) of
+        X when (X == not_found) or (X == multiple_matches) ->
             ?event({resetting_hmac, {msg, Msg}}),
             dev_codec_httpsig:reset_hmac(Msg);
         _ ->
@@ -300,9 +307,8 @@ to(TABM, Opts) when is_map(TABM) ->
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
     Intermediate = do_to(Stripped, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
     % Finally, add the signatures to the HTTP message
-    case maps:get(<<"commitments">>, TABM, not_found) of
-        #{ <<"hmac-sha256">> :=
-                #{ <<"signature">> := Sig, <<"signature-input">> := SigInput } } ->
+    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM) of
+        {ok, _, #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }} ->
             HPs = hashpaths_from_message(TABM),
             EncWithHPs = maps:merge(Intermediate, HPs),
             % Add the original signature encodings to the HTTP message

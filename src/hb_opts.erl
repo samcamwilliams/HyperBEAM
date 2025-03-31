@@ -124,6 +124,7 @@ default_message() ->
         short_trace_len => 5,
         debug_metadata => true,
         debug_ids => false,
+        debug_committers => false,
         debug_show_priv => if_present,
 		trusted => #{},
         routes => [

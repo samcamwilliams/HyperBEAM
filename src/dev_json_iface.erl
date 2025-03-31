@@ -90,21 +90,16 @@ prep_call(M1, M2, Opts) ->
 
 %% @doc Normalize a message for AOS-compatibility.
 denormalize_message(Message) ->
-    Signers =
-        lists:filter(
-            fun(ID) -> ?IS_ID(ID) end,
-            hb_converge:get(<<"committers">>, {as, <<"message@1.0">>, Message})
-        ),
     NormOwnerMsg =
-        case Signers of
+        case hb_message:signers(Message) of
             [] -> Message;
-            [Signer|_] ->
-                Sig =
-                    hb_converge:get(
-                        <<"commitments/", Signer/binary, "/signature">>,
-                        {as, <<"message@1.0">>, Message}
-                    ),
-                Message#{ <<"owner">> => Signer, <<"signature">> => Sig }
+            [PrimarySigner|_] ->
+                {ok, _, Commitment} = hb_message:commitment(PrimarySigner, Message),
+                Message#{
+                    <<"owner">> => hb_util:human_id(PrimarySigner),
+                    <<"signature">> =>
+                        hb_converge:get(<<"signature">>, Commitment, <<>>)
+                }
         end,
     NormOwnerMsg#{
         <<"id">> => hb_message:id(Message, all)

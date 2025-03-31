@@ -106,7 +106,7 @@ hashpath(RawMsg1, Opts) ->
                     hb_util:ok(
                         dev_message:id(
                             Msg1,
-                            #{ <<"committers">> => <<"all">> },
+                            #{ <<"commitments">> => <<"all">> },
                             Opts
                         )
                     )
@@ -131,7 +131,7 @@ hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
             {ok, Msg2ID} =
                 dev_message:id(
                     Msg2,
-                    #{ <<"committers">> => <<"all">> },
+                    #{ <<"commitments">> => <<"all">> },
                     Opts
                 ),
             hashpath(Msg1, hb_util:human_id(Msg2ID), HashpathAlg, Opts)

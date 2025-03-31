@@ -37,13 +37,7 @@ estimate(_, Msg, NodeMsg) ->
 is_admissible(Msg, NodeMsg) ->
     AllowList = hb_opts:get(faff_allow_list, [], NodeMsg),
     Req = hb_converge:get(<<"request">>, Msg, NodeMsg),
-    Signers =
-        lists:filtermap(
-            fun(Signer) when not ?IS_ID(Signer) -> false;
-               (Signer) -> {true, hb_util:human_id(Signer)}
-            end,
-            hb_converge:get(<<"committers">>, Req, undefined, NodeMsg)
-        ),
+    Signers = hb_message:signers(Req),
     ?event(payment, {is_admissible, {signers, Signers}, {allow_list, AllowList}}),
     lists:all(
         fun(Signer) -> lists:member(Signer, AllowList) end,
