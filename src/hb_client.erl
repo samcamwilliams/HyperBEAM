@@ -76,10 +76,10 @@ arweave_timestamp() ->
                 httpc:request(
                     <<(hb_opts:get(gateway))/binary, "/block/current">>
                 ),
-            {Fields} = jiffy:decode(Body),
-            {_, Timestamp} = lists:keyfind(<<"timestamp">>, 1, Fields),
-            {_, Hash} = lists:keyfind(<<"indep_hash">>, 1, Fields),
-            {_, Height} = lists:keyfind(<<"height">>, 1, Fields),
+            Fields = hb_json:decode(Body),
+            Timestamp = maps:get(<<"timestamp">>, Fields),
+            Hash = maps:get(<<"indep_hash">>, Fields),
+            Height = maps:get(<<"height">>, Fields),
             {Timestamp, Height, Hash}
     end.
 

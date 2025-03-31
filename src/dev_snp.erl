@@ -61,7 +61,7 @@ init(M1, _M2, Opts) ->
             {error, <<"Cannot enable SNP if operator is already set.">>};
         _ ->
             SnpHashes = hb_converge:get(<<"body">>, M1, Opts),
-            SNPDecoded = jiffy:decode(SnpHashes, [return_maps]),
+            SNPDecoded = hb_json:decode(SnpHashes),
             Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
             ok = hb_http_server:set_opts(Opts#{
                 % Add our trusted hashes to the device's trusted software list
@@ -88,7 +88,7 @@ verify(M1, M2, NodeOpts) ->
     {ok, MsgWithJSONReport} = hb_message:find_target(M1, M2, NodeOpts),
 	% Normalize the request message
 	ReportJSON = hb_converge:get(<<"report">>, MsgWithJSONReport, NodeOpts),
-	Report = jiffy:decode(ReportJSON, [return_maps]),
+	Report = hb_json:decode(ReportJSON),
 	Msg =
 		maps:merge(
 			maps:without([<<"report">>], MsgWithJSONReport),

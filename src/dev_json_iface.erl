@@ -63,23 +63,19 @@ prep_call(M1, M2, Opts) ->
     Message = hb_converge:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_converge:get(<<"process/image">>, M1, Opts),
     BlockHeight = hb_converge:get(<<"block-height">>, M2, Opts),
-    RawMsgJson = message_to_json_struct(denormalize_message(Message)),
-    {Props} = RawMsgJson,
+    Props = message_to_json_struct(denormalize_message(Message)),
     MsgProps =
-        normalize_props(
-            Props ++
-                [
-                    {<<"Module">>, Image},
-                    {<<"Block-Height">>, BlockHeight}
-                ]
-        ),
-    MsgJson = jiffy:encode({MsgProps}),
+        Props#{
+            <<"Module">> => Image,
+            <<"Block-Height">> => BlockHeight
+        },
+    MsgJson = hb_json:encode(MsgProps),
     {ok, MsgJsonPtr} = hb_beamr_io:write_string(Instance, MsgJson),
     ProcessProps =
-        normalize_props(
-            [{<<"Process">>, message_to_json_struct(Process)}]
-        ),
-    ProcessJson = jiffy:encode({ProcessProps}),
+        #{
+            <<"Process">> => message_to_json_struct(Process)
+        },
+    ProcessJson = hb_json:encode(ProcessProps),
     {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Instance, ProcessJson),
     {ok,
         hb_converge:set(
@@ -124,7 +120,7 @@ message_to_json_struct(RawMsg, Features) ->
             #{}
         ),
     ID = hb_message:id(RawMsg, all),
-    ?event(next_debug, {encoding, {id, ID}, {msg, RawMsg}}),
+    ?event({encoding, {id, ID}, {msg, RawMsg}}),
     Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
 	Owner =
         case hb_message:signers(RawMsg) of
@@ -162,21 +158,19 @@ message_to_json_struct(RawMsg, Features) ->
             #{}
         ),
     Sig = hb_converge:get(<<"signature">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
-    Fields = [
-        {<<"Id">>, safe_to_id(ID)},
+    #{
+        <<"Id">> => safe_to_id(ID),
         % NOTE: In Arweave TXs, these are called "last_tx"
-        {<<"Anchor">>, Last},
+        <<"Anchor">> => Last,
         % NOTE: When sent to ao "Owner" is the wallet address
-        {<<"Owner">>, hb_util:encode(Owner)},
-        {<<"From">>, case ?IS_ID(From) of true -> safe_to_id(From); false -> From end},
-        {<<"Tags">>,
+        <<"Owner">> => hb_util:encode(Owner),
+        <<"From">> => case ?IS_ID(From) of true -> safe_to_id(From); false -> From end,
+        <<"Tags">> =>
             lists:map(
                 fun({Name, Value}) ->
-                    {
-                        [
-                            {name, maybe_list_to_binary(Name)},
-                            {value, maybe_list_to_binary(Value)}
-                        ]
+                    #{
+                        name => header_case_string(maybe_list_to_binary(Name)),
+                        value => maybe_list_to_binary(Value)
                     }
                 end,
                 maps:to_list(
@@ -188,23 +182,21 @@ message_to_json_struct(RawMsg, Features) ->
                         Message
                     )
                 )
-            )},
-        {<<"Target">>, safe_to_id(Target)},
-        {<<"Data">>, Data},
-        {<<"Signature">>,
+            ),
+        <<"Target">> => safe_to_id(Target),
+        <<"Data">> => Data,
+        <<"Signature">> =>
             case byte_size(Sig) of
                 0 -> <<>>;
                 512 -> hb_util:encode(Sig);
                 _ -> Sig
-            end}
-    ],
-    HeaderCaseFields = normalize_props(Fields),
-    {HeaderCaseFields}.
+            end
+    }.
 
 %% @doc Translates a compute result -- either from a WASM execution using the 
 %% JSON-Iface, or from a `Legacy' CU -- and transforms it into a result message.
 json_to_message(JSON, Opts) when is_binary(JSON) ->
-    json_to_message(jiffy:decode(JSON, [return_maps]), Opts);
+    json_to_message(hb_json:decode(JSON), Opts);
 json_to_message(Resp, Opts) when is_map(Resp) ->
     {ok, Data, Messages, Patches} = normalize_results(Resp),
     Output = 
@@ -242,30 +234,6 @@ maybe_list_to_binary(List) when is_list(List) ->
     list_to_binary(List);
 maybe_list_to_binary(Bin) ->
     Bin.
-
-%% @doc Normalize the properties of a message to begin with a capital letter for
-%% backwards compatibility with AOS.
-normalize_props(Props) ->
-    lists:map(
-        fun({<<"Tags">>, Values}) ->
-            {<<"Tags">>,
-                lists:map(
-                    fun({[{name, Name}, {value, Value}]}) ->
-                        {
-                            [
-                                {name, header_case_string(Name)},
-                                {value, Value}
-                            ]
-                        }
-                    end,
-                    Values
-                )
-            };
-        ({Key, Value}) ->
-            {header_case_string(Key), Value}
-        end,
-        Props
-    ).
 
 header_case_string(Key) ->
     NormKey = hb_converge:normalize_key(Key),
@@ -306,7 +274,7 @@ results(M1, _M2, Opts) ->
         <<"ok">> ->
             [Ptr] = hb_converge:get(<<"results/wasm/output">>, M1, Opts),
             {ok, Str} = hb_beamr_io:read_string(Instance, Ptr),
-            try jiffy:decode(Str, [return_maps]) of
+            try hb_json:decode(Str) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     {ok, ProcessedResults} = json_to_message(Resp, Opts),
                     PostProcessed = postprocess_outbox(ProcessedResults, Proc, Opts),
@@ -396,13 +364,6 @@ postprocess_outbox(Msg, Proc, Opts) ->
 
 test_init() ->
     application:ensure_all_started(hb).
-
-% Disabled due to missing test file
-% json_to_message_test() ->
-%     {ok, JSON} = file:read_file("test/example_json_iface_result.json"),
-%     {ok, Msg} = json_to_message(JSON, #{}),
-%     ?event({msg, Msg}),
-%     ?assertEqual(<<"OK">>, hb_converge:get(<<"outbox/1/result">>, Msg, #{})).
 
 generate_stack(File) ->
     generate_stack(File, <<"WASM">>).

@@ -139,16 +139,15 @@ query(Query, Opts) ->
             <<"method">> => <<"POST">>,
             <<"path">> => <<"/graphql">>,
             <<"content-type">> => <<"application/json">>,
-            <<"body">> => jiffy:encode(Query)
+            <<"body">> => hb_json:encode(Query)
         },
         Opts
     ),
     case Res of
         {ok, Msg} ->
             {ok,
-                jiffy:decode(
-                    hb_converge:get(<<"body">>, Msg, <<>>, Opts),
-                    [return_maps]
+                hb_json:decode(
+                    hb_converge:get(<<"body">>, Msg, <<>>, Opts)
                 )
             };
         {error, Reason} -> {error, Reason}

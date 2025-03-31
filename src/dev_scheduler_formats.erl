@@ -72,25 +72,27 @@ assignments_to_aos2(ProcID, Assignments, More, RawOpts) ->
     Opts = format_opts(RawOpts),
     {Timestamp, Height, Hash} = ar_timestamp:get(),
     BodyStruct = 
-        {[
-            {<<"page_info">>,
-                {[
-                    {<<"process">>, hb_util:human_id(ProcID)},
-                    {<<"has_next_page">>, More},
-                    {<<"timestamp">>, list_to_binary(integer_to_list(Timestamp))},
-                    {<<"block-height">>, list_to_binary(integer_to_list(Height))},
-                    {<<"block-hash">>, hb_util:human_id(Hash)}
-                ]}
-            },
-            {<<"edges">>, [
-                {[
-                    {<<"cursor">>, cursor(Assignment, Opts)},
-                    {<<"node">>, assignment_to_aos2(Assignment, Opts)}
-                ]}
-                || Assignment <- Assignments
-            ]}
-        ]},
-    Encoded = iolist_to_binary(lists:flatten([jiffy:encode(BodyStruct)])),
+        #{
+            <<"page_info">> =>
+                #{
+                    <<"process">> => hb_util:human_id(ProcID),
+                    <<"has_next_page">> => More,
+                    <<"timestamp">> => list_to_binary(integer_to_list(Timestamp)),
+                    <<"block-height">> => list_to_binary(integer_to_list(Height)),
+                    <<"block-hash">> => hb_util:human_id(Hash)
+                },
+            <<"edges">> =>
+                lists:map(
+                    fun(Assignment) ->
+                        #{
+                            <<"cursor">> => cursor(Assignment, Opts),
+                            <<"node">> => assignment_to_aos2(Assignment, Opts)
+                        }
+                    end,
+                    Assignments
+                )
+        },
+    Encoded = hb_json:encode(BodyStruct),
     ?event({body_struct, BodyStruct}),
     ?event({encoded, {explicit, Encoded}}),
     {ok, 
@@ -112,12 +114,12 @@ assignment_to_aos2(Assignment, RawOpts) ->
     Opts = format_opts(RawOpts),
     Message = hb_converge:get(<<"body">>, Assignment, Opts),
     AssignmentWithoutBody = maps:without([<<"body">>], Assignment),
-    {[
-        {<<"message">>,
-            dev_json_iface:message_to_json_struct(Message)},
-        {<<"assignment">>,
-            dev_json_iface:message_to_json_struct(AssignmentWithoutBody)}
-    ]}.
+    #{
+        <<"message">> =>
+            dev_json_iface:message_to_json_struct(Message),
+        <<"assignment">> =>
+            dev_json_iface:message_to_json_struct(AssignmentWithoutBody)
+    }.
 
 %% @doc Convert an AOS2-style JSON structure to a normalized HyperBEAM
 %% assignments response.

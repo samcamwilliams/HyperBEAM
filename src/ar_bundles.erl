@@ -317,8 +317,10 @@ normalize(Item) -> reset_ids(normalize_data(Item)).
 %% @doc Ensure that a data item (potentially containing a map or list) has a standard, serialized form.
 normalize_data(not_found) -> throw(not_found);
 normalize_data(Bundle) when is_list(Bundle); is_map(Bundle) ->
+    ?event({normalize_data, bundle, Bundle}),
     normalize_data(#tx{ data = Bundle });
 normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
+    ?event({normalize_data, list, Item}),
     normalize_data(
         Item#tx{
             tags = add_list_tags(Item#tx.tags),
@@ -338,8 +340,10 @@ normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
         }
     );
 normalize_data(Item = #tx{data = Bin}) when is_binary(Bin) ->
+    ?event({normalize_data, binary, Item}),
     normalize_data_size(Item);
 normalize_data(Item = #tx{data = Data}) ->
+    ?event({normalize_data, map, Item}),
     normalize_data_size(
         case serialize_bundle_data(Data, Item#tx.manifest) of
             {Manifest, Bin} ->
@@ -384,7 +388,7 @@ serialize(RawTX, binary) ->
     >>;
 serialize(TX, json) ->
     true = enforce_valid_tx(TX),
-    jiffy:encode(hb_message:convert(TX, <<"ans104@1.0">>, #{})).
+    hb_json:encode(hb_message:convert(TX, <<"ans104@1.0">>, #{})).
 
 %% @doc Take an item and ensure that it is of valid form. Useful for ensuring
 %% that a message is viable for serialization/deserialization before execution.
@@ -562,19 +566,19 @@ new_manifest(Index) ->
             {<<"data-protocol">>, <<"bundle-map">>},
             {<<"variant">>, <<"0.0.1">>}
         ],
-        data = jiffy:encode(Index)
+        data = hb_json:encode(Index)
     }),
     TX.
 
 manifest(Map) when is_map(Map) -> Map;
 manifest(#tx { manifest = undefined }) -> undefined;
 manifest(#tx { manifest = ManifestTX }) ->
-    jiffy:decode(ManifestTX#tx.data, [return_maps]).
+    hb_json:decode(ManifestTX#tx.data).
 
 parse_manifest(Item) when is_record(Item, tx) ->
     parse_manifest(Item#tx.data);
 parse_manifest(Bin) ->
-    jiffy:decode(Bin, [return_maps]).
+    hb_json:decode(Bin).
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 -- but it is is written in
@@ -677,7 +681,7 @@ deserialize(Binary, binary) ->
 %end;
 deserialize(Bin, json) ->
     try
-        Map = jiffy:decode(Bin, [return_maps]),
+        Map = hb_json:decode(Bin),
         hb_message:convert(Map, <<"ans104@1.0">>, #{})
     catch
         _:_:_Stack ->
@@ -720,7 +724,7 @@ maybe_unbundle_map(Bundle) ->
                 detached -> Bundle#tx { data = detached };
                 Items ->
                     MapItem = find_single_layer(hb_util:decode(MapTXID), Items),
-                    Map = jiffy:decode(MapItem#tx.data, [return_maps]),
+                    Map = hb_json:decode(MapItem#tx.data),
                     Bundle#tx{
                         manifest = MapItem,
                         data =
@@ -864,6 +868,9 @@ ar_bundles_test_() ->
         {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0}
     ].
 
+run_test() ->
+    test_bundle_with_one_item().
+
 test_no_tags() ->
     {Priv, Pub} = ar_wallet:new(),
     {KeyType, Owner} = Pub,
@@ -939,10 +946,13 @@ test_bundle_with_one_item() ->
         crypto:strong_rand_bytes(32),
         crypto:strong_rand_bytes(32),
         [],
-        ItemData = crypto:strong_rand_bytes(32)
+        ItemData = crypto:strong_rand_bytes(1000)
     ),
+    ?event({item, Item}),
     Bundle = serialize([Item]),
+    ?event({bundle, Bundle}),
     BundleItem = deserialize(Bundle),
+    ?event({bundle_item, BundleItem}),
     ?assertEqual(ItemData, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
