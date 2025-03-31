@@ -101,8 +101,7 @@ start(Opts) ->
         gun,
         prometheus,
         prometheus_cowboy,
-        os_mon,
-        rocksdb
+        os_mon
     ]),
     hb:init(),
     BaseOpts = set_default_opts(Opts),
@@ -341,8 +340,7 @@ start_node(Opts) ->
         gun,
         prometheus,
         prometheus_cowboy,
-        os_mon,
-        rocksdb
+        os_mon
     ]),
     hb:init(),
     hb_sup:start_link(Opts),
