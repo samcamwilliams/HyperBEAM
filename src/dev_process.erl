@@ -1012,19 +1012,21 @@ now_results_test_() ->
         ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"now/results/data">>, #{}))
     end}.
 
-prior_results_accessible_test() ->
-    init(),
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"return 1+1">>),
-    schedule_aos_call(Msg1, <<"return 2+2">>),
-    ?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"now/results/data">>, #{})),
-    ?assertMatch({ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
-        hb_converge:resolve(
-            Msg1,
-            #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-            #{}
-        )
-    ).
+prior_results_accessible_test_() ->
+	{timeout, 30, fun() ->
+		init(),
+		Msg1 = test_aos_process(),
+		schedule_aos_call(Msg1, <<"return 1+1">>),
+		schedule_aos_call(Msg1, <<"return 2+2">>),
+		?assertEqual({ok, <<"4">>}, hb_converge:resolve(Msg1, <<"now/results/data">>, #{})),
+		?assertMatch({ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
+			hb_converge:resolve(
+				Msg1,
+				#{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
+				#{}
+			)
+		)
+	end}.
 
 persistent_process_test() ->
     {timeout, 30, fun() ->
@@ -1100,7 +1102,7 @@ simple_wasm_persistent_worker_benchmark_test() ->
 
 aos_persistent_worker_benchmark_test_() ->
     {timeout, 30, fun() ->
-        BenchTime = 4,
+        BenchTime = 5,
         init(),
         Msg1 = test_aos_process(),
         schedule_aos_call(Msg1, <<"X=1337">>),

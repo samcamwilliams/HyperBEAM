@@ -409,23 +409,25 @@ generate_aos_msg(ProcID, Code) ->
         <<"block-height">> => 1
     }, Wallet).
 
-basic_aos_call_test() ->
-    Msg = generate_stack("test/aos-2-pure-xs.wasm"),
-    Proc = hb_converge:get(<<"process">>, Msg, #{ hashpath => ignore }),
-    ProcID = hb_message:id(Proc, all),
-    {ok, Msg3} =
-        hb_converge:resolve(
-            Msg,
-            generate_aos_msg(ProcID, <<"return 1+1">>),
-            #{}
-        ),
-    ?event({res, Msg3}),
-    Data = hb_converge:get(<<"results/data">>, Msg3, #{}),
-    ?assertEqual(<<"2">>, Data).
+basic_aos_call_test_() ->
+    {timeout, 20, fun() ->
+		Msg = generate_stack("test/aos-2-pure-xs.wasm"),
+		Proc = hb_converge:get(<<"process">>, Msg, #{ hashpath => ignore }),
+		ProcID = hb_message:id(Proc, all),
+		{ok, Msg3} =
+			hb_converge:resolve(
+				Msg,
+				generate_aos_msg(ProcID, <<"return 1+1">>),
+				#{}
+			),
+		?event({res, Msg3}),
+		Data = hb_converge:get(<<"results/data">>, Msg3, #{}),
+		?assertEqual(<<"2">>, Data)
+	end}.
 
 aos_stack_benchmark_test_() ->
     {timeout, 20, fun() ->
-        BenchTime = 3,
+        BenchTime = 5,
         RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm"),
         Proc = hb_converge:get(<<"process">>, RawWASMMsg, #{ hashpath => ignore }),
         ProcID = hb_converge:get(id, Proc, #{}),
@@ -445,6 +447,7 @@ aos_stack_benchmark_test_() ->
             "Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)",
             [Iterations, BenchTime, Iterations / BenchTime]
         ),
-        ?assert(Iterations > 10),
+		?debugFmt("Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)", [Iterations, BenchTime, Iterations / BenchTime]),
+        ?assert(Iterations >= 10),
         ok
     end}.

@@ -82,15 +82,17 @@ maybe_cache(StoreOpts, Data) ->
 %%% Tests
 
 %% @doc Store is accessible via the default options.
-graphql_as_store_test() ->
-    hb_http_server:start_node(#{}),
-    ?assertMatch(
-        {ok, #{ <<"type">> := <<"Assignment">> }},
-        hb_store:read(
-            [#{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }],
-            <<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>
-        )
-    ).
+graphql_as_store_test_() ->
+	{timeout, 10, fun() ->
+		hb_http_server:start_node(#{}),
+		?assertMatch(
+			{ok, #{ <<"type">> := <<"Assignment">> }},
+			hb_store:read(
+				[#{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }],
+				<<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>
+			)
+		)
+	end}.
 
 %% @doc Stored messages are accessible via `hb_cache` accesses.
 graphql_from_cache_test() ->

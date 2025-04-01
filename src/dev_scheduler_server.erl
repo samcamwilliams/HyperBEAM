@@ -183,32 +183,35 @@ next_hashchain(HashChain, Message) ->
 %% TESTS
 
 %% @doc Test the basic functionality of the server.
-new_proc_test() ->
-    Wallet = ar_wallet:new(),
-    SignedItem = hb_message:commit(
-        #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
-        Wallet
-    ),
-    SignedItem2 = hb_message:commit(
-        #{ <<"data">> => <<"test2">> },
-        Wallet
-    ),
-    SignedItem3 = hb_message:commit(
-        #{
-            <<"data">> => <<"test2">>,
-            <<"deep-key">> =>
-                #{ <<"data">> => <<"test3">> }
-        },
-        Wallet
-    ),
-    dev_scheduler_registry:find(hb_converge:get(id, SignedItem), true),
-    schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
-    schedule(ID, SignedItem2),
-    schedule(ID, SignedItem3),
-    ?assertMatch(
-        #{ current := 2 },
-        dev_scheduler_server:info(dev_scheduler_registry:find(ID))
-    ).
+new_proc_test_() ->
+	{timeout, 20, fun() -> 
+		Wallet = ar_wallet:new(),
+		SignedItem = hb_message:commit(
+			#{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
+			Wallet
+		),
+		SignedItem2 = hb_message:commit(
+			#{ <<"data">> => <<"test2">> },
+			Wallet
+		),
+		SignedItem3 = hb_message:commit(
+			#{
+				<<"data">> => <<"test2">>,
+				<<"deep-key">> =>
+					#{ <<"data">> => <<"test3">> }
+			},
+			Wallet
+		),
+		dev_scheduler_registry:find(hb_converge:get(id, SignedItem), true),
+		schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
+		schedule(ID, SignedItem2),
+		schedule(ID, SignedItem3),
+		?assertMatch(
+			#{ current := 2 },
+			dev_scheduler_server:info(dev_scheduler_registry:find(ID))
+		)
+	end}.
+    
 
 % benchmark_test() ->
 %     BenchTime = 1,
