@@ -241,13 +241,32 @@ do_read(Path, Store, Opts, AlreadyRead) ->
                             lists:map(
                                 fun(Subpath) ->
                                     ?event({reading_subpath, {path, Subpath}, {store, Store}}),
-                                    {ok, Res} = store_read(
+                                    Res = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
                                         Opts,
                                         [ResolvedFullPath | AlreadyRead]
                                     ),
-                                    {iolist_to_binary([Subpath]), Res}
+                                    case Res of
+                                        not_found ->
+                                            ?event(error,
+                                                {subpath_not_found,
+                                                    {parent, Path},
+                                                    {resolved_parent, {string, ResolvedFullPath}},
+                                                    {subpath, Subpath},
+                                                    {all_subpaths, Subpaths},
+                                                    {store, Store}
+                                                }
+                                            ),
+                                            TriedPath = hb_path:to_binary([ResolvedFullPath, Subpath]),
+                                            throw({subpath_not_found,
+                                                {parent, Path},
+                                                {resolved_parent, ResolvedFullPath},
+                                                {failed_path, TriedPath}
+                                            });
+                                        {ok, Data} ->
+                                            {iolist_to_binary([Subpath]), Data}
+                                    end
                                 end,
                                 Subpaths
                             )
