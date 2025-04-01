@@ -98,7 +98,7 @@ denormalize_message(Message) ->
                 Message#{
                     <<"owner">> => hb_util:human_id(PrimarySigner),
                     <<"signature">> =>
-                        hb_converge:get(<<"signature">>, Commitment, <<>>)
+                        hb_converge:get(<<"signature">>, Commitment, <<>>, #{})
                 }
         end,
     NormOwnerMsg#{
