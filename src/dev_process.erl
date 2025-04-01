@@ -609,22 +609,27 @@ test_aos_process(Opts, Stack) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
-    hb_message:commit(maps:merge(WASMProc, #{
-        <<"device-stack">> => Stack,
-        <<"execution-device">> => <<"stack@1.0">>,
-        <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"output-prefix">> => <<"wasm">>,
-        <<"passes">> => 2,
-        <<"stack-keys">> =>
-            [
-                <<"init">>,
-                <<"compute">>,
-                <<"snapshot">>,
-                <<"normalize">>
-            ],
-        <<"scheduler">> => Address,
-        <<"authority">> => Address
-    }), Wallet).
+    hb_message:commit(
+        maps:merge(
+            hb_message:uncommitted(WASMProc),
+            #{
+                <<"device-stack">> => Stack,
+                <<"execution-device">> => <<"stack@1.0">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"output-prefix">> => <<"wasm">>,
+                <<"passes">> => 2,
+                <<"stack-keys">> =>
+                    [
+                        <<"init">>,
+                        <<"compute">>,
+                        <<"snapshot">>,
+                        <<"normalize">>
+                    ],
+                <<"scheduler">> => Address,
+                <<"authority">> => Address
+            }),
+        Wallet
+    ).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
 %% execution. This should generate a message state has doubled 
@@ -643,13 +648,14 @@ schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
+    UncommittedBase = hb_message:uncommitted(MsgBase),
     Msg2 =
         hb_message:commit(#{
                 <<"path">> => <<"schedule">>,
                 <<"method">> => <<"POST">>,
                 <<"body">> =>
                     hb_message:commit(
-                        MsgBase#{
+                        UncommittedBase#{
                             <<"type">> => <<"Message">>,
                             <<"test-label">> => Text
                         },
