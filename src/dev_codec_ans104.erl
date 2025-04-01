@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([id/1, to/1, from/1, commit/3, verify/3, commited/3, content_type/1]).
+-export([id/1, to/1, from/1, commit/3, verify/3, committed/3, content_type/1]).
 -export([serialize/1, deserialize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -107,8 +107,8 @@ commit(Msg, _Req, Opts) ->
         }
     }.
 
-%% @doc Return a list of commited keys from an ANS-104 message.
-commited(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, _Req, Opts) ->
+%% @doc Return a list of committed keys from an ANS-104 message.
+committed(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, _Req, Opts) ->
     % If the message has a `trusted-keys' field in the immediate layer, we validate
     % that it also exists in the commitment's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
@@ -121,8 +121,8 @@ commited(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, 
             % the keys in the commitment so we return an error.
             throw({trusted_keys_not_found_in_commitment, Msg})
     end;
-commited(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _Req, Opts) ->
-    % If the message has an `original-tags' field, the commited fields are only
+committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _Req, Opts) ->
+    % If the message has an `original-tags' field, the committed fields are only
     % those keys, and maps that are nested in the `data' field.
     ?event({committed_from_original_tags, {input, Msg}}),
     case hb_converge:get(hd(hb_converge:keys(Comms)), Comms, #{}) of
@@ -138,10 +138,10 @@ commited(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _
             % Message appears to be tampered with.
             throw({original_tags_not_found_in_commitment, Msg})
     end;
-commited(Msg, Req, Opts) ->
+committed(Msg, Req, Opts) ->
     ?event({running_committed, {input, Msg}}),
     % Remove other commitments that were not 'promoted' to the base layer message
-    % by `message@1.0/commited'. This is safe because `to' will only proceed if 
+    % by `message@1.0/committed'. This is safe because `to' will only proceed if 
     % there is a single signature on the message. Subsequently, we can trust that
     % the keys signed by that single commitment speak for 'all' of the 
     % commitments.
@@ -166,7 +166,7 @@ commited(Msg, Req, Opts) ->
                     false -> []
                 end,
             % Return the immediate and nested keys. The `data' field is always
-            % commited, so we include it in the list of keys.
+            % committed, so we include it in the list of keys.
             {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?COMMITTED_TAGS};
         _ ->
             ?event({could_not_verify, {msg, MsgLessGivenComm}}),

@@ -252,7 +252,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({ErlStatus, Res}) when is_map(Res) ->
-    case lists:member(<<"status">>, hb_message:commited(Res)) of
+    case lists:member(<<"status">>, hb_message:committed(Res)) of
         false ->
             HTTPCode = status_code({ErlStatus, Res}),
             {ok, Res#{ <<"status">> => HTTPCode }};

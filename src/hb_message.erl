@@ -56,7 +56,7 @@
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, uncommitted/1, with_only_committers/2]).
 -export([verify/1, verify/2, commit/2, commit/3, signers/1, type/1, minimize/1]).
--export([commited/1, commited/2, commited/3]).
+-export([committed/1, committed/2, committed/3]).
 -export([commitment/2, commitment/3]).
 -export([with_only_committed/1, with_only_committed/2]).
 -export([with_commitments/2, without_commitments/2]).
@@ -148,10 +148,10 @@ id(Msg, RawCommitters, Opts) ->
         ),
     hb_util:human_id(ID).
 
-%% @doc Return a message with only the commited keys. If no commitments are
+%% @doc Return a message with only the committed keys. If no commitments are
 %% present, the message is returned unchanged. This means that you need to
 %% check if the message is:
-%% - Commited
+%% - Committed
 %% - Verifies
 %% ...before using the output of this function as the 'canonical' message. This
 %% is such that expensive operations like signature verification are not
@@ -164,12 +164,12 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
         true ->
             try
                 CommittedKeys =
-                    hb_message:commited(
+                    hb_message:committed(
                         Msg,
                         #{ <<"commitments">> => <<"all">> },
                         Opts
                     ),
-                % Add the inline-body-key to the commited list if it is not
+                % Add the inline-body-key to the committed list if it is not
                 % already present.
                 ?event({committed_keys, CommittedKeys, {msg, Msg}}),
                 {ok, maps:with(
@@ -224,15 +224,15 @@ commit(Msg, Opts, Format) ->
         ),
     Signed.
 
-%% @doc Return the list of commited keys from a message.
-commited(Msg) -> commited(Msg, all).
-commited(Msg, Committers) -> commited(Msg, Committers, #{}).
-commited(Msg, all, Opts) ->
-    commited(Msg, #{ <<"commitments">> => <<"all">> }, Opts);
-commited(Msg, List, Opts) when is_list(List) ->
-    commited(Msg, #{ <<"commitments">> => List }, Opts);
-commited(Msg, CommittersMsg, Opts) ->
-    {ok, CommittedKeys} = dev_message:commited(Msg, CommittersMsg, Opts),
+%% @doc Return the list of committed keys from a message.
+committed(Msg) -> committed(Msg, all).
+committed(Msg, Committers) -> committed(Msg, Committers, #{}).
+committed(Msg, all, Opts) ->
+    committed(Msg, #{ <<"commitments">> => <<"all">> }, Opts);
+committed(Msg, List, Opts) when is_list(List) ->
+    committed(Msg, #{ <<"commitments">> => List }, Opts);
+committed(Msg, CommittersMsg, Opts) ->
+    {ok, CommittedKeys} = dev_message:committed(Msg, CommittersMsg, Opts),
     CommittedKeys.
 
 %% @doc wrapper function to verify a message.
@@ -1233,14 +1233,14 @@ signed_message_with_derived_components_test(Codec) ->
 committed_keys_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     Signed = commit(Msg, hb:wallet(), Codec),
-    CommittedKeys = commited(Signed),
+    CommittedKeys = committed(Signed),
     ?event({committed_keys, CommittedKeys}),
     ?assert(verify(Signed)),
     ?assert(lists:member(<<"a">>, CommittedKeys)),
     ?assert(lists:member(<<"b">>, CommittedKeys)),
     ?assert(lists:member(<<"c">>, CommittedKeys)),
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-    ?assert(not lists:member(<<"bad-key">>, commited(MsgToFilter))).
+    ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter))).
 
 committed_empty_keys_test(Codec) ->
     Msg = #{
@@ -1251,7 +1251,7 @@ committed_empty_keys_test(Codec) ->
     },
     Signed = commit(Msg, hb:wallet(), Codec),
     ?assert(verify(Signed)),
-    CommittedKeys = commited(Signed),
+    CommittedKeys = committed(Signed),
     ?event({committed_keys, CommittedKeys}),
     ?assert(lists:member(<<"very">>, CommittedKeys)),
     ?assert(lists:member(<<"exciting">>, CommittedKeys)),
@@ -1291,7 +1291,7 @@ signed_with_inner_signed_message_test(Codec) ->
                 % Uncommitted keys that should be ripped out of the inner message
                 % by `with_only_committed`. These should still be present in the
                 % `with_only_committed` outer message. For now, only `httpsig@1.0`
-                % supports stripping non-commited keys.
+                % supports stripping non-committed keys.
                 case Codec of
                     <<"httpsig@1.0">> ->
                         #{
@@ -1342,19 +1342,19 @@ large_body_committed_keys_test(Codec) ->
             ?event({decoded, Decoded}),
             Signed = commit(Decoded, hb:wallet(), Codec),
             ?event({signed, Signed}),
-            CommittedKeys = commited(Signed),
+            CommittedKeys = committed(Signed),
             ?assert(lists:member(<<"a">>, CommittedKeys)),
             ?assert(lists:member(<<"b">>, CommittedKeys)),
             ?assert(lists:member(<<"c">>, CommittedKeys)),
             MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-            ?assert(not lists:member(<<"bad-key">>, commited(MsgToFilter)));
+            ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter)));
         _ ->
             skip
     end.
 
 sign_node_message_test(Codec) ->
     Msg = hb_message:commit(hb_opts:default_message(), hb:wallet(), Codec),
-    ?event({commited, Msg}),
+    ?event({committed, Msg}),
     ?assert(verify(Msg)),
     Encoded = convert(Msg, Codec, #{}),
     ?event({encoded, Encoded}),
@@ -1495,14 +1495,14 @@ message_suite_test_() ->
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
         {"nested data key test", fun signed_nested_data_key_test/1},
-        {"signed only commited data field test", fun signed_only_committed_data_field_test/1},
+        {"signed only committed data field test", fun signed_only_committed_data_field_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
-        {"commited keys test", fun committed_keys_test/1},
-        {"commited empty keys test", fun committed_empty_keys_test/1},
-        {"large body commited keys test", fun large_body_committed_keys_test/1},
+        {"committed keys test", fun committed_keys_test/1},
+        {"committed empty keys test", fun committed_empty_keys_test/1},
+        {"large body committed keys test", fun large_body_committed_keys_test/1},
         {"signed list http response test", fun signed_list_test/1},
         {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
         {"priv survives conversion test", fun priv_survives_conversion_test/1},

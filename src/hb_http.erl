@@ -656,7 +656,7 @@ req_to_tabm_singleton(Req, Body, Opts) ->
 %% @doc HTTPSig messages are inherently mixed into the transport layer, so they
 %% require special handling in order to be converted to a normalized message.
 %% In particular, the signatures are verified if present and required by the 
-%% node configuration. Additionally, non-commited fields are removed from the
+%% node configuration. Additionally, non-committed fields are removed from the
 %% message if it is signed, with the exception of the `path` and `method` fields.
 http_sig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
     Msg = dev_codec_httpsig_conv:from(

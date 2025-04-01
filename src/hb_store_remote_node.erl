@@ -46,7 +46,7 @@ type(Opts = #{ <<"node">> := Node }, Key) ->
 %% @doc Read a key from the remote node.
 %%
 %% Makes an HTTP GET request to the remote node and returns the
-%% commited message.
+%% committed message.
 %%
 %% @param Opts A map of options (including node configuration).
 %% @param Key The key to read.

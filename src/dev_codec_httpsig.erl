@@ -6,7 +6,7 @@
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, commit/3, commited/3, verify/3, reset_hmac/1, public_keys/1]).
+-export([id/3, commit/3, committed/3, verify/3, reset_hmac/1, public_keys/1]).
 %%% Codec API functions
 -export([to/1, from/1]).
 %%% Public API functions
@@ -201,10 +201,10 @@ commit(MsgToSign, _Req, Opts) ->
         OldCommitments#{ ID => Commitment }
     }).
 
-%% @doc Return the list of commited keys from a message. The message will have
+%% @doc Return the list of committed keys from a message. The message will have
 %% had the `commitments' key removed and the signature inputs added to the
-%% root. Subsequently, we can parse that to get the list of commited keys.
-commited(RawMsg, Req, Opts) ->
+%% root. Subsequently, we can parse that to get the list of committed keys.
+committed(RawMsg, Req, Opts) ->
     Msg = to(RawMsg),
     case maps:get(<<"signature-input">>, Msg, none) of
         none -> {ok, []};
@@ -236,20 +236,20 @@ do_committed(SigInputStr, Msg, _Req, _Opts) ->
         true -> {ok, SignedWithImplicit ++ committed_from_body(Msg)}
     end.
 
-%% @doc Return the list of commited keys from a message that are derived from
+%% @doc Return the list of committed keys from a message that are derived from
 %% the body components.
 committed_from_body(Msg) ->
-    % Body and inline-body-key are always commited if the
+    % Body and inline-body-key are always committed if the
     % content-digest is present.
     [<<"body">>, <<"inline-body-key">>] ++
         % If the inline-body-key is present, add it to the list of
-        % commited keys.
+        % committed keys.
         case maps:get(<<"inline-body-key">>, Msg, []) of
             [] -> [];
             InlineBodyKey -> [InlineBodyKey]
         end
         % If the body-keys are present, add them to the list of
-        % commited keys.
+        % committed keys.
         ++ case maps:get(<<"body-keys">>, Msg, []) of
             [] -> [];
             BodyKeys ->
@@ -268,8 +268,8 @@ committed_from_body(Msg) ->
                     ParsedList   
                 ),
                 % Grab the top most field on the body key
-                % because the top most being commited means all subsequent
-                % fields are also commited
+                % because the top most being committed means all subsequent
+                % fields are also committed
                 Tops = lists:map(
                     fun(BodyKey) ->
                         hd(hb_path:term_to_path_parts(BodyKey, #{}))
@@ -429,7 +429,7 @@ hmac(Msg) ->
     ?event({hmac_result, {string, hb_util:human_id(HMacValue)}}),
     {ok, HMacValue}.
 
-%% @doc Verify different forms of httpsig commited messages. `dev_message:verify'
+%% @doc Verify different forms of httpsig committed messages. `dev_message:verify'
 %% already places the keys from the commitment message into the root of the
 %% message.
 verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha256">> }, _Opts) ->

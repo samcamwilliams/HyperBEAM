@@ -545,10 +545,10 @@ ensure_process_key(Msg1, Opts) ->
                         ),
                         Msg1
                 end,
-            {ok, Commited} = hb_message:with_only_committed(ProcessMsg, Opts),
+            {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
             Res = hb_converge:set(
                 Msg1,
-                #{ <<"process">> => Commited },
+                #{ <<"process">> => Committed },
                 Opts#{ hashpath => ignore }
             ),
             ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),

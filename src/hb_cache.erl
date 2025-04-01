@@ -14,7 +14,7 @@
 %%%    all messages to share the same hashpath space, such that all requests
 %%%    from users additively fill-in the hashpath space, minimizing duplicated
 %%%    compute.
-%%% 3. Messages, referrable by their IDs (commited or uncommitted). These are
+%%% 3. Messages, referrable by their IDs (committed or uncommitted). These are
 %%%    stored as a set of links commitment IDs and the uncommitted message.
 %%%
 %%% Before writing a message to the store, we convert it to Type-Annotated
@@ -51,7 +51,7 @@ list(Path, Store) ->
 %% the hashpath of the data (by default the SHA2-256 hash of the data). We link
 %% the unattended ID's hashpath for the keys (including `/commitments') on the
 %% message to the underlying data and recurse. We then link each commitment ID
-%% to the uncommitted message, such that any of the commited or uncommitted IDs
+%% to the uncommitted message, such that any of the committed or uncommitted IDs
 %% can be read, and once in memory all of the commitments are available. For
 %% deep messages, the commitments will also be read, such that the ID of the
 %% outer message (which does not include its commitments) will be built upon
@@ -324,15 +324,15 @@ test_store_ans104_message(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:reset(Store),
     Item = #{ <<"type">> => <<"ANS104">>, <<"content">> => <<"Hello, world!">> },
-    Commited = hb_message:commit(Item, hb:wallet()),
-    {ok, _Path} = write(Commited, Opts),
-    CommittedID = hb_util:human_id(hb_message:id(Commited, all)),
-    UncommittedID = hb_util:human_id(hb_message:id(Commited, none)),
-    ?event({test_message_ids, {uncommitted, UncommittedID}, {commited, CommittedID}}),
+    Committed = hb_message:commit(Item, hb:wallet()),
+    {ok, _Path} = write(Committed, Opts),
+    CommittedID = hb_util:human_id(hb_message:id(Committed, all)),
+    UncommittedID = hb_util:human_id(hb_message:id(Committed, none)),
+    ?event({test_message_ids, {uncommitted, UncommittedID}, {committed, CommittedID}}),
     {ok, RetrievedItem} = read(CommittedID, Opts),
     {ok, RetrievedItemU} = read(UncommittedID, Opts),
-    ?assert(hb_message:match(Commited, RetrievedItem)),
-    ?assert(hb_message:match(Commited, RetrievedItemU)),
+    ?assert(hb_message:match(Committed, RetrievedItem)),
+    ?assert(hb_message:match(Committed, RetrievedItemU)),
     ok.
 
 %% @doc Test storing and retrieving a simple unsigned item
@@ -389,7 +389,7 @@ test_deeply_nested_complex_message(Opts) ->
     ?event({string, <<"================================================">>}),
     {ok, CommittedID} = dev_message:id(Outer, #{ <<"committers">> => [Address] }, Opts),
     ?event({string, <<"================================================">>}),
-    ?event({test_message_ids, {uncommitted, UID}, {commited, CommittedID}}),
+    ?event({test_message_ids, {uncommitted, UID}, {committed, CommittedID}}),
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath

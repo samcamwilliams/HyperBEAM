@@ -10,7 +10,7 @@
 -export([set/3, set_path/3, remove/2, get/2, get/3]).
 %%% Commitment-specific keys:
 -export([id/1, id/2, id/3]).
--export([commit/3, commited/3, committers/1, committers/2, committers/3, verify/3]).
+-export([commit/3, committed/3, committers/1, committers/2, committers/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -159,8 +159,8 @@ commit(Self, Req, Opts) ->
     AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
     {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, commit, 3, Opts),
     Encoded = hb_message:convert(Base, tabm, Opts),
-    {ok, Commited} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
-    {ok, hb_message:convert(Commited, <<"structured@1.0">>, Opts)}.
+    {ok, Committed} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
+    {ok, hb_message:convert(Committed, <<"structured@1.0">>, Opts)}.
 
 %% @doc Verify a message. By default, all commitments are verified. The
 %% `committers' key in the request can be used to specify that only the 
@@ -228,19 +228,19 @@ exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
     apply(AttFun, [Encoded, Req, Opts]).
 
 %% @doc Return the list of committed keys from a message.
-commited(Self, Req, Opts) ->
+committed(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
     Commitments = maps:get(<<"commitments">>, Base, #{}),
-    % Get the list of commited keys from each committer.
+    % Get the list of committed keys from each committer.
     CommitmentKeys =
         lists:map(
             fun(CommitmentID) ->
                 Commitment = maps:get(CommitmentID, Commitments),
                 {ok, CommittedKeys} =
                     exec_for_commitment(
-                        commited,
+                        committed,
                         Base,
                         Commitment,
                         #{ <<"commitment">> => CommitmentID },
@@ -252,7 +252,7 @@ commited(Self, Req, Opts) ->
             CommitmentIDs
         ),
     % Remove commitments that are not in *every* committer's list.
-    % To start, we need to create the super-set of commited keys.
+    % To start, we need to create the super-set of committed keys.
     AllCommittedKeys =
         lists:foldl(
             fun(Key, Acc) ->
@@ -264,7 +264,7 @@ commited(Self, Req, Opts) ->
             [],
             lists:flatten(CommitmentKeys)
         ),
-    % Next, we filter the list of all commited keys to only include those that
+    % Next, we filter the list of all committed keys to only include those that
     % are present in every committer's list.
     OnlyCommittedKeys =
         lists:filter(
@@ -458,9 +458,9 @@ set(Message1, NewValuesMsg, Opts) ->
             KeysToSet
         )
     ),
-    % Caclulate if the keys to be set conflict with any commited keys.
+    % Caclulate if the keys to be set conflict with any committed keys.
     {ok, CommittedKeys} =
-        commited(
+        committed(
             Message1,
             #{
                 <<"committers">> => <<"all">>
