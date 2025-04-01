@@ -583,11 +583,14 @@ test_wasm_process(WASMImage, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:commit(
-        maps:merge(test_base_process(Opts), #{
-            <<"execution-device">> => <<"stack@1.0">>,
-            <<"device-stack">> => [<<"WASM-64@1.0">>],
-            <<"image">> => WASMImageID
-        }),
+        maps:merge(
+            hb_message:uncommitted(test_base_process(Opts)),
+            #{
+                <<"execution-device">> => <<"stack@1.0">>,
+                <<"device-stack">> => [<<"WASM-64@1.0">>],
+                <<"image">> => WASMImageID
+            }
+        ),
         Wallet
     ).
 
@@ -640,18 +643,21 @@ schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
-    Msg2 = hb_message:commit(#{
-        <<"path">> => <<"schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> =>
-            hb_message:commit(
-                MsgBase#{
-                    <<"type">> => <<"Message">>,
-                    <<"test-label">> => Text
-                },
-                Wallet
-            )
-    }, Wallet),
+    Msg2 =
+        hb_message:commit(#{
+                <<"path">> => <<"schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                    hb_message:commit(
+                        MsgBase#{
+                            <<"type">> => <<"Message">>,
+                            <<"test-label">> => Text
+                        },
+                        Wallet
+                    )
+            },
+            Wallet
+        ),
     {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
 
 schedule_aos_call(Msg1, Code) ->
