@@ -99,7 +99,8 @@ do_write_message(Bin, AllIDs, Store, Opts) when is_binary(Bin) ->
     {ok, Path};
 do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % Get the ID of the unsigned message.
-    {ok, UncommittedID} = dev_message:id(Msg, #{ <<"committers">> => <<"none">> }, Opts),
+    {ok, UncommittedID} =
+        dev_message:id(Msg, #{ <<"committers">> => <<"none">> }, Opts),
     AltIDs = AllIDs -- [UncommittedID],
     ?event({writing_message_with_unsigned_id, UncommittedID, {alt_ids, AltIDs}}),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),

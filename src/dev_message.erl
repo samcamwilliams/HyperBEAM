@@ -86,7 +86,9 @@ id(Base, Req, NodeOpts) ->
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
     case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
-        {ok, Fun} -> apply(Fun, hb_converge:truncate_args(Fun, [ModBase, Req, NodeOpts]));
+        {ok, Fun} ->
+            ?event(id, {called_id_device, IDMod}, NodeOpts),
+            apply(Fun, hb_converge:truncate_args(Fun, [ModBase, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
