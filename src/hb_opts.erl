@@ -252,7 +252,11 @@ get(Key, Default, Opts) ->
                     (Str) when Str == "true" -> true;
                     (Str) -> string:tokens(Str, ",")
                 end,
-                "error,http_short,compute_short,push_short"
+                {conditional,
+                    test,
+                    "error",
+                    "error,http_short,compute_short,push_short"
+                }
             }
     }
 ).
@@ -262,7 +266,7 @@ global_get(Key, Default) ->
     case maps:get(Key, ?ENV_KEYS, Default) of
         Default -> config_lookup(Key, Default);
         {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
-            ValParser(os:getenv(EnvKey, DefaultValue));
+            ValParser(os:getenv(EnvKey, normalize_default(DefaultValue)));
         {EnvKey, ValParser} when is_function(ValParser) ->
             case os:getenv(EnvKey, not_found) of
                 not_found -> config_lookup(Key, Default);
@@ -271,6 +275,15 @@ global_get(Key, Default) ->
         {EnvKey, DefaultValue} ->
             os:getenv(EnvKey, DefaultValue)
     end.
+
+%% @doc Get an option from environment variables, optionally consulting the
+%% `hb_features' of the node if a conditional default tuple is provided.
+normalize_default({conditional, Feature, IfTest, Else}) ->
+    case hb_features:enabled(Feature) of
+        true -> IfTest;
+        false -> Else
+    end;
+normalize_default(Default) -> Default.
 
 %% @doc An abstraction for looking up configuration variables. In the future,
 %% this is the function that we will want to change to support a more dynamic
