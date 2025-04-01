@@ -136,7 +136,7 @@ new_server(RawNodeMsg) ->
     PrometheusOpts =
         case hb_opts:get(prometheus, not hb_features:test(), NodeMsg) of
             true ->
-                ?event(debug, {starting_prometheus, {test_mode, hb_features:test()}}),
+                ?event(prometheus, {starting_prometheus, {test_mode, hb_features:test()}}),
                 % Attempt to start the prometheus application, if possible.
                 try
                     application:ensure_all_started([prometheus, prometheus_cowboy]),
@@ -150,13 +150,13 @@ new_server(RawNodeMsg) ->
                         % If the prometheus application is not started, we can
                         % still start the HTTP server, but we won't have any
                         % metrics.
-                        ?event(warning,
+                        ?event(prometheus,
                             {prometheus_not_started, {type, Type}, {reason, Reason}}
                         ),
                         ProtoOpts
                 end;
             false ->
-                ?event(debug, {prometheus_not_started, {test_mode, hb_features:test()}}),
+                ?event(prometheus, {prometheus_not_started, {test_mode, hb_features:test()}}),
                 ProtoOpts
         end,
     DefaultProto =
