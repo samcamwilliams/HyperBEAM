@@ -53,7 +53,7 @@ id(Base, Req) -> id(Base, Req, #{}).
 id(Base, _, NodeOpts) when not is_map(Base) ->
     % Return the hashpath of the message in native format, to match the native
     % format of the message ID return.
-    {ok, hb_util:native_id(hb_path:hashpath(Base, NodeOpts))};
+    {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(Base, Req, NodeOpts) ->
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.

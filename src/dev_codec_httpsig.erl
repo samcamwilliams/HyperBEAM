@@ -104,11 +104,11 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 id(Msg, _Params, _Opts) ->
     ?event({calculating_id, {msg, Msg}}),
     case find_id(Msg) of
-        {ok, ID} -> {ok, ID};
+        {ok, ID} -> {ok, hb_util:human_id(ID)};
         {not_found, MsgToID} ->
             {ok, MsgAfterReset} = reset_hmac(MsgToID),
             {ok, ID} = find_id(MsgAfterReset),
-            {ok, ID}
+            {ok, hb_util:human_id(ID)}
     end.
 
 %% @doc Find the ID of the message, which is the hmac of the fields referenced in
@@ -126,7 +126,7 @@ find_id(Msg = #{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
         [] -> throw({could_not_find_ids, CommsWithoutHmac});
         [ID] ->
             ?event({returning_single_id, ID}),
-            {ok, ID};
+            {ok, hb_util:human_id(ID)};
         _ ->
             ?event({multiple_ids, IDs}),
             SortedIDs =

@@ -53,7 +53,7 @@ deserialize(TX) when is_record(TX, tx) ->
 %% @doc Return the ID of a message.
 id(Msg) ->
     TABM = dev_codec_structured:from(Msg),
-    {ok, (to(TABM))#tx.id}.
+    {ok, hb_util:human_id((to(TABM))#tx.id)}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
 commit(Msg, _Req, Opts) ->
