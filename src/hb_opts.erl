@@ -186,6 +186,12 @@ default_message() ->
         store_all_signed => true,
         % Should the node use persistent processes?
         process_workers => false
+        % Should the node track and expose prometheus metrics?
+        % We do not set this explicitly, so that the hb_features:test() value
+        % can be used to determine if we should expose metrics instead,
+        % dynamically changing the configuration based on whether we are running
+        % tests or not. To override this, set the `prometheus' option explicitly.
+        % prometheus => false
     }.
 
 %% @doc Get an option from the global options, optionally overriding with a
@@ -246,7 +252,7 @@ get(Key, Default, Opts) ->
                     (Str) when Str == "true" -> true;
                     (Str) -> string:tokens(Str, ",")
                 end,
-                "http_short,compute_short,push_short"
+                "error,http_short,compute_short,push_short"
             }
     }
 ).

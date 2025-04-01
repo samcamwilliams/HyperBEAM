@@ -6,7 +6,7 @@
 %%% Public API.
 -export([all/0, enabled/1]).
 %%% Individual feature flags.
--export([http3/0, rocksdb/0]).
+-export([http3/0, rocksdb/0, test/0]).
 
 %% @doc Returns a list of all feature flags that the node supports.
 all() ->
@@ -48,4 +48,10 @@ http3() -> false.
 rocksdb() -> true.
 -else.
 rocksdb() -> false.
+-endif.
+
+-ifdef(TEST).
+test() -> true.
+-else.
+test() -> false.
 -endif.
