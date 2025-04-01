@@ -231,22 +231,8 @@ do_from(RawTX) ->
                 )
             )
         ),
-    TagsFromTX = hb_converge:normalize_keys(maps:from_list(TX#tx.tags)),
+    TagsFromTX = deduplicating_from_list(TX#tx.tags),
     ?event({tags_from_tx, {explicit, TagsFromTX}}),
-    % Check that the original tags did not contain any duplicated keys after 
-    % normalization.
-    case maps:size(TagsFromTX) =/= maps:size(OriginalTagMap) of
-        true ->
-            ?event(warning,
-                {unsupported_ans104, tag_duplication,
-                    {tx, TX},
-                    {original_tag_map, OriginalTagMap},
-                    {tags_from_tx, TagsFromTX}
-                }
-            ),
-            throw({unsupported_ans104, tag_duplication});
-        false -> ok
-    end,
     % Generate a TABM from the tags.
     MapWithoutData = maps:merge(TXKeysMap, maps:from_list(TX#tx.tags)),
     DataMap =
@@ -326,6 +312,24 @@ do_from(RawTX) ->
     Res = maps:without(?FILTERED_TAGS, WithCommitments),
     ?event({message_after_commitments, Res}),
     Res.
+
+%% @doc Deduplicate a list of key-value pairs by key, generating a list of
+%% values for each normalized key if there are duplicates.
+deduplicating_from_list(Tags) ->
+    lists:foldl(
+        fun({Key, Value}, Acc) ->
+            NormKey = hb_converge:normalize_key(Key),
+            case maps:get(NormKey, Acc, undefined) of
+                undefined -> maps:put(NormKey, Value, Acc);
+                Existing when is_list(Existing) ->
+                    maps:put(NormKey, Existing ++ [Value], Acc);
+                ExistingSingle ->
+                    maps:put(NormKey, [ExistingSingle, Value], Acc)
+            end
+        end,
+        #{},
+        Tags
+    ).
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
 normal_tags(Tags) ->
@@ -475,40 +479,34 @@ to(RawTABM) when is_map(RawTABM) ->
         ),
     ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
     ?event({original_tags, {explicit, OriginalTags}}),
-    % Restore the original tags into the tx record.
-    % First, we check that the value of the original tags matches the expected
-    % values.
-    lists:all(
-        fun({OriginalKey, OriginalValue}) ->
-            NormOriginalKey = hb_converge:normalize_key(OriginalKey),
-            Value = maps:get(NormOriginalKey, RemainingMap, undefined),
-            case Value of
-                OriginalValue -> true;
-                undefined ->
-                    throw({original_tag_missing, OriginalKey, RemainingMap});
-                OtherValue ->
-                    ?event({original_tag_mismatch,
-                        {original_key, OriginalKey},
-                        {original_value, OriginalValue},
-                        {actual_value, OtherValue}
-                    }),
-                    throw(
-                        {original_tag_mismatch,
-                            OriginalKey,
-                            {original, OriginalValue},
-                            {actual, OtherValue}
-                        }
-                    )
-            end
-        end,
-        OriginalTags
-    ),
-    TX = TXWithoutTags#tx {
-        tags = case OriginalTags of
-            [] -> Remaining;
-            _ -> OriginalTags
-        end
-    },
+    % Check that the remaining keys are as we expect them to be, given the 
+    % original tags. We do this by re-calculating the expected tags from the
+    % original tags and comparing the result to the remaining keys.
+    if map_size(OriginalTags) > 0 ->
+        ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags),
+        case Remaining == ExpectedTagsFromOriginal of
+            true -> ok;
+            false ->
+                ?event(debug,
+                    {invalid_original_tags,
+                        {expected, ExpectedTagsFromOriginal},
+                        {given, Remaining}
+                    }
+                ),
+                throw({invalid_original_tags, OriginalTags, Remaining})
+        end;
+    true -> ok
+    end,
+    % Restore the original tags, or the remaining keys if there are no original
+    % tags.
+    TX =
+        TXWithoutTags#tx {
+            tags =
+                case OriginalTags of
+                    [] -> Remaining;
+                    _ -> OriginalTags
+                end
+        },
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
@@ -604,17 +602,32 @@ restore_tag_name_case_from_cache_test() ->
     ?assert(hb_message:match(ReadMsg, SignedMsg)),
     ?assert(ar_bundles:verify_item(ReadTX)).
 
-unsupported_duplicated_name_tag_test() ->
-    TX = #tx {
+duplicated_tag_name_test() ->
+    TX = ar_bundles:reset_ids(ar_bundles:normalize(#tx {
         tags = [
             {<<"Test-Tag">>, <<"test-value">>},
             {<<"test-tag">>, <<"test-value-2">>}
         ]
-    },
-    ?assertThrow(
-        {unsupported_ans104, tag_duplication},
-        from(TX)
-    ).
+    })),
+    Msg = from(TX),
+    ?event({msg, Msg}),
+    TX2 = to(Msg),
+    ?event({tx2, TX2}),
+    ?assertEqual(TX, TX2).
+
+signed_duplicated_tag_name_test() ->
+    TX = ar_bundles:sign_item(#tx {
+        tags = [
+            {<<"Test-Tag">>, <<"test-value">>},
+            {<<"test-tag">>, <<"test-value-2">>}
+        ]
+    }, ar_wallet:new()),
+    Msg = from(TX),
+    ?event({msg, Msg}),
+    TX2 = to(Msg),
+    ?event({tx2, TX2}),
+    ?assertEqual(TX, TX2),
+    ?assert(ar_bundles:verify_item(TX2)).
     
 simple_to_conversion_test() ->
     Msg = #{
