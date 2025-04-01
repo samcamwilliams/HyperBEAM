@@ -611,7 +611,10 @@ commitment(_Spec, _Msg, _Opts) ->
 %% the target is expected to be a key in the message, and the operation is
 %% performed on the value of that key.
 find_target(Self, Req, Opts) ->
-	GetOpts = Opts#{ hashpath => ignore },
+	GetOpts = Opts#{
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>]
+    },
     {ok,
         case hb_converge:get(<<"target">>, Req, <<"self">>, GetOpts) of
             <<"self">> -> Self;
