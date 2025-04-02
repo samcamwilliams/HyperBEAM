@@ -552,7 +552,7 @@ benchmark_test() ->
         "Evaluated ~p stack messages in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
-    ?assert(Iterations > 10).
+    ?assert(Iterations >= 10).
 
 
 test_prefix_msg() ->

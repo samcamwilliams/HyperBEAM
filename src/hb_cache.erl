@@ -323,6 +323,8 @@ test_store_binary(Opts) ->
     ?assertEqual(Bin, RetrievedBin).
 
 test_store_unsigned_empty_message(Opts) ->
+	Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:reset(Store),
     Item = #{},
     {ok, Path} = write(Item, Opts),
     {ok, RetrievedItem} = read(Path, Opts),

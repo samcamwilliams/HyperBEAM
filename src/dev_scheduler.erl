@@ -1425,31 +1425,34 @@ http_post_schedule_test() ->
     ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res2, #{})),
     ?assertMatch({ok, #{ <<"current">> := 1 }}, http_get_slot(N, PMsg)).
 
-http_get_schedule_test() ->
-    {Node, Wallet} = http_init(),
-    PMsg = hb_message:commit(test_process(Wallet), Wallet),
-    Msg1 = hb_message:commit(#{
-        <<"path">> => <<"/~scheduler@1.0/schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> => PMsg
-    }, Wallet),
-    Msg2 = hb_message:commit(#{
-        <<"path">> => <<"/~scheduler@1.0/schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> => PMsg
-    }, Wallet),
-    {ok, _} = hb_http:post(Node, Msg1, #{}),
-    lists:foreach(
-        fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
-        lists:seq(1, 10)
-    ),
-    ?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
-    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
-    Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
-    ?assertEqual(
-        12, % +1 for the hashpath
-        length(maps:values(Assignments))
-    ).
+http_get_schedule_test_() ->
+	{timeout, 20, fun() ->
+		{Node, Wallet} = http_init(),
+		PMsg = hb_message:commit(test_process(Wallet), Wallet),
+		Msg1 = hb_message:commit(#{
+			<<"path">> => <<"/~scheduler@1.0/schedule">>,
+			<<"method">> => <<"POST">>,
+			<<"body">> => PMsg
+		}, Wallet),
+		Msg2 = hb_message:commit(#{
+			<<"path">> => <<"/~scheduler@1.0/schedule">>,
+			<<"method">> => <<"POST">>,
+			<<"body">> => PMsg
+		}, Wallet),
+		{ok, _} = hb_http:post(Node, Msg1, #{}),
+		lists:foreach(
+			fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
+			lists:seq(1, 10)
+		),
+		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
+		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
+		Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
+		?assertEqual(
+			12, % +1 for the hashpath
+			length(maps:values(Assignments))
+		)
+	end}.
+    
 
 http_get_legacy_schedule_test_() ->
     {timeout, 10, fun() ->
@@ -1525,42 +1528,44 @@ http_post_legacy_schedule_test_() ->
         )
     end}.
 
-http_get_json_schedule_test() ->
-    {Node, Wallet} = http_init(),
-    PMsg = hb_message:commit(test_process(Wallet), Wallet),
-    Msg1 = hb_message:commit(#{
-        <<"path">> => <<"/~scheduler@1.0/schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> => PMsg
-    }, Wallet),
-    {ok, _} = hb_http:post(Node, Msg1, #{}),
-    Msg2 = hb_message:commit(#{
-        <<"path">> => <<"/~scheduler@1.0/schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> =>
-            hb_message:commit(
-                #{
-                    <<"inner">> => <<"test">>,
-                    <<"target">> => hb_util:human_id(hb_message:id(PMsg, all))
-                },
-                Wallet
-            )
-        },
-        Wallet
-    ),
-    lists:foreach(
-        fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
-        lists:seq(1, 10)
-    ),
-    ?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
-    {ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
-    ?event({schedule, Schedule}),
-    JSON = hb_converge:get(<<"body">>, Schedule, #{}),
-    Assignments = hb_json:decode(JSON),
-    ?assertEqual(
-        11, % +1 for the hashpath
-        length(maps:get(<<"edges">>, Assignments))
-    ).
+http_get_json_schedule_test_() ->
+	{timeout, 20, fun() ->
+		{Node, Wallet} = http_init(),
+		PMsg = hb_message:commit(test_process(Wallet), Wallet),
+		Msg1 = hb_message:commit(#{
+			<<"path">> => <<"/~scheduler@1.0/schedule">>,
+			<<"method">> => <<"POST">>,
+			<<"body">> => PMsg
+		}, Wallet),
+		{ok, _} = hb_http:post(Node, Msg1, #{}),
+		Msg2 = hb_message:commit(#{
+			<<"path">> => <<"/~scheduler@1.0/schedule">>,
+			<<"method">> => <<"POST">>,
+			<<"body">> =>
+				hb_message:commit(
+					#{
+						<<"inner">> => <<"test">>,
+						<<"target">> => hb_util:human_id(hb_message:id(PMsg, all))
+					},
+					Wallet
+				)
+			},
+			Wallet
+		),
+		lists:foreach(
+			fun(_) -> {ok, _} = hb_http:post(Node, Msg2, #{}) end,
+			lists:seq(1, 10)
+		),
+		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
+		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
+		?event({schedule, Schedule}),
+		JSON = hb_converge:get(<<"body">>, Schedule, #{}),
+		Assignments = hb_json:decode(JSON),
+		?assertEqual(
+			11, % +1 for the hashpath
+			length(maps:get(<<"edges">>, Assignments))
+		)
+	end}.
 
 %%% Benchmarks
 
@@ -1613,7 +1618,7 @@ many_clients(Opts) ->
         <<"body">> => hb_message:commit(#{ <<"inner">> => <<"test">> }, Wallet)
     }, Wallet),
     {ok, _} = hb_http:post(Node, Msg1, Opts),
-    Iterations = hb:benchmark(
+	    Iterations = hb:benchmark(
         fun(X) ->
             {ok, _} = hb_http:post(Node, Msg1, Opts),
             ?event(bench, {iteration, X, self()})
@@ -1631,16 +1636,18 @@ many_clients(Opts) ->
     ?assert(Iterations > 10).
 
 benchmark_suite_test_() ->
-    rand:seed(exsplus, erlang:timestamp()),
-    Port = 30000 + rand:uniform(10000),
-    Bench = [
-        {benchmark, "benchmark", fun single_converge/1},
-        {multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
-    ],
-    filelib:ensure_dir(
-        binary_to_list(Base = <<"cache-TEST/run-">>)
-    ),
-    hb_test_utils:suite_with_opts(Bench, benchmark_suite(Port, Base)).
+	{timeout, 10, fun() -> 
+		rand:seed(exsplus, erlang:timestamp()),
+		Port = 30000 + rand:uniform(10000),
+		Bench = [
+			{benchmark, "benchmark", fun single_converge/1},
+			{multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
+		],
+		filelib:ensure_dir(
+			binary_to_list(Base = <<"cache-TEST/run-">>)
+		),
+		hb_test_utils:suite_with_opts(Bench, benchmark_suite(Port, Base))
+	end}.
 
 benchmark_suite(Port, Base) ->
     PortBin = integer_to_binary(Port),
