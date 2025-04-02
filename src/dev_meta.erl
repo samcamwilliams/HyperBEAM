@@ -283,7 +283,7 @@ status_code(unavailable) -> 503.
 message_to_status(#{ <<"body">> := Status }) when is_atom(Status) ->
     status_code(Status);
 message_to_status(Item) when is_map(Item) ->
-    % Note: We use `dev_message` directly here, such that we do not cause 
+    % Note: We use `dev_message' directly here, such that we do not cause 
     % additional AO-Core calls for every request. This is particularly important
     % if a remote server is being used for all AO-Core requests by a node.
     case dev_message:get(<<"status">>, Item) of

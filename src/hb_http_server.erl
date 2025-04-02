@@ -261,7 +261,7 @@ cors_reply(Req, _ServerID) ->
 
 %% @doc Handle all non-CORS preflight requests as AO-Core requests. Execution 
 %% starts by parsing the HTTP request into HyerBEAM's message format, then
-%% passing the message directly to `meta@1.0` which handles calling AO-Core in
+%% passing the message directly to `meta@1.0' which handles calling AO-Core in
 %% the appropriate way.
 handle_request(RawReq, Body, ServerID) ->
     % Insert the start time into the request so that it can be used by the

@@ -154,7 +154,7 @@ query(Query, Opts) ->
     end.
 
 %% @doc Takes a GraphQL item node, matches it with the appropriate data from a
-%% gateway, then returns `{ok, ParsedMsg}`.
+%% gateway, then returns `{ok, ParsedMsg}'.
 result_to_message(Item, Opts) ->
     case hb_ao:get(<<"id">>, Item, Opts) of
         ExpectedID when is_binary(ExpectedID) ->
