@@ -231,10 +231,9 @@ do_from(RawTX) ->
                 )
             )
         ),
-    TagsFromTX = deduplicating_from_list(TX#tx.tags),
-    ?event({tags_from_tx, {explicit, TagsFromTX}}),
     % Generate a TABM from the tags.
-    MapWithoutData = maps:merge(TXKeysMap, maps:from_list(TX#tx.tags)),
+    MapWithoutData = maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags)),
+    ?event({tags_from_tx, {explicit, MapWithoutData}}),
     DataMap =
         case TX#tx.data of
             Data when is_map(Data) ->
@@ -316,20 +315,45 @@ do_from(RawTX) ->
 %% @doc Deduplicate a list of key-value pairs by key, generating a list of
 %% values for each normalized key if there are duplicates.
 deduplicating_from_list(Tags) ->
-    lists:foldl(
-        fun({Key, Value}, Acc) ->
-            NormKey = hb_converge:normalize_key(Key),
-            case maps:get(NormKey, Acc, undefined) of
-                undefined -> maps:put(NormKey, Value, Acc);
-                Existing when is_list(Existing) ->
-                    maps:put(NormKey, Existing ++ [Value], Acc);
-                ExistingSingle ->
-                    maps:put(NormKey, [ExistingSingle, Value], Acc)
-            end
-        end,
-        #{},
-        Tags
-    ).
+    % Aggregate any duplicated tags into an ordered list of values.
+    Aggregated =
+        lists:foldl(
+            fun({Key, Value}, Acc) ->
+                NormKey = hb_converge:normalize_key(Key),
+                ?event({deduplicating_from_list, {key, NormKey}, {value, Value}, {acc, Acc}}),
+                case maps:get(NormKey, Acc, undefined) of
+                    undefined -> maps:put(NormKey, Value, Acc);
+                    Existing when is_list(Existing) ->
+                        maps:put(NormKey, Existing ++ [Value], Acc);
+                    ExistingSingle ->
+                        maps:put(NormKey, [ExistingSingle, Value], Acc)
+                end
+            end,
+            #{},
+            Tags
+        ),
+    ?event({deduplicating_from_list, {aggregated, Aggregated}}),
+    % Convert aggregated values into a structured-field list.
+    Res =
+        maps:map(
+            fun(_Key, Values) when is_list(Values) ->
+                % Convert Erlang lists of binaries into a structured-field list.
+                iolist_to_binary(
+                    hb_structured_fields:list(
+                        [
+                            {item, {string, Value}, []}
+                        ||
+                            Value <- Values
+                        ]
+                    )
+                );
+            (_Key, Value) ->
+                Value
+            end,
+            Aggregated
+        ),
+    ?event({deduplicating_from_list, {result, Res}}),
+    Res.
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
 normal_tags(Tags) ->
@@ -471,29 +495,26 @@ to(RawTABM) when is_map(RawTABM) ->
                     end;
                 (_) -> false
             end,
-            [ 
-                    {Key, maps:get(Key, RemainingMap)}
-                ||
-                    Key <- maps:keys(RemainingMap)
-            ]
+            maps:to_list(RemainingMap)
         ),
     ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
     ?event({original_tags, {explicit, OriginalTags}}),
     % Check that the remaining keys are as we expect them to be, given the 
     % original tags. We do this by re-calculating the expected tags from the
     % original tags and comparing the result to the remaining keys.
-    if map_size(OriginalTags) > 0 ->
+    if length(OriginalTags) > 0 ->
         ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags),
-        case Remaining == ExpectedTagsFromOriginal of
+        NormRemaining = maps:from_list(Remaining),
+        case NormRemaining == ExpectedTagsFromOriginal of
             true -> ok;
             false ->
                 ?event(debug,
                     {invalid_original_tags,
                         {expected, ExpectedTagsFromOriginal},
-                        {given, Remaining}
+                        {given, NormRemaining}
                     }
                 ),
-                throw({invalid_original_tags, OriginalTags, Remaining})
+                throw({invalid_original_tags, OriginalTags, NormRemaining})
         end;
     true -> ok
     end,
@@ -609,9 +630,9 @@ duplicated_tag_name_test() ->
             {<<"test-tag">>, <<"test-value-2">>}
         ]
     })),
-    Msg = from(TX),
+    Msg = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
     ?event({msg, Msg}),
-    TX2 = to(Msg),
+    TX2 = hb_message:convert(Msg, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
     ?event({tx2, TX2}),
     ?assertEqual(TX, TX2).
 
@@ -622,9 +643,9 @@ signed_duplicated_tag_name_test() ->
             {<<"test-tag">>, <<"test-value-2">>}
         ]
     }, ar_wallet:new()),
-    Msg = from(TX),
+    Msg = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
     ?event({msg, Msg}),
-    TX2 = to(Msg),
+    TX2 = hb_message:convert(Msg, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
     ?event({tx2, TX2}),
     ?assertEqual(TX, TX2),
     ?assert(ar_bundles:verify_item(TX2)).
