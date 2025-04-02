@@ -5,7 +5,7 @@
 %%% `set', `remove', `get', and `verify'. Their function comments describe the 
 %%% behaviour of the device when these keys are set.
 -module(dev_message).
-%%% Base Converge reserved keys:
+%%% Base AO-Core reserved keys:
 -export([info/0, keys/1]).
 -export([set/3, set_path/3, remove/2, get/2, get/3]).
 %%% Commitment-specific keys:
@@ -45,7 +45,7 @@ info() ->
 %% should be used to calculate the ID. If it is not set, the default device
 %% (`httpsig@1.0') is used.
 %% 
-%% Note: This function _does not_ use Converge's `get/3' function, as it
+%% Note: This function _does not_ use AO-Core's `get/3' function, as it
 %% as it would require significant computation. We may want to change this
 %% if/when non-map message structures are created.
 id(Base) -> id(Base, #{}).
@@ -514,7 +514,7 @@ set(Message1, NewValuesMsg, Opts) ->
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, necessary 
-%% for Converge to know the key to evaluate in requests.
+%% for AO-Core to know the key to evaluate in requests.
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
 

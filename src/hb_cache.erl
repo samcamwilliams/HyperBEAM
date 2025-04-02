@@ -1,4 +1,4 @@
-%%% @doc A cache of Converge Protocol messages and compute results.
+%%% @doc A cache of AO-Core protocol messages and compute results.
 %%%
 %%% HyperBEAM stores all paths in key value stores, abstracted by the `hb_store'
 %%% module. Each store has its own storage backend, but each works with simple

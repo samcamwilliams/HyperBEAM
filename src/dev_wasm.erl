@@ -284,7 +284,7 @@ terminate(M1, M2, Opts) ->
     )}.
 
 %% @doc Get the WASM instance from the message. Note that this function is exported
-%% such that other devices can use it, but it is excluded from calls from Converge
+%% such that other devices can use it, but it is excluded from calls from AO-Core
 %% resolution directly.
 instance(M1, M2, Opts) ->
     Prefix = dev_stack:prefix(M1, M2, Opts),
@@ -480,7 +480,7 @@ benchmark_test() ->
         ),
     ?event(benchmark, {scheduled, Iterations}),
     hb_util:eunit_print(
-        "Evaluated ~p WASM messages through Converge in ~p seconds (~.2f msg/s)",
+        "Evaluated ~p WASM messages through AO-Core in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 5),

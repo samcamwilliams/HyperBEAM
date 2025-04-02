@@ -136,7 +136,7 @@ human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
 human_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->
     Bin.
 
-%% @doc Return a short ID for the different types of IDs used in Converge.
+%% @doc Return a short ID for the different types of IDs used in AO-Core.
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 32 ->
     short_id(human_id(Bin));
 short_id(Bin) when is_binary(Bin) andalso byte_size(Bin) == 43 ->

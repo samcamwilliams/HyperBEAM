@@ -48,7 +48,7 @@ routes(M1, M2, Opts) ->
                 ),
             case IsTrusted of
                 true ->
-                    % Minimize the work performed by converge to make the sort
+                    % Minimize the work performed by AO-Core to make the sort
                     % more efficient.
                     SortOpts = Opts#{ hashpath => ignore },
                     NewRoutes =

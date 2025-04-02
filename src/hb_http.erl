@@ -37,7 +37,7 @@ post(Node, Message, Opts) ->
             <<"path">>,
             Message,
             <<"/">>,
-            Opts#{ topic => converge_internal }
+            Opts#{ topic => ao_internal }
         ),
         Message,
         Opts
@@ -521,7 +521,7 @@ encode_reply(TABMReq, Message, Opts) ->
                     Message,
                     <<"httpsig@1.0">>,
                     <<"structured@1.0">>,
-                    #{ topic => converge_internal }
+                    #{ topic => ao_internal }
                 ),
             {
                 ok,
@@ -542,7 +542,7 @@ encode_reply(TABMReq, Message, Opts) ->
                         ),
                         <<"ans104@1.0">>,
                         <<"structured@1.0">>,
-                        Opts#{ topic => converge_internal }
+                        Opts#{ topic => ao_internal }
                     )
                 )
             };
@@ -558,7 +558,7 @@ encode_reply(TABMReq, Message, Opts) ->
                     Message,
                     Codec,
                     <<"structured@1.0">>,
-                    Opts#{ topic => converge_internal }
+                    Opts#{ topic => ao_internal }
                 )
             }
     end.
@@ -735,12 +735,12 @@ remove_unsigned_fields(Msg, _Opts) ->
 
 %%% Tests
 
-simple_converge_resolve_unsigned_test() ->
+simple_ao_resolve_unsigned_test() ->
     URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
     ?assertEqual({ok, <<"Value1">>}, post(URL, TestMsg, #{})).
 
-simple_converge_resolve_signed_test() ->
+simple_ao_resolve_signed_test() ->
     URL = hb_http_server:start_node(),
     TestMsg = #{ <<"path">> => <<"/key1">>, <<"key1">> => <<"Value1">> },
     Wallet = hb:wallet(),
@@ -752,7 +752,7 @@ simple_converge_resolve_signed_test() ->
         ),
     ?assertEqual(<<"Value1">>, Res).
 
-nested_converge_resolve_test() ->
+nested_ao_resolve_test() ->
     URL = hb_http_server:start_node(),
     Wallet = hb:wallet(),
     {ok, Res} =

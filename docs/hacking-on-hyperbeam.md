@@ -59,10 +59,10 @@ while you run your tests, just execute:
 Some useful logging events are:
 
 ```
-    converge_result: Outputs every Converge computation result (M1, M2, and M3).
+    converge_result: Outputs every AO-Core computation result (M1, M2, and M3).
     worker: Information about spawns and registrations of worker processes.
     converge_core: Output information about progression through the core 
-    computation loop of Converge. Produces a large volume of output.
+    computation loop of AO-Core. Produces a large volume of output.
 ```
 
 The HB printing system is reasonably intelligent. It has a custom

@@ -1,6 +1,6 @@
-%%% @doc A parser that translates Converge HTTP API requests in TABM format
+%%% @doc A parser that translates AO-Core HTTP API requests in TABM format
 %%% into an ordered list of messages to evaluate. The details of this format
-%%% are described in `docs/converge-http-api.md`.
+%%% are described in `docs/ao-core-http-api.md`.
 %%%
 %%% Syntax overview:
 %%% ```
@@ -37,23 +37,23 @@
 -include_lib("eunit/include/eunit.hrl").
 -define(MAX_SEGMENT_LENGTH, 512).
 
--type converge_message() :: map() | binary().
+-type ao_message() :: map() | binary().
 -type tabm_message() :: map().
 
-%% @doc Convert a list of converge message into TABM message.
--spec to(list(converge_message())) -> tabm_message().
+%% @doc Convert a list of AO-Core message into TABM message.
+-spec to(list(ao_message())) -> tabm_message().
 to(Messages) ->
-    % Iterate through all converge messages folding them into the TABM message
+    % Iterate through all AO-Core messages folding them into the TABM message
     % Scopes contains the following map: #{Key => [StageIndex, StageIndex2...]}
     % that allows to scope keys to the given stage.
     {TABMMessage, _FinalIndex, Scopes} =
         lists:foldl(
             fun
-                % Special case when Converge message is ID
+                % Special case when AO-Core message is ID
                 (Message, {Acc, Index, ScopedModifications}) when ?IS_ID(Message) ->
                     {append_path(Message, Acc), Index + 1, ScopedModifications};
 
-                % Special case when Converge message contains resolve command
+                % Special case when AO-Core message contains resolve command
                 ({resolve, SubMessages0}, {Acc, Index, ScopedModifications}) ->
                     SubMessages1 = maps:get(<<"path">>, to(SubMessages0)),
                     <<"/", SubMessages2/binary>> = SubMessages1,
@@ -133,7 +133,7 @@ type(Value) when is_binary(Value) -> binary;
 type(Value) when is_integer(Value) -> integer;
 type(_Value) -> unknown.
 
-%% @doc Normalize a singleton TABM message into a list of executable Converge
+%% @doc Normalize a singleton TABM message into a list of executable AO-Core
 %% messages.
 from(RawMsg) ->
     RawPath = maps:get(<<"path">>, RawMsg, <<>>),
@@ -284,7 +284,7 @@ do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys) ->
     StepMsg = hb_message:convert(
         Merged = maps:merge(Msg, ScopedKey),
         <<"structured@1.0">>,
-        #{ topic => converge_internal }
+        #{ topic => ao_internal }
     ),
     ?event({merged, {dev, DevID}, {input, Msg}, {merged, Merged}, {output, StepMsg}}),
     [{as, DevID, StepMsg} | do_build(I + 1, Rest, ScopedKeys)];
@@ -295,7 +295,7 @@ do_build(I, [Msg | Rest], ScopedKeys) ->
     StepMsg = hb_message:convert(
         maps:merge(Msg, ScopedKey),
         <<"structured@1.0">>,
-        #{ topic => converge_internal }
+        #{ topic => ao_internal }
     ),
     [StepMsg | do_build(I + 1, Rest, ScopedKeys)].
 

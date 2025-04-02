@@ -1,4 +1,4 @@
-%%% @doc Cache control logic for the Converge resolver. It derives cache settings
+%%% @doc Cache control logic for the AO-Core resolver. It derives cache settings
 %%% from request, response, execution-local node Opts, as well as the global
 %%% node Opts. It applies these settings when asked to maybe store/lookup in 
 %%% response to a request.
@@ -214,7 +214,7 @@ maybe_set(Map1, Map2) ->
     ).
 
 %% @doc Convert a cache source to a cache setting. The setting _must_ always be
-%% directly in the source, not a Converge-derivable value. The 
+%% directly in the source, not a AO-Core-derivable value. The 
 %% `to_cache_control_map' function is used as the source of settings in all
 %% cases, except where an `Opts' specifies that hashpaths should not be updated,
 %% which leads to the result not being cached (as it may be stored with an 
@@ -363,7 +363,7 @@ message_source_cache_control_test() ->
         <<"only-if-cached">> => undefined
     }, Result).
 
-%%% Basic cached Converge resolution tests
+%%% Basic cached AO-Core resolution tests
 
 cache_binary_result_test() ->
     CachedMsg = <<"test-message">>,

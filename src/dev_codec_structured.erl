@@ -4,7 +4,7 @@
 %%% This format mirrors HTTP Structured Fields, aside from its limitations of 
 %%% compound type depths, as well as limited floating point representations.
 %%% 
-%%% As with all Converge codecs, its target format (the format it expects to 
+%%% As with all AO-Core codecs, its target format (the format it expects to 
 %%% receive in the `to/1' function, and give in `from/1') is TABM.
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
