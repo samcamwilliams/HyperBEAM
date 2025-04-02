@@ -224,13 +224,13 @@ message_to_ordered_list(Message) ->
 message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
     [];
 message_to_ordered_list(Message, Opts) ->
-    Keys = hb_converge:keys(Message, Opts),
+    Keys = hb_ao:keys(Message, Opts),
     IntKeys = lists:sort(lists:map(fun int/1, Keys)),
     message_to_ordered_list(Message, IntKeys, erlang:hd(IntKeys), Opts).
 message_to_ordered_list(_Message, [], _Key, _Opts) ->
     [];
 message_to_ordered_list(Message, [Key|Keys], Key, Opts) ->
-    case hb_converge:get(Key, Message, Opts#{ hashpath => ignore }) of
+    case hb_ao:get(Key, Message, Opts#{ hashpath => ignore }) of
         undefined -> throw({missing_key, Key, {remaining_keys, Keys}});
         Value ->
             [
@@ -254,18 +254,18 @@ hd(Message) -> hd(Message, value).
 hd(Message, ReturnType) ->
     hd(Message, ReturnType, #{ error_strategy => throw }).
 hd(Message, ReturnType, Opts) -> 
-    hd(Message, hb_converge:keys(Message, Opts), 1, ReturnType, Opts).
+    hd(Message, hb_ao:keys(Message, Opts), 1, ReturnType, Opts).
 hd(_Map, [], _Index, _ReturnType, #{ error_strategy := throw }) ->
     throw(no_integer_keys);
 hd(_Map, [], _Index, _ReturnType, _Opts) -> undefined;
 hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
-    case hb_converge:normalize_key(Key, Opts#{ error_strategy => return }) of
+    case hb_ao:normalize_key(Key, Opts#{ error_strategy => return }) of
         undefined ->
             hd(Message, Rest, Index + 1, ReturnType, Opts);
         Key ->
             case ReturnType of
                 key -> Key;
-                value -> hb_converge:resolve(Message, Key, #{})
+                value -> hb_ao:resolve(Message, Key, #{})
             end
     end.
 
@@ -301,7 +301,7 @@ remove_common(Rest, _) -> Rest.
 %% @doc Throw an exception if the Opts map has an `error_strategy' key with the
 %% value `throw'. Otherwise, return the value.
 maybe_throw(Val, Opts) ->
-    case hb_converge:get(error_strategy, Opts) of
+    case hb_ao:get(error_strategy, Opts) of
         throw -> throw(Val);
         _ -> Val
     end.

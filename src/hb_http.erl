@@ -24,7 +24,7 @@ get(Node, Message, Opts) ->
     request(
         <<"GET">>,
         Node,
-        hb_converge:get(<<"path">>, Message, <<"/">>, Opts),
+        hb_ao:get(<<"path">>, Message, <<"/">>, Opts),
         Message,
         Opts
     ).
@@ -33,7 +33,7 @@ get(Node, Message, Opts) ->
 %% resulting message in deserialized form.
 post(Node, Message, Opts) ->
     post(Node,
-        hb_converge:get(
+        hb_ao:get(
             <<"path">>,
             Message,
             <<"/">>,
@@ -80,7 +80,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
     ?event({request, {method, Method}, {peer, Peer}, {path, Path}, {message, RawMessage}}),
     Req =
         prepare_request(
-            hb_converge:get(
+            hb_ao:get(
                 <<"codec-device">>,
                 RawMessage,
                 <<"httpsig@1.0">>,
@@ -111,7 +111,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         Opts
     ),
     HeaderMap = maps:from_list(Headers),
-    NormHeaderMap = hb_converge:normalize_keys(HeaderMap),
+    NormHeaderMap = hb_ao:normalize_keys(HeaderMap),
     ?event(http_outbound,
         {normalized_response_headers, {norm_header_map, NormHeaderMap}},
         Opts
@@ -182,7 +182,7 @@ http_response_to_httpsig(Status, HeaderMap, Body, Opts) ->
 
 %% @doc Given a message, return the information needed to make the request.
 message_to_request(M, Opts) ->
-    Method = hb_converge:get(<<"method">>, M, <<"GET">>, Opts),
+    Method = hb_ao:get(<<"method">>, M, <<"GET">>, Opts),
     % We must remove the path and host from the message, because they are not
     % valid for outbound requests. The path is retrieved from the route, and
     % the host should already be known to the caller.
@@ -219,7 +219,7 @@ message_to_request(M, Opts) ->
         {ok, Routes} ->
             ?event(http_outbound, {found_routes, {req, M}, {routes, Routes}}),
             % The result is a route, so we leave it to `request` to handle it.
-            Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
+            Path = hb_ao:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Routes, Path, MsgWithoutMeta};
         {error, Reason} ->
             {error, {no_viable_route, Reason, {message, M}}}
@@ -228,7 +228,7 @@ message_to_request(M, Opts) ->
 %% @doc Turn a set of request arguments into a request message, formatted in the
 %% preferred format.
 prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
-    Message = hb_converge:normalize_keys(RawMessage),
+    Message = hb_ao:normalize_keys(RawMessage),
     BinPeer = if is_binary(Peer) -> Peer; true -> list_to_binary(Peer) end,
     BinPath = hb_path:normalize(hb_path:to_binary(Path)),
     ReqBase = #{ peer => BinPeer, path => BinPath, method => Method },
@@ -313,7 +313,7 @@ multirequest_opts(Config, Message, Opts) ->
 
 %% @doc Get a value for a multirequest option from the config or message.
 multirequest_opt(Key, Config, Message, Default, Opts) ->
-    hb_converge:get_first(
+    hb_ao:get_first(
         [
             {Message, <<"multirequest-", Key/binary>>},
             {Config, Key}
@@ -329,7 +329,7 @@ serial_multirequest(_Nodes, 0, _Method, _Path, _Message, _Statuses, _Opts) -> []
 serial_multirequest([], _, _Method, _Path, _Message, _Statuses, _Opts) -> [];
 serial_multirequest([Node|Nodes], Remaining, Method, Path, Message, Statuses, Opts) ->
     {ErlStatus, Res} = request(Method, Node, Path, Message, Opts),
-    BaseStatus = hb_converge:get(<<"status">>, Res, Opts),
+    BaseStatus = hb_ao:get(<<"status">>, Res, Opts),
     case (ErlStatus == ok) andalso allowed_status(BaseStatus, Statuses) of
         true ->
             ?event(http, {admissible_status, {response, Res}}),
@@ -424,7 +424,7 @@ empty_inbox(Ref) ->
 %% @doc Reply to the client's HTTP request with a message.
 reply(Req, TABMReq, Message, Opts) ->
     Status =
-        case hb_converge:get(<<"status">>, Message, Opts) of
+        case hb_ao:get(<<"status">>, Message, Opts) of
             not_found -> 200;
             S-> S
         end,
@@ -432,7 +432,7 @@ reply(Req, TABMReq, Message, Opts) ->
 reply(Req, TABMReq, BinStatus, RawMessage, Opts) when is_binary(BinStatus) ->
     reply(Req, TABMReq, binary_to_integer(BinStatus), RawMessage, Opts);
 reply(Req, TABMReq, Status, RawMessage, Opts) ->
-    Message = hb_converge:normalize_keys(RawMessage),
+    Message = hb_ao:normalize_keys(RawMessage),
     {ok, HeadersBeforeCors, EncodedBody} = encode_reply(TABMReq, Message, Opts),
     % Get the CORS request headers from the message, if they exist.
     ReqHdr = cowboy_req:header(<<"access-control-request-headers">>, Req, <<"">>),
@@ -471,7 +471,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
             {path,
                 {string,
                     uri_string:percent_decode(
-                        hb_converge:get(<<"path">>, TABMReq, <<"[NO PATH]">>, Opts)
+                        hb_ao:get(<<"path">>, TABMReq, <<"[NO PATH]">>, Opts)
                     )
                 }
             },
@@ -595,7 +595,7 @@ mime_to_codec(<<"application/", Mime/binary>>, Opts) ->
             nomatch -> << Mime/binary, "@1.0" >>;
             _ -> Mime
         end,
-    try hb_converge:message_to_device(#{ <<"device">> => Name }, Opts)
+    try hb_ao:message_to_device(#{ <<"device">> => Name }, Opts)
     catch _:Error ->
         ?event(http, {accept_to_codec_error, {name, Name}, {error, Error}}),
         default_codec(Opts)
@@ -618,7 +618,7 @@ codec_to_content_type(Codec, Opts) ->
             load_remote_devices => false,
             error_strategy => continue
         },
-    case hb_converge:get(<<"content-type">>, #{ <<"device">> => Codec }, FastOpts) of
+    case hb_ao:get(<<"content-type">>, #{ <<"device">> => Codec }, FastOpts) of
         not_found -> undefined;
         CT -> CT
     end.
@@ -706,7 +706,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
 maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
     Method = cowboy_req:method(Req),
     MsgPath =
-        hb_converge:get(
+        hb_ao:get(
             <<"path">>,
             Msg,
             maps:get(
@@ -788,34 +788,34 @@ run_wasm_unsigned_test() ->
     Node = hb_http_server:start_node(#{force_signed => false}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0]),
     {ok, Res} = post(Node, Msg, #{}),
-    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 run_wasm_signed_test() ->
     URL = hb_http_server:start_node(#{force_signed => true}),
     Msg = wasm_compute_request(<<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).
 
 get_deep_unsigned_wasm_state_test() ->
     URL = hb_http_server:start_node(#{force_signed => false}),
     Msg = wasm_compute_request(
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(6.0, hb_converge:get(<<"/output/1">>, Res, #{})).
+    ?assertEqual(6.0, hb_ao:get(<<"/output/1">>, Res, #{})).
 
 get_deep_signed_wasm_state_test() ->
     URL = hb_http_server:start_node(#{force_signed => true}),
     Msg = wasm_compute_request(
         <<"test/test-64.wasm">>, <<"fac">>, [3.0], <<"/output">>),
     {ok, Res} = post(URL, Msg, #{}),
-    ?assertEqual(6.0, hb_converge:get(<<"1">>, Res, #{})).
+    ?assertEqual(6.0, hb_ao:get(<<"1">>, Res, #{})).
 
 cors_get_test() ->
     URL = hb_http_server:start_node(),
     {ok, Res} = get(URL, <<"/~meta@1.0/info">>, #{}),
     ?assertEqual(
         <<"*">>,
-        hb_converge:get(<<"access-control-allow-origin">>, Res, #{})
+        hb_ao:get(<<"access-control-allow-origin">>, Res, #{})
     ).
 
 ans104_wasm_test() ->
@@ -834,4 +834,4 @@ ans104_wasm_test() ->
     ?event({msg, Msg}),
     {ok, Res} = post(URL, Msg, #{}),
     ?event({res, Res}),
-    ?assertEqual(6.0, hb_converge:get(<<"output/1">>, Res, #{})).
+    ?assertEqual(6.0, hb_ao:get(<<"output/1">>, Res, #{})).

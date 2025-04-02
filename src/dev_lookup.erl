@@ -6,12 +6,12 @@
 -include_lib("eunit/include/eunit.hrl").
 
 read(_M1, M2, Opts) ->
-    ID = hb_converge:get(<<"target">>, M2, Opts),
+    ID = hb_ao:get(<<"target">>, M2, Opts),
     ?event({lookup, {id, ID}, {opts, Opts}}),
     case hb_cache:read(ID, Opts) of
         {ok, Res} ->
             ?event({lookup_result, Res}),
-            case hb_converge:get(<<"accept">>, M2, Opts) of
+            case hb_ao:get(<<"accept">>, M2, Opts) of
                 <<"application/aos-2">> ->
                     Struct = dev_json_iface:message_to_json_struct(Res),
                     {ok,
@@ -50,8 +50,8 @@ aos2_message_lookup_test() ->
             #{ <<"target">> => ID, <<"accept">> => <<"application/aos-2">> },
             #{}
         ),
-    Decoded = hb_json:decode(hb_converge:get(<<"body">>, RetrievedMsg, #{})),
-    ?assertEqual(<<"test-data">>, hb_converge:get(<<"data">>, Decoded, #{})).
+    Decoded = hb_json:decode(hb_ao:get(<<"body">>, RetrievedMsg, #{})),
+    ?assertEqual(<<"test-data">>, hb_ao:get(<<"data">>, Decoded, #{})).
 
 http_lookup_test() ->
     Store = #{
@@ -69,5 +69,5 @@ http_lookup_test() ->
         <<"accept">> => <<"application/aos-2">>
     }, Wallet),
     {ok, Res} = hb_http:post(Node, Req, Opts),
-    Decoded = hb_json:decode(hb_converge:get(<<"body">>, Res, Opts)),
-    ?assertEqual(<<"test-data">>, hb_converge:get(<<"data">>, Decoded, Opts)).
+    Decoded = hb_json:decode(hb_ao:get(<<"body">>, Res, Opts)),
+    ?assertEqual(<<"test-data">>, hb_ao:get(<<"data">>, Decoded, Opts)).

@@ -68,7 +68,7 @@ The special case `info/{0,1,2}` function may be implemented by the device, signa
 	}
 ```
 
-See `hb_converge.erl` for a full overview of supported keys.
+See `hb_ao.erl` for a full overview of supported keys.
 
 If the `default` parameter is provided, the function will be used as the entrypoint all key resolution when a matching function is not found. The key's name is provided as an additional first argument in this case (`defaultFun/{2,3,4}`).
 

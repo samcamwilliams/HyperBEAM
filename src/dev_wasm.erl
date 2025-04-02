@@ -58,9 +58,9 @@ init(M1, M2, Opts) ->
     Prefix = dev_stack:prefix(M1, M2, Opts),
     ?event({in_prefix, InPrefix}),
     ImageBin =
-        case hb_converge:get(<<InPrefix/binary, "/image">>, M1, Opts) of
+        case hb_ao:get(<<InPrefix/binary, "/image">>, M1, Opts) of
             not_found ->
-                case hb_converge:get(<<"body">>, M1, Opts) of
+                case hb_ao:get(<<"body">>, M1, Opts) of
                     not_found ->
                         throw(
                             {
@@ -78,16 +78,16 @@ init(M1, M2, Opts) ->
             ImageID when ?IS_ID(ImageID) ->
                 ?event({getting_wasm_image, ImageID}),
                 {ok, ImageMsg} = hb_cache:read(ImageID, Opts),
-                hb_converge:get(<<"body">>, ImageMsg, Opts);
+                hb_ao:get(<<"body">>, ImageMsg, Opts);
             ImageMsg when is_map(ImageMsg) ->
                 ?event(wasm_image_message_directly_provided),
-                hb_converge:get(<<"body">>, ImageMsg, Opts);
+                hb_ao:get(<<"body">>, ImageMsg, Opts);
             Image when is_binary(Image) ->
                 ?event(wasm_image_binary_directly_provided),
                 Image
         end,
     Mode =
-        case hb_converge:get(<<InPrefix/binary, "/Mode">>, M1, Opts) of
+        case hb_ao:get(<<InPrefix/binary, "/Mode">>, M1, Opts) of
             not_found -> wasm;
             <<"WASM">> -> wasm;
             <<"AOT">> ->
@@ -111,7 +111,7 @@ init(M1, M2, Opts) ->
         )
     }.
 
-%% @doc Take a BEAMR import call and resolve it using `hb_converge'.
+%% @doc Take a BEAMR import call and resolve it using `hb_ao'.
 default_import_resolver(Msg1, Msg2, Opts) ->
     #{
         instance := WASM,
@@ -122,7 +122,7 @@ default_import_resolver(Msg1, Msg2, Opts) ->
     } = Msg2,
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
     {ok, Msg3} =
-        hb_converge:resolve(
+        hb_ao:resolve(
             hb_private:set(
                 Msg1,
                 #{ <<Prefix/binary, "/instance">> => WASM },
@@ -137,8 +137,8 @@ default_import_resolver(Msg1, Msg2, Opts) ->
             },
             Opts
         ),
-    NextState = hb_converge:get(state, Msg3, Opts),
-    Response = hb_converge:get(results, Msg3, Opts),
+    NextState = hb_ao:get(state, Msg3, Opts),
+    Response = hb_ao:get(results, Msg3, Opts),
     {ok, Response, NextState}.
 
 %% @doc Call the WASM executor with a message that has been prepared by a prior
@@ -152,12 +152,12 @@ compute(RawM1, M2, Opts) ->
     {ok, M1} = normalize(RawM1, M2, Opts),
     ?event(running_compute),
     Prefix = dev_stack:prefix(M1, M2, Opts),
-    case hb_converge:get(pass, M1, Opts) of
+    case hb_ao:get(pass, M1, Opts) of
         X when X == 1 orelse X == not_found ->
             % Extract the WASM Instance, func, params, and standard library
             % invokation from the message and apply them with the WASM executor.
             WASMFunction =
-                hb_converge:get_first(
+                hb_ao:get_first(
                     [
                         {M2, <<"body/wasm-function">>},
                         {M2, <<"wasm-function">>},
@@ -166,7 +166,7 @@ compute(RawM1, M2, Opts) ->
                     Opts
                 ),
             WASMParams =
-                hb_converge:get_first(
+                hb_ao:get_first(
                     [
                         {M2, <<"body/wasm-params">>},
                         {M2, <<"wasm-params">>},
@@ -211,7 +211,7 @@ compute(RawM1, M2, Opts) ->
                             Opts
                         ),
                     {ok,
-                        hb_converge:set(MsgAfterExecution,
+                        hb_ao:set(MsgAfterExecution,
                             #{
                                 <<"results/", Prefix/binary, "/type">> => ResType,
                                 <<"results/", Prefix/binary, "/output">> => Res
@@ -230,7 +230,7 @@ normalize(RawM1, M2, Opts) ->
         case instance(RawM1, M2, Opts) of
             not_found ->
                 DeviceKey =
-                    case hb_converge:get(<<"device-key">>, RawM1, Opts) of
+                    case hb_ao:get(<<"device-key">>, RawM1, Opts) of
                         not_found -> [];
                         Key -> [Key]
                     end,
@@ -240,7 +240,7 @@ normalize(RawM1, M2, Opts) ->
                     }
                 ),
                 Memory = 
-                    hb_converge:get(
+                    hb_ao:get(
                         [<<"snapshot">>] ++ DeviceKey ++ [<<"body">>],
                         {as, dev_message, RawM1},
                         Opts
@@ -300,8 +300,8 @@ instance(M1, M2, Opts) ->
 %% 5. If it fails with `not_found', call the stub handler.
 import(Msg1, Msg2, Opts) ->
     % 1. Adjust the path to the stdlib.
-    ModName = hb_converge:get(<<"module">>, Msg2, Opts),
-    FuncName = hb_converge:get(<<"func">>, Msg2, Opts),
+    ModName = hb_ao:get(<<"module">>, Msg2, Opts),
+    FuncName = hb_ao:get(<<"func">>, Msg2, Opts),
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
     AdjustedPath =
         <<
@@ -321,14 +321,14 @@ import(Msg1, Msg2, Opts) ->
     AdjustedMsg2 = Msg2#{ <<"path">> => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =
-        hb_converge:set(
+        hb_ao:set(
             Msg1,
             #{ StatePath => Msg1 },
             Opts#{ hashpath => ignore }
         ),
     ?event({state_added_msg1, AdjustedMsg1, AdjustedMsg2}),
     % 3. Resolve the adjusted path against the added state.
-    case hb_converge:resolve(AdjustedMsg1, AdjustedMsg2, Opts) of
+    case hb_ao:resolve(AdjustedMsg1, AdjustedMsg2, Opts) of
         {ok, Res} ->
             % 4. Success. Return.
             {ok, Res};
@@ -345,14 +345,14 @@ undefined_import_stub(Msg1, Msg2, Opts) ->
     Prefix = dev_stack:prefix(Msg1, Msg2, Opts),
     UndefinedCallsPath =
         <<"state/results/", Prefix/binary, "/undefined-calls">>,
-    Msg3 = hb_converge:set(
+    Msg3 = hb_ao:set(
         Msg1,
         #{
             UndefinedCallsPath =>
                 [
                     Msg2
                 |
-                    case hb_converge:get(UndefinedCallsPath, Msg1, Opts) of
+                    case hb_ao:get(UndefinedCallsPath, Msg1, Opts) of
                         not_found -> [];
                         X -> X
                     end
@@ -377,16 +377,16 @@ input_prefix_test() ->
             <<"input-prefix">> => <<"test-in">>,
             <<"test-in">> => #{ <<"image">> => ImageID }
         },
-    {ok, Msg2} = hb_converge:resolve(Msg1, <<"init">>, #{}),
+    {ok, Msg2} = hb_ao:resolve(Msg1, <<"init">>, #{}),
     ?event({after_init, Msg2}),
     Priv = hb_private:from_message(Msg2),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
-        hb_converge:resolve(Priv, <<"instance">>, #{})
+        hb_ao:resolve(Priv, <<"instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"import-resolver">>, #{})
+        hb_ao:resolve(Priv, <<"import-resolver">>, #{})
     ).
 
 %% @doc Test that realistic prefixing for a `dev_process' works --
@@ -401,32 +401,32 @@ process_prefixes_test() ->
             <<"input-prefix">> => <<"process">>,
             <<"process">> => cache_wasm_image("test/test.wasm")
         },
-    {ok, Msg3} = hb_converge:resolve(Msg1, <<"init">>, #{}),
+    {ok, Msg3} = hb_ao:resolve(Msg1, <<"init">>, #{}),
     ?event({after_init, Msg3}),
     Priv = hb_private:from_message(Msg3),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
-        hb_converge:resolve(Priv, <<"wasm/instance">>, #{})
+        hb_ao:resolve(Priv, <<"wasm/instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"wasm/import-resolver">>, #{})
+        hb_ao:resolve(Priv, <<"wasm/import-resolver">>, #{})
     ).
 
 
 init_test() ->
     init(),
     Msg = cache_wasm_image("test/test.wasm"),
-    {ok, Msg1} = hb_converge:resolve(Msg, <<"init">>, #{}),
+    {ok, Msg1} = hb_ao:resolve(Msg, <<"init">>, #{}),
     ?event({after_init, Msg1}),
     Priv = hb_private:from_message(Msg1),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
-        hb_converge:resolve(Priv, <<"instance">>, #{})
+        hb_ao:resolve(Priv, <<"instance">>, #{})
     ),
     ?assertMatch(
         {ok, Fun} when is_function(Fun),
-        hb_converge:resolve(Priv, <<"import-resolver">>, #{})
+        hb_ao:resolve(Priv, <<"import-resolver">>, #{})
     ).
 
 basic_execution_test() ->
@@ -459,11 +459,11 @@ benchmark_test() ->
     BenchTime = 0.5,
     init(),
     Msg0 = cache_wasm_image("test/test-64.wasm"),
-    {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
+    {ok, Msg1} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     Msg2 =
         maps:merge(
             Msg1,
-            hb_converge:set(
+            hb_ao:set(
                 #{
                     <<"wasm-function">> => <<"fac">>,
                     <<"wasm-params">> => [5.0]
@@ -474,7 +474,7 @@ benchmark_test() ->
     Iterations =
         hb:benchmark(
             fun() ->
-                hb_converge:resolve(Msg2, <<"compute">>, #{})
+                hb_ao:resolve(Msg2, <<"compute">>, #{})
             end,
             BenchTime
         ),
@@ -491,7 +491,7 @@ state_export_and_restore_test() ->
     % Generate a WASM message. We use the pow_calculator because it has a 
     % reasonable amount of memory to work with.
     Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
-    {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
+    {ok, Msg1} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     Msg2 =
         maps:merge(
             Msg1,
@@ -507,15 +507,15 @@ state_export_and_restore_test() ->
         ),
     ?event({after_setup, Msg2}),
     % Compute a computation and export the state.
-    {ok, Msg3a} = hb_converge:resolve(Msg2, <<"compute">>, #{}),
-    ?assertEqual([4], hb_converge:get(<<"results/output">>, Msg3a, #{})),
-    {ok, State} = hb_converge:resolve(Msg3a, <<"snapshot">>, #{}),
+    {ok, Msg3a} = hb_ao:resolve(Msg2, <<"compute">>, #{}),
+    ?assertEqual([4], hb_ao:get(<<"results/output">>, Msg3a, #{})),
+    {ok, State} = hb_ao:resolve(Msg3a, <<"snapshot">>, #{}),
     ?event({state_res, State}),
     % Restore the state without calling Init.
     NewMsg1 = maps:merge(Msg0, Extras#{ <<"snapshot">> => State }),
     ?assertEqual(
         {ok, [4]},
-        hb_converge:resolve(NewMsg1, <<"compute/results/output">>, #{})
+        hb_ao:resolve(NewMsg1, <<"compute/results/output">>, #{})
     ).
 
 %%% Test helpers
@@ -534,12 +534,12 @@ cache_wasm_image(Image, Opts) ->
 test_run_wasm(File, Func, Params, AdditionalMsg) ->
     init(),
     Msg0 = cache_wasm_image(File),
-    {ok, Msg1} = hb_converge:resolve(Msg0, <<"init">>, #{}),
+    {ok, Msg1} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     ?event({after_init, Msg1}),
     Msg2 =
         maps:merge(
             Msg1,
-            hb_converge:set(
+            hb_ao:set(
                 #{
                     <<"wasm-function">> => Func,
                     <<"wasm-params">> => Params
@@ -549,6 +549,6 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
             )
         ),
     ?event({after_setup, Msg2}),
-    {ok, StateRes} = hb_converge:resolve(Msg2, <<"compute">>, #{}),
+    {ok, StateRes} = hb_ao:resolve(Msg2, <<"compute">>, #{}),
     ?event({after_resolve, StateRes}),
-    hb_converge:resolve(StateRes, <<"results/output">>, #{}).
+    hb_ao:resolve(StateRes, <<"results/output">>, #{}).

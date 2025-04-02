@@ -11,11 +11,11 @@
 push(Base, Req, Opts) ->
     ModBase = dev_process:as_process(Base, Opts),
     ?event(push, {push_base, {base, ModBase}, {req, Req}}, Opts),
-    case hb_converge:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
+    case hb_ao:get(<<"slot">>, {as, <<"message@1.0">>, Req}, no_slot, Opts) of
         no_slot ->
             case schedule_initial_message(ModBase, Req, Opts) of
                 {ok, Assignment} ->
-                    case find_type(hb_converge:get(<<"body">>, Assignment, Opts), Opts) of
+                    case find_type(hb_ao:get(<<"body">>, Assignment, Opts), Opts) of
                         <<"Message">> ->
                             ?event(push,
                                 {pushing_message,
@@ -50,7 +50,7 @@ push_with_mode(Base, Req, Opts) ->
 
 %% @doc Determine if the push is asynchronous.
 is_async(Base, Req, Opts) ->
-    hb_converge:get_first(
+    hb_ao:get_first(
         [
             {Req, <<"push-mode">>},
             {Base, <<"push-mode">>},
@@ -62,10 +62,10 @@ is_async(Base, Req, Opts) ->
 
 %% @doc Push a message or slot number.
 do_push(Base, Assignment, Opts) ->
-    Slot = hb_converge:get(<<"slot">>, Assignment, Opts),
+    Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
-    Result = hb_converge:resolve(
+    Result = hb_ao:resolve(
         {as, <<"process@1.0">>, Base},
         #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
@@ -109,7 +109,7 @@ do_push(Base, Assignment, Opts) ->
     end.
 
 push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
-    case hb_converge:get(<<"target">>, MsgToPush, undefined, Opts) of
+    case hb_ao:get(<<"target">>, MsgToPush, undefined, Opts) of
         undefined ->
             ?event(push, {skip_no_target, {key, Key}, MsgToPush}, Opts),
             #{};
@@ -124,8 +124,8 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
             ),
             case schedule_result(Base, MsgToPush, Opts) of
                 {ok, Assignment} ->
-                    NextSlotOnProc = hb_converge:get(<<"slot">>, Assignment, Opts),
-                    PushedMsg = hb_converge:get(<<"body">>, Assignment, Opts),
+                    NextSlotOnProc = hb_ao:get(<<"slot">>, Assignment, Opts),
+                    PushedMsg = hb_ao:get(<<"body">>, Assignment, Opts),
                     PushedMsgID = hb_message:id(PushedMsg, all, Opts),
                     ?event(push_short,
                         {pushed_message_to,
@@ -137,7 +137,7 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
                     TargetAsProcess = dev_process:ensure_process_key(TargetBase, Opts),
                     RecvdID = hb_message:id(TargetBase, all),
                     ?event(push, {recvd_id, {id, RecvdID}, {msg, TargetAsProcess}}),
-                    Resurse = hb_converge:resolve(
+                    Resurse = hb_ao:resolve(
                         {as, <<"process@1.0">>, TargetAsProcess},
                         #{ <<"path">> => <<"push">>, <<"slot">> => NextSlotOnProc },
                         Opts#{ cache_control => <<"always">> }
@@ -170,7 +170,7 @@ push_result_message(Base, FromSlot, Key, MsgToPush, Opts) ->
 
 %% @doc Augment the message with from-* keys, if it doesn't already have them.
 normalize_message(MsgToPush, Opts) ->
-    hb_converge:set(
+    hb_ao:set(
         MsgToPush,
         #{
             <<"target">> => target_process(MsgToPush, Opts)
@@ -180,7 +180,7 @@ normalize_message(MsgToPush, Opts) ->
 
 %% @doc Find the target process ID for a message to push.
 target_process(MsgToPush, Opts) ->
-    case hb_converge:get(<<"target">>, MsgToPush, Opts) of
+    case hb_ao:get(<<"target">>, MsgToPush, Opts) of
         not_found -> undefined;
         RawTarget -> extract(target, RawTarget)
     end.
@@ -202,7 +202,7 @@ split_target(RawTarget) ->
 schedule_result(Base, MsgToPush, Opts) ->
     schedule_result(Base, MsgToPush, <<"httpsig@1.0">>, Opts).
 schedule_result(Base, MsgToPush, Codec, Opts) ->
-    Target = hb_converge:get(<<"target">>, MsgToPush, Opts),
+    Target = hb_ao:get(<<"target">>, MsgToPush, Opts),
     ?event(push,
         {push_scheduling_result,
             {target, {string, Target}},
@@ -230,17 +230,17 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
         }
     ),
     {ErlStatus, Res} =
-        hb_converge:resolve(
+        hb_ao:resolve(
             {as, <<"process@1.0">>, Base},
             SignedReq,
             Opts#{ cache_control => <<"always">> }
         ),
     ?event(push, {push_scheduling_result, {status, ErlStatus}, {response, Res}}, Opts),
-    case {ErlStatus, hb_converge:get(<<"status">>, Res, 200, Opts)} of
+    case {ErlStatus, hb_ao:get(<<"status">>, Res, 200, Opts)} of
         {ok, 200} ->
             {ok, Res};
         {ok, 307} ->
-            Location = hb_converge:get(<<"location">>, Res, Opts),
+            Location = hb_ao:get(<<"location">>, Res, Opts),
             ?event(push, {redirect, {location, {explicit, Location}}}),
             NormMsg = normalize_message(MsgToPush, Opts),
             SignedNormMsg = hb_message:commit(NormMsg, Opts),
@@ -261,7 +261,7 @@ schedule_result(Base, MsgToPush, Codec, Opts) ->
 %% @doc Set the necessary keys in order for the recipient to know where the
 %% message came from.
 additional_keys(FromMsg, ToSched, Opts) ->
-    hb_converge:set(
+    hb_ao:set(
         ToSched,
         #{
             <<"Data-Protocol">> => <<"ao">>,
@@ -276,12 +276,12 @@ additional_keys(FromMsg, ToSched, Opts) ->
 schedule_initial_message(Base, Req, Opts) ->
     ModReq = Req#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
     ?event(push, {initial_push, {base, Base}, {req, ModReq}}, Opts),
-    case hb_converge:resolve(Base, ModReq, Opts) of
+    case hb_ao:resolve(Base, ModReq, Opts) of
         {ok, Res} ->
-            case hb_converge:get(<<"status">>, Res, 200, Opts) of
+            case hb_ao:get(<<"status">>, Res, 200, Opts) of
                 200 -> {ok, Res};
                 307 ->
-                    Location = hb_converge:get(<<"location">>, Res, Opts),
+                    Location = hb_ao:get(<<"location">>, Res, Opts),
                     remote_schedule_result(Location, Req, Opts)
             end;
         {error, Res = #{ <<"status">> := 422 }} ->
@@ -306,10 +306,10 @@ remote_schedule_result(Location, SignedReq, Opts) ->
     case hb_http:post(Node, Path, maps:without([<<"path">>], SignedReq), Opts) of
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
-            case hb_converge:get(<<"status">>, Res, 200, Opts) of
+            case hb_ao:get(<<"status">>, Res, 200, Opts) of
                 200 -> {ok, Res};
                 307 ->
-                    NewLocation = hb_converge:get(<<"location">>, Res, Opts),
+                    NewLocation = hb_ao:get(<<"location">>, Res, Opts),
                     remote_schedule_result(NewLocation, SignedReq, Opts)
             end;
         {error, Res} ->
@@ -317,7 +317,7 @@ remote_schedule_result(Location, SignedReq, Opts) ->
     end.
 
 find_type(Req, Opts) ->
-    hb_converge:get_first(
+    hb_ao:get_first(
         [
             {Req, <<"type">>},
             {Req, <<"body/type">>}
@@ -356,7 +356,7 @@ full_push_test_() ->
         Msg1 = dev_process:test_aos_process(Opts),
         hb_cache:write(Msg1, Opts),
         {ok, SchedInit} =
-            hb_converge:resolve(Msg1, #{
+            hb_ao:resolve(Msg1, #{
                 <<"method">> => <<"POST">>,
                 <<"path">> => <<"schedule">>,
                 <<"body">> => Msg1
@@ -369,17 +369,17 @@ full_push_test_() ->
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
         ?event(push, {msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
-            hb_converge:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+            hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),
         Msg3 =
             #{
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
-        {ok, _} = hb_converge:resolve(Msg1, Msg3, Opts),
+        {ok, _} = hb_ao:resolve(Msg1, Msg3, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_converge:resolve(Msg1, <<"now/results/data">>, Opts)
+            hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
         )
     end}.
 
@@ -393,7 +393,7 @@ multi_process_push_test_disabled() ->
         Proc1 = dev_process:test_aos_process(Opts),
         hb_cache:write(Proc1, Opts),
         {ok, _SchedInit1} =
-            hb_converge:resolve(Proc1, #{
+            hb_ao:resolve(Proc1, #{
                 <<"method">> => <<"POST">>,
                 <<"path">> => <<"schedule">>,
                 <<"body">> => Proc1
@@ -404,7 +404,7 @@ multi_process_push_test_disabled() ->
         Proc2 = dev_process:test_aos_process(Opts),
         hb_cache:write(Proc2, Opts),
         {ok, _SchedInit2} =
-            hb_converge:resolve(Proc2, #{
+            hb_ao:resolve(Proc2, #{
                 <<"method">> => <<"POST">>,
                 <<"path">> => <<"schedule">>,
                 <<"body">> => Proc2
@@ -412,13 +412,13 @@ multi_process_push_test_disabled() ->
             Opts
         ),
         ProcID1 =
-            hb_converge:get(
+            hb_ao:get(
                 <<"process/id">>,
                 dev_process:ensure_process_key(Proc1, Opts),
                 Opts
             ),
         ProcID2 =
-            hb_converge:get(
+            hb_ao:get(
                 <<"process/id">>,
                 dev_process:ensure_process_key(Proc2, Opts),
                 Opts
@@ -436,16 +436,16 @@ multi_process_push_test_disabled() ->
                 "Send({ Target = \"", (ProcID1)/binary, "\", Action = \"Ping\" })\n"
             >>
         ),
-        SlotToPush = hb_converge:get(<<"slot">>, ToPush, Opts),
+        SlotToPush = hb_ao:get(<<"slot">>, ToPush, Opts),
         ?event(push, {slot_to_push_proc2, SlotToPush}),
         Msg3 =
             #{
                 <<"path">> => <<"push">>,
                 <<"slot">> => SlotToPush
             },
-        {ok, PushResult} = hb_converge:resolve(Proc2, Msg3, Opts),
+        {ok, PushResult} = hb_ao:resolve(Proc2, Msg3, Opts),
         ?event(push, {push_result_proc2, PushResult}),
-        AfterPush = hb_converge:resolve(Proc2, <<"now/results/data">>, Opts),
+        AfterPush = hb_ao:resolve(Proc2, <<"now/results/data">>, Opts),
         ?event(push, {after_push, AfterPush}),
         ?assertEqual({ok, <<"GOT PONG">>}, AfterPush)
     end}.
@@ -466,7 +466,7 @@ push_with_redirect_hint_test_disabled() ->
         ?event(push, {pong_server_sched_resp, ServerSchedResp}),
         % Get the IDs of the server process
         PongServerID =
-            hb_converge:get(
+            hb_ao:get(
                 <<"process/id">>,
                 dev_process:ensure_process_key(PongServer, LocalOpts),
                 LocalOpts
@@ -507,12 +507,12 @@ push_with_redirect_hint_test_disabled() ->
                 >>,
                 LocalOpts
             ),
-        SlotToPush = hb_converge:get(<<"slot">>, ToPush, LocalOpts),
+        SlotToPush = hb_ao:get(<<"slot">>, ToPush, LocalOpts),
         ?event(push, {slot_to_push_client, SlotToPush}),
         Msg3 = #{ <<"path">> => <<"push">>, <<"slot">> => SlotToPush },
-        {ok, PushResult} = hb_converge:resolve(Client, Msg3, LocalOpts),
+        {ok, PushResult} = hb_ao:resolve(Client, Msg3, LocalOpts),
         ?event(push, {push_result_client, PushResult}),
-        AfterPush = hb_converge:resolve(Client, <<"now/results/data">>, LocalOpts),
+        AfterPush = hb_ao:resolve(Client, <<"now/results/data">>, LocalOpts),
         ?event(push, {after_push, AfterPush}),
         % Note: This test currently only gets a reply that the message was not
         % trusted by the process. To fix this, we would have to add another 
@@ -548,7 +548,7 @@ push_prompts_encoding_change_test() ->
     }, Opts),
     ?event(push, {msg1, Msg}),
     Res =
-        hb_converge:resolve_many(
+        hb_ao:resolve_many(
             [
                 <<"QQiMcAge5ZtxcUV7ruxpi16KYRE8UBP0GAAqCIJPXz0">>,
                 {as, <<"process@1.0">>, <<>>},

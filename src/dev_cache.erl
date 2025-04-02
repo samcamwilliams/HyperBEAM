@@ -22,12 +22,12 @@
 %%          not_found if the key does not exist,
 %%          {error, Reason} on failure.
 read(_M1, M2, Opts) ->
-    Location = hb_converge:get(<<"target">>, M2, Opts),
+    Location = hb_ao:get(<<"target">>, M2, Opts),
     ?event({read, {key_extracted, Location}}),
     case hb_cache:read(Location, Opts) of
         {ok, Res} ->
             ?event({read, {cache_result, ok, Res}}),
-            case hb_converge:get(<<"accept">>, M2, Opts) of
+            case hb_ao:get(<<"accept">>, M2, Opts) of
                 <<"application/aos-2">> ->
                     ?event(dev_cache, 
 						{read, 
@@ -69,7 +69,7 @@ write(_M1, M2, Opts) ->
     case is_trusted_writer(M2, Opts) of
         true ->
             ?event(dev_cache, {write, {trusted_writer, true}}),
-            Type = hb_converge:get(<<"type">>, M2, <<"single">>, Opts),
+            Type = hb_ao:get(<<"type">>, M2, <<"single">>, Opts),
             ?event(dev_cache, {write, {write_type, Type}}),
             case Type of
                 <<"single">> ->
@@ -82,7 +82,7 @@ write(_M1, M2, Opts) ->
                             ?event(dev_cache, {write, {batch_item, Value}}),
                             write_single(Value, Opts)
                         end,
-                        hb_converge:get(<<"body">>, M2, Opts)
+                        hb_ao:get(<<"body">>, M2, Opts)
                     );
                 _ ->
                     ?event(dev_cache, {write, {invalid_write_type, Type}}),
@@ -107,8 +107,8 @@ write(_M1, M2, Opts) ->
 link(_Base, Req, Opts) ->
     case is_trusted_writer(Req, Opts) of
         true ->
-            Source = hb_converge:get(<<"source">>, Req, Opts),
-            Destination = hb_converge:get(<<"destination">>, Req, Opts),
+            Source = hb_ao:get(<<"source">>, Req, Opts),
+            Destination = hb_ao:get(<<"destination">>, Req, Opts),
             write_single(#{
                 <<"operation">> => <<"link">>,
                 <<"source">> => Source,
@@ -128,11 +128,11 @@ link(_Base, Req, Opts) ->
 %% @returns {ok, #{status := 200, path := Path}} on success,
 %%          {error, Reason} on failure.
 write_single(Msg, Opts) ->
-    Body = hb_converge:get(<<"body">>, Msg, Opts),
+    Body = hb_ao:get(<<"body">>, Msg, Opts),
     ?event(dev_cache, {write_single, {body_extracted, Body}}),
-    Location = hb_converge:get(<<"location">>, Msg, Opts),
+    Location = hb_ao:get(<<"location">>, Msg, Opts),
     ?event(dev_cache, {write_single, {location_extracted, Location}}),
-    Operation = hb_converge:get(<<"operation">>, Msg, <<"write">>, Opts),
+    Operation = hb_ao:get(<<"operation">>, Msg, <<"write">>, Opts),
     ?event(dev_cache, {write_single, {operation, Operation}}),
     case {Operation, Body, Location} of
         {<<"write">>, not_found, _} ->
@@ -156,8 +156,8 @@ write_single(Msg, Opts) ->
             {ok, #{ <<"status">> => 200, <<"path">> => Path }};
         {<<"link">>, _, _} ->
             ?event(dev_cache, {write_single, {processing_link}}),
-            Source = hb_converge:get(<<"source">>, Msg, Opts),
-            Destination = hb_converge:get(<<"destination">>, Msg, Opts),
+            Source = hb_ao:get(<<"source">>, Msg, Opts),
+            Destination = hb_ao:get(<<"destination">>, Msg, Opts),
             ?event(dev_cache, 
 				{write_single, 
 					{link_params, Source, Destination}
@@ -271,9 +271,9 @@ write_to_cache(Node, Data, Wallet) ->
     ?event(dev_cache, {write_to_cache, {http_post, WriteResult}}),
     {ok, WriteResponse} = WriteResult,
     ?event(dev_cache, {write_to_cache, {response_received, WriteResponse}}),
-    Status = hb_converge:get(<<"status">>, WriteResponse, 0, #{}),
+    Status = hb_ao:get(<<"status">>, WriteResponse, 0, #{}),
     ?assertEqual(200, Status),
-    Path = hb_converge:get(<<"path">>, WriteResponse, not_found, #{}),
+    Path = hb_ao:get(<<"path">>, WriteResponse, not_found, #{}),
     ?assertNotEqual(not_found, Path),
     ?event(dev_cache, {write_to_cache, {write_success, Path}}),
     {WriteResponse, Path}.

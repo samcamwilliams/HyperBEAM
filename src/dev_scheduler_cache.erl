@@ -8,8 +8,8 @@
 write(Assignment, Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     % Write the message into the main cache
-    ProcID = hb_converge:get(<<"process">>, Assignment),
-    Slot = hb_converge:get(<<"slot">>, Assignment),
+    ProcID = hb_ao:get(<<"process">>, Assignment),
+    Slot = hb_ao:get(<<"slot">>, Assignment),
     ?event(
         {writing_assignment,
             {proc_id, ProcID},
@@ -29,7 +29,7 @@ write(Assignment, Opts) ->
                     [
                         <<"assignments">>,
                         hb_util:human_id(ProcID),
-                        hb_converge:normalize_key(Slot)
+                        hb_ao:normalize_key(Slot)
                     ]
                 )
             ),
@@ -58,7 +58,7 @@ read(ProcID, Slot, Opts) ->
         {ok, Assignment} ->
             % If the slot key is not present, the format of the assignment is
             % AOS2, so we need to convert it to the canonical format.
-            case hb_converge:get(<<"slot">>, Assignment, Opts) of
+            case hb_ao:get(<<"slot">>, Assignment, Opts) of
                 not_found ->
                     Norm = dev_scheduler_formats:aos2_normalize_types(Assignment),
                     {ok, Norm};
@@ -102,7 +102,7 @@ latest(ProcID, Opts) ->
             ),
             {
                 AssignmentNum,
-                hb_converge:get(
+                hb_ao:get(
                     <<"hash-chain">>, Assignment, #{ hashpath => ignore })
             }
     end.

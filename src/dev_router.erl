@@ -36,7 +36,7 @@ routes(M1, M2, Opts) ->
     ?event({routes_msg, M1, M2}),
     Routes = hb_opts:get(routes, [], Opts),
     ?event({routes, Routes}),
-    case hb_converge:get(<<"method">>, M2, Opts) of
+    case hb_ao:get(<<"method">>, M2, Opts) of
         <<"POST">> ->
             Owner = hb_opts:get(operator, undefined, Opts),
             RouteOwners = hb_opts:get(route_owners, [Owner], Opts),
@@ -54,8 +54,8 @@ routes(M1, M2, Opts) ->
                     NewRoutes =
                         lists:sort(
                             fun(X, Y) ->
-                                hb_converge:get(<<"priority">>, X, SortOpts)
-                                    < hb_converge:get(<<"priority">>, Y, SortOpts)
+                                hb_ao:get(<<"priority">>, X, SortOpts)
+                                    < hb_ao:get(<<"priority">>, Y, SortOpts)
                             end,
                             [M2|Routes]
                         ),
@@ -92,33 +92,33 @@ route(_, Msg, Opts) ->
     Routes = hb_opts:get(routes, [], Opts),
     R = match_routes(Msg, Routes, Opts),
     ?event({find_route, {msg, Msg}, {routes, Routes}, {res, R}}),
-    case (R =/= no_matches) andalso hb_converge:get(<<"node">>, R, Opts) of
+    case (R =/= no_matches) andalso hb_ao:get(<<"node">>, R, Opts) of
         false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
         Node when is_map(Node) -> apply_route(Msg, Node);
         not_found ->
             ModR = apply_routes(Msg, R, Opts),
-            case hb_converge:get(<<"strategy">>, R, Opts) of
+            case hb_ao:get(<<"strategy">>, R, Opts) of
                 not_found -> {ok, ModR};
                 <<"All">> -> {ok, ModR};
                 Strategy ->
-                    ChooseN = hb_converge:get(<<"choose">>, R, 1, Opts),
+                    ChooseN = hb_ao:get(<<"choose">>, R, 1, Opts),
                     Hashpath = hb_path:from_message(hashpath, R),
-                    Nodes = hb_converge:get(<<"nodes">>, ModR, Opts),
+                    Nodes = hb_ao:get(<<"nodes">>, ModR, Opts),
                     Chosen = choose(ChooseN, Strategy, Hashpath, Nodes, Opts),
                     case Chosen of
                         [X] when is_map(X) ->
-                            {ok, hb_converge:get(<<"host">>, X, Opts)};
+                            {ok, hb_ao:get(<<"host">>, X, Opts)};
                         [X] -> {ok, X};
                         _ ->
-                            {ok, hb_converge:set(<<"nodes">>, Chosen, Opts)}
+                            {ok, hb_ao:set(<<"nodes">>, Chosen, Opts)}
                     end
             end
     end.
 
 %% @doc Generate a `uri` key for each node in a route.
 apply_routes(Msg, R, Opts) ->
-    Nodes = hb_converge:get(<<"nodes">>, R, Opts),
+    Nodes = hb_ao:get(<<"nodes">>, R, Opts),
     NodesWithRouteApplied =
         if is_list(Nodes) ->
             lists:map(
@@ -155,7 +155,7 @@ match_routes(ToMatch, Routes, Opts) ->
     match_routes(
         ToMatch,
         Routes,
-        hb_converge:keys(hb_converge:normalize_keys(Routes)),
+        hb_ao:keys(hb_ao:normalize_keys(Routes)),
         Opts
     ).
 match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
@@ -165,9 +165,9 @@ match_routes(#{ <<"path">> := Explicit = <<"https://", _/binary>> }, _, _, _) ->
     #{ <<"node">> => Explicit };
 match_routes(_, _, [], _) -> no_matches;
 match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
-    XM = hb_converge:get(XKey, Routes, Opts),
+    XM = hb_ao:get(XKey, Routes, Opts),
     Template =
-        hb_converge:get(
+        hb_ao:get(
             <<"template">>,
             XM,
             #{},
@@ -210,7 +210,7 @@ choose(N, <<"Nearest">>, HashPath, Nodes, Opts) ->
     NodesWithDistances =
         lists:map(
             fun(Node) ->
-                Wallet = hb_converge:get(<<"wallet">>, Node, Opts),
+                Wallet = hb_ao:get(<<"wallet">>, Node, Opts),
                 DistanceScore =
                     field_distance(
                         hb_util:native_id(Wallet),
@@ -419,7 +419,7 @@ device_call_from_singleton_test() ->
     ?event({msgs, Msgs}),
     ?assertEqual(
         {ok, Routes},
-        hb_converge:resolve_many(Msgs, NodeOpts)
+        hb_ao:resolve_many(Msgs, NodeOpts)
     ).
     
 

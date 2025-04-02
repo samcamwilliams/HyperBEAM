@@ -50,7 +50,7 @@ default_zone_required_opts(Opts) ->
 init(_M1, M2, Opts) ->
     ?event(green_zone, {init, start}),
 	RequiredConfig =
-        hb_converge:get(
+        hb_ao:get(
             <<"required-config">>,
             M2,
             default_zone_required_opts(Opts),
@@ -110,8 +110,8 @@ init(_M1, M2, Opts) ->
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-	PeerLocation = hb_converge:get(<<"peer-location">>, M1, undefined, Opts),
-	PeerID = hb_converge:get(<<"peer-id">>, M1, undefined, Opts),
+	PeerLocation = hb_ao:get(<<"peer-location">>, M1, undefined, Opts),
+	PeerID = hb_ao:get(<<"peer-id">>, M1, undefined, Opts),
 	?event(green_zone, {join_peer, PeerLocation, PeerID}),
 	if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
 		validate_join(M1, M2, Opts);
@@ -183,8 +183,8 @@ key(_M1, _M2, Opts) ->
 become(_M1, M2, Opts) ->
     ?event(green_zone, {become, start}),
     % 1. Retrieve the target node's address from the incoming message.
-    NodeLocation = hb_converge:get(<<"peer-location">>, M2, Opts),
-    NodeID = hb_converge:get(<<"peer-id">>, M2, Opts),
+    NodeLocation = hb_ao:get(<<"peer-location">>, M2, Opts),
+    NodeID = hb_ao:get(<<"peer-id">>, M2, Opts),
     % 2. Check if the local node has a valid shared AES key.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     case GreenZoneAES of
@@ -210,8 +210,8 @@ finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) ->
     % 4. Decode the response to obtain the encrypted key and IV.
     Combined =
         base64:decode(
-            hb_converge:get(<<"encrypted_key">>, KeyResp, Opts)),
-    IV = base64:decode(hb_converge:get(<<"iv">>, KeyResp, Opts)),
+            hb_ao:get(<<"encrypted_key">>, KeyResp, Opts)),
+    IV = base64:decode(hb_ao:get(<<"iv">>, KeyResp, Opts)),
     % 5. Separate the ciphertext and the authentication tag.
     CipherLen = byte_size(Combined) - 16,
     <<Ciphertext:CipherLen/binary, Tag:16/binary>> = Combined,
@@ -285,7 +285,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
 			{ok, Report} = dev_snp:generate(#{}, #{}, Opts),
 			WalletPub = element(2, Wallet),
-			MergedReq = hb_converge:set(
+			MergedReq = hb_ao:set(
 				Report, 
 				<<"public-key">>,
 				base64:encode(term_to_binary(WalletPub)),
@@ -316,7 +316,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                         true ->
                             % Extract the encrypted shared AES key (zone-key) 
                             % from the response.
-                            ZoneKey = hb_converge:get(<<"zone-key">>, Resp, Opts),
+                            ZoneKey = hb_ao:get(<<"zone-key">>, Resp, Opts),
                             % Decrypt the zone key using the local node's
                             % private key.
                             {ok, AESKey} = decrypt_zone_key(ZoneKey, Opts),
@@ -359,7 +359,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 %% a list of fields that should be included in the node message, alongside the
 %% required config of the green zone they are joining.
 maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
-    case hb_converge:get(<<"adopt-config">>, Req, true, InitOpts) of
+    case hb_ao:get(<<"adopt-config">>, Req, true, InitOpts) of
         false ->
             % The node operator does not want to adopt the peer's config. Return
             % the initial options unchanged.
@@ -453,11 +453,11 @@ validate_join(_M1, Req, Opts) ->
 	end,
 	?event(green_zone, {join, start}),
     % Retrieve the commitment report and address from the join request.
-    Report = hb_converge:get(<<"report">>, Req, Opts),
-    NodeAddr = hb_converge:get(<<"address">>, Req, Opts),
+    Report = hb_ao:get(<<"report">>, Req, Opts),
+    NodeAddr = hb_ao:get(<<"address">>, Req, Opts),
     ?event(green_zone, {join, extract, {node_addr, NodeAddr}}),
     % Retrieve and decode the joining node's public key.
-    EncodedPubKey = hb_converge:get(<<"public-key">>, Req, Opts),
+    EncodedPubKey = hb_ao:get(<<"public-key">>, Req, Opts),
     RequesterPubKey = case EncodedPubKey of
         not_found -> not_found;
         Encoded -> binary_to_term(base64:decode(Encoded))
@@ -500,13 +500,13 @@ validate_peer_opts(Req, Opts) ->
     ?event(green_zone, {validate_peer_opts, start, Req}),
 	% Get the required config from the local node's configuration.
 	RequiredConfig =
-        hb_converge:normalize_keys(
+        hb_ao:normalize_keys(
             hb_opts:get(green_zone_required_opts, #{}, Opts)),
     ?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
     
     PeerOpts =
-        hb_converge:normalize_keys(
-            hb_converge:get(<<"node-message">>, Req, undefined, Opts)),
+        hb_ao:normalize_keys(
+            hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
     ?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
     
     % Add the required config itself to the required options of the peer. This
@@ -521,7 +521,7 @@ validate_peer_opts(Req, Opts) ->
     ?event(green_zone, {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
     
     % Debug: Get node_history safely
-    NodeHistory = hb_converge:get(<<"node_history">>, PeerOpts, [], Opts),
+    NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
     ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
     
     % Debug: Check length of node_history

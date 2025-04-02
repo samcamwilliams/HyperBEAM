@@ -14,8 +14,8 @@
 %% the request, then multiplying by the per-message price. The operator does
 %% not pay for their own requests.
 estimate(_, EstimateReq, NodeMsg) ->
-    Req = hb_converge:get(<<"request">>, EstimateReq, NodeMsg#{ hashpath => ignore }),
-    ReqType = hb_converge:get(<<"type">>, EstimateReq, undefined, NodeMsg),
+    Req = hb_ao:get(<<"request">>, EstimateReq, NodeMsg#{ hashpath => ignore }),
+    ReqType = hb_ao:get(<<"type">>, EstimateReq, undefined, NodeMsg),
     case {is_operator(Req, NodeMsg), ReqType} of
         {true, _} -> {ok, 0};
         {_, <<"post">>} ->
@@ -23,7 +23,7 @@ estimate(_, EstimateReq, NodeMsg) ->
             % in the ledger are updated in the pre-processing step.
             {ok, 0};
         {_, <<"pre">>} ->
-            Messages = hb_converge:get(<<"body">>, EstimateReq, NodeMsg#{ hashpath => ignore }),
+            Messages = hb_ao:get(<<"body">>, EstimateReq, NodeMsg#{ hashpath => ignore }),
             {ok, length(Messages) * hb_opts:get(simple_pay_price, 1, NodeMsg)}
     end.
 
@@ -31,16 +31,16 @@ estimate(_, EstimateReq, NodeMsg) ->
 %% can charge the user at this stage because we know statically what the price
 %% will be
 debit(_, RawReq, NodeMsg) ->
-    case hb_converge:get(<<"type">>, RawReq, undefined, NodeMsg) of
+    case hb_ao:get(<<"type">>, RawReq, undefined, NodeMsg) of
         <<"post">> -> {ok, true};
         <<"pre">> ->
             ?event(payment, {debit_preprocessing, RawReq}),
-            Req = hb_converge:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
+            Req = hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }),
             case hb_message:signers(Req) of
                 [] -> {ok, false};
                 [Signer] ->
                     UserBalance = get_balance(Signer, NodeMsg),
-                    Price = hb_converge:get(<<"amount">>, RawReq, 0, NodeMsg),
+                    Price = hb_ao:get(<<"amount">>, RawReq, 0, NodeMsg),
                     ?event(payment,
                         {debit,
                             {user, Signer},
@@ -59,7 +59,7 @@ debit(_, RawReq, NodeMsg) ->
 %% @doc Get the balance of a user in the ledger.
 balance(_, RawReq, NodeMsg) ->
     Target =
-        case hb_converge:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }) of
+        case hb_ao:get(<<"request">>, RawReq, NodeMsg#{ hashpath => ignore }) of
             not_found -> hd(hb_message:signers(RawReq));
             Req -> hd(hb_message:signers(Req))
         end,
@@ -79,7 +79,7 @@ set_balance(Signer, Amount, NodeMsg) ->
     hb_http_server:set_opts(
         NewMsg = NodeMsg#{
             simple_pay_ledger =>
-                hb_converge:set(
+                hb_ao:set(
                     Ledger,
                     NormSigner,
                     Amount,
@@ -93,7 +93,7 @@ set_balance(Signer, Amount, NodeMsg) ->
 get_balance(Signer, NodeMsg) ->
     NormSigner = hb_util:human_id(Signer),
     Ledger = hb_opts:get(simple_pay_ledger, #{}, NodeMsg),
-    hb_converge:get(NormSigner, Ledger, 0, NodeMsg).
+    hb_ao:get(NormSigner, Ledger, 0, NodeMsg).
 
 %% @doc Top up the user's balance in the ledger.
 topup(_, Req, NodeMsg) ->
@@ -101,8 +101,8 @@ topup(_, Req, NodeMsg) ->
     case is_operator(Req, NodeMsg) of
         false -> {error, <<"Unauthorized">>};
         true ->
-            Amount = hb_converge:get(<<"amount">>, Req, 0, NodeMsg),
-            Recipient = hb_converge:get(<<"recipient">>, Req, undefined, NodeMsg),
+            Amount = hb_ao:get(<<"amount">>, Req, 0, NodeMsg),
+            Recipient = hb_ao:get(<<"recipient">>, Req, undefined, NodeMsg),
             CurrentBalance = get_balance(Recipient, NodeMsg),
             ?event(payment,
                 {topup,

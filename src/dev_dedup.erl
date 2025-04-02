@@ -21,10 +21,10 @@ handle(<<"set">>, M1, M2, Opts) ->
     dev_message:set(M1, M2, Opts);
 handle(Key, M1, M2, Opts) ->
     ?event({dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
-    case hb_converge:get(<<"pass">>, {as, dev_message, M1}, 1, Opts) of
+    case hb_ao:get(<<"pass">>, {as, dev_message, M1}, 1, Opts) of
         1 ->
             Msg2ID = hb_message:id(M2, all),
-            Dedup = hb_converge:get(<<"dedup">>, {as, dev_message, M1}, [], Opts),
+            Dedup = hb_ao:get(<<"dedup">>, {as, dev_message, M1}, [], Opts),
             ?event({dedup_checking, {existing, Dedup}}),
             case lists:member(Msg2ID, Dedup) of
                 true ->
@@ -32,7 +32,7 @@ handle(Key, M1, M2, Opts) ->
                     {skip, M1};
                 false ->
                     ?event({not_seen, Msg2ID}),
-                    M3 = hb_converge:set(
+                    M3 = hb_ao:set(
                         M1,
                         #{ <<"dedup">> => [Msg2ID|Dedup] }
                     ),
@@ -61,14 +61,14 @@ dedup_test() ->
 		<<"result">> => <<"INIT">>
 	},
     % Send the same message twice, with the same binary.
-    {ok, Msg2} = hb_converge:resolve(Msg,
+    {ok, Msg2} = hb_ao:resolve(Msg,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
-    {ok, Msg3} = hb_converge:resolve(Msg2,
+    {ok, Msg3} = hb_ao:resolve(Msg2,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     % Send the same message twice, with another binary.
-    {ok, Msg4} = hb_converge:resolve(Msg3,
+    {ok, Msg4} = hb_ao:resolve(Msg3,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
-    {ok, Msg5} = hb_converge:resolve(Msg4,
+    {ok, Msg5} = hb_ao:resolve(Msg4,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     % Ensure that downstream devices have only seen each message once.
     ?assertMatch(
@@ -94,11 +94,11 @@ dedup_with_multipass_test() ->
         <<"passes">> => 2
 	},
     % Send the same message twice, with the same binary.
-    {ok, Msg2} = hb_converge:resolve(Msg, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
-    {ok, Msg3} = hb_converge:resolve(Msg2, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
+    {ok, Msg2} = hb_ao:resolve(Msg, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
+    {ok, Msg3} = hb_ao:resolve(Msg2, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     % Send the same message twice, with another binary.
-    {ok, Msg4} = hb_converge:resolve(Msg3, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
-    {ok, Msg5} = hb_converge:resolve(Msg4, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
+    {ok, Msg4} = hb_ao:resolve(Msg3, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
+    {ok, Msg5} = hb_ao:resolve(Msg4, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     % Ensure that downstream devices have only seen each message once.
     ?assertMatch(
 		#{ <<"result">> := <<"INIT+D2_+D3_+D2_+D3_+D2/+D3/+D2/+D3/">> },

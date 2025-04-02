@@ -236,7 +236,7 @@ cache_source_to_cache_settings(Msg) ->
 specifiers_to_cache_settings(CCSpecifier) when not is_list(CCSpecifier) ->
     specifiers_to_cache_settings([CCSpecifier]);
 specifiers_to_cache_settings(RawCCList) ->
-    CCList = lists:map(fun hb_converge:normalize_key/1, RawCCList),
+    CCList = lists:map(fun hb_ao:normalize_key/1, RawCCList),
     #{
         <<"store">> =>
             case lists:member(<<"always">>, CCList) of
@@ -369,10 +369,10 @@ cache_binary_result_test() ->
     CachedMsg = <<"test-message">>,
     Msg1 = #{ <<"test-key">> => CachedMsg },
     Msg2 = <<"test-key">>,
-    {ok, Res} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
+    {ok, Res} = hb_ao:resolve(Msg1, Msg2, #{ cache_control => [<<"always">>] }),
     ?assertEqual(CachedMsg, Res),
-    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
-    {ok, Res3} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    {ok, Res2} = hb_ao:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    {ok, Res3} = hb_ao:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
     ?assertEqual(CachedMsg, Res2),
     ?assertEqual(Res2, Res3).
 
@@ -386,7 +386,7 @@ cache_message_result_test() ->
     Msg1 = #{ <<"test-key">> => CachedMsg, <<"local">> => <<"Binary">> },
     Msg2 = <<"test-key">>,
     {ok, Res} =
-        hb_converge:resolve(
+        hb_ao:resolve(
             Msg1,
             Msg2,
             #{
@@ -395,9 +395,9 @@ cache_message_result_test() ->
         ),
     ?event({res1, Res}),
     ?event(reading_from_cache),
-    {ok, Res2} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    {ok, Res2} = hb_ao:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
     ?event(reading_from_cache_again),
-    {ok, Res3} = hb_converge:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
+    {ok, Res3} = hb_ao:resolve(Msg1, Msg2, #{ cache_control => [<<"only-if-cached">>] }),
     ?event({res2, Res2}),
     ?event({res3, Res3}),
     ?assertEqual(Res2, Res3).

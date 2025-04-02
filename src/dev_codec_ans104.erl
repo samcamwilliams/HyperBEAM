@@ -113,7 +113,7 @@ committed(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms },
     % that it also exists in the commitment's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
     % are present in the message.
-    case hb_converge:get(hd(hb_converge:keys(Comms)), Comms, #{}) of
+    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}) of
         #{ <<"trusted-keys">> := RawTKeys } ->
             committed_from_trusted_keys(Msg, RawTKeys, Opts);
         _ ->
@@ -125,13 +125,13 @@ committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, 
     % If the message has an `original-tags' field, the committed fields are only
     % those keys, and maps that are nested in the `data' field.
     ?event({committed_from_original_tags, {input, Msg}}),
-    case hb_converge:get(hd(hb_converge:keys(Comms)), Comms, #{}) of
+    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}) of
         #{ <<"original-tags">> := TagMap } ->
             TrustedKeys =
                 [
                     maps:get(<<"name">>, Tag)
                 ||
-                    Tag <- maps:values(hb_converge:normalize_keys(TagMap))
+                    Tag <- maps:values(hb_ao:normalize_keys(TagMap))
                 ],
             committed_from_trusted_keys(Msg, TrustedKeys, Opts);
         _ ->
@@ -157,7 +157,7 @@ committed(Msg, Req, Opts) ->
             % This is safe because we know that the message is valid. We normalize
             % the keys such that callers can rely on the keys being in a canonical
             % form.
-            TagKeys = [ hb_converge:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
+            TagKeys = [ hb_ao:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
             % Get the nested keys from the original message.
             NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
             Implicit =
@@ -176,7 +176,7 @@ committed(Msg, Req, Opts) ->
 committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
     ?event({committed_from_trusted_keys, {trusted_keys, TrustedKeys}, {input, Msg}}),
     NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
-    TKeys = maps:values(hb_converge:normalize_keys(TrustedKeys)),
+    TKeys = maps:values(hb_ao:normalize_keys(TrustedKeys)),
     Implicit =
         case lists:member(<<"ao-types">>, TKeys) of
             true -> dev_codec_structured:implicit_keys(Msg);
@@ -184,7 +184,7 @@ committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
         end,
     {
         ok,
-        lists:map(fun hb_converge:normalize_key/1, TKeys)
+        lists:map(fun hb_ao:normalize_key/1, TKeys)
             ++ Implicit
             ++ NestedKeys
             ++ ?COMMITTED_TAGS
@@ -222,7 +222,7 @@ do_from(RawTX) ->
     % the list of key-value pairs into a map, removing irrelevant fields.
     TXKeysMap =
         maps:with(?TX_KEYS,
-            hb_converge:normalize_keys(
+            hb_ao:normalize_keys(
                 maps:from_list(
                     lists:zip(
                         record_info(fields, tx),
@@ -253,7 +253,7 @@ do_from(RawTX) ->
     % Merge the data map with the rest of the TX map and remove any keys that
     % are not part of the message.
     NormalizedDataMap =
-        hb_converge:normalize_keys(maps:merge(DataMap, MapWithoutData)),
+        hb_ao:normalize_keys(maps:merge(DataMap, MapWithoutData)),
     %% Add the commitments to the message if the TX has a signature.
     ?event({message_before_commitments, NormalizedDataMap}),
     WithCommitments =
@@ -319,7 +319,7 @@ deduplicating_from_list(Tags) ->
     Aggregated =
         lists:foldl(
             fun({Key, Value}, Acc) ->
-                NormKey = hb_converge:normalize_key(Key),
+                NormKey = hb_ao:normalize_key(Key),
                 ?event({deduplicating_from_list, {key, NormKey}, {value, Value}, {acc, Acc}}),
                 case maps:get(NormKey, Acc, undefined) of
                     undefined -> maps:put(NormKey, Value, Acc);
@@ -359,7 +359,7 @@ deduplicating_from_list(Tags) ->
 normal_tags(Tags) ->
     lists:all(
         fun({Key, _}) ->
-            hb_converge:normalize_key(Key) =:= Key
+            hb_ao:normalize_key(Key) =:= Key
         end,
         Tags
     ).
@@ -408,12 +408,12 @@ to(Binary) when is_binary(Binary) ->
 to(TX) when is_record(TX, tx) -> TX;
 to(RawTABM) when is_map(RawTABM) ->
     % The path is a special case so we normalized it first. It may have been
-    % modified by `hb_converge' in order to set it to the current key that is
+    % modified by `hb_ao' in order to set it to the current key that is
     % being executed. We should check whether the path is in the
     % `priv/Converge/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
-    TABM = hb_converge:normalize_keys(maps:without([<<"commitments">>], RawTABM)),
+    TABM = hb_ao:normalize_keys(maps:without([<<"commitments">>], RawTABM)),
     Commitments = maps:get(<<"commitments">>, RawTABM, #{}),
     TABMWithComm =
         case maps:keys(Commitments) of
@@ -454,13 +454,13 @@ to(RawTABM) when is_map(RawTABM) ->
             end,
             M
         ),
-    NormalizedMsgKeyMap = hb_converge:normalize_keys(MsgKeyMap),
+    NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
     {RemainingMap, BaseTXList} =
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
-                NormKey = hb_converge:normalize_key(Field),
+                NormKey = hb_ao:normalize_key(Field),
                 case maps:find(NormKey, NormalizedMsgKeyMap) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
@@ -531,7 +531,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
-            {hb_converge:normalize_key(Key), to(Value)}
+            {hb_ao:normalize_key(Key), to(Value)}
         end,
         RawDataItems
     )),
