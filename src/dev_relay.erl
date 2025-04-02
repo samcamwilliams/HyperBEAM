@@ -28,7 +28,7 @@
 call(M1, RawM2, Opts) ->
     {ok, BaseTarget} = hb_message:find_target(M1, RawM2, Opts),
     RelayPath =
-        hb_converge:get_first(
+        hb_ao:get_first(
             [
                 {RawM2, <<"relay-path">>},
                 {M1, <<"relay-path">>},
@@ -37,7 +37,7 @@ call(M1, RawM2, Opts) ->
             Opts
         ),
     RelayMethod =
-        hb_converge:get_first(
+        hb_ao:get_first(
             [
                 {RawM2, <<"relay-method">>},
                 {M1, <<"relay-method">>},
@@ -47,7 +47,7 @@ call(M1, RawM2, Opts) ->
             Opts
         ),
     RelayBody =
-        hb_converge:get_first(
+        hb_ao:get_first(
             [
                 {RawM2, <<"relay-body">>},
                 {M1, <<"relay-body">>},
@@ -62,12 +62,12 @@ call(M1, RawM2, Opts) ->
         <<"path">> => RelayPath
     },
     TargetMod2 =
-        case hb_converge:get(<<"requires-sign">>, BaseTarget, false, Opts) of
+        case hb_ao:get(<<"requires-sign">>, BaseTarget, false, Opts) of
             true -> hb_message:commit(TargetMod1, Opts);
             false -> TargetMod1
         end,
     Client =
-        case hb_converge:get(<<"http-client">>, BaseTarget, Opts) of
+        case hb_ao:get(<<"http-client">>, BaseTarget, Opts) of
             not_found -> hb_opts:get(relay_http_client, Opts);
             RequestedClient -> RequestedClient
         end,
@@ -86,7 +86,7 @@ cast(M1, M2, Opts) ->
 call_get_test() ->
     application:ensure_all_started([hb]),
     {ok, #{<<"body">> := Body}} =
-        hb_converge:resolve(
+        hb_ao:resolve(
             #{
                 <<"device">> => <<"relay@1.0">>,
                 <<"method">> => <<"GET">>,

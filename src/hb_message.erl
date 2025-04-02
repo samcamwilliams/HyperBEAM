@@ -1,17 +1,17 @@
 
 %%% @doc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol, and their uderlying binary representations and formats.
+%%% AO-Core protocol, and their uderlying binary representations and formats.
 %%% 
 %%% Unless you are implementing a new message serialization codec, you should
 %%% not need to interact with this module directly. Instead, use the
-%%% `hb_converge' interfaces to interact with all messages. The `dev_message'
+%%% `hb_ao' interfaces to interact with all messages. The `dev_message'
 %%% module implements a device interface for abstracting over the different
 %%% message formats.
 %%% 
 %%% `hb_message' and the HyperBEAM caches can interact with multiple different
 %%% types of message formats:
 %%% 
-%%%     - Richly typed Converge structured messages.
+%%%     - Richly typed AO-Core structured messages.
 %%%     - Arweave transations.
 %%%     - ANS-104 data items.
 %%%     - HTTP Signed Messages.
@@ -33,8 +33,8 @@
 %%%     HTTP Signed Message ==> dev_codec_httpsig_conv:from/1 ==> TABM
 %%%     Flat Maps ==> dev_codec_flat:from/1 ==> TABM
 %%% 
-%%%     TABM ==> dev_codec_structured:to/1 ==> Converge Message
-%%%     Converge Message ==> dev_codec_structured:from/1 ==> TABM
+%%%     TABM ==> dev_codec_structured:to/1 ==> AO-Core Message
+%%%     AO-Core Message ==> dev_codec_structured:from/1 ==> TABM
 %%% 
 %%%     TABM ==> dev_codec_ans104:to/1 ==> Arweave TX/ANS-104
 %%%     TABM ==> dev_codec_httpsig_conv:to/1 ==> HTTP Signed Message
@@ -44,7 +44,7 @@
 %%% 
 %%% Additionally, this module provides a number of utility functions for
 %%% manipulating messages. For example, `hb_message:sign/2' to sign a message of
-%%% arbitrary type, or `hb_message:format/1' to print a Converge/TABM message in
+%%% arbitrary type, or `hb_message:format/1' to print a AO-Core/TABM message in
 %%% a human-readable format.
 %%% 
 %%% The `hb_cache' module is responsible for storing and retrieving messages in
@@ -70,14 +70,14 @@
 
 %% @doc Convert a message from one format to another. Taking a message in the
 %% source format, a target format, and a set of opts. If not given, the source
-%% is assumed to be `converge`. Additional codecs can be added by ensuring they
+%% is assumed to be `structured@1.0`. Additional codecs can be added by ensuring they
 %% are part of the `Opts` map -- either globally, or locally for a computation.
 %% 
 %% The encoding happens in two phases:
 %% 1. Convert the message to a TABM.
 %% 2. Convert the TABM to the target format.
 %% 
-%% The conversion to a TABM is done by the `converge' codec, which is always
+%% The conversion to a TABM is done by the `structured@1.0' codec, which is always
 %% available. The conversion from a TABM is done by the target codec.
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
@@ -122,7 +122,7 @@ restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
 restore_priv(Msg, OldPriv) ->
     MsgPriv = maps:get(<<"priv">>, Msg, #{}),
     ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
-    NewPriv = hb_converge:set(MsgPriv, OldPriv, #{}),
+    NewPriv = hb_ao:set(MsgPriv, OldPriv, #{}),
     ?event({new_priv, NewPriv}),
     Msg#{ <<"priv">> => NewPriv }.
 
@@ -141,7 +141,7 @@ id(Msg, RawCommitters, Opts) ->
         end,
     ?event({getting_id, {msg, Msg}, {committers, Committers}}),
     {ok, ID} =
-        hb_converge:resolve(
+        hb_ao:resolve(
             Msg,
             #{ <<"path">> => <<"id">>, <<"committers">> => Committers },
             Opts
@@ -251,7 +251,7 @@ verify(Msg, Committers) ->
             #{}),
     Res.
 
-%% @doc Return the unsigned version of a message in Converge format.
+%% @doc Return the unsigned version of a message in AO-Core format.
 uncommitted(Bin) when is_binary(Bin) -> Bin;
 uncommitted(Msg) ->
     maps:remove(<<"commitments">>, Msg).
@@ -260,12 +260,12 @@ uncommitted(Msg) ->
 %% addresses.
 signers(Msg) ->
     lists:filter(fun(Signer) -> ?IS_ID(Signer) end,
-        hb_converge:get(<<"committers">>, Msg, #{})).
+        hb_ao:get(<<"committers">>, Msg, #{})).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
     try
-        hb_converge:message_to_device(
+        hb_ao:message_to_device(
             #{ <<"device">> => TargetFormat },
             Opts
         )
@@ -287,7 +287,7 @@ format(Bin, Indent) when is_binary(Bin) ->
         Indent
     );
 format(List, Indent) when is_list(List) ->
-    format(lists:map(fun hb_converge:normalize_key/1, List), Indent);
+    format(lists:map(fun hb_ao:normalize_key/1, List), Indent);
 format(Map, Indent) when is_map(Map) ->
     % Define helper functions for formatting elements of the map.
     ValOrUndef =
@@ -412,13 +412,13 @@ format(Map, Indent) when is_map(Map) ->
     % Format the remaining 'normal' keys and values.
     Res = lists:map(
         fun({Key, Val}) ->
-            NormKey = hb_converge:normalize_key(Key, #{ error_strategy => ignore }),
+            NormKey = hb_ao:normalize_key(Key, #{ error_strategy => ignore }),
             KeyStr = 
                 case NormKey of
                     undefined ->
                         io_lib:format("~p [!!! INVALID KEY !!!]", [Key]);
                     _ ->
-                        hb_converge:normalize_key(Key)
+                        hb_ao:normalize_key(Key)
                 end,
             hb_util:format_indented(
                 "~s => ~s~n",
@@ -481,14 +481,14 @@ match(Map1, Map2, Mode) ->
      Keys1 =
         maps:keys(
             NormMap1 = minimize(
-                normalize(hb_converge:normalize_keys(Map1)),
+                normalize(hb_ao:normalize_keys(Map1)),
                 [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     Keys2 =
         maps:keys(
             NormMap2 = minimize(
-                normalize(hb_converge:normalize_keys(Map2)),
+                normalize(hb_ao:normalize_keys(Map2)),
                 [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
@@ -503,8 +503,8 @@ match(Map1, Map2, Mode) ->
         true ->
             lists:all(
                 fun(Key) ->
-                    Val1 = hb_converge:normalize_keys(maps:get(Key, NormMap1, not_found)),
-                    Val2 = hb_converge:normalize_keys(maps:get(Key, NormMap2, not_found)),
+                    Val1 = hb_ao:normalize_keys(maps:get(Key, NormMap1, not_found)),
+                    Val2 = hb_ao:normalize_keys(maps:get(Key, NormMap2, not_found)),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
@@ -535,7 +535,7 @@ match(Map1, Map2, Mode) ->
     end.
 	
 matchable_keys(Map) ->
-    lists:sort(lists:map(fun hb_converge:normalize_key/1, maps:keys(Map))).
+    lists:sort(lists:map(fun hb_ao:normalize_key/1, maps:keys(Map))).
 
 %% @doc Filter messages that do not match the 'spec' given. The underlying match
 %% is performed in the `only_present' mode, such that match specifications only
@@ -616,13 +616,13 @@ find_target(Self, Req, Opts) ->
         cache_control => [<<"no-cache">>, <<"no-store">>]
     },
     {ok,
-        case hb_converge:get(<<"target">>, Req, <<"self">>, GetOpts) of
+        case hb_ao:get(<<"target">>, Req, <<"self">>, GetOpts) of
             <<"self">> -> Self;
             Key ->
-                hb_converge:get(
+                hb_ao:get(
                     Key,
                     Req,
-                    hb_converge:get(<<"body">>, Req, GetOpts),
+                    hb_ao:get(<<"body">>, Req, GetOpts),
                     GetOpts
                 )
         end
@@ -634,11 +634,11 @@ minimize(Msg) -> minimize(Msg, []).
 minimize(RawVal, _) when not is_map(RawVal) -> RawVal;
 minimize(Map, ExtraKeys) ->
     NormKeys =
-        lists:map(fun hb_converge:normalize_key/1, ?REGEN_KEYS)
-            ++ lists:map(fun hb_converge:normalize_key/1, ExtraKeys),
+        lists:map(fun hb_ao:normalize_key/1, ?REGEN_KEYS)
+            ++ lists:map(fun hb_ao:normalize_key/1, ExtraKeys),
     maps:filter(
         fun(Key, _) ->
-            (not lists:member(hb_converge:normalize_key(Key), NormKeys))
+            (not lists:member(hb_ao:normalize_key(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
         maps:map(fun(_K, V) -> minimize(V) end, Map)
@@ -647,7 +647,7 @@ minimize(Map, ExtraKeys) ->
 %% @doc Return a map with only the keys that necessary, without those that can
 %% be regenerated.
 normalize(Map) when is_map(Map) orelse is_list(Map) ->
-    NormalizedMap = hb_converge:normalize_keys(Map),
+    NormalizedMap = hb_ao:normalize_keys(Map),
     FilteredMap = filter_default_keys(NormalizedMap),
     maps:with(matchable_keys(FilteredMap), FilteredMap);
 normalize(Other) ->
@@ -659,7 +659,7 @@ filter_default_keys(Map) ->
     DefaultsMap = default_tx_message(),
     maps:filter(
         fun(Key, Value) ->
-            case maps:find(hb_converge:normalize_key(Key), DefaultsMap) of
+            case maps:find(hb_ao:normalize_key(Key), DefaultsMap) of
                 {ok, Value} -> false;
                 _ -> true
             end
@@ -671,10 +671,10 @@ filter_default_keys(Map) ->
 default_tx_message() ->
     maps:from_list(default_tx_list()).
 
-%% @doc Get the ordered list of fields as Converge keys and default values of
+%% @doc Get the ordered list of fields as AO-Core keys and default values of
 %% the tx record.
 default_tx_list() ->
-    Keys = lists:map(fun hb_converge:normalize_key/1, record_info(fields, tx)),
+    Keys = lists:map(fun hb_ao:normalize_key/1, record_info(fields, tx)),
     lists:zip(Keys, tl(tuple_to_list(#tx{}))).
 
 %%% Tests
@@ -1054,7 +1054,7 @@ deep_multisignature_test() ->
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
 
-tabm_converge_ids_equal_test(Codec) ->
+tabm_ao_ids_equal_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"deep_data">> => #{
@@ -1470,7 +1470,7 @@ message_suite_test_() ->
         {"match test", fun match_test/1},
         {"single layer message to encoding test",
             fun single_layer_message_to_encoding_test/1},
-        {"tabm converge ids equal test", fun tabm_converge_ids_equal_test/1},
+        {"TABM AO-Core ids equal test", fun tabm_ao_ids_equal_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
         {"nested message with large keys and content test",
             fun nested_message_with_large_keys_and_content_test/1},

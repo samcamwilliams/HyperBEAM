@@ -13,9 +13,9 @@ init(Msg, _Msg2, _Opts) -> {ok, Msg}.
 %% the `patch@1.0` device, applying any state patches that the AO process may have
 %% requested.
 compute(Msg, Msg2, Opts) ->
-    case hb_converge:resolve(Msg, {as, <<"delegated-compute@1.0">>, Msg2}, Opts) of
+    case hb_ao:resolve(Msg, {as, <<"delegated-compute@1.0">>, Msg2}, Opts) of
         {ok, Msg3} ->
-            {ok, Msg4} = hb_converge:resolve(Msg3, {as, <<"patch@1.0">>, Msg2}, Opts),
+            {ok, Msg4} = hb_ao:resolve(Msg3, {as, <<"patch@1.0">>, Msg2}, Opts),
             {ok, Msg4};
         {error, Error} ->
             {error, Error}

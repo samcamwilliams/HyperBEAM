@@ -7,14 +7,14 @@
 %% @doc Output the dot representation of the cache, or a specific path within
 %% the cache set by the `target' key in the request.
 dot(_, Req, Opts) ->
-    Target = hb_converge:get(<<"target">>, Req, all, Opts),
+    Target = hb_ao:get(<<"target">>, Req, all, Opts),
     Dot =
         hb_cache_render:cache_path_to_dot(
             Target,
             #{
                 render_data =>
                     hb_util:atom(
-                        hb_converge:get(<<"render-data">>, Req, false, Opts)
+                        hb_ao:get(<<"render-data">>, Req, false, Opts)
                     )
             },
             Opts

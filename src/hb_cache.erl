@@ -1,4 +1,4 @@
-%%% @doc A cache of Converge Protocol messages and compute results.
+%%% @doc A cache of AO-Core protocol messages and compute results.
 %%%
 %%% HyperBEAM stores all paths in key value stores, abstracted by the `hb_store'
 %%% module. Each store has its own storage backend, but each works with simple
@@ -337,7 +337,7 @@ test_store_simple_unsigned_message(Opts) ->
     %% Write the simple unsigned item
     {ok, _Path} = write(Item, Opts),
     %% Read the item back
-    ID = hb_util:human_id(hb_converge:get(id, Item)),
+    ID = hb_util:human_id(hb_ao:get(id, Item)),
     {ok, RetrievedItem} = read(ID, Opts),
     ?assert(hb_message:match(Item, RetrievedItem)),
     ok.
@@ -427,7 +427,7 @@ test_deeply_nested_complex_message(Opts) ->
         ),
     ?event({deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_converge:get(<<"other-test-key">>, DeepMsg)),
+    ?assertEqual([1,2,3], hb_ao:get(<<"other-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),

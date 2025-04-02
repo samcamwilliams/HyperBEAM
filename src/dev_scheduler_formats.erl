@@ -32,7 +32,7 @@ assignments_to_bundle(ProcID, Assignments, More, TimeInfo, RawOpts) ->
                 lists:map(
                     fun(Assignment) ->
                         {
-                            hb_converge:get(
+                            hb_ao:get(
                                 <<"slot">>,
                                 Assignment,
                                 Opts#{ hashpath => ignore }
@@ -63,7 +63,7 @@ assignments_to_aos2(ProcID, Assignments, More, RawOpts) when is_map(Assignments)
     ListAssignments =
         lists:map(
             fun(Key) ->
-                hb_converge:get(Key, Assignments, Opts)
+                hb_ao:get(Key, Assignments, Opts)
             end,
             SortedKeys
         ),
@@ -107,12 +107,12 @@ assignments_to_aos2(ProcID, Assignments, More, RawOpts) ->
 %% (`ao.TN.1') assignments, we may want to use the assignment ID.
 cursor(Assignment, RawOpts) ->
     Opts = format_opts(RawOpts),
-    hb_converge:get(<<"slot">>, Assignment, Opts).
+    hb_ao:get(<<"slot">>, Assignment, Opts).
 
 %% @doc Convert an assignment to an AOS2-compatible JSON structure.
 assignment_to_aos2(Assignment, RawOpts) ->
     Opts = format_opts(RawOpts),
-    Message = hb_converge:get(<<"body">>, Assignment, Opts),
+    Message = hb_ao:get(<<"body">>, Assignment, Opts),
     AssignmentWithoutBody = maps:without([<<"body">>], Assignment),
     #{
         <<"message">> =>
@@ -139,9 +139,9 @@ aos2_to_assignments(ProcID, Body, RawOpts) ->
             _ ->
                 Last = lists:last(ParsedAssignments),
                 {
-                    hb_converge:get(<<"timestamp">>, Last, Opts),
-                    hb_converge:get(<<"block-height">>, Last, Opts),
-                    hb_converge:get(<<"block-hash">>, Last, Opts)
+                    hb_ao:get(<<"timestamp">>, Last, Opts),
+                    hb_ao:get(<<"block-height">>, Last, Opts),
+                    hb_ao:get(<<"block-hash">>, Last, Opts)
                 }
         end,
     assignments_to_bundle(ProcID, ParsedAssignments, false, TimeInfo, Opts).
@@ -217,7 +217,7 @@ aos2_normalize_types(Msg) ->
         {
             aos2_normalized_types,
             {msg, Msg},
-            {anchor, hb_converge:get(<<"anchor">>, Msg, <<>>, #{})}
+            {anchor, hb_ao:get(<<"anchor">>, Msg, <<>>, #{})}
         }
     ),
     Msg.

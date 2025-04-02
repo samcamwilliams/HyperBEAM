@@ -1,6 +1,6 @@
 
 %%% @doc A long-lived process worker that keeps state in memory between
-%%% calls. Implements the interface of `hb_converge' to receive and respond 
+%%% calls. Implements the interface of `hb_ao' to receive and respond 
 %%% to computation requests regarding a process as a singleton.
 -module(dev_process_worker).
 -export([server/3, stop/1, group/3, await/5, notify_compute/4]).
@@ -32,13 +32,13 @@ group(Msg1, Msg2, Opts) ->
 
 process_to_group_name(Msg1, Opts) ->
     Initialized = dev_process:ensure_process_key(Msg1, Opts),
-    ProcMsg = hb_converge:get(<<"process">>, Initialized, Opts#{ hashpath => ignore }),
+    ProcMsg = hb_ao:get(<<"process">>, Initialized, Opts#{ hashpath => ignore }),
     ID = hb_message:id(ProcMsg, all),
     ?event({process_to_group_name, {id, ID}, {msg1, Msg1}}),
     hb_util:human_id(ID).
 
 %% @doc Spawn a new worker process. This is called after the end of the first
-%% execution of `hb_converge:resolve/3', so the state we are given is the
+%% execution of `hb_ao:resolve/3', so the state we are given is the
 %% already current.
 server(GroupName, Msg1, Opts) ->
     ServerOpts = Opts#{
@@ -52,7 +52,7 @@ server(GroupName, Msg1, Opts) ->
     ?event(worker, {waiting_for_req, {group, GroupName}}),
     receive
         {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
-            TargetSlot = hb_converge:get(<<"slot">>, Msg2, Opts),
+            TargetSlot = hb_ao:get(<<"slot">>, Msg2, Opts),
             ?event(worker,
                 {work_received,
                     {group, GroupName},
@@ -61,7 +61,7 @@ server(GroupName, Msg1, Opts) ->
                 }
             ),
             Res =
-                hb_converge:resolve(
+                hb_ao:resolve(
                     Msg1,
                     #{ <<"path">> => <<"compute">>, <<"slot">> => TargetSlot },
                     maps:merge(ListenerOpts, ServerOpts)
@@ -82,7 +82,7 @@ server(GroupName, Msg1, Opts) ->
     after Timeout ->
         % We have hit the in-memory persistence timeout. Generate a snapshot
         % of the current process state and ensure it is cached.
-        hb_converge:resolve(
+        hb_ao:resolve(
             Msg1,
             <<"snapshot">>,
             ServerOpts#{ <<"cache-control">> => [<<"store">>] }
@@ -97,7 +97,7 @@ await(Worker, GroupName, Msg1, Msg2, Opts) ->
         false -> 
             hb_persistent:default_await(Worker, GroupName, Msg1, Msg2, Opts);
         true ->
-            TargetSlot = hb_converge:get(<<"slot">>, Msg2, any, Opts),
+            TargetSlot = hb_ao:get(<<"slot">>, Msg2, any, Opts),
             ?event({awaiting_compute, 
                 {worker, Worker},
                 {group, GroupName},
@@ -171,7 +171,7 @@ test_init() ->
 info_test() ->
     test_init(),
     M1 = dev_process:test_wasm_process(<<"test/aos-2-pure-xs.wasm">>),
-    Res = hb_converge:info(M1, #{}),
+    Res = hb_ao:info(M1, #{}),
     ?assertEqual(fun dev_process_worker:group/3, maps:get(grouper, Res)).
 
 grouper_test() ->

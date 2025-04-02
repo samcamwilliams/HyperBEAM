@@ -1,5 +1,5 @@
 -module(hb_client).
-%% Converge API and HyperBEAM Built-In Devices
+%% AO-Core API and HyperBEAM Built-In Devices
 -export([resolve/4, routes/2, add_route/3]).
 %% Arweave node API
 -export([arweave_timestamp/0]).
@@ -9,7 +9,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% Converge API and HyperBEAM Built-In Devices
+%%% AO-Core API and HyperBEAM Built-In Devices
 
 %% @doc Resolve a message pair on a remote node.
 %% The message pair is first transformed into a singleton request, by
@@ -17,9 +17,9 @@
 %% and then adjusting the "Path" field from the second message.
 resolve(Node, Msg1, Msg2, Opts) ->
     TABM2 =
-        hb_converge:set(
+        hb_ao:set(
             #{
-                <<"path">> => hb_converge:get(<<"path">>, Msg2, <<"/">>, Opts),
+                <<"path">> => hb_ao:get(<<"path">>, Msg2, <<"/">>, Opts),
                 <<"2.path">> => unset
             },
         prefix_keys(<<"2.">>, Msg2, Opts),
@@ -87,7 +87,7 @@ arweave_timestamp() ->
 
 %% @doc Upload a data item to the bundler node.
 upload(Msg, Opts) ->
-    upload(Msg, Opts, hb_converge:get(<<"codec-device">>, Msg, <<"httpsig@1.0">>, Opts)).
+    upload(Msg, Opts, hb_ao:get(<<"codec-device">>, Msg, <<"httpsig@1.0">>, Opts)).
 upload(Msg, Opts, <<"httpsig@1.0">>) ->
     case hb_opts:get(bundler_httpsig, not_found, Opts) of
         not_found ->

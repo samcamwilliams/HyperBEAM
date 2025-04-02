@@ -102,7 +102,7 @@ paid_wasm_test() ->
     ?assert(length(hb_message:signers(Res)) > 0),
     ?assert(hb_message:verify(Res)),
     % Now we have the results, we can verify them.
-    ?assertMatch(6.0, hb_converge:get(<<"output/1">>, Res, #{})),
+    ?assertMatch(6.0, hb_ao:get(<<"output/1">>, Res, #{})),
     % Check that the client's balance has been deducted.
     ClientMessage2 =
         hb_message:commit(
@@ -146,7 +146,7 @@ create_schedule_aos2_test_disabled() ->
                 <<"http://localhost:8734">>
         end,
     ProcMsg = #{
-        <<"Data-Protocol">> => <<"ao">>,
+        <<"data-protocol">> => <<"ao">>,
         <<"type">> => <<"Process">>,
         <<"variant">> => <<"ao.TN.1">>,
         <<"type">> => <<"Process">>,
@@ -170,7 +170,7 @@ create_schedule_aos2_test_disabled() ->
         <<"/~scheduler@1.0/slot?target=", IDNone/binary>>,
         #{}
     ),
-    ?assertMatch(Slot when Slot >= 0, hb_converge:get(<<"at-slot">>, Res2, #{})).
+    ?assertMatch(Slot when Slot >= 0, hb_ao:get(<<"at-slot">>, Res2, #{})).
 
 schedule(ProcMsg, Target) ->
     schedule(ProcMsg, Target, hb:wallet()).

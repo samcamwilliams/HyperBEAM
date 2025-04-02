@@ -26,7 +26,7 @@ write(ProcID, Slot, Msg, Opts) ->
     MsgIDPath =
         path(
             ProcID,
-            ID = hb_util:human_id(hb_converge:get(id, Msg)),
+            ID = hb_util:human_id(hb_ao:get(id, Msg)),
             Opts
         ),
     ?event({linking_id, {proc_id, ProcID}, {slot, Slot}, {id, ID}, {path, MsgIDPath}}),
@@ -149,7 +149,7 @@ process_cache_suite_test_() ->
 test_write_and_read_output(Opts) ->
     Proc = hb_cache:test_signed(
         #{ <<"test-item">> => hb_cache:test_unsigned(<<"test-body-data">>) }),
-    ProcID = hb_util:human_id(hb_converge:get(id, Proc)),
+    ProcID = hb_util:human_id(hb_ao:get(id, Proc)),
     Item1 = hb_cache:test_signed(<<"Simple signed output #1">>),
     Item2 = hb_cache:test_unsigned(<<"Simple unsigned output #2">>),
     {ok, Path0} = write(ProcID, 0, Item1, Opts),
@@ -163,7 +163,7 @@ test_write_and_read_output(Opts) ->
     {ok, ReadItem2BySlotNum} = read(ProcID, 1, Opts),
     ?assert(hb_message:match(Item2, ReadItem2BySlotNum)),
     {ok, ReadItem1ByID} =
-        read(ProcID, hb_util:human_id(hb_converge:get(id, Item1)), Opts),
+        read(ProcID, hb_util:human_id(hb_ao:get(id, Item1)), Opts),
     ?assert(hb_message:match(Item1, ReadItem1ByID)),
     {ok, ReadItem2ByID} =
         read(ProcID, hb_util:human_id(hb_message:id(Item2, all)), Opts),
@@ -176,7 +176,7 @@ find_latest_outputs(Opts) ->
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),
     Proc1 = dev_process:test_aos_process(),
-    ProcID = hb_util:human_id(hb_converge:get(id, Proc1)),
+    ProcID = hb_util:human_id(hb_ao:get(id, Proc1)),
     % Create messages for the slots, with only the middle slot having a
     % `/Process` field, while the top slot has a `/Deep/Process` field.
     Msg0 = #{ <<"Results">> => #{ <<"Result-Number">> => 0 } },

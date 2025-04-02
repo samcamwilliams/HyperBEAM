@@ -19,7 +19,7 @@ compute(Msg1, Msg2, Opts) ->
     OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
     ProcessID =
         case RawProcessID of
-            not_found -> hb_converge:get(<<"process-id">>, Msg2, Opts);
+            not_found -> hb_ao:get(<<"process-id">>, Msg2, Opts);
             ProcID -> ProcID
         end,
     Res = do_compute(ProcessID, Msg2, Opts),
@@ -28,14 +28,14 @@ compute(Msg1, Msg2, Opts) ->
             ?event(
                 {compute_lite_res,
                     {process_id, ProcessID},
-                    {slot, hb_converge:get(<<"slot">>, Msg2, Opts)},
+                    {slot, hb_ao:get(<<"slot">>, Msg2, Opts)},
                     {json_res, {string, JSONRes}},
                     {req, Msg2}
                 }
             ),
             {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
             {ok,
-                hb_converge:set(
+                hb_ao:set(
                     Msg1,
                     #{
                         <<OutputPrefix/binary, "/results">> => Msg,
@@ -55,7 +55,7 @@ compute(Msg1, Msg2, Opts) ->
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Msg2, Opts) ->
     ?event({do_compute_msg, {msg2, Msg2}}),
-    Slot = hb_converge:get(<<"slot">>, Msg2, Opts),
+    Slot = hb_ao:get(<<"slot">>, Msg2, Opts),
     {ok, AOS2 = #{ <<"body">> := Body }} =
         dev_scheduler_formats:assignments_to_aos2(
             ProcID,
@@ -67,7 +67,7 @@ do_compute(ProcID, Msg2, Opts) ->
         ),
     ?event({do_compute_msg, {aos2, {string, Body}}}),
     Res = 
-        hb_converge:resolve(#{ <<"device">> => <<"relay@1.0">>, <<"content-type">> => <<"application/json">> },
+        hb_ao:resolve(#{ <<"device">> => <<"relay@1.0">>, <<"content-type">> => <<"application/json">> },
             AOS2#{
                 <<"path">> => <<"call">>,
                 <<"relay-method">> => <<"POST">>,
@@ -88,7 +88,7 @@ do_compute(ProcID, Msg2, Opts) ->
         ),
     case Res of
         {ok, Response} ->
-            JSONRes = hb_converge:get(<<"body">>, Response, Opts),
+            JSONRes = hb_ao:get(<<"body">>, Response, Opts),
             ?event({
                 delegated_compute_res_metadata,
                 {req, maps:without([<<"body">>], Response)}

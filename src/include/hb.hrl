@@ -7,8 +7,8 @@
 %% @doc Macro usable in guards that validates whether a term is a
 %% human-readable ID encoding.
 -define(IS_ID(X), (is_binary(X) andalso (byte_size(X) == 43 orelse byte_size(X) == 32))).
-%% @doc List of special keys that are used in the Converge Protocol.
--define(CONVERGE_KEYS, [<<"path">>, <<"hashpath">>, <<"priv">>]).
+%% @doc List of special keys that are used in the AO-Core protocol.
+-define(AO_CORE_KEYS, [<<"path">>, <<"hashpath">>, <<"priv">>]).
 %% @doc Keys that can be regenerated losslessly.
 -define(REGEN_KEYS, [<<"unsigned_id">>, <<"content-digest">>]).
 

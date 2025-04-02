@@ -1,4 +1,4 @@
-%%% @doc Hyperbeam is a decentralized node implementing the Converge Protocol
+%%% @doc Hyperbeam is a decentralized node implementing the AO-Core protocol
 %%% on top of Arweave.
 %%% 
 %%% This protocol offers a computation layer for executing arbitrary logic on 
@@ -47,9 +47,9 @@
 %%%    `hb_http' handles making requests and responding with messages. `cowboy'
 %%%    is used to implement the underlying HTTP server.
 %%% 
-%%% 3. `hb_converge' implements the computation logic of the node: A mechanism
+%%% 3. `hb_ao' implements the computation logic of the node: A mechanism
 %%%    for resolving messages to other messages, via the application of logic
-%%%    implemented in `devices'. `hb_converge' also manages the loading of Erlang
+%%%    implemented in `devices'. `hb_ao' also manages the loading of Erlang
 %%%    modules for each device into the node's environment. There are many
 %%%    different default devices implemented in the hyperbeam node, using the
 %%%    namespace `dev_*'. Some of the critical components are:
@@ -300,7 +300,7 @@ benchmark(Fun, TLen, Procs) ->
 until(Condition, Fun, Count) ->
     case Condition() of
         false ->
-            case apply(Fun, hb_converge:truncate_args(Fun, [Count])) of
+            case apply(Fun, hb_ao:truncate_args(Fun, [Count])) of
                 {count, AddToCount} ->
                     until(Condition, Fun, Count + AddToCount);
                 _ ->

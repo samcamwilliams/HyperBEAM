@@ -202,8 +202,8 @@ new_proc_test_() ->
 			},
 			Wallet
 		),
-		dev_scheduler_registry:find(hb_converge:get(id, SignedItem), true),
-		schedule(ID = hb_converge:get(id, SignedItem), SignedItem),
+		dev_scheduler_registry:find(hb_ao:get(id, SignedItem), true),
+		schedule(ID = hb_ao:get(id, SignedItem), SignedItem),
 		schedule(ID, SignedItem2),
 		schedule(ID, SignedItem3),
 		?assertMatch(
@@ -220,7 +220,7 @@ new_proc_test_() ->
 %         #{ <<"data">> => <<"test">>, <<"random-key">> => rand:uniform(10000) },
 %         Wallet
 %     ),
-%     dev_scheduler_registry:find(ID = hb_converge:get(id, SignedItem), true),
+%     dev_scheduler_registry:find(ID = hb_ao:get(id, SignedItem), true),
 %     ?event({benchmark_start, ?MODULE}),
 %     Iterations = hb:benchmark(
 %         fun(X) ->

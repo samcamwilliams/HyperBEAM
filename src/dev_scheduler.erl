@@ -15,7 +15,7 @@
 %%% '''
 
 -module(dev_scheduler).
-%%% Converge API functions:
+%%% AO-Core API functions:
 -export([info/0]).
 %%% Local scheduling functions:
 -export([schedule/3, router/4, register/3]).
@@ -70,7 +70,7 @@ next(Msg1, Msg2, Opts) ->
     Schedule = message_cached_assignments(Msg1, Opts),
     LastProcessed =
         hb_util:int(
-            hb_converge:get(
+            hb_ao:get(
                 <<"at-slot">>,
                 Msg1,
                 Opts#{ hashpath => ignore }
@@ -91,7 +91,7 @@ next(Msg1, Msg2, Opts) ->
                         [Assignment];
                     not_found ->
                         {ok, RecvdAssignments} =
-                            hb_converge:resolve(
+                            hb_ao:resolve(
                                 Msg1,
                                 #{
                                     <<"method">> => <<"GET">>,
@@ -117,7 +117,7 @@ next(Msg1, Msg2, Opts) ->
     % last processed slot + 1.
     NextAssignmentSlot =
         try hb_util:int(
-            hb_converge:get(
+            hb_ao:get(
                 <<"slot">>,
                 NextAssignment,
                 Opts#{ hashpath => ignore }
@@ -202,10 +202,10 @@ register(_Msg1, Req, Opts) ->
     ExistingNonce = 
         case hb_gateway_client:scheduler_location(Operator, Opts) of
             {ok, SchedulerLocation} ->
-                hb_converge:get(<<"nonce">>, SchedulerLocation, 0, Opts);
+                hb_ao:get(<<"nonce">>, SchedulerLocation, 0, Opts);
             {error, _} -> -1
         end,
-    NewNonce = hb_converge:get(<<"nonce">>, OnlyCommitted, 0, Opts),
+    NewNonce = hb_ao:get(<<"nonce">>, OnlyCommitted, 0, Opts),
     case lists:member(Operator, Signers) andalso NewNonce > ExistingNonce of
         false ->
             {ok,
@@ -221,14 +221,14 @@ register(_Msg1, Req, Opts) ->
             % The operator has asked to replace the scheduler location. Get the
             % details and register the new location.
             DefaultTTL = hb_opts:get(scheduler_location_ttl, 1000 * 60 * 60, Opts),
-            TimeToLive = hb_converge:get(
+            TimeToLive = hb_ao:get(
                     <<"time-to-live">>,
                     OnlyCommitted,
                     DefaultTTL,
                     Opts
                 ),
             URL =
-                case hb_converge:get(<<"url">>, OnlyCommitted, Opts) of
+                case hb_ao:get(<<"url">>, OnlyCommitted, Opts) of
                     not_found ->
                         Port = hb_opts:get(port, 8734, Opts),
                         Host = hb_opts:get(host, <<"localhost">>, Opts),
@@ -242,7 +242,7 @@ register(_Msg1, Req, Opts) ->
                     GivenURL -> GivenURL
                 end,
             % Construct the new scheduler location message.
-            Codec = hb_converge:get(<<"accept-codec">>, OnlyCommitted, <<"httpsig@1.0">>, Opts),
+            Codec = hb_ao:get(<<"accept-codec">>, OnlyCommitted, <<"httpsig@1.0">>, Opts),
             NewSchedulerLocation =
                 #{
                     <<"data-protocol">> => <<"ao">>,
@@ -264,7 +264,7 @@ register(_Msg1, Req, Opts) ->
 %% scheduling a new message.
 schedule(Msg1, Msg2, Opts) ->
     ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Msg1}}),
-    case hb_converge:get(<<"method">>, Msg2, <<"GET">>, Opts) of
+    case hb_ao:get(<<"method">>, Msg2, <<"GET">>, Opts) of
         <<"POST">> -> post_schedule(Msg1, Msg2, Opts);
         <<"GET">> -> get_schedule(Msg1, Msg2, Opts)
     end.
@@ -281,10 +281,10 @@ post_schedule(Msg1, Msg2, Opts) ->
     % - If it is a Process, use the ID of the message.
     % - If not, use the target as the ProcessID.
     ProcID =
-        case hb_converge:get(<<"type">>, ToSched, not_found, Opts) of
+        case hb_ao:get(<<"type">>, ToSched, not_found, Opts) of
             <<"Process">> -> hb_message:id(ToSched, all);
             _ ->
-                case hb_converge:get(<<"target">>, ToSched, not_found, Opts) of
+                case hb_ao:get(<<"target">>, ToSched, not_found, Opts) of
                     not_found -> find_target_id(Msg1, Msg2, Opts);
                     Target -> Target
                 end
@@ -345,7 +345,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
             false -> true
         end,
     % Handle scheduling of the message if the message is valid.
-    case {Verified, hb_converge:get(<<"type">>, Msg2, Opts)} of
+    case {Verified, hb_ao:get(<<"type">>, Msg2, Opts)} of
         {false, _} ->
             {error,
                 #{
@@ -388,7 +388,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                     ?event({no_pid_in_local_registry, ProcID}),
                     % Find the process from the message.
                     Proc =
-                        case hb_converge:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
+                        case hb_ao:get(<<"process">>, Msg1, not_found, Opts#{ hashpath => ignore }) of
                             not_found ->
                                 case (ToSched =/= undefined) andalso (hb_message:id(ToSched, all) == ProcID) of
                                     true -> ToSched;
@@ -417,7 +417,7 @@ find_server(ProcID, Msg1, ToSched, Opts) ->
                         hb_opts:get(priv_wallet, hb:wallet(), Opts))),
                     ?event({local_address, Address}),
                     SchedLoc =
-                        hb_converge:get_first(
+                        hb_ao:get_first(
                             [
                                 {Proc, <<"scheduler">>},
                                 {Proc, <<"scheduler-location">>}
@@ -463,13 +463,13 @@ get_hint(_Str, _Opts) -> not_found.
 
 %% @doc Generate a redirect message to a scheduler.
 generate_redirect(ProcID, SchedulerLocation, Opts) ->
-    Variant = hb_converge:get(<<"variant">>, SchedulerLocation, <<"ao.N.1">>, Opts),
+    Variant = hb_ao:get(<<"variant">>, SchedulerLocation, <<"ao.N.1">>, Opts),
     ?event({generating_redirect, {proc_id, ProcID}, {variant, Variant}}),
     RedirectLocation =
         case is_binary(SchedulerLocation) of
             true -> SchedulerLocation;
             false ->
-                hb_converge:get_first(
+                hb_ao:get_first(
                     [
                         {SchedulerLocation, <<"url">>},
                         {SchedulerLocation, <<"location">>}
@@ -563,7 +563,7 @@ remote_slot(ProcID, Redirect, Opts) ->
     Node = node_from_redirect(Redirect, Opts),
     ?event({getting_slot_from_node, {string, Node}}),
     remote_slot(
-        hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
+        hb_ao:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
         ProcID,
         Node,
         Opts
@@ -585,9 +585,9 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
     case hb_http:get(Node, Path, Opts#{ http_client => httpc }) of
         {ok, Res} ->
             ?event({remote_slot_result, {res, Res}}),
-            case hb_util:int(hb_converge:get(<<"status">>, Res, 200, Opts)) of
+            case hb_util:int(hb_ao:get(<<"status">>, Res, 200, Opts)) of
                 200 ->
-                    Body = hb_converge:get(<<"body">>, Res, Opts),
+                    Body = hb_ao:get(<<"body">>, Res, Opts),
                     JSON = hb_json:decode(Body),
                     ?event({got_slot_response, {json, JSON}}),
                     % Convert the JSON object for the latest assignment into the
@@ -632,17 +632,17 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
 get_schedule(Msg1, Msg2, Opts) ->
     ProcID = find_target_id(Msg1, Msg2, Opts),
     From =
-        case hb_converge:get(<<"from">>, Msg2, not_found, Opts) of
+        case hb_ao:get(<<"from">>, Msg2, not_found, Opts) of
             not_found -> 0;
             X when X < 0 -> 0;
             FromRes -> hb_util:int(FromRes)
         end,
     To =
-        case hb_converge:get(<<"to">>, Msg2, not_found, Opts) of
+        case hb_ao:get(<<"to">>, Msg2, not_found, Opts) of
             not_found -> undefined;
             ToRes -> hb_util:int(ToRes)
         end,
-    Format = hb_converge:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
+    Format = hb_ao:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
     ?event({parsed_get_schedule, {process, ProcID}, {from, From}, {to, To}, {format, Format}}),
     case find_server(ProcID, Msg1, Opts) of
         {local, _PID} ->
@@ -657,15 +657,15 @@ get_schedule(Msg1, Msg2, Opts) ->
                                 <<"application/aos-2">> ->
                                     {ok, Formatted} = dev_scheduler_formats:assignments_to_aos2(
                                         ProcID,
-                                        hb_converge:get(
+                                        hb_ao:get(
                                             <<"assignments">>, Res, [], Opts),
-                                        hb_util:atom(hb_converge:get(
+                                        hb_util:atom(hb_ao:get(
                                             <<"continues">>, Res, false, Opts)),
                                         Opts
                                     ),
                                     ?event({formatted_assignments,
                                         {body,
-                                            {string, hb_converge:get(<<"body">>, Formatted, Opts)}
+                                            {string, hb_ao:get(<<"body">>, Formatted, Opts)}
                                         },
                                         {full, Formatted}}
                                     ),
@@ -730,7 +730,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
     % We don't have all of the assignments from the local cache, so we need to
     % fetch the rest from the remote scheduler.
     Node = node_from_redirect(Redirect, Opts),
-    Variant = hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
+    Variant = hb_ao:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     ?event(
         {getting_remote_schedule,
             {node, {string, Node}},
@@ -787,7 +787,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
     case hb_http:get(Node, Path, Opts#{ http_client => httpc }) of
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
-            case hb_util:int(hb_converge:get(<<"status">>, Res, 200, Opts)) of
+            case hb_util:int(hb_ao:get(<<"status">>, Res, 200, Opts)) of
                 200 ->
                     {ok, NormSched} = 
                         case Variant of
@@ -796,7 +796,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                             <<"ao.TN.1">> ->
                                 JSONRes =
                                     hb_json:decode(
-                                        hb_converge:get(
+                                        hb_ao:get(
                                             <<"body">>,
                                             Res,
                                             <<"">>,
@@ -816,8 +816,8 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                     % assignments to a list, maintaining the order of the keys.
                     RemoteAssignments =
                         hb_util:message_to_ordered_list(
-                            hb_converge:normalize_keys(
-                                hb_converge:get(
+                            hb_ao:normalize_keys(
+                                hb_ao:get(
                                     <<"assignments">>,
                                     NormSched,
                                     Opts
@@ -830,7 +830,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                         dev_scheduler_formats:assignments_to_bundle(
                             ProcID,
                             MergedAssignments = LocalAssignments ++ RemoteAssignments,
-                            hb_converge:get(<<"continues">>, NormSched, false, Opts),
+                            hb_ao:get(<<"continues">>, NormSched, false, Opts),
                             Opts
                         ),
                     ?event(debug_sched,
@@ -866,7 +866,7 @@ cache_remote_schedule(Schedule, Opts) ->
         fun() ->
             ?event(debug_sched, {caching_remote_schedule, {schedule, Schedule}}),
             Assignments =
-                hb_converge:get(
+                hb_ao:get(
                     <<"assignments">>,
                     Schedule,
                     Opts#{ hashpath => ignore }
@@ -884,7 +884,7 @@ cache_remote_schedule(Schedule, Opts) ->
                 end,
                 AssignmentList =
                     hb_util:message_to_ordered_list(
-                        maps:without([<<"priv">>], hb_converge:normalize_keys(Assignments))
+                        maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments))
                     )
             ),
             ?event(debug_sched,
@@ -903,7 +903,7 @@ node_from_redirect(Redirect, Opts) ->
             maps:remove(
                 query,
                 uri_string:parse(
-                    hb_converge:get(<<"location">>, Redirect, Opts)
+                    hb_ao:get(<<"location">>, Redirect, Opts)
                 )
             )
         )#{path => <<"/">>}
@@ -938,10 +938,10 @@ filter_json_assignments(JSONRes, To, From) ->
 post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
     RemoteOpts = Opts#{ http_client => httpc },
     ProcID = without_hint(RawProcID),
-    Location = hb_converge:get(<<"location">>, Redirect, Opts),
+    Location = hb_ao:get(<<"location">>, Redirect, Opts),
     Parsed = uri_string:parse(Location),
     Node = uri_string:recompose((maps:remove(query, Parsed))#{path => <<"/">>}),
-    Variant = hb_converge:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
+    Variant = hb_ao:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     case Variant of
         <<"ao.N.1">> ->
             PostMsg = #{
@@ -1005,7 +1005,7 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                     ?event({remote_schedule_result, PostRes}),
                     JSONRes =
                         hb_json:decode(
-                            hb_converge:get(<<"body">>, PostRes, Opts)
+                            hb_ao:get(<<"body">>, PostRes, Opts)
                         ),
                     % Legacy SUs return only the ID of the assignment, so we need
                     % to read and return it.
@@ -1016,7 +1016,7 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                             ?event({received_full_assignment, AssignmentRes}),
                             AssignmentJSON =
                                 hb_json:decode(
-                                    hb_converge:get(<<"body">>, AssignmentRes, Opts)
+                                    hb_ao:get(<<"body">>, AssignmentRes, Opts)
                                 ),
                             Assignment =
                                 dev_scheduler_formats:aos2_to_assignment(
@@ -1047,23 +1047,23 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
 %% 6. `Msg2/id'
 find_target_id(Msg1, Msg2, Opts) ->
     TempOpts = Opts#{ hashpath => ignore },
-    Res = case hb_converge:resolve(Msg2, <<"target">>, TempOpts) of
+    Res = case hb_ao:resolve(Msg2, <<"target">>, TempOpts) of
         {ok, Target} ->
             % ID found at Msg2/target
             Target;
         _ ->
-            case hb_converge:resolve(Msg2, <<"type">>, TempOpts) of
+            case hb_ao:resolve(Msg2, <<"type">>, TempOpts) of
                 {ok, <<"Process">>} ->
                     % Msg2 is a Process, so the ID is at Msg2/id
                     hb_message:id(Msg2, all);
                 _ ->
-                    case hb_converge:resolve(Msg1, <<"process">>, TempOpts) of
+                    case hb_ao:resolve(Msg1, <<"process">>, TempOpts) of
                         {ok, Process} ->
                             % ID found at Msg1/process/id
                             hb_message:id(Process, all);
                         _ ->
                             % Does the message have a type of Process?
-                            case hb_converge:get(<<"type">>, Msg1, TempOpts) of
+                            case hb_ao:get(<<"type">>, Msg1, TempOpts) of
                                 <<"Process">> ->
                                     % Yes, so try Msg1/id
                                     hb_message:id(Msg1, all);
@@ -1082,7 +1082,7 @@ find_target_id(Msg1, Msg2, Opts) ->
 %% 1. `Msg2/body'
 %% 2. `Msg2'
 find_message_to_schedule(_Msg1, Msg2, Opts) ->
-    case hb_converge:resolve(Msg2, <<"body">>, Opts#{ hashpath => ignore }) of
+    case hb_ao:resolve(Msg2, <<"body">>, Opts#{ hashpath => ignore }) of
         {ok, Body} ->
             Body;
         _ -> Msg2
@@ -1180,7 +1180,7 @@ status_test() ->
         #{<<"processes">> := Processes,
             <<"address">> := Address}
             when is_list(Processes) and is_binary(Address),
-        hb_converge:get(status, test_process())
+        hb_ao:get(status, test_process())
     ).
 
 register_new_process_test() ->
@@ -1188,7 +1188,7 @@ register_new_process_test() ->
     Msg1 = test_process(),
     ?event({test_registering_new_process, {msg, Msg1}}),
     ?assertMatch({ok, _},
-        hb_converge:resolve(
+        hb_ao:resolve(
             Msg1,
             #{
                 <<"method">> => <<"POST">>,
@@ -1199,12 +1199,12 @@ register_new_process_test() ->
         )
     ),
     ?event({status_response, Msg1}),
-    Procs = hb_converge:get(<<"processes">>, hb_converge:get(status, Msg1)),
+    Procs = hb_ao:get(<<"processes">>, hb_ao:get(status, Msg1)),
     ?event({procs, Procs}),
     ?assert(
         lists:member(
             hb_util:id(Msg1, all),
-            hb_converge:get(<<"processes">>, hb_converge:get(status, Msg1))
+            hb_ao:get(<<"processes">>, hb_ao:get(status, Msg1))
         )
     ).
 
@@ -1220,8 +1220,8 @@ schedule_message_and_get_slot_test() ->
                 <<"test-key">> => <<"true">>
             }, hb:wallet())
     },
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Msg1, Msg2, #{})),
     Msg3 = #{
         <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
@@ -1231,7 +1231,7 @@ schedule_message_and_get_slot_test() ->
     ?event({getting_schedule, {msg, Msg3}}),
     ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot > 0,
-        hb_converge:resolve(Msg1, Msg3, #{})).
+        hb_ao:resolve(Msg1, Msg3, #{})).
 
 redirect_to_hint_test() ->
     start(),
@@ -1245,7 +1245,7 @@ redirect_to_hint_test() ->
     },
     ?assertMatch(
         {ok, #{ <<"location">> := Location }} when is_binary(Location),
-        hb_converge:resolve(
+        hb_ao:resolve(
             Msg1,
             Msg2,
             #{
@@ -1267,7 +1267,7 @@ redirect_from_graphql_test() ->
     {ok, Msg} = hb_cache:read(<<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>, Opts),
     ?assertMatch(
         {ok, #{ <<"location">> := Location }} when is_binary(Location),
-        hb_converge:resolve(
+        hb_ao:resolve(
             Msg,
             #{
                 <<"path">> => <<"schedule">>,
@@ -1309,11 +1309,11 @@ get_local_schedule_test() ->
                 <<"test-key">> => <<"Test-Val-2">>
             }, hb:wallet())
     },
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg2, #{})),
-    ?assertMatch({ok, _}, hb_converge:resolve(Msg1, Msg3, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Msg1, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Msg1, Msg3, #{})),
     ?assertMatch(
         {ok, _},
-        hb_converge:resolve(Msg1, #{
+        hb_ao:resolve(Msg1, #{
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>,
             <<"target">> => hb_util:id(Msg1)
@@ -1422,7 +1422,7 @@ http_post_schedule_test() ->
             PMsg,
             W
         ),
-    ?assertEqual(<<"test-message">>, hb_converge:get(<<"body/inner">>, Res2, #{})),
+    ?assertEqual(<<"test-message">>, hb_ao:get(<<"body/inner">>, Res2, #{})),
     ?assertMatch({ok, #{ <<"current">> := 1 }}, http_get_slot(N, PMsg)).
 
 http_get_schedule_test_() ->
@@ -1446,7 +1446,7 @@ http_get_schedule_test_() ->
 		),
 		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
 		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
-		Assignments = hb_converge:get(<<"assignments">>, Schedule, #{}),
+		Assignments = hb_ao:get(<<"assignments">>, Schedule, #{}),
 		?assertEqual(
 			12, % +1 for the hashpath
 			length(maps:values(Assignments))
@@ -1494,7 +1494,7 @@ http_get_legacy_schedule_as_aos2_test_() ->
                 },
                 #{}
             ),
-        Decoded = hb_json:decode(hb_converge:get(<<"body">>, Res, #{})),
+        Decoded = hb_json:decode(hb_ao:get(<<"body">>, Res, #{})),
         ?assertMatch(#{ <<"edges">> := As } when length(As) > 0, Decoded)
     end}.
 
@@ -1559,7 +1559,7 @@ http_get_json_schedule_test_() ->
 		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),
 		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10, <<"application/aos-2">>),
 		?event({schedule, Schedule}),
-		JSON = hb_converge:get(<<"body">>, Schedule, #{}),
+		JSON = hb_ao:get(<<"body">>, Schedule, #{}),
 		Assignments = hb_json:decode(JSON),
 		?assertEqual(
 			11, % +1 for the hashpath
@@ -1569,7 +1569,7 @@ http_get_json_schedule_test_() ->
 
 %%% Benchmarks
 
-single_converge(Opts) ->
+single_resolution(Opts) ->
     start(),
     BenchTime = 1,
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
@@ -1586,7 +1586,7 @@ single_converge(Opts) ->
                 <<"method">> => <<"POST">>,
                 <<"body">> => MsgToSchedule
             },
-            ?assertMatch({ok, _}, hb_converge:resolve(Msg1, MsgX, Opts))
+            ?assertMatch({ok, _}, hb_ao:resolve(Msg1, MsgX, Opts))
         end,
         BenchTime
     ),
@@ -1598,10 +1598,10 @@ single_converge(Opts) ->
     },
     ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
-        hb_converge:resolve(Msg1, Msg3, Opts)),
+        hb_ao:resolve(Msg1, Msg3, Opts)),
     ?event(bench, {res, Iterations - 1}),
     hb_util:eunit_print(
-        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
+        "Scheduled ~p messages through AO-Core in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 3).
@@ -1640,7 +1640,7 @@ benchmark_suite_test_() ->
 		rand:seed(exsplus, erlang:timestamp()),
 		Port = 30000 + rand:uniform(10000),
 		Bench = [
-			{benchmark, "benchmark", fun single_converge/1},
+			{benchmark, "benchmark", fun single_resolution/1},
 			{multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
 		],
 		filelib:ensure_dir(

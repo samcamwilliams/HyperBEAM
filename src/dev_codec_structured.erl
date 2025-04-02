@@ -4,7 +4,7 @@
 %%% This format mirrors HTTP Structured Fields, aside from its limitations of 
 %%% compound type depths, as well as limited floating point representations.
 %%% 
-%%% As with all Converge codecs, its target format (the format it expects to 
+%%% As with all AO-Core codecs, its target format (the format it expects to 
 %%% receive in the `to/1' function, and give in `from/1') is TABM.
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
@@ -22,18 +22,18 @@ committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;
 from(Msg) when is_map(Msg) ->
-    NormKeysMap = hb_converge:normalize_keys(Msg),
+    NormKeysMap = hb_ao:normalize_keys(Msg),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
             case maps:find(Key, NormKeysMap) of
                 {ok, <<>>} ->
-                    BinKey = hb_converge:normalize_key(Key),
+                    BinKey = hb_ao:normalize_key(Key),
                     {[{BinKey, <<"empty-binary">>} | Types], Values};
                 {ok, []} ->
-                    BinKey = hb_converge:normalize_key(Key),
+                    BinKey = hb_ao:normalize_key(Key),
                     {[{BinKey, <<"empty-list">>} | Types], Values};
                 {ok, EmptyMap} when ?IS_EMPTY_MESSAGE(EmptyMap) ->
-                    BinKey = hb_converge:normalize_key(Key),
+                    BinKey = hb_ao:normalize_key(Key),
                     {[{BinKey, <<"empty-message">>} | Types], Values};
                 {ok, Value} when is_binary(Value) ->
                     {Types, [{Key, Value} | Values]};
@@ -42,14 +42,14 @@ from(Msg) when is_map(Msg) ->
                 {ok, MsgList = [Msg1|_]} when is_map(Msg1) or is_list(Msg1) ->
                     % We have a list of maps. Convert to a numbered map and
                     % recurse.
-                    BinKey = hb_converge:normalize_key(Key),
+                    BinKey = hb_ao:normalize_key(Key),
                     % Convert the list of maps into a numbered map and recurse
-                    NumberedMap = from(hb_converge:normalize_keys(MsgList)),
+                    NumberedMap = from(hb_ao:normalize_keys(MsgList)),
                     {[{BinKey, <<"list">>} | Types], [{BinKey, NumberedMap} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
                         or is_list(Value) or is_float(Value) ->
-                    BinKey = hb_converge:normalize_key(Key),
+                    BinKey = hb_ao:normalize_key(Key),
                     ?event({encode_value, Value}),
                     {Type, BinValue} = encode_value(Value),
                     {[{BinKey, Type} | Types], [{BinKey, BinValue} | Values]};
@@ -129,7 +129,7 @@ to(TABM0) ->
     hb_message:filter_default_keys(maps:fold(
         fun (<<"ao-types">>, _Value, Acc) -> Acc;
         (RawKey, BinValue, Acc) when is_binary(BinValue) ->
-            case maps:find(hb_converge:normalize_key(RawKey), Types) of
+            case maps:find(hb_ao:normalize_key(RawKey), Types) of
                 % The value is a binary, no parsing required
                 error -> Acc#{ RawKey => BinValue };
                 % Parse according to its type
@@ -205,7 +205,7 @@ encode_value(Values) when is_list(Values) ->
             fun(Bin) when is_binary(Bin) -> {item, {string, Bin}, []};
                (Item) ->
                 {RawType, Encoded} = encode_value(Item),
-                Type = hb_converge:normalize_key(RawType),
+                Type = hb_ao:normalize_key(RawType),
                 {
                     item,
                     {

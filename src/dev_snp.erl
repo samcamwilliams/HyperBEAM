@@ -60,7 +60,7 @@ init(M1, _M2, Opts) ->
         {_, Addr} when is_binary(Addr) ->
             {error, <<"Cannot enable SNP if operator is already set.">>};
         _ ->
-            SnpHashes = hb_converge:get(<<"body">>, M1, Opts),
+            SnpHashes = hb_ao:get(<<"body">>, M1, Opts),
             SNPDecoded = hb_json:decode(SnpHashes),
             Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
             ok = hb_http_server:set_opts(Opts#{
@@ -87,7 +87,7 @@ init(M1, _M2, Opts) ->
 verify(M1, M2, NodeOpts) ->
     {ok, MsgWithJSONReport} = hb_message:find_target(M1, M2, NodeOpts),
 	% Normalize the request message
-	ReportJSON = hb_converge:get(<<"report">>, MsgWithJSONReport, NodeOpts),
+	ReportJSON = hb_ao:get(<<"report">>, MsgWithJSONReport, NodeOpts),
 	Report = hb_json:decode(ReportJSON),
 	Msg =
 		maps:merge(
@@ -96,19 +96,19 @@ verify(M1, M2, NodeOpts) ->
 		),
     ?event({verify, Msg}),
     % Step 1: Verify the nonce.
-    Address = hb_converge:get(<<"address">>, Msg, NodeOpts),
+    Address = hb_ao:get(<<"address">>, Msg, NodeOpts),
     ?event({snp_address, Address}),
     NodeMsgID =
-        case hb_converge:get(<<"node-message">>, Msg, NodeOpts#{ hashpath => ignore }) of
+        case hb_ao:get(<<"node-message">>, Msg, NodeOpts#{ hashpath => ignore }) of
             undefined ->
-                case hb_converge:get(<<"node-message-id">>, Msg, NodeOpts) of
+                case hb_ao:get(<<"node-message-id">>, Msg, NodeOpts) of
                     undefined -> {error, missing_node_msg_id};
                     ID -> ID
                 end;
             NodeMsg -> hb_util:ok(dev_message:id(NodeMsg, #{}, NodeOpts))
         end,
     ?event({snp_node_msg_id, NodeMsgID}),
-    Nonce = hb_util:decode(hb_converge:get(<<"nonce">>, Msg, NodeOpts)),
+    Nonce = hb_util:decode(hb_ao:get(<<"nonce">>, Msg, NodeOpts)),
     ?event({snp_nonce, Nonce}),
     NonceMatches = report_data_matches(Address, NodeMsgID, Nonce),
     ?event({nonce_matches, NonceMatches}),
@@ -137,7 +137,7 @@ verify(M1, M2, NodeOpts) ->
 	?event({args, Args}),
     {ok,Expected} = dev_snp_nif:compute_launch_digest(Args),
     ?event({expected_measurement, Expected}),
-    Measurement = hb_converge:get(<<"measurement">>, Msg, NodeOpts),
+    Measurement = hb_ao:get(<<"measurement">>, Msg, NodeOpts),
     ?event({measurement, {explicit,Measurement}}),
     {ok, MeasurementIsValid} = dev_snp_nif:verify_measurement(ReportJSON, list_to_binary(Expected)),
     ?event({measurement_is_valid, MeasurementIsValid}),
@@ -205,7 +205,7 @@ generate(_M1, _M2, Opts) ->
 
 %% @doc Ensure that the node's debug policy is disabled.
 is_debug(Report) ->
-    (hb_converge:get(<<"policy">>, Report, #{}) band (1 bsl 19)) =/= 0.
+    (hb_ao:get(<<"policy">>, Report, #{}) band (1 bsl 19)) =/= 0.
 
 %% @doc Ensure that all of the software hashes are trusted. The caller may set
 %% a specific device to use for the `is-trusted' key. The device must then
@@ -216,14 +216,14 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
     % If not provided, use the default resolver (this module's `trusted'
     % function).
     ModM1 =
-        case hb_converge:get(<<"is-trusted-device">>, M1, NodeOpts) of
+        case hb_ao:get(<<"is-trusted-device">>, M1, NodeOpts) of
             not_found -> M1#{ <<"device">> => <<"snp@1.0">> };
             Device -> {as, Device, M1}
         end,
     %?event({starting_to_validate_software, {mod_m1, {explicit, ModM1}}, {m2, {explicit, Msg}}, {node_opts, {explicit, NodeOpts}}}),
     Result = lists:all(
         fun(ReportKey) ->
-            ReportVal = hb_converge:get(ReportKey, Msg, NodeOpts),
+            ReportVal = hb_ao:get(ReportKey, Msg, NodeOpts),
             QueryMsg = #{
                 <<"path">> => <<"trusted">>,
                 <<"key">> => ReportKey,
@@ -231,7 +231,7 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
             },
             % ?event({is_trusted_query, {base, ModM1}, {query, QueryMsg}}),
             % Resolve the query message against the modified base message.
-            {ok, KeyIsTrusted} = hb_converge:resolve(ModM1, QueryMsg, NodeOpts),
+            {ok, KeyIsTrusted} = hb_ao:resolve(ModM1, QueryMsg, NodeOpts),
             % ?event(
             %     {is_software_component_trusted,
             %         {key, ReportKey},
@@ -250,11 +250,11 @@ execute_is_trusted(M1, Msg, NodeOpts) ->
 %% `trusted' key in the base message for a list of trusted values, and checks
 %% if the value in the request message is a member of that list.
 trusted(_Msg1, Msg2, NodeOpts) ->
-    Key = hb_converge:get(<<"key">>, Msg2, NodeOpts),
-    Body = hb_converge:get(<<"body">>, Msg2, not_found, NodeOpts),
+    Key = hb_ao:get(<<"key">>, Msg2, NodeOpts),
+    Body = hb_ao:get(<<"body">>, Msg2, not_found, NodeOpts),
     %% Ensure Trusted is always a map
     TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
-    PropertyName = hb_converge:get(Key, TrustedSoftware, not_found, NodeOpts),
+    PropertyName = hb_ao:get(Key, TrustedSoftware, not_found, NodeOpts),
     % ?event({trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
     %% Final trust validation
     {ok, PropertyName == Body}.
@@ -295,7 +295,7 @@ generate_nonce(RawAddress, RawNodeMsgID) ->
 %     ),
 %     {ok, Report} = hb_http:get(Node, <<"/\~snp@1.0/generate">>, #{}),
 %     ?event({snp_report_rcvd, Report}),
-%     ?assertEqual(Addr, hb_converge:get(<<"address">>, Report, #{})),
+%     ?assertEqual(Addr, hb_ao:get(<<"address">>, Report, #{})),
 % 	ValidationRes = verify(#{ <<"trusted">> => Trusted}, #{ <<"body">> => Report }, #{}),
 % 	?event({snp_validation_res, ValidationRes}),
 %     ?assertEqual({ok, true}, ValidationRes).

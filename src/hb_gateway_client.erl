@@ -51,7 +51,7 @@ read(ID, Opts) ->
     case query(Query, Opts) of
         {error, Reason} -> {error, Reason};
         {ok, GqlMsg} ->
-            case hb_converge:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
+            case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
                 not_found -> {error, not_found};
                 Item = #{<<"id">> := ID} -> result_to_message(ID, Item, Opts)
             end
@@ -90,10 +90,10 @@ data(ID, Opts) ->
                 {data,
                     {id, ID},
                     {response, Res},
-                    {body, hb_converge:get(<<"body">>, Res, <<>>, Opts)}
+                    {body, hb_ao:get(<<"body">>, Res, <<>>, Opts)}
                 }
             ),
-            {ok, hb_converge:get(<<"body">>, Res, <<>>, Opts)};
+            {ok, hb_ao:get(<<"body">>, Res, <<>>, Opts)};
         Res ->
             ?event(gateway, {request_error, {id, ID}, {response, Res}}),
             {error, no_viable_gateway}
@@ -119,7 +119,7 @@ scheduler_location(Address, Opts) ->
     case query(Query, Opts) of
         {error, Reason} -> {error, Reason};
         {ok, GqlMsg} ->
-            case hb_converge:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
+            case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
                 not_found -> {error, not_found};
                 Item = #{ <<"id">> := ID } -> result_to_message(ID, Item, Opts)
             end
@@ -147,7 +147,7 @@ query(Query, Opts) ->
         {ok, Msg} ->
             {ok,
                 hb_json:decode(
-                    hb_converge:get(<<"body">>, Msg, <<>>, Opts)
+                    hb_ao:get(<<"body">>, Msg, <<>>, Opts)
                 )
             };
         {error, Reason} -> {error, Reason}
@@ -156,7 +156,7 @@ query(Query, Opts) ->
 %% @doc Takes a GraphQL item node, matches it with the appropriate data from a
 %% gateway, then returns `{ok, ParsedMsg}`.
 result_to_message(Item, Opts) ->
-    case hb_converge:get(<<"id">>, Item, Opts) of
+    case hb_ao:get(<<"id">>, Item, Opts) of
         ExpectedID when is_binary(ExpectedID) ->
             result_to_message(ExpectedID, Item, Opts);
         _ ->
@@ -166,7 +166,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     GQLOpts = Opts#{ hashpath => ignore },
     % We have the headers, so we can get the data.
     Data =
-        case hb_converge:get(<<"data">>, Item, GQLOpts) of
+        case hb_ao:get(<<"data">>, Item, GQLOpts) of
             BinData when is_binary(BinData) -> BinData;
             _ ->
                 {ok, Bytes} = data(ExpectedID, Opts),
@@ -175,17 +175,17 @@ result_to_message(ExpectedID, Item, Opts) ->
     DataSize = byte_size(Data),
     ?event(gateway, {data, {id, ExpectedID}, {data, Data}, {item, Item}}, Opts),
     % Convert the response to an ANS-104 message.
-    Tags = hb_converge:get(<<"tags">>, Item, GQLOpts),
+    Tags = hb_ao:get(<<"tags">>, Item, GQLOpts),
     TX =
         #tx {
             format = ans104,
             id = hb_util:decode(ExpectedID),
-            last_tx = normalize_null(hb_converge:get(<<"anchor">>, Item, GQLOpts)),
+            last_tx = normalize_null(hb_ao:get(<<"anchor">>, Item, GQLOpts)),
             signature =
-                hb_util:decode(hb_converge:get(<<"signature">>, Item, GQLOpts)),
+                hb_util:decode(hb_ao:get(<<"signature">>, Item, GQLOpts)),
             target =
                 decode_or_null(
-                    hb_converge:get_first(
+                    hb_ao:get_first(
                         [
                             {Item, <<"recipient">>},
                             {Item, <<"target">>}
@@ -194,7 +194,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                     )
                 ),
             owner =
-                hb_util:decode(hb_converge:get(<<"owner/key">>,
+                hb_util:decode(hb_ao:get(<<"owner/key">>,
                     Item, GQLOpts)),
             tags =
                 [
@@ -237,12 +237,12 @@ result_to_message(ExpectedID, Item, Opts) ->
                                 AttName =>
                                     Comm#{
                                         <<"trusted-keys">> =>
-                                            hb_converge:normalize_keys([
-                                                    hb_converge:normalize_key(Name)
+                                            hb_ao:normalize_keys([
+                                                    hb_ao:normalize_key(Name)
                                                 ||
                                                     #{ <<"name">> := Name } <-
                                                         maps:values(
-                                                            hb_converge:normalize_keys(Tags)
+                                                            hb_ao:normalize_keys(Tags)
                                                         )
                                                 ]
                                             )
@@ -282,7 +282,7 @@ scheduler_location_test() ->
     _Node = hb_http_server:start_node(#{}),
     {ok, Res} = scheduler_location(<<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>, #{}),
     ?event(gateway, {get_scheduler_location_test, Res}),
-    ?assertEqual(<<"Scheduler-Location">>, hb_converge:get(<<"Type">>, Res, #{})),
-    ?event(gateway, {scheduler_location, {explicit, hb_converge:get(<<"url">>, Res, #{})}}),
+    ?assertEqual(<<"Scheduler-Location">>, hb_ao:get(<<"Type">>, Res, #{})),
+    ?event(gateway, {scheduler_location, {explicit, hb_ao:get(<<"url">>, Res, #{})}}),
     % Will need updating when Legacynet terminates.
-    ?assertEqual(<<"https://su-router.ao-testnet.xyz">>, hb_converge:get(<<"url">>, Res, #{})).
+    ?assertEqual(<<"https://su-router.ao-testnet.xyz">>, hb_ao:get(<<"url">>, Res, #{})).

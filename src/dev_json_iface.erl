@@ -44,11 +44,11 @@
 
 %% @doc Initialize the device.
 init(M1, _M2, _Opts) ->
-    {ok, hb_converge:set(M1, #{<<"wasm-function">> => <<"handle">>})}.
+    {ok, hb_ao:set(M1, #{<<"wasm-function">> => <<"handle">>})}.
 
 %% @doc On first pass prepare the call, on second pass get the results.
 compute(M1, M2, Opts) ->
-    case hb_converge:get(<<"pass">>, M1, Opts) of
+    case hb_ao:get(<<"pass">>, M1, Opts) of
         1 -> prep_call(M1, M2, Opts);
         2 -> results(M1, M2, Opts);
         _ -> {ok, M1}
@@ -59,10 +59,10 @@ compute(M1, M2, Opts) ->
 prep_call(M1, M2, Opts) ->
     ?event({prep_call, M1, M2, Opts}),
     Instance = hb_private:get(<<"priv/wasm/instance">>, M1, Opts),
-    Process = hb_converge:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
-    Message = hb_converge:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
-    Image = hb_converge:get(<<"process/image">>, M1, Opts),
-    BlockHeight = hb_converge:get(<<"block-height">>, M2, Opts),
+    Process = hb_ao:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
+    Message = hb_ao:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
+    Image = hb_ao:get(<<"process/image">>, M1, Opts),
+    BlockHeight = hb_ao:get(<<"block-height">>, M2, Opts),
     Props = message_to_json_struct(denormalize_message(Message)),
     MsgProps =
         Props#{
@@ -78,7 +78,7 @@ prep_call(M1, M2, Opts) ->
     ProcessJson = hb_json:encode(ProcessProps),
     {ok, ProcessJsonPtr} = hb_beamr_io:write_string(Instance, ProcessJson),
     {ok,
-        hb_converge:set(
+        hb_ao:set(
             M1,
             #{
                 <<"wasm-function">> => <<"handle">>,
@@ -98,7 +98,7 @@ denormalize_message(Message) ->
                 Message#{
                     <<"owner">> => hb_util:human_id(PrimarySigner),
                     <<"signature">> =>
-                        hb_converge:get(<<"signature">>, Commitment, <<>>, #{})
+                        hb_ao:get(<<"signature">>, Commitment, <<>>, #{})
                 }
         end,
     NormOwnerMsg#{
@@ -116,7 +116,7 @@ message_to_json_struct(RawMsg, Features) ->
         ),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
-    Last = hb_converge:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
 	Owner =
         case hb_message:signers(RawMsg) of
             [] -> <<>>;
@@ -125,12 +125,12 @@ message_to_json_struct(RawMsg, Features) ->
                     true -> hb_util:native_id(Signer);
                     false ->
                         Commitment =
-                            hb_converge:get(
+                            hb_ao:get(
                                 <<"commitments/", Signer/binary>>,
                                 {as, <<"message@1.0">>, RawMsg},
                                 #{}
                             ),
-                        case hb_converge:get(<<"owner">>, Commitment, #{}) of
+                        case hb_ao:get(<<"owner">>, Commitment, #{}) of
                             not_found ->
                                 % The signature is likely a HTTPsig, so we need 
                                 % to extract the owner from the signature.
@@ -142,17 +142,17 @@ message_to_json_struct(RawMsg, Features) ->
                         end
                 end
         end,
-    Data = hb_converge:get(<<"data">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
-    Target = hb_converge:get(<<"target">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Data = hb_ao:get(<<"data">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Target = hb_ao:get(<<"target">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     % Set "From" if From-Process is Tag or set with "Owner" address
     From =
-        hb_converge:get(
+        hb_ao:get(
             <<"from-process">>,
             {as, <<"message@1.0">>, Message},
             hb_util:encode(Owner),
             #{}
         ),
-    Sig = hb_converge:get(<<"signature">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Sig = hb_ao:get(<<"signature">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
     #{
         <<"Id">> => safe_to_id(ID),
         % NOTE: In Arweave TXs, these are called "last_tx"
@@ -231,7 +231,7 @@ maybe_list_to_binary(Bin) ->
     Bin.
 
 header_case_string(Key) ->
-    NormKey = hb_converge:normalize_key(Key),
+    NormKey = hb_ao:normalize_key(Key),
     Words = string:lexemes(NormKey, "-"),
     TitleCaseWords =
         lists:map(
@@ -249,12 +249,12 @@ header_case_string(Key) ->
 %% has been called with `computed{pass=1}'.
 results(M1, _M2, Opts) ->
     Instance = hb_private:get(<<"priv/wasm/instance">>, M1, Opts),
-    Type = hb_converge:get(<<"results/wasm/type">>, M1, Opts),
-    Proc = hb_converge:get(<<"process">>, M1, Opts),
-    case hb_converge:normalize_key(Type) of
+    Type = hb_ao:get(<<"results/wasm/type">>, M1, Opts),
+    Proc = hb_ao:get(<<"process">>, M1, Opts),
+    case hb_ao:normalize_key(Type) of
         <<"error">> ->
             {error,
-                hb_converge:set(
+                hb_ao:set(
                     M1,
                     #{
                         <<"outbox">> => undefined,
@@ -267,13 +267,13 @@ results(M1, _M2, Opts) ->
                 )
             };
         <<"ok">> ->
-            [Ptr] = hb_converge:get(<<"results/wasm/output">>, M1, Opts),
+            [Ptr] = hb_ao:get(<<"results/wasm/output">>, M1, Opts),
             {ok, Str} = hb_beamr_io:read_string(Instance, Ptr),
             try hb_json:decode(Str) of
                 #{<<"ok">> := true, <<"response">> := Resp} ->
                     {ok, ProcessedResults} = json_to_message(Resp, Opts),
                     PostProcessed = postprocess_outbox(ProcessedResults, Proc, Opts),
-                    Out = hb_converge:set(
+                    Out = hb_ao:set(
                         M1,
                         <<"results">>,
                         PostProcessed,
@@ -284,7 +284,7 @@ results(M1, _M2, Opts) ->
                 _:_ ->
                     ?event(error, {json_error, Str}),
                     {error,
-                        hb_converge:set(
+                        hb_ao:set(
                             M1,
                             #{
                                 <<"results/outbox">> => undefined,
@@ -320,7 +320,7 @@ preprocess_results(Msg, _Opts) ->
         maps:from_list(
             lists:map(
                 fun({Key, Value}) ->
-                    {hb_converge:normalize_key(Key), Value}
+                    {hb_ao:normalize_key(Key), Value}
                 end,
                 maps:to_list(FilteredMsg)
             )
@@ -330,7 +330,7 @@ preprocess_results(Msg, _Opts) ->
 
 %% @doc Convert a message with tags into a map of their key-value pairs.
 tags_to_map(Msg) ->
-    NormMsg = hb_converge:normalize_keys(Msg),
+    NormMsg = hb_ao:normalize_keys(Msg),
     RawTags = maps:get(<<"tags">>, NormMsg, []),
     TagList =
         [
@@ -347,13 +347,13 @@ postprocess_outbox(Msg, Proc, Opts) ->
         maps:map(
             fun(_Key, XMsg) ->
                 XMsg#{
-                    <<"from-process">> => hb_converge:get(id, Proc, Opts),
-                    <<"from-image">> => hb_converge:get(<<"image">>, Proc, Opts)
+                    <<"from-process">> => hb_ao:get(id, Proc, Opts),
+                    <<"from-image">> => hb_ao:get(<<"image">>, Proc, Opts)
                 }
             end,
-            hb_converge:get(<<"outbox">>, Msg, #{}, Opts)
+            hb_ao:get(<<"outbox">>, Msg, #{}, Opts)
         ),
-    hb_converge:set(Msg, <<"outbox">>, AdjustedOutbox, Opts).
+    hb_ao:set(Msg, <<"outbox">>, AdjustedOutbox, Opts).
 
 %%% Tests
 
@@ -366,7 +366,7 @@ generate_stack(File, _Mode) ->
     test_init(),
     Wallet = hb:wallet(),
     Msg0 = dev_wasm:cache_wasm_image(File),
-    Image = hb_converge:get(<<"image">>, Msg0, #{}),
+    Image = hb_ao:get(<<"image">>, Msg0, #{}),
     Msg1 = Msg0#{
         <<"device">> => <<"Stack@1.0">>,
         <<"device-stack">> =>
@@ -388,7 +388,7 @@ generate_stack(File, _Mode) ->
                 <<"authority">> => hb:address()
             }, Wallet)
     },
-    {ok, Msg2} = hb_converge:resolve(Msg1, <<"init">>, #{}),
+    {ok, Msg2} = hb_ao:resolve(Msg1, <<"init">>, #{}),
     Msg2.
 
 generate_aos_msg(ProcID, Code) ->
@@ -407,16 +407,16 @@ generate_aos_msg(ProcID, Code) ->
 basic_aos_call_test_() ->
     {timeout, 20, fun() ->
 		Msg = generate_stack("test/aos-2-pure-xs.wasm"),
-		Proc = hb_converge:get(<<"process">>, Msg, #{ hashpath => ignore }),
+		Proc = hb_ao:get(<<"process">>, Msg, #{ hashpath => ignore }),
 		ProcID = hb_message:id(Proc, all),
 		{ok, Msg3} =
-			hb_converge:resolve(
+			hb_ao:resolve(
 				Msg,
 				generate_aos_msg(ProcID, <<"return 1+1">>),
 				#{}
 			),
 		?event({res, Msg3}),
-		Data = hb_converge:get(<<"results/data">>, Msg3, #{}),
+		Data = hb_ao:get(<<"results/data">>, Msg3, #{}),
 		?assertEqual(<<"2">>, Data)
 	end}.
 
@@ -424,10 +424,10 @@ aos_stack_benchmark_test_() ->
     {timeout, 20, fun() ->
         BenchTime = 5,
         RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm"),
-        Proc = hb_converge:get(<<"process">>, RawWASMMsg, #{ hashpath => ignore }),
-        ProcID = hb_converge:get(id, Proc, #{}),
+        Proc = hb_ao:get(<<"process">>, RawWASMMsg, #{ hashpath => ignore }),
+        ProcID = hb_ao:get(id, Proc, #{}),
         {ok, Initialized} =
-        hb_converge:resolve(
+        hb_ao:resolve(
             RawWASMMsg,
             generate_aos_msg(ProcID, <<"return 1">>),
             #{}
@@ -435,7 +435,7 @@ aos_stack_benchmark_test_() ->
         Msg = generate_aos_msg(ProcID, <<"return 1+1">>),
         Iterations =
             hb:benchmark(
-                fun() -> hb_converge:resolve(Initialized, Msg, #{}) end,
+                fun() -> hb_ao:resolve(Initialized, Msg, #{}) end,
                 BenchTime
             ),
         hb_util:eunit_print(

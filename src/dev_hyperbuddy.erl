@@ -27,7 +27,7 @@ metrics(_, Req, Opts) ->
                 #{path => true,
                 headers => 
                     fun(Name, Default) ->
-                        hb_converge:get(Name, Req, Default, Opts)
+                        hb_ao:get(Name, Req, Default, Opts)
                     end,
                 registry => prometheus_registry:exists(<<"default">>),
                 standalone => false}
