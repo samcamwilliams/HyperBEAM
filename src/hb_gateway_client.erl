@@ -214,7 +214,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     % verify the data item and optionally add the explicit keys as committed
     % fields _if_ the node desires it.
     Embedded =
-        case ar_bundles:verify_item(TX) of
+        case try ar_bundles:verify_item(TX) catch _:_ -> false end of
             true ->
                 ?event({gql_verify_succeeded, Structured}),
                 Structured;
@@ -254,6 +254,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     {ok, Embedded}.
 
 normalize_null(null) -> <<>>;
+normalize_null(not_found) -> <<>>;
 normalize_null(Bin) when is_binary(Bin) -> Bin.
 
 decode_id_or_null(Bin) when byte_size(Bin) > 0 ->
