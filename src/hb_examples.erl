@@ -146,7 +146,7 @@ create_schedule_aos2_test_disabled() ->
                 <<"http://localhost:8734">>
         end,
     ProcMsg = #{
-        <<"Data-Protocol">> => <<"ao">>,
+        <<"data-protocol">> => <<"ao">>,
         <<"type">> => <<"Process">>,
         <<"variant">> => <<"ao.TN.1">>,
         <<"type">> => <<"Process">>,

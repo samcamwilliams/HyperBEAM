@@ -208,10 +208,10 @@ verify(Msg, _Req, _Opts) ->
 %% @doc Convert a #tx record into a message map recursively.
 from(Binary) when is_binary(Binary) -> Binary;
 from(TX) when is_record(TX, tx) ->
-    case lists:keyfind(<<"converge-type">>, 1, TX#tx.tags) of
+    case lists:keyfind(<<"ao-type">>, 1, TX#tx.tags) of
         false ->
             do_from(TX);
-        {<<"converge-type">>, <<"binary">>} ->
+        {<<"ao-type">>, <<"binary">>} ->
             TX#tx.data
     end.
 do_from(RawTX) ->
@@ -402,7 +402,7 @@ to(Binary) when is_binary(Binary) ->
     % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
     #tx{
-        tags= [{<<"converge-type">>, <<"binary">>}],
+        tags= [{<<"ao-type">>, <<"binary">>}],
         data = Binary
     };
 to(TX) when is_record(TX, tx) -> TX;
@@ -410,7 +410,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % The path is a special case so we normalized it first. It may have been
     % modified by `hb_ao' in order to set it to the current key that is
     % being executed. We should check whether the path is in the
-    % `priv/Converge/Original-Path' field, and if so, use that instead of the
+    % `priv/AO-Core/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
     TABM = hb_ao:normalize_keys(maps:without([<<"commitments">>], RawTABM)),
@@ -438,7 +438,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % mechanism for restoring original tags?
     M =
         case {maps:find(<<"path">>, TABMNoOrigTags), hb_private:from_message(TABMNoOrigTags)} of
-            {{ok, _}, #{ <<"converge">> := #{ <<"original-path">> := Path } }} ->
+            {{ok, _}, #{ <<"ao-core">> := #{ <<"original-path">> := Path } }} ->
                 maps:put(<<"path">>, Path, TABMNoOrigTags);
             _ -> TABMNoOrigTags
         end,

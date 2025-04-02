@@ -264,10 +264,10 @@ additional_keys(FromMsg, ToSched, Opts) ->
     hb_ao:set(
         ToSched,
         #{
-            <<"Data-Protocol">> => <<"ao">>,
-            <<"Variant">> => <<"ao.N.1">>,
-            <<"Type">> => <<"Message">>,
-            <<"From-Process">> => hb_message:id(FromMsg, all, Opts)
+            <<"data-protocol">> => <<"ao">>,
+            <<"variant">> => <<"ao.N.1">>,
+            <<"type">> => <<"Message">>,
+            <<"from-process">> => hb_message:id(FromMsg, all, Opts)
         },
         Opts#{ hashpath => ignore }
     ).

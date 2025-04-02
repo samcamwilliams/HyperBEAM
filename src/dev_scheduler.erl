@@ -15,7 +15,7 @@
 %%% '''
 
 -module(dev_scheduler).
-%%% Converge API functions:
+%%% AO-Core API functions:
 -export([info/0]).
 %%% Local scheduling functions:
 -export([schedule/3, router/4, register/3]).
@@ -1569,7 +1569,7 @@ http_get_json_schedule_test_() ->
 
 %%% Benchmarks
 
-single_converge(Opts) ->
+single_resolution(Opts) ->
     start(),
     BenchTime = 1,
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
@@ -1601,7 +1601,7 @@ single_converge(Opts) ->
         hb_ao:resolve(Msg1, Msg3, Opts)),
     ?event(bench, {res, Iterations - 1}),
     hb_util:eunit_print(
-        "Scheduled ~p messages through Converge in ~p seconds (~.2f msg/s)",
+        "Scheduled ~p messages through AO-Core in ~p seconds (~.2f msg/s)",
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 3).
@@ -1640,7 +1640,7 @@ benchmark_suite_test_() ->
 		rand:seed(exsplus, erlang:timestamp()),
 		Port = 30000 + rand:uniform(10000),
 		Bench = [
-			{benchmark, "benchmark", fun single_converge/1},
+			{benchmark, "benchmark", fun single_resolution/1},
 			{multihttp_benchmark, "multihttp_benchmark", fun many_clients/1}
 		],
 		filelib:ensure_dir(

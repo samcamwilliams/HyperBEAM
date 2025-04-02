@@ -1,5 +1,5 @@
 %%% @doc This module contains the device implementation of AO processes
-%%% in Converge. The core functionality of the module is in 'routing' requests
+%%% in AO-Core. The core functionality of the module is in 'routing' requests
 %%% for different functionality (scheduling, computing, and pushing messages)
 %%% to the appropriate device. This is achieved by swapping out the device 
 %%% of the process message with the necessary component in order to run the 
@@ -908,7 +908,7 @@ aos_state_access_via_http_test_() ->
         ProcID = hb_util:human_id(hb_message:id(Proc, all)),
         {ok, _InitRes} = hb_http:post(Node, <<"/schedule">>, Proc, Opts),
         Msg2 = hb_message:commit(#{
-            <<"data-prefix">> => <<"ao">>,
+            <<"data-protocol">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"type">> => <<"Message">>,
             <<"action">> => <<"Eval">>,
@@ -962,7 +962,7 @@ aos_state_patch_test_() ->
         {ok, Msg1} = hb_message:with_only_committed(Msg1Raw),
         ProcID = hb_message:id(Msg1, all),
         Msg2 = (hb_message:commit(#{
-            <<"data-prefix">> => <<"ao">>,
+            <<"data-protocol">> => <<"ao">>,
             <<"variant">> => <<"ao.N.1">>,
             <<"target">> => ProcID,
             <<"type">> => <<"Message">>,

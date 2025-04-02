@@ -1,4 +1,4 @@
-%%% @doc Hyperbeam is a decentralized node implementing the Converge Protocol
+%%% @doc Hyperbeam is a decentralized node implementing the AO-Core protocol
 %%% on top of Arweave.
 %%% 
 %%% This protocol offers a computation layer for executing arbitrary logic on 

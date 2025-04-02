@@ -1,7 +1,7 @@
-%%% @doc A router that attaches a HTTP server to the Converge resolver.
-%%% Because Converge is built to speak in HTTP semantics, this module
+%%% @doc A router that attaches a HTTP server to the AO-Core resolver.
+%%% Because AO-Core is built to speak in HTTP semantics, this module
 %%% only has to marshal the HTTP request into a message, and then
-%%% pass it to the Converge resolver. 
+%%% pass it to the AO-Core resolver. 
 %%% 
 %%% `hb_http:reply/4' is used to respond to the client, handling the 
 %%% process of converting a message back into an HTTP response.
@@ -17,7 +17,7 @@
 
 %% @doc Starts the HTTP server. Optionally accepts an `Opts' message, which
 %% is used as the source for server configuration settings, as well as the
-%% `Opts' argument to use for all Converge resolution requests downstream.
+%% `Opts' argument to use for all AO-Core resolution requests downstream.
 start() ->
     ?event(http, {start_store, <<"cache-mainnet">>}),
     Store = hb_opts:get(store, no_store, #{}),
@@ -259,9 +259,9 @@ cors_reply(Req, _ServerID) ->
     ?event(http_debug, {cors_reply, {req, Req}, {req2, Req2}}),
     {ok, Req2, no_state}.
 
-%% @doc Handle all non-CORS preflight requests as Converge requests. Execution 
+%% @doc Handle all non-CORS preflight requests as AO-Core requests. Execution 
 %% starts by parsing the HTTP request into HyerBEAM's message format, then
-%% passing the message directly to `meta@1.0` which handles calling Converge in
+%% passing the message directly to `meta@1.0` which handles calling AO-Core in
 %% the appropriate way.
 handle_request(RawReq, Body, ServerID) ->
     % Insert the start time into the request so that it can be used by the

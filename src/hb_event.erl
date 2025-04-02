@@ -47,10 +47,10 @@ log(Topic, X, ModStr, Func, Line, Opts) ->
 %% filtering debug messages. Similarly, events with a topic that begins with
 %% `debug' are ignored.
 increment(global, _Message, _Opts) -> ignored;
-increment(converge_core, _Message, _Opts) -> ignored;
-increment(converge_internal, _Message, _Opts) -> ignored;
-increment(converge_devices, _Message, _Opts) -> ignored;
-increment(converge_subresolution, _Message, _Opts) -> ignored;
+increment(ao_core, _Message, _Opts) -> ignored;
+increment(ao_internal, _Message, _Opts) -> ignored;
+increment(ao_devices, _Message, _Opts) -> ignored;
+increment(ao_subresolution, _Message, _Opts) -> ignored;
 increment(signature_base, _Message, _Opts) -> ignored;
 increment(id_base, _Message, _Opts) -> ignored;
 increment(parsing, _Message, _Opts) -> ignored;

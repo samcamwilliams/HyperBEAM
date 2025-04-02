@@ -13,11 +13,11 @@ This creates what is known as a hyper-parallel processing engine, allowing compu
 AO is built to support autonomous agents—self-executing programs that run independently. These agents can respond to events, process data, and execute logic without requiring centralized control. Because AO combines Arweave’s permanent storage with a fully decentralized execution environment, it overcomes many of the limitations found in traditional blockchains, making it more scalable, cost-efficient, and resilient for decentralized applications.
 
 Decentralized systems like Bitcoin have introduced strong guarantees of trustlessness and permissionlessness, but they are not absolute. Users still need to trust that the majority of mining power follows the rules and that cryptographic security remains intact.
-AO introduces a new approach where users do not need to trust any central authority or even other participants in the network. Instead, it relies entirely on cryptographic proofs and decentralized execution. The Converge Protocol, which powers AO, is built on two key principles:
+AO introduces a new approach where users do not need to trust any central authority or even other participants in the network. Instead, it relies entirely on cryptographic proofs and decentralized execution. The AO-Core protocol, which powers AO, is built on two key principles:
 - Trustlessness – Anyone can participate in the network without having to trust other participants to act honestly. Everything is verifiable and executed based on predefined rules.
 - Permissionlessness – No entity, individual, or group has the power to block another participant from accessing or using the network. Everyone has equal access to computation and storage resources.
 
-Unlike rigid blockchain models that enforce the same rules for all users, AO and Converge provide flexibility by allowing participants to choose from different levels of security, scalability, and computational resources. This way, users can collaborate while still maintaining control over their trade-offs.
+Unlike rigid blockchain models that enforce the same rules for all users, AO and AO-Core provide flexibility by allowing participants to choose from different levels of security, scalability, and computational resources. This way, users can collaborate while still maintaining control over their trade-offs.
 
 At the heart of AO is a unique concept: executable and isolated processes. These processes are self-contained pieces of code that are permanently stored on Arweave. Once stored, they can be executed at any time to produce specific results.
 
@@ -31,25 +31,25 @@ Each process in AO can:
 Instead of relying on a global consensus mechanism like Bitcoin or Ethereum, AO uses a more modular approach where messages trigger processes. These messages function like transactions or function calls in traditional systems, enabling communication and execution between nodes.
 The execution of these processes is supported by modular layers, including transmission, scheduling, and execution components. This modular structure allows the network to scale efficiently and enables what is known as hyper-parallel computing, where thousands of computations can run simultaneously without interference.
 
-## Converge Protocol: A new way to Process Data
+## AO-Core protocol: A new way to Process Data
 
-The Converge Protocol is a foundational system that makes it easier to process and manage data across decentralized networks. It is designed to work with standard web technologies like HTTP, making it more accessible and flexible than traditional blockchain-based architectures.
+The AO-Core protocol is a foundational system that makes it easier to process and manage data across decentralized networks. It is designed to work with standard web technologies like HTTP, making it more accessible and flexible than traditional blockchain-based architectures.
 
-At its core, Converge helps users create, track, and combine pieces of information efficiently by organizing them into three main components:
+At its core, AO-Core helps users create, track, and combine pieces of information efficiently by organizing them into three main components:
 - Messages – The smallest units of data and computation.
 - Devices – Systems that process and store messages.
 - Paths – The structures that connect and organize messages over time.
 
-By keeping messages small and lightweight, Converge reduces storage and computation costs. At the same time, it ensures scalability by distributing computations across multiple machines, increasing both speed and efficiency. Security is guaranteed through cryptographic proofs, ensuring that all data remains transparent and verifiable.
+By keeping messages small and lightweight, AO-Core reduces storage and computation costs. At the same time, it ensures scalability by distributing computations across multiple machines, increasing both speed and efficiency. Security is guaranteed through cryptographic proofs, ensuring that all data remains transparent and verifiable.
 
-### Messages: The Building Blocks of Converge
+### Messages: The Building Blocks of AO-Core
 
-At the heart of Converge’s decentralized system is the concept of Messages. Messages are the smallest units of data and computation, acting as the primary way that processes communicate and execute functions.
+At the heart of AO-Core’s decentralized system is the concept of Messages. Messages are the smallest units of data and computation, acting as the primary way that processes communicate and execute functions.
 
 Messages are processed by devices, stored permanently, and can be referenced at any time. This eliminates the need for centralized servers and ensures that every computation remains verifiable and traceable.
 
-Unlike traditional blockchains, where transactions are processed in a strict order, Converge allows messages to be processed in parallel. This is a critical innovation that enables AO’s hyper-parallel computing model.
-Because messages are lightweight and cryptographically linked, they can be distributed across many devices without causing congestion. This makes Converge much more scalable than traditional blockchain-based smart contract platforms.
+Unlike traditional blockchains, where transactions are processed in a strict order, AO-Core allows messages to be processed in parallel. This is a critical innovation that enables AO’s hyper-parallel computing model.
+Because messages are lightweight and cryptographically linked, they can be distributed across many devices without causing congestion. This makes AO-Core much more scalable than traditional blockchain-based smart contract platforms.
 
 Messages don’t just exist in isolation. Instead, they form a computation graph, where new messages reference previous ones to build complex logic and decision-making processes.
 For example, one message might contain raw data, while another message applies a transformation to that data. A third message might then combine multiple previous messages to create a final result.
@@ -57,9 +57,9 @@ This graph-based structure eliminates the need for sequential processing and all
 
 ### Devices: Systems That Process Messages
 
-In the Converge Protocol, a Device is a system responsible for processing and interpreting messages. Devices determine how messages are executed and play a key role in making AO a modular and flexible decentralized computing framework.
+In the AO-Core protocol, a Device is a system responsible for processing and interpreting messages. Devices determine how messages are executed and play a key role in making AO a modular and flexible decentralized computing framework.
 
-Unlike traditional blockchains, where every node processes every transaction, Converge distributes tasks among different devices. This eliminates bottlenecks, improves efficiency, and enables AO to support a wide variety of use cases without enforcing a single computation model.
+Unlike traditional blockchains, where every node processes every transaction, AO-Core distributes tasks among different devices. This eliminates bottlenecks, improves efficiency, and enables AO to support a wide variety of use cases without enforcing a single computation model.
 
 Devices are not fixed; they can be added or upgraded over time. Each node in the network can select which devices to support based on their hardware capabilities and desired functionality. This decentralized approach allows nodes to contribute computing power and storage in a way that best suits their resources.
 
@@ -72,18 +72,18 @@ For example, a high-performance node with a powerful CPU may choose to run compu
 
 ### Paths: Tracing the history of computation
 
-A Path in Converge is a way to link and structure messages over time, creating an organized and verifiable history of computations.
+A Path in AO-Core is a way to link and structure messages over time, creating an organized and verifiable history of computations.
 
-Paths ensure that every transformation applied to a message is traceable, reproducible, and secure. Instead of storing each version of data separately, Converge keeps only the essential transformation steps, reducing storage costs while maintaining a full history of how data evolved.
+Paths ensure that every transformation applied to a message is traceable, reproducible, and secure. Instead of storing each version of data separately, AO-Core keeps only the essential transformation steps, reducing storage costs while maintaining a full history of how data evolved.
 
 Each Path generates a HashPath, a cryptographic fingerprint that records every change applied to a message. This ensures once a message is recorded in a HashPath, it cannot be altered without detection.
-Instead of storing every version of a message, Converge saves only the essential transformation steps. At the end, large-scale distributed computing becomes possible because only the necessary parts of a message are retrieved and processed, reducing network congestion.
+Instead of storing every version of a message, AO-Core saves only the essential transformation steps. At the end, large-scale distributed computing becomes possible because only the necessary parts of a message are retrieved and processed, reducing network congestion.
 
-Paths function like version control systems (similar to Git), allowing Converge to maintain a structured and efficient way to track changes without wasting resources.
+Paths function like version control systems (similar to Git), allowing AO-Core to maintain a structured and efficient way to track changes without wasting resources.
 
 ## HyperBEAM
 
-HyperBEAM is the main implementation of the Converge protocol, written in Erlang, and serves as the backbone of AO’s decentralized operating system. By using Erlang and its BEAM runtime, HyperBEAM benefits from a battle-tested ecosystem designed for fault tolerance and distributed computing. 
+HyperBEAM is the main implementation of the AO-Core protocol, written in Erlang, and serves as the backbone of AO’s decentralized operating system. By using Erlang and its BEAM runtime, HyperBEAM benefits from a battle-tested ecosystem designed for fault tolerance and distributed computing. 
 This architecture ensures key features such as process isolation, message-passing, and efficient task scheduling, all of which align with the core principles of AO. Erlang’s lightweight processes and actor-based concurrency model mirror AO’s execution requirements, where independent agents must operate in parallel, communicate asynchronously, and recover from failures automatically—ensuring a robust, decentralized computing environment.
 
 One of HyperBEAM’s most important capabilities is its abstraction and modular design, which allows programs to execute independently of the underlying hardware. HyperBEAM provides a hardware-agnostic execution layer, enabling computations to run across a distributed network of nodes. 

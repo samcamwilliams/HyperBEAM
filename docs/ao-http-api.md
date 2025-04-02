@@ -1,10 +1,10 @@
-# Converge HTTP API Design notes
+# AO-Core HTTP API Design notes
 ### Date: 11 Jan, 2025.
 
-The Converge protocol is designed to layer a computation system on top of
+The AO-Core protocol is designed to layer a computation system on top of
 HTTP Semantics. As such, it offers syntax for HTTP requests that allow users to
 easily manipulate and traverse through the computation graph. This document
-describes the semantics and syntax of the Converge HTTP API.
+describes the semantics and syntax of the AO-Core HTTP API.
 
 ## Semantics and syntax
 
@@ -12,7 +12,7 @@ describes the semantics and syntax of the Converge HTTP API.
 ```
 GET /hashpath1/...
 ```
-- All keys after the base are interpreted as Converge messages individually, in 
+- All keys after the base are interpreted as AO-Core messages individually, in 
 a chain. For example, `GET /hashpath1/key1/key2` is equivalent to:
 ```
 GET /hashpath(hashpath1, key1)/key2
@@ -20,7 +20,7 @@ GET /hashpath(hashpath1, key1)/key2
 - Each path segment is interpreted as a key to resolve upon the message for the
 resolution of the previous message. The `key` is taken as the full path for
 that message during that resolution.
-- When Converge is not given a base hashpath (the first key is not a 43 character
+- When AO-Core is not given a base hashpath (the first key is not a 43 character
 base64URL encoded string), the request message is assumed to be its own base
 message, with the path applied alone as the request (`Message2`).
 - Query parameters are treated as equivalent to headers.

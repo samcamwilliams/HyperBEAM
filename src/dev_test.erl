@@ -4,7 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% A simple test device for Converge, so that we can test the functionality that
+%%% A simple test device for AO-Core, so that we can test the functionality that
 %%% depends on using Erlang's module system.
 %%% 
 %%% NOTE: This device is labelled `Test-Device/1.0' to avoid conflicts with

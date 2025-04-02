@@ -1,6 +1,6 @@
 %%% @doc A virtual filesystem device.
 %%% Implements a file-system-as-map structure, which is traversible externally.
-%%% Each file is a binary and each directory is a Converge message.
+%%% Each file is a binary and each directory is a AO-Core message.
 %%% Additionally, this module adds a series of WASI-preview-1 compatible
 %%% functions for accessing the filesystem as imported functions by WASM
 %%% modules.
@@ -70,28 +70,6 @@ init(M1, _M2, Opts) ->
 
 compute(Msg1) ->
     {ok, Msg1}.
-
-% %% @doc Encode the input message for inclusion in the VFS.
-% execute(M1, M2, Opts) ->
-%     case hb_ao:get(<<"Pass">>, M1, Opts) of
-%         1 ->
-%             MsgToProc = hb_ao:get(<<"Message">>, M2, Opts),
-%             JSON =
-%                 ar_bundles:serialize(
-%                     hb_message:convert(MsgToProc, tx, converge, #{}),
-%                     json
-%                 ),
-%             ?event(setting_message_vfs_key),
-%             {ok,
-%                 hb_ao:set(
-%                     M1,
-%                     <<"vfs/message">>,
-%                     JSON,
-%                     Opts
-%                 )
-%             };
-%         _ -> {ok, M1}
-%     end.
 
 %% @doc Return the stdout buffer from a state message.
 stdout(M) ->

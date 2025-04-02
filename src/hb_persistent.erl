@@ -1,4 +1,4 @@
-%%% @doc Creates and manages long-lived Converge resolution processes.
+%%% @doc Creates and manages long-lived AO-Core resolution processes.
 %%% These can be useful for situations where a message is large and expensive
 %%% to serialize and deserialize, or when executions should be deliberately
 %%% serialized to avoid parallel executions of the same computation. This 
@@ -145,12 +145,12 @@ group(Msg1, Msg2, Opts) ->
         hb_ao:truncate_args(Grouper, [Msg1, Msg2, Opts])
     ).
 
-%% @doc Register for performing a Converge resolution.
+%% @doc Register for performing a AO-Core resolution.
 register_groupname(Groupname, _Opts) ->
     ?event({registering_as, Groupname}),
     hb_name:register(Groupname).
 
-%% @doc Unregister for being the leader on a Converge resolution.
+%% @doc Unregister for being the leader on a AO-Core resolution.
 unregister(Msg1, Msg2, Opts) ->
     start(),
     unregister_groupname(group(Msg1, Msg2, Opts), Opts).

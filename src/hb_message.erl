@@ -1,6 +1,6 @@
 
 %%% @doc This module acts an adapter between messages, as modeled in the
-%%% Converge Protocol, and their uderlying binary representations and formats.
+%%% AO-Core protocol, and their uderlying binary representations and formats.
 %%% 
 %%% Unless you are implementing a new message serialization codec, you should
 %%% not need to interact with this module directly. Instead, use the
@@ -11,7 +11,7 @@
 %%% `hb_message' and the HyperBEAM caches can interact with multiple different
 %%% types of message formats:
 %%% 
-%%%     - Richly typed Converge structured messages.
+%%%     - Richly typed AO-Core structured messages.
 %%%     - Arweave transations.
 %%%     - ANS-104 data items.
 %%%     - HTTP Signed Messages.
@@ -33,8 +33,8 @@
 %%%     HTTP Signed Message ==> dev_codec_httpsig_conv:from/1 ==> TABM
 %%%     Flat Maps ==> dev_codec_flat:from/1 ==> TABM
 %%% 
-%%%     TABM ==> dev_codec_structured:to/1 ==> Converge Message
-%%%     Converge Message ==> dev_codec_structured:from/1 ==> TABM
+%%%     TABM ==> dev_codec_structured:to/1 ==> AO-Core Message
+%%%     AO-Core Message ==> dev_codec_structured:from/1 ==> TABM
 %%% 
 %%%     TABM ==> dev_codec_ans104:to/1 ==> Arweave TX/ANS-104
 %%%     TABM ==> dev_codec_httpsig_conv:to/1 ==> HTTP Signed Message
@@ -44,7 +44,7 @@
 %%% 
 %%% Additionally, this module provides a number of utility functions for
 %%% manipulating messages. For example, `hb_message:sign/2' to sign a message of
-%%% arbitrary type, or `hb_message:format/1' to print a Converge/TABM message in
+%%% arbitrary type, or `hb_message:format/1' to print a AO-Core/TABM message in
 %%% a human-readable format.
 %%% 
 %%% The `hb_cache' module is responsible for storing and retrieving messages in
@@ -70,14 +70,14 @@
 
 %% @doc Convert a message from one format to another. Taking a message in the
 %% source format, a target format, and a set of opts. If not given, the source
-%% is assumed to be `converge`. Additional codecs can be added by ensuring they
+%% is assumed to be `structured@1.0`. Additional codecs can be added by ensuring they
 %% are part of the `Opts` map -- either globally, or locally for a computation.
 %% 
 %% The encoding happens in two phases:
 %% 1. Convert the message to a TABM.
 %% 2. Convert the TABM to the target format.
 %% 
-%% The conversion to a TABM is done by the `converge' codec, which is always
+%% The conversion to a TABM is done by the `structured@1.0' codec, which is always
 %% available. The conversion from a TABM is done by the target codec.
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
@@ -251,7 +251,7 @@ verify(Msg, Committers) ->
             #{}),
     Res.
 
-%% @doc Return the unsigned version of a message in Converge format.
+%% @doc Return the unsigned version of a message in AO-Core format.
 uncommitted(Bin) when is_binary(Bin) -> Bin;
 uncommitted(Msg) ->
     maps:remove(<<"commitments">>, Msg).
@@ -671,7 +671,7 @@ filter_default_keys(Map) ->
 default_tx_message() ->
     maps:from_list(default_tx_list()).
 
-%% @doc Get the ordered list of fields as Converge keys and default values of
+%% @doc Get the ordered list of fields as AO-Core keys and default values of
 %% the tx record.
 default_tx_list() ->
     Keys = lists:map(fun hb_ao:normalize_key/1, record_info(fields, tx)),
@@ -1054,7 +1054,7 @@ deep_multisignature_test() ->
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
 
-tabm_converge_ids_equal_test(Codec) ->
+tabm_ao_ids_equal_test(Codec) ->
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"deep_data">> => #{
@@ -1470,7 +1470,7 @@ message_suite_test_() ->
         {"match test", fun match_test/1},
         {"single layer message to encoding test",
             fun single_layer_message_to_encoding_test/1},
-        {"tabm converge ids equal test", fun tabm_converge_ids_equal_test/1},
+        {"TABM AO-Core ids equal test", fun tabm_ao_ids_equal_test/1},
         {"message with large keys test", fun message_with_large_keys_test/1},
         {"nested message with large keys and content test",
             fun nested_message_with_large_keys_and_content_test/1},
