@@ -625,7 +625,8 @@ encode_tags(Tags) ->
 
 %% @doc Encode a string for Avro using ZigZag and VInt encoding.
 encode_avro_string(<<>>) ->
-    error;
+    % Zero length strings are treated as a special case, due to the Avro encoder.
+    << 0 >>;
 encode_avro_string(String) ->
     StringBytes = unicode:characters_to_binary(String, utf8),
     Length = byte_size(StringBytes),
@@ -819,8 +820,9 @@ decode_avro_name(NameSize, Rest, Count) ->
     {ValueSize, Rest3} = decode_zigzag(Rest2),
     decode_avro_value(ValueSize, Name, Rest3, Count).
 
-decode_avro_value(0, _, Rest, _) ->
-    {[], Rest};
+decode_avro_value(0, Name, Rest, Count) ->
+    {DecodedTags, NonAvroRest} = decode_avro_tags(Rest, Count - 1),
+    {[{Name, <<>>} | DecodedTags], NonAvroRest};
 decode_avro_value(ValueSize, Name, Rest, Count) ->
     <<Value:ValueSize/binary, Rest2/binary>> = Rest,
     {DecodedTags, NonAvroRest} = decode_avro_tags(Rest2, Count - 1),
@@ -854,7 +856,7 @@ ar_bundles_test_() ->
     [
         {timeout, 30, fun test_no_tags/0},
         {timeout, 30, fun test_with_tags/0},
-        {timeout, 30, fun test_bundle_with_zero_length_tag/0},
+        {timeout, 30, fun test_with_zero_length_tag/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
         {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
@@ -869,7 +871,7 @@ ar_bundles_test_() ->
     ].
 
 run_test() ->
-    test_bundle_with_one_item().
+    test_with_zero_length_tag().
 
 test_no_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -906,13 +908,19 @@ test_with_tags() ->
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
 
-test_bundle_with_zero_length_tag() ->
-    Item = #tx{
+test_with_zero_length_tag() ->
+    Item = normalize(#tx{
         format = ans104,
-        tags = [{<<"tag1">>, <<"">>}],
-        data = <<"data">>
-    },
-    ?assertThrow({cannot_encode_empty_string, <<"tag1">>, <<>>}, serialize([Item])).
+        tags = [
+            {<<"normal-tag-1">>, <<"tag1">>},
+            {<<"empty-tag">>, <<>>},
+            {<<"normal-tag-2">>, <<"tag2">>}
+        ],
+        data = <<"Typical data field.">>
+    }),
+    Serialized = serialize(Item),
+    Deserialized = deserialize(Serialized),
+    ?assertEqual(Item, Deserialized).
 
 test_unsigned_data_item_id() ->
     Item1 = deserialize(
