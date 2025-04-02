@@ -71,14 +71,11 @@ If you intend to offer TEE-based computation of AO-Core devices, please see the
 
 ## Running HyperBEAM
 
-Once the code is compiled, you can start HyperBEAM in one of two ways:
+Once the code is compiled, you can start HyperBEAM with:
 
 ```bash
-# Default configuration
+# Start with default configuration
 rebar3 shell
-
-# Custom configuration/mainnet connection
-rebar3 shell --eval "hb:start_mainnet(#{ port => 10001, priv_key_location => <<\"./wallet.json\">>})."
 ```
 
 The default configuration uses settings from `hb_opts.erl`, which preloads 
@@ -93,20 +90,19 @@ curl http://localhost:10000/~meta@1.0/info
 ```
 
 If you receive a response with node information, your HyperBEAM
- installation is working properly.
+installation is working properly.
 
 ## Configuration
 
 HyperBEAM can be configured using a `~meta@1.0` device, which is initialized
  using either command line arguments or a configuration file.
 
-### Simple Configuration with config.flat
+### Configuration with `config.flat`
 
-If you're new to HyperBEAM, you can start with a simple configuration file for
- basic settings:
+The simplest way to configure HyperBEAM is using the `config.flat` file:
 
 1. A file named `config.flat` is already included in the project directory
-2. Update to include configuration values:
+2. Update to include your configuration values:
 
 ```
 port: 10000
@@ -116,29 +112,17 @@ priv_key_location: /path/to/wallet.json
 3. Start HyperBEAM with `rebar3 shell`
 
 HyperBEAM will automatically load your configuration and display the active
- settings in the startup log.
+settings in the startup log.
 
-### Recommended Configuration Approach
+### Creating a Release
 
-For any non-trivial configuration, especially those with complex data types, 
-use the Erlang API directly:
+For production environments, you can create a standalone release:
 
 ```bash
-rebar3 shell --eval "hb:start_mainnet(#{ 
-  port => 10001,
-  priv_key_location => <<\"./wallet.json\">>, 
-  mode => debug,
-
-  http_extra_opts => #{
-    force_message => true,
-    store => {hb_store_fs, #{ prefix => \"local-storage\" }}
-    cache_control => [<<\"always\">>]
-  }
-})."
+rebar3 release
 ```
 
-This method allows you to use any Erlang data type and structure without
- limitations and is the recommended approach for production deployments.
+This creates a release in `_build/default/rel/hb` that can be deployed independently.
 
 ### Runtime Configuration Changes
 
