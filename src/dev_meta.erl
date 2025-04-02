@@ -171,7 +171,7 @@ adopt_node_message(Request, NodeMsg) ->
             {ok, MergedOpts}
     end.
 
-%% @doc Handle a AO-Core request, which is a list of messages. We apply
+%% @doc Handle an AO-Core request, which is a list of messages. We apply
 %% the node's pre-processor to the request first, and then resolve the request
 %% using the node's AO-Core implementation if its response was `ok'.
 %% After execution, we run the node's `postprocessor' message on the result of
@@ -263,7 +263,7 @@ embed_status({ErlStatus, Res}) ->
     HTTPCode = status_code({ErlStatus, Res}),
     {ok, #{ <<"status">> => HTTPCode, <<"body">> => Res }}.
 
-%% @doc Calculate the appropriate HTTP status code for a AO-Core result.
+%% @doc Calculate the appropriate HTTP status code for an AO-Core result.
 %% The order of precedence is:
 %% 1. The status code from the message.
 %% 2. The HTTP representation of the status code.

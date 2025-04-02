@@ -214,7 +214,7 @@ maybe_set(Map1, Map2) ->
     ).
 
 %% @doc Convert a cache source to a cache setting. The setting _must_ always be
-%% directly in the source, not a AO-Core-derivable value. The 
+%% directly in the source, not an AO-Core-derivable value. The 
 %% `to_cache_control_map' function is used as the source of settings in all
 %% cases, except where an `Opts' specifies that hashpaths should not be updated,
 %% which leads to the result not being cached (as it may be stored with an 

@@ -1,5 +1,5 @@
 %%% @doc This module implements HTTP Message Signatures as described in RFC-9421
-%%% (https://datatracker.ietf.org/doc/html/rfc9421), as a AO-Core device.
+%%% (https://datatracker.ietf.org/doc/html/rfc9421), as an AO-Core device.
 %%% It implements the codec standard (from/1, to/1), as well as the optional
 %%% commitment functions (id/3, sign/3, verify/3). The commitment functions
 %%% are found in this module, while the codec functions are relayed to the 

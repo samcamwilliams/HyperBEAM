@@ -83,7 +83,7 @@ The `uses` info key may be optionally utilized to signal to the environment whic
 
 ## The Stack Device
 
-In order to allow messages to have more flexibility in their execution, hyperbeam offers an implementation of a AO-Core `stack`-style device, which combines a series of devices on a message into a single 'stack' of executable transformations. This device allows many complex forms of processors to be built inside the AO-Core environment -- for example, AO processes -- whiile transferring the architecture's modularity and flexibility to them.
+In order to allow messages to have more flexibility in their execution, hyperbeam offers an implementation of an AO-Core `stack`-style device, which combines a series of devices on a message into a single 'stack' of executable transformations. This device allows many complex forms of processors to be built inside the AO-Core environment -- for example, AO processes -- whiile transferring the architecture's modularity and flexibility to them.
 
 When added as the highest `Device` tag on a message, the stack device scans the remainder of the message's tags looking for (and subsequently loading) any other messages it finds. When a user then calls an execution on top of a message containing a device, the device passes through each of the elements of the stack in turn, 'folding' over it.
 
