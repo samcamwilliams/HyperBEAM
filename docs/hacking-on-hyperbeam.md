@@ -53,15 +53,15 @@ would like to analyze would HB's path management `dev_message` modules are doing
 while you run your tests, just execute:
 
 ```
-	HB_PRINT=hb_path,hb_ao,converge_result rebar3 eunit --module=your_mod
+	HB_PRINT=hb_path,hb_ao,ao_result rebar3 eunit --module=your_mod
 ```
 
 Some useful logging events are:
 
 ```
-    converge_result: Outputs every AO-Core computation result (M1, M2, and M3).
+    ao_result: Outputs every AO-Core computation result (M1, M2, and M3).
     worker: Information about spawns and registrations of worker processes.
-    converge_core: Output information about progression through the core 
+    ao_core: Output information about progression through the core 
     computation loop of AO-Core. Produces a large volume of output.
 ```
 
