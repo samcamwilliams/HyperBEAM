@@ -14,7 +14,6 @@
 %%% with a refusal to execute.
 -module(hb_opts).
 -export([get/1, get/2, get/3, load/1, default_message/0, mimic_default_types/2]).
--include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
 %% @doc The default configuration options of the hyperbeam node.
@@ -239,6 +238,12 @@ get(Key, Default, Opts) ->
     % No preference was set in Opts, so we default to local.
     ?MODULE:get(Key, Default, Opts#{ prefer => local }).
 
+-ifdef(TEST).
+-define(DEFAULT_PRINT_OPTS, "error").
+-else.
+-define(DEFAULT_PRINT_OPTS, "error,http_short,compute_short,push_short").
+-endif.
+
 -define(ENV_KEYS,
     #{
         priv_key_location => {"HB_KEY", "hyperbeam-key.json"},
@@ -252,11 +257,7 @@ get(Key, Default, Opts) ->
                     (Str) when Str == "true" -> true;
                     (Str) -> string:tokens(Str, ",")
                 end,
-                {conditional,
-                    test,
-                    "error",
-                    "error,http_short,compute_short,push_short"
-                }
+                ?DEFAULT_PRINT_OPTS
             }
     }
 ).
@@ -266,14 +267,28 @@ global_get(Key, Default) ->
     case maps:get(Key, ?ENV_KEYS, Default) of
         Default -> config_lookup(Key, Default);
         {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
-            ValParser(os:getenv(EnvKey, normalize_default(DefaultValue)));
+            ValParser(cached_os_env(EnvKey, normalize_default(DefaultValue)));
         {EnvKey, ValParser} when is_function(ValParser) ->
-            case os:getenv(EnvKey, not_found) of
+            case cached_os_env(EnvKey, not_found) of
                 not_found -> config_lookup(Key, Default);
                 Value -> ValParser(Value)
             end;
         {EnvKey, DefaultValue} ->
-            os:getenv(EnvKey, DefaultValue)
+            cached_os_env(EnvKey, DefaultValue)
+    end.
+
+%% @doc Cache the result of os:getenv/1 in the process dictionary, as it never
+%% changes during the lifetime of a node.
+cached_os_env(Key, DefaultValue) ->
+    case erlang:get({os_env, Key}) of
+        undefined ->
+            case os:getenv(Key) of
+                false -> DefaultValue;
+                Value ->
+                    erlang:put({os_env, Key}, Value),
+                    Value
+            end;
+        Value -> Value
     end.
 
 %% @doc Get an option from environment variables, optionally consulting the
@@ -329,6 +344,9 @@ mimic_default_types(Map, Mode) ->
     
 %%% Tests
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
 global_get_test() ->
     ?assertEqual(debug, ?MODULE:get(mode)),
     ?assertEqual(debug, ?MODULE:get(mode, production)),
@@ -371,3 +389,4 @@ load_test() ->
     ?assertEqual(<<"https://ao.computer">>, maps:get(host, Conf)),
     % An atom, where the key contained a header-key `-' rather than a `_'.
     ?assertEqual(false, maps:get(await_inprogress, Conf)).
+-endif.
