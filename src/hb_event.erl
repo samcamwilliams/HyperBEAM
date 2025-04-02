@@ -111,4 +111,6 @@ parse_name(Name) when is_tuple(Name) ->
 parse_name(Name) when is_atom(Name) ->
     atom_to_binary(Name, utf8);
 parse_name(Name) when is_binary(Name) ->
-    Name.
+    Name;
+parse_name(Name) when is_list(Name) ->
+    iolist_to_binary(Name).

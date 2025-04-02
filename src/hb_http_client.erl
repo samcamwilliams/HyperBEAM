@@ -127,8 +127,7 @@ gun_req(Args, ReestablishedConnection, Opts) ->
 init(Opts) ->
     case hb_opts:get(prometheus, not hb_features:test(), Opts) of
         true ->
-            ?event(debug,
-                {starting_prometheus_application,
+            ?event({starting_prometheus_application,
                     {test_mode, hb_features:test()}
                 }
             ),
