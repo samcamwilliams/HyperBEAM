@@ -18,7 +18,7 @@
 %%% Because each message implies a device that can resolve its keys, as well
 %%% as generating a merkle tree of the computation that led to the result,
 %%% you can see Converge Protocol as a system for cryptographically chaining 
-%%% the execution of `combinators'. See `docs/converge-protocol.md' for more 
+%%% the execution of `combinators'. See `docs/ao-core-protocol.md' for more 
 %%% information about Converge.
 %%% 
 %%% The `Fun(Message1, Message2)' pattern is repeated throughout the HyperBEAM 
@@ -89,7 +89,7 @@
 %%% `add_key':          Whether to add the key to the start of the arguments.
 %%% 					Default: `<not set>'.
 %%% '''
--module(hb_converge).
+-module(hb_ao).
 %%% Main Converge API:
 -export([resolve/2, resolve/3, resolve_many/2]).
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
@@ -99,7 +99,7 @@
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
 -export([set/2, set/3, set/4, remove/2, remove/3]).
-%%% Exports for tests in hb_converge_tests.erl:
+%%% Exports for tests in hb_ao_test_vectors.erl:
 -export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
 
@@ -1118,9 +1118,9 @@ normalize_keys(Map) when is_map(Map) ->
     maps:from_list(
         lists:map(
             fun({Key, Value}) when is_map(Value) ->
-                {hb_converge:normalize_key(Key), Value};
+                {hb_ao:normalize_key(Key), Value};
             ({Key, Value}) ->
-                {hb_converge:normalize_key(Key), Value}
+                {hb_ao:normalize_key(Key), Value}
             end,
             maps:to_list(Map)
         )
@@ -1216,7 +1216,7 @@ verify_device_compatibility(Msg, Opts) ->
                 {true,
                     {
                         hb_util:key_to_atom(
-                            hb_converge:normalize_key(Key),
+                            hb_ao:normalize_key(Key),
                             new_atoms
                         ),
                         Value

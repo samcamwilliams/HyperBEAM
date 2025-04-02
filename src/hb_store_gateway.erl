@@ -223,12 +223,12 @@ resolve_on_gateway_test_() ->
         % only an explicit key.
         ?assertMatch(
             {ok, <<"Process">>},
-            hb_converge:resolve(TestProc, <<"type">>, Opts)
+            hb_ao:resolve(TestProc, <<"type">>, Opts)
         ),
         % Next, we resolve the schedule key on the message, as a `process@1.0`
         % message.
         {ok, X} =
-            hb_converge:resolve(
+            hb_ao:resolve(
                 {as, <<"process@1.0">>, TestProc},
                 <<"schedule">>,
                 Opts

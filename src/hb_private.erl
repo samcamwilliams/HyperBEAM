@@ -11,7 +11,7 @@
 %%% as converge paths if you would like to have private `devices` in the
 %%% messages non-public zone.
 %%% 
-%%% See `hb_converge' for more information about the Converge Protocol
+%%% See `hb_ao' for more information about the Converge Protocol
 %%% and private elements of messages.
 
 -module(hb_private).
@@ -39,7 +39,7 @@ get(InputPath, Msg, Default, Opts) ->
     ?event({get_private, {in, InputPath}, {out, Path}}),
     % Resolve the path against the private element of the message.
     Resolve =
-        hb_converge:resolve(
+        hb_ao:resolve(
             from_message(Msg),
             #{ <<"path">> => Path },
             priv_converge_opts(Opts)
@@ -54,13 +54,13 @@ set(Msg, InputPath, Value, Opts) ->
     Path = remove_private_specifier(InputPath),
     Priv = from_message(Msg),
     ?event({set_private, {in, InputPath}, {out, Path}, {value, Value}, {opts, Opts}}),
-    NewPriv = hb_converge:set(Priv, Path, Value, priv_converge_opts(Opts)),
+    NewPriv = hb_ao:set(Priv, Path, Value, priv_converge_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 set(Msg, PrivMap, Opts) ->
     CurrentPriv = from_message(Msg),
     ?event({set_private, {in, PrivMap}, {opts, Opts}}),
-    NewPriv = hb_converge:set(CurrentPriv, PrivMap, priv_converge_opts(Opts)),
+    NewPriv = hb_ao:set(CurrentPriv, PrivMap, priv_converge_opts(Opts)),
     ?event({set_private_res, {out, NewPriv}}),
     set_priv(Msg, NewPriv).
 
@@ -73,7 +73,7 @@ set_priv(Msg, PrivMap) ->
 
 %% @doc Check if a key is private.
 is_private(Key) ->
-	case hb_converge:normalize_key(Key) of
+	case hb_ao:normalize_key(Key) of
 		<<"priv", _/binary>> -> true;
 		_ -> false
 	end.
@@ -108,7 +108,7 @@ set_private_test() ->
 get_private_key_test() ->
     M1 = #{<<"a">> => 1, <<"priv">> => #{<<"b">> => 2}},
     ?assertEqual(not_found, get(<<"a">>, M1, #{})),
-    {ok, [<<"a">>]} = hb_converge:resolve(M1, <<"keys">>, #{}),
+    {ok, [<<"a">>]} = hb_ao:resolve(M1, <<"keys">>, #{}),
     ?assertEqual(2, get(<<"b">>, M1, #{})),
-    {error, _} = hb_converge:resolve(M1, <<"priv/a">>, #{}),
-    {error, _} = hb_converge:resolve(M1, <<"priv">>, #{}).
+    {error, _} = hb_ao:resolve(M1, <<"priv/a">>, #{}),
+    {error, _} = hb_ao:resolve(M1, <<"priv">>, #{}).

@@ -90,9 +90,9 @@ calculate_ids(Base, Req, NodeOpts) ->
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
     DevMod =
-        case hb_converge:message_to_device(#{ <<"device">> => IDMod }, NodeOpts) of
+        case hb_ao:message_to_device(#{ <<"device">> => IDMod }, NodeOpts) of
             ?MODULE ->
-                hb_converge:message_to_device(
+                hb_ao:message_to_device(
                     #{ <<"device">> => ?DEFAULT_ID_DEVICE },
                     NodeOpts
                 );
@@ -100,10 +100,10 @@ calculate_ids(Base, Req, NodeOpts) ->
         end,
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
-    case hb_converge:find_exported_function(Base, DevMod, id, 3, NodeOpts) of
+    case hb_ao:find_exported_function(Base, DevMod, id, 3, NodeOpts) of
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
-            apply(Fun, hb_converge:truncate_args(Fun, [Base, Req, NodeOpts]));
+            apply(Fun, hb_ao:truncate_args(Fun, [Base, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
@@ -173,10 +173,10 @@ commit(Self, Req, Opts) ->
     % We _do not_ set the `device` key in the message, as the device will be
     % part of the commitment. Instead, we find the device module's `commit`
     % function and apply it.
-    AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
-    {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, commit, 3, Opts),
+    AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, Opts),
+    {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, Opts),
     Encoded = hb_message:convert(Base, tabm, Opts),
-    {ok, Committed} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
+    {ok, Committed} = apply(AttFun, hb_ao:truncate_args(AttFun, [Encoded, Req, Opts])),
     {ok, hb_message:convert(Committed, <<"structured@1.0">>, Opts)}.
 
 %% @doc Verify a message. By default, all commitments are verified. The
@@ -229,12 +229,12 @@ exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
             ?DEFAULT_ATT_DEVICE
         ),
     AttMod =
-        hb_converge:message_to_device(
+        hb_ao:message_to_device(
             #{ <<"device">> => AttDev },
             Opts
         ),
     {ok, AttFun} =
-        hb_converge:find_exported_function(
+        hb_ao:find_exported_function(
             CommitmentMessage,
             AttMod,
             Func,
@@ -314,7 +314,7 @@ commitment_ids_from_request(Base, Req, Opts) ->
     ReqCommitters =
         case maps:get(<<"committers">>, Req, <<"none">>) of
             X when is_list(X) -> X;
-            Descriptor -> hb_converge:normalize_key(Descriptor)
+            Descriptor -> hb_ao:normalize_key(Descriptor)
         end,
     RawReqCommitments =
         maps:get(
@@ -328,7 +328,7 @@ commitment_ids_from_request(Base, Req, Opts) ->
     ReqCommitments =
         case RawReqCommitments of
             X2 when is_list(X2) -> X2;
-            Descriptor2 -> hb_converge:normalize_key(Descriptor2)
+            Descriptor2 -> hb_ao:normalize_key(Descriptor2)
         end,
     ?event({commitment_ids_from_request, {req_commitments, ReqCommitments}, {req_committers, ReqCommitters}}),
     % Get the commitments to verify.
@@ -488,7 +488,7 @@ set(Message1, NewValuesMsg, Opts) ->
     OverwrittenCommittedKeys =
         lists:filtermap(
             fun(Key) ->
-                NormKey = hb_converge:normalize_key(Key),
+                NormKey = hb_ao:normalize_key(Key),
                 ?event({checking_committed_key, {key, Key}, {norm_key, NormKey}}),
                 Res = case lists:member(NormKey, KeysToSet) of
                     true -> {true, NormKey};
@@ -544,7 +544,7 @@ remove(Message1, #{ <<"items">> := Keys }) ->
 
 %% @doc Get the public keys of a message.
 keys(Msg) when not is_map(Msg) ->
-    case hb_converge:normalize_keys(Msg) of
+    case hb_ao:normalize_keys(Msg) of
         NormMsg when is_map(NormMsg) -> keys(NormMsg);
         _ -> throw(badarg)
     end;
@@ -575,8 +575,8 @@ get(Key, Msg, _Msg2) ->
 %% implement a case-insensitive key lookup rather than delegating to
 %% `maps:get/2'. Encode the key to a binary if it is not already.
 case_insensitive_get(Key, Msg) ->
-    NormKey = hb_converge:normalize_key(Key),
-    NormMsg = hb_converge:normalize_keys(Msg),
+    NormKey = hb_ao:normalize_key(Key),
+    NormMsg = hb_ao:normalize_keys(Msg),
     case maps:get(NormKey, NormMsg, not_found) of
         not_found -> {error, not_found};
         Value -> {ok, Value}
@@ -596,7 +596,7 @@ is_private_mod_test() ->
 %%% Device functionality tests:
 
 keys_from_device_test() ->
-    ?assertEqual({ok, [<<"a">>]}, hb_converge:resolve(#{ <<"a">> => 1 }, keys, #{})).
+    ?assertEqual({ok, [<<"a">>]}, hb_ao:resolve(#{ <<"a">> => 1 }, keys, #{})).
 
 case_insensitive_get_test() ->
 	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"a">> => 1 })),
@@ -607,17 +607,17 @@ case_insensitive_get_test() ->
 private_keys_are_filtered_test() ->
     ?assertEqual(
         {ok, [<<"a">>]},
-        hb_converge:resolve(#{ <<"a">> => 1, <<"private">> => 2 }, keys, #{})
+        hb_ao:resolve(#{ <<"a">> => 1, <<"private">> => 2 }, keys, #{})
     ),
     ?assertEqual(
         {ok, [<<"a">>]},
-        hb_converge:resolve(#{ <<"a">> => 1, <<"priv_foo">> => 4 }, keys, #{})
+        hb_ao:resolve(#{ <<"a">> => 1, <<"priv_foo">> => 4 }, keys, #{})
     ).
 
 cannot_get_private_keys_test() ->
     ?assertEqual(
         {error, not_found},
-        hb_converge:resolve(
+        hb_ao:resolve(
             #{ <<"a">> => 1, <<"private_key">> => 2 },
             <<"private_key">>,
             #{ hashpath => ignore }
@@ -625,19 +625,19 @@ cannot_get_private_keys_test() ->
     ).
 
 key_from_device_test() ->
-    ?assertEqual({ok, 1}, hb_converge:resolve(#{ <<"a">> => 1 }, <<"a">>, #{})).
+    ?assertEqual({ok, 1}, hb_ao:resolve(#{ <<"a">> => 1 }, <<"a">>, #{})).
 
 remove_test() ->
 	Msg = #{ <<"key1">> => <<"Value1">>, <<"key2">> => <<"Value2">> },
 	?assertMatch({ok, #{ <<"key2">> := <<"Value2">> }},
-		hb_converge:resolve(
+		hb_ao:resolve(
             Msg,
             #{ <<"path">> => <<"remove">>, <<"item">> => <<"key1">> },
             #{ hashpath => ignore }
         )
     ),
 	?assertMatch({ok, #{}},
-		hb_converge:resolve(
+		hb_ao:resolve(
             Msg,
             #{ <<"path">> => <<"remove">>, <<"items">> => [<<"key1">>, <<"key2">>] },
             #{ hashpath => ignore }
@@ -648,13 +648,13 @@ set_conflicting_keys_test() ->
 	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => <<"Value2">> },
 	?assertMatch({ok, #{ <<"dangerous">> := <<"Value2">> }},
-		hb_converge:resolve(Msg1, Msg2, #{})).
+		hb_ao:resolve(Msg1, Msg2, #{})).
 
 unset_with_set_test() ->
 	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
 	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
-		hb_converge:resolve(Msg1, Msg2, #{ hashpath => ignore })).
+		hb_ao:resolve(Msg1, Msg2, #{ hashpath => ignore })).
 
 set_ignore_undefined_test() ->
 	Msg1 = #{ <<"test-key">> => <<"Value1">> },
@@ -670,7 +670,7 @@ verify_test() ->
     ?event({bad_signed, BadSigned}),
     ?assertEqual(false, hb_message:verify(BadSigned)),
     ?assertEqual({ok, true},
-        hb_converge:resolve(
+        hb_ao:resolve(
             #{ <<"device">> => <<"message@1.0">> },
             #{ <<"path">> => <<"verify">>, <<"body">> => Signed },
             #{ hashpath => ignore }
@@ -678,7 +678,7 @@ verify_test() ->
     ),
     % Test that we can verify a message without specifying the device explicitly.
     ?assertEqual({ok, true},
-        hb_converge:resolve(
+        hb_ao:resolve(
             #{},
             #{ <<"path">> => <<"verify">>, <<"body">> => Signed },
             #{ hashpath => ignore }

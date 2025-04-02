@@ -153,7 +153,7 @@
 % %     BenchTime = 3,
 % %     BenchWorkers = 16,
 % %     Msg1 = dev_scheduler:test_process(),
-% %     Proc = hb_converge:get(process, Msg1, #{ hashpath => ignore }),
+% %     Proc = hb_ao:get(process, Msg1, #{ hashpath => ignore }),
 % %     ProcID = hb_util:id(Proc),
 % %     ?event({benchmark_start, ?MODULE}),
 % %     Iterations = hb:benchmark(

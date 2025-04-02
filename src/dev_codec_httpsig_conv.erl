@@ -459,7 +459,7 @@ group_maps(Map, Parent, Top) when is_map(Map) ->
     {Flattened, NewTop} = maps:fold(
         fun(Key, Value, {CurMap, CurTop}) ->
             ?event({group_maps, {key, Key}, {value, Value}}),
-            NormKey = hb_converge:normalize_key(Key),
+            NormKey = hb_ao:normalize_key(Key),
             FlatK =
                 case Parent of
                     <<>> -> NormKey;
@@ -632,11 +632,11 @@ encode_http_msg(Httpsig) ->
 %% @doc All maps are encoded into the body of the HTTP message
 %% to be further encoded later.
 field_to_http(Httpsig, {Name, Value}, _Opts) when is_map(Value) ->
-    NormalizedName = hb_converge:normalize_key(Name),
+    NormalizedName = hb_ao:normalize_key(Name),
     OldBody = maps:get(<<"body">>, Httpsig, #{}),
     Httpsig#{ <<"body">> => OldBody#{ NormalizedName => Value } };
 field_to_http(Httpsig, {Name, Value}, Opts) when is_binary(Value) ->
-    NormalizedName = hb_converge:normalize_key(Name),
+    NormalizedName = hb_ao:normalize_key(Name),
     % The default location where the value is encoded within the HTTP
     % message depends on its size.
     % 

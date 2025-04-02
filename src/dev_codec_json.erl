@@ -26,9 +26,9 @@ committed(Msg) -> hb_message:committed(Msg).
 %% @doc Deserialize the JSON string found at the given path.
 deserialize(Base, Req, Opts) ->
     Payload = 
-        hb_converge:get(
+        hb_ao:get(
             Target =
-                hb_converge:get(
+                hb_ao:get(
                     <<"target">>,
                     Req,
                     <<"body">>,

@@ -152,7 +152,7 @@ find_id(Msg) ->
 %% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
 commit(MsgToSign, _Req, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    NormMsg = hb_converge:normalize_keys(MsgToSign),
+    NormMsg = hb_ao:normalize_keys(MsgToSign),
     % The hashpath, if present, is encoded as a HTTP Sig tag,
     % added as a field on the commitment, and then the field is removed from the Msg,
     % so that it is not included in the actual signature matierial.

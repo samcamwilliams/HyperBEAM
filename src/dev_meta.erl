@@ -28,12 +28,12 @@ info(_) -> #{ exports => [info] }.
 handle(NodeMsg, RawRequest) ->
     ?event({singleton_tabm_request, RawRequest}),
     NormRequest = hb_singleton:from(RawRequest),
-    ?event(http, {request, hb_converge:normalize_keys(NormRequest)}),
+    ?event(http, {request, hb_ao:normalize_keys(NormRequest)}),
     case hb_opts:get(initialized, false, NodeMsg) of
         false ->
             Res =
                 embed_status(
-                    hb_converge:force_message(
+                    hb_ao:force_message(
                         handle_initialize(NormRequest, NodeMsg),
                         NodeMsg
                     )
@@ -59,14 +59,14 @@ handle_initialize([], _NodeMsg) ->
 %% request is signed by the owner of the node. If not, we return the node message
 %% as-is, aside all keys that are private (according to `hb_private').
 info(_, Request, NodeMsg) ->
-    case hb_converge:get(<<"method">>, Request, NodeMsg) of
+    case hb_ao:get(<<"method">>, Request, NodeMsg) of
         <<"GET">> ->
             ?event({get_config_req, Request, NodeMsg}),
 			DynamicKeys = add_dynamic_keys(NodeMsg),	
 			?event(green_zone, {get_config, DynamicKeys}),
             embed_status({ok, filter_node_msg(DynamicKeys)});
         <<"POST">> ->
-            case hb_converge:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
+            case hb_ao:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 permanent ->
                     embed_status(
                         {error,
@@ -182,7 +182,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
         {ok, PreProcessedMsg} ->
             ?event(
                 {result_after_preprocessing,
-                    hb_converge:normalize_keys(PreProcessedMsg)}
+                    hb_ao:normalize_keys(PreProcessedMsg)}
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
@@ -192,7 +192,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
             ),
             Res =
                 try
-                    hb_converge:resolve_many(
+                    hb_ao:resolve_many(
                         PreProcessedMsg,
                         HTTPOpts#{ force_message => true }
                     )
@@ -228,7 +228,7 @@ handle_converge(Req, Msgs, NodeMsg) ->
             ),
             ?event(http, {response, Output}),
             Output;
-        Res -> embed_status(hb_converge:force_message(Res, NodeMsg))
+        Res -> embed_status(hb_ao:force_message(Res, NodeMsg))
     end.
 
 %% @doc execute a message from the node message upon the user's request.
@@ -237,7 +237,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
         undefined -> {ok, Query};
         ProcessorMsg ->
             ?event({resolving_processor, PathKey, ProcessorMsg}),
-            Res = hb_converge:resolve(
+            Res = hb_ao:resolve(
                 ProcessorMsg,
                 #{
                     <<"path">> => PathKey,
@@ -318,7 +318,7 @@ config_test() ->
     Node = hb_http_server:start_node(#{ test_config_item => <<"test">> }),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})).
+    ?assertEqual(<<"test">>, hb_ao:get(<<"test_config_item">>, Res, #{})).
 
 %% @doc Test that we can't get the node message if the requested key is private.
 priv_inaccessible_test() ->
@@ -330,8 +330,8 @@ priv_inaccessible_test() ->
     ),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(<<"test">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
-    ?assertEqual(not_found, hb_converge:get(<<"priv_key">>, Res, #{})).
+    ?assertEqual(<<"test">>, hb_ao:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"priv_key">>, Res, #{})).
 
 %% @doc Test that we can't set the node message if the request is not signed by
 %% the owner of the node.
@@ -350,8 +350,8 @@ unauthorized_set_node_msg_fails_test() ->
             #{}
         ),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    ?assertEqual(not_found, hb_converge:get(<<"evil_config_item">>, Res, #{})),
-    ?assertEqual(0, length(hb_converge:get(<<"node_history">>, Res, [], #{}))).
+    ?assertEqual(not_found, hb_ao:get(<<"evil_config_item">>, Res, #{})),
+    ?assertEqual(0, length(hb_ao:get(<<"node_history">>, Res, [], #{}))).
 
 %% @doc Test that we can set the node message if the request is signed by the
 %% owner of the node.
@@ -378,8 +378,8 @@ authorized_set_node_msg_succeeds_test() ->
     ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
-    ?assertEqual(1, length(hb_converge:get(<<"node_history">>, Res, [], #{}))).
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(1, length(hb_ao:get(<<"node_history">>, Res, [], #{}))).
 
 %% @doc Test that an uninitialized node will not run computation.
 uninitialized_node_test() ->
@@ -414,7 +414,7 @@ permanent_node_message_test() ->
     ?event({set_res, SetRes1}),
     {ok, Res} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res, #{})),
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res, #{})),
     {error, SetRes2} =
         hb_http:post(
             Node,
@@ -430,8 +430,8 @@ permanent_node_message_test() ->
     ?event({set_res, SetRes2}),
     {ok, Res2} = hb_http:get(Node, #{ <<"path">> => <<"/~meta@1.0/info">> }, #{}),
     ?event({get_res, Res2}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})),
-    ?assertEqual(1, length(hb_converge:get(<<"node_history">>, Res2, [], #{}))).
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, #{})),
+    ?assertEqual(1, length(hb_ao:get(<<"node_history">>, Res2, [], #{}))).
 
 %% @doc Test that we can claim the node correctly and set the node message after.
 claim_node_test() ->
@@ -458,7 +458,7 @@ claim_node_test() ->
     ?event({res, SetRes}),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res}),
-    ?assertEqual(hb_util:human_id(Address), hb_converge:get(<<"operator">>, Res, #{})),
+    ?assertEqual(hb_util:human_id(Address), hb_ao:get(<<"operator">>, Res, #{})),
     {ok, SetRes2} =
         hb_http:post(
             Node,
@@ -474,8 +474,8 @@ claim_node_test() ->
     ?event({res, SetRes2}),
     {ok, Res2} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
     ?event({res, Res2}),
-    ?assertEqual(<<"test2">>, hb_converge:get(<<"test_config_item">>, Res2, #{})),
-    ?assertEqual(2, length(hb_converge:get(<<"node_history">>, Res2, [], #{}))).
+    ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, #{})),
+    ?assertEqual(2, length(hb_ao:get(<<"node_history">>, Res2, [], #{}))).
 
 %% @doc Test that we can use a preprocessor upon a request.
 % preprocessor_test() ->

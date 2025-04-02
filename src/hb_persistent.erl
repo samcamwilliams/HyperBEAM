@@ -2,7 +2,7 @@
 %%% These can be useful for situations where a message is large and expensive
 %%% to serialize and deserialize, or when executions should be deliberately
 %%% serialized to avoid parallel executions of the same computation. This 
-%%% module is called during the core `hb_converge' execution process, so care
+%%% module is called during the core `hb_ao' execution process, so care
 %%% must be taken to avoid recursive spawns/loops.
 %%% 
 %%% Built using the `pg' module, which is a distributed Erlang process group
@@ -139,10 +139,10 @@ find_execution(Groupname, _Opts) ->
 %% `group' function if it is found in the `info', otherwise uses the default.
 group(Msg1, Msg2, Opts) ->
     Grouper =
-        maps:get(grouper, hb_converge:info(Msg1, Opts), fun default_grouper/3),
+        maps:get(grouper, hb_ao:info(Msg1, Opts), fun default_grouper/3),
     apply(
         Grouper,
-        hb_converge:truncate_args(Grouper, [Msg1, Msg2, Opts])
+        hb_ao:truncate_args(Grouper, [Msg1, Msg2, Opts])
     ).
 
 %% @doc Register for performing a Converge resolution.
@@ -166,7 +166,7 @@ await(Worker, Msg1, Msg2, Opts) ->
     AwaitFun =
         maps:get(
             await,
-            hb_converge:info(Msg1, Opts),
+            hb_ao:info(Msg1, Opts),
             fun default_await/5
         ),
     % Calculate the compute path that we will wait upon resolution of.
@@ -268,7 +268,7 @@ start_worker(GroupName, Msg, Opts) ->
             WorkerFun =
                 maps:get(
                     worker,
-                    hb_converge:info(Msg, Opts),
+                    hb_ao:info(Msg, Opts),
                     Def = fun default_worker/3
                 ),
             ?event(worker,
@@ -285,7 +285,7 @@ start_worker(GroupName, Msg, Opts) ->
             register_groupname(GroupName, Opts),
             apply(
                 WorkerFun,
-                hb_converge:truncate_args(
+                hb_ao:truncate_args(
                     WorkerFun,
                     [
                         GroupName,
@@ -315,7 +315,7 @@ default_worker(GroupName, Msg1, Opts) ->
                 }
             ),
             Res =
-                hb_converge:resolve(
+                hb_ao:resolve(
                     Msg1,
                     Msg2,
                     maps:merge(ListenerOpts, Opts)
@@ -429,7 +429,7 @@ spawn_test_client(Msg1, Msg2, Opts) ->
     TestParent = self(),
     spawn_link(fun() ->
         ?event({new_concurrent_test_resolver, Ref, {executing, Msg2}}),
-        Res = hb_converge:resolve(Msg1, Msg2, Opts),
+        Res = hb_ao:resolve(Msg1, Msg2, Opts),
         ?event({test_worker_got_result, Ref, {result, Res}}),
         TestParent ! {result, Ref, Res}
     end),

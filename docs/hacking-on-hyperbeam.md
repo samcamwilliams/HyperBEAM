@@ -53,7 +53,7 @@ would like to analyze would HB's path management `dev_message` modules are doing
 while you run your tests, just execute:
 
 ```
-	HB_PRINT=hb_path,hb_converge,converge_result rebar3 eunit --module=your_mod
+	HB_PRINT=hb_path,hb_ao,converge_result rebar3 eunit --module=your_mod
 ```
 
 Some useful logging events are:

@@ -84,7 +84,7 @@ write(Opts = #{ <<"node">> := Node }, Key, Value) ->
     ?event({write, {signed, SignedMsg}}),
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->
-            Status = hb_converge:get(<<"status">>, Response, 0, #{}),
+            Status = hb_ao:get(<<"status">>, Response, 0, #{}),
             ?event({write, {response, Response}}),
             case Status of
                 200 -> ok;
@@ -113,7 +113,7 @@ make_link(Opts = #{ <<"node">> := Node }, Source, Destination) ->
     ?event({make_remote_link, {signed, SignedMsg}}),
     case hb_http:post(Node, SignedMsg, Opts) of
         {ok, Response} ->
-            Status = hb_converge:get(<<"status">>, Response, 0, #{}),
+            Status = hb_ao:get(<<"status">>, Response, 0, #{}),
             ?event({make_remote_link, {response, Response}}),
             case Status of
                 200 -> ok;
