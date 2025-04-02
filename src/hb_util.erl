@@ -223,6 +223,8 @@ message_to_ordered_list(Message) ->
     message_to_ordered_list(Message, #{}).
 message_to_ordered_list(Message, _Opts) when ?IS_EMPTY_MESSAGE(Message) ->
     [];
+message_to_ordered_list(List, _Opts) when is_list(List) ->
+    List;
 message_to_ordered_list(Message, Opts) ->
     Keys = hb_ao:keys(Message, Opts),
     IntKeys = lists:sort(lists:map(fun int/1, Keys)),

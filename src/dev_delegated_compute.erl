@@ -54,7 +54,7 @@ compute(Msg1, Msg2, Opts) ->
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Msg2, Opts) ->
-    ?event({do_compute_msg, {msg2, Msg2}}),
+    ?event({do_compute_msg, {req, Msg2}}),
     Slot = hb_ao:get(<<"slot">>, Msg2, Opts),
     {ok, AOS2 = #{ <<"body">> := Body }} =
         dev_scheduler_formats:assignments_to_aos2(

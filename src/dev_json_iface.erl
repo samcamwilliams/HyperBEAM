@@ -108,15 +108,16 @@ denormalize_message(Message) ->
 message_to_json_struct(RawMsg) ->
     message_to_json_struct(RawMsg, [owner_as_address]).
 message_to_json_struct(RawMsg, Features) ->
-    Message = 
+    TABM = 
         hb_message:convert(
-            hb_private:reset(maps:without([<<"commitments">>], RawMsg)),
+            hb_private:reset(RawMsg),
             tabm,
             #{}
         ),
+    MsgWithoutCommitments = maps:without([<<"commitments">>], TABM),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
-    Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
 	Owner =
         case hb_message:signers(RawMsg) of
             [] -> <<>>;
@@ -142,17 +143,17 @@ message_to_json_struct(RawMsg, Features) ->
                         end
                 end
         end,
-    Data = hb_ao:get(<<"data">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
-    Target = hb_ao:get(<<"target">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Data = hb_ao:get(<<"data">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
+    Target = hb_ao:get(<<"target">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
     % Set "From" if From-Process is Tag or set with "Owner" address
     From =
         hb_ao:get(
             <<"from-process">>,
-            {as, <<"message@1.0">>, Message},
+            {as, <<"message@1.0">>, MsgWithoutCommitments},
             hb_util:encode(Owner),
             #{}
         ),
-    Sig = hb_ao:get(<<"signature">>, {as, <<"message@1.0">>, Message}, <<>>, #{}),
+    Sig = hb_ao:get(<<"signature">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
     #{
         <<"Id">> => safe_to_id(ID),
         % NOTE: In Arweave TXs, these are called "last_tx"
@@ -160,24 +161,7 @@ message_to_json_struct(RawMsg, Features) ->
         % NOTE: When sent to ao "Owner" is the wallet address
         <<"Owner">> => hb_util:encode(Owner),
         <<"From">> => case ?IS_ID(From) of true -> safe_to_id(From); false -> From end,
-        <<"Tags">> =>
-            lists:map(
-                fun({Name, Value}) ->
-                    #{
-                        name => header_case_string(maybe_list_to_binary(Name)),
-                        value => maybe_list_to_binary(Value)
-                    }
-                end,
-                maps:to_list(
-                    maps:without(
-                        [
-                            <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
-                            <<"target">>, <<"signature">>, <<"commitments">>
-                        ],
-                        Message
-                    )
-                )
-            ),
+        <<"Tags">> => prepare_tags(TABM),
         <<"Target">> => safe_to_id(Target),
         <<"Data">> => Data,
         <<"Signature">> =>
@@ -187,6 +171,46 @@ message_to_json_struct(RawMsg, Features) ->
                 _ -> Sig
             end
     }.
+
+%% @doc Prepare the tags of a message as a key-value list, for use in the 
+%% construction of the JSON-Struct message.
+prepare_tags(Msg) ->
+    % Prepare an ANS-104 message for JSON-Struct construction.
+    case hb_message:commitment(#{ <<"commitment-device">> => <<"ans104@1.0">> }, Msg, #{}) of
+        {ok, _, Commitment} ->
+            case maps:find(<<"original-tags">>, Commitment) of
+                {ok, OriginalTags} ->
+                    Res = hb_util:message_to_ordered_list(OriginalTags),
+                    ?event(debug, {using_original_tags, Res}),
+                    Res;
+                error -> 
+                    prepare_header_case_tags(Msg)
+            end;
+        _ ->
+            prepare_header_case_tags(Msg)
+    end.
+
+%% @doc Convert a message without an `original-tags' field into a list of
+%% key-value pairs, with the keys in HTTP header-case.
+prepare_header_case_tags(TABM) ->
+    % Prepare a non-ANS-104 message for JSON-Struct construction. 
+    lists:map(
+        fun({Name, Value}) ->
+            #{
+                <<"name">> => header_case_string(maybe_list_to_binary(Name)),
+                <<"value">> => maybe_list_to_binary(Value)
+            }
+        end,
+        maps:to_list(
+            maps:without(
+                [
+                    <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
+                    <<"target">>, <<"signature">>, <<"commitments">>
+                ],
+                TABM
+            )
+        )
+    ).
 
 %% @doc Translates a compute result -- either from a WASM execution using the 
 %% JSON-Iface, or from a `Legacy' CU -- and transforms it into a result message.

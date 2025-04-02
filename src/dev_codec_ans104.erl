@@ -508,7 +508,7 @@ to(RawTABM) when is_map(RawTABM) ->
         case NormRemaining == ExpectedTagsFromOriginal of
             true -> ok;
             false ->
-                ?event(debug,
+                ?event(warning,
                     {invalid_original_tags,
                         {expected, ExpectedTagsFromOriginal},
                         {given, NormRemaining}

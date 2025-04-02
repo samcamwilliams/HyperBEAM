@@ -47,27 +47,12 @@ assignments_to_bundle(ProcID, Assignments, More, TimeInfo, RawOpts) ->
 
 %%% Return legacy net-SU compatible results.
 assignments_to_aos2(ProcID, Assignments, More, RawOpts) when is_map(Assignments) ->
-    Opts = format_opts(RawOpts),
-    SortedKeys =
-        lists:sort(
-            lists:map(
-                fun hb_util:int/1,
-                maps:keys(
-                    maps:without(
-                        [<<"priv">>, <<"commitments">>],
-                        Assignments
-                    )
-                )
-            )
-        ),
-    ListAssignments =
-        lists:map(
-            fun(Key) ->
-                hb_ao:get(Key, Assignments, Opts)
-            end,
-            SortedKeys
-        ),
-    assignments_to_aos2(ProcID, ListAssignments, More, Opts);
+    assignments_to_aos2(
+        ProcID,
+        hb_util:message_to_ordered_list(Assignments),
+        More,
+        format_opts(RawOpts)
+    );
 assignments_to_aos2(ProcID, Assignments, More, RawOpts) ->
     Opts = format_opts(RawOpts),
     {Timestamp, Height, Hash} = ar_timestamp:get(),
@@ -181,9 +166,7 @@ aos2_to_assignment(A, RawOpts) ->
         end,
     NormalizedMessage = aos2_normalize_types(Message),
     ?event({message, Message}),
-    Res = NormalizedAssignment#{ <<"body">> => NormalizedMessage },
-    ?event({final_assignment, Res}),
-    Res.
+    NormalizedAssignment#{ <<"body">> => NormalizedMessage }.
 
 %% @doc The `hb_gateway_client' module expects all JSON structures to at least
 %% have a `data' field. This function ensures that.
