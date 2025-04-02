@@ -60,7 +60,7 @@ function parseMetrics(text) {
           else if (label === `system_load`) {
             document.getElementById("system-value").innerHTML = formatDisplayAmount(data);
           }
-          else if (currentMetric.name === 'event' && label.includes('topic="converge_result",event="converge_result"')) {
+          else if (currentMetric.name === 'event' && label.includes('topic="ao_result",event="ao_result"')) {
             document.getElementById("executions-value").innerHTML = formatDisplayAmount(data);
           }
 
