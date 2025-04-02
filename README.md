@@ -105,8 +105,8 @@ HyperBEAM can be configured using a `~meta@1.0` device, which is initialized
 If you're new to HyperBEAM, you can start with a simple configuration file for
  basic settings:
 
-1. Create a file named `config.flat` in your project directory
-2. Add only simple configuration values:
+1. A file named `config.flat` is already included in the project directory
+2. Update to include configuration values:
 
 ```
 port: 10000
