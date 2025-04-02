@@ -116,8 +116,6 @@ start_mainnet(Opts) ->
         ranch,
         cowboy,
         gun,
-        prometheus,
-        prometheus_cowboy,
         os_mon
     ]),
     Wallet = hb:wallet(hb_opts:get(priv_key_location, no_viable_wallet_path, Opts)),
@@ -159,8 +157,6 @@ do_start_simple_pay(Opts) ->
         ranch,
         cowboy,
         gun,
-        prometheus,
-        prometheus_cowboy,
         os_mon
     ]),
     Port = maps:get(port, Opts),

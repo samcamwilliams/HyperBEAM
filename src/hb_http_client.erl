@@ -110,11 +110,14 @@ gun_req(Args, ReestablishedConnection, Opts) ->
 		true ->
 			ok;
 		false ->
-			prometheus_histogram:observe(http_request_duration_seconds, [
-					method_to_list(Method),
-					Path,
-					get_status_class(Response)
-				], EndTime - StartTime)
+            case application:get_application(prometheus) of
+                undefined -> ok;
+                _ -> prometheus_histogram:observe(http_request_duration_seconds, [
+                        method_to_list(Method),
+                        Path,
+                        get_status_class(Response)
+                    ], EndTime - StartTime)
+            end
 	end,
 	Response.
 %%% ==================================================================
@@ -122,6 +125,30 @@ gun_req(Args, ReestablishedConnection, Opts) ->
 %%% ==================================================================
 
 init(Opts) ->
+    case hb_opts:get(prometheus, not hb_features:test(), Opts) of
+        true ->
+            ?event({starting_prometheus_application,
+                    {test_mode, hb_features:test()}
+                }
+            ),
+            try
+                application:ensure_all_started([prometheus, prometheus_cowboy]),
+                init_prometheus(Opts)
+            catch
+                Type:Reason:Stack ->
+                    ?event(warning,
+                        {prometheus_not_started,
+                            {type, Type},
+                            {reason, Reason},
+                            {stack, Stack}
+                        }
+                    ),
+                    {ok, #state{ opts = Opts }}
+            end;
+        false -> {ok, #state{ opts = Opts }}
+    end.
+
+init_prometheus(Opts) ->
 	prometheus_counter:new([
 		{name, gun_requests_total},
 		{labels, [http_method, route, status_class]},
@@ -221,7 +248,7 @@ handle_info({gun_up, PID, _Protocol}, #state{ status_by_pid = StatusByPID } = St
 		{{connecting, PendingRequests}, MonitorRef, Peer} ->
 			[gen_server:reply(ReplyTo, {ok, PID}) || {ReplyTo, _} <- PendingRequests],
 			StatusByPID2 = maps:put(PID, {connected, MonitorRef, Peer}, StatusByPID),
-			prometheus_gauge:inc(outbound_connections),
+			inc_prometheus_gauge(outbound_connections),
 			{noreply, State#state{ status_by_pid = StatusByPID2 }};
 		{connected, _MonitorRef, Peer} ->
 			?event(warning,
@@ -251,7 +278,7 @@ handle_info({gun_error, PID, Reason},
 				{connecting, PendingRequests} ->
 					reply_error(PendingRequests, Reason2);
 				connected ->
-					prometheus_gauge:dec(outbound_connections),
+					dec_prometheus_gauge(outbound_connections),
 					ok
 			end,
 			gun:shutdown(PID),
@@ -280,7 +307,7 @@ handle_info({gun_down, PID, Protocol, Reason, _KilledStreams, _UnprocessedStream
 				{connecting, PendingRequests} ->
 					reply_error(PendingRequests, Reason2);
 				_ ->
-					prometheus_gauge:dec(outbound_connections),
+					dec_prometheus_gauge(outbound_connections),
 					ok
 			end,
 			{noreply,
@@ -303,7 +330,7 @@ handle_info({'DOWN', _Ref, process, PID, Reason},
 				{connecting, PendingRequests} ->
 					reply_error(PendingRequests, Reason);
 				_ ->
-					prometheus_gauge:dec(outbound_connections),
+					dec_prometheus_gauge(outbound_connections),
 					ok
 			end,
 			{noreply,
@@ -326,6 +353,26 @@ terminate(Reason, #state{ status_by_pid = StatusByPID }) ->
 %%% ==================================================================
 %%% Private functions.
 %%% ==================================================================
+
+%% @doc Safe wrapper for prometheus_gauge:inc/2.
+inc_prometheus_gauge(Name) ->
+    case application:get_application(prometheus) of
+        undefined -> ok;
+        _ -> prometheus_gauge:inc(Name)
+    end.
+
+%% @doc Safe wrapper for prometheus_gauge:dec/2.
+dec_prometheus_gauge(Name) ->
+    case application:get_application(prometheus) of
+        undefined -> ok;
+        _ -> prometheus_gauge:dec(Name)
+    end.
+
+inc_prometheus_counter(Name, Labels, Value) ->
+    case application:get_application(prometheus) of
+        undefined -> ok;
+        _ -> prometheus_counter:inc(Name, Labels, Value)
+    end.
 
 open_connection(#{ peer := Peer }, Opts) ->
     {Host, Port} = parse_peer(Peer, Opts),
@@ -399,12 +446,13 @@ reply_error([PendingRequest | PendingRequests], Reason) ->
 	reply_error(PendingRequests, Reason).
 
 record_response_status(Method, Path, Response) ->
-	prometheus_counter:inc(gun_requests_total,
+	inc_prometheus_counter(gun_requests_total,
         [
             method_to_list(Method),
 			Path,
 			get_status_class(Response)
-        ]
+        ],
+        1
     ).
 
 method_to_list(get) ->
@@ -522,14 +570,14 @@ log(Type, Event, #{method := Method, peer := Peer, path := Path}, Reason, Opts) 
     ok.
 
 download_metric(Data, #{path := Path}) ->
-	prometheus_counter:inc(
+	inc_prometheus_counter(
 		http_client_downloaded_bytes_total,
 		[Path],
 		byte_size(Data)
 	).
 
 upload_metric(#{method := post, path := Path, body := Body}) ->
-	prometheus_counter:inc(
+	inc_prometheus_counter(
 		http_client_uploaded_bytes_total,
 		[Path],
 		byte_size(Body)

@@ -14,7 +14,7 @@
 %%%    all messages to share the same hashpath space, such that all requests
 %%%    from users additively fill-in the hashpath space, minimizing duplicated
 %%%    compute.
-%%% 3. Messages, referrable by their IDs (commited or uncommitted). These are
+%%% 3. Messages, referrable by their IDs (committed or uncommitted). These are
 %%%    stored as a set of links commitment IDs and the uncommitted message.
 %%%
 %%% Before writing a message to the store, we convert it to Type-Annotated
@@ -51,7 +51,7 @@ list(Path, Store) ->
 %% the hashpath of the data (by default the SHA2-256 hash of the data). We link
 %% the unattended ID's hashpath for the keys (including `/commitments') on the
 %% message to the underlying data and recurse. We then link each commitment ID
-%% to the uncommitted message, such that any of the commited or uncommitted IDs
+%% to the uncommitted message, such that any of the committed or uncommitted IDs
 %% can be read, and once in memory all of the commitments are available. For
 %% deep messages, the commitments will also be read, such that the ID of the
 %% outer message (which does not include its commitments) will be built upon
@@ -62,13 +62,13 @@ write(RawMsg, Opts) when is_map(RawMsg) ->
     % _tabm_ format for writing to the store.
     case hb_message:with_only_committed(RawMsg, Opts) of
         {ok, Msg} ->
-            AltIDs = calculate_alt_ids(RawMsg, Opts),
-            ?event({writing_full_message, {alt_ids, AltIDs}, {msg, Msg}}),
+            AllIDs = calculate_all_ids(RawMsg, Opts),
+            ?event({writing_full_message, {all_ids, AllIDs}, {msg, Msg}}),
             Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
             ?event({tabm, Tabm}),
             try do_write_message(
                 Tabm,
-                AltIDs,
+                AllIDs,
                 hb_opts:get(store, no_viable_store, Opts),
                 Opts
             )
@@ -91,16 +91,18 @@ write(Bin, Opts) when is_binary(Bin) ->
     % When asked to write only a binary, we do not calculate any alternative IDs.
     do_write_message(Bin, [], hb_opts:get(store, no_viable_store, Opts), Opts).
 
-do_write_message(Bin, AltIDs, Store, Opts) when is_binary(Bin) ->
+do_write_message(Bin, AllIDs, Store, Opts) when is_binary(Bin) ->
     % Write the binary in the store at its given hash. Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
     ok = hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin),
-    lists:map(fun(AltID) -> hb_store:make_link(Store, Path, AltID) end, AltIDs),
+    lists:map(fun(ID) -> hb_store:make_link(Store, Path, ID) end, AllIDs),
     {ok, Path};
-do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
+do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % Get the ID of the unsigned message.
-    {ok, UncommittedID} = dev_message:id(Msg, #{ <<"committers">> => <<"none">> }, Opts),
-    ?event({writing_message_with_unsigned_id, UncommittedID, {alts, AltIDs}}),
+    {ok, UncommittedID} =
+        dev_message:id(Msg, #{ <<"committers">> => <<"none">> }, Opts),
+    AltIDs = AllIDs -- [UncommittedID],
+    ?event({writing_message_with_unsigned_id, UncommittedID, {alt_ids, AltIDs}}),
     MsgHashpathAlg = hb_path:hashpath_alg(Msg),
     hb_store:make_group(Store, UncommittedID),
     % Write the keys of the message into the store, rolling the keys into
@@ -122,11 +124,8 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
                     Opts
                 ),
             ?event({key_hashpath_from_unsigned, KeyHashPath}),
-            % Note: We do not pass the AltIDs here, as we cannot calculate them
-            % based on the TABM that we have in-memory at this point. We could
-            % turn the TABM back into a structured message, but this is
-            % expensive.
-            {ok, Path} = do_write_message(Value, [], Store, Opts),
+            ValueAltIDs = calculate_all_ids(Value, Opts),
+            {ok, Path} = do_write_message(Value, ValueAltIDs, Store, Opts),
             hb_store:make_link(Store, Path, KeyHashPath),
             ?event(
                 {
@@ -152,24 +151,15 @@ do_write_message(Msg, AltIDs, Store, Opts) when is_map(Msg) ->
     ),
     {ok, UncommittedID}.
 
-%% @doc Calculate the alternative IDs for a message.
-calculate_alt_ids(Bin, _Opts) when is_binary(Bin) -> [];
-calculate_alt_ids(Msg, _Opts) ->
+%% @doc Calculate the IDs for a message.
+calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
+calculate_all_ids(Msg, _Opts) ->
     Commitments =
         maps:without(
             [<<"priv">>],
             maps:get(<<"commitments">>, Msg, #{})
         ),
-    lists:filtermap(
-        fun(Committer) ->
-            Comm = maps:get(Committer, Commitments, #{}),
-            case maps:get(<<"id">>, Comm, undefined) of
-                undefined -> false;
-                ID -> {true, ID}
-            end
-        end,
-        maps:keys(Commitments)
-    ).
+    maps:keys(Commitments).
 
 %% @doc Write a hashpath and its message to the store and link it.
 write_hashpath(Msg = #{ <<"priv">> := #{ <<"hashpath">> := HP } }, Opts) ->
@@ -251,13 +241,32 @@ do_read(Path, Store, Opts, AlreadyRead) ->
                             lists:map(
                                 fun(Subpath) ->
                                     ?event({reading_subpath, {path, Subpath}, {store, Store}}),
-                                    {ok, Res} = store_read(
+                                    Res = store_read(
                                         [ResolvedFullPath, Subpath],
                                         Store,
                                         Opts,
                                         [ResolvedFullPath | AlreadyRead]
                                     ),
-                                    {iolist_to_binary([Subpath]), Res}
+                                    case Res of
+                                        not_found ->
+                                            ?event(error,
+                                                {subpath_not_found,
+                                                    {parent, Path},
+                                                    {resolved_parent, {string, ResolvedFullPath}},
+                                                    {subpath, Subpath},
+                                                    {all_subpaths, Subpaths},
+                                                    {store, Store}
+                                                }
+                                            ),
+                                            TriedPath = hb_path:to_binary([ResolvedFullPath, Subpath]),
+                                            throw({subpath_not_found,
+                                                {parent, Path},
+                                                {resolved_parent, ResolvedFullPath},
+                                                {failed_path, TriedPath}
+                                            });
+                                        {ok, Data} ->
+                                            {iolist_to_binary([Subpath]), Data}
+                                    end
                                 end,
                                 Subpaths
                             )
@@ -299,7 +308,7 @@ to_integer(Value) when is_binary(Value) ->
 test_unsigned(Data) ->
     #{
         <<"base-test-key">> => <<"base-test-value">>,
-        <<"deep-test-key">> => Data
+        <<"other-test-key">> => Data
     }.
 
 %% Helper function to create signed #tx items.
@@ -322,7 +331,7 @@ test_store_unsigned_empty_message(Opts) ->
 
 %% @doc Test storing and retrieving a simple unsigned item
 test_store_simple_unsigned_message(Opts) ->
-    Item = test_unsigned(#{ <<"key">> => <<"Simple unsigned data item">> }),
+    Item = test_unsigned(<<"Simple unsigned data item">>),
     %% Write the simple unsigned item
     {ok, _Path} = write(Item, Opts),
     %% Read the item back
@@ -335,15 +344,15 @@ test_store_ans104_message(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:reset(Store),
     Item = #{ <<"type">> => <<"ANS104">>, <<"content">> => <<"Hello, world!">> },
-    Commited = hb_message:commit(Item, hb:wallet()),
-    {ok, _Path} = write(Commited, Opts),
-    CommittedID = hb_util:human_id(hb_message:id(Commited, all)),
-    UncommittedID = hb_util:human_id(hb_message:id(Commited, none)),
-    ?event({test_message_ids, {uncommitted, UncommittedID}, {commited, CommittedID}}),
+    Committed = hb_message:commit(Item, hb:wallet()),
+    {ok, _Path} = write(Committed, Opts),
+    CommittedID = hb_util:human_id(hb_message:id(Committed, all)),
+    UncommittedID = hb_util:human_id(hb_message:id(Committed, none)),
+    ?event({test_message_ids, {uncommitted, UncommittedID}, {committed, CommittedID}}),
     {ok, RetrievedItem} = read(CommittedID, Opts),
     {ok, RetrievedItemU} = read(UncommittedID, Opts),
-    ?assert(hb_message:match(Commited, RetrievedItem)),
-    ?assert(hb_message:match(Commited, RetrievedItemU)),
+    ?assert(hb_message:match(Committed, RetrievedItem)),
+    ?assert(hb_message:match(Committed, RetrievedItemU)),
     ok.
 
 %% @doc Test storing and retrieving a simple unsigned item
@@ -400,7 +409,7 @@ test_deeply_nested_complex_message(Opts) ->
     ?event({string, <<"================================================">>}),
     {ok, CommittedID} = dev_message:id(Outer, #{ <<"committers">> => [Address] }, Opts),
     ?event({string, <<"================================================">>}),
-    ?event({test_message_ids, {uncommitted, UID}, {commited, CommittedID}}),
+    ?event({test_message_ids, {uncommitted, UID}, {committed, CommittedID}}),
     %% Write the nested item
     {ok, _} = write(Outer, Opts),
     %% Read the deep value back using subpath
@@ -416,7 +425,7 @@ test_deeply_nested_complex_message(Opts) ->
         ),
     ?event({deep_message, DeepMsg}),
     %% Assert that the retrieved item matches the original deep value
-    ?assertEqual([1,2,3], hb_converge:get(<<"deep-test-key">>, DeepMsg)),
+    ?assertEqual([1,2,3], hb_converge:get(<<"other-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
     ?assert(hb_message:match(Level3SignedSubmessage, DeepMsg)),
     {ok, OuterMsg} = read(OuterID, Opts),

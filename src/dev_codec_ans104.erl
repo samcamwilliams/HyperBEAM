@@ -1,7 +1,7 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([id/1, to/1, from/1, commit/3, verify/3, commited/3, content_type/1]).
+-export([id/1, to/1, from/1, commit/3, verify/3, committed/3, content_type/1]).
 -export([serialize/1, deserialize/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -53,7 +53,7 @@ deserialize(TX) when is_record(TX, tx) ->
 %% @doc Return the ID of a message.
 id(Msg) ->
     TABM = dev_codec_structured:from(Msg),
-    {ok, (to(TABM))#tx.id}.
+    {ok, hb_util:human_id((to(TABM))#tx.id)}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
 commit(Msg, _Req, Opts) ->
@@ -63,18 +63,21 @@ commit(Msg, _Req, Opts) ->
         Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
     ),
     ?event({signed_tx, Signed}),
-    ID = Signed#tx.id,
+    ID = hb_util:human_id(Signed#tx.id),
     Owner = Signed#tx.owner,
     Sig = Signed#tx.signature,
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    % Gather the prior commitments.
-    PriorCommitments = maps:get(<<"commitments">>, Msg, #{}),
-    PriorUnsigned = maps:get(<<"ans104-unsigned">>, PriorCommitments, #{}),
-    PriorOriginalTags = maps:get(<<"original-tags">>, PriorUnsigned, undefined),
+    % Get the prior original tags from the commitment, if it exists.
+    PriorOriginalTags =
+        case hb_message:commitment(#{ <<"alg">> => <<"unsigned">> }, Msg) of
+            {ok, _, #{ <<"original-tags">> := OrigTags }} -> OrigTags;
+            _ -> undefined
+        end,
     Commitment =
         #{
             <<"commitment-device">> => <<"ans104@1.0">>,
-            <<"id">> => hb_util:human_id(ID),
+            <<"committer">> => Address,
+            <<"alg">> => <<"rsa-pss">>,
             <<"owner">> => Owner,
             <<"signature">> => Sig
         },
@@ -91,16 +94,21 @@ commit(Msg, _Req, Opts) ->
         end,
     MsgWithoutHP = maps:without([<<"hashpath">>], Msg),
     {ok,
-        MsgWithoutHP#{
-            <<"commitments">> =>
-                (maps:without([<<"ans104-unsigned">>], PriorCommitments))#{
-                    Address => CommitmentWithHP
-                }
+        (hb_message:without_commitments(
+            #{
+                <<"commitment-device">> => <<"ans104@1.0">>,
+                <<"alg">> => <<"unsigned">>
+            },
+            MsgWithoutHP
+        ))#{
+            <<"commitments">> => #{
+                ID => CommitmentWithHP
+            }
         }
     }.
 
-%% @doc Return a list of commited keys from an ANS-104 message.
-commited(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, _Req, Opts) ->
+%% @doc Return a list of committed keys from an ANS-104 message.
+committed(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, _Req, Opts) ->
     % If the message has a `trusted-keys' field in the immediate layer, we validate
     % that it also exists in the commitment's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
@@ -113,8 +121,8 @@ commited(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms }, 
             % the keys in the commitment so we return an error.
             throw({trusted_keys_not_found_in_commitment, Msg})
     end;
-commited(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _Req, Opts) ->
-    % If the message has an `original-tags' field, the commited fields are only
+committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _Req, Opts) ->
+    % If the message has an `original-tags' field, the committed fields are only
     % those keys, and maps that are nested in the `data' field.
     ?event({committed_from_original_tags, {input, Msg}}),
     case hb_converge:get(hd(hb_converge:keys(Comms)), Comms, #{}) of
@@ -130,10 +138,10 @@ commited(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, _
             % Message appears to be tampered with.
             throw({original_tags_not_found_in_commitment, Msg})
     end;
-commited(Msg, Req, Opts) ->
+committed(Msg, Req, Opts) ->
     ?event({running_committed, {input, Msg}}),
-    % Remove the commitment that was 'promoted' to the base layer of the message
-    % by `message@1.0/commited'. This is safe because `to' will only proceed if 
+    % Remove other commitments that were not 'promoted' to the base layer message
+    % by `message@1.0/committed'. This is safe because `to' will only proceed if 
     % there is a single signature on the message. Subsequently, we can trust that
     % the keys signed by that single commitment speak for 'all' of the 
     % commitments.
@@ -158,7 +166,7 @@ commited(Msg, Req, Opts) ->
                     false -> []
                 end,
             % Return the immediate and nested keys. The `data' field is always
-            % commited, so we include it in the list of keys.
+            % committed, so we include it in the list of keys.
             {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?COMMITTED_TAGS};
         _ ->
             ?event({could_not_verify, {msg, MsgLessGivenComm}}),
@@ -184,7 +192,15 @@ committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
 
 %% @doc Verify an ANS-104 commitment.
 verify(Msg, _Req, _Opts) ->
-    MsgWithoutCommitments = maps:without([<<"commitments">>], hb_private:reset(Msg)),
+    MsgWithoutCommitments =
+        maps:without(
+            [
+                <<"commitments">>,
+                <<"committer">>,
+                <<"alg">>
+            ],
+            hb_private:reset(Msg)
+        ),
     TX = to(MsgWithoutCommitments),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
@@ -215,24 +231,9 @@ do_from(RawTX) ->
                 )
             )
         ),
-    TagsFromTX = hb_converge:normalize_keys(maps:from_list(TX#tx.tags)),
-    ?event({tags_from_tx, {explicit, TagsFromTX}}),
-    % Check that the original tags did not contain any duplicated keys after 
-    % normalization.
-    case maps:size(TagsFromTX) =/= maps:size(OriginalTagMap) of
-        true ->
-            ?event(warning,
-                {unsupported_ans104, tag_duplication,
-                    {tx, TX},
-                    {original_tag_map, OriginalTagMap},
-                    {tags_from_tx, TagsFromTX}
-                }
-            ),
-            throw({unsupported_ans104, tag_duplication});
-        false -> ok
-    end,
     % Generate a TABM from the tags.
-    MapWithoutData = maps:merge(TXKeysMap, maps:from_list(TX#tx.tags)),
+    MapWithoutData = maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags)),
+    ?event({tags_from_tx, {explicit, MapWithoutData}}),
     DataMap =
         case TX#tx.data of
             Data when is_map(Data) ->
@@ -261,9 +262,12 @@ do_from(RawTX) ->
                 case normal_tags(TX#tx.tags) of
                     true -> NormalizedDataMap;
                     false ->
+                        ID = hb_util:human_id(TX#tx.id),
                         NormalizedDataMap#{
                             <<"commitments">> => #{
-                                <<"ans-104-unsigned">> => #{
+                                ID => #{
+                                    <<"commitment-device">> => <<"ans104@1.0">>,
+                                    <<"alg">> => <<"unsigned">>,
                                     <<"original-tags">> => OriginalTagMap
                                 }
                             }
@@ -278,19 +282,23 @@ do_from(RawTX) ->
                             <<"owner">>,
                             <<"signature">>,
                             <<"commitment-device">>,
+                            <<"committer">>,
+                            <<"alg">>,
                             <<"original-tags">>
                         ],
                         NormalizedDataMap
                     ),
+                ID = hb_util:human_id(TX#tx.id),
                 Commitment = #{
                     <<"commitment-device">> => <<"ans104@1.0">>,
-                    <<"id">> => hb_util:human_id(TX#tx.id),
+                    <<"alg">> => <<"rsa-pss">>,
+                    <<"committer">> => Address,
                     <<"owner">> => TX#tx.owner,
                     <<"signature">> => TX#tx.signature
                 },
                 WithoutBaseCommitment#{
                     <<"commitments">> => #{
-                        Address =>
+                        ID =>
                             case normal_tags(TX#tx.tags) of
                                 true -> Commitment;
                                 false -> Commitment#{
@@ -302,6 +310,49 @@ do_from(RawTX) ->
         end,
     Res = maps:without(?FILTERED_TAGS, WithCommitments),
     ?event({message_after_commitments, Res}),
+    Res.
+
+%% @doc Deduplicate a list of key-value pairs by key, generating a list of
+%% values for each normalized key if there are duplicates.
+deduplicating_from_list(Tags) ->
+    % Aggregate any duplicated tags into an ordered list of values.
+    Aggregated =
+        lists:foldl(
+            fun({Key, Value}, Acc) ->
+                NormKey = hb_converge:normalize_key(Key),
+                ?event({deduplicating_from_list, {key, NormKey}, {value, Value}, {acc, Acc}}),
+                case maps:get(NormKey, Acc, undefined) of
+                    undefined -> maps:put(NormKey, Value, Acc);
+                    Existing when is_list(Existing) ->
+                        maps:put(NormKey, Existing ++ [Value], Acc);
+                    ExistingSingle ->
+                        maps:put(NormKey, [ExistingSingle, Value], Acc)
+                end
+            end,
+            #{},
+            Tags
+        ),
+    ?event({deduplicating_from_list, {aggregated, Aggregated}}),
+    % Convert aggregated values into a structured-field list.
+    Res =
+        maps:map(
+            fun(_Key, Values) when is_list(Values) ->
+                % Convert Erlang lists of binaries into a structured-field list.
+                iolist_to_binary(
+                    hb_structured_fields:list(
+                        [
+                            {item, {string, Value}, []}
+                        ||
+                            Value <- Values
+                        ]
+                    )
+                );
+            (_Key, Value) ->
+                Value
+            end,
+            Aggregated
+        ),
+    ?event({deduplicating_from_list, {result, Res}}),
     Res.
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
@@ -367,14 +418,17 @@ to(RawTABM) when is_map(RawTABM) ->
     TABMWithComm =
         case maps:keys(Commitments) of
             [] -> TABM;
-            [Address] ->
-                maps:merge(
-                    TABM,
-                    maps:without(
-                        [<<"commitment-device">>],
-                        maps:get(Address, Commitments)
-                    )
-                );
+            [ID] ->
+                TABMWithoutCommitmentKeys =
+                    maps:merge(
+                        TABM,
+                        maps:without(
+                            [<<"commitment-device">>, <<"committer">>, <<"alg">>],
+                            maps:get(ID, Commitments)
+                        )
+                    ),
+                ?event({tabm_without_commitment_keys, TABMWithoutCommitmentKeys}),
+                TABMWithoutCommitmentKeys;
             _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
         end,
     OriginalTagMap = maps:get(<<"original-tags">>, TABMWithComm, #{}),
@@ -396,7 +450,7 @@ to(RawTABM) when is_map(RawTABM) ->
     MsgKeyMap =
         maps:map(
             fun(_Key, Msg) when is_map(Msg) -> to(Msg);
-            (_Key, Value) -> Value
+               (_Key, Value) -> Value
             end,
             M
         ),
@@ -415,7 +469,9 @@ to(RawTABM) when is_map(RawTABM) ->
                             maps:remove(NormKey, RemMap),
                             [
                                 try hb_util:native_id(Value) catch _:_ -> Value end
-                            |Acc]
+                            |
+                                Acc
+                            ]
                         };
                     {ok, Value} ->
                         {
@@ -439,48 +495,39 @@ to(RawTABM) when is_map(RawTABM) ->
                     end;
                 (_) -> false
             end,
-            [ 
-                    {Key, maps:get(Key, RemainingMap)}
-                ||
-                    Key <- maps:keys(RemainingMap)
-            ]
+            maps:to_list(RemainingMap)
         ),
     ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
     ?event({original_tags, {explicit, OriginalTags}}),
-    % Restore the original tags into the tx record.
-    % First, we check that the value of the original tags matches the expected
-    % values.
-    lists:all(
-        fun({OriginalKey, OriginalValue}) ->
-            NormOriginalKey = hb_converge:normalize_key(OriginalKey),
-            Value = maps:get(NormOriginalKey, RemainingMap, undefined),
-            case Value of
-                OriginalValue -> true;
-                undefined ->
-                    throw({original_tag_missing, OriginalKey, RemainingMap});
-                OtherValue ->
-                    ?event({original_tag_mismatch,
-                        {original_key, OriginalKey},
-                        {original_value, OriginalValue},
-                        {actual_value, OtherValue}
-                    }),
-                    throw(
-                        {original_tag_mismatch,
-                            OriginalKey,
-                            {original, OriginalValue},
-                            {actual, OtherValue}
-                        }
-                    )
-            end
-        end,
-        OriginalTags
-    ),
-    TX = TXWithoutTags#tx {
-        tags = case OriginalTags of
-            [] -> Remaining;
-            _ -> OriginalTags
-        end
-    },
+    % Check that the remaining keys are as we expect them to be, given the 
+    % original tags. We do this by re-calculating the expected tags from the
+    % original tags and comparing the result to the remaining keys.
+    if length(OriginalTags) > 0 ->
+        ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags),
+        NormRemaining = maps:from_list(Remaining),
+        case NormRemaining == ExpectedTagsFromOriginal of
+            true -> ok;
+            false ->
+                ?event(debug,
+                    {invalid_original_tags,
+                        {expected, ExpectedTagsFromOriginal},
+                        {given, NormRemaining}
+                    }
+                ),
+                throw({invalid_original_tags, OriginalTags, NormRemaining})
+        end;
+    true -> ok
+    end,
+    % Restore the original tags, or the remaining keys if there are no original
+    % tags.
+    TX =
+        TXWithoutTags#tx {
+            tags =
+                case OriginalTags of
+                    [] -> Remaining;
+                    _ -> OriginalTags
+                end
+        },
     % Recursively turn the remaining data items into tx records.
     DataItems = maps:from_list(lists:map(
         fun({Key, Value}) ->
@@ -503,16 +550,17 @@ to(RawTABM) when is_map(RawTABM) ->
                 TX#tx { data = DataItems#{ <<"data">> => to(Data) } }
         end,
     % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
-    Res = try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
-    catch
-        _:Error ->
-            ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
-            ?event({prepared_tx_before_ids,
-                {tags, {explicit, TXWithData#tx.tags}},
-                {data, TXWithData#tx.data}
-            }),
-            throw(Error)
-    end,
+    Res =
+        try ar_bundles:reset_ids(ar_bundles:normalize(TXWithData))
+        catch
+            _:Error ->
+                ?event({{reset_ids_error, Error}, {tx_without_data, TX}}),
+                ?event({prepared_tx_before_ids,
+                    {tags, {explicit, TXWithData#tx.tags}},
+                    {data, TXWithData#tx.data}
+                }),
+                throw(Error)
+        end,
     %?event({result, {explicit, Res}}),
     Res;
 to(_Other) ->
@@ -575,17 +623,32 @@ restore_tag_name_case_from_cache_test() ->
     ?assert(hb_message:match(ReadMsg, SignedMsg)),
     ?assert(ar_bundles:verify_item(ReadTX)).
 
-unsupported_duplicated_name_tag_test() ->
-    TX = #tx {
+duplicated_tag_name_test() ->
+    TX = ar_bundles:reset_ids(ar_bundles:normalize(#tx {
         tags = [
             {<<"Test-Tag">>, <<"test-value">>},
             {<<"test-tag">>, <<"test-value-2">>}
         ]
-    },
-    ?assertThrow(
-        {unsupported_ans104, tag_duplication},
-        from(TX)
-    ).
+    })),
+    Msg = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({msg, Msg}),
+    TX2 = hb_message:convert(Msg, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    ?event({tx2, TX2}),
+    ?assertEqual(TX, TX2).
+
+signed_duplicated_tag_name_test() ->
+    TX = ar_bundles:sign_item(#tx {
+        tags = [
+            {<<"Test-Tag">>, <<"test-value">>},
+            {<<"test-tag">>, <<"test-value-2">>}
+        ]
+    }, ar_wallet:new()),
+    Msg = hb_message:convert(TX, <<"structured@1.0">>, <<"ans104@1.0">>, #{}),
+    ?event({msg, Msg}),
+    TX2 = hb_message:convert(Msg, <<"ans104@1.0">>, <<"structured@1.0">>, #{}),
+    ?event({tx2, TX2}),
+    ?assertEqual(TX, TX2),
+    ?assert(ar_bundles:verify_item(TX2)).
     
 simple_to_conversion_test() ->
     Msg = #{

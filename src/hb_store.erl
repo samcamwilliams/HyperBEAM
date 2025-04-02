@@ -166,7 +166,7 @@ call_function([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
             Result
     catch
         Class:Reason:Stacktrace ->
-            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
+            ?event(warning, {store_call_failed, {Class, Reason, Stacktrace}}),
             call_function(Rest, Function, Args)
     end.
 
@@ -180,7 +180,7 @@ call_all([Store = #{<<"store-module">> := Mod} | Rest], Function, Args) ->
         apply(Mod, Function, [Store | Args])
     catch
         Class:Reason:Stacktrace ->
-            ?event(error, {store_call_failed, {Class, Reason, Stacktrace}}),
+            ?event(warning, {store_call_failed, {Class, Reason, Stacktrace}}),
             ok
     end,
     call_all(Rest, Function, Args).

@@ -20,19 +20,24 @@ info() ->
 
 %% @doc The main HTML page for the REPL device.
 metrics(_, Req, Opts) ->
-    {_, HeaderList, Body} =
-        prometheus_http_impl:reply(
-            #{path => true,
-            headers => 
-                fun(Name, Default) ->
-                    hb_converge:get(Name, Req, Default, Opts)
-                end,
-            registry => prometheus_registry:exists(<<"default">>),
-            standalone => false}
-        ),
-    RawHeaderMap = maps:from_list(prometheus_cowboy:to_cowboy_headers(HeaderList)),
-    Headers = maps:map(fun(_, Value) -> hb_util:bin(Value) end, RawHeaderMap),
-    {ok, Headers#{ <<"body">> => Body }}.
+    case hb_opts:get(prometheus, not hb_features:test(), Opts) of
+        true ->
+            {_, HeaderList, Body} =
+            prometheus_http_impl:reply(
+                #{path => true,
+                headers => 
+                    fun(Name, Default) ->
+                        hb_converge:get(Name, Req, Default, Opts)
+                    end,
+                registry => prometheus_registry:exists(<<"default">>),
+                standalone => false}
+            ),
+            RawHeaderMap = maps:from_list(prometheus_cowboy:to_cowboy_headers(HeaderList)),
+            Headers = maps:map(fun(_, Value) -> hb_util:bin(Value) end, RawHeaderMap),
+            {ok, Headers#{ <<"body">> => Body }};
+        false ->
+            {ok, #{ <<"body">> => <<"Prometheus metrics disabled.">> }}
+    end.
 
 %% @doc Employ HyperBEAM's internal pretty printer to format a message.
 format(Base, _, _) ->

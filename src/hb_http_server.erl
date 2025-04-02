@@ -99,8 +99,6 @@ start(Opts) ->
         ranch,
         cowboy,
         gun,
-        prometheus,
-        prometheus_cowboy,
         os_mon
     ]),
     hb:init(),
@@ -131,12 +129,36 @@ new_server(RawNodeMsg) ->
     Dispatcher = cowboy_router:compile([{'_', [{'_', ?MODULE, ServerID}]}]),
     ProtoOpts = #{
         env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
-        metrics_callback =>
-            fun prometheus_cowboy2_instrumenter:observe/1,
-        stream_handlers => [cowboy_metrics_h, cowboy_stream_h],
+        stream_handlers => [cowboy_stream_h],
         max_connections => infinity,
         idle_timeout => hb_opts:get(idle_timeout, 300000, NodeMsg)
     },
+    PrometheusOpts =
+        case hb_opts:get(prometheus, not hb_features:test(), NodeMsg) of
+            true ->
+                ?event(prometheus, {starting_prometheus, {test_mode, hb_features:test()}}),
+                % Attempt to start the prometheus application, if possible.
+                try
+                    application:ensure_all_started([prometheus, prometheus_cowboy]),
+                    ProtoOpts#{
+                        metrics_callback =>
+                            fun prometheus_cowboy2_instrumenter:observe/1,
+                        stream_handlers => [cowboy_metrics_h, cowboy_stream_h]
+                    }
+                catch
+                    Type:Reason ->
+                        % If the prometheus application is not started, we can
+                        % still start the HTTP server, but we won't have any
+                        % metrics.
+                        ?event(prometheus,
+                            {prometheus_not_started, {type, Type}, {reason, Reason}}
+                        ),
+                        ProtoOpts
+                end;
+            false ->
+                ?event(prometheus, {prometheus_not_started, {test_mode, hb_features:test()}}),
+                ProtoOpts
+        end,
     DefaultProto =
         case hb_features:http3() of
             true -> http3;
@@ -145,10 +167,10 @@ new_server(RawNodeMsg) ->
     {ok, Port, Listener} =
         case Protocol = hb_opts:get(protocol, DefaultProto, NodeMsg) of
             http3 ->
-                start_http3(ServerID, ProtoOpts, NodeMsg);
+                start_http3(ServerID, PrometheusOpts, NodeMsg);
             Pro when Pro =:= http2; Pro =:= http1 ->
         		% The HTTP/2 server has fallback mode to 1.1 as necessary.
-                start_http2(ServerID, ProtoOpts, NodeMsg);
+                start_http2(ServerID, PrometheusOpts, NodeMsg);
             _ -> {error, {unknown_protocol, Protocol}}
         end,
     ?event(http,
@@ -301,8 +323,8 @@ set_default_opts(Opts) ->
     Port =
         case hb_opts:get(port, no_port, TempOpts) of
             no_port ->
-                rand:seed(exsplus, erlang:timestamp()),
-                10000 + rand:uniform(20000);
+                rand:seed(exsplus, erlang:system_time(microsecond)),
+                10000 + rand:uniform(50000);
             PassedPort -> PassedPort
         end,
     Wallet =
@@ -344,8 +366,6 @@ start_node(Opts) ->
         ranch,
         cowboy,
         gun,
-        prometheus,
-        prometheus_cowboy,
         os_mon
     ]),
     hb:init(),

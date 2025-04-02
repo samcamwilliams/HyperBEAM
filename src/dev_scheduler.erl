@@ -326,14 +326,14 @@ post_schedule(Msg1, Msg2, Opts) ->
                 #{
                     <<"status">> => 400,
                     <<"body">> => <<"Message invalid: ",
-                        "Commited components cannot be validated.">>,
+                        "Committed components cannot be validated.">>,
                     <<"reason">> => Err
                 }
             }
     end.
 
 %% @doc Post schedule the message. `Msg2` by this point has been refined to only
-%% commited keys, and to only include the `target' message that is to be
+%% committed keys, and to only include the `target' message that is to be
 %% scheduled.
 do_post_schedule(ProcID, PID, Msg2, Opts) ->
     % Should we verify the message again before scheduling?

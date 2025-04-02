@@ -9,8 +9,6 @@
         inets,
         ssl,
         cowboy,
-        prometheus,
-        prometheus_cowboy,
         os_mon,
         gun
     ]},

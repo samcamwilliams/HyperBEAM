@@ -625,7 +625,8 @@ encode_tags(Tags) ->
 
 %% @doc Encode a string for Avro using ZigZag and VInt encoding.
 encode_avro_string(<<>>) ->
-    error;
+    % Zero length strings are treated as a special case, due to the Avro encoder.
+    << 0 >>;
 encode_avro_string(String) ->
     StringBytes = unicode:characters_to_binary(String, utf8),
     Length = byte_size(StringBytes),
@@ -819,8 +820,9 @@ decode_avro_name(NameSize, Rest, Count) ->
     {ValueSize, Rest3} = decode_zigzag(Rest2),
     decode_avro_value(ValueSize, Name, Rest3, Count).
 
-decode_avro_value(0, _, Rest, _) ->
-    {[], Rest};
+decode_avro_value(0, Name, Rest, Count) ->
+    {DecodedTags, NonAvroRest} = decode_avro_tags(Rest, Count - 1),
+    {[{Name, <<>>} | DecodedTags], NonAvroRest};
 decode_avro_value(ValueSize, Name, Rest, Count) ->
     <<Value:ValueSize/binary, Rest2/binary>> = Rest,
     {DecodedTags, NonAvroRest} = decode_avro_tags(Rest2, Count - 1),
@@ -854,7 +856,7 @@ ar_bundles_test_() ->
     [
         {timeout, 30, fun test_no_tags/0},
         {timeout, 30, fun test_with_tags/0},
-        {timeout, 30, fun test_bundle_with_zero_length_tag/0},
+        {timeout, 30, fun test_with_zero_length_tag/0},
         {timeout, 30, fun test_unsigned_data_item_id/0},
         {timeout, 30, fun test_unsigned_data_item_normalization/0},
         {timeout, 30, fun test_empty_bundle/0},
@@ -869,7 +871,7 @@ ar_bundles_test_() ->
     ].
 
 run_test() ->
-    test_bundle_with_one_item().
+    test_with_zero_length_tag().
 
 test_no_tags() ->
     {Priv, Pub} = ar_wallet:new(),
@@ -906,13 +908,19 @@ test_with_tags() ->
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
 
-test_bundle_with_zero_length_tag() ->
-    Item = #tx{
+test_with_zero_length_tag() ->
+    Item = normalize(#tx{
         format = ans104,
-        tags = [{<<"tag1">>, <<"">>}],
-        data = <<"data">>
-    },
-    ?assertThrow({cannot_encode_empty_string, <<"tag1">>, <<>>}, serialize([Item])).
+        tags = [
+            {<<"normal-tag-1">>, <<"tag1">>},
+            {<<"empty-tag">>, <<>>},
+            {<<"normal-tag-2">>, <<"tag2">>}
+        ],
+        data = <<"Typical data field.">>
+    }),
+    Serialized = serialize(Item),
+    Deserialized = deserialize(Serialized),
+    ?assertEqual(Item, Deserialized).
 
 test_unsigned_data_item_id() ->
     Item1 = deserialize(
@@ -1064,7 +1072,6 @@ test_deep_member() ->
     ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item2)).
 
 test_serialize_deserialize_deep_signed_bundle() ->
-    application:ensure_all_started(hb),
     W = ar_wallet:new(),
     % Test that we can serialize, deserialize, and get the same IDs back.
     Item1 = sign_item(#tx{data = <<"item1_data">>}, W),
@@ -1082,13 +1089,3 @@ test_serialize_deserialize_deep_signed_bundle() ->
     Item3 = sign_item(Item2, W),
     ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
     ?assert(verify_item(Item3)).
-    % Test that we can write to disk and read back the same ID.
-    % hb_cache:write(hb_message:convert(Item2, converge, tx, #{}), #{}),
-    % {ok, MsgFromDisk} = hb_cache:read(hb_util:encode(id(Item2, unsigned)), #{}),
-    % FromDisk = hb_message:convert(MsgFromDisk, tx, converge, #{}),
-    % format(FromDisk),
-    % ?assertEqual(id(Item2, signed), id(FromDisk, signed)),
-    % % Test that normalizing the item and signing it again yields the same unsigned ID.
-    % NormItem2 = normalize(Item2),
-    % SignedNormItem2 = sign_item(NormItem2, W),
-    % ?assertEqual(id(SignedNormItem2, unsigned), id(Item2, unsigned)).

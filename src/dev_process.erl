@@ -545,10 +545,10 @@ ensure_process_key(Msg1, Opts) ->
                         ),
                         Msg1
                 end,
-            {ok, Commited} = hb_message:with_only_committed(ProcessMsg, Opts),
+            {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
             Res = hb_converge:set(
                 Msg1,
-                #{ <<"process">> => Commited },
+                #{ <<"process">> => Committed },
                 Opts#{ hashpath => ignore }
             ),
             ?event({set_process_key_res, {msg1, Msg1}, {process_msg, ProcessMsg}, {res, Res}}),
@@ -583,11 +583,14 @@ test_wasm_process(WASMImage, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:commit(
-        maps:merge(test_base_process(Opts), #{
-            <<"execution-device">> => <<"stack@1.0">>,
-            <<"device-stack">> => [<<"WASM-64@1.0">>],
-            <<"image">> => WASMImageID
-        }),
+        maps:merge(
+            hb_message:uncommitted(test_base_process(Opts)),
+            #{
+                <<"execution-device">> => <<"stack@1.0">>,
+                <<"device-stack">> => [<<"WASM-64@1.0">>],
+                <<"image">> => WASMImageID
+            }
+        ),
         Wallet
     ).
 
@@ -606,22 +609,27 @@ test_aos_process(Opts, Stack) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
-    hb_message:commit(maps:merge(WASMProc, #{
-        <<"device-stack">> => Stack,
-        <<"execution-device">> => <<"stack@1.0">>,
-        <<"scheduler-device">> => <<"scheduler@1.0">>,
-        <<"output-prefix">> => <<"wasm">>,
-        <<"passes">> => 2,
-        <<"stack-keys">> =>
-            [
-                <<"init">>,
-                <<"compute">>,
-                <<"snapshot">>,
-                <<"normalize">>
-            ],
-        <<"scheduler">> => Address,
-        <<"authority">> => Address
-    }), Wallet).
+    hb_message:commit(
+        maps:merge(
+            hb_message:uncommitted(WASMProc),
+            #{
+                <<"device-stack">> => Stack,
+                <<"execution-device">> => <<"stack@1.0">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"output-prefix">> => <<"wasm">>,
+                <<"passes">> => 2,
+                <<"stack-keys">> =>
+                    [
+                        <<"init">>,
+                        <<"compute">>,
+                        <<"snapshot">>,
+                        <<"normalize">>
+                    ],
+                <<"scheduler">> => Address,
+                <<"authority">> => Address
+            }),
+        Wallet
+    ).
 
 %% @doc Generate a device that has a stack of two `dev_test's for 
 %% execution. This should generate a message state has doubled 
@@ -640,18 +648,22 @@ schedule_test_message(Msg1, Text) ->
     schedule_test_message(Msg1, Text, #{}).
 schedule_test_message(Msg1, Text, MsgBase) ->
     Wallet = hb:wallet(),
-    Msg2 = hb_message:commit(#{
-        <<"path">> => <<"schedule">>,
-        <<"method">> => <<"POST">>,
-        <<"body">> =>
-            hb_message:commit(
-                MsgBase#{
-                    <<"type">> => <<"Message">>,
-                    <<"test-label">> => Text
-                },
-                Wallet
-            )
-    }, Wallet),
+    UncommittedBase = hb_message:uncommitted(MsgBase),
+    Msg2 =
+        hb_message:commit(#{
+                <<"path">> => <<"schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                    hb_message:commit(
+                        UncommittedBase#{
+                            <<"type">> => <<"Message">>,
+                            <<"test-label">> => Text
+                        },
+                        Wallet
+                    )
+            },
+            Wallet
+        ),
     {ok, _} = hb_converge:resolve(Msg1, Msg2, #{}).
 
 schedule_aos_call(Msg1, Code) ->

@@ -70,7 +70,7 @@ increment(Topic, Message, _Opts) ->
     end.
 
 server() ->
-    application:ensure_all_started([prometheus, prometheus_cowboy]),
+    await_prometheus_started(),
     prometheus_counter:declare(
         [
             {name, <<"event">>},
@@ -96,9 +96,21 @@ handle_events() ->
             handle_events()
     end.
 
+%% @doc Delay the event server until prometheus is started.
+await_prometheus_started() ->
+    receive
+        Msg ->
+            case application:get_application(prometheus) of
+                undefined -> await_prometheus_started();
+                _ -> self() ! Msg, ok
+            end
+    end.
+
 parse_name(Name) when is_tuple(Name) ->
     parse_name(element(1, Name));
 parse_name(Name) when is_atom(Name) ->
     atom_to_binary(Name, utf8);
 parse_name(Name) when is_binary(Name) ->
-    Name.
+    Name;
+parse_name(Name) when is_list(Name) ->
+    iolist_to_binary(Name).

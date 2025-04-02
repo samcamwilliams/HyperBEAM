@@ -10,7 +10,7 @@
 -export([set/3, set_path/3, remove/2, get/2, get/3]).
 %%% Commitment-specific keys:
 -export([id/1, id/2, id/3]).
--export([commit/3, commited/3, committers/1, committers/2, committers/3, verify/3]).
+-export([commit/3, committed/3, committers/1, committers/2, committers/3, verify/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -53,59 +53,39 @@ id(Base, Req) -> id(Base, Req, #{}).
 id(Base, _, NodeOpts) when not is_map(Base) ->
     % Return the hashpath of the message in native format, to match the native
     % format of the message ID return.
-    {ok, hb_util:native_id(hb_path:hashpath(Base, NodeOpts))};
+    {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(Base, Req, NodeOpts) ->
-    ModBase =
-        case maps:get(<<"committers">>, Req, <<"none">>) of
-            <<"all">> -> Base;
-            <<"none">> -> maps:without([<<"commitments">>], Base);
-            [] -> Base;
-            RawCommitterIDs ->
-                KeepIDs =
-                    case is_map(RawCommitterIDs) of
-                        true -> maps:keys(RawCommitterIDs);
-                        false -> RawCommitterIDs
-                    end,
-                BaseCommitments = maps:get(<<"commitments">>, Base, #{}),
-                % Add commitments with only the keys that are requested.
-                BaseWithCommitments = 
-                    Base#{
-                        <<"commitments">> =>
-                            maps:from_list(
-                                lists:map(
-                                    fun(Comm) ->
-                                        try {Comm, maps:get(Comm, BaseCommitments)}
-                                        catch _:_ ->
-                                            throw(
-                                                {
-                                                    committer_not_found,
-                                                    Comm,
-                                                    {commitments, BaseCommitments}
-                                                }
-                                            )
-                                        end
-                                    end,
-                                    KeepIDs
-                                )
-                            )
-                    },
-                % Add the hashpath to the message if it is present.
-                case Base of
-                    #{ <<"priv">> := #{ <<"hashpath">> := Hashpath }} ->
-                        BaseWithCommitments#{
-                            <<"hashpath">> => Hashpath
-                        };
-                    _ ->
-                        BaseWithCommitments
-                end
-        end,
+    % Remove the commitments from the base message if there are none, after
+    % filtering for the committers specified in the request.
+    ModBase = #{ <<"commitments">> := Commitments }
+        = with_relevant_commitments(Base, Req, NodeOpts),
+    case maps:keys(Commitments) of
+        [] ->
+            % If there are no commitments, we must (re)calculate the ID.
+            ?event(ids, no_commitments_found_in_id_call),
+            calculate_ids(maps:without([<<"commitments">>], ModBase), Req, NodeOpts);
+        [ID] ->
+            % If there is only one commitment, return the ID of the message.
+            ?event(ids, using_precalculated_id),
+            {ok, ID};
+        IDs ->
+            % If there are multiple commitments, sort them, concatenate them as
+            % a structured field string, and return the hash of the result.
+            ?event(ids, multiple_commitments_found_in_id_call),
+            SortedIDs = lists:sort(IDs),
+            IDsLine = iolist_to_binary(lists:join(<<", ">>, SortedIDs)),
+            {ok, hb_util:human_id(hb_crypto:sha256(IDsLine))}
+    end.
+
+calculate_ids(Base, Req, NodeOpts) ->
+    % Find the ID device for the message.
     % Find the ID device for the message.
     IDMod =
-        case id_device(ModBase) of
+        case id_device(Base) of
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
-    ?event({using_id_device, {idmod, IDMod}, {modbase, ModBase}}),
+    ?event({using_id_device, {idmod, IDMod}, {modbase, Base}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -116,21 +96,20 @@ id(Base, Req, NodeOpts) ->
                     #{ <<"device">> => ?DEFAULT_ID_DEVICE },
                     NodeOpts
                 );
-            Mod -> Mod
+            Module -> Module
         end,
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
-    case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
-        {ok, Fun} -> apply(Fun, hb_converge:truncate_args(Fun, [ModBase, Req, NodeOpts]));
+    case hb_converge:find_exported_function(Base, DevMod, id, 3, NodeOpts) of
+        {ok, Fun} ->
+            ?event(id, {called_id_device, IDMod}, NodeOpts),
+            apply(Fun, hb_converge:truncate_args(Fun, [Base, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
-%% @doc Locate the ID device of a message. The ID device is determined by the 
-%% `id-device` if found in the `/commitments/id/commitment-device` key, or the
+%% @doc Locate the ID device of a message. The ID device is determined the
 %% `device` set in _all_ of the commitments. If no commitments are present,
 %% the default device (`httpsig@1.0') is used.
-id_device(#{ <<"commitments">> := #{ <<"id">> := #{ <<"commitment-device">> := IDDev } } }) ->
-    {ok, IDDev};
 id_device(#{ <<"commitments">> := Commitments }) ->
     % Get the device from the first commitment.
     UnfilteredDevs =
@@ -161,32 +140,23 @@ id_device(_) ->
 %% @doc Return the committers of a message that are present in the given request.
 committers(Base) -> committers(Base, #{}).
 committers(Base, Req) -> committers(Base, Req, #{}).
-committers(Base, _, _NodeOpts) ->
-    {ok, maps:keys(maps:get(<<"commitments">>, Base, #{}))}.
-
-% %% @doc Return a device that resolves a given path to a specific commitment.
-% commitments(Base, _Req, _NodeOpts) ->
-%     {ok,
-%         Base#{
-%             <<"device">> =>
-%                 #{
-%                     info =>
-%                         fun(Msg, MsgWithPath, _NodeOpts2) ->
-%                             Committer = maps:get(<<"path">>, MsgWithPath),
-%                             Commitment = maps:get(Committer, Msg),
-%                             % 'Promote' the keys of the commitment to the root
-%                             % of the message.
-%                             {
-%                                 ok,
-%                                 maps:merge(
-%                                     maps:without([<<"commitments">>], Msg),
-%                                     Commitment
-%                                 )
-%                             }
-%                         end
-%                 }
-%         }
-%     }.
+committers(#{ <<"commitments">> := Commitments }, _, _NodeOpts) ->
+    ?event({commitments, Commitments}),
+    {ok,
+        maps:values(
+            maps:filtermap(
+                fun(_ID, Commitment) ->
+                    case maps:get(<<"committer">>, Commitment, undefined) of
+                        undefined -> false;
+                        Committer -> {true, Committer}
+                    end
+                end,
+                Commitments
+            )
+        )
+    };
+committers(_, _, _) ->
+    {ok, []}.
 
 %% @doc Commit to a message, using the `commitment-device' key to specify the
 %% device that should be used to commit to the message. If the key is not set,
@@ -206,50 +176,40 @@ commit(Self, Req, Opts) ->
     AttMod = hb_converge:message_to_device(#{ <<"device">> => AttDev }, Opts),
     {ok, AttFun} = hb_converge:find_exported_function(Base, AttMod, commit, 3, Opts),
     Encoded = hb_message:convert(Base, tabm, Opts),
-    {ok, Commited} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
-    {ok, hb_message:convert(Commited, <<"structured@1.0">>, Opts)}.
+    {ok, Committed} = apply(AttFun, hb_converge:truncate_args(AttFun, [Encoded, Req, Opts])),
+    {ok, hb_message:convert(Committed, <<"structured@1.0">>, Opts)}.
 
-%% @doc Verify a message nested in the body. As with `id', the `committers'
-%% key in the request can be used to specify which commitments should be
-%% verified. 
+%% @doc Verify a message. By default, all commitments are verified. The
+%% `committers' key in the request can be used to specify that only the 
+%% commitments from specific committers should be verified. Similarly, specific
+%% commitments can be specified using the `commitments' key.
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    % Get the commitments to verify.
-    Commitments =
-        case hb_converge:normalize_key(maps:get(<<"committers">>, Req, <<"all">>)) of
-            <<"none">> -> [];
-            <<"all">> -> maps:get(<<"commitments">>, Base, #{});
-            CommitterIDs ->
-                maps:with(
-                    if is_list(CommitterIDs) -> CommitterIDs;
-                       true -> [CommitterIDs]
-                    end,
-                    maps:get(<<"commitments">>, Base, #{})
-                )
-        end,
+    Commitments = maps:get(<<"commitments">>, Base, #{}),
+    IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Remove the commitments from the base message.
     ?event({verifying_commitments, Commitments}),
     % Verify the commitments. Stop execution if any fail.
     Res =
         lists:all(
-            fun(Committer) ->
+            fun(CommitmentID) ->
                 ?event(
                     {verify_commitment,
-                        {committer, Committer},
+                        {commitment_id, CommitmentID},
                         {target, Base}}
                 ),
                 {ok, Res} = exec_for_commitment(
                     verify,
                     Base,
-                    maps:get(Committer, Commitments),
-                    Req#{ <<"committer">> => Committer },
+                    maps:get(CommitmentID, Commitments),
+                    Req#{ <<"commitment">> => CommitmentID },
                     Opts
                 ),
-                ?event({verify_commitment_res, {committer, Committer}, {res, Res}}),
+                ?event({verify_commitment_res, {commitment_id, CommitmentID}, {res, Res}}),
                 Res
             end,
-            maps:keys(Commitments)
+            IDsToVerify
         ),
     ?event({verify_res, Res}),
     {ok, Res}.
@@ -284,38 +244,32 @@ exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
     Encoded = hb_message:convert(CommitmentMessage, tabm, Opts),
     apply(AttFun, [Encoded, Req, Opts]).
 
-%% @doc Return the list of commited keys from a message.
-%% @doc Set keys in a message. Takes a map of key-value pairs and sets them in
-%% the message, overwriting any existing values.
-commited(Self, Req, Opts) ->
+%% @doc Return the list of committed keys from a message.
+committed(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
+    CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
     Commitments = maps:get(<<"commitments">>, Base, #{}),
-    Committers =
-        case maps:get(<<"committers">>, Req, <<"all">>) of
-            <<"none">> -> [];
-            <<"all">> -> maps:keys(Commitments);
-            CommitterIDs -> CommitterIDs
-        end,
-    % Get the list of commited keys from each committer.
+    % Get the list of committed keys from each committer.
     CommitmentKeys =
         lists:map(
-            fun(Committer) ->
-                Commitment = maps:get(Committer, Commitments),
+            fun(CommitmentID) ->
+                Commitment = maps:get(CommitmentID, Commitments),
                 {ok, CommittedKeys} =
                     exec_for_commitment(
-                        commited,
+                        committed,
                         Base,
                         Commitment,
-                        #{ <<"committer">> => Committer },
+                        #{ <<"commitment">> => CommitmentID },
                         Opts
                     ),
+                ?event({committed_keys, {commitment_id, CommitmentID}, {keys, CommittedKeys}}),
                 CommittedKeys
             end,
-            Committers
+            CommitmentIDs
         ),
     % Remove commitments that are not in *every* committer's list.
-    % To start, we need to create the super-set of commited keys.
+    % To start, we need to create the super-set of committed keys.
     AllCommittedKeys =
         lists:foldl(
             fun(Key, Acc) ->
@@ -327,7 +281,7 @@ commited(Self, Req, Opts) ->
             [],
             lists:flatten(CommitmentKeys)
         ),
-    % Next, we filter the list of all commited keys to only include those that
+    % Next, we filter the list of all committed keys to only include those that
     % are present in every committer's list.
     OnlyCommittedKeys =
         lists:filter(
@@ -342,6 +296,131 @@ commited(Self, Req, Opts) ->
     ?event({only_committed_keys, OnlyCommittedKeys}),
     {ok, OnlyCommittedKeys}.
 
+%% @doc Return a message with only the relevant commitments for a given request.
+%% See `commitment_ids_from_request/3' for more information on the request format.
+with_relevant_commitments(Base, Req, Opts) ->
+    Commitments = maps:get(<<"commitments">>, Base, #{}),
+    CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
+    Base#{ <<"commitments">> => maps:with(CommitmentIDs, Commitments) }.
+
+%% @doc Implements a standardized form of specifying commitment IDs for a
+%% message request. The caller may specify a list of committers (by address)
+%% or a list of commitment IDs directly. They may specify both, in which case
+%% the returned list will be the union of the two lists. In each case, they
+%% may specify `all' or `none' for each group. If no specifiers are provided,
+%% the default is `all' for commitments -- also implying `all' for committers.
+commitment_ids_from_request(Base, Req, Opts) ->
+    Commitments = maps:get(<<"commitments">>, Base, #{}),
+    ReqCommitters =
+        case maps:get(<<"committers">>, Req, <<"none">>) of
+            X when is_list(X) -> X;
+            Descriptor -> hb_converge:normalize_key(Descriptor)
+        end,
+    RawReqCommitments =
+        maps:get(
+            <<"commitments">>,
+            Req,
+            case ReqCommitters of
+                <<"none">> -> <<"all">>;
+                _ -> <<"none">>
+            end
+        ),
+    ReqCommitments =
+        case RawReqCommitments of
+            X2 when is_list(X2) -> X2;
+            Descriptor2 -> hb_converge:normalize_key(Descriptor2)
+        end,
+    ?event({commitment_ids_from_request, {req_commitments, ReqCommitments}, {req_committers, ReqCommitters}}),
+    % Get the commitments to verify.
+    FromCommitmentIDs =
+        case ReqCommitments of
+            <<"none">> -> [];
+            <<"all">> -> maps:keys(Commitments);
+            CommitmentIDs ->
+                CommitmentIDs =
+                    if is_list(CommitmentIDs) -> CommitmentIDs;
+                    true -> [CommitmentIDs]
+                    end,
+                lists:map(
+                    fun(CommitmentID) -> maps:get(CommitmentID, Commitments) end,
+                    CommitmentIDs
+                )
+        end,
+    FromCommitterAddrs =
+        case ReqCommitters of
+            <<"none">> ->
+                ?event(no_commitment_ids_for_committers),
+                [];
+            <<"all">> ->
+                ?event(getting_commitment_ids_for_all_committers),
+                {ok, Committers} = committers(Base, Req, Opts),
+                ?event({commitment_ids_from_committers, Committers}),
+                commitment_ids_from_committers(Committers, Commitments);
+            RawCommitterAddrs ->
+                ?event({getting_commitment_ids_for_specific_committers, RawCommitterAddrs}),
+                CommitterAddrs =
+                    if is_list(RawCommitterAddrs) -> RawCommitterAddrs;
+                    true -> [RawCommitterAddrs]
+                    end,
+                commitment_ids_from_committers(CommitterAddrs, Commitments)
+        end,
+    Res = FromCommitterAddrs ++ FromCommitmentIDs,
+    ?event({commitment_ids_from_request, {base, Base}, {req, Req}, {res, Res}}),
+    Res.
+
+%% @doc Returns a list of commitment IDs in a commitments map that are relevant
+%% for a list of given committer addresses.
+commitment_ids_from_committers(CommitterAddrs, Commitments) ->
+    % Get the IDs of all commitments for each committer.
+    Comms =
+        lists:map(
+            fun(CommitterAddr) ->
+                % For each committer, filter the commitments to only
+                % include those with the matching committer address.
+                IDs = 
+                    maps:values(maps:filtermap(
+                        fun(ID, Msg) ->
+                            % If the committer address matches, return
+                            % the ID. If not, ignore the commitment.
+                            case maps:get(<<"committer">>, Msg, undefined) of
+                                CommitterAddr -> {true, ID};
+                                _ -> false
+                            end
+                        end,
+                        Commitments
+                    )),
+                {CommitterAddr, IDs}
+            end,
+            CommitterAddrs
+        ),
+    % Check that each committer has at least one commitment.
+    EachCommitterHasCommitment =
+        lists:all(fun({_, IDs}) -> IDs =/= [] end, Comms),
+    % If all committers have at least one commitment, return the
+    % IDs of all commitments. If any committer does not have a
+    % commitment, error.
+    case EachCommitterHasCommitment of
+        true -> lists:flatten([ IDs || {_, IDs} <- Comms ]);
+        false ->
+            % Get the list of committers that do not have a
+            % commitment.
+            MissingCommitters =
+                [
+                    MissingCommitter
+                ||
+                    {MissingCommitter, []} <- Comms
+                ],
+            throw(
+                {verify,
+                    {requested_committers_not_found,
+                        {missing_commitments, MissingCommitters}
+                    }
+                }
+            )
+    end.
+
+%% @doc Deep merge keys in a message. Takes a map of key-value pairs and sets
+%% them in the message, overwriting any existing values.
 set(Message1, NewValuesMsg, Opts) ->
     OriginalPriv = hb_private:from_message(Message1),
 	% Filter keys that are in the default device (this one).
@@ -396,9 +475,9 @@ set(Message1, NewValuesMsg, Opts) ->
             KeysToSet
         )
     ),
-    % Caclulate if the keys to be set conflict with any commited keys.
+    % Caclulate if the keys to be set conflict with any committed keys.
     {ok, CommittedKeys} =
-        commited(
+        committed(
             Message1,
             #{
                 <<"committers">> => <<"all">>

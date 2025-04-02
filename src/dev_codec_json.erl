@@ -2,7 +2,7 @@
 %%% message as TABM and returns an encoded JSON string representation.
 %%% This codec utilizes the httpsig@1.0 codec for signing and verifying.
 -module(dev_codec_json).
--export([to/1, from/1, commit/3, verify/3, commited/1, content_type/1]).
+-export([to/1, from/1, commit/3, verify/3, committed/1, content_type/1]).
 -export([deserialize/3, serialize/3]).
 
 %% @doc Return the content type for the codec.
@@ -20,8 +20,8 @@ commit(Msg, Req, Opts) -> dev_codec_httpsig:commit(Msg, Req, Opts).
 
 verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
 
-commited(Msg) when is_binary(Msg) -> commited(from(Msg));
-commited(Msg) -> hb_message:commited(Msg).
+committed(Msg) when is_binary(Msg) -> committed(from(Msg));
+committed(Msg) -> hb_message:committed(Msg).
 
 %% @doc Deserialize the JSON string found at the given path.
 deserialize(Base, Req, Opts) ->

@@ -291,7 +291,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 				base64:encode(term_to_binary(WalletPub)),
 				Opts
 			),
-			% Create an commited join request using the wallet.
+			% Create an committed join request using the wallet.
 			Req = hb_message:commit(MergedReq, Wallet),
 			?event({join_req, Req}),
 			?event({verify_res, hb_message:verify(Req)}),

@@ -56,8 +56,10 @@
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, uncommitted/1, with_only_committers/2]).
 -export([verify/1, verify/2, commit/2, commit/3, signers/1, type/1, minimize/1]).
--export([commited/1, commited/2, commited/3]).
+-export([committed/1, committed/2, committed/3]).
+-export([commitment/2, commitment/3]).
 -export([with_only_committed/1, with_only_committed/2]).
+-export([with_commitments/2, without_commitments/2]).
 -export([match/2, match/3, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -132,7 +134,7 @@ id(Msg, RawCommitters, Opts) ->
         case RawCommitters of
             uncommitted -> <<"none">>;
             unsigned -> <<"none">>;
-            none -> <<"none">>;
+            none -> [];
             all -> <<"all">>;
             signed -> signers(Msg);
             List -> List
@@ -146,10 +148,10 @@ id(Msg, RawCommitters, Opts) ->
         ),
     hb_util:human_id(ID).
 
-%% @doc Return a message with only the commited keys. If no commitments are
+%% @doc Return a message with only the committed keys. If no commitments are
 %% present, the message is returned unchanged. This means that you need to
 %% check if the message is:
-%% - Commited
+%% - Committed
 %% - Verifies
 %% ...before using the output of this function as the 'canonical' message. This
 %% is such that expensive operations like signature verification are not
@@ -162,12 +164,12 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
         true ->
             try
                 CommittedKeys =
-                    hb_message:commited(
+                    hb_message:committed(
                         Msg,
-                        #{ <<"committers">> => <<"all">> },
+                        #{ <<"commitments">> => <<"all">> },
                         Opts
                     ),
-                % Add the inline-body-key to the commited list if it is not
+                % Add the inline-body-key to the committed list if it is not
                 % already present.
                 ?event({committed_keys, CommittedKeys, {msg, Msg}}),
                 {ok, maps:with(
@@ -185,9 +187,15 @@ with_only_committed(Msg, _) ->
 
 %% @doc Return the message with only the specified committers attached.
 with_only_committers(Msg, Committers) when is_map(Msg) ->
-    OriginalCommitments = maps:get(<<"commitments">>, Msg, #{}),
-    NewCommitments = maps:with(Committers, OriginalCommitments),
-    maps:put(<<"commitments">>, NewCommitments, Msg);
+    NewCommitments =
+        maps:filter(
+            fun(_, #{ <<"committer">> := Committer }) ->
+                lists:member(Committer, Committers);
+               (_, _) -> false
+            end,
+            maps:get(<<"commitments">>, Msg, #{})
+        ),
+    Msg#{ <<"commitments">> => NewCommitments };
 with_only_committers(Msg, _Committers) ->
     throw({unsupported_message_type, Msg}).
 
@@ -216,15 +224,15 @@ commit(Msg, Opts, Format) ->
         ),
     Signed.
 
-%% @doc Return the list of commited keys from a message.
-commited(Msg) -> commited(Msg, all).
-commited(Msg, Committers) -> commited(Msg, Committers, #{}).
-commited(Msg, all, Opts) ->
-    commited(Msg, #{ <<"committers">> => <<"all">> }, Opts);
-commited(Msg, List, Opts) when is_list(List) ->
-    commited(Msg, #{ <<"committers">> => List }, Opts);
-commited(Msg, CommittersMsg, Opts) ->
-    {ok, CommittedKeys} = dev_message:commited(Msg, CommittersMsg, Opts),
+%% @doc Return the list of committed keys from a message.
+committed(Msg) -> committed(Msg, all).
+committed(Msg, Committers) -> committed(Msg, Committers, #{}).
+committed(Msg, all, Opts) ->
+    committed(Msg, #{ <<"commitments">> => <<"all">> }, Opts);
+committed(Msg, List, Opts) when is_list(List) ->
+    committed(Msg, #{ <<"commitments">> => List }, Opts);
+committed(Msg, CommittersMsg, Opts) ->
+    {ok, CommittedKeys} = dev_message:committed(Msg, CommittersMsg, Opts),
     CommittedKeys.
 
 %% @doc wrapper function to verify a message.
@@ -235,9 +243,9 @@ verify(Msg, Committers) ->
         dev_message:verify(
             Msg,
             #{ <<"committers">> =>
-                case is_list(Committers) of
-                    true -> Committers;
-                    false -> [Committers]
+                case ?IS_ID(Committers) of
+                    true -> [Committers];
+                    false -> Committers
                 end
             },
             #{}),
@@ -317,9 +325,9 @@ format(Map, Indent) when is_map(Map) ->
                     {<<"*S">>, ValOrUndef(<<"id">>)}
                 ];
             true ->
-                {ok, UID} = dev_message:id(Map, #{ <<"committers">> => <<"none">> }, #{}),
+                {ok, UID} = dev_message:id(Map, #{}, #{}),
                 {ok, ID} =
-                    dev_message:id(Map, #{ <<"committers">> => <<"all">> }, #{}),
+                    dev_message:id(Map, #{ <<"commitments">> => <<"all">> }, #{}),
                 [
                     {<<"#P">>, hb_util:short_id(ValOrUndef(<<"hashpath">>))},
                     {<<"*U">>, hb_util:short_id(UID)}
@@ -330,20 +338,29 @@ format(Map, Indent) when is_map(Map) ->
                 end
         end,
     CommitterMetadata =
-        case dev_message:committers(Map, #{}, #{}) of
-            {ok, []} -> [];
-            {ok, [Committer]} ->
-                [{<<"Comm.">>, hb_util:short_id(Committer)}];
-            {ok, Committers} ->
-                [
-                    {
-                        <<"Comms.">>,
-                        string:join(
-                            lists:map(fun(X) -> [hb_util:short_id(X)] end, Committers),
-                            ", "
-                        )
-                    }
-                ]
+        case hb_opts:get(debug_committers, true, #{}) of
+            false -> [];
+            true ->
+                case dev_message:committers(Map) of
+                    {ok, []} -> [];
+                    {ok, [Committer]} ->
+                        [{<<"Comm.">>, hb_util:short_id(Committer)}];
+                    {ok, Committers} ->
+                        [
+                            {
+                                <<"Comms.">>,
+                                string:join(
+                                    lists:map(
+                                        fun(X) ->
+                                            [hb_util:short_id(X)]
+                                        end,
+                                        Committers
+                                    ),
+                                    ", "
+                                )
+                            }
+                        ]
+                end
         end,
     % Concatenate the present metadata rows.
     Metadata = FilterUndef(lists:flatten([IDMetadata, CommitterMetadata])),
@@ -481,6 +498,7 @@ match(Map1, Map2, Mode) ->
                 fun(Key) -> lists:member(Key, Keys1) end,
                 Keys1
             ),
+    ?event({match, {keys1, Keys1}, {keys2, Keys2}, {mode, Mode}, {primary_keys_present, PrimaryKeysPresent}}),
     case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
         true ->
             lists:all(
@@ -519,13 +537,84 @@ match(Map1, Map2, Mode) ->
 matchable_keys(Map) ->
     lists:sort(lists:map(fun hb_converge:normalize_key/1, maps:keys(Map))).
 
+%% @doc Filter messages that do not match the 'spec' given. The underlying match
+%% is performed in the `only_present' mode, such that match specifications only
+%% need to specify the keys that must be present.
+with_commitments(Spec, Msg) ->
+    with_commitments(Spec, Msg, #{}).
+with_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
+    ?event({with_commitments, {spec, Spec}, {commitments, Commitments}}),
+    FilteredCommitments =
+        maps:filter(
+            fun(_, CommMsg) ->
+                Res = match(Spec, CommMsg, primary),
+                ?event({with_commitments, {commitments, CommMsg}, {spec, Spec}, {match, Res}}),
+                Res
+            end,
+            Commitments
+        ),
+    ?event({with_commitments, {filtered_commitments, FilteredCommitments}}),
+    Msg#{ <<"commitments">> => FilteredCommitments };
+with_commitments(_Spec, Msg, _Opts) ->
+    Msg.
+
+%% @doc Filter messages that match the 'spec' given. Inverts the `with_commitments/2'
+%% function, such that only messages that do _not_ match the spec are returned.
+without_commitments(Spec, Msg) ->
+    without_commitments(Spec, Msg, #{}).
+without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
+    ?event({without_commitments, {spec, Spec}, {msg, Msg}, {commitments, Commitments}}),
+    FilteredCommitments =
+        maps:without(
+            maps:keys(
+                maps:get(<<"commitments">>, with_commitments(Spec, Msg, #{}), #{})
+            ),
+            Commitments
+        ),
+    ?event({without_commitments, {filtered_commitments, FilteredCommitments}}),
+    Msg#{ <<"commitments">> => FilteredCommitments };
+without_commitments(_Spec, Msg, _Opts) ->
+    Msg.
+
+%% @doc Extract a commitment from a message given a `committer` ID, or a spec
+%% message to match against. Returns only the first matching commitment, or
+%% `not_found`.
+commitment(Committer, Msg) ->
+    commitment(Committer, Msg, #{}).
+commitment(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
+    commitment(#{ <<"committer">> => CommitterID }, Msg, Opts);
+commitment(Spec, #{ <<"commitments">> := Commitments }, _Opts) ->
+    Matches =
+        maps:filtermap(
+            fun(ID, CommMsg) ->
+                case match(Spec, CommMsg, primary) of
+                    true -> {true, {ID, CommMsg}};
+                    false -> false
+                end
+            end,
+            Commitments
+        ),
+    case maps:values(Matches) of
+        [] -> not_found;
+        [{ID, Commitment}] -> {ok, ID, Commitment};
+        _ ->
+            ?event(commitment, {multiple_matches, {matches, Matches}}),
+            multiple_matches
+    end;
+commitment(_Spec, _Msg, _Opts) ->
+    % The message has no commitments, so the spec can never match.
+    not_found.
+
 %% @doc Implements a standard pattern in which the target for an operation is
 %% found by looking for a `target' key in the request. If the target is `self',
 %% or not present, the operation is performed on the original message. Otherwise,
 %% the target is expected to be a key in the message, and the operation is
 %% performed on the value of that key.
 find_target(Self, Req, Opts) ->
-	GetOpts = Opts#{ hashpath => ignore },
+	GetOpts = Opts#{
+        hashpath => ignore,
+        cache_control => [<<"no-cache">>, <<"no-store">>]
+    },
     {ok,
         case hb_converge:get(<<"target">>, Req, <<"self">>, GetOpts) of
             <<"self">> -> Self;
@@ -960,7 +1049,7 @@ deep_multisignature_test() ->
         ),
     ?event({signed_msg_twice, MsgSignedTwice}),
     ?assert(verify(MsgSignedTwice)),
-    {ok, Committers} = dev_message:committers(MsgSignedTwice),
+    Committers = hb_message:signers(MsgSignedTwice),
     ?event({committers, Committers}),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
@@ -1147,13 +1236,14 @@ signed_message_with_derived_components_test(Codec) ->
 committed_keys_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     Signed = commit(Msg, hb:wallet(), Codec),
-    CommittedKeys = commited(Signed),
+    CommittedKeys = committed(Signed),
+    ?event({committed_keys, CommittedKeys}),
     ?assert(verify(Signed)),
     ?assert(lists:member(<<"a">>, CommittedKeys)),
     ?assert(lists:member(<<"b">>, CommittedKeys)),
     ?assert(lists:member(<<"c">>, CommittedKeys)),
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-    ?assert(not lists:member(<<"bad-key">>, commited(MsgToFilter))).
+    ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter))).
 
 committed_empty_keys_test(Codec) ->
     Msg = #{
@@ -1164,7 +1254,7 @@ committed_empty_keys_test(Codec) ->
     },
     Signed = commit(Msg, hb:wallet(), Codec),
     ?assert(verify(Signed)),
-    CommittedKeys = commited(Signed),
+    CommittedKeys = committed(Signed),
     ?event({committed_keys, CommittedKeys}),
     ?assert(lists:member(<<"very">>, CommittedKeys)),
     ?assert(lists:member(<<"exciting">>, CommittedKeys)),
@@ -1204,7 +1294,7 @@ signed_with_inner_signed_message_test(Codec) ->
                 % Uncommitted keys that should be ripped out of the inner message
                 % by `with_only_committed`. These should still be present in the
                 % `with_only_committed` outer message. For now, only `httpsig@1.0`
-                % supports stripping non-commited keys.
+                % supports stripping non-committed keys.
                 case Codec of
                     <<"httpsig@1.0">> ->
                         #{
@@ -1244,26 +1334,30 @@ signed_with_inner_signed_message_test(Codec) ->
 large_body_committed_keys_test(Codec) ->
     case Codec of
         <<"httpsig@1.0">> ->
-            Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> } },
+            Msg = #{
+                <<"a">> => 1,
+                <<"b">> => 2,
+                <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> }
+            },
             Encoded = convert(Msg, Codec, #{}),
             ?event({encoded, Encoded}),
             Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
             ?event({decoded, Decoded}),
             Signed = commit(Decoded, hb:wallet(), Codec),
             ?event({signed, Signed}),
-            CommittedKeys = commited(Signed),
+            CommittedKeys = committed(Signed),
             ?assert(lists:member(<<"a">>, CommittedKeys)),
             ?assert(lists:member(<<"b">>, CommittedKeys)),
             ?assert(lists:member(<<"c">>, CommittedKeys)),
             MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-            ?assert(not lists:member(<<"bad-key">>, commited(MsgToFilter)));
+            ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter)));
         _ ->
             skip
     end.
 
 sign_node_message_test(Codec) ->
     Msg = hb_message:commit(hb_opts:default_message(), hb:wallet(), Codec),
-    ?event({commited, Msg}),
+    ?event({committed, Msg}),
     ?assert(verify(Msg)),
     Encoded = convert(Msg, Codec, #{}),
     ?event({encoded, Encoded}),
@@ -1289,7 +1383,6 @@ nested_body_list_test(Codec) ->
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, Decoded}),
     ?assert(match(Msg, Decoded)).
-
 
 recursive_nested_list_test(Codec) ->
     % This test is to ensure that the codec can handle arbitrarily deep nested
@@ -1405,14 +1498,14 @@ message_suite_test_() ->
         {"signed deep serialize and deserialize test",
             fun signed_deep_message_test/1},
         {"nested data key test", fun signed_nested_data_key_test/1},
-        {"signed only commited data field test", fun signed_only_committed_data_field_test/1},
+        {"signed only committed data field test", fun signed_only_committed_data_field_test/1},
         {"unsigned id test", fun unsigned_id_test/1},
         {"complex signed message test", fun complex_signed_message_test/1},
         {"signed message with hashpath test", fun hashpath_sign_verify_test/1},
         {"message with derived components test", fun signed_message_with_derived_components_test/1},
-        {"commited keys test", fun committed_keys_test/1},
-        {"commited empty keys test", fun committed_empty_keys_test/1},
-        {"large body commited keys test", fun large_body_committed_keys_test/1},
+        {"committed keys test", fun committed_keys_test/1},
+        {"committed empty keys test", fun committed_empty_keys_test/1},
+        {"large body committed keys test", fun large_body_committed_keys_test/1},
         {"signed list http response test", fun signed_list_test/1},
         {"signed with inner signed test", fun signed_with_inner_signed_message_test/1},
         {"priv survives conversion test", fun priv_survives_conversion_test/1},
@@ -1422,4 +1515,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    committed_empty_keys_test(<<"httpsig@1.0">>).
+    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).

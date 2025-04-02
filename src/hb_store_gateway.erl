@@ -66,7 +66,6 @@ maybe_cache(StoreOpts, Data) ->
         FoundStore -> 
             FoundStore
     end,
-    
     case Store of
         false -> do_nothing;
         Store ->
@@ -197,11 +196,20 @@ external_http_access_test() ->
 resolve_on_gateway_test_() ->
     {timeout, 10, fun() ->
         TestProc = <<"p45HPD-ENkLS7Ykqrx6p_DYGbmeHDeeF8LJ09N2K53g">>,
+        EmptyStore = #{
+            <<"store-module">> => hb_store_fs,
+            <<"prefix">> => <<"cache-TEST">>
+        },
+        hb_store:reset(EmptyStore),
         hb_http_server:start_node(#{}),
         Opts = #{
             store =>
                 [
-                    #{ <<"store-module">> => hb_store_gateway, <<"store">> => false }
+                    #{
+                        <<"store-module">> => hb_store_gateway,
+                        <<"store">> => false
+                    },
+                    EmptyStore
                 ],
             cache_control => <<"cache">>
         },

@@ -152,19 +152,35 @@ aos2_to_assignment(A, RawOpts) ->
     Opts = format_opts(RawOpts),
     % Unwrap the node if it is provided
     Node = maps:get(<<"node">>, A, A),
-    {ok, Message} =
-        hb_gateway_client:result_to_message(
-            aos2_normalize_data(maps:get(<<"message">>, Node)),
-            Opts
-        ),
-    NormalizedMessage = aos2_normalize_types(Message),
-    ?event({message, Message}),
+    ?event({node, Node}),
     {ok, Assignment} =
         hb_gateway_client:result_to_message(
             aos2_normalize_data(maps:get(<<"assignment">>, Node)),
             Opts
         ),
     NormalizedAssignment = aos2_normalize_types(Assignment),
+    {ok, Message} =
+        case maps:get(<<"message">>, Node) of
+            null ->
+                MessageID = maps:get(<<"message">>, Assignment),
+                ?event(error, {scheduler_did_not_provide_message, MessageID}),
+                case hb_cache:read(MessageID, Opts) of
+                    {ok, Msg} -> {ok, Msg};
+                    {error, _} ->
+                        throw({error,
+                            {message_not_given_by_scheduler_or_cache,
+                                MessageID}
+                            }
+                        )
+                end;
+            Body ->
+                hb_gateway_client:result_to_message(
+                    aos2_normalize_data(Body),
+                    Opts
+                )
+        end,
+    NormalizedMessage = aos2_normalize_types(Message),
+    ?event({message, Message}),
     Res = NormalizedAssignment#{ <<"body">> => NormalizedMessage },
     ?event({final_assignment, Res}),
     Res.
@@ -201,7 +217,7 @@ aos2_normalize_types(Msg) ->
         {
             aos2_normalized_types,
             {msg, Msg},
-            {anchor, hb_converge:get(<<"anchor">>, Msg, #{})}
+            {anchor, hb_converge:get(<<"anchor">>, Msg, <<>>, #{})}
         }
     ),
     Msg.

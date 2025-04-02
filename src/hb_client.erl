@@ -158,8 +158,8 @@ upload_raw_ans104_with_anchor_test() ->
 
 upload_empty_message_test() ->
     Msg = #{ <<"data">> => <<"TEST">> },
-    Commited = hb_message:commit(Msg, hb:wallet(), <<"ans104@1.0">>),
-    Result = upload(Commited, #{}, <<"ans104@1.0">>),
+    Committed = hb_message:commit(Msg, hb:wallet(), <<"ans104@1.0">>),
+    Result = upload(Committed, #{}, <<"ans104@1.0">>),
     ?event({upload_result, Result}),
     ?assertMatch({ok, _}, Result).
 
@@ -169,7 +169,7 @@ upload_single_layer_message_test() ->
         <<"basic">> => <<"value">>,
         <<"integer">> => 1
     },
-    Commited = hb_message:commit(Msg, hb:wallet(), <<"ans104@1.0">>),
-    Result = upload(Commited, #{}, <<"ans104@1.0">>),
+    Committed = hb_message:commit(Msg, hb:wallet(), <<"ans104@1.0">>),
+    Result = upload(Committed, #{}, <<"ans104@1.0">>),
     ?event({upload_result, Result}),
     ?assertMatch({ok, _}, Result).

@@ -211,10 +211,10 @@ result_to_message(ExpectedID, Item, Opts) ->
     ?event({decoded_tabm, TABM}),
     Structured = dev_codec_structured:to(TABM),
     % Some graphql nodes do not grant the `anchor' or `last_tx' fields, so we
-    % verify the data item and optionally add the explicit keys as commited
+    % verify the data item and optionally add the explicit keys as committed
     % fields _if_ the node desires it.
     Embedded =
-        case ar_bundles:verify_item(TX) of
+        case try ar_bundles:verify_item(TX) catch _:_ -> false end of
             true ->
                 ?event({gql_verify_succeeded, Structured}),
                 Structured;
@@ -227,7 +227,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                         Structured;
                     true ->
                         % The node trusts the GraphQL API, so we add the explicit
-                        % keys as commited fields.
+                        % keys as committed fields.
                         ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
                         Comms = maps:get(<<"commitments">>, Structured),
                         AttName = hd(maps:keys(Comms)),
@@ -254,6 +254,7 @@ result_to_message(ExpectedID, Item, Opts) ->
     {ok, Embedded}.
 
 normalize_null(null) -> <<>>;
+normalize_null(not_found) -> <<>>;
 normalize_null(Bin) when is_binary(Bin) -> Bin.
 
 decode_id_or_null(Bin) when byte_size(Bin) > 0 ->

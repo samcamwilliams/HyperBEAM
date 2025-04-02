@@ -8,8 +8,6 @@
 %%% the Converge resolver has returned a result.
 -module(dev_meta).
 -export([info/1, info/3, handle/2, adopt_node_message/2]).
-%%% Helper functions for processors
--export([all_committers/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -107,7 +105,7 @@ add_dynamic_keys(NodeMsg) ->
 %% @doc Validate that the request is signed by the operator of the node, then
 %% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
-    {ok, RequestSigners} = dev_message:committers(Request),
+    RequestSigners = hb_message:signers(Request),
     Operator =
         hb_opts:get(
             operator,
@@ -254,7 +252,7 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
 
 %% @doc Wrap the result of a device call in a status.
 embed_status({ErlStatus, Res}) when is_map(Res) ->
-    case lists:member(<<"status">>, hb_message:commited(Res)) of
+    case lists:member(<<"status">>, hb_message:committed(Res)) of
         false ->
             HTTPCode = status_code({ErlStatus, Res}),
             {ok, Res#{ <<"status">> => HTTPCode }};
@@ -312,20 +310,6 @@ maybe_sign(Res, NodeMsg) ->
             end;
         false -> Res
     end.
-
-%%% External helpers
-
-%% @doc Return the signers of a list of messages.
-all_committers(Msgs) ->
-    lists:foldl(
-        fun(Msg, Acc) ->
-            Committers =
-                hb_converge:get(<<"committers">>, Msg, #{}, #{ hashpath => ignore }),
-            Acc ++ lists:map(fun hb_util:human_id/1, maps:values(Committers))
-        end,
-        [],
-        Msgs
-    ).
 
 %%% Tests
 
