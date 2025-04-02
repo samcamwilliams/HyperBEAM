@@ -150,7 +150,6 @@ init(Opts) ->
     end.
 
 init_prometheus(Opts) ->
-    ?event(debug, creating_prometheus_metrics_for_http_outbound, Opts),
 	prometheus_counter:new([
 		{name, gun_requests_total},
 		{labels, [http_method, route, status_class]},
