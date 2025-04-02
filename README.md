@@ -49,7 +49,7 @@ To begin using HyperBeam, you will need to install:
 - Docker (optional, for containerized deployment)
 
 You will also need:
-- A wallet and it's keyfile(generate a new wallet and keyfile with https://www.wander.app)
+- A wallet and it's keyfile *(generate a new wallet and keyfile with https://www.wander.app)*
 
 Then you can clone the HyperBEAM source and build it:
 
@@ -69,36 +69,82 @@ docker build -t hyperbeam .
 If you intend to offer TEE-based computation of AO-Core devices, please see the
 [`HyperBEAM OS`](https://github.com/permaweb/hb-os) repo for details on configuration and deployment.
 
+## Running HyperBEAM
+
+Once the code is compiled, you can start HyperBEAM in one of two ways:
+
+```bash
+# Default configuration
+rebar3 shell
+
+# Custom configuration/mainnet connection
+rebar3 shell --eval "hb:start_mainnet(#{ port => 10001, priv_key_location => <<\"./wallet.json\">>})."
+```
+
+The default configuration uses settings from `hb_opts.erl`, which preloads 
+all devices and sets up default stores on port 10000.
+
+### Verify Installation
+
+To verify that your HyperBEAM node is running correctly, check:
+
+```bash
+curl http://localhost:10000/~meta@1.0/info
+```
+
+If you receive a response with node information, your HyperBEAM
+ installation is working properly.
+
 ## Configuration
 
-HyperBeam can be configured using a `~meta@1.0` device. This device is initialized
-via the command line arguments provided when the node is started.
+HyperBEAM can be configured using a `~meta@1.0` device, which is initialized
+ using either command line arguments or a configuration file.
+
+### Simple Configuration with config.flat
+
+If you're new to HyperBEAM, you can start with a simple configuration file for
+ basic settings:
+
+1. Create a file named `config.flat` in your project directory
+2. Add only simple configuration values:
+
+```
+port: 10000
+priv_key_location: /path/to/wallet.json
+```
+
+3. Start HyperBEAM with `rebar3 shell`
+
+HyperBEAM will automatically load your configuration and display the active
+ settings in the startup log.
+
+### Recommended Configuration Approach
+
+For any non-trivial configuration, especially those with complex data types, 
+use the Erlang API directly:
 
 ```bash
-rebar3 shell --eval "hb:start_mainnet(#{ [OPTS] })."
+rebar3 shell --eval "hb:start_mainnet(#{ 
+  port => 10001,
+  priv_key_location => <<\"./wallet.json\">>, 
+  mode => debug,
+
+  http_extra_opts => #{
+    force_message => true,
+    store => {hb_store_fs, #{ prefix => \"local-storage\" }}
+    cache_control => [<<\"always\">>]
+  }
+})."
 ```
 
-For example, in order to start a node using a custom port and Arweave wallet,
-you could execute the following command:
+This method allows you to use any Erlang data type and structure without
+ limitations and is the recommended approach for production deployments.
 
-```bash
-rebar3 shell --eval "hb:start_mainnet(#{ port => 9001, key_location => 'path/to/my/wallet.key' })."
-```
-
-Node operators can also configure the environment using a `flat@1.0` encoded settings file. An 
-example configuration is found in the `config.flat` file of this repository. The format simply specifies 
-configuration options using HTTP header styling. For example, to set the port for the node and to specify
-whether it should use caching hueristics or always consult its local data store, the `config.flat` would
-be as follows:
-
-```
-port: 1337
-cache-lookup-hueristics: true
-```
+### Runtime Configuration Changes
 
 Additionally, if you would like to modify a running node's configuration, you can
-do so by sending a HTTP Signed Message using any RFC-9421 compatible client in 
-the following form:
+ do so by sending a HTTP Signed Message using any RFC-9421 compatible client
+  in the following form:
 
 ```
 POST /~meta@1.0/info
