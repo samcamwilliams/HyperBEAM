@@ -57,20 +57,35 @@ id(Base, _, NodeOpts) when not is_map(Base) ->
 id(Base, Req, NodeOpts) ->
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
-    ModBase =
-        case with_relevant_commitments(Base, Req, NodeOpts) of
-            Mod = #{ <<"commitments">> := Commitments }
-                    when map_size(Commitments) == 0 ->
-                maps:without([<<"commitments">>], Mod);
-            Mod -> Mod
-        end,
+    ModBase = #{ <<"commitments">> := Commitments }
+        = with_relevant_commitments(Base, Req, NodeOpts),
+    case maps:keys(Commitments) of
+        [] ->
+            % If there are no commitments, we must (re)calculate the ID.
+            ?event(ids, no_commitments_found_in_id_call),
+            calculate_ids(maps:without([<<"commitments">>], ModBase), Req, NodeOpts);
+        [ID] ->
+            % If there is only one commitment, return the ID of the message.
+            ?event(ids, using_precalculated_id),
+            {ok, ID};
+        IDs ->
+            % If there are multiple commitments, sort them, concatenate them as
+            % a structured field string, and return the hash of the result.
+            ?event(ids, multiple_commitments_found_in_id_call),
+            SortedIDs = lists:sort(IDs),
+            IDsLine = iolist_to_binary(lists:join(<<", ">>, SortedIDs)),
+            {ok, hb_util:human_id(hb_crypto:sha256(IDsLine))}
+    end.
+
+calculate_ids(Base, Req, NodeOpts) ->
+    % Find the ID device for the message.
     % Find the ID device for the message.
     IDMod =
-        case id_device(ModBase) of
+        case id_device(Base) of
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
-    ?event({using_id_device, {idmod, IDMod}, {modbase, ModBase}}),
+    ?event({using_id_device, {idmod, IDMod}, {modbase, Base}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -85,10 +100,10 @@ id(Base, Req, NodeOpts) ->
         end,
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
-    case hb_converge:find_exported_function(ModBase, DevMod, id, 3, NodeOpts) of
+    case hb_converge:find_exported_function(Base, DevMod, id, 3, NodeOpts) of
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
-            apply(Fun, hb_converge:truncate_args(Fun, [ModBase, Req, NodeOpts]));
+            apply(Fun, hb_converge:truncate_args(Fun, [Base, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
