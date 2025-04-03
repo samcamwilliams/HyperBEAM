@@ -1,10 +1,14 @@
-.PHONY: compile setup-cu start-cu stop-cu
+.PHONY: compile
 
 compile:
 	rebar3 compile
 
 WAMR_VERSION = 2.2.0
 WAMR_DIR = _build/wamr
+
+GENESIS_WASM_BRANCH = tillathehun0/cu-experimental
+GENESIS_WASM_REPO = https://github.com/permaweb/ao.git
+GENESIS_WASM_SERVER_DIR = _build/genesis-wasm-server
 
 ifdef HB_DEBUG
 	WAMR_FLAGS = -DWAMR_ENABLE_LOG=1 -DWAMR_BUILD_DUMP_CALL_STACK=1 -DCMAKE_BUILD_TYPE=Debug
@@ -77,8 +81,18 @@ clean:
 print-lib-path:
 	@echo $(CURDIR)/lib/libvmlib.a
 
-# Set up CU environment
-setup-cu:
+$(GENESIS_WASM_SERVER_DIR):
+	mkdir -p $(GENESIS_WASM_SERVER_DIR)
+	@echo "Cloning genesis-wasm repository..." && \
+        tmp_dir=$$(mktemp -d) && \
+        git clone --depth=1 -b $(GENESIS_WASM_BRANCH) $(GENESIS_WASM_REPO) $$tmp_dir && \
+        mkdir -p $(GENESIS_WASM_SERVER_DIR) && \
+        cp -r $$tmp_dir/servers/cu/* $(GENESIS_WASM_SERVER_DIR) && \
+        rm -rf $$tmp_dir && \
+        echo "Extracted servers/genesis-wasm to $(GENESIS_WASM_SERVER_DIR)"
+
+# Set up genesis-wasm@1.0 environment
+setup-genesis-wasm: $(GENESIS_WASM_SERVER_DIR)
 	@# Check if Node.js is installed
 	@if ! command -v node > /dev/null; then \
 		echo "Error: Node.js is not installed. Please install Node.js before continuing."; \
@@ -88,17 +102,8 @@ setup-cu:
 		echo "  node -v && npm -v"; \
 		exit 1; \
 	fi
-	@if [ ! -d "$(CURDIR)/cu" ]; then \
-		echo "Cloning CU repository..."; \
-		tmp_dir=$$(mktemp -d); \
-		git clone --depth=1 -b tillathehun0/cu-experimental https://github.com/permaweb/ao.git $$tmp_dir && \
-		mkdir -p $(CURDIR)/cu && \
-		cp -r $$tmp_dir/servers/cu/* $(CURDIR)/cu/ && \
-		rm -rf $$tmp_dir && \
-		echo "Extracted servers/cu to $(CURDIR)/cu"; \
-	fi
-	@if [ ! -f "$(CURDIR)/cu/.env" ]; then \
-		cd $(CURDIR)/cu && \
+	@if [ ! -f "$(GENESIS_WASM_SERVER_DIR)/.env" ]; then \
+		cd $(GENESIS_WASM_SERVER_DIR) && \
 			npx --yes @permaweb/wallet >> wallet.json && \
 			echo 'NODE_CONFIG_ENV="development"' > .env && \
 			echo "WALLET_FILE=./wallet.json" >> .env && \
@@ -106,28 +111,5 @@ setup-cu:
 			echo "UNIT_MODE=hbu" >> .env && \
 			echo "PORT=6363" >> .env; \
 	fi
-	@cd $(CURDIR)/cu && npm install
-
-# Start the CU server
-start-cu:
-	@echo "Starting CU server..."
-	@cd $(CURDIR)/cu && npm run dev > /dev/null 2>&1 &
-	@sleep 3 # Give it a moment to start
-	@lsof -i :6363 -t | head -1 > $(CURDIR)/cu/.cu_server.pid
-	@if [ -s "$(CURDIR)/cu/.cu_server.pid" ]; then \
-		echo "CU server running with PID $$(cat $(CURDIR)/cu/.cu_server.pid)"; \
-	else \
-		echo "Warning: Could not find CU server process on port 6363"; \
-	fi
-
-# Stop the CU server
-stop-cu:
-	@if [ -f "$(CURDIR)/cu/.cu_server.pid" ]; then \
-		CU_PID=$$(cat $(CURDIR)/cu/.cu_server.pid); \
-		echo "Stopping Node.js process with PID $${CU_PID}"; \
-		kill -9 $${CU_PID} 2>/dev/null || echo "Node process already stopped"; \
-		rm -f $(CURDIR)/cu/.cu_server.pid; \
-		echo "CU server stopped"; \
-	else \
-		echo "No CU server PID file found"; \
-	fi
+	@cd $(GENESIS_WASM_SERVER_DIR) && npm install > /dev/null 2>&1 && \
+		echo "Installed genesis-wasm@1.0 server."
