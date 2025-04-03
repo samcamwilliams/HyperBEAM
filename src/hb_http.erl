@@ -219,7 +219,7 @@ message_to_request(M, Opts) ->
         {ok, Routes} ->
             ?event(http_outbound, {found_routes, {req, M}, {routes, Routes}}),
             % The result is a route, so we leave it to `request' to handle it.
-            Path = hb_converge:get(<<"path">>, M, <<"/">>, Opts),
+            Path = hb_ao:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Routes, Path, MsgWithoutMeta};
         {error, Reason} ->
             {error, {no_viable_route, Reason, {message, M}}}

@@ -3,9 +3,11 @@
 %%% AO process definitions to be used in HyperBEAM.
 -module(dev_genesis_wasm).
 -export([init/3, compute/3, normalize/3, snapshot/3]).
--export([ensure_started/0]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("include/hb.hrl").
+
+%%% Timeout for legacy CU status check.
+-define(STATUS_TIMEOUT, 100).
 
 %% @doc Initialize the device.
 init(Msg, _Msg2, _Opts) -> {ok, Msg}.
@@ -15,7 +17,7 @@ init(Msg, _Msg2, _Opts) -> {ok, Msg}.
 %% requested.
 compute(Msg, Msg2, Opts) ->
     % Validate whether the genesis-wasm feature is enabled.
-    case hb_features:genesis_wasm() andalso ensure_started() of
+    case ensure_started(Opts) of
         true ->
             % Resolve the `delegated-compute@1.0` device.
             case hb_ao:resolve(Msg, {as, <<"delegated-compute@1.0">>, Msg2}, Opts) of
@@ -44,14 +46,15 @@ compute(Msg, Msg2, Opts) ->
     end.
 
 %% @doc Ensure the local `genesis-wasm@1.0' is live. If it not, start it.
-ensure_started() ->
+ensure_started(Opts) ->
     % Check if the `genesis-wasm@1.0` device is already running. The presence
     % of the registered name implies its availability.
-    case hb_name:lookup(<<"genesis-wasm@1.0">>) of
-        PID when is_pid(PID) ->
+    ?event({ensure_started, genesis_wasm, self()}),
+    case is_genesis_wasm_server_running(Opts) orelse (hb_features:genesis_wasm() andalso is_pid(hb_name:lookup(<<"genesis-wasm@1.0">>))) of
+        true ->
             % If it is, do nothing.
             true;
-        undefined ->
+        false ->
             % The device is not running, so we need to start it.
             PID =
                 spawn(
@@ -75,7 +78,38 @@ ensure_started() ->
             % Wait for the device to start.
             receive after 2000 -> ok end,
             ?event({genesis_wasm_started, {pid, PID}}),
-            true
+            is_genesis_wasm_server_running(Opts)
+    end.
+
+is_genesis_wasm_server_running(Opts) ->
+    ?event({genesis_wasm_checking_status, self()}),
+    Parent = self(),
+    PID = spawn(
+        fun() ->
+            ?event({genesis_wasm_checking_status, {pid, self()}}),
+            Parent ! {ok, self(), status(Opts)}
+        end
+    ),
+    receive
+        {ok, PID, Status} -> Status
+    after ?STATUS_TIMEOUT ->
+        ?event({genesis_wasm_status_check, {timeout, {pid, PID}}}),
+        erlang:exit(PID, kill),
+        false
+    end.
+
+status(Opts) ->
+    try hb_http:get(<<"http://localhost:6363/">>, Opts) of
+        {ok, Res} ->
+            ?event({genesis_wasm_status_check, {res, Res}}),
+            true;
+        Err ->
+            ?event({genesis_wasm_status_check, {err, Err}}),
+            false
+    catch
+        _:Err ->
+            ?event({genesis_wasm_status_check, {connect_error, Err}}),
+            false
     end.
 
 %% @doc Collect events from the port and log them.
