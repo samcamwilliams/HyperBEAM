@@ -455,7 +455,7 @@ cache_suite_test_() ->
         {"message with message", fun test_message_with_message/1}
     ]).
 
-%% @doc Test that message whose device is `#{}` cannot be written. If it were to
+%% @doc Test that message whose device is `#{}' cannot be written. If it were to
 %% be written, it would cause an infinite loop.
 test_device_map_cannot_be_written_test() ->
     try

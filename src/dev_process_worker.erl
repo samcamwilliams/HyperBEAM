@@ -91,7 +91,7 @@ server(GroupName, Msg1, Opts) ->
         {ok, Msg1}
     end.
 
-%% @doc Await a resolution from a worker executing the `process@1.0` device.
+%% @doc Await a resolution from a worker executing the `process@1.0' device.
 await(Worker, GroupName, Msg1, Msg2, Opts) ->
     case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
         false -> 

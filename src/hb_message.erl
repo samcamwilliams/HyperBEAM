@@ -116,8 +116,8 @@ from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
         OtherTypeRes -> OtherTypeRes
     end.
 
-%% @doc Add the existing `priv` sub-map back to a converted message, honoring
-%% any existing `priv` sub-map that may already be present.
+%% @doc Add the existing `priv' sub-map back to a converted message, honoring
+%% any existing `priv' sub-map that may already be present.
 restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
 restore_priv(Msg, OldPriv) ->
     MsgPriv = maps:get(<<"priv">>, Msg, #{}),
@@ -576,9 +576,9 @@ without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
 without_commitments(_Spec, Msg, _Opts) ->
     Msg.
 
-%% @doc Extract a commitment from a message given a `committer` ID, or a spec
+%% @doc Extract a commitment from a message given a `committer' ID, or a spec
 %% message to match against. Returns only the first matching commitment, or
-%% `not_found`.
+%% `not_found'.
 commitment(Committer, Msg) ->
     commitment(Committer, Msg, #{}).
 commitment(CommitterID, Msg, Opts) when is_binary(CommitterID) ->

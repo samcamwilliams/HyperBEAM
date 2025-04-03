@@ -139,7 +139,7 @@ start_mainnet(Opts) ->
     ),
     <<"http://localhost:", (integer_to_binary(maps:get(port, Opts)))/binary>>.
 
-%%% @doc Start a server with a `simple-pay@1.0` pre-processor.
+%%% @doc Start a server with a `simple-pay@1.0' pre-processor.
 start_simple_pay() ->
     start_simple_pay(address()).
 start_simple_pay(Addr) ->
