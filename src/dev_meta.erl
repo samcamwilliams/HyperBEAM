@@ -477,7 +477,7 @@ claim_node_test() ->
     ?assertEqual(<<"test2">>, hb_ao:get(<<"test_config_item">>, Res2, #{})),
     ?assertEqual(2, length(hb_ao:get(<<"node_history">>, Res2, [], #{}))).
 
-%% @doc Test that we can use a preprocessor upon a request.
+%% Test that we can use a preprocessor upon a request.
 % preprocessor_test() ->
 %     Parent = self(),
 %     Node = hb_http_server:start_node(
@@ -530,7 +530,7 @@ modify_request_test() ->
     {ok, Res} = hb_http:get(Node, <<"/added">>, #{}),
     ?assertEqual(<<"value">>, Res).
 
-%% @doc Test that we can use a postprocessor upon a request. Calls the `test@1.0'
+%% Test that we can use a postprocessor upon a request. Calls the `test@1.0'
 %% device's postprocessor, which sets the `postprocessor-called' key to true in
 %% the HTTP server.
 % postprocessor_test() ->

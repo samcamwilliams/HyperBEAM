@@ -9,13 +9,13 @@
 
 %% @doc Read data from the cache.
 %% Retrieves data corresponding to a key from a local store.
-%% The key is extracted from the incoming message under <<"target">>.
+%% The key is extracted from the incoming message under &lt;&lt;"target"&gt;&gt;.
 %% The options map may include store configuration.
-%% If the "accept" header is set to <<"application/aos-2">>, the result is 
+%% If the "accept" header is set to &lt;&lt;"application/aos-2"&gt;&gt;, the result is 
 %% converted to a JSON structure and encoded.
 %%
 %% @param M1 Ignored parameter.
-%% @param M2 The request message containing the key (<<"target">>) and an
+%% @param M2 The request message containing the key (&lt;&lt;"target"&gt;&gt;) and an
 %%            optional "accept" header.
 %% @param Opts A map of configuration options.
 %% @returns {ok, Data} on success,

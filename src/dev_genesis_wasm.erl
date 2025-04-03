@@ -43,7 +43,7 @@ compute(Msg, Msg2, Opts) ->
             }}
     end.
 
-%% @doc Ensure the local `genesis-wasm@1.0` is live. If it not, start it.
+%% @doc Ensure the local `genesis-wasm@1.0' is live. If it not, start it.
 ensure_started() ->
     % Check if the `genesis-wasm@1.0` device is already running. The presence
     % of the registered name implies its availability.
