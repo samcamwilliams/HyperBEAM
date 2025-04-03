@@ -145,12 +145,12 @@ group(Msg1, Msg2, Opts) ->
         hb_ao:truncate_args(Grouper, [Msg1, Msg2, Opts])
     ).
 
-%% @doc Register for performing a AO-Core resolution.
+%% @doc Register for performing an AO-Core resolution.
 register_groupname(Groupname, _Opts) ->
     ?event({registering_as, Groupname}),
     hb_name:register(Groupname).
 
-%% @doc Unregister for being the leader on a AO-Core resolution.
+%% @doc Unregister for being the leader on an AO-Core resolution.
 unregister(Msg1, Msg2, Opts) ->
     start(),
     unregister_groupname(group(Msg1, Msg2, Opts), Opts).

@@ -1,6 +1,6 @@
 %%% @doc A virtual filesystem device.
 %%% Implements a file-system-as-map structure, which is traversible externally.
-%%% Each file is a binary and each directory is a AO-Core message.
+%%% Each file is a binary and each directory is an AO-Core message.
 %%% Additionally, this module adds a series of WASI-preview-1 compatible
 %%% functions for accessing the filesystem as imported functions by WASM
 %%% modules.

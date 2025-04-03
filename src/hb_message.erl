@@ -44,7 +44,7 @@
 %%% 
 %%% Additionally, this module provides a number of utility functions for
 %%% manipulating messages. For example, `hb_message:sign/2' to sign a message of
-%%% arbitrary type, or `hb_message:format/1' to print a AO-Core/TABM message in
+%%% arbitrary type, or `hb_message:format/1' to print an AO-Core/TABM message in
 %%% a human-readable format.
 %%% 
 %%% The `hb_cache' module is responsible for storing and retrieving messages in
