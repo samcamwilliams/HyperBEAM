@@ -55,16 +55,31 @@ ensure_started(Opts) ->
             % If it is, do nothing.
             true;
         false ->
-            % The device is not running, so we need to start it.
+			% Create genesis_wasm cache dir, if it does not exist.
+			[#{<<"prefix">> := CacheDir} | _] = hb_opts:get(store),
+			WalletFile = hb_opts:get(priv_key_location, no_viable_key_location, Opts),
+			DatabaseDir = io_lib:format(
+				"~s/genesis-wasm-cache",
+				[CacheDir]
+			),
+			DatabaseUrl = io_lib:format(
+				"~s/ao-cache",
+				[DatabaseDir]
+			),
+			Command = io_lib:format(
+				"sh -c 'DB_URL=../../~s NODE_CONFIG_ENV=development WALLET_FILE=../../~s HB_URL=http://localhost:10000 UNIT_MODE=hbu PORT=6363 npm --prefix _build/genesis-wasm-server run dev'",
+				[DatabaseUrl, WalletFile]
+			),
+			filelib:ensure_path(DatabaseDir),
+			?event({genesis_wasm_command, {Command}}),
+			% The device is not running, so we need to start it.
             PID =
                 spawn(
                     fun() ->
                         ?event({genesis_wasm_starting, {pid, self()}}),
                         Port =
                             open_port(
-                                {spawn,
-                                    "npm --prefix _build/genesis-wasm-server run dev"
-                                },
+                                {spawn, lists:flatten(Command)},
                                 [binary, use_stdio, stderr_to_stdout]
                             ),
                         ?event({genesis_wasm_port_opened, {port, Port}}),
@@ -76,7 +91,7 @@ ensure_started(Opts) ->
             hb_name:register(<<"genesis-wasm@1.0">>, PID),
             ?event({genesis_wasm_starting, {pid, PID}}),
             % Wait for the device to start.
-            receive after 2000 -> ok end,
+            receive after 5000 -> ok end,
             ?event({genesis_wasm_started, {pid, PID}}),
             is_genesis_wasm_server_running(Opts)
     end.
