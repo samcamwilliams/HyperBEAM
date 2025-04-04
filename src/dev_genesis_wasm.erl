@@ -58,6 +58,7 @@ ensure_started(Opts) ->
 			% Create genesis_wasm cache dir, if it does not exist.
 			[#{<<"prefix">> := CacheDir} | _] = hb_opts:get(store),
 			WalletFile = hb_opts:get(priv_key_location, no_viable_key_location, Opts),
+			Port = hb_opts:get(port, no_viable_port, Opts),
 			DatabaseDir = io_lib:format(
 				"~s/genesis-wasm-cache",
 				[CacheDir]
@@ -67,8 +68,8 @@ ensure_started(Opts) ->
 				[DatabaseDir]
 			),
 			Command = io_lib:format(
-				"sh -c 'DB_URL=../../~s NODE_CONFIG_ENV=development WALLET_FILE=../../~s HB_URL=http://localhost:10000 UNIT_MODE=hbu PORT=6363 npm --prefix _build/genesis-wasm-server run dev'",
-				[DatabaseUrl, WalletFile]
+				"sh -c 'DB_URL=../../~s NODE_CONFIG_ENV=development WALLET_FILE=../../~s HB_URL=http://localhost:~s UNIT_MODE=hbu PORT=6363 npm --prefix _build/genesis-wasm-server run dev'",
+				[DatabaseUrl, WalletFile, Port]
 			),
 			filelib:ensure_path(DatabaseDir),
 			?event({genesis_wasm_command, {Command}}),
