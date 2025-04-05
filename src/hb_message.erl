@@ -1433,6 +1433,20 @@ priv_survives_conversion_test(Codec) ->
         maps:get(<<"priv">>, Decoded, #{})
     ).
 
+encode_balance_table_test(Codec) ->
+    Msg =
+        #{
+            hb_util:encode(crypto:strong_rand_bytes(32)) =>
+                integer_to_binary(rand:uniform(1_000_000_000_000_000))
+        ||
+            _ <- lists:seq(1, 20000)
+        },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event({encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1515,4 +1529,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).
+    encode_balance_table_test(<<"httpsig@1.0">>).

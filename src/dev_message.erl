@@ -437,9 +437,7 @@ set(Message1, NewValuesMsg, Opts) ->
 	% note them for removal.
 	ConflictingKeys =
 		lists:filter(
-			fun(Key) ->
-				lists:member(Key, KeysToSet)
-			end,
+			fun(Key) -> lists:member(Key, KeysToSet) end,
 			maps:keys(Message1)
 		),
     UnsetKeys =
