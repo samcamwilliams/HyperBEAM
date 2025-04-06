@@ -516,13 +516,17 @@ trim_ws_end(Value, N) ->
 dictionary(Map) when is_map(Map) ->
     dictionary(maps:to_list(Map));
 dictionary(KVList) when is_list(KVList) ->
-    lists:join(<<", ">>, [
-        case Value of
-            true -> Key;
-            _ -> [Key, $=, item_or_inner_list(Value)]
-        end
-    || {Key, Value} <- KVList
-    ]).
+    lists:join(
+        <<", ">>,
+        [
+            case Value of
+                true -> Key;
+                _ -> [Key, $=, item_or_inner_list(Value)]
+            end
+        ||
+            {Key, Value} <- KVList
+        ]
+    ).
 
 -spec item(sh_item()) -> iolist().
 item({item, BareItem, Params}) ->
