@@ -164,7 +164,7 @@ key_to_binary(Key) -> iolist_to_binary(Key).
 -spec parse_dictionary(binary()) -> sh_dictionary().
 parse_dictionary(<<>>) ->
     [];
-parse_dictionary(<<C, R/bits>>) when ?IS_LC_ALPHA(C)
+parse_dictionary(<<C, R/bits>>) when ?IS_ALPHA(C)
         or ?IS_DIGIT(C) or (C =:= $*) or (C =:= $%) or (C =:= $_) or (C =:= $-) ->
     parse_dict_key(R, [], <<C>>).
 
@@ -175,7 +175,7 @@ parse_dict_key(<<$=, R0/bits>>, Acc, K) ->
     {Item, R} = parse_item1(R0),
     parse_dict_before_sep(R, lists:keystore(K, 1, Acc, {K, Item}));
 parse_dict_key(<<C, R/bits>>, Acc, K) when
-        ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or
+        ?IS_ALPHA(C) or ?IS_DIGIT(C) or
         (C =:= $_) or (C =:= $-) or (C =:= $.) or (C =:= $*) or (C =:= $%) ->
     parse_dict_key(R, Acc, <<K/binary, C>>);
 parse_dict_key(<<$;, R0/bits>>, Acc, K) ->
@@ -199,7 +199,9 @@ parse_dict_before_member(<<$\s, R/bits>>, Acc) ->
     parse_dict_before_member(R, Acc);
 parse_dict_before_member(<<$\t, R/bits>>, Acc) ->
     parse_dict_before_member(R, Acc);
-parse_dict_before_member(<<C, R/bits>>, Acc) when ?IS_LC_ALPHA(C) or ?IS_DIGIT(C) or (C =:= $*) ->
+parse_dict_before_member(<<C, R/bits>>, Acc)
+        when ?IS_ALPHA(C) or ?IS_DIGIT(C) or (C =:= $*)
+        or (C =:= $%) or (C =:= $_) or (C =:= $-) ->
     parse_dict_key(R, Acc, <<C>>).
 
 %% @doc Parse a binary SF item to an SF `item'.

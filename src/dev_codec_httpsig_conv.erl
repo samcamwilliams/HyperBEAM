@@ -40,9 +40,8 @@
 %% @doc Convert a HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
-from(RawHTTP) ->
+from(HTTP) ->
     % Decode the keys of the HTTP message
-    HTTP = hb_escape:decode_keys(RawHTTP),
     Body = maps:get(<<"body">>, HTTP, <<>>),
     % First, parse all headers excluding the signature-related headers, as they
     % are handled separately.
@@ -52,9 +51,16 @@ from(RawHTTP) ->
     ContentType = maps:get(<<"content-type">>, Headers, undefined),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
+    WithBodyKeys = from_body(Headers, InlinedKey, ContentType, Body),
+    % Decode the `ao-ids' key into a map. `ao-ids` is an encoding of literal
+    % binaries whose keys (given that they are IDs) cannot be distributed as
+    % HTTP headers.
+    WithIDs = ungroup_ids(WithBodyKeys),
+    % Remove the signature-related headers, such that they can be reconstructed
+    % from the commitments.
     MsgWithoutSigs = maps:without(
         [<<"signature">>, <<"signature-input">>, <<"commitments">>],
-        from_body(Headers, InlinedKey, ContentType, Body)
+        WithIDs
     ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Extract all hashpaths from the commitments of the message
@@ -295,8 +301,10 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM) -> to(TABM, []).
 to(TABM, Opts) when is_map(TABM) ->
-    % Encode the keys of the TABM
-    EncodedTABM = hb_escape:encode_keys(TABM),
+    % Group the IDs into a dictionary, so that they can be distributed as
+    % HTTP headers. If we did not do this, ID keys would be lower-cased and
+    % their comparability against the original keys would be lost.
+    WithGroupedIDs = group_ids(TABM),
     Stripped =
         maps:without(
             [
@@ -305,7 +313,7 @@ to(TABM, Opts) when is_map(TABM) ->
                 <<"signature-input">>,
                 <<"priv">>
             ],
-            EncodedTABM
+            WithGroupedIDs
         ),
     ?event({stripped, Stripped}),
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
@@ -446,6 +454,51 @@ do_to(TABM, Opts) when is_map(TABM) ->
     ?event({final_body_map, {msg, Enc2}}),
     Enc2.
 
+%% @doc Group all elements with:
+%% 1. A key that ?IS_ID returns true for, and
+%% 2. A value that is immediate
+%% into a combined SF dict-_like_ structure. If not encoded, these keys would 
+%% be sent as headers and lower-cased, losing their comparability against the
+%% original keys. The structure follows all SF dict rules, except that it allows
+%% for keys to contain capitals. The HyperBEAM SF parser will accept these keys,
+%% but standard RFC 8741 parsers will not. Subsequently, the resulting `ao-cased`
+%% key is not added to the `ao-types` map.
+group_ids(Map) ->
+    % Find all keys that are IDs
+    IDDict = maps:filter(fun(K, V) -> ?IS_ID(K) andalso is_binary(V) end, Map),
+    % Convert the dictionary into a list of key-value pairs
+    IDDictStruct =
+        lists:map(
+            fun({K, V}) ->
+                {K, {item, {string, V}, []}}
+            end,
+            maps:to_list(IDDict)
+        ),
+    % Convert the list of key-value pairs into a binary
+    IDBin = iolist_to_binary(hb_structured_fields:dictionary(IDDictStruct)),
+    % Remove the encoded keys from the map
+    Stripped = maps:without(maps:keys(IDDict), Map),
+    % Add the ID binary to the map if it is not empty
+    case map_size(IDDict) of
+        0 -> Stripped;
+        _ -> Stripped#{ <<"ao-ids">> => IDBin }
+    end.
+
+%% @doc Decode the `ao-ids' key into a map.
+ungroup_ids(Msg = #{ <<"ao-ids">> := IDBin }) ->
+    % Extract the ID binary from the Map
+    EncodedIDsMap = hb_structured_fields:parse_dictionary(IDBin),
+    % Convert the value back into a raw binary
+    IDsMap =
+        lists:map(
+            fun({K, {item, {string, Bin}, _}}) -> {K, Bin} end,
+            EncodedIDsMap
+        ),
+    % Add the decoded IDs to the Map and remove the `ao-ids' key
+    maps:merge(maps:without([<<"ao-ids">>], Msg), maps:from_list(IDsMap));
+ungroup_ids(Msg) -> Msg.
+
+%% @doc Encode a list of body parts into a binary.
 encode_body_keys(PartList) when is_list(PartList) ->
     iolist_to_binary(hb_structured_fields:list(lists:map(
         fun
