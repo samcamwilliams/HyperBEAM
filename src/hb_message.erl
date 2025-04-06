@@ -1433,6 +1433,26 @@ priv_survives_conversion_test(Codec) ->
         maps:get(<<"priv">>, Decoded, #{})
     ).
 
+encode_balance_table(Size, Codec) ->
+    Msg =
+        #{
+            hb_util:encode(crypto:strong_rand_bytes(32)) =>
+                rand:uniform(1_000_000_000_000_000)
+        ||
+            _ <- lists:seq(1, Size)
+        },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event(debug, {encoded, {explicit, Encoded}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
+encode_small_balance_table_test(Codec) ->
+    encode_balance_table(5, Codec).
+
+encode_large_balance_table_test(Codec) ->
+    encode_balance_table(1000, Codec).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1511,8 +1531,10 @@ message_suite_test_() ->
         {"priv survives conversion test", fun priv_survives_conversion_test/1},
         {"sign node message test", fun sign_node_message_test/1},
         {"nested list test", fun nested_body_list_test/1},
-        {"recursive nested list test", fun recursive_nested_list_test/1}
+        {"recursive nested list test", fun recursive_nested_list_test/1},
+        {"encode small balance table test", fun encode_small_balance_table_test/1},
+        {"encode large balance table test", fun encode_large_balance_table_test/1}
     ]).
 
 run_test() ->
-    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).
+    encode_balance_table(1000, <<"httpsig@1.0">>).

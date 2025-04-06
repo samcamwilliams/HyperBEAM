@@ -181,7 +181,7 @@ prepare_tags(Msg) ->
             case maps:find(<<"original-tags">>, Commitment) of
                 {ok, OriginalTags} ->
                     Res = hb_util:message_to_ordered_list(OriginalTags),
-                    ?event(debug, {using_original_tags, Res}),
+                    ?event({using_original_tags, Res}),
                     Res;
                 error -> 
                     prepare_header_case_tags(Msg)
