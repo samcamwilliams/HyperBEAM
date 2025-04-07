@@ -13,7 +13,11 @@
 %%%     curl /~relay@.1.0/call?method=GET?0.path=https://www.arweave.net/
 %%% '''
 -module(dev_relay).
+%%% Execute synchronous and asynchronous relay requests.
 -export([call/3, cast/3]).
+%%% Re-route requests that would be executed locally to other peers, according
+%%% to the node's routing table.
+-export([preprocess/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -30,6 +34,7 @@ call(M1, RawM2, Opts) ->
     RelayPath =
         hb_ao:get_first(
             [
+                {BaseTarget, <<"path">>},
                 {RawM2, <<"relay-path">>},
                 {M1, <<"relay-path">>},
                 {M1, <<"path">>}
@@ -39,6 +44,7 @@ call(M1, RawM2, Opts) ->
     RelayMethod =
         hb_ao:get_first(
             [
+                {BaseTarget, <<"method">>},
                 {RawM2, <<"relay-method">>},
                 {M1, <<"relay-method">>},
                 {RawM2, <<"method">>},
@@ -49,6 +55,7 @@ call(M1, RawM2, Opts) ->
     RelayBody =
         hb_ao:get_first(
             [
+                {BaseTarget, <<"body">>},
                 {RawM2, <<"relay-body">>},
                 {M1, <<"relay-body">>},
                 {RawM2, <<"body">>},
@@ -81,6 +88,20 @@ cast(M1, M2, Opts) ->
     spawn(fun() -> call(M1, M2, Opts) end),
     {ok, <<"OK">>}.
 
+%% @doc Preprocess a request to check if it should be relayed to a different node.
+preprocess(_M1, M2, Opts) ->
+    {ok,
+        [
+            #{ <<"device">> => <<"relay@1.0">> },
+            #{
+                <<"path">> => <<"call">>,
+                <<"target">> => <<"body">>,
+                <<"body">> =>
+                    hb_ao:get(<<"request">>, M2, Opts#{ hashpath => ignore })
+            }
+        ]
+    }.
+
 %%% Tests
 
 call_get_test() ->
@@ -96,3 +117,49 @@ call_get_test() ->
             #{ protocol => http2 }
         ),
     ?assertEqual(true, byte_size(Body) > 10_000).
+
+%% @doc Test that the `preprocess/3' function re-routes a request to remote
+%% peers, according to the node's routing table.
+preprocessor_reroute_to_nearest_test() ->
+    Peer1 = <<"https://compute-1.forward.computer">>,
+    Peer2 = <<"https://compute-2.forward.computer">>,
+    HTTPSOpts = #{ http_client => httpc },
+    {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
+    {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
+    Peers = [Address1, Address2],
+    Node =
+        hb_http_server:start_node(#{
+            priv_wallet => ar_wallet:new(),
+            routes =>
+                [
+                    #{
+                        <<"template">> => <<"/.*~process@1.0/.*">>,
+                        <<"strategy">> => <<"Nearest">>,
+                        <<"nodes">> => [
+                            #{
+                                <<"prefix">> => Peer1,
+                                <<"wallet">> => Address1
+                            },
+                            #{
+                                <<"prefix">> => Peer2,
+                                <<"wallet">> => Address2
+                            }
+                        ]
+                    }
+                ],
+            preprocessor => #{ <<"device">> => <<"relay@1.0">> }
+        }),
+    {ok, Res} =
+        hb_http:get(
+            Node,
+            <<"/CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM~process@1.0/slot">>,
+            #{}
+        ),
+    ?event({res, Res}),
+    HasValidSigner = lists:any(
+        fun(Peer) ->
+            lists:member(Peer, hb_message:signers(Res))
+        end,
+        Peers
+    ),
+    ?assert(HasValidSigner).
