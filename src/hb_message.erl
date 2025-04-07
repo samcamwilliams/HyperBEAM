@@ -122,7 +122,7 @@ restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
 restore_priv(Msg, OldPriv) ->
     MsgPriv = maps:get(<<"priv">>, Msg, #{}),
     ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
-    NewPriv = hb_ao:set(MsgPriv, OldPriv, #{}),
+    NewPriv = hb_util:deep_merge(MsgPriv, OldPriv),
     ?event({new_priv, NewPriv}),
     Msg#{ <<"priv">> => NewPriv }.
 
