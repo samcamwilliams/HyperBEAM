@@ -139,11 +139,11 @@ default_message() ->
                     [
                         #{
                             <<"prefix">> => <<"https://arweave-search.goldsky.com">>,
-                            <<"opts">> => #{ http_client => httpc }
+                            <<"opts">> => #{ http_client => httpc, protocol => http2 }
                         },
                         #{
                             <<"prefix">> => <<"https://arweave.net">>,
-                            <<"opts">> => #{ http_client => gun }
+                            <<"opts">> => #{ http_client => gun, protocol => http2 }
                         }
                     ]
             },
@@ -153,7 +153,7 @@ default_message() ->
                 <<"node">> =>
                     #{
                         <<"prefix">> => <<"https://arweave.net">>,
-                        <<"opts">> => #{ http_client => gun }
+                        <<"opts">> => #{ http_client => gun, protocol => http2 }
                     }
             }
         ],
