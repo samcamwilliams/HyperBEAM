@@ -93,8 +93,8 @@ $(GENESIS_WASM_SERVER_DIR):
 
 # Set up genesis-wasm@1.0 environment
 setup-genesis-wasm: $(GENESIS_WASM_SERVER_DIR)
-	@# Check if Node.js is installed
-	@if ! command -v node > /dev/null; then \
+	@cp native/genesis-wasm/launch-monitored.sh $(GENESIS_WASM_SERVER_DIR) && \
+	if ! command -v node > /dev/null; then \
 		echo "Error: Node.js is not installed. Please install Node.js before continuing."; \
 		echo "For Ubuntu/Debian, you can install it with:"; \
 		echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && \\"; \

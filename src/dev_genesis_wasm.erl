@@ -85,12 +85,18 @@ ensure_started(Opts) ->
                         filelib:ensure_path(DBDir),
                         Port =
                             open_port(
-                                {spawn,
-                                    "npm --prefix _build/genesis-wasm-server "
-                                        "run dev"
+                                {spawn_executable,
+                                    "_build/genesis-wasm-server/launch-monitored.sh"
                                 },
                                 [
                                     binary, use_stdio, stderr_to_stdout,
+                                    {args, [
+                                        "npm",
+                                        "--prefix",
+                                        "_build/genesis-wasm-server",
+                                        "run",
+                                        "dev"
+                                    ]},
                                     {env,
                                         [
                                             {"UNIT_MODE", "hbu"},
@@ -138,7 +144,7 @@ ensure_started(Opts) ->
             % Wait for the device to start.
             hb_util:until(
                 fun() ->
-                    receive after 1000 -> ok end,
+                    receive after 2000 -> ok end,
                     Status = is_genesis_wasm_server_running(Opts),
                     ?event({genesis_wasm_boot_wait, {received_status, Status}}),
                     Status
