@@ -81,6 +81,36 @@ rebar3 shell
 The default configuration uses settings from `hb_opts.erl`, which preloads 
 all devices and sets up default stores on port 10000.
 
+### Optional Build Profiles
+
+HyperBEAM supports several optional build profiles that enable additional features:
+
+- `genesis_wasm`: Enables Genesis WebAssembly support
+- `rocksdb`: Enables RocksDB storage backend (adds RocksDB v1.8.0 dependency)
+- `http3`: Enables HTTP/3 support via QUIC protocol
+
+
+Using these profiles allows you to optimize HyperBEAM for your specific use case without adding unnecessary dependencies to the base installation.
+
+To start a shell with profiles:
+
+```bash
+# Single profile
+rebar3 as rocksdb shell
+
+# Multiple profiles
+rebar3 as rocksdb,genesis_wasm shell
+```
+
+To create a release with profiles:
+
+```bash
+# Create release with profiles
+rebar3 as rocksdb,genesis_wasm release
+```
+
+Note: Profiles modify compile-time options that get baked into the release. Choose the profiles you need before starting HyperBEAM.
+
 ### Verify Installation
 
 To verify that your HyperBEAM node is running correctly, check:

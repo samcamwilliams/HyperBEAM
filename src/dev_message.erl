@@ -437,9 +437,7 @@ set(Message1, NewValuesMsg, Opts) ->
 	% note them for removal.
 	ConflictingKeys =
 		lists:filter(
-			fun(Key) ->
-				lists:member(Key, KeysToSet)
-			end,
+			fun(Key) -> lists:member(Key, KeysToSet) end,
 			maps:keys(Message1)
 		),
     UnsetKeys =
@@ -499,8 +497,8 @@ set(Message1, NewValuesMsg, Opts) ->
             CommittedKeys
         ),
     ?event({setting, {overwritten_committed_keys, OverwrittenCommittedKeys}}),
-    % Combine with deep_merge
-    Merged = hb_private:set_priv(deep_merge(BaseValues, NewValues), OriginalPriv),
+    % Combine with deep merge
+    Merged = hb_private:set_priv(hb_util:deep_merge(BaseValues, NewValues), OriginalPriv),
     case OverwrittenCommittedKeys of
         [] -> {ok, Merged};
         _ ->
@@ -517,24 +515,6 @@ set(Message1, NewValuesMsg, Opts) ->
 %% for AO-Core to know the key to evaluate in requests.
 set_path(Message1, #{ <<"value">> := Value }, _Opts) ->
     {ok, Message1#{ <<"path">> => Value }}.
-
-%% @doc Deep merge two maps, recursively merging nested maps
-deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
-    maps:fold(
-        fun(Key, Value2, AccMap) ->
-            case maps:find(Key, AccMap) of
-                {ok, Value1} when is_map(Value1), is_map(Value2) ->
-                    % Both values are maps, recursively merge them
-                    AccMap#{Key => deep_merge(Value1, Value2)};
-                _ ->
-                    % Either the key doesn't exist in Map1 or at least one of 
-                    % the values isn't a map. Simply use the value from Map2
-                    AccMap#{ Key => Value2 }
-            end
-        end,
-        Map1,
-        Map2
-    ).
 
 %% @doc Remove a key or keys from a message.
 remove(Message1, #{ <<"item">> := Key }) ->

@@ -52,8 +52,8 @@ read(StoreOpts, Key) ->
             not_found
     end.
 
-%% @doc Cache the data if the cache is enabled. The `store` option may either
-%% be `false` to disable local caching, or a store definition to use as the
+%% @doc Cache the data if the cache is enabled. The `store' option may either
+%% be `false' to disable local caching, or a store definition to use as the
 %% cache.
 maybe_cache(StoreOpts, Data) ->
     ?event({maybe_cache, StoreOpts, Data}),
@@ -93,7 +93,7 @@ graphql_as_store_test_() ->
 		)
 	end}.
 
-%% @doc Stored messages are accessible via `hb_cache` accesses.
+%% @doc Stored messages are accessible via `hb_cache' accesses.
 graphql_from_cache_test() ->
     hb_http_server:start_node(#{}),
     Opts = #{ store => [#{ <<"store-module">> => hb_store_gateway, <<"opts">> => #{} }] },
@@ -225,7 +225,7 @@ resolve_on_gateway_test_() ->
             {ok, <<"Process">>},
             hb_ao:resolve(TestProc, <<"type">>, Opts)
         ),
-        % Next, we resolve the schedule key on the message, as a `process@1.0`
+        % Next, we resolve the schedule key on the message, as a `process@1.0'
         % message.
         {ok, X} =
             hb_ao:resolve(

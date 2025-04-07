@@ -116,7 +116,7 @@ route(_, Msg, Opts) ->
             end
     end.
 
-%% @doc Generate a `uri` key for each node in a route.
+%% @doc Generate a `uri' key for each node in a route.
 apply_routes(Msg, R, Opts) ->
     Nodes = hb_ao:get(<<"nodes">>, R, Opts),
     NodesWithRouteApplied =

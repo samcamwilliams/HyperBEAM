@@ -116,13 +116,13 @@ from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
         OtherTypeRes -> OtherTypeRes
     end.
 
-%% @doc Add the existing `priv` sub-map back to a converted message, honoring
-%% any existing `priv` sub-map that may already be present.
+%% @doc Add the existing `priv' sub-map back to a converted message, honoring
+%% any existing `priv' sub-map that may already be present.
 restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
 restore_priv(Msg, OldPriv) ->
     MsgPriv = maps:get(<<"priv">>, Msg, #{}),
     ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
-    NewPriv = hb_ao:set(MsgPriv, OldPriv, #{}),
+    NewPriv = hb_util:deep_merge(MsgPriv, OldPriv),
     ?event({new_priv, NewPriv}),
     Msg#{ <<"priv">> => NewPriv }.
 
@@ -576,9 +576,9 @@ without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
 without_commitments(_Spec, Msg, _Opts) ->
     Msg.
 
-%% @doc Extract a commitment from a message given a `committer` ID, or a spec
+%% @doc Extract a commitment from a message given a `committer' ID, or a spec
 %% message to match against. Returns only the first matching commitment, or
-%% `not_found`.
+%% `not_found'.
 commitment(Committer, Msg) ->
     commitment(Committer, Msg, #{}).
 commitment(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
@@ -1433,6 +1433,26 @@ priv_survives_conversion_test(Codec) ->
         maps:get(<<"priv">>, Decoded, #{})
     ).
 
+encode_balance_table(Size, Codec) ->
+    Msg =
+        #{
+            hb_util:encode(crypto:strong_rand_bytes(32)) =>
+                rand:uniform(1_000_000_000_000_000)
+        ||
+            _ <- lists:seq(1, Size)
+        },
+    Encoded = convert(Msg, Codec, #{}),
+    ?event(debug, {encoded, {explicit, Encoded}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    ?event(debug, {decoded, Decoded}),
+    ?assert(match(Msg, Decoded)).
+
+encode_small_balance_table_test(Codec) ->
+    encode_balance_table(5, Codec).
+
+encode_large_balance_table_test(Codec) ->
+    encode_balance_table(1000, Codec).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1511,8 +1531,10 @@ message_suite_test_() ->
         {"priv survives conversion test", fun priv_survives_conversion_test/1},
         {"sign node message test", fun sign_node_message_test/1},
         {"nested list test", fun nested_body_list_test/1},
-        {"recursive nested list test", fun recursive_nested_list_test/1}
+        {"recursive nested list test", fun recursive_nested_list_test/1},
+        {"encode small balance table test", fun encode_small_balance_table_test/1},
+        {"encode large balance table test", fun encode_large_balance_table_test/1}
     ]).
 
 run_test() ->
-    signed_message_encode_decode_verify_test(<<"ans104@1.0">>).
+    encode_balance_table(1000, <<"httpsig@1.0">>).

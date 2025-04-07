@@ -60,8 +60,8 @@ request(Message, Opts) ->
 request(Method, Peer, Path, Opts) ->
     request(Method, Peer, Path, #{}, Opts).
 request(Method, Config = #{ <<"nodes">> := Nodes }, Path, Message, Opts) when is_list(Nodes) ->
-    % The request has a `route` (see `dev_router` for more details), so we use the
-    % `multirequest` functionality, rather than a single request.
+    % The request has a `route' (see `dev_router' for more details), so we use the
+    % `multirequest' functionality, rather than a single request.
     multirequest(Config, Method, Path, Message, Opts);
 request(Method, #{ <<"opts">> := NodeOpts, <<"uri">> := URI }, _Path, Message, Opts) ->
     % The request has a set of additional options, so we apply them to the
@@ -218,7 +218,7 @@ message_to_request(M, Opts) ->
             {ok, Method, Node, Path, MsgWithoutMeta};
         {ok, Routes} ->
             ?event(http_outbound, {found_routes, {req, M}, {routes, Routes}}),
-            % The result is a route, so we leave it to `request` to handle it.
+            % The result is a route, so we leave it to `request' to handle it.
             Path = hb_ao:get(<<"path">>, M, <<"/">>, Opts),
             {ok, Method, Routes, Path, MsgWithoutMeta};
         {error, Reason} ->
@@ -494,7 +494,7 @@ add_cors_headers(Msg, ReqHdr) ->
         }
     end,
     % Keys in the given message will overwrite the defaults listed below if 
-    % included, due to `maps:merge`'s precidence order.
+    % included, due to `maps:merge''s precidence order.
     maps:merge(WithAllowHeaders, Msg).
 
 %% @doc Generate the headers and body for a HTTP response message.
@@ -512,7 +512,7 @@ encode_reply(TABMReq, Message, Opts) ->
             end
         ),
     % Codecs generally do not need to specify headers outside of the content-type,
-    % aside the default `httpsig@1.0` codec, which expresses its form in HTTP
+    % aside the default `httpsig@1.0' codec, which expresses its form in HTTP
     % documents, and subsequently must set its own headers.
     case Codec of
         <<"httpsig@1.0">> ->
@@ -529,7 +529,7 @@ encode_reply(TABMReq, Message, Opts) ->
                 maps:get(<<"body">>, EncMessage, <<>>)
             };
         <<"ans104@1.0">> ->
-            % The `ans104@1.0` codec is a binary format, so we must serialize
+            % The `ans104@1.0' codec is a binary format, so we must serialize
             % the message to a binary before sending it.
             {
                 ok,
@@ -566,10 +566,10 @@ encode_reply(TABMReq, Message, Opts) ->
 %% @doc Calculate the codec name to use for a reply given its initiating Cowboy
 %% request, the parsed TABM request, and the response message. The precidence
 %% order for finding the codec is:
-%% 1. The `accept-codec` field in the message
-%% 2. The `accept` field in the request headers
+%% 1. The `accept-codec' field in the message
+%% 2. The `accept' field in the request headers
 %% 3. The default codec
-%% Options can be specified in mime-type format (`application/*`) or in
+%% Options can be specified in mime-type format (`application/*') or in
 %% AO device format (`device@1.0').
 accept_to_codec(TABMReq, Opts) ->
     AcceptCodec =
@@ -582,7 +582,7 @@ accept_to_codec(TABMReq, Opts) ->
     case AcceptCodec of
         not_specified ->
             % We hold off until confirming that the codec is not directly in the
-            % message before calling `hb_opts:get/3`, as it is comparatively
+            % message before calling `hb_opts:get/3', as it is comparatively
             % expensive.
             default_codec(Opts);
         _ -> AcceptCodec
@@ -607,7 +607,7 @@ mime_to_codec(_, _Opts) -> not_specified.
 default_codec(Opts) ->
     hb_opts:get(default_codec, <<"httpsig@1.0">>, Opts).
 
-%% @doc Call the `content-type` key on a message with the given codec, using
+%% @doc Call the `content-type' key on a message with the given codec, using
 %% a fast-path for options that are not needed for this one-time lookup.
 codec_to_content_type(Codec, Opts) ->
     FastOpts =
@@ -657,7 +657,7 @@ req_to_tabm_singleton(Req, Body, Opts) ->
 %% require special handling in order to be converted to a normalized message.
 %% In particular, the signatures are verified if present and required by the 
 %% node configuration. Additionally, non-committed fields are removed from the
-%% message if it is signed, with the exception of the `path` and `method` fields.
+%% message if it is signed, with the exception of the `path' and `method' fields.
 httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
     Msg = dev_codec_httpsig_conv:from(
         RawHeaders#{ <<"body">> => Body }

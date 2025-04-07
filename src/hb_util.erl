@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([number/1, list_to_numbered_map/1, message_to_ordered_list/1]).
+-export([deep_merge/2, number/1, list_to_numbered_map/1, message_to_ordered_list/1]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
@@ -14,7 +14,7 @@
 -export([format_maybe_multiline/2, remove_trailing_noise/2]).
 -export([debug_print/4, debug_fmt/1, debug_fmt/2, eunit_print/2]).
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
--export([ok/1, ok/2]).
+-export([ok/1, ok/2, until/1, until/2, until/3]).
 -export([format_trace_short/1]).
 -export([count/2, mean/1, stddev/1, variance/1]).
 -include("include/hb.hrl").
@@ -73,6 +73,26 @@ ok(Other, Opts) ->
 		throw -> throw({unexpected, Other});
 		_ -> {unexpected, Other}
 	end.
+
+%% @doc Utility function to wait for a condition to be true. Optionally,
+%% you can pass a function that will be called with the current count of
+%% iterations, returning an integer that will be added to the count. Once the
+%% condition is true, the function will return the count.
+until(Condition) ->
+    until(Condition, 0).
+until(Condition, Count) ->
+    until(Condition, fun() -> receive after 100 -> 1 end end, Count).
+until(Condition, Fun, Count) ->
+    case Condition() of
+        false ->
+            case apply(Fun, hb_ao:truncate_args(Fun, [Count])) of
+                {count, AddToCount} ->
+                    until(Condition, Fun, Count + AddToCount);
+                _ ->
+                    until(Condition, Fun, Count + 1)
+            end;
+        true -> Count
+    end.
 
 %% @doc Return the human-readable form of an ID of a message when given either
 %% a message explicitly, raw encoded ID, or an Erlang Arweave `tx' record.
@@ -203,6 +223,24 @@ to_hex(Bin) when is_binary(Bin) ->
         iolist_to_binary(
             [io_lib:format("~2.16.0B", [X]) || X <- binary_to_list(Bin)]
         )
+    ).
+
+%% @doc Deep merge two maps, recursively merging nested maps.
+deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
+    maps:fold(
+        fun(Key, Value2, AccMap) ->
+            case maps:find(Key, AccMap) of
+                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+                    % Both values are maps, recursively merge them
+                    AccMap#{Key => deep_merge(Value1, Value2)};
+                _ ->
+                    % Either the key doesn't exist in Map1 or at least one of 
+                    % the values isn't a map. Simply use the value from Map2
+                    AccMap#{ Key => Value2 }
+            end
+        end,
+        Map1,
+        Map2
     ).
 
 %% @doc Label a list of elements with a number.

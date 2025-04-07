@@ -7,9 +7,9 @@
 %%% GraphQL API. When gateways integrate serving in `httpsig@1.0' form, this
 %%% module will be deprecated.
 -module(hb_gateway_client).
-%% @doc Raw access primitives:
+%% Raw access primitives:
 -export([read/2, data/2, result_to_message/2]).
-%% @doc Application-specific data access functions:
+%% Application-specific data access functions:
 -export([scheduler_location/2]).
 -include_lib("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -75,8 +75,8 @@ item_spec() ->
 %% @doc Get the data associated with a transaction by its ID, using the node's
 %% Arweave `gateway' peers. The item is expected to be available in its 
 %% unmodified (by caches or other proxies) form at the following location:
-%%      https://<gateway>/raw/<id>
-%% where `<id>' is the base64-url-encoded transaction ID.
+%%      https://&lt;gateway&gt;/raw/&lt;id&gt;
+%% where `&lt;id&gt;' is the base64-url-encoded transaction ID.
 data(ID, Opts) ->
     Req = #{
         <<"multirequest-accept-status">> => 200,
@@ -154,7 +154,7 @@ query(Query, Opts) ->
     end.
 
 %% @doc Takes a GraphQL item node, matches it with the appropriate data from a
-%% gateway, then returns `{ok, ParsedMsg}`.
+%% gateway, then returns `{ok, ParsedMsg}'.
 result_to_message(Item, Opts) ->
     case hb_ao:get(<<"id">>, Item, Opts) of
         ExpectedID when is_binary(ExpectedID) ->
