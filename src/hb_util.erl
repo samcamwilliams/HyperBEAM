@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([number/1, list_to_numbered_map/1, message_to_ordered_list/1]).
+-export([deep_merge/2, number/1, list_to_numbered_map/1, message_to_ordered_list/1]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
@@ -223,6 +223,24 @@ to_hex(Bin) when is_binary(Bin) ->
         iolist_to_binary(
             [io_lib:format("~2.16.0B", [X]) || X <- binary_to_list(Bin)]
         )
+    ).
+
+%% @doc Deep merge two maps, recursively merging nested maps.
+deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
+    maps:fold(
+        fun(Key, Value2, AccMap) ->
+            case maps:find(Key, AccMap) of
+                {ok, Value1} when is_map(Value1), is_map(Value2) ->
+                    % Both values are maps, recursively merge them
+                    AccMap#{Key => deep_merge(Value1, Value2)};
+                _ ->
+                    % Either the key doesn't exist in Map1 or at least one of 
+                    % the values isn't a map. Simply use the value from Map2
+                    AccMap#{ Key => Value2 }
+            end
+        end,
+        Map1,
+        Map2
     ).
 
 %% @doc Label a list of elements with a number.
