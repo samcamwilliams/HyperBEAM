@@ -74,14 +74,16 @@ ensure_started(Opts) ->
                             "http://localhost:" ++
                             integer_to_list(hb_opts:get(port, no_port, Opts)),
                         DBDir =
-                            hb_util:list(
-                                hb_opts:get(
-                                    genesis_wasm_db_dir,
-                                    "cache-mainnet/genesis-wasm",
-                                    Opts
+                            filename:absname(
+                                hb_util:list(
+                                    hb_opts:get(
+                                        genesis_wasm_db_dir,
+                                        "cache-mainnet/genesis-wasm",
+                                        Opts
+                                    )
                                 )
                             ),
-                        DatabaseUrl = "../../" ++ DBDir ++ "/genesis-wasm-db",
+                        DatabaseUrl = filename:absname(DBDir ++ "/genesis-wasm-db"),
                         filelib:ensure_path(DBDir),
                         Port =
                             open_port(
@@ -122,7 +124,7 @@ ensure_started(Opts) ->
                                                 )
                                             },
                                             {"WALLET_FILE",
-                                                "../../" ++
+                                                filename:absname(
                                                     hb_util:list(
                                                         hb_opts:get(
                                                             priv_key_location,
@@ -130,6 +132,7 @@ ensure_started(Opts) ->
                                                             Opts
                                                         )
                                                     )
+                                                )
                                             }
                                         ]
                                     }
