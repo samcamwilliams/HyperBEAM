@@ -7,7 +7,7 @@ are protected by hardware commitment and encryption.
 """.
 -export([join/3, init/3, become/3, key/3, 
          default_zone_required_opts/1, default_zone_bypass_opts/1]).
--export([list_partitions/3, format_disk/3, mount_disk/3, change_node_store/3]).
+-export([list_partitions/3, create_partition/3, format_disk/3, mount_disk/3, change_node_store/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
@@ -729,6 +729,77 @@ list_partitions(_M1, _M2, _Opts) ->
                 <<"status">> => 200,
                 <<"partitions">> => list_to_binary(Output)
             }}
+    end.
+
+-doc """
+Create a partition on a disk device.
+This function creates a GPT partition table on the specified device and
+creates a single partition that occupies the entire disk.
+@param M1 A map containing the device path.
+@param M2 A map containing optional parameters like partition type.
+@param Opts A map of configuration options.
+@returns {ok, Map} on success where Map includes status and partition information.
+""".
+-spec create_partition(M1 :: map(), M2 :: map(), Opts :: map()) ->
+    {ok, map()} | {error, binary()}.
+create_partition(M1, M2, Opts) ->
+    ?event(green_zone, {disk, create_partition, start}),
+    
+    % Get the device path from the request
+    Device = hb_ao:get(<<"device">>, M1, undefined, Opts),
+    
+    % Get optional parameters
+    PartType = hb_ao:get(<<"partition_type">>, M2, <<"ext4">>, Opts),
+    
+    % Validate device path
+    case Device of
+        undefined ->
+            ?event(green_zone, 
+                  {disk, create_partition, error, <<"no device specified">>}),
+            {error, <<"No device path specified.">>};
+        _ ->
+            % Create a GPT partition table
+            MklabelCmd = "sudo parted " ++ binary_to_list(Device) ++ " mklabel gpt",
+            MklabelResult = os:cmd(MklabelCmd),
+            
+            % Check if creating the partition table succeeded
+            case string:find(MklabelResult, "Error") of
+                nomatch ->
+                    % Create a single partition occupying the entire disk
+                    MkpartCmd = "sudo parted -a optimal " ++ binary_to_list(Device) 
+                                ++ " mkpart primary " ++ binary_to_list(PartType) 
+                                ++ " 0% 100%",
+                    MkpartResult = os:cmd(MkpartCmd),
+                    
+                    % Check if creating the partition succeeded
+                    case string:find(MkpartResult, "Error") of
+                        nomatch ->
+                            % Print partition information
+                            PrintCmd = "sudo parted " ++ binary_to_list(Device) 
+                                      ++ " print",
+                            PartitionInfo = os:cmd(PrintCmd),
+                            
+                            ?event(green_zone, {disk, create_partition, complete}),
+                            {ok, #{
+                                <<"status">> => 200,
+                                <<"message">> => 
+                                    <<"Partition created successfully.">>,
+                                <<"device">> => Device,
+                                <<"partition_info">> => 
+                                    list_to_binary(PartitionInfo)
+                            }};
+                        _ ->
+                            ?event(green_zone, 
+                                  {disk, create_partition, error, 
+                                   list_to_binary(MkpartResult)}),
+                            {error, list_to_binary(MkpartResult)}
+                    end;
+                _ ->
+                    ?event(green_zone, 
+                          {disk, create_partition, error, 
+                           list_to_binary(MklabelResult)}),
+                    {error, list_to_binary(MklabelResult)}
+            end
     end.
 
 -doc """
