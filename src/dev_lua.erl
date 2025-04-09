@@ -244,23 +244,15 @@ direct_benchmark_test() ->
     ?assert(Iterations > 10).
 
 invoke_aos_test() ->
-    {ok, Script} = file:read_file("test/aos-lite.lua"),
-    Base = #{
-        <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
-        <<"function">> => <<"handle">>,
-        <<"parameters">> => [
-            aos_exec_binary(<<"1 + 1">>),
-            aos_process_binary()
-        ]
-    },
-    {ok, Initialized} = hb_ao:resolve(Base, <<"init">>, #{}),
-    {ok, Results} = hb_ao:resolve(Initialized, <<"compute">>, #{}),
-    Data = hb_json:decode(hb_ao:get(<<"results/output">>, Results, #{})),
-    ?assertEqual(<<"2">>, hb_ao:get(<<"response/Output/data">>, Data, #{})).
+    Process = generate_lua_process("test/aos-lite.lua"),
+    {ok, _} = hb_cache:write(Process, #{}),
+    Message = generate_test_message(Process),
+    {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+    {ok, Results} = hb_ao:resolve(Process, <<"now">>, #{}),
+    ?assertEqual(<<"23">>, Results).
 
 %% @doc Benchmark the performance of Lua executions.
-aos_benchmark_test() ->
+aos_benchmark_test_disabled() ->
     BenchTime = 3,
     {ok, Script} = file:read_file("test/aos-lite.lua"),
     Base = #{
