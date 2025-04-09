@@ -244,10 +244,10 @@ direct_benchmark_test() ->
     ?assert(Iterations > 10).
 
 %% @doc Call AOS with an eval command.
-invoke_aos_test_disabled() ->
+invoke_aos_test() ->
     % Disabled: aos-2.0.4.lua is an update script, but does not initialize
     % the Lua environment state correctly.
-    {ok, Script} = file:read_file("test/aos-2.0.4.lua"),
+    {ok, Script} = file:read_file("test/aos-2.0.4x.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
         <<"script">> => Script,
