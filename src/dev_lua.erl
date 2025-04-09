@@ -243,11 +243,27 @@ direct_benchmark_test() ->
     ),
     ?assert(Iterations > 10).
 
-%% @doc Call AOS with an eval command.
 invoke_aos_test() ->
+    {ok, Script} = file:read_file("test/aos-lite.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => Script,
+        <<"function">> => <<"handle">>,
+        <<"parameters">> => [
+            aos_exec_binary(<<"1 + 1">>),
+            aos_process_binary()
+        ]
+    },
+    {ok, Initialized} = hb_ao:resolve(Base, <<"init">>, #{}),
+    {ok, Results} = hb_ao:resolve(Initialized, <<"compute">>, #{}),
+    Data = hb_json:decode(hb_ao:get(<<"results/output">>, Results, #{})),
+    ?assertEqual(<<"2">>, hb_ao:get(<<"response/Output/data">>, Data, #{})).
+
+%% @doc Call AOS with an eval command.
+invoke_aos_test_disabled() ->
     % Disabled: aos-2.0.4.lua is an update script, but does not initialize
     % the Lua environment state correctly.
-    {ok, Script} = file:read_file("test/aos-2.0.4x.lua"),
+    {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
         <<"script">> => Script,
@@ -259,7 +275,6 @@ invoke_aos_test() ->
     },
     {ok, Initialized} = hb_ao:resolve(Base, <<"init">>, #{}),
     {ok, Results} = hb_ao:resolve(Initialized, <<"compute">>, #{}),
-    ?event({results, Results}),
     ?assertEqual(42, hb_ao:get(<<"data">>, Results, #{})).
 
 %% @doc Call a non-compute key on a Lua device message and ensure that the
