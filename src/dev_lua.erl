@@ -259,6 +259,34 @@ invoke_aos_test() ->
     Data = hb_json:decode(hb_ao:get(<<"results/output">>, Results, #{})),
     ?assertEqual(<<"2">>, hb_ao:get(<<"response/Output/data">>, Data, #{})).
 
+%% @doc Benchmark the performance of Lua executions.
+aos_benchmark_test() ->
+    BenchTime = 3,
+    {ok, Script} = file:read_file("test/aos-lite.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => Script,
+        <<"function">> => <<"handle">>,
+        <<"parameters">> => [
+            aos_exec_binary(<<"1 + 1">>),
+            aos_process_binary()
+        ]
+    },
+    {ok, Initialized} = hb_ao:resolve(Base, <<"init">>, #{}),
+    Iterations = hb:benchmark(
+        fun(X) ->
+            {ok, _} = hb_ao:resolve(Initialized, <<"compute">>, #{}),
+            ?event({iteration, X})
+        end,
+        BenchTime
+    ),
+    ?event({iterations, Iterations}),
+    hb_util:eunit_print(
+        "Computed ~p Lua executions in ~ps (~.2f calls/s)",
+        [Iterations, BenchTime, Iterations / BenchTime]
+    ),
+    ?assert(Iterations > 10).
+
 %% @doc Call AOS with an eval command.
 invoke_aos_test_disabled() ->
     % Disabled: aos-2.0.4.lua is an update script, but does not initialize
