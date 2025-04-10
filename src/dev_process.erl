@@ -431,18 +431,20 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                 }
             ),
             case LoadRes of
-                {ok, LoadedSlot, SnapshotMsg} ->
+                {ok, MaybeLoadedSlot, MaybeLoadedSnapshotMsg} ->
                     % Restore the devices in the executor stack with the
                     % loaded state. This allows the devices to load any
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this, and remove
                     % the snapshot key after we have normalized the message.
+                    LoadedSnapshotMsg = hb_ao:ensure_all_loaded(MaybeLoadedSnapshotMsg, Opts),
+                    LoadedSlot = hb_ao:ensure_all_loaded(MaybeLoadedSlot, Opts),
                     ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     {ok, Normalized} =
                         run_as(
                             <<"execution">>,
-                            SnapshotMsg,
+                            LoadedSnapshotMsg,
                             normalize,
                             Opts#{ hashpath => ignore }
                         ),
