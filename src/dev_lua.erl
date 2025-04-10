@@ -298,7 +298,7 @@ invoke_aos_test() ->
     Message = generate_test_message(Process),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-    ?assertEqual(23, Results).
+    ?assertEqual(<<"23">>, Results).
 
 %% @doc Benchmark the performance of Lua executions.
 aos_process_benchmark_test_() ->
@@ -361,8 +361,9 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"body">> => <<"TEST MESSAGE">>,
-                        <<"random-seed">> => rand:uniform(1337)
+                        <<"body">> => <<"22 + 1">>,
+                        <<"random-seed">> => rand:uniform(1337),
+                        <<"action">> => <<"Eval">>
                     },
                     Wallet
                 )

@@ -1774,11 +1774,6 @@ end
 
 function process.handle(msg, env) 
 
-  -- tagify msg
-  msg.TagArray = msg.Tags
-  msg.Tags = Utils.Tab(msg)
-
-
   Handlers.add("_eval", function (msg)
     return msg.Action == "Eval" -- and Owner == msg.From
   end, eval(ao))
@@ -1794,7 +1789,7 @@ function process.handle(msg, env)
     return { Error = tostring(result) }
   end
 
-  return ao.outbox
+  return 
 end
 
 return process
@@ -1805,24 +1800,41 @@ print("loaded process")
   
 
 ao = require('.ao')
-Dump = require('.dump')
-local process = require('.process')
-
+local _process = require('.process')
 
 function compute(base, req, opts) 
-  base.results = {
-    output = {
-      data = 23
-    },
-    messages = {},
-    spawns = {},
-    assignments = {}
+  local message = {
+    Id = "1",
+    ["Hash-Chain"] = req['hash-chain'],
+    Action = req.body.action,
+    Data = req.body.body,
+    Type = req.body.type,
+    Target = req.body.target,
+    Owner = "",
+    From = "",
+    Timestamp = tostring(req['timestamp']),
+    ['Block-Height'] = tostring(req['block-height']),
+    ['Block-Hash'] = tostring(req['block-hash']),
+    ['Data-Protocol'] = req['data-protocol'],
+    ['Path'] = req.path,
+    ['Slot'] = req.slot,
+    ['Epoch'] = req.epoch
   }
-  -- print(require('.stringify').format())
-  -- ao.id = env.Id
-  -- local response = process.handle(ao.normalize(req.body), { Process = base.process} )
-  -- base.response = response 
-  -- local result = json.encode({ ok = true, response = response}) 
+  base.process.script = nil
+  local process = {
+    Id = req.body.target,
+    Type = base.process.type,
+    Device = base.process.device,
+    ['Execution-Device'] = base.process['execution-device'],
+    ['Scheduler-Device'] = base.process['scheduler-device'],
+    ['Test-Random-Seed'] = base.process['test-random-seed'],
+    commitments = base.process.commitments
+  }
+
+  _process.handle(message, { Process = process, Module = {} } )
+
+  -- print(require('.stringify').format(ao.outbox))
+  base.results = ao.outbox
   return base 
 end
 
