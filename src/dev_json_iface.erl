@@ -56,7 +56,9 @@ compute(M1, M2, Opts) ->
 
 %% @doc Prepare the WASM environment for execution by writing the process string and
 %% the message as JSON representations into the WASM environment.
-prep_call(M1, M2, Opts) ->
+prep_call(RawM1, RawM2, Opts) ->
+    M1 = hb_ao:ensure_all_loaded(RawM1),
+    M2 = hb_ao:ensure_all_loaded(RawM2),
     ?event({prep_call, M1, M2, Opts}),
     Process = hb_ao:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
     Message = hb_ao:get(<<"body">>, M2, Opts#{ hashpath => ignore }),

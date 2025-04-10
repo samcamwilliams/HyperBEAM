@@ -57,8 +57,9 @@ id(Base, _, NodeOpts) when not is_map(Base) ->
 id(Base, Req, NodeOpts) ->
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
+    LoadedBase = hb_ao:ensure_all_loaded(Base),
     ModBase = #{ <<"commitments">> := Commitments }
-        = with_relevant_commitments(Base, Req, NodeOpts),
+        = with_relevant_commitments(LoadedBase, Req, NodeOpts),
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
@@ -141,7 +142,6 @@ id_device(_) ->
 committers(Base) -> committers(Base, #{}).
 committers(Base, Req) -> committers(Base, Req, #{}).
 committers(#{ <<"commitments">> := Commitments }, _, _NodeOpts) ->
-    ?event({commitments, Commitments}),
     {ok,
         hb_maps:values(
             hb_maps:filtermap(
@@ -247,7 +247,7 @@ exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
 %% @doc Return the list of committed keys from a message.
 committed(Self, Req, Opts) ->
     % Get the target message of the verification request.
-    {ok, Base} = hb_message:find_target(Self, Req, Opts),
+    {ok, Base} = hb_message:find_target(hb_ao:ensure_all_loaded(Self), Req, Opts),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
     Commitments = hb_maps:get(<<"commitments">>, Base, #{}),
     % Get the list of committed keys from each committer.

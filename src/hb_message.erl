@@ -159,6 +159,7 @@ id(Msg, RawCommitters, Opts) ->
 with_only_committed(Msg) ->
     with_only_committed(Msg, #{}).
 with_only_committed(Msg, Opts) when is_map(Msg) ->
+    ?event(debug_load, {with_only_committed, {msg, Msg}, {opts, Opts}}),
     Comms = hb_maps:get(<<"commitments">>, Msg, not_found),
     case is_map(Msg) andalso Comms /= not_found of
         true ->
@@ -232,6 +233,7 @@ committed(Msg, all, Opts) ->
 committed(Msg, List, Opts) when is_list(List) ->
     committed(Msg, #{ <<"commitments">> => List }, Opts);
 committed(Msg, CommittersMsg, Opts) ->
+    ?event(debug_load, {committed, {msg, {explicit, Msg}}, {committers_msg, {explicit, CommittersMsg}}, {opts, Opts}}),
     {ok, CommittedKeys} = dev_message:committed(Msg, CommittersMsg, Opts),
     CommittedKeys.
 

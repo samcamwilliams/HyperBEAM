@@ -407,14 +407,16 @@ to(Binary) when is_binary(Binary) ->
     };
 to(TX) when is_record(TX, tx) -> TX;
 to(RawTABM) when is_map(RawTABM) ->
+    % Ensure that the TABM is fully loaded, for now.
+    DenormTABM = hb_ao:ensure_all_loaded(RawTABM),
     % The path is a special case so we normalized it first. It may have been
     % modified by `hb_ao' in order to set it to the current key that is
     % being executed. We should check whether the path is in the
     % `priv/AO-Core/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
-    TABM = hb_ao:normalize_keys(hb_maps:without([<<"commitments">>], RawTABM)),
-    Commitments = hb_maps:get(<<"commitments">>, RawTABM, #{}),
+    TABM = hb_ao:normalize_keys(hb_maps:without([<<"commitments">>], DenormTABM)),
+    Commitments = hb_maps:get(<<"commitments">>, DenormTABM, #{}),
     TABMWithComm =
         case hb_maps:keys(Commitments) of
             [] -> TABM;
@@ -429,7 +431,7 @@ to(RawTABM) when is_map(RawTABM) ->
                     ),
                 ?event({tabm_without_commitment_keys, TABMWithoutCommitmentKeys}),
                 TABMWithoutCommitmentKeys;
-            _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
+            _ -> throw({multisignatures_not_supported_by_ans104, DenormTABM})
         end,
     OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),

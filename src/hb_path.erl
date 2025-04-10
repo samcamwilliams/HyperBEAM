@@ -216,6 +216,8 @@ verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
 %% viable hashpath and path in its Erlang map at all times, unless the message
 %% is directly from a user (in which case paths and hashpaths will not have 
 %% been assigned yet).
+from_message(Type, Link) when ?IS_LINK(Link) ->
+    from_message(Type, hb_ao:ensure_loaded(Link));
 from_message(hashpath, Msg) -> hashpath(Msg, #{});
 from_message(request, #{ path := Path }) -> term_to_path_parts(Path);
 from_message(request, #{ <<"path">> := Path }) -> term_to_path_parts(Path);
@@ -226,6 +228,8 @@ from_message(request, _) -> undefined.
 %% atoms. Notably, it does not support strings as lists of characters.
 term_to_path_parts(Path) ->
     term_to_path_parts(Path, #{ error_strategy => throw }).
+term_to_path_parts(Link, Opts) when ?IS_LINK(Link) ->
+    term_to_path_parts(hb_ao:ensure_loaded(Link), Opts);
 term_to_path_parts([], _Opts) -> undefined;
 term_to_path_parts(<<>>, _Opts) -> undefined;
 term_to_path_parts(<<"/">>, _Opts) -> [];

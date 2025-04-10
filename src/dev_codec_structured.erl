@@ -10,7 +10,7 @@
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
 -export([to/1, from/1, commit/3, committed/3, verify/3]).
--export([decode_value/2, encode_value/1, implicit_keys/1]).
+-export([decode_value/2, encode_value/1, parse_ao_types/1, implicit_keys/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -233,6 +233,7 @@ encode_value(Value) ->
 decode_value(Type, Value) when is_list(Type) ->
     decode_value(list_to_binary(Type), Value);
 decode_value(Type, Value) when is_binary(Type) ->
+    ?event(debug_types, {decoding, {type, Type}, {value, Value}}),
     decode_value(
         binary_to_existing_atom(
             list_to_binary(string:to_lower(binary_to_list(Type))),

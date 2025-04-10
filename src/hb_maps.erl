@@ -39,7 +39,10 @@ get(Key, Map, Default) ->
     Opts :: map()
 ) -> term().
 get(Key, Map, Default, Opts) ->
-    hb_ao:ensure_loaded(maps:get(Key, Map, Default), Opts).
+    hb_ao:ensure_loaded(
+        maps:get(Key, hb_ao:ensure_loaded(Map), Default),
+        Opts
+    ).
 
 -spec find(Key :: term(), Map :: map()) -> {ok, term()} | error.
 find(Key, Map) ->
@@ -47,27 +50,27 @@ find(Key, Map) ->
 
 -spec find(Key :: term(), Map :: map(), Opts :: map()) -> {ok, term()} | error.
 find(Key, Map, Opts) ->
-    hb_ao:ensure_loaded(maps:find(Key, Map), Opts).
+    hb_ao:ensure_loaded(maps:find(Key, hb_ao:ensure_loaded(Map)), Opts).
 
 -spec put(Key :: term(), Value :: term(), Map :: map()) -> map().
 put(Key, Value, Map) ->
-    maps:put(Key, Value, Map).
+    maps:put(Key, Value, hb_ao:ensure_loaded(Map)).
 
 -spec is_key(Key :: term(), Map :: map()) -> boolean().
 is_key(Key, Map) ->
-    maps:is_key(Key, Map).
+    maps:is_key(Key, hb_ao:ensure_loaded(Map)).
 
 -spec keys(Map :: map()) -> [term()].
 keys(Map) ->
-    maps:keys(Map).
+    maps:keys(hb_ao:ensure_loaded(Map)).
 
 -spec values(Map :: map()) -> [term()].
 values(Map) ->
-    maps:values(Map).
+    maps:values(hb_ao:ensure_loaded(Map)).
 
 -spec size(Map :: map()) -> non_neg_integer().
 size(Map) ->
-    maps:size(Map).
+    maps:size(hb_ao:ensure_loaded(Map)).
 
 -spec map(
     Fun :: fun((Key :: term(), Value :: term()) -> term()),
@@ -82,23 +85,26 @@ map(Fun, Map) ->
     Opts :: map()
 ) -> map().
 map(Fun, Map, Opts) ->
-    maps:map(fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end, Map).
+    maps:map(
+        fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end,
+        hb_ao:ensure_loaded(Map)
+    ).
 
 -spec merge(Map1 :: map(), Map2 :: map()) -> map().
 merge(Map1, Map2) ->
-    maps:merge(Map1, Map2).
+    maps:merge(hb_ao:ensure_loaded(Map1), hb_ao:ensure_loaded(Map2)).
 
 -spec remove(Key :: term(), Map :: map()) -> map().
 remove(Key, Map) ->
-    maps:remove(Key, Map).
+    maps:remove(Key, hb_ao:ensure_loaded(Map)).
 
 -spec with(Keys :: [term()], Map :: map()) -> map().
 with(Keys, Map) ->
-    maps:with(Keys, Map).
+    maps:with(Keys, hb_ao:ensure_loaded(Map)).
 
 -spec without(Keys :: [term()], Map :: map()) -> map().
 without(Keys, Map) ->
-    maps:without(Keys, Map).
+    maps:without(Keys, hb_ao:ensure_loaded(Map)).
 
 -spec filter(
     Fun :: fun((Key :: term(), Value :: term()) -> boolean()),
@@ -120,7 +126,7 @@ filter(Fun, Map, Opts) ->
                 false -> false
             end
         end,
-        Map
+        hb_ao:ensure_loaded(Map)
     ).
 
 -spec filtermap(
@@ -136,7 +142,10 @@ filtermap(Fun, Map) ->
     Opts :: map()
 ) -> map().
 filtermap(Fun, Map, Opts) ->
-    maps:filtermap(fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end, Map).
+    maps:filtermap(
+        fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end,
+        hb_ao:ensure_loaded(Map)
+    ).
 
 -spec fold(
     Fun :: fun((Key :: term(), Value :: term(), Acc :: term()) -> term()),
@@ -156,12 +165,12 @@ fold(Fun, Acc, Map, Opts) ->
     maps:fold(
         fun(K, V, CurrAcc) -> Fun(K, hb_ao:ensure_loaded(V, Opts), CurrAcc) end,
         Acc,
-        Map
+        hb_ao:ensure_loaded(Map)
     ).
 
 -spec take(N :: non_neg_integer(), Map :: map()) -> map().
 take(N, Map) ->
-    maps:take(N, Map).
+    maps:take(N, hb_ao:ensure_loaded(Map)).
 
 -spec update_with(
     Key :: term(),
@@ -169,7 +178,7 @@ take(N, Map) ->
     Map :: map()
 ) -> map().
 update_with(Key, Fun, Map) ->
-    maps:update_with(Key, Fun, Map).
+    maps:update_with(Key, Fun, hb_ao:ensure_loaded(Map)).
 
 -spec update_with(
     Key :: term(),
@@ -178,7 +187,7 @@ update_with(Key, Fun, Map) ->
     Opts :: map()
 ) -> map().
 update_with(Key, Fun, Map, Opts) ->
-    maps:update_with(Key, Fun, Map, Opts).
+    maps:update_with(Key, Fun, hb_ao:ensure_loaded(Map), Opts).
 
 -spec from_list(List :: [{Key :: term(), Value :: term()}]) -> map().
 from_list(List) ->
@@ -186,7 +195,7 @@ from_list(List) ->
 
 -spec to_list(Map :: map()) -> [{Key :: term(), Value :: term()}].
 to_list(Map) ->
-    maps:to_list(Map).
+    maps:to_list(hb_ao:ensure_loaded(Map)).
 
 %%% Tests
 

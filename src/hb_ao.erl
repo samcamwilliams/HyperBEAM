@@ -98,7 +98,7 @@
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 -export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 -export([force_message/2]).
--export([ensure_loaded/2, ensure_all_loaded/1, ensure_all_loaded/2]).
+-export([ensure_loaded/1, ensure_loaded/2, ensure_all_loaded/1, ensure_all_loaded/2]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
@@ -648,10 +648,18 @@ ensure_message_loaded(Msg, _Opts) ->
 %% load only the first `layer' of it: Representing all nested messages inside 
 %% the result as links. If the value has an associated `type' key in the extra
 %% options, we apply it to the read value.
+ensure_loaded(Msg) -> ensure_loaded(Msg, #{}).
 ensure_loaded({link, ID, ExtraOpts}, Opts) ->
     MergedOpts = hb_maps:merge(Opts, ExtraOpts),
     case hb_cache:read(ID, MergedOpts) of
         {ok, LoadedMsg} ->
+            ?event(caching,
+                {lazy_loaded,
+                    {link, ID},
+                    {msg, LoadedMsg},
+                    {extra_opts, ExtraOpts}
+                }
+            ),
             case hb_maps:get(<<"type">>, ExtraOpts, undefined) of
                 undefined ->
                     LoadedMsg;

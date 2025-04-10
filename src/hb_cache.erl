@@ -110,6 +110,7 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % We start by writing the group, such that if the message is empty, we
     % still have a group in the store.
     hb_store:make_group(Store, UncommittedID),
+    ?event(debug_types, {writing_message, Msg}),
     hb_maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
             ?event(error, {request_to_write_device_map, Map}),
@@ -187,36 +188,17 @@ read(Path, Opts) ->
     case store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts) of
         not_found -> not_found;
         {ok, Res} ->
-            ?event({applying_types_to_read_message, Res}),
-            Structured = dev_codec_structured:to(Res),
-            ?event({finished_read, Structured}),
-            {ok, Structured}
+            %?event({applying_types_to_read_message, Res}),
+            %Structured = dev_codec_structured:to(Res),
+            %?event({finished_read, Structured}),
+            {ok, Res}
     end.
 
-%% @doc List all of the subpaths of a given path, read each in turn, returning a
-%% flat map. We track the paths that we have already read to avoid circular
-%% links.
-store_read(Path, Store, Opts) ->
-    store_read(Path, Store, Opts, []).
-store_read(_Path, no_viable_store, _, _AlreadyRead) ->
+%% @doc List all of the subpaths of a given path and return a map of keys and
+%% links to the subpaths, including their types.
+store_read(_Path, no_viable_store, _) ->
     not_found;
-store_read(Path, Store, Opts, AlreadyRead) ->
-    case lists:member(Path, AlreadyRead) of
-        true ->
-            ?event(read_error,
-                {circular_links_detected,
-                    {path, Path},
-                    {already_read, AlreadyRead}
-                }
-            ),
-            throw({circular_links_detected, Path, {already_read, AlreadyRead}});
-        false ->
-            do_read(Path, Store, Opts, AlreadyRead)
-    end.
-
-%% @doc Read a path from the store. Unsafe: May recurse indefinitely if circular
-%% links are present.
-do_read(Path, Store, Opts, AlreadyRead) ->
+store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathToBin = hb_path:to_binary(Path)),
     ?event({reading, {path, PathToBin}, {resolved, ResolvedFullPath}}),
     case hb_store:type(Store, ResolvedFullPath) of
@@ -229,7 +211,9 @@ do_read(Path, Store, Opts, AlreadyRead) ->
             end;
         _ ->
             case hb_store:list(Store, ResolvedFullPath) of
-                {ok, Subpaths} ->
+                {ok, RawSubpaths} ->
+                    Subpaths = lists:map(fun hb_ao:normalize_key/1, RawSubpaths),
+                    {ok, Implicit, Types} = read_ao_types(Path, Subpaths, Store, Opts),
                     ?event(
                         {listed,
                             {original_path, Path},
@@ -237,45 +221,64 @@ do_read(Path, Store, Opts, AlreadyRead) ->
                         }
                     ),
                     Msg =
-                        hb_maps:from_list(
+                        maps:from_list(
                             lists:map(
                                 fun(Subpath) ->
-                                    ?event({reading_subpath, {path, Subpath}, {store, Store}}),
-                                    Res = store_read(
-                                        [ResolvedFullPath, Subpath],
-                                        Store,
-                                        Opts,
-                                        [ResolvedFullPath | AlreadyRead]
-                                    ),
-                                    case Res of
-                                        not_found ->
-                                            ?event(error,
-                                                {subpath_not_found,
-                                                    {parent, Path},
-                                                    {resolved_parent, {string, ResolvedFullPath}},
-                                                    {subpath, Subpath},
-                                                    {all_subpaths, Subpaths},
-                                                    {store, Store}
-                                                }
+                                    ?event(debug_types, {returning_link, {subpath, Subpath}}),
+                                    {
+                                        Subpath,
+                                        {link,
+                                            hb_store:resolve(
+                                                Store,
+                                                hb_store:path(Store, [ResolvedFullPath, Subpath])
                                             ),
-                                            TriedPath = hb_path:to_binary([ResolvedFullPath, Subpath]),
-                                            throw({subpath_not_found,
-                                                {parent, Path},
-                                                {resolved_parent, ResolvedFullPath},
-                                                {failed_path, TriedPath}
-                                            });
-                                        {ok, Data} ->
-                                            {iolist_to_binary([Subpath]), Data}
-                                    end
+                                            case Types of
+                                                #{ Subpath := Type } ->
+                                                    #{ <<"type">> => Type };
+                                                _ ->
+                                                    #{}
+                                            end
+                                        }
+                                    }
                                 end,
-                                Subpaths
+                                lists:delete(<<"ao-types">>, Subpaths)
                             )
                         ),
-                    ?event({read_message, Msg}),
-                    {ok, Msg};
+                    ?event(debug_types, {read_message, {explicit, Msg}}),
+                    {ok, maps:merge(Msg, Implicit)};
                 _ -> not_found
             end
     end.
+
+%% @doc Read and parse the ao-types for a given path if it is in the supplied
+%% list of subpaths, returning a map of keys and their types.
+read_ao_types(Path, Subpaths, Store, _Opts) ->
+    ?event({reading_ao_types, {path, Path}, {subpaths, {explicit, Subpaths}}}),
+    case lists:member(<<"ao-types">>, Subpaths) of
+        true ->
+            {ok, TypesBin} =
+                hb_store:read(
+                    Store,
+                    hb_store:path(Store, [Path, <<"ao-types">>])
+                ),
+            Types = dev_codec_structured:parse_ao_types(TypesBin),
+            ?event({parsed_ao_types, {types, Types}}),
+            {ok, types_to_implicit(Types), Types};
+        false ->
+            ?event({no_ao_types, {path, Path}, {subpaths, Subpaths}}),
+            {ok, #{}, #{}}
+    end.
+
+%% @doc Convert a map of ao-types to an implicit map of types.
+types_to_implicit(Types) ->
+    maps:filtermap(
+        fun(_K, <<"empty-message">>) -> {true, #{}};
+           (_K, <<"empty-list">>) -> {true, []};
+           (_K, <<"empty-binary">>) -> {true, <<>>};
+           (_, _) -> false
+        end,
+        Types
+    ).
 
 %% @doc Read the output of a prior computation, given Msg1, Msg2, and some
 %% options.
@@ -329,6 +332,22 @@ test_store_unsigned_empty_message(Opts) ->
     {ok, Path} = write(Item, Opts),
     {ok, RetrievedItem} = read(Path, Opts),
     ?event({retrieved_item, {path, {string, Path}}, {item, RetrievedItem}}),
+    ?assert(hb_message:match(Item, RetrievedItem)).
+
+test_store_unsigned_nested_empty_message(Opts) ->
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    hb_store:reset(Store),
+    Item = #{ <<"layer1">> =>
+        #{ <<"layer2">> =>
+            #{ <<"layer3">> =>
+                #{ <<"a">> => <<"b">>}
+            },
+            <<"layer3b">> => #{ <<"c">> => <<"d">>},
+            <<"layer3c">> => #{}
+        }
+    },
+    {ok, Path} = write(Item, Opts),
+    {ok, RetrievedItem} = read(Path, Opts),
     ?assert(hb_message:match(Item, RetrievedItem)).
 
 %% @doc Test storing and retrieving a simple unsigned item
@@ -425,7 +444,7 @@ test_deeply_nested_complex_message(Opts) ->
             ],
             Opts
         ),
-    ?event({deep_message, DeepMsg}),
+    ?event(debug_types, {deep_message, {explicit, DeepMsg}}),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_ao:get(<<"other-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
@@ -436,7 +455,7 @@ test_deeply_nested_complex_message(Opts) ->
     {ok, CommittedMsg} = read(hb_util:human_id(CommittedID), Opts),
     ?assert(hb_message:match(Outer, CommittedMsg)).
 
-test_message_with_message(Opts) ->
+test_message_with_list(Opts) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     hb_store:reset(Store),
     Msg = test_unsigned([<<"a">>, <<"b">>, <<"c">>]),
@@ -448,11 +467,12 @@ test_message_with_message(Opts) ->
 cache_suite_test_() ->
     hb_store:generate_test_suite([
         {"store unsigned empty message", fun test_store_unsigned_empty_message/1},
+        {"store unsigned nested empty message", fun test_store_unsigned_nested_empty_message/1},
         {"store binary", fun test_store_binary/1},
         {"store simple unsigned message", fun test_store_simple_unsigned_message/1},
         {"store simple signed message", fun test_store_simple_signed_message/1},
         {"deeply nested complex message", fun test_deeply_nested_complex_message/1},
-        {"message with message", fun test_message_with_message/1}
+        {"message with list", fun test_message_with_list/1}
     ]).
 
 %% @doc Test that message whose device is `#{}' cannot be written. If it were to
@@ -472,4 +492,4 @@ test_device_map_cannot_be_written_test() ->
 run_test() ->
     Opts = #{ store => StoreOpts = 
         [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
-    test_store_unsigned_empty_message(Opts).
+    test_store_unsigned_nested_empty_message(Opts).
