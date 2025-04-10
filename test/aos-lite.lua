@@ -1809,13 +1809,16 @@ Dump = require('.dump')
 local process = require('.process')
 
 
-function handle(base, req, opts) 
-  print("BASE")
-  Dump(base)
-  -- base.foo = { hello = "World" }
+function compute(base, req, opts) 
+  base.results = {
+    output = {
+      data = 23
+    },
+    messages = {},
+    spawns = {},
+    assignments = {}
+  }
   -- print(require('.stringify').format())
-  -- local _msg = json.decode(msg)
-  -- local _env = json.decode(env)
   -- ao.id = env.Id
   -- local response = process.handle(ao.normalize(req.body), { Process = base.process} )
   -- base.response = response 
