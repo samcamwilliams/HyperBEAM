@@ -275,7 +275,11 @@ pure_lua_process_benchmark_test_() ->
         ),
         ?event(debug_lua, {executing, BenchMsgs}),
         BeforeExec = os:system_time(millisecond),
-        {ok, _} = hb_ao:resolve(Process, <<"now">>, #{ hashpath => ignore }),
+        {ok, _} = hb_ao:resolve(
+            Process,
+            <<"now">>,
+            #{ hashpath => ignore, process_cache_frequency => 50 }
+        ),
         AfterExec = os:system_time(millisecond),
         ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
         hb_util:eunit_print(
@@ -311,7 +315,11 @@ aos_process_benchmark_test_() ->
         ),
         ?event(debug_lua, {executing, BenchMsgs}),
         BeforeExec = os:system_time(millisecond),
-        {ok, _} = hb_ao:resolve(Process, <<"now">>, #{ hashpath => ignore }),
+        {ok, _} = hb_ao:resolve(
+            Process,
+            <<"now">>,
+            #{ hashpath => ignore, process_cache_frequency => 50 }
+        ),
         AfterExec = os:system_time(millisecond),
         ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
         hb_util:eunit_print(
