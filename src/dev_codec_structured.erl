@@ -250,7 +250,7 @@ decode_value(atom, Value) ->
     {item, {_, AtomString}, _} =
         hb_structured_fields:parse_item(Value),
     binary_to_existing_atom(AtomString);
-decode_value(list, Value) ->
+decode_value(list, Value) when is_binary(Value) ->
     lists:map(
         fun({item, {string, <<"(ao-type-", Rest/binary>>}, _}) ->
             [Type, Item] = binary:split(Rest, <<") ">>),
@@ -259,6 +259,8 @@ decode_value(list, Value) ->
         end,
         hb_structured_fields:parse_list(iolist_to_binary(Value))
     );
+decode_value(list, Value) when is_map(Value) ->
+    hb_util:message_to_ordered_list(Value);
 decode_value(map, Value) ->
     hb_maps:from_list(
         lists:map(
