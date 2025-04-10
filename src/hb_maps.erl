@@ -18,7 +18,8 @@
 %%% module without understanding the full implications. You have been warned.
 -module(hb_maps).
 -export([get/2, get/3, get/4, find/2, find/3, is_key/2, keys/1, values/1, size/1]).
--export([put/3, map/2, filter/2, filtermap/2, fold/3, take/2]).
+-export([put/3, map/2, map/3, filter/2, filter/3, filtermap/2, filtermap/3]).
+-export([fold/3, fold/4, take/2]).
 -export([merge/2, remove/2, with/2, without/2, update_with/3, update_with/4]).
 -export([from_list/1, to_list/1]).
 -include_lib("eunit/include/eunit.hrl").
@@ -93,15 +94,35 @@ filter(Fun, Map) ->
 
 -spec filter(fun((Key :: term(), Value :: term()) -> boolean()), Map :: map(), Opts :: map()) -> map().
 filter(Fun, Map, Opts) ->
-    maps:filter(fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end, Map).
+    maps:filtermap(
+        fun(K, V) ->
+            case Fun(K, Loaded = hb_ao:ensure_loaded(V, Opts)) of
+                true -> {true, Loaded};
+                false -> false
+            end
+        end,
+        Map
+    ).
 
 -spec filtermap(fun((Key :: term(), Value :: term()) -> {boolean(), term()}), Map :: map()) -> map().
 filtermap(Fun, Map) ->
-    maps:filtermap(Fun, Map).
+    filtermap(Fun, Map, #{}).
+
+-spec filtermap(fun((Key :: term(), Value :: term()) -> {boolean(), term()}), Map :: map(), Opts :: map()) -> map().
+filtermap(Fun, Map, Opts) ->
+    maps:filtermap(fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end, Map).
 
 -spec fold(fun((Key :: term(), Value :: term(), Acc :: term()) -> term()), Acc :: term(), Map :: map()) -> term().
 fold(Fun, Acc, Map) ->
-    maps:fold(Fun, Acc, Map).
+    fold(Fun, Acc, Map, #{}).
+
+-spec fold(fun((Key :: term(), Value :: term(), Acc :: term()) -> term()), Acc :: term(), Map :: map(), Opts :: map()) -> term().
+fold(Fun, Acc, Map, Opts) ->
+    maps:fold(
+        fun(K, V, CurrAcc) -> Fun(K, hb_ao:ensure_loaded(V, Opts), CurrAcc) end,
+        Acc,
+        Map
+    ).
 
 -spec take(non_neg_integer(), map()) -> map().
 take(N, Map) ->
@@ -153,4 +174,53 @@ resolve_on_link_test() ->
     ?assertEqual(
         {ok, <<"test-value">>},
         hb_ao:resolve({link, ID, #{}}, <<"test-key">>, #{})
+    ).
+
+filter_with_link_test() ->
+    Bin = <<"TEST DATA">>,
+    Opts = #{},
+    {ok, Location} = hb_cache:write(Bin, Opts),
+    Map = #{ 1 => 1, 2 => {link, Location, #{}}, 3 => 3 },
+    ?assertEqual(#{1 => 1, 3 => 3}, filter(fun(_, V) -> V =/= Bin end, Map)).
+
+filtermap_with_link_test() ->
+    Bin = <<"TEST DATA">>,
+    Opts = #{},
+    {ok, Location} = hb_cache:write(Bin, Opts),
+    Map = #{ 1 => 1, 2 => {link, Location, #{}}, 3 => 3 },
+    ?assertEqual(
+        #{2 => <<"FOUND">>},
+        filtermap(
+            fun(_, <<"TEST DATA">>) -> {true, <<"FOUND">>};
+               (_K, _V) -> false
+            end,
+            Map
+        )
+    ).
+
+fold_with_typed_link_test() ->
+    Bin = <<"123">>,
+    Opts = #{},
+    {ok, Location} = hb_cache:write(Bin, Opts),
+    Map = #{ 1 => 1, 2 => {link, Location, #{ <<"type">> => integer }}, 3 => 3 },
+    ?assertEqual(127, fold(fun(_, V, Acc) -> V + Acc end, 0, Map)).
+
+filter_passively_loads_test() ->
+    Bin = <<"TEST DATA">>,
+    Opts = #{},
+    {ok, Location} = hb_cache:write(Bin, Opts),
+    Map = #{ 1 => 1, 2 => {link, Location, #{}}, 3 => 3 },
+    ?assertEqual(
+        #{1 => 1, 2 => <<"TEST DATA">>, 3 => 3},
+        filter(fun(_, _) -> true end, Map)
+    ).
+
+filtermap_passively_loads_test() ->
+    Bin = <<"TEST DATA">>,
+    Opts = #{},
+    {ok, Location} = hb_cache:write(Bin, Opts),
+    Map = #{ 1 => 1, 2 => {link, Location, #{}}, 3 => 3 },
+    ?assertEqual(
+        #{ 1 => 1, 2 => <<"TEST DATA">>, 3 => 3 },
+        filtermap(fun(_, V) -> {true, V} end, Map)
     ).
