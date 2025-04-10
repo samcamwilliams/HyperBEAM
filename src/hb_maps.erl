@@ -32,7 +32,12 @@ get(Key, Map) ->
 get(Key, Map, Default) ->
     get(Key, Map, Default, #{}).
 
--spec get(Key :: term(), Map :: map(), Default :: term(), Opts :: map()) -> term().
+-spec get(
+    Key :: term(),
+    Map :: map(),
+    Default :: term(),
+    Opts :: map()
+) -> term().
 get(Key, Map, Default, Opts) ->
     hb_ao:ensure_loaded(maps:get(Key, Map, Default), Opts).
 
@@ -64,35 +69,49 @@ values(Map) ->
 size(Map) ->
     maps:size(Map).
 
--spec map(fun((Key :: term(), Value :: term()) -> term()), Map :: map()) -> map().
+-spec map(
+    Fun :: fun((Key :: term(), Value :: term()) -> term()),
+    Map :: map()
+) -> map().
 map(Fun, Map) ->
     map(Fun, Map, #{}).
 
--spec map(fun((Key :: term(), Value :: term()) -> term()), Map :: map(), Opts :: map()) -> map().
+-spec map(
+    Fun :: fun((Key :: term(), Value :: term()) -> term()),
+    Map :: map(),
+    Opts :: map()
+) -> map().
 map(Fun, Map, Opts) ->
     maps:map(fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end, Map).
 
--spec merge(map(), map()) -> map().
+-spec merge(Map1 :: map(), Map2 :: map()) -> map().
 merge(Map1, Map2) ->
     maps:merge(Map1, Map2).
 
--spec remove(term(), map()) -> map().
+-spec remove(Key :: term(), Map :: map()) -> map().
 remove(Key, Map) ->
     maps:remove(Key, Map).
 
--spec with([term()], Map :: map()) -> map().
+-spec with(Keys :: [term()], Map :: map()) -> map().
 with(Keys, Map) ->
     maps:with(Keys, Map).
 
--spec without([term()], Map :: map()) -> map().
+-spec without(Keys :: [term()], Map :: map()) -> map().
 without(Keys, Map) ->
     maps:without(Keys, Map).
 
--spec filter(fun((Key :: term(), Value :: term()) -> boolean()), Map :: map()) -> map().
+-spec filter(
+    Fun :: fun((Key :: term(), Value :: term()) -> boolean()),
+    Map :: map()
+) -> map().
 filter(Fun, Map) ->
     filter(Fun, Map, #{}).
 
--spec filter(fun((Key :: term(), Value :: term()) -> boolean()), Map :: map(), Opts :: map()) -> map().
+-spec filter(
+    Fun :: fun((Key :: term(), Value :: term()) -> boolean()),
+    Map :: map(),
+    Opts :: map()
+) -> map().
 filter(Fun, Map, Opts) ->
     maps:filtermap(
         fun(K, V) ->
@@ -104,19 +123,35 @@ filter(Fun, Map, Opts) ->
         Map
     ).
 
--spec filtermap(fun((Key :: term(), Value :: term()) -> {boolean(), term()}), Map :: map()) -> map().
+-spec filtermap(
+    Fun :: fun((Key :: term(), Value :: term()) -> {boolean(), term()}),
+    Map :: map()
+) -> map().
 filtermap(Fun, Map) ->
     filtermap(Fun, Map, #{}).
 
--spec filtermap(fun((Key :: term(), Value :: term()) -> {boolean(), term()}), Map :: map(), Opts :: map()) -> map().
+-spec filtermap(
+    Fun :: fun((Key :: term(), Value :: term()) -> {boolean(), term()}),
+    Map :: map(),
+    Opts :: map()
+) -> map().
 filtermap(Fun, Map, Opts) ->
     maps:filtermap(fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end, Map).
 
--spec fold(fun((Key :: term(), Value :: term(), Acc :: term()) -> term()), Acc :: term(), Map :: map()) -> term().
+-spec fold(
+    Fun :: fun((Key :: term(), Value :: term(), Acc :: term()) -> term()),
+    Acc :: term(),
+    Map :: map()
+) -> term().
 fold(Fun, Acc, Map) ->
     fold(Fun, Acc, Map, #{}).
 
--spec fold(fun((Key :: term(), Value :: term(), Acc :: term()) -> term()), Acc :: term(), Map :: map(), Opts :: map()) -> term().
+-spec fold(
+    Fun :: fun((Key :: term(), Value :: term(), Acc :: term()) -> term()),
+    Acc :: term(),
+    Map :: map(),
+    Opts :: map()
+) -> term().
 fold(Fun, Acc, Map, Opts) ->
     maps:fold(
         fun(K, V, CurrAcc) -> Fun(K, hb_ao:ensure_loaded(V, Opts), CurrAcc) end,
@@ -124,15 +159,24 @@ fold(Fun, Acc, Map, Opts) ->
         Map
     ).
 
--spec take(non_neg_integer(), map()) -> map().
+-spec take(N :: non_neg_integer(), Map :: map()) -> map().
 take(N, Map) ->
     maps:take(N, Map).
 
--spec update_with(Key :: term(), Fun :: fun((Value :: term()) -> term()), Map :: map()) -> map().
+-spec update_with(
+    Key :: term(),
+    Fun :: fun((Value :: term()) -> term()),
+    Map :: map()
+) -> map().
 update_with(Key, Fun, Map) ->
     maps:update_with(Key, Fun, Map).
 
--spec update_with(Key :: term(), Fun :: fun((Value :: term()) -> term()), Map :: map(), Opts :: map()) -> map().
+-spec update_with(
+    Key :: term(),
+    Fun :: fun((Value :: term()) -> term()),
+    Map :: map(),
+    Opts :: map()
+) -> map().
 update_with(Key, Fun, Map, Opts) ->
     maps:update_with(Key, Fun, Map, Opts).
 

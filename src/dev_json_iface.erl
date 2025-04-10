@@ -493,7 +493,6 @@ aos_stack_benchmark_test_() ->
             "Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)",
             [Iterations, BenchTime, Iterations / BenchTime]
         ),
-		?debugFmt("Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)", [Iterations, BenchTime, Iterations / BenchTime]),
         ?assert(Iterations >= 10),
         ok
     end}.
