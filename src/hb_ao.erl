@@ -1299,7 +1299,7 @@ verify_device_compatibility(Msg, Opts) ->
                             hb_ao:normalize_key(Key),
                             new_atoms
                         ),
-                        Value
+                        ensure_loaded(Value, Opts)
                     }
                 };
             (_) -> false

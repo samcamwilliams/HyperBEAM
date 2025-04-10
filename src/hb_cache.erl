@@ -232,12 +232,12 @@ store_read(Path, Store, Opts) ->
                                                 Store,
                                                 hb_store:path(Store, [ResolvedFullPath, Subpath])
                                             ),
-                                            case Types of
+                                            (case Types of
                                                 #{ Subpath := Type } ->
                                                     #{ <<"type">> => Type };
                                                 _ ->
                                                     #{}
-                                            end
+                                            end)#{ store => Store }
                                         }
                                     }
                                 end,
