@@ -67,7 +67,7 @@ request(Method, Config = #{ <<"nodes">> := Nodes }, Path, Message, Opts) when is
 request(Method, #{ <<"opts">> := NodeOpts, <<"uri">> := URI }, _Path, Message, Opts) ->
     % The request has a set of additional options, so we apply them to the
     % request.
-    MergedOpts = maps:merge(Opts, NodeOpts),
+    MergedOpts = hb_maps:merge(Opts, NodeOpts),
     % We also recalculate the request. The order of precidence here is subtle:
     % We favor the args given to the function, but the URI rules take precidence
     % over that.
@@ -110,7 +110,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         },
         Opts
     ),
-    HeaderMap = maps:from_list(Headers),
+    HeaderMap = hb_maps:from_list(Headers),
     NormHeaderMap = hb_ao:normalize_keys(HeaderMap),
     ?event(http_outbound,
         {normalized_response_headers, {norm_header_map, NormHeaderMap}},
@@ -132,16 +132,16 @@ request(Method, Peer, Path, RawMessage, Opts) ->
             {path, {string, Path}},
             {body_size, byte_size(Body)}
         }),
-    case maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
+    case hb_maps:get(<<"ao-result">>, NormHeaderMap, undefined) of
         Key when is_binary(Key) ->
             Msg = http_response_to_httpsig(Status, NormHeaderMap, Body, Opts),
             ?event(http_outbound, {result_is_single_key, {key, Key}, {msg, Msg}}, Opts),
-            case maps:get(Key, Msg, undefined) of
+            case hb_maps:get(Key, Msg, undefined) of
                 undefined -> {failure, result_key_not_found};
                 Value -> {BaseStatus, Value}
             end;
         undefined ->
-            case maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
+            case hb_maps:get(<<"codec-device">>, NormHeaderMap, <<"httpsig@1.0">>) of
                 <<"httpsig@1.0">> ->
                     ?event(http_outbound, {result_is_httpsig, {body, Body}}, Opts),
                     {
@@ -168,7 +168,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
 %% @doc Convert a HTTP response to a httpsig message.
 http_response_to_httpsig(Status, HeaderMap, Body, Opts) ->
     (hb_message:convert(
-        maps:merge(
+        hb_maps:merge(
             HeaderMap#{ <<"status">> => hb_util:bin(Status) },
             case Body of
                 <<>> -> #{};
@@ -200,9 +200,9 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
     % We must remove the path and host from the message, because they are not
     % valid for outbound requests. The path is retrieved from the route, and
     % the host should already be known to the caller.
-    MsgWithoutMeta = maps:without([<<"path">>, <<"host">>], M),
+    MsgWithoutMeta = hb_maps:without([<<"path">>, <<"host">>], M),
     Port =
-        case maps:get(port, URI, undefined) of
+        case hb_maps:get(port, URI, undefined) of
             undefined ->
                 % If no port is specified, use 80 for HTTP and 443
                 % for HTTPS.
@@ -212,11 +212,11 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
                 end;
             X -> integer_to_binary(X)
         end,
-    Protocol = maps:get(scheme, URI, <<"https">>),
-    Host = maps:get(host, URI, <<"localhost">>),
+    Protocol = hb_maps:get(scheme, URI, <<"https">>),
+    Host = hb_maps:get(host, URI, <<"localhost">>),
     Node = << Protocol/binary, "://", Host/binary, ":", Port/binary  >>,
-    PathParts = [maps:get(path, URI, <<"/">>)] ++
-        case maps:get(query, URI, <<>>) of
+    PathParts = [hb_maps:get(path, URI, <<"/">>)] ++
+        case hb_maps:get(query, URI, <<>>) of
             <<>> -> [];
             Query -> [<<"?", Query/binary>>]
         end,
@@ -231,7 +231,7 @@ route_to_request(M, {ok, Routes}, Opts) ->
     % We must remove the path and host from the message, because they are not
     % valid for outbound requests. The path is retrieved from the route, and
     % the host should already be known to the caller.
-    MsgWithoutMeta = maps:without([<<"path">>, <<"host">>], M),
+    MsgWithoutMeta = hb_maps:without([<<"path">>, <<"host">>], M),
     {ok, Method, Routes, Path, MsgWithoutMeta, Opts};
 route_to_request(M, {error, Reason}, _Opts) ->
     {error, {no_viable_route, {reason, Reason}, {message, M}}}.
@@ -247,12 +247,12 @@ prepare_request(Format, Method, Peer, Path, RawMessage, Opts) ->
         <<"httpsig@1.0">> ->
             FullEncoding =
                 hb_message:convert(Message, <<"httpsig@1.0">>, Opts),
-            Body = maps:get(<<"body">>, FullEncoding, <<>>),
-            Headers = maps:without([<<"body">>], FullEncoding),
+            Body = hb_maps:get(<<"body">>, FullEncoding, <<>>),
+            Headers = hb_maps:without([<<"body">>], FullEncoding),
 
 			?event(http, {request_headers, {explicit, {headers, Headers}}}),
 			?event(http, {request_body, {explicit, {body, Body}}}),
-            maps:merge(ReqBase, #{ headers => Headers, body => Body });
+            hb_maps:merge(ReqBase, #{ headers => Headers, body => Body });
         <<"ans104@1.0">> ->
             ReqBase#{
                 headers =>
@@ -452,7 +452,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     ?event(http,
         {http_replying,
             {status, {explicit, Status}},
-            {path, maps:get(<<"path">>, Req, undefined_path)},
+            {path, hb_maps:get(<<"path">>, Req, undefined_path)},
             {raw_message, RawMessage},
             {enc_headers, EncodedHeaders},
             {enc_body, EncodedBody}
@@ -462,7 +462,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     % the request to set the cookies such that they will be sent over the wire
     % unmodified.
     SetCookiesReq =
-        case maps:get(<<"set-cookie">>, EncodedHeaders, undefined) of
+        case hb_maps:get(<<"set-cookie">>, EncodedHeaders, undefined) of
             undefined -> Req#{ resp_headers => EncodedHeaders };
             Cookies ->
                 Req#{
@@ -477,7 +477,7 @@ reply(Req, TABMReq, Status, RawMessage, Opts) ->
     ?event(http_short,
         {sent,
             {status, Status},
-            {duration, EndTime - maps:get(start_time, Req)},
+            {duration, EndTime - hb_maps:get(start_time, Req)},
             {method, cowboy_req:method(Req)},
             {path,
                 {string,
@@ -505,15 +505,15 @@ add_cors_headers(Msg, ReqHdr) ->
         }
     end,
     % Keys in the given message will overwrite the defaults listed below if 
-    % included, due to `maps:merge''s precidence order.
-    maps:merge(WithAllowHeaders, Msg).
+    % included, due to `hb_maps:merge''s precidence order.
+    hb_maps:merge(WithAllowHeaders, Msg).
 
 %% @doc Generate the headers and body for a HTTP response message.
 encode_reply(TABMReq, Message, Opts) ->
     Codec = accept_to_codec(TABMReq, Opts),
     ?event(http, {encoding_reply, {codec, Codec}, {message, Message}}),
     BaseHdrs =
-        maps:merge(
+        hb_maps:merge(
             #{
                 <<"codec-device">> => Codec
             },
@@ -536,8 +536,8 @@ encode_reply(TABMReq, Message, Opts) ->
                 ),
             {
                 ok,
-                maps:without([<<"body">>], EncMessage),
-                maps:get(<<"body">>, EncMessage, <<>>)
+                hb_maps:without([<<"body">>], EncMessage),
+                hb_maps:get(<<"body">>, EncMessage, <<>>)
             };
         <<"ans104@1.0">> ->
             % The `ans104@1.0' codec is a binary format, so we must serialize
@@ -561,10 +561,10 @@ encode_reply(TABMReq, Message, Opts) ->
             % Other codecs are already in binary format, so we can just convert
             % the message to the codec. We also include all of the top-level 
             % fields in the message and return them as headers.
-            ExtraHdrs = maps:filter(fun(_, V) -> not is_map(V) end, Message),
+            ExtraHdrs = hb_maps:filter(fun(_, V) -> not is_map(V) end, Message),
             ?event({extra_headers, {headers, {explicit, ExtraHdrs}}, {message, Message}}),
             {ok,
-                maps:merge(BaseHdrs, ExtraHdrs),
+                hb_maps:merge(BaseHdrs, ExtraHdrs),
                 hb_message:convert(
                     Message,
                     Codec,
@@ -584,10 +584,10 @@ encode_reply(TABMReq, Message, Opts) ->
 %% AO device format (`device@1.0').
 accept_to_codec(TABMReq, Opts) ->
     AcceptCodec =
-        maps:get(
+        hb_maps:get(
             <<"accept-codec">>,
             TABMReq,
-            mime_to_codec(maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts)
+            mime_to_codec(hb_maps:get(<<"accept">>, TABMReq, <<"*/*">>), Opts)
         ),
     ?event(http, {accept_to_codec, AcceptCodec}),
     case AcceptCodec of
@@ -720,7 +720,7 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
         hb_ao:get(
             <<"path">>,
             Msg,
-            maps:get(
+            hb_maps:get(
                 <<"path">>, 
                 RawHeaders,
                 iolist_to_binary(

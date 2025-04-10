@@ -25,7 +25,7 @@ from(Msg) when is_map(Msg) ->
     NormKeysMap = hb_ao:normalize_keys(Msg),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
-            case maps:find(Key, NormKeysMap) of
+            case hb_maps:find(Key, NormKeysMap) of
                 {ok, <<>>} ->
                     BinKey = hb_ao:normalize_key(Key),
                     {[{BinKey, <<"empty-binary">>} | Types], Values};
@@ -96,13 +96,13 @@ from(Msg) when is_map(Msg) ->
                 )),
                 [{<<"ao-types">>, AoTypes} | Values]
         end,
-    maps:from_list(lists:reverse(WithTypes));
+    hb_maps:from_list(lists:reverse(WithTypes));
 from(Other) -> hb_path:to_binary(Other).
 
 %% @doc Convert a TABM into a native HyperBEAM message.
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM0) ->
-    Types = case maps:get(<<"ao-types">>, TABM0, <<>>) of
+    Types = case hb_maps:get(<<"ao-types">>, TABM0, <<>>) of
         <<>> -> #{};
         Bin -> parse_ao_types(Bin)
     end,
@@ -111,8 +111,8 @@ to(TABM0) ->
     % 
     % So we first loop through Types and map over the each empty type to its
     % equivalent empty value
-    TABM1 = maps:from_list(
-        maps:fold(
+    TABM1 = hb_maps:from_list(
+        hb_maps:fold(
             fun (Key, <<"empty-binary">>, Acc) -> [{Key, <<>>} | Acc];
                 (Key, <<"empty-list">>, Acc) -> [{Key, []} | Acc];
                 (Key, <<"empty-message">>, Acc) -> [{Key, #{}} | Acc];
@@ -126,10 +126,10 @@ to(TABM0) ->
     % 2. Decode any binary values that have a type;
     % 3. Recursively decode any maps that we encounter;
     % 4. Return the remaining keys and values as a map.
-    hb_message:filter_default_keys(maps:fold(
+    hb_message:filter_default_keys(hb_maps:fold(
         fun (<<"ao-types">>, _Value, Acc) -> Acc;
         (RawKey, BinValue, Acc) when is_binary(BinValue) ->
-            case maps:find(hb_ao:normalize_key(RawKey), Types) of
+            case hb_maps:find(hb_ao:normalize_key(RawKey), Types) of
                 % The value is a binary, no parsing required
                 error -> Acc#{ RawKey => BinValue };
                 % Parse according to its type
@@ -142,7 +142,7 @@ to(TABM0) ->
             ChildDecoded = to(ChildTABM),
             Acc#{
                 RawKey =>
-                    case maps:find(RawKey, Types) of
+                    case hb_maps:find(RawKey, Types) of
                         error ->
                             % The value is a map, so we return it as is
                             ChildDecoded;
@@ -165,9 +165,9 @@ to(TABM0) ->
 %% @doc Parse the `ao-types' field of a TABM and return a map of keys and their
 %% types
 parse_ao_types(Msg) when is_map(Msg) ->
-    parse_ao_types(maps:get(<<"ao-types">>, Msg, <<>>));
+    parse_ao_types(hb_maps:get(<<"ao-types">>, Msg, <<>>));
 parse_ao_types(Bin) ->
-    maps:from_list(
+    hb_maps:from_list(
         lists:map(
             fun({Key, {item, {_, Value}, _}}) ->
                 {hb_escape:decode(Key), Value}
@@ -178,8 +178,8 @@ parse_ao_types(Bin) ->
 
 %% @doc Find the implicit keys of a TABM.
 implicit_keys(Req) ->
-    maps:keys(
-        maps:filtermap(
+    hb_maps:keys(
+        hb_maps:filtermap(
             fun(_Key, Val = <<"empty-", _/binary>>) -> {true, Val};
             (_Key, _Val) -> false
             end,
@@ -259,7 +259,7 @@ decode_value(list, Value) ->
         hb_structured_fields:parse_list(iolist_to_binary(Value))
     );
 decode_value(map, Value) ->
-    maps:from_list(
+    hb_maps:from_list(
         lists:map(
             fun({Key, {item, Item, _}}) ->
                 ?event({decoded_item, {explicit, Key}, Item}),

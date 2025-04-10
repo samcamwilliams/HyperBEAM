@@ -46,7 +46,7 @@
 
 %% @doc Convert a map to a dictionary.
 to_dictionary(Map) when is_map(Map) ->
-   to_dictionary(maps:to_list(Map));
+   to_dictionary(hb_maps:to_list(Map));
 to_dictionary(Pairs) when is_list(Pairs) ->
     to_dictionary([], Pairs).
 
@@ -381,16 +381,16 @@ parse_struct_hd_test_() ->
             [
                 {iolist_to_binary(io_lib:format("~s: ~s", [filename:basename(File), Name])), fun() ->
                     %% The implementation is strict. We fail whenever we can.
-                    CanFail = maps:get(<<"can_fail">>, Test, false),
-                    MustFail = maps:get(<<"must_fail">>, Test, false),
+                    CanFail = hb_maps:get(<<"can_fail">>, Test, false),
+                    MustFail = hb_maps:get(<<"must_fail">>, Test, false),
                     io:format(
                         "must fail ~p~nexpected json ~0p~n",
-                        [MustFail, maps:get(<<"expected">>, Test, undefined)]
+                        [MustFail, hb_maps:get(<<"expected">>, Test, undefined)]
                     ),
                     Expected =
                         case MustFail of
                             true -> undefined;
-                            false -> expected_to_term(maps:get(<<"expected">>, Test))
+                            false -> expected_to_term(hb_maps:get(<<"expected">>, Test))
                         end,
                     io:format("expected term: ~0p", [Expected]),
                     Raw = raw_to_binary(Raw0),
@@ -516,7 +516,7 @@ trim_ws_end(Value, N) ->
 -spec dictionary(#{binary() => sh_item() | sh_inner_list()} | sh_dictionary()) ->
     iolist().
 dictionary(Map) when is_map(Map) ->
-    dictionary(maps:to_list(Map));
+    dictionary(hb_maps:to_list(Map));
 dictionary(KVList) when is_list(KVList) ->
     lists:join(
         <<", ">>,

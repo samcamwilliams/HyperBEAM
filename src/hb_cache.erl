@@ -110,7 +110,7 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % We start by writing the group, such that if the message is empty, we
     % still have a group in the store.
     hb_store:make_group(Store, UncommittedID),
-    maps:map(
+    hb_maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
             ?event(error, {request_to_write_device_map, Map}),
             throw({device_map_cannot_be_written, Map});
@@ -155,11 +155,11 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
 calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
 calculate_all_ids(Msg, _Opts) ->
     Commitments =
-        maps:without(
+        hb_maps:without(
             [<<"priv">>],
-            maps:get(<<"commitments">>, Msg, #{})
+            hb_maps:get(<<"commitments">>, Msg, #{})
         ),
-    maps:keys(Commitments).
+    hb_maps:keys(Commitments).
 
 %% @doc Write a hashpath and its message to the store and link it.
 write_hashpath(Msg = #{ <<"priv">> := #{ <<"hashpath">> := HP } }, Opts) ->
@@ -237,7 +237,7 @@ do_read(Path, Store, Opts, AlreadyRead) ->
                         }
                     ),
                     Msg =
-                        maps:from_list(
+                        hb_maps:from_list(
                             lists:map(
                                 fun(Subpath) ->
                                     ?event({reading_subpath, {path, Subpath}, {store, Store}}),

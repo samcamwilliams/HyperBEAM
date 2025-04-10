@@ -120,13 +120,13 @@ is_string_list(MaybeString) ->
 %% @doc Given a map or KVList, return a deterministically sorted list of its
 %% key-value pairs.
 to_sorted_list(Msg) when is_map(Msg) ->
-    to_sorted_list(maps:to_list(Msg));
+    to_sorted_list(hb_maps:to_list(Msg));
 to_sorted_list(Msg) when is_list(Msg) ->
     lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
 
 %% @doc Given a map or KVList, return a deterministically ordered list of its keys.
 to_sorted_keys(Msg) when is_map(Msg) ->
-    to_sorted_keys(maps:keys(Msg));
+    to_sorted_keys(hb_maps:keys(Msg));
 to_sorted_keys(Msg) when is_list(Msg) ->
     lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
 
@@ -228,9 +228,9 @@ to_hex(Bin) when is_binary(Bin) ->
 
 %% @doc Deep merge two maps, recursively merging nested maps.
 deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
-    maps:fold(
+    hb_maps:fold(
         fun(Key, Value2, AccMap) ->
-            case maps:find(Key, AccMap) of
+            case hb_maps:find(Key, AccMap) of
                 {ok, Value1} when is_map(Value1), is_map(Value2) ->
                     % Both values are maps, recursively merge them
                     AccMap#{Key => deep_merge(Value1, Value2)};
@@ -253,7 +253,7 @@ number(List) ->
 
 %% @doc Convert a list of elements to a map with numbered keys.
 list_to_numbered_map(List) ->
-    maps:from_list(number(List)).
+    hb_maps:from_list(number(List)).
 
 %% @doc Take a message with numbered keys and convert it to a list of tuples
 %% with the associated key as an integer and a value. Optionally, it takes a
@@ -315,7 +315,7 @@ find_value(Key, List) ->
     find_value(Key, List, undefined).
 
 find_value(Key, Map, Default) when is_map(Map) ->
-    case maps:find(Key, Map) of
+    case hb_maps:find(Key, Map) of
         {ok, Value} -> Value;
         error -> Default
     end;
@@ -603,15 +603,15 @@ format_trace([Item|Rest], Prefixes) ->
 format_trace({Func, ArityOrTerm, Extras}, Prefixes) ->
     format_trace({no_module, Func, ArityOrTerm, Extras}, Prefixes);
 format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
-    ExtraMap = maps:from_list(Extras),
+    ExtraMap = hb_maps:from_list(Extras),
     format_indented(
         "~p:~p/~p [~s]~n",
         [
             Mod, Func, ArityOrTerm,
-            case maps:get(line, ExtraMap, undefined) of
+            case hb_maps:get(line, ExtraMap, undefined) of
                 undefined -> "No details";
                 Line ->
-                    maps:get(file, ExtraMap)
+                    hb_maps:get(file, ExtraMap)
                         ++ ":" ++ integer_to_list(Line)
             end
         ],

@@ -47,7 +47,7 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                     ?event({poda_validated, ok}),
                     % Add the validations to the VFS.
                     Comms =
-                        maps:to_list(
+                        hb_maps:to_list(
                             case Msg of 
                                 #tx { data = #{ <<"commitments">> := #tx { data = X } }} -> X;
                                 #tx { data = #{ <<"commitments">> := X }} -> X;
@@ -59,13 +59,13 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                             fun({_, Commitment}, Acc) ->
                                 Id = ar_bundles:signer(Commitment),
                                 Encoded = hb_util:encode(Id),
-                                maps:put(
+                                hb_maps:put(
                                     <<"/commitments/", Encoded/binary>>,
                                     Commitment#tx.data,
                                     Acc
                                 )
                             end,
-                            maps:get(vfs, S, #{}),
+                            hb_maps:get(vfs, S, #{}),
                             Comms
                         ),
                     % Update the arg prefix to include the unwrapped message.
@@ -75,7 +75,7 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                             % the actual message, then replace `/Message` with it.
                             Outer#tx{
                                 data = (Outer#tx.data)#{
-                                    <<"body">> => maps:get(<<"body">>, Msg#tx.data)
+                                    <<"body">> => hb_maps:get(<<"body">>, Msg#tx.data)
                                 }
                             }
                         ]
@@ -107,7 +107,7 @@ validate_stage(2, Commitments, Content, Opts) ->
             fun({_, Comm}) ->
                 ar_bundles:verify_item(Comm)
             end,
-            maps:to_list(Commitments)
+            hb_maps:to_list(Commitments)
         ) of
         true -> validate_stage(3, Content, Commitments, Opts);
         false -> {false, <<"Invalid commitments">>}
@@ -117,7 +117,7 @@ validate_stage(3, Content, Commitments, Opts = #{ <<"quorum">> := Quorum }) ->
     Validations =
         lists:filter(
             fun({_, Comm}) -> validate_commitment(Content, Comm, Opts) end,
-            maps:to_list(Commitments)
+            hb_maps:to_list(Commitments)
         ),
     ?event({poda_validations, length(Validations)}),
     case length(Validations) >= Quorum of
@@ -130,8 +130,8 @@ validate_stage(3, Content, Commitments, Opts = #{ <<"quorum">> := Quorum }) ->
 validate_commitment(Msg, Comm, Opts) ->
     MsgID = hb_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = hb_util:encode(ar_bundles:signer(Comm)),
-    ?event({poda_commitment, {signer, AttSigner, maps:get(authorities, Opts)}, {msg_id, MsgID}}),
-    ValidSigner = lists:member(AttSigner, maps:get(authorities, Opts)),
+    ?event({poda_commitment, {signer, AttSigner, hb_maps:get(authorities, Opts)}, {msg_id, MsgID}}),
+    ValidSigner = lists:member(AttSigner, hb_maps:get(authorities, Opts)),
     ValidSignature = ar_bundles:verify_item(Comm),
     RelevantMsg = ar_bundles:id(Comm, unsigned) == MsgID orelse
         (lists:keyfind(<<"commitment-for">>, 1, Comm#tx.tags)
@@ -185,14 +185,14 @@ commit_to_results(Msg, S) ->
     case is_map(Msg#tx.data) of
         true ->
             % Add commitments to the outbox and spawn items.
-            maps:map(
+            hb_maps:map(
                 fun(Key, IndexMsg) ->
                     ?no_prod("Currently we only commit to the outbox and spawn items."
                         "Make it general?"),
                     case lists:member(Key, [<<"/outbox">>, <<"/spawn">>]) of
                         true ->
                             ?event({poda_starting_to_commit_to_result, Key}),
-                            maps:map(
+                            hb_maps:map(
                                 fun(_, DeepMsg) -> add_commitments(DeepMsg, S) end,
                                 IndexMsg#tx.data
                             );
@@ -246,7 +246,7 @@ add_commitments(NewMsg, S = #{ <<"assignment">> := Assignment, <<"store">> := _S
                     ar_bundles:normalize(
                         #tx {
                             data = 
-                                maps:from_list(
+                                hb_maps:from_list(
                                     lists:zipwith(
                                         fun(Index, Comm) -> {integer_to_binary(Index), Comm} end,
                                         lists:seq(1, length([LocalCommitment | Commitments])),

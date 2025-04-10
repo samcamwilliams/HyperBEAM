@@ -73,13 +73,13 @@ tl(Path, Opts) when is_list(Path) ->
 %% can be safely used inside the main AO-Core resolve function.
 priv_remaining(Msg, _Opts) ->
     Priv = hb_private:from_message(Msg),
-    AOCore = maps:get(<<"ao-core">>, Priv, #{}),
-    maps:get(<<"remaining">>, AOCore, undefined).
+    AOCore = hb_maps:get(<<"ao-core">>, Priv, #{}),
+    hb_maps:get(<<"remaining">>, AOCore, undefined).
 
 %% @doc Store the remaining path of a message in its hidden `AO-Core' key.
 priv_store_remaining(Msg, RemainingPath) ->
     Priv = hb_private:from_message(Msg),
-    AOCore = maps:get(<<"ao-core">>, Priv, #{}),
+    AOCore = hb_maps:get(<<"ao-core">>, Priv, #{}),
     Msg#{
         <<"priv">> =>
             Priv#{
@@ -122,7 +122,7 @@ hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    Msg2WithoutMeta = maps:without(?AO_CORE_KEYS, Msg2),
+    Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Msg2),
     ReqPath = from_message(request, Msg2),
     case {map_size(Msg2WithoutMeta), ReqPath} of
         {0, _} when ReqPath =/= undefined ->
@@ -175,7 +175,7 @@ hashpath_alg(Msg) ->
 
 %%% @doc Add a message to the head (next to execute) of a request path.
 push_request(Msg, Path) ->
-    maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
+    hb_maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
 
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
@@ -187,7 +187,7 @@ pop_request(Msg, Opts) when is_map(Msg) ->
         {Head, []} -> {Head, undefined};
         {Head, Rest} ->
             ?event({popped_request, Head, Rest}),
-            {Head, maps:put(<<"path">>, Rest, Msg)}
+            {Head, hb_maps:put(<<"path">>, Rest, Msg)}
     end;
 pop_request([], _Opts) -> undefined;
 pop_request([Head|Rest], _Opts) ->
@@ -195,9 +195,9 @@ pop_request([Head|Rest], _Opts) ->
 
 %%% @doc Queue a message at the back of a request path. `path' is the only
 %%% key that we cannot use dev_message's `set/3' function for (as it expects
-%%% the compute path to be there), so we use `maps:put/3' instead.
+%%% the compute path to be there), so we use `hb_maps:put/3' instead.
 queue_request(Msg, Path) ->
-    maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
+    hb_maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
@@ -354,7 +354,7 @@ hd_test() ->
     ?assertEqual(undefined, hd(#{ <<"path">> => undefined }, #{})).
 
 tl_test() ->
-    ?assertMatch([<<"b">>, <<"c">>], maps:get(<<"path">>, tl(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{}))),
+    ?assertMatch([<<"b">>, <<"c">>], hb_maps:get(<<"path">>, tl(#{ <<"path">> => [<<"a">>, <<"b">>, <<"c">>] }, #{}))),
     ?assertEqual(undefined, tl(#{ <<"path">> => [] }, #{})),
     ?assertEqual(undefined, tl(#{ <<"path">> => <<"a">> }, #{})),
     ?assertEqual(undefined, tl(#{ <<"path">> => undefined }, #{})),

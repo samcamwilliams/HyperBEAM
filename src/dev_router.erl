@@ -118,7 +118,7 @@ route(_, Msg, Opts) ->
                             {ok,
                                 hb_ao:set(
                                     <<"nodes">>,
-                                    maps:map(
+                                    hb_maps:map(
                                         fun(Node) ->
                                             hb_util:ok(apply_route(Msg, Node))
                                         end,
@@ -171,7 +171,7 @@ apply_routes(Msg, R, Opts) ->
 apply_route(Msg, Route = #{ <<"opts">> := Opts }) ->
     {ok, #{
         <<"opts">> => Opts,
-        <<"uri">> => hb_util:ok(apply_route(Msg, maps:without([<<"opts">>], Route)))
+        <<"uri">> => hb_util:ok(apply_route(Msg, hb_maps:without([<<"opts">>], Route)))
     }};
 apply_route(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
     {ok, <<Prefix/binary, Path/binary>>};
@@ -595,7 +595,7 @@ simulation_occurences(SimRes, Nodes) ->
         fun(NearestNodes, Acc) ->
             lists:foldl(
                 fun(Node, Acc2) ->
-                    Acc2#{ Node => maps:get(Node, Acc2) + 1 }
+                    Acc2#{ Node => hb_maps:get(Node, Acc2) + 1 }
                 end,
                 Acc,
                 NearestNodes
@@ -606,7 +606,7 @@ simulation_occurences(SimRes, Nodes) ->
     ).
 
 simulation_distribution(SimRes, Nodes) ->
-    maps:values(simulation_occurences(SimRes, Nodes)).
+    hb_maps:values(simulation_occurences(SimRes, Nodes)).
 
 within_norms(SimRes, Nodes, TestSize) ->
     Distribution = simulation_distribution(SimRes, Nodes),

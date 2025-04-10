@@ -36,7 +36,7 @@ do_monitor(Group) ->
 do_monitor(Group, Last) ->
     Groups = lists:map(fun({Name, _}) -> Name end, hb_name:all()),
     New =
-        maps:from_list(
+        hb_maps:from_list(
             lists:map(
                 fun(G) ->
                     Pid = hb_name:lookup(G),
@@ -69,21 +69,21 @@ do_monitor(Group, Last) ->
             )
         ),
     Delta =
-        maps:filter(
+        hb_maps:filter(
             fun(G, NewState) ->
-                case maps:get(G, Last, []) of
+                case hb_maps:get(G, Last, []) of
                     NewState -> false;
                     _ -> true
                 end
             end,
             New
         ),
-    case maps:size(Delta) of
+    case hb_maps:size(Delta) of
         0 -> ok;
         Deltas ->
             io:format(standard_error, "== Sitrep ==> ~p named processes. ~p changes. ~n",
-                [maps:size(New), Deltas]),
-            maps:map(
+                [hb_maps:size(New), Deltas]),
+            hb_maps:map(
                 fun(G, #{pid := P, messages := Msgs}) ->
                     io:format(standard_error, "[~p: ~p] #M: ~p~n", [G, P, Msgs])
                 end,
@@ -139,7 +139,7 @@ find_execution(Groupname, _Opts) ->
 %% `group' function if it is found in the `info', otherwise uses the default.
 group(Msg1, Msg2, Opts) ->
     Grouper =
-        maps:get(grouper, hb_ao:info(Msg1, Opts), fun default_grouper/3),
+        hb_maps:get(grouper, hb_ao:info(Msg1, Opts), fun default_grouper/3),
     apply(
         Grouper,
         hb_ao:truncate_args(Grouper, [Msg1, Msg2, Opts])
@@ -164,7 +164,7 @@ unregister_groupname(Groupname, _Opts) ->
 await(Worker, Msg1, Msg2, Opts) ->
     % Get the device's await function, if it exists.
     AwaitFun =
-        maps:get(
+        hb_maps:get(
             await,
             hb_ao:info(Msg1, Opts),
             fun default_await/5
@@ -266,7 +266,7 @@ start_worker(GroupName, Msg, Opts) ->
             % If the device's info contains a `worker` function we
             % use that instead of the default implementation.
             WorkerFun =
-                maps:get(
+                hb_maps:get(
                     worker,
                     hb_ao:info(Msg, Opts),
                     Def = fun default_worker/3
@@ -290,7 +290,7 @@ start_worker(GroupName, Msg, Opts) ->
                     [
                         GroupName,
                         Msg,
-                        maps:merge(Opts, #{
+                        hb_maps:merge(Opts, #{
                             is_worker => true,
                             spawn_worker => false,
                             allow_infinite => true
@@ -318,7 +318,7 @@ default_worker(GroupName, Msg1, Opts) ->
                 hb_ao:resolve(
                     Msg1,
                     Msg2,
-                    maps:merge(ListenerOpts, Opts)
+                    hb_maps:merge(ListenerOpts, Opts)
                 ),
             send_response(Listener, GroupName, Msg2, Res),
             notify(GroupName, Msg2, Res, Opts),
@@ -365,8 +365,8 @@ default_grouper(Msg1, Msg2, Opts) ->
         true ->
             erlang:phash2(
                 {
-                    maps:without([<<"priv">>], Msg1),
-                    maps:without([<<"priv">>], Msg2)
+                    hb_maps:without([<<"priv">>], Msg1),
+                    hb_maps:without([<<"priv">>], Msg2)
                 }
             );
         _ -> ungrouped_exec
@@ -388,7 +388,7 @@ test_device(Base) ->
     #{
         info =>
             fun() ->
-                maps:merge(
+                hb_maps:merge(
                     #{
                         grouper =>
                             fun(M1, _M2, _Opts) ->

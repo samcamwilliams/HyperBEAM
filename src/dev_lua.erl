@@ -11,7 +11,7 @@
 info(Base) ->
     #{
         default => fun handler/4,
-        excludes => [<<"keys">>, <<"set">>] ++ maps:keys(Base)
+        excludes => [<<"keys">>, <<"set">>] ++ hb_maps:keys(Base)
     }.
 
 %% @doc The handler of all non-message and non-device keys. We call the Lua
@@ -195,13 +195,13 @@ normalize(Base, _Req, RawOpts) ->
 
 %% @doc Decode a Lua result into a HyperBEAM `structured@1.0' message.
 decode(Map = [{_K, _V} | _]) when is_list(Map) ->
-    maps:map(fun(_, V) -> decode(V) end, maps:from_list(Map));
+    hb_maps:map(fun(_, V) -> decode(V) end, hb_maps:from_list(Map));
 decode(Other) ->
     Other.
 
 %% @doc Encode a HyperBEAM `structured@1.0' message into a Lua result.
 encode(Map) when is_map(Map) ->
-    maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map));
+    hb_maps:to_list(hb_maps:map(fun(_, V) -> encode(V) end, Map));
 encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
 encode(Other) ->

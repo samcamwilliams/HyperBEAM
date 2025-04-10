@@ -10,7 +10,7 @@ find(Type, ID) ->
     find(Type, ID, '_').
 
 find(Type, _ID, Address) ->
-    case maps:get(Type, hb_opts:get(nodes), undefined) of
+    case hb_maps:get(Type, hb_opts:get(nodes), undefined) of
         #{ Address := Node } -> {ok, Node};
         undefined -> {error, service_type_not_found}
     end.

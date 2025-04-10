@@ -83,7 +83,7 @@ info(_, Request, NodeMsg) ->
 %% @doc Remove items from the node message that are not encodable into a
 %% message.
 filter_node_msg(Msg) when is_map(Msg) ->
-    maps:map(fun(_, Value) -> filter_node_msg(Value) end, hb_private:reset(Msg));
+    hb_maps:map(fun(_, Value) -> filter_node_msg(Value) end, hb_private:reset(Msg));
 filter_node_msg(Msg) when is_list(Msg) ->
     lists:map(fun filter_node_msg/1, Msg);
 filter_node_msg(Tuple) when is_tuple(Tuple) ->
@@ -152,7 +152,7 @@ update_node_message(Request, NodeMsg) ->
 adopt_node_message(Request, NodeMsg) ->
     ?event({set_node_message_success, Request}),
     MergedOpts =
-        maps:merge(
+        hb_maps:merge(
             NodeMsg,
             hb_opts:mimic_default_types(hb_message:uncommitted(Request), new_atoms)
         ),
@@ -186,7 +186,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
             ),
             AfterPreprocOpts = hb_http_server:get_opts(NodeMsg),
             % Resolve the request message.
-            HTTPOpts = maps:merge(
+            HTTPOpts = hb_maps:merge(
                 AfterPreprocOpts,
                 hb_opts:get(http_extra_opts, #{}, NodeMsg)
             ),

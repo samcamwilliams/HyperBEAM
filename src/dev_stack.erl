@@ -101,12 +101,12 @@
 -include("include/hb.hrl").
 
 info(Msg) ->
-    maps:merge(
+    hb_maps:merge(
         #{
             handler => fun router/4,
             excludes => [<<"set">>, <<"keys">>]
         },
-        case maps:get(<<"stack-keys">>, Msg, not_found) of
+        case hb_maps:get(<<"stack-keys">>, Msg, not_found) of
             not_found -> #{};
             StackKeys -> #{ exports => StackKeys }
         end
@@ -168,7 +168,7 @@ transformer_message(Msg1, Opts) ->
 			<<"device">> => #{
 				info =>
 					fun() ->
-                        maps:merge(
+                        hb_maps:merge(
                             BaseInfo,
                             #{
                                 handler =>
@@ -347,7 +347,7 @@ resolve_map(Message1, Message2, Opts) ->
             Opts
         ),
     Res = {ok,
-        maps:filtermap(
+        hb_maps:filtermap(
             fun(Key, _Dev) ->
                 {ok, OrigWithDev} = transform(Message1, Key, Opts),
                 case hb_ao:resolve(OrigWithDev, Message2, Opts) of
@@ -355,7 +355,7 @@ resolve_map(Message1, Message2, Opts) ->
                     _ -> false
                 end
             end,
-            maps:without(?AO_CORE_KEYS, hb_ao:normalize_keys(DevKeys))
+            hb_maps:without(?AO_CORE_KEYS, hb_ao:normalize_keys(DevKeys))
         )
     },
     Res.
@@ -439,7 +439,7 @@ transform_external_call_device_test() ->
 									handler =>
 										fun(<<"keys">>, MsgX1) ->
                                             ?event({test_dev_keys_called, MsgX1}),
-											{ok, maps:keys(MsgX1)};
+											{ok, hb_maps:keys(MsgX1)};
 										(Key, MsgX1) ->
 											{ok, Value} =
 												dev_message:get(Key, MsgX1),

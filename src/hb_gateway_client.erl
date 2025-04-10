@@ -229,9 +229,9 @@ result_to_message(ExpectedID, Item, Opts) ->
                         % The node trusts the GraphQL API, so we add the explicit
                         % keys as committed fields.
                         ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
-                        Comms = maps:get(<<"commitments">>, Structured),
-                        AttName = hd(maps:keys(Comms)),
-                        Comm = maps:get(AttName, Comms),
+                        Comms = hb_maps:get(<<"commitments">>, Structured),
+                        AttName = hd(hb_maps:keys(Comms)),
+                        Comm = hb_maps:get(AttName, Comms),
                         Structured#{
                             <<"commitments">> => #{
                                 AttName =>
@@ -241,7 +241,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                                                     hb_ao:normalize_key(Name)
                                                 ||
                                                     #{ <<"name">> := Name } <-
-                                                        maps:values(
+                                                        hb_maps:values(
                                                             hb_ao:normalize_keys(Tags)
                                                         )
                                                 ]

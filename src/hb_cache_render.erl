@@ -50,11 +50,11 @@ traverse_store(Store, Key, Parent, Graph) ->
     JoinedPath = hb_store:join(Key),
     ResolvedPath = hb_store:resolve(Store, Key),
     % Skip if we've already processed this node
-    case maps:get(visited, Graph, #{}) of
+    case hb_maps:get(visited, Graph, #{}) of
         #{JoinedPath := _} -> Graph;
         _ ->
             % Mark as visited to avoid cycles
-            Graph1 = Graph#{visited => maps:put(JoinedPath, true, maps:get(visited, Graph, #{}))},
+            Graph1 = Graph#{visited => hb_maps:put(JoinedPath, true, hb_maps:get(visited, Graph, #{}))},
             % Process node based on its type
             case hb_store:type(Store, Key) of
                 simple -> 
@@ -69,7 +69,7 @@ traverse_store(Store, Key, Parent, Graph) ->
 %% @doc Process a simple (leaf) node
 process_simple_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph) ->
     % Add the node to the graph
-    case maps:get(render_data, Graph, true) of
+    case hb_maps:get(render_data, Graph, true) of
         false -> Graph;
         true ->
             Graph1 = add_node(Graph, ResolvedPath, "lightblue"),
@@ -113,14 +113,14 @@ process_composite_node(Store, Key, Parent, ResolvedPath, JoinedPath, Graph) ->
 
 %% @doc Add a node to the graph
 add_node(Graph, ID, Color) ->
-    Nodes = maps:get(nodes, Graph, #{}),
-    Graph#{nodes => maps:put(ID, {ID, Color}, Nodes)}.
+    Nodes = hb_maps:get(nodes, Graph, #{}),
+    Graph#{nodes => hb_maps:put(ID, {ID, Color}, Nodes)}.
 
 %% @doc Add an arc to the graph
 add_arc(Graph, From, To, Label) ->
     ?event({insert_arc, {id1, From}, {id2, To}, {label, Label}}),
-    Arcs = maps:get(arcs, Graph, #{}),
-    Graph#{arcs => maps:put({From, To, Label}, true, Arcs)}.
+    Arcs = hb_maps:get(arcs, Graph, #{}),
+    Graph#{arcs => hb_maps:put({From, To, Label}, true, Arcs)}.
 
 %% @doc Extract a label from a path
 extract_label(Path) ->
@@ -142,7 +142,7 @@ graph_to_dot(Graph) ->
         <<"  node [shape=circle];\n">>
     ],
     % Create nodes section
-    Nodes = maps:fold(
+    Nodes = hb_maps:fold(
         fun(ID, {Label, Color}, Acc) ->
             [
                 Acc,
@@ -153,10 +153,10 @@ graph_to_dot(Graph) ->
             ]
         end,
         [],
-        maps:get(nodes, Graph, #{})
+        hb_maps:get(nodes, Graph, #{})
     ),
     % Create arcs section
-    Arcs = maps:fold(
+    Arcs = hb_maps:fold(
         fun({From, To, Label}, _, Acc) ->
             [
                 Acc,
@@ -167,7 +167,7 @@ graph_to_dot(Graph) ->
             ]
         end,
         [],
-        maps:get(arcs, Graph, #{})
+        hb_maps:get(arcs, Graph, #{})
     ),
     % Create graph footer
     Footer = <<"}\n">>,

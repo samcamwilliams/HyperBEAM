@@ -32,8 +32,8 @@ metrics(_, Req, Opts) ->
                 registry => prometheus_registry:exists(<<"default">>),
                 standalone => false}
             ),
-            RawHeaderMap = maps:from_list(prometheus_cowboy:to_cowboy_headers(HeaderList)),
-            Headers = maps:map(fun(_, Value) -> hb_util:bin(Value) end, RawHeaderMap),
+            RawHeaderMap = hb_maps:from_list(prometheus_cowboy:to_cowboy_headers(HeaderList)),
+            Headers = hb_maps:map(fun(_, Value) -> hb_util:bin(Value) end, RawHeaderMap),
             {ok, Headers#{ <<"body">> => Body }};
         false ->
             {ok, #{ <<"body">> => <<"Prometheus metrics disabled.">> }}
@@ -49,7 +49,7 @@ serve(<<"keys">>, M1, _M2, _Opts) -> dev_message:keys(M1);
 serve(<<"set">>, M1, M2, Opts) -> dev_message:set(M1, M2, Opts);
 serve(Key, _, _, _) ->
     ?event({hyperbuddy_serving, Key}),
-    case maps:get(Key, maps:get(routes, info(), no_routes), undefined) of
+    case hb_maps:get(Key, hb_maps:get(routes, info(), no_routes), undefined) of
         undefined -> {error, not_found};
         Filename -> return_file(Filename)
     end.

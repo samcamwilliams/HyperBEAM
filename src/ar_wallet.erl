@@ -156,11 +156,11 @@ load_keyfile(File) ->
     {ok, Body} = file:read_file(File),
     Key = hb_json:decode(Body),
     {Pub, Priv, KeyType} =
-        case maps:get(<<"kty">>, Key) of
+        case hb_maps:get(<<"kty">>, Key) of
             <<"EC">> ->
-                XEncoded = maps:get(<<"x">>, Key),
-                YEncoded = maps:get(<<"y">>, Key),
-                PrivEncoded = maps:get(<<"d">>, Key),
+                XEncoded = hb_maps:get(<<"x">>, Key),
+                YEncoded = hb_maps:get(<<"y">>, Key),
+                PrivEncoded = hb_maps:get(<<"d">>, Key),
                 OrigPub = iolist_to_binary([<<4:8>>, hb_util:decode(XEncoded),
                         hb_util:decode(YEncoded)]),
                 Pb = compress_ecdsa_pubkey(OrigPub),
@@ -168,15 +168,15 @@ load_keyfile(File) ->
                 KyType = {?ECDSA_SIGN_ALG, secp256k1},
                 {Pb, Prv, KyType};
             <<"OKP">> ->
-                PubEncoded = maps:get(<<"x">>, Key),
-                PrivEncoded = maps:get(<<"d">>, Key),
+                PubEncoded = hb_maps:get(<<"x">>, Key),
+                PrivEncoded = hb_maps:get(<<"d">>, Key),
                 Pb = hb_util:decode(PubEncoded),
                 Prv = hb_util:decode(PrivEncoded),
                 KyType = {?EDDSA_SIGN_ALG, ed25519},
                 {Pb, Prv, KyType};
             _ ->
-                PubEncoded = maps:get(<<"n">>, Key),
-                PrivEncoded = maps:get(<<"d">>, Key),
+                PubEncoded = hb_maps:get(<<"n">>, Key),
+                PrivEncoded = hb_maps:get(<<"d">>, Key),
                 Pb = hb_util:decode(PubEncoded),
                 Prv = hb_util:decode(PrivEncoded),
                 KyType = {?RSA_SIGN_ALG, 65537},

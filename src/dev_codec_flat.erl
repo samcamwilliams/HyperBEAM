@@ -16,7 +16,7 @@ committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 %% @doc Convert a flat map to a TABM.
 from(Bin) when is_binary(Bin) -> Bin;
 from(Map) when is_map(Map) ->
-    maps:fold(
+    hb_maps:fold(
         fun(Path, Value, Acc) ->
             inject_at_path(hb_path:term_to_path_parts(Path), from(Value), Acc)
         end,
@@ -26,12 +26,12 @@ from(Map) when is_map(Map) ->
 
 %% Helper function to inject a value at a specific path in a nested map
 inject_at_path([Key], Value, Map) ->
-    case maps:get(Key, Map, not_found) of
+    case hb_maps:get(Key, Map, not_found) of
         not_found ->
             Map#{ Key => Value };
         ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
             % If both are maps, merge them
-            Map#{ Key => maps:merge(ExistingMap, Value) };
+            Map#{ Key => hb_maps:merge(ExistingMap, Value) };
         OldValue ->
             % Otherwise, alert the user and fail
             throw({path_collision,
@@ -41,19 +41,19 @@ inject_at_path([Key], Value, Map) ->
             })
     end;
 inject_at_path([Key|Rest], Value, Map) ->
-    SubMap = maps:get(Key, Map, #{}),
-    maps:put(Key, inject_at_path(Rest, Value, SubMap), Map).
+    SubMap = hb_maps:get(Key, Map, #{}),
+    hb_maps:put(Key, inject_at_path(Rest, Value, SubMap), Map).
 
 %% @doc Convert a TABM to a flat map.
 to(Bin) when is_binary(Bin) -> Bin;
 to(Map) when is_map(Map) ->
-    maps:fold(
+    hb_maps:fold(
         fun(Key, Value, Acc) ->
             case to(Value) of
                 SubMap when is_map(SubMap) ->
-                    maps:fold(
+                    hb_maps:fold(
                         fun(SubKey, SubValue, InnerAcc) ->
-                            maps:put(
+                            hb_maps:put(
                                 hb_path:to_binary([Key, SubKey]),
                                 SubValue,
                                 InnerAcc
@@ -63,7 +63,7 @@ to(Map) when is_map(Map) ->
                         SubMap
                     );
                 SimpleValue ->
-                    maps:put(hb_path:to_binary([Key]), SimpleValue, Acc)
+                    hb_maps:put(hb_path:to_binary([Key]), SimpleValue, Acc)
             end
         end,
         #{},
@@ -79,11 +79,11 @@ serialize(Map) when is_map(Map) ->
                         Acc,
                         hb_path:to_binary(Key),
                         <<": ">>,
-                        maps:get(Key, Flattened), <<"\n">>
+                        hb_maps:get(Key, Flattened), <<"\n">>
                     ]
                 end,
                 <<>>,
-                maps:keys(Flattened)
+                hb_maps:keys(Flattened)
             )
         )
     }.
@@ -149,7 +149,7 @@ path_list_test() ->
         fun(Key) ->
             ?assert(not lists:member($\n, binary_to_list(Key)))
         end,
-        maps:keys(Flat)
+        hb_maps:keys(Flat)
     ).
 
 binary_passthrough_test() ->

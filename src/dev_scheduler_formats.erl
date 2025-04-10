@@ -28,7 +28,7 @@ assignments_to_bundle(ProcID, Assignments, More, TimeInfo, RawOpts) ->
         <<"block-height">> => hb_util:int(Height),
         <<"block-hash">> => hb_util:human_id(Hash),
         <<"assignments">> =>
-            maps:from_list(
+            hb_maps:from_list(
                 lists:map(
                     fun(Assignment) ->
                         {
@@ -98,7 +98,7 @@ cursor(Assignment, RawOpts) ->
 assignment_to_aos2(Assignment, RawOpts) ->
     Opts = format_opts(RawOpts),
     Message = hb_ao:get(<<"body">>, Assignment, Opts),
-    AssignmentWithoutBody = maps:without([<<"body">>], Assignment),
+    AssignmentWithoutBody = hb_maps:without([<<"body">>], Assignment),
     #{
         <<"message">> =>
             dev_json_iface:message_to_json_struct(Message),
@@ -110,7 +110,7 @@ assignment_to_aos2(Assignment, RawOpts) ->
 %% assignments response.
 aos2_to_assignments(ProcID, Body, RawOpts) ->
     Opts = format_opts(RawOpts),
-    Assignments = maps:get(<<"edges">>, Body, Opts),
+    Assignments = hb_maps:get(<<"edges">>, Body, Opts),
     ?event({raw_assignments, Assignments}),
     ParsedAssignments =
         lists:map(
@@ -136,18 +136,18 @@ aos2_to_assignments(ProcID, Body, RawOpts) ->
 aos2_to_assignment(A, RawOpts) ->
     Opts = format_opts(RawOpts),
     % Unwrap the node if it is provided
-    Node = maps:get(<<"node">>, A, A),
+    Node = hb_maps:get(<<"node">>, A, A),
     ?event({node, Node}),
     {ok, Assignment} =
         hb_gateway_client:result_to_message(
-            aos2_normalize_data(maps:get(<<"assignment">>, Node)),
+            aos2_normalize_data(hb_maps:get(<<"assignment">>, Node)),
             Opts
         ),
     NormalizedAssignment = aos2_normalize_types(Assignment),
     {ok, Message} =
-        case maps:get(<<"message">>, Node) of
+        case hb_maps:get(<<"message">>, Node) of
             null ->
-                MessageID = maps:get(<<"message">>, Assignment),
+                MessageID = hb_maps:get(<<"message">>, Assignment),
                 ?event(error, {scheduler_did_not_provide_message, MessageID}),
                 case hb_cache:read(MessageID, Opts) of
                     {ok, Msg} -> {ok, Msg};

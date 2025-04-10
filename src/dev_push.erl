@@ -77,7 +77,7 @@ do_push(Base, Assignment, Opts) ->
             {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =
-                maps:map(
+                hb_maps:map(
                     fun(Key, MsgToPush = #{ <<"target">> := Target }) ->
                         case hb_cache:read(Target, Opts) of
                             {ok, PushBase} ->
@@ -303,7 +303,7 @@ remote_schedule_result(Location, SignedReq, Opts) ->
     % Store a copy of the message for ourselves.
     {ok, _} = hb_cache:write(SignedReq, Opts),
     ?event(push, {remote_schedule_result, {path, Path}}, Opts),
-    case hb_http:post(Node, Path, maps:without([<<"path">>], SignedReq), Opts) of
+    case hb_http:post(Node, Path, hb_maps:without([<<"path">>], SignedReq), Opts) of
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_ao:get(<<"status">>, Res, 200, Opts) of
@@ -329,11 +329,11 @@ parse_redirect(Location) ->
     Parsed = uri_string:parse(Location),
     Node =
         uri_string:recompose(
-            (maps:remove(query, Parsed))#{
+            (hb_maps:remove(query, Parsed))#{
                 path => <<"/schedule">>
             }
         ),
-    {Node, maps:get(path, Parsed)}.
+    {Node, hb_maps:get(path, Parsed)}.
 
 %%% Tests
 

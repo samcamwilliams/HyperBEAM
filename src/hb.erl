@@ -135,9 +135,9 @@ start_mainnet(Opts) ->
     io:format(
         "Started mainnet node at http://localhost:~p~n"
         "Operator: ~s~n",
-        [maps:get(port, Opts), Address]
+        [hb_maps:get(port, Opts), Address]
     ),
-    <<"http://localhost:", (integer_to_binary(maps:get(port, Opts)))/binary>>.
+    <<"http://localhost:", (integer_to_binary(hb_maps:get(port, Opts)))/binary>>.
 
 %%% @doc Start a server with a `simple-pay@1.0' pre-processor.
 start_simple_pay() ->
@@ -159,7 +159,7 @@ do_start_simple_pay(Opts) ->
         gun,
         os_mon
     ]),
-    Port = maps:get(port, Opts),
+    Port = hb_maps:get(port, Opts),
     Processor =
         #{
             <<"device">> => <<"p4@1.0">>,

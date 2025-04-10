@@ -83,13 +83,13 @@ convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
     OldPriv =
-        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
+        if is_map(Msg) -> hb_maps:get(<<"priv">>, Msg, #{});
            true -> #{}
         end,
     TABM =
         to_tabm(
             case is_map(Msg) of
-                true -> maps:without([<<"priv">>], Msg);
+                true -> hb_maps:without([<<"priv">>], Msg);
                 false -> Msg
             end,
             SourceFormat,
@@ -120,7 +120,7 @@ from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
 %% any existing `priv' sub-map that may already be present.
 restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
 restore_priv(Msg, OldPriv) ->
-    MsgPriv = maps:get(<<"priv">>, Msg, #{}),
+    MsgPriv = hb_maps:get(<<"priv">>, Msg, #{}),
     ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
     NewPriv = hb_util:deep_merge(MsgPriv, OldPriv),
     ?event({new_priv, NewPriv}),
@@ -159,7 +159,7 @@ id(Msg, RawCommitters, Opts) ->
 with_only_committed(Msg) ->
     with_only_committed(Msg, #{}).
 with_only_committed(Msg, Opts) when is_map(Msg) ->
-    Comms = maps:get(<<"commitments">>, Msg, not_found),
+    Comms = hb_maps:get(<<"commitments">>, Msg, not_found),
     case is_map(Msg) andalso Comms /= not_found of
         true ->
             try
@@ -172,7 +172,7 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                 % Add the inline-body-key to the committed list if it is not
                 % already present.
                 ?event({committed_keys, CommittedKeys, {msg, Msg}}),
-                {ok, maps:with(
+                {ok, hb_maps:with(
                     CommittedKeys ++ [<<"commitments">>],
                     Msg
                 )}
@@ -188,12 +188,12 @@ with_only_committed(Msg, _) ->
 %% @doc Return the message with only the specified committers attached.
 with_only_committers(Msg, Committers) when is_map(Msg) ->
     NewCommitments =
-        maps:filter(
+        hb_maps:filter(
             fun(_, #{ <<"committer">> := Committer }) ->
                 lists:member(Committer, Committers);
                (_, _) -> false
             end,
-            maps:get(<<"commitments">>, Msg, #{})
+            hb_maps:get(<<"commitments">>, Msg, #{})
         ),
     Msg#{ <<"commitments">> => NewCommitments };
 with_only_committers(Msg, _Committers) ->
@@ -254,7 +254,7 @@ verify(Msg, Committers) ->
 %% @doc Return the unsigned version of a message in AO-Core format.
 uncommitted(Bin) when is_binary(Bin) -> Bin;
 uncommitted(Msg) ->
-    maps:remove(<<"commitments">>, Msg).
+    hb_maps:remove(<<"commitments">>, Msg).
 
 %% @doc Return all of the committers on a message that have 'normal', 256 bit, 
 %% addresses.
@@ -385,7 +385,7 @@ format(Map, Indent) when is_map(Map) ->
     % 2. `if_present' -- show priv only if there are keys inside
     % 2. `always' -- always show priv
     FooterKeys =
-        case {hb_opts:get(debug_show_priv, false, #{}), maps:get(<<"priv">>, Map, #{})} of
+        case {hb_opts:get(debug_show_priv, false, #{}), hb_maps:get(<<"priv">>, Map, #{})} of
             {false, _} -> [];
             {if_present, #{}} -> [];
             {_, Priv} -> [{<<"!Private!">>, Priv}]
@@ -393,7 +393,7 @@ format(Map, Indent) when is_map(Map) ->
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
         FilterUndef(PriorityKeys) ++
-        maps:to_list(
+        hb_maps:to_list(
             minimize(Map,
                 case hb_opts:get(debug_metadata, false, #{}) of
                     false ->
@@ -462,7 +462,7 @@ type(Msg) when is_map(Msg) ->
         fun({_, Value}) -> is_map(Value) end,
         lists:filter(
             fun({Key, _}) -> not hb_private:is_private(Key) end,
-            maps:to_list(Msg)
+            hb_maps:to_list(Msg)
         )
     ),
     case IsDeep of
@@ -479,14 +479,14 @@ match(Map1, Map2) ->
     match(Map1, Map2, strict).
 match(Map1, Map2, Mode) ->
      Keys1 =
-        maps:keys(
+        hb_maps:keys(
             NormMap1 = minimize(
                 normalize(hb_ao:normalize_keys(Map1)),
                 [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     Keys2 =
-        maps:keys(
+        hb_maps:keys(
             NormMap2 = minimize(
                 normalize(hb_ao:normalize_keys(Map2)),
                 [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
@@ -503,8 +503,8 @@ match(Map1, Map2, Mode) ->
         true ->
             lists:all(
                 fun(Key) ->
-                    Val1 = hb_ao:normalize_keys(maps:get(Key, NormMap1, not_found)),
-                    Val2 = hb_ao:normalize_keys(maps:get(Key, NormMap2, not_found)),
+                    Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found)),
+                    Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found)),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
@@ -535,7 +535,7 @@ match(Map1, Map2, Mode) ->
     end.
 	
 matchable_keys(Map) ->
-    lists:sort(lists:map(fun hb_ao:normalize_key/1, maps:keys(Map))).
+    lists:sort(lists:map(fun hb_ao:normalize_key/1, hb_maps:keys(Map))).
 
 %% @doc Filter messages that do not match the 'spec' given. The underlying match
 %% is performed in the `only_present' mode, such that match specifications only
@@ -545,7 +545,7 @@ with_commitments(Spec, Msg) ->
 with_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
     ?event({with_commitments, {spec, Spec}, {commitments, Commitments}}),
     FilteredCommitments =
-        maps:filter(
+        hb_maps:filter(
             fun(_, CommMsg) ->
                 Res = match(Spec, CommMsg, primary),
                 ?event({with_commitments, {commitments, CommMsg}, {spec, Spec}, {match, Res}}),
@@ -565,9 +565,9 @@ without_commitments(Spec, Msg) ->
 without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
     ?event({without_commitments, {spec, Spec}, {msg, Msg}, {commitments, Commitments}}),
     FilteredCommitments =
-        maps:without(
-            maps:keys(
-                maps:get(<<"commitments">>, with_commitments(Spec, Msg, #{}), #{})
+        hb_maps:without(
+            hb_maps:keys(
+                hb_maps:get(<<"commitments">>, with_commitments(Spec, Msg, #{}), #{})
             ),
             Commitments
         ),
@@ -585,7 +585,7 @@ commitment(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
     commitment(#{ <<"committer">> => CommitterID }, Msg, Opts);
 commitment(Spec, #{ <<"commitments">> := Commitments }, _Opts) ->
     Matches =
-        maps:filtermap(
+        hb_maps:filtermap(
             fun(ID, CommMsg) ->
                 case match(Spec, CommMsg, primary) of
                     true -> {true, {ID, CommMsg}};
@@ -594,7 +594,7 @@ commitment(Spec, #{ <<"commitments">> := Commitments }, _Opts) ->
             end,
             Commitments
         ),
-    case maps:values(Matches) of
+    case hb_maps:values(Matches) of
         [] -> not_found;
         [{ID, Commitment}] -> {ok, ID, Commitment};
         _ ->
@@ -636,12 +636,12 @@ minimize(Map, ExtraKeys) ->
     NormKeys =
         lists:map(fun hb_ao:normalize_key/1, ?REGEN_KEYS)
             ++ lists:map(fun hb_ao:normalize_key/1, ExtraKeys),
-    maps:filter(
+    hb_maps:filter(
         fun(Key, _) ->
             (not lists:member(hb_ao:normalize_key(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
-        maps:map(fun(_K, V) -> minimize(V) end, Map)
+        hb_maps:map(fun(_K, V) -> minimize(V) end, Map)
     ).
 
 %% @doc Return a map with only the keys that necessary, without those that can
@@ -649,7 +649,7 @@ minimize(Map, ExtraKeys) ->
 normalize(Map) when is_map(Map) orelse is_list(Map) ->
     NormalizedMap = hb_ao:normalize_keys(Map),
     FilteredMap = filter_default_keys(NormalizedMap),
-    maps:with(matchable_keys(FilteredMap), FilteredMap);
+    hb_maps:with(matchable_keys(FilteredMap), FilteredMap);
 normalize(Other) ->
     Other.
 
@@ -657,9 +657,9 @@ normalize(Other) ->
 %% record.
 filter_default_keys(Map) ->
     DefaultsMap = default_tx_message(),
-    maps:filter(
+    hb_maps:filter(
         fun(Key, Value) ->
-            case maps:find(hb_ao:normalize_key(Key), DefaultsMap) of
+            case hb_maps:find(hb_ao:normalize_key(Key), DefaultsMap) of
                 {ok, Value} -> false;
                 _ -> true
             end
@@ -669,7 +669,7 @@ filter_default_keys(Map) ->
 
 %% @doc Get the normalized fields and default values of the tx record.
 default_tx_message() ->
-    maps:from_list(default_tx_list()).
+    hb_maps:from_list(default_tx_list()).
 
 %% @doc Get the ordered list of fields as AO-Core keys and default values of
 %% the tx record.
@@ -692,10 +692,10 @@ default_keys_removed_test() ->
         <<"data">> => TX#tx.data
     },
     FilteredMap = filter_default_keys(TXMap),
-    ?assertEqual(<< 1:256 >>, maps:get(<<"unsigned_id">>, FilteredMap)),
-    ?assertEqual(<< 2:256 >>, maps:get(<<"last_tx">>, FilteredMap, not_found)),
-    ?assertEqual(not_found, maps:get(<<"owner">>, FilteredMap, not_found)),
-    ?assertEqual(not_found, maps:get(<<"target">>, FilteredMap, not_found)).
+    ?assertEqual(<< 1:256 >>, hb_maps:get(<<"unsigned_id">>, FilteredMap)),
+    ?assertEqual(<< 2:256 >>, hb_maps:get(<<"last_tx">>, FilteredMap, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"owner">>, FilteredMap, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"target">>, FilteredMap, not_found)).
 
 minimization_test() ->
     Msg = #{
@@ -704,7 +704,7 @@ minimization_test() ->
     },
     MinimizedMsg = minimize(Msg),
     ?event({minimized, MinimizedMsg}),
-    ?assertEqual(1, maps:size(MinimizedMsg)).
+    ?assertEqual(1, hb_maps:size(MinimizedMsg)).
 
 match_modes_test() ->
     Msg1 = #{ <<"a">> => 1, <<"b">> => 2 },
@@ -776,9 +776,9 @@ signed_nested_data_key_test(Codec) ->
 %     },
 %     TX = message_to_tx(Msg),
 %     ?event({key_encodings_to_tx, {msg, Msg}, {tx, TX}}),
-%     ?assertEqual(maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
-%     ?assertEqual(maps:get(<<"owner">>, Msg), TX#tx.owner),
-%     ?assertEqual(maps:get(<<"target">>, Msg), TX#tx.target).
+%     ?assertEqual(hb_maps:get(<<"last_tx">>, Msg), TX#tx.last_tx),
+%     ?assertEqual(hb_maps:get(<<"owner">>, Msg), TX#tx.owner),
+%     ?assertEqual(hb_maps:get(<<"target">>, Msg), TX#tx.target).
 
 %% @doc Test that the message matching function works.
 match_test(Codec) ->
@@ -1273,7 +1273,7 @@ deeply_nested_committed_keys_test() ->
     ?assert(
         match(
             Msg,
-            maps:without([<<"commitments">>], WithOnlyCommitted)
+            hb_maps:without([<<"commitments">>], WithOnlyCommitted)
         )
     ).
 
@@ -1282,7 +1282,7 @@ signed_with_inner_signed_message_test(Codec) ->
     Msg = commit(#{
         <<"a">> => 1,
         <<"inner">> =>
-            maps:merge(
+            hb_maps:merge(
                 commit(
                     #{
                         <<"c">> => <<"abc">>,
@@ -1308,7 +1308,7 @@ signed_with_inner_signed_message_test(Codec) ->
     ?event({initial_msg, Msg}),
     % 1. Verify the outer message without changes.
     ?assert(verify(Msg)),
-    {ok, CommittedInner} = with_only_committed(maps:get(<<"inner">>, Msg)),
+    {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg)),
     ?event({committed_inner, CommittedInner}),
     ?event({inner_committers, hb_message:signers(CommittedInner)}),
     % 2. Verify the inner message without changes.
@@ -1316,7 +1316,7 @@ signed_with_inner_signed_message_test(Codec) ->
     % 3. Convert the message to the format and back.
     Encoded = convert(Msg, Codec, #{}),
     ?event({encoded, Encoded}),
-    %?event({encoded_body, {string, maps:get(<<"body">>, Encoded)}}, #{}),
+    %?event({encoded_body, {string, hb_maps:get(<<"body">>, Encoded)}}, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, Decoded}),
     % 4. Verify the outer message after decode.
@@ -1324,7 +1324,7 @@ signed_with_inner_signed_message_test(Codec) ->
     ?assert(verify(Decoded)),
     % 5. Verify the inner message from the converted message, applying
     % `with_only_committed` first.
-    InnerDecoded = maps:get(<<"inner">>, Decoded),
+    InnerDecoded = hb_maps:get(<<"inner">>, Decoded),
     ?event({inner_decoded, InnerDecoded}),
     % Applying `with_only_committed` should verify the inner message.
     {ok, CommittedInnerOnly} = with_only_committed(InnerDecoded),
@@ -1430,7 +1430,7 @@ priv_survives_conversion_test(Codec) ->
     ?assert(match(Msg, Decoded)),
     ?assertMatch(
         #{ <<"test_key">> := <<"TEST_VALUE">> },
-        maps:get(<<"priv">>, Decoded, #{})
+        hb_maps:get(<<"priv">>, Decoded, #{})
     ).
 
 encode_balance_table(Size, Codec) ->

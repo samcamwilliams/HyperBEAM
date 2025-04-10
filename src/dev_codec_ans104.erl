@@ -92,7 +92,7 @@ commit(Msg, _Req, Opts) ->
                 CommitmentWithOriginalTags#{ <<"hashpath">> => Hashpath };
             _ -> CommitmentWithOriginalTags
         end,
-    MsgWithoutHP = maps:without([<<"hashpath">>], Msg),
+    MsgWithoutHP = hb_maps:without([<<"hashpath">>], Msg),
     {ok,
         (hb_message:without_commitments(
             #{
@@ -129,9 +129,9 @@ committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, 
         #{ <<"original-tags">> := TagMap } ->
             TrustedKeys =
                 [
-                    maps:get(<<"name">>, Tag)
+                    hb_maps:get(<<"name">>, Tag)
                 ||
-                    Tag <- maps:values(hb_ao:normalize_keys(TagMap))
+                    Tag <- hb_maps:values(hb_ao:normalize_keys(TagMap))
                 ],
             committed_from_trusted_keys(Msg, TrustedKeys, Opts);
         _ ->
@@ -145,7 +145,7 @@ committed(Msg, Req, Opts) ->
     % there is a single signature on the message. Subsequently, we can trust that
     % the keys signed by that single commitment speak for 'all' of the 
     % commitments.
-    MsgLessGivenComm = maps:without([<<"commitments">>], Msg),
+    MsgLessGivenComm = hb_maps:without([<<"commitments">>], Msg),
     ?event({to_verify, {input, MsgLessGivenComm}}),
     case verify(MsgLessGivenComm, Req, Opts) of
         {ok, true} ->
@@ -159,9 +159,9 @@ committed(Msg, Req, Opts) ->
             % form.
             TagKeys = [ hb_ao:normalize_key(Key) || {Key ,_} <- Encoded#tx.tags ],
             % Get the nested keys from the original message.
-            NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+            NestedKeys = hb_maps:keys(hb_maps:filter(fun(_, V) -> is_map(V) end, Msg)),
             Implicit =
-                case lists:member(<<"ao-types">>, maps:keys(Msg)) of
+                case lists:member(<<"ao-types">>, hb_maps:keys(Msg)) of
                     true -> dev_codec_structured:implicit_keys(Msg);
                     false -> []
                 end,
@@ -175,8 +175,8 @@ committed(Msg, Req, Opts) ->
 
 committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
     ?event({committed_from_trusted_keys, {trusted_keys, TrustedKeys}, {input, Msg}}),
-    NestedKeys = maps:keys(maps:filter(fun(_, V) -> is_map(V) end, Msg)),
-    TKeys = maps:values(hb_ao:normalize_keys(TrustedKeys)),
+    NestedKeys = hb_maps:keys(hb_maps:filter(fun(_, V) -> is_map(V) end, Msg)),
+    TKeys = hb_maps:values(hb_ao:normalize_keys(TrustedKeys)),
     Implicit =
         case lists:member(<<"ao-types">>, TKeys) of
             true -> dev_codec_structured:implicit_keys(Msg);
@@ -193,7 +193,7 @@ committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
 %% @doc Verify an ANS-104 commitment.
 verify(Msg, _Req, _Opts) ->
     MsgWithoutCommitments =
-        maps:without(
+        hb_maps:without(
             [
                 <<"commitments">>,
                 <<"committer">>,
@@ -221,9 +221,9 @@ do_from(RawTX) ->
     % Get the raw fields and values of the tx record and pair them. Then convert 
     % the list of key-value pairs into a map, removing irrelevant fields.
     TXKeysMap =
-        maps:with(?TX_KEYS,
+        hb_maps:with(?TX_KEYS,
             hb_ao:normalize_keys(
-                maps:from_list(
+                hb_maps:from_list(
                     lists:zip(
                         record_info(fields, tx),
                         tl(tuple_to_list(TX))
@@ -232,16 +232,16 @@ do_from(RawTX) ->
             )
         ),
     % Generate a TABM from the tags.
-    MapWithoutData = maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags)),
+    MapWithoutData = hb_maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags)),
     ?event({tags_from_tx, {explicit, MapWithoutData}}),
     DataMap =
         case TX#tx.data of
             Data when is_map(Data) ->
                 % If the data is a map, we need to recursively turn its children
                 % into messages from their tx representations.
-                maps:merge(
+                hb_maps:merge(
                     MapWithoutData,
-                    maps:map(fun(_, InnerValue) -> from(InnerValue) end, Data)
+                    hb_maps:map(fun(_, InnerValue) -> from(InnerValue) end, Data)
                 );
             Data when Data == ?DEFAULT_DATA -> MapWithoutData;
             Data when is_binary(Data) -> MapWithoutData#{ <<"data">> => Data };
@@ -253,7 +253,7 @@ do_from(RawTX) ->
     % Merge the data map with the rest of the TX map and remove any keys that
     % are not part of the message.
     NormalizedDataMap =
-        hb_ao:normalize_keys(maps:merge(DataMap, MapWithoutData)),
+        hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData)),
     %% Add the commitments to the message if the TX has a signature.
     ?event({message_before_commitments, NormalizedDataMap}),
     WithCommitments =
@@ -276,7 +276,7 @@ do_from(RawTX) ->
             _ ->
                 Address = hb_util:human_id(ar_wallet:to_address(TX#tx.owner)),
                 WithoutBaseCommitment =
-                    maps:without(
+                    hb_maps:without(
                         [
                             <<"id">>,
                             <<"owner">>,
@@ -308,7 +308,7 @@ do_from(RawTX) ->
                     }
                 }
         end,
-    Res = maps:without(?FILTERED_TAGS, WithCommitments),
+    Res = hb_maps:without(?FILTERED_TAGS, WithCommitments),
     ?event({message_after_commitments, Res}),
     Res.
 
@@ -321,12 +321,12 @@ deduplicating_from_list(Tags) ->
             fun({Key, Value}, Acc) ->
                 NormKey = hb_ao:normalize_key(Key),
                 ?event({deduplicating_from_list, {key, NormKey}, {value, Value}, {acc, Acc}}),
-                case maps:get(NormKey, Acc, undefined) of
-                    undefined -> maps:put(NormKey, Value, Acc);
+                case hb_maps:get(NormKey, Acc, undefined) of
+                    undefined -> hb_maps:put(NormKey, Value, Acc);
                     Existing when is_list(Existing) ->
-                        maps:put(NormKey, Existing ++ [Value], Acc);
+                        hb_maps:put(NormKey, Existing ++ [Value], Acc);
                     ExistingSingle ->
-                        maps:put(NormKey, [ExistingSingle, Value], Acc)
+                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc)
                 end
             end,
             #{},
@@ -335,7 +335,7 @@ deduplicating_from_list(Tags) ->
     ?event({deduplicating_from_list, {aggregated, Aggregated}}),
     % Convert aggregated values into a structured-field list.
     Res =
-        maps:map(
+        hb_maps:map(
             fun(_Key, Values) when is_list(Values) ->
                 % Convert Erlang lists of binaries into a structured-field list.
                 iolist_to_binary(
@@ -383,7 +383,7 @@ encoded_tags_to_map(Tags) ->
 tag_map_to_encoded_tags(TagMap) ->
     OrderedList =
         hb_util:message_to_ordered_list(
-            maps:without([<<"priv">>], TagMap)),
+            hb_maps:without([<<"priv">>], TagMap)),
     %?event({ordered_list, {explicit, OrderedList}, {input, {explicit, Input}}}),
     lists:map(
         fun(#{ <<"name">> := Key, <<"value">> := Value }) ->
@@ -413,33 +413,33 @@ to(RawTABM) when is_map(RawTABM) ->
     % `priv/AO-Core/Original-Path' field, and if so, use that instead of the
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
-    TABM = hb_ao:normalize_keys(maps:without([<<"commitments">>], RawTABM)),
-    Commitments = maps:get(<<"commitments">>, RawTABM, #{}),
+    TABM = hb_ao:normalize_keys(hb_maps:without([<<"commitments">>], RawTABM)),
+    Commitments = hb_maps:get(<<"commitments">>, RawTABM, #{}),
     TABMWithComm =
-        case maps:keys(Commitments) of
+        case hb_maps:keys(Commitments) of
             [] -> TABM;
             [ID] ->
                 TABMWithoutCommitmentKeys =
-                    maps:merge(
+                    hb_maps:merge(
                         TABM,
-                        maps:without(
+                        hb_maps:without(
                             [<<"commitment-device">>, <<"committer">>, <<"alg">>],
-                            maps:get(ID, Commitments)
+                            hb_maps:get(ID, Commitments)
                         )
                     ),
                 ?event({tabm_without_commitment_keys, TABMWithoutCommitmentKeys}),
                 TABMWithoutCommitmentKeys;
             _ -> throw({multisignatures_not_supported_by_ans104, RawTABM})
         end,
-    OriginalTagMap = maps:get(<<"original-tags">>, TABMWithComm, #{}),
+    OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
-    TABMNoOrigTags = maps:without([<<"original-tags">>], TABMWithComm),
+    TABMNoOrigTags = hb_maps:without([<<"original-tags">>], TABMWithComm),
     % TODO: Is this necessary now? Do we want to pursue `original-path` as the
     % mechanism for restoring original tags?
     M =
-        case {maps:find(<<"path">>, TABMNoOrigTags), hb_private:from_message(TABMNoOrigTags)} of
+        case {hb_maps:find(<<"path">>, TABMNoOrigTags), hb_private:from_message(TABMNoOrigTags)} of
             {{ok, _}, #{ <<"ao-core">> := #{ <<"original-path">> := Path } }} ->
-                maps:put(<<"path">>, Path, TABMNoOrigTags);
+                hb_maps:put(<<"path">>, Path, TABMNoOrigTags);
             _ -> TABMNoOrigTags
         end,
     % Translate the keys into a binary map. If a key has a value that is a map,
@@ -448,7 +448,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % an extra layer of nesting to the data.
     %?event({message_to_tx, {keys, Keys}, {map, M}}),
     MsgKeyMap =
-        maps:map(
+        hb_maps:map(
             fun(_Key, Msg) when is_map(Msg) -> to(Msg);
                (_Key, Value) -> Value
             end,
@@ -461,12 +461,12 @@ to(RawTABM) when is_map(RawTABM) ->
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
                 NormKey = hb_ao:normalize_key(Field),
-                case maps:find(NormKey, NormalizedMsgKeyMap) of
+                case hb_maps:find(NormKey, NormalizedMsgKeyMap) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
                         % NOTE: Do we really want to do this type coercion?
                         {
-                            maps:remove(NormKey, RemMap),
+                            hb_maps:remove(NormKey, RemMap),
                             [
                                 try hb_util:native_id(Value) catch _:_ -> Value end
                             |
@@ -475,7 +475,7 @@ to(RawTABM) when is_map(RawTABM) ->
                         };
                     {ok, Value} ->
                         {
-                            maps:remove(NormKey, RemMap),
+                            hb_maps:remove(NormKey, RemMap),
                             [Value|Acc]
                         }
                 end
@@ -495,7 +495,7 @@ to(RawTABM) when is_map(RawTABM) ->
                     end;
                 (_) -> false
             end,
-            maps:to_list(RemainingMap)
+            hb_maps:to_list(RemainingMap)
         ),
     ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
     ?event({original_tags, {explicit, OriginalTags}}),
@@ -504,7 +504,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % original tags and comparing the result to the remaining keys.
     if length(OriginalTags) > 0 ->
         ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags),
-        NormRemaining = maps:from_list(Remaining),
+        NormRemaining = hb_maps:from_list(Remaining),
         case NormRemaining == ExpectedTagsFromOriginal of
             true -> ok;
             false ->
@@ -529,7 +529,7 @@ to(RawTABM) when is_map(RawTABM) ->
                 end
         },
     % Recursively turn the remaining data items into tx records.
-    DataItems = maps:from_list(lists:map(
+    DataItems = hb_maps:from_list(lists:map(
         fun({Key, Value}) ->
             {hb_ao:normalize_key(Key), to(Value)}
         end,
@@ -537,13 +537,13 @@ to(RawTABM) when is_map(RawTABM) ->
     )),
     % Set the data based on the remaining keys.
     TXWithData = 
-        case {TX#tx.data, maps:size(DataItems)} of
+        case {TX#tx.data, hb_maps:size(DataItems)} of
             {Binary, 0} when is_binary(Binary) ->
                 TX;
             {?DEFAULT_DATA, _} ->
                 TX#tx { data = DataItems };
             {Data, _} when is_map(Data) ->
-                TX#tx { data = maps:merge(Data, DataItems) };
+                TX#tx { data = hb_maps:merge(Data, DataItems) };
             {Data, _} when is_record(Data, tx) ->
                 TX#tx { data = DataItems#{ <<"data">> => Data } };
             {Data, _} when is_binary(Data) ->
