@@ -3,8 +3,28 @@
 -export([info/1, init/3, snapshot/3, normalize/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
-%%% The default Lua function to call, if not provided by the invoker.
--define(DEFAULT_LUA_FUNCTION, <<"compute">>).
+%%% The set of functions that will be sandboxed by default if `sandbox` is set 
+%%% to only `true`. Setting `sandbox` to a map allows the invoker to specify
+%%% which functions should be sandboxed and what to return instead. Providing
+%%% a list instead of a map will result in all functions being sandboxed and
+%%% returning `sandboxed'.
+-define(DEFAULT_SANDBOX, [
+    {['_G', io], <<"sandboxed">>},
+    {['_G', file], <<"sandboxed">>},
+    {['_G', os, execute], <<"sandboxed">>},
+    {['_G', os, exit], <<"sandboxed">>},
+    {['_G', os, getenv], <<"sandboxed">>},
+    {['_G', os, remove], <<"sandboxed">>},
+    {['_G', os, rename], <<"sandboxed">>},
+    {['_G', os, tmpname], <<"sandboxed">>},
+    {['_G', package], <<"sandboxed">>},
+    {['_G', loadfile], <<"sandboxed">>},
+    {['_G', require], <<"sandboxed">>},
+    {['_G', dofile], <<"sandboxed">>},
+    {['_G', load], <<"sandboxed">>},
+    {['_G', loadfile], <<"sandboxed">>},
+    {['_G', loadstring], <<"sandboxed">>}
+]).
 
 %% @doc All keys that are not directly available in the base message are 
 %% resolved by calling the Lua function in the script of the same name.
@@ -55,14 +75,40 @@ ensure_initialized(Base, _Req, Opts) ->
             ?event(debug_lua, initializing_lua_state),
             case find_script(Base, Opts) of
                 {ok, Script} ->
-                    State0 = luerl:init(),
-                    {ok, _, State1} = luerl:do_dec(Script, State0),
-                    % Return the base message with the state added to it.
-                    {ok, hb_private:set(Base, <<"state">>, State1, Opts)};
+                    initialize(Base, Script, Opts);
                 Error ->
                     Error
             end
     end.
+
+%% @doc Initialize a new Lua state with a given base message and script.
+initialize(Base, Script, Opts) ->
+    State0 = luerl:init(),
+    {ok, _, State1} = luerl:do_dec(Script, State0),
+    State2 =
+        case hb_ao:get(<<"sandbox">>, {as, <<"message@1.0">>, Base}, false, Opts) of
+            false -> State1;
+            true -> sandbox(State1, ?DEFAULT_SANDBOX, Opts);
+            Spec -> sandbox(State1, Spec, Opts)
+        end,
+    % Return the base message with the state added to it.
+    {ok, hb_private:set(Base, <<"state">>, State2, Opts)}.
+
+%% @doc Sandbox (render inoperable) a set of Lua functions. Each function is
+%% referred to as if it is a path in AO-Core, with its value being what to 
+%% return to the caller. For example, 'os.exit' would be referred to as
+%% referred to as `os/exit'. If preferred, a list rather than a map may be
+%% provided, in which case the functions all return `sandboxed'.
+sandbox(State, Map, Opts) when is_map(Map) ->
+    sandbox(State, maps:to_list(Map), Opts);
+sandbox(State, [], _Opts) ->
+    State;
+sandbox(State, [{Path, Value} | Rest], Opts) ->
+    {ok, NextState} = luerl:set_table_keys_dec(Path, Value, State),
+    sandbox(NextState, Rest, Opts);
+sandbox(State, [Path | Rest], Opts) ->
+    {ok, NextState} = luerl:set_table_keys_dec(Path, <<"sandboxed">>, State),
+    sandbox(NextState, Rest, Opts).
 
 %% @doc Call the Lua script with the given arguments.
 compute(Key, RawBase, Req, Opts) ->
@@ -112,11 +158,11 @@ compute(Key, RawBase, Req, Opts) ->
                     <<"state">> => NewState
                 }
             }};
-        {lua_error, Error} ->
+        {lua_error, Error, Details} ->
             {error, #{
                 <<"status">> => 500,
-                <<"body">> =>
-                    <<"Lua error: ", Error/binary>>
+                <<"body">> => Error,
+                <<"details">> => Details
             }}
     end.
 
@@ -191,6 +237,16 @@ simple_invocation_test() ->
         <<"parameters">> => []
     },
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
+
+sandboxed_failure_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => Script,
+        <<"parameters">> => [],
+        <<"sandbox">> => true
+    },
+    ?assertMatch({error, _}, hb_ao:resolve(Base, <<"sandboxed_fail">>, #{})).
 
 %% @doc Benchmark the performance of Lua executions.
 direct_benchmark_test() ->

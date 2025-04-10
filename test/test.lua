@@ -28,7 +28,11 @@ end
 --- the `response` field set to a table with the `Output` field set to a string,
 --- and the `messages` field set to an empty table.
 function compute(process, message, opts)
-    process.script = nil
+    process.results = {
+        output = {
+            body = 42
+        }
+    }
     return process
 end
 
@@ -62,4 +66,9 @@ end
 --- @return table an answer to every HTTP request with the words "i like turtles"
 function preprocess(base, req, opts)
     return { { body = "i like turtles" } }
+end
+
+function sandboxed_fail()
+    -- Do something that is not dangerous, but is sandboxed nonetheless.
+    return os.getenv("PWD")
 end
