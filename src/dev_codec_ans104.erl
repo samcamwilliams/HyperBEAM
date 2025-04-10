@@ -129,7 +129,7 @@ committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, 
         #{ <<"original-tags">> := TagMap } ->
             TrustedKeys =
                 [
-                    hb_maps:get(<<"name">>, Tag)
+                    hb_maps:get(<<"name">>, Tag, Opts)
                 ||
                     Tag <- hb_maps:values(hb_ao:normalize_keys(TagMap))
                 ],
