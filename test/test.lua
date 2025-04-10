@@ -67,3 +67,8 @@ end
 function preprocess(base, req, opts)
     return { { body = "i like turtles" } }
 end
+
+function sandboxed_fail()
+    -- Do something that is not dangerous, but is sandboxed nonetheless.
+    return os.getenv("PWD")
+end
