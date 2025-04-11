@@ -52,7 +52,9 @@ find_script(Base, Opts) ->
         ScriptID ->
             case hb_cache:read(ScriptID, Opts) of
                 {ok, Script} ->
-                    {ok, Script};
+                    Data = hb_ao:get(<<"data">>, Script, #{}),
+                    ?event(debug_lua, { data, Data}),
+                    {ok, Data};
                 {error, Error} ->
                     {error, #{
                         <<"status">> => 404,
@@ -73,7 +75,6 @@ ensure_initialized(Base, _Req, Opts) ->
             {ok, Base};
         _ ->
             ?event(debug_lua, initializing_lua_state),
-            ?event(debug_lua, { base, Base}),
             case find_script(Base, Opts) of
                 {ok, Script} ->
                     initialize(Base, Script, Opts);
