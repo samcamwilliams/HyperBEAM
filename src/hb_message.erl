@@ -159,7 +159,7 @@ id(Msg, RawCommitters, Opts) ->
 with_only_committed(Msg) ->
     with_only_committed(Msg, #{}).
 with_only_committed(Msg, Opts) when is_map(Msg) ->
-    ?event(debug_load, {with_only_committed, {msg, Msg}, {opts, Opts}}),
+    ?event({with_only_committed, {msg, Msg}, {opts, Opts}}),
     Comms = hb_maps:get(<<"commitments">>, Msg, not_found),
     case is_map(Msg) andalso Comms /= not_found of
         true ->
@@ -233,7 +233,7 @@ committed(Msg, all, Opts) ->
 committed(Msg, List, Opts) when is_list(List) ->
     committed(Msg, #{ <<"commitments">> => List }, Opts);
 committed(Msg, CommittersMsg, Opts) ->
-    ?event(debug_load, {committed, {msg, {explicit, Msg}}, {committers_msg, {explicit, CommittersMsg}}, {opts, Opts}}),
+    ?event({committed, {msg, {explicit, Msg}}, {committers_msg, {explicit, CommittersMsg}}, {opts, Opts}}),
     {ok, CommittedKeys} = dev_message:committed(Msg, CommittersMsg, Opts),
     CommittedKeys.
 
@@ -1455,6 +1455,42 @@ encode_small_balance_table_test(Codec) ->
 encode_large_balance_table_test(Codec) ->
     encode_balance_table(1000, Codec).
 
+sign_links_test(Codec) ->
+    % Make a message with definitively non-accessible lazy-loadable links. Sign
+    % it, ensuring that we can produce signatures and IDs without having the 
+    % data directly in memory.
+    Msg = #{
+        <<"immediate-key">> => <<"immediate-value">>,
+        <<"link-key">> =>
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
+    },
+    Signed = commit(Msg, hb:wallet(), Codec),
+    ?event({signed, Signed}),
+    ?assert(verify(Signed)).
+
+sign_deep_message_from_lazy_cache_read_test(Codec) ->
+    Msg = #{
+        <<"immediate-key">> => <<"immediate-value">>,
+        <<"link-key">> => #{
+            <<"immediate-key-2">> => <<"link-value">>,
+            <<"link-key-2">> => #{
+                <<"immediate-key-3">> => <<"link-value-2">>
+            }
+        }
+    },
+    % Write the message to the store to ensure that we get lazy-loadable links.
+    {ok, Path} = hb_cache:write(Msg, #{}),
+    {ok, ReadMsg} = hb_cache:read(Path, #{}),
+    ?event({read, ReadMsg}),
+    Signed = commit(Msg, hb:wallet(), Codec),
+    ?event({signed, Signed}),
+    ?assert(
+        lists:all(
+            fun({_K, Value}) -> not is_map(Value) end,
+            maps:to_list(maps:without([<<"commitments">>, <<"priv">>], Msg))
+        )
+    ).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1535,7 +1571,10 @@ message_suite_test_() ->
         {"nested list test", fun nested_body_list_test/1},
         {"recursive nested list test", fun recursive_nested_list_test/1},
         {"encode small balance table test", fun encode_small_balance_table_test/1},
-        {"encode large balance table test", fun encode_large_balance_table_test/1}
+        {"encode large balance table test", fun encode_large_balance_table_test/1},
+        {"sign links test", fun sign_links_test/1},
+        {"sign deep message from lazy cache read test",
+            fun sign_deep_message_from_lazy_cache_read_test/1}
     ]).
 
 run_test() ->

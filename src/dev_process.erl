@@ -149,7 +149,7 @@ process_id(Msg1, Msg2, Opts) ->
 %% `Initialized' key to `True' to indicate that the process has been
 %% initialized.
 init(Msg1, Msg2, Opts) ->
-    ?event(debug_load, {init_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
+    ?event({init_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok, Initialized} =
         run_as(<<"execution">>, Msg1, #{ <<"path">> => init }, Opts),
     {
@@ -549,7 +549,7 @@ ensure_process_key(Msg1, Opts) ->
                         Msg1
                 end,
             {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
-            ?event(debug_load, {process_key_before_set, {msg1, Msg1}, {process_msg, {explicit, ProcessMsg}}, {committed, Committed}}),
+            ?event({process_key_before_set, {msg1, Msg1}, {process_msg, {explicit, ProcessMsg}}, {committed, Committed}}),
             Res = hb_ao:set(
                 Msg1,
                 #{ <<"process">> => Committed },

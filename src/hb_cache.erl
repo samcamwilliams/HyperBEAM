@@ -175,7 +175,7 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % We start by writing the group, such that if the message is empty, we
     % still have a group in the store.
     hb_store:make_group(Store, UncommittedID),
-    ?event(debug_types, {writing_message, Msg}),
+    ?event({writing_message, Msg}),
     hb_maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
             ?event(error, {request_to_write_device_map, Map}),
@@ -321,7 +321,7 @@ store_read(Path, Store, Opts) ->
                                             }
                                         };
                                     (Subpath) ->
-                                        ?event(debug_types,
+                                        ?event(
                                             {returning_link,
                                             {subpath, Subpath}
                                         }
@@ -350,7 +350,7 @@ store_read(Path, Store, Opts) ->
                                 Subpaths
                             )
                         ),
-                    ?event(debug_types, {read_message, {explicit, Msg}}),
+                    ?event({read_message, {explicit, Msg}}),
                     {ok, maps:merge(Msg, Implicit)};
                 _ -> not_found
             end
@@ -550,7 +550,7 @@ test_deeply_nested_complex_message(Opts) ->
             ],
             Opts
         ),
-    ?event(debug_types, {deep_message, {explicit, DeepMsg}}),
+    ?event({deep_message, {explicit, DeepMsg}}),
     %% Assert that the retrieved item matches the original deep value
     ?assertEqual([1,2,3], hb_ao:get(<<"other-test-key">>, DeepMsg)),
     ?event({deep_message_match, {read, DeepMsg}, {write, Level3SignedSubmessage}}),
