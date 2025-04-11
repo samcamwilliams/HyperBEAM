@@ -3668,12 +3668,26 @@ function ao.clearOutbox()
   ao.outbox = { Output = {}, Messages = {}, Spawns = {}, Assignments = {}}
 end
 
-function ao.init(env)
-    if ao.id == "" then ao.id = env.Process.Id end
-
-    if ao._module == "" then
-      ao._module = env.Module.Id
+local function getId(m)
+  local id = ""
+  utils.map(function (k)
+    local c = m.commitments[k]
+    if c.alg == "rsa-pss-sha512" then
+      id = k
+    elseif c.alg == "signed" and c['commitment-device'] == "ans104" then
+      id = k
     end
+  end, utils.keys(m.commitments)
+  )
+  return id
+end
+
+function ao.init(env)
+  if ao.id == "" then ao.id = getId(env.process) end
+
+    -- if ao._module == "" then
+    --   ao._module = env.Module.Id
+    -- end
     -- TODO: need to deal with assignables
     -- if #ao.authorities < 1 then
     --     for _, o in ipairs(env.Process.Tags) do
@@ -3995,6 +4009,7 @@ local function load_state()
   ao = ao or require('.ao')
 local state = {}
 local stringify = require('.stringify')
+local utils = require('.utils')
 
 Colors = { red = "\27[31m", green = "\27[32m",
   blue = "\27[34m", reset = "\27[0m", gray = "\27[90m"
@@ -4048,18 +4063,34 @@ function state.insertInbox(msg)
   end
 end
 
+local function getOwner(m)
+  local id = ""
+  utils.map(function (k)
+    local c = m.commitments[k]
+    if c.alg == "rsa-pss-sha512" then
+      id = c.committer
+    elseif c.alg == "signed" and c['commitment-device'] == "ans104" then
+      id = c.committer
+    end
+  end, utils.keys(m.commitments)
+  )
+  return id
+end
+
 function state.init(msg, env)
-  -- if not Initialized then
-  --   -- if process id is equal to message id then set Owner
-  --   -- TODO: need additional check, like msg.Slot == 1
-  --   if env.Process.Id == msg.Id and Owner ~= msg.Id then
-  --     Owner = env.Process['From-Process'] or msg.From
-  --   end
-  --   if env.Process.Name then
-  --     Name = Name == "aos" and env.Process.Name
-  --   end
-  --   Initialized = true
-  -- end
+
+  if not Initialized then
+    Owner = getOwner(env.process)
+    -- if process id is equal to message id then set Owner
+    -- TODO: need additional check, like msg.Slot == 1
+    -- if env.Process.Id == msg.Id and Owner ~= msg.Id then
+    --   Owner = env.Process['From-Process'] or msg.From
+    -- end
+    -- if env.Process.Name then
+    --   Name = Name == "aos" and env.Process.Name
+    -- end
+    Initialized = true
+  end
 end
 
 function state.checkSlot(msg, ao)
@@ -4126,9 +4157,23 @@ function process.handle(msg, env)
   ao.clearOutbox()
 
   -- state.checkSlot(msg, ao)
-
   Handlers.add("_eval", function (msg)
-    return msg.Action == "Eval" --and Owner == msg.
+    local function getMsgFrom(m)
+      local from = ""
+      Utils.map(
+        function (k)
+          local c = m.commitments[k]
+          if c.alg == "rsa-pss-sha512" then
+            from = c.committer
+          end
+        end,
+        Utils.keys(m.commitments)
+      )
+      return from
+    end
+    -- print(Owner)
+    -- print(getMsgFrom(msg.body))
+    return msg.body.action == "Eval" and Owner == getMsgFrom(msg.body)
   end, eval(ao))
 
   Handlers.append("_default",
@@ -4204,5 +4249,12 @@ local _process = require('.process')
 function compute(base, req, opts)
   base.results = _process.handle(req, base)
   return base
+  -- base.results = { 
+  --   Output = { data = ao.id  },
+  --   Messages = {
+  --     { Data = "Bar" }
+  --   }
+  -- }
+  -- return base
 end
 

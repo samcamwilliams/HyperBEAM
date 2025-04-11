@@ -350,12 +350,14 @@ pure_lua_process_benchmark_test_() ->
     end}.
 
 invoke_aos_test() ->
-    Process = generate_lua_process("test/aos-lite.lua"),
+    Process = generate_lua_process("test/hyper-aos.lua"),
     {ok, _} = hb_cache:write(Process, #{}),
     Message = generate_test_message(Process),
+    ?event(rakis, { message, Message }),
+    ?event(rakis, { process, Process }),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-
+    ?event(rakis, { results, Results }),
     ?assertEqual(<<"1">>, Results),
     {ok, MessageResult} = hb_ao:resolve(Process, <<"now/results/messages/1/data">>, #{}),
     ?assertEqual(<<"Bar">>, MessageResult).
@@ -364,7 +366,7 @@ invoke_aos_test() ->
 aos_process_benchmark_test_() ->
     {timeout, 30, fun() ->
         BenchMsgs = 200,
-        Process = generate_lua_process("test/aos-lite.lua"),
+        Process = generate_lua_process("test/hyper-aos.lua"),
         Message = generate_test_message(Process),
         lists:foreach(
             fun(X) ->
