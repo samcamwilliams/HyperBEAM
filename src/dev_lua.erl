@@ -73,6 +73,7 @@ ensure_initialized(Base, _Req, Opts) ->
             {ok, Base};
         _ ->
             ?event(debug_lua, initializing_lua_state),
+            ?event(debug_lua, { base, Base}),
             case find_script(Base, Opts) of
                 {ok, Script} ->
                     initialize(Base, Script, Opts);
