@@ -999,10 +999,10 @@ do_test_restore() ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"X = 42">>),
-    schedule_aos_call(Msg1, <<"X = 1337">>),
-    schedule_aos_call(Msg1, <<"return X">>),
+    Msg1 = test_aos_process(Opts),
+    schedule_aos_call(Msg1, <<"X = 42">>, Opts),
+    schedule_aos_call(Msg1, <<"X = 1337">>, Opts),
+    schedule_aos_call(Msg1, <<"return X">>, Opts),
     % Compute the first message.
     {ok, _} =
         hb_ao:resolve(

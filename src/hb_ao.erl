@@ -649,18 +649,20 @@ ensure_message_loaded(Msg, _Opts) ->
 %% the result as links. If the value has an associated `type' key in the extra
 %% options, we apply it to the read value.
 ensure_loaded(Msg) -> ensure_loaded(Msg, #{}).
-ensure_loaded({link, ID, ExtraOpts}, Opts) ->
-    MergedOpts = hb_maps:merge(Opts, ExtraOpts),
+ensure_loaded({link, ID, LinkOpts}, Opts) ->
+    % If the user provided their own options, we merge them and _overwrite_
+    % the options that are already set in the link.
+    MergedOpts = hb_maps:merge(LinkOpts, Opts),
     case hb_cache:read(ID, MergedOpts) of
         {ok, LoadedMsg} ->
             ?event(caching,
                 {lazy_loaded,
                     {link, ID},
                     {msg, LoadedMsg},
-                    {extra_opts, ExtraOpts}
+                    {link_opts, LinkOpts}
                 }
             ),
-            case hb_maps:get(<<"type">>, ExtraOpts, undefined) of
+            case hb_maps:get(<<"type">>, LinkOpts, undefined) of
                 undefined ->
                     LoadedMsg;
                 Type ->
@@ -679,6 +681,8 @@ ensure_loaded(Msg, _Opts) ->
 %% performance costs.
 ensure_all_loaded(Msg) ->
     ensure_all_loaded(Msg, #{}).
+ensure_all_loaded(Link, Opts) when ?IS_LINK(Link) ->
+    ensure_all_loaded(ensure_loaded(Link, Opts), Opts);
 ensure_all_loaded(Msg, Opts) when is_map(Msg) ->
     hb_maps:map(fun(_K, V) -> ensure_all_loaded(V, Opts) end, Msg);
 ensure_all_loaded(Msg, Opts) when is_list(Msg) ->
