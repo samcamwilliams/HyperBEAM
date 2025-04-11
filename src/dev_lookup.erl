@@ -12,7 +12,7 @@ read(_M1, M2, Opts) ->
         {ok, RawRes} ->
             % We are sending the result over the wire, so make sure it is
             % fully loaded, to save the recipient latency.
-            Res = hb_ao:ensure_all_loaded(RawRes),
+            Res = hb_cache:ensure_all_loaded(RawRes),
             ?event({lookup_result, Res}),
             case hb_ao:get(<<"accept">>, M2, Opts) of
                 <<"application/aos-2">> ->

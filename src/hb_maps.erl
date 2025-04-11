@@ -39,8 +39,8 @@ get(Key, Map, Default) ->
     Opts :: map()
 ) -> term().
 get(Key, Map, Default, Opts) ->
-    hb_ao:ensure_loaded(
-        maps:get(Key, hb_ao:ensure_loaded(Map), Default),
+    hb_cache:ensure_loaded(
+        maps:get(Key, hb_cache:ensure_loaded(Map), Default),
         Opts
     ).
 
@@ -50,27 +50,27 @@ find(Key, Map) ->
 
 -spec find(Key :: term(), Map :: map(), Opts :: map()) -> {ok, term()} | error.
 find(Key, Map, Opts) ->
-    hb_ao:ensure_loaded(maps:find(Key, hb_ao:ensure_loaded(Map)), Opts).
+    hb_cache:ensure_loaded(maps:find(Key, hb_cache:ensure_loaded(Map)), Opts).
 
 -spec put(Key :: term(), Value :: term(), Map :: map()) -> map().
 put(Key, Value, Map) ->
-    maps:put(Key, Value, hb_ao:ensure_loaded(Map)).
+    maps:put(Key, Value, hb_cache:ensure_loaded(Map)).
 
 -spec is_key(Key :: term(), Map :: map()) -> boolean().
 is_key(Key, Map) ->
-    maps:is_key(Key, hb_ao:ensure_loaded(Map)).
+    maps:is_key(Key, hb_cache:ensure_loaded(Map)).
 
 -spec keys(Map :: map()) -> [term()].
 keys(Map) ->
-    maps:keys(hb_ao:ensure_loaded(Map)).
+    maps:keys(hb_cache:ensure_loaded(Map)).
 
 -spec values(Map :: map()) -> [term()].
 values(Map) ->
-    maps:values(hb_ao:ensure_loaded(Map)).
+    maps:values(hb_cache:ensure_loaded(Map)).
 
 -spec size(Map :: map()) -> non_neg_integer().
 size(Map) ->
-    maps:size(hb_ao:ensure_loaded(Map)).
+    maps:size(hb_cache:ensure_loaded(Map)).
 
 -spec map(
     Fun :: fun((Key :: term(), Value :: term()) -> term()),
@@ -86,25 +86,25 @@ map(Fun, Map) ->
 ) -> map().
 map(Fun, Map, Opts) ->
     maps:map(
-        fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end,
-        hb_ao:ensure_loaded(Map)
+        fun(K, V) -> Fun(K, hb_cache:ensure_loaded(V, Opts)) end,
+        hb_cache:ensure_loaded(Map)
     ).
 
 -spec merge(Map1 :: map(), Map2 :: map()) -> map().
 merge(Map1, Map2) ->
-    maps:merge(hb_ao:ensure_loaded(Map1), hb_ao:ensure_loaded(Map2)).
+    maps:merge(hb_cache:ensure_loaded(Map1), hb_cache:ensure_loaded(Map2)).
 
 -spec remove(Key :: term(), Map :: map()) -> map().
 remove(Key, Map) ->
-    maps:remove(Key, hb_ao:ensure_loaded(Map)).
+    maps:remove(Key, hb_cache:ensure_loaded(Map)).
 
 -spec with(Keys :: [term()], Map :: map()) -> map().
 with(Keys, Map) ->
-    maps:with(Keys, hb_ao:ensure_loaded(Map)).
+    maps:with(Keys, hb_cache:ensure_loaded(Map)).
 
 -spec without(Keys :: [term()], Map :: map()) -> map().
 without(Keys, Map) ->
-    maps:without(Keys, hb_ao:ensure_loaded(Map)).
+    maps:without(Keys, hb_cache:ensure_loaded(Map)).
 
 -spec filter(
     Fun :: fun((Key :: term(), Value :: term()) -> boolean()),
@@ -121,12 +121,12 @@ filter(Fun, Map) ->
 filter(Fun, Map, Opts) ->
     maps:filtermap(
         fun(K, V) ->
-            case Fun(K, Loaded = hb_ao:ensure_loaded(V, Opts)) of
+            case Fun(K, Loaded = hb_cache:ensure_loaded(V, Opts)) of
                 true -> {true, Loaded};
                 false -> false
             end
         end,
-        hb_ao:ensure_loaded(Map)
+        hb_cache:ensure_loaded(Map)
     ).
 
 -spec filtermap(
@@ -143,8 +143,8 @@ filtermap(Fun, Map) ->
 ) -> map().
 filtermap(Fun, Map, Opts) ->
     maps:filtermap(
-        fun(K, V) -> Fun(K, hb_ao:ensure_loaded(V, Opts)) end,
-        hb_ao:ensure_loaded(Map)
+        fun(K, V) -> Fun(K, hb_cache:ensure_loaded(V, Opts)) end,
+        hb_cache:ensure_loaded(Map)
     ).
 
 -spec fold(
@@ -163,14 +163,14 @@ fold(Fun, Acc, Map) ->
 ) -> term().
 fold(Fun, Acc, Map, Opts) ->
     maps:fold(
-        fun(K, V, CurrAcc) -> Fun(K, hb_ao:ensure_loaded(V, Opts), CurrAcc) end,
+        fun(K, V, CurrAcc) -> Fun(K, hb_cache:ensure_loaded(V, Opts), CurrAcc) end,
         Acc,
-        hb_ao:ensure_loaded(Map)
+        hb_cache:ensure_loaded(Map)
     ).
 
 -spec take(N :: non_neg_integer(), Map :: map()) -> map().
 take(N, Map) ->
-    maps:take(N, hb_ao:ensure_loaded(Map)).
+    maps:take(N, hb_cache:ensure_loaded(Map)).
 
 -spec update_with(
     Key :: term(),
@@ -178,7 +178,7 @@ take(N, Map) ->
     Map :: map()
 ) -> map().
 update_with(Key, Fun, Map) ->
-    maps:update_with(Key, Fun, hb_ao:ensure_loaded(Map)).
+    maps:update_with(Key, Fun, hb_cache:ensure_loaded(Map)).
 
 -spec update_with(
     Key :: term(),
@@ -187,7 +187,7 @@ update_with(Key, Fun, Map) ->
     Opts :: map()
 ) -> map().
 update_with(Key, Fun, Map, Opts) ->
-    maps:update_with(Key, Fun, hb_ao:ensure_loaded(Map), Opts).
+    maps:update_with(Key, Fun, hb_cache:ensure_loaded(Map), Opts).
 
 -spec from_list(List :: [{Key :: term(), Value :: term()}]) -> map().
 from_list(List) ->
@@ -195,7 +195,7 @@ from_list(List) ->
 
 -spec to_list(Map :: map()) -> [{Key :: term(), Value :: term()}].
 to_list(Map) ->
-    maps:to_list(hb_ao:ensure_loaded(Map)).
+    maps:to_list(hb_cache:ensure_loaded(Map)).
 
 %%% Tests
 

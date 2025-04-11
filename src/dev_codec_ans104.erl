@@ -408,7 +408,7 @@ to(Binary) when is_binary(Binary) ->
 to(TX) when is_record(TX, tx) -> TX;
 to(RawTABM) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded, for now.
-    DenormTABM = hb_ao:ensure_all_loaded(RawTABM),
+    DenormTABM = hb_cache:ensure_all_loaded(RawTABM),
     % The path is a special case so we normalized it first. It may have been
     % modified by `hb_ao' in order to set it to the current key that is
     % being executed. We should check whether the path is in the

@@ -98,7 +98,6 @@
 -export([normalize_key/1, normalize_key/2, normalize_keys/1]).
 -export([message_to_fun/3, message_to_device/2, load_device/2, find_exported_function/5]).
 -export([force_message/2]).
--export([ensure_loaded/1, ensure_loaded/2, ensure_all_loaded/1, ensure_all_loaded/2]).
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
@@ -181,7 +180,7 @@ resolve_many(MsgList, Opts) ->
     Res.
 do_resolve_many([Msg3], Opts) ->
     ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
-    {ok, ensure_loaded(Msg3, Opts)};
+    {ok, hb_cache:ensure_loaded(Msg3, Opts)};
 do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
@@ -205,12 +204,12 @@ resolve_stage(1, Link, Msg2, Opts) when ?IS_LINK(Link) ->
     % If the first message is a link, we should load the message and
     % continue with the resolution.
     ?event(ao_core, {stage, 1, resolve_base_link, {link, Link}}, Opts),
-    resolve_stage(1, ensure_loaded(Link, Opts), Msg2, Opts);
+    resolve_stage(1, hb_cache:ensure_loaded(Link, Opts), Msg2, Opts);
 resolve_stage(1, Msg1, Link, Opts) when ?IS_LINK(Link) ->
     % If the second message is a link, we should load the message and
     % continue with the resolution.
     ?event(ao_core, {stage, 1, resolve_req_link, {link, Link}}, Opts),
-    resolve_stage(1, Msg1, ensure_loaded(Link, Opts), Opts);
+    resolve_stage(1, Msg1, hb_cache:ensure_loaded(Link, Opts), Opts);
 resolve_stage(1, {as, DevID, Ref}, Msg2, Opts) when ?IS_ID(Ref) orelse ?IS_LINK(Ref) ->
     % Normalize `as' requests with a raw ID or link as the path. Links will be
     % loaded in following stages.
@@ -219,7 +218,7 @@ resolve_stage(1, {as, DevID, Link}, Msg2, Opts) when ?IS_LINK(Link) ->
     % If the first message is an `as' with a link, we should load the message and
     % continue with the resolution.
     ?event(ao_core, {stage, 1, resolve_base_as_link, {link, Link}}, Opts),
-    resolve_stage(1, {as, DevID, ensure_loaded(Link, Opts)}, Msg2, Opts);
+    resolve_stage(1, {as, DevID, hb_cache:ensure_loaded(Link, Opts)}, Msg2, Opts);
 resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Msg2, Opts) when ?IS_ID(ID) ->
     % If the first message is an `as' with an ID, we should load the message and
     % apply the non-path elements of the sub-request to it.
@@ -634,61 +633,14 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
             Res
     end.
 
-%% @doc Ensure that a message is loaded from the cache if it is an ID, ready
-%% for execution.
+%% @doc Ensure that a message is loaded from the cache if it is an ID, or 
+%% a link, such that it is ready for execution.
 ensure_message_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
-    ensure_loaded({link, MsgID, #{}}, Opts);
+    hb_cache:ensure_loaded({link, MsgID, #{}}, Opts);
 ensure_message_loaded(MsgLink, Opts) when ?IS_LINK(MsgLink) ->
-    ensure_loaded(MsgLink, Opts);
+    hb_cache:ensure_loaded(MsgLink, Opts);
 ensure_message_loaded(Msg, _Opts) ->
     Msg.
-
-%% @doc Ensure that a value is loaded from the cache if it is an ID or a link.
-%% If it is not loadable we raise an error. If the value is a message, we will
-%% load only the first `layer' of it: Representing all nested messages inside 
-%% the result as links. If the value has an associated `type' key in the extra
-%% options, we apply it to the read value.
-ensure_loaded(Msg) -> ensure_loaded(Msg, #{}).
-ensure_loaded({link, ID, LinkOpts}, Opts) ->
-    % If the user provided their own options, we merge them and _overwrite_
-    % the options that are already set in the link.
-    MergedOpts = hb_maps:merge(LinkOpts, Opts),
-    case hb_cache:read(ID, MergedOpts) of
-        {ok, LoadedMsg} ->
-            ?event(caching,
-                {lazy_loaded,
-                    {link, ID},
-                    {msg, LoadedMsg},
-                    {link_opts, LinkOpts}
-                }
-            ),
-            case hb_maps:get(<<"type">>, LinkOpts, undefined) of
-                undefined ->
-                    LoadedMsg;
-                Type ->
-                    dev_codec_structured:decode_value(Type, LoadedMsg)
-            end;
-        not_found ->
-            throw({necessary_message_not_found, ID})
-    end;
-ensure_loaded(Msg, _Opts) ->
-    Msg.
-
-%% @doc Ensure that all of the components of a message (whether a map, list,
-%% or immediate value) are recursively fully loaded from the stores into memory.
-%% This is a catch-all function that is useful in situations where ensuring a
-%% message contains no links is important, but it carries potentially extreme
-%% performance costs.
-ensure_all_loaded(Msg) ->
-    ensure_all_loaded(Msg, #{}).
-ensure_all_loaded(Link, Opts) when ?IS_LINK(Link) ->
-    ensure_all_loaded(ensure_loaded(Link, Opts), Opts);
-ensure_all_loaded(Msg, Opts) when is_map(Msg) ->
-    hb_maps:map(fun(_K, V) -> ensure_all_loaded(V, Opts) end, Msg);
-ensure_all_loaded(Msg, Opts) when is_list(Msg) ->
-    lists:map(fun(V) -> ensure_all_loaded(V, Opts) end, Msg);
-ensure_all_loaded(Msg, Opts) ->
-    ensure_loaded(Msg, Opts).
 
 %% @doc Catch all return if the message is invalid.
 error_invalid_message(Msg1, Msg2, Opts) ->
@@ -1303,7 +1255,7 @@ verify_device_compatibility(Msg, Opts) ->
                             hb_ao:normalize_key(Key),
                             new_atoms
                         ),
-                        ensure_loaded(Value, Opts)
+                        hb_cache:ensure_loaded(Value, Opts)
                     }
                 };
             (_) -> false

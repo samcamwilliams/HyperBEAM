@@ -1,6 +1,6 @@
 
-%%% @doc A codec for the that marshals TABM encoded messages to and from the
-%%% "HTTP" message structure.
+%%% @doc A codec that marshals TABM encoded messages to and from the "HTTP"
+%%% message structure.
 %%% 
 %%% Every HTTP message is an HTTP multipart message.
 %%% See https://datatracker.ietf.org/doc/html/rfc7578
@@ -42,7 +42,7 @@
 from(Bin) when is_binary(Bin) -> Bin;
 from(MaybeHTTP) ->
     % Ensure that the HTTP message is fully loaded, for now.
-    HTTP = hb_ao:ensure_all_loaded(MaybeHTTP),
+    HTTP = hb_cache:ensure_all_loaded(MaybeHTTP),
     % Decode the keys of the HTTP message
     Body = hb_maps:get(<<"body">>, HTTP, <<>>),
     % First, parse all headers excluding the signature-related headers, as they
@@ -303,10 +303,10 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM) -> to(TABM, []).
 to(Link, Opts) when ?IS_LINK(Link) ->
-    to(hb_ao:ensure_loaded(Link), Opts);
+    to(hb_cache:ensure_loaded(Link), Opts);
 to(MaybeTABM, Opts) when is_map(MaybeTABM) ->
     % Ensure that the TABM is fully loaded, for now.
-    TABM = hb_ao:ensure_all_loaded(MaybeTABM),
+    TABM = hb_cache:ensure_all_loaded(MaybeTABM),
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.

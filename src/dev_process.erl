@@ -438,8 +438,8 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this, and remove
                     % the snapshot key after we have normalized the message.
-                    LoadedSnapshotMsg = hb_ao:ensure_all_loaded(MaybeLoadedSnapshotMsg, Opts),
-                    LoadedSlot = hb_ao:ensure_all_loaded(MaybeLoadedSlot, Opts),
+                    LoadedSnapshotMsg = hb_cache:ensure_all_loaded(MaybeLoadedSnapshotMsg, Opts),
+                    LoadedSlot = hb_cache:ensure_all_loaded(MaybeLoadedSlot, Opts),
                     ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     {ok, Normalized} =
                         run_as(

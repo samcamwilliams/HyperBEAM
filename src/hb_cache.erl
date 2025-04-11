@@ -20,12 +20,77 @@
 %%% Before writing a message to the store, we convert it to Type-Annotated
 %%% Binary Messages (TABMs), such that each of the keys in the message is
 %%% either a map or a direct binary.
+%%% 
+%%% Nested keys are lazily loaded from the stores, such that large deeply
+%%% nested messages where only a small part of the data is actually used are
+%%% not loaded into memory unnecessarily. In order to ensure that a message is
+%%% loaded from the cache after a `read', we can use the `ensure_loaded/1' and
+%%% `ensure_all_loaded/1' functions. Ensure loaded will load the exact value
+%%% that has been requested, while ensure all loaded will load the entire 
+%%% structure of the message into memory.
+%%% 
+%%% Lazily loadable `links' are expressed as a tuple of the following form:
+%%% `{link, ID, LinkOpts}', where `ID' is the path to the data in the store,
+%%% and `LinkOpts' is a map of suggested options to use when loading the data.
+%%% In particular, this module ensures to stash the `store' option in `LinkOpts',
+%%% such that the `read' function can use the correct store without having to
+%%% search unnecessarily. By providing an `Opts' argument to `ensure_loaded' or
+%%% `ensure_all_loaded', the caller can specify additional options to use when
+%%% loading the data -- overriding the suggested options in the link.
 -module(hb_cache).
+-export([ensure_loaded/1, ensure_loaded/2, ensure_all_loaded/1, ensure_all_loaded/2]).
 -export([read/2, read_resolved/3, write/2, write_binary/3, write_hashpath/2, link/3]).
 -export([list/2, list_numbered/2]).
 -export([test_unsigned/1, test_signed/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
+%% @doc Ensure that a value is loaded from the cache if it is an ID or a link.
+%% If it is not loadable we raise an error. If the value is a message, we will
+%% load only the first `layer' of it: Representing all nested messages inside 
+%% the result as links. If the value has an associated `type' key in the extra
+%% options, we apply it to the read value.
+ensure_loaded(Msg) -> ensure_loaded(Msg, #{}).
+ensure_loaded({link, ID, LinkOpts}, Opts) ->
+    % If the user provided their own options, we merge them and _overwrite_
+    % the options that are already set in the link.
+    MergedOpts = hb_maps:merge(LinkOpts, Opts),
+    case hb_cache:read(ID, MergedOpts) of
+        {ok, LoadedMsg} ->
+            ?event(caching,
+                {lazy_loaded,
+                    {link, ID},
+                    {msg, LoadedMsg},
+                    {link_opts, LinkOpts}
+                }
+            ),
+            case hb_maps:get(<<"type">>, LinkOpts, undefined) of
+                undefined ->
+                    LoadedMsg;
+                Type ->
+                    dev_codec_structured:decode_value(Type, LoadedMsg)
+            end;
+        not_found ->
+            throw({necessary_message_not_found, ID})
+    end;
+ensure_loaded(Msg, _Opts) ->
+    Msg.
+
+%% @doc Ensure that all of the components of a message (whether a map, list,
+%% or immediate value) are recursively fully loaded from the stores into memory.
+%% This is a catch-all function that is useful in situations where ensuring a
+%% message contains no links is important, but it carries potentially extreme
+%% performance costs.
+ensure_all_loaded(Msg) ->
+    ensure_all_loaded(Msg, #{}).
+ensure_all_loaded(Link, Opts) when ?IS_LINK(Link) ->
+    ensure_all_loaded(ensure_loaded(Link, Opts), Opts);
+ensure_all_loaded(Msg, Opts) when is_map(Msg) ->
+    hb_maps:map(fun(_K, V) -> ensure_all_loaded(V, Opts) end, Msg);
+ensure_all_loaded(Msg, Opts) when is_list(Msg) ->
+    lists:map(fun(V) -> ensure_all_loaded(V, Opts) end, Msg);
+ensure_all_loaded(Msg, Opts) ->
+    ensure_loaded(Msg, Opts).
 
 %% @doc List all items in a directory, assuming they are numbered.
 list_numbered(Path, Opts) ->
@@ -249,7 +314,7 @@ store_read(Path, Store, Opts) ->
                                         {true,
                                             {
                                                 <<"commitments">>,
-                                                hb_ao:ensure_all_loaded(
+                                                hb_cache:ensure_all_loaded(
                                                     Commitments,
                                                     Opts
                                                 )
