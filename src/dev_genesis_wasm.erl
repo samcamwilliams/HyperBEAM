@@ -87,7 +87,7 @@ ensure_started(Opts) ->
                             filename:absname(
                                 hb_util:list(
                                     hb_opts:get(
-                                        genesis_wasm_db_dir,
+                                        genesis_wasm_checkpoints_dir,
                                         "cache-mainnet/genesis-wasm/checkpoints",
                                         Opts
                                     )
