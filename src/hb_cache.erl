@@ -220,28 +220,69 @@ store_read(Path, Store, Opts) ->
                             {subpaths, {explicit, Subpaths}}
                         }
                     ),
+                    % Generate links for all subpaths except `commitments' and
+                    % `ao-types'. `commitments' is always read in its entirety,
+                    % such that all messages have their IDs and signatures
+                    % locally available.
                     Msg =
                         maps:from_list(
-                            lists:map(
-                                fun(Subpath) ->
-                                    ?event(debug_types, {returning_link, {subpath, Subpath}}),
-                                    {
-                                        Subpath,
-                                        {link,
-                                            hb_store:resolve(
+                            lists:filtermap(
+                                fun(<<"ao-types">>) -> false;
+                                   (<<"commitments">>) ->
+                                        {ok, Commitments} =
+                                            store_read(
+                                                hb_store:path(
+                                                    Store,
+                                                    [
+                                                        ResolvedFullPath,
+                                                        <<"commitments">>
+                                                    ]
+                                                ),
                                                 Store,
-                                                hb_store:path(Store, [ResolvedFullPath, Subpath])
+                                                Opts
                                             ),
-                                            (case Types of
-                                                #{ Subpath := Type } ->
-                                                    #{ <<"type">> => Type };
-                                                _ ->
-                                                    #{}
-                                            end)#{ store => Store }
+                                        ?event(debug_load,
+                                            {loaded_commitments, Commitments}
+                                        ),
+                                        % Ensure that the full commitments map
+                                        % is recursively loaded into memory.
+                                        {true,
+                                            {
+                                                <<"commitments">>,
+                                                hb_ao:ensure_all_loaded(
+                                                    Commitments,
+                                                    Opts
+                                                )
+                                            }
+                                        };
+                                    (Subpath) ->
+                                        ?event(debug_types,
+                                            {returning_link,
+                                            {subpath, Subpath}
+                                        }
+                                    ),
+                                    {true,
+                                        {
+                                            Subpath,
+                                            {link,
+                                                hb_store:resolve(
+                                                    Store,
+                                                    hb_store:path(
+                                                        Store,
+                                                        [ResolvedFullPath, Subpath]
+                                                    )
+                                                ),
+                                                (case Types of
+                                                    #{ Subpath := Type } ->
+                                                        #{ <<"type">> => Type };
+                                                    _ ->
+                                                        #{}
+                                                end)#{ store => Store }
+                                            }
                                         }
                                     }
                                 end,
-                                lists:delete(<<"ao-types">>, Subpaths)
+                                Subpaths
                             )
                         ),
                     ?event(debug_types, {read_message, {explicit, Msg}}),
