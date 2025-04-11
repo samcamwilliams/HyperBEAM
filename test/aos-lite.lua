@@ -441,7 +441,7 @@ local json = require('.json')
 return function (ao)
   return function (msg)
     -- exec expression
-    local expr = msg.Data or "1 + 1"
+    local expr = msg.Data 
     local func, err = load("return " .. expr, 'aos', 't', _G)
     local output = ""
     local e = nil
@@ -454,16 +454,22 @@ return function (ao)
       ao.outbox.Error = err
       return
     end
-    if e then 
+    if e then
       ao.outbox.Error = e
-      return 
+      return
     end
-    if HANDLER_PRINT_LOGS and output then
-      table.insert(HANDLER_PRINT_LOGS, type(output) == "table" and stringify.format(output) or tostring(output))
+    if HandlerPrintLogs and output then
+      table.insert(HandlerPrintLogs,
+        type(output) == "table"
+        and stringify.format(output)
+        or tostring(output)
+      )
+      -- print(stringify.format(HandlerPrintLogs))
     else
       -- set result in outbox.Output (Left for backwards compatibility)
-      ao.outbox.Output = {  
-        data = type(output) == "table" and stringify.format(output) or tostring(output),
+      ao.outbox.Output = {
+        data = type(output) == "table" 
+          and stringify.format(output) or tostring(output),
         prompt = Prompt()
       }
 
@@ -1658,6 +1664,1946 @@ print("loaded dump")
   
 
 
+local function load_bint() 
+  --[[--
+lua-bint - v0.5.1 - 26/Jun/2023
+Eduardo Bart - edub4rt@gmail.com
+https://github.com/edubart/lua-bint
+
+Small portable arbitrary-precision integer arithmetic library in pure Lua for
+computing with large integers.
+
+Different from most arbitrary-precision integer libraries in pure Lua out there this one
+uses an array of lua integers as underlying data-type in its implementation instead of
+using strings or large tables, this make it efficient for working with fixed width integers
+and to make bitwise operations.
+
+## Design goals
+
+The main design goal of this library is to be small, correct, self contained and use few
+resources while retaining acceptable performance and feature completeness.
+
+The library is designed to follow recent Lua integer semantics, this means that
+integer overflow warps around,
+signed integers are implemented using two-complement arithmetic rules,
+integer division operations rounds towards minus infinity,
+any mixed operations with float numbers promotes the value to a float,
+and the usual division/power operation always promotes to floats.
+
+The library is designed to be possible to work with only unsigned integer arithmetic
+when using the proper methods.
+
+All the lua arithmetic operators (+, -, *, //, /, %) and bitwise operators (&, |, ~, <<, >>)
+are implemented as metamethods.
+
+The integer size must be fixed in advance and the library is designed to be more efficient when
+working with integers of sizes between 64-4096 bits. If you need to work with really huge numbers
+without size restrictions then use another library. This choice has been made to have more efficiency
+in that specific size range.
+
+## Usage
+
+First on you should require the bint file including how many bits the bint module will work with,
+by calling the returned function from the require, for example:
+
+```lua
+local bint = require 'bint'(1024)
+```
+
+For more information about its arguments see @{newmodule}.
+Then when you need create a bint, you can use one of the following functions:
+
+* @{bint.fromuinteger} (convert from lua integers, but read as unsigned integer)
+* @{bint.frominteger} (convert from lua integers, preserving the sign)
+* @{bint.frombase} (convert from arbitrary bases, like hexadecimal)
+* @{bint.fromstring} (convert from arbitrary string, support binary/hexadecimal/decimal)
+* @{bint.trunc} (convert from lua numbers, truncating the fractional part)
+* @{bint.new} (convert from anything, asserts on invalid integers)
+* @{bint.tobint} (convert from anything, returns nil on invalid integers)
+* @{bint.parse} (convert from anything, returns a lua number as fallback)
+* @{bint.zero}
+* @{bint.one}
+* `bint`
+
+You can also call `bint` as it is an alias to `bint.new`.
+In doubt use @{bint.new} to create a new bint.
+
+Then you can use all the usual lua numeric operations on it,
+all the arithmetic metamethods are implemented.
+When you are done computing and need to get the result,
+get the output from one of the following functions:
+
+* @{bint.touinteger} (convert to a lua integer, wraps around as an unsigned integer)
+* @{bint.tointeger} (convert to a lua integer, wraps around, preserves the sign)
+* @{bint.tonumber} (convert to lua float, losing precision)
+* @{bint.tobase} (convert to a string in any base)
+* @{bint.__tostring} (convert to a string in base 10)
+
+To output a very large integer with no loss you probably want to use @{bint.tobase}
+or call `tostring` to get a string representation.
+
+## Precautions
+
+All library functions can be mixed with lua numbers,
+this makes easy to mix operations between bints and lua numbers,
+however the user should take care in some situations:
+
+* Don't mix integers and float operations if you want to work with integers only.
+* Don't use the regular equal operator ('==') to compare values from this library,
+unless you know in advance that both values are of the same primitive type,
+otherwise it will always return false, use @{bint.eq} to be safe.
+* Don't pass fractional numbers to functions that an integer is expected
+* Don't mix operations between bint classes with different sizes as this is not supported, this
+will throw assertions.
+* Remember that casting back to lua integers or numbers precision can be lost.
+* For dividing while preserving integers use the @{bint.__idiv} (the '//' operator).
+* For doing power operation preserving integers use the @{bint.ipow} function.
+* Configure the proper integer size you intend to work with, otherwise large integers may wrap around.
+
+]]
+
+-- Returns number of bits of the internal lua integer type.
+local function luainteger_bitsize()
+  local n, i = -1, 0
+  repeat
+    n, i = n >> 16, i + 16
+  until n==0
+  return i
+end
+
+local math_type = math.type
+local math_floor = math.floor
+local math_abs = math.abs
+local math_ceil = math.ceil
+local math_modf = math.modf
+local math_mininteger = math.mininteger
+local math_maxinteger = math.maxinteger
+local math_max = math.max
+local math_min = math.min
+local string_format = string.format
+local table_insert = table.insert
+local table_concat = table.concat
+local table_unpack = table.unpack
+
+local memo = {}
+
+--- Create a new bint module representing integers of the desired bit size.
+-- This is the returned function when `require 'bint'` is called.
+-- @function newmodule
+-- @param bits Number of bits for the integer representation, must be multiple of wordbits and
+-- at least 64.
+-- @param[opt] wordbits Number of the bits for the internal word,
+-- defaults to half of Lua's integer size.
+local function newmodule(bits, wordbits)
+
+local intbits = luainteger_bitsize()
+bits = bits or 256
+wordbits = wordbits or (intbits // 2)
+
+-- Memoize bint modules
+local memoindex = bits * 64 + wordbits
+if memo[memoindex] then
+  return memo[memoindex]
+end
+
+-- Validate
+assert(bits % wordbits == 0, 'bitsize is not multiple of word bitsize')
+assert(2*wordbits <= intbits, 'word bitsize must be half of the lua integer bitsize')
+assert(bits >= 64, 'bitsize must be >= 64')
+assert(wordbits >= 8, 'wordbits must be at least 8')
+assert(bits % 8 == 0, 'bitsize must be multiple of 8')
+
+-- Create bint module
+local bint = {}
+bint.__index = bint
+
+--- Number of bits representing a bint instance.
+bint.bits = bits
+
+-- Constants used internally
+local BINT_BITS = bits
+local BINT_BYTES = bits // 8
+local BINT_WORDBITS = wordbits
+local BINT_SIZE = BINT_BITS // BINT_WORDBITS
+local BINT_WORDMAX = (1 << BINT_WORDBITS) - 1
+local BINT_WORDMSB = (1 << (BINT_WORDBITS - 1))
+local BINT_LEPACKFMT = '<'..('I'..(wordbits // 8)):rep(BINT_SIZE)
+local BINT_MATHMININTEGER, BINT_MATHMAXINTEGER
+local BINT_MININTEGER
+
+--- Create a new bint with 0 value.
+function bint.zero()
+  local x = setmetatable({}, bint)
+  for i=1,BINT_SIZE do
+    x[i] = 0
+  end
+  return x
+end
+local bint_zero = bint.zero
+
+--- Create a new bint with 1 value.
+function bint.one()
+  local x = setmetatable({}, bint)
+  x[1] = 1
+  for i=2,BINT_SIZE do
+    x[i] = 0
+  end
+  return x
+end
+local bint_one = bint.one
+
+-- Convert a value to a lua integer without losing precision.
+local function tointeger(x)
+  x = tonumber(x)
+  local ty = math_type(x)
+  if ty == 'float' then
+    local floorx = math_floor(x)
+    if floorx == x then
+      x = floorx
+      ty = math_type(x)
+    end
+  end
+  if ty == 'integer' then
+    return x
+  end
+end
+
+--- Create a bint from an unsigned integer.
+-- Treats signed integers as an unsigned integer.
+-- @param x A value to initialize from convertible to a lua integer.
+-- @return A new bint or nil in case the input cannot be represented by an integer.
+-- @see bint.frominteger
+function bint.fromuinteger(x)
+  x = tointeger(x)
+  if x then
+    if x == 1 then
+      return bint_one()
+    elseif x == 0 then
+      return bint_zero()
+    end
+    local n = setmetatable({}, bint)
+    for i=1,BINT_SIZE do
+      n[i] = x & BINT_WORDMAX
+      x = x >> BINT_WORDBITS
+    end
+    return n
+  end
+end
+local bint_fromuinteger = bint.fromuinteger
+
+--- Create a bint from a signed integer.
+-- @param x A value to initialize from convertible to a lua integer.
+-- @return A new bint or nil in case the input cannot be represented by an integer.
+-- @see bint.fromuinteger
+function bint.frominteger(x)
+  x = tointeger(x)
+  if x then
+    if x == 1 then
+      return bint_one()
+    elseif x == 0 then
+      return bint_zero()
+    end
+    local neg = false
+    if x < 0 then
+      x = math_abs(x)
+      neg = true
+    end
+    local n = setmetatable({}, bint)
+    for i=1,BINT_SIZE do
+      n[i] = x & BINT_WORDMAX
+      x = x >> BINT_WORDBITS
+    end
+    if neg then
+      n:_unm()
+    end
+    return n
+  end
+end
+local bint_frominteger = bint.frominteger
+
+local basesteps = {}
+
+-- Compute the read step for frombase function
+local function getbasestep(base)
+  local step = basesteps[base]
+  if step then
+    return step
+  end
+  step = 0
+  local dmax = 1
+  local limit = math_maxinteger // base
+  repeat
+    step = step + 1
+    dmax = dmax * base
+  until dmax >= limit
+  basesteps[base] = step
+  return step
+end
+
+-- Compute power with lua integers.
+local function ipow(y, x, n)
+  if n == 1 then
+    return y * x
+  elseif n & 1 == 0 then --even
+    return ipow(y, x * x, n // 2)
+  end
+  return ipow(x * y, x * x, (n-1) // 2)
+end
+
+--- Create a bint from a string of the desired base.
+-- @param s The string to be converted from,
+-- must have only alphanumeric and '+-' characters.
+-- @param[opt] base Base that the number is represented, defaults to 10.
+-- Must be at least 2 and at most 36.
+-- @return A new bint or nil in case the conversion failed.
+function bint.frombase(s, base)
+  if type(s) ~= 'string' then
+    return
+  end
+  base = base or 10
+  if not (base >= 2 and base <= 36) then
+    -- number base is too large
+    return
+  end
+  local step = getbasestep(base)
+  if #s < step then
+    -- string is small, use tonumber (faster)
+    return bint_frominteger(tonumber(s, base))
+  end
+  local sign, int = s:lower():match('^([+-]?)(%w+)$')
+  if not (sign and int) then
+    -- invalid integer string representation
+    return
+  end
+  local n = bint_zero()
+  for i=1,#int,step do
+    local part = int:sub(i,i+step-1)
+    local d = tonumber(part, base)
+    if not d then
+      -- invalid integer string representation
+      return
+    end
+    if i > 1 then
+      n = n * ipow(1, base, #part)
+    end
+    if d ~= 0 then
+      n:_add(d)
+    end
+  end
+  if sign == '-' then
+    n:_unm()
+  end
+  return n
+end
+local bint_frombase = bint.frombase
+
+--- Create a new bint from a string.
+-- The string can by a decimal number, binary number prefixed with '0b' or hexadecimal number prefixed with '0x'.
+-- @param s A string convertible to a bint.
+-- @return A new bint or nil in case the conversion failed.
+-- @see bint.frombase
+function bint.fromstring(s)
+  if type(s) ~= 'string' then
+    return
+  end
+  if s:find('^[+-]?[0-9]+$') then
+    return bint_frombase(s, 10)
+  elseif s:find('^[+-]?0[xX][0-9a-fA-F]+$') then
+    return bint_frombase(s:gsub('0[xX]', '', 1), 16)
+  elseif s:find('^[+-]?0[bB][01]+$') then
+    return bint_frombase(s:gsub('0[bB]', '', 1), 2)
+  end
+end
+local bint_fromstring = bint.fromstring
+
+--- Create a new bint from a buffer of little-endian bytes.
+-- @param buffer Buffer of bytes, extra bytes are trimmed from the right, missing bytes are padded to the right.
+-- @raise An assert is thrown in case buffer is not an string.
+-- @return A bint.
+function bint.fromle(buffer)
+  assert(type(buffer) == 'string', 'buffer is not a string')
+  if #buffer > BINT_BYTES then -- trim extra bytes from the right
+    buffer = buffer:sub(1, BINT_BYTES)
+  elseif #buffer < BINT_BYTES then -- add missing bytes to the right
+    buffer = buffer..('\x00'):rep(BINT_BYTES - #buffer)
+  end
+  return setmetatable({BINT_LEPACKFMT:unpack(buffer)}, bint)
+end
+
+--- Create a new bint from a buffer of big-endian bytes.
+-- @param buffer Buffer of bytes, extra bytes are trimmed from the left, missing bytes are padded to the left.
+-- @raise An assert is thrown in case buffer is not an string.
+-- @return A bint.
+function bint.frombe(buffer)
+  assert(type(buffer) == 'string', 'buffer is not a string')
+  if #buffer > BINT_BYTES then -- trim extra bytes from the left
+    buffer = buffer:sub(-BINT_BYTES, #buffer)
+  elseif #buffer < BINT_BYTES then -- add missing bytes to the left
+    buffer = ('\x00'):rep(BINT_BYTES - #buffer)..buffer
+  end
+  return setmetatable({BINT_LEPACKFMT:unpack(buffer:reverse())}, bint)
+end
+
+--- Create a new bint from a value.
+-- @param x A value convertible to a bint (string, number or another bint).
+-- @return A new bint, guaranteed to be a new reference in case needed.
+-- @raise An assert is thrown in case x is not convertible to a bint.
+-- @see bint.tobint
+-- @see bint.parse
+function bint.new(x)
+  if getmetatable(x) ~= bint then
+    local ty = type(x)
+    if ty == 'number' then
+      x = bint_frominteger(x)
+    elseif ty == 'string' then
+      x = bint_fromstring(x)
+    end
+    assert(x, 'value cannot be represented by a bint')
+    return x
+  end
+  -- return a clone
+  local n = setmetatable({}, bint)
+  for i=1,BINT_SIZE do
+    n[i] = x[i]
+  end
+  return n
+end
+local bint_new = bint.new
+
+--- Convert a value to a bint if possible.
+-- @param x A value to be converted (string, number or another bint).
+-- @param[opt] clone A boolean that tells if a new bint reference should be returned.
+-- Defaults to false.
+-- @return A bint or nil in case the conversion failed.
+-- @see bint.new
+-- @see bint.parse
+function bint.tobint(x, clone)
+  if getmetatable(x) == bint then
+    if not clone then
+      return x
+    end
+    -- return a clone
+    local n = setmetatable({}, bint)
+    for i=1,BINT_SIZE do
+      n[i] = x[i]
+    end
+    return n
+  end
+  local ty = type(x)
+  if ty == 'number' then
+    return bint_frominteger(x)
+  elseif ty == 'string' then
+    return bint_fromstring(x)
+  end
+end
+local tobint = bint.tobint
+
+--- Convert a value to a bint if possible otherwise to a lua number.
+-- Useful to prepare values that you are unsure if it's going to be an integer or float.
+-- @param x A value to be converted (string, number or another bint).
+-- @param[opt] clone A boolean that tells if a new bint reference should be returned.
+-- Defaults to false.
+-- @return A bint or a lua number or nil in case the conversion failed.
+-- @see bint.new
+-- @see bint.tobint
+function bint.parse(x, clone)
+  local i = tobint(x, clone)
+  if i then
+    return i
+  end
+  return tonumber(x)
+end
+local bint_parse = bint.parse
+
+--- Convert a bint to an unsigned integer.
+-- Note that large unsigned integers may be represented as negatives in lua integers.
+-- Note that lua cannot represent values larger than 64 bits,
+-- in that case integer values wrap around.
+-- @param x A bint or a number to be converted into an unsigned integer.
+-- @return An integer or nil in case the input cannot be represented by an integer.
+-- @see bint.tointeger
+function bint.touinteger(x)
+  if getmetatable(x) == bint then
+    local n = 0
+    for i=1,BINT_SIZE do
+      n = n | (x[i] << (BINT_WORDBITS * (i - 1)))
+    end
+    return n
+  end
+  return tointeger(x)
+end
+
+--- Convert a bint to a signed integer.
+-- It works by taking absolute values then applying the sign bit in case needed.
+-- Note that lua cannot represent values larger than 64 bits,
+-- in that case integer values wrap around.
+-- @param x A bint or value to be converted into an unsigned integer.
+-- @return An integer or nil in case the input cannot be represented by an integer.
+-- @see bint.touinteger
+function bint.tointeger(x)
+  if getmetatable(x) == bint then
+    local n = 0
+    local neg = x:isneg()
+    if neg then
+      x = -x
+    end
+    for i=1,BINT_SIZE do
+      n = n | (x[i] << (BINT_WORDBITS * (i - 1)))
+    end
+    if neg then
+      n = -n
+    end
+    return n
+  end
+  return tointeger(x)
+end
+local bint_tointeger = bint.tointeger
+
+local function bint_assert_tointeger(x)
+  x = bint_tointeger(x)
+  if not x then
+    error('value has no integer representation')
+  end
+  return x
+end
+
+--- Convert a bint to a lua float in case integer would wrap around or lua integer otherwise.
+-- Different from @{bint.tointeger} the operation does not wrap around integers,
+-- but digits precision are lost in the process of converting to a float.
+-- @param x A bint or value to be converted into a lua number.
+-- @return A lua number or nil in case the input cannot be represented by a number.
+-- @see bint.tointeger
+function bint.tonumber(x)
+  if getmetatable(x) == bint then
+    if x <= BINT_MATHMAXINTEGER and x >= BINT_MATHMININTEGER then
+      return x:tointeger()
+    end
+    return tonumber(tostring(x))
+  end
+  return tonumber(x)
+end
+local bint_tonumber = bint.tonumber
+
+-- Compute base letters to use in bint.tobase
+local BASE_LETTERS = {}
+do
+  for i=1,36 do
+    BASE_LETTERS[i-1] = ('0123456789abcdefghijklmnopqrstuvwxyz'):sub(i,i)
+  end
+end
+
+--- Convert a bint to a string in the desired base.
+-- @param x The bint to be converted from.
+-- @param[opt] base Base to be represented, defaults to 10.
+-- Must be at least 2 and at most 36.
+-- @param[opt] unsigned Whether to output as an unsigned integer.
+-- Defaults to false for base 10 and true for others.
+-- When unsigned is false the symbol '-' is prepended in negative values.
+-- @return A string representing the input.
+-- @raise An assert is thrown in case the base is invalid.
+function bint.tobase(x, base, unsigned)
+  x = tobint(x)
+  if not x then
+    -- x is a fractional float or something else
+    return
+  end
+  base = base or 10
+  if not (base >= 2 and base <= 36) then
+    -- number base is too large
+    return
+  end
+  if unsigned == nil then
+    unsigned = base ~= 10
+  end
+  local isxneg = x:isneg()
+  if (base == 10 and not unsigned) or (base == 16 and unsigned and not isxneg) then
+    if x <= BINT_MATHMAXINTEGER and x >= BINT_MATHMININTEGER then
+      -- integer is small, use tostring or string.format (faster)
+      local n = x:tointeger()
+      if base == 10 then
+        return tostring(n)
+      elseif unsigned then
+        return string_format('%x', n)
+      end
+    end
+  end
+  local ss = {}
+  local neg = not unsigned and isxneg
+  x = neg and x:abs() or bint_new(x)
+  local xiszero = x:iszero()
+  if xiszero then
+    return '0'
+  end
+  -- calculate basepow
+  local step = 0
+  local basepow = 1
+  local limit = (BINT_WORDMSB - 1) // base
+  repeat
+    step = step + 1
+    basepow = basepow * base
+  until basepow >= limit
+  -- serialize base digits
+  local size = BINT_SIZE
+  local xd, carry, d
+  repeat
+    -- single word division
+    carry = 0
+    xiszero = true
+    for i=size,1,-1 do
+      carry = carry | x[i]
+      d, xd = carry // basepow, carry % basepow
+      if xiszero and d ~= 0 then
+        size = i
+        xiszero = false
+      end
+      x[i] = d
+      carry = xd << BINT_WORDBITS
+    end
+    -- digit division
+    for _=1,step do
+      xd, d = xd // base, xd % base
+      if xiszero and xd == 0 and d == 0 then
+        -- stop on leading zeros
+        break
+      end
+      table_insert(ss, 1, BASE_LETTERS[d])
+    end
+  until xiszero
+  if neg then
+    table_insert(ss, 1, '-')
+  end
+  return table_concat(ss)
+end
+
+local function bint_assert_convert(x)
+  return assert(tobint(x), 'value has not integer representation')
+end
+
+--- Convert a bint to a buffer of little-endian bytes.
+-- @param x A bint or lua integer.
+-- @param[opt] trim If true, zero bytes on the right are trimmed.
+-- @return A buffer of bytes representing the input.
+-- @raise Asserts in case input is not convertible to an integer.
+function bint.tole(x, trim)
+  x = bint_assert_convert(x)
+  local s = BINT_LEPACKFMT:pack(table_unpack(x))
+  if trim then
+    s = s:gsub('\x00+$', '')
+    if s == '' then
+      s = '\x00'
+    end
+  end
+  return s
+end
+
+--- Convert a bint to a buffer of big-endian bytes.
+-- @param x A bint or lua integer.
+-- @param[opt] trim If true, zero bytes on the left are trimmed.
+-- @return A buffer of bytes representing the input.
+-- @raise Asserts in case input is not convertible to an integer.
+function bint.tobe(x, trim)
+  x = bint_assert_convert(x)
+  local s = BINT_LEPACKFMT:pack(table_unpack(x)):reverse()
+  if trim then
+    s = s:gsub('^\x00+', '')
+    if s == '' then
+      s = '\x00'
+    end
+  end
+  return s
+end
+
+--- Check if a number is 0 considering bints.
+-- @param x A bint or a lua number.
+function bint.iszero(x)
+  if getmetatable(x) == bint then
+    for i=1,BINT_SIZE do
+      if x[i] ~= 0 then
+        return false
+      end
+    end
+    return true
+  end
+  return x == 0
+end
+
+--- Check if a number is 1 considering bints.
+-- @param x A bint or a lua number.
+function bint.isone(x)
+  if getmetatable(x) == bint then
+    if x[1] ~= 1 then
+      return false
+    end
+    for i=2,BINT_SIZE do
+      if x[i] ~= 0 then
+        return false
+      end
+    end
+    return true
+  end
+  return x == 1
+end
+
+--- Check if a number is -1 considering bints.
+-- @param x A bint or a lua number.
+function bint.isminusone(x)
+  if getmetatable(x) == bint then
+    for i=1,BINT_SIZE do
+      if x[i] ~= BINT_WORDMAX then
+        return false
+      end
+    end
+    return true
+  end
+  return x == -1
+end
+local bint_isminusone = bint.isminusone
+
+--- Check if the input is a bint.
+-- @param x Any lua value.
+function bint.isbint(x)
+  return getmetatable(x) == bint
+end
+
+--- Check if the input is a lua integer or a bint.
+-- @param x Any lua value.
+function bint.isintegral(x)
+  return getmetatable(x) == bint or math_type(x) == 'integer'
+end
+
+--- Check if the input is a bint or a lua number.
+-- @param x Any lua value.
+function bint.isnumeric(x)
+  return getmetatable(x) == bint or type(x) == 'number'
+end
+
+--- Get the number type of the input (bint, integer or float).
+-- @param x Any lua value.
+-- @return Returns "bint" for bints, "integer" for lua integers,
+-- "float" from lua floats or nil otherwise.
+function bint.type(x)
+  if getmetatable(x) == bint then
+    return 'bint'
+  end
+  return math_type(x)
+end
+
+--- Check if a number is negative considering bints.
+-- Zero is guaranteed to never be negative for bints.
+-- @param x A bint or a lua number.
+function bint.isneg(x)
+  if getmetatable(x) == bint then
+    return x[BINT_SIZE] & BINT_WORDMSB ~= 0
+  end
+  return x < 0
+end
+local bint_isneg = bint.isneg
+
+--- Check if a number is positive considering bints.
+-- @param x A bint or a lua number.
+function bint.ispos(x)
+  if getmetatable(x) == bint then
+    return not x:isneg() and not x:iszero()
+  end
+  return x > 0
+end
+
+--- Check if a number is even considering bints.
+-- @param x A bint or a lua number.
+function bint.iseven(x)
+  if getmetatable(x) == bint then
+    return x[1] & 1 == 0
+  end
+  return math_abs(x) % 2 == 0
+end
+
+--- Check if a number is odd considering bints.
+-- @param x A bint or a lua number.
+function bint.isodd(x)
+  if getmetatable(x) == bint then
+    return x[1] & 1 == 1
+  end
+  return math_abs(x) % 2 == 1
+end
+
+--- Create a new bint with the maximum possible integer value.
+function bint.maxinteger()
+  local x = setmetatable({}, bint)
+  for i=1,BINT_SIZE-1 do
+    x[i] = BINT_WORDMAX
+  end
+  x[BINT_SIZE] = BINT_WORDMAX ~ BINT_WORDMSB
+  return x
+end
+
+--- Create a new bint with the minimum possible integer value.
+function bint.mininteger()
+  local x = setmetatable({}, bint)
+  for i=1,BINT_SIZE-1 do
+    x[i] = 0
+  end
+  x[BINT_SIZE] = BINT_WORDMSB
+  return x
+end
+
+--- Bitwise left shift a bint in one bit (in-place).
+function bint:_shlone()
+  local wordbitsm1 = BINT_WORDBITS - 1
+  for i=BINT_SIZE,2,-1 do
+    self[i] = ((self[i] << 1) | (self[i-1] >> wordbitsm1)) & BINT_WORDMAX
+  end
+  self[1] = (self[1] << 1) & BINT_WORDMAX
+  return self
+end
+
+--- Bitwise right shift a bint in one bit (in-place).
+function bint:_shrone()
+  local wordbitsm1 = BINT_WORDBITS - 1
+  for i=1,BINT_SIZE-1 do
+    self[i] = ((self[i] >> 1) | (self[i+1] << wordbitsm1)) & BINT_WORDMAX
+  end
+  self[BINT_SIZE] = self[BINT_SIZE] >> 1
+  return self
+end
+
+-- Bitwise left shift words of a bint (in-place). Used only internally.
+function bint:_shlwords(n)
+  for i=BINT_SIZE,n+1,-1 do
+    self[i] = self[i - n]
+  end
+  for i=1,n do
+    self[i] = 0
+  end
+  return self
+end
+
+-- Bitwise right shift words of a bint (in-place). Used only internally.
+function bint:_shrwords(n)
+  if n < BINT_SIZE then
+    for i=1,BINT_SIZE-n do
+      self[i] = self[i + n]
+    end
+    for i=BINT_SIZE-n+1,BINT_SIZE do
+      self[i] = 0
+    end
+  else
+    for i=1,BINT_SIZE do
+      self[i] = 0
+    end
+  end
+  return self
+end
+
+--- Increment a bint by one (in-place).
+function bint:_inc()
+  for i=1,BINT_SIZE do
+    local tmp = self[i]
+    local v = (tmp + 1) & BINT_WORDMAX
+    self[i] = v
+    if v > tmp then
+      break
+    end
+  end
+  return self
+end
+
+--- Increment a number by one considering bints.
+-- @param x A bint or a lua number to increment.
+function bint.inc(x)
+  local ix = tobint(x, true)
+  if ix then
+    return ix:_inc()
+  end
+  return x + 1
+end
+
+--- Decrement a bint by one (in-place).
+function bint:_dec()
+  for i=1,BINT_SIZE do
+    local tmp = self[i]
+    local v = (tmp - 1) & BINT_WORDMAX
+    self[i] = v
+    if v <= tmp then
+      break
+    end
+  end
+  return self
+end
+
+--- Decrement a number by one considering bints.
+-- @param x A bint or a lua number to decrement.
+function bint.dec(x)
+  local ix = tobint(x, true)
+  if ix then
+    return ix:_dec()
+  end
+  return x - 1
+end
+
+--- Assign a bint to a new value (in-place).
+-- @param y A value to be copied from.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint:_assign(y)
+  y = bint_assert_convert(y)
+  for i=1,BINT_SIZE do
+    self[i] = y[i]
+  end
+  return self
+end
+
+--- Take absolute of a bint (in-place).
+function bint:_abs()
+  if self:isneg() then
+    self:_unm()
+  end
+  return self
+end
+
+--- Take absolute of a number considering bints.
+-- @param x A bint or a lua number to take the absolute.
+function bint.abs(x)
+  local ix = tobint(x, true)
+  if ix then
+    return ix:_abs()
+  end
+  return math_abs(x)
+end
+local bint_abs = bint.abs
+
+--- Take the floor of a number considering bints.
+-- @param x A bint or a lua number to perform the floor operation.
+function bint.floor(x)
+  if getmetatable(x) == bint then
+    return bint_new(x)
+  end
+  return bint_new(math_floor(tonumber(x)))
+end
+
+--- Take ceil of a number considering bints.
+-- @param x A bint or a lua number to perform the ceil operation.
+function bint.ceil(x)
+  if getmetatable(x) == bint then
+    return bint_new(x)
+  end
+  return bint_new(math_ceil(tonumber(x)))
+end
+
+--- Wrap around bits of an integer (discarding left bits) considering bints.
+-- @param x A bint or a lua integer.
+-- @param y Number of right bits to preserve.
+function bint.bwrap(x, y)
+  x = bint_assert_convert(x)
+  if y <= 0 then
+    return bint_zero()
+  elseif y < BINT_BITS then
+    return x & (bint_one() << y):_dec()
+  end
+  return bint_new(x)
+end
+
+--- Rotate left integer x by y bits considering bints.
+-- @param x A bint or a lua integer.
+-- @param y Number of bits to rotate.
+function bint.brol(x, y)
+  x, y = bint_assert_convert(x), bint_assert_tointeger(y)
+  if y > 0 then
+    return (x << y) | (x >> (BINT_BITS - y))
+  elseif y < 0 then
+    if y ~= math_mininteger then
+      return x:bror(-y)
+    else
+      x:bror(-(y+1))
+      x:bror(1)
+    end
+  end
+  return x
+end
+
+--- Rotate right integer x by y bits considering bints.
+-- @param x A bint or a lua integer.
+-- @param y Number of bits to rotate.
+function bint.bror(x, y)
+  x, y = bint_assert_convert(x), bint_assert_tointeger(y)
+  if y > 0 then
+    return (x >> y) | (x << (BINT_BITS - y))
+  elseif y < 0 then
+    if y ~= math_mininteger then
+      return x:brol(-y)
+    else
+      x:brol(-(y+1))
+      x:brol(1)
+    end
+  end
+  return x
+end
+
+--- Truncate a number to a bint.
+-- Floats numbers are truncated, that is, the fractional port is discarded.
+-- @param x A number to truncate.
+-- @return A new bint or nil in case the input does not fit in a bint or is not a number.
+function bint.trunc(x)
+  if getmetatable(x) ~= bint then
+    x = tonumber(x)
+    if x then
+      local ty = math_type(x)
+      if ty == 'float' then
+        -- truncate to integer
+        x = math_modf(x)
+      end
+      return bint_frominteger(x)
+    end
+    return
+  end
+  return bint_new(x)
+end
+
+--- Take maximum between two numbers considering bints.
+-- @param x A bint or lua number to compare.
+-- @param y A bint or lua number to compare.
+-- @return A bint or a lua number. Guarantees to return a new bint for integer values.
+function bint.max(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    return bint_new(ix > iy and ix or iy)
+  end
+  return bint_parse(math_max(x, y))
+end
+
+--- Take minimum between two numbers considering bints.
+-- @param x A bint or lua number to compare.
+-- @param y A bint or lua number to compare.
+-- @return A bint or a lua number. Guarantees to return a new bint for integer values.
+function bint.min(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    return bint_new(ix < iy and ix or iy)
+  end
+  return bint_parse(math_min(x, y))
+end
+
+--- Add an integer to a bint (in-place).
+-- @param y An integer to be added.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint:_add(y)
+  y = bint_assert_convert(y)
+  local carry = 0
+  for i=1,BINT_SIZE do
+    local tmp = self[i] + y[i] + carry
+    carry = tmp >> BINT_WORDBITS
+    self[i] = tmp & BINT_WORDMAX
+  end
+  return self
+end
+
+--- Add two numbers considering bints.
+-- @param x A bint or a lua number to be added.
+-- @param y A bint or a lua number to be added.
+function bint.__add(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local z = setmetatable({}, bint)
+    local carry = 0
+    for i=1,BINT_SIZE do
+      local tmp = ix[i] + iy[i] + carry
+      carry = tmp >> BINT_WORDBITS
+      z[i] = tmp & BINT_WORDMAX
+    end
+    return z
+  end
+  return bint_tonumber(x) + bint_tonumber(y)
+end
+
+--- Subtract an integer from a bint (in-place).
+-- @param y An integer to subtract.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint:_sub(y)
+  y = bint_assert_convert(y)
+  local borrow = 0
+  local wordmaxp1 = BINT_WORDMAX + 1
+  for i=1,BINT_SIZE do
+    local res = self[i] + wordmaxp1 - y[i] - borrow
+    self[i] = res & BINT_WORDMAX
+    borrow = (res >> BINT_WORDBITS) ~ 1
+  end
+  return self
+end
+
+--- Subtract two numbers considering bints.
+-- @param x A bint or a lua number to be subtracted from.
+-- @param y A bint or a lua number to subtract.
+function bint.__sub(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local z = setmetatable({}, bint)
+    local borrow = 0
+    local wordmaxp1 = BINT_WORDMAX + 1
+    for i=1,BINT_SIZE do
+      local res = ix[i] + wordmaxp1 - iy[i] - borrow
+      z[i] = res & BINT_WORDMAX
+      borrow = (res >> BINT_WORDBITS) ~ 1
+    end
+    return z
+  end
+  return bint_tonumber(x) - bint_tonumber(y)
+end
+
+--- Multiply two numbers considering bints.
+-- @param x A bint or a lua number to multiply.
+-- @param y A bint or a lua number to multiply.
+function bint.__mul(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local z = bint_zero()
+    local sizep1 = BINT_SIZE+1
+    local s = sizep1
+    local e = 0
+    for i=1,BINT_SIZE do
+      if ix[i] ~= 0 or iy[i] ~= 0 then
+        e = math_max(e, i)
+        s = math_min(s, i)
+      end
+    end
+    for i=s,e do
+      for j=s,math_min(sizep1-i,e) do
+        local a = ix[i] * iy[j]
+        if a ~= 0 then
+          local carry = 0
+          for k=i+j-1,BINT_SIZE do
+            local tmp = z[k] + (a & BINT_WORDMAX) + carry
+            carry = tmp >> BINT_WORDBITS
+            z[k] = tmp & BINT_WORDMAX
+            a = a >> BINT_WORDBITS
+          end
+        end
+      end
+    end
+    return z
+  end
+  return bint_tonumber(x) * bint_tonumber(y)
+end
+
+--- Check if bints are equal.
+-- @param x A bint to compare.
+-- @param y A bint to compare.
+function bint.__eq(x, y)
+  for i=1,BINT_SIZE do
+    if x[i] ~= y[i] then
+      return false
+    end
+  end
+  return true
+end
+
+--- Check if numbers are equal considering bints.
+-- @param x A bint or lua number to compare.
+-- @param y A bint or lua number to compare.
+function bint.eq(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    return ix == iy
+  end
+  return x == y
+end
+local bint_eq = bint.eq
+
+local function findleftbit(x)
+  for i=BINT_SIZE,1,-1 do
+    local v = x[i]
+    if v ~= 0 then
+      local j = 0
+      repeat
+        v = v >> 1
+        j = j + 1
+      until v == 0
+      return (i-1)*BINT_WORDBITS + j - 1, i
+    end
+  end
+end
+
+-- Single word division modulus
+local function sudivmod(nume, deno)
+  local rema
+  local carry = 0
+  for i=BINT_SIZE,1,-1 do
+    carry = carry | nume[i]
+    nume[i] = carry // deno
+    rema = carry % deno
+    carry = rema << BINT_WORDBITS
+  end
+  return rema
+end
+
+--- Perform unsigned division and modulo operation between two integers considering bints.
+-- This is effectively the same of @{bint.udiv} and @{bint.umod}.
+-- @param x The numerator, must be a bint or a lua integer.
+-- @param y The denominator, must be a bint or a lua integer.
+-- @return The quotient following the remainder, both bints.
+-- @raise Asserts on attempt to divide by zero
+-- or if inputs are not convertible to integers.
+-- @see bint.udiv
+-- @see bint.umod
+function bint.udivmod(x, y)
+  local nume = bint_new(x)
+  local deno = bint_assert_convert(y)
+  -- compute if high bits of denominator are all zeros
+  local ishighzero = true
+  for i=2,BINT_SIZE do
+    if deno[i] ~= 0 then
+      ishighzero = false
+      break
+    end
+  end
+  if ishighzero then
+    -- try to divide by a single word (optimization)
+    local low = deno[1]
+    assert(low ~= 0, 'attempt to divide by zero')
+    if low == 1 then
+      -- denominator is one
+      return nume, bint_zero()
+    elseif low <= (BINT_WORDMSB - 1) then
+      -- can do single word division
+      local rema = sudivmod(nume, low)
+      return nume, bint_fromuinteger(rema)
+    end
+  end
+  if nume:ult(deno) then
+    -- denominator is greater than numerator
+    return bint_zero(), nume
+  end
+  -- align leftmost digits in numerator and denominator
+  local denolbit = findleftbit(deno)
+  local numelbit, numesize = findleftbit(nume)
+  local bit = numelbit - denolbit
+  deno = deno << bit
+  local wordmaxp1 = BINT_WORDMAX + 1
+  local wordbitsm1 = BINT_WORDBITS - 1
+  local denosize = numesize
+  local quot = bint_zero()
+  while bit >= 0 do
+    -- compute denominator <= numerator
+    local le = true
+    local size = math_max(numesize, denosize)
+    for i=size,1,-1 do
+      local a, b = deno[i], nume[i]
+      if a ~= b then
+        le = a < b
+        break
+      end
+    end
+    -- if the portion of the numerator above the denominator is greater or equal than to the denominator
+    if le then
+      -- subtract denominator from the portion of the numerator
+      local borrow = 0
+      for i=1,size do
+        local res = nume[i] + wordmaxp1 - deno[i] - borrow
+        nume[i] = res & BINT_WORDMAX
+        borrow = (res >> BINT_WORDBITS) ~ 1
+      end
+      -- concatenate 1 to the right bit of the quotient
+      local i = (bit // BINT_WORDBITS) + 1
+      quot[i] = quot[i] | (1 << (bit % BINT_WORDBITS))
+    end
+    -- shift right the denominator in one bit
+    for i=1,denosize-1 do
+      deno[i] = ((deno[i] >> 1) | (deno[i+1] << wordbitsm1)) & BINT_WORDMAX
+    end
+    local lastdenoword = deno[denosize] >> 1
+    deno[denosize] = lastdenoword
+    -- recalculate denominator size (optimization)
+    if lastdenoword == 0 then
+      while deno[denosize] == 0 do
+        denosize = denosize - 1
+      end
+      if denosize == 0 then
+        break
+      end
+    end
+    -- decrement current set bit for the quotient
+    bit = bit - 1
+  end
+  -- the remaining numerator is the remainder
+  return quot, nume
+end
+local bint_udivmod = bint.udivmod
+
+--- Perform unsigned division between two integers considering bints.
+-- @param x The numerator, must be a bint or a lua integer.
+-- @param y The denominator, must be a bint or a lua integer.
+-- @return The quotient, a bint.
+-- @raise Asserts on attempt to divide by zero
+-- or if inputs are not convertible to integers.
+function bint.udiv(x, y)
+  return (bint_udivmod(x, y))
+end
+
+--- Perform unsigned integer modulo operation between two integers considering bints.
+-- @param x The numerator, must be a bint or a lua integer.
+-- @param y The denominator, must be a bint or a lua integer.
+-- @return The remainder, a bint.
+-- @raise Asserts on attempt to divide by zero
+-- or if the inputs are not convertible to integers.
+function bint.umod(x, y)
+  local _, rema = bint_udivmod(x, y)
+  return rema
+end
+local bint_umod = bint.umod
+
+--- Perform integer truncate division and modulo operation between two numbers considering bints.
+-- This is effectively the same of @{bint.tdiv} and @{bint.tmod}.
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The quotient following the remainder, both bint or lua number.
+-- @raise Asserts on attempt to divide by zero or on division overflow.
+-- @see bint.tdiv
+-- @see bint.tmod
+function bint.tdivmod(x, y)
+  local ax, ay = bint_abs(x), bint_abs(y)
+  local ix, iy = tobint(ax), tobint(ay)
+  local quot, rema
+  if ix and iy then
+    assert(not (bint_eq(x, BINT_MININTEGER) and bint_isminusone(y)), 'division overflow')
+    quot, rema = bint_udivmod(ix, iy)
+  else
+    quot, rema = ax // ay, ax % ay
+  end
+  local isxneg, isyneg = bint_isneg(x), bint_isneg(y)
+  if isxneg ~= isyneg then
+    quot = -quot
+  end
+  if isxneg then
+    rema = -rema
+  end
+  return quot, rema
+end
+local bint_tdivmod = bint.tdivmod
+
+--- Perform truncate division between two numbers considering bints.
+-- Truncate division is a division that rounds the quotient towards zero.
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The quotient, a bint or lua number.
+-- @raise Asserts on attempt to divide by zero or on division overflow.
+function bint.tdiv(x, y)
+  return (bint_tdivmod(x, y))
+end
+
+--- Perform integer truncate modulo operation between two numbers considering bints.
+-- The operation is defined as the remainder of the truncate division
+-- (division that rounds the quotient towards zero).
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The remainder, a bint or lua number.
+-- @raise Asserts on attempt to divide by zero or on division overflow.
+function bint.tmod(x, y)
+  local _, rema = bint_tdivmod(x, y)
+  return rema
+end
+
+--- Perform integer floor division and modulo operation between two numbers considering bints.
+-- This is effectively the same of @{bint.__idiv} and @{bint.__mod}.
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The quotient following the remainder, both bint or lua number.
+-- @raise Asserts on attempt to divide by zero.
+-- @see bint.__idiv
+-- @see bint.__mod
+function bint.idivmod(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local isnumeneg = ix[BINT_SIZE] & BINT_WORDMSB ~= 0
+    local isdenoneg = iy[BINT_SIZE] & BINT_WORDMSB ~= 0
+    if isnumeneg then
+      ix = -ix
+    end
+    if isdenoneg then
+      iy = -iy
+    end
+    local quot, rema = bint_udivmod(ix, iy)
+    if isnumeneg ~= isdenoneg then
+      quot:_unm()
+      -- round quotient towards minus infinity
+      if not rema:iszero() then
+        quot:_dec()
+        -- adjust the remainder
+        if isnumeneg and not isdenoneg then
+          rema:_unm():_add(y)
+        elseif isdenoneg and not isnumeneg then
+          rema:_add(y)
+        end
+      end
+    elseif isnumeneg then
+      -- adjust the remainder
+      rema:_unm()
+    end
+    return quot, rema
+  end
+  local nx, ny = bint_tonumber(x), bint_tonumber(y)
+  return nx // ny, nx % ny
+end
+local bint_idivmod = bint.idivmod
+
+--- Perform floor division between two numbers considering bints.
+-- Floor division is a division that rounds the quotient towards minus infinity,
+-- resulting in the floor of the division of its operands.
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The quotient, a bint or lua number.
+-- @raise Asserts on attempt to divide by zero.
+function bint.__idiv(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local isnumeneg = ix[BINT_SIZE] & BINT_WORDMSB ~= 0
+    local isdenoneg = iy[BINT_SIZE] & BINT_WORDMSB ~= 0
+    if isnumeneg then
+      ix = -ix
+    end
+    if isdenoneg then
+      iy = -iy
+    end
+    local quot, rema = bint_udivmod(ix, iy)
+    if isnumeneg ~= isdenoneg then
+      quot:_unm()
+      -- round quotient towards minus infinity
+      if not rema:iszero() then
+        quot:_dec()
+      end
+    end
+    return quot, rema
+  end
+  return bint_tonumber(x) // bint_tonumber(y)
+end
+
+--- Perform division between two numbers considering bints.
+-- This always casts inputs to floats, for integer division only use @{bint.__idiv}.
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The quotient, a lua number.
+function bint.__div(x, y)
+  return bint_tonumber(x) / bint_tonumber(y)
+end
+
+--- Perform integer floor modulo operation between two numbers considering bints.
+-- The operation is defined as the remainder of the floor division
+-- (division that rounds the quotient towards minus infinity).
+-- @param x The numerator, a bint or lua number.
+-- @param y The denominator, a bint or lua number.
+-- @return The remainder, a bint or lua number.
+-- @raise Asserts on attempt to divide by zero.
+function bint.__mod(x, y)
+  local _, rema = bint_idivmod(x, y)
+  return rema
+end
+
+--- Perform integer power between two integers considering bints.
+-- If y is negative then pow is performed as an unsigned integer.
+-- @param x The base, an integer.
+-- @param y The exponent, an integer.
+-- @return The result of the pow operation, a bint.
+-- @raise Asserts in case inputs are not convertible to integers.
+-- @see bint.__pow
+-- @see bint.upowmod
+function bint.ipow(x, y)
+  y = bint_assert_convert(y)
+  if y:iszero() then
+    return bint_one()
+  elseif y:isone() then
+    return bint_new(x)
+  end
+  -- compute exponentiation by squaring
+  x, y = bint_new(x),  bint_new(y)
+  local z = bint_one()
+  repeat
+    if y:iseven() then
+      x = x * x
+      y:_shrone()
+    else
+      z = x * z
+      x = x * x
+      y:_dec():_shrone()
+    end
+  until y:isone()
+  return x * z
+end
+
+--- Perform integer power between two unsigned integers over a modulus considering bints.
+-- @param x The base, an integer.
+-- @param y The exponent, an integer.
+-- @param m The modulus, an integer.
+-- @return The result of the pow operation, a bint.
+-- @raise Asserts in case inputs are not convertible to integers.
+-- @see bint.__pow
+-- @see bint.ipow
+function bint.upowmod(x, y, m)
+  m = bint_assert_convert(m)
+  if m:isone() then
+    return bint_zero()
+  end
+  x, y = bint_new(x),  bint_new(y)
+  local z = bint_one()
+  x = bint_umod(x, m)
+  while not y:iszero() do
+    if y:isodd() then
+      z = bint_umod(z*x, m)
+    end
+    y:_shrone()
+    x = bint_umod(x*x, m)
+  end
+  return z
+end
+
+--- Perform numeric power between two numbers considering bints.
+-- This always casts inputs to floats, for integer power only use @{bint.ipow}.
+-- @param x The base, a bint or lua number.
+-- @param y The exponent, a bint or lua number.
+-- @return The result of the pow operation, a lua number.
+-- @see bint.ipow
+function bint.__pow(x, y)
+  return bint_tonumber(x) ^ bint_tonumber(y)
+end
+
+--- Bitwise left shift integers considering bints.
+-- @param x An integer to perform the bitwise shift.
+-- @param y An integer with the number of bits to shift.
+-- @return The result of shift operation, a bint.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint.__shl(x, y)
+  x, y = bint_new(x), bint_assert_tointeger(y)
+  if y == math_mininteger or math_abs(y) >= BINT_BITS then
+    return bint_zero()
+  end
+  if y < 0 then
+    return x >> -y
+  end
+  local nvals = y // BINT_WORDBITS
+  if nvals ~= 0 then
+    x:_shlwords(nvals)
+    y = y - nvals * BINT_WORDBITS
+  end
+  if y ~= 0 then
+    local wordbitsmy = BINT_WORDBITS - y
+    for i=BINT_SIZE,2,-1 do
+      x[i] = ((x[i] << y) | (x[i-1] >> wordbitsmy)) & BINT_WORDMAX
+    end
+    x[1] = (x[1] << y) & BINT_WORDMAX
+  end
+  return x
+end
+
+--- Bitwise right shift integers considering bints.
+-- @param x An integer to perform the bitwise shift.
+-- @param y An integer with the number of bits to shift.
+-- @return The result of shift operation, a bint.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint.__shr(x, y)
+  x, y = bint_new(x), bint_assert_tointeger(y)
+  if y == math_mininteger or math_abs(y) >= BINT_BITS then
+    return bint_zero()
+  end
+  if y < 0 then
+    return x << -y
+  end
+  local nvals = y // BINT_WORDBITS
+  if nvals ~= 0 then
+    x:_shrwords(nvals)
+    y = y - nvals * BINT_WORDBITS
+  end
+  if y ~= 0 then
+    local wordbitsmy = BINT_WORDBITS - y
+    for i=1,BINT_SIZE-1 do
+      x[i] = ((x[i] >> y) | (x[i+1] << wordbitsmy)) & BINT_WORDMAX
+    end
+    x[BINT_SIZE] = x[BINT_SIZE] >> y
+  end
+  return x
+end
+
+--- Bitwise AND bints (in-place).
+-- @param y An integer to perform bitwise AND.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint:_band(y)
+  y = bint_assert_convert(y)
+  for i=1,BINT_SIZE do
+    self[i] = self[i] & y[i]
+  end
+  return self
+end
+
+--- Bitwise AND two integers considering bints.
+-- @param x An integer to perform bitwise AND.
+-- @param y An integer to perform bitwise AND.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint.__band(x, y)
+  return bint_new(x):_band(y)
+end
+
+--- Bitwise OR bints (in-place).
+-- @param y An integer to perform bitwise OR.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint:_bor(y)
+  y = bint_assert_convert(y)
+  for i=1,BINT_SIZE do
+    self[i] = self[i] | y[i]
+  end
+  return self
+end
+
+--- Bitwise OR two integers considering bints.
+-- @param x An integer to perform bitwise OR.
+-- @param y An integer to perform bitwise OR.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint.__bor(x, y)
+  return bint_new(x):_bor(y)
+end
+
+--- Bitwise XOR bints (in-place).
+-- @param y An integer to perform bitwise XOR.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint:_bxor(y)
+  y = bint_assert_convert(y)
+  for i=1,BINT_SIZE do
+    self[i] = self[i] ~ y[i]
+  end
+  return self
+end
+
+--- Bitwise XOR two integers considering bints.
+-- @param x An integer to perform bitwise XOR.
+-- @param y An integer to perform bitwise XOR.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint.__bxor(x, y)
+  return bint_new(x):_bxor(y)
+end
+
+--- Bitwise NOT a bint (in-place).
+function bint:_bnot()
+  for i=1,BINT_SIZE do
+    self[i] = (~self[i]) & BINT_WORDMAX
+  end
+  return self
+end
+
+--- Bitwise NOT a bint.
+-- @param x An integer to perform bitwise NOT.
+-- @raise Asserts in case inputs are not convertible to integers.
+function bint.__bnot(x)
+  local y = setmetatable({}, bint)
+  for i=1,BINT_SIZE do
+    y[i] = (~x[i]) & BINT_WORDMAX
+  end
+  return y
+end
+
+--- Negate a bint (in-place). This effectively applies two's complements.
+function bint:_unm()
+  return self:_bnot():_inc()
+end
+
+--- Negate a bint. This effectively applies two's complements.
+-- @param x A bint to perform negation.
+function bint.__unm(x)
+  return (~x):_inc()
+end
+
+--- Compare if integer x is less than y considering bints (unsigned version).
+-- @param x Left integer to compare.
+-- @param y Right integer to compare.
+-- @raise Asserts in case inputs are not convertible to integers.
+-- @see bint.__lt
+function bint.ult(x, y)
+  x, y = bint_assert_convert(x), bint_assert_convert(y)
+  for i=BINT_SIZE,1,-1 do
+    local a, b = x[i], y[i]
+    if a ~= b then
+      return a < b
+    end
+  end
+  return false
+end
+
+--- Compare if bint x is less or equal than y considering bints (unsigned version).
+-- @param x Left integer to compare.
+-- @param y Right integer to compare.
+-- @raise Asserts in case inputs are not convertible to integers.
+-- @see bint.__le
+function bint.ule(x, y)
+  x, y = bint_assert_convert(x), bint_assert_convert(y)
+  for i=BINT_SIZE,1,-1 do
+    local a, b = x[i], y[i]
+    if a ~= b then
+      return a < b
+    end
+  end
+  return true
+end
+
+--- Compare if number x is less than y considering bints and signs.
+-- @param x Left value to compare, a bint or lua number.
+-- @param y Right value to compare, a bint or lua number.
+-- @see bint.ult
+function bint.__lt(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local xneg = ix[BINT_SIZE] & BINT_WORDMSB ~= 0
+    local yneg = iy[BINT_SIZE] & BINT_WORDMSB ~= 0
+    if xneg == yneg then
+      for i=BINT_SIZE,1,-1 do
+        local a, b = ix[i], iy[i]
+        if a ~= b then
+          return a < b
+        end
+      end
+      return false
+    end
+    return xneg and not yneg
+  end
+  return bint_tonumber(x) < bint_tonumber(y)
+end
+
+--- Compare if number x is less or equal than y considering bints and signs.
+-- @param x Left value to compare, a bint or lua number.
+-- @param y Right value to compare, a bint or lua number.
+-- @see bint.ule
+function bint.__le(x, y)
+  local ix, iy = tobint(x), tobint(y)
+  if ix and iy then
+    local xneg = ix[BINT_SIZE] & BINT_WORDMSB ~= 0
+    local yneg = iy[BINT_SIZE] & BINT_WORDMSB ~= 0
+    if xneg == yneg then
+      for i=BINT_SIZE,1,-1 do
+        local a, b = ix[i], iy[i]
+        if a ~= b then
+          return a < b
+        end
+      end
+      return true
+    end
+    return xneg and not yneg
+  end
+  return bint_tonumber(x) <= bint_tonumber(y)
+end
+
+--- Convert a bint to a string on base 10.
+-- @see bint.tobase
+function bint:__tostring()
+  return self:tobase(10)
+end
+
+-- Allow creating bints by calling bint itself
+setmetatable(bint, {
+  __call = function(_, x)
+    return bint_new(x)
+  end
+})
+
+BINT_MATHMININTEGER, BINT_MATHMAXINTEGER = bint_new(math.mininteger), bint_new(math.maxinteger)
+BINT_MININTEGER = bint.mininteger()
+memo[memoindex] = bint
+
+return bint
+
+end
+
+return newmodule
+end
+_G.package.loaded[".bint"] = load_bint()
+print("loaded bint")
+  
+
+
+local function load_pretty() 
+  local pretty = { _version = "0.0.1" }
+
+pretty.tprint = function (tbl, indent)
+  if not indent then indent = 0 end
+  local output = ""
+  for k, v in pairs(tbl) do
+    local formatting = string.rep(" ", indent) .. k .. ": "
+    if type(v) == "table" then
+      output = output .. formatting .. "\n"
+      output = output .. pretty.tprint(v, indent+1)
+    elseif type(v) == 'boolean' then
+      output = output .. formatting .. tostring(v) .. "\n"
+    else
+      output = output .. formatting .. v .. "\n"
+    end
+  end
+  return output
+end
+
+return pretty
+
+end
+_G.package.loaded[".pretty"] = load_pretty()
+print("loaded pretty")
+  
+
+
+local function load_chance() 
+  --- The Chance module provides utilities for generating random numbers and values. Returns the chance table.
+-- @module chance
+
+local N = 624
+local M = 397
+local MATRIX_A = 0x9908b0df
+local UPPER_MASK = 0x80000000
+local LOWER_MASK = 0x7fffffff
+
+--- Initializes mt[N] with a seed
+-- @lfunction init_genrand
+-- @tparam {table} o The table to initialize
+-- @tparam {number} s The seed
+local function init_genrand(o, s)
+    o.mt[0] = s & 0xffffffff
+    for i = 1, N - 1 do
+        o.mt[i] = (1812433253 * (o.mt[i - 1] ~ (o.mt[i - 1] >> 30))) + i
+        -- See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier.
+        -- In the previous versions, MSBs of the seed affect
+        -- only MSBs of the array mt[].
+        -- 2002/01/09 modified by Makoto Matsumoto
+        o.mt[i] = o.mt[i] & 0xffffffff
+        -- for >32 bit machines
+    end
+    o.mti = N
+end
+
+--- Generates a random number on [0,0xffffffff]-interval
+-- @lfunction genrand_int32
+-- @tparam {table} o The table to generate the random number from
+-- @treturn {number} The random number
+local function genrand_int32(o)
+    local y
+    local mag01 = {} -- mag01[x] = x * MATRIX_A  for x=0,1
+    mag01[0] = 0x0
+    mag01[1] = MATRIX_A
+    if o.mti >= N then  -- generate N words at one time
+        if o.mti == N + 1 then -- if init_genrand() has not been called,
+            init_genrand(o, 5489)   -- a default initial seed is used
+        end
+        for kk = 0, N - M - 1 do
+            y = (o.mt[kk] & UPPER_MASK) | (o.mt[kk + 1] & LOWER_MASK)
+            o.mt[kk] = o.mt[kk + M] ~ (y >> 1) ~ mag01[y & 0x1]
+        end
+        for kk = N - M, N - 2 do
+            y = (o.mt[kk] & UPPER_MASK) | (o.mt[kk + 1] & LOWER_MASK)
+            o.mt[kk] = o.mt[kk + (M - N)] ~ (y >> 1) ~ mag01[y & 0x1]
+        end
+        y = (o.mt[N - 1] & UPPER_MASK) | (o.mt[0] & LOWER_MASK)
+        o.mt[N - 1] = o.mt[M - 1] ~ (y >> 1) ~ mag01[y & 0x1]
+
+        o.mti = 0
+    end
+
+    y = o.mt[o.mti]
+    o.mti = o.mti + 1
+
+    -- Tempering
+    y = y ~ (y >> 11)
+    y = y ~ ((y << 7) & 0x9d2c5680)
+    y = y ~ ((y << 15) & 0xefc60000)
+    y = y ~ (y >> 18)
+
+    return y
+end
+
+local MersenneTwister = {}
+MersenneTwister.mt = {}
+MersenneTwister.mti = N + 1
+
+
+--- The Random table
+-- @table Random
+-- @field seed The seed function
+-- @field random The random function
+-- @field integer The integer function
+local Random = {}
+
+--- Sets a new random table given a seed.
+-- @function seed
+-- @tparam {number} seed The seed
+function Random.seed(seed)
+    init_genrand(MersenneTwister, seed)
+end
+
+--- Generates a random number on [0,1)-real-interval.
+-- @function random
+-- @treturn {number} The random number
+function Random.random()
+    return genrand_int32(MersenneTwister) * (1.0 / 4294967296.0)
+end
+
+--- Returns a random integer. The min and max are INCLUDED in the range.
+-- The max integer in lua is math.maxinteger
+-- The min is math.mininteger
+-- @function Random.integer
+-- @tparam {number} min The minimum value
+-- @tparam {number} max The maximum value
+-- @treturn {number} The random integer
+function Random.integer(min, max)
+    assert(max >= min, "max must bigger than min")
+    return math.floor(Random.random() * (max - min + 1) + min)
+end
+
+return Random
+end
+_G.package.loaded[".chance"] = load_chance()
+print("loaded chance")
+  
+
+
+local function load_boot() 
+  --- The Boot module provides functionality for booting the process. Returns the boot function.
+-- @module boot
+
+-- This is for aop6 Boot Loader
+-- See: https://github.com/permaweb/aos/issues/342
+-- For the Process as the first Message, if On-Boot
+-- has the value 'data' then evaluate the data
+-- if it is a tx id, then download and evaluate the tx
+
+local drive = { _version = "0.0.1" }
+
+function drive.getData(txId)
+  local file = io.open('/data/' .. txId)
+  if not file then
+    return nil, "File not found!"
+  end
+  local contents = file:read(
+    file:seek('end')
+  )
+  file:close()
+  return contents
+end
+
+--- The boot function.
+-- If the message has no On-Boot tag, do nothing.
+-- If the message has an On-Boot tag with the value 'Data', then evaluate the message.
+-- If the message has an On-Boot tag with a tx id, then download and evaluate the tx data.
+-- @function boot
+-- @param ao The ao environment object
+-- @see eval
+return function (ao)
+  local eval = require(".eval")(ao)
+  return function (msg)
+    if #Inbox == 0 then
+      table.insert(Inbox, msg)
+    end
+    if msg.Tags['On-Boot'] == nil then
+      return
+    end
+    if msg.Tags['On-Boot'] == 'Data' then
+      eval(msg)
+    else
+      local loadedVal = drive.getData(msg.Tags['On-Boot'])
+      eval({ Data = loadedVal })
+    end
+  end
+end
+end
+_G.package.loaded[".boot"] = load_boot()
+print("loaded boot")
+  
+
+
 local function load_default() 
   local json = require('.json')
 -- default handler for aos
@@ -1690,7 +3636,9 @@ print("loaded default")
 
 
 local function load_ao() 
-  local oldao = ao or {}
+  Handlers = Handlers or require('.handlers')
+
+local oldao = ao or {}
 
 local utils = require('.utils')
 
@@ -1716,6 +3664,10 @@ local ao = {
     Nonce = nil
 }
 
+function ao.clearOutbox()
+  ao.outbox = { Output = {}, Messages = {}, Spawns = {}, Assignments = {}}
+end
+
 function ao.normalize(msg)
     for _, o in ipairs(msg.Tags) do
         if not utils.includes(o.name, ao.nonExtractableTags) then
@@ -1723,6 +3675,103 @@ function ao.normalize(msg)
         end
     end
     return msg
+end
+
+function ao.init(env)
+    if ao.id == "" then ao.id = env.Process.Id end
+
+    if ao._module == "" then
+      ao._module = env.Module.Id
+    end
+    -- TODO: need to deal with assignables
+    -- if #ao.authorities < 1 then
+    --     for _, o in ipairs(env.Process.Tags) do
+    --         if o.name == "Authority" then
+    --             table.insert(ao.authorities, o.value)
+    --         end
+    --     end
+    -- end
+
+    ao.outbox = {Output = {}, Messages = {}, Spawns = {}, Assignments = {}}
+    ao.env = env
+
+end
+
+function ao.send(msg)
+  assert(type(msg) == 'table', 'msg should be a table')
+
+  ao.reference = ao.reference + 1
+  local referenceString = tostring(ao.reference)
+  -- set kv
+  msg.Reference = referenceString
+  msg["Data-Protocol"] = "ao"
+  msg["Variant"] = msg["Variant"] or "ao.MN.1"
+  msg["Type"] = "Message"
+
+  -- clone message info and add to outbox
+  table.insert(ao.outbox.Messages, utils.reduce(
+    function (acc, key)
+      acc[key] = msg[key]
+      return acc
+    end,
+    {},
+    utils.keys(msg)
+  ))
+
+  if msg.Target then
+    msg.onReply = function(...)
+      local from, resolver
+      if select("#", ...) == 2 then
+        from = select(1, ...)
+        resolver = select(2, ...)
+      else
+        from = msg.Target
+        resolver = select(1, ...)
+      end
+      Handlers.once({
+        From = from,
+        ["X-Reference"] = referenceString
+      }, resolver)
+    end
+  end
+  return msg
+end
+
+function ao.spawn(module, msg)
+  assert(type(module) == "string", "Module source id is required!")
+  assert(type(msg) == "table", "Message must be a table.")
+
+  ao.reference = ao.reference + 1
+
+  local spawnRef = tostring(ao.reference)
+
+  msg["Data-Protocol"] = "ao"
+  msg["Variant"] = msg["Variant"] or "ao.MN.1"
+  msg["Type"] = "Process"
+  msg["Module"] = module
+  msg["Reference"] = spawnRef
+
+
+  -- clone message info and add to outbox
+  table.insert(ao.outbox.Spawns, utils.reduce(
+    function (acc, key)
+      acc[key] = msg[key]
+      return acc
+    end,
+    {},
+    utils.keys(msg)
+  ))
+
+  msg.onReply = function(cb)
+    Handlers.once({
+      Action = "Spawned",
+      From = ao.id,
+      ["X-Reference"] = spawnRef
+    }, cb)
+  end
+
+  return msg
+
 end
 
 function ao.result(result)
@@ -1737,6 +3786,10 @@ function ao.result(result)
   }
 end
 
+-- set global Send and Spawn
+Send = Send or ao.send
+Spawn = Spawn or ao.spawn
+
 return ao
 
 end
@@ -1745,26 +3798,271 @@ print("loaded ao")
   
 
 
-local function load_process() 
-  Handlers = require('.handlers')
-Utils = require('.utils')
-Inbox = Inbox or {}
+local function load_base64() 
+  --[[
+
+ base64 -- v1.5.3 public domain Lua base64 encoder/decoder
+ no warranty implied; use at your own risk
+
+ Needs bit32.extract function. If not present it's implemented using BitOp
+ or Lua 5.3 native bit operators. For Lua 5.1 fallbacks to pure Lua
+ implementation inspired by Rici Lake's post:
+   http://ricilake.blogspot.co.uk/2007/10/iterating-bits-in-lua.html
+
+ author: Ilya Kolbin (iskolbin@gmail.com)
+ url: github.com/iskolbin/lbase64
+
+ COMPATIBILITY
+
+ Lua 5.1+, LuaJIT
+
+ LICENSE
+
+ See end of file for license information.
+
+--]]
+
+
+local base64 = {}
+
+local extract = _G.bit32 and _G.bit32.extract -- Lua 5.2/Lua 5.3 in compatibility mode
+if not extract then
+	if _G.bit then -- LuaJIT
+		local shl, shr, band = _G.bit.lshift, _G.bit.rshift, _G.bit.band
+		extract = function( v, from, width )
+			return band( shr( v, from ), shl( 1, width ) - 1 )
+		end
+	elseif _G._VERSION == "Lua 5.1" then
+		extract = function( v, from, width )
+			local w = 0
+			local flag = 2^from
+			for i = 0, width-1 do
+				local flag2 = flag + flag
+				if v % flag2 >= flag then
+					w = w + 2^i
+				end
+				flag = flag2
+			end
+			return w
+		end
+	else -- Lua 5.3+
+		extract = load[[return function( v, from, width )
+			return ( v >> from ) & ((1 << width) - 1)
+		end]]()
+	end
+end
+
+
+function base64.makeencoder( s62, s63, spad )
+	local encoder = {}
+	for b64code, char in pairs{[0]='A','B','C','D','E','F','G','H','I','J',
+		'K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y',
+		'Z','a','b','c','d','e','f','g','h','i','j','k','l','m','n',
+		'o','p','q','r','s','t','u','v','w','x','y','z','0','1','2',
+		'3','4','5','6','7','8','9',s62 or '+',s63 or'/',spad or'='} do
+		encoder[b64code] = char:byte()
+	end
+	return encoder
+end
+
+function base64.makedecoder( s62, s63, spad )
+	local decoder = {}
+	for b64code, charcode in pairs( base64.makeencoder( s62, s63, spad )) do
+		decoder[charcode] = b64code
+	end
+	return decoder
+end
+
+local DEFAULT_ENCODER = base64.makeencoder()
+local DEFAULT_DECODER = base64.makedecoder()
+
+local char, concat = string.char, table.concat
+
+function base64.encode( str, encoder, usecaching )
+	encoder = encoder or DEFAULT_ENCODER
+	local t, k, n = {}, 1, #str
+	local lastn = n % 3
+	local cache = {}
+	for i = 1, n-lastn, 3 do
+		local a, b, c = str:byte( i, i+2 )
+		local v = a*0x10000 + b*0x100 + c
+		local s
+		if usecaching then
+			s = cache[v]
+			if not s then
+				s = char(encoder[extract(v,18,6)], encoder[extract(v,12,6)], encoder[extract(v,6,6)], encoder[extract(v,0,6)])
+				cache[v] = s
+			end
+		else
+			s = char(encoder[extract(v,18,6)], encoder[extract(v,12,6)], encoder[extract(v,6,6)], encoder[extract(v,0,6)])
+		end
+		t[k] = s
+		k = k + 1
+	end
+	if lastn == 2 then
+		local a, b = str:byte( n-1, n )
+		local v = a*0x10000 + b*0x100
+		t[k] = char(encoder[extract(v,18,6)], encoder[extract(v,12,6)], encoder[extract(v,6,6)], encoder[64])
+	elseif lastn == 1 then
+		local v = str:byte( n )*0x10000
+		t[k] = char(encoder[extract(v,18,6)], encoder[extract(v,12,6)], encoder[64], encoder[64])
+	end
+	return concat( t )
+end
+
+function base64.decode( b64, decoder, usecaching )
+	decoder = decoder or DEFAULT_DECODER
+	local pattern = '[^%w%+%/%=]'
+	if decoder then
+		local s62, s63
+		for charcode, b64code in pairs( decoder ) do
+			if b64code == 62 then s62 = charcode
+			elseif b64code == 63 then s63 = charcode
+			end
+		end
+		pattern = ('[^%%w%%%s%%%s%%=]'):format( char(s62), char(s63) )
+	end
+	b64 = b64:gsub( pattern, '' )
+	local cache = usecaching and {}
+	local t, k = {}, 1
+	local n = #b64
+	local padding = b64:sub(-2) == '==' and 2 or b64:sub(-1) == '=' and 1 or 0
+	for i = 1, padding > 0 and n-4 or n, 4 do
+		local a, b, c, d = b64:byte( i, i+3 )
+		local s
+		if usecaching then
+			local v0 = a*0x1000000 + b*0x10000 + c*0x100 + d
+			s = cache[v0]
+			if not s then
+				local v = decoder[a]*0x40000 + decoder[b]*0x1000 + decoder[c]*0x40 + decoder[d]
+				s = char( extract(v,16,8), extract(v,8,8), extract(v,0,8))
+				cache[v0] = s
+			end
+		else
+			local v = decoder[a]*0x40000 + decoder[b]*0x1000 + decoder[c]*0x40 + decoder[d]
+			s = char( extract(v,16,8), extract(v,8,8), extract(v,0,8))
+		end
+		t[k] = s
+		k = k + 1
+	end
+	if padding == 1 then
+		local a, b, c = b64:byte( n-3, n-1 )
+		local v = decoder[a]*0x40000 + decoder[b]*0x1000 + decoder[c]*0x40
+		t[k] = char( extract(v,16,8), extract(v,8,8))
+	elseif padding == 2 then
+		local a, b = b64:byte( n-3, n-2 )
+		local v = decoder[a]*0x40000 + decoder[b]*0x1000
+		t[k] = char( extract(v,16,8))
+	end
+	return concat( t )
+end
+
+return base64
+
+--[[
+------------------------------------------------------------------------------
+This software is available under 2 licenses -- choose whichever you prefer.
+------------------------------------------------------------------------------
+ALTERNATIVE A - MIT License
+Copyright (c) 2018 Ilya Kolbin
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+------------------------------------------------------------------------------
+ALTERNATIVE B - Public Domain (www.unlicense.org)
+This is free and unencumbered software released into the public domain.
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
+software, either in source code form or as a compiled binary, for any purpose,
+commercial or non-commercial, and by any means.
+In jurisdictions that recognize copyright laws, the author or authors of this
+software dedicate any and all copyright interest in the software to the public
+domain. We make this dedication for the benefit of the public at large and to
+the detriment of our heirs and successors. We intend this dedication to be an
+overt act of relinquishment in perpetuity of all present and future rights to
+this software under copyright law.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+------------------------------------------------------------------------------
+--]]
+end
+_G.package.loaded[".base64"] = load_base64()
+print("loaded base64")
+  
+
+
+local function load_state() 
+  ao = ao or require('.ao')
+local state = {}
+local stringify = require('.stringify')
+
 Colors = { red = "\27[31m", green = "\27[32m",
   blue = "\27[34m", reset = "\27[0m", gray = "\27[90m"
 }
 Bell = "\x07"
-Name = Name or "default"
 
-local process = { _version = "2.0.5" }
-local eval = require('.eval')
-local default = require('.default')
+Initialized = Initialized or false
+Name = Name or "aos"
 
+Owner = Owner or ""
+Inbox = Inbox or {}
+
+-- global prompt function
 function Prompt()
   return "aos> "
 end
 
+-- global print function
+function print(a)
+  if type(a) == "table" then
+    a = stringify.format(a)
+  end
+
+  if type(a) == "boolean" then
+    a = Colors.blue .. tostring(a) .. Colors.reset
+  end
+  if type(a) == "nil" then
+    a = Colors.red .. tostring(a) .. Colors.reset
+  end
+  if type(a) == "number" then
+    a = Colors.green .. tostring(a) .. Colors.reset
+  end
+
+  local data = a
+
+  if ao.outbox.Output.data then
+    data = ao.outbox.Output.data .. "\n" .. a
+  end
+
+  ao.outbox.Output = { data = data, prompt = Prompt(), print = true }
+
+  -- Only supported for newer version of AOS
+  if HandlerPrintLogs then
+    table.insert(HandlerPrintLogs, a)
+    return nil
+  end
+
+  return tostring(a)
+end
+
 local maxInboxCount = 10000
-local function insertInbox(msg)
+
+function state.insertInbox(msg)
   table.insert(Inbox, msg)
   local overflow = #Inbox - maxInboxCount
   for i = 1,overflow do
@@ -1772,24 +4070,155 @@ local function insertInbox(msg)
   end
 end
 
-function process.handle(msg, env) 
+function state.init(msg, env)
+  if not Initialized then
+    -- if process id is equal to message id then set Owner
+    -- TODO: need additional check, like msg.Slot == 1
+    if env.Process.Id == msg.Id and Owner ~= msg.Id then
+      Owner = env.Process['From-Process'] or msg.From
+    end
+    if env.Process.Name then
+      Name = Name == "aos" and env.Process.Name
+    end
+    Initialized = true
+  end
+end
+
+function state.checkSlot(msg, ao)
+  -- slot check
+  if not ao.Slot then
+    ao.Slot = tonumber(msg.Slot)
+  else
+    if tonumber(msg.Slot) ~= (ao.Slot + 1) then
+      print(table.concat({
+      Colors.red,
+      "WARNING: Slot did not match, may be due to an error generated by process",
+      Colors.reset
+      }))
+      print("")
+    end
+  end
+end
+
+function state.reset(tbl)
+  tbl = nil
+  collectgarbage()
+  return {}
+end
+
+return state
+
+end
+_G.package.loaded[".state"] = load_state()
+print("loaded state")
+  
+
+
+local function load_process() 
+  ao = ao or require('.ao')
+Handlers = require('.handlers')
+Utils = require('.utils')
+Dump = require('.dump')
+
+local process = { _version = "2.0.5" }
+local state = require('.state')
+local eval = require('.eval')
+local default = require('.default')
+local json = require('.json')
+
+function Prompt()
+  return "aos> "
+end
+
+function process.handle(msg, env)
+  ao.id = env.Process.Id
+  HandlerPrintLogs = state.reset(HandlerPrintLogs)
+  os.time = function () return tonumber(msg.Timestamp) end
+
+  ao.init(env)
+  -- initialize state
+  state.init(msg, env)
+  -- magic table
+  msg.Data = msg['Content-Type'] == 'application/json'
+    and json.decode(msg.Data or "{}")
+    or msg.Data
+
+  Errors = Errors or {}
+  -- clear outbox
+  ao.clearOutbox()
+
+  state.checkSlot(msg, ao)
 
   Handlers.add("_eval", function (msg)
-    return msg.Action == "Eval" -- and Owner == msg.From
+    return msg.Action == "Eval" and Owner == msg.From
   end, eval(ao))
 
-  Handlers.append("_default", function () return true end, require('.default')(insertInbox))
+  Handlers.append("_default",
+    function () return true end,
+    default(state.insertInbox)
+  )
 
-  local status, result = pcall(Handlers.evaluate, msg, env)
+  local status, error = pcall(Handlers.evaluate, msg, env)
 
+  local printData = table.concat(HandlerPrintLogs, "\n")
   if not status then
-    print("ERROR")
-    print(result)
-    print(require('.stringify').format(msg))
-    return { Error = tostring(result) }
+    if msg.Action == "Eval" then
+      table.insert(Errors, error)
+      return {
+        Error = table.concat({
+          printData,
+          "\n",
+          Colors.red,
+          "error: " .. error,
+          Colors.reset,
+        })
+      }
+    end
+    if msg.Action then
+      print(Colors.red .. "Error" .. Colors.gray .. " handling message with Action = " .. msg.Action  .. Colors.reset)
+    else
+      print(Colors.red .. "Error" .. Colors.gray .. " handling message " .. Colors.reset)
+    end
+    print(Colors.green .. error .. Colors.reset)
+    print("\n" .. Colors.gray .. debug.traceback() .. Colors.reset)
+    return ao.result({Error = printData .. '\n\n' .. Colors.red .. 'error:\n' .. Colors.reset .. error, Messages = {}, Spawns = {}, Assignments = {} })
   end
 
-  return 
+  local response = {}
+
+  if msg.Action == "Eval" then
+    response = ao.result({
+      Output = {
+        data = printData,
+        prompt = Prompt(),
+        test = Dump(HandlerPrintLogs)
+      }
+    })
+  elseif msg.Tags.Type == "Process" and Owner == msg.From then
+    response = ao.result({
+      Output = {
+        data = table.concat(HandlerPrintLogs, "\n"),
+        prompt = Prompt(),
+        print = true
+      }
+    })
+  else
+    response = ao.result({
+      Output = {
+        data = table.concat(HandlerPrintLogs, "\n"),
+        prompt = Prompt(),
+        print = true
+      }
+    })
+  end
+
+  HandlerPrintLogs = state.reset(HandlerPrintLogs) -- clear logs
+  ao.Slot = msg.Slot
+  return response
+end
+
+function Version()
+  print("version: " .. process._version)
 end
 
 return process
@@ -1802,18 +4231,18 @@ print("loaded process")
 ao = require('.ao')
 local _process = require('.process')
 
-function compute(base, req, opts) 
+function compute(base, req, opts)
   local message = {
-    Id = "1",
-    ["Hash-Chain"] = req['hash-chain'],
+    Id = req.body.target,
     Action = req.body.action,
     Data = req.body.body,
     Type = req.body.type,
     Target = req.body.target,
-    Owner = "",
-    From = "",
+    Owner = "OWNER",
+    From = "OWNER",
     Timestamp = tostring(req['timestamp']),
     ['Block-Height'] = tostring(req['block-height']),
+    ["Hash-Chain"] = req['hash-chain'],
     ['Block-Hash'] = tostring(req['block-hash']),
     ['Data-Protocol'] = req['data-protocol'],
     ['Path'] = req.path,
@@ -1825,16 +4254,18 @@ function compute(base, req, opts)
     Id = req.body.target,
     Type = base.process.type,
     Device = base.process.device,
+    Owner = "OWNER",
     ['Execution-Device'] = base.process['execution-device'],
     ['Scheduler-Device'] = base.process['scheduler-device'],
-    ['Test-Random-Seed'] = base.process['test-random-seed'],
+    ['Random-Seed'] = base.process['test-random-seed'],
     commitments = base.process.commitments
   }
 
-  _process.handle(message, { Process = process, Module = {} } )
+  base.results = _process.handle(message, { 
+    Process = process, 
+    Module = { Id = "1" } 
+  })
 
-  -- print(require('.stringify').format(ao.outbox))
-  base.results = ao.outbox
-  return base 
+  return base
 end
 

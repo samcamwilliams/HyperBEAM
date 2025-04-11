@@ -117,6 +117,7 @@ compute(Key, RawBase, Req, Opts) ->
     ?event(debug_lua, ensure_initialized_done),
     % Get the state from the base message's private element.
     OldPriv = #{ <<"state">> := State } = hb_private:from_message(Base),
+    % NOTE: looks like the script is injected in multiple places, does the script need to be passed?
     % Get the Lua function to call from the base message.
     Function =
         hb_ao:get_first(
@@ -354,7 +355,10 @@ invoke_aos_test() ->
     Message = generate_test_message(Process),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-    ?assertEqual(<<"23">>, Results).
+
+    ?assertEqual(<<"1">>, Results),
+    {ok, MessageResult} = hb_ao:resolve(Process, <<"now/results/messages/1/data">>, #{}),
+    ?assertEqual(<<"Bar">>, MessageResult).
 
 %% @doc Benchmark the performance of Lua executions.
 aos_process_benchmark_test_() ->
@@ -417,7 +421,7 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"body">> => <<"22 + 1">>,
+                        <<"body">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
                     },
