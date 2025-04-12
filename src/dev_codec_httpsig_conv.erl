@@ -40,9 +40,9 @@
 %% @doc Convert a HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
-from(MaybeHTTP) ->
-    % Ensure that the HTTP message is fully loaded, for now.
-    HTTP = hb_cache:ensure_all_loaded(MaybeHTTP),
+from(Link) when ?IS_LINK(Link) ->
+    from(hb_cache:ensure_loaded(Link));
+from(HTTP) ->
     % Decode the keys of the HTTP message
     Body = hb_maps:get(<<"body">>, HTTP, <<>>),
     % First, parse all headers excluding the signature-related headers, as they
@@ -58,11 +58,12 @@ from(MaybeHTTP) ->
     % binaries whose keys (given that they are IDs) cannot be distributed as
     % HTTP headers.
     WithIDs = ungroup_ids(WithBodyKeys),
+    WithLinks = decode_all_links(WithIDs),
     % Remove the signature-related headers, such that they can be reconstructed
     % from the commitments.
     MsgWithoutSigs = hb_maps:without(
         [<<"signature">>, <<"signature-input">>, <<"commitments">>],
-        WithIDs
+        WithLinks
     ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Extract all hashpaths from the commitments of the message
@@ -304,9 +305,7 @@ to(Bin) when is_binary(Bin) -> Bin;
 to(TABM) -> to(TABM, []).
 to(Link, Opts) when ?IS_LINK(Link) ->
     to(hb_cache:ensure_loaded(Link), Opts);
-to(MaybeTABM, Opts) when is_map(MaybeTABM) ->
-    % Ensure that the TABM is fully loaded, for now.
-    TABM = hb_cache:ensure_all_loaded(MaybeTABM),
+to(TABM, Opts) when is_map(TABM) ->
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.
@@ -321,9 +320,10 @@ to(MaybeTABM, Opts) when is_map(MaybeTABM) ->
             ],
             WithGroupedIDs
         ),
-    ?event({stripped, Stripped}),
+    WithLinks = encode_all_links(Stripped),
+    ?event(debug_links, {with_links, WithLinks}),
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
-    Intermediate = do_to(Stripped, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
+    Intermediate = do_to(WithLinks, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
     % Finally, add the signatures to the HTTP message
     case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM) of
         {ok, _, #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }} ->
@@ -350,12 +350,12 @@ do_to(TABM, Opts) when is_map(TABM) ->
         end,
     % Calculate the initial encoding from the TABM
     Enc0 =
-        hb_maps:fold(
+        maps:fold(
             fun(<<"body">>, Value, AccMap) ->
-                    OldBody = hb_maps:get(<<"body">>, AccMap, #{}),
+                    OldBody = maps:get(<<"body">>, AccMap, #{}),
                     AccMap#{ <<"body">> => OldBody#{ <<"body">> => Value } };
                (Key, Value, AccMap) when Key =:= InlineKey andalso InlineKey =/= not_set ->
-                    OldBody = hb_maps:get(<<"body">>, AccMap, #{}),
+                    OldBody = maps:get(<<"body">>, AccMap, #{}),
                     AccMap#{ <<"body">> => OldBody#{ InlineKey => Value } };
                (Key, Value, AccMap) ->
                     field_to_http(AccMap, {Key, Value}, #{})
@@ -365,10 +365,10 @@ do_to(TABM, Opts) when is_map(TABM) ->
                 {inline, InlineFieldHdrs, _InlineKey} -> InlineFieldHdrs;
                 _ -> #{}
             end,
-            hb_maps:without([<<"priv">>], TABM)
+            maps:without([<<"priv">>], TABM)
         ),
     ?event({prepared_body_map, {msg, Enc0}}),
-    BodyMap = hb_maps:get(<<"body">>, Enc0, #{}),
+    BodyMap = maps:get(<<"body">>, Enc0, #{}),
     GroupedBodyMap = group_maps(BodyMap),
     Enc1 =
         case GroupedBodyMap of
@@ -470,20 +470,20 @@ do_to(TABM, Opts) when is_map(TABM) ->
 %% but standard RFC 8741 parsers will not. Subsequently, the resulting `ao-cased`
 %% key is not added to the `ao-types` map.
 group_ids(Map) ->
-    % Find all keys that are IDs
-    IDDict = hb_maps:filter(fun(K, V) -> ?IS_ID(K) andalso is_binary(V) end, Map),
+    % Find all keys that are IDs.
+    IDDict = maps:filter(fun(K, V) -> ?IS_ID(K) andalso is_binary(V) end, Map),
     % Convert the dictionary into a list of key-value pairs
     IDDictStruct =
         lists:map(
             fun({K, V}) ->
                 {K, {item, {string, V}, []}}
             end,
-            hb_maps:to_list(IDDict)
+            maps:to_list(IDDict)
         ),
     % Convert the list of key-value pairs into a binary
     IDBin = iolist_to_binary(hb_structured_fields:dictionary(IDDictStruct)),
     % Remove the encoded keys from the map
-    Stripped = hb_maps:without(hb_maps:keys(IDDict), Map),
+    Stripped = maps:without(maps:keys(IDDict), Map),
     % Add the ID binary to the map if it is not empty
     case map_size(IDDict) of
         0 -> Stripped;
@@ -503,6 +503,50 @@ ungroup_ids(Msg = #{ <<"ao-ids">> := IDBin }) ->
     % Add the decoded IDs to the Map and remove the `ao-ids' key
     hb_maps:merge(hb_maps:without([<<"ao-ids">>], Msg), hb_maps:from_list(IDsMap));
 ungroup_ids(Msg) -> Msg.
+
+%% @doc Search a TABM for all links and replace them with a `+link' key.
+encode_all_links(Map) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, Value}) when ?IS_LINK(Value) ->
+                {<<Key/binary, "+link">>, encode_link(Value)};
+            ({Key, Value}) ->
+                {Key, Value}
+            end,
+            maps:to_list(Map)
+        )
+    ).
+
+%% @doc Encode a link into a binary.
+encode_link({link, ID, #{ <<"type">> := Type }}) ->
+    <<ID/binary, "+", (hb_util:bin(Type))/binary>>;
+encode_link({link, ID, #{}}) ->
+    <<ID/binary>>.
+
+%% @doc Decode links embedded in the headers of a message.
+decode_all_links(Msg) ->
+    maps:from_list(
+        lists:map(
+            fun({Key, Value}) ->
+                case binary:part(Key, byte_size(Key) - 5, 5) of
+                    <<"+link">> ->
+                        NewKey = binary:part(Key, 0, byte_size(Key) - 5),
+                        {NewKey, decode_link(Value)};
+                    _ -> {Key, Value}
+                end
+            end,
+            maps:to_list(Msg)
+        )
+    ).
+
+%% @doc Decode a link embedded in a header.
+decode_link(LinkStr) ->
+    case binary:split(LinkStr, <<"+">>) of
+        [ID, Type] ->
+            {link, ID, #{ <<"type">> => Type }};
+        [ID] ->
+            {link, ID, #{}}
+    end.
 
 %% @doc Encode a list of body parts into a binary.
 encode_body_keys(PartList) when is_list(PartList) ->
@@ -806,3 +850,15 @@ group_maps_flat_compatible_test() ->
     Lifted = group_maps(Map),
     ?assertEqual(dev_codec_flat:from(Lifted), Map),
     ok.
+
+encode_message_with_links_test() ->
+    Msg = #{
+        <<"immediate-key">> => <<"immediate-value">>,
+        <<"link-key">> =>
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
+    },
+    Encoded = to(Msg),
+    ?event({encoded, Encoded}),
+    Decoded = from(Encoded),
+    ?event({decoded, Decoded}),
+    ?assertEqual(Msg, Decoded).
