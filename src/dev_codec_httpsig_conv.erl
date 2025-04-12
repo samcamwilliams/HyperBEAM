@@ -854,8 +854,13 @@ group_maps_flat_compatible_test() ->
 encode_message_with_links_test() ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
-        <<"link-key">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
+        <<"untyped">> =>
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}},
+        <<"typed">> =>
+            {link,
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                #{ <<"type">> => <<"integer">> }
+            }
     },
     Encoded = to(Msg),
     ?event({encoded, Encoded}),

@@ -65,10 +65,8 @@ ensure_loaded({link, ID, LinkOpts}, Opts) ->
                 }
             ),
             case hb_maps:get(<<"type">>, LinkOpts, undefined) of
-                undefined ->
-                    LoadedMsg;
-                Type ->
-                    dev_codec_structured:decode_value(Type, LoadedMsg)
+                undefined -> LoadedMsg;
+                Type -> dev_codec_structured:decode_value(Type, LoadedMsg)
             end;
         not_found ->
             throw({necessary_message_not_found, ID})

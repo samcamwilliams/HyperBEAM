@@ -121,11 +121,12 @@ default_message() ->
         debug_print => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 8,
+        short_trace_len => 10,
         debug_metadata => true,
         debug_ids => false,
         debug_committers => false,
         debug_show_priv => false,
+        debug_resolve_links => false,
 		trusted => #{},
         routes => [
             #{

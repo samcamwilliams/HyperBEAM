@@ -373,7 +373,9 @@ format(Map, Indent) when is_map(Map) ->
                 string:join(
                     [
                         io_lib:format("~s: ~s", [Lbl, Val])
-                        || {Lbl, Val} <- Metadata
+                        ||
+                            {Lbl, Val} <- Metadata,
+                            Val /= undefined
                     ],
                     ", "
                 )
@@ -381,7 +383,11 @@ format(Map, Indent) when is_map(Map) ->
             Indent
         ),
     % Put the path and device rows into the output at the _top_ of the map.
-    PriorityKeys = [{<<"path">>, ValOrUndef(<<"path">>)}, {<<"device">>, ValOrUndef(<<"device">>)}],
+    PriorityKeys =
+        [
+            {<<"path">>, ValOrUndef(<<"path">>)},
+            {<<"device">>, ValOrUndef(<<"device">>)}
+        ],
     % Add private keys to the output if they are not hidden. Opt takes 3 forms:
     % 1. `false' -- never show priv
     % 2. `if_present' -- show priv only if there are keys inside
@@ -395,7 +401,7 @@ format(Map, Indent) when is_map(Map) ->
     % Concatenate the path and device rows with the rest of the key values.
     KeyVals =
         FilterUndef(PriorityKeys) ++
-        hb_maps:to_list(
+        maps:to_list(
             minimize(Map,
                 case hb_opts:get(debug_metadata, false, #{}) of
                     false ->
@@ -436,6 +442,8 @@ format(Map, Indent) when is_map(Map) ->
                             io_lib:format("~s [#p]", [hb_util:short_id(Val)]);
                         Bin when is_binary(Bin) ->
                             hb_util:format_binary(Bin);
+                        Link when ?IS_LINK(Link) ->
+                            hb_link:format(Link);
                         Other ->
                             io_lib:format("~p", [Other])
                     end
@@ -638,12 +646,12 @@ minimize(Map, ExtraKeys) ->
     NormKeys =
         lists:map(fun hb_ao:normalize_key/1, ?REGEN_KEYS)
             ++ lists:map(fun hb_ao:normalize_key/1, ExtraKeys),
-    hb_maps:filter(
+    maps:filter(
         fun(Key, _) ->
             (not lists:member(hb_ao:normalize_key(Key), NormKeys))
                 andalso (not hb_private:is_private(Key))
         end,
-        hb_maps:map(fun(_K, V) -> minimize(V) end, Map)
+        maps:map(fun(_K, V) -> minimize(V) end, Map)
     ).
 
 %% @doc Return a map with only the keys that necessary, without those that can
