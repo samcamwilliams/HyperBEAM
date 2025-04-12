@@ -441,7 +441,7 @@ local json = require('.json')
 return function (ao)
   return function (msg)
     -- exec expression
-    local expr = msg.Data 
+    local expr = msg.body.data
     local func, err = load("return " .. expr, 'aos', 't', _G)
     local output = ""
     local e = nil
@@ -3612,19 +3612,20 @@ return function (insertInbox)
     -- Add Message to Inbox
     insertInbox(msg)
 
-    local txt = Colors.gray .. "New Message From " .. Colors.green .. 
-    (msg.From and (msg.From:sub(1,3) .. "..." .. msg.From:sub(-3)) or "unknown") .. Colors.gray .. ": "
-    if msg.Action then
-      txt = txt .. Colors.gray .. (msg.Action and ("Action = " .. Colors.blue .. msg.Action:sub(1,20)) or "") .. Colors.reset
-    else
-      local data = msg.Data
-      if type(data) == 'table' then
-        data = json.encode(data)
-      end
-      txt = txt .. Colors.gray .. "Data = " .. Colors.blue .. (data and data:sub(1,20) or "") .. Colors.reset
-    end
+    -- local txt = Colors.gray .. "New Message From " .. Colors.green .. 
+    -- (msg.From and (msg.From:sub(1,3) .. "..." .. msg.From:sub(-3)) or "unknown") .. Colors.gray .. ": "
+    -- if msg.Action then
+    --   txt = txt .. Colors.gray .. (msg.Action and ("Action = " .. Colors.blue .. msg.Action:sub(1,20)) or "") .. Colors.reset
+    -- else
+    --   local data = msg.Data
+    --   if type(data) == 'table' then
+    --     data = json.encode(data)
+    --   end
+    --   txt = txt .. Colors.gray .. "Data = " .. Colors.blue .. (data and data:sub(1,20) or "") .. Colors.reset
+    -- end
     -- Print to Output
-    print(txt)
+    -- print(txt)
+    print("New Message")
   end
 
 end
@@ -4065,6 +4066,10 @@ end
 
 local function getOwner(m)
   local id = ""
+  if m['from-process'] then
+    return m['from-process']
+  end
+
   utils.map(function (k)
     local c = m.commitments[k]
     if c.alg == "rsa-pss-sha512" then
@@ -4148,9 +4153,9 @@ function process.handle(msg, env)
   state.init(msg, env)
 
   -- magic table
-  msg.Data = msg['Content-Type'] == 'application/json'
-    and json.decode(msg.body.body or "{}")
-    or msg.body.body
+  msg.body.data = msg.body['Content-Type'] == 'application/json'
+    and json.decode(msg.body.data or "{}")
+    or msg.body.data
 
   Errors = Errors or {}
   -- clear outbox
@@ -4171,8 +4176,6 @@ function process.handle(msg, env)
       )
       return from
     end
-    -- print(Owner)
-    -- print(getMsgFrom(msg.body))
     return msg.body.action == "Eval" and Owner == getMsgFrom(msg.body)
   end, eval(ao))
 

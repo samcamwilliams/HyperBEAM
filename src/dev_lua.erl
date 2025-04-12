@@ -150,10 +150,11 @@ compute(Key, RawBase, Req, Opts) ->
     % Call the VM function with the given arguments.
     ?event({calling_lua_function, {function, Function}, {args, Params}, {req, Req}}),
     ?event(debug_lua, calling_lua_function),
+    % ?event(debug_lua, {lua_params, Params}),
     case luerl:call_function_dec([Function], encode(Params), State) of
         {ok, [LuaResult], NewState} ->
             ?event(debug_lua, got_lua_result),
-            ?event({lua_result, {result_before_decoding, {explicit, LuaResult}}}),
+            % ?event(debug_lua, {lua_result, {result_before_decoding, {explicit, LuaResult}}}),
             Result = decode(LuaResult),
             ?event(debug_lua, decoded_result),
             {ok, Result#{
@@ -425,7 +426,7 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"body">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
+                        <<"data">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
                     },
