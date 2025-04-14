@@ -1483,6 +1483,19 @@ sign_links_test(Codec) ->
     ?event({signed, Signed}),
     ?assert(verify(Signed)).
 
+id_of_linked_message_test(Codec) ->
+    Msg = #{
+        <<"immediate-key">> => <<"immediate-value">>,
+        <<"link-key">> =>
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
+    },
+    UnsignedID = id(Msg),
+    ?event({id, UnsignedID}),
+    EncMsg = convert(Msg, Codec, #{}),
+    DecMsg = convert(EncMsg, <<"structured@1.0">>, Codec, #{}),
+    UnsignedID2 = id(DecMsg),
+    ?assertEqual(UnsignedID, UnsignedID2).
+
 sign_deep_message_from_lazy_cache_read_test(Codec) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
@@ -1497,14 +1510,15 @@ sign_deep_message_from_lazy_cache_read_test(Codec) ->
     {ok, Path} = hb_cache:write(Msg, #{}),
     {ok, ReadMsg} = hb_cache:read(Path, #{}),
     ?event({read, ReadMsg}),
-    Signed = commit(Msg, hb:wallet(), Codec),
+    Signed = commit(ReadMsg, hb:wallet(), Codec),
     ?event({signed, Signed}),
     ?assert(
         lists:all(
             fun({_K, Value}) -> not is_map(Value) end,
-            maps:to_list(maps:without([<<"commitments">>, <<"priv">>], Msg))
+            maps:to_list(maps:without([<<"commitments">>, <<"priv">>], Signed))
         )
-    ).
+    ),
+    verify(Signed).
 
 %%% Test helpers
 
@@ -1588,9 +1602,10 @@ message_suite_test_() ->
         {"encode small balance table test", fun encode_small_balance_table_test/1},
         {"encode large balance table test", fun encode_large_balance_table_test/1},
         {"sign links test", fun sign_links_test/1},
+        {"ID of linked message test", fun id_of_linked_message_test/1},
         {"sign deep message from lazy cache read test",
             fun sign_deep_message_from_lazy_cache_read_test/1}
     ]).
 
 run_test() ->
-    encode_balance_table(1000, <<"httpsig@1.0">>).
+    sign_deep_message_from_lazy_cache_read_test(<<"httpsig@1.0">>).
