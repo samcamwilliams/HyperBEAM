@@ -16,7 +16,7 @@ committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 %% @doc Convert a flat map to a TABM.
 from(Bin) when is_binary(Bin) -> Bin;
 from(Map) when is_map(Map) ->
-    hb_maps:fold(
+    maps:fold(
         fun(Path, Value, Acc) ->
             inject_at_path(hb_path:term_to_path_parts(Path), from(Value), Acc)
         end,
@@ -26,7 +26,7 @@ from(Map) when is_map(Map) ->
 
 %% Helper function to inject a value at a specific path in a nested map
 inject_at_path([Key], Value, Map) ->
-    case hb_maps:get(Key, Map, not_found) of
+    case maps:get(Key, Map, not_found) of
         not_found ->
             Map#{ Key => Value };
         ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
@@ -47,13 +47,13 @@ inject_at_path([Key|Rest], Value, Map) ->
 %% @doc Convert a TABM to a flat map.
 to(Bin) when is_binary(Bin) -> Bin;
 to(Map) when is_map(Map) ->
-    hb_maps:fold(
+    maps:fold(
         fun(Key, Value, Acc) ->
             case to(Value) of
                 SubMap when is_map(SubMap) ->
-                    hb_maps:fold(
+                    maps:fold(
                         fun(SubKey, SubValue, InnerAcc) ->
-                            hb_maps:put(
+                            maps:put(
                                 hb_path:to_binary([Key, SubKey]),
                                 SubValue,
                                 InnerAcc
@@ -63,7 +63,7 @@ to(Map) when is_map(Map) ->
                         SubMap
                     );
                 SimpleValue ->
-                    hb_maps:put(hb_path:to_binary([Key]), SimpleValue, Acc)
+                    maps:put(hb_path:to_binary([Key]), SimpleValue, Acc)
             end
         end,
         #{},
