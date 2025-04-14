@@ -674,7 +674,7 @@ normalize(Other) ->
 %% record.
 filter_default_keys(Map) ->
     DefaultsMap = default_tx_message(),
-    hb_maps:filter(
+    maps:filter(
         fun(Key, Value) ->
             case hb_maps:find(hb_ao:normalize_key(Key), DefaultsMap) of
                 {ok, Value} -> false;
