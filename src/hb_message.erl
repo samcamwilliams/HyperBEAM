@@ -102,6 +102,9 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
 
 to_tabm(Msg, SourceFormat, Opts) ->
     SourceCodecMod = get_codec(SourceFormat, Opts),
+    % We use _from_ here because the codecs are labelled from the perspective
+    % of their own format. `dev_codec_ans104:from/1' will convert _from_
+    % an ANS-104 message _into_ a TABM.
     case SourceCodecMod:from(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
             TypicalMsg;
@@ -110,6 +113,10 @@ to_tabm(Msg, SourceFormat, Opts) ->
 
 from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
     TargetCodecMod = get_codec(TargetFormat, Opts),
+    % We use the _to_ function here because each of the codecs we may call in
+    % this step are labelled from the perspective of the target format. For 
+    % example, `dev_codec_httpsig:to/1' will convert _from_ a TABM to an
+    % HTTPSig message.
     case TargetCodecMod:to(Msg) of
         TypicalMsg when is_map(TypicalMsg) ->
             restore_priv(TypicalMsg, OldPriv);
