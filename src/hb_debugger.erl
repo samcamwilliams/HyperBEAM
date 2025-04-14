@@ -57,7 +57,7 @@ interpret(Module) ->
 
 %% @doc Interpret modules from a list of atom prefixes.
 interpret_modules(Prefixes) when is_binary(Prefixes) ->
-    interpret_modules(binary:split(Prefixes, <<",">>));
+    interpret_modules(binary:split(Prefixes, <<",">>, [global, trim_all]));
 interpret_modules(Prefixes) when is_list(Prefixes) ->
     RelevantModules =
         lists:filter(
@@ -91,18 +91,21 @@ start_and_break(Module, Function) ->
 start_and_break(Module, Function, Args) ->
     start_and_break(Module, Function, Args, []).
 start_and_break(Module, Function, Args, DebuggerScope) ->
-    start(),
-    interpret(Module),
-    interpret_modules(DebuggerScope),
-    SetRes = int:break_in(Module, Function, length(Args)),
-    io:format(
-        "Breakpoint set. Result from `int:break_in/3`: ~p.~n",
-        [SetRes]
-    ),
-    io:format("Invoking function...~n", []),
-    apply(Module, Function, Args),
-    io:format("Function invoked. Terminating.~n", []),
-    erlang:halt().
+    timer:sleep(1000),
+    spawn(fun() ->
+        start(),
+        interpret(Module),
+        interpret_modules(DebuggerScope),
+        SetRes = int:break_in(Module, Function, length(Args)),
+        io:format(
+            "Breakpoint set. Result from `int:break_in/3`: ~p.~n",
+            [SetRes]
+        ),
+        io:format("Invoking function...~n", []),
+        apply(Module, Function, Args),
+        io:format("Function invoked. Terminating.~n", []),
+        erlang:halt()
+    end).
 
 %% @doc Await a debugger to be attached to the node.
 await_debugger() -> await_debugger(0).
