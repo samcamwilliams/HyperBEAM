@@ -1520,6 +1520,24 @@ sign_deep_message_from_lazy_cache_read_test(Codec) ->
     ),
     verify(Signed).
 
+id_of_deep_message_and_link_message_match_test(Codec) ->
+    Msg = #{
+        <<"immediate-key">> => <<"immediate-value">>,
+        <<"link-key">> => #{
+            <<"immediate-key-2">> => <<"immediate-value-2">>,
+            <<"link-key-2">> => #{
+                <<"immediate-key-3">> => <<"immediate-value-3">>
+            }
+        }
+    },
+    Linkified = hb_link:linkify(Msg),
+    ?event(linkify, {test_recvd_linkified, {msg, Linkified}}),
+    BaseID = id(Msg),
+    ?event(linkify, {test_recvd_nonlink_id, {id, BaseID}}),
+    LinkID = id(Linkified),
+    ?event(linkify, {test_recvd_link_id, {id, LinkID}}),
+    ?assertEqual(BaseID, LinkID).
+
 %%% Test helpers
 
 test_codecs() ->
@@ -1604,8 +1622,10 @@ message_suite_test_() ->
         {"sign links test", fun sign_links_test/1},
         {"ID of linked message test", fun id_of_linked_message_test/1},
         {"sign deep message from lazy cache read test",
-            fun sign_deep_message_from_lazy_cache_read_test/1}
+            fun sign_deep_message_from_lazy_cache_read_test/1},
+        {"id of deep message and link message match test",
+            fun id_of_deep_message_and_link_message_match_test/1}
     ]).
 
 run_test() ->
-    sign_deep_message_from_lazy_cache_read_test(<<"httpsig@1.0">>).
+    id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).

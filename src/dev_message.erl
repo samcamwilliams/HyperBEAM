@@ -64,28 +64,29 @@ id(Base, Req, NodeOpts) ->
             % If there are no commitments, we must (re)calculate the ID.
             ?event(ids, no_commitments_found_in_id_call),
             calculate_ids(hb_maps:without([<<"commitments">>], ModBase), Req, NodeOpts);
-        [ID] ->
-            % If there is only one commitment, return the ID of the message.
-            ?event(ids, using_precalculated_id),
-            {ok, ID};
         IDs ->
-            % If there are multiple commitments, sort them, concatenate them as
-            % a structured field string, and return the hash of the result.
-            ?event(ids, multiple_commitments_found_in_id_call),
-            SortedIDs = lists:sort(IDs),
-            IDsLine = iolist_to_binary(lists:join(<<", ">>, SortedIDs)),
-            {ok, hb_util:human_id(hb_crypto:sha256(IDsLine))}
+            % Accumulate the relevant IDs into a single value. This is performed 
+            % by module arithmetic of each of the IDs.
+            {ok,
+                hb_util:human_id(
+                    hb_crypto:accumulate(
+                        lists:map(fun hb_util:native_id/1, IDs)
+                    )
+                )
+            }
     end.
 
 calculate_ids(Base, Req, NodeOpts) ->
     % Find the ID device for the message.
     % Find the ID device for the message.
+    ?event(linkify, {calculate_ids, {base, Base}}),
     IDMod =
         case id_device(Base) of
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
-    ?event({using_id_device, {idmod, IDMod}, {modbase, Base}}),
+    LinkifiedBase = hb_link:linkify(Base),
+    ?event(linkify, {generating_id, {idmod, IDMod}, {linkified_base, LinkifiedBase}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -100,10 +101,10 @@ calculate_ids(Base, Req, NodeOpts) ->
         end,
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
-    case hb_ao:find_exported_function(Base, DevMod, id, 3, NodeOpts) of
+    case hb_ao:find_exported_function(LinkifiedBase, DevMod, id, 3, NodeOpts) of
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
-            apply(Fun, hb_ao:truncate_args(Fun, [Base, Req, NodeOpts]));
+            apply(Fun, hb_ao:truncate_args(Fun, [LinkifiedBase, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 

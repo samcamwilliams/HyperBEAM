@@ -217,13 +217,17 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
 
 %% @doc Calculate the IDs for a message.
 calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
-calculate_all_ids(Msg, _Opts) ->
+calculate_all_ids(Msg, Opts) ->
     Commitments =
         hb_maps:without(
             [<<"priv">>],
             hb_maps:get(<<"commitments">>, Msg, #{})
         ),
-    hb_maps:keys(Commitments).
+    CommIDs = hb_maps:keys(Commitments),
+    case lists:member(All = hb_message:id(Msg, all, Opts), CommIDs) of
+        true -> CommIDs;
+        false -> [All | CommIDs]
+    end.
 
 %% @doc Write a hashpath and its message to the store and link it.
 write_hashpath(Msg = #{ <<"priv">> := #{ <<"hashpath">> := HP } }, Opts) ->
