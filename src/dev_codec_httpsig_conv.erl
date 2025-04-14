@@ -40,8 +40,7 @@
 %% @doc Convert a HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
 from(Bin) when is_binary(Bin) -> Bin;
-from(Link) when ?IS_LINK(Link) ->
-    from(hb_cache:ensure_loaded(Link));
+from(Link) when ?IS_LINK(Link) -> Link;
 from(HTTP) ->
     % Decode the keys of the HTTP message
     Body = hb_maps:get(<<"body">>, HTTP, <<>>),
@@ -58,12 +57,11 @@ from(HTTP) ->
     % binaries whose keys (given that they are IDs) cannot be distributed as
     % HTTP headers.
     WithIDs = ungroup_ids(WithBodyKeys),
-    WithLinks = decode_all_links(WithIDs),
     % Remove the signature-related headers, such that they can be reconstructed
     % from the commitments.
     MsgWithoutSigs = hb_maps:without(
         [<<"signature">>, <<"signature-input">>, <<"commitments">>],
-        WithLinks
+        WithIDs
     ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
     % Extract all hashpaths from the commitments of the message
@@ -303,8 +301,7 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
 %%% that can translated to a given web server Response API
 to(Bin) when is_binary(Bin) -> Bin;
 to(TABM) -> to(TABM, []).
-to(Link, Opts) when ?IS_LINK(Link) ->
-    to(hb_cache:ensure_loaded(Link), Opts);
+to(Link, _Opts) when ?IS_LINK(Link) -> Link;
 to(TABM, Opts) when is_map(TABM) ->
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
@@ -320,10 +317,9 @@ to(TABM, Opts) when is_map(TABM) ->
             ],
             WithGroupedIDs
         ),
-    WithLinks = encode_all_links(Stripped),
-    ?event(debug_links, {with_links, WithLinks}),
+    ?event(debug_links, {stripped, Stripped}),
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
-    Intermediate = do_to(WithLinks, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
+    Intermediate = do_to(Stripped, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
     % Finally, add the signatures to the HTTP message
     case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM) of
         {ok, _, #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }} ->
@@ -503,50 +499,6 @@ ungroup_ids(Msg = #{ <<"ao-ids">> := IDBin }) ->
     % Add the decoded IDs to the Map and remove the `ao-ids' key
     hb_maps:merge(hb_maps:without([<<"ao-ids">>], Msg), hb_maps:from_list(IDsMap));
 ungroup_ids(Msg) -> Msg.
-
-%% @doc Search a TABM for all links and replace them with a `+link' key.
-encode_all_links(Map) ->
-    maps:from_list(
-        lists:map(
-            fun({Key, Value}) when ?IS_LINK(Value) ->
-                {<<Key/binary, "+link">>, encode_link(Value)};
-            ({Key, Value}) ->
-                {Key, Value}
-            end,
-            maps:to_list(Map)
-        )
-    ).
-
-%% @doc Encode a link into a binary.
-encode_link({link, ID, #{ <<"type">> := Type }}) ->
-    <<ID/binary, "+", (hb_util:bin(Type))/binary>>;
-encode_link({link, ID, #{}}) ->
-    <<ID/binary>>.
-
-%% @doc Decode links embedded in the headers of a message.
-decode_all_links(Msg) ->
-    maps:from_list(
-        lists:map(
-            fun({Key, Value}) ->
-                case binary:part(Key, byte_size(Key) - 5, 5) of
-                    <<"+link">> ->
-                        NewKey = binary:part(Key, 0, byte_size(Key) - 5),
-                        {NewKey, decode_link(Value)};
-                    _ -> {Key, Value}
-                end
-            end,
-            maps:to_list(Msg)
-        )
-    ).
-
-%% @doc Decode a link embedded in a header.
-decode_link(LinkStr) ->
-    case binary:split(LinkStr, <<"+">>) of
-        [ID, Type] ->
-            {link, ID, #{ <<"type">> => Type }};
-        [ID] ->
-            {link, ID, #{}}
-    end.
 
 %% @doc Encode a list of body parts into a binary.
 encode_body_keys(PartList) when is_list(PartList) ->
@@ -862,8 +814,8 @@ encode_message_with_links_test() ->
                 #{ <<"type">> => <<"integer">> }
             }
     },
-    Encoded = to(Msg),
-    ?event({encoded, Encoded}),
-    Decoded = from(Encoded),
+    Encoded = hb_message:convert(Msg, <<"httpsig@1.0">>, #{}),
+    ?event(debug_links, {encoded, Encoded}),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, <<"httpsig@1.0">>, #{}),
     ?event({decoded, Decoded}),
     ?assertEqual(Msg, Decoded).

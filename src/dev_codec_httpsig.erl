@@ -319,7 +319,7 @@ reset_hmac(RawMsg) ->
         ),
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
     AllSigs =
-        hb_maps:from_list(lists:map(
+        maps:from_list(lists:map(
             fun ({Committer, #{ <<"signature">> := Signature }}) ->
                 SigNameFromDict = sig_name_from_dict(Signature),
                 ?event({name_options,
@@ -1369,3 +1369,20 @@ derive_component_error_status_req_target_test() ->
 	Result = derive_component({item, {string, <<"@status">>}, []}, #{}, #{}, req),
 	{E, _M} = Result,
 	?assertEqual(res_identifier_error, E).
+
+%% @doc Test that we can sign and verify a message with a link. We use 
+sign_and_verify_link_test() ->
+    Msg = #{
+        <<"normal">> => <<"typical-value">>,
+        <<"untyped">> =>
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}},
+        <<"typed">> =>
+            {link,
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                #{ <<"type">> => <<"integer">> }
+            }
+    },
+    ?event({msg, Msg}),
+    Signed = hb_message:commit(Msg, hb:wallet()),
+    ?event({signed_msg, Signed}),
+    ?assert(hb_message:verify(Signed)).

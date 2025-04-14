@@ -22,7 +22,8 @@ committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin) when is_binary(Bin) -> Bin;
 from(Msg) when is_map(Msg) ->
-    NormKeysMap = hb_ao:normalize_keys(Msg),
+    NormLinks = hb_link:encode_all_links(Msg),
+    NormKeysMap = hb_ao:normalize_keys(NormLinks),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
             case hb_maps:find(Key, NormKeysMap) of
@@ -111,8 +112,8 @@ to(TABM0) ->
     % 
     % So we first loop through Types and map over the each empty type to its
     % equivalent empty value
-    TABM1 = hb_maps:from_list(
-        hb_maps:fold(
+    EmptyKeys = maps:from_list(
+        maps:fold(
             fun (Key, <<"empty-binary">>, Acc) -> [{Key, <<>>} | Acc];
                 (Key, <<"empty-list">>, Acc) -> [{Key, []} | Acc];
                 (Key, <<"empty-message">>, Acc) -> [{Key, #{}} | Acc];
@@ -122,11 +123,13 @@ to(TABM0) ->
             Types
         )
     ),
+    % Decode all links to their HyperBEAM-native, resolvable form.
+    TABM1 = hb_link:decode_all_links(TABM0),
     % 1. Remove 'ao-types' field
     % 2. Decode any binary values that have a type;
     % 3. Recursively decode any maps that we encounter;
     % 4. Return the remaining keys and values as a map.
-    hb_message:filter_default_keys(hb_maps:fold(
+    hb_message:filter_default_keys(maps:fold(
         fun (<<"ao-types">>, _Value, Acc) -> Acc;
         (RawKey, BinValue, Acc) when is_binary(BinValue) ->
             case hb_maps:find(hb_ao:normalize_key(RawKey), Types) of
@@ -158,8 +161,8 @@ to(TABM0) ->
             % We can just return it as is.
             Acc#{ RawKey => Value }
         end,
-        TABM1,
-        TABM0
+        EmptyKeys,
+        TABM1
     )).
 
 %% @doc Parse the `ao-types' field of a TABM and return a map of keys and their
