@@ -57,9 +57,8 @@ id(Base, _, NodeOpts) when not is_map(Base) ->
 id(Base, Req, NodeOpts) ->
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
-    LoadedBase = hb_cache:ensure_all_loaded(Base),
     ModBase = #{ <<"commitments">> := Commitments }
-        = with_relevant_commitments(LoadedBase, Req, NodeOpts),
+        = with_relevant_commitments(Base, Req, NodeOpts),
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
@@ -170,7 +169,7 @@ commit(Self, Req, Opts) ->
                 hb_opts:get(commitment_device, no_viable_commitment_device, Opts);
             Dev -> Dev
         end,
-    % We _do not_ set the `device` key in the message, as the device will be
+    % We _do not_ set the `device` key in the message, as the device may be
     % part of the commitment. Instead, we find the device module's `commit`
     % function and apply it.
     AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, Opts),
