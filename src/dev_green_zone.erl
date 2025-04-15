@@ -876,17 +876,26 @@ the mount information.
     {ok, map()} | {error, binary()}.
 mount_disk(M1, M2, Opts) ->
     ?event(green_zone, {disk, mount, start}),
+    ?event(green_zone, {disk, mount, input_parameters, {m1, M1}, {m2, M2}}),
     
     % Get parameters from the request
-    Device = hb_ao:get(<<"device">>, M1, undefined, Opts),
+    Device = hb_ao:get(<<"device_path">>, M1, undefined, Opts),
     MountPoint = hb_ao:get(<<"mount_point">>, M1, 
                           <<"/root/mnt/encrypted_data">>, Opts),
     VolumeName = hb_ao:get(<<"volume_name">>, M1, 
                           <<"primary_encrypted_volume">>, Opts),
     
+    ?event(green_zone, {disk, mount, parsed_params, {device, Device}, 
+                       {mount_point, MountPoint}, {volume_name, VolumeName}}),
+    
     % Get the encryption key (use the green zone AES key if not specified)
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     EncKey = hb_ao:get(<<"encryption_key">>, M2, GreenZoneAES, Opts),
+    
+    ?event(green_zone, {disk, mount, key_info, 
+                       {key_from_m2, hb_ao:get(<<"encryption_key">>, M2, not_found, Opts) =/= not_found},
+                       {using_green_zone_key, hb_ao:get(<<"encryption_key">>, M2, not_found, Opts) =:= not_found},
+                       {key_size, case EncKey of undefined -> undefined; _ -> byte_size(EncKey) end}}),
     
     % Validate device path and encryption key
     case {Device, EncKey} of
@@ -898,42 +907,81 @@ mount_disk(M1, M2, Opts) ->
             {error, <<"No encryption key available to open LUKS volume.">>};
         _ ->
             % Ensure tmp directory exists
-            os:cmd("sudo mkdir -p /root/tmp"),
+            TmpDirCmd = "sudo mkdir -p /root/tmp",
+            ?event(green_zone, {disk, mount, create_tmp_dir, TmpDirCmd}),
+            TmpDirResult = os:cmd(TmpDirCmd),
+            ?event(green_zone, {disk, mount, tmp_dir_result, list_to_binary(TmpDirResult)}),
+            
             KeyFile = "/root/tmp/luks_key_" ++ os:getpid(),
-            file:write_file(KeyFile, EncKey, [raw]),
+            ?event(green_zone, {disk, mount, key_file, list_to_binary(KeyFile)}),
+            
+            WriteKeyResult = file:write_file(KeyFile, EncKey, [raw]),
+            ?event(green_zone, {disk, mount, write_key_result, WriteKeyResult}),
             
             % Open the LUKS volume
             OpenCmd = "sudo cryptsetup luksOpen --key-file " ++ KeyFile ++ " " 
                       ++ binary_to_list(Device) ++ " " 
                       ++ binary_to_list(VolumeName),
+            ?event(green_zone, {disk, mount, luks_open_cmd, list_to_binary(OpenCmd)}),
+            
             OpenResult = os:cmd(OpenCmd),
+            ?event(green_zone, {disk, mount, luks_open_result, list_to_binary(OpenResult)}),
             
             % Remove the temporary key file
-            os:cmd("sudo shred -u " ++ KeyFile),
+            ShredCmd = "sudo shred -u " ++ KeyFile,
+            ?event(green_zone, {disk, mount, shred_cmd, list_to_binary(ShredCmd)}),
+            
+            ShredResult = os:cmd(ShredCmd),
+            ?event(green_zone, {disk, mount, shred_result, list_to_binary(ShredResult)}),
             
             % Check if opening the LUKS volume succeeded
-            case string:find(OpenResult, "failed") of
+            HasFailed = string:find(OpenResult, "failed"),
+            ?event(green_zone, {disk, mount, luks_open_failed, HasFailed =/= nomatch}),
+            
+            case HasFailed of
                 nomatch ->
                     % Create mount point if it doesn't exist
-                    os:cmd("sudo mkdir -p " ++ binary_to_list(MountPoint)),
+                    MkdirCmd = "sudo mkdir -p " ++ binary_to_list(MountPoint),
+                    ?event(green_zone, {disk, mount, mkdir_cmd, list_to_binary(MkdirCmd)}),
+                    
+                    MkdirResult = os:cmd(MkdirCmd),
+                    ?event(green_zone, {disk, mount, mkdir_result, list_to_binary(MkdirResult)}),
                     
                     % Mount the unlocked LUKS volume
                     MountCmd = "sudo mount /dev/mapper/" 
                                ++ binary_to_list(VolumeName) 
                                ++ " " ++ binary_to_list(MountPoint),
+                    ?event(green_zone, {disk, mount, mount_cmd, list_to_binary(MountCmd)}),
+                    
                     MountResult = os:cmd(MountCmd),
+                    ?event(green_zone, {disk, mount, mount_result, list_to_binary(MountResult)}),
+                    
+                    % Check mount verification
+                    MountVerifyCmd = "df -h " ++ binary_to_list(MountPoint),
+                    MountVerifyResult = os:cmd(MountVerifyCmd),
+                    ?event(green_zone, {disk, mount, verify_cmd, list_to_binary(MountVerifyCmd)}),
+                    ?event(green_zone, {disk, mount, verify_result, list_to_binary(MountVerifyResult)}),
                     
                     % Check if mounting succeeded
-                    case string:find(MountResult, "failed") of
+                    MountFailed = string:find(MountResult, "failed"),
+                    ?event(green_zone, {disk, mount, mount_failed, MountFailed =/= nomatch}),
+                    
+                    case MountFailed of
                         nomatch ->
                             % Save the mount information in the configuration
-                            ok = hb_http_server:set_opts(Opts#{
+                            ?event(green_zone, {disk, mount, updating_config, {device, Device}, 
+                                              {mount_point, MountPoint}, {volume_name, VolumeName}}),
+                            
+                            NewOpts = Opts#{
                                 priv_encrypted_disk => #{
-                                    device => Device,
+                                    device_path => Device,
                                     mount_point => MountPoint,
                                     volume_name => VolumeName
                                 }
-                            }),
+                            },
+                            SetOptsResult = hb_http_server:set_opts(NewOpts),
+                            ?event(green_zone, {disk, mount, set_opts_result, SetOptsResult}),
+                            
                             ?event(green_zone, {disk, mount, complete}),
                             {ok, #{
                                 <<"status">> => 200,
@@ -943,15 +991,26 @@ mount_disk(M1, M2, Opts) ->
                             }};
                         _ ->
                             % Close the LUKS volume if mounting failed
-                            os:cmd("sudo cryptsetup luksClose " 
-                                  ++ binary_to_list(VolumeName)),
-                            ?event(green_zone, {disk, mount, error, 
+                            CloseCmd = "sudo cryptsetup luksClose " 
+                                      ++ binary_to_list(VolumeName),
+                            ?event(green_zone, {disk, mount, close_cmd, list_to_binary(CloseCmd)}),
+                            
+                            CloseResult = os:cmd(CloseCmd),
+                            ?event(green_zone, {disk, mount, close_result, list_to_binary(CloseResult)}),
+                            
+                            ?event(green_zone, {disk, mount, error, mount_failed, 
                                               list_to_binary(MountResult)}),
                             {error, list_to_binary(MountResult)}
                     end;
                 _ ->
-                    ?event(green_zone, {disk, mount, error, 
+                    ?event(green_zone, {disk, mount, error, luks_open_failed, 
                                       list_to_binary(OpenResult)}),
+                    
+                    % Try listing devices for further debugging
+                    DevListCmd = "sudo lsblk",
+                    DevListResult = os:cmd(DevListCmd),
+                    ?event(green_zone, {disk, mount, device_list, list_to_binary(DevListResult)}),
+                    
                     {error, list_to_binary(OpenResult)}
             end
     end.
