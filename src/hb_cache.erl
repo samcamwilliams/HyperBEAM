@@ -51,7 +51,23 @@
 %% the result as links. If the value has an associated `type' key in the extra
 %% options, we apply it to the read value.
 ensure_loaded(Msg) -> ensure_loaded(Msg, #{}).
-ensure_loaded({link, ID, LinkOpts}, Opts) ->
+ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"type">> := <<"link">> }}, Opts) ->
+    % The link is multi-tiered (the link points to at least one further link),
+    % so we need to dereference the first link and call `ensure_loaded' again.
+    case hb_cache:read(ID, LinkOpts) of
+        {ok, LinkValue} ->
+            NextLink = hb_link:decode_link(LinkValue),
+            ?event(linkify,
+                {dereferencing_secondary_link,
+                    {original, Link},
+                    {dereferenced, LinkValue}
+                }
+            ),
+            ensure_loaded(NextLink, Opts);
+        not_found ->
+            throw({necessary_message_not_found, Link})
+    end;
+ensure_loaded(Link = {link, ID, LinkOpts}, Opts) ->
     % If the user provided their own options, we merge them and _overwrite_
     % the options that are already set in the link.
     MergedOpts = hb_maps:merge(LinkOpts, Opts),
@@ -69,7 +85,7 @@ ensure_loaded({link, ID, LinkOpts}, Opts) ->
                 Type -> dev_codec_structured:decode_value(Type, LoadedMsg)
             end;
         not_found ->
-            throw({necessary_message_not_found, ID})
+            throw({necessary_message_not_found, Link})
     end;
 ensure_loaded(Msg, _Opts) ->
     Msg.
@@ -280,7 +296,7 @@ store_read(Path, Store, Opts) ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, RawSubpaths} ->
                     Subpaths = lists:map(fun hb_ao:normalize_key/1, RawSubpaths),
-                    {ok, Implicit, Types} = read_ao_types(Path, Subpaths, Store, Opts),
+                    
                     ?event(
                         {listed,
                             {original_path, Path},
@@ -291,72 +307,85 @@ store_read(Path, Store, Opts) ->
                     % `ao-types'. `commitments' is always read in its entirety,
                     % such that all messages have their IDs and signatures
                     % locally available.
-                    Msg =
-                        maps:from_list(
-                            lists:filtermap(
-                                fun(<<"ao-types">>) -> false;
-                                   (<<"commitments">>) ->
-                                        {ok, Commitments} =
-                                            store_read(
-                                                hb_store:path(
-                                                    Store,
-                                                    [
-                                                        ResolvedFullPath,
-                                                        <<"commitments">>
-                                                    ]
-                                                ),
-                                                Store,
-                                                Opts
-                                            ),
-                                        ?event(debug_load,
-                                            {loaded_commitments, Commitments}
-                                        ),
-                                        % Ensure that the full commitments map
-                                        % is recursively loaded into memory.
-                                        {true,
-                                            {
-                                                <<"commitments">>,
-                                                hb_cache:ensure_all_loaded(
-                                                    Commitments,
-                                                    Opts
-                                                )
-                                            }
-                                        };
-                                    (Subpath) ->
-                                        ?event(
-                                            {returning_link,
-                                            {subpath, Subpath}
-                                        }
-                                    ),
-                                    {true,
-                                        {
-                                            Subpath,
-                                            {link,
-                                                hb_store:resolve(
-                                                    Store,
-                                                    hb_store:path(
-                                                        Store,
-                                                        [ResolvedFullPath, Subpath]
-                                                    )
-                                                ),
-                                                (case Types of
-                                                    #{ Subpath := Type } ->
-                                                        #{ <<"type">> => Type };
-                                                    _ ->
-                                                        #{}
-                                                end)#{ store => Store }
-                                            }
-                                        }
-                                    }
-                                end,
-                                Subpaths
-                            )
-                        ),
+                    Msg = prepare_links(Path, Subpaths, Store, Opts),
                     ?event({read_message, {explicit, Msg}}),
-                    {ok, maps:merge(Msg, Implicit)};
+                    {ok, Msg};
                 _ -> not_found
             end
     end.
+
+%% @doc Prepare a set of links from a listing of subpaths.
+prepare_links(RootPath, Subpaths, Store, Opts) ->
+    {ok, Implicit, Types} = read_ao_types(RootPath, Subpaths, Store, Opts),
+    Res =
+        maps:from_list(lists:filtermap(
+            fun(<<"ao-types">>) -> false;
+            (<<"commitments">>) ->
+                    {ok, Commitments} =
+                        store_read(
+                            hb_store:path(
+                                Store,
+                                [
+                                    RootPath,
+                                    <<"commitments">>
+                                ]
+                            ),
+                            Store,
+                            Opts
+                        ),
+                    ?event(debug_load, {loaded_commitments, Commitments}),
+                    % Ensure that the full commitments map
+                    % is recursively loaded into memory.
+                    {true,
+                        {
+                            <<"commitments">>,
+                            hb_cache:ensure_all_loaded(Commitments, Opts)
+                        }
+                    };
+                (Subpath) ->
+                    ?event(
+                        {returning_link,
+                            {subpath, Subpath}
+                        }
+                    ),
+                    SubkeyPath = hb_store:path(Store, [RootPath, Subpath]),
+                    case hb_link:is_link_key(Subpath) of
+                        false ->
+                            % The key is a literal value, not a nested composite
+                            % message. Subsequently, we return a resolvable link
+                            % to the subpath, leaving the key as-is.
+                            {true,
+                                {
+                                    Subpath,
+                                    {link,
+                                        SubkeyPath,
+                                        (case Types of
+                                            #{ Subpath := Type } ->
+                                                #{ <<"type">> => Type };
+                                            _ ->
+                                                #{}
+                                        end)#{ store => Store }
+                                    }
+                                }
+                            };
+                        true ->
+                            % The key is an encoded link, so we create a resolvable
+                            % link to the underlying link. This requires that we
+                            % dereference the link twice in order to get the final
+                            % value. Returning the data this way avoids having to
+                            % read each of the links themselves, which may be
+                            % a large quantity.
+                            {true,
+                                {
+                                    binary:part(Subpath, 0, byte_size(Subpath) - 5),
+                                    {link, SubkeyPath, #{ <<"type">> => <<"link">> }}
+                                }
+                            }
+                    end
+                end,
+            Subpaths
+        )),
+    maps:merge(Res, Implicit).
 
 %% @doc Read and parse the ao-types for a given path if it is in the supplied
 %% list of subpaths, returning a map of keys and their types.
