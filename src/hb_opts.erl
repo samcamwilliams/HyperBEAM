@@ -211,11 +211,11 @@ get(Key, Default, Opts) when is_binary(Key) ->
         error:badarg -> Default
     end;
 get(Key, Default, Opts = #{ <<"only">> := Only }) ->
-    get(Key, Default, hb_maps:remove(<<"only">>, Opts#{ only => Only }));
+    get(Key, Default, maps:remove(<<"only">>, Opts#{ only => Only }));
 get(Key, Default, Opts = #{ <<"prefer">> := Prefer }) ->
-    get(Key, Default, hb_maps:remove(<<"prefer">>, Opts#{ prefer => Prefer }));
+    get(Key, Default, maps:remove(<<"prefer">>, Opts#{ prefer => Prefer }));
 get(Key, Default, Opts = #{ only := local }) ->
-    case hb_maps:find(Key, Opts) of
+    case maps:find(Key, Opts) of
         {ok, Value} -> Value;
         error -> 
             Default
@@ -266,7 +266,7 @@ get(Key, Default, Opts) ->
 
 %% @doc Get an environment variable or configuration key.
 global_get(Key, Default) ->
-    case hb_maps:get(Key, ?ENV_KEYS, Default) of
+    case maps:get(Key, ?ENV_KEYS, Default) of
         Default -> config_lookup(Key, Default);
         {EnvKey, ValParser, DefaultValue} when is_function(ValParser) ->
             ValParser(cached_os_env(EnvKey, normalize_default(DefaultValue)));

@@ -112,7 +112,15 @@ hashpath(RawMsg1, Opts) ->
                     )
                 )
             catch
-                _A:_B:_ST -> throw({badarg, {unsupported_type, Msg1}, _ST})
+                A:B:ST ->
+                    throw(
+                        {badarg,
+                            {unsupported_type, Msg1},
+                            {error, A},
+                            {details, B},
+                            {stacktrace, ST}
+                        }
+                    )
             end
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
