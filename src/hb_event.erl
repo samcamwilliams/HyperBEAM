@@ -39,7 +39,34 @@ log(Topic, X, ModStr, Func, Line, Opts) ->
             end;
         true -> hb_util:debug_print(X, ModStr, Func, Line);
         false -> X
-    end.
+    end,
+	handle_tracer(Topic, X, Opts).
+
+handle_tracer(Topic, X, Opts) ->
+	AllowedTopics = [http, ao_core, ao_result],
+	case lists:member(Topic, AllowedTopics) of
+		true -> 
+			case maps:get(trace, Opts, undefined) of
+				undefined -> 
+					case tuple_to_list(X) of
+						[_ | Rest] -> 
+							try
+								Map = maps:from_list(Rest),
+								TopicOpts = maps:get(opts, Map, #{}),
+								case maps:get(trace, TopicOpts, undefined) of
+									undefined ->  ok;
+									TracePID -> hb_tracer:record_step(TracePID, {Topic, X})
+								end
+							catch
+								_:_ -> ok
+							end;
+						_ -> 
+							ok
+					end;
+				TracePID -> hb_tracer:record_step(TracePID, {Topic, X})
+			end;
+		_ -> ok
+	end.
 
 %% @doc Increment the counter for the given topic and message. Registers the
 %% counter if it doesn't exist. If the topic is `global', the message is ignored.

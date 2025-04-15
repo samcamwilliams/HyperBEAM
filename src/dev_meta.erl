@@ -199,6 +199,7 @@ adopt_node_message(Request, NodeMsg) ->
 %% After execution, we run the node's `postprocessor' message on the result of
 %% the request before returning the result it grants back to the user.
 handle_resolve(Req, Msgs, NodeMsg) ->
+	TracePID = maps:get(trace, NodeMsg),
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcessedMsg} ->
@@ -216,7 +217,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                 try
                     hb_ao:resolve_many(
                         PreProcessedMsg,
-                        HTTPOpts#{ force_message => true }
+                        HTTPOpts#{ force_message => true, trace => TracePID }
                     )
                 catch
                     throw:{necessary_message_not_found, MsgID} ->
