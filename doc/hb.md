@@ -1,6 +1,6 @@
 
 
-# Module hb #
+# Module hb
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ on top of Arweave.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 This protocol offers a computation layer for executing arbitrary logic on
 top of the network's data.
@@ -92,7 +92,7 @@ node codebase presently maintained by the Digital History Association
 You can find documentation of a similar form to this note in each of the core
 modules of the hyperbeam node.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#address-0">address/0</a></td><td>Get the address of a wallet.</td></tr><tr><td valign="top"><a href="#address-1">address/1*</a></td><td></td></tr><tr><td valign="top"><a href="#benchmark-2">benchmark/2</a></td><td>Run a function as many times as possible in a given amount of time.</td></tr><tr><td valign="top"><a href="#benchmark-3">benchmark/3</a></td><td>Run multiple instances of a function in parallel for a given amount of time.</td></tr><tr><td valign="top"><a href="#build-0">build/0</a></td><td>Utility function to hot-recompile and load the hyperbeam environment.</td></tr><tr><td valign="top"><a href="#debug_wait-4">debug_wait/4</a></td><td>Utility function to wait for a given amount of time, printing a debug
@@ -103,11 +103,11 @@ then analyze the results.</td></tr><tr><td valign="top"><a href="#read-1">read/1
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="address-0"></a>
 
-### address/0 ###
+### address/0
 
 `address() -> any()`
 
@@ -117,13 +117,13 @@ wallet tuple as an argument.
 
 <a name="address-1"></a>
 
-### address/1 * ###
+### address/1 *
 
 `address(Wallet) -> any()`
 
 <a name="benchmark-2"></a>
 
-### benchmark/2 ###
+### benchmark/2
 
 `benchmark(Fun, TLen) -> any()`
 
@@ -131,7 +131,7 @@ Run a function as many times as possible in a given amount of time.
 
 <a name="benchmark-3"></a>
 
-### benchmark/3 ###
+### benchmark/3
 
 `benchmark(Fun, TLen, Procs) -> any()`
 
@@ -139,7 +139,7 @@ Run multiple instances of a function in parallel for a given amount of time.
 
 <a name="build-0"></a>
 
-### build/0 ###
+### build/0
 
 `build() -> any()`
 
@@ -147,7 +147,7 @@ Utility function to hot-recompile and load the hyperbeam environment.
 
 <a name="debug_wait-4"></a>
 
-### debug_wait/4 ###
+### debug_wait/4
 
 `debug_wait(T, Mod, Func, Line) -> any()`
 
@@ -156,13 +156,13 @@ message to the console first.
 
 <a name="do_start_simple_pay-1"></a>
 
-### do_start_simple_pay/1 * ###
+### do_start_simple_pay/1 *
 
 `do_start_simple_pay(Opts) -> any()`
 
 <a name="init-0"></a>
 
-### init/0 ###
+### init/0
 
 `init() -> any()`
 
@@ -170,7 +170,7 @@ Initialize system-wide settings for the hyperbeam node.
 
 <a name="no_prod-3"></a>
 
-### no_prod/3 ###
+### no_prod/3
 
 `no_prod(X, Mod, Line) -> any()`
 
@@ -180,7 +180,7 @@ by looking for ?NO_PROD calls.
 
 <a name="now-0"></a>
 
-### now/0 ###
+### now/0
 
 `now() -> any()`
 
@@ -188,7 +188,7 @@ Utility function to get the current time in milliseconds.
 
 <a name="profile-1"></a>
 
-### profile/1 ###
+### profile/1
 
 `profile(Fun) -> any()`
 
@@ -197,7 +197,7 @@ then analyze the results. Obviously -- do not use in production.
 
 <a name="read-1"></a>
 
-### read/1 ###
+### read/1
 
 `read(ID) -> any()`
 
@@ -207,13 +207,13 @@ as the second argument.
 
 <a name="read-2"></a>
 
-### read/2 ###
+### read/2
 
 `read(ID, ScopeAtom) -> any()`
 
 <a name="start_mainnet-0"></a>
 
-### start_mainnet/0 ###
+### start_mainnet/0
 
 `start_mainnet() -> any()`
 
@@ -221,13 +221,13 @@ Start a mainnet server without payments.
 
 <a name="start_mainnet-1"></a>
 
-### start_mainnet/1 ###
+### start_mainnet/1
 
 `start_mainnet(Port) -> any()`
 
 <a name="start_simple_pay-0"></a>
 
-### start_simple_pay/0 ###
+### start_simple_pay/0
 
 `start_simple_pay() -> any()`
 
@@ -235,19 +235,19 @@ Start a server with a `simple-pay@1.0` pre-processor.
 
 <a name="start_simple_pay-1"></a>
 
-### start_simple_pay/1 ###
+### start_simple_pay/1
 
 `start_simple_pay(Addr) -> any()`
 
 <a name="start_simple_pay-2"></a>
 
-### start_simple_pay/2 ###
+### start_simple_pay/2
 
 `start_simple_pay(Addr, Port) -> any()`
 
 <a name="topup-3"></a>
 
-### topup/3 ###
+### topup/3
 
 `topup(Node, Amount, Recipient) -> any()`
 
@@ -255,19 +255,19 @@ Helper for topping up a user's balance on a simple-pay node.
 
 <a name="topup-4"></a>
 
-### topup/4 ###
+### topup/4
 
 `topup(Node, Amount, Recipient, Wallet) -> any()`
 
 <a name="wallet-0"></a>
 
-### wallet/0 ###
+### wallet/0
 
 `wallet() -> any()`
 
 <a name="wallet-1"></a>
 
-### wallet/1 ###
+### wallet/1
 
 `wallet(Location) -> any()`
 

@@ -1,6 +1,6 @@
 
 
-# Module hb_cache_control #
+# Module hb_cache_control
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,13 +9,13 @@ Cache control logic for the AO-Core resolver.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 It derives cache settings
 from request, response, execution-local node Opts, as well as the global
 node Opts. It applies these settings when asked to maybe store/lookup in
 response to a request.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cache_binary_result_test-0">cache_binary_result_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#cache_message_result_test-0">cache_message_result_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#cache_source_to_cache_settings-1">cache_source_to_cache_settings/1*</a></td><td>Convert a cache source to a cache setting.</td></tr><tr><td valign="top"><a href="#derive_cache_settings-2">derive_cache_settings/2*</a></td><td>Derive cache settings from a series of option sources and the opts,
@@ -30,23 +30,23 @@ normalized map of simply whether we should store and/or lookup the result.</td><
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="cache_binary_result_test-0"></a>
 
-### cache_binary_result_test/0 * ###
+### cache_binary_result_test/0 *
 
 `cache_binary_result_test() -> any()`
 
 <a name="cache_message_result_test-0"></a>
 
-### cache_message_result_test/0 * ###
+### cache_message_result_test/0 *
 
 `cache_message_result_test() -> any()`
 
 <a name="cache_source_to_cache_settings-1"></a>
 
-### cache_source_to_cache_settings/1 * ###
+### cache_source_to_cache_settings/1 *
 
 `cache_source_to_cache_settings(Msg) -> any()`
 
@@ -59,7 +59,7 @@ incorrect hashpath).
 
 <a name="derive_cache_settings-2"></a>
 
-### derive_cache_settings/2 * ###
+### derive_cache_settings/2 *
 
 `derive_cache_settings(SourceList, Opts) -> any()`
 
@@ -73,7 +73,7 @@ will contain a `store => true` entry.
 
 <a name="dispatch_cache_write-4"></a>
 
-### dispatch_cache_write/4 * ###
+### dispatch_cache_write/4 *
 
 `dispatch_cache_write(Msg1, Msg2, Msg3, Opts) -> any()`
 
@@ -82,13 +82,13 @@ Invoke the appropriate cache write function based on the type of the message.
 
 <a name="empty_message_list_test-0"></a>
 
-### empty_message_list_test/0 * ###
+### empty_message_list_test/0 *
 
 `empty_message_list_test() -> any()`
 
 <a name="exec_likely_faster_heuristic-3"></a>
 
-### exec_likely_faster_heuristic/3 * ###
+### exec_likely_faster_heuristic/3 *
 
 `exec_likely_faster_heuristic(Msg1, Msg2, Opts) -> any()`
 
@@ -97,25 +97,25 @@ our cache (hoping we have it), or executing it directly.
 
 <a name="hashpath_ignore_prevents_storage_test-0"></a>
 
-### hashpath_ignore_prevents_storage_test/0 * ###
+### hashpath_ignore_prevents_storage_test/0 *
 
 `hashpath_ignore_prevents_storage_test() -> any()`
 
 <a name="is_explicit_lookup-3"></a>
 
-### is_explicit_lookup/3 * ###
+### is_explicit_lookup/3 *
 
 `is_explicit_lookup(Msg1, X2, Opts) -> any()`
 
 <a name="lookup-3"></a>
 
-### lookup/3 * ###
+### lookup/3 *
 
 `lookup(Msg1, Msg2, Opts) -> any()`
 
 <a name="maybe_lookup-3"></a>
 
-### maybe_lookup/3 ###
+### maybe_lookup/3
 
 `maybe_lookup(Msg1, Msg2, Opts) -> any()`
 
@@ -129,7 +129,7 @@ a 504 `Status`.
 
 <a name="maybe_set-2"></a>
 
-### maybe_set/2 * ###
+### maybe_set/2 *
 
 `maybe_set(Map1, Map2) -> any()`
 
@@ -138,7 +138,7 @@ the value of the second map _if_ the value is not undefined.
 
 <a name="maybe_store-4"></a>
 
-### maybe_store/4 ###
+### maybe_store/4
 
 `maybe_store(Msg1, Msg2, Msg3, Opts) -> any()`
 
@@ -152,37 +152,37 @@ itself, without affecting its outputs.
 
 <a name="message_source_cache_control_test-0"></a>
 
-### message_source_cache_control_test/0 * ###
+### message_source_cache_control_test/0 *
 
 `message_source_cache_control_test() -> any()`
 
 <a name="message_without_cache_control_test-0"></a>
 
-### message_without_cache_control_test/0 * ###
+### message_without_cache_control_test/0 *
 
 `message_without_cache_control_test() -> any()`
 
 <a name="msg_precidence_overrides_test-0"></a>
 
-### msg_precidence_overrides_test/0 * ###
+### msg_precidence_overrides_test/0 *
 
 `msg_precidence_overrides_test() -> any()`
 
 <a name="msg_with_cc-1"></a>
 
-### msg_with_cc/1 * ###
+### msg_with_cc/1 *
 
 `msg_with_cc(CC) -> any()`
 
 <a name="multiple_directives_test-0"></a>
 
-### multiple_directives_test/0 * ###
+### multiple_directives_test/0 *
 
 `multiple_directives_test() -> any()`
 
 <a name="necessary_messages_not_found_error-3"></a>
 
-### necessary_messages_not_found_error/3 * ###
+### necessary_messages_not_found_error/3 *
 
 `necessary_messages_not_found_error(Msg1, Msg2, Opts) -> any()`
 
@@ -191,25 +191,25 @@ cache lookup are not found in the cache.
 
 <a name="no_cache_directive_test-0"></a>
 
-### no_cache_directive_test/0 * ###
+### no_cache_directive_test/0 *
 
 `no_cache_directive_test() -> any()`
 
 <a name="no_store_directive_test-0"></a>
 
-### no_store_directive_test/0 * ###
+### no_store_directive_test/0 *
 
 `no_store_directive_test() -> any()`
 
 <a name="only_if_cached_directive_test-0"></a>
 
-### only_if_cached_directive_test/0 * ###
+### only_if_cached_directive_test/0 *
 
 `only_if_cached_directive_test() -> any()`
 
 <a name="only_if_cached_not_found_error-3"></a>
 
-### only_if_cached_not_found_error/3 * ###
+### only_if_cached_not_found_error/3 *
 
 `only_if_cached_not_found_error(Msg1, Msg2, Opts) -> any()`
 
@@ -218,25 +218,25 @@ we don't have a cached result.
 
 <a name="opts_override_message_settings_test-0"></a>
 
-### opts_override_message_settings_test/0 * ###
+### opts_override_message_settings_test/0 *
 
 `opts_override_message_settings_test() -> any()`
 
 <a name="opts_source_cache_control_test-0"></a>
 
-### opts_source_cache_control_test/0 * ###
+### opts_source_cache_control_test/0 *
 
 `opts_source_cache_control_test() -> any()`
 
 <a name="opts_with_cc-1"></a>
 
-### opts_with_cc/1 * ###
+### opts_with_cc/1 *
 
 `opts_with_cc(CC) -> any()`
 
 <a name="specifiers_to_cache_settings-1"></a>
 
-### specifiers_to_cache_settings/1 * ###
+### specifiers_to_cache_settings/1 *
 
 `specifiers_to_cache_settings(CCSpecifier) -> any()`
 

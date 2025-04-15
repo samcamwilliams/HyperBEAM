@@ -1,6 +1,6 @@
 
 
-# Module hb_ao #
+# Module hb_ao
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ AO-Core protocol in HyperBEAM.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 At the implementation level, every message is simply a collection of keys,
 dictated by its `Device`, that can be resolved in order to yield their
@@ -92,7 +92,7 @@ HyperBEAM device implementations are defined as follows:
 ```
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#deep_set-4">deep_set/4</a></td><td>Recursively search a map, resolving keys, and set the value of the key
@@ -111,11 +111,11 @@ actually takes.</td></tr><tr><td valign="top"><a href="#verify_device_compatibil
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="deep_set-4"></a>
 
-### deep_set/4 ###
+### deep_set/4
 
 `deep_set(Msg, Rest, Value, Opts) -> any()`
 
@@ -124,7 +124,7 @@ at the given path.
 
 <a name="default_module-0"></a>
 
-### default_module/0 * ###
+### default_module/0 *
 
 `default_module() -> any()`
 
@@ -135,7 +135,7 @@ according to the `Message2` passed to it.
 
 <a name="device_set-4"></a>
 
-### device_set/4 * ###
+### device_set/4 *
 
 `device_set(Msg, Key, Value, Opts) -> any()`
 
@@ -143,13 +143,13 @@ Call the device's `set` function.
 
 <a name="do_resolve_many-2"></a>
 
-### do_resolve_many/2 * ###
+### do_resolve_many/2 *
 
 `do_resolve_many(MsgList, Opts) -> any()`
 
 <a name="ensure_loaded-2"></a>
 
-### ensure_loaded/2 * ###
+### ensure_loaded/2 *
 
 `ensure_loaded(MsgID, Opts) -> any()`
 
@@ -158,7 +158,7 @@ not loadable or already present, we raise an error.
 
 <a name="error_execution-5"></a>
 
-### error_execution/5 * ###
+### error_execution/5 *
 
 `error_execution(ExecGroup, Msg2, Whence, X4, Opts) -> any()`
 
@@ -166,7 +166,7 @@ Handle an error in a device call.
 
 <a name="error_infinite-3"></a>
 
-### error_infinite/3 * ###
+### error_infinite/3 *
 
 `error_infinite(Msg1, Msg2, Opts) -> any()`
 
@@ -174,13 +174,13 @@ Catch all return if we are in an infinite loop.
 
 <a name="error_invalid_intermediate_status-5"></a>
 
-### error_invalid_intermediate_status/5 * ###
+### error_invalid_intermediate_status/5 *
 
 `error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) -> any()`
 
 <a name="error_invalid_message-3"></a>
 
-### error_invalid_message/3 * ###
+### error_invalid_message/3 *
 
 `error_invalid_message(Msg1, Msg2, Opts) -> any()`
 
@@ -188,7 +188,7 @@ Catch all return if the message is invalid.
 
 <a name="find_exported_function-5"></a>
 
-### find_exported_function/5 ###
+### find_exported_function/5
 
 `find_exported_function(Msg, Dev, Key, MaxArity, Opts) -> any()`
 
@@ -203,13 +203,13 @@ and try again.
 
 <a name="force_message-2"></a>
 
-### force_message/2 ###
+### force_message/2
 
 `force_message(X1, Opts) -> any()`
 
 <a name="get-2"></a>
 
-### get/2 ###
+### get/2
 
 `get(Path, Msg) -> any()`
 
@@ -226,19 +226,19 @@ provided by the user, or `not_found` if no default is provided.
 
 <a name="get-3"></a>
 
-### get/3 ###
+### get/3
 
 `get(Path, Msg, Opts) -> any()`
 
 <a name="get-4"></a>
 
-### get/4 ###
+### get/4
 
 `get(Path, Msg, Default, Opts) -> any()`
 
 <a name="get_first-2"></a>
 
-### get_first/2 ###
+### get_first/2
 
 `get_first(Paths, Opts) -> any()`
 
@@ -247,13 +247,13 @@ first message that can be resolved using a path.
 
 <a name="get_first-3"></a>
 
-### get_first/3 ###
+### get_first/3
 
 `get_first(Msgs, Default, Opts) -> any()`
 
 <a name="info-2"></a>
 
-### info/2 ###
+### info/2
 
 `info(Msg, Opts) -> any()`
 
@@ -262,13 +262,13 @@ device's info function is parameterized by one.
 
 <a name="info-3"></a>
 
-### info/3 * ###
+### info/3 *
 
 `info(DevMod, Msg, Opts) -> any()`
 
 <a name="info_handler_to_fun-4"></a>
 
-### info_handler_to_fun/4 * ###
+### info_handler_to_fun/4 *
 
 `info_handler_to_fun(Handler, Msg, Key, Opts) -> any()`
 
@@ -276,7 +276,7 @@ Parse a handler key given by a device's `info`.
 
 <a name="internal_opts-1"></a>
 
-### internal_opts/1 * ###
+### internal_opts/1 *
 
 `internal_opts(Opts) -> any()`
 
@@ -285,13 +285,13 @@ when calling itself.
 
 <a name="is_exported-2"></a>
 
-### is_exported/2 * ###
+### is_exported/2 *
 
 `is_exported(Info, Key) -> any()`
 
 <a name="is_exported-4"></a>
 
-### is_exported/4 ###
+### is_exported/4
 
 `is_exported(Msg, Dev, Key, Opts) -> any()`
 
@@ -307,7 +307,7 @@ given, so we check for it in both cases.
 
 <a name="keys-1"></a>
 
-### keys/1 ###
+### keys/1
 
 `keys(Msg) -> any()`
 
@@ -315,19 +315,19 @@ Shortcut to get the list of keys from a message.
 
 <a name="keys-2"></a>
 
-### keys/2 ###
+### keys/2
 
 `keys(Msg, Opts) -> any()`
 
 <a name="keys-3"></a>
 
-### keys/3 ###
+### keys/3
 
 `keys(Msg, Opts, X3) -> any()`
 
 <a name="load_device-2"></a>
 
-### load_device/2 ###
+### load_device/2
 
 `load_device(Map, Opts) -> any()`
 
@@ -337,7 +337,7 @@ a tuple of the form {error, Reason} is returned.
 
 <a name="maybe_force_message-2"></a>
 
-### maybe_force_message/2 * ###
+### maybe_force_message/2 *
 
 `maybe_force_message(X1, Opts) -> any()`
 
@@ -348,7 +348,7 @@ when the result is a single value and an explicit status code.
 
 <a name="message_to_device-2"></a>
 
-### message_to_device/2 ###
+### message_to_device/2
 
 `message_to_device(Msg, Opts) -> any()`
 
@@ -356,7 +356,7 @@ Extract the device module from a message.
 
 <a name="message_to_fun-3"></a>
 
-### message_to_fun/3 ###
+### message_to_fun/3
 
 `message_to_fun(Msg, Key, Opts) -> any()`
 
@@ -381,7 +381,7 @@ indicates that the key should be added to the start of the call's arguments.
 
 <a name="normalize_key-1"></a>
 
-### normalize_key/1 ###
+### normalize_key/1
 
 `normalize_key(Key) -> any()`
 
@@ -389,13 +389,13 @@ Convert a key to a binary in normalized form.
 
 <a name="normalize_key-2"></a>
 
-### normalize_key/2 ###
+### normalize_key/2
 
 `normalize_key(Key, Opts) -> any()`
 
 <a name="normalize_keys-1"></a>
 
-### normalize_keys/1 ###
+### normalize_keys/1
 
 `normalize_keys(Msg1) -> any()`
 
@@ -403,7 +403,7 @@ Ensure that a message is processable by the AO-Core resolver: No lists.
 
 <a name="remove-2"></a>
 
-### remove/2 ###
+### remove/2
 
 `remove(Msg, Key) -> any()`
 
@@ -411,13 +411,13 @@ Remove a key from a message, using its underlying device.
 
 <a name="remove-3"></a>
 
-### remove/3 ###
+### remove/3
 
 `remove(Msg, Key, Opts) -> any()`
 
 <a name="resolve-2"></a>
 
-### resolve/2 ###
+### resolve/2
 
 `resolve(SingletonMsg, Opts) -> any()`
 
@@ -440,13 +440,13 @@ The resolver is composed of a series of discrete phases:
 
 <a name="resolve-3"></a>
 
-### resolve/3 ###
+### resolve/3
 
 `resolve(Msg1, Path, Opts) -> any()`
 
 <a name="resolve_many-2"></a>
 
-### resolve_many/2 ###
+### resolve_many/2
 
 `resolve_many(ListMsg, Opts) -> any()`
 
@@ -458,25 +458,25 @@ directly from the store. No execution is performed.
 
 <a name="resolve_stage-4"></a>
 
-### resolve_stage/4 * ###
+### resolve_stage/4 *
 
 `resolve_stage(X1, Raw, Msg2, Opts) -> any()`
 
 <a name="resolve_stage-5"></a>
 
-### resolve_stage/5 * ###
+### resolve_stage/5 *
 
 `resolve_stage(X1, Msg1, Msg2, ExecName, Opts) -> any()`
 
 <a name="resolve_stage-6"></a>
 
-### resolve_stage/6 * ###
+### resolve_stage/6 *
 
 `resolve_stage(X1, Func, Msg1, Msg2, ExecName, Opts) -> any()`
 
 <a name="set-2"></a>
 
-### set/2 ###
+### set/2
 
 `set(Msg1, Msg2) -> any()`
 
@@ -487,19 +487,19 @@ Like the `get/3` function, this function honors the `error_strategy` option.
 
 <a name="set-3"></a>
 
-### set/3 ###
+### set/3
 
 `set(RawMsg1, RawMsg2, Opts) -> any()`
 
 <a name="set-4"></a>
 
-### set/4 ###
+### set/4
 
 `set(Msg1, Key, Value, Opts) -> any()`
 
 <a name="subresolve-4"></a>
 
-### subresolve/4 * ###
+### subresolve/4 *
 
 `subresolve(RawMsg1, DevID, ReqPath, Opts) -> any()`
 
@@ -507,7 +507,7 @@ Execute a sub-resolution.
 
 <a name="truncate_args-2"></a>
 
-### truncate_args/2 ###
+### truncate_args/2
 
 `truncate_args(Fun, Args) -> any()`
 
@@ -516,7 +516,7 @@ actually takes.
 
 <a name="verify_device_compatibility-2"></a>
 
-### verify_device_compatibility/2 * ###
+### verify_device_compatibility/2 *
 
 `verify_device_compatibility(Msg, Opts) -> any()`
 

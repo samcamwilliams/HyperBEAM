@@ -1,6 +1,6 @@
 
 
-# Module hb_singleton #
+# Module hb_singleton
 * [Description](#description)
 * [Data Types](#types)
 * [Function Index](#index)
@@ -11,7 +11,7 @@ into an ordered list of messages to evaluate.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 The details of this format
 are described in `docs/ao-core-http-api.md`.
@@ -48,12 +48,12 @@ Syntax overview:
 
 <a name="types"></a>
 
-## Data Types ##
+## Data Types
 
 
 
 
-### <a name="type-ao_message">ao_message()</a> ###
+### <a name="type-ao_message">ao_message()</a>
 
 
 <pre><code>
@@ -63,7 +63,7 @@ ao_message() = map() | binary()
 
 
 
-### <a name="type-tabm_message">tabm_message()</a> ###
+### <a name="type-tabm_message">tabm_message()</a>
 
 
 <pre><code>
@@ -72,7 +72,7 @@ tabm_message() = map()
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#all_path_parts-2">all_path_parts/2*</a></td><td>Extract all of the parts from the binary, given (a list of) separators.</td></tr><tr><td valign="top"><a href="#append_path-2">append_path/2*</a></td><td></td></tr><tr><td valign="top"><a href="#apply_types-1">apply_types/1*</a></td><td>Step 3: Apply types to values and remove specifiers.</td></tr><tr><td valign="top"><a href="#basic_hashpath_test-0">basic_hashpath_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#basic_hashpath_to_test-0">basic_hashpath_to_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#build_messages-2">build_messages/2*</a></td><td>Step 5: Merge the base message with the scoped messages.</td></tr><tr><td valign="top"><a href="#decode_string-1">decode_string/1*</a></td><td>Attempt Cowboy URL decode, then sanitize the result.</td></tr><tr><td valign="top"><a href="#do_build-3">do_build/3*</a></td><td></td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Normalize a singleton TABM message into a list of executable AO-Core
@@ -85,11 +85,11 @@ segments that are too long.</td></tr><tr><td valign="top"><a href="#path_parts_t
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="all_path_parts-2"></a>
 
-### all_path_parts/2 * ###
+### all_path_parts/2 *
 
 `all_path_parts(Sep, Bin) -> any()`
 
@@ -97,13 +97,13 @@ Extract all of the parts from the binary, given (a list of) separators.
 
 <a name="append_path-2"></a>
 
-### append_path/2 * ###
+### append_path/2 *
 
 `append_path(PathPart, Message) -> any()`
 
 <a name="apply_types-1"></a>
 
-### apply_types/1 * ###
+### apply_types/1 *
 
 `apply_types(Msg) -> any()`
 
@@ -111,19 +111,19 @@ Step 3: Apply types to values and remove specifiers.
 
 <a name="basic_hashpath_test-0"></a>
 
-### basic_hashpath_test/0 * ###
+### basic_hashpath_test/0 *
 
 `basic_hashpath_test() -> any()`
 
 <a name="basic_hashpath_to_test-0"></a>
 
-### basic_hashpath_to_test/0 * ###
+### basic_hashpath_to_test/0 *
 
 `basic_hashpath_to_test() -> any()`
 
 <a name="build_messages-2"></a>
 
-### build_messages/2 * ###
+### build_messages/2 *
 
 `build_messages(Msgs, ScopedModifications) -> any()`
 
@@ -131,7 +131,7 @@ Step 5: Merge the base message with the scoped messages.
 
 <a name="decode_string-1"></a>
 
-### decode_string/1 * ###
+### decode_string/1 *
 
 `decode_string(B) -> any()`
 
@@ -139,13 +139,13 @@ Attempt Cowboy URL decode, then sanitize the result.
 
 <a name="do_build-3"></a>
 
-### do_build/3 * ###
+### do_build/3 *
 
 `do_build(I, Rest, ScopedKeys) -> any()`
 
 <a name="from-1"></a>
 
-### from/1 ###
+### from/1
 
 `from(RawMsg) -> any()`
 
@@ -154,7 +154,7 @@ messages.
 
 <a name="group_scoped-2"></a>
 
-### group_scoped/2 * ###
+### group_scoped/2 *
 
 `group_scoped(Map, Msgs) -> any()`
 
@@ -163,19 +163,19 @@ Step 4: Group headers/query by N-scope.
 
 <a name="inlined_keys_test-0"></a>
 
-### inlined_keys_test/0 * ###
+### inlined_keys_test/0 *
 
 `inlined_keys_test() -> any()`
 
 <a name="inlined_keys_to_test-0"></a>
 
-### inlined_keys_to_test/0 * ###
+### inlined_keys_to_test/0 *
 
 `inlined_keys_to_test() -> any()`
 
 <a name="maybe_join-2"></a>
 
-### maybe_join/2 * ###
+### maybe_join/2 *
 
 `maybe_join(Items, Sep) -> any()`
 
@@ -184,7 +184,7 @@ is only one item. If there are no items, return an empty binary.
 
 <a name="maybe_subpath-1"></a>
 
-### maybe_subpath/1 * ###
+### maybe_subpath/1 *
 
 `maybe_subpath(Str) -> any()`
 
@@ -193,7 +193,7 @@ or the original string with a specifier.
 
 <a name="maybe_typed-2"></a>
 
-### maybe_typed/2 * ###
+### maybe_typed/2 *
 
 `maybe_typed(Key, Value) -> any()`
 
@@ -201,31 +201,31 @@ Parse a key's type (applying it to the value) and device name if present.
 
 <a name="multiple_inlined_keys_test-0"></a>
 
-### multiple_inlined_keys_test/0 * ###
+### multiple_inlined_keys_test/0 *
 
 `multiple_inlined_keys_test() -> any()`
 
 <a name="multiple_inlined_keys_to_test-0"></a>
 
-### multiple_inlined_keys_to_test/0 * ###
+### multiple_inlined_keys_to_test/0 *
 
 `multiple_inlined_keys_to_test() -> any()`
 
 <a name="multiple_messages_test-0"></a>
 
-### multiple_messages_test/0 * ###
+### multiple_messages_test/0 *
 
 `multiple_messages_test() -> any()`
 
 <a name="multiple_messages_to_test-0"></a>
 
-### multiple_messages_to_test/0 * ###
+### multiple_messages_to_test/0 *
 
 `multiple_messages_to_test() -> any()`
 
 <a name="normalize_base-1"></a>
 
-### normalize_base/1 * ###
+### normalize_base/1 *
 
 `normalize_base(Rest) -> any()`
 
@@ -233,13 +233,13 @@ Normalize the base path.
 
 <a name="parse_explicit_message_test-0"></a>
 
-### parse_explicit_message_test/0 * ###
+### parse_explicit_message_test/0 *
 
 `parse_explicit_message_test() -> any()`
 
 <a name="parse_full_path-1"></a>
 
-### parse_full_path/1 * ###
+### parse_full_path/1 *
 
 `parse_full_path(RelativeRef) -> any()`
 
@@ -247,7 +247,7 @@ Parse the relative reference into path, query, and fragment.
 
 <a name="parse_inlined_key_val-1"></a>
 
-### parse_inlined_key_val/1 * ###
+### parse_inlined_key_val/1 *
 
 `parse_inlined_key_val(Bin) -> any()`
 
@@ -257,7 +257,7 @@ value is not provided, it is assumed to be a boolean `true`.
 
 <a name="parse_part-1"></a>
 
-### parse_part/1 * ###
+### parse_part/1 *
 
 `parse_part(ID) -> any()`
 
@@ -270,7 +270,7 @@ Applies the syntax rules outlined in the module doc, in the following order:
 
 <a name="parse_part_mods-2"></a>
 
-### parse_part_mods/2 * ###
+### parse_part_mods/2 *
 
 `parse_part_mods(X1, Msg) -> any()`
 
@@ -280,7 +280,7 @@ Parse part modifiers:
 
 <a name="parse_scope-1"></a>
 
-### parse_scope/1 * ###
+### parse_scope/1 *
 
 `parse_scope(KeyBin) -> any()`
 
@@ -288,7 +288,7 @@ Get the scope of a key. Adds 1 to account for the base message.
 
 <a name="part-2"></a>
 
-### part/2 * ###
+### part/2 *
 
 `part(Sep, Bin) -> any()`
 
@@ -299,13 +299,13 @@ accumulated characters, and the rest of the binary.
 
 <a name="part-4"></a>
 
-### part/4 * ###
+### part/4 *
 
 `part(Seps, X2, Depth, CurrAcc) -> any()`
 
 <a name="path_messages-1"></a>
 
-### path_messages/1 * ###
+### path_messages/1 *
 
 `path_messages(RawBin) -> any()`
 
@@ -315,7 +315,7 @@ their parent path.
 
 <a name="path_parts-2"></a>
 
-### path_parts/2 * ###
+### path_parts/2 *
 
 `path_parts(Sep, PathBin) -> any()`
 
@@ -324,73 +324,73 @@ segments that are too long.
 
 <a name="path_parts_test-0"></a>
 
-### path_parts_test/0 * ###
+### path_parts_test/0 *
 
 `path_parts_test() -> any()`
 
 <a name="scoped_key_test-0"></a>
 
-### scoped_key_test/0 * ###
+### scoped_key_test/0 *
 
 `scoped_key_test() -> any()`
 
 <a name="scoped_key_to_test-0"></a>
 
-### scoped_key_to_test/0 * ###
+### scoped_key_to_test/0 *
 
 `scoped_key_to_test() -> any()`
 
 <a name="simple_to_test-0"></a>
 
-### simple_to_test/0 * ###
+### simple_to_test/0 *
 
 `simple_to_test() -> any()`
 
 <a name="single_message_test-0"></a>
 
-### single_message_test/0 * ###
+### single_message_test/0 *
 
 `single_message_test() -> any()`
 
 <a name="subpath_in_inlined_test-0"></a>
 
-### subpath_in_inlined_test/0 * ###
+### subpath_in_inlined_test/0 *
 
 `subpath_in_inlined_test() -> any()`
 
 <a name="subpath_in_inlined_to_test-0"></a>
 
-### subpath_in_inlined_to_test/0 * ###
+### subpath_in_inlined_to_test/0 *
 
 `subpath_in_inlined_to_test() -> any()`
 
 <a name="subpath_in_key_test-0"></a>
 
-### subpath_in_key_test/0 * ###
+### subpath_in_key_test/0 *
 
 `subpath_in_key_test() -> any()`
 
 <a name="subpath_in_key_to_test-0"></a>
 
-### subpath_in_key_to_test/0 * ###
+### subpath_in_key_to_test/0 *
 
 `subpath_in_key_to_test() -> any()`
 
 <a name="subpath_in_path_test-0"></a>
 
-### subpath_in_path_test/0 * ###
+### subpath_in_path_test/0 *
 
 `subpath_in_path_test() -> any()`
 
 <a name="subpath_in_path_to_test-0"></a>
 
-### subpath_in_path_to_test/0 * ###
+### subpath_in_path_to_test/0 *
 
 `subpath_in_path_to_test() -> any()`
 
 <a name="to-1"></a>
 
-### to/1 ###
+### to/1
 
 <pre><code>
 to(Messages::[<a href="#type-ao_message">ao_message()</a>]) -&gt; <a href="#type-tabm_message">tabm_message()</a>
@@ -401,25 +401,25 @@ Convert a list of AO-Core message into TABM message.
 
 <a name="to_suite_test_-0"></a>
 
-### to_suite_test_/0 * ###
+### to_suite_test_/0 *
 
 `to_suite_test_() -> any()`
 
 <a name="type-1"></a>
 
-### type/1 * ###
+### type/1 *
 
 `type(Value) -> any()`
 
 <a name="typed_key_test-0"></a>
 
-### typed_key_test/0 * ###
+### typed_key_test/0 *
 
 `typed_key_test() -> any()`
 
 <a name="typed_key_to_test-0"></a>
 
-### typed_key_to_test/0 * ###
+### typed_key_to_test/0 *
 
 `typed_key_to_test() -> any()`
 

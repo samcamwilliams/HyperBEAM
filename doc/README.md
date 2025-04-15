@@ -1,9 +1,9 @@
 
 
-# The hb application #
+# The hb application
 
 
-## Modules ##
+## Modules
 
 
 <table width="100%" border="0" summary="list of modules">

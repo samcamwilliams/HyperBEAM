@@ -1,6 +1,6 @@
 
 
-# Module hb_persistent #
+# Module hb_persistent
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,7 +9,7 @@ Creates and manages long-lived AO-Core resolution processes.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 These can be useful for situations where a message is large and expensive
 to serialize and deserialize, or when executions should be deliberately
@@ -20,7 +20,7 @@ must be taken to avoid recursive spawns/loops.
 Built using the `pg` module, which is a distributed Erlang process group
 manager.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#await-4">await/4</a></td><td>If there was already an Erlang process handling this execution,
@@ -34,11 +34,11 @@ future executions.</td></tr><tr><td valign="top"><a href="#start_worker-3">start
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="await-4"></a>
 
-### await/4 ###
+### await/4
 
 `await(Worker, Msg1, Msg2, Opts) -> any()`
 
@@ -48,7 +48,7 @@ completion.
 
 <a name="deduplicated_execution_test-0"></a>
 
-### deduplicated_execution_test/0 * ###
+### deduplicated_execution_test/0 *
 
 `deduplicated_execution_test() -> any()`
 
@@ -56,7 +56,7 @@ Test merging and returning a value with a persistent worker.
 
 <a name="default_await-5"></a>
 
-### default_await/5 ###
+### default_await/5
 
 `default_await(Worker, GroupName, Msg1, Msg2, Opts) -> any()`
 
@@ -64,7 +64,7 @@ Default await function that waits for a resolution from a worker.
 
 <a name="default_grouper-3"></a>
 
-### default_grouper/3 ###
+### default_grouper/3
 
 `default_grouper(Msg1, Msg2, Opts) -> any()`
 
@@ -72,7 +72,7 @@ Create a group name from a Msg1 and Msg2 pair as a tuple.
 
 <a name="default_worker-3"></a>
 
-### default_worker/3 ###
+### default_worker/3
 
 `default_worker(GroupName, Msg1, Opts) -> any()`
 
@@ -80,19 +80,19 @@ A server function for handling persistent executions.
 
 <a name="do_monitor-1"></a>
 
-### do_monitor/1 * ###
+### do_monitor/1 *
 
 `do_monitor(Group) -> any()`
 
 <a name="do_monitor-2"></a>
 
-### do_monitor/2 * ###
+### do_monitor/2 *
 
 `do_monitor(Group, Last) -> any()`
 
 <a name="find_execution-2"></a>
 
-### find_execution/2 * ###
+### find_execution/2 *
 
 `find_execution(Groupname, Opts) -> any()`
 
@@ -100,7 +100,7 @@ Find a group with the given name.
 
 <a name="find_or_register-3"></a>
 
-### find_or_register/3 ###
+### find_or_register/3
 
 `find_or_register(Msg1, Msg2, Opts) -> any()`
 
@@ -109,13 +109,13 @@ signal that we should await resolution.
 
 <a name="find_or_register-4"></a>
 
-### find_or_register/4 * ###
+### find_or_register/4 *
 
 `find_or_register(GroupName, Msg1, Msg2, Opts) -> any()`
 
 <a name="forward_work-2"></a>
 
-### forward_work/2 ###
+### forward_work/2
 
 `forward_work(NewPID, Opts) -> any()`
 
@@ -123,7 +123,7 @@ Forward requests to a newly delegated execution process.
 
 <a name="group-3"></a>
 
-### group/3 ###
+### group/3
 
 `group(Msg1, Msg2, Opts) -> any()`
 
@@ -132,7 +132,7 @@ Calculate the group name for a Msg1 and Msg2 pair. Uses the Msg1's
 
 <a name="notify-4"></a>
 
-### notify/4 ###
+### notify/4
 
 `notify(GroupName, Msg2, Msg3, Opts) -> any()`
 
@@ -143,7 +143,7 @@ of this execution. Comes in two forms:
 
 <a name="persistent_worker_test-0"></a>
 
-### persistent_worker_test/0 * ###
+### persistent_worker_test/0 *
 
 `persistent_worker_test() -> any()`
 
@@ -151,7 +151,7 @@ Test spawning a default persistent worker.
 
 <a name="register_groupname-2"></a>
 
-### register_groupname/2 * ###
+### register_groupname/2 *
 
 `register_groupname(Groupname, Opts) -> any()`
 
@@ -159,7 +159,7 @@ Register for performing an AO-Core resolution.
 
 <a name="send_response-4"></a>
 
-### send_response/4 * ###
+### send_response/4 *
 
 `send_response(Listener, GroupName, Msg2, Msg3) -> any()`
 
@@ -167,25 +167,25 @@ Helper function that wraps responding with a new Msg3.
 
 <a name="spawn_after_execution_test-0"></a>
 
-### spawn_after_execution_test/0 * ###
+### spawn_after_execution_test/0 *
 
 `spawn_after_execution_test() -> any()`
 
 <a name="spawn_test_client-2"></a>
 
-### spawn_test_client/2 * ###
+### spawn_test_client/2 *
 
 `spawn_test_client(Msg1, Msg2) -> any()`
 
 <a name="spawn_test_client-3"></a>
 
-### spawn_test_client/3 * ###
+### spawn_test_client/3 *
 
 `spawn_test_client(Msg1, Msg2, Opts) -> any()`
 
 <a name="start-0"></a>
 
-### start/0 * ###
+### start/0 *
 
 `start() -> any()`
 
@@ -193,7 +193,7 @@ Ensure that the `pg` module is started.
 
 <a name="start_monitor-0"></a>
 
-### start_monitor/0 ###
+### start_monitor/0
 
 `start_monitor() -> any()`
 
@@ -202,13 +202,13 @@ n seconds.
 
 <a name="start_monitor-1"></a>
 
-### start_monitor/1 ###
+### start_monitor/1
 
 `start_monitor(Group) -> any()`
 
 <a name="start_worker-2"></a>
 
-### start_worker/2 ###
+### start_worker/2
 
 `start_worker(Msg, Opts) -> any()`
 
@@ -217,31 +217,31 @@ future executions.
 
 <a name="start_worker-3"></a>
 
-### start_worker/3 ###
+### start_worker/3
 
 `start_worker(GroupName, NotMsg, Opts) -> any()`
 
 <a name="stop_monitor-1"></a>
 
-### stop_monitor/1 ###
+### stop_monitor/1
 
 `stop_monitor(PID) -> any()`
 
 <a name="test_device-0"></a>
 
-### test_device/0 * ###
+### test_device/0 *
 
 `test_device() -> any()`
 
 <a name="test_device-1"></a>
 
-### test_device/1 * ###
+### test_device/1 *
 
 `test_device(Base) -> any()`
 
 <a name="unregister-3"></a>
 
-### unregister/3 * ###
+### unregister/3 *
 
 `unregister(Msg1, Msg2, Opts) -> any()`
 
@@ -249,13 +249,13 @@ Unregister for being the leader on an AO-Core resolution.
 
 <a name="unregister_groupname-2"></a>
 
-### unregister_groupname/2 * ###
+### unregister_groupname/2 *
 
 `unregister_groupname(Groupname, Opts) -> any()`
 
 <a name="unregister_notify-4"></a>
 
-### unregister_notify/4 ###
+### unregister_notify/4
 
 `unregister_notify(GroupName, Msg2, Msg3, Opts) -> any()`
 
@@ -263,13 +263,13 @@ Unregister as the leader for an execution and notify waiting processes.
 
 <a name="wait_for_test_result-1"></a>
 
-### wait_for_test_result/1 * ###
+### wait_for_test_result/1 *
 
 `wait_for_test_result(Ref) -> any()`
 
 <a name="worker_event-5"></a>
 
-### worker_event/5 * ###
+### worker_event/5 *
 
 `worker_event(Group, Data, Msg1, Msg2, Opts) -> any()`
 

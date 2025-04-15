@@ -1,6 +1,6 @@
 
 
-# Module hb_path #
+# Module hb_path
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -11,7 +11,7 @@ its HashPath.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 A HashPath is a rolling Merkle list of the messages that have been applied
 in order to generate a given message. Because applied messages can
@@ -42,7 +42,7 @@ which allows for custom logic to be used for representing the history of a
 message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 will be generated according to Msg1's algorithm choice.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#do_to_binary-1">do_to_binary/1*</a></td><td></td></tr><tr><td valign="top"><a href="#from_message-2">from_message/2</a></td><td>Extract the request path or hashpath from a message.</td></tr><tr><td valign="top"><a href="#hashpath-2">hashpath/2</a></td><td>Add an ID of a Msg2 to the HashPath of another message.</td></tr><tr><td valign="top"><a href="#hashpath-3">hashpath/3</a></td><td></td></tr><tr><td valign="top"><a href="#hashpath-4">hashpath/4</a></td><td></td></tr><tr><td valign="top"><a href="#hashpath_alg-1">hashpath_alg/1</a></td><td>Get the hashpath function for a message from its HashPath-Alg.</td></tr><tr><td valign="top"><a href="#hashpath_direct_msg2_test-0">hashpath_direct_msg2_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#hashpath_test-0">hashpath_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#hd-2">hd/2</a></td><td>Extract the first key from a <code>Message2</code>'s <code>Path</code> field.</td></tr><tr><td valign="top"><a href="#hd_test-0">hd_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#matches-2">matches/2</a></td><td>Check if two keys match.</td></tr><tr><td valign="top"><a href="#multiple_hashpaths_test-0">multiple_hashpaths_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#normalize-1">normalize/1</a></td><td>Normalize a path to a binary, removing the leading slash if present.</td></tr><tr><td valign="top"><a href="#pop_from_message_test-0">pop_from_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pop_from_path_list_test-0">pop_from_path_list_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pop_request-2">pop_request/2</a></td><td>Pop the next element from a request path or path list.</td></tr><tr><td valign="top"><a href="#priv_remaining-2">priv_remaining/2</a></td><td>Return the <code>Remaining-Path</code> of a message, from its hidden <code>AO-Core</code>
@@ -52,17 +52,17 @@ represent its history.</td></tr><tr><td valign="top"><a href="#verify_hashpath_t
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="do_to_binary-1"></a>
 
-### do_to_binary/1 * ###
+### do_to_binary/1 *
 
 `do_to_binary(Path) -> any()`
 
 <a name="from_message-2"></a>
 
-### from_message/2 ###
+### from_message/2
 
 `from_message(X1, Msg) -> any()`
 
@@ -75,7 +75,7 @@ been assigned yet).
 
 <a name="hashpath-2"></a>
 
-### hashpath/2 ###
+### hashpath/2
 
 `hashpath(Bin, Opts) -> any()`
 
@@ -83,19 +83,19 @@ Add an ID of a Msg2 to the HashPath of another message.
 
 <a name="hashpath-3"></a>
 
-### hashpath/3 ###
+### hashpath/3
 
 `hashpath(Msg1, Msg2, Opts) -> any()`
 
 <a name="hashpath-4"></a>
 
-### hashpath/4 ###
+### hashpath/4
 
 `hashpath(Msg1, Msg2, HashpathAlg, Opts) -> any()`
 
 <a name="hashpath_alg-1"></a>
 
-### hashpath_alg/1 ###
+### hashpath_alg/1
 
 `hashpath_alg(Msg) -> any()`
 
@@ -105,19 +105,19 @@ If no hashpath algorithm is specified, the protocol defaults to
 
 <a name="hashpath_direct_msg2_test-0"></a>
 
-### hashpath_direct_msg2_test/0 * ###
+### hashpath_direct_msg2_test/0 *
 
 `hashpath_direct_msg2_test() -> any()`
 
 <a name="hashpath_test-0"></a>
 
-### hashpath_test/0 * ###
+### hashpath_test/0 *
 
 `hashpath_test() -> any()`
 
 <a name="hd-2"></a>
 
-### hd/2 ###
+### hd/2
 
 `hd(Msg2, Opts) -> any()`
 
@@ -127,13 +127,13 @@ a generic call as the path should always be an explicit key in the message.
 
 <a name="hd_test-0"></a>
 
-### hd_test/0 * ###
+### hd_test/0 *
 
 `hd_test() -> any()`
 
 <a name="matches-2"></a>
 
-### matches/2 ###
+### matches/2
 
 `matches(Key1, Key2) -> any()`
 
@@ -141,13 +141,13 @@ Check if two keys match.
 
 <a name="multiple_hashpaths_test-0"></a>
 
-### multiple_hashpaths_test/0 * ###
+### multiple_hashpaths_test/0 *
 
 `multiple_hashpaths_test() -> any()`
 
 <a name="normalize-1"></a>
 
-### normalize/1 ###
+### normalize/1
 
 `normalize(Path) -> any()`
 
@@ -155,19 +155,19 @@ Normalize a path to a binary, removing the leading slash if present.
 
 <a name="pop_from_message_test-0"></a>
 
-### pop_from_message_test/0 * ###
+### pop_from_message_test/0 *
 
 `pop_from_message_test() -> any()`
 
 <a name="pop_from_path_list_test-0"></a>
 
-### pop_from_path_list_test/0 * ###
+### pop_from_path_list_test/0 *
 
 `pop_from_path_list_test() -> any()`
 
 <a name="pop_request-2"></a>
 
-### pop_request/2 ###
+### pop_request/2
 
 `pop_request(Msg, Opts) -> any()`
 
@@ -175,7 +175,7 @@ Pop the next element from a request path or path list.
 
 <a name="priv_remaining-2"></a>
 
-### priv_remaining/2 ###
+### priv_remaining/2
 
 `priv_remaining(Msg, Opts) -> any()`
 
@@ -185,7 +185,7 @@ can be safely used inside the main AO-Core resolve function.
 
 <a name="priv_store_remaining-2"></a>
 
-### priv_store_remaining/2 ###
+### priv_store_remaining/2
 
 `priv_store_remaining(Msg, RemainingPath) -> any()`
 
@@ -193,7 +193,7 @@ Store the remaining path of a message in its hidden `AO-Core` key.
 
 <a name="push_request-2"></a>
 
-### push_request/2 ###
+### push_request/2
 
 `push_request(Msg, Path) -> any()`
 
@@ -201,7 +201,7 @@ Add a message to the head (next to execute) of a request path.
 
 <a name="queue_request-2"></a>
 
-### queue_request/2 ###
+### queue_request/2
 
 `queue_request(Msg, Path) -> any()`
 
@@ -211,7 +211,7 @@ the compute path to be there), so we use `maps:put/3` instead.
 
 <a name="regex_matches-2"></a>
 
-### regex_matches/2 ###
+### regex_matches/2
 
 `regex_matches(Path1, Path2) -> any()`
 
@@ -219,13 +219,13 @@ Check if two keys match using regex.
 
 <a name="regex_matches_test-0"></a>
 
-### regex_matches_test/0 * ###
+### regex_matches_test/0 *
 
 `regex_matches_test() -> any()`
 
 <a name="term_to_path_parts-1"></a>
 
-### term_to_path_parts/1 ###
+### term_to_path_parts/1
 
 `term_to_path_parts(Path) -> any()`
 
@@ -234,19 +234,19 @@ atoms. Notably, it does not support strings as lists of characters.
 
 <a name="term_to_path_parts-2"></a>
 
-### term_to_path_parts/2 ###
+### term_to_path_parts/2
 
 `term_to_path_parts(Binary, Opts) -> any()`
 
 <a name="term_to_path_parts_test-0"></a>
 
-### term_to_path_parts_test/0 * ###
+### term_to_path_parts_test/0 *
 
 `term_to_path_parts_test() -> any()`
 
 <a name="tl-2"></a>
 
-### tl/2 ###
+### tl/2
 
 `tl(Msg2, Opts) -> any()`
 
@@ -258,13 +258,13 @@ This may or may not be the mainnet behavior we want.
 
 <a name="tl_test-0"></a>
 
-### tl_test/0 * ###
+### tl_test/0 *
 
 `tl_test() -> any()`
 
 <a name="to_binary-1"></a>
 
-### to_binary/1 ###
+### to_binary/1
 
 `to_binary(Path) -> any()`
 
@@ -272,19 +272,19 @@ Convert a path of any form to a binary.
 
 <a name="to_binary_test-0"></a>
 
-### to_binary_test/0 * ###
+### to_binary_test/0 *
 
 `to_binary_test() -> any()`
 
 <a name="validate_path_transitions-2"></a>
 
-### validate_path_transitions/2 * ###
+### validate_path_transitions/2 *
 
 `validate_path_transitions(X, Opts) -> any()`
 
 <a name="verify_hashpath-2"></a>
 
-### verify_hashpath/2 ###
+### verify_hashpath/2
 
 `verify_hashpath(Rest, Opts) -> any()`
 
@@ -293,7 +293,7 @@ represent its history.
 
 <a name="verify_hashpath_test-0"></a>
 
-### verify_hashpath_test/0 * ###
+### verify_hashpath_test/0 *
 
 `verify_hashpath_test() -> any()`
 

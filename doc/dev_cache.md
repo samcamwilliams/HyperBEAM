@@ -1,6 +1,6 @@
 
 
-# Module dev_cache #
+# Module dev_cache
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,12 +10,12 @@ honoring the `accept` key to return the correct format.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 The cache also
 supports writing messages to the store, if the node message has the
 writer's address in its `cache_writers` key.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cache_write_binary_test-0">cache_write_binary_test/0*</a></td><td>Ensure that we can write direct binaries to the cache.</td></tr><tr><td valign="top"><a href="#cache_write_message_test-0">cache_write_message_test/0*</a></td><td>Test that the cache can be written to and read from using the hb_cache
@@ -24,11 +24,11 @@ API.</td></tr><tr><td valign="top"><a href="#is_trusted_writer-2">is_trusted_wri
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="cache_write_binary_test-0"></a>
 
-### cache_write_binary_test/0 * ###
+### cache_write_binary_test/0 *
 
 `cache_write_binary_test() -> any()`
 
@@ -36,7 +36,7 @@ Ensure that we can write direct binaries to the cache.
 
 <a name="cache_write_message_test-0"></a>
 
-### cache_write_message_test/0 * ###
+### cache_write_message_test/0 *
 
 `cache_write_message_test() -> any()`
 
@@ -45,7 +45,7 @@ API.
 
 <a name="is_trusted_writer-2"></a>
 
-### is_trusted_writer/2 * ###
+### is_trusted_writer/2 *
 
 `is_trusted_writer(Req, Opts) -> any()`
 
@@ -55,7 +55,7 @@ of trusted cache writer addresses specified in the options.
 
 <a name="link-3"></a>
 
-### link/3 ###
+### link/3
 
 `link(Base, Req, Opts) -> any()`
 
@@ -63,7 +63,7 @@ Link a source to a destination in the cache.
 
 <a name="read-3"></a>
 
-### read/3 ###
+### read/3
 
 `read(M1, M2, Opts) -> any()`
 
@@ -76,7 +76,7 @@ converted to a JSON structure and encoded.
 
 <a name="read_from_cache-2"></a>
 
-### read_from_cache/2 * ###
+### read_from_cache/2 *
 
 `read_from_cache(Node, Path) -> any()`
 
@@ -86,7 +86,7 @@ and returns the response.
 
 <a name="setup_test_env-0"></a>
 
-### setup_test_env/0 * ###
+### setup_test_env/0 *
 
 `setup_test_env() -> any()`
 
@@ -98,7 +98,7 @@ writer configuration.
 
 <a name="write-3"></a>
 
-### write/3 ###
+### write/3
 
 `write(M1, M2, Opts) -> any()`
 
@@ -110,7 +110,7 @@ and the data is stored accordingly.
 
 <a name="write_single-2"></a>
 
-### write_single/2 * ###
+### write_single/2 *
 
 `write_single(Msg, Opts) -> any()`
 
@@ -121,7 +121,7 @@ requested, it writes the data to the store using the appropriate function.
 
 <a name="write_to_cache-3"></a>
 
-### write_to_cache/3 * ###
+### write_to_cache/3 *
 
 `write_to_cache(Node, Data, Wallet) -> any()`
 

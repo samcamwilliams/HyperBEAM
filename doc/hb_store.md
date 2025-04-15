@@ -1,12 +1,12 @@
 
 
-# Module hb_store #
+# Module hb_store
 * [Function Index](#index)
 * [Function Details](#functions)
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_path-2">add_path/2</a></td><td>Add two path components together.</td></tr><tr><td valign="top"><a href="#add_path-3">add_path/3</a></td><td></td></tr><tr><td valign="top"><a href="#behavior_info-1">behavior_info/1</a></td><td></td></tr><tr><td valign="top"><a href="#call_all-3">call_all/3*</a></td><td>Call a function on all modules in the store.</td></tr><tr><td valign="top"><a href="#call_function-3">call_function/3*</a></td><td>Call a function on the first store module that succeeds.</td></tr><tr><td valign="top"><a href="#filter-2">filter/2</a></td><td>Takes a store object and a filter function or match spec, returning a
@@ -15,11 +15,11 @@ new store object with only the modules that match the filter.</td></tr><tr><td v
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="add_path-2"></a>
 
-### add_path/2 ###
+### add_path/2
 
 `add_path(Path1, Path2) -> any()`
 
@@ -28,19 +28,19 @@ function, we concatenate the paths.
 
 <a name="add_path-3"></a>
 
-### add_path/3 ###
+### add_path/3
 
 `add_path(Store, Path1, Path2) -> any()`
 
 <a name="behavior_info-1"></a>
 
-### behavior_info/1 ###
+### behavior_info/1
 
 `behavior_info(X1) -> any()`
 
 <a name="call_all-3"></a>
 
-### call_all/3 * ###
+### call_all/3 *
 
 `call_all(X, Function, Args) -> any()`
 
@@ -48,7 +48,7 @@ Call a function on all modules in the store.
 
 <a name="call_function-3"></a>
 
-### call_function/3 * ###
+### call_function/3 *
 
 `call_function(X, Function, Args) -> any()`
 
@@ -57,7 +57,7 @@ result, or no_viable_store if none of the stores succeed.
 
 <a name="filter-2"></a>
 
-### filter/2 ###
+### filter/2
 
 `filter(Module, Filter) -> any()`
 
@@ -68,19 +68,19 @@ scope function to get the scope of the module.
 
 <a name="generate_test_suite-1"></a>
 
-### generate_test_suite/1 ###
+### generate_test_suite/1
 
 `generate_test_suite(Suite) -> any()`
 
 <a name="generate_test_suite-2"></a>
 
-### generate_test_suite/2 ###
+### generate_test_suite/2
 
 `generate_test_suite(Suite, Stores) -> any()`
 
 <a name="get_store_scope-1"></a>
 
-### get_store_scope/1 * ###
+### get_store_scope/1 *
 
 `get_store_scope(Store) -> any()`
 
@@ -89,7 +89,7 @@ default scope (local).
 
 <a name="hierarchical_path_resolution_test-1"></a>
 
-### hierarchical_path_resolution_test/1 * ###
+### hierarchical_path_resolution_test/1 *
 
 `hierarchical_path_resolution_test(Opts) -> any()`
 
@@ -97,7 +97,7 @@ Ensure that we can resolve links through a directory.
 
 <a name="join-1"></a>
 
-### join/1 ###
+### join/1
 
 `join(Path) -> any()`
 
@@ -105,7 +105,7 @@ Join a list of path components together.
 
 <a name="list-2"></a>
 
-### list/2 ###
+### list/2
 
 `list(Modules, Path) -> any()`
 
@@ -115,7 +115,7 @@ structures, so this is likely to be very slow for most stores.
 
 <a name="make_group-2"></a>
 
-### make_group/2 ###
+### make_group/2
 
 `make_group(Modules, Path) -> any()`
 
@@ -124,7 +124,7 @@ Make a group in the store. A group can be seen as a namespace or
 
 <a name="make_link-3"></a>
 
-### make_link/3 ###
+### make_link/3
 
 `make_link(Modules, Existing, New) -> any()`
 
@@ -132,7 +132,7 @@ Make a link from one path to another in the store.
 
 <a name="path-1"></a>
 
-### path/1 ###
+### path/1
 
 `path(Path) -> any()`
 
@@ -141,13 +141,13 @@ the path function, we return the path with the 'default' transformation (id).
 
 <a name="path-2"></a>
 
-### path/2 ###
+### path/2
 
 `path(X1, Path) -> any()`
 
 <a name="read-2"></a>
 
-### read/2 ###
+### read/2
 
 `read(Modules, Key) -> any()`
 
@@ -155,7 +155,7 @@ Read a key from the store.
 
 <a name="reset-1"></a>
 
-### reset/1 ###
+### reset/1
 
 `reset(Modules) -> any()`
 
@@ -164,7 +164,7 @@ caution. Lost data can lose money in many/most of hyperbeam's use cases.
 
 <a name="resolve-2"></a>
 
-### resolve/2 ###
+### resolve/2
 
 `resolve(Modules, Path) -> any()`
 
@@ -172,7 +172,7 @@ Follow links through the store to resolve a path to its ultimate target.
 
 <a name="resursive_path_resolution_test-1"></a>
 
-### resursive_path_resolution_test/1 * ###
+### resursive_path_resolution_test/1 *
 
 `resursive_path_resolution_test(Opts) -> any()`
 
@@ -180,7 +180,7 @@ Ensure that we can resolve links recursively.
 
 <a name="scope-2"></a>
 
-### scope/2 ###
+### scope/2
 
 `scope(Scope, Opts) -> any()`
 
@@ -190,7 +190,7 @@ of scopes.
 
 <a name="simple_path_resolution_test-1"></a>
 
-### simple_path_resolution_test/1 * ###
+### simple_path_resolution_test/1 *
 
 `simple_path_resolution_test(Opts) -> any()`
 
@@ -198,7 +198,7 @@ Test path resolution dynamics.
 
 <a name="sort-2"></a>
 
-### sort/2 ###
+### sort/2
 
 `sort(Stores, PreferenceOrder) -> any()`
 
@@ -210,31 +210,31 @@ default to a score of 0.
 
 <a name="start-1"></a>
 
-### start/1 ###
+### start/1
 
 `start(Modules) -> any()`
 
 <a name="stop-1"></a>
 
-### stop/1 ###
+### stop/1
 
 `stop(Modules) -> any()`
 
 <a name="store_suite_test_-0"></a>
 
-### store_suite_test_/0 * ###
+### store_suite_test_/0 *
 
 `store_suite_test_() -> any()`
 
 <a name="test_stores-0"></a>
 
-### test_stores/0 ###
+### test_stores/0
 
 `test_stores() -> any()`
 
 <a name="type-2"></a>
 
-### type/2 ###
+### type/2
 
 `type(Modules, Path) -> any()`
 
@@ -243,7 +243,7 @@ a performance killer if the store is remote etc. Use only when necessary.
 
 <a name="write-3"></a>
 
-### write/3 ###
+### write/3
 
 `write(Modules, Key, Value) -> any()`
 

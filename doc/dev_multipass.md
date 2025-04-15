@@ -1,6 +1,6 @@
 
 
-# Module dev_multipass #
+# Module dev_multipass
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,11 +10,11 @@ reached.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 This is useful for certain types of stacks that need various
 execution passes to be completed in sequence across devices.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#basic_multipass_test-0">basic_multipass_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#handle-4">handle/4*</a></td><td>Forward the keys function to the message device, handle all others
@@ -23,17 +23,17 @@ with deduplication.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="basic_multipass_test-0"></a>
 
-### basic_multipass_test/0 * ###
+### basic_multipass_test/0 *
 
 `basic_multipass_test() -> any()`
 
 <a name="handle-4"></a>
 
-### handle/4 * ###
+### handle/4 *
 
 `handle(Key, M1, M2, Opts) -> any()`
 
@@ -42,7 +42,7 @@ with deduplication. We only act on the first pass.
 
 <a name="info-1"></a>
 
-### info/1 ###
+### info/1
 
 `info(M1) -> any()`
 

@@ -1,6 +1,6 @@
 
 
-# Module dev_scheduler #
+# Module dev_scheduler
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,7 +9,7 @@ A simple scheduler scheme for AO.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 This device expects a message of the form:
 Process: `#{ id, Scheduler: #{ Authority } }`
 
@@ -24,7 +24,7 @@ Process: `#{ id, Scheduler: #{ Authority } }`
 ```
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#benchmark_suite-2">benchmark_suite/2*</a></td><td></td></tr><tr><td valign="top"><a href="#benchmark_suite_test_-0">benchmark_suite_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#cache_remote_schedule-2">cache_remote_schedule/2*</a></td><td>Cache a schedule received from a remote scheduler.</td></tr><tr><td valign="top"><a href="#check_lookahead_and_local_cache-4">check_lookahead_and_local_cache/4*</a></td><td>Check if we have a result from a lookahead worker or from our local
@@ -45,23 +45,23 @@ process ID.</td></tr></table>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="benchmark_suite-2"></a>
 
-### benchmark_suite/2 * ###
+### benchmark_suite/2 *
 
 `benchmark_suite(Port, Base) -> any()`
 
 <a name="benchmark_suite_test_-0"></a>
 
-### benchmark_suite_test_/0 * ###
+### benchmark_suite_test_/0 *
 
 `benchmark_suite_test_() -> any()`
 
 <a name="cache_remote_schedule-2"></a>
 
-### cache_remote_schedule/2 * ###
+### cache_remote_schedule/2 *
 
 `cache_remote_schedule(Schedule, Opts) -> any()`
 
@@ -69,7 +69,7 @@ Cache a schedule received from a remote scheduler.
 
 <a name="check_lookahead_and_local_cache-4"></a>
 
-### check_lookahead_and_local_cache/4 * ###
+### check_lookahead_and_local_cache/4 *
 
 `check_lookahead_and_local_cache(Msg1, ProcID, TargetSlot, Opts) -> any()`
 
@@ -81,7 +81,7 @@ option.
 
 <a name="checkpoint-1"></a>
 
-### checkpoint/1 ###
+### checkpoint/1
 
 `checkpoint(State) -> any()`
 
@@ -89,7 +89,7 @@ Returns the current state of the scheduler.
 
 <a name="do_get_remote_schedule-6"></a>
 
-### do_get_remote_schedule/6 * ###
+### do_get_remote_schedule/6 *
 
 `do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) -> any()`
 
@@ -98,7 +98,7 @@ read all of the assignments from the local cache.
 
 <a name="do_post_schedule-4"></a>
 
-### do_post_schedule/4 * ###
+### do_post_schedule/4 *
 
 `do_post_schedule(ProcID, PID, Msg2, Opts) -> any()`
 
@@ -108,7 +108,7 @@ scheduled.
 
 <a name="filter_json_assignments-3"></a>
 
-### filter_json_assignments/3 * ###
+### filter_json_assignments/3 *
 
 `filter_json_assignments(JSONRes, To, From) -> any()`
 
@@ -116,7 +116,7 @@ Filter JSON assignment results from a remote legacy scheduler.
 
 <a name="find_message_to_schedule-3"></a>
 
-### find_message_to_schedule/3 * ###
+### find_message_to_schedule/3 *
 
 `find_message_to_schedule(Msg1, Msg2, Opts) -> any()`
 
@@ -127,7 +127,7 @@ schedule. The precidence order for search is as follows:
 
 <a name="find_remote_scheduler-3"></a>
 
-### find_remote_scheduler/3 * ###
+### find_remote_scheduler/3 *
 
 `find_remote_scheduler(ProcID, Scheduler, Opts) -> any()`
 
@@ -135,7 +135,7 @@ Use the SchedulerLocation to the remote path and return a redirect.
 
 <a name="find_server-3"></a>
 
-### find_server/3 * ###
+### find_server/3 *
 
 `find_server(ProcID, Msg1, Opts) -> any()`
 
@@ -143,13 +143,13 @@ Locate the correct scheduling server for a given process.
 
 <a name="find_server-4"></a>
 
-### find_server/4 * ###
+### find_server/4 *
 
 `find_server(ProcID, Msg1, ToSched, Opts) -> any()`
 
 <a name="find_target_id-3"></a>
 
-### find_target_id/3 * ###
+### find_target_id/3 *
 
 `find_target_id(Msg1, Msg2, Opts) -> any()`
 
@@ -164,7 +164,7 @@ search is as follows:
 
 <a name="generate_local_schedule-5"></a>
 
-### generate_local_schedule/5 * ###
+### generate_local_schedule/5 *
 
 `generate_local_schedule(Format, ProcID, From, To, Opts) -> any()`
 
@@ -172,7 +172,7 @@ Generate a `GET /schedule` response for a process.
 
 <a name="generate_redirect-3"></a>
 
-### generate_redirect/3 * ###
+### generate_redirect/3 *
 
 `generate_redirect(ProcID, SchedulerLocation, Opts) -> any()`
 
@@ -180,7 +180,7 @@ Generate a redirect message to a scheduler.
 
 <a name="get_hint-2"></a>
 
-### get_hint/2 * ###
+### get_hint/2 *
 
 `get_hint(Str, Opts) -> any()`
 
@@ -188,7 +188,7 @@ If a hint is present in the string, return it. Else, return not_found.
 
 <a name="get_local_assignments-4"></a>
 
-### get_local_assignments/4 * ###
+### get_local_assignments/4 *
 
 `get_local_assignments(ProcID, From, RequestedTo, Opts) -> any()`
 
@@ -196,13 +196,13 @@ Get the assignments for a process, and whether the request was truncated.
 
 <a name="get_local_schedule_test-0"></a>
 
-### get_local_schedule_test/0 * ###
+### get_local_schedule_test/0 *
 
 `get_local_schedule_test() -> any()`
 
 <a name="get_remote_schedule-5"></a>
 
-### get_remote_schedule/5 * ###
+### get_remote_schedule/5 *
 
 `get_remote_schedule(RawProcID, From, To, Redirect, Opts) -> any()`
 
@@ -211,7 +211,7 @@ assignments from the local cache that we already know about.
 
 <a name="get_schedule-3"></a>
 
-### get_schedule/3 * ###
+### get_schedule/3 *
 
 `get_schedule(Msg1, Msg2, Opts) -> any()`
 
@@ -221,97 +221,97 @@ we redirect to the remote scheduler or proxy based on the node opts.
 
 <a name="http_get_json_schedule_test_-0"></a>
 
-### http_get_json_schedule_test_/0 * ###
+### http_get_json_schedule_test_/0 *
 
 `http_get_json_schedule_test_() -> any()`
 
 <a name="http_get_legacy_schedule_as_aos2_test_-0"></a>
 
-### http_get_legacy_schedule_as_aos2_test_/0 * ###
+### http_get_legacy_schedule_as_aos2_test_/0 *
 
 `http_get_legacy_schedule_as_aos2_test_() -> any()`
 
 <a name="http_get_legacy_schedule_slot_range_test_-0"></a>
 
-### http_get_legacy_schedule_slot_range_test_/0 * ###
+### http_get_legacy_schedule_slot_range_test_/0 *
 
 `http_get_legacy_schedule_slot_range_test_() -> any()`
 
 <a name="http_get_legacy_schedule_test_-0"></a>
 
-### http_get_legacy_schedule_test_/0 * ###
+### http_get_legacy_schedule_test_/0 *
 
 `http_get_legacy_schedule_test_() -> any()`
 
 <a name="http_get_legacy_slot_test_-0"></a>
 
-### http_get_legacy_slot_test_/0 * ###
+### http_get_legacy_slot_test_/0 *
 
 `http_get_legacy_slot_test_() -> any()`
 
 <a name="http_get_schedule-4"></a>
 
-### http_get_schedule/4 * ###
+### http_get_schedule/4 *
 
 `http_get_schedule(N, PMsg, From, To) -> any()`
 
 <a name="http_get_schedule-5"></a>
 
-### http_get_schedule/5 * ###
+### http_get_schedule/5 *
 
 `http_get_schedule(N, PMsg, From, To, Format) -> any()`
 
 <a name="http_get_schedule_redirect_test-0"></a>
 
-### http_get_schedule_redirect_test/0 * ###
+### http_get_schedule_redirect_test/0 *
 
 `http_get_schedule_redirect_test() -> any()`
 
 <a name="http_get_schedule_test_-0"></a>
 
-### http_get_schedule_test_/0 * ###
+### http_get_schedule_test_/0 *
 
 `http_get_schedule_test_() -> any()`
 
 <a name="http_get_slot-2"></a>
 
-### http_get_slot/2 * ###
+### http_get_slot/2 *
 
 `http_get_slot(N, PMsg) -> any()`
 
 <a name="http_init-0"></a>
 
-### http_init/0 * ###
+### http_init/0 *
 
 `http_init() -> any()`
 
 <a name="http_init-1"></a>
 
-### http_init/1 * ###
+### http_init/1 *
 
 `http_init(Opts) -> any()`
 
 <a name="http_post_legacy_schedule_test_-0"></a>
 
-### http_post_legacy_schedule_test_/0 * ###
+### http_post_legacy_schedule_test_/0 *
 
 `http_post_legacy_schedule_test_() -> any()`
 
 <a name="http_post_schedule_sign-4"></a>
 
-### http_post_schedule_sign/4 * ###
+### http_post_schedule_sign/4 *
 
 `http_post_schedule_sign(Node, Msg, ProcessMsg, Wallet) -> any()`
 
 <a name="http_post_schedule_test-0"></a>
 
-### http_post_schedule_test/0 * ###
+### http_post_schedule_test/0 *
 
 `http_post_schedule_test() -> any()`
 
 <a name="info-0"></a>
 
-### info/0 ###
+### info/0
 
 `info() -> any()`
 
@@ -320,13 +320,13 @@ function.
 
 <a name="many_clients-1"></a>
 
-### many_clients/1 * ###
+### many_clients/1 *
 
 `many_clients(Opts) -> any()`
 
 <a name="message_cached_assignments-2"></a>
 
-### message_cached_assignments/2 * ###
+### message_cached_assignments/2 *
 
 `message_cached_assignments(Msg, Opts) -> any()`
 
@@ -335,7 +335,7 @@ process.
 
 <a name="next-3"></a>
 
-### next/3 ###
+### next/3
 
 `next(Msg1, Msg2, Opts) -> any()`
 
@@ -346,7 +346,7 @@ a `Current-Slot` key. It stores a local cache of the schedule in the
 
 <a name="node_from_redirect-2"></a>
 
-### node_from_redirect/2 * ###
+### node_from_redirect/2 *
 
 `node_from_redirect(Redirect, Opts) -> any()`
 
@@ -354,19 +354,19 @@ Get the node URL from a redirect.
 
 <a name="post_legacy_schedule-4"></a>
 
-### post_legacy_schedule/4 * ###
+### post_legacy_schedule/4 *
 
 `post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) -> any()`
 
 <a name="post_remote_schedule-4"></a>
 
-### post_remote_schedule/4 * ###
+### post_remote_schedule/4 *
 
 `post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) -> any()`
 
 <a name="post_schedule-3"></a>
 
-### post_schedule/3 * ###
+### post_schedule/3 *
 
 `post_schedule(Msg1, Msg2, Opts) -> any()`
 
@@ -376,7 +376,7 @@ for this scheduler. If so, it schedules the message and returns the assignment.
 
 <a name="read_local_assignments-4"></a>
 
-### read_local_assignments/4 * ###
+### read_local_assignments/4 *
 
 `read_local_assignments(ProcID, From, To, Opts) -> any()`
 
@@ -384,19 +384,19 @@ Get the assignments for a process.
 
 <a name="redirect_from_graphql_test-0"></a>
 
-### redirect_from_graphql_test/0 * ###
+### redirect_from_graphql_test/0 *
 
 `redirect_from_graphql_test() -> any()`
 
 <a name="redirect_to_hint_test-0"></a>
 
-### redirect_to_hint_test/0 * ###
+### redirect_to_hint_test/0 *
 
 `redirect_to_hint_test() -> any()`
 
 <a name="register-3"></a>
 
-### register/3 ###
+### register/3
 
 `register(Msg1, Req, Opts) -> any()`
 
@@ -405,19 +405,19 @@ the new scheduler-location to the given registry, and return it to the caller.
 
 <a name="register_new_process_test-0"></a>
 
-### register_new_process_test/0 * ###
+### register_new_process_test/0 *
 
 `register_new_process_test() -> any()`
 
 <a name="register_scheduler_test-0"></a>
 
-### register_scheduler_test/0 * ###
+### register_scheduler_test/0 *
 
 `register_scheduler_test() -> any()`
 
 <a name="remote_slot-3"></a>
 
-### remote_slot/3 * ###
+### remote_slot/3 *
 
 `remote_slot(ProcID, Redirect, Opts) -> any()`
 
@@ -425,7 +425,7 @@ Get the current slot from a remote scheduler.
 
 <a name="remote_slot-4"></a>
 
-### remote_slot/4 * ###
+### remote_slot/4 *
 
 `remote_slot(X1, ProcID, Node, Opts) -> any()`
 
@@ -434,7 +434,7 @@ the process's scheduler.
 
 <a name="router-4"></a>
 
-### router/4 ###
+### router/4
 
 `router(X1, Msg1, Msg2, Opts) -> any()`
 
@@ -442,7 +442,7 @@ The default handler for the scheduler device.
 
 <a name="schedule-3"></a>
 
-### schedule/3 ###
+### schedule/3
 
 `schedule(Msg1, Msg2, Opts) -> any()`
 
@@ -451,19 +451,19 @@ scheduling a new message.
 
 <a name="schedule_message_and_get_slot_test-0"></a>
 
-### schedule_message_and_get_slot_test/0 * ###
+### schedule_message_and_get_slot_test/0 *
 
 `schedule_message_and_get_slot_test() -> any()`
 
 <a name="single_resolution-1"></a>
 
-### single_resolution/1 * ###
+### single_resolution/1 *
 
 `single_resolution(Opts) -> any()`
 
 <a name="slot-3"></a>
 
-### slot/3 ###
+### slot/3
 
 `slot(M1, M2, Opts) -> any()`
 
@@ -471,7 +471,7 @@ Returns information about the current slot for a process.
 
 <a name="spawn_lookahead_worker-3"></a>
 
-### spawn_lookahead_worker/3 * ###
+### spawn_lookahead_worker/3 *
 
 `spawn_lookahead_worker(ProcID, Slot, Opts) -> any()`
 
@@ -480,7 +480,7 @@ cache, if we have them available.
 
 <a name="start-0"></a>
 
-### start/0 ###
+### start/0
 
 `start() -> any()`
 
@@ -488,7 +488,7 @@ Helper to ensure that the environment is started.
 
 <a name="status-3"></a>
 
-### status/3 ###
+### status/3
 
 `status(M1, M2, Opts) -> any()`
 
@@ -496,13 +496,13 @@ Returns information about the entire scheduler.
 
 <a name="status_test-0"></a>
 
-### status_test/0 * ###
+### status_test/0 *
 
 `status_test() -> any()`
 
 <a name="test_process-0"></a>
 
-### test_process/0 ###
+### test_process/0
 
 `test_process() -> any()`
 
@@ -511,13 +511,13 @@ by users. See `dev_process` for examples of AO process messages.
 
 <a name="test_process-1"></a>
 
-### test_process/1 * ###
+### test_process/1 *
 
 `test_process(Wallet) -> any()`
 
 <a name="without_hint-1"></a>
 
-### without_hint/1 * ###
+### without_hint/1 *
 
 `without_hint(Target) -> any()`
 

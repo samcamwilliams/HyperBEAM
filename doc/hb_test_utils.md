@@ -1,6 +1,6 @@
 
 
-# Module hb_test_utils #
+# Module hb_test_utils
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,7 +9,7 @@ Simple utilities for testing HyperBEAM.
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#run-4">run/4</a></td><td></td></tr><tr><td valign="top"><a href="#satisfies_requirements-1">satisfies_requirements/1*</a></td><td>Determine if the environment satisfies the given test requirements.</td></tr><tr><td valign="top"><a href="#suite_with_opts-2">suite_with_opts/2</a></td><td>Run each test in a suite with each set of options.</td></tr></table>
@@ -17,17 +17,17 @@ Simple utilities for testing HyperBEAM.
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="run-4"></a>
 
-### run/4 ###
+### run/4
 
 `run(Name, OptsName, Suite, OptsList) -> any()`
 
 <a name="satisfies_requirements-1"></a>
 
-### satisfies_requirements/1 * ###
+### satisfies_requirements/1 *
 
 `satisfies_requirements(Requirements) -> any()`
 
@@ -37,7 +37,7 @@ return true if it exposes an `enabled/0` function.
 
 <a name="suite_with_opts-2"></a>
 
-### suite_with_opts/2 ###
+### suite_with_opts/2
 
 `suite_with_opts(Suite, OptsList) -> any()`
 

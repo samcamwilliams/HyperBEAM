@@ -1,6 +1,6 @@
 
 
-# Module hb_gateway_client #
+# Module hb_gateway_client
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,14 +10,14 @@ items of data stored on the network.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 This module must be used to get full HyperBEAM `structured@1.0` form messages
 from data items stored on the network, as Arweave gateways do not presently
 expose all necessary fields to retrieve this information outside of the
 GraphQL API. When gateways integrate serving in `httpsig@1.0` form, this
 module will be deprecated.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#ans104_no_data_item_test-0">ans104_no_data_item_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#data-2">data/2</a></td><td>Get the data associated with a transaction by its ID, using the node's
@@ -29,17 +29,17 @@ gateway, then returns <code>{ok, ParsedMsg}</code>.</td></tr><tr><td valign="top
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="ans104_no_data_item_test-0"></a>
 
-### ans104_no_data_item_test/0 * ###
+### ans104_no_data_item_test/0 *
 
 `ans104_no_data_item_test() -> any()`
 
 <a name="data-2"></a>
 
-### data/2 ###
+### data/2
 
 `data(ID, Opts) -> any()`
 
@@ -51,19 +51,19 @@ where `&lt;id&gt;` is the base64-url-encoded transaction ID.
 
 <a name="decode_id_or_null-1"></a>
 
-### decode_id_or_null/1 * ###
+### decode_id_or_null/1 *
 
 `decode_id_or_null(Bin) -> any()`
 
 <a name="decode_or_null-1"></a>
 
-### decode_or_null/1 * ###
+### decode_or_null/1 *
 
 `decode_or_null(Bin) -> any()`
 
 <a name="item_spec-0"></a>
 
-### item_spec/0 * ###
+### item_spec/0 *
 
 `item_spec() -> any()`
 
@@ -72,13 +72,13 @@ ANS-104 message.
 
 <a name="normalize_null-1"></a>
 
-### normalize_null/1 * ###
+### normalize_null/1 *
 
 `normalize_null(Bin) -> any()`
 
 <a name="query-2"></a>
 
-### query/2 * ###
+### query/2 *
 
 `query(Query, Opts) -> any()`
 
@@ -88,7 +88,7 @@ to use for the request.
 
 <a name="read-2"></a>
 
-### read/2 ###
+### read/2
 
 `read(ID, Opts) -> any()`
 
@@ -113,7 +113,7 @@ ar: String!
 
 <a name="result_to_message-2"></a>
 
-### result_to_message/2 ###
+### result_to_message/2
 
 `result_to_message(Item, Opts) -> any()`
 
@@ -122,13 +122,13 @@ gateway, then returns `{ok, ParsedMsg}`.
 
 <a name="result_to_message-3"></a>
 
-### result_to_message/3 * ###
+### result_to_message/3 *
 
 `result_to_message(ExpectedID, Item, Opts) -> any()`
 
 <a name="scheduler_location-2"></a>
 
-### scheduler_location/2 ###
+### scheduler_location/2
 
 `scheduler_location(Address, Opts) -> any()`
 
@@ -136,7 +136,7 @@ Find the location of the scheduler based on its ID, through GraphQL.
 
 <a name="scheduler_location_test-0"></a>
 
-### scheduler_location_test/0 * ###
+### scheduler_location_test/0 *
 
 `scheduler_location_test() -> any()`
 

@@ -1,6 +1,6 @@
 
 
-# Module dev_stack #
+# Module dev_stack
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ execution.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 It can run in two modes: fold (the default), and map.
 
@@ -118,7 +118,7 @@ execution is as follows:
 In this example, the `device` key is mutated a number of times, but the
 resulting HashPath remains correct and verifiable.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#benchmark_test-0">benchmark_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#example_device_for_stack_test-0">example_device_for_stack_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#generate_append_device-1">generate_append_device/1</a></td><td></td></tr><tr><td valign="top"><a href="#generate_append_device-2">generate_append_device/2*</a></td><td></td></tr><tr><td valign="top"><a href="#increment_pass-2">increment_pass/2*</a></td><td>Helper to increment the pass number.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td></td></tr><tr><td valign="top"><a href="#input_and_output_prefixes_test-0">input_and_output_prefixes_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#input_output_prefixes_passthrough_test-0">input_output_prefixes_passthrough_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#input_prefix-3">input_prefix/3</a></td><td>Return the input prefix for the stack.</td></tr><tr><td valign="top"><a href="#many_devices_test-0">many_devices_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#maybe_error-5">maybe_error/5*</a></td><td></td></tr><tr><td valign="top"><a href="#no_prefix_test-0">no_prefix_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#not_found_test-0">not_found_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#output_prefix-3">output_prefix/3</a></td><td>Return the output prefix for the stack.</td></tr><tr><td valign="top"><a href="#output_prefix_test-0">output_prefix_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pass_test-0">pass_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#prefix-3">prefix/3</a></td><td>Return the default prefix for the stack.</td></tr><tr><td valign="top"><a href="#reinvocation_test-0">reinvocation_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#resolve_fold-3">resolve_fold/3*</a></td><td>The main device stack execution engine.</td></tr><tr><td valign="top"><a href="#resolve_fold-4">resolve_fold/4*</a></td><td></td></tr><tr><td valign="top"><a href="#resolve_map-3">resolve_map/3*</a></td><td>Map over the devices in the stack, accumulating the output in a single
@@ -134,35 +134,35 @@ takes the place of the original <code>Device</code> key.</td></tr></table>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="benchmark_test-0"></a>
 
-### benchmark_test/0 * ###
+### benchmark_test/0 *
 
 `benchmark_test() -> any()`
 
 <a name="example_device_for_stack_test-0"></a>
 
-### example_device_for_stack_test/0 * ###
+### example_device_for_stack_test/0 *
 
 `example_device_for_stack_test() -> any()`
 
 <a name="generate_append_device-1"></a>
 
-### generate_append_device/1 ###
+### generate_append_device/1
 
 `generate_append_device(Separator) -> any()`
 
 <a name="generate_append_device-2"></a>
 
-### generate_append_device/2 * ###
+### generate_append_device/2 *
 
 `generate_append_device(Separator, Status) -> any()`
 
 <a name="increment_pass-2"></a>
 
-### increment_pass/2 * ###
+### increment_pass/2 *
 
 `increment_pass(Message, Opts) -> any()`
 
@@ -170,25 +170,25 @@ Helper to increment the pass number.
 
 <a name="info-1"></a>
 
-### info/1 ###
+### info/1
 
 `info(Msg) -> any()`
 
 <a name="input_and_output_prefixes_test-0"></a>
 
-### input_and_output_prefixes_test/0 * ###
+### input_and_output_prefixes_test/0 *
 
 `input_and_output_prefixes_test() -> any()`
 
 <a name="input_output_prefixes_passthrough_test-0"></a>
 
-### input_output_prefixes_passthrough_test/0 * ###
+### input_output_prefixes_passthrough_test/0 *
 
 `input_output_prefixes_passthrough_test() -> any()`
 
 <a name="input_prefix-3"></a>
 
-### input_prefix/3 ###
+### input_prefix/3
 
 `input_prefix(Msg1, Msg2, Opts) -> any()`
 
@@ -196,31 +196,31 @@ Return the input prefix for the stack.
 
 <a name="many_devices_test-0"></a>
 
-### many_devices_test/0 * ###
+### many_devices_test/0 *
 
 `many_devices_test() -> any()`
 
 <a name="maybe_error-5"></a>
 
-### maybe_error/5 * ###
+### maybe_error/5 *
 
 `maybe_error(Message1, Message2, DevNum, Info, Opts) -> any()`
 
 <a name="no_prefix_test-0"></a>
 
-### no_prefix_test/0 * ###
+### no_prefix_test/0 *
 
 `no_prefix_test() -> any()`
 
 <a name="not_found_test-0"></a>
 
-### not_found_test/0 * ###
+### not_found_test/0 *
 
 `not_found_test() -> any()`
 
 <a name="output_prefix-3"></a>
 
-### output_prefix/3 ###
+### output_prefix/3
 
 `output_prefix(Msg1, Msg2, Opts) -> any()`
 
@@ -228,19 +228,19 @@ Return the output prefix for the stack.
 
 <a name="output_prefix_test-0"></a>
 
-### output_prefix_test/0 * ###
+### output_prefix_test/0 *
 
 `output_prefix_test() -> any()`
 
 <a name="pass_test-0"></a>
 
-### pass_test/0 * ###
+### pass_test/0 *
 
 `pass_test() -> any()`
 
 <a name="prefix-3"></a>
 
-### prefix/3 ###
+### prefix/3
 
 `prefix(Msg1, Msg2, Opts) -> any()`
 
@@ -248,13 +248,13 @@ Return the default prefix for the stack.
 
 <a name="reinvocation_test-0"></a>
 
-### reinvocation_test/0 * ###
+### reinvocation_test/0 *
 
 `reinvocation_test() -> any()`
 
 <a name="resolve_fold-3"></a>
 
-### resolve_fold/3 * ###
+### resolve_fold/3 *
 
 `resolve_fold(Message1, Message2, Opts) -> any()`
 
@@ -263,13 +263,13 @@ information.
 
 <a name="resolve_fold-4"></a>
 
-### resolve_fold/4 * ###
+### resolve_fold/4 *
 
 `resolve_fold(Message1, Message2, DevNum, Opts) -> any()`
 
 <a name="resolve_map-3"></a>
 
-### resolve_map/3 * ###
+### resolve_map/3 *
 
 `resolve_map(Message1, Message2, Opts) -> any()`
 
@@ -279,13 +279,13 @@ original message (typically a number).
 
 <a name="router-3"></a>
 
-### router/3 * ###
+### router/3 *
 
 `router(Message1, Message2, Opts) -> any()`
 
 <a name="router-4"></a>
 
-### router/4 ###
+### router/4
 
 `router(Key, Message1, Message2, Opts) -> any()`
 
@@ -295,31 +295,31 @@ except for `set/2` which is handled by the default implementation in
 
 <a name="simple_map_test-0"></a>
 
-### simple_map_test/0 * ###
+### simple_map_test/0 *
 
 `simple_map_test() -> any()`
 
 <a name="simple_stack_execute_test-0"></a>
 
-### simple_stack_execute_test/0 * ###
+### simple_stack_execute_test/0 *
 
 `simple_stack_execute_test() -> any()`
 
 <a name="skip_test-0"></a>
 
-### skip_test/0 * ###
+### skip_test/0 *
 
 `skip_test() -> any()`
 
 <a name="test_prefix_msg-0"></a>
 
-### test_prefix_msg/0 * ###
+### test_prefix_msg/0 *
 
 `test_prefix_msg() -> any()`
 
 <a name="transform-3"></a>
 
-### transform/3 * ###
+### transform/3 *
 
 `transform(Msg1, Key, Opts) -> any()`
 
@@ -330,7 +330,7 @@ of the message as it delegates execution to devices contained within it.
 
 <a name="transform_external_call_device_test-0"></a>
 
-### transform_external_call_device_test/0 * ###
+### transform_external_call_device_test/0 *
 
 `transform_external_call_device_test() -> any()`
 
@@ -339,7 +339,7 @@ return a version of msg1 with only that device attached.
 
 <a name="transform_internal_call_device_test-0"></a>
 
-### transform_internal_call_device_test/0 * ###
+### transform_internal_call_device_test/0 *
 
 `transform_internal_call_device_test() -> any()`
 
@@ -348,7 +348,7 @@ by other functions in the module.
 
 <a name="transformer_message-2"></a>
 
-### transformer_message/2 * ###
+### transformer_message/2 *
 
 `transformer_message(Msg1, Opts) -> any()`
 

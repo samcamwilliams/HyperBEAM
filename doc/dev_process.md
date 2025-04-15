@@ -1,6 +1,6 @@
 
 
-# Module dev_process #
+# Module dev_process
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ in AO-Core.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 The core functionality of the module is in 'routing' requests
 for different functionality (scheduling, computing, and pushing messages)
@@ -62,7 +62,7 @@ before the full (restorable) state should be cached.
 Cache-Keys:      A list of the keys that should be cached for all
 assignments, in addition to `/Results`.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#aos_browsable_state_test_-0">aos_browsable_state_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#aos_compute_test_-0">aos_compute_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#aos_persistent_worker_benchmark_test_-0">aos_persistent_worker_benchmark_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#aos_state_access_via_http_test_-0">aos_state_access_via_http_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#aos_state_patch_test_-0">aos_state_patch_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#as_process-2">as_process/2</a></td><td>Change the message to for that has the device set as this module.</td></tr><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Compute the result of an assignment applied to the process state, if it
@@ -80,41 +80,41 @@ executor.</td></tr><tr><td valign="top"><a href="#test_base_process-1">test_base
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="aos_browsable_state_test_-0"></a>
 
-### aos_browsable_state_test_/0 * ###
+### aos_browsable_state_test_/0 *
 
 `aos_browsable_state_test_() -> any()`
 
 <a name="aos_compute_test_-0"></a>
 
-### aos_compute_test_/0 * ###
+### aos_compute_test_/0 *
 
 `aos_compute_test_() -> any()`
 
 <a name="aos_persistent_worker_benchmark_test_-0"></a>
 
-### aos_persistent_worker_benchmark_test_/0 * ###
+### aos_persistent_worker_benchmark_test_/0 *
 
 `aos_persistent_worker_benchmark_test_() -> any()`
 
 <a name="aos_state_access_via_http_test_-0"></a>
 
-### aos_state_access_via_http_test_/0 * ###
+### aos_state_access_via_http_test_/0 *
 
 `aos_state_access_via_http_test_() -> any()`
 
 <a name="aos_state_patch_test_-0"></a>
 
-### aos_state_patch_test_/0 * ###
+### aos_state_patch_test_/0 *
 
 `aos_state_patch_test_() -> any()`
 
 <a name="as_process-2"></a>
 
-### as_process/2 ###
+### as_process/2
 
 `as_process(Msg1, Opts) -> any()`
 
@@ -124,7 +124,7 @@ transformed device, this is useful.
 
 <a name="compute-3"></a>
 
-### compute/3 ###
+### compute/3
 
 `compute(Msg1, Msg2, Opts) -> any()`
 
@@ -133,7 +133,7 @@ is the next message.
 
 <a name="compute_slot-5"></a>
 
-### compute_slot/5 * ###
+### compute_slot/5 *
 
 `compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) -> any()`
 
@@ -141,7 +141,7 @@ Compute a single slot for a process, given an initialized state.
 
 <a name="compute_to_slot-5"></a>
 
-### compute_to_slot/5 * ###
+### compute_to_slot/5 *
 
 `compute_to_slot(ProcID, Msg1, Msg2, TargetSlot, Opts) -> any()`
 
@@ -150,7 +150,7 @@ we reach the target slot that the user has requested.
 
 <a name="default_device-3"></a>
 
-### default_device/3 * ###
+### default_device/3 *
 
 `default_device(Msg1, Key, Opts) -> any()`
 
@@ -162,13 +162,13 @@ using infrastructure that should not be present on nodes in the future.
 
 <a name="default_device_index-1"></a>
 
-### default_device_index/1 * ###
+### default_device_index/1 *
 
 `default_device_index(X1) -> any()`
 
 <a name="dev_test_process-0"></a>
 
-### dev_test_process/0 ###
+### dev_test_process/0
 
 `dev_test_process() -> any()`
 
@@ -178,13 +178,13 @@ execution. This should generate a message state has doubled
 
 <a name="do_test_restore-0"></a>
 
-### do_test_restore/0 ###
+### do_test_restore/0
 
 `do_test_restore() -> any()`
 
 <a name="ensure_loaded-3"></a>
 
-### ensure_loaded/3 * ###
+### ensure_loaded/3 *
 
 `ensure_loaded(Msg1, Msg2, Opts) -> any()`
 
@@ -193,7 +193,7 @@ up-to-date.
 
 <a name="ensure_process_key-2"></a>
 
-### ensure_process_key/2 ###
+### ensure_process_key/2
 
 `ensure_process_key(Msg1, Opts) -> any()`
 
@@ -201,19 +201,19 @@ Helper function to store a copy of the `process` key in the message.
 
 <a name="get_scheduler_slot_test-0"></a>
 
-### get_scheduler_slot_test/0 * ###
+### get_scheduler_slot_test/0 *
 
 `get_scheduler_slot_test() -> any()`
 
 <a name="http_wasm_process_by_id_test-0"></a>
 
-### http_wasm_process_by_id_test/0 * ###
+### http_wasm_process_by_id_test/0 *
 
 `http_wasm_process_by_id_test() -> any()`
 
 <a name="info-1"></a>
 
-### info/1 ###
+### info/1
 
 `info(Msg1) -> any()`
 
@@ -221,13 +221,13 @@ When the info key is called, we should return the process exports.
 
 <a name="init-0"></a>
 
-### init/0 ###
+### init/0
 
 `init() -> any()`
 
 <a name="init-3"></a>
 
-### init/3 * ###
+### init/3 *
 
 `init(Msg1, Msg2, Opts) -> any()`
 
@@ -238,13 +238,13 @@ initialized.
 
 <a name="next-3"></a>
 
-### next/3 * ###
+### next/3 *
 
 `next(Msg1, Msg2, Opts) -> any()`
 
 <a name="now-3"></a>
 
-### now/3 ###
+### now/3
 
 `now(RawMsg1, Msg2, Opts) -> any()`
 
@@ -253,25 +253,25 @@ the latest slot in the cache depending on the `process_now_from_cache` option.
 
 <a name="now_results_test_-0"></a>
 
-### now_results_test_/0 * ###
+### now_results_test_/0 *
 
 `now_results_test_() -> any()`
 
 <a name="persistent_process_test-0"></a>
 
-### persistent_process_test/0 * ###
+### persistent_process_test/0 *
 
 `persistent_process_test() -> any()`
 
 <a name="prior_results_accessible_test_-0"></a>
 
-### prior_results_accessible_test_/0 * ###
+### prior_results_accessible_test_/0 *
 
 `prior_results_accessible_test_() -> any()`
 
 <a name="process_id-3"></a>
 
-### process_id/3 ###
+### process_id/3
 
 `process_id(Msg1, Msg2, Opts) -> any()`
 
@@ -279,7 +279,7 @@ Returns the process ID of the current process.
 
 <a name="push-3"></a>
 
-### push/3 ###
+### push/3
 
 `push(Msg1, Msg2, Opts) -> any()`
 
@@ -288,13 +288,13 @@ that does not lead to any further messages being scheduled.
 
 <a name="recursive_path_resolution_test-0"></a>
 
-### recursive_path_resolution_test/0 * ###
+### recursive_path_resolution_test/0 *
 
 `recursive_path_resolution_test() -> any()`
 
 <a name="restore_test_-0"></a>
 
-### restore_test_/0 * ###
+### restore_test_/0 *
 
 `restore_test_() -> any()`
 
@@ -302,7 +302,7 @@ Manually test state restoration without using the cache.
 
 <a name="run_as-4"></a>
 
-### run_as/4 * ###
+### run_as/4 *
 
 `run_as(Key, Msg1, Msg2, Opts) -> any()`
 
@@ -312,7 +312,7 @@ to the original device if the device is the same as we left it.
 
 <a name="schedule-3"></a>
 
-### schedule/3 ###
+### schedule/3
 
 `schedule(Msg1, Msg2, Opts) -> any()`
 
@@ -320,67 +320,67 @@ Wraps functions in the Scheduler device.
 
 <a name="schedule_aos_call-2"></a>
 
-### schedule_aos_call/2 ###
+### schedule_aos_call/2
 
 `schedule_aos_call(Msg1, Code) -> any()`
 
 <a name="schedule_aos_call-3"></a>
 
-### schedule_aos_call/3 ###
+### schedule_aos_call/3
 
 `schedule_aos_call(Msg1, Code, Opts) -> any()`
 
 <a name="schedule_on_process_test-0"></a>
 
-### schedule_on_process_test/0 * ###
+### schedule_on_process_test/0 *
 
 `schedule_on_process_test() -> any()`
 
 <a name="schedule_test_message-2"></a>
 
-### schedule_test_message/2 * ###
+### schedule_test_message/2 *
 
 `schedule_test_message(Msg1, Text) -> any()`
 
 <a name="schedule_test_message-3"></a>
 
-### schedule_test_message/3 * ###
+### schedule_test_message/3 *
 
 `schedule_test_message(Msg1, Text, MsgBase) -> any()`
 
 <a name="schedule_wasm_call-3"></a>
 
-### schedule_wasm_call/3 * ###
+### schedule_wasm_call/3 *
 
 `schedule_wasm_call(Msg1, FuncName, Params) -> any()`
 
 <a name="schedule_wasm_call-4"></a>
 
-### schedule_wasm_call/4 * ###
+### schedule_wasm_call/4 *
 
 `schedule_wasm_call(Msg1, FuncName, Params, Opts) -> any()`
 
 <a name="simple_wasm_persistent_worker_benchmark_test-0"></a>
 
-### simple_wasm_persistent_worker_benchmark_test/0 * ###
+### simple_wasm_persistent_worker_benchmark_test/0 *
 
 `simple_wasm_persistent_worker_benchmark_test() -> any()`
 
 <a name="slot-3"></a>
 
-### slot/3 ###
+### slot/3
 
 `slot(Msg1, Msg2, Opts) -> any()`
 
 <a name="snapshot-3"></a>
 
-### snapshot/3 ###
+### snapshot/3
 
 `snapshot(RawMsg1, Msg2, Opts) -> any()`
 
 <a name="store_result-5"></a>
 
-### store_result/5 * ###
+### store_result/5 *
 
 `store_result(ProcID, Slot, Msg3, Msg2, Opts) -> any()`
 
@@ -389,7 +389,7 @@ key.
 
 <a name="test_aos_process-0"></a>
 
-### test_aos_process/0 ###
+### test_aos_process/0
 
 `test_aos_process() -> any()`
 
@@ -398,19 +398,19 @@ Generate a process message with a random number, and the
 
 <a name="test_aos_process-1"></a>
 
-### test_aos_process/1 ###
+### test_aos_process/1
 
 `test_aos_process(Opts) -> any()`
 
 <a name="test_aos_process-2"></a>
 
-### test_aos_process/2 * ###
+### test_aos_process/2 *
 
 `test_aos_process(Opts, Stack) -> any()`
 
 <a name="test_base_process-0"></a>
 
-### test_base_process/0 * ###
+### test_base_process/0 *
 
 `test_base_process() -> any()`
 
@@ -419,37 +419,37 @@ executor.
 
 <a name="test_base_process-1"></a>
 
-### test_base_process/1 * ###
+### test_base_process/1 *
 
 `test_base_process(Opts) -> any()`
 
 <a name="test_device_compute_test-0"></a>
 
-### test_device_compute_test/0 * ###
+### test_device_compute_test/0 *
 
 `test_device_compute_test() -> any()`
 
 <a name="test_wasm_process-1"></a>
 
-### test_wasm_process/1 ###
+### test_wasm_process/1
 
 `test_wasm_process(WASMImage) -> any()`
 
 <a name="test_wasm_process-2"></a>
 
-### test_wasm_process/2 * ###
+### test_wasm_process/2 *
 
 `test_wasm_process(WASMImage, Opts) -> any()`
 
 <a name="wasm_compute_from_id_test-0"></a>
 
-### wasm_compute_from_id_test/0 * ###
+### wasm_compute_from_id_test/0 *
 
 `wasm_compute_from_id_test() -> any()`
 
 <a name="wasm_compute_test-0"></a>
 
-### wasm_compute_test/0 * ###
+### wasm_compute_test/0 *
 
 `wasm_compute_test() -> any()`
 

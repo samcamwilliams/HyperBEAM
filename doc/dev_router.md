@@ -1,6 +1,6 @@
 
 
-# Module dev_router #
+# Module dev_router
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ appropriate network recipients via HTTP.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 All messages are initially
 routed to a single process per node, which then load-balances them
@@ -40,7 +40,7 @@ The structure of the routes should be as follows:
 ```
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_route_test-0">add_route_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#apply_route-2">apply_route/2*</a></td><td>Apply a node map's rules for transforming the path of the message.</td></tr><tr><td valign="top"><a href="#apply_routes-3">apply_routes/3*</a></td><td>Generate a <code>uri</code> key for each node in a route.</td></tr><tr><td valign="top"><a href="#binary_to_bignum-1">binary_to_bignum/1*</a></td><td>Cast a human-readable or native-encoded ID to a big integer.</td></tr><tr><td valign="top"><a href="#by_base_determinism_test-0">by_base_determinism_test/0*</a></td><td>Ensure that <code>By-Base</code> always chooses the same node for the same
@@ -51,17 +51,17 @@ hashpath.</td></tr><tr><td valign="top"><a href="#choose-5">choose/5*</a></td><t
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="add_route_test-0"></a>
 
-### add_route_test/0 * ###
+### add_route_test/0 *
 
 `add_route_test() -> any()`
 
 <a name="apply_route-2"></a>
 
-### apply_route/2 * ###
+### apply_route/2 *
 
 `apply_route(Msg, Route) -> any()`
 
@@ -74,7 +74,7 @@ Supports the following keys:
 
 <a name="apply_routes-3"></a>
 
-### apply_routes/3 * ###
+### apply_routes/3 *
 
 `apply_routes(Msg, R, Opts) -> any()`
 
@@ -82,7 +82,7 @@ Generate a `uri` key for each node in a route.
 
 <a name="binary_to_bignum-1"></a>
 
-### binary_to_bignum/1 * ###
+### binary_to_bignum/1 *
 
 `binary_to_bignum(Bin) -> any()`
 
@@ -90,7 +90,7 @@ Cast a human-readable or native-encoded ID to a big integer.
 
 <a name="by_base_determinism_test-0"></a>
 
-### by_base_determinism_test/0 * ###
+### by_base_determinism_test/0 *
 
 `by_base_determinism_test() -> any()`
 
@@ -99,7 +99,7 @@ hashpath.
 
 <a name="choose-5"></a>
 
-### choose/5 * ###
+### choose/5 *
 
 `choose(N, X2, Hashpath, Nodes, Opts) -> any()`
 
@@ -107,31 +107,31 @@ Implements the load distribution strategies if given a cluster.
 
 <a name="choose_1_test-1"></a>
 
-### choose_1_test/1 * ###
+### choose_1_test/1 *
 
 `choose_1_test(Strategy) -> any()`
 
 <a name="choose_n_test-1"></a>
 
-### choose_n_test/1 * ###
+### choose_n_test/1 *
 
 `choose_n_test(Strategy) -> any()`
 
 <a name="device_call_from_singleton_test-0"></a>
 
-### device_call_from_singleton_test/0 * ###
+### device_call_from_singleton_test/0 *
 
 `device_call_from_singleton_test() -> any()`
 
 <a name="explicit_route_test-0"></a>
 
-### explicit_route_test/0 * ###
+### explicit_route_test/0 *
 
 `explicit_route_test() -> any()`
 
 <a name="extract_base-2"></a>
 
-### extract_base/2 * ###
+### extract_base/2 *
 
 `extract_base(RawPath, Opts) -> any()`
 
@@ -140,7 +140,7 @@ binary ID that can be used for routing decisions.
 
 <a name="field_distance-2"></a>
 
-### field_distance/2 * ###
+### field_distance/2 *
 
 `field_distance(A, B) -> any()`
 
@@ -150,25 +150,25 @@ Calculate the minimum distance between two numbers
 
 <a name="generate_hashpaths-1"></a>
 
-### generate_hashpaths/1 * ###
+### generate_hashpaths/1 *
 
 `generate_hashpaths(Runs) -> any()`
 
 <a name="generate_nodes-1"></a>
 
-### generate_nodes/1 * ###
+### generate_nodes/1 *
 
 `generate_nodes(N) -> any()`
 
 <a name="get_routes_test-0"></a>
 
-### get_routes_test/0 * ###
+### get_routes_test/0 *
 
 `get_routes_test() -> any()`
 
 <a name="lowest_distance-1"></a>
 
-### lowest_distance/1 * ###
+### lowest_distance/1 *
 
 `lowest_distance(Nodes) -> any()`
 
@@ -176,13 +176,13 @@ Find the node with the lowest distance to the given hashpath.
 
 <a name="lowest_distance-2"></a>
 
-### lowest_distance/2 * ###
+### lowest_distance/2 *
 
 `lowest_distance(Nodes, X) -> any()`
 
 <a name="match_routes-3"></a>
 
-### match_routes/3 ###
+### match_routes/3
 
 `match_routes(ToMatch, Routes, Opts) -> any()`
 
@@ -190,19 +190,19 @@ Find the first matching template in a list of known routes.
 
 <a name="match_routes-4"></a>
 
-### match_routes/4 * ###
+### match_routes/4 *
 
 `match_routes(ToMatch, Routes, Keys, Opts) -> any()`
 
 <a name="relay_nearest_test-0"></a>
 
-### relay_nearest_test/0 * ###
+### relay_nearest_test/0 *
 
 `relay_nearest_test() -> any()`
 
 <a name="route-2"></a>
 
-### route/2 ###
+### route/2
 
 `route(Msg, Opts) -> any()`
 
@@ -233,25 +233,25 @@ function, taking only the request message and the `Opts` map.
 
 <a name="route-3"></a>
 
-### route/3 ###
+### route/3
 
 `route(X1, Msg, Opts) -> any()`
 
 <a name="route_regex_matches_test-0"></a>
 
-### route_regex_matches_test/0 * ###
+### route_regex_matches_test/0 *
 
 `route_regex_matches_test() -> any()`
 
 <a name="route_template_message_matches_test-0"></a>
 
-### route_template_message_matches_test/0 * ###
+### route_template_message_matches_test/0 *
 
 `route_template_message_matches_test() -> any()`
 
 <a name="routes-3"></a>
 
-### routes/3 ###
+### routes/3
 
 `routes(M1, M2, Opts) -> any()`
 
@@ -259,31 +259,31 @@ Device function that returns all known routes.
 
 <a name="simulate-4"></a>
 
-### simulate/4 * ###
+### simulate/4 *
 
 `simulate(Runs, ChooseN, Nodes, Strategy) -> any()`
 
 <a name="simulation_distribution-2"></a>
 
-### simulation_distribution/2 * ###
+### simulation_distribution/2 *
 
 `simulation_distribution(SimRes, Nodes) -> any()`
 
 <a name="simulation_occurences-2"></a>
 
-### simulation_occurences/2 * ###
+### simulation_occurences/2 *
 
 `simulation_occurences(SimRes, Nodes) -> any()`
 
 <a name="strategy_suite_test_-0"></a>
 
-### strategy_suite_test_/0 * ###
+### strategy_suite_test_/0 *
 
 `strategy_suite_test_() -> any()`
 
 <a name="template_matches-2"></a>
 
-### template_matches/2 * ###
+### template_matches/2 *
 
 `template_matches(ToMatch, Template) -> any()`
 
@@ -291,19 +291,19 @@ Check if a message matches a message template or path regex.
 
 <a name="unique_nodes-1"></a>
 
-### unique_nodes/1 * ###
+### unique_nodes/1 *
 
 `unique_nodes(Simulation) -> any()`
 
 <a name="unique_test-1"></a>
 
-### unique_test/1 * ###
+### unique_test/1 *
 
 `unique_test(Strategy) -> any()`
 
 <a name="within_norms-3"></a>
 
-### within_norms/3 * ###
+### within_norms/3 *
 
 `within_norms(SimRes, Nodes, TestSize) -> any()`
 

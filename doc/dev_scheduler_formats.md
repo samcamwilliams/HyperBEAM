@@ -1,6 +1,6 @@
 
 
-# Module dev_scheduler_formats #
+# Module dev_scheduler_formats
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ are compatible with various forms of AO clients.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 It features two main formats:
 
@@ -20,7 +20,7 @@ It features two main formats:
 The `application/json` format is a legacy format that is not recommended for
 new integrations of the AO protocol.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#aos2_normalize_data-1">aos2_normalize_data/1*</a></td><td>The <code>hb_gateway_client</code> module expects all JSON structures to at least
@@ -32,11 +32,11 @@ perform cache lookups, or await inprogress results.</td></tr></table>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="aos2_normalize_data-1"></a>
 
-### aos2_normalize_data/1 * ###
+### aos2_normalize_data/1 *
 
 `aos2_normalize_data(JSONStruct) -> any()`
 
@@ -45,7 +45,7 @@ have a `data` field. This function ensures that.
 
 <a name="aos2_normalize_types-1"></a>
 
-### aos2_normalize_types/1 ###
+### aos2_normalize_types/1
 
 `aos2_normalize_types(Msg) -> any()`
 
@@ -57,7 +57,7 @@ necessary for gaining compatibility with the AOS2-style scheduling API.
 
 <a name="aos2_to_assignment-2"></a>
 
-### aos2_to_assignment/2 ###
+### aos2_to_assignment/2
 
 `aos2_to_assignment(A, RawOpts) -> any()`
 
@@ -66,7 +66,7 @@ NOTE: This method is destructive to the verifiability of the assignment.
 
 <a name="aos2_to_assignments-3"></a>
 
-### aos2_to_assignments/3 ###
+### aos2_to_assignments/3
 
 `aos2_to_assignments(ProcID, Body, RawOpts) -> any()`
 
@@ -75,7 +75,7 @@ assignments response.
 
 <a name="assignment_to_aos2-2"></a>
 
-### assignment_to_aos2/2 * ###
+### assignment_to_aos2/2 *
 
 `assignment_to_aos2(Assignment, RawOpts) -> any()`
 
@@ -83,13 +83,13 @@ Convert an assignment to an AOS2-compatible JSON structure.
 
 <a name="assignments_to_aos2-4"></a>
 
-### assignments_to_aos2/4 ###
+### assignments_to_aos2/4
 
 `assignments_to_aos2(ProcID, Assignments, More, RawOpts) -> any()`
 
 <a name="assignments_to_bundle-4"></a>
 
-### assignments_to_bundle/4 ###
+### assignments_to_bundle/4
 
 `assignments_to_bundle(ProcID, Assignments, More, Opts) -> any()`
 
@@ -97,13 +97,13 @@ Generate a `GET /schedule` response for a process as HTTP-sig bundles.
 
 <a name="assignments_to_bundle-5"></a>
 
-### assignments_to_bundle/5 * ###
+### assignments_to_bundle/5 *
 
 `assignments_to_bundle(ProcID, Assignments, More, TimeInfo, RawOpts) -> any()`
 
 <a name="cursor-2"></a>
 
-### cursor/2 * ###
+### cursor/2 *
 
 `cursor(Assignment, RawOpts) -> any()`
 
@@ -113,7 +113,7 @@ least in the case of mainnet `ao.N.1` assignments. In the case of legacynet
 
 <a name="format_opts-1"></a>
 
-### format_opts/1 * ###
+### format_opts/1 *
 
 `format_opts(Opts) -> any()`
 

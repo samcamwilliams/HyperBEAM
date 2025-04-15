@@ -1,6 +1,6 @@
 
 
-# Module hb_opts #
+# Module hb_opts
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ HyperBEAM.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 Options are set globally, but can also be overridden using an
 an optional local `Opts` map argument. Many functions across the HyperBEAM
@@ -26,7 +26,7 @@ for non-verifiable behavior. Instead, if a local node setting makes
 deterministic behavior impossible, the caller should fail the execution
 with a refusal to execute.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cached_os_env-2">cached_os_env/2*</a></td><td>Cache the result of os:getenv/1 in the process dictionary, as it never
@@ -38,11 +38,11 @@ keys to those in the default message.</td></tr><tr><td valign="top"><a href="#mi
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="cached_os_env-2"></a>
 
-### cached_os_env/2 * ###
+### cached_os_env/2 *
 
 `cached_os_env(Key, DefaultValue) -> any()`
 
@@ -51,7 +51,7 @@ changes during the lifetime of a node.
 
 <a name="config_lookup-2"></a>
 
-### config_lookup/2 * ###
+### config_lookup/2 *
 
 `config_lookup(Key, Default) -> any()`
 
@@ -61,7 +61,7 @@ configuration system.
 
 <a name="default_message-0"></a>
 
-### default_message/0 ###
+### default_message/0
 
 `default_message() -> any()`
 
@@ -69,7 +69,7 @@ The default configuration options of the hyperbeam node.
 
 <a name="get-1"></a>
 
-### get/1 ###
+### get/1
 
 `get(Key) -> any()`
 
@@ -83,19 +83,19 @@ a way to specify a default value to return if the option is not set.
 
 <a name="get-2"></a>
 
-### get/2 ###
+### get/2
 
 `get(Key, Default) -> any()`
 
 <a name="get-3"></a>
 
-### get/3 ###
+### get/3
 
 `get(Key, Default, Opts) -> any()`
 
 <a name="global_get-2"></a>
 
-### global_get/2 * ###
+### global_get/2 *
 
 `global_get(Key, Default) -> any()`
 
@@ -103,7 +103,7 @@ Get an environment variable or configuration key.
 
 <a name="load-1"></a>
 
-### load/1 ###
+### load/1
 
 `load(Path) -> any()`
 
@@ -112,7 +112,7 @@ keys to those in the default message.
 
 <a name="mimic_default_types-2"></a>
 
-### mimic_default_types/2 ###
+### mimic_default_types/2
 
 `mimic_default_types(Map, Mode) -> any()`
 
@@ -120,7 +120,7 @@ Mimic the types of the default message for a given map.
 
 <a name="normalize_default-1"></a>
 
-### normalize_default/1 * ###
+### normalize_default/1 *
 
 `normalize_default(Default) -> any()`
 

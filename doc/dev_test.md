@@ -1,12 +1,12 @@
 
 
-# Module dev_test #
+# Module dev_test
 * [Function Index](#index)
 * [Function Details](#functions)
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Example implementation of a <code>compute</code> handler.</td></tr><tr><td valign="top"><a href="#compute_test-0">compute_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#device_with_function_key_module_test-0">device_with_function_key_module_test/0*</a></td><td>Tests the resolution of a default function.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Exports a default_handler function that can be used to test the
@@ -16,11 +16,11 @@ executor.</td></tr><tr><td valign="top"><a href="#postprocess-3">postprocess/3</
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="compute-3"></a>
 
-### compute/3 ###
+### compute/3
 
 `compute(Msg1, Msg2, Opts) -> any()`
 
@@ -30,13 +30,13 @@ slot number in the results key.
 
 <a name="compute_test-0"></a>
 
-### compute_test/0 * ###
+### compute_test/0 *
 
 `compute_test() -> any()`
 
 <a name="device_with_function_key_module_test-0"></a>
 
-### device_with_function_key_module_test/0 * ###
+### device_with_function_key_module_test/0 *
 
 `device_with_function_key_module_test() -> any()`
 
@@ -44,7 +44,7 @@ Tests the resolution of a default function.
 
 <a name="info-1"></a>
 
-### info/1 ###
+### info/1
 
 `info(X1) -> any()`
 
@@ -53,7 +53,7 @@ handler resolution mechanism.
 
 <a name="init-3"></a>
 
-### init/3 ###
+### init/3
 
 `init(Msg, Msg2, Opts) -> any()`
 
@@ -61,7 +61,7 @@ Example `init/3` handler. Sets the `Already-Seen` key to an empty list.
 
 <a name="mul-2"></a>
 
-### mul/2 ###
+### mul/2
 
 `mul(Msg1, Msg2) -> any()`
 
@@ -70,7 +70,7 @@ executor.
 
 <a name="postprocess-3"></a>
 
-### postprocess/3 ###
+### postprocess/3
 
 `postprocess(Msg, X2, Opts) -> any()`
 
@@ -78,7 +78,7 @@ Set the `postprocessor-called` key to true in the HTTP server.
 
 <a name="restore-3"></a>
 
-### restore/3 ###
+### restore/3
 
 `restore(Msg, Msg2, Opts) -> any()`
 
@@ -87,13 +87,13 @@ value of `Current-Slot` and checks whether the `Already-Seen` key is valid.
 
 <a name="restore_test-0"></a>
 
-### restore_test/0 * ###
+### restore_test/0 *
 
 `restore_test() -> any()`
 
 <a name="snapshot-3"></a>
 
-### snapshot/3 ###
+### snapshot/3
 
 `snapshot(Msg1, Msg2, Opts) -> any()`
 
@@ -101,7 +101,7 @@ Do nothing when asked to snapshot.
 
 <a name="test_func-1"></a>
 
-### test_func/1 ###
+### test_func/1
 
 `test_func(X1) -> any()`
 

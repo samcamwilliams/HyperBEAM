@@ -1,6 +1,6 @@
 
 
-# Module dev_meta #
+# Module dev_meta
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ for all messages processed by the machine.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 This device executes a
 AO-Core singleton request, after first applying the node's
 pre-processor, if set. The pre-processor can halt the request by
@@ -19,7 +19,7 @@ the result of the pre-processor is used as the request for the AO-Core
 resolver. Additionally, a post-processor can be set, which is executed after
 the AO-Core resolver has returned a result.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_dynamic_keys-1">add_dynamic_keys/1*</a></td><td>Add dynamic keys to the node message.</td></tr><tr><td valign="top"><a href="#adopt_node_message-2">adopt_node_message/2</a></td><td>Attempt to adopt changes to a node message.</td></tr><tr><td valign="top"><a href="#authorized_set_node_msg_succeeds_test-0">authorized_set_node_msg_succeeds_test/0*</a></td><td>Test that we can set the node message if the request is signed by the
@@ -31,11 +31,11 @@ allow them to update the node message.</td></tr></table>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="add_dynamic_keys-1"></a>
 
-### add_dynamic_keys/1 * ###
+### add_dynamic_keys/1 *
 
 `add_dynamic_keys(NodeMsg) -> any()`
 
@@ -43,7 +43,7 @@ Add dynamic keys to the node message.
 
 <a name="adopt_node_message-2"></a>
 
-### adopt_node_message/2 ###
+### adopt_node_message/2
 
 `adopt_node_message(Request, NodeMsg) -> any()`
 
@@ -51,7 +51,7 @@ Attempt to adopt changes to a node message.
 
 <a name="authorized_set_node_msg_succeeds_test-0"></a>
 
-### authorized_set_node_msg_succeeds_test/0 * ###
+### authorized_set_node_msg_succeeds_test/0 *
 
 `authorized_set_node_msg_succeeds_test() -> any()`
 
@@ -60,7 +60,7 @@ owner of the node.
 
 <a name="claim_node_test-0"></a>
 
-### claim_node_test/0 * ###
+### claim_node_test/0 *
 
 `claim_node_test() -> any()`
 
@@ -68,7 +68,7 @@ Test that we can claim the node correctly and set the node message after.
 
 <a name="config_test-0"></a>
 
-### config_test/0 * ###
+### config_test/0 *
 
 `config_test() -> any()`
 
@@ -76,7 +76,7 @@ Test that we can get the node message.
 
 <a name="embed_status-1"></a>
 
-### embed_status/1 * ###
+### embed_status/1 *
 
 `embed_status(X1) -> any()`
 
@@ -84,7 +84,7 @@ Wrap the result of a device call in a status.
 
 <a name="filter_node_msg-1"></a>
 
-### filter_node_msg/1 * ###
+### filter_node_msg/1 *
 
 `filter_node_msg(Msg) -> any()`
 
@@ -93,7 +93,7 @@ message.
 
 <a name="halt_request_test-0"></a>
 
-### halt_request_test/0 * ###
+### halt_request_test/0 *
 
 `halt_request_test() -> any()`
 
@@ -101,7 +101,7 @@ Test that we can halt a request if the preprocessor returns an error.
 
 <a name="handle-2"></a>
 
-### handle/2 ###
+### handle/2
 
 `handle(NodeMsg, RawRequest) -> any()`
 
@@ -111,13 +111,13 @@ other messages are routed to the `handle_resolve/2` function.
 
 <a name="handle_initialize-2"></a>
 
-### handle_initialize/2 * ###
+### handle_initialize/2 *
 
 `handle_initialize(Rest, NodeMsg) -> any()`
 
 <a name="handle_resolve-3"></a>
 
-### handle_resolve/3 * ###
+### handle_resolve/3 *
 
 `handle_resolve(Req, Msgs, NodeMsg) -> any()`
 
@@ -129,7 +129,7 @@ the request before returning the result it grants back to the user.
 
 <a name="info-1"></a>
 
-### info/1 ###
+### info/1
 
 `info(X1) -> any()`
 
@@ -145,7 +145,7 @@ function, we will need to find a different approach.
 
 <a name="info-3"></a>
 
-### info/3 ###
+### info/3
 
 `info(X1, Request, NodeMsg) -> any()`
 
@@ -155,7 +155,7 @@ as-is, aside all keys that are private (according to `hb_private`).
 
 <a name="maybe_sign-2"></a>
 
-### maybe_sign/2 * ###
+### maybe_sign/2 *
 
 `maybe_sign(Res, NodeMsg) -> any()`
 
@@ -163,7 +163,7 @@ Sign the result of a device call if the node is configured to do so.
 
 <a name="message_to_status-1"></a>
 
-### message_to_status/1 * ###
+### message_to_status/1 *
 
 `message_to_status(Item) -> any()`
 
@@ -171,7 +171,7 @@ Get the HTTP status code from a transaction (if it exists).
 
 <a name="modify_request_test-0"></a>
 
-### modify_request_test/0 * ###
+### modify_request_test/0 *
 
 `modify_request_test() -> any()`
 
@@ -179,7 +179,7 @@ Test that a preprocessor can modify a request.
 
 <a name="permanent_node_message_test-0"></a>
 
-### permanent_node_message_test/0 * ###
+### permanent_node_message_test/0 *
 
 `permanent_node_message_test() -> any()`
 
@@ -187,7 +187,7 @@ Test that a permanent node message cannot be changed.
 
 <a name="priv_inaccessible_test-0"></a>
 
-### priv_inaccessible_test/0 * ###
+### priv_inaccessible_test/0 *
 
 `priv_inaccessible_test() -> any()`
 
@@ -195,7 +195,7 @@ Test that we can't get the node message if the requested key is private.
 
 <a name="resolve_processor-5"></a>
 
-### resolve_processor/5 * ###
+### resolve_processor/5 *
 
 `resolve_processor(PathKey, Processor, Req, Query, NodeMsg) -> any()`
 
@@ -211,7 +211,7 @@ invocation of the processor provides a request of the following form:
 
 <a name="status_code-1"></a>
 
-### status_code/1 * ###
+### status_code/1 *
 
 `status_code(X1) -> any()`
 
@@ -223,7 +223,7 @@ The order of precedence is:
 
 <a name="unauthorized_set_node_msg_fails_test-0"></a>
 
-### unauthorized_set_node_msg_fails_test/0 * ###
+### unauthorized_set_node_msg_fails_test/0 *
 
 `unauthorized_set_node_msg_fails_test() -> any()`
 
@@ -232,7 +232,7 @@ the owner of the node.
 
 <a name="uninitialized_node_test-0"></a>
 
-### uninitialized_node_test/0 * ###
+### uninitialized_node_test/0 *
 
 `uninitialized_node_test() -> any()`
 
@@ -240,7 +240,7 @@ Test that an uninitialized node will not run computation.
 
 <a name="update_node_message-2"></a>
 
-### update_node_message/2 * ###
+### update_node_message/2 *
 
 `update_node_message(Request, NodeMsg) -> any()`
 

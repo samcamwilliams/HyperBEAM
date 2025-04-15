@@ -1,6 +1,6 @@
 
 
-# Module hb_util #
+# Module hb_util
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,7 +9,7 @@ A collection of utility functions for building with HyperBEAM.
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_commas-1">add_commas/1*</a></td><td></td></tr><tr><td valign="top"><a href="#all_hb_modules-0">all_hb_modules/0</a></td><td>Get all loaded modules that are loaded and are part of HyperBEAM.</td></tr><tr><td valign="top"><a href="#atom-1">atom/1</a></td><td>Coerce a string to an atom.</td></tr><tr><td valign="top"><a href="#bin-1">bin/1</a></td><td>Coerce a value to a binary.</td></tr><tr><td valign="top"><a href="#count-2">count/2</a></td><td></td></tr><tr><td valign="top"><a href="#debug_fmt-1">debug_fmt/1</a></td><td>Convert a term to a string for debugging print purposes.</td></tr><tr><td valign="top"><a href="#debug_fmt-2">debug_fmt/2</a></td><td></td></tr><tr><td valign="top"><a href="#debug_print-4">debug_print/4</a></td><td>Print a message to the standard error stream, prefixed by the amount
@@ -29,17 +29,17 @@ stack trace.</td></tr><tr><td valign="top"><a href="#until-1">until/1</a></td><t
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="add_commas-1"></a>
 
-### add_commas/1 * ###
+### add_commas/1 *
 
 `add_commas(Rest) -> any()`
 
 <a name="all_hb_modules-0"></a>
 
-### all_hb_modules/0 ###
+### all_hb_modules/0
 
 `all_hb_modules() -> any()`
 
@@ -47,7 +47,7 @@ Get all loaded modules that are loaded and are part of HyperBEAM.
 
 <a name="atom-1"></a>
 
-### atom/1 ###
+### atom/1
 
 `atom(Str) -> any()`
 
@@ -55,7 +55,7 @@ Coerce a string to an atom.
 
 <a name="bin-1"></a>
 
-### bin/1 ###
+### bin/1
 
 `bin(Value) -> any()`
 
@@ -63,13 +63,13 @@ Coerce a value to a binary.
 
 <a name="count-2"></a>
 
-### count/2 ###
+### count/2
 
 `count(Item, List) -> any()`
 
 <a name="debug_fmt-1"></a>
 
-### debug_fmt/1 ###
+### debug_fmt/1
 
 `debug_fmt(X) -> any()`
 
@@ -77,13 +77,13 @@ Convert a term to a string for debugging print purposes.
 
 <a name="debug_fmt-2"></a>
 
-### debug_fmt/2 ###
+### debug_fmt/2
 
 `debug_fmt(X, Indent) -> any()`
 
 <a name="debug_print-4"></a>
 
-### debug_print/4 ###
+### debug_print/4
 
 `debug_print(X, Mod, Func, LineNum) -> any()`
 
@@ -92,7 +92,7 @@ of time that has elapsed since the last call to this function.
 
 <a name="decode-1"></a>
 
-### decode/1 ###
+### decode/1
 
 `decode(Input) -> any()`
 
@@ -101,7 +101,7 @@ invalid.
 
 <a name="deep_merge-2"></a>
 
-### deep_merge/2 ###
+### deep_merge/2
 
 `deep_merge(Map1, Map2) -> any()`
 
@@ -109,19 +109,19 @@ Deep merge two maps, recursively merging nested maps.
 
 <a name="do_debug_fmt-2"></a>
 
-### do_debug_fmt/2 * ###
+### do_debug_fmt/2 *
 
 `do_debug_fmt(Wallet, Indent) -> any()`
 
 <a name="do_to_lines-1"></a>
 
-### do_to_lines/1 * ###
+### do_to_lines/1 *
 
 `do_to_lines(In) -> any()`
 
 <a name="encode-1"></a>
 
-### encode/1 ###
+### encode/1
 
 `encode(Bin) -> any()`
 
@@ -129,7 +129,7 @@ Encode a binary to URL safe base64 binary string.
 
 <a name="eunit_print-2"></a>
 
-### eunit_print/2 ###
+### eunit_print/2
 
 `eunit_print(FmtStr, FmtArgs) -> any()`
 
@@ -137,7 +137,7 @@ Format and print an indented string to standard error.
 
 <a name="find_value-2"></a>
 
-### find_value/2 ###
+### find_value/2
 
 `find_value(Key, List) -> any()`
 
@@ -145,13 +145,13 @@ Find the value associated with a key in parsed a JSON structure list.
 
 <a name="find_value-3"></a>
 
-### find_value/3 ###
+### find_value/3
 
 `find_value(Key, Map, Default) -> any()`
 
 <a name="float-1"></a>
 
-### float/1 ###
+### float/1
 
 `float(Str) -> any()`
 
@@ -159,7 +159,7 @@ Coerce a string to a float.
 
 <a name="format_address-2"></a>
 
-### format_address/2 * ###
+### format_address/2 *
 
 `format_address(Wallet, Indent) -> any()`
 
@@ -167,7 +167,7 @@ If the user attempts to print a wallet, format it as an address.
 
 <a name="format_binary-1"></a>
 
-### format_binary/1 ###
+### format_binary/1
 
 `format_binary(Bin) -> any()`
 
@@ -175,7 +175,7 @@ Format a binary as a short string suitable for printing.
 
 <a name="format_debug_trace-3"></a>
 
-### format_debug_trace/3 * ###
+### format_debug_trace/3 *
 
 `format_debug_trace(Mod, Func, Line) -> any()`
 
@@ -183,7 +183,7 @@ Generate the appropriate level of trace for a given call.
 
 <a name="format_indented-2"></a>
 
-### format_indented/2 ###
+### format_indented/2
 
 `format_indented(Str, Indent) -> any()`
 
@@ -191,13 +191,13 @@ Format a string with an indentation level.
 
 <a name="format_indented-3"></a>
 
-### format_indented/3 ###
+### format_indented/3
 
 `format_indented(RawStr, Fmt, Ind) -> any()`
 
 <a name="format_maybe_multiline-2"></a>
 
-### format_maybe_multiline/2 ###
+### format_maybe_multiline/2
 
 `format_maybe_multiline(X, Indent) -> any()`
 
@@ -206,7 +206,7 @@ on the value of the `debug_print_map_line_threshold` runtime option.
 
 <a name="format_trace-2"></a>
 
-### format_trace/2 * ###
+### format_trace/2 *
 
 `format_trace(Rest, Prefixes) -> any()`
 
@@ -217,7 +217,7 @@ option. At the first frame that does not match a prefix in the
 
 <a name="format_trace_short-1"></a>
 
-### format_trace_short/1 ###
+### format_trace_short/1
 
 `format_trace_short(Trace) -> any()`
 
@@ -225,13 +225,13 @@ Format a trace to a short string.
 
 <a name="format_trace_short-4"></a>
 
-### format_trace_short/4 * ###
+### format_trace_short/4 *
 
 `format_trace_short(Max, Latch, Trace, Prefixes) -> any()`
 
 <a name="format_tuple-2"></a>
 
-### format_tuple/2 * ###
+### format_tuple/2 *
 
 `format_tuple(Tuple, Indent) -> any()`
 
@@ -239,7 +239,7 @@ Helper function to format tuples with arity greater than 2.
 
 <a name="get_trace-0"></a>
 
-### get_trace/0 * ###
+### get_trace/0 *
 
 `get_trace() -> any()`
 
@@ -247,7 +247,7 @@ Get the trace of the current process.
 
 <a name="hd-1"></a>
 
-### hd/1 ###
+### hd/1
 
 `hd(Message) -> any()`
 
@@ -257,25 +257,25 @@ as well as a standard map of HyperBEAM runtime options.
 
 <a name="hd-2"></a>
 
-### hd/2 ###
+### hd/2
 
 `hd(Message, ReturnType) -> any()`
 
 <a name="hd-3"></a>
 
-### hd/3 ###
+### hd/3
 
 `hd(Message, ReturnType, Opts) -> any()`
 
 <a name="hd-5"></a>
 
-### hd/5 * ###
+### hd/5 *
 
 `hd(Map, Rest, Index, ReturnType, Opts) -> any()`
 
 <a name="human_id-1"></a>
 
-### human_id/1 ###
+### human_id/1
 
 `human_id(Bin) -> any()`
 
@@ -284,7 +284,7 @@ a human readable ID, it is returned as is.
 
 <a name="human_int-1"></a>
 
-### human_int/1 ###
+### human_int/1
 
 `human_int(Int) -> any()`
 
@@ -292,7 +292,7 @@ Add `,` characters to a number every 3 digits to make it human readable.
 
 <a name="id-1"></a>
 
-### id/1 ###
+### id/1
 
 `id(Item) -> any()`
 
@@ -301,13 +301,13 @@ a message explicitly, raw encoded ID, or an Erlang Arweave `tx` record.
 
 <a name="id-2"></a>
 
-### id/2 ###
+### id/2
 
 `id(TX, Type) -> any()`
 
 <a name="int-1"></a>
 
-### int/1 ###
+### int/1
 
 `int(Str) -> any()`
 
@@ -315,7 +315,7 @@ Coerce a string to an integer.
 
 <a name="is_hb_module-1"></a>
 
-### is_hb_module/1 ###
+### is_hb_module/1
 
 `is_hb_module(Atom) -> any()`
 
@@ -323,13 +323,13 @@ Is the given module part of HyperBEAM?
 
 <a name="is_hb_module-2"></a>
 
-### is_hb_module/2 ###
+### is_hb_module/2
 
 `is_hb_module(Atom, Prefixes) -> any()`
 
 <a name="is_human_binary-1"></a>
 
-### is_human_binary/1 * ###
+### is_human_binary/1 *
 
 `is_human_binary(Bin) -> any()`
 
@@ -337,7 +337,7 @@ Determine whether a binary is human-readable.
 
 <a name="is_string_list-1"></a>
 
-### is_string_list/1 ###
+### is_string_list/1
 
 `is_string_list(MaybeString) -> any()`
 
@@ -345,7 +345,7 @@ Is the given term a string list?
 
 <a name="key_to_atom-2"></a>
 
-### key_to_atom/2 ###
+### key_to_atom/2
 
 `key_to_atom(Key, Mode) -> any()`
 
@@ -353,7 +353,7 @@ Convert keys in a map to atoms, lowering `-` to `_`.
 
 <a name="list-1"></a>
 
-### list/1 ###
+### list/1
 
 `list(Value) -> any()`
 
@@ -361,7 +361,7 @@ Coerce a value to a list.
 
 <a name="list_to_numbered_map-1"></a>
 
-### list_to_numbered_map/1 ###
+### list_to_numbered_map/1
 
 `list_to_numbered_map(List) -> any()`
 
@@ -369,7 +369,7 @@ Convert a list of elements to a map with numbered keys.
 
 <a name="maybe_throw-2"></a>
 
-### maybe_throw/2 ###
+### maybe_throw/2
 
 `maybe_throw(Val, Opts) -> any()`
 
@@ -378,13 +378,13 @@ value `throw`. Otherwise, return the value.
 
 <a name="mean-1"></a>
 
-### mean/1 ###
+### mean/1
 
 `mean(List) -> any()`
 
 <a name="message_to_ordered_list-1"></a>
 
-### message_to_ordered_list/1 ###
+### message_to_ordered_list/1
 
 `message_to_ordered_list(Message) -> any()`
 
@@ -394,19 +394,19 @@ standard map of HyperBEAM runtime options.
 
 <a name="message_to_ordered_list-2"></a>
 
-### message_to_ordered_list/2 ###
+### message_to_ordered_list/2
 
 `message_to_ordered_list(Message, Opts) -> any()`
 
 <a name="message_to_ordered_list-4"></a>
 
-### message_to_ordered_list/4 * ###
+### message_to_ordered_list/4 *
 
 `message_to_ordered_list(Message, Keys, Key, Opts) -> any()`
 
 <a name="native_id-1"></a>
 
-### native_id/1 ###
+### native_id/1
 
 `native_id(Bin) -> any()`
 
@@ -415,7 +415,7 @@ a native binary ID, it is returned as is.
 
 <a name="normalize_trace-1"></a>
 
-### normalize_trace/1 * ###
+### normalize_trace/1 *
 
 `normalize_trace(Rest) -> any()`
 
@@ -423,7 +423,7 @@ Remove all calls from this module from the top of a trace.
 
 <a name="number-1"></a>
 
-### number/1 ###
+### number/1
 
 `number(List) -> any()`
 
@@ -431,7 +431,7 @@ Label a list of elements with a number.
 
 <a name="ok-1"></a>
 
-### ok/1 ###
+### ok/1
 
 `ok(Value) -> any()`
 
@@ -440,19 +440,19 @@ the value of the `error_strategy` option.
 
 <a name="ok-2"></a>
 
-### ok/2 ###
+### ok/2
 
 `ok(Other, Opts) -> any()`
 
 <a name="print_trace-3"></a>
 
-### print_trace/3 * ###
+### print_trace/3 *
 
 `print_trace(Stack, Label, CallerInfo) -> any()`
 
 <a name="print_trace-4"></a>
 
-### print_trace/4 ###
+### print_trace/4
 
 `print_trace(Stack, CallMod, CallFunc, CallLine) -> any()`
 
@@ -464,7 +464,7 @@ which will be used instead of the default.
 
 <a name="print_trace_short-4"></a>
 
-### print_trace_short/4 ###
+### print_trace_short/4
 
 `print_trace_short(Trace, Mod, Func, Line) -> any()`
 
@@ -472,7 +472,7 @@ Print a trace to the standard error stream.
 
 <a name="remove_common-2"></a>
 
-### remove_common/2 ###
+### remove_common/2
 
 `remove_common(MainStr, SubStr) -> any()`
 
@@ -482,19 +482,19 @@ returning the type of the first argument.
 
 <a name="remove_trailing_noise-1"></a>
 
-### remove_trailing_noise/1 * ###
+### remove_trailing_noise/1 *
 
 `remove_trailing_noise(Str) -> any()`
 
 <a name="remove_trailing_noise-2"></a>
 
-### remove_trailing_noise/2 ###
+### remove_trailing_noise/2
 
 `remove_trailing_noise(Str, Noise) -> any()`
 
 <a name="safe_decode-1"></a>
 
-### safe_decode/1 ###
+### safe_decode/1
 
 `safe_decode(E) -> any()`
 
@@ -503,7 +503,7 @@ tuple.
 
 <a name="safe_encode-1"></a>
 
-### safe_encode/1 ###
+### safe_encode/1
 
 `safe_encode(Bin) -> any()`
 
@@ -511,7 +511,7 @@ Safely encode a binary to URL safe base64.
 
 <a name="short_id-1"></a>
 
-### short_id/1 ###
+### short_id/1
 
 `short_id(Bin) -> any()`
 
@@ -519,13 +519,13 @@ Return a short ID for the different types of IDs used in AO-Core.
 
 <a name="stddev-1"></a>
 
-### stddev/1 ###
+### stddev/1
 
 `stddev(List) -> any()`
 
 <a name="to_hex-1"></a>
 
-### to_hex/1 ###
+### to_hex/1
 
 `to_hex(Bin) -> any()`
 
@@ -535,13 +535,13 @@ the core protocol. We use b64u for efficient encoding.
 
 <a name="to_lines-1"></a>
 
-### to_lines/1 * ###
+### to_lines/1 *
 
 `to_lines(Elems) -> any()`
 
 <a name="to_lower-1"></a>
 
-### to_lower/1 ###
+### to_lower/1
 
 `to_lower(Str) -> any()`
 
@@ -549,7 +549,7 @@ Convert a binary to a lowercase.
 
 <a name="to_sorted_keys-1"></a>
 
-### to_sorted_keys/1 ###
+### to_sorted_keys/1
 
 `to_sorted_keys(Msg) -> any()`
 
@@ -557,7 +557,7 @@ Given a map or KVList, return a deterministically ordered list of its keys.
 
 <a name="to_sorted_list-1"></a>
 
-### to_sorted_list/1 ###
+### to_sorted_list/1
 
 `to_sorted_list(Msg) -> any()`
 
@@ -566,7 +566,7 @@ key-value pairs.
 
 <a name="trace_macro_helper-5"></a>
 
-### trace_macro_helper/5 ###
+### trace_macro_helper/5
 
 `trace_macro_helper(Fun, X2, Mod, Func, Line) -> any()`
 
@@ -575,7 +575,7 @@ stack trace.
 
 <a name="until-1"></a>
 
-### until/1 ###
+### until/1
 
 `until(Condition) -> any()`
 
@@ -586,19 +586,19 @@ condition is true, the function will return the count.
 
 <a name="until-2"></a>
 
-### until/2 ###
+### until/2
 
 `until(Condition, Count) -> any()`
 
 <a name="until-3"></a>
 
-### until/3 ###
+### until/3
 
 `until(Condition, Fun, Count) -> any()`
 
 <a name="variance-1"></a>
 
-### variance/1 ###
+### variance/1
 
 `variance(List) -> any()`
 

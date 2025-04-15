@@ -1,6 +1,6 @@
 
 
-# Module dev_codec_httpsig_conv #
+# Module dev_codec_httpsig_conv
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ A codec for the that marshals TABM encoded messages to and from the
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 Every HTTP message is an HTTP multipart message.
 See https://datatracker.ietf.org/doc/html/rfc7578
@@ -36,7 +36,7 @@ structured field.
 - Otherwise encode the value as a part in the multipart response
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#boundary_from_parts-1">boundary_from_parts/1*</a></td><td>Generate a unique, reproducible boundary for the
@@ -54,11 +54,11 @@ where on keys with maps values are flattened.</td></tr><tr><td valign="top"><a h
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="boundary_from_parts-1"></a>
 
-### boundary_from_parts/1 * ###
+### boundary_from_parts/1 *
 
 `boundary_from_parts(PartList) -> any()`
 
@@ -72,7 +72,7 @@ secure.
 
 <a name="commitments_from_signature-4"></a>
 
-### commitments_from_signature/4 * ###
+### commitments_from_signature/4 *
 
 `commitments_from_signature(Map, HPs, RawSig, RawSigInput) -> any()`
 
@@ -81,13 +81,13 @@ signatures and their corresponding inputs.
 
 <a name="do_to-2"></a>
 
-### do_to/2 * ###
+### do_to/2 *
 
 `do_to(Binary, Opts) -> any()`
 
 <a name="encode_body_keys-1"></a>
 
-### encode_body_keys/1 * ###
+### encode_body_keys/1 *
 
 `encode_body_keys(PartList) -> any()`
 
@@ -95,7 +95,7 @@ Encode a list of body parts into a binary.
 
 <a name="encode_body_part-3"></a>
 
-### encode_body_part/3 * ###
+### encode_body_part/3 *
 
 `encode_body_part(PartName, BodyPart, InlineKey) -> any()`
 
@@ -103,7 +103,7 @@ Encode a multipart body part to a flat binary.
 
 <a name="encode_http_msg-1"></a>
 
-### encode_http_msg/1 * ###
+### encode_http_msg/1 *
 
 `encode_http_msg(Httpsig) -> any()`
 
@@ -111,7 +111,7 @@ Encode a HTTP message into a binary.
 
 <a name="extract_hashpaths-1"></a>
 
-### extract_hashpaths/1 * ###
+### extract_hashpaths/1 *
 
 `extract_hashpaths(Map) -> any()`
 
@@ -120,7 +120,7 @@ to the HTTP message as `hashpath*` keys.
 
 <a name="field_to_http-3"></a>
 
-### field_to_http/3 * ###
+### field_to_http/3 *
 
 `field_to_http(Httpsig, X2, Opts) -> any()`
 
@@ -129,7 +129,7 @@ to be further encoded later.
 
 <a name="from-1"></a>
 
-### from/1 ###
+### from/1
 
 `from(Bin) -> any()`
 
@@ -138,19 +138,19 @@ HTTP Structured Field is encoded into it's equivalent TABM encoding.
 
 <a name="from_body-4"></a>
 
-### from_body/4 * ###
+### from_body/4 *
 
 `from_body(TABM, InlinedKey, ContentType, Body) -> any()`
 
 <a name="from_body_parts-3"></a>
 
-### from_body_parts/3 * ###
+### from_body_parts/3 *
 
 `from_body_parts(TABM, InlinedKey, Rest) -> any()`
 
 <a name="group_ids-1"></a>
 
-### group_ids/1 * ###
+### group_ids/1 *
 
 `group_ids(Map) -> any()`
 
@@ -166,7 +166,7 @@ key is not added to the `ao-types` map.
 
 <a name="group_maps-1"></a>
 
-### group_maps/1 * ###
+### group_maps/1 *
 
 `group_maps(Map) -> any()`
 
@@ -174,13 +174,13 @@ Merge maps at the same level, if possible.
 
 <a name="group_maps-3"></a>
 
-### group_maps/3 * ###
+### group_maps/3 *
 
 `group_maps(Map, Parent, Top) -> any()`
 
 <a name="group_maps_flat_compatible_test-0"></a>
 
-### group_maps_flat_compatible_test/0 * ###
+### group_maps_flat_compatible_test/0 *
 
 `group_maps_flat_compatible_test() -> any()`
 
@@ -195,19 +195,19 @@ The test asserts that is indeed the case.
 
 <a name="group_maps_test-0"></a>
 
-### group_maps_test/0 * ###
+### group_maps_test/0 *
 
 `group_maps_test() -> any()`
 
 <a name="hashpaths_from_message-1"></a>
 
-### hashpaths_from_message/1 * ###
+### hashpaths_from_message/1 *
 
 `hashpaths_from_message(Msg) -> any()`
 
 <a name="inline_key-1"></a>
 
-### inline_key/1 * ###
+### inline_key/1 *
 
 `inline_key(Msg) -> any()`
 
@@ -220,7 +220,7 @@ part, an additional field may need to be added
 
 <a name="to-1"></a>
 
-### to/1 ###
+### to/1
 
 `to(Bin) -> any()`
 
@@ -229,13 +229,13 @@ that can translated to a given web server Response API
 
 <a name="to-2"></a>
 
-### to/2 * ###
+### to/2 *
 
 `to(TABM, Opts) -> any()`
 
 <a name="ungroup_ids-1"></a>
 
-### ungroup_ids/1 * ###
+### ungroup_ids/1 *
 
 `ungroup_ids(Msg) -> any()`
 

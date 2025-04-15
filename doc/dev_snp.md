@@ -1,6 +1,6 @@
 
 
-# Module dev_snp #
+# Module dev_snp
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ as well as generating them, if called in an appropriate environment.
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#execute_is_trusted-3">execute_is_trusted/3*</a></td><td>Ensure that all of the software hashes are trusted.</td></tr><tr><td valign="top"><a href="#generate-3">generate/3</a></td><td>Generate an commitment report and emit it as a message, including all of
@@ -23,11 +23,11 @@ remote node, its ephemeral private address, and the integrity of the report.</td
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="execute_is_trusted-3"></a>
 
-### execute_is_trusted/3 * ###
+### execute_is_trusted/3 *
 
 `execute_is_trusted(M1, Msg, NodeOpts) -> any()`
 
@@ -37,7 +37,7 @@ implement the `trusted` resolver.
 
 <a name="generate-3"></a>
 
-### generate/3 ###
+### generate/3
 
 `generate(M1, M2, Opts) -> any()`
 
@@ -48,7 +48,7 @@ hashes).
 
 <a name="generate_nonce-2"></a>
 
-### generate_nonce/2 * ###
+### generate_nonce/2 *
 
 `generate_nonce(RawAddress, RawNodeMsgID) -> any()`
 
@@ -56,7 +56,7 @@ Generate the nonce to use in the commitment report.
 
 <a name="init-3"></a>
 
-### init/3 ###
+### init/3
 
 `init(M1, M2, Opts) -> any()`
 
@@ -67,7 +67,7 @@ had any priviledged access).
 
 <a name="is_debug-1"></a>
 
-### is_debug/1 * ###
+### is_debug/1 *
 
 `is_debug(Report) -> any()`
 
@@ -75,13 +75,13 @@ Ensure that the node's debug policy is disabled.
 
 <a name="real_node_test-0"></a>
 
-### real_node_test/0 * ###
+### real_node_test/0 *
 
 `real_node_test() -> any()`
 
 <a name="report_data_matches-3"></a>
 
-### report_data_matches/3 * ###
+### report_data_matches/3 *
 
 `report_data_matches(Address, NodeMsgID, ReportData) -> any()`
 
@@ -89,7 +89,7 @@ Ensure that the report data matches the expected report data.
 
 <a name="trusted-3"></a>
 
-### trusted/3 ###
+### trusted/3
 
 `trusted(Msg1, Msg2, NodeOpts) -> any()`
 
@@ -99,7 +99,7 @@ if the value in the request message is a member of that list.
 
 <a name="verify-3"></a>
 
-### verify/3 ###
+### verify/3
 
 `verify(M1, M2, NodeOpts) -> any()`
 

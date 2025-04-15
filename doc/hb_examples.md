@@ -1,6 +1,6 @@
 
 
-# Module hb_examples #
+# Module hb_examples
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,11 +10,11 @@ the HTTP interface.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 As well as testing the system, you can use these tests
 as examples of how to interact with HyperBEAM nodes.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#create_schedule_aos2_test_disabled-0">create_schedule_aos2_test_disabled/0*</a></td><td></td></tr><tr><td valign="top"><a href="#paid_wasm_test-0">paid_wasm_test/0*</a></td><td>Gain signed WASM responses from a node and verify them.</td></tr><tr><td valign="top"><a href="#relay_with_payments_test-0">relay_with_payments_test/0*</a></td><td>Start a node running the simple pay meta device, and use it to relay
@@ -23,17 +23,17 @@ a message for a client.</td></tr><tr><td valign="top"><a href="#schedule-2">sche
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="create_schedule_aos2_test_disabled-0"></a>
 
-### create_schedule_aos2_test_disabled/0 * ###
+### create_schedule_aos2_test_disabled/0 *
 
 `create_schedule_aos2_test_disabled() -> any()`
 
 <a name="paid_wasm_test-0"></a>
 
-### paid_wasm_test/0 * ###
+### paid_wasm_test/0 *
 
 `paid_wasm_test() -> any()`
 
@@ -45,7 +45,7 @@ Gain signed WASM responses from a node and verify them.
 
 <a name="relay_with_payments_test-0"></a>
 
-### relay_with_payments_test/0 * ###
+### relay_with_payments_test/0 *
 
 `relay_with_payments_test() -> any()`
 
@@ -60,19 +60,19 @@ correctly.
 
 <a name="schedule-2"></a>
 
-### schedule/2 * ###
+### schedule/2 *
 
 `schedule(ProcMsg, Target) -> any()`
 
 <a name="schedule-3"></a>
 
-### schedule/3 * ###
+### schedule/3 *
 
 `schedule(ProcMsg, Target, Wallet) -> any()`
 
 <a name="schedule-4"></a>
 
-### schedule/4 * ###
+### schedule/4 *
 
 `schedule(ProcMsg, Target, Wallet, Node) -> any()`
 

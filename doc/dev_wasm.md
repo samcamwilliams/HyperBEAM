@@ -1,6 +1,6 @@
 
 
-# Module dev_wasm #
+# Module dev_wasm
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ preview standard.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 In the backend, this device uses `beamr`: An Erlang wrapper
 for WAMR, the WebAssembly Micro Runtime.
@@ -49,7 +49,7 @@ The device has the following requirements and interface:
 ```
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#basic_execution_64_test-0">basic_execution_64_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#basic_execution_test-0">basic_execution_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#benchmark_test-0">benchmark_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#cache_wasm_image-1">cache_wasm_image/1</a></td><td></td></tr><tr><td valign="top"><a href="#cache_wasm_image-2">cache_wasm_image/2</a></td><td></td></tr><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Call the WASM executor with a message that has been prepared by a prior
@@ -64,41 +64,41 @@ call details into the message.</td></tr></table>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="basic_execution_64_test-0"></a>
 
-### basic_execution_64_test/0 * ###
+### basic_execution_64_test/0 *
 
 `basic_execution_64_test() -> any()`
 
 <a name="basic_execution_test-0"></a>
 
-### basic_execution_test/0 * ###
+### basic_execution_test/0 *
 
 `basic_execution_test() -> any()`
 
 <a name="benchmark_test-0"></a>
 
-### benchmark_test/0 * ###
+### benchmark_test/0 *
 
 `benchmark_test() -> any()`
 
 <a name="cache_wasm_image-1"></a>
 
-### cache_wasm_image/1 ###
+### cache_wasm_image/1
 
 `cache_wasm_image(Image) -> any()`
 
 <a name="cache_wasm_image-2"></a>
 
-### cache_wasm_image/2 ###
+### cache_wasm_image/2
 
 `cache_wasm_image(Image, Opts) -> any()`
 
 <a name="compute-3"></a>
 
-### compute/3 ###
+### compute/3
 
 `compute(RawM1, M2, Opts) -> any()`
 
@@ -107,7 +107,7 @@ pass.
 
 <a name="default_import_resolver-3"></a>
 
-### default_import_resolver/3 * ###
+### default_import_resolver/3 *
 
 `default_import_resolver(Msg1, Msg2, Opts) -> any()`
 
@@ -115,7 +115,7 @@ Take a BEAMR import call and resolve it using `hb_ao`.
 
 <a name="import-3"></a>
 
-### import/3 ###
+### import/3
 
 `import(Msg1, Msg2, Opts) -> any()`
 
@@ -128,13 +128,13 @@ Handle standard library calls by:
 
 <a name="imported_function_test-0"></a>
 
-### imported_function_test/0 * ###
+### imported_function_test/0 *
 
 `imported_function_test() -> any()`
 
 <a name="info-2"></a>
 
-### info/2 ###
+### info/2
 
 `info(Msg1, Opts) -> any()`
 
@@ -142,13 +142,13 @@ Export all functions aside the `instance/3` function.
 
 <a name="init-0"></a>
 
-### init/0 * ###
+### init/0 *
 
 `init() -> any()`
 
 <a name="init-3"></a>
 
-### init/3 ###
+### init/3
 
 `init(M1, M2, Opts) -> any()`
 
@@ -157,19 +157,19 @@ the message.
 
 <a name="init_test-0"></a>
 
-### init_test/0 * ###
+### init_test/0 *
 
 `init_test() -> any()`
 
 <a name="input_prefix_test-0"></a>
 
-### input_prefix_test/0 * ###
+### input_prefix_test/0 *
 
 `input_prefix_test() -> any()`
 
 <a name="instance-3"></a>
 
-### instance/3 ###
+### instance/3
 
 `instance(M1, M2, Opts) -> any()`
 
@@ -179,7 +179,7 @@ resolution directly.
 
 <a name="normalize-3"></a>
 
-### normalize/3 ###
+### normalize/3
 
 `normalize(RawM1, M2, Opts) -> any()`
 
@@ -188,7 +188,7 @@ Normalize the message to have an open WASM instance, but no literal
 
 <a name="process_prefixes_test-0"></a>
 
-### process_prefixes_test/0 * ###
+### process_prefixes_test/0 *
 
 `process_prefixes_test() -> any()`
 
@@ -198,7 +198,7 @@ Device-Key) work
 
 <a name="snapshot-3"></a>
 
-### snapshot/3 ###
+### snapshot/3
 
 `snapshot(M1, M2, Opts) -> any()`
 
@@ -206,13 +206,13 @@ Serialize the WASM state to a binary.
 
 <a name="state_export_and_restore_test-0"></a>
 
-### state_export_and_restore_test/0 * ###
+### state_export_and_restore_test/0 *
 
 `state_export_and_restore_test() -> any()`
 
 <a name="terminate-3"></a>
 
-### terminate/3 ###
+### terminate/3
 
 `terminate(M1, M2, Opts) -> any()`
 
@@ -220,13 +220,13 @@ Tear down the WASM executor.
 
 <a name="test_run_wasm-4"></a>
 
-### test_run_wasm/4 * ###
+### test_run_wasm/4 *
 
 `test_run_wasm(File, Func, Params, AdditionalMsg) -> any()`
 
 <a name="undefined_import_stub-3"></a>
 
-### undefined_import_stub/3 * ###
+### undefined_import_stub/3 *
 
 `undefined_import_stub(Msg1, Msg2, Opts) -> any()`
 

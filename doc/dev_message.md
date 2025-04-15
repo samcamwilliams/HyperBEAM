@@ -1,6 +1,6 @@
 
 
-# Module dev_message #
+# Module dev_message
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,13 +10,13 @@ from the message as it is found in the message's underlying Erlang map.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 Private keys (`priv[.*]`) are not included.
 Reserved keys are: `id`, `commitments`, `committers`, `keys`, `path`,
 `set`, `remove`, `get`, and `verify`. Their function comments describe the
 behaviour of the device when these keys are set.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#calculate_ids-3">calculate_ids/3*</a></td><td></td></tr><tr><td valign="top"><a href="#cannot_get_private_keys_test-0">cannot_get_private_keys_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#case_insensitive_get-2">case_insensitive_get/2*</a></td><td>Key matching should be case insensitive, following RFC-9110, so we
@@ -31,23 +31,23 @@ underlying Erlang map.</td></tr><tr><td valign="top"><a href="#get-3">get/3</a><
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="calculate_ids-3"></a>
 
-### calculate_ids/3 * ###
+### calculate_ids/3 *
 
 `calculate_ids(Base, Req, NodeOpts) -> any()`
 
 <a name="cannot_get_private_keys_test-0"></a>
 
-### cannot_get_private_keys_test/0 * ###
+### cannot_get_private_keys_test/0 *
 
 `cannot_get_private_keys_test() -> any()`
 
 <a name="case_insensitive_get-2"></a>
 
-### case_insensitive_get/2 * ###
+### case_insensitive_get/2 *
 
 `case_insensitive_get(Key, Msg) -> any()`
 
@@ -57,13 +57,13 @@ implement a case-insensitive key lookup rather than delegating to
 
 <a name="case_insensitive_get_test-0"></a>
 
-### case_insensitive_get_test/0 * ###
+### case_insensitive_get_test/0 *
 
 `case_insensitive_get_test() -> any()`
 
 <a name="commit-3"></a>
 
-### commit/3 ###
+### commit/3
 
 `commit(Self, Req, Opts) -> any()`
 
@@ -73,7 +73,7 @@ the default device (`httpsig@1.0`) is used.
 
 <a name="commitment_ids_from_committers-2"></a>
 
-### commitment_ids_from_committers/2 * ###
+### commitment_ids_from_committers/2 *
 
 `commitment_ids_from_committers(CommitterAddrs, Commitments) -> any()`
 
@@ -82,7 +82,7 @@ for a list of given committer addresses.
 
 <a name="commitment_ids_from_request-3"></a>
 
-### commitment_ids_from_request/3 * ###
+### commitment_ids_from_request/3 *
 
 `commitment_ids_from_request(Base, Req, Opts) -> any()`
 
@@ -95,7 +95,7 @@ the default is `all` for commitments -- also implying `all` for committers.
 
 <a name="committed-3"></a>
 
-### committed/3 ###
+### committed/3
 
 `committed(Self, Req, Opts) -> any()`
 
@@ -103,7 +103,7 @@ Return the list of committed keys from a message.
 
 <a name="committers-1"></a>
 
-### committers/1 ###
+### committers/1
 
 `committers(Base) -> any()`
 
@@ -111,19 +111,19 @@ Return the committers of a message that are present in the given request.
 
 <a name="committers-2"></a>
 
-### committers/2 ###
+### committers/2
 
 `committers(Base, Req) -> any()`
 
 <a name="committers-3"></a>
 
-### committers/3 ###
+### committers/3
 
 `committers(X1, X2, NodeOpts) -> any()`
 
 <a name="exec_for_commitment-5"></a>
 
-### exec_for_commitment/5 * ###
+### exec_for_commitment/5 *
 
 `exec_for_commitment(Func, Base, Commitment, Req, Opts) -> any()`
 
@@ -134,7 +134,7 @@ message if applicable.
 
 <a name="get-2"></a>
 
-### get/2 ###
+### get/2
 
 `get(Key, Msg) -> any()`
 
@@ -144,19 +144,19 @@ insensitively if the key is a binary.
 
 <a name="get-3"></a>
 
-### get/3 ###
+### get/3
 
 `get(Key, Msg, Msg2) -> any()`
 
 <a name="get_keys_mod_test-0"></a>
 
-### get_keys_mod_test/0 * ###
+### get_keys_mod_test/0 *
 
 `get_keys_mod_test() -> any()`
 
 <a name="id-1"></a>
 
-### id/1 ###
+### id/1
 
 `id(Base) -> any()`
 
@@ -176,19 +176,19 @@ if/when non-map message structures are created.
 
 <a name="id-2"></a>
 
-### id/2 ###
+### id/2
 
 `id(Base, Req) -> any()`
 
 <a name="id-3"></a>
 
-### id/3 ###
+### id/3
 
 `id(Base, Req, NodeOpts) -> any()`
 
 <a name="id_device-1"></a>
 
-### id_device/1 * ###
+### id_device/1 *
 
 `id_device(X1) -> any()`
 
@@ -198,7 +198,7 @@ the default device (`httpsig@1.0`) is used.
 
 <a name="info-0"></a>
 
-### info/0 ###
+### info/0
 
 `info() -> any()`
 
@@ -206,19 +206,19 @@ Return the info for the identity device.
 
 <a name="is_private_mod_test-0"></a>
 
-### is_private_mod_test/0 * ###
+### is_private_mod_test/0 *
 
 `is_private_mod_test() -> any()`
 
 <a name="key_from_device_test-0"></a>
 
-### key_from_device_test/0 * ###
+### key_from_device_test/0 *
 
 `key_from_device_test() -> any()`
 
 <a name="keys-1"></a>
 
-### keys/1 ###
+### keys/1
 
 `keys(Msg) -> any()`
 
@@ -226,19 +226,19 @@ Get the public keys of a message.
 
 <a name="keys_from_device_test-0"></a>
 
-### keys_from_device_test/0 * ###
+### keys_from_device_test/0 *
 
 `keys_from_device_test() -> any()`
 
 <a name="private_keys_are_filtered_test-0"></a>
 
-### private_keys_are_filtered_test/0 * ###
+### private_keys_are_filtered_test/0 *
 
 `private_keys_are_filtered_test() -> any()`
 
 <a name="remove-2"></a>
 
-### remove/2 ###
+### remove/2
 
 `remove(Message1, X2) -> any()`
 
@@ -246,19 +246,19 @@ Remove a key or keys from a message.
 
 <a name="remove_test-0"></a>
 
-### remove_test/0 * ###
+### remove_test/0 *
 
 `remove_test() -> any()`
 
 <a name="run_test-0"></a>
 
-### run_test/0 * ###
+### run_test/0 *
 
 `run_test() -> any()`
 
 <a name="set-3"></a>
 
-### set/3 ###
+### set/3
 
 `set(Message1, NewValuesMsg, Opts) -> any()`
 
@@ -267,19 +267,19 @@ them in the message, overwriting any existing values.
 
 <a name="set_conflicting_keys_test-0"></a>
 
-### set_conflicting_keys_test/0 * ###
+### set_conflicting_keys_test/0 *
 
 `set_conflicting_keys_test() -> any()`
 
 <a name="set_ignore_undefined_test-0"></a>
 
-### set_ignore_undefined_test/0 * ###
+### set_ignore_undefined_test/0 *
 
 `set_ignore_undefined_test() -> any()`
 
 <a name="set_path-3"></a>
 
-### set_path/3 ###
+### set_path/3
 
 `set_path(Message1, X2, Opts) -> any()`
 
@@ -289,13 +289,13 @@ for AO-Core to know the key to evaluate in requests.
 
 <a name="unset_with_set_test-0"></a>
 
-### unset_with_set_test/0 * ###
+### unset_with_set_test/0 *
 
 `unset_with_set_test() -> any()`
 
 <a name="verify-3"></a>
 
-### verify/3 ###
+### verify/3
 
 `verify(Self, Req, Opts) -> any()`
 
@@ -306,13 +306,13 @@ commitments can be specified using the `commitments` key.
 
 <a name="verify_test-0"></a>
 
-### verify_test/0 * ###
+### verify_test/0 *
 
 `verify_test() -> any()`
 
 <a name="with_relevant_commitments-3"></a>
 
-### with_relevant_commitments/3 * ###
+### with_relevant_commitments/3 *
 
 `with_relevant_commitments(Base, Req, Opts) -> any()`
 

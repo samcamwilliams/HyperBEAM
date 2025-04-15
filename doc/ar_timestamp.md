@@ -1,12 +1,12 @@
 
 
-# Module ar_timestamp #
+# Module ar_timestamp
 * [Function Index](#index)
 * [Function Details](#functions)
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#cache-1">cache/1*</a></td><td>Cache the current timestamp from Arweave.</td></tr><tr><td valign="top"><a href="#get-0">get/0</a></td><td>Get the current timestamp from the server, starting the server if it
@@ -15,11 +15,11 @@ isn't already running.</td></tr><tr><td valign="top"><a href="#refresher-1">refr
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="cache-1"></a>
 
-### cache/1 * ###
+### cache/1 *
 
 `cache(Current) -> any()`
 
@@ -27,7 +27,7 @@ Cache the current timestamp from Arweave.
 
 <a name="get-0"></a>
 
-### get/0 ###
+### get/0
 
 `get() -> any()`
 
@@ -36,7 +36,7 @@ isn't already running.
 
 <a name="refresher-1"></a>
 
-### refresher/1 * ###
+### refresher/1 *
 
 `refresher(TSServer) -> any()`
 
@@ -44,7 +44,7 @@ Refresh the timestamp cache periodically.
 
 <a name="spawn_server-0"></a>
 
-### spawn_server/0 * ###
+### spawn_server/0 *
 
 `spawn_server() -> any()`
 
@@ -52,7 +52,7 @@ Spawn a new server and its refresher.
 
 <a name="start-0"></a>
 
-### start/0 ###
+### start/0
 
 `start() -> any()`
 

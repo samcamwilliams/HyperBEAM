@@ -1,6 +1,6 @@
 
 
-# Module dev_green_zone #
+# Module dev_green_zone
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,12 +10,12 @@ management between trusted nodes.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 It handles node initialization, joining
 existing green zones, key exchange, and node identity cloning. All operations
 are protected by hardware commitment and encryption.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_trusted_node-4">add_trusted_node/4*</a></td><td>Add a joining node's details to the trusted nodes list.</td></tr><tr><td valign="top"><a href="#become-3">become/3</a></td><td>Clone the identity of a target node.</td></tr><tr><td valign="top"><a href="#calculate_node_message-3">calculate_node_message/3*</a></td><td>Generate the node message that should be set prior to joining a green zone.</td></tr><tr><td valign="top"><a href="#decrypt_zone_key-2">decrypt_zone_key/2*</a></td><td>Decrypt the zone AES key using the node's RSA private key.</td></tr><tr><td valign="top"><a href="#default_zone_required_opts-1">default_zone_required_opts/1*</a></td><td>The default required options for a green zone.</td></tr><tr><td valign="top"><a href="#encrypt_payload-2">encrypt_payload/2*</a></td><td>Encrypt the shared AES key with the requester's RSA public key.</td></tr><tr><td valign="top"><a href="#finalize_become-5">finalize_become/5*</a></td><td></td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Initialize the green zone.</td></tr><tr><td valign="top"><a href="#join-3">join/3</a></td><td>Initiate the join process for a node (Node B).</td></tr><tr><td valign="top"><a href="#join_peer-5">join_peer/5*</a></td><td>Process an internal join request when a target peer is specified.</td></tr><tr><td valign="top"><a href="#key-3">key/3</a></td><td>Retrieve and encrypt the node's private key.</td></tr><tr><td valign="top"><a href="#maybe_set_zone_opts-4">maybe_set_zone_opts/4*</a></td><td>If the operator requests it, the node can automatically adopt the
@@ -24,11 +24,11 @@ necessary configuration to join a green zone.</td></tr><tr><td valign="top"><a h
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="add_trusted_node-4"></a>
 
-### add_trusted_node/4 * ###
+### add_trusted_node/4 *
 
 <pre><code>
 add_trusted_node(NodeAddr::binary(), Report::map(), RequesterPubKey::term(), Opts::map()) -&gt; ok
@@ -45,7 +45,7 @@ and public key.
 
 <a name="become-3"></a>
 
-### become/3 ###
+### become/3
 
 <pre><code>
 become(M1::term(), M2::term(), Opts::map()) -&gt; {ok, map()} | {error, binary()}
@@ -67,7 +67,7 @@ and updating the local node's wallet with the target node's keypair.
 
 <a name="calculate_node_message-3"></a>
 
-### calculate_node_message/3 * ###
+### calculate_node_message/3 *
 
 `calculate_node_message(RequiredOpts, Req, List) -> any()`
 
@@ -79,7 +79,7 @@ include, separated by commas.
 
 <a name="decrypt_zone_key-2"></a>
 
-### decrypt_zone_key/2 * ###
+### decrypt_zone_key/2 *
 
 <pre><code>
 decrypt_zone_key(EncZoneKey::binary(), Opts::map()) -&gt; {ok, binary()} | {error, binary()}
@@ -96,7 +96,7 @@ wallet.
 
 <a name="default_zone_required_opts-1"></a>
 
-### default_zone_required_opts/1 * ###
+### default_zone_required_opts/1 *
 
 `default_zone_required_opts(Opts) -> any()`
 
@@ -117,7 +117,7 @@ Each of these options is derived from the present node's configuration.
 
 <a name="encrypt_payload-2"></a>
 
-### encrypt_payload/2 * ###
+### encrypt_payload/2 *
 
 <pre><code>
 encrypt_payload(AESKey::binary(), RequesterPubKey::term()) -&gt; binary()
@@ -135,13 +135,13 @@ record suitable for encryption.
 
 <a name="finalize_become-5"></a>
 
-### finalize_become/5 * ###
+### finalize_become/5 *
 
 `finalize_become(KeyResp, NodeLocation, NodeID, GreenZoneAES, Opts) -> any()`
 
 <a name="init-3"></a>
 
-### init/3 ###
+### init/3
 
 <pre><code>
 init(M1::term(), M2::term(), Opts::map()) -&gt; {ok, binary()}
@@ -162,7 +162,7 @@ AES key, and an empty trusted nodes list are stored in the node's configuration.
 
 <a name="join-3"></a>
 
-### join/3 ###
+### join/3
 
 <pre><code>
 join(M1::term(), M2::term(), Opts::map()) -&gt; {ok, map()} | {error, binary()}
@@ -190,7 +190,7 @@ the validate_join flow.
 
 <a name="join_peer-5"></a>
 
-### join_peer/5 * ###
+### join_peer/5 *
 
 <pre><code>
 join_peer(PeerLocation::binary(), PeerID::binary(), M1::term(), M2::term(), Opts::map()) -&gt; {ok, map()} | {error, map()}
@@ -212,7 +212,7 @@ updates its configuration with the shared AES key.
 
 <a name="key-3"></a>
 
-### key/3 ###
+### key/3
 
 <pre><code>
 key(M1::term(), M2::term(), Opts::map()) -&gt; {ok, map()} | {error, binary()}
@@ -235,7 +235,7 @@ for decryption.
 
 <a name="maybe_set_zone_opts-4"></a>
 
-### maybe_set_zone_opts/4 * ###
+### maybe_set_zone_opts/4 *
 
 `maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) -> any()`
 
@@ -246,7 +246,7 @@ required config of the green zone they are joining.
 
 <a name="rsa_wallet_integration_test-0"></a>
 
-### rsa_wallet_integration_test/0 * ###
+### rsa_wallet_integration_test/0 *
 
 `rsa_wallet_integration_test() -> any()`
 
@@ -258,7 +258,7 @@ key, asserting that the decrypted message matches the original.
 
 <a name="validate_join-3"></a>
 
-### validate_join/3 * ###
+### validate_join/3 *
 
 <pre><code>
 validate_join(M1::term(), Req::map(), Opts::map()) -&gt; {ok, map()} | {error, binary()}
@@ -283,7 +283,7 @@ key and returns it along with its public key.
 
 <a name="validate_peer_opts-2"></a>
 
-### validate_peer_opts/2 * ###
+### validate_peer_opts/2 *
 
 `validate_peer_opts(Req, Opts) -> any()`
 

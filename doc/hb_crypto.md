@@ -1,6 +1,6 @@
 
 
-# Module hb_crypto #
+# Module hb_crypto
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ used in HyperBEAM.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 Abstracted such that this (extremely!) dangerous code
 can be carefully managed.
@@ -25,7 +25,7 @@ their values into a single commitment.
 The accumulate algorithm is experimental and at this point only exists to
 allow us to test multiple HashPath algorithms in HyperBEAM.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#accumulate-2">accumulate/2</a></td><td>Accumulate two IDs into a single commitment.</td></tr><tr><td valign="top"><a href="#count_zeroes-1">count_zeroes/1*</a></td><td>Count the number of leading zeroes in a bitstring.</td></tr><tr><td valign="top"><a href="#sha256-1">sha256/1</a></td><td>Wrap Erlang's <code>crypto:hash/2</code> to provide a standard interface.</td></tr><tr><td valign="top"><a href="#sha256_chain-2">sha256_chain/2</a></td><td>Add a new ID to the end of a SHA-256 hash chain.</td></tr><tr><td valign="top"><a href="#sha256_chain_test-0">sha256_chain_test/0*</a></td><td>Check that <code>sha-256-chain</code> correctly produces a hash matching
@@ -34,11 +34,11 @@ the machine's OpenSSL lib's output.</td></tr></table>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="accumulate-2"></a>
 
-### accumulate/2 ###
+### accumulate/2
 
 `accumulate(ID1, ID2) -> any()`
 
@@ -47,7 +47,7 @@ Experimental! This is not necessarily a cryptographically-secure operation.
 
 <a name="count_zeroes-1"></a>
 
-### count_zeroes/1 * ###
+### count_zeroes/1 *
 
 `count_zeroes(X1) -> any()`
 
@@ -55,7 +55,7 @@ Count the number of leading zeroes in a bitstring.
 
 <a name="sha256-1"></a>
 
-### sha256/1 ###
+### sha256/1
 
 `sha256(Data) -> any()`
 
@@ -64,7 +64,7 @@ Under-the-hood, this uses OpenSSL.
 
 <a name="sha256_chain-2"></a>
 
-### sha256_chain/2 ###
+### sha256_chain/2
 
 `sha256_chain(ID1, ID2) -> any()`
 
@@ -72,7 +72,7 @@ Add a new ID to the end of a SHA-256 hash chain.
 
 <a name="sha256_chain_test-0"></a>
 
-### sha256_chain_test/0 * ###
+### sha256_chain_test/0 *
 
 `sha256_chain_test() -> any()`
 

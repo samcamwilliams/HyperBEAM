@@ -1,6 +1,6 @@
 
 
-# Module dev_p4 #
+# Module dev_p4
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,7 +9,7 @@ The HyperBEAM core payment ledger.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 This module allows the operator to
 specify another device that can act as a pricing mechanism for transactions
@@ -45,7 +45,7 @@ The `type` key is optional and defaults to `pre`. If `type` is set to `post`,
 the debit must be applied to the ledger, whereas the `pre` type is used to
 check whether the debit would succeed before execution.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#balance-3">balance/3</a></td><td>Get the balance of a user in the ledger.</td></tr><tr><td valign="top"><a href="#faff_test-0">faff_test/0*</a></td><td>Simple test of p4's capabilities with the <code>faff@1.0</code> device.</td></tr><tr><td valign="top"><a href="#is_chargable_req-2">is_chargable_req/2*</a></td><td>The node operator may elect to make certain routes non-chargable, using
@@ -55,11 +55,11 @@ a request.</td></tr><tr><td valign="top"><a href="#test_opts-1">test_opts/1*</a>
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="balance-3"></a>
 
-### balance/3 ###
+### balance/3
 
 `balance(X1, Req, NodeMsg) -> any()`
 
@@ -67,7 +67,7 @@ Get the balance of a user in the ledger.
 
 <a name="faff_test-0"></a>
 
-### faff_test/0 * ###
+### faff_test/0 *
 
 `faff_test() -> any()`
 
@@ -75,7 +75,7 @@ Simple test of p4's capabilities with the `faff@1.0` device.
 
 <a name="is_chargable_req-2"></a>
 
-### is_chargable_req/2 * ###
+### is_chargable_req/2 *
 
 `is_chargable_req(Req, NodeMsg) -> any()`
 
@@ -84,7 +84,7 @@ the `routes` syntax also used to declare routes in `router@1.0`.
 
 <a name="non_chargable_route_test-0"></a>
 
-### non_chargable_route_test/0 * ###
+### non_chargable_route_test/0 *
 
 `non_chargable_route_test() -> any()`
 
@@ -92,7 +92,7 @@ Test that a non-chargable route is not charged for.
 
 <a name="postprocess-3"></a>
 
-### postprocess/3 ###
+### postprocess/3
 
 `postprocess(State, RawResponse, NodeMsg) -> any()`
 
@@ -100,7 +100,7 @@ Postprocess the request after it has been fulfilled.
 
 <a name="preprocess-3"></a>
 
-### preprocess/3 ###
+### preprocess/3
 
 `preprocess(State, Raw, NodeMsg) -> any()`
 
@@ -110,19 +110,19 @@ not set is to proceed, so it is important that a user initialize them.
 
 <a name="test_opts-1"></a>
 
-### test_opts/1 * ###
+### test_opts/1 *
 
 `test_opts(Opts) -> any()`
 
 <a name="test_opts-2"></a>
 
-### test_opts/2 * ###
+### test_opts/2 *
 
 `test_opts(Opts, PricingDev) -> any()`
 
 <a name="test_opts-3"></a>
 
-### test_opts/3 * ###
+### test_opts/3 *
 
 `test_opts(Opts, PricingDev, LedgerDev) -> any()`
 

@@ -1,6 +1,6 @@
 
 
-# Module hb_beamr #
+# Module hb_beamr
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -9,7 +9,7 @@ BEAMR: A WAMR wrapper for BEAM.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 Beamr is a library that allows you to run WASM modules in BEAM, using the
 Webassembly Micro Runtime (WAMR) as its engine. Each WASM module is
@@ -61,7 +61,7 @@ BEAMR was designed for use in the HyperBEAM project, but is suitable for
 deployment in other Erlang applications that need to run WASM modules. PRs
 are welcome.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#benchmark_test-0">benchmark_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#call-3">call/3</a></td><td>Call a function in the WASM executor (see moduledoc for more details).</td></tr><tr><td valign="top"><a href="#call-4">call/4</a></td><td></td></tr><tr><td valign="top"><a href="#call-5">call/5</a></td><td></td></tr><tr><td valign="top"><a href="#call-6">call/6</a></td><td></td></tr><tr><td valign="top"><a href="#deserialize-2">deserialize/2</a></td><td>Deserialize a WASM state from a binary.</td></tr><tr><td valign="top"><a href="#dispatch_response-2">dispatch_response/2*</a></td><td>Check the type of an import response and dispatch it to a Beamr port.</td></tr><tr><td valign="top"><a href="#driver_loads_test-0">driver_loads_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#imported_function_test-0">imported_function_test/0*</a></td><td>Test that imported functions can be called from the WASM module.</td></tr><tr><td valign="top"><a href="#is_valid_arg_list-1">is_valid_arg_list/1*</a></td><td>Check that a list of arguments is valid for a WASM function call.</td></tr><tr><td valign="top"><a href="#load_driver-0">load_driver/0*</a></td><td>Load the driver for the WASM executor.</td></tr><tr><td valign="top"><a href="#monitor_call-4">monitor_call/4*</a></td><td>Synchonously monitor the WASM executor for a call result and any
@@ -71,17 +71,17 @@ the WASM executor.</td></tr><tr><td valign="top"><a href="#serialize-1">serializ
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="benchmark_test-0"></a>
 
-### benchmark_test/0 * ###
+### benchmark_test/0 *
 
 `benchmark_test() -> any()`
 
 <a name="call-3"></a>
 
-### call/3 ###
+### call/3
 
 `call(PID, FuncRef, Args) -> any()`
 
@@ -89,25 +89,25 @@ Call a function in the WASM executor (see moduledoc for more details).
 
 <a name="call-4"></a>
 
-### call/4 ###
+### call/4
 
 `call(PID, FuncRef, Args, ImportFun) -> any()`
 
 <a name="call-5"></a>
 
-### call/5 ###
+### call/5
 
 `call(PID, FuncRef, Args, ImportFun, StateMsg) -> any()`
 
 <a name="call-6"></a>
 
-### call/6 ###
+### call/6
 
 `call(PID, FuncRef, Args, ImportFun, StateMsg, Opts) -> any()`
 
 <a name="deserialize-2"></a>
 
-### deserialize/2 ###
+### deserialize/2
 
 `deserialize(WASM, Bin) -> any()`
 
@@ -115,7 +115,7 @@ Deserialize a WASM state from a binary.
 
 <a name="dispatch_response-2"></a>
 
-### dispatch_response/2 * ###
+### dispatch_response/2 *
 
 `dispatch_response(WASM, Term) -> any()`
 
@@ -123,13 +123,13 @@ Check the type of an import response and dispatch it to a Beamr port.
 
 <a name="driver_loads_test-0"></a>
 
-### driver_loads_test/0 * ###
+### driver_loads_test/0 *
 
 `driver_loads_test() -> any()`
 
 <a name="imported_function_test-0"></a>
 
-### imported_function_test/0 * ###
+### imported_function_test/0 *
 
 `imported_function_test() -> any()`
 
@@ -137,7 +137,7 @@ Test that imported functions can be called from the WASM module.
 
 <a name="is_valid_arg_list-1"></a>
 
-### is_valid_arg_list/1 * ###
+### is_valid_arg_list/1 *
 
 `is_valid_arg_list(Args) -> any()`
 
@@ -145,7 +145,7 @@ Check that a list of arguments is valid for a WASM function call.
 
 <a name="load_driver-0"></a>
 
-### load_driver/0 * ###
+### load_driver/0 *
 
 `load_driver() -> any()`
 
@@ -153,7 +153,7 @@ Load the driver for the WASM executor.
 
 <a name="monitor_call-4"></a>
 
-### monitor_call/4 * ###
+### monitor_call/4 *
 
 `monitor_call(WASM, ImportFun, StateMsg, Opts) -> any()`
 
@@ -162,7 +162,7 @@ imports that need to be handled.
 
 <a name="multiclient_test-0"></a>
 
-### multiclient_test/0 * ###
+### multiclient_test/0 *
 
 `multiclient_test() -> any()`
 
@@ -171,7 +171,7 @@ the WASM executor.
 
 <a name="serialize-1"></a>
 
-### serialize/1 ###
+### serialize/1
 
 `serialize(WASM) -> any()`
 
@@ -179,7 +179,7 @@ Serialize the WASM state to a binary.
 
 <a name="simple_wasm_test-0"></a>
 
-### simple_wasm_test/0 * ###
+### simple_wasm_test/0 *
 
 `simple_wasm_test() -> any()`
 
@@ -187,7 +187,7 @@ Test standalone `hb_beamr` correctly after loading a WASM module.
 
 <a name="start-1"></a>
 
-### start/1 ###
+### start/1
 
 `start(WasmBinary) -> any()`
 
@@ -197,13 +197,13 @@ imports and exports of the WASM module. Optionally, specify a mode
 
 <a name="start-2"></a>
 
-### start/2 ###
+### start/2
 
 `start(WasmBinary, Mode) -> any()`
 
 <a name="stop-1"></a>
 
-### stop/1 ###
+### stop/1
 
 `stop(WASM) -> any()`
 
@@ -211,7 +211,7 @@ Stop a WASM executor context.
 
 <a name="stub-3"></a>
 
-### stub/3 ###
+### stub/3
 
 `stub(Msg1, Msg2, Opts) -> any()`
 
@@ -219,7 +219,7 @@ Stub import function for the WASM executor.
 
 <a name="wasm64_test-0"></a>
 
-### wasm64_test/0 * ###
+### wasm64_test/0 *
 
 `wasm64_test() -> any()`
 
@@ -227,13 +227,13 @@ Test that WASM Memory64 modules load and execute correctly.
 
 <a name="wasm_send-2"></a>
 
-### wasm_send/2 ###
+### wasm_send/2
 
 `wasm_send(WASM, Message) -> any()`
 
 <a name="worker-2"></a>
 
-### worker/2 * ###
+### worker/2 *
 
 `worker(Port, Listener) -> any()`
 

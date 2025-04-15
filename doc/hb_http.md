@@ -1,12 +1,12 @@
 
 
-# Module hb_http #
+# Module hb_http
 * [Function Index](#index)
 * [Function Details](#functions)
 
 <a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#accept_to_codec-2">accept_to_codec/2</a></td><td>Calculate the codec name to use for a reply given its initiating Cowboy
@@ -25,11 +25,11 @@ number of responses have been gathered.</td></tr><tr><td valign="top"><a href="#
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="accept_to_codec-2"></a>
 
-### accept_to_codec/2 ###
+### accept_to_codec/2
 
 `accept_to_codec(TABMReq, Opts) -> any()`
 
@@ -44,7 +44,7 @@ AO device format (`device@1.0`).
 
 <a name="add_cors_headers-2"></a>
 
-### add_cors_headers/2 * ###
+### add_cors_headers/2 *
 
 `add_cors_headers(Msg, ReqHdr) -> any()`
 
@@ -53,7 +53,7 @@ specified CORS headers.
 
 <a name="allowed_status-2"></a>
 
-### allowed_status/2 * ###
+### allowed_status/2 *
 
 `allowed_status(ResponseMsg, Statuses) -> any()`
 
@@ -61,13 +61,13 @@ Check if a status is allowed, according to the configuration.
 
 <a name="ans104_wasm_test-0"></a>
 
-### ans104_wasm_test/0 * ###
+### ans104_wasm_test/0 *
 
 `ans104_wasm_test() -> any()`
 
 <a name="codec_to_content_type-2"></a>
 
-### codec_to_content_type/2 * ###
+### codec_to_content_type/2 *
 
 `codec_to_content_type(Codec, Opts) -> any()`
 
@@ -76,13 +76,13 @@ a fast-path for options that are not needed for this one-time lookup.
 
 <a name="cors_get_test-0"></a>
 
-### cors_get_test/0 * ###
+### cors_get_test/0 *
 
 `cors_get_test() -> any()`
 
 <a name="default_codec-1"></a>
 
-### default_codec/1 * ###
+### default_codec/1 *
 
 `default_codec(Opts) -> any()`
 
@@ -90,7 +90,7 @@ Return the default codec for the given options.
 
 <a name="empty_inbox-1"></a>
 
-### empty_inbox/1 * ###
+### empty_inbox/1 *
 
 `empty_inbox(Ref) -> any()`
 
@@ -99,7 +99,7 @@ reference.
 
 <a name="encode_reply-3"></a>
 
-### encode_reply/3 * ###
+### encode_reply/3 *
 
 `encode_reply(TABMReq, Message, Opts) -> any()`
 
@@ -107,7 +107,7 @@ Generate the headers and body for a HTTP response message.
 
 <a name="get-2"></a>
 
-### get/2 ###
+### get/2
 
 `get(Node, Opts) -> any()`
 
@@ -116,25 +116,25 @@ form.
 
 <a name="get-3"></a>
 
-### get/3 ###
+### get/3
 
 `get(Node, PathBin, Opts) -> any()`
 
 <a name="get_deep_signed_wasm_state_test-0"></a>
 
-### get_deep_signed_wasm_state_test/0 * ###
+### get_deep_signed_wasm_state_test/0 *
 
 `get_deep_signed_wasm_state_test() -> any()`
 
 <a name="get_deep_unsigned_wasm_state_test-0"></a>
 
-### get_deep_unsigned_wasm_state_test/0 * ###
+### get_deep_unsigned_wasm_state_test/0 *
 
 `get_deep_unsigned_wasm_state_test() -> any()`
 
 <a name="http_response_to_httpsig-4"></a>
 
-### http_response_to_httpsig/4 * ###
+### http_response_to_httpsig/4 *
 
 `http_response_to_httpsig(Status, HeaderMap, Body, Opts) -> any()`
 
@@ -142,7 +142,7 @@ Convert a HTTP response to a httpsig message.
 
 <a name="httpsig_to_tabm_singleton-3"></a>
 
-### httpsig_to_tabm_singleton/3 * ###
+### httpsig_to_tabm_singleton/3 *
 
 `httpsig_to_tabm_singleton(Req, Body, Opts) -> any()`
 
@@ -154,7 +154,7 @@ message if it is signed, with the exception of the `path` and `method` fields.
 
 <a name="maybe_add_unsigned-3"></a>
 
-### maybe_add_unsigned/3 * ###
+### maybe_add_unsigned/3 *
 
 `maybe_add_unsigned(Req, Msg, Opts) -> any()`
 
@@ -165,7 +165,7 @@ The precidence order for finding the path is:
 
 <a name="message_to_request-2"></a>
 
-### message_to_request/2 * ###
+### message_to_request/2 *
 
 `message_to_request(M, Opts) -> any()`
 
@@ -173,7 +173,7 @@ Given a message, return the information needed to make the request.
 
 <a name="mime_to_codec-2"></a>
 
-### mime_to_codec/2 * ###
+### mime_to_codec/2 *
 
 `mime_to_codec(X1, Opts) -> any()`
 
@@ -181,7 +181,7 @@ Find a codec name from a mime-type.
 
 <a name="multirequest-5"></a>
 
-### multirequest/5 * ###
+### multirequest/5 *
 
 `multirequest(Config, Method, Path, Message, Opts) -> any()`
 
@@ -199,7 +199,7 @@ Expects a config message of the following form:
 
 <a name="multirequest_opt-5"></a>
 
-### multirequest_opt/5 * ###
+### multirequest_opt/5 *
 
 `multirequest_opt(Key, Config, Message, Default, Opts) -> any()`
 
@@ -207,7 +207,7 @@ Get a value for a multirequest option from the config or message.
 
 <a name="multirequest_opts-3"></a>
 
-### multirequest_opts/3 * ###
+### multirequest_opts/3 *
 
 `multirequest_opts(Config, Message, Opts) -> any()`
 
@@ -216,13 +216,13 @@ the message take precidence over the options in the config.
 
 <a name="nested_ao_resolve_test-0"></a>
 
-### nested_ao_resolve_test/0 * ###
+### nested_ao_resolve_test/0 *
 
 `nested_ao_resolve_test() -> any()`
 
 <a name="parallel_multirequest-8"></a>
 
-### parallel_multirequest/8 * ###
+### parallel_multirequest/8 *
 
 `parallel_multirequest(Nodes, Responses, StopAfter, Method, Path, Message, Statuses, Opts) -> any()`
 
@@ -230,7 +230,7 @@ Dispatch the same HTTP request to many nodes in parallel.
 
 <a name="parallel_responses-7"></a>
 
-### parallel_responses/7 * ###
+### parallel_responses/7 *
 
 `parallel_responses(Res, Procs, Ref, Awaiting, StopAfter, Statuses, Opts) -> any()`
 
@@ -239,7 +239,7 @@ configured to do so.
 
 <a name="post-3"></a>
 
-### post/3 ###
+### post/3
 
 `post(Node, Message, Opts) -> any()`
 
@@ -248,13 +248,13 @@ resulting message in deserialized form.
 
 <a name="post-4"></a>
 
-### post/4 ###
+### post/4
 
 `post(Node, Path, Message, Opts) -> any()`
 
 <a name="prepare_request-6"></a>
 
-### prepare_request/6 * ###
+### prepare_request/6 *
 
 `prepare_request(Format, Method, Peer, Path, RawMessage, Opts) -> any()`
 
@@ -263,13 +263,13 @@ preferred format.
 
 <a name="remove_unsigned_fields-2"></a>
 
-### remove_unsigned_fields/2 * ###
+### remove_unsigned_fields/2 *
 
 `remove_unsigned_fields(Msg, Opts) -> any()`
 
 <a name="reply-4"></a>
 
-### reply/4 ###
+### reply/4
 
 `reply(Req, TABMReq, Message, Opts) -> any()`
 
@@ -277,13 +277,13 @@ Reply to the client's HTTP request with a message.
 
 <a name="reply-5"></a>
 
-### reply/5 * ###
+### reply/5 *
 
 `reply(Req, TABMReq, BinStatus, RawMessage, Opts) -> any()`
 
 <a name="req_to_tabm_singleton-3"></a>
 
-### req_to_tabm_singleton/3 ###
+### req_to_tabm_singleton/3
 
 `req_to_tabm_singleton(Req, Body, Opts) -> any()`
 
@@ -291,7 +291,7 @@ Convert a cowboy request to a normalized message.
 
 <a name="request-2"></a>
 
-### request/2 ###
+### request/2
 
 `request(Message, Opts) -> any()`
 
@@ -300,19 +300,19 @@ binary body.
 
 <a name="request-4"></a>
 
-### request/4 ###
+### request/4
 
 `request(Method, Peer, Path, Opts) -> any()`
 
 <a name="request-5"></a>
 
-### request/5 ###
+### request/5
 
 `request(Method, Config, Path, Message, Opts) -> any()`
 
 <a name="route_to_request-3"></a>
 
-### route_to_request/3 * ###
+### route_to_request/3 *
 
 `route_to_request(M, X2, Opts) -> any()`
 
@@ -321,19 +321,19 @@ parameters.
 
 <a name="run_wasm_signed_test-0"></a>
 
-### run_wasm_signed_test/0 * ###
+### run_wasm_signed_test/0 *
 
 `run_wasm_signed_test() -> any()`
 
 <a name="run_wasm_unsigned_test-0"></a>
 
-### run_wasm_unsigned_test/0 * ###
+### run_wasm_unsigned_test/0 *
 
 `run_wasm_unsigned_test() -> any()`
 
 <a name="serial_multirequest-7"></a>
 
-### serial_multirequest/7 * ###
+### serial_multirequest/7 *
 
 `serial_multirequest(Nodes, Remaining, Method, Path, Message, Statuses, Opts) -> any()`
 
@@ -343,31 +343,31 @@ allowed, according to the configuration.
 
 <a name="simple_ao_resolve_signed_test-0"></a>
 
-### simple_ao_resolve_signed_test/0 * ###
+### simple_ao_resolve_signed_test/0 *
 
 `simple_ao_resolve_signed_test() -> any()`
 
 <a name="simple_ao_resolve_unsigned_test-0"></a>
 
-### simple_ao_resolve_unsigned_test/0 * ###
+### simple_ao_resolve_unsigned_test/0 *
 
 `simple_ao_resolve_unsigned_test() -> any()`
 
 <a name="start-0"></a>
 
-### start/0 ###
+### start/0
 
 `start() -> any()`
 
 <a name="wasm_compute_request-3"></a>
 
-### wasm_compute_request/3 * ###
+### wasm_compute_request/3 *
 
 `wasm_compute_request(ImageFile, Func, Params) -> any()`
 
 <a name="wasm_compute_request-4"></a>
 
-### wasm_compute_request/4 * ###
+### wasm_compute_request/4 *
 
 `wasm_compute_request(ImageFile, Func, Params, ResultPath) -> any()`
 

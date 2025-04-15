@@ -1,6 +1,6 @@
 
 
-# Module hb_message #
+# Module hb_message
 * [Description](#description)
 * [Function Index](#index)
 * [Function Details](#functions)
@@ -10,7 +10,7 @@ AO-Core protocol, and their uderlying binary representations and formats.
 
 <a name="description"></a>
 
-## Description ##
+## Description
 
 Unless you are implementing a new message serialization codec, you should
 not need to interact with this module directly. Instead, use the
@@ -63,7 +63,7 @@ backend, but each works with simple key-value pairs. Subsequently, the
 `hb_cache` module uses TABMs as the internal format for storing and
 retrieving messages.<a name="index"></a>
 
-## Function Index ##
+## Function Index
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#basic_map_codec_test-1">basic_map_codec_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#binary_to_binary_test-1">binary_to_binary_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#commit-2">commit/2</a></td><td>Sign a message with the given wallet.</td></tr><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td></td></tr><tr><td valign="top"><a href="#commitment-2">commitment/2</a></td><td>Extract a commitment from a message given a <code>committer</code> ID, or a spec
@@ -85,23 +85,23 @@ addresses.</td></tr><tr><td valign="top"><a href="#simple_nested_message_test-1"
 
 <a name="functions"></a>
 
-## Function Details ##
+## Function Details
 
 <a name="basic_map_codec_test-1"></a>
 
-### basic_map_codec_test/1 * ###
+### basic_map_codec_test/1 *
 
 `basic_map_codec_test(Codec) -> any()`
 
 <a name="binary_to_binary_test-1"></a>
 
-### binary_to_binary_test/1 * ###
+### binary_to_binary_test/1 *
 
 `binary_to_binary_test(Codec) -> any()`
 
 <a name="commit-2"></a>
 
-### commit/2 ###
+### commit/2
 
 `commit(Msg, WalletOrOpts) -> any()`
 
@@ -109,13 +109,13 @@ Sign a message with the given wallet.
 
 <a name="commit-3"></a>
 
-### commit/3 ###
+### commit/3
 
 `commit(Msg, Wallet, Format) -> any()`
 
 <a name="commitment-2"></a>
 
-### commitment/2 ###
+### commitment/2
 
 `commitment(Committer, Msg) -> any()`
 
@@ -125,13 +125,13 @@ message to match against. Returns only the first matching commitment, or
 
 <a name="commitment-3"></a>
 
-### commitment/3 ###
+### commitment/3
 
 `commitment(CommitterID, Msg, Opts) -> any()`
 
 <a name="committed-1"></a>
 
-### committed/1 ###
+### committed/1
 
 `committed(Msg) -> any()`
 
@@ -139,37 +139,37 @@ Return the list of committed keys from a message.
 
 <a name="committed-2"></a>
 
-### committed/2 ###
+### committed/2
 
 `committed(Msg, Committers) -> any()`
 
 <a name="committed-3"></a>
 
-### committed/3 ###
+### committed/3
 
 `committed(Msg, List, Opts) -> any()`
 
 <a name="committed_empty_keys_test-1"></a>
 
-### committed_empty_keys_test/1 * ###
+### committed_empty_keys_test/1 *
 
 `committed_empty_keys_test(Codec) -> any()`
 
 <a name="committed_keys_test-1"></a>
 
-### committed_keys_test/1 * ###
+### committed_keys_test/1 *
 
 `committed_keys_test(Codec) -> any()`
 
 <a name="complex_signed_message_test-1"></a>
 
-### complex_signed_message_test/1 * ###
+### complex_signed_message_test/1 *
 
 `complex_signed_message_test(Codec) -> any()`
 
 <a name="convert-3"></a>
 
-### convert/3 ###
+### convert/3
 
 `convert(Msg, TargetFormat, Opts) -> any()`
 
@@ -187,25 +187,25 @@ available. The conversion from a TABM is done by the target codec.
 
 <a name="convert-4"></a>
 
-### convert/4 ###
+### convert/4
 
 `convert(Msg, TargetFormat, SourceFormat, Opts) -> any()`
 
 <a name="deep_multisignature_test-0"></a>
 
-### deep_multisignature_test/0 * ###
+### deep_multisignature_test/0 *
 
 `deep_multisignature_test() -> any()`
 
 <a name="deeply_nested_committed_keys_test-0"></a>
 
-### deeply_nested_committed_keys_test/0 * ###
+### deeply_nested_committed_keys_test/0 *
 
 `deeply_nested_committed_keys_test() -> any()`
 
 <a name="deeply_nested_message_with_content_test-1"></a>
 
-### deeply_nested_message_with_content_test/1 * ###
+### deeply_nested_message_with_content_test/1 *
 
 `deeply_nested_message_with_content_test(Codec) -> any()`
 
@@ -213,13 +213,13 @@ Test that we can convert a 3 layer nested message into a tx record and back.
 
 <a name="deeply_nested_message_with_only_content-1"></a>
 
-### deeply_nested_message_with_only_content/1 * ###
+### deeply_nested_message_with_only_content/1 *
 
 `deeply_nested_message_with_only_content(Codec) -> any()`
 
 <a name="default_keys_removed_test-0"></a>
 
-### default_keys_removed_test/0 * ###
+### default_keys_removed_test/0 *
 
 `default_keys_removed_test() -> any()`
 
@@ -229,7 +229,7 @@ have been set by the user.
 
 <a name="default_tx_list-0"></a>
 
-### default_tx_list/0 ###
+### default_tx_list/0
 
 `default_tx_list() -> any()`
 
@@ -238,7 +238,7 @@ the tx record.
 
 <a name="default_tx_message-0"></a>
 
-### default_tx_message/0 * ###
+### default_tx_message/0 *
 
 `default_tx_message() -> any()`
 
@@ -246,31 +246,31 @@ Get the normalized fields and default values of the tx record.
 
 <a name="empty_string_in_tag_test-1"></a>
 
-### empty_string_in_tag_test/1 * ###
+### empty_string_in_tag_test/1 *
 
 `empty_string_in_tag_test(Codec) -> any()`
 
 <a name="encode_balance_table-2"></a>
 
-### encode_balance_table/2 * ###
+### encode_balance_table/2 *
 
 `encode_balance_table(Size, Codec) -> any()`
 
 <a name="encode_large_balance_table_test-1"></a>
 
-### encode_large_balance_table_test/1 * ###
+### encode_large_balance_table_test/1 *
 
 `encode_large_balance_table_test(Codec) -> any()`
 
 <a name="encode_small_balance_table_test-1"></a>
 
-### encode_small_balance_table_test/1 * ###
+### encode_small_balance_table_test/1 *
 
 `encode_small_balance_table_test(Codec) -> any()`
 
 <a name="filter_default_keys-1"></a>
 
-### filter_default_keys/1 ###
+### filter_default_keys/1
 
 `filter_default_keys(Map) -> any()`
 
@@ -279,7 +279,7 @@ record.
 
 <a name="find_target-3"></a>
 
-### find_target/3 ###
+### find_target/3
 
 `find_target(Self, Req, Opts) -> any()`
 
@@ -291,7 +291,7 @@ performed on the value of that key.
 
 <a name="format-1"></a>
 
-### format/1 ###
+### format/1
 
 `format(Item) -> any()`
 
@@ -300,25 +300,25 @@ to start from.
 
 <a name="format-2"></a>
 
-### format/2 ###
+### format/2
 
 `format(Bin, Indent) -> any()`
 
 <a name="from_tabm-4"></a>
 
-### from_tabm/4 * ###
+### from_tabm/4 *
 
 `from_tabm(Msg, TargetFormat, OldPriv, Opts) -> any()`
 
 <a name="generate_test_suite-1"></a>
 
-### generate_test_suite/1 * ###
+### generate_test_suite/1 *
 
 `generate_test_suite(Suite) -> any()`
 
 <a name="get_codec-2"></a>
 
-### get_codec/2 * ###
+### get_codec/2 *
 
 `get_codec(TargetFormat, Opts) -> any()`
 
@@ -326,13 +326,13 @@ Get a codec from the options.
 
 <a name="hashpath_sign_verify_test-1"></a>
 
-### hashpath_sign_verify_test/1 * ###
+### hashpath_sign_verify_test/1 *
 
 `hashpath_sign_verify_test(Codec) -> any()`
 
 <a name="id-1"></a>
 
-### id/1 ###
+### id/1
 
 `id(Msg) -> any()`
 
@@ -340,25 +340,25 @@ Return the ID of a message.
 
 <a name="id-2"></a>
 
-### id/2 ###
+### id/2
 
 `id(Msg, Committers) -> any()`
 
 <a name="id-3"></a>
 
-### id/3 ###
+### id/3
 
 `id(Msg, RawCommitters, Opts) -> any()`
 
 <a name="large_body_committed_keys_test-1"></a>
 
-### large_body_committed_keys_test/1 * ###
+### large_body_committed_keys_test/1 *
 
 `large_body_committed_keys_test(Codec) -> any()`
 
 <a name="match-2"></a>
 
-### match/2 ###
+### match/2
 
 `match(Map1, Map2) -> any()`
 
@@ -370,19 +370,19 @@ Takes an optional mode argument to control the matching behavior:
 
 <a name="match-3"></a>
 
-### match/3 ###
+### match/3
 
 `match(Map1, Map2, Mode) -> any()`
 
 <a name="match_modes_test-0"></a>
 
-### match_modes_test/0 * ###
+### match_modes_test/0 *
 
 `match_modes_test() -> any()`
 
 <a name="match_test-1"></a>
 
-### match_test/1 * ###
+### match_test/1 *
 
 `match_test(Codec) -> any()`
 
@@ -390,19 +390,19 @@ Test that the message matching function works.
 
 <a name="matchable_keys-1"></a>
 
-### matchable_keys/1 * ###
+### matchable_keys/1 *
 
 `matchable_keys(Map) -> any()`
 
 <a name="message_suite_test_-0"></a>
 
-### message_suite_test_/0 * ###
+### message_suite_test_/0 *
 
 `message_suite_test_() -> any()`
 
 <a name="message_with_large_keys_test-1"></a>
 
-### message_with_large_keys_test/1 * ###
+### message_with_large_keys_test/1 *
 
 `message_with_large_keys_test(Codec) -> any()`
 
@@ -412,19 +412,19 @@ tags).
 
 <a name="message_with_simple_embedded_list_test-1"></a>
 
-### message_with_simple_embedded_list_test/1 * ###
+### message_with_simple_embedded_list_test/1 *
 
 `message_with_simple_embedded_list_test(Codec) -> any()`
 
 <a name="minimization_test-0"></a>
 
-### minimization_test/0 * ###
+### minimization_test/0 *
 
 `minimization_test() -> any()`
 
 <a name="minimize-1"></a>
 
-### minimize/1 ###
+### minimize/1
 
 `minimize(Msg) -> any()`
 
@@ -433,25 +433,25 @@ additional list of keys to include in the minimization.
 
 <a name="minimize-2"></a>
 
-### minimize/2 * ###
+### minimize/2 *
 
 `minimize(RawVal, ExtraKeys) -> any()`
 
 <a name="nested_body_list_test-1"></a>
 
-### nested_body_list_test/1 * ###
+### nested_body_list_test/1 *
 
 `nested_body_list_test(Codec) -> any()`
 
 <a name="nested_empty_map_test-1"></a>
 
-### nested_empty_map_test/1 * ###
+### nested_empty_map_test/1 *
 
 `nested_empty_map_test(Codec) -> any()`
 
 <a name="nested_message_with_large_content_test-1"></a>
 
-### nested_message_with_large_content_test/1 * ###
+### nested_message_with_large_content_test/1 *
 
 `nested_message_with_large_content_test(Codec) -> any()`
 
@@ -461,7 +461,7 @@ tags).
 
 <a name="nested_message_with_large_keys_and_content_test-1"></a>
 
-### nested_message_with_large_keys_and_content_test/1 * ###
+### nested_message_with_large_keys_and_content_test/1 *
 
 `nested_message_with_large_keys_and_content_test(Codec) -> any()`
 
@@ -469,19 +469,19 @@ Check that large keys and data fields are correctly handled together.
 
 <a name="nested_message_with_large_keys_test-1"></a>
 
-### nested_message_with_large_keys_test/1 * ###
+### nested_message_with_large_keys_test/1 *
 
 `nested_message_with_large_keys_test(Codec) -> any()`
 
 <a name="nested_structured_fields_test-1"></a>
 
-### nested_structured_fields_test/1 * ###
+### nested_structured_fields_test/1 *
 
 `nested_structured_fields_test(Codec) -> any()`
 
 <a name="normalize-1"></a>
 
-### normalize/1 * ###
+### normalize/1 *
 
 `normalize(Map) -> any()`
 
@@ -490,7 +490,7 @@ be regenerated.
 
 <a name="print-1"></a>
 
-### print/1 ###
+### print/1
 
 `print(Msg) -> any()`
 
@@ -498,25 +498,25 @@ Pretty-print a message.
 
 <a name="print-2"></a>
 
-### print/2 * ###
+### print/2 *
 
 `print(Msg, Indent) -> any()`
 
 <a name="priv_survives_conversion_test-1"></a>
 
-### priv_survives_conversion_test/1 * ###
+### priv_survives_conversion_test/1 *
 
 `priv_survives_conversion_test(Codec) -> any()`
 
 <a name="recursive_nested_list_test-1"></a>
 
-### recursive_nested_list_test/1 * ###
+### recursive_nested_list_test/1 *
 
 `recursive_nested_list_test(Codec) -> any()`
 
 <a name="restore_priv-2"></a>
 
-### restore_priv/2 * ###
+### restore_priv/2 *
 
 `restore_priv(Msg, EmptyPriv) -> any()`
 
@@ -525,67 +525,67 @@ any existing `priv` sub-map that may already be present.
 
 <a name="run_test-0"></a>
 
-### run_test/0 * ###
+### run_test/0 *
 
 `run_test() -> any()`
 
 <a name="set_body_codec_test-1"></a>
 
-### set_body_codec_test/1 * ###
+### set_body_codec_test/1 *
 
 `set_body_codec_test(Codec) -> any()`
 
 <a name="sign_node_message_test-1"></a>
 
-### sign_node_message_test/1 * ###
+### sign_node_message_test/1 *
 
 `sign_node_message_test(Codec) -> any()`
 
 <a name="signed_deep_message_test-1"></a>
 
-### signed_deep_message_test/1 * ###
+### signed_deep_message_test/1 *
 
 `signed_deep_message_test(Codec) -> any()`
 
 <a name="signed_list_test-1"></a>
 
-### signed_list_test/1 * ###
+### signed_list_test/1 *
 
 `signed_list_test(Codec) -> any()`
 
 <a name="signed_message_encode_decode_verify_test-1"></a>
 
-### signed_message_encode_decode_verify_test/1 * ###
+### signed_message_encode_decode_verify_test/1 *
 
 `signed_message_encode_decode_verify_test(Codec) -> any()`
 
 <a name="signed_message_with_derived_components_test-1"></a>
 
-### signed_message_with_derived_components_test/1 * ###
+### signed_message_with_derived_components_test/1 *
 
 `signed_message_with_derived_components_test(Codec) -> any()`
 
 <a name="signed_nested_data_key_test-1"></a>
 
-### signed_nested_data_key_test/1 * ###
+### signed_nested_data_key_test/1 *
 
 `signed_nested_data_key_test(Codec) -> any()`
 
 <a name="signed_only_committed_data_field_test-1"></a>
 
-### signed_only_committed_data_field_test/1 * ###
+### signed_only_committed_data_field_test/1 *
 
 `signed_only_committed_data_field_test(Codec) -> any()`
 
 <a name="signed_with_inner_signed_message_test-1"></a>
 
-### signed_with_inner_signed_message_test/1 * ###
+### signed_with_inner_signed_message_test/1 *
 
 `signed_with_inner_signed_message_test(Codec) -> any()`
 
 <a name="signers-1"></a>
 
-### signers/1 ###
+### signers/1
 
 `signers(Msg) -> any()`
 
@@ -594,13 +594,13 @@ addresses.
 
 <a name="simple_nested_message_test-1"></a>
 
-### simple_nested_message_test/1 * ###
+### simple_nested_message_test/1 *
 
 `simple_nested_message_test(Codec) -> any()`
 
 <a name="single_layer_message_to_encoding_test-1"></a>
 
-### single_layer_message_to_encoding_test/1 * ###
+### single_layer_message_to_encoding_test/1 *
 
 `single_layer_message_to_encoding_test(Codec) -> any()`
 
@@ -608,7 +608,7 @@ Test that we can convert a message into a tx record and back.
 
 <a name="structured_field_atom_parsing_test-1"></a>
 
-### structured_field_atom_parsing_test/1 * ###
+### structured_field_atom_parsing_test/1 *
 
 `structured_field_atom_parsing_test(Codec) -> any()`
 
@@ -616,31 +616,31 @@ Structured field parsing tests.
 
 <a name="structured_field_decimal_parsing_test-1"></a>
 
-### structured_field_decimal_parsing_test/1 * ###
+### structured_field_decimal_parsing_test/1 *
 
 `structured_field_decimal_parsing_test(Codec) -> any()`
 
 <a name="tabm_ao_ids_equal_test-1"></a>
 
-### tabm_ao_ids_equal_test/1 * ###
+### tabm_ao_ids_equal_test/1 *
 
 `tabm_ao_ids_equal_test(Codec) -> any()`
 
 <a name="test_codecs-0"></a>
 
-### test_codecs/0 * ###
+### test_codecs/0 *
 
 `test_codecs() -> any()`
 
 <a name="to_tabm-3"></a>
 
-### to_tabm/3 * ###
+### to_tabm/3 *
 
 `to_tabm(Msg, SourceFormat, Opts) -> any()`
 
 <a name="type-1"></a>
 
-### type/1 ###
+### type/1
 
 `type(TX) -> any()`
 
@@ -648,7 +648,7 @@ Return the type of an encoded message.
 
 <a name="uncommitted-1"></a>
 
-### uncommitted/1 ###
+### uncommitted/1
 
 `uncommitted(Bin) -> any()`
 
@@ -656,13 +656,13 @@ Return the unsigned version of a message in AO-Core format.
 
 <a name="unsigned_id_test-1"></a>
 
-### unsigned_id_test/1 * ###
+### unsigned_id_test/1 *
 
 `unsigned_id_test(Codec) -> any()`
 
 <a name="verify-1"></a>
 
-### verify/1 ###
+### verify/1
 
 `verify(Msg) -> any()`
 
@@ -670,13 +670,13 @@ wrapper function to verify a message.
 
 <a name="verify-2"></a>
 
-### verify/2 ###
+### verify/2
 
 `verify(Msg, Committers) -> any()`
 
 <a name="with_commitments-2"></a>
 
-### with_commitments/2 ###
+### with_commitments/2
 
 `with_commitments(Spec, Msg) -> any()`
 
@@ -686,13 +686,13 @@ need to specify the keys that must be present.
 
 <a name="with_commitments-3"></a>
 
-### with_commitments/3 * ###
+### with_commitments/3 *
 
 `with_commitments(Spec, Msg, Opts) -> any()`
 
 <a name="with_only_committed-1"></a>
 
-### with_only_committed/1 ###
+### with_only_committed/1
 
 `with_only_committed(Msg) -> any()`
 
@@ -707,13 +707,13 @@ performed unless necessary.
 
 <a name="with_only_committed-2"></a>
 
-### with_only_committed/2 ###
+### with_only_committed/2
 
 `with_only_committed(Msg, Opts) -> any()`
 
 <a name="with_only_committers-2"></a>
 
-### with_only_committers/2 ###
+### with_only_committers/2
 
 `with_only_committers(Msg, Committers) -> any()`
 
@@ -721,7 +721,7 @@ Return the message with only the specified committers attached.
 
 <a name="without_commitments-2"></a>
 
-### without_commitments/2 ###
+### without_commitments/2
 
 `without_commitments(Spec, Msg) -> any()`
 
@@ -730,7 +730,7 @@ function, such that only messages that do _not_ match the spec are returned.
 
 <a name="without_commitments-3"></a>
 
-### without_commitments/3 * ###
+### without_commitments/3 *
 
 `without_commitments(Spec, Msg, Opts) -> any()`
 
