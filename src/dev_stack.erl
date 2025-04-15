@@ -20,7 +20,7 @@
 %%% Will produce the output:
 %%% <pre>
 %%% #{ Path = "FuncName", binary => `<<"3">>' }
-%%% {ok, #{ bin => <<"3">> }}
+%%% {ok, #{ bin => `<<"3">>' }}
 %%% </pre>
 %%% 
 %%% In map mode, the stack will run over all the devices in the stack, and

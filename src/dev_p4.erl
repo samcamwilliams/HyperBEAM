@@ -10,8 +10,8 @@
 %%%
 %%% The pricing device should implement the following keys:
 %%% <pre>
-%%%             GET /estimate?type=pre|post&body=[...]&request=RequestMessage
-%%%             GET /price?type=pre|post&body=[...]&request=RequestMessage
+%%%             `GET /estimate?type=pre|post&body=[...]&request=RequestMessage'
+%%%             `GET /price?type=pre|post&body=[...]&request=RequestMessage'
 %%% </pre>
 %%% 
 %%% The `body' key is used to pass either the request or response messages to the
@@ -24,8 +24,8 @@
 %%%
 %%% The ledger device should implement the following keys:
 %%% <pre>
-%%%             POST /credit?message=PaymentMessage&request=RequestMessage
-%%%             POST /debit?amount=PriceMessage&type=pre|post&request=RequestMessage
+%%%             `POST /credit?message=PaymentMessage&request=RequestMessage'
+%%%             `POST /debit?amount=PriceMessage&type=pre|post&request=RequestMessage'
 %%% </pre>
 %%%
 %%% The `type' key is optional and defaults to `pre'. If `type' is set to `post',

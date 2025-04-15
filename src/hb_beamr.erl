@@ -9,7 +9,7 @@
 %%% 
 %%% Because each WASM module runs as an independent async worker, if you plan
 %%% to run many instances in parallel, you should be sure to configure the 
-%%% BEAM to have enough async worker threads enabled (see `erl +A N` in the
+%%% BEAM to have enough async worker threads enabled (see `erl +A N' in the
 %%% Erlang manuals).
 %%% 
 %%% The core API is simple:
