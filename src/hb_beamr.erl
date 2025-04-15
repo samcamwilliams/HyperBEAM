@@ -55,7 +55,7 @@
 %%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
 
--include("src/include/hb.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Load the driver for the WASM executor.

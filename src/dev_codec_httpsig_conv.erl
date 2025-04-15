@@ -52,7 +52,7 @@ from(HTTP) ->
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
     WithBodyKeys = from_body(Headers, InlinedKey, ContentType, Body),
-    % Decode the `ao-ids' key into a map. `ao-ids` is an encoding of literal
+    % Decode the `ao-ids' key into a map. `ao-ids' is an encoding of literal
     % binaries whose keys (given that they are IDs) cannot be distributed as
     % HTTP headers.
     WithIDs = ungroup_ids(WithBodyKeys),
@@ -392,9 +392,9 @@ do_to(TABM, Opts) when is_map(TABM) ->
                 PartList = hb_util:to_sorted_list(
                     maps:map(
                         fun(Key, M = #{ <<"body">> := _ }) when map_size(M) =:= 1 ->
-                            % If the map has only one key, and it is `body`,
+                            % If the map has only one key, and it is `body',
                             % then we must encode part name with the additional
-                            % `/body` suffix. This is because otherwise, the `body`
+                            % `/body' suffix. This is because otherwise, the `body'
                             % element will be assumed to be an inline part, removing
                             % the necessary hierarchy.
                             encode_body_part(
@@ -461,8 +461,8 @@ do_to(TABM, Opts) when is_map(TABM) ->
 %% be sent as headers and lower-cased, losing their comparability against the
 %% original keys. The structure follows all SF dict rules, except that it allows
 %% for keys to contain capitals. The HyperBEAM SF parser will accept these keys,
-%% but standard RFC 8741 parsers will not. Subsequently, the resulting `ao-cased`
-%% key is not added to the `ao-types` map.
+%% but standard RFC 8741 parsers will not. Subsequently, the resulting `ao-cased'
+%% key is not added to the `ao-types' map.
 group_ids(Map) ->
     % Find all keys that are IDs
     IDDict = maps:filter(fun(K, V) -> ?IS_ID(K) andalso is_binary(V) end, Map),
