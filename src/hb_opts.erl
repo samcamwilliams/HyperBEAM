@@ -88,7 +88,7 @@ default_message() ->
         cache_control => [<<"no-cache">>, <<"no-store">>],
         cache_lookup_hueristics => false,
         % Should we await in-progress executions, rather than re-running?
-        % Has three settings: false, only `named` executions, or all executions.
+        % Has three settings: false, only `named' executions, or all executions.
         await_inprogress => named,
         %% Should the node attempt to access data from remote caches for
         %% client requests?
@@ -111,7 +111,7 @@ default_message() ->
         commitment_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
-        % Every modification to `Opts` called directly by the node operator
+        % Every modification to `Opts' called directly by the node operator
         % should be recorded here.
 		node_history => [],
         debug_stack_depth => 40,
@@ -120,7 +120,7 @@ default_message() ->
         debug_print_indent => 2,
         debug_print => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
-        debug_print_trace => short, % `short` | `false`. Has performance impact.
+        debug_print_trace => short, % `short' | `false'. Has performance impact.
         short_trace_len => 5,
         debug_metadata => true,
         debug_ids => false,

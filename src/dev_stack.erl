@@ -14,12 +14,12 @@
 %%% 
 %%% When called with the message:
 %%% <pre>
-%%% #{ Path = "FuncName", binary => `<<"0">>` }
+%%% #{ Path = "FuncName", binary => `<<"0">>' }
 %%% </pre>
 %%% 
 %%% Will produce the output:
 %%% <pre>
-%%% #{ Path = "FuncName", binary => `<<"3">>` }
+%%% #{ Path = "FuncName", binary => `<<"3">>' }
 %%% {ok, #{ bin => <<"3">> }}
 %%% </pre>
 %%% 

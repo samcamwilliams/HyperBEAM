@@ -434,7 +434,7 @@ post_schedule(Msg1, Msg2, Opts) ->
             }
     end.
 
-%% @doc Post schedule the message. `Msg2` by this point has been refined to only
+%% @doc Post schedule the message. `Msg2' by this point has been refined to only
 %% committed keys, and to only include the `target' message that is to be
 %% scheduled.
 do_post_schedule(ProcID, PID, Msg2, Opts) ->
@@ -681,7 +681,7 @@ remote_slot(<<"ao.N.1">>, ProcID, Node, Opts) ->
     hb_http:get(Node, <<ProcID/binary, "/slot">>, Opts);
 remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
     % The process is running on a testnet AO-Core scheduler, so we need to use
-    % `/processes/procID/latest` to get the current slot.
+    % `/processes/procID/latest' to get the current slot.
     Path = << ProcID/binary, "/latest?proc-id=", ProcID/binary>>,
     ?event({getting_slot_from_ao_core_remote, {path, {string, Path}}}),
     case hb_http:get(Node, Path, Opts#{ http_client => httpc }) of
@@ -693,7 +693,7 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
                     JSON = hb_json:decode(Body),
                     ?event({got_slot_response, {json, JSON}}),
                     % Convert the JSON object for the latest assignment into the
-                    % standardized `~scheduler@1.0` format.
+                    % standardized `~scheduler@1.0' format.
                     A =
                         dev_scheduler_formats:aos2_to_assignment(
                             JSON,

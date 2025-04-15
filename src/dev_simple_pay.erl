@@ -1,8 +1,8 @@
 %%% @doc A simple device that allows the operator to specify a price for a
 %%% request and then charge the user for it, on a per message basis.
-%%% The device's ledger is stored in the node message at `simple_pay_ledger`,
+%%% The device's ledger is stored in the node message at `simple_pay_ledger',
 %%% and can be topped-up by either the operator, or an external device. The 
-%%% price is specified in the node message at `simple_pay_price`.
+%%% price is specified in the node message at `simple_pay_price'.
 %%% This device acts as both a pricing device and a ledger device, by p4's
 %%% definition.
 -module(dev_simple_pay).

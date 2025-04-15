@@ -1,10 +1,10 @@
 %%% @doc A parser that translates AO-Core HTTP API requests in TABM format
 %%% into an ordered list of messages to evaluate. The details of this format
-%%% are described in `docs/ao-core-http-api.md`.
+%%% are described in `docs/ao-core-http-api.md'.
 %%%
 %%% Syntax overview:
 %%% <pre>
-%%%     Singleton: Message containing keys and a `path` field,
+%%%     Singleton: Message containing keys and a `path' field,
 %%%                which may also contain a query string of key-value pairs.
 %%%
 %%%     Path:
@@ -384,7 +384,7 @@ maybe_typed(Key, Value) ->
             case {Type, Value} of
                 {<<"resolve">>, Subpath} ->
                     % If the value needs to be resolved before it is converted,
-                    % use the `Codec/1.0` device to resolve it.
+                    % use the `Codec/1.0' device to resolve it.
                     % For example:
                     % /a/b&k+Int=(/x/y/z)` => /a/b&k=(/x/y/z/body&Type=Int+Codec)
                     {typed,

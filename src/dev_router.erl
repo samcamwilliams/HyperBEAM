@@ -74,13 +74,13 @@ routes(M1, M2, Opts) ->
 %% 
 %% If we have a route that has multiple resolving nodes, check
 %% the load distribution strategy and choose a node. Supported strategies:
-%% ```
+%% <pre>
 %%       All:     Return all nodes (default).
 %%       Random:  Distribute load evenly across all nodes, non-deterministically.
 %%       By-Base: According to the base message's hashpath.
 %%       Nearest: According to the distance of the node's wallet address to the
 %%                base message's hashpath.
-%% '''
+%% </pre>
 %% `By-Base' will ensure that all traffic for the same hashpath is routed to the
 %% same node, minimizing work duplication, while `Random' ensures a more even
 %% distribution of the requests.

@@ -32,9 +32,9 @@
 %%%     call(Port, FunName, Args[, Import, State, Opts]) -> {ok, Res, NewState}
 %%%         Where:
 %%%             ImportFun is a function that will be called upon each import.
-%%%             ImportFun must have an arity of 2: Taking an arbitrary `state`
-%%%             term, and a map containing the `port`, `module`, `func`, `args`,
-%%%             `signature`, and the `options` map of the import.
+%%%             ImportFun must have an arity of 2: Taking an arbitrary `state'
+%%%             term, and a map containing the `port', `module', `func', `args',
+%%%             `signature', and the `options' map of the import.
 %%%             It must return a tuple of the form {ok, Response, NewState}.
 %%%     serialize(Port) -> {ok, Mem}
 %%%         Where:

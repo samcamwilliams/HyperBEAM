@@ -7,6 +7,7 @@
 
 
 <table width="100%" border="0" summary="list of modules">
+<tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/ar_bundles.md" class="module">ar_bundles</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/ar_deep_hash.md" class="module">ar_deep_hash</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/ar_rate_limiter.md" class="module">ar_rate_limiter</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/ar_timestamp.md" class="module">ar_timestamp</a></td></tr>
@@ -35,7 +36,6 @@
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_meta.md" class="module">dev_meta</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_monitor.md" class="module">dev_monitor</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_multipass.md" class="module">dev_multipass</a></td></tr>
-<tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_p4.md" class="module">dev_p4</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_patch.md" class="module">dev_patch</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_poda.md" class="module">dev_poda</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_process.md" class="module">dev_process</a></td></tr>
@@ -52,7 +52,6 @@
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_simple_pay.md" class="module">dev_simple_pay</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_snp.md" class="module">dev_snp</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_snp_nif.md" class="module">dev_snp_nif</a></td></tr>
-<tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_stack.md" class="module">dev_stack</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_test.md" class="module">dev_test</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_wasi.md" class="module">dev_wasi</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/dev_wasm.md" class="module">dev_wasm</a></td></tr>
@@ -60,7 +59,6 @@
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_ao.md" class="module">hb_ao</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_ao_test_vectors.md" class="module">hb_ao_test_vectors</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_app.md" class="module">hb_app</a></td></tr>
-<tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_beamr.md" class="module">hb_beamr</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_beamr_io.md" class="module">hb_beamr_io</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_cache.md" class="module">hb_cache</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_cache_control.md" class="module">hb_cache_control</a></td></tr>
@@ -89,7 +87,6 @@
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_private.md" class="module">hb_private</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_process_monitor.md" class="module">hb_process_monitor</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_router.md" class="module">hb_router</a></td></tr>
-<tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_singleton.md" class="module">hb_singleton</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_store.md" class="module">hb_store</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_store_fs.md" class="module">hb_store_fs</a></td></tr>
 <tr><td><a href="https://github.com/permaweb/HyperBEAM/blob/dpshade/md-docs/doc/hb_store_gateway.md" class="module">hb_store_gateway</a></td></tr>

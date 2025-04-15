@@ -71,8 +71,8 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                     % Update the arg prefix to include the unwrapped message.
                     {ok, S#{ <<"vfs">> => VFS1, <<"arg_prefix">> =>
                         [
-                            % Traverse two layers of `/Message/Message` to get
-                            % the actual message, then replace `/Message` with it.
+                            % Traverse two layers of `/Message/Message' to get
+                            % the actual message, then replace `/Message' with it.
                             Outer#tx{
                                 data = (Outer#tx.data)#{
                                     <<"body">> => maps:get(<<"body">>, Msg#tx.data)
