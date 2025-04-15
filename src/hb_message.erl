@@ -148,7 +148,7 @@ id(Msg, RawCommitters, Opts) ->
         end,
     ?event({getting_id, {msg, Msg}, {committers, Committers}}),
     {ok, ID} =
-        hb_ao:resolve(
+        dev_message:id(
             Msg,
             #{ <<"path">> => <<"id">>, <<"committers">> => Committers },
             Opts

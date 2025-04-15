@@ -274,6 +274,8 @@ decode_value(map, Value) ->
             hb_structured_fields:parse_dictionary(iolist_to_binary(Value))
         )
     );
+decode_value(link, Value) ->
+    {link, Value, #{ <<"type">> => <<"link">> }};
 decode_value(BinType, Value) when is_binary(BinType) ->
     decode_value(
         list_to_existing_atom(

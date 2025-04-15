@@ -1,6 +1,6 @@
 %%% @doc Utility functions for working with links.
 -module(hb_link).
--export([read/1, read/2, linkify/1, linkify/2, linkify/3]).
+-export([read/1, read/2, linkify/1, linkify/2, linkify/3, is_link_key/1]).
 -export([encode_link/1, decode_link/1, encode_all_links/1, decode_all_links/1]).
 -export([format/1, format/2]).
 -include("include/hb.hrl").
@@ -27,7 +27,12 @@ linkify(Msg, Mode, Opts) when is_map(Msg) ->
             lists:map(
                 fun({Key, InnerMsg}) when is_map(InnerMsg) or is_list(InnerMsg) ->
                     LinkifiedInnerMsg = linkify(InnerMsg, Mode, Opts),
-                    ID = hb_message:id(LinkifiedInnerMsg, all, Opts),
+                    {ok, ID} =
+                        dev_message:id(
+                            LinkifiedInnerMsg,
+                            #{ <<"commitments">> => <<"all">> },
+                            Opts
+                        ),
                     % If we are in `offload' mode, we write the message to the
                     % cache. If we are in `discard' mode, we simply drop the 
                     % nested message.
@@ -42,7 +47,11 @@ linkify(Msg, Mode, Opts) when is_map(Msg) ->
                 maps:to_list(maps:without([<<"commitments">>, <<"priv">>], Msg))
             )
         )
-    ).
+    );
+linkify(Msg, Mode, Opts) when is_list(Msg) ->
+    lists:map(fun(X) -> linkify(X, Mode, Opts) end, Msg);
+linkify(OtherVal, _Mode, _Opts) ->
+    OtherVal.
 
 %% @doc Search a TABM for all links and replace them with a `+link' key.
 encode_all_links(Map) ->
@@ -51,7 +60,8 @@ encode_all_links(Map) ->
         lists:map(
             fun({Key, Value}) when ?IS_LINK(Value) ->
                 ?event(linkify, {encoding_link, {key, Key}, {link, Value}}),
-                {<<Key/binary, "+link">>, encode_link(Value)};
+                NormKey = hb_ao:normalize_key(Key),
+                {<<NormKey/binary, "+link">>, encode_link(Value)};
             ({Key, Value}) ->
                 {Key, Value}
             end,
@@ -69,20 +79,19 @@ encode_link({link, ID, #{}}) ->
 decode_all_links(Msg) ->
     maps:from_list(
         lists:map(
-            fun({Key, Value}) when byte_size(Key) >= 5 ->
-                case binary:part(Key, byte_size(Key) - 5, 5) of
-                    <<"+link">> ->
+            fun({Key, Value}) ->
+                case is_link_key(Key) of
+                    true ->
                         NewKey = binary:part(Key, 0, byte_size(Key) - 5),
                         {NewKey, decode_link(Value)};
                     _ -> {Key, Value}
-                end;
-                ({Key, Value}) -> {Key, Value}
+                end
             end,
             maps:to_list(Msg)
         )
     ).
 
-%% @doc Decode a link embedded in a header.
+%% @doc Decode a link value embedded in a header.
 decode_link(LinkStr) ->
     case binary:split(LinkStr, <<"+">>) of
         [ID, Type] ->
@@ -90,6 +99,11 @@ decode_link(LinkStr) ->
         [ID] ->
             {link, ID, #{}}
     end.
+
+%% @doc Determine if a key is an encoded link.
+is_link_key(Key) when byte_size(Key) >= 5 ->
+    binary:part(Key, byte_size(Key) - 5, 5) =:= <<"+link">>;
+is_link_key(_) -> false.
 
 %% @doc Format a link as a short string suitable for printing. Checks the node
 %% options (optionally) given, to see if it should resolve the link to a value

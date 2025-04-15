@@ -78,7 +78,6 @@ id(Base, Req, NodeOpts) ->
 
 calculate_ids(Base, Req, NodeOpts) ->
     % Find the ID device for the message.
-    % Find the ID device for the message.
     ?event(linkify, {calculate_ids, {base, Base}}),
     IDMod =
         case id_device(Base) of
