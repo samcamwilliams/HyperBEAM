@@ -28,7 +28,7 @@
 %%% 
 %%% The structure of the conversions is as follows:
 %%% 
-%%% ```
+%%% <pre>
 %%%     Arweave TX/ANS-104 ==> dev_codec_ans104:from/1 ==> TABM
 %%%     HTTP Signed Message ==> dev_codec_httpsig_conv:from/1 ==> TABM
 %%%     Flat Maps ==> dev_codec_flat:from/1 ==> TABM
@@ -40,7 +40,7 @@
 %%%     TABM ==> dev_codec_httpsig_conv:to/1 ==> HTTP Signed Message
 %%%     TABM ==> dev_codec_flat:to/1 ==> Flat Maps
 %%%     ...
-%%% '''
+%%% </pre>
 %%% 
 %%% Additionally, this module provides a number of utility functions for
 %%% manipulating messages. For example, `hb_message:sign/2' to sign a message of

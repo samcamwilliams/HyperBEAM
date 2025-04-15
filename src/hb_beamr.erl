@@ -13,7 +13,7 @@
 %%% Erlang manuals).
 %%% 
 %%% The core API is simple:
-%%% ```
+%%% <pre>
 %%%     start(WasmBinary) -> {ok, Port, Imports, Exports}
 %%%         Where:
 %%%             WasmBinary is the WASM binary to load.
@@ -44,7 +44,7 @@
 %%%         Where:
 %%%             Port is the port to the LID.
 %%%             Mem is a binary output of a previous `serialize/1' call.
-%%% '''
+%%% </pre>
 %%% 
 %%% BEAMR was designed for use in the HyperBEAM project, but is suitable for
 %%% deployment in other Erlang applications that need to run WASM modules. PRs

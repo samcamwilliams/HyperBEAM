@@ -33,7 +33,7 @@
 %%% `trusted_device_signers' environment settings).
 %%% 
 %%% HyperBEAM device implementations are defined as follows:
-%%% ```
+%%% <pre>
 %%%     DevMod:ExportedFunc : Key resolution functions. All are assumed to be
 %%%                           device keys (thus, present in every message that
 %%%                           uses it) unless specified by `DevMod:info()'.
@@ -88,7 +88,7 @@
 %%% 					Default: true.
 %%% `add_key':          Whether to add the key to the start of the arguments.
 %%% 					Default: `<not set>'.
-%%% '''
+%%% </pre>
 -module(hb_ao).
 %%% Main AO-Core API:
 -export([resolve/2, resolve/3, resolve_many/2]).

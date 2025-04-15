@@ -3,7 +3,7 @@
 %%% are described in `docs/ao-core-http-api.md`.
 %%%
 %%% Syntax overview:
-%%% ```
+%%% <pre>
 %%%     Singleton: Message containing keys and a `path` field,
 %%%                which may also contain a query string of key-value pairs.
 %%%
@@ -30,7 +30,7 @@
 %%%         - key+Int: 1 => #{ key => 1, ... }
 %%%         - key+Res: /nested/path => #{ key => (resolve /nested/path), ... }
 %%%         - N.Key+Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
-%%% '''
+%%% </pre>
 -module(hb_singleton).
 -export([from/1, to/1]).
 -include("include/hb.hrl").

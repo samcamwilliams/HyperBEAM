@@ -15,14 +15,14 @@
 %%% `hb_http' module to manage control of requests.
 %%% 
 %%% The structure of the routes should be as follows:
-%%% ```
+%%% <pre>
 %%%     Node?: The node to route the message to.
 %%%     Nodes?: A list of nodes to route the message to.
 %%%     Strategy?: The load distribution strategy to use.
 %%%     Choose?: The number of nodes to choose from the list.
 %%%     Template?: A message template to match the message against, either as a
 %%%                map or a path regex.
-%%% '''
+%%% </pre>
 -module(dev_router).
 %%% Device API:
 -export([routes/3, route/2, route/3]).

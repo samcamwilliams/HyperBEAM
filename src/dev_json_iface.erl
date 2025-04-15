@@ -11,7 +11,7 @@
 %%%    message.
 %%%
 %%% The device has the following requirements and interface:
-%%%     ```
+%%% <pre>
 %%%     M1/Computed when /Pass == 1 ->
 %%%         Assumes:
 %%%             M1/priv/wasm/instance
@@ -32,7 +32,7 @@
 %%%             M2/Process
 %%%         Generates:
 %%%             /Results/Outbox
-%%%             /Results/Data'''
+%%%             /Results/Data</pre>
 -module(dev_json_iface).
 -export([init/3, compute/3]).
 %%% Public interface helpers:

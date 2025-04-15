@@ -3,7 +3,7 @@
 %%% for WAMR, the WebAssembly Micro Runtime.
 %%% 
 %%% The device has the following requirements and interface:
-%%% ```
+%%% <pre>
 %%%     M1/Init ->
 %%%         Assumes:
 %%%             M1/process
@@ -32,7 +32,7 @@
 %%%             M1/priv/[Prefix]/instance
 %%%         Generates:
 %%%             Raw binary WASM state
-%%% '''
+%%% </pre>
 -module(dev_wasm).
 -export([info/2, init/3, compute/3, import/3, terminate/3, snapshot/3, normalize/3]).
 %%% API for other devices:

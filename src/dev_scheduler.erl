@@ -1,7 +1,7 @@
 %%% @doc A simple scheduler scheme for AO.
 %%% This device expects a message of the form:
 %%%     Process: `#{ id, Scheduler: #{ Authority } }'
-%%% ```
+%%% <pre>
 %%% It exposes the following keys for scheduling:
 %%%     `#{ method: GET, path: <<"/info">> }' ->
 %%%         Returns information about the scheduler.
@@ -12,7 +12,7 @@
 %%%    ` #{ method: POST, path: <<"/schedule">> }' -> `post_schedule(Msg1, Msg2, Opts)'
 %%%         Schedules a new message for a process, or starts a new scheduler
 %%%         for the given message.
-%%% '''
+%%% </pre>
 
 -module(dev_scheduler).
 %%% AO-Core API functions:

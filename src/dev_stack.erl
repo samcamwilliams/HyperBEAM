@@ -6,22 +6,22 @@
 %%% progresses through devices.
 %%%
 %%% For example, a stack of devices as follows:
-%%% ```
+%%% <pre>
 %%% Device -> Stack
 %%% Device-Stack/1/Name -> Add-One-Device
 %%% Device-Stack/2/Name -> Add-Two-Device
-%%% '''
+%%% </pre>
 %%% 
 %%% When called with the message:
-%%% ```
-%%% #{ Path = "FuncName", binary => <<"0">> }
-%%% '''
+%%% <pre>
+%%% #{ Path = "FuncName", binary => `<<"0">>` }
+%%% </pre>
 %%% 
 %%% Will produce the output:
-%%%  ```
-%%% #{ Path = "FuncName", binary => <<"3">> }
+%%% <pre>
+%%% #{ Path = "FuncName", binary => `<<"3">>` }
 %%% {ok, #{ bin => <<"3">> }}
-%%% '''
+%%% </pre>
 %%% 
 %%% In map mode, the stack will run over all the devices in the stack, and
 %%% combine their results into a single message. Each of the devices'
@@ -81,7 +81,7 @@
 %%% allows dev_stack to ensure that the message's HashPath is always correct,
 %%% even as it delegates calls to other devices. An example flow for a `dev_stack'
 %%% execution is as follows:
-%%%```
+%%% <pre>
 %%% 	/Msg1/AlicesExcitingKey ->
 %%% 		dev_stack:execute ->
 %%% 			/Msg1/Set?device=/Device-Stack/1 ->
@@ -92,7 +92,7 @@
 %%% 			/MsgN/Set?device=[This-Device] ->
 %%% 		returns {ok, /MsgN+1} ->
 %%% 	/MsgN+1
-%%% '''
+%%% </pre>
 %%%
 %%% In this example, the `device' key is mutated a number of times, but the
 %%% resulting HashPath remains correct and verifiable.
