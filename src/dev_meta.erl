@@ -233,11 +233,11 @@ handle_resolve(Req, Msgs, NodeMsg) ->
 
 %% @doc Execute a message from the node message upon the user's request. The
 %% invocation of the processor provides a request of the following form:
-%% ```
+%% <pre>
 %%      /path => preprocess | postprocess
 %%      /request => the original request singleton
 %%      /body => list of messages the user wishes to process
-%% '''
+%% </pre>
 resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     case hb_opts:get(Processor, undefined, NodeMsg) of
         undefined -> {ok, Query};

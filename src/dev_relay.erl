@@ -9,9 +9,9 @@
 %%% 
 %%% Example usage:
 %%% 
-%%% ```
+%%% <pre>
 %%%     curl /~relay@.1.0/call?method=GET?0.path=https://www.arweave.net/
-%%% '''
+%%% </pre>
 -module(dev_relay).
 %%% Execute synchronous and asynchronous relay requests.
 -export([call/3, cast/3]).

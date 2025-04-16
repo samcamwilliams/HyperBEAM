@@ -1,4 +1,4 @@
-%%% @doc `push@1.0` takes a message or slot number, evaluates it, and recursively
+%%% @doc `push@1.0' takes a message or slot number, evaluates it, and recursively
 %%% pushes the resulting messages to other processes. The `push'ing mechanism
 %%% continues until the there are no remaining messages to push.
 -module(dev_push).

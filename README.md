@@ -284,9 +284,4 @@ You can regenerate the documentation by running:
 rebar3 edoc
 ```
 
-Then you can serve them locally by running the following command, then navigating
-to `http://localhost:8000/index.html`.
-
-```sh
-erl -s inets -eval 'inets:start(httpd,[{server_name,"HyperBEAM_Docs"},{document_root, "doc"},{server_root, "doc"},{port, 8000},{mime_types,[{"html","text/html"},{"htm","text/html"},{"js","text/javascript"},{"css","text/css"},{"gif","image/gif"},{"jpg","image/jpeg"},{"jpeg","image/jpeg"},{"png","image/png"}]}]).'
-```
+The documentation is generated as Markdown (MD) files in the `doc` directory. You can view these files directly or use a Markdown viewer or server to render them locally.

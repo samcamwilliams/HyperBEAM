@@ -1,10 +1,10 @@
 %%% @doc A parser that translates AO-Core HTTP API requests in TABM format
 %%% into an ordered list of messages to evaluate. The details of this format
-%%% are described in `docs/ao-core-http-api.md`.
+%%% are described in `docs/ao-core-http-api.md'.
 %%%
 %%% Syntax overview:
-%%% ```
-%%%     Singleton: Message containing keys and a `path` field,
+%%% <pre>
+%%%     Singleton: Message containing keys and a `path' field,
 %%%                which may also contain a query string of key-value pairs.
 %%%
 %%%     Path:
@@ -13,24 +13,24 @@
 %%%
 %%%     Part: (Key + Resolution), Device?, #{ K => V}?
 %%%         - Part => #{ path => Part }
-%%%         - Part&Key=Value => #{ path => Part, Key => Value }
-%%%         - Part&Key => #{ path => Part, Key => true }
-%%%         - Part&k1=v1&k2=v2 => #{ path => Part, k1 => <<"v1">>, k2 => <<"v2">> }
-%%%         - Part~Device => {as, Device, #{ path => Part }}
-%%%         - Part~D&K1=V1 => {as, D, #{ path => Part, K1 => <<"v1">> }}
-%%%         - pt&k1+int=1 => #{ path => pt, k1 => 1 }
-%%%         - pt~d&k1+int=1 => {as, d, #{ path => pt, k1 => 1 }}
-%%%         - (/nested/path) => Resolution of the path /nested/path
-%%%         - (/nested/path&k1=v1) => (resolve /nested/path)#{k1 => v1}
-%%%         - (/nested/path~D&K1=V1) => (resolve /nested/path)#{K1 => V1}
-%%%         - pt&k1+res=(/a/b/c) => #{ path => pt, k1 => (resolve /a/b/c) }
+%%%         - `Part&Key=Value => #{ path => Part, Key => Value }'
+%%%         - `Part&Key => #{ path => Part, Key => true }'
+%%%         - `Part&k1=v1&k2=v2 => #{ path => Part, k1 => `<<"v1">>', k2 => `<<"v2">>' }'
+%%%         - `Part~Device => {as, Device, #{ path => Part }}'
+%%%         - `Part~D&K1=V1 => {as, D, #{ path => Part, K1 => `<<"v1">>' }}'
+%%%         - `pt&k1+int=1 => #{ path => pt, k1 => 1 }'
+%%%         - `pt~d&k1+int=1 => {as, d, #{ path => pt, k1 => 1 }}'
+%%%         - `(/nested/path) => Resolution of the path /nested/path'
+%%%         - `(/nested/path&k1=v1) => (resolve /nested/path)#{k1 => v1}'
+%%%         - `(/nested/path~D&K1=V1) => (resolve /nested/path)#{K1 => V1}'
+%%%         - `pt&k1+res=(/a/b/c) => #{ path => pt, k1 => (resolve /a/b/c) }'
 %%%     Key:
-%%%         - key: <<"value">> => #{ key => <<"value">>, ... } for all messages
-%%%         - n.key: <<"value">> => #{ key => <<"value">>, ... } for Nth message
+%%%         - key: `<<"value">>' => #{ key => `<<"value">>', ... } for all messages
+%%%         - n.key: `<<"value">>' => #{ key => `<<"value">>', ... } for Nth message
 %%%         - key+Int: 1 => #{ key => 1, ... }
 %%%         - key+Res: /nested/path => #{ key => (resolve /nested/path), ... }
 %%%         - N.Key+Res=(/a/b/c) => #{ Key => (resolve /a/b/c), ... }
-%%% '''
+%%% </pre>
 -module(hb_singleton).
 -export([from/1, to/1]).
 -include("include/hb.hrl").
@@ -384,9 +384,9 @@ maybe_typed(Key, Value) ->
             case {Type, Value} of
                 {<<"resolve">>, Subpath} ->
                     % If the value needs to be resolved before it is converted,
-                    % use the `Codec/1.0` device to resolve it.
+                    % use the `Codec/1.0' device to resolve it.
                     % For example:
-                    % /a/b&k+Int=(/x/y/z)` => /a/b&k=(/x/y/z/body&Type=Int+Codec)
+                    % `/a/b&k+Int=(/x/y/z) => /a/b&k=(/x/y/z/body&Type=Int+Codec)'
                     {typed,
                         OnlyKey,
                         {resolve, from(#{ <<"path">> => Subpath })}

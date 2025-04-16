@@ -6,29 +6,32 @@
 %%% progresses through devices.
 %%%
 %%% For example, a stack of devices as follows:
-%%% ```
+%%% <pre>
 %%% Device -> Stack
 %%% Device-Stack/1/Name -> Add-One-Device
-%%% Device-Stack/2/Name -> Add-Two-Device'''
+%%% Device-Stack/2/Name -> Add-Two-Device
+%%% </pre>
 %%% 
 %%% When called with the message:
-%%% ```
-%%% #{ Path = "FuncName", binary => <<"0">> }'''
+%%% <pre>
+%%% #{ Path = "FuncName", binary => `<<"0">>' }
+%%% </pre>
 %%% 
 %%% Will produce the output:
-%%%  ```
-%%% #{ Path = "FuncName", binary => <<"3">> }
-%%% {ok, #{ bin => <<"3">> }}'''
+%%% <pre>
+%%% #{ Path = "FuncName", binary => `<<"3">>' }
+%%% {ok, #{ bin => `<<"3">>' }}
+%%% </pre>
 %%% 
 %%% In map mode, the stack will run over all the devices in the stack, and
 %%% combine their results into a single message. Each of the devices'
-%%% output values have a key that is the device's name in the `Device-Stack`
+%%% output values have a key that is the device's name in the `Device-Stack'
 %%% (its number if the stack is a list).
 %%% 
-%%% You can switch between fold and map modes by setting the `Mode` key in the
-%%% `Msg2` to either `Fold` or `Map`, or set it globally for the stack by
-%%% setting the `Mode` key in the `Msg1` message. The key in `Msg2` takes
-%%% precedence over the key in `Msg1`.
+%%% You can switch between fold and map modes by setting the `Mode' key in the
+%%% `Msg2' to either `Fold' or `Map', or set it globally for the stack by
+%%% setting the `Mode' key in the `Msg1' message. The key in `Msg2' takes
+%%% precedence over the key in `Msg1'.
 %%%
 %%% The key that is called upon the device stack is the same key that is used
 %%% upon the devices that are contained within it. For example, in the above
@@ -78,7 +81,7 @@
 %%% allows dev_stack to ensure that the message's HashPath is always correct,
 %%% even as it delegates calls to other devices. An example flow for a `dev_stack'
 %%% execution is as follows:
-%%%```
+%%% <pre>
 %%% 	/Msg1/AlicesExcitingKey ->
 %%% 		dev_stack:execute ->
 %%% 			/Msg1/Set?device=/Device-Stack/1 ->
@@ -88,7 +91,8 @@
 %%% 			... ->
 %%% 			/MsgN/Set?device=[This-Device] ->
 %%% 		returns {ok, /MsgN+1} ->
-%%% 	/MsgN+1'''
+%%% 	/MsgN+1
+%%% </pre>
 %%%
 %%% In this example, the `device' key is mutated a number of times, but the
 %%% resulting HashPath remains correct and verifiable.
@@ -196,7 +200,7 @@ transform(Msg1, Key, Opts) ->
 			% Find the requested key in the device stack.
             % TODO: Should we use `as dev_message` here? After the first transform
             % of a fold (for example), the message is no longer a stack, so its 
-            % `GET` behavior may be different.
+            % `GET' behavior may be different.
             NormKey = hb_ao:normalize_key(Key),
 			case hb_ao:resolve(StackMsg, #{ <<"path">> => NormKey }, Opts) of
 				{ok, DevMsg} ->
@@ -687,8 +691,8 @@ skip_test() ->
 	).
 
 pass_test() ->
-    % The append device will return `ok` after 2 passes, so this test
-    % recursively calls the device by forcing its response to be `pass`
+    % The append device will return `ok' after 2 passes, so this test
+    % recursively calls the device by forcing its response to be `pass'
     % until that happens.
 	Msg = #{
 		<<"device">> => <<"Stack@1.0">>,

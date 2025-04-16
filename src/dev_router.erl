@@ -15,14 +15,14 @@
 %%% `hb_http' module to manage control of requests.
 %%% 
 %%% The structure of the routes should be as follows:
-%%% ```
+%%% <pre>
 %%%     Node?: The node to route the message to.
 %%%     Nodes?: A list of nodes to route the message to.
 %%%     Strategy?: The load distribution strategy to use.
 %%%     Choose?: The number of nodes to choose from the list.
 %%%     Template?: A message template to match the message against, either as a
 %%%                map or a path regex.
-%%% '''
+%%% </pre>
 -module(dev_router).
 %%% Device API:
 -export([routes/3, route/2, route/3]).
@@ -74,13 +74,13 @@ routes(M1, M2, Opts) ->
 %% 
 %% If we have a route that has multiple resolving nodes, check
 %% the load distribution strategy and choose a node. Supported strategies:
-%% ```
+%% <pre>
 %%       All:     Return all nodes (default).
 %%       Random:  Distribute load evenly across all nodes, non-deterministically.
 %%       By-Base: According to the base message's hashpath.
 %%       Nearest: According to the distance of the node's wallet address to the
 %%                base message's hashpath.
-%% '''
+%% </pre>
 %% `By-Base' will ensure that all traffic for the same hashpath is routed to the
 %% same node, minimizing work duplication, while `Random' ensures a more even
 %% distribution of the requests.

@@ -63,7 +63,7 @@ start_and_break(Module, Function, Args) ->
     interpret(Module),
     SetRes = int:break_in(Module, Function, length(Args)),
     io:format(
-        "Breakpoint set. Result from `int:break_in/3`: ~p.~n",
+        "Breakpoint set. Result from `int:break_in/3': ~p.~n",
         [SetRes]
     ),
     io:format("Invoking function...~n", []),

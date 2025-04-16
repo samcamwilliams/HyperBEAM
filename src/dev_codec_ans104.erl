@@ -434,7 +434,7 @@ to(RawTABM) when is_map(RawTABM) ->
     OriginalTagMap = maps:get(<<"original-tags">>, TABMWithComm, #{}),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
     TABMNoOrigTags = maps:without([<<"original-tags">>], TABMWithComm),
-    % TODO: Is this necessary now? Do we want to pursue `original-path` as the
+    % TODO: Is this necessary now? Do we want to pursue `original-path' as the
     % mechanism for restoring original tags?
     M =
         case {maps:find(<<"path">>, TABMNoOrigTags), hb_private:from_message(TABMNoOrigTags)} of
