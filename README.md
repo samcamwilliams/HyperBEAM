@@ -271,17 +271,37 @@ respective documentation.
 HyperBEAM is developed as an open source implementation of the AO-Core protocol 
 by [Forward Research](https://fwd.arweave.net). Pull Requests are always welcome!
 
-To get started building on HyperBEAM, check out the [hacking on HyperBEAM](./docs/hacking-on-hyperbeam.md)
+To get started building on HyperBEAM, check out the [hacking on HyperBEAM](./docs/contribute/setup.md)
 guide.
 
 ## Documentation
 
-HyperBEAM implementation documentation is generated into the [`doc` directory](./doc)
-using [`edoc`](https://www.erlang.org/doc/apps/edoc/chapter.html#content).
-You can regenerate the documentation by running:
+HyperBEAM uses [MkDocs](https://www.mkdocs.org/) with the [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) theme to build its documentation site.
 
-```sh
-rebar3 edoc
+Building the documentation requires Python 3, pip, and the following packages:
+```bash
+pip3 install mkdocs mkdocs-material
 ```
 
-The documentation is generated as Markdown (MD) files in the `doc` directory. You can view these files directly or use a Markdown viewer or server to render them locally.
+- **Source Files:** All documentation source files (Markdown `.md`, images, CSS) are located in the `docs/` directory.
+- **Source Code Docs:** Erlang source code documentation is generated using `rebar3 edoc` (with the `edown_doclet` plugin) into the `docs/source-code-docs/` directory as Markdown files. These are then incorporated into the main MkDocs site.
+- **Build Script:** The entire process (compiling, generating edoc, processing source docs, building the site) is handled by the `./docs/build-all.sh` script.
+
+To build and view the documentation locally:
+
+1.  Ensure you are in the project root directory.
+2.  Run the build script:
+    ```bash
+    ./docs/build-all.sh
+    ```
+
+This script performs the following steps:
+- Compiles the Erlang project (`rebar3 compile`).
+- Generates Markdown documentation from source code comments (`rebar3 edoc`) into `docs/source-code-docs/`.
+- Processes the generated source code Markdown files (updates index, cleans up TOCs).
+- Builds the MkDocs site into the `dist/mkdocs` directory (`mkdocs build`).
+- Starts a local development server (`mkdocs serve`) to view the site at `http://127.0.0.1:8000/`.
+
+Press `Ctrl+C` in the terminal where the script is running to stop the local server.
+
+The final static site is generated in the `dist/mkdocs` directory, as configured in `mkdocs.yml` (`site_dir: dist/mkdocs`).
