@@ -39,10 +39,6 @@ nav:
   - Guides:
     - Overview: 'guides/index.md'
     - HB JavaScript Client: 'guides/js-client-guide.md'
-  - Reference:
-    - Troubleshooting: 'reference/troubleshooting.md'
-    - Glossary: 'reference/glossary.md'
-    - FAQ: 'reference/faq.md'
   - Source Code:
     - Overview: 'source-code-docs/index.md'
     - Modules:
@@ -141,7 +137,10 @@ nav:
       - hb_test_utils: 'source-code-docs/hb_test_utils.md'
       - hb_util: 'source-code-docs/hb_util.md'
       - rsa_pss: 'source-code-docs/rsa_pss.md'
-    
+  - Reference:
+    - Troubleshooting: 'reference/troubleshooting.md'
+    - Glossary: 'reference/glossary.md'
+    - FAQ: 'reference/faq.md'
   - Contribute:
     - Development Setup: 'contribute/setup.md'
     - Contribution Guidelines: 'contribute/guidelines.md'
