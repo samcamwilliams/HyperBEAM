@@ -109,7 +109,13 @@ route(_, Msg, Opts) ->
                     Base = extract_base(Msg, Opts),
                     Nodes = hb_ao:get(<<"nodes">>, ModR, Opts),
                     Chosen = choose(ChooseN, Strategy, Base, Nodes, Opts),
-                    ?event({choose, {strategy, Strategy}, {choose_n, ChooseN}, {base, Base}, {nodes, Nodes}, {chosen, Chosen}}),
+                    ?event({choose,
+                        {strategy, Strategy},
+                        {choose_n, ChooseN},
+                        {base, Base},
+                        {nodes, Nodes},
+                        {chosen, Chosen}
+                    }),
                     case Chosen of
                         [Node] when is_map(Node) ->
                             apply_route(Msg, Node);
