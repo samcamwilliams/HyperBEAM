@@ -5,7 +5,7 @@
 --- @treturn table
 --- @return a table with three key-value pairs. In Erlang, this will be
 --- represented as `#{<<"a">> => 1, <<"b">> => 2, <<"c">> => 3}`.
-function AssocTable()
+function assoctable()
     return {
         a = 1,
         b = 2,
@@ -21,17 +21,19 @@ function ListTable()
     return {1, 2, 3}
 end
 
---- @function handle
+--- @function compute
 --- @tparam stringified AO process
 --- @tparam stringified AO message
 --- @return table An AO Process response, with the `ok` field set to `true`,
 --- the `response` field set to a table with the `Output` field set to a string,
 --- and the `messages` field set to an empty table.
-function handle(process, message, opts)
-    return {
-        body = 42,
-        messages = {}
+function compute(process, message, opts)
+    process.results = {
+        output = {
+            body = 42
+        }
     }
+    return process
 end
 
 --- @function json_result
@@ -64,4 +66,9 @@ end
 --- @return table an answer to every HTTP request with the words "i like turtles"
 function preprocess(base, req, opts)
     return { { body = "i like turtles" } }
+end
+
+function sandboxed_fail()
+    -- Do something that is not dangerous, but is sandboxed nonetheless.
+    return os.getenv("PWD")
 end

@@ -1,42 +1,38 @@
 %%% @doc A device that calls a Lua script upon a request and returns the result.
 -module(dev_lua).
--export([info/1, init/3, compute/3, snapshot/3, normalize/3]).
+-export([info/1, init/3, snapshot/3, normalize/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
-%%% The default Lua function to call, if not provided by the invoker.
--define(DEFAULT_LUA_FUNCTION, <<"handle">>).
+%%% The set of functions that will be sandboxed by default if `sandbox` is set 
+%%% to only `true`. Setting `sandbox` to a map allows the invoker to specify
+%%% which functions should be sandboxed and what to return instead. Providing
+%%% a list instead of a map will result in all functions being sandboxed and
+%%% returning `sandboxed'.
+-define(DEFAULT_SANDBOX, [
+    {['_G', io], <<"sandboxed">>},
+    {['_G', file], <<"sandboxed">>},
+    {['_G', os, execute], <<"sandboxed">>},
+    {['_G', os, exit], <<"sandboxed">>},
+    {['_G', os, getenv], <<"sandboxed">>},
+    {['_G', os, remove], <<"sandboxed">>},
+    {['_G', os, rename], <<"sandboxed">>},
+    {['_G', os, tmpname], <<"sandboxed">>},
+    {['_G', package], <<"sandboxed">>},
+    {['_G', loadfile], <<"sandboxed">>},
+    {['_G', require], <<"sandboxed">>},
+    {['_G', dofile], <<"sandboxed">>},
+    {['_G', load], <<"sandboxed">>},
+    {['_G', loadfile], <<"sandboxed">>},
+    {['_G', loadstring], <<"sandboxed">>}
+]).
 
 %% @doc All keys that are not directly available in the base message are 
 %% resolved by calling the Lua function in the script of the same name.
 info(Base) ->
     #{
-        default => fun handler/4,
+        default => fun compute/4,
         excludes => [<<"keys">>, <<"set">>] ++ maps:keys(Base)
     }.
-
-%% @doc The handler of all non-message and non-device keys. We call the Lua
-%% function in the script of the same name, passing the request as the 
-%% parameter.
-handler(Key, Base, Req, Opts) ->
-    LuaReq =
-        Req#{
-            <<"function">> => Key,
-            <<"parameters">> => [Base, Req, hb_private:reset(Opts)]
-        },
-    case compute(Base, LuaReq, Opts#{ hashpath => ignore }) of
-        {ok, NewBase} ->
-            ?event({handled, {key, Key}, {result, NewBase}}),
-            Res =
-                hb_ao:get(
-                    <<"results/output">>,
-                    {as, <<"message@1.0">>, NewBase},
-                    Opts#{ hashpath => ignore }
-                ),
-            ?event({set_result, {key, Key}, {result, Res}}),
-            {ok, Res};
-        {error, Error} ->
-            {error, Error}
-    end.
 
 %% @doc Initialize the device state, loading the script into memory if it is 
 %% a reference.
@@ -56,7 +52,9 @@ find_script(Base, Opts) ->
         ScriptID ->
             case hb_cache:read(ScriptID, Opts) of
                 {ok, Script} ->
-                    {ok, Script};
+                    Data = hb_ao:get(<<"data">>, Script, #{}),
+                    ?event(debug_lua, { data, Data}),
+                    {ok, Data};
                 {error, Error} ->
                     {error, #{
                         <<"status">> => 404,
@@ -70,38 +68,58 @@ find_script(Base, Opts) ->
 %% @doc Initialize the Lua VM if it is not already initialized. Optionally takes
 %% the script as a  Binary string. If not provided, the script will be loaded
 %% from the base message.
-ensure_initialized(Base, Req, Opts) ->
-    case find_script(Base, Opts) of
-        {ok, Script} ->
-            ensure_initialized(Base, Req, Script, Opts);
-        Error ->
-            Error
-    end.
-ensure_initialized(Base, Req, Script, Opts) ->
-    case hb_private:get(<<"state">>, Base, Opts) of
-        not_found ->
-            State0 = luerl:init(),
-            {ok, _, State1} = luerl:do_dec(Script, State0),
-            % Return the base message with the state added to it.
-            {ok, hb_private:set(Base, <<"state">>, State1, Opts)};
+ensure_initialized(Base, _Req, Opts) ->
+    case hb_private:from_message(Base) of
+        #{<<"state">> := _} -> 
+            ?event(debug_lua, lua_state_already_initialized),
+            {ok, Base};
         _ ->
-            % The VM is already initialized, so return the base message.
-            {ok, Base}
+            ?event(debug_lua, initializing_lua_state),
+            case find_script(Base, Opts) of
+                {ok, Script} ->
+                    initialize(Base, Script, Opts);
+                Error ->
+                    Error
+            end
     end.
 
-%% @doc Call the Lua script with the given arguments. This key is `multipass@1.0'
-%% compatible: It will only execute the call on the first pass. On subsequent
-%% passes, it will return the base message unchanged.
-compute(Base, Req, RawOpts) ->
-    Opts = RawOpts#{ hashpath => ignore },
-    case hb_ao:get(<<"pass">>, {as, <<"message@1.0">>, Base}, 1, Opts) of
-        1 -> do_compute(Base, Req, Opts);
-        _ -> {ok, Base}
-    end.
-do_compute(RawBase, Req, Opts) ->
+%% @doc Initialize a new Lua state with a given base message and script.
+initialize(Base, Script, Opts) ->
+    State0 = luerl:init(),
+    {ok, _, State1} = luerl:do_dec(Script, State0),
+    State2 =
+        case hb_ao:get(<<"sandbox">>, {as, <<"message@1.0">>, Base}, false, Opts) of
+            false -> State1;
+            true -> sandbox(State1, ?DEFAULT_SANDBOX, Opts);
+            Spec -> sandbox(State1, Spec, Opts)
+        end,
+    % Return the base message with the state added to it.
+    {ok, hb_private:set(Base, <<"state">>, State2, Opts)}.
+
+%% @doc Sandbox (render inoperable) a set of Lua functions. Each function is
+%% referred to as if it is a path in AO-Core, with its value being what to 
+%% return to the caller. For example, 'os.exit' would be referred to as
+%% referred to as `os/exit'. If preferred, a list rather than a map may be
+%% provided, in which case the functions all return `sandboxed'.
+sandbox(State, Map, Opts) when is_map(Map) ->
+    sandbox(State, maps:to_list(Map), Opts);
+sandbox(State, [], _Opts) ->
+    State;
+sandbox(State, [{Path, Value} | Rest], Opts) ->
+    {ok, NextState} = luerl:set_table_keys_dec(Path, Value, State),
+    sandbox(NextState, Rest, Opts);
+sandbox(State, [Path | Rest], Opts) ->
+    {ok, NextState} = luerl:set_table_keys_dec(Path, <<"sandboxed">>, State),
+    sandbox(NextState, Rest, Opts).
+
+%% @doc Call the Lua script with the given arguments.
+compute(Key, RawBase, Req, Opts) ->
+    ?event(debug_lua, compute_called),
     {ok, Base} = ensure_initialized(RawBase, Req, Opts),
+    ?event(debug_lua, ensure_initialized_done),
     % Get the state from the base message's private element.
-    State = hb_private:get(<<"state">>, Base, Opts),
+    OldPriv = #{ <<"state">> := State } = hb_private:from_message(Base),
+    % NOTE: looks like the script is injected in multiple places, does the script need to be passed?
     % Get the Lua function to call from the base message.
     Function =
         hb_ao:get_first(
@@ -110,9 +128,10 @@ do_compute(RawBase, Req, Opts) ->
                 {Req, <<"function">>},
                 {{as, <<"message@1.0">>, Base}, <<"function">>}
             ],
-            ?DEFAULT_LUA_FUNCTION,
+            Key,
             Opts#{ hashpath => ignore }
         ),
+    ?event(debug_lua, function_found),
     Params =
         hb_ao:get_first(
             [
@@ -120,28 +139,34 @@ do_compute(RawBase, Req, Opts) ->
                 {Req, <<"parameters">>},
                 {{as, <<"message@1.0">>, Base}, <<"parameters">>}
             ],
-            [],
+            [
+                hb_private:reset(Base),
+                Req,
+                #{}
+            ],
             Opts#{ hashpath => ignore }
         ),
+    ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
     ?event({calling_lua_function, {function, Function}, {args, Params}, {req, Req}}),
+    ?event(debug_lua, calling_lua_function),
+    % ?event(debug_lua, {lua_params, Params}),
     case luerl:call_function_dec([Function], encode(Params), State) of
         {ok, [LuaResult], NewState} ->
-            ?event({lua_result, {result_before_decoding, {explicit, LuaResult}}}),
+            ?event(debug_lua, got_lua_result),
+            % ?event(debug_lua, {lua_result, {result_before_decoding, {explicit, LuaResult}}}),
             Result = decode(LuaResult),
-            BaseWithResults =
-                Base#{
-                    <<"results">> => #{
-                        <<"type">> => <<"ok">>,
-                        <<"output">> => Result
-                    }
-                },
-            {ok, hb_private:set(BaseWithResults, <<"state">>, NewState, Opts)};
-        {lua_error, Error} ->
+            ?event(debug_lua, decoded_result),
+            {ok, Result#{
+                <<"priv">> => OldPriv#{
+                    <<"state">> => NewState
+                }
+            }};
+        {lua_error, Error, Details} ->
             {error, #{
                 <<"status">> => 500,
-                <<"body">> =>
-                    <<"Lua error: ", Error/binary>>
+                <<"body">> => Error,
+                <<"details">> => Details
             }}
     end.
 
@@ -213,10 +238,19 @@ simple_invocation_test() ->
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
         <<"script">> => Script,
-        <<"function">> => <<"AssocTable">>,
         <<"parameters">> => []
     },
-    ?assertEqual(2, hb_ao:get(<<"compute/results/output/b">>, Base, #{})).
+    ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
+
+sandboxed_failure_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => Script,
+        <<"parameters">> => [],
+        <<"sandbox">> => true
+    },
+    ?assertMatch({error, _}, hb_ao:resolve(Base, <<"sandboxed_fail">>, #{})).
 
 %% @doc Benchmark the performance of Lua executions.
 direct_benchmark_test() ->
@@ -225,13 +259,11 @@ direct_benchmark_test() ->
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
         <<"script">> => Script,
-        <<"function">> => <<"AssocTable">>,
         <<"parameters">> => []
     },
-    {ok, Initialized} = hb_ao:resolve(Base, <<"init">>, #{}),
     Iterations = hb:benchmark(
         fun(X) ->
-            {ok, _} = hb_ao:resolve(Initialized, <<"compute">>, #{}),
+            {ok, _} = hb_ao:resolve(Base, <<"assoctable">>, #{}),
             ?event({iteration, X})
         end,
         BenchTime
@@ -242,25 +274,6 @@ direct_benchmark_test() ->
         [Iterations, BenchTime, Iterations / BenchTime]
     ),
     ?assert(Iterations > 10).
-
-%% @doc Call AOS with an eval command.
-invoke_aos_test_disabled() ->
-    % Disabled: aos-2.0.4.lua is an update script, but does not initialize
-    % the Lua environment state correctly.
-    {ok, Script} = file:read_file("test/aos-2.0.4.lua"),
-    Base = #{
-        <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
-        <<"function">> => <<"handle">>,
-        <<"parameters">> => [
-            aos_process_binary(),
-            aos_exec_binary(<<"return 42">>)
-        ]
-    },
-    {ok, Initialized} = hb_ao:resolve(Base, <<"init">>, #{}),
-    {ok, Results} = hb_ao:resolve(Initialized, <<"compute">>, #{}),
-    ?event({results, Results}),
-    ?assertEqual(42, hb_ao:get(<<"data">>, Results, #{})).
 
 %% @doc Call a non-compute key on a Lua device message and ensure that the
 %% function of the same name in the script is called.
@@ -298,30 +311,6 @@ lua_http_preprocessor_test() ->
     {ok, Res} = hb_http:get(Node, <<"/hello?hello=world">>, #{}),
     ?assertMatch(#{ <<"body">> := <<"i like turtles">> }, Res).
 
-%% @doc Ensure that we can call a Lua process using the JSON interface.
-lua_json_interface_test() ->
-    {ok, Computed} = execute_aos_call(generate_stack("test/test.lua")),
-    {ok, Results} = hb_ao:resolve(Computed, <<"results">>, #{}),
-    ?assertEqual(42, hb_ao:get(<<"data">>, Results, #{})).
-
-%% @doc Benchmark execution of a Lua stack with a JSON interface.
-lua_json_interface_benchmark_test() ->
-    BenchTime = 3,
-    Initialized = generate_stack("test/test.lua"),
-    Iterations = hb:benchmark(
-        fun(X) ->
-            execute_aos_call(Initialized),
-            ?event({iteration, X})
-        end,
-        BenchTime
-    ),
-    ?event({iterations, Iterations}),
-    hb_util:eunit_print(
-        "Computed ~p Lua+JSON stack executions in ~ps (~.2f calls/s)",
-        [Iterations, BenchTime, Iterations / BenchTime]
-    ),
-    ?assert(Iterations > 10).
-
 %% @doc Call a process whose `execution-device' is set to `lua@5.3a'.
 pure_lua_process_test() ->
     Process = generate_lua_process("test/test.lua"),
@@ -346,11 +335,60 @@ pure_lua_process_benchmark_test_() ->
         ),
         ?event(debug_lua, {executing, BenchMsgs}),
         BeforeExec = os:system_time(millisecond),
-        {ok, _} = hb_ao:resolve(Process, <<"now">>, #{ hashpath => ignore }),
+        {ok, _} = hb_ao:resolve(
+            Process,
+            <<"now">>,
+            #{ hashpath => ignore, process_cache_frequency => 50 }
+        ),
         AfterExec = os:system_time(millisecond),
         ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
         hb_util:eunit_print(
             "Computed ~p pure Lua process executions in ~ps (~.2f calls/s)",
+            [
+                BenchMsgs,
+                (AfterExec - BeforeExec) / 1000,
+                BenchMsgs / ((AfterExec - BeforeExec) / 1000)
+            ]
+        )
+    end}.
+
+invoke_aos_test() ->
+    Process = generate_lua_process("test/hyper-aos.lua"),
+    {ok, _} = hb_cache:write(Process, #{}),
+    Message = generate_test_message(Process),
+    ?event(rakis, { message, Message }),
+    ?event(rakis, { process, Process }),
+    {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
+    ?event(rakis, { results, Results }),
+    ?assertEqual(<<"1">>, Results),
+    {ok, MessageResult} = hb_ao:resolve(Process, <<"now/results/messages/1/data">>, #{}),
+    ?assertEqual(<<"Bar">>, MessageResult).
+
+%% @doc Benchmark the performance of Lua executions.
+aos_process_benchmark_test_() ->
+    {timeout, 30, fun() ->
+        BenchMsgs = 200,
+        Process = generate_lua_process("test/hyper-aos.lua"),
+        Message = generate_test_message(Process),
+        lists:foreach(
+            fun(X) ->
+                hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+                ?event(debug_lua, {scheduled, X})
+            end,
+            lists:seq(1, BenchMsgs)
+        ),
+        ?event(debug_lua, {executing, BenchMsgs}),
+        BeforeExec = os:system_time(millisecond),
+        {ok, _} = hb_ao:resolve(
+            Process,
+            <<"now">>,
+            #{ hashpath => ignore, process_cache_frequency => 50 }
+        ),
+        AfterExec = os:system_time(millisecond),
+        ?event(debug_lua, {execution_time, (AfterExec - BeforeExec) / BenchMsgs}),
+        hb_util:eunit_print(
+            "Computed ~p AOS process executions in ~ps (~.2f calls/s)",
             [
                 BenchMsgs,
                 (AfterExec - BeforeExec) / 1000,
@@ -388,8 +426,9 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"body">> => <<"TEST MESSAGE">>,
-                        <<"random-seed">> => rand:uniform(1337)
+                        <<"data">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
+                        <<"random-seed">> => rand:uniform(1337),
+                        <<"action">> => <<"Eval">>
                     },
                     Wallet
                 )
@@ -442,19 +481,3 @@ execute_aos_call(Base, Req) ->
         },
         #{}
     ).
-
-aos_process_binary() ->
-    <<
-        "{\"Process\":{\"Id\":\"AOS\",\"Owner\":\"FOOBAR\",\"Tags\":",
-        "[{\"name\":\"Name\",\"value\":\"Thomas\"}, ",
-        "{\"name\":\"Authority\",\"value\":\"FOOBAR\"}]}}"
-    >>.
-
-aos_exec_binary(Command) ->
-    <<
-        "{\"From\":\"FOOBAR\",\"Block-Height\":\"1\",\"Target\":\"AOS\",",
-        "\"Owner\":\"FOOBAR\",\"Id\":\"1\",\"Module\":\"W\",\"Tags\":[",
-        "{\"name\":\"Action\",\"value\":\"Eval\"}],\"Data\":\"",
-        Command/binary,
-        "\"}"
-    >>.
