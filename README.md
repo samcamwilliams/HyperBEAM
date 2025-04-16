@@ -278,6 +278,11 @@ guide.
 
 HyperBEAM uses [MkDocs](https://www.mkdocs.org/) with the [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) theme to build its documentation site.
 
+Building the documentation requires Python 3, pip, and the following packages:
+```bash
+pip3 install mkdocs mkdocs-material
+```
+
 - **Source Files:** All documentation source files (Markdown `.md`, images, CSS) are located in the `docs/` directory.
 - **Source Code Docs:** Erlang source code documentation is generated using `rebar3 edoc` (with the `edown_doclet` plugin) into the `docs/source-code-docs/` directory as Markdown files. These are then incorporated into the main MkDocs site.
 - **Build Script:** The entire process (compiling, generating edoc, processing source docs, building the site) is handled by the `./docs/build-all.sh` script.
