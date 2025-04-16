@@ -8,6 +8,8 @@
 %%% the AO-Core resolver has returned a result.
 -module(dev_meta).
 -export([info/1, info/3, handle/2, adopt_node_message/2]).
+%%% Public API
+-export([is_operator/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -21,6 +23,26 @@
 %% future the `request' is added as an argument to AO-Core's internal `info'
 %% function, we will need to find a different approach.
 info(_) -> #{ exports => [info] }.
+
+%% @doc Utility function for determining if a request is from the `operator' of
+%% the node.
+is_operator(Request, NodeMsg) ->
+    RequestSigners = hb_message:signers(Request),
+    Operator =
+        hb_opts:get(
+            operator,
+            case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+                no_viable_wallet -> unclaimed;
+                Wallet -> ar_wallet:to_address(Wallet)
+            end,
+            NodeMsg
+        ),
+    EncOperator =
+        case Operator of
+            unclaimed -> unclaimed;
+            NativeAddress -> hb_util:human_id(NativeAddress)
+        end,
+    EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners).
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
