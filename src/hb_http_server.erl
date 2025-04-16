@@ -324,8 +324,12 @@ allowed_methods(Req, State) ->
 %% @doc Update the `Opts' map that the HTTP server uses for all future
 %% requests.
 set_opts(Opts) ->
-    ServerRef = hb_opts:get(http_server, no_server_ref, Opts),
-    ok = cowboy:set_env(ServerRef, node_msg, Opts).
+    case hb_opts:get(http_server, no_server_ref, Opts) of
+        no_server_ref ->
+            ok;
+        ServerRef ->
+            ok = cowboy:set_env(ServerRef, node_msg, Opts)
+    end.
 
 get_opts(NodeMsg) ->
     ServerRef = hb_opts:get(http_server, no_server_ref, NodeMsg),
