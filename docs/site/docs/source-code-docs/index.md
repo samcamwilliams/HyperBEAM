@@ -24,45 +24,7 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 ## Contributing
 
 We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. 
-<tr><td><a href="ar_bundles.md" class="module">ar_bundles</a></td></tr>
-<tr><td><a href="ar_deep_hash.md" class="module">ar_deep_hash</a></td></tr>
-<tr><td><a href="ar_rate_limiter.md" class="module">ar_rate_limiter</a></td></tr>
-<tr><td><a href="ar_timestamp.md" class="module">ar_timestamp</a></td></tr>
-<tr><td><a href="ar_tx.md" class="module">ar_tx</a></td></tr>
-<tr><td><a href="ar_wallet.md" class="module">ar_wallet</a></td></tr>
-<tr><td><a href="dev_cache.md" class="module">dev_cache</a></td></tr>
-<tr><td><a href="dev_cacheviz.md" class="module">dev_cacheviz</a></td></tr>
-<tr><td><a href="dev_codec_ans104.md" class="module">dev_codec_ans104</a></td></tr>
-<tr><td><a href="dev_codec_flat.md" class="module">dev_codec_flat</a></td></tr>
-</table>
-
-*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*
-<tr><td><a href="ar_bundles.md" class="module">ar_bundles</a></td></tr>
-<tr><td><a href="ar_deep_hash.md" class="module">ar_deep_hash</a></td></tr>
-<tr><td><a href="ar_rate_limiter.md" class="module">ar_rate_limiter</a></td></tr>
-<tr><td><a href="ar_timestamp.md" class="module">ar_timestamp</a></td></tr>
-<tr><td><a href="ar_tx.md" class="module">ar_tx</a></td></tr>
-<tr><td><a href="ar_wallet.md" class="module">ar_wallet</a></td></tr>
-<tr><td><a href="dev_cache.md" class="module">dev_cache</a></td></tr>
-<tr><td><a href="dev_cacheviz.md" class="module">dev_cacheviz</a></td></tr>
-<tr><td><a href="dev_codec_ans104.md" class="module">dev_codec_ans104</a></td></tr>
-<tr><td><a href="dev_codec_flat.md" class="module">dev_codec_flat</a></td></tr>
-</table>
-
-*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*
-<tr><td><a href="ar_bundles.md" class="module">ar_bundles</a></td></tr>
-<tr><td><a href="ar_deep_hash.md" class="module">ar_deep_hash</a></td></tr>
-<tr><td><a href="ar_rate_limiter.md" class="module">ar_rate_limiter</a></td></tr>
-<tr><td><a href="ar_timestamp.md" class="module">ar_timestamp</a></td></tr>
-<tr><td><a href="ar_tx.md" class="module">ar_tx</a></td></tr>
-<tr><td><a href="ar_wallet.md" class="module">ar_wallet</a></td></tr>
-<tr><td><a href="dev_cache.md" class="module">dev_cache</a></td></tr>
-<tr><td><a href="dev_cacheviz.md" class="module">dev_cacheviz</a></td></tr>
-<tr><td><a href="dev_codec_ans104.md" class="module">dev_codec_ans104</a></td></tr>
-<tr><td><a href="dev_codec_flat.md" class="module">dev_codec_flat</a></td></tr>
-</table>
-
-*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*
+<table>
 <tr><td><a href="ar_bundles.md" class="module">ar_bundles</a></td></tr>
 <tr><td><a href="ar_deep_hash.md" class="module">ar_deep_hash</a></td></tr>
 <tr><td><a href="ar_rate_limiter.md" class="module">ar_rate_limiter</a></td></tr>
