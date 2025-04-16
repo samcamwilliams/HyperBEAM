@@ -37,4 +37,4 @@ cache-*
 *.svg
 
 cu/
-site-build/
+mkdocs-site/
