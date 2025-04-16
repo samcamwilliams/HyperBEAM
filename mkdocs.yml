@@ -3,6 +3,9 @@ repo_url: https://github.com/permaweb/HyperBEAM
 repo_name: 'permaweb/HyperBEAM'
 site_url: https://permaweb.github.io/
 
+docs_dir: docs
+site_dir: mkdocs-site
+
 nav:
   - Home: 'index.md'
   - Getting Started:
@@ -214,7 +217,8 @@ plugins:
   - search
 
 extra_css:
-  - assets/style.css
+  - assets/css/style.css
+  - assets/css/custom.css
  
 extra:
   social:
