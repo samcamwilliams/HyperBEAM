@@ -68,7 +68,24 @@ function preprocess(base, req, opts)
     return { { body = "i like turtles" } }
 end
 
+--- @function sandboxed_fail
+--- @tparam table base
+--- @tparam table request
+--- @error fails when inside the sandbox
 function sandboxed_fail()
     -- Do something that is not dangerous, but is sandboxed nonetheless.
     return os.getenv("PWD")
+end
+
+--- @function routes
+--- @tparam table base
+--- @tparam table request
+--- @return table a table with the `node` field set to the value of the `node`
+--- field in the base message.
+function routes(base, req, opts)
+    return {
+        {
+            node = base.node
+        }
+    }
 end
