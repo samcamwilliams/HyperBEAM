@@ -37,6 +37,7 @@ static ErlDrvData wasm_driver_start(ErlDrvPort port, char *buff) {
     DRV_DEBUG("Port term: %p", proc->port_term);
     proc->is_running = erl_drv_mutex_create("wasm_instance_mutex");
     proc->is_initialized = 0;
+    proc->current_import = NULL;
     proc->start_time = time(NULL);
     return (ErlDrvData)proc;
 }
