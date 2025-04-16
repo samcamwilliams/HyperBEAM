@@ -75,9 +75,10 @@ routes(M1, M2, Opts) ->
 %% If we have a route that has multiple resolving nodes, check
 %% the load distribution strategy and choose a node. Supported strategies:
 %% <pre>
-%%       All:     Return all nodes (default).
-%%       Random:  Distribute load evenly across all nodes, non-deterministically.
+%%           All: Return all nodes (default).
+%%        Random: Distribute load evenly across all nodes, non-deterministically.
 %%       By-Base: According to the base message's hashpath.
+%%     By-Weight: According to the node's `weight' key.
 %%       Nearest: According to the distance of the node's wallet address to the
 %%                base message's hashpath.
 %% </pre>
@@ -246,6 +247,19 @@ choose(0, _, _, _, _) -> [];
 choose(N, <<"Random">>, _, Nodes, _Opts) ->
     Node = lists:nth(rand:uniform(length(Nodes)), Nodes),
     [Node | choose(N - 1, <<"Random">>, nop, lists:delete(Node, Nodes), _Opts)];
+choose(N, <<"By-Weight">>, _, Nodes, Opts) ->
+    NodesWithWeight =
+        [
+            { Node, hb_util:int(hb_ao:get(<<"weight">>, Node, Opts)) }
+        ||
+            Node <- Nodes
+        ],
+    Node = hb_util:weighted_random(NodesWithWeight),
+    [
+        Node
+    |
+        choose(N - 1, <<"By-Weight">>, nop, lists:delete(Node, Nodes), Opts)
+    ];
 choose(N, <<"By-Base">>, Hashpath, Nodes, Opts) when is_binary(Hashpath) ->
     choose(N, <<"By-Base">>, binary_to_bignum(Hashpath), Nodes, Opts);
 choose(N, <<"By-Base">>, HashInt, Nodes, Opts) ->
@@ -351,6 +365,17 @@ dynamic_routes_provider_test() ->
         {ok, <<"test-dynamic-node">>},
         hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{})
     ).
+
+weighted_random_strategy_test() ->
+    Nodes =
+        [
+            #{ <<"host">> => <<"1">>, <<"weight">> => 1 },
+            #{ <<"host">> => <<"2">>, <<"weight">> => 99 }
+        ],
+    SimRes = simulate(1000, 1, Nodes, <<"By-Weight">>),
+    [One, _] = simulation_distribution(SimRes, Nodes),
+    ?assert(One < 20),
+    ?assert(One > 5).
 
 strategy_suite_test_() ->
     lists:map(
