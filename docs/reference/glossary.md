@@ -1,6 +1,6 @@
 # Glossary
 
-This glossary provides definitions for terms and concepts used throughout the HyperBEAM documentation.
+This glossary provides definitions for terms and concepts used throughout the HyperBEAM documentation. For a comprehensive glossary of permaweb-specific terminology, check out the [permaweb glossary](#permaweb-glossary) section below.
 
 ### AO-Core Protocol
 The underlying protocol that HyperBEAM implements, enabling decentralized computing and communication between nodes. AO-Core provides a framework into which any number of different computational models, encapsulated as primitive devices, can be attached.
@@ -84,4 +84,44 @@ A device used to execute an ordered set of devices over the same inputs, allowin
 A secure area inside a processor that ensures the confidentiality and integrity of code and data loaded within it. Used in HyperBEAM for trust-minimized computation.
 
 ### WebAssembly (WASM)
-A binary instruction format that serves as a portable compilation target for programming languages, enabling deployment on the web and other environments. 
+A binary instruction format that serves as a portable compilation target for programming languages, enabling deployment on the web and other environments.
+
+## Permaweb Glossary
+
+For a more comprehensive glossary of terms used in the permaweb, try the [Permaweb Glossary](https://glossary.arweave.net). Or use it below:
+
+
+<style>
+.dark-mode-iframe-container { display: none; }
+.light-mode-iframe-container { display: block; }
+[data-md-color-scheme="slate"] .light-mode-iframe-container { display: none; }
+[data-md-color-scheme="slate"] .dark-mode-iframe-container { display: block; }
+
+/* Explicitly handle default scheme */
+[data-md-color-scheme="default"] .dark-mode-iframe-container { display: none; }
+[data-md-color-scheme="default"] .light-mode-iframe-container { display: block; }
+</style>
+
+<div class="mt-6">
+  <div class="light-mode-iframe-container">
+    <iframe 
+     id="glossary-frame-light" 
+     src="https://glossary.arweave.net/?hide-header=true&bg-color=%23FFFFFF&text-color=%231A1A1A&link-color=%234DD171&heading-color=%233C3C3C&accent-color=%234DD171"
+     width="100%" 
+     height="400" 
+     frameborder="0" 
+     scrolling="no">
+    </iframe>
+  </div>
+  <div class="dark-mode-iframe-container">
+    <iframe 
+     class="w-full"
+	 width="100%" 
+     height="400"  
+	 frameborder="0" 
+	 scrolling="no"
+     src="https://glossary.arweave.net/?hide-header=true&bg-color=%231F2129&text-color=%23e0e0e0&link-color=%234DD171&heading-color=%23ffffff&accent-color=%234DD171&border-color=%23444444&hover-bg=%23222222&button-bg=%234DD171&button-text=%23ffffff&section-bg=%23333333&section-color=%23ffffff&category-bg=%23333333&category-text=%23ffffff&tag-bg=%234DD171&tag-text=%2318181B&secondary-text=%23a0a0a0&result-bg=%231e1e1e&result-hover=%23333333"
+     >
+    </iframe>
+  </div>
+</div>
