@@ -38,41 +38,39 @@ if [ ! -f "$INDEX_FILE" ]; then
   exit 1
 fi
 
-# Temporary file to store the updated content
-TEMP_FILE=$(mktemp)
+# Step 3.1: Recreate module list in index.md
 
-# Start of the modules section marker for index.md
-START_MARKER="## Modules"
-# End of the modules section marker (adjust based on your index.md structure)
-# Assuming the next major section starts with '##' as a fallback if END_MARKER isn't found
-END_MARKER="## Getting Started" # Keep this specific if possible, otherwise adjust
+# Overwrite the file with the header content
+echo "# Source Code Documentation" > "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "Welcome to the source code documentation for HyperBEAM. This section provides detailed insights into the codebase, helping developers understand the structure, functionality, and implementation details of HyperBEAM and its components." >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "## Overview" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "HyperBEAM is built with a modular architecture to ensure scalability, maintainability, and extensibility. The source code is organized into distinct components, each serving a specific purpose within the ecosystem." >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "## Sections" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "- **HyperBEAM Core**: The main framework that orchestrates data processing, storage, and routing." >> "$INDEX_FILE"
+echo "- **Compute Unit**: Handles computational tasks and integrates with the HyperBEAM core for distributed processing." >> "$INDEX_FILE"
+echo "- **Trusted Execution Environment (TEE)**: Ensures secure execution of sensitive operations." >> "$INDEX_FILE"
+echo "- **Client Libraries**: Tools and SDKs for interacting with HyperBEAM, including the JavaScript client." >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "## Getting Started" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide." >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "## Navigation" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "Use the navigation menu to dive into specific parts of the codebase. Each module includes detailed documentation, code comments, and examples to assist in understanding and contributing to the project." >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "## Contributing" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
 
-# Step 3.1: Update module list in index.md
-
-# Extract content before and after the modules section
-awk -v start_marker="$START_MARKER" -v end_marker="$END_MARKER" '
-  BEGIN { in_section=0; printing=1; }
-  $0 ~ start_marker { print; in_section=1; printing=1; next; }
-  # If we hit the end marker, stop being in the section
-  $0 ~ end_marker { in_section=0; printing=1; }
-  # Alternative end: if we were in the section and hit another header
-  in_section && /^## / { in_section=0; printing=1; }
-  # Skip lines within the section
-  in_section { printing=0; next; }
-  # Print lines outside the section
-  printing { print; }
-' "$INDEX_FILE" > "$TEMP_FILE"
-
-# Insert the updated modules list
-awk -v start_marker="$START_MARKER" '
-  $0 ~ start_marker {
-    print; 
-    print "\nBelow is a list of key modules in the HyperBEAM application. For a complete list, refer to the [full module documentation](#).\n";
-    print "<table width=\"100%\" border=\"0\" summary=\"list of modules\">";
-    inserted=1
-  }
-  { print; }
-' "$TEMP_FILE" > "$TEMP_FILE.2"
+# Append the table header
+echo "<table>" >> "$INDEX_FILE"
 
 # Get list of markdown files (excluding index.md and README.md), limit to first 10 for index.md
 # Updated find command to use the correct DOCS_DIR
@@ -86,7 +84,7 @@ for file in $MODULE_FILES; do
   filename=$(basename "$file")
   module_name="${filename%.md}"
   # Use relative path for link
-  echo "<tr><td><a href=\"$filename\" class=\"module\">$module_name</a></td></tr>" >> "$TEMP_FILE.2"
+  echo "<tr><td><a href=\"$filename\" class=\"module\">$module_name</a></td></tr>" >> "$INDEX_FILE"
   count=$((count + 1))
   if [ $count -eq 10 ]; then
     break
@@ -94,26 +92,9 @@ for file in $MODULE_FILES; do
 done
 
 # Close the table and add note
-cat >> "$TEMP_FILE.2" << EOF
-</table>
-
-*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*
-EOF
-
-# Append the rest of the original file after the insertion point
-awk -v start_marker="$START_MARKER" -v end_marker="$END_MARKER" '
-  BEGIN { in_section=0; printing=0; }
-  $0 ~ start_marker { in_section=1; printing=0; next; }
-  $0 ~ end_marker { in_section=0; printing=1; }
-  in_section && /^## / { in_section=0; printing=1; }
-  in_section { next; }
-  printing { print; }
-' "$INDEX_FILE" >> "$TEMP_FILE.2"
-
-
-# Replace the original index.md with updated content
-mv "$TEMP_FILE.2" "$INDEX_FILE"
-rm "$TEMP_FILE"
+echo "</table>" >> "$INDEX_FILE"
+echo "" >> "$INDEX_FILE"
+echo "*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*" >> "$INDEX_FILE"
 
 echo "Updated module list in $INDEX_FILE"
 
