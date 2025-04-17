@@ -32,7 +32,7 @@ default_zone_required_opts(Opts) ->
 		trusted_device_signers => hb_opts:get(trusted_device_signers, [], Opts),
         load_remote_devices => hb_opts:get(load_remote_devices, false, Opts),
         preload_devices => hb_opts:get(preload_devices, [], Opts),
-        store => hb_opts:get(store, [], Opts),
+        % store => hb_opts:get(store, [], Opts),
         routes => hb_opts:get(routes, [], Opts),
         preprocessor => hb_opts:get(preprocessor, undefined, Opts),
         postprocessor => hb_opts:get(postprocessor, undefined, Opts),
@@ -327,6 +327,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 			Wallet = hb_opts:get(priv_wallet, undefined, Opts),
 			{ok, Report} = dev_snp:generate(#{}, #{}, Opts),
 			WalletPub = element(2, Wallet),
+			?event(green_zone, {remove_uncommitted, Report}),
 			MergedReq = hb_ao:set(
 				Report, 
 				<<"public-key">>,
@@ -335,7 +336,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 			),
 			% Create an committed join request using the wallet.
 			Req = hb_message:commit(MergedReq, Wallet),
-			?event({join_req, Req}),
+			?event({join_req, {explicit, Req}}),
 			?event({verify_res, hb_message:verify(Req)}),
 			% Log that the commitment report is being sent to the peer.
 			?event(green_zone, {join, sending_commitment, PeerLocation, PeerID, Req}),
@@ -423,8 +424,7 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
             % the initial options unchanged.
             {ok, InitOpts};
         AdoptConfig ->
-			?event(green_zone, 
-                {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}),
+			?event(green_zone, {adopt_config, AdoptConfig, PeerLocation, PeerID, InitOpts}),
             % Request the required config from the peer.
             RequiredConfigRes =
                 hb_http:get(
@@ -562,73 +562,56 @@ validate_join(_M1, Req, Opts) ->
     end.
 
 validate_peer_opts(Req, Opts) ->
-    ?event(green_zone, {validate_peer_opts, start, Req}),
+	?event(green_zone, {validate_peer_opts, start, Req}),
 	% Get the required config from the local node's configuration.
 	RequiredConfig =
-        hb_ao:normalize_keys(
-            hb_opts:get(green_zone_required_opts, #{}, Opts)),
-    ?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
-    
-    % Get the list of options that can bypass validation from configuration
-    BypassOpts = hb_opts:get(
-		green_zone_bypass_opts, 
-		default_zone_bypass_opts(Opts), 
-		Opts
-	),
-    ?event(green_zone, {validate_peer_opts, bypass_opts, BypassOpts}),
-    
-    % Remove bypass options from required config for validation
-    FilteredRequiredConfig = maps:without(BypassOpts, RequiredConfig),
-    ?event(green_zone, {validate_peer_opts, 
-		filtered_required_config, 
-		FilteredRequiredConfig
-	}),
-    
-    PeerOpts =
-        hb_ao:normalize_keys(
-            hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
-    ?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
-    
-    % Add the required config itself to the required options of the peer. This
-    % enforces that the new peer will also enforce the required config on peers
-    % that join them.
-	FullRequiredOpts = FilteredRequiredConfig#{
+		hb_ao:normalize_keys(
+			hb_opts:get(green_zone_required_opts, #{}, Opts)),
+	?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
+	
+	PeerOpts =
+		hb_ao:normalize_keys(
+			hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
+	?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
+	
+	% Add the required config itself to the required options of the peer. This
+	% enforces that the new peer will also enforce the required config on peers
+	% that join them.
+	FullRequiredOpts = RequiredConfig#{
 		green_zone_required_opts => RequiredConfig
 	},
-    ?event(green_zone, {validate_peer_opts, full_required_opts, FullRequiredOpts}),
-    
-    % Debug: Check if PeerOpts is a map
-    ?event(green_zone, 
-          {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
-    
-    % Debug: Get node_history safely
-    NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
-    ?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
-    
-    % Debug: Check length of node_history
-    HistoryCheck = case is_list(NodeHistory) of
-        true -> length(NodeHistory) =< 1;
-        false -> {error, not_a_list}
-    end,
-    ?event(green_zone, {validate_peer_opts, history_check, HistoryCheck}),
-    
-    % Debug: Try the match check separately
-    MatchCheck = try
-        Result = hb_message:match(PeerOpts, FullRequiredOpts, only_present),
-        ?event(green_zone, {validate_peer_opts, match_check, Result}),
-        Result
-    catch
-        Error:Reason:Stacktrace ->
-            ?event(green_zone, 
-                  {validate_peer_opts, match_error, 
-                   {Error, Reason, Stacktrace}}),
-            false
-    end,
-    
-    % Final result
-    FinalResult = MatchCheck andalso (HistoryCheck =:= true),
-    ?event(green_zone, {validate_peer_opts, final_result, FinalResult}),
-    FinalResult.
+	?event(green_zone, {validate_peer_opts, full_required_opts, FullRequiredOpts}),
+	
+	% Debug: Check if PeerOpts is a map
+	?event(green_zone, {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
+	
+	% Debug: Get node_history safely
+	NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
+	?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
+	
+	% Debug: Check length of node_history
+	HistoryCheck = case is_list(NodeHistory) of
+		true -> length(NodeHistory) =< 1;
+		false -> {error, not_a_list}
+	end,
+	?event(green_zone, {validate_peer_opts, history_check, HistoryCheck}),
+	
+	% Debug: Try the match check separately
+	MatchCheck = try
+		Result = hb_message:match(PeerOpts, FullRequiredOpts, only_present),
+		?event(green_zone, {validate_peer_opts, match_check, Result}),
+		Result
+	catch
+		Error:Reason:Stacktrace ->
+			?event(green_zone, {validate_peer_opts, match_error, {Error, Reason, Stacktrace}}),
+			false
+	end,
+	
+	% Final result
+	FinalResult = MatchCheck andalso (HistoryCheck =:= true),
+	?event(green_zone, {validate_peer_opts, final_result, FinalResult}),
+	FinalResult.
+	
 
 -doc """
 Add a joining node's details to the trusted nodes list.
@@ -820,3 +803,4 @@ rsa_wallet_integration_test() ->
     ?assertEqual(PlainText, Decrypted),
     % Verify wallet structure
     ?assertEqual(KeyType, {rsa, 65537}).
+
