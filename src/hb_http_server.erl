@@ -305,17 +305,35 @@ handle_request(RawReq, Body, ServerID) ->
             % The request is of normal AO-Core form, so we parse it and invoke
             % the meta@1.0 device to handle it.
             ?event(http, {http_inbound, {cowboy_req, Req}, {body, {string, Body}}}),
+
+			TracePID = hb_tracer:start_trace(),
+
             % Parse the HTTP request into HyerBEAM's message format.
-            ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
-            CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
-            ?event(http, {parsed_singleton, ReqSingleton, {accept_codec, CommitmentCodec}}),
-            {ok, Res} =
-                dev_meta:handle(
-                    NodeMsg#{ commitment_device => CommitmentCodec },
-                    ReqSingleton
-                ),
-            hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
-    end.
+			try 
+				ReqSingleton = hb_http:req_to_tabm_singleton(Req, Body, NodeMsg),
+				CommitmentCodec = hb_http:accept_to_codec(ReqSingleton, NodeMsg),
+				?event(http, {parsed_singleton, ReqSingleton, {accept_codec, CommitmentCodec}}, #{trace => TracePID}),
+
+				% hb_tracer:record_step(TracePID, request_parsing),
+				% Invoke the meta@1.0 device to handle the request.
+				{ok, Res} =
+					dev_meta:handle(
+						NodeMsg#{ commitment_device => CommitmentCodec, trace => TracePID },
+						ReqSingleton
+					),
+				hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
+			catch
+				throw:_ ->
+					Trace = hb_tracer:get_trace(TracePID),
+					TraceString = hb_tracer:format_error_trace(Trace),
+					hb_http:reply(Req, #{}, #{ <<"status">> => 500, <<"body">> => list_to_binary(TraceString)}, NodeMsg);
+
+				error:_ ->
+					Trace = hb_tracer:get_trace(TracePID),
+					TraceString = hb_tracer:format_error_trace(Trace),
+					hb_http:reply(Req, #{}, #{ <<"status">> => 500, <<"body">> => list_to_binary(TraceString)}, NodeMsg)
+			end
+end.
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->

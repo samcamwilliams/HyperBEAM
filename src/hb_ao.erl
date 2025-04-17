@@ -189,7 +189,8 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
                     resolved_message_of_many,
                     {msg3, Msg3},
                     {opts, Opts}
-                }
+                },
+				Opts
             ),
             do_resolve_many([Msg3 | MsgList], Opts);
         Res ->
@@ -272,7 +273,7 @@ resolve_stage(2, Msg1, Msg2, Opts) ->
     % only return a result if it is already in the cache).
     case hb_cache_control:maybe_lookup(Msg1, Msg2, Opts) of
         {ok, Msg3} ->
-            ?event(ao_core, {stage, 2, cache_hit, {msg3, Msg3}, {opts, Opts}}),
+            ?event(ao_core, {stage, 2, cache_hit, {msg3, Msg3}, {opts, Opts}}, Opts),
             {ok, Msg3};
         {continue, NewMsg1, NewMsg2} ->
             resolve_stage(3, NewMsg1, NewMsg2, Opts);
@@ -357,7 +358,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
             end
     end.
 resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
-    ?event(ao_core, {stage, 5, device_lookup}),
+    ?event(ao_core, {stage, 5, device_lookup}, Opts),
     % Device lookup: Find the Erlang function that should be utilized to 
     % execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
@@ -409,7 +410,8 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
                         {exec_exception, Exception},
                         {exec_stacktrace, Stacktrace},
                         {opts, Opts}
-                    }
+                    },
+					Opts
                 ),
                 % If the device cannot be loaded, we alert the caller.
 				error_execution(
@@ -426,7 +428,7 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = maps:without(?TEMP_OPTS, Opts),
+	UserOpts1 = maps:remove(trace, maps:without(?TEMP_OPTS, Opts)),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
@@ -479,7 +481,8 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
                         {exec_exception, ExecException},
                         {exec_stacktrace, erlang:process_info(self(), backtrace)},
                         {opts, Opts}
-                    }
+                    },
+					Opts
                 ),
                 % If the function call fails, we raise an error in the manner
                 % indicated by caller's `#Opts'.
@@ -691,7 +694,7 @@ error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) ->
 error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
     Error = {error, Whence, {Class, Exception, Stacktrace}},
     hb_persistent:unregister_notify(ExecGroup, Msg2, Error, Opts),
-    ?event(ao_core, {handle_error, Error, {opts, Opts}}),
+    ?event(ao_core, {handle_error, Error, {opts, Opts}}, Opts),
     case hb_opts:get(error_strategy, throw, Opts) of
         throw -> erlang:raise(Class, Exception, Stacktrace);
         _ -> Error
@@ -954,7 +957,8 @@ message_to_fun(Msg, Key, Opts) ->
             {key, Key},
             {is_exported, Exported},
             {opts, Opts}
-        }
+        },
+		Opts
     ),
     % Does the device have an explicit handler function?
     case {maps:find(handler, Info), Exported} of
