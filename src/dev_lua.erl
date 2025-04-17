@@ -119,7 +119,8 @@ compute(Key, RawBase, Req, Opts) ->
     ?event(debug_lua, ensure_initialized_done),
     % Get the state from the base message's private element.
     OldPriv = #{ <<"state">> := State } = hb_private:from_message(Base),
-    % NOTE: looks like the script is injected in multiple places, does the script need to be passed?
+    % TODO: looks like the script is injected in multiple places, does the 
+    % script need to be passed?
     % Get the Lua function to call from the base message.
     Function =
         hb_ao:get_first(
@@ -148,13 +149,12 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
-    ?event({calling_lua_function, {function, Function}, {args, Params}, {req, Req}}),
-    ?event(debug_lua, calling_lua_function),
+    ?event({calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
+    ?event(debug_lua, calling_lua_func),
     % ?event(debug_lua, {lua_params, Params}),
     case luerl:call_function_dec([Function], encode(Params), State) of
         {ok, [LuaResult], NewState} ->
             ?event(debug_lua, got_lua_result),
-            % ?event(debug_lua, {lua_result, {result_before_decoding, {explicit, LuaResult}}}),
             Result = decode(LuaResult),
             ?event(debug_lua, decoded_result),
             {ok, Result#{
