@@ -1,0 +1,57 @@
+.md-header__title{
+	margin-left: 0px !important;
+}
+
+
+.header-logo {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+  }
+  
+  .logo-container {
+	display: flex;
+	align-items: center;
+	margin-bottom: 10px;
+  }
+  
+  .logo-stripes {
+	display: flex;
+	flex-direction: column;
+	height: 100px;
+	width: 30px;
+	margin-right: 10px;
+  }
+  
+  .stripe {
+	flex: 1;
+	width: 100%;
+  }
+  
+  .green { background-color: #33F22F; }
+  .yellow { background-color: #FEE55F; }
+  .blue { background-color: #86DAFE; }
+  .purple { background-color: #9611FF; }
+  .red { background-color: #F60000; }
+  
+  .logo-text h1 {
+	font-size: 2.5rem;
+	font-weight: bold;
+	margin: 0;
+	color: var(--md-default-fg-color);
+  }
+  
+  .tagline {
+	font-size: 0.9rem;
+	letter-spacing: 1px;
+	margin: 0;
+	color: var(--md-default-fg-color--light);
+  }
+  
+  [data-md-color-scheme="slate"] .logo-text h1 {
+	color: #FFF;
+  }
+  
+  [data-md-color-scheme="slate"] .tagline {
+	color: #AAA;
+  }
