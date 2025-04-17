@@ -65,23 +65,38 @@ do_push(Base, Assignment, Opts) ->
     Slot = hb_ao:get(<<"slot">>, Assignment, Opts),
     ID = dev_process:process_id(Base, #{}, Opts),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
-    Result = hb_ao:resolve(
+    {Status, Result} = hb_ao:resolve(
         {as, <<"process@1.0">>, Base},
-        #{ <<"path">> => <<"compute/results/outbox">>, <<"slot">> => Slot },
+        #{ <<"path">> => <<"compute/results">>, <<"slot">> => Slot },
         Opts#{ hashpath => ignore }
     ),
+    AdditionalRes =
+        case IncludeDepth = hb_opts:get(push_include_result, 1, Opts) of
+            X when X > 0 -> Result;
+            _ -> #{}
+        end,
+    NextOpts =
+        Opts#{
+            push_include_result => IncludeDepth - 1
+        },
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
-    case Result of
+    case {Status, hb_ao:get(<<"outbox">>, Result, #{}, Opts)} of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
             ?event(push_short, {push_complete, {process, {string, ID}}, {slot, Slot}}),
-            {ok, #{ <<"slot">> => Slot, <<"process">> => ID }};
+            {ok, AdditionalRes#{ <<"slot">> => Slot, <<"process">> => ID }};
         {ok, Outbox} ->
             Downstream =
                 maps:map(
                     fun(Key, MsgToPush = #{ <<"target">> := Target }) ->
                         case hb_cache:read(Target, Opts) of
                             {ok, PushBase} ->
-                                push_result_message(PushBase, Slot, Key, MsgToPush, Opts);
+                                push_result_message(
+                                    PushBase,
+                                    Slot,
+                                    Key,
+                                    MsgToPush,
+                                    NextOpts
+                                );
                             not_found ->
                                 #{
                                     <<"response">> => <<"error">>,
@@ -101,10 +116,10 @@ do_push(Base, Assignment, Opts) ->
                     end,
                     Outbox
                 ),
-            {ok, Downstream#{
+            {ok, maps:merge(Downstream, AdditionalRes#{
                 <<"slot">> => Slot,
                 <<"process">> => ID
-            }};
+            })};
         {Err, Error} when Err == error; Err == failure -> {error, Error}
     end.
 
