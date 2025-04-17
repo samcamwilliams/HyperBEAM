@@ -530,7 +530,6 @@ function utils.matchesPattern(pattern, value, msg)
       return false
     end
   end
-  
   -- if the patternMatchSpec is a string, check it for special symbols (less `-` alone)
   -- and exact string match mode
   if (type(pattern) == 'string') then
@@ -575,26 +574,25 @@ function utils.matchesSpec(msg, spec)
   end
   if type(spec) == 'table' then
     for key, pattern in pairs(spec) do
-      -- The key can either be in the top level of the 'msg' object or within the 'Tags' 
-
-      local msgValue = msg[key]
-      local msgTagValue = msg['Tags'] and msg['Tags'][key]
-  
-      if not msgValue and not msgTagValue then
+      -- The key can either be in the top level of the 'msg' object  
+      -- or in the body table of the msg
+      local msgValue = msg[key] or msg.body[key]
+      if not msgValue then
         return false
       end
-  
       local matchesMsgValue = utils.matchesPattern(pattern, msgValue, msg)
-      local matchesMsgTagValue = utils.matchesPattern(pattern, msgTagValue, msg)
-  
-      if not matchesMsgValue and not matchesMsgTagValue then
+      if not matchesMsgValue then
         return false
       end
+
     end
     return true
   end
-  
-  if type(spec) == 'string' and msg.Action and msg.Action == spec then
+
+  if type(spec) == 'string' and msg.action and msg.action == spec then
+    return true
+  end
+  if type(spec) == 'string' and msg.body.action and msg.body.action == spec then
     return true
   end
   return false
@@ -1028,7 +1026,7 @@ local function assertAddArgs(name, pattern, handle, maxRuns)
     (type(pattern) == 'function' or type(pattern) == 'table' or type(pattern) == 'string'),
     'Invalid arguments given. Expected: \n' ..
     '\tname : string, ' ..
-    '\tpattern : Action : string | MsgMatch : table,\n' ..
+    '\tpattern : action : string | MsgMatch : table,\n' ..
     '\t\tfunction(msg: Message) : {-1 = break, 0 = skip, 1 = continue},\n' ..
     '\thandle(msg : Message) : void) | Resolver,\n' ..
     '\tMaxRuns? : number | "inf" | nil')
@@ -1061,16 +1059,6 @@ end
 -- @function receive
 -- @tparam {table | function} pattern The pattern to check for in the message
 function handlers.receive(pattern)
-  
-  --local self = coroutine.running()
-  --handlers.once(pattern, function (msg)
-      -- If the result of the resumed coroutine is an error then we should bubble it up to the process
-  --    local _, success, errmsg = coroutine.resume(self, msg)
-  --    if not success then
-  --      error(errmsg)
-  --    end
-  --end)
-  --return coroutine.yield(pattern)
   return 'not implemented'
 end
 
@@ -1115,16 +1103,16 @@ function handlers.add(...)
     pattern = select(2, ...)
     handle = select(3, ...)
     maxRuns = nil
-  else 
+  else
     name = select(1, ...)
     pattern = select(2, ...)
     handle = select(3, ...)
     maxRuns = select(4, ...)
   end
   assertAddArgs(name, pattern, handle, maxRuns)
-  
+
   handle = handlers.generateResolver(handle)
-  
+
   -- update existing handler by name
   local idx = findIndexByProp(handlers.list, "name", name)
   if idx ~= nil and idx > 0 then
@@ -1159,14 +1147,14 @@ function handlers.append(...)
     pattern = select(2, ...)
     handle = select(3, ...)
     maxRuns = nil
-  else 
+  else
     name = select(1, ...)
     pattern = select(2, ...)
     handle = select(3, ...)
     maxRuns = select(4, ...)
   end
   assertAddArgs(name, pattern, handle, maxRuns)
-  
+
   handle = handlers.generateResolver(handle)
   -- update existing handler by name
   local idx = findIndexByProp(handlers.list, "name", name)
@@ -1176,11 +1164,8 @@ function handlers.append(...)
     handlers.list[idx].handle = handle
     handlers.list[idx].maxRuns = maxRuns
   else
-    
     table.insert(handlers.list, { pattern = pattern, handle = handle, name = name, maxRuns = maxRuns })
   end
-
-  
 end
 
 --- Prepends a new handler to the beginning of the handlers list.
@@ -1222,8 +1207,6 @@ function handlers.prepend(...)
   else  
     table.insert(handlers.list, 1, { pattern = pattern, handle = handle, name = name, maxRuns = maxRuns })
   end
-
-  
 end
 
 --- Returns an object that allows adding a new handler before a specified handler.
@@ -1237,13 +1220,10 @@ function handlers.before(handleName)
   return {
     add = function (name, pattern, handle, maxRuns) 
       assertAddArgs(name, pattern, handle, maxRuns)
-      
       handle = handlers.generateResolver(handle)
-      
       if idx then
         table.insert(handlers.list, idx, { pattern = pattern, handle = handle, name = name, maxRuns = maxRuns })
       end
-      
     end
   }
 end
@@ -1258,13 +1238,10 @@ function handlers.after(handleName)
   return {
     add = function (name, pattern, handle, maxRuns)
       assertAddArgs(name, pattern, handle, maxRuns)
-      
       handle = handlers.generateResolver(handle)
-      
       if idx then
         table.insert(handlers.list, idx + 1, { pattern = pattern, handle = handle, name = name, maxRuns = maxRuns })
       end
-      
     end
   }
 
@@ -1277,14 +1254,12 @@ function handlers.remove(name)
   assert(type(name) == 'string', 'name MUST be string')
   if #handlers.list == 1 and handlers.list[1].name == name then
     handlers.list = {}
-    
   end
 
   local idx = findIndexByProp(handlers.list, "name", name)
   if idx ~= nil and idx > 0 then
     table.remove(handlers.list, idx)
   end
-  
 end
 
 --- Evaluates each handler against a given message and environment. Handlers are called in the order they appear in the handlers list.
@@ -1297,14 +1272,12 @@ function handlers.evaluate(msg, env)
   local handled = false
   assert(type(msg) == 'table', 'msg is not valid')
   assert(type(env) == 'table', 'env is not valid')
-  
   for _, o in ipairs(handlers.list) do
     if o.name ~= "_default" then
       local match = utils.matchesSpec(msg, o.pattern)
       if not (type(match) == 'number' or type(match) == 'string' or type(match) == 'boolean') then
         error("Pattern result is not valid, it MUST be string, number, or boolean")
       end
-      
       -- handle boolean returns
       if type(match) == "boolean" and match == true then
         match = -1
@@ -3652,15 +3625,15 @@ local ao = {
     outbox = oldao.outbox or
         {Output = {}, Messages = {}, Spawns = {}, Assignments = {}},
     nonExtractableTags = {
-        'Data-Protocol', 'Variant', 'From-Process', 'From-Module', 'Type',
-        'From', 'Owner', 'Anchor', 'Target', 'Data', 'Tags', 'Read-Only'
+        'data-protocol', 'variant', 'from-process', 'from-module', 'type',
+        'from', 'owner', 'anchor', 'target', 'data', 'tags', 'read-only'
     },
     nonForwardableTags = {
-        'Data-Protocol', 'Variant', 'From-Process', 'From-Module', 'Type',
-        'From', 'Owner', 'Anchor', 'Target', 'Tags', 'TagArray', 'Hash-Chain',
-        'Timestamp', 'Nonce', 'Epoch', 'Signature', 'Forwarded-By',
-        'Pushed-For', 'Read-Only', 'Cron', 'Block-Height', 'Reference', 'Id',
-        'Reply-To'
+        'data-protocol', 'variant', 'from-process', 'from-module', 'type',
+        'from', 'owner', 'anchor', 'target', 'tags', 'tagArray', 'hash-chain',
+        'timestamp', 'nonce', 'slot', 'epoch', 'signature', 'forwarded-by',
+        'pushed-for', 'read-only', 'cron', 'block-height', 'reference', 'id',
+        'reply-to'
     },
     Nonce = nil
 }
@@ -3690,13 +3663,13 @@ function ao.init(env)
     --   ao._module = env.Module.Id
     -- end
     -- TODO: need to deal with assignables
-    -- if #ao.authorities < 1 then
-    --     for _, o in ipairs(env.Process.Tags) do
-    --         if o.name == "Authority" then
-    --             table.insert(ao.authorities, o.value)
-    --         end
-    --     end
-    -- end
+    if #ao.authorities < 1 then
+        if type(env.process.authority) == 'string' then
+          ao.authorities = { env.process.authority }
+        else
+          ao.authorities = env.process.authority
+        end
+    end
 
     ao.outbox = {Output = {}, Messages = {}, Spawns = {}, Assignments = {}}
     ao.env = env
@@ -3709,7 +3682,7 @@ function ao.send(msg)
   ao.reference = ao.reference + 1
   local referenceString = tostring(ao.reference)
   -- set kv
-  msg.Reference = referenceString
+  msg.reference = referenceString
 
   -- clone message info and add to outbox
   table.insert(ao.outbox.Messages, utils.reduce(
@@ -3721,19 +3694,19 @@ function ao.send(msg)
     utils.keys(msg)
   ))
 
-  if msg.Target then
+  if msg.target then
     msg.onReply = function(...)
       local from, resolver
       if select("#", ...) == 2 then
         from = select(1, ...)
         resolver = select(2, ...)
       else
-        from = msg.Target
+        from = msg.target
         resolver = select(1, ...)
       end
       Handlers.once({
-        From = from,
-        ["X-Reference"] = referenceString
+        from = from,
+        ["x-reference"] = referenceString
       }, resolver)
     end
   end
@@ -3748,9 +3721,7 @@ function ao.spawn(module, msg)
 
   local spawnRef = tostring(ao.reference)
 
-  
-  msg["Reference"] = spawnRef
-
+  msg["reference"] = spawnRef
 
   -- clone message info and add to outbox
   table.insert(ao.outbox.Spawns, utils.reduce(
@@ -3764,9 +3735,9 @@ function ao.spawn(module, msg)
 
   msg.onReply = function(cb)
     Handlers.once({
-      Action = "Spawned",
-      From = ao.id,
-      ["X-Reference"] = spawnRef
+      action = "Spawned",
+      from = ao.id,
+      ["x-reference"] = spawnRef
     }, cb)
   end
 
@@ -4044,8 +4015,6 @@ function print(a)
     a = Colors.green .. tostring(a) .. Colors.reset
   end
 
-  local data = a
-
   if HandlerPrintLogs then
     table.insert(HandlerPrintLogs, a)
     return nil
@@ -4062,6 +4031,24 @@ function state.insertInbox(msg)
   for i = 1,overflow do
     table.remove(Inbox,1)
   end
+end
+local function getOwnerAddress(m)
+  local _owner = nil 
+  utils.map(function (k)
+    local c = m.commitments[k]
+    if c.alg == "rsa-pss-sha512" then
+      _owner = c.committer
+    elseif c.alg == "signed" and c['commitment-device'] == "ans104" then
+      _owner = c.commiter
+    end
+  end, utils.keys(m.commitments))
+  return _owner
+end
+
+local function isFromOwner(m)
+  local _owner = getOwnerAddress(m)
+  local _fromProcess = m['from-process'] or nil
+  return _owner ~= nil and _fromProcess == _owner
 end
 
 local function getOwner(m)
@@ -4082,10 +4069,9 @@ local function getOwner(m)
   return id
 end
 
-function state.init(msg, env)
-
+function state.init(req, base)
   if not Initialized then
-    Owner = getOwner(env.process)
+    Owner = getOwner(base.process)
     -- if process id is equal to message id then set Owner
     -- TODO: need additional check, like msg.Slot == 1
     -- if env.Process.Id == msg.Id and Owner ~= msg.Id then
@@ -4098,12 +4084,37 @@ function state.init(msg, env)
   end
 end
 
-function state.checkSlot(msg, ao)
+function state.getFrom(req) 
+  return req.body['from-process'] or getOwner(req.body)
+end
+
+function state.isTrusted(req)
+  if isFromOwner(req.body) then
+    return true
+  end
+  local _trusted = false
+
+  if req.body['from-process'] then
+    _trusted = utils.includes(
+      req.body['from-process'],
+      ao.authorities
+    )
+  end
+
+  if not _trusted then
+    _trusted = utils.includes(
+      getOwner(req.body), ao.authorities
+    )
+  end
+  return _trusted
+end
+
+function state.checkSlot(req, ao)
   -- slot check
-  if not ao.Slot then
-    ao.Slot = tonumber(msg.Slot)
+  if not ao.slot then
+    ao.slot = tonumber(req.slot)
   else
-    if tonumber(msg.Slot) ~= (ao.Slot + 1) then
+    if tonumber(req.slot) ~= (ao.slot + 1) then
       print(table.concat({
       Colors.red,
       "WARNING: Slot did not match, may be due to an error generated by process",
@@ -4134,7 +4145,7 @@ Handlers = require('.handlers')
 Utils = require('.utils')
 Dump = require('.dump')
 
-local process = { _version = "2.0.5" }
+local process = { _version = "2.0.7" }
 local state = require('.state')
 local eval = require('.eval')
 local default = require('.default')
@@ -4144,25 +4155,43 @@ function Prompt()
   return "aos> "
 end
 
-function process.handle(msg, env)
+function process.handle(req, base)
   HandlerPrintLogs = state.reset(HandlerPrintLogs)
-  os.time = function () return tonumber(msg.Timestamp) end
+  os.time = function () return tonumber(req['block-timestamp']) end
 
-  ao.init(env)
+  ao.init(base)
   -- initialize state
-  state.init(msg, env)
+  state.init(req, base)
+
 
   -- magic table
-  msg.body.data = msg.body['Content-Type'] == 'application/json'
-    and json.decode(msg.body.data or "{}")
-    or msg.body.data
+  req.body.data = req.body['Content-Type'] == 'application/json'
+    and json.decode(req.body.data or "{}")
+    or req.body.data
 
   Errors = Errors or {}
   -- clear outbox
   ao.clearOutbox()
 
+  if not state.isTrusted(req) then
+    return ao.result({
+      Output = {
+        data = "Message is not trusted."
+      }
+    })
+  end
+
+  req.reply = function (_reply)
+    local _from = state.getFrom(req)
+    _reply.target = _reply.target and _reply.target or _from
+    _reply['x-reference'] = req.body.reference or nil
+    _reply['x-origin'] = req.body['x-origin'] or nil
+    return ao.send(_reply)
+  end
+
+
   -- state.checkSlot(msg, ao)
-  Handlers.add("_eval", function (msg)
+  Handlers.add("_eval", function (_req)
     local function getMsgFrom(m)
       local from = ""
       Utils.map(
@@ -4176,19 +4205,23 @@ function process.handle(msg, env)
       )
       return from
     end
-    return msg.body.action == "Eval" and Owner == getMsgFrom(msg.body)
+    return _req.body.action == "Eval" and Owner == getMsgFrom(_req.body)
   end, eval(ao))
 
-  Handlers.append("_default",
+  Handlers.add("_default",
     function () return true end,
     default(state.insertInbox)
   )
 
-  local status, error = pcall(Handlers.evaluate, msg, env)
+  local status, error = pcall(Handlers.evaluate, req, base)
+
+  -- cleanup handlers so that they are always at the end of the pipeline
+  Handlers.remove("_eval")
+  Handlers.remove("_default")
 
   local printData = table.concat(HandlerPrintLogs, "\n")
   if not status then
-    if msg.body.action == "Eval" then
+    if req.body.action == "Eval" then
       table.insert(Errors, error)
       return {
         Error = table.concat({
@@ -4213,7 +4246,7 @@ function process.handle(msg, env)
 
   local response = {}
 
-  if msg.body.action == "Eval" then
+  if req.body.action == "Eval" then
     response = ao.result({
       Output = {
         data = printData,
@@ -4250,14 +4283,16 @@ ao = require('.ao')
 local _process = require('.process')
 
 function compute(base, req, opts)
-  base.results = _process.handle(req, base)
+  local _results = _process.handle(req, base)
+  base.results = {
+    outbox = {},
+    output = _results.Output,
+    authority = base.process.authority,
+    from = req.body['from-process']
+  }
+  for i=1,#_results.Messages do
+    base.results.outbox[tostring(i)] = _results.Messages[i]
+  end
   return base
-  -- base.results = { 
-  --   Output = { data = ao.id  },
-  --   Messages = {
-  --     { Data = "Bar" }
-  --   }
-  -- }
-  -- return base
 end
 
