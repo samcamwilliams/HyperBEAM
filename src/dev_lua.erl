@@ -358,8 +358,6 @@ invoke_aos_test() ->
     Message = generate_test_message(Process),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-
-    ?event(rakis, { results, Results}),
     ?assertEqual(<<"1">>, Results).
 
 aos_authority_not_trusted_test() ->
@@ -384,7 +382,6 @@ aos_authority_not_trusted_test() ->
     ),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-    ?event(rakis, { results, Results }),
     ?assertEqual(Results, <<"Message is not trusted.">>).
 
 %% @doc Benchmark the performance of Lua executions.
