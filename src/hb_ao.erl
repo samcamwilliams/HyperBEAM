@@ -787,8 +787,15 @@ keys(Msg, Opts, keep) ->
             )
         )
     catch
-        A:B:_C ->
-            throw({cannot_get_keys, {msg, Msg}, {opts, Opts}, {error, {A, B}}})
+        A:B:St ->
+            throw(
+                {cannot_get_keys,
+                    {msg, Msg},
+                    {opts, Opts},
+                    {error, {A, B}},
+                    {stacktrace, St}
+                }
+            )
     end;
 keys(Msg, Opts, remove) ->
     lists:filter(
