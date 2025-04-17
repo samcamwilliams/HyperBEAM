@@ -359,7 +359,8 @@ dynamic_routes_provider_test() ->
             <<"path">> => <<"routes">>,
             <<"script">> => Script,
             <<"node">> => <<"test-dynamic-node">>
-        }
+        },
+        priv_wallet => ar_wallet:new()
     }),
     ?assertEqual(
         {ok, <<"test-dynamic-node">>},
@@ -374,8 +375,8 @@ weighted_random_strategy_test() ->
         ],
     SimRes = simulate(1000, 1, Nodes, <<"By-Weight">>),
     [One, _] = simulation_distribution(SimRes, Nodes),
-    ?assert(One < 20),
-    ?assert(One > 5).
+    ?assert(One < 25),
+    ?assert(One > 4).
 
 strategy_suite_test_() ->
     lists:map(

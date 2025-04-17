@@ -121,7 +121,7 @@ generate_test_opts() ->
                     <<"prefix">> => "cache-TEST/"
                 }
             ],
-        priv_wallet => hb:wallet()
+        priv_wallet => ar_wallet:new()
     },
     Opts.
 
