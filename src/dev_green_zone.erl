@@ -370,6 +370,10 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                                 priv_green_zone_aes => AESKey
                             }),
 							?event(successfully_joined_greenzone),
+                            
+                            % After successfully joining, try to mount encrypted volume
+                            try_mount_encrypted_volume(AESKey),
+                            
                             {ok, #{ 
                                 <<"body">> => 
 									<<"Node joined green zone successfully.">>, 
@@ -704,6 +708,85 @@ decrypt_zone_key(EncZoneKey, Opts) ->
     ?event(green_zone, {decrypt_zone_key, complete}),
     {ok, DecryptedKey}.
 
+-doc """
+Attempts to mount an encrypted volume using the green zone AES key.
+This function handles the complete process of secure storage setup:
+1. Checks if the base device exists
+2. Checks if the partition exists on the device
+3. If the partition exists, attempts to mount it
+4. If the partition doesn't exist, creates it, formats it with LUKS 
+   encryption using the green zone AES key, and mounts it
+
+The encryption key used for the volume is the same AES key used for green zone
+communication, ensuring that only nodes in the green zone can access the data.
+
+@param AESKey The AES key obtained from joining the green zone.
+@returns ok (implicit) in all cases, with detailed event logs of the results.
+""".
+% Attempts to mount an encrypted disk using the green zone AES key
+try_mount_encrypted_volume(AESKey) ->
+	Device = <<"/dev/sdc">>,
+	Partition = <<Device/binary, "1">>,
+	PartitionType = <<"ext4">>,
+	VolumeName = <<"hyperbeam_secure">>,
+	MountPoint = <<"/root/mnt/", VolumeName/binary>>,
+	
+	% First check if the base device exists
+	case hb_volume:check_for_device(Device) of
+		false ->
+			% Base device doesn't exist
+			?event(green_zone, 
+					{device_check, error, <<"Base device not found">>});
+		true ->
+			% Check if the partition exists
+			case hb_volume:check_for_device(Partition) of
+				true ->
+					% Partition exists, try mounting it
+					?event(green_zone, {mount_volume, attempt, Partition}),
+					case hb_volume:mount_disk(Partition, AESKey, 
+												MountPoint, VolumeName) of
+						{ok, MountResult} ->
+							?event(green_zone, 
+									{mount_volume, success, MountResult});
+						{error, MountError} ->
+							?event(green_zone, 
+									{mount_volume, error, MountError})
+					end;
+				false ->
+					% Partition doesn't exist, create it
+					?event(green_zone, {create_partition, attempt, Device}),
+					case hb_volume:create_partition(Device, PartitionType) of
+						{ok, PartitionResult} ->
+							?event(green_zone, 
+									{partition_create, success, PartitionResult}),
+							% Format the new partition
+							case hb_volume:format_disk(Partition, AESKey) of
+								{ok, FormatResult} ->
+									?event(green_zone, 
+											{format_disk, success, FormatResult}),
+									% Try mounting the formatted partition
+									case hb_volume:mount_disk(
+											Partition, AESKey, 
+											MountPoint, VolumeName) of
+										{ok, RetryMountResult} ->
+											?event(green_zone, 
+													{mount_volume, success, 
+													RetryMountResult});
+										{error, RetryMountError} ->
+											?event(green_zone, 
+													{mount_volume, error, 
+													RetryMountError})
+									end;
+								{error, FormatError} ->
+									?event(green_zone, 
+											{format_disk, error, FormatError})
+							end;
+						{error, PartitionError} ->
+							?event(green_zone, 
+									{partition_create, error, PartitionError})
+					end
+			end
+	end.
 
 -doc """
 Test RSA operations with the existing wallet structure.

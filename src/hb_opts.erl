@@ -48,7 +48,6 @@ default_message() ->
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
-            #{<<"name">> => <<"disk@1.0">>, <<"module">> => dev_disk},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
             #{<<"name">> => <<"cacheviz@1.0">>, <<"module">> => dev_cacheviz},
