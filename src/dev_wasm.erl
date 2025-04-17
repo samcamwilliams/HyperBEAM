@@ -45,7 +45,7 @@
 %% @doc Export all functions aside the `instance/3' function.
 info(_Msg1, _Opts) ->
     #{
-        exclude => [instance]
+        excludes => [instance]
     }.
 
 %% @doc Boot a WASM image on the image stated in the `process/image' field of

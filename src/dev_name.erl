@@ -14,7 +14,7 @@
 info(_) ->
     #{
         default => fun resolve/4,
-        exclude => [<<"keys">>, <<"set">>]
+        excludes => [<<"keys">>, <<"set">>]
     }.
 
 %% @doc Resolve a name to its corresponding value. The name is given by the key

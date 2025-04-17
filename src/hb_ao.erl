@@ -1035,7 +1035,7 @@ message_to_device(Msg, Opts) ->
 info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
 	{add_key, Handler};
 info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
-	case maps:find(exclude, HandlerMap) of
+	case maps:find(excludes, HandlerMap) of
 		{ok, Exclude} ->
 			case lists:member(Key, Exclude) of
 				true ->
