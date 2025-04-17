@@ -2,14 +2,23 @@
 %%% the node message to store a local cache of its known names, and the typical
 %%% non-volatile storage of the node message to store the names long-term.
 -module(dev_local_name).
--export([lookup/3, register/3]).
+-export([info/1, lookup/3, register/3]).
+%%% HyperBEAM public (non-AO resolvable) functions.
+-export([direct_register/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%% The location that the device should use in the store for its links.
 -define(DEV_CACHE, <<"local-name@1.0">>).
 
-%% @doc Takes a `key` argument and returns the value of the name, if it exists.
+%% @doc Export only the `lookup' and `register' functions.
+info(_Opts) ->
+    #{
+        excludes => [<<"direct_register">>, <<"keys">>, <<"set">>],
+        default => fun default_lookup/4
+    }.
+
+%% @doc Takes a `key' argument and returns the value of the name, if it exists.
 lookup(_, Req, Opts) ->
     Key = hb_ao:get(<<"key">>, Req, no_key_specified, Opts),
     ?event(local_name, {lookup, Key}),
@@ -18,6 +27,10 @@ lookup(_, Req, Opts) ->
         Key,
         Opts
     ).
+
+%% @doc Handle all other requests by delegating to the lookup function.
+default_lookup(Key, _, Req, Opts) ->
+    lookup(Key, Req#{ <<"key">> => Key }, Opts).
 
 %% @doc Takes a `key' and `value' argument and registers the name. The caller
 %% must be the node operator in order to register a name.
@@ -31,30 +44,35 @@ register(_, Req, Opts) ->
                 }
             };
         true ->
-            case hb_cache:write(hb_ao:get(<<"value">>, Req, Opts), Opts) of
-                {ok, MsgPath} ->
-                    hb_cache:link(
-                        MsgPath,
-                        LinkPath =
-                            [
-                                ?DEV_CACHE,
-                                Name = hb_ao:get(<<"key">>, Req, Opts)
-                            ],
-                        Opts
-                    ),
-                    load_names(Opts),
-                    ?event(
-                        local_name,
-                        {registered,
-                            Name,
-                            {link, LinkPath},
-                            {msg, MsgPath}
-                        }
-                    ),
-                    {ok, <<"Registered.">>};
-                {error, _} ->
-                    not_found
-            end
+            direct_register(Req, Opts)
+    end.
+
+%% @doc Register a name without checking if the caller is an operator. Exported
+%% for use by other devices, but not publicly available.
+direct_register(Req, Opts) ->
+    case hb_cache:write(hb_ao:get(<<"value">>, Req, Opts), Opts) of
+        {ok, MsgPath} ->
+            hb_cache:link(
+                MsgPath,
+                LinkPath =
+                    [
+                        ?DEV_CACHE,
+                        Name = hb_ao:get(<<"key">>, Req, Opts)
+                    ],
+                Opts
+            ),
+            load_names(Opts),
+            ?event(
+                local_name,
+                {registered,
+                    Name,
+                    {link, LinkPath},
+                    {msg, MsgPath}
+                }
+            ),
+            {ok, <<"Registered.">>};
+        {error, _} ->
+            not_found
     end.
 
 %% @doc Returns a message containing all known names.
@@ -103,7 +121,7 @@ generate_test_opts() ->
                     <<"prefix">> => "cache-TEST/"
                 }
             ],
-        priv_wallet => hb:wallet()
+        priv_wallet => ar_wallet:new()
     },
     Opts.
 

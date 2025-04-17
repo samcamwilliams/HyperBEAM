@@ -71,6 +71,7 @@ default_message() ->
             #{<<"name">> => <<"monitor@1.0">>, <<"module">> => dev_monitor},
             #{<<"name">> => <<"multipass@1.0">>, <<"module">> => dev_multipass},
             #{<<"name">> => <<"name@1.0">>, <<"module">> => dev_name},
+            #{<<"name">> => <<"node-process@1.0">>, <<"module">> => dev_node_process},
             #{<<"name">> => <<"p4@1.0">>, <<"module">> => dev_p4},
             #{<<"name">> => <<"patch@1.0">>, <<"module">> => dev_patch},
             #{<<"name">> => <<"poda@1.0">>, <<"module">> => dev_poda},

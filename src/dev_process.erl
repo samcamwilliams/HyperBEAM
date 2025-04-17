@@ -69,7 +69,7 @@ info(_Msg1) ->
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3,
         await => fun dev_process_worker:await/5,
-        exclude => [
+        excludes => [
             <<"test">>,
             <<"init">>,
             <<"ping_ping_script">>,
