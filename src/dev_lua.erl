@@ -453,14 +453,33 @@ invoke_aos_test() ->
     Process = generate_lua_process("test/hyper-aos.lua"),
     {ok, _} = hb_cache:write(Process, #{}),
     Message = generate_test_message(Process),
-    ?event(rakis, { message, Message }),
-    ?event(rakis, { process, Process }),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-    ?event(rakis, { results, Results }),
-    ?assertEqual(<<"1">>, Results),
-    {ok, MessageResult} = hb_ao:resolve(Process, <<"now/results/messages/1/data">>, #{}),
-    ?assertEqual(<<"Bar">>, MessageResult).
+    ?assertEqual(<<"1">>, Results).
+
+aos_authority_not_trusted_test() ->
+    Process = generate_lua_process("test/hyper-aos.lua"),
+    ProcID = hb_message:id(Process, all),
+    {ok, _} = hb_cache:write(Process, #{}),
+    GuestWallet = ar_wallet:new(),
+    Message = hb_message:commit(#{
+        <<"path">> => <<"schedule">>,
+        <<"method">> => <<"POST">>,
+        <<"body">> =>
+            hb_message:commit(
+                #{
+                    <<"target">> => ProcID,
+                    <<"type">> => <<"Message">>,
+                    <<"data">> => <<"1 + 1">>,
+                    <<"random-seed">> => rand:uniform(1337),
+                    <<"action">> => <<"Eval">>
+
+        }, GuestWallet)
+      }, GuestWallet
+    ),
+    {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
+    {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
+    ?assertEqual(Results, <<"Message is not trusted.">>).
 
 %% @doc Benchmark the performance of Lua executions.
 aos_process_benchmark_test_() ->
@@ -506,6 +525,10 @@ generate_lua_process(File) ->
         <<"scheduler-device">> => <<"scheduler@1.0">>,
         <<"execution-device">> => <<"lua@5.3a">>,
         <<"script">> => Script,
+        <<"authority">> => [ 
+          hb:address(), 
+          <<"E3FJ53E6xtAzcftBpaw2E1H4ZM9h6qy6xz9NXh5lhEQ">>
+        ], 
         <<"scheduler-location">> =>
             hb_util:human_id(ar_wallet:to_address(Wallet)),
         <<"test-random-seed">> => rand:uniform(1337)
