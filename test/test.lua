@@ -77,15 +77,55 @@ function sandboxed_fail()
     return os.getenv("PWD")
 end
 
---- @function routes
+--- @function route_provider
 --- @tparam table base
 --- @tparam table request
---- @return table a table with the `node` field set to the value of the `node`
---- field in the base message.
-function routes(base, req, opts)
+--- @return table a static set of routes for testing purposes.
+function route_provider(base, req, opts)
     return {
         {
             node = base.node
         }
     }
+end
+
+BaseRoutes = {
+    {
+        template = "test1",
+        host = "http://localhost:10000",
+        weight = 50
+    },
+    {
+        template = "test2",
+        strategy = "By-Weight",
+        choose = 1,
+        nodes = {
+            {
+                prefix = "http://localhost:10001/",
+                weight = 50
+            },
+            {
+                prefix = "http://localhost:10002/",
+                weight = 50
+            }
+        }
+    }
+}
+
+--- @function compute_routes
+--- @tparam table base
+--- @tparam table request
+--- @return table the state of a process after adding a route.
+function compute_routes(base, req, opts)
+    base["known-routes"] = base["known-routes"] or BaseRoutes
+    if req.body.path == "add-route" then
+        table.insert(base["known-routes"], req.body)
+        base.results = base.results or {}
+        base.results.output = {
+            status = 200,
+            ["content-type"] = "text/plain",
+            body = "Route added."
+        }
+    end
+    return base
 end

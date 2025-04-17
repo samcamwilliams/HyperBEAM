@@ -379,6 +379,48 @@ dynamic_route_provider_test() ->
         hb_http:get(Node, <<"/~router@1.0/routes/1/node">>, #{})
     ).
 
+local_process_route_provider_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Node = hb_http_server:start_node(#{
+        priv_wallet => ar_wallet:new(),
+        route_provider => #{
+            <<"path">> => <<"/router~node-process@1.0/now/known-routes">>
+        },
+        node_processes => #{
+            <<"router">> => #{
+                <<"device">> => <<"process@1.0">>,
+                <<"execution-device">> => <<"lua@5.3a">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"script">> => Script,
+                <<"node">> => <<"router-node">>,
+                <<"function">> => <<"compute_routes">>
+            }
+        }
+    }),
+    ?assertEqual(
+        {ok, <<"test1">>},
+        hb_http:get(Node, <<"/~router@1.0/routes/1/template">>, #{})
+    ),
+    % Query the route 10 times with the same path. This should yield 2 different
+    % results, as the route provider should choose 1 node of a set of 2 at random.
+    Responses =
+        lists:map(
+            fun(_) ->
+                hb_util:ok(
+                    hb_http:get(
+                        Node,
+                        <<"/~router@1.0/route?route-path=test2">>,
+                        #{
+                            <<"route-path">> => <<"test2">>
+                        }
+                    )
+                )
+            end,
+            lists:seq(1, 10)
+        ),
+    ?event({responses, Responses}),
+    ?assertEqual(2, sets:size(sets:from_list(Responses))).
+
 weighted_random_strategy_test() ->
     Nodes =
         [
