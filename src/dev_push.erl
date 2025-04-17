@@ -71,16 +71,16 @@ do_push(Base, Assignment, Opts) ->
         Opts#{ hashpath => ignore }
     ),
     AdditionalRes =
-        case hb_opts:get(push_include_result, 1, Opts) of
+        case IncludeDepth = hb_opts:get(push_include_result, 1, Opts) of
             X when X > 0 -> Result;
             _ -> #{}
         end,
     NextOpts =
         Opts#{
-            push_include_result => hb_opts:get(push_include_result, 1, Opts) - 1
+            push_include_result => IncludeDepth - 1
         },
     ?event(push, {push_computed, {process, ID}, {slot, Slot}}),
-    case {Status, hb_ao:get(<<"outbox">>, Result, Opts)} of
+    case {Status, hb_ao:get(<<"outbox">>, Result, #{}, Opts)} of
         {ok, NoResults} when ?IS_EMPTY_MESSAGE(NoResults) ->
             ?event(push_short, {push_complete, {process, {string, ID}}, {slot, Slot}}),
             {ok, AdditionalRes#{ <<"slot">> => Slot, <<"process">> => ID }};
