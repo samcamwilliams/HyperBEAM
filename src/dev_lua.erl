@@ -222,27 +222,36 @@ compute(Key, RawBase, Req, Opts) ->
     % Call the VM function with the given arguments.
     ?event({calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
     ?event(debug_lua, calling_lua_func),
-    % ?event(debug_lua, {lua_params, Params}),
-    case luerl:call_function_dec([Function], encode(Params), State) of
-        {ok, [LuaResult], NewState} when is_map(LuaResult) ->
-            ?event(debug_lua, got_lua_result),
-            Result = decode(LuaResult),
-            ?event(debug_lua, decoded_result),
-            {ok, Result#{
-                <<"priv">> => OldPriv#{
-                    <<"state">> => NewState
-                }
-            }};
-        {ok, [LuaResult], _NewState} ->
-            ?event(debug_lua, got_lua_result),
-            {ok, LuaResult};
-        {lua_error, Error, Details} ->
-            {error, #{
-                <<"status">> => 500,
-                <<"body">> => Error,
-                <<"details">> => Details
-            }}
-    end.
+    ?event(debug_lua, {lua_params, Params}),
+    process_response(
+        luerl:call_function_dec(
+            [Function],
+            encode(Params),
+            State
+        ),
+        OldPriv
+    ).
+
+%% @doc Process a response to a Luerl invocation. Returns the typical AO-Core
+%% HyperBEAM response format.
+process_response({ok, [Result], NewState}, Priv) ->
+    process_response({ok, [<<"ok">>, Result], NewState}, Priv);
+process_response({ok, [Status, MsgResult], NewState}, Priv) when is_list(MsgResult) ->
+    % If the result is a Lua list (an AO-Core message), decode it and the
+    % previous `priv' element back into it.
+    {hb_util:atom(Status), (decode(MsgResult))#{
+        <<"priv">> => Priv#{
+            <<"state">> => NewState
+        }
+    }};
+process_response({ok, [Status, BareResult], _NewState}, _Priv) ->
+    {hb_util:atom(Status), BareResult};
+process_response({lua_error, Error, Details}, _Priv) ->
+    {error, #{
+        <<"status">> => 500,
+        <<"body">> => Error,
+        <<"details">> => Details
+    }}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
 %% state element, then serializes the state to a binary.
@@ -315,6 +324,18 @@ simple_invocation_test() ->
         <<"parameters">> => []
     },
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
+
+error_response_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => Script,
+        <<"parameters">> => []
+    },
+    ?assertEqual(
+        {error, <<"Very bad, but Lua caught it.">>},
+        hb_ao:resolve(Base, <<"error_response">>, #{})
+    ).
 
 sandboxed_failure_test() ->
     {ok, Script} = file:read_file("test/test.lua"),

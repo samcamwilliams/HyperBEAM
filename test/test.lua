@@ -13,6 +13,10 @@ function assoctable()
     }
 end
 
+function error_response()
+    return "error", "Very bad, but Lua caught it."
+end
+
 --- @function ListTable
 --- @treturn table
 --- @return a table with three elements. In Erlang, this will be
