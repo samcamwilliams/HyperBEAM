@@ -10,16 +10,16 @@
 --- /sampling-rate = The frequency at which random sampling of registered nodes
 ---                should be performed, rather than scored routing. Default = 0.1.
 --- /pricing-weight = The level to which pricing should be preferred relative to
----                   performance in the scoring algorithm. Default = 1.
+---                performance in the scoring algorithm. Default = 1.
 --- /performance-weight = The level to which performance should be preferred
----                        relative to pricing in the scoring algorithm.
----                        Default = 1.
+---                relative to pricing in the scoring algorithm.
+---                Default = 1.
 --- /score-preference = The level to which the scoring algorithm influence routing
----                     decisions amongst scored route generations. Default = 1,
----                     yielding an exponential decay in preference for better
----                     performing nodes. Default = 1.
+---                decisions amongst scored route generations. Default = 1,
+---                yielding an exponential decay in preference for better
+---                performing nodes. Default = 1.
 --- /recalculate-every = The number of messages to process between recalculating
----                     the routing table. Default = 1000.
+---                the routing table. Default = 1000.
 local function ensure_opts(state)
     state["is-admissible"] =
         state["is-admissible"] or {
@@ -61,24 +61,24 @@ end
 local function recalculate_scores(state, routes, opts)
     -- Calculate the score per node.
 
-    for _, route in ipairs(routes) do
+    for _, node in ipairs(routes.nodes) do
         -- The performance score for the node on the route should be scaled by
         -- the performance weight, moderated by the sampling rate. The sampling
         -- rate is used to ensure that new nodes (and improving nodes) are given
         -- a chance to be selected.
         local perf_score =
-            decay(state, route.performance * state["performance-weight"]) *
-            ((1 - route.price * state["sampling-rate"]) + state["sampling-rate"])
+            decay(state, node.performance * state["performance-weight"]) *
+            ((1 - node.price * state["sampling-rate"]) + state["sampling-rate"])
         -- The price score for the node on the route should be scaled by the
         -- pricing weight. It is not moderated by the sampling rate, as we want
         -- to ensure that the node is selected if it has a low price. New nodes
         -- can improve their likelihood of being selected by lowering their price.
-        local price_score = decay(state, route.price * state["pricing-weight"])
+        local price_score = decay(state, node.price * state["pricing-weight"])
 
-        route.weight = perf_score + price_score
-
+        node.weight = perf_score + price_score
     end
 
+    error("throw")
     return routes
 end
 
@@ -94,7 +94,9 @@ local function add_route(state, route, opts)
         performance = 0
     })
 
-    return r
+    table.insert(routes, r)
+
+    return routes
 end
 
 -- Compute the new routes, with their weights, based on the current routes and
@@ -102,7 +104,9 @@ end
 local function recalculate_routes(state, opts)
     local routes = state.routes
 
-    r = recalculate_scores(state, routes, opts)
+    for _, r in ipairs(routes) do
+        r = recalculate_scores(state, r, opts)
+    end
 
     -- TODO: Remove the prior route from the list before adding the new one.
     table.insert(routes, r)
@@ -159,4 +163,78 @@ function compute(state, assignment, opts)
     end
 
     return state
+end
+
+--- Tests
+
+function register_route_test()
+    local state = {}
+    state = ensure_opts(state)
+    state.routes = {}
+  
+    -- simulate a register call
+    local req = { path = "register", route = { node = "host1", price = 0.5 } }
+    state = compute(state, { body = req }, {})
+  
+    -- we must now have exactly one route in state.routes
+    if #state.routes ~= 1 then
+      error("Expected 1 route after register, got "..tostring(#state.routes))
+    end
+  
+    -- verify node, price and default perf=0
+    local r = state.routes[1]
+    if r.node ~= "host1" then
+      error("Expected node='host1', got "..tostring(r.node))
+    end
+    if r.price ~= 0.5 then
+      error("Expected price=0.5, got "..tostring(r.price))
+    end
+    if r.performance ~= 0 then
+      error("Expected performance=0, got "..tostring(r.performance))
+    end
+  
+    return "ok"
+  end
+  
+  -- Test 2: performance updates and weight recalculation
+function performance_and_recalc_test()
+    -- start with one route already in state
+    local init = { routes = { { node = "host1", price = 0.2, performance = 0 } } }
+    local state = ensure_opts(init)
+    state.performance = {}
+  
+    -- post a performance update
+    local perf_req = {
+      path = "performance",
+      body = { host = "host1", duration = 100 }
+    }
+    state = compute(state, { body = perf_req }, {})
+  
+    -- compute expected new performance value
+    local avg = state["averaging-period"]
+    local init_perf = state["initial-performance"]
+    local expected_perf = (init_perf * (1 - 1/avg)) + (100 * (1/avg))
+    local actual_perf = state.performance["host1"]
+    if math.abs(actual_perf - expected_perf) > 1e-9 then
+      error(("Performance mismatch: expected %.9f, got %.9f")
+            :format(expected_perf, actual_perf))
+    end
+  
+    -- now trigger a recalc
+    state = compute(state, { body = { path = "recalculate" } }, {})
+  
+    -- manually compute the expected weight term
+    local route = state.routes[1]
+    local sp = state["score-preference"]
+    local sr = state["sampling-rate"]
+    local pw = state["pricing-weight"]
+    local perf_term = math.exp(-sp * actual_perf) * ((1 - route.price * sr) + sr)
+    local price_term = math.exp(-sp * (route.price * pw))
+    local expected_weight = perf_term + price_term
+    if math.abs(route.weight - expected_weight) > 1e-9 then
+      error(("Weight mismatch: expected %.9f, got %.9f")
+            :format(expected_weight, route.weight))
+    end
+  
+    return "ok"
 end
