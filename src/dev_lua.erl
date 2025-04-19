@@ -1,6 +1,6 @@
 %%% @doc A device that calls a Lua script upon a request and returns the result.
 -module(dev_lua).
--export([info/1, init/3, snapshot/3, normalize/3]).
+-export([info/1, init/3, snapshot/3, normalize/3, functions/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 %%% The set of functions that will be sandboxed by default if `sandbox` is set 
@@ -96,6 +96,30 @@ initialize(Base, Script, Opts) ->
     {ok, State3} = add_ao_core_resolver(Base, State2, Opts),
     % Return the base message with the state added to it.
     {ok, hb_private:set(Base, <<"state">>, State3, Opts)}.
+
+%%% @doc Return a list of all functions in the Lua environment.
+functions(Base, _Req, Opts) ->
+    case hb_private:get(<<"state">>, Base, Opts) of
+        not_found ->
+            {error, not_found};
+        State ->
+            {ok, [Res], _S2} =
+                luerl:do_dec(
+                    <<
+                        """
+                        local __tests = {}
+                        for k, v in pairs(_G) do
+                            if type(v) == "function" then
+                                table.insert(__tests, k)
+                            end
+                        end
+                        return __tests
+                        """
+                    >>,
+                    State
+                ),
+            {ok, hb_util:message_to_ordered_list(decode(Res))}
+    end.
 
 %% @doc Sandbox (render inoperable) a set of Lua functions. Each function is
 %% referred to as if it is a path in AO-Core, with its value being what to 
@@ -220,9 +244,7 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
-    ?event({calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
-    ?event(debug_lua, calling_lua_func),
-    ?event(debug_lua, {lua_params, Params}),
+    ?event(debug_lua, {calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
     process_response(
         luerl:call_function_dec(
             [Function],
