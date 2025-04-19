@@ -15,26 +15,25 @@
 ---                        relative to pricing in the scoring algorithm.
 ---                        Default = 1.
 --- /score-preference = The level to which the scoring algorithm influence routing
----                      decisions amongst scored route generations. Default = 1,
----                      yielding an exponential decay in preference for better
----                      performing nodes.
-
-DefaultIsAdmissible = {
-    path = "/default",
-    default = true
-}
-
-DefaultSamplingRate = 0.1
-DefaultPricingWeight = 1
-DefaultPerformanceWeight = 1
-DefaultScorePreference = 1
-
+---                     decisions amongst scored route generations. Default = 1,
+---                     yielding an exponential decay in preference for better
+---                     performing nodes. Default = 1.
+--- /recalculate-every = The number of messages to process between recalculating
+---                     the routing table. Default = 1000.
 local function ensure_opts(state)
-    state["is-admissible"] = state["is-admissible"] or DefaultIsAdmissible
-    state["sampling-rate"] = state["sampling-rate"] or DefaultSamplingRate
-    state["pricing-weight"] = state["pricing-weight"] or DefaultPricingWeight
-    state["performance-weight"] = state["performance-weight"] or DefaultPerformanceWeight
-    state["score-preference"] = state["score-preference"] or DefaultScorePreference
+    state["is-admissible"] =
+        state["is-admissible"] or {
+            path = "/default",
+            default = true
+        }
+    state["sampling-rate"] = state["sampling-rate"] or 0.1
+    state["pricing-weight"] = state["pricing-weight"] or 1
+    state["performance-weight"] = state["performance-weight"] or 1
+    state["score-preference"] = state["score-preference"] or 1
+    state["recalculate-every"] = state["recalculate-every"] or 1000
+    state["averaging-period"] = state["averaging-period"] or 1000
+    state.performance = state.performance or {}
+    state["initial-performance"] = state["initial-performance"] or 30000
     return state
 end
 
@@ -83,42 +82,65 @@ local function recalculate_scores(state, routes, opts)
     return routes
 end
 
--- Compute the new routes, with their weights, based on the current routes and
--- a new route.
-local function recalculate_routes(state, route, opts)
+local function add_route(state, route, opts)
     local routes = state.routes
     local path = route["route-path"] or route.path
     local price = route.price
 
     local r = current_route(routes, path, opts)
-    local nodes = r.nodes
-    table.insert(nodes, {
+    table.insert(r.nodes, {
         node = route.node,
         price = price,
         performance = 0
     })
 
-    r = recalculate_scores(state, r, opts)
+    return r
+end
+
+-- Compute the new routes, with their weights, based on the current routes and
+-- a new route.
+local function recalculate_routes(state, opts)
+    local routes = state.routes
+
+    r = recalculate_scores(state, routes, opts)
 
     -- TODO: Remove the prior route from the list before adding the new one.
     table.insert(routes, r)
 
-    return routes
+    state.routes = routes
+    return state
 end
 
-local function add_route(state, req, opts)
-    local path = req.path
-    if path == "register" then
-        local status, is_admissible = ao.resolve(state["is-admissible"])
-        if status == "ok" and is_admissible ~= false then
-            print "TRUSTED PEER"
-            state.routes = recalculate_routes(state, req.route)
-        else
-            print "UNTRUSTED PEER"
-        end
-
-        return state
+-- Register a new host to a route.
+local function register(state, req, opts)
+    local status, is_admissible = ao.resolve(state["is-admissible"])
+    if status == "ok" and is_admissible ~= false then
+        print "TRUSTED PEER"
+        state.routes = add_route(state, req.route)
+        state.routes = recalculate_routes(state, opts)
+    else
+        print "UNTRUSTED PEER"
     end
+
+    return state
+end
+
+-- Update the performance of a host.
+local function performance(state, req, opts)
+    local duration = req.body.duration
+    local host = req.body.host
+    local change_factor = 1 / state["averaging-period"]
+
+    -- Modify the node's existing performance score, weighted by the change
+    -- factor, to give more weight to the existing performance score. Even node
+    -- is given a poor performance score (30000ms) to start, then will slowly
+    -- improve its performance score over time.
+    state.performance[host] =
+        ((state.performance[host] or state["initial-performance"]) *
+            (1 - change_factor)) +
+        (duration * change_factor)
+
+    return state
 end
 
 -- Main handler for incoming scheduled messages.
@@ -129,7 +151,12 @@ function compute(state, assignment, opts)
     local path = req.path
 
     if path == "register" then
-        add_route(state, req, opts)
+        state = register(state, req, opts)
+    elseif path == "recalculate" then
+        state = recalculate_routes(state, opts)
+    elseif path == "performance" and req.body.method == "POST" then
+        state = performance(state, req, opts)
     end
 
+    return state
 end
