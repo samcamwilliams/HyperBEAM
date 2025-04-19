@@ -197,7 +197,7 @@ add_ao_core_resolver(Base, State, Opts) ->
             try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
                 {Status, Res} ->
                     ?event({resolved_msgs, {status, Status}, {res, Res}}),
-                    {[Status, encode(Res)], ExecState}
+                    {[hb_util:bin(Status), encode(Res)], ExecState}
             catch
                 Error ->
                     ?event({ao_core_resolver_error, Error}),
