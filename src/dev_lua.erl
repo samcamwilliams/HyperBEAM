@@ -187,25 +187,42 @@ add_ao_core_resolver(Base, State, Opts) ->
             State
         ),
     % Add the AO-Core resolver to the base AO table.
-    luerl:set_table_keys_dec(
-        [ao, resolve],
-        fun([EncodedMsg], ExecState) ->
-            AOMsg = decode(luerl:decode(EncodedMsg, ExecState)),
-            ?event({ao_core_resolver, {msg, AOMsg}}),
-            ParsedMsgs = hb_singleton:from(AOMsg),
-            ?event({parsed_msgs_to_resolve, ParsedMsgs}),
-            try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
-                {Status, Res} ->
-                    ?event({resolved_msgs, {status, Status}, {res, Res}}),
-                    {[hb_util:bin(Status), encode(Res)], ExecState}
-            catch
-                Error ->
-                    ?event({ao_core_resolver_error, Error}),
-                    {error, Error}
-            end
-        end,
-        State2
-    ).
+    {ok, State3} = 
+        luerl:set_table_keys_dec(
+            [ao, resolve],
+            fun([EncodedMsg], ExecState) ->
+                AOMsg = decode(luerl:decode(EncodedMsg, ExecState)),
+                ?event({ao_core_resolver, {msg, AOMsg}}),
+                ParsedMsgs = hb_singleton:from(AOMsg),
+                ?event({parsed_msgs_to_resolve, ParsedMsgs}),
+                try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
+                    {Status, Res} ->
+                        ?event({resolved_msgs, {status, Status}, {res, Res}}),
+                        {[hb_util:bin(Status), encode(Res)], ExecState}
+                catch
+                    Error ->
+                        ?event({ao_core_resolver_error, Error}),
+                        {error, Error}
+                end
+            end,
+            State2
+        ),
+    % Add the `event' function to the Lua environment.
+    {ok, State4} =
+        luerl:set_table_keys_dec(
+            [ao, event],
+            fun SendEvent([EncodedEvent], ExecState) ->
+                    SendEvent([<<"lua_event">>, EncodedEvent], ExecState);
+                SendEvent([RawGroup, EncodedEvent], ExecState) ->
+                    Group = decode(RawGroup),
+                    Event = decode(luerl:decode(EncodedEvent, ExecState)),
+                            
+                    ?event(lua_event, {Group, Event}, Opts),
+                    {ok, ExecState}
+            end,
+            State3
+        ),
+    {ok, State4}.
 
 %% @doc Call the Lua script with the given arguments.
 compute(Key, RawBase, Req, Opts) ->

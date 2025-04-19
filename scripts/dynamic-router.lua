@@ -78,7 +78,7 @@ local function recalculate_scores(state, routes, opts)
         node.weight = perf_score + price_score
     end
 
-    error("throw")
+    ao.event(routes)
     return routes
 end
 
