@@ -268,11 +268,13 @@ process_response({ok, [Status, MsgResult], NewState}, Priv) when is_list(MsgResu
     }};
 process_response({ok, [Status, BareResult], _NewState}, _Priv) ->
     {hb_util:atom(Status), BareResult};
-process_response({lua_error, Error, Details}, _Priv) ->
+process_response({lua_error, Error, State}, _Priv) ->
+    StackTrace = decode_stacktrace(luerl:get_stacktrace(State), State),
+    ?event(lua_error, {lua_error, Error, {stacktrace, StackTrace}}),
     {error, #{
         <<"status">> => 500,
         <<"body">> => Error,
-        <<"details">> => Details
+        <<"trace">> => StackTrace
     }}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
@@ -336,6 +338,31 @@ encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
 encode(Other) ->
     Other.
+
+%% @doc Parse a Lua stack trace into a list of messages.
+decode_stacktrace(StackTrace, State0) ->
+    decode_stacktrace(StackTrace, State0, []).
+decode_stacktrace([], _State, Acc) ->
+    lists:reverse(Acc);
+decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc) ->
+    %% Decode all the Lua table refs into Erlang terms
+    DecodedParams = decode_params(ParamRefs, State0),
+    %% Pull out the line number
+    Line = proplists:get_value(line, FileInfo),
+    %% Build our message‐map
+    Entry = #{
+        <<"function">>   => FuncBin,
+        <<"line">>       => Line,
+        <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
+    },
+    decode_stacktrace(Rest, State0, [Entry|Acc]).
+
+%% @doc Decode a list of Lua references, as found in a stack trace, into a
+%% list of Erlang terms.
+decode_params([], _State) -> [];
+decode_params([Tref|Rest], State) ->
+    Decoded = decode(luerl:decode(Tref, State)),
+    [Decoded|decode_params(Rest, State)].
 
 %%% Tests
 simple_invocation_test() ->
@@ -589,7 +616,14 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"data">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
+                        <<"data">> =>
+                            <<
+                                """
+                                Count = 0
+                                function add() Send({Target = 'Foo', Data = 'Bar' });
+                                Count = Count + 1 end\n add()\n return Count
+                                """
+                            >>,
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
                     },
