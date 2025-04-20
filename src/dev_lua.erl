@@ -1,6 +1,8 @@
 %%% @doc A device that calls a Lua script upon a request and returns the result.
 -module(dev_lua).
 -export([info/1, init/3, snapshot/3, normalize/3, functions/3]).
+%%% Public Utilities
+-export([encode/1, decode/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 %%% The set of functions that will be sandboxed by default if `sandbox` is set 
@@ -28,10 +30,14 @@
 
 %% @doc All keys that are not directly available in the base message are 
 %% resolved by calling the Lua function in the script of the same name.
+%% Additionally, we exclude the `keys', `set', `encode' and `decode' functions
+%% which are `message@1.0' core functions, and Lua public utility functions.
 info(Base) ->
     #{
         default => fun compute/4,
-        excludes => [<<"keys">>, <<"set">>] ++ maps:keys(Base)
+        excludes =>
+            [<<"keys">>, <<"set">>, <<"encode">>, <<"decode">>]
+                ++ maps:keys(Base)
     }.
 
 %% @doc Initialize the device state, loading the script into memory if it is 
@@ -93,7 +99,7 @@ initialize(Base, Script, Opts) ->
             true -> sandbox(State1, ?DEFAULT_SANDBOX, Opts);
             Spec -> sandbox(State1, Spec, Opts)
         end,
-    {ok, State3} = add_ao_core_resolver(Base, State2, Opts),
+    {ok, State3} = dev_lua_lib:install(Base, State2, Opts),
     % Return the base message with the state added to it.
     {ok, hb_private:set(Base, <<"state">>, State3, Opts)}.
 
@@ -137,111 +143,6 @@ sandbox(State, [Path | Rest], Opts) ->
     {ok, NextState} = luerl:set_table_keys_dec(Path, <<"sandboxed">>, State),
     sandbox(NextState, Rest, Opts).
 
-%% @doc Add a HTTP-style AO-Core resolution function to the Lua environment.
-%% Optionally, limit the devices that the environment can make use of.
-add_ao_core_resolver(Base, State, Opts) ->
-    % Calculate and set the new `preloaded_devices' option.
-    AllDevs = hb_opts:get(preloaded_devices, Opts),
-    DevSandboxDef =
-        hb_ao:get(
-            <<"device-sandbox">>,
-            {as, <<"message@1.0">>, Base},
-            false,
-            Opts
-        ),
-    AdmissibleDevs =
-        case DevSandboxDef of
-            false -> AllDevs;
-            DevNames ->
-                lists:map(
-                    fun(Name) ->
-                        [Dev] =
-                            lists:filter(
-                                fun(X) ->
-                                    hb_ao:get(<<"name">>, X, Opts) == Name
-                                end,
-                                AllDevs
-                            ),
-                        Dev
-                    end,
-                    hb_util:message_to_ordered_list(DevNames)
-                )
-        end,
-    ?event({adding_ao_core_resolver, {devs, AdmissibleDevs}}),
-    ExecOpts = Opts#{ preloaded_devices => AdmissibleDevs },
-    % Initialize the AO-Core resolver.
-    BaseAOTable =
-        case luerl:get_table_keys_dec([ao], State) of
-            {ok, nil, _} ->
-                ?event(no_ao_table),
-                #{};
-            {ok, ExistingTable, _} ->
-                ?event({existing_ao_table, ExistingTable}),
-                decode(ExistingTable)
-        end,
-    ?event({base_ao_table, BaseAOTable}),
-    {ok, State2} =
-        luerl:set_table_keys_dec(
-            [ao],
-            encode(BaseAOTable),
-            State
-        ),
-    % Add the AO-Core resolver to the base AO table.
-    {ok, State3} = 
-        luerl:set_table_keys_dec(
-            [ao, resolve],
-            fun([EncodedMsg], ExecState) ->
-                AOMsg = decode(luerl:decode(EncodedMsg, ExecState)),
-                ?event({ao_core_resolver, {msg, AOMsg}}),
-                ParsedMsgs = hb_singleton:from(AOMsg),
-                ?event({parsed_msgs_to_resolve, ParsedMsgs}),
-                try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
-                    {Status, Res} ->
-                        ?event({resolved_msgs, {status, Status}, {res, Res}}),
-                        {[hb_util:bin(Status), encode(Res)], ExecState}
-                catch
-                    Error ->
-                        ?event(error, {ao_core_resolver_error, Error}),
-                        {[<<"error">>, Error], ExecState}
-                end
-            end,
-            State2
-        ),
-    % Add the `event' function to the Lua environment.
-    {ok, State4} =
-        luerl:set_table_keys_dec(
-            [ao, event],
-            fun SendEvent([EncodedEvent], ExecState) ->
-                    SendEvent([<<"lua_event">>, EncodedEvent], ExecState);
-                SendEvent([RawGroup, EncodedEvent], ExecState) ->
-                    Group =
-                        try decode(RawGroup)
-                        catch
-                            error:_ ->
-                                ?event(lua_error,
-                                    {group_decode_failed, {group, RawGroup}}
-                                ),
-                                lua_event
-                        end,
-                    Event =
-                        try decode(luerl:decode(EncodedEvent, ExecState))
-                        catch
-                            error:Reason ->
-                                ?event(lua_error,
-                                    {event_decode_failed,
-                                        {reason, Reason},
-                                        {event, EncodedEvent}
-                                    }
-                                ),
-                                #{<<"error">> => Reason}
-                        end,
-                    ?event(Group, {Group, Event}, Opts),
-                    {[<<"ok">>], ExecState}
-            end,
-            State3
-        ),
-    {ok, State4}.
-
 %% @doc Call the Lua script with the given arguments.
 compute(Key, RawBase, Req, Opts) ->
     ?event(debug_lua, compute_called),
@@ -279,13 +180,23 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
-    ?event(debug_lua, {calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
+    ?event(debug_lua,
+        {calling_lua_func,
+            {function, Function},
+            {args, Params},
+            {req, Req}
+        }
+    ),
     process_response(
-        luerl:call_function_dec(
+        try luerl:call_function_dec(
             [Function],
             encode(Params),
             State
-        ),
+        )
+        catch
+            error:Reason ->
+                {error, Reason}
+        end,
         OldPriv
     ).
 
@@ -304,13 +215,18 @@ process_response({ok, [Status, MsgResult], NewState}, Priv) when is_list(MsgResu
 process_response({ok, [Status, BareResult], _NewState}, _Priv) ->
     {hb_util:atom(Status), BareResult};
 process_response({lua_error, Error, State}, _Priv) ->
+    % An error occurred while calling the Lua function. Parse the stack trace
+    % and return it.
     StackTrace = decode_stacktrace(luerl:get_stacktrace(State), State),
     ?event(lua_error, {lua_error, Error, {stacktrace, StackTrace}}),
     {error, #{
         <<"status">> => 500,
         <<"body">> => Error,
         <<"trace">> => hb_ao:normalize_keys(StackTrace)
-    }}.
+    }};
+process_response({error, Reason}, _Priv) ->
+    % An Erlang error occurred while calling the Lua function. Return it.
+    {error, Reason}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
 %% state element, then serializes the state to a binary.
