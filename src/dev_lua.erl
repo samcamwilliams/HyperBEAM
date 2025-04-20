@@ -214,10 +214,17 @@ add_ao_core_resolver(Base, State, Opts) ->
             fun SendEvent([EncodedEvent], ExecState) ->
                     SendEvent([<<"lua_event">>, EncodedEvent], ExecState);
                 SendEvent([RawGroup, EncodedEvent], ExecState) ->
-                    Group = decode(RawGroup),
+                    Group =
+                        try decode(RawGroup)
+                        catch
+                            error:_ ->
+                                ?event(lua_error,
+                                    {group_decode_failed, {group, RawGroup}}
+                                ),
+                                lua_event
+                        end,
                     Event = decode(luerl:decode(EncodedEvent, ExecState)),
-                            
-                    ?event(lua_event, {Group, Event}, Opts),
+                    ?event(Group, {Group, Event}, Opts),
                     {ok, ExecState}
             end,
             State3

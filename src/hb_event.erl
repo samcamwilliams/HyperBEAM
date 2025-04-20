@@ -32,7 +32,7 @@ log(Topic, X, ModStr, Func, Line, Opts) ->
     case hb_opts:get(debug_print, false, Opts) of
         ModList when is_list(ModList) ->
             case lists:member(ModStr, ModList)
-                orelse lists:member(atom_to_list(Topic), ModList)
+                orelse lists:member(hb_util:list(Topic), ModList)
             of
                 true -> hb_util:debug_print(X, ModStr, Func, Line);
                 false -> X
@@ -55,7 +55,8 @@ handle_tracer(Topic, X, Opts) ->
 								TopicOpts = maps:get(opts, Map, #{}),
 								case maps:get(trace, TopicOpts, undefined) of
 									undefined ->  ok;
-									TracePID -> hb_tracer:record_step(TracePID, {Topic, X})
+									TracePID ->
+                                        hb_tracer:record_step(TracePID, {Topic, X})
 								end
 							catch
 								_:_ -> ok
