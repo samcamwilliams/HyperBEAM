@@ -20,7 +20,8 @@
 ---                performing nodes. Default = 1.
 --- /recalculate-every = The number of messages to process between recalculating
 ---                the routing table. Default = 1000.
-local function ensure_opts(state)
+local function ensure_defaults(state)
+    state.routes = state.routes or {}
     state["is-admissible"] =
         state["is-admissible"] or {
             path = "/default",
@@ -58,10 +59,10 @@ local function decay(state, score)
 end
 
 -- Compute the scores for all routes.
-local function recalculate_scores(state, routes, opts)
+local function recalculate_scores(state, route, opts)
     -- Calculate the score per node.
 
-    for _, node in ipairs(routes.nodes) do
+    for _, node in ipairs(route.nodes) do
         -- The performance score for the node on the route should be scaled by
         -- the performance weight, moderated by the sampling rate. The sampling
         -- rate is used to ensure that new nodes (and improving nodes) are given
@@ -78,8 +79,7 @@ local function recalculate_scores(state, routes, opts)
         node.weight = perf_score + price_score
     end
 
-    ao.event(routes)
-    return routes
+    return route
 end
 
 local function add_route(state, route, opts)
@@ -93,9 +93,7 @@ local function add_route(state, route, opts)
         price = price,
         performance = 0
     })
-
     table.insert(routes, r)
-
     return routes
 end
 
@@ -108,11 +106,7 @@ local function recalculate_routes(state, opts)
         r = recalculate_scores(state, r, opts)
     end
 
-    -- TODO: Remove the prior route from the list before adding the new one.
-    table.insert(routes, r)
-
-    state.routes = routes
-    return state
+    return routes
 end
 
 -- Register a new host to a route.
@@ -149,8 +143,7 @@ end
 
 -- Main handler for incoming scheduled messages.
 function compute(state, assignment, opts)
-    state = ensure_opts(state)
-    state.routes = state.routes or {}
+    state = ensure_defaults(state)
     local req = assignment.body
     local path = req.path
 
@@ -169,30 +162,40 @@ end
 
 function register_route_test()
     local state = {}
-    state = ensure_opts(state)
+    state = ensure_defaults(state)
     state.routes = {}
   
-    -- simulate a register call
-    local req = { path = "register", route = { node = "host1", price = 0.5 } }
+    -- Simulate a register call upon a default state.
+    local req = {
+        path = "register",
+        route = {
+            node = "host1",
+            price = 0.5,
+            template = "/test-key"
+        }
+    }
     state = compute(state, { body = req }, {})
   
-    -- we must now have exactly one route in state.routes
+    for key,value in pairs(state) do print(key,value) end
+    for key,value in pairs(state.routes) do print(key,value) end
+    -- We must now have exactly one route in state.routes.
     if #state.routes ~= 1 then
       error("Expected 1 route after register, got "..tostring(#state.routes))
     end
   
-    -- verify node, price and default perf=0
+    -- Verify the node, price and default performance.
     local r = state.routes[1]
-    if r.node ~= "host1" then
-      error("Expected node='host1', got "..tostring(r.node))
+    ao.event("debug_router", { "route:", r })
+    if r.nodes[1].node ~= "host1" then
+      error("Expected node='host1', got "..tostring(r.nodes[1].node))
     end
-    if r.price ~= 0.5 then
-      error("Expected price=0.5, got "..tostring(r.price))
+    if r.nodes[1].price ~= 0.5 then
+      error("Expected price=0.5, got "..tostring(r.nodes[1].price))
     end
-    if r.performance ~= 0 then
-      error("Expected performance=0, got "..tostring(r.performance))
+    if r.nodes[1].performance ~= 0 then
+      error("Expected performance=0, got "..tostring(r.nodes[1].performance))
     end
-  
+
     return "ok"
   end
   
@@ -200,8 +203,7 @@ function register_route_test()
 function performance_and_recalc_test()
     -- start with one route already in state
     local init = { routes = { { node = "host1", price = 0.2, performance = 0 } } }
-    local state = ensure_opts(init)
-    state.performance = {}
+    local state = ensure_defaults(init)
   
     -- post a performance update
     local perf_req = {
@@ -214,7 +216,8 @@ function performance_and_recalc_test()
     local avg = state["averaging-period"]
     local init_perf = state["initial-performance"]
     local expected_perf = (init_perf * (1 - 1/avg)) + (100 * (1/avg))
-    local actual_perf = state.performance["host1"]
+    local actual_perf = state.performance.nodes["host1"]
+    ao.event("debug_router", state.performance)
     if math.abs(actual_perf - expected_perf) > 1e-9 then
       error(("Performance mismatch: expected %.9f, got %.9f")
             :format(expected_perf, actual_perf))
