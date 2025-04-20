@@ -54,14 +54,21 @@ suite(File) ->
 
 %% @doc Generate an EUnit test for a given function.
 exec_test(State, Function) ->
-    ?assertMatch(
-        {ok, _},
+    {Status, Result} =
         hb_ao:resolve(
             State,
             #{ <<"path">> => Function, <<"parameters">> => [] },
             #{}
-        )
-    ).
+        ),
+    case Status of
+        ok -> ok;
+        error ->
+            hb_util:debug_print(Result, <<"Lua">>, Function, 1),
+            ?assertEqual(
+                ok,
+                Status
+            )
+    end.
 
 %%% Utility functions.
 

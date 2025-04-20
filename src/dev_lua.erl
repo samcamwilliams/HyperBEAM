@@ -201,8 +201,8 @@ add_ao_core_resolver(Base, State, Opts) ->
                         {[hb_util:bin(Status), encode(Res)], ExecState}
                 catch
                     Error ->
-                        ?event({ao_core_resolver_error, Error}),
-                        {error, Error}
+                        ?event(error, {ao_core_resolver_error, Error}),
+                        {[<<"error">>, Error], ExecState}
                 end
             end,
             State2
@@ -223,9 +223,20 @@ add_ao_core_resolver(Base, State, Opts) ->
                                 ),
                                 lua_event
                         end,
-                    Event = decode(luerl:decode(EncodedEvent, ExecState)),
+                    Event =
+                        try decode(luerl:decode(EncodedEvent, ExecState))
+                        catch
+                            error:Reason ->
+                                ?event(lua_error,
+                                    {event_decode_failed,
+                                        {reason, Reason},
+                                        {event, EncodedEvent}
+                                    }
+                                ),
+                                #{<<"error">> => Reason}
+                        end,
                     ?event(Group, {Group, Event}, Opts),
-                    {ok, ExecState}
+                    {[<<"ok">>], ExecState}
             end,
             State3
         ),
@@ -298,7 +309,7 @@ process_response({lua_error, Error, State}, _Priv) ->
     {error, #{
         <<"status">> => 500,
         <<"body">> => Error,
-        <<"trace">> => StackTrace
+        <<"trace">> => hb_ao:normalize_keys(StackTrace)
     }}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
@@ -376,10 +387,15 @@ decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc) ->
     %% Build our message‐map
     Entry = #{
         <<"function">>   => FuncBin,
-        <<"line">>       => Line,
         <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
     },
-    decode_stacktrace(Rest, State0, [Entry|Acc]).
+    MaybeLine =
+        if is_binary(FuncBin) andalso is_integer(Line) ->
+            #{<<"line">> => Line};
+        true ->
+            #{}
+        end,
+    decode_stacktrace(Rest, State0, [maps:merge(Entry, MaybeLine)|Acc]).
 
 %% @doc Decode a list of Lua references, as found in a stack trace, into a
 %% list of Erlang terms.
