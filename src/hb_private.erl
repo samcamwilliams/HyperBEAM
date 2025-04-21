@@ -7,8 +7,8 @@
 %%% should _not_ be used for encoding state that makes the execution of a
 %%% device non-deterministic (unless you are sure you know what you are doing).
 %%%
-%%% The `set` and `get` functions of this module allow you to run those keys
-%%% as AO-Core paths if you would like to have private `devices` in the
+%%% The `set' and `get' functions of this module allow you to run those keys
+%%% as AO-Core paths if you would like to have private `devices' in the
 %%% messages non-public zone.
 %%% 
 %%% See `hb_ao' for more information about the AO-Core protocol

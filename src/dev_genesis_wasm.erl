@@ -25,10 +25,10 @@ compute(Msg, Msg2, Opts) ->
     % Validate whether the genesis-wasm feature is enabled.
     case ensure_started(Opts) of
         true ->
-            % Resolve the `delegated-compute@1.0` device.
+            % Resolve the `delegated-compute@1.0' device.
             case hb_ao:resolve(Msg, {as, <<"delegated-compute@1.0">>, Msg2}, Opts) of
                 {ok, Msg3} ->
-                    % Resolve the `patch@1.0` device.
+                    % Resolve the `patch@1.0' device.
                     {ok, Msg4} =
                         hb_ao:resolve(
                             Msg3,
@@ -53,7 +53,7 @@ compute(Msg, Msg2, Opts) ->
 
 %% @doc Ensure the local `genesis-wasm@1.0' is live. If it not, start it.
 ensure_started(Opts) ->
-    % Check if the `genesis-wasm@1.0` device is already running. The presence
+    % Check if the `genesis-wasm@1.0' device is already running. The presence
     % of the registered name implies its availability.
     ?event({ensure_started, genesis_wasm, self()}),
     IsRunning = is_genesis_wasm_server_running(Opts),

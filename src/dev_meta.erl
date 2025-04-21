@@ -8,6 +8,8 @@
 %%% the AO-Core resolver has returned a result.
 -module(dev_meta).
 -export([info/1, info/3, handle/2, adopt_node_message/2]).
+%%% Public API
+-export([is_operator/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -21,6 +23,26 @@
 %% future the `request' is added as an argument to AO-Core's internal `info'
 %% function, we will need to find a different approach.
 info(_) -> #{ exports => [info] }.
+
+%% @doc Utility function for determining if a request is from the `operator' of
+%% the node.
+is_operator(Request, NodeMsg) ->
+    RequestSigners = hb_message:signers(Request),
+    Operator =
+        hb_opts:get(
+            operator,
+            case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+                no_viable_wallet -> unclaimed;
+                Wallet -> ar_wallet:to_address(Wallet)
+            end,
+            NodeMsg
+        ),
+    EncOperator =
+        case Operator of
+            unclaimed -> unclaimed;
+            NativeAddress -> hb_util:human_id(NativeAddress)
+        end,
+    EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners).
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
@@ -177,6 +199,7 @@ adopt_node_message(Request, NodeMsg) ->
 %% After execution, we run the node's `postprocessor' message on the result of
 %% the request before returning the result it grants back to the user.
 handle_resolve(Req, Msgs, NodeMsg) ->
+	TracePID = maps:get(trace, NodeMsg),
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcessedMsg} ->
@@ -194,7 +217,7 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                 try
                     hb_ao:resolve_many(
                         PreProcessedMsg,
-                        HTTPOpts#{ force_message => true }
+                        HTTPOpts#{ force_message => true, trace => TracePID }
                     )
                 catch
                     throw:{necessary_message_not_found, MsgID} ->
@@ -233,11 +256,11 @@ handle_resolve(Req, Msgs, NodeMsg) ->
 
 %% @doc Execute a message from the node message upon the user's request. The
 %% invocation of the processor provides a request of the following form:
-%% ```
+%% <pre>
 %%      /path => preprocess | postprocess
 %%      /request => the original request singleton
 %%      /body => list of messages the user wishes to process
-%% '''
+%% </pre>
 resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     case hb_opts:get(Processor, undefined, NodeMsg) of
         undefined -> {ok, Query};

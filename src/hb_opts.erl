@@ -62,12 +62,16 @@ default_message() ->
             #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
+            #{<<"name">> => <<"local-name@1.0">>, <<"module">> => dev_local_name},
             #{<<"name">> => <<"lookup@1.0">>, <<"module">> => dev_lookup},
             #{<<"name">> => <<"lua@5.3a">>, <<"module">> => dev_lua},
+            #{<<"name">> => <<"manifest@1.0">>, <<"module">> => dev_manifest},
             #{<<"name">> => <<"message@1.0">>, <<"module">> => dev_message},
             #{<<"name">> => <<"meta@1.0">>, <<"module">> => dev_meta},
             #{<<"name">> => <<"monitor@1.0">>, <<"module">> => dev_monitor},
             #{<<"name">> => <<"multipass@1.0">>, <<"module">> => dev_multipass},
+            #{<<"name">> => <<"name@1.0">>, <<"module">> => dev_name},
+            #{<<"name">> => <<"node-process@1.0">>, <<"module">> => dev_node_process},
             #{<<"name">> => <<"p4@1.0">>, <<"module">> => dev_p4},
             #{<<"name">> => <<"patch@1.0">>, <<"module">> => dev_patch},
             #{<<"name">> => <<"poda@1.0">>, <<"module">> => dev_poda},
@@ -88,7 +92,7 @@ default_message() ->
         cache_control => [<<"no-cache">>, <<"no-store">>],
         cache_lookup_hueristics => false,
         % Should we await in-progress executions, rather than re-running?
-        % Has three settings: false, only `named` executions, or all executions.
+        % Has three settings: false, only `named' executions, or all executions.
         await_inprogress => named,
         %% Should the node attempt to access data from remote caches for
         %% client requests?
@@ -111,7 +115,7 @@ default_message() ->
         commitment_device => <<"httpsig@1.0">>,
         %% Dev options
         mode => debug,
-        % Every modification to `Opts` called directly by the node operator
+        % Every modification to `Opts' called directly by the node operator
         % should be recorded here.
 		node_history => [],
         debug_stack_depth => 40,

@@ -108,7 +108,7 @@ calculate_ids(Base, Req, NodeOpts) ->
     end.
 
 %% @doc Locate the ID device of a message. The ID device is determined the
-%% `device` set in _all_ of the commitments. If no commitments are present,
+%% `device' set in _all_ of the commitments. If no commitments are present,
 %% the default device (`httpsig@1.0') is used.
 id_device(#{ <<"commitments">> := Commitments }) ->
     % Get the device from the first commitment.
@@ -169,8 +169,8 @@ commit(Self, Req, Opts) ->
                 hb_opts:get(commitment_device, no_viable_commitment_device, Opts);
             Dev -> Dev
         end,
-    % We _do not_ set the `device` key in the message, as the device may be
-    % part of the commitment. Instead, we find the device module's `commit`
+    % We _do not_ set the `device' key in the message, as the device will be
+    % part of the commitment. Instead, we find the device module's `commit'
     % function and apply it.
     AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, Opts),
     {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, Opts),

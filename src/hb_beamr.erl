@@ -9,11 +9,11 @@
 %%% 
 %%% Because each WASM module runs as an independent async worker, if you plan
 %%% to run many instances in parallel, you should be sure to configure the 
-%%% BEAM to have enough async worker threads enabled (see `erl +A N` in the
+%%% BEAM to have enough async worker threads enabled (see `erl +A N' in the
 %%% Erlang manuals).
 %%% 
 %%% The core API is simple:
-%%% ```
+%%% <pre>
 %%%     start(WasmBinary) -> {ok, Port, Imports, Exports}
 %%%         Where:
 %%%             WasmBinary is the WASM binary to load.
@@ -32,9 +32,9 @@
 %%%     call(Port, FunName, Args[, Import, State, Opts]) -> {ok, Res, NewState}
 %%%         Where:
 %%%             ImportFun is a function that will be called upon each import.
-%%%             ImportFun must have an arity of 2: Taking an arbitrary `state`
-%%%             term, and a map containing the `port`, `module`, `func`, `args`,
-%%%             `signature`, and the `options` map of the import.
+%%%             ImportFun must have an arity of 2: Taking an arbitrary `state'
+%%%             term, and a map containing the `port', `module', `func', `args',
+%%%             `signature', and the `options' map of the import.
 %%%             It must return a tuple of the form {ok, Response, NewState}.
 %%%     serialize(Port) -> {ok, Mem}
 %%%         Where:
@@ -44,7 +44,7 @@
 %%%         Where:
 %%%             Port is the port to the LID.
 %%%             Mem is a binary output of a previous `serialize/1' call.
-%%% '''
+%%% </pre>
 %%% 
 %%% BEAMR was designed for use in the HyperBEAM project, but is suitable for
 %%% deployment in other Erlang applications that need to run WASM modules. PRs
@@ -55,7 +55,7 @@
 %%% Utility API:
 -export([serialize/1, deserialize/2, stub/3]).
 
--include("src/include/hb.hrl").
+-include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Load the driver for the WASM executor.

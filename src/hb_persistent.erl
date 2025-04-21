@@ -263,7 +263,7 @@ start_worker(GroupName, Msg, Opts) ->
     ),
     WorkerPID = spawn(
         fun() ->
-            % If the device's info contains a `worker` function we
+            % If the device's info contains a `worker' function we
             % use that instead of the default implementation.
             WorkerFun =
                 hb_maps:get(
@@ -356,9 +356,9 @@ default_worker(GroupName, Msg1, Opts) ->
 %% @doc Create a group name from a Msg1 and Msg2 pair as a tuple.
 default_grouper(Msg1, Msg2, Opts) ->
     %?event({calculating_default_group_name, {msg1, Msg1}, {msg2, Msg2}}),
-    % Use Erlang's `phash2` to hash the result of the Grouper function.
-    % `phash2` is relatively fast and ensures that the group name is short for
-    % storage in `pg`. In production we should only use a hash with a larger
+    % Use Erlang's `phash2' to hash the result of the Grouper function.
+    % `phash2' is relatively fast and ensures that the group name is short for
+    % storage in `pg'. In production we should only use a hash with a larger
     % output range to avoid collisions.
     ?no_prod("Using a hash for group names is not secure."),
     case hb_opts:get(await_inprogress, true, Opts) of

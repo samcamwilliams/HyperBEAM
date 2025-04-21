@@ -28,7 +28,7 @@
 %%% 
 %%% The structure of the conversions is as follows:
 %%% 
-%%% ```
+%%% <pre>
 %%%     Arweave TX/ANS-104 ==> dev_codec_ans104:from/1 ==> TABM
 %%%     HTTP Signed Message ==> dev_codec_httpsig_conv:from/1 ==> TABM
 %%%     Flat Maps ==> dev_codec_flat:from/1 ==> TABM
@@ -40,7 +40,7 @@
 %%%     TABM ==> dev_codec_httpsig_conv:to/1 ==> HTTP Signed Message
 %%%     TABM ==> dev_codec_flat:to/1 ==> Flat Maps
 %%%     ...
-%%% '''
+%%% </pre>
 %%% 
 %%% Additionally, this module provides a number of utility functions for
 %%% manipulating messages. For example, `hb_message:sign/2' to sign a message of
@@ -70,8 +70,8 @@
 
 %% @doc Convert a message from one format to another. Taking a message in the
 %% source format, a target format, and a set of opts. If not given, the source
-%% is assumed to be `structured@1.0`. Additional codecs can be added by ensuring they
-%% are part of the `Opts` map -- either globally, or locally for a computation.
+%% is assumed to be `structured@1.0'. Additional codecs can be added by ensuring they
+%% are part of the `Opts' map -- either globally, or locally for a computation.
 %% 
 %% The encoding happens in two phases:
 %% 1. Convert the message to a TABM.
@@ -324,7 +324,7 @@ format(Map, Indent) when is_map(Map) ->
     % Prepare the metadata row for formatting.
     % Note: We try to get the IDs _if_ they are *already* in the map. We do not
     % force calculation of the IDs here because that may cause significant
-    % overhead unless the `debug_ids` option is set.
+    % overhead unless the `debug_ids' option is set.
     IDMetadata =
         case hb_opts:get(debug_ids, false, #{}) of
             false ->
@@ -1040,7 +1040,7 @@ complex_signed_message_test(Codec) ->
 %     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
 
 deep_multisignature_test() ->
-    % Only the `httpsig@1.0` codec supports multisignatures.
+    % Only the `httpsig@1.0' codec supports multisignatures.
     Codec = <<"httpsig@1.0">>,
     Wallet1 = ar_wallet:new(),
     Wallet2 = ar_wallet:new(),
@@ -1309,8 +1309,8 @@ signed_with_inner_signed_message_test(Codec) ->
                     Codec
                 ),
                 % Uncommitted keys that should be ripped out of the inner message
-                % by `with_only_committed`. These should still be present in the
-                % `with_only_committed` outer message. For now, only `httpsig@1.0`
+                % by `with_only_committed'. These should still be present in the
+                % `with_only_committed' outer message. For now, only `httpsig@1.0'
                 % supports stripping non-committed keys.
                 case Codec of
                     <<"httpsig@1.0">> ->
@@ -1343,7 +1343,7 @@ signed_with_inner_signed_message_test(Codec) ->
     % `with_only_committed` first.
     InnerDecoded = hb_maps:get(<<"inner">>, Decoded),
     ?event({inner_decoded, InnerDecoded}),
-    % Applying `with_only_committed` should verify the inner message.
+    % Applying `with_only_committed' should verify the inner message.
     {ok, CommittedInnerOnly} = with_only_committed(InnerDecoded),
     ?event({committed_inner_only, CommittedInnerOnly}),
     ?assert(verify(CommittedInnerOnly, signers)).

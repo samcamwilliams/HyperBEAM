@@ -47,7 +47,7 @@ read(_M1, M2, Opts) ->
             end;
         not_found ->
             % The cache does not have this ID,but it may still be an explicit
-            % `data/` path.
+            % `data/' path.
             Store = hb_opts:get(store, [], Opts),
             ?event(dev_cache, {read, {location, Location}, {store, Store}}),
             hb_store:read(Store, Location)

@@ -14,7 +14,7 @@
 %%% `dev_process_cache' for details.
 %%% 
 %%% The external API of the device is as follows:
-%%% ```
+%%% <pre>
 %%% GET /ID/Schedule:                Returns the messages in the schedule
 %%% POST /ID/Schedule:               Adds a message to the schedule
 %%% 
@@ -22,10 +22,10 @@
 %%%                                  applying a message
 %%% GET /ID/Now:                     Returns the `/Results' key of the latest 
 %%%                                  computed message
-%%% '''
+%%% </pre>
 %%% 
 %%% An example process definition will look like this:
-%%% ```
+%%% <pre>
 %%%     Device: Process/1.0
 %%%     Scheduler-Device: Scheduler/1.0
 %%%     Execution-Device: Stack/1.0
@@ -38,7 +38,7 @@
 %%%         Authority: B
 %%%         Authority: C
 %%%         Quorum: 2
-%%% '''
+%%% </pre>
 %%%
 %%% Runtime options:
 %%%     Cache-Frequency: The number of assignments that will be computed 
@@ -69,7 +69,7 @@ info(_Msg1) ->
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3,
         await => fun dev_process_worker:await/5,
-        exclude => [
+        excludes => [
             <<"test">>,
             <<"init">>,
             <<"ping_ping_script">>,

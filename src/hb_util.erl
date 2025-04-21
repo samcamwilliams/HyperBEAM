@@ -17,7 +17,7 @@
 -export([print_trace/4, trace_macro_helper/5, print_trace_short/4]).
 -export([ok/1, ok/2, until/1, until/2, until/3]).
 -export([format_trace_short/1, is_hb_module/1, is_hb_module/2, all_hb_modules/0]).
--export([count/2, mean/1, stddev/1, variance/1]).
+-export([count/2, mean/1, stddev/1, variance/1, weighted_random/1]).
 -include("include/hb.hrl").
 
 %%% Simple type coercion functions, useful for quickly turning inputs from the
@@ -710,3 +710,21 @@ stddev(List) ->
 variance(List) ->
     Mean = mean(List),
     lists:sum([ math:pow(X - Mean, 2) || X <- List ]) / length(List).
+
+%% @doc Shuffle a list.
+shuffle(List) ->
+    [ Y || {_, Y} <- lists:sort([ {rand:uniform(), X} || X <- List]) ].
+
+%% @doc Return a random element from a list, weighted by the values in the list.
+weighted_random(List) ->
+    TotalWeight = lists:sum([ Weight || {_, Weight} <- List ]),
+    Normalized = [ {Item, Weight / TotalWeight} || {Item, Weight} <- List ],
+    Shuffled = shuffle(Normalized),
+    pick_weighted(Shuffled, rand:uniform()).
+
+pick_weighted([], _) ->
+    error(empty_list);
+pick_weighted([{Item, Weight}|_Rest], Remaining) when Remaining < Weight ->
+    Item;
+pick_weighted([{_Item, Weight}|Rest], Remaining) ->
+    pick_weighted(Rest, Remaining - Weight).
