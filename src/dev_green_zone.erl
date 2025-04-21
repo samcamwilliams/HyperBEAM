@@ -367,14 +367,15 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                             % shared AES key.
                             ?event(green_zone, {oldOpts, {explicit, InitOpts}}),
                             ?event(green_zone, {newOpts, {explicit, Opts}}),
-                            hb_http_server:set_opts(Opts#{
-                                priv_green_zone_aes => AESKey
-                            }),
+							NewOpts = Opts#{
+								priv_green_zone_aes => AESKey
+							},
+                            hb_http_server:set_opts(NewOpts),
 							?event(successfully_joined_greenzone),
                             
                             % After successfully joining, try to mount encrypted volume
-                            try_mount_encrypted_volume(AESKey),
-                            
+                            try_mount_encrypted_volume(AESKey, NewOpts),
+							
                             {ok, #{ 
                                 <<"body">> => 
 									<<"Node joined green zone successfully.">>, 
@@ -704,16 +705,26 @@ The encryption key used for the volume is the same AES key used for green zone
 communication, ensuring that only nodes in the green zone can access the data.
 
 @param AESKey The AES key obtained from joining the green zone.
+@param Opts A map of configuration options.
 @returns ok (implicit) in all cases, with detailed event logs of the results.
 """.
 % Attempts to mount an encrypted disk using the green zone AES key
-try_mount_encrypted_volume(AESKey) ->
+try_mount_encrypted_volume(AESKey, Opts) ->
 	Device = <<"/dev/sdc">>,
 	Partition = <<Device/binary, "1">>,
 	PartitionType = <<"ext4">>,
 	VolumeName = <<"hyperbeam_secure">>,
 	MountPoint = <<"/root/mnt/", VolumeName/binary>>,
+	StorePath = <<MountPoint/binary, "/store">>,
 	
+	?event(green_zone, {try_mount_encrypted_volume, start}),
+	?event(green_zone, {try_mount_encrypted_volume, device, Device}),
+	?event(green_zone, {try_mount_encrypted_volume, partition, Partition}),
+	?event(green_zone, {try_mount_encrypted_volume, partition_type, PartitionType}),
+	?event(green_zone, {try_mount_encrypted_volume, volume_name, VolumeName}),
+	?event(green_zone, {try_mount_encrypted_volume, mount_point, MountPoint}),
+	
+
 	% First check if the base device exists
 	case hb_volume:check_for_device(Device) of
 		false ->
@@ -730,7 +741,22 @@ try_mount_encrypted_volume(AESKey) ->
 												MountPoint, VolumeName) of
 						{ok, MountResult} ->
 							?event(green_zone, 
-									{mount_volume, success, MountResult});
+									{mount_volume, success, MountResult}),
+							% Update store paths to use the mounted volume
+							CurrentStore = hb_opts:get(store, [], Opts),
+							case hb_volume:change_node_store(StorePath, CurrentStore) of
+								{ok, #{<<"store">> := NewStore} = StoreResult} ->
+									?event(green_zone, 
+											{store_update, success, StoreResult}),
+									% Update the node's configuration with the new store
+									ok = hb_http_server:set_opts(Opts#{
+										store => NewStore
+									}),
+									?event(green_zone, {store_update, config_updated});
+								{error, StoreError} ->
+									?event(green_zone, 
+											{store_update, error, StoreError})
+							end;
 						{error, MountError} ->
 							?event(green_zone, 
 									{mount_volume, error, MountError})
@@ -754,7 +780,22 @@ try_mount_encrypted_volume(AESKey) ->
 										{ok, RetryMountResult} ->
 											?event(green_zone, 
 													{mount_volume, success, 
-													RetryMountResult});
+													RetryMountResult}),
+											% Update store paths to use the mounted volume
+											CurrentStore = hb_opts:get(store, [], Opts),
+											case hb_volume:change_node_store(StorePath, CurrentStore) of
+												{ok, #{<<"store">> := NewStore} = StoreResult} ->
+													?event(green_zone, 
+															{store_update, success, StoreResult}),
+													% Update the node's configuration with the new store
+													ok = hb_http_server:set_opts(Opts#{
+														store => NewStore
+													}),
+													?event(green_zone, {store_update, config_updated});
+												{error, StoreError} ->
+													?event(green_zone, 
+															{store_update, error, StoreError})
+											end;
 										{error, RetryMountError} ->
 											?event(green_zone, 
 													{mount_volume, error, 

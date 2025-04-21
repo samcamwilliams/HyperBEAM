@@ -440,5 +440,6 @@ Check if a device exists on the system.
 -spec check_for_device(Device :: binary()) -> boolean().
 check_for_device(Device) ->
     Command = io_lib:format("ls -l ~s 2>/dev/null || echo 'not_found'", [binary_to_list(Device)]),
+	?event(disk, {check_for_device, command, Command}),
     Result = os:cmd(Command),
-    not string:find(Result, "not_found"). 
+    string:find(Result, "not_found") =:= nomatch. 
