@@ -18,20 +18,20 @@ decode(Bin) when is_binary(Bin) ->
 
 %% @doc Return a message with all of its keys decoded.
 decode_keys(Msg) when is_map(Msg) ->
-    maps:from_list(
+    hb_maps:from_list(
         lists:map(
             fun({Key, Value}) -> {decode(Key), Value} end,
-            maps:to_list(Msg)
+            hb_maps:to_list(Msg)
         )
     );
 decode_keys(Other) -> Other.
 
 %% @doc URI encode keys in the base layer of a message. Does not recurse.
 encode_keys(Msg) when is_map(Msg) ->
-    maps:from_list(
+    hb_maps:from_list(
         lists:map(
             fun({Key, Value}) -> {encode(Key), Value} end,
-            maps:to_list(Msg)
+            hb_maps:to_list(Msg)
         )
     );
 encode_keys(Other) -> Other.

@@ -38,14 +38,14 @@ compute(Msg1, Msg2, Opts) ->
     Outbox = hb_ao:get(PatchFrom, Msg1, #{}, Opts),
     % Find all messages with the PATCH request.
     Patches =
-        maps:filter(
+        hb_maps:filter(
             fun(_, Msg) ->
                 (hb_ao:get(<<"method">>, Msg, Opts) == <<"PATCH">>) orelse
                     (hb_ao:get(<<"device">>, Msg, Opts) == <<"patch@1.0">>)
             end,
             Outbox
         ),
-    OutboxWithoutPatches = maps:without(maps:keys(Patches), Outbox),
+    OutboxWithoutPatches = hb_maps:without(hb_maps:keys(Patches), Outbox),
     % Remove the outbox from the message.
     Msg1WithoutOutbox = hb_ao:set(Msg1, PatchFrom, should_never_happen, Opts),
     % Set the new outbox.
@@ -53,12 +53,12 @@ compute(Msg1, Msg2, Opts) ->
     % Find the state to apply the patches to.
     % Apply the patches to the state.
     PatchedSubmessage =
-        maps:fold(
+        hb_maps:fold(
             fun(_, Patch, MsgN) ->
                 ?event({patching, {patch, Patch}, {before, MsgN}}),
                 Res = hb_ao:set(
                     MsgN,
-                    maps:without([<<"method">>], Patch),
+                    hb_maps:without([<<"method">>], Patch),
                     Opts
                 ),
                 ?event({patched, {'after', Res}}),

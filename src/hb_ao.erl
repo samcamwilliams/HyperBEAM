@@ -3,29 +3,32 @@
 %%% 
 %%% At the implementation level, every message is simply a collection of keys,
 %%% dictated by its `Device', that can be resolved in order to yield their
-%%% values. Each key may return another message or a raw value:
+%%% values. Each key may contain a link to another message or a raw value:
 %%% 
-%%% 	`ao(Message1, Message2) -> {Status, Message3}'
+%%% 	`ao(BaseMessage, RequestMessage) -> {Status, Result}'
 %%% 
-%%% Under-the-hood, `AO-Core(Message1, Message2)' leads to the evaluation of
-%%% `DeviceMod:PathPart(Message1, Message2)', which defines the user compute
-%%% to be performed. If `Message1' does not specify a device, `dev_message' is
-%%% assumed. The key to resolve is specified by the `Path' field of the message.
+%%% Under-the-hood, `AO-Core(BaseMessage, RequestMessage)' leads to a lookup of
+%%% the `device' key of the base message, followed by the evaluation of
+%%% `DeviceMod:PathPart(BaseMessage, RequestMessage)', which defines the user 
+%%% compute to be performed. If `BaseMessage' does not specify a device, 
+%%% `~message@1.0' is assumed. The key to resolve is specified by the `path' 
+%%% field of the message.
 %%% 
-%%% After each output, the `HashPath' is updated to include the `Message2'
+%%% After each output, the `HashPath' is updated to include the `RequestMessage'
 %%% that was executed upon it.
 %%% 
 %%% Because each message implies a device that can resolve its keys, as well
 %%% as generating a merkle tree of the computation that led to the result,
-%%% you can see AO-Core protocol as a system for cryptographically chaining 
+%%% you can see the AO-Core protocol as a system for cryptographically chaining 
 %%% the execution of `combinators'. See `docs/ao-core-protocol.md' for more 
 %%% information about AO-Core.
 %%% 
-%%% The `Fun(Message1, Message2)' pattern is repeated throughout the HyperBEAM 
-%%% codebase, sometimes with `MessageX' replaced with `MX' or `MsgX' for brevity.
+%%% The `key(BaseMessage, RequestMessage)' pattern is repeated throughout the 
+%%% HyperBEAM codebase, sometimes with `BaseMessage' replaced with `Msg1', `M1'
+%%% or similar, and `RequestMessage' replaced with `Msg2', `M2', etc.
 %%% 
-%%% Message3 can be either a new message or a raw output value (a binary, integer,
-%%% float, atom, or list of such values).
+%%% The result of any computation can be either a new message or a raw literal 
+%%% value (a binary, integer, float, atom, or list of such values).
 %%% 
 %%% Devices can be expressed as either modules or maps. They can also be 
 %%% referenced by an Arweave ID, which can be used to load a device from 
@@ -148,7 +151,7 @@ resolve_many([ID], Opts) when ?IS_ID(ID) ->
     %    pairs and outputs. With only a single ID, there is not a valid pairing
     %    to use in looking up a cached result.
     ?event(ao_core, {stage, na, resolve_directly_to_id, ID, {opts, Opts}}, Opts),
-    try {ok, ensure_loaded(ID, Opts)}
+    try {ok, ensure_message_loaded(ID, Opts)}
     catch _:_:_ -> {error, not_found}
     end;
 resolve_many(ListMsg, Opts) when is_map(ListMsg) ->
@@ -175,9 +178,9 @@ resolve_many(MsgList, Opts) ->
     Res = do_resolve_many(MsgList, Opts),
     ?event(ao_core, {resolve_many_complete, {res, Res}, {req, MsgList}}, Opts),
     Res.
-do_resolve_many([Msg3], _Opts) ->
+do_resolve_many([Msg3], Opts) ->
     ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
-    {ok, Msg3};
+    {ok, hb_cache:ensure_loaded(Msg3, Opts)};
 do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
@@ -198,18 +201,34 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
             Res
     end.
 
-resolve_stage(1, {as, DevID, ID}, Msg2, Opts) when ?IS_ID(ID) ->
-    % Normalize `as' requests with a raw ID as the path.
-    resolve_stage(1, {as, DevID, #{ <<"path">> => ID }}, Msg2, Opts);
+resolve_stage(1, Link, Msg2, Opts) when ?IS_LINK(Link) ->
+    % If the first message is a link, we should load the message and
+    % continue with the resolution.
+    ?event(ao_core, {stage, 1, resolve_base_link, {link, Link}}, Opts),
+    resolve_stage(1, hb_cache:ensure_loaded(Link, Opts), Msg2, Opts);
+resolve_stage(1, Msg1, Link, Opts) when ?IS_LINK(Link) ->
+    % If the second message is a link, we should load the message and
+    % continue with the resolution.
+    ?event(ao_core, {stage, 1, resolve_req_link, {link, Link}}, Opts),
+    resolve_stage(1, Msg1, hb_cache:ensure_loaded(Link, Opts), Opts);
+resolve_stage(1, {as, DevID, Ref}, Msg2, Opts) when ?IS_ID(Ref) orelse ?IS_LINK(Ref) ->
+    % Normalize `as' requests with a raw ID or link as the path. Links will be
+    % loaded in following stages.
+    resolve_stage(1, {as, DevID, #{ <<"path">> => Ref }}, Msg2, Opts);
+resolve_stage(1, {as, DevID, Link}, Msg2, Opts) when ?IS_LINK(Link) ->
+    % If the first message is an `as' with a link, we should load the message and
+    % continue with the resolution.
+    ?event(ao_core, {stage, 1, resolve_base_as_link, {link, Link}}, Opts),
+    resolve_stage(1, {as, DevID, hb_cache:ensure_loaded(Link, Opts)}, Msg2, Opts);
 resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Msg2, Opts) when ?IS_ID(ID) ->
     % If the first message is an `as' with an ID, we should load the message and
     % apply the non-path elements of the sub-request to it.
     ?event(ao_core, {stage, 1, subresolving_with_load, {dev, DevID}, {id, ID}}, Opts),
-    RemMsg1 = maps:without([<<"path">>], Raw),
+    RemMsg1 = hb_maps:without([<<"path">>], Raw),
     ?event(subresolution, {loading_message, {id, ID}, {params, RemMsg1}}, Opts),
-    Msg1b = ensure_loaded(ID, Opts),
+    Msg1b = ensure_message_loaded(ID, Opts),
     ?event(subresolution, {loaded_message, {msg, Msg1b}}, Opts),
-    Msg1c = maps:merge(Msg1b, RemMsg1),
+    Msg1c = hb_maps:merge(Msg1b, RemMsg1),
     ?event(subresolution, {merged_message, {msg, Msg1c}}, Opts),
     Msg1d = set(Msg1c, <<"device">>, DevID, Opts),
     ?event(subresolution, {loaded_parameterized_message, {msg, Msg1d}}, Opts),
@@ -241,10 +260,13 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
     % the `Msg2Inner' into the `Msg2Outer' message first. We return the result
     % of the sub-resolution directly.
     ?event(ao_core, {stage, 1, subresolving_from_request, {dev, DevID}}, Opts),
+    LoadedInner = ensure_message_loaded(Msg2Inner, Opts),
     Msg2 =
-        maps:merge(
+        hb_maps:merge(
             Msg2Outer,
-            if is_map(Msg2Inner) -> Msg2Inner; true -> #{ <<"path">> => Msg2Inner } end
+            if is_map(LoadedInner) -> LoadedInner;
+            true -> #{ <<"path">> => LoadedInner }
+            end
         ),
     subresolve(RawMsg1, DevID, Msg2, Opts);
 resolve_stage(1, Msg1, Msg2, Opts) when is_list(Msg1) ->
@@ -303,7 +325,7 @@ resolve_stage(4, Msg1, Msg2, Opts) ->
     % the `dev_process' device 'groups' all calls to the same process onto
     % calls to a single executor. By default, `{Msg1, Msg2}' is used as the
     % group name.
-    case hb_persistent:find_or_register(Msg1, Msg2, maps:without(?TEMP_OPTS, Opts)) of
+    case hb_persistent:find_or_register(Msg1, Msg2, hb_maps:without(?TEMP_OPTS, Opts)) of
         {leader, ExecName} ->
             % We are the leader for this resolution. Continue to the next stage.
             case hb_opts:get(spawn_worker, false, Opts) of
@@ -363,7 +385,7 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
     % execute Msg2 on Msg1.
 	{ResolvedFunc, NewOpts} =
 		try
-            UserOpts = maps:without(?TEMP_OPTS, Opts),
+            UserOpts = hb_maps:without(?TEMP_OPTS, Opts),
 			Key = hb_path:hd(Msg2, UserOpts),
 			% Try to load the device and get the function to call.
             ?event(
@@ -428,17 +450,17 @@ resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
 	% Execution.
 	% First, determine the arguments to pass to the function.
 	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = maps:remove(trace, maps:without(?TEMP_OPTS, Opts)),
+	UserOpts1 = hb_maps:without(?TEMP_OPTS, Opts),
     % Unless the user has explicitly requested recursive spawning, we
     % unset the spawn_worker option so that we do not spawn a new worker
     % for every resulting execution.
     UserOpts2 =
-        case maps:get(spawn_worker, UserOpts1, false) of
+        case hb_maps:get(spawn_worker, UserOpts1, false) of
             recursive -> UserOpts1;
-            _ -> maps:remove(spawn_worker, UserOpts1)
+            _ -> hb_maps:remove(spawn_worker, UserOpts1)
         end,
 	Args =
-		case maps:get(add_key, Opts, false) of
+		case hb_maps:get(add_key, Opts, false) of
 			false -> [Msg1, Msg2, UserOpts2];
 			Key -> [Key, Msg1, Msg2, UserOpts2]
 		end,
@@ -511,7 +533,7 @@ resolve_stage(7, Msg1, Msg2, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
                 end;
             reset ->
                 Priv = hb_private:from_message(Msg3),
-                {ok, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }};
+                {ok, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv) }};
             ignore ->
                 Priv = hb_private:from_message(Msg3),
                 if not is_map(Priv) ->
@@ -530,7 +552,7 @@ resolve_stage(7, Msg1, Msg2, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) -
     Priv = hb_private:from_message(Msg3),
     resolve_stage(
         8, Msg1, Msg2,
-        {Status, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
+        {Status, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv) }},
         ExecName, Opts);
 resolve_stage(7, Msg1, Msg2, Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 7, ExecName, non_map_result_skipping_hash_path}, Opts),
@@ -574,7 +596,7 @@ subresolve(RawMsg1, DevID, ReqPath, Opts) when is_binary(ReqPath) ->
     subresolve(RawMsg1, DevID, #{ <<"path">> => ReqPath }, Opts);
 subresolve(RawMsg1, DevID, Req, Opts) ->
     % First, ensure that the message is loaded from the cache.
-    Msg1 = ensure_loaded(RawMsg1, Opts),
+    Msg1 = ensure_message_loaded(RawMsg1, Opts),
     ?event(subresolution,
         {subresolving, {msg1, Msg1}, {dev, DevID}, {req, Req}},
         Opts
@@ -583,7 +605,7 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     Msg1b =
         case DevID of
             undefined -> Msg1;
-            _ -> set(Msg1, <<"device">>, DevID, maps:without(?TEMP_OPTS, Opts))
+            _ -> set(Msg1, <<"device">>, DevID, hb_maps:without(?TEMP_OPTS, Opts))
         end,
     % If there is no path but there are elements to the request, we set these on
     % the base message. If there is a path, we do not modify the base message 
@@ -591,10 +613,10 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
     case hb_path:from_message(request, Req) of
         undefined ->
             Msg1c =
-                case map_size(maps:without([<<"path">>], Req)) of
+                case map_size(hb_maps:without([<<"path">>], Req)) of
                     0 -> Msg1b;
                     _ ->
-                        set(Msg1b, maps:without([<<"path">>], Req), Opts#{ force_message => false })
+                        set(Msg1b, hb_maps:without([<<"path">>], Req), Opts#{ force_message => false })
                 end,
             ?event(subresolution,
                 {subresolve_modified_base, Msg1c},
@@ -614,16 +636,13 @@ subresolve(RawMsg1, DevID, Req, Opts) ->
             Res
     end.
 
-%% @doc Ensure that the message is loaded from the cache if it is an ID. If is
-%% not loadable or already present, we raise an error.
-ensure_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
-    case hb_cache:read(MsgID, Opts) of
-        {ok, LoadedMsg} ->
-            LoadedMsg;
-        not_found ->
-            throw({necessary_message_not_found, MsgID})
-    end;
-ensure_loaded(Msg, _Opts) ->
+%% @doc Ensure that a message is loaded from the cache if it is an ID, or 
+%% a link, such that it is ready for execution.
+ensure_message_loaded(MsgID, Opts) when ?IS_ID(MsgID) ->
+    hb_cache:ensure_loaded({link, MsgID, #{}}, Opts);
+ensure_message_loaded(MsgLink, Opts) when ?IS_LINK(MsgLink) ->
+    hb_cache:ensure_loaded(MsgLink, Opts);
+ensure_message_loaded(Msg, _Opts) ->
     Msg.
 
 %% @doc Catch all return if the message is invalid.
@@ -685,7 +704,7 @@ error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) ->
         #{
             <<"status">> => 422,
             <<"body">> => Msg3,
-            <<"key">> => maps:get(<<"path">>, Msg2, <<"Key unknown.">>),
+            <<"key">> => hb_maps:get(<<"path">>, Msg2, <<"Key unknown.">>),
             <<"remaining-path">> => RemainingPath
         }
     }.
@@ -777,13 +796,13 @@ keys(Msg, Opts, keep) ->
     %    `keys' function on its device.
     % 2. Ensure that the result is normalized to a message (not just a list)
     %    with `normalize_keys'.
-    % 3. Now we have a map of the original keys, so we can use `maps:values' to
+    % 3. Now we have a map of the original keys, so we can use `hb_maps:values' to
     %    get a list of them.
     % 4. Normalize each of those keys in turn.
     try
         lists:map(
             fun normalize_key/1,
-            maps:values(
+            hb_maps:values(
                 normalize_keys(
                     get(<<"keys">>, Msg, Opts)
                 )
@@ -814,7 +833,7 @@ set(Msg1, Msg2) ->
     set(Msg1, Msg2, #{}).
 set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg1 = normalize_keys(RawMsg1),
-    Msg2 = maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2)),
+    Msg2 = hb_maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2)),
     ?event(ao_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
     case keys(Msg2, internal_opts(Opts)) of
@@ -824,7 +843,7 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
             % getting via `maps' if it is not found.
             Val =
                 case get(Key, Msg2, internal_opts(Opts)) of
-                    not_found -> maps:get(Key, Msg2);
+                    not_found -> hb_maps:get(Key, Msg2);
                     Body -> Body
                 end,
             ?event({got_val_to_set, {key, Key}, {val, Val}, {msg2, Msg2}}),
@@ -961,7 +980,7 @@ message_to_fun(Msg, Key, Opts) ->
 		Opts
     ),
     % Does the device have an explicit handler function?
-    case {maps:find(handler, Info), Exported} of
+    case {hb_maps:find(handler, Info), Exported} of
         {{ok, Handler}, true} ->
 			% Case 2: The device has an explicit handler function.
 			?event(
@@ -977,7 +996,7 @@ message_to_fun(Msg, Key, Opts) ->
 					% Case 3: The device has a function of the name `Key'.
 					{ok, Dev, Func};
 				_ ->
-					case {maps:find(default, Info), Exported} of
+					case {hb_maps:find(default, Info), Exported} of
 						{{ok, DefaultFunc}, true} when is_function(DefaultFunc) ->
 							% Case 4: The device has a default handler.
                             ?event({found_default_handler, {func, DefaultFunc}}),
@@ -1039,7 +1058,7 @@ message_to_device(Msg, Opts) ->
 info_handler_to_fun(Handler, _Msg, _Key, _Opts) when is_function(Handler) ->
 	{add_key, Handler};
 info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
-	case maps:find(excludes, HandlerMap) of
+	case hb_maps:find(exclude, HandlerMap) of
 		{ok, Exclude} ->
 			case lists:member(Key, Exclude) of
 				true ->
@@ -1050,9 +1069,9 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 						Key,
 						Opts
 					);
-				false -> {add_key, maps:get(func, HandlerMap)}
+				false -> {add_key, hb_maps:get(func, HandlerMap)}
 			end;
-		error -> {add_key, maps:get(func, HandlerMap)}
+		error -> {add_key, hb_maps:get(func, HandlerMap)}
 	end.
 
 %% @doc Find the function with the highest arity that has the given name, if it
@@ -1064,7 +1083,7 @@ info_handler_to_fun(HandlerMap, Msg, Key, Opts) ->
 %% the key using its literal value. If that fails, we cast the key to an atom
 %% and try again.
 find_exported_function(Msg, Dev, Key, MaxArity, Opts) when is_map(Dev) ->
-	case maps:get(normalize_key(Key), normalize_keys(Dev), not_found) of
+	case hb_maps:get(normalize_key(Key), normalize_keys(Dev), not_found) of
 		not_found -> not_found;
 		Fun when is_function(Fun) ->
 			case erlang:fun_info(Fun, arity) of
@@ -1110,7 +1129,7 @@ is_exported(_, info) -> true;
 is_exported(Info = #{ excludes := Excludes }, Key) ->
     case lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Excludes)) of
         true -> false;
-        false -> is_exported(maps:remove(excludes, Info), Key)
+        false -> is_exported(hb_maps:remove(excludes, Info), Key)
     end;
 is_exported(#{ exports := Exports }, Key) ->
     lists:member(normalize_key(Key), lists:map(fun normalize_key/1, Exports));
@@ -1136,21 +1155,21 @@ normalize_key(Key, _Opts) when is_list(Key) ->
 
 %% @doc Ensure that a message is processable by the AO-Core resolver: No lists.
 normalize_keys(Msg1) when is_list(Msg1) ->
-    normalize_keys(maps:from_list(
+    normalize_keys(hb_maps:from_list(
         lists:zip(
             lists:seq(1, length(Msg1)),
             Msg1
         )
     ));
 normalize_keys(Map) when is_map(Map) ->
-    maps:from_list(
+    hb_maps:from_list(
         lists:map(
             fun({Key, Value}) when is_map(Value) ->
                 {hb_ao:normalize_key(Key), Value};
             ({Key, Value}) ->
                 {hb_ao:normalize_key(Key), Value}
             end,
-            maps:to_list(Map)
+            hb_maps:to_list(Map)
         )
     );
 normalize_keys(Other) -> Other.
@@ -1192,16 +1211,16 @@ load_device(ID, Opts) when ?IS_ID(ID) ->
 				false -> {error, device_signer_not_trusted};
 				true ->
                     ?event(device_load, {loading_device, {id, ID}}, Opts),
-					case maps:get(<<"content-type">>, Msg, undefined) of
+					case hb_maps:get(<<"content-type">>, Msg, undefined) of
 						<<"application/beam">> ->
                             case verify_device_compatibility(Msg, Opts) of
                                 ok ->
                                     ModName =
                                         hb_util:key_to_atom(
-                                            maps:get(<<"module-name">>, Msg),
+                                            hb_maps:get(<<"module-name">>, Msg),
                                             new_atoms
                                         ),
-                                    case erlang:load_module(ModName, maps:get(<<"body">>, Msg)) of
+                                    case erlang:load_module(ModName, hb_maps:get(<<"body">>, Msg)) of
                                         {module, _} ->
                                             {ok, ModName};
                                         {error, Reason} ->
@@ -1247,12 +1266,12 @@ verify_device_compatibility(Msg, Opts) ->
                             hb_ao:normalize_key(Key),
                             new_atoms
                         ),
-                        Value
+                        hb_cache:ensure_loaded(Value, Opts)
                     }
                 };
             (_) -> false
             end,
-            maps:to_list(Msg)
+            hb_maps:to_list(Msg)
         ),
     ?event(device_load,
         {discerned_requirements,
@@ -1311,7 +1330,7 @@ default_module() -> dev_message.
 %% @doc The execution options that are used internally by this module
 %% when calling itself.
 internal_opts(Opts) ->
-    maps:merge(Opts, #{
+    hb_maps:merge(Opts, #{
         topic => hb_opts:get(topic, ao_internal, Opts),
         hashpath => ignore,
         cache_control => [<<"no-cache">>, <<"no-store">>],

@@ -56,7 +56,9 @@ compute(M1, M2, Opts) ->
 
 %% @doc Prepare the WASM environment for execution by writing the process string and
 %% the message as JSON representations into the WASM environment.
-prep_call(M1, M2, Opts) ->
+prep_call(RawM1, RawM2, Opts) ->
+    M1 = hb_cache:ensure_all_loaded(RawM1),
+    M2 = hb_cache:ensure_all_loaded(RawM2),
     ?event({prep_call, M1, M2, Opts}),
     Process = hb_ao:get(<<"process">>, M1, Opts#{ hashpath => ignore }),
     Message = hb_ao:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
@@ -102,7 +104,7 @@ message_to_json_struct(RawMsg, Features) ->
             tabm,
             #{}
         ),
-    MsgWithoutCommitments = maps:without([<<"commitments">>], TABM),
+    MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
     Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
@@ -166,7 +168,7 @@ prepare_tags(Msg) ->
     % Prepare an ANS-104 message for JSON-Struct construction.
     case hb_message:commitment(#{ <<"commitment-device">> => <<"ans104@1.0">> }, Msg, #{}) of
         {ok, _, Commitment} ->
-            case maps:find(<<"original-tags">>, Commitment) of
+            case hb_maps:find(<<"original-tags">>, Commitment) of
                 {ok, OriginalTags} ->
                     Res = hb_util:message_to_ordered_list(OriginalTags),
                     ?event({using_original_tags, Res}),
@@ -189,8 +191,8 @@ prepare_header_case_tags(TABM) ->
                 <<"value">> => maybe_list_to_binary(Value)
             }
         end,
-        maps:to_list(
-            maps:without(
+        hb_maps:to_list(
+            hb_maps:without(
                 [
                     <<"id">>, <<"anchor">>, <<"owner">>, <<"data">>,
                     <<"target">>, <<"signature">>, <<"commitments">>
@@ -209,7 +211,7 @@ json_to_message(Resp, Opts) when is_map(Resp) ->
     Output = 
         #{
             <<"outbox">> =>
-                maps:from_list(
+                hb_maps:from_list(
                     [
                         {MessageNum, preprocess_results(Msg, Opts)}
                     ||
@@ -349,8 +351,8 @@ normalize_results(
     Msg = #{ <<"Output">> := #{<<"data">> := Data} }) ->
     {ok,
         Data,
-        maps:get(<<"Messages">>, Msg, []),
-        maps:get(<<"patches">>, Msg, [])
+        hb_maps:get(<<"Messages">>, Msg, []),
+        hb_maps:get(<<"patches">>, Msg, [])
     };
 normalize_results(#{ <<"Error">> := Error }) ->
     {ok, Error, [], []};
@@ -363,17 +365,17 @@ normalize_results(Other) ->
 preprocess_results(Msg, _Opts) ->
     Tags = tags_to_map(Msg),
     FilteredMsg =
-        maps:without(
+        hb_maps:without(
             [<<"from-process">>, <<"from-image">>, <<"anchor">>, <<"tags">>],
             Msg
         ),
-    maps:merge(
-        maps:from_list(
+    hb_maps:merge(
+        hb_maps:from_list(
             lists:map(
                 fun({Key, Value}) ->
                     {hb_ao:normalize_key(Key), Value}
                 end,
-                maps:to_list(FilteredMsg)
+                hb_maps:to_list(FilteredMsg)
             )
         ),
         Tags
@@ -382,20 +384,20 @@ preprocess_results(Msg, _Opts) ->
 %% @doc Convert a message with tags into a map of their key-value pairs.
 tags_to_map(Msg) ->
     NormMsg = hb_ao:normalize_keys(Msg),
-    RawTags = maps:get(<<"tags">>, NormMsg, []),
+    RawTags = hb_maps:get(<<"tags">>, NormMsg, []),
     TagList =
         [
-            {maps:get(<<"name">>, Tag), maps:get(<<"value">>, Tag)}
+            {hb_maps:get(<<"name">>, Tag), hb_maps:get(<<"value">>, Tag)}
         ||
             Tag <- RawTags
         ],
-    maps:from_list(TagList).
+    hb_maps:from_list(TagList).
 
 %% @doc Post-process messages in the outbox to add the correct `from-process'
 %% and `from-image' tags.
 postprocess_outbox(Msg, Proc, Opts) ->
     AdjustedOutbox =
-        maps:map(
+        hb_maps:map(
             fun(_Key, XMsg) ->
                 XMsg#{
                     <<"from-process">> => hb_ao:get(id, Proc, Opts),
@@ -493,7 +495,6 @@ aos_stack_benchmark_test_() ->
             "Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)",
             [Iterations, BenchTime, Iterations / BenchTime]
         ),
-		?debugFmt("Evaluated ~p AOS messages (minimal stack) in ~p sec (~.2f msg/s)", [Iterations, BenchTime, Iterations / BenchTime]),
         ?assert(Iterations >= 10),
         ok
     end}.

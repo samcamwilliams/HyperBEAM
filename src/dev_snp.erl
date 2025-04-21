@@ -62,10 +62,10 @@ init(M1, _M2, Opts) ->
         _ ->
             SnpHashes = hb_ao:get(<<"body">>, M1, Opts),
             SNPDecoded = hb_json:decode(SnpHashes),
-            Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
+            Hashes = hb_maps:get(<<"snp_hashes">>, SNPDecoded),
             ok = hb_http_server:set_opts(Opts#{
                 % Add our trusted hashes to the device's trusted software list
-                trusted => maps:merge(hb_opts:get(trusted, #{}, Opts), Hashes),
+                trusted => hb_maps:merge(hb_opts:get(trusted, #{}, Opts), Hashes),
                 % Set our hashes to the given hashes
                 snp_hashes => Hashes
             }),
@@ -90,8 +90,8 @@ verify(M1, M2, NodeOpts) ->
 	ReportJSON = hb_ao:get(<<"report">>, MsgWithJSONReport, NodeOpts),
 	Report = hb_json:decode(ReportJSON),
 	Msg =
-		maps:merge(
-			maps:without([<<"report">>], MsgWithJSONReport),
+		hb_maps:merge(
+			hb_maps:without([<<"report">>], MsgWithJSONReport),
 			Report
 		),
     ?event({verify, Msg}),
@@ -128,10 +128,10 @@ verify(M1, M2, NodeOpts) ->
     ?event({trusted_software, IsTrustedSoftware}),
     % Step 5: Verify the measurement against the report's measurement.
 	Args =
-		maps:from_list(
+		hb_maps:from_list(
 			lists:map(
 				fun({Key, Val}) -> {binary_to_existing_atom(Key), Val} end,
-				maps:to_list(maps:with(lists:map(fun atom_to_binary/1, ?COMMITTED_PARAMETERS), Msg))
+				hb_maps:to_list(hb_maps:with(lists:map(fun atom_to_binary/1, ?COMMITTED_PARAMETERS), Msg))
 			)
 		),
 	?event({args, Args}),
@@ -255,7 +255,7 @@ trusted(_Msg1, Msg2, NodeOpts) ->
     %% Ensure Trusted is always a map
     TrustedSoftware = hb_opts:get(trusted, #{}, NodeOpts),
     PropertyName = hb_ao:get(Key, TrustedSoftware, not_found, NodeOpts),
-    % ?event({trust_key, PropertyName, maps:is_key(Key, TrustedSoftware)}),
+    % ?event({trust_key, PropertyName, hb_maps:is_key(Key, TrustedSoftware)}),
     %% Final trust validation
     {ok, PropertyName == Body}.
 

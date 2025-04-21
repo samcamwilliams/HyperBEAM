@@ -114,7 +114,7 @@ next(Msg1, Msg2, Opts) ->
                         % Convert the assignments to an ordered list of messages,
                         % after removing all keys before the last processed slot.
                         {undefined, hb_util:message_to_ordered_list(
-                            maps:filter(
+                            hb_maps:filter(
                                 fun(<<"priv">>, _) -> false;
                                    (<<"commitments">>, _) -> false;
                                    (Slot, _) -> hb_util:int(Slot) > LastProcessed
@@ -552,8 +552,8 @@ get_hint(Str, Opts) when is_binary(Str) ->
         true ->
             case binary:split(Str, <<"?">>, [global]) of
                 [_, QS] ->
-                    QueryMap = maps:from_list(uri_string:dissect_query(QS)),
-                    case maps:get(<<"hint">>, QueryMap, not_found) of
+                    QueryMap = hb_maps:from_list(uri_string:dissect_query(QS)),
+                    case hb_maps:get(<<"hint">>, QueryMap, not_found) of
                         not_found -> not_found;
                         Hint -> {ok, Hint}
                     end;
@@ -702,9 +702,9 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
                     ?event({got_slot_response, {assignment, A}}),
                     {ok, #{
                         <<"process">> => ProcID,
-                        <<"current">> => maps:get(<<"slot">>, A),
-                        <<"timestamp">> => maps:get(<<"timestamp">>, A),
-                        <<"block-height">> => maps:get(<<"block-height">>, A),
+                        <<"current">> => hb_maps:get(<<"slot">>, A),
+                        <<"timestamp">> => hb_maps:get(<<"timestamp">>, A),
+                        <<"block-height">> => hb_maps:get(<<"block-height">>, A),
                         <<"block-hash">> => hb_util:encode(<<0:256>>),
                         <<"cache-control">> => <<"no-store">>
                     }};
@@ -979,14 +979,14 @@ cache_remote_schedule(Schedule, Opts) ->
                     % an additional cache.
                     ?event(debug_sched,
                         {writing_assignment,
-                            {assignment, maps:get(<<"slot">>, Assignment)}
+                            {assignment, hb_maps:get(<<"slot">>, Assignment)}
                         }
                     ),
                     dev_scheduler_cache:write(Assignment, Opts)
                 end,
                 AssignmentList =
                     hb_util:message_to_ordered_list(
-                        maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments))
+                        hb_maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments))
                     )
             ),
             ?event(debug_sched,
@@ -1002,7 +1002,7 @@ cache_remote_schedule(Schedule, Opts) ->
 node_from_redirect(Redirect, Opts) ->
     uri_string:recompose(
         (
-            maps:remove(
+            hb_maps:remove(
                 query,
                 uri_string:parse(
                     hb_ao:get(<<"location">>, Redirect, Opts)
@@ -1013,13 +1013,13 @@ node_from_redirect(Redirect, Opts) ->
 
 %% @doc Filter JSON assignment results from a remote legacy scheduler.
 filter_json_assignments(JSONRes, To, From) ->
-    Edges = maps:get(<<"edges">>, JSONRes, []),
+    Edges = hb_maps:get(<<"edges">>, JSONRes, []),
     Filtered =
         lists:filter(
             fun(Edge) ->
-                Node = maps:get(<<"node">>, Edge),
-                Assignment = maps:get(<<"assignment">>, Node),
-                Tags = maps:get(<<"tags">>, Assignment),
+                Node = hb_maps:get(<<"node">>, Edge),
+                Assignment = hb_maps:get(<<"assignment">>, Node),
+                Tags = hb_maps:get(<<"tags">>, Assignment),
                 Nonces = 
                     lists:filtermap(
                         fun(#{ <<"name">> := <<"Nonce">>, <<"value">> := Nonce }) ->
@@ -1042,7 +1042,7 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
     ProcID = without_hint(RawProcID),
     Location = hb_ao:get(<<"location">>, Redirect, Opts),
     Parsed = uri_string:parse(Location),
-    Node = uri_string:recompose((maps:remove(query, Parsed))#{path => <<"/">>}),
+    Node = uri_string:recompose((hb_maps:remove(query, Parsed))#{path => <<"/">>}),
     Variant = hb_ao:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     case Variant of
         <<"ao.N.1">> ->
@@ -1112,7 +1112,7 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                         ),
                     % Legacy SUs return only the ID of the assignment, so we need
                     % to read and return it.
-                    ID = maps:get(<<"id">>, JSONRes),
+                    ID = hb_maps:get(<<"id">>, JSONRes),
                     ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
                     case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, LegacyOpts) of
                         {ok, AssignmentRes} ->
@@ -1552,7 +1552,7 @@ http_get_schedule_test_() ->
 		Assignments = hb_ao:get(<<"assignments">>, Schedule, #{}),
 		?assertEqual(
 			12, % +1 for the hashpath
-			length(maps:values(Assignments))
+			length(hb_maps:values(Assignments))
 		)
 	end}.
     
@@ -1666,7 +1666,7 @@ http_get_json_schedule_test_() ->
 		Assignments = hb_json:decode(JSON),
 		?assertEqual(
 			11, % +1 for the hashpath
-			length(maps:get(<<"edges">>, Assignments))
+			length(hb_maps:get(<<"edges">>, Assignments))
 		)
 	end}.
 

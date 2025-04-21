@@ -103,7 +103,7 @@ format_data(Item, Indent) when is_map(Item#tx.data) ->
             format_line("~s ->", [Name], Indent + 1) ++
             format(MapItem, Indent + 2)
         end,
-        maps:to_list(Item#tx.data)
+        hb_maps:to_list(Item#tx.data)
     );
 format_data(Item, Indent) when is_list(Item#tx.data) ->
     format_line("List:", Indent) ++
@@ -174,7 +174,7 @@ hd(_) -> undefined.
 %% @doc Convert an item containing a map or list into an Erlang map.
 map(#tx { data = Map }) when is_map(Map) -> Map;
 map(#tx { data = Data }) when is_list(Data) ->
-    maps:from_list(
+    hb_maps:from_list(
         lists:zipwith(
             fun({Index, Item}) -> {integer_to_binary(Index), map(Item)} end,
             lists:seq(1, length(Data)),
@@ -190,8 +190,8 @@ member(Key, Item) ->
 
 %% @doc Find an item in a bundle-map/list and return it.
 find(Key, Map) when is_map(Map) ->
-    case maps:get(Key, Map, not_found) of
-        not_found -> find(Key, maps:values(Map));
+    case hb_maps:get(Key, Map, not_found) of
+        not_found -> find(Key, hb_maps:values(Map));
         Item -> Item
     end;
 find(_Key, []) -> not_found;
@@ -325,7 +325,7 @@ normalize_data(Item = #tx { data = Data }) when is_list(Data) ->
         Item#tx{
             tags = add_list_tags(Item#tx.tags),
             data =
-                maps:from_list(
+                hb_maps:from_list(
                     lists:zipwith(
                         fun(Index, MapItem) ->
                             {
@@ -397,7 +397,7 @@ serialize(TX, json) ->
 enforce_valid_tx(List) when is_list(List) ->
     lists:all(fun enforce_valid_tx/1, List);
 enforce_valid_tx(Map) when is_map(Map) ->
-    lists:all(fun(Item) -> enforce_valid_tx(Item) end, maps:values(Map));
+    lists:all(fun(Item) -> enforce_valid_tx(Item) end, hb_maps:values(Map));
 enforce_valid_tx(TX) ->
     ok_or_throw(TX,
         check_type(TX, message),
@@ -549,11 +549,11 @@ to_serialized_pair(Item) ->
 serialize_bundle_data(Map, _Manifest) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
     % For now we just serialize the map to a JSON string of Key=>TXID
-    BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
-    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
+    BinItems = hb_maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
+    Index = hb_maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
     NewManifest = new_manifest(Index),
     %?event({generated_manifest, NewManifest == Manifest, hb_util:encode(id(NewManifest, unsigned)), Index}),
-    {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)])};
+    {NewManifest, finalize_bundle_data([to_serialized_pair(NewManifest) | hb_maps:values(BinItems)])};
 serialize_bundle_data(List, _Manifest) when is_list(List) ->
     finalize_bundle_data(lists:map(fun to_serialized_pair/1, List));
 serialize_bundle_data(Data, _Manifest) ->
@@ -712,9 +712,9 @@ unbundle_list(Item) ->
         data =
             lists:map(
                 fun(Index) ->
-                    maps:get(list_to_binary(integer_to_list(Index)), Item#tx.data)
+                    hb_maps:get(list_to_binary(integer_to_list(Index)), Item#tx.data)
                 end,
-                lists:seq(1, maps:size(Item#tx.data))
+                lists:seq(1, hb_maps:size(Item#tx.data))
             )
     }.
 
@@ -729,7 +729,7 @@ maybe_unbundle_map(Bundle) ->
                     Bundle#tx{
                         manifest = MapItem,
                         data =
-                            maps:map(
+                            hb_maps:map(
                                 fun(_K, TXID) ->
                                     find_single_layer(hb_util:decode(TXID), Items)
                                 end,
@@ -961,7 +961,7 @@ test_bundle_with_one_item() ->
     ?event({bundle, Bundle}),
     BundleItem = deserialize(Bundle),
     ?event({bundle_item, BundleItem}),
-    ?assertEqual(ItemData, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData, (hb_maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
 
 test_bundle_with_two_items() ->
     Item1 = new_item(
@@ -978,8 +978,8 @@ test_bundle_with_two_items() ->
     ),
     Bundle = serialize([Item1, Item2]),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData1, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data),
-    ?assertEqual(ItemData2, (maps:get(<<"2">>, BundleItem#tx.data))#tx.data).
+    ?assertEqual(ItemData1, (hb_maps:get(<<"1">>, BundleItem#tx.data))#tx.data),
+    ?assertEqual(ItemData2, (hb_maps:get(<<"2">>, BundleItem#tx.data))#tx.data).
 
 test_recursive_bundle() ->
     W = ar_wallet:new(),
@@ -1020,7 +1020,7 @@ test_bundle_map() ->
     }, W),
     Bundle = serialize(Item2),
     BundleItem = deserialize(Bundle),
-    ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
+    ?assertEqual(Item1#tx.data, (hb_maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
     ?assert(verify_item(BundleItem)).
 
 test_extremely_large_bundle() ->

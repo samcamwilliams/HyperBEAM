@@ -31,7 +31,7 @@ inject_at_path([Key], Value, Map) ->
             Map#{ Key => Value };
         ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
             % If both are maps, merge them
-            Map#{ Key => maps:merge(ExistingMap, Value) };
+            Map#{ Key => hb_maps:merge(ExistingMap, Value) };
         OldValue ->
             % Otherwise, alert the user and fail
             throw({path_collision,
@@ -41,8 +41,8 @@ inject_at_path([Key], Value, Map) ->
             })
     end;
 inject_at_path([Key|Rest], Value, Map) ->
-    SubMap = maps:get(Key, Map, #{}),
-    maps:put(Key, inject_at_path(Rest, Value, SubMap), Map).
+    SubMap = hb_maps:get(Key, Map, #{}),
+    hb_maps:put(Key, inject_at_path(Rest, Value, SubMap), Map).
 
 %% @doc Convert a TABM to a flat map.
 to(Bin) when is_binary(Bin) -> Bin;
@@ -79,11 +79,11 @@ serialize(Map) when is_map(Map) ->
                         Acc,
                         hb_path:to_binary(Key),
                         <<": ">>,
-                        maps:get(Key, Flattened), <<"\n">>
+                        hb_maps:get(Key, Flattened), <<"\n">>
                     ]
                 end,
                 <<>>,
-                maps:keys(Flattened)
+                hb_maps:keys(Flattened)
             )
         )
     }.
@@ -149,7 +149,7 @@ path_list_test() ->
         fun(Key) ->
             ?assert(not lists:member($\n, binary_to_list(Key)))
         end,
-        maps:keys(Flat)
+        hb_maps:keys(Flat)
     ).
 
 binary_passthrough_test() ->

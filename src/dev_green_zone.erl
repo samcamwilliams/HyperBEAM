@@ -411,7 +411,7 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
 calculate_node_message(RequiredOpts, Req, true) ->
     % Remove irrelevant fields from the request.
     StrippedReq =
-        maps:without(
+        hb_maps:without(
             [
                 <<"adopt-config">>, <<"peer-location">>,
                 <<"peer-id">>, <<"path">>, <<"method">>
@@ -420,11 +420,11 @@ calculate_node_message(RequiredOpts, Req, true) ->
         ),
 	% Convert atoms to binaries in RequiredOpts to prevent binary_to_existing_atom errors
     % The required config should override the request, if necessary.
-    maps:merge(StrippedReq, RequiredOpts);
+    hb_maps:merge(StrippedReq, RequiredOpts);
 calculate_node_message(RequiredOpts, Req, <<"true">>) ->
     calculate_node_message(RequiredOpts, Req, true);
 calculate_node_message(RequiredOpts, Req, List) when is_list(List) ->
-    calculate_node_message(RequiredOpts, maps:with(List, Req), true);
+    calculate_node_message(RequiredOpts, hb_maps:with(List, Req), true);
 calculate_node_message(RequiredOpts, Req, BinList) when is_binary(BinList) ->
     calculate_node_message(RequiredOpts, hb_util:list(BinList), Req).
 
@@ -563,7 +563,7 @@ add_trusted_node(NodeAddr, Report, RequesterPubKey, Opts) ->
 	% Retrieve the current trusted nodes map.
 	TrustedNodes = hb_opts:get(trusted_nodes, #{}, Opts),
 	% Add the joining node's details to the trusted nodes.
-	UpdatedTrustedNodes = maps:put(NodeAddr, #{
+	UpdatedTrustedNodes = hb_maps:put(NodeAddr, #{
 		report => Report,
 		public_key => RequesterPubKey
 	}, TrustedNodes),

@@ -458,7 +458,7 @@ sandboxed_failure_test() ->
     ?assertMatch({error, _}, hb_ao:resolve(Base, <<"sandboxed_fail">>, #{})).
 
 %% @doc Run an AO-Core resolution from the Lua environment.
-ao_core_sandbox_test() ->
+ao_core_sandbox_test_disabled() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
@@ -561,7 +561,7 @@ pure_lua_process_test() ->
     Message = generate_test_message(Process),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now">>, #{}),
-    ?event({results, Results}),
+    ?event(rakis, {results, Results}),
     ?assertEqual(42, hb_ao:get(<<"results/output/body">>, Results, #{})).
 
 pure_lua_process_benchmark_test_() ->

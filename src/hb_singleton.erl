@@ -55,7 +55,7 @@ to(Messages) ->
 
                 % Special case when AO-Core message contains resolve command
                 ({resolve, SubMessages0}, {Acc, Index, ScopedModifications}) ->
-                    SubMessages1 = maps:get(<<"path">>, to(SubMessages0)),
+                    SubMessages1 = hb_maps:get(<<"path">>, to(SubMessages0)),
                     <<"/", SubMessages2/binary>> = SubMessages1,
                     SubMessages = <<"(", SubMessages2/binary, ")">>,
                     {append_path(SubMessages, Acc), Index + 1, ScopedModifications};
@@ -63,19 +63,19 @@ to(Messages) ->
                 % Regular case when message is a map
                 (Message, {Acc, Index, ScopedModifications}) ->
                     {NewMessage, NewScopedModifications} =
-                        maps:fold(
+                        hb_maps:fold(
                             fun
                                 (<<"path">>, PathPart, {AccIn, Scoped}) ->
                                     {append_path(PathPart, AccIn), Scoped};
                                 % Specifically ignore method field from scope modifications
                                 (<<"method">>, Value, {AccIn, Scoped}) ->
-                                    {maps:put(<<"method">>, Value, AccIn), Scoped};
+                                    {hb_maps:put(<<"method">>, Value, AccIn), Scoped};
                                 (Key, {resolve, SubMessages}, {AccIn, Scoped}) ->
                                     NewKey = <<Key/binary, "+resolve">>,
-                                    NewSubMessages = maps:get(<<"path">>, to(SubMessages)),
+                                    NewSubMessages = hb_maps:get(<<"path">>, to(SubMessages)),
                                     {
-                                        maps:put(NewKey, NewSubMessages, AccIn),
-                                        maps:update_with(
+                                        hb_maps:put(NewKey, NewSubMessages, AccIn),
+                                        hb_maps:update_with(
                                             NewKey,
                                             fun(Indexes) -> [Index | Indexes] end,
                                             [Index],
@@ -84,8 +84,8 @@ to(Messages) ->
                                     };
                                 (Key, Value, {AccIn, Scoped}) ->
                                     {
-                                        maps:put(Key, Value, AccIn),
-                                        maps:update_with(
+                                        hb_maps:put(Key, Value, AccIn),
+                                        hb_maps:update_with(
                                             Key,
                                             fun(Indexes) -> [Index | Indexes] end,
                                             [Index],
@@ -103,12 +103,12 @@ to(Messages) ->
             Messages),
 
     MessageWithTypeAndScopes =
-        maps:fold(
+        hb_maps:fold(
             fun
                 % For the case when a given Key appeared only once in scopes
                 (Key, [SingleIndexScope], AccIn) ->
                     Index = integer_to_binary(SingleIndexScope),
-                    {Value, NewAccIn} = maps:take(Key, AccIn),
+                    {Value, NewAccIn} = hb_maps:take(Key, AccIn),
                     {NewKey, NewValue} =
                         case type(Value) of
                             integer ->
@@ -117,7 +117,7 @@ to(Messages) ->
                                 {K, V};
                             _ -> {<<Index/binary, ".", Key/binary>>, Value}
                         end,
-                    maps:put(NewKey, NewValue, NewAccIn);
+                    hb_maps:put(NewKey, NewValue, NewAccIn);
                 (_Key, _Value, AccIn) -> AccIn
             end,
             TABMMessage,
@@ -125,9 +125,9 @@ to(Messages) ->
     MessageWithTypeAndScopes.
 
 append_path(PathPart, #{<<"path">> := Path} = Message) ->
-    maps:put(<<"path">>, <<Path/binary, "/", PathPart/binary>>, Message);
+    hb_maps:put(<<"path">>, <<Path/binary, "/", PathPart/binary>>, Message);
 append_path(PathPart, Message) ->
-    maps:put(<<"path">>, <<"/", PathPart/binary>>, Message).
+    hb_maps:put(<<"path">>, <<"/", PathPart/binary>>, Message).
 
 type(Value) when is_binary(Value) -> binary;
 type(Value) when is_integer(Value) -> integer;
@@ -136,12 +136,12 @@ type(_Value) -> unknown.
 %% @doc Normalize a singleton TABM message into a list of executable AO-Core
 %% messages.
 from(RawMsg) ->
-    RawPath = maps:get(<<"path">>, RawMsg, <<>>),
+    RawPath = hb_maps:get(<<"path">>, RawMsg, <<>>),
     ?event(parsing, {raw_path, RawPath}),
     {ok, Path, Query} = parse_full_path(RawPath),
     ?event(parsing, {parsed_path, Path, Query}),
-    MsgWithoutBasePath = maps:merge(
-        maps:remove(<<"path">>, RawMsg),
+    MsgWithoutBasePath = hb_maps:merge(
+        hb_maps:remove(<<"path">>, RawMsg),
         Query
     ),
     % 2. Decode, split, and sanitize path segments. Each yields one step message.
@@ -170,7 +170,7 @@ parse_full_path(RelativeRef) ->
     {
         ok,
         lists:map(fun(Part) -> decode_string(Part) end, path_parts($/, Path)),
-        maps:from_list(QKVList)
+        hb_maps:from_list(QKVList)
     }.
 
 %% @doc Step 2: Decode, split and sanitize the path. Split by `/' but avoid
@@ -231,10 +231,10 @@ part(Seps, <<C:8/integer, Rest/binary>>, Depth, CurrAcc) ->
 
 %% @doc Step 3: Apply types to values and remove specifiers.
 apply_types(Msg) ->
-    maps:fold(
+    hb_maps:fold(
         fun(Key, Val, Acc) ->
             {_, K, V} = maybe_typed(Key, Val),
-            maps:put(K, V, Acc)
+            hb_maps:put(K, V, Acc)
         end,
         #{},
         Msg
@@ -244,21 +244,21 @@ apply_types(Msg) ->
 %% `N.Key' => applies to Nth step. Otherwise => `global'
 group_scoped(Map, Msgs) ->
     {NScope, Global} =
-        maps:fold(
+        hb_maps:fold(
             fun(KeyBin, Val, {Ns, Gs}) ->
                 case parse_scope(KeyBin) of
                     {OkN, RealKey} when OkN > 0 ->
-                        Curr = maps:get(OkN, Ns, #{}),
-                        Ns2 = maps:put(OkN, maps:put(RealKey, Val, Curr), Ns),
+                        Curr = hb_maps:get(OkN, Ns, #{}),
+                        Ns2 = hb_maps:put(OkN, hb_maps:put(RealKey, Val, Curr), Ns),
                         {Ns2, Gs};
-                    global -> {Ns, maps:put(KeyBin, Val, Gs)}
+                    global -> {Ns, hb_maps:put(KeyBin, Val, Gs)}
                 end
           end,
           {#{}, #{}},
           Map
         ),
     [
-        maps:merge(Global, maps:get(N, NScope, #{}))
+        hb_maps:merge(Global, hb_maps:get(N, NScope, #{}))
     ||
         N <- lists:seq(1, length(Msgs))
     ].
@@ -282,7 +282,7 @@ do_build(_, [], _ScopedKeys) -> [];
 do_build(I, [{as, DevID, Msg = #{ <<"path">> := <<"">> }}|Rest], ScopedKeys) ->
     ScopedKey = lists:nth(I, ScopedKeys),
     StepMsg = hb_message:convert(
-        Merged = maps:merge(Msg, ScopedKey),
+        Merged = hb_maps:merge(Msg, ScopedKey),
         <<"structured@1.0">>,
         #{ topic => ao_internal }
     ),
@@ -293,7 +293,7 @@ do_build(I, [Msg|Rest], ScopedKeys) when not is_map(Msg) ->
 do_build(I, [Msg | Rest], ScopedKeys) ->
     ScopedKey = lists:nth(I, ScopedKeys),
     StepMsg = hb_message:convert(
-        maps:merge(Msg, ScopedKey),
+        hb_maps:merge(Msg, ScopedKey),
         <<"structured@1.0">>,
         #{ topic => ao_internal }
     ),
@@ -340,7 +340,7 @@ parse_part_mods(<< "&", InlinedMsgBin/binary >>, Msg) ->
             fun(InlinedKey, Acc) ->
                 {Key, Val} = parse_inlined_key_val(InlinedKey),
                 ?event({inlined_key, {explicit, Key}, {explicit, Val}}),
-                maps:put(Key, Val, Acc)
+                hb_maps:put(Key, Val, Acc)
             end,
             Msg,
             InlinedKeys
@@ -616,7 +616,7 @@ single_message_test() ->
     Msgs = from(Req),
     ?assertEqual(2, length(Msgs)),
     ?assert(is_map(hd(Msgs))),
-    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, hd(Msgs))).
+    ?assertEqual(<<"test-value">>, hb_maps:get(<<"test-key">>, hd(Msgs))).
 
 basic_hashpath_test() ->
     Hashpath = hb_util:human_id(crypto:strong_rand_bytes(32)),
@@ -629,8 +629,8 @@ basic_hashpath_test() ->
     ?assertEqual(2, length(Msgs)),
     [Base, Msg2] = Msgs,
     ?assertEqual(Base, Hashpath),
-    ?assertEqual(<<"GET">>, maps:get(<<"method">>, Msg2)),
-    ?assertEqual(<<"some-other">>, maps:get(<<"path">>, Msg2)).
+    ?assertEqual(<<"GET">>, hb_maps:get(<<"method">>, Msg2)),
+    ?assertEqual(<<"some-other">>, hb_maps:get(<<"path">>, Msg2)).
 
 multiple_messages_test() ->
     Req = #{
@@ -641,9 +641,9 @@ multiple_messages_test() ->
     ?assertEqual(4, length(Msgs)),
     [_Base, Msg1, Msg2, Msg3] = Msgs,
     ?assert(lists:all(fun is_map/1, Msgs)),
-    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg1)),
-    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg2)),
-    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg3)).
+    ?assertEqual(<<"test-value">>, hb_maps:get(<<"test-key">>, Msg1)),
+    ?assertEqual(<<"test-value">>, hb_maps:get(<<"test-key">>, Msg2)),
+    ?assertEqual(<<"test-value">>, hb_maps:get(<<"test-key">>, Msg3)).
 
 %%% Advanced key syntax tests
 
@@ -655,9 +655,9 @@ scoped_key_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
-    ?assertEqual(<<"test-value">>, maps:get(<<"test-key">>, Msg2, not_found)),
-    ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
+    ?assertEqual(not_found, hb_maps:get(<<"test-key">>, Msg1, not_found)),
+    ?assertEqual(<<"test-value">>, hb_maps:get(<<"test-key">>, Msg2, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"test-key">>, Msg3, not_found)).
 
 typed_key_test() ->
     Req = #{
@@ -667,9 +667,9 @@ typed_key_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
-    ?assertEqual(123, maps:get(<<"test-key">>, Msg2, not_found)),
-    ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
+    ?assertEqual(not_found, hb_maps:get(<<"test-key">>, Msg1, not_found)),
+    ?assertEqual(123, hb_maps:get(<<"test-key">>, Msg2, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"test-key">>, Msg3, not_found)).
 
 subpath_in_key_test() ->
     Req = #{
@@ -679,7 +679,7 @@ subpath_in_key_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(not_found, maps:get(<<"test-key">>, Msg1, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"test-key">>, Msg1, not_found)),
     ?assertEqual(
         {resolve,
             [
@@ -689,9 +689,9 @@ subpath_in_key_test() ->
                 #{ <<"path">> => <<"z">> }
             ]
         },
-        maps:get(<<"test-key">>, Msg2, not_found)
+        hb_maps:get(<<"test-key">>, Msg2, not_found)
     ),
-    ?assertEqual(not_found, maps:get(<<"test-key">>, Msg3, not_found)).
+    ?assertEqual(not_found, hb_maps:get(<<"test-key">>, Msg3, not_found)).
 
 %%% Advanced path syntax tests
 
@@ -702,7 +702,7 @@ subpath_in_path_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(<<"a">>, maps:get(<<"path">>, Msg1)),
+    ?assertEqual(<<"a">>, hb_maps:get(<<"path">>, Msg1)),
     ?assertEqual(
         {resolve,
             [
@@ -714,7 +714,7 @@ subpath_in_path_test() ->
         },
         Msg2
     ),
-    ?assertEqual(<<"z">>, maps:get(<<"path">>, Msg3)).
+    ?assertEqual(<<"z">>, hb_maps:get(<<"path">>, Msg3)).
 
 inlined_keys_test() ->
     Req = #{
@@ -724,10 +724,10 @@ inlined_keys_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, Msg1, Msg2, Msg3] = Msgs,
-    ?assertEqual(<<"v1">>, maps:get(<<"k1">>, Msg2)),
-    ?assertEqual(<<"v2">>, maps:get(<<"k2">>, Msg3)),
-    ?assertEqual(not_found, maps:get(<<"k1">>, Msg1, not_found)),
-    ?assertEqual(not_found, maps:get(<<"k2">>, Msg2, not_found)).
+    ?assertEqual(<<"v1">>, hb_maps:get(<<"k1">>, Msg2)),
+    ?assertEqual(<<"v2">>, hb_maps:get(<<"k2">>, Msg3)),
+    ?assertEqual(not_found, hb_maps:get(<<"k1">>, Msg1, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"k2">>, Msg2, not_found)).
 
 multiple_inlined_keys_test() ->
     Path = <<"/a/b&k1=v1&k2=v2">>,
@@ -738,10 +738,10 @@ multiple_inlined_keys_test() ->
     Msgs = from(Req),
     ?assertEqual(3, length(Msgs)),
     [_, Msg1, Msg2] = Msgs,
-    ?assertEqual(not_found, maps:get(<<"k1">>, Msg1, not_found)),
-    ?assertEqual(not_found, maps:get(<<"k2">>, Msg1, not_found)),
-    ?assertEqual(<<"v1">>, maps:get(<<"k1">>, Msg2, not_found)),
-    ?assertEqual(<<"v2">>, maps:get(<<"k2">>, Msg2, not_found)).
+    ?assertEqual(not_found, hb_maps:get(<<"k1">>, Msg1, not_found)),
+    ?assertEqual(not_found, hb_maps:get(<<"k2">>, Msg1, not_found)),
+    ?assertEqual(<<"v1">>, hb_maps:get(<<"k1">>, Msg2, not_found)),
+    ?assertEqual(<<"v2">>, hb_maps:get(<<"k2">>, Msg2, not_found)).
 
 subpath_in_inlined_test() ->
     Path = <<"/part1/part2&test=1&b=(/x/y)/part3">>,
@@ -751,11 +751,11 @@ subpath_in_inlined_test() ->
     Msgs = from(Req),
     ?assertEqual(4, length(Msgs)),
     [_, First, Second, Third] = Msgs,
-    ?assertEqual(<<"part1">>, maps:get(<<"path">>, First)),
-    ?assertEqual(<<"part3">>, maps:get(<<"path">>, Third)),
+    ?assertEqual(<<"part1">>, hb_maps:get(<<"path">>, First)),
+    ?assertEqual(<<"part3">>, hb_maps:get(<<"path">>, Third)),
     ?assertEqual(
         {resolve, [#{}, #{ <<"path">> => <<"x">> }, #{ <<"path">> => <<"y">> }] },
-        maps:get(<<"b">>, Second)
+        hb_maps:get(<<"b">>, Second)
     ).
 
 path_parts_test() ->

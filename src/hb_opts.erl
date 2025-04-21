@@ -124,12 +124,13 @@ default_message() ->
         debug_print_indent => 2,
         debug_print => false,
         stack_print_prefixes => ["hb", "dev", "ar"],
-        debug_print_trace => short, % `short' | `false'. Has performance impact.
-        short_trace_len => 5,
+        debug_print_trace => short, % `short` | `false`. Has performance impact.
+        short_trace_len => 10,
         debug_metadata => true,
         debug_ids => false,
         debug_committers => false,
         debug_show_priv => false,
+        debug_resolve_links => false,
 		trusted => #{},
         routes => [
             #{
@@ -308,7 +309,7 @@ normalize_default(Default) -> Default.
 %% @doc An abstraction for looking up configuration variables. In the future,
 %% this is the function that we will want to change to support a more dynamic
 %% configuration system.
-config_lookup(Key, Default) -> maps:get(Key, default_message(), Default).
+config_lookup(Key, Default) -> hb_maps:get(Key, default_message(), Default).
 
 %% @doc Parse a `flat@1.0' encoded file into a map, matching the types of the 
 %% keys to those in the default message.
@@ -326,11 +327,11 @@ load(Path) ->
 %% @doc Mimic the types of the default message for a given map.
 mimic_default_types(Map, Mode) ->
     Default = default_message(),
-    maps:from_list(lists:map(
+    hb_maps:from_list(lists:map(
         fun({Key, Value}) ->
             NewKey = hb_util:key_to_atom(Key, Mode),
             NewValue = 
-                case maps:get(NewKey, Default, not_found) of
+                case hb_maps:get(NewKey, Default, not_found) of
                     not_found -> Value;
                     DefaultValue when is_atom(DefaultValue) ->
                         hb_util:atom(Value);
@@ -344,7 +345,7 @@ mimic_default_types(Map, Mode) ->
                 end,
             {NewKey, NewValue}
         end,
-        maps:to_list(Map)
+        hb_maps:to_list(Map)
     )).
     
 %%% Tests
@@ -389,9 +390,9 @@ load_test() ->
     {ok, Conf} = load("test/config.flat"),
     ?event({loaded, {explicit, Conf}}),
     % Ensure we convert types as expected.
-    ?assertEqual(1234, maps:get(port, Conf)),
+    ?assertEqual(1234, hb_maps:get(port, Conf)),
     % A binary
-    ?assertEqual(<<"https://ao.computer">>, maps:get(host, Conf)),
+    ?assertEqual(<<"https://ao.computer">>, hb_maps:get(host, Conf)),
     % An atom, where the key contained a header-key `-' rather than a `_'.
-    ?assertEqual(false, maps:get(await_inprogress, Conf)).
+    ?assertEqual(false, hb_maps:get(await_inprogress, Conf)).
 -endif.

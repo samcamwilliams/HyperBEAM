@@ -148,8 +148,8 @@ process_id(Msg1, Msg2, Opts) ->
 %% allows devices on the execution stack to initialize themselves. We set the
 %% `Initialized' key to `True' to indicate that the process has been
 %% initialized.
-init(Msg1, _Msg2, Opts) ->
-    ?event({init_called, {msg1, Msg1}, {opts, Opts}}),
+init(Msg1, Msg2, Opts) ->
+    ?event({init_called, {msg1, Msg1}, {msg2, Msg2}, {opts, Opts}}),
     {ok, Initialized} =
         run_as(<<"execution">>, Msg1, #{ <<"path">> => init }, Opts),
     {
@@ -431,22 +431,24 @@ ensure_loaded(Msg1, Msg2, Opts) ->
                 }
             ),
             case LoadRes of
-                {ok, LoadedSlot, SnapshotMsg} ->
+                {ok, MaybeLoadedSlot, MaybeLoadedSnapshotMsg} ->
                     % Restore the devices in the executor stack with the
                     % loaded state. This allows the devices to load any
                     % necessary 'shadow' state (state not represented in
                     % the public component of a message) into memory.
                     % Do not update the hashpath while we do this, and remove
                     % the snapshot key after we have normalized the message.
+                    LoadedSnapshotMsg = hb_cache:ensure_all_loaded(MaybeLoadedSnapshotMsg, Opts),
+                    LoadedSlot = hb_cache:ensure_all_loaded(MaybeLoadedSlot, Opts),
                     ?event(compute, {loaded_state_checkpoint, ProcID, LoadedSlot}),
                     {ok, Normalized} =
                         run_as(
                             <<"execution">>,
-                            SnapshotMsg,
+                            LoadedSnapshotMsg,
                             normalize,
                             Opts#{ hashpath => ignore }
                         ),
-                    NormalizedWithoutSnapshot = maps:remove(<<"snapshot">>, Normalized),
+                    NormalizedWithoutSnapshot = hb_maps:remove(<<"snapshot">>, Normalized),
                     ?event({loaded_state_checkpoint_result,
                         {proc_id, ProcID},
                         {slot, LoadedSlot},
@@ -547,6 +549,7 @@ ensure_process_key(Msg1, Opts) ->
                         Msg1
                 end,
             {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
+            ?event({process_key_before_set, {msg1, Msg1}, {process_msg, {explicit, ProcessMsg}}, {committed, Committed}}),
             Res = hb_ao:set(
                 Msg1,
                 #{ <<"process">> => Committed },
@@ -584,7 +587,7 @@ test_wasm_process(WASMImage, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
     #{ <<"image">> := WASMImageID } = dev_wasm:cache_wasm_image(WASMImage, Opts),
     hb_message:commit(
-        maps:merge(
+        hb_maps:merge(
             hb_message:uncommitted(test_base_process(Opts)),
             #{
                 <<"execution-device">> => <<"stack@1.0">>,
@@ -611,7 +614,7 @@ test_aos_process(Opts, Stack) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     WASMProc = test_wasm_process(<<"test/aos-2-pure-xs.wasm">>, Opts),
     hb_message:commit(
-        maps:merge(
+        hb_maps:merge(
             hb_message:uncommitted(WASMProc),
             #{
                 <<"device-stack">> => Stack,
@@ -638,7 +641,7 @@ test_aos_process(Opts, Stack) ->
 dev_test_process() ->
     Wallet = hb:wallet(),
     hb_message:commit(
-        maps:merge(test_base_process(), #{
+        hb_maps:merge(test_base_process(), #{
             <<"execution-device">> => <<"stack@1.0">>,
             <<"device-stack">> => [<<"test-device@1.0">>, <<"test-device@1.0">>]
         }),
@@ -996,10 +999,10 @@ do_test_restore() ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),
-    Msg1 = test_aos_process(),
-    schedule_aos_call(Msg1, <<"X = 42">>),
-    schedule_aos_call(Msg1, <<"X = 1337">>),
-    schedule_aos_call(Msg1, <<"return X">>),
+    Msg1 = test_aos_process(Opts),
+    schedule_aos_call(Msg1, <<"X = 42">>, Opts),
+    schedule_aos_call(Msg1, <<"X = 1337">>, Opts),
+    schedule_aos_call(Msg1, <<"return X">>, Opts),
     % Compute the first message.
     {ok, _} =
         hb_ao:resolve(

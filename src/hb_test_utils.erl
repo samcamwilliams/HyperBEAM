@@ -14,7 +14,7 @@ suite_with_opts(Suite, OptsList) ->
     lists:filtermap(
         fun(OptSpec = #{ name := _Name, opts := Opts, desc := ODesc}) ->
             Store = hb_opts:get(store, hb_opts:get(store), Opts),
-            Skip = maps:get(skip, OptSpec, []),
+            Skip = hb_maps:get(skip, OptSpec, []),
             case satisfies_requirements(OptSpec) of
                 true ->
                     {true, {foreach,
@@ -43,7 +43,7 @@ suite_with_opts(Suite, OptsList) ->
 %% Requirements is a list of atoms, each corresponding to a module that must
 %% return true if it exposes an `enabled/0' function.
 satisfies_requirements(Requirements) when is_map(Requirements) ->
-    satisfies_requirements(maps:get(requires, Requirements, []));
+    satisfies_requirements(hb_maps:get(requires, Requirements, []));
 satisfies_requirements(Requirements) ->
     lists:all(
         fun(Req) ->

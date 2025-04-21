@@ -121,7 +121,7 @@ find_id(Msg = #{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
             #{ <<"alg">> => <<"hmac-sha256">> },
             Msg
         ),
-    IDs = maps:keys(CommsWithoutHmac),
+    IDs = hb_maps:keys(CommsWithoutHmac),
     case IDs of
         [] -> throw({could_not_find_ids, CommsWithoutHmac});
         [ID] ->
@@ -140,9 +140,9 @@ find_id(Msg = #{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
             {ok, hb_util:human_id(crypto:hash(sha256, SFList))}
     end;
 find_id(#{ <<"commitments">> := CommitmentMap }) ->
-    {ok, hd(maps:keys(CommitmentMap))};
+    {ok, hd(hb_maps:keys(CommitmentMap))};
 find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }) ->
-    {not_found, (maps:without([<<"signature-input">>], AttMsg))#{
+    {not_found, (hb_maps:without([<<"signature-input">>], AttMsg))#{
         <<"x-signature-input">> => UserSigInput
     }};
 find_id(Msg) ->
@@ -167,13 +167,13 @@ commit(MsgToSign, _Req, Opts) ->
             _ -> {#{}, NormMsg}
         end,
     EncWithoutBodyKeys =
-        maps:without(
+        hb_maps:without(
             [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"priv">>],
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     Enc = add_content_digest(EncWithoutBodyKeys),
     ?event({encoded_to_httpsig_for_commitment, Enc}),
-    Authority = authority(lists:sort(maps:keys(Enc)), SigParams, Wallet),
+    Authority = authority(lists:sort(hb_maps:keys(Enc)), SigParams, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
     [ParsedSignatureInput] = hb_structured_fields:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
@@ -196,7 +196,7 @@ commit(MsgToSign, _Req, Opts) ->
                     #{ SigName => ParsedSignatureInput }
                 ))
         },
-    OldCommitments = maps:get(<<"commitments">>, NormMsg, #{}),
+    OldCommitments = hb_maps:get(<<"commitments">>, NormMsg, #{}),
     reset_hmac(MsgWithoutHP#{<<"commitments">> =>
         OldCommitments#{ ID => Commitment }
     }).
@@ -206,7 +206,7 @@ commit(MsgToSign, _Req, Opts) ->
 %% root. Subsequently, we can parse that to get the list of committed keys.
 committed(RawMsg, Req, Opts) ->
     Msg = to(RawMsg),
-    case maps:get(<<"signature-input">>, Msg, none) of
+    case hb_maps:get(<<"signature-input">>, Msg, none) of
         none -> {ok, []};
         SigInput ->
             do_committed(SigInput, Msg, Req, Opts)
@@ -244,13 +244,13 @@ committed_from_body(Msg) ->
     [<<"body">>, <<"inline-body-key">>] ++
         % If the inline-body-key is present, add it to the list of
         % committed keys.
-        case maps:get(<<"inline-body-key">>, Msg, []) of
+        case hb_maps:get(<<"inline-body-key">>, Msg, []) of
             [] -> [];
             InlineBodyKey -> [InlineBodyKey]
         end
         % If the body-keys are present, add them to the list of
         % committed keys.
-        ++ case maps:get(<<"body-keys">>, Msg, []) of
+        ++ case hb_maps:get(<<"body-keys">>, Msg, []) of
             [] -> [];
             BodyKeys ->
                 ParsedList = case BodyKeys of
@@ -281,13 +281,13 @@ committed_from_body(Msg) ->
 
 %% @doc If the `body' key is present, replace it with a content-digest.
 add_content_digest(Msg) ->
-    case maps:get(<<"body">>, Msg, not_found) of
+    case hb_maps:get(<<"body">>, Msg, not_found) of
         not_found -> Msg;
         Body ->
             % Remove the body from the message and add the content-digest,
             % encoded as a structured field.
             ?event({add_content_digest, {string, Body}}),
-            (maps:without([<<"body">>], Msg))#{
+            (hb_maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
                     iolist_to_binary(hb_structured_fields:dictionary(
                         #{
@@ -317,7 +317,7 @@ reset_hmac(RawMsg) ->
             },
             Msg
         ),
-    Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
+    Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
     AllSigs =
         maps:from_list(lists:map(
             fun ({Committer, #{ <<"signature">> := Signature }}) ->
@@ -327,26 +327,26 @@ reset_hmac(RawMsg) ->
                     {sig_name_from_dict, SigNameFromDict}}
                 ),
                 SigBin =
-                    maps:get(SigNameFromDict,
-                        maps:from_list(
+                    hb_maps:get(SigNameFromDict,
+                        hb_maps:from_list(
                             hb_structured_fields:parse_dictionary(Signature)
                         )
                     ),
                 {SigNameFromDict, SigBin}
             end,
-            maps:to_list(Commitments)
+            hb_maps:to_list(Commitments)
         )),
     AllInputs =
-        maps:from_list(lists:map(
+        hb_maps:from_list(lists:map(
             fun ({_Committer, #{ <<"signature-input">> := Inputs }}) ->
                 SigNameFromDict = sig_name_from_dict(Inputs),
                 Res = hb_structured_fields:parse_dictionary(Inputs),
-                SingleSigInput = maps:get(SigNameFromDict, maps:from_list(Res)),
+                SingleSigInput = hb_maps:get(SigNameFromDict, hb_maps:from_list(Res)),
                 {SigNameFromDict, SingleSigInput}
             end,
-            maps:to_list(Commitments)
+            hb_maps:to_list(Commitments)
         )),
-    FlatInputs = lists:flatten(maps:values(AllInputs)),
+    FlatInputs = lists:flatten(hb_maps:values(AllInputs)),
     HMacSigInfo =
         case FlatInputs of
             [] -> #{};
@@ -358,13 +358,13 @@ reset_hmac(RawMsg) ->
             }
         end,
     ?event({pre_hmac_sig_input,
-        {string, maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
-    HMacInputMsg = maps:merge(Msg, HMacSigInfo),
+        {string, hb_maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
+    HMacInputMsg = hb_maps:merge(Msg, HMacSigInfo),
     {ok, RawID} = hmac(HMacInputMsg),
     ID = hb_util:human_id(RawID),
     Res = {
         ok,
-        maps:put(
+        hb_maps:put(
             <<"commitments">>,
             Commitments#{
                 ID =>
@@ -389,9 +389,9 @@ hmac(Msg) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
     EncodedMsg =
-        maps:without(
+        hb_maps:without(
             [<<"body-keys">>],
-            to(maps:without([<<"commitments">>, <<"body-keys">>], Msg))
+            to(hb_maps:without([<<"commitments">>, <<"body-keys">>], Msg))
         ),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg),
@@ -399,10 +399,10 @@ hmac(Msg) ->
     % input, but if that is not present, then use all the keys from the encoded
     % message.
     HMacKeys =
-        case maps:get(<<"signature-input">>, Msg, none) of
+        case hb_maps:get(<<"signature-input">>, Msg, none) of
             none -> 
                 ?event(no_sig_input_found),
-                maps:keys(MsgWithContentDigest);
+                hb_maps:keys(MsgWithContentDigest);
             SigInput ->
                 ?event(sig_input_found),
                 [{_, {list, Items, _}}|_]
@@ -435,8 +435,8 @@ hmac(Msg) ->
 verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha256">> }, _Opts) ->
     % Verify a hmac on the message
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
-    {ok, ResetMsg} = reset_hmac(maps:without([<<"id">>], MsgToVerify)),
-    case maps:get(<<"commitments">>, ResetMsg, no_commitments) of
+    {ok, ResetMsg} = reset_hmac(hb_maps:without([<<"id">>], MsgToVerify)),
+    case hb_maps:get(<<"commitments">>, ResetMsg, no_commitments) of
         no_commitments -> {error, could_not_calculate_id};
         #{ ExpectedID := #{ <<"alg">> := <<"hmac-sha256">> } } ->
             ?event({hmac_verified, {id, ExpectedID}}),
@@ -444,7 +444,7 @@ verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha2
         _ ->
             ?event({hmac_failed_verification,
                 {recalculated_commitments,
-                    maps:keys(maps:get(<<"commitments">>, ResetMsg, #{}))
+                    hb_maps:keys(hb_maps:get(<<"commitments">>, ResetMsg, #{}))
                 },
                 {expected_id, ExpectedID}}),
             {ok, false}
@@ -453,24 +453,24 @@ verify(MsgToVerify, Req, _Opts) ->
     % Validate a signed commitment.
     ?event({verify, {target, MsgToVerify}, {req, Req}}),
     % Parse the signature parameters into a map.
-    CommitmentID = maps:get(<<"commitment">>, Req),
+    CommitmentID = hb_maps:get(<<"commitment">>, Req),
     Commitment =
-        maps:get(
+        hb_maps:get(
             CommitmentID,
-            maps:get(<<"commitments">>, MsgToVerify, #{})
+            hb_maps:get(<<"commitments">>, MsgToVerify, #{})
         ),
-    SigName = address_to_sig_name(maps:get(<<"committer">>, Commitment)),
+    SigName = address_to_sig_name(hb_maps:get(<<"committer">>, Commitment)),
     {list, _SigInputs, ParamsKVList} =
-        maps:get(
+        hb_maps:get(
             SigName,
-            maps:from_list(
+            hb_maps:from_list(
                 hb_structured_fields:parse_dictionary(
-                    maps:get(<<"signature-input">>, MsgToVerify)
+                    hb_maps:get(<<"signature-input">>, MsgToVerify)
                 )
             )
         ),
-    {string, Alg} = maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)),
-    AlgFromCommitment = maps:get(<<"alg">>, Commitment),
+    {string, Alg} = hb_maps:get(<<"alg">>, Params = hb_maps:from_list(ParamsKVList)),
+    AlgFromCommitment = hb_maps:get(<<"alg">>, Commitment),
     case Alg of
         _ when AlgFromCommitment =/= Alg ->
             {error, {commitment_alg_mismatch,
@@ -478,19 +478,19 @@ verify(MsgToVerify, Req, _Opts) ->
                 {from_signature_params, Alg}
             }};
         <<"rsa-pss-sha512">> when AlgFromCommitment =:= Alg ->
-            {string, KeyID} = maps:get(<<"keyid">>, Params),
+            {string, KeyID} = hb_maps:get(<<"keyid">>, Params),
             PubKey = hb_util:decode(KeyID),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
-            EncWithoutBodyKeys = maps:without([<<"body-keys">>], Enc),
+            EncWithoutBodyKeys = hb_maps:without([<<"body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
                 EncWithoutBodyKeys#{
                     <<"signature-input">> =>
-                        maps:get(<<"signature-input">>, MsgToVerify),
+                        hb_maps:get(<<"signature-input">>, MsgToVerify),
                     <<"signature">> =>
-                        maps:get(<<"signature">>, MsgToVerify)
+                        hb_maps:get(<<"signature">>, MsgToVerify)
                 },
             % If the content-digest is already present, we override it with a
             % regenerated value. If those values match, then the signature will
@@ -512,12 +512,12 @@ verify(MsgToVerify, Req, _Opts) ->
     end.
 
 public_keys(Commitment) ->
-    SigInputs = maps:get(<<"signature-input">>, Commitment),
+    SigInputs = hb_maps:get(<<"signature-input">>, Commitment),
     lists:filtermap(
         fun ({_SigName, {list, _, ParamsKVList}}) ->
-            case maps:get(<<"alg">>, Params = maps:from_list(ParamsKVList)) of
+            case hb_maps:get(<<"alg">>, Params = hb_maps:from_list(ParamsKVList)) of
                 {string, <<"rsa-pss-sha512">>} ->
-                    {string, KeyID} = maps:get(<<"keyid">>, Params),
+                    {string, KeyID} = hb_maps:get(<<"keyid">>, Params),
                     PubKey = hb_util:decode(KeyID),
                     {true, PubKey};
                 _ ->
@@ -589,7 +589,7 @@ remove_derived_specifiers(ComponentIdentifiers) ->
 -spec sign_auth(authority_state(), request_message(), response_message()) ->
     {ok, {binary(), binary(), binary()}}.
 sign_auth(Authority, Req, Res) ->
-    {Priv, Pub} = maps:get(key_pair, Authority),
+    {Priv, Pub} = hb_maps:get(key_pair, Authority),
     % Create the signature base and signature-input values
     AuthorityWithSigParams = add_sig_params(Authority, Pub),
 	{SignatureInput, SignatureBase} =
@@ -602,10 +602,10 @@ sign_auth(Authority, Req, Res) ->
 
 %% @doc Add the signature parameters to the authority state
 add_sig_params(Authority, {_KeyType, PubKey}) ->
-    maps:put(
+    hb_maps:put(
         sig_params,
-        maps:merge(
-            maps:get(sig_params, Authority),
+        hb_maps:merge(
+            hb_maps:get(sig_params, Authority),
             #{
                 alg => <<"rsa-pss-sha512">>,
                 keyid => hb_util:encode(PubKey)
@@ -658,8 +658,8 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             SigParamsMap = lists:foldl(
                 % TODO: does not support SF decimal params
                 fun
-                    ({Name, {_Kind, Value}}, Map) -> maps:put(Name, Value, Map);
-                    ({Name, Value}, Map) -> maps:put(Name, Value, Map)
+                    ({Name, {_Kind, Value}}, Map) -> hb_maps:put(Name, Value, Map);
+                    ({Name, Value}, Map) -> hb_maps:put(Name, Value, Map)
                 end,
                 #{},
                 SigParams
@@ -670,7 +670,7 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             {_, SignatureBase} = signature_base(Authority, Req, Res),
             ?event(signature_base,
                 {signature_base_for_verification, {string, SignatureBase}}),
-            {_Priv, Pub} = maps:get(key_pair, Authority),
+            {_Priv, Pub} = hb_maps:get(key_pair, Authority),
             % Now verify the signature base signed with the provided key matches
             % the signature
             ar_wallet:verify(Pub, SignatureBase, Signature, sha512);
@@ -690,13 +690,13 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%% This implements a portion of RFC-9421 see:
 %%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
 signature_base(Authority, Req, Res) when is_map(Authority) ->
-    ComponentIdentifiers = maps:get(component_identifiers, Authority),
+    ComponentIdentifiers = hb_maps:get(component_identifiers, Authority),
     ?event({component_identifiers_for_sig_base, ComponentIdentifiers}),
 	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
 	ParamsLine =
         signature_params_line(
             ComponentIdentifiers,
-            maps:get(sig_params, Authority)),
+            hb_maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
     ?event(signature_base, {signature_base, {string, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
@@ -796,7 +796,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
             %?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
-			case maps:get(NormParsed, if IsRequestIdentifier -> Req; true -> Res end, not_found) of
+			case hb_maps:get(NormParsed, if IsRequestIdentifier -> Req; true -> Res end, not_found) of
 				not_found ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6
 					{
@@ -935,23 +935,23 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 				case Lowered of
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.2.1
 					<<"@method">> ->
-						{ok, upper_bin(maps:get(<<"method">>, Req, <<>>))};
+						{ok, upper_bin(hb_maps:get(<<"method">>, Req, <<>>))};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.4.1
 					<<"@target-uri">> ->
-						{ok, bin(maps:get(<<"path">>, Req, <<>>))};
+						{ok, bin(hb_maps:get(<<"path">>, Req, <<>>))};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.6.1
 					<<"@authority">> ->
-						URI = uri_string:parse(maps:get(<<"path">>, Req, <<>>)),
-						Authority = maps:get(host, URI, <<>>),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req, <<>>)),
+						Authority = hb_maps:get(host, URI, <<>>),
 						{ok, lower_bin(Authority)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.8.1
 					<<"@scheme">> ->
-						URI = uri_string:parse(maps:get(<<"path">>, Req)),
-						Scheme = maps:get(scheme, URI, <<>>),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
+						Scheme = hb_maps:get(scheme, URI, <<>>),
 						{ok, lower_bin(Scheme)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.10.1
 					<<"@request-target">> ->
-						URI = uri_string:parse(maps:get(<<"path">>, Req)),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
 						% If message contains the absolute form value, then
 						% the value must be the absolut url
 						%
@@ -960,29 +960,29 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
 						%
 						% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.5-10
 						RequestTarget =
-							case maps:get(is_absolute_form, Req, false) of
-								true -> maps:get(url, Req);
+							case hb_maps:get(is_absolute_form, Req, false) of
+								true -> hb_maps:get(url, Req);
 								_ ->
                                     lists:join($?,
                                         [
-                                            maps:get(path, URI, <<>>),
-                                            maps:get(query, URI, ?EMPTY_QUERY_PARAMS)
+                                            hb_maps:get(path, URI, <<>>),
+                                            hb_maps:get(query, URI, ?EMPTY_QUERY_PARAMS)
                                         ]
                                     )
 							end,
 						{ok, bin(RequestTarget)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.12.1
 					<<"@path">> ->
-						URI = uri_string:parse(maps:get(<<"path">>, Req)),
-						Path = maps:get(path, URI),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
+						Path = hb_maps:get(path, URI),
 						{ok, bin(Path)};
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2-4.14.1
 					<<"@query">> ->
-						URI = uri_string:parse(maps:get(<<"path">>, Req)),
+						URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
 						% No query params results in a "?" value
 						% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 						Query =
-							case maps:get(query, URI, <<>>) of
+							case hb_maps:get(query, URI, <<>>) of
 								<<>> -> ?EMPTY_QUERY_PARAMS;
 								Q -> Q
 							end,
@@ -999,9 +999,9 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
                                     "must specify a name parameter">>
                                 };
 							Name ->
-								URI = uri_string:parse(maps:get(<<"path">>, Req)),
+								URI = uri_string:parse(hb_maps:get(<<"path">>, Req)),
 								QueryParams =
-                                    uri_string:dissect_query(maps:get(query, URI, "")),
+                                    uri_string:dissect_query(hb_maps:get(query, URI, "")),
 								QueryParam =
 									case lists:keyfind(Name, 1, QueryParams) of
 										{_, QP} -> QP;
@@ -1023,7 +1023,7 @@ derive_component({item, {_Kind, IParsed}, IParams}, Req, Res, Subject) ->
                                     "used if target is a request message">>
                                 };
 							_ ->
-								Status = maps:get(<<"status">>, Res, <<"200">>),
+								Status = hb_maps:get(<<"status">>, Res, <<"200">>),
 								{ok, Status}
 						end
 				end,
@@ -1065,7 +1065,7 @@ sf_signature_param({Name, Param}) ->
 %%%
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.3.2.4
 sf_signature_params(ComponentIdentifiers, SigParams) when is_map(SigParams) ->
-    AsList = maps:to_list(SigParams),
+    AsList = hb_maps:to_list(SigParams),
     Sorted = lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, AsList),
     sf_signature_params(ComponentIdentifiers, Sorted);
 sf_signature_params(ComponentIdentifiers, SigParams) when is_list(SigParams) ->
@@ -1369,3 +1369,20 @@ derive_component_error_status_req_target_test() ->
 	Result = derive_component({item, {string, <<"@status">>}, []}, #{}, #{}, req),
 	{E, _M} = Result,
 	?assertEqual(res_identifier_error, E).
+
+%% @doc Test that we can sign and verify a message with a link. We use 
+sign_and_verify_link_test() ->
+    Msg = #{
+        <<"normal">> => <<"typical-value">>,
+        <<"untyped">> =>
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}},
+        <<"typed">> =>
+            {link,
+                hb_util:human_id(crypto:strong_rand_bytes(32)),
+                #{ <<"type">> => <<"integer">> }
+            }
+    },
+    ?event({msg, Msg}),
+    Signed = hb_message:commit(Msg, hb:wallet()),
+    ?event({signed_msg, Signed}),
+    ?assert(hb_message:verify(Signed)).

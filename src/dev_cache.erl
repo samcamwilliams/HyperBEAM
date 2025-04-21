@@ -77,7 +77,7 @@ write(_M1, M2, Opts) ->
                     write_single(M2, Opts);
                 <<"batch">> ->
                     ?event(dev_cache, {write, {write_batch_called}}),
-                    maps:map(
+                    hb_maps:map(
                         fun(_, Value) ->
                             ?event(dev_cache, {write, {batch_item, Value}}),
                             write_single(Value, Opts)

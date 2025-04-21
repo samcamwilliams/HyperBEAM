@@ -32,7 +32,7 @@ start() ->
                 #{}
         end,
     MergedConfig =
-        maps:merge(
+        hb_maps:merge(
             hb_opts:default_message(),
             Loaded
         ),
@@ -113,7 +113,7 @@ start(Opts) ->
 
 new_server(RawNodeMsg) ->
     NodeMsg =
-        maps:merge(
+        hb_maps:merge(
             hb_opts:default_message(),
             RawNodeMsg#{ only => local }
         ),
@@ -130,7 +130,7 @@ new_server(RawNodeMsg) ->
         ),
     % Put server ID into node message so it's possible to update current server
     % params
-    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
+    NodeMsgWithID = hb_maps:put(http_server, ServerID, NodeMsg),
     Dispatcher = cowboy_router:compile([{'_', [{'_', ?MODULE, ServerID}]}]),
     ProtoOpts = #{
         env => #{dispatch => Dispatcher, node_msg => NodeMsgWithID},
@@ -214,7 +214,7 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
                 ServerID,
                 1024,
                 ranch:normalize_opts(
-                    maps:to_list(TransOpts#{ port => GivenPort })
+                    hb_maps:to_list(TransOpts#{ port => GivenPort })
                 ),
                 ProtoOpts,
                 []

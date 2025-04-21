@@ -90,8 +90,8 @@ assign(State, Message, ReplyPID) ->
 
 %% @doc Generate and store the actual assignment message.
 do_assign(State, Message, ReplyPID) ->
-    HashChain = next_hashchain(maps:get(hash_chain, State), Message),
-    NextSlot = maps:get(current, State) + 1,
+    HashChain = next_hashchain(hb_maps:get(hash_chain, State), Message),
+    NextSlot = hb_maps:get(current, State) + 1,
     % Run the signing of the assignment and writes to the disk in a separate
     % process.
     AssignFun =
@@ -105,7 +105,7 @@ do_assign(State, Message, ReplyPID) ->
                     end,
                 <<"data-protocol">> => <<"ao">>,
                 <<"variant">> => <<"ao.N.1">>,
-                <<"process">> => hb_util:id(maps:get(id, State)),
+                <<"process">> => hb_util:id(hb_maps:get(id, State)),
                 <<"epoch">> => <<"0">>,
                 <<"slot">> => NextSlot,
                 <<"block-height">> => Height,
@@ -115,11 +115,11 @@ do_assign(State, Message, ReplyPID) ->
                 <<"timestamp">> => erlang:system_time(millisecond),
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
-            }, maps:get(wallet, State)),
+            }, hb_maps:get(wallet, State)),
             AssignmentID = hb_message:id(Assignment, all),
             ?event(scheduling,
                 {assigned,
-                    {proc_id, maps:get(id, State)},
+                    {proc_id, hb_maps:get(id, State)},
                     {slot, NextSlot},
                     {assignment, AssignmentID}
                 }
@@ -132,7 +132,7 @@ do_assign(State, Message, ReplyPID) ->
                 State
             ),
             ?event(starting_message_write),
-            ok = dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
+            ok = dev_scheduler_cache:write(Assignment, hb_maps:get(opts, State)),
             maybe_inform_recipient(
                 local_confirmation,
                 ReplyPID,
@@ -142,7 +142,7 @@ do_assign(State, Message, ReplyPID) ->
             ),
             ?event(writes_complete),
             ?event(uploading_assignment),
-            hb_client:upload(Assignment, maps:get(opts, State)),
+            hb_client:upload(Assignment, hb_maps:get(opts, State)),
             ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
@@ -152,7 +152,7 @@ do_assign(State, Message, ReplyPID) ->
                 State
             )
         end,
-    case hb_opts:get(scheduling_mode, sync, maps:get(opts, State)) of
+    case hb_opts:get(scheduling_mode, sync, hb_maps:get(opts, State)) of
         aggressive ->
             spawn(AssignFun);
         Other ->
@@ -165,7 +165,7 @@ do_assign(State, Message, ReplyPID) ->
     }.
 
 maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
-    case hb_opts:get(scheduling_mode, remote_confirmation, maps:get(opts, State)) of
+    case hb_opts:get(scheduling_mode, remote_confirmation, hb_maps:get(opts, State)) of
         Mode -> ReplyPID ! {scheduled, Message, Assignment};
         _ -> ok
     end.

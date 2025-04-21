@@ -472,7 +472,7 @@ benchmark_test() ->
     Msg0 = cache_wasm_image("test/test-64.wasm"),
     {ok, Msg1} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     Msg2 =
-        maps:merge(
+        hb_maps:merge(
             Msg1,
             hb_ao:set(
                 #{
@@ -504,7 +504,7 @@ state_export_and_restore_test() ->
     Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
     {ok, Msg1} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     Msg2 =
-        maps:merge(
+        hb_maps:merge(
             Msg1,
             Extras = #{
                 <<"function">> => <<"pow">>,
@@ -523,7 +523,7 @@ state_export_and_restore_test() ->
     {ok, State} = hb_ao:resolve(Msg3a, <<"snapshot">>, #{}),
     ?event({state_res, State}),
     % Restore the state without calling Init.
-    NewMsg1 = maps:merge(Msg0, Extras#{ <<"snapshot">> => State }),
+    NewMsg1 = hb_maps:merge(Msg0, Extras#{ <<"snapshot">> => State }),
     ?assertEqual(
         {ok, [4]},
         hb_ao:resolve(NewMsg1, <<"compute/results/output">>, #{})
@@ -548,7 +548,7 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
     {ok, Msg1} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     ?event({after_init, Msg1}),
     Msg2 =
-        maps:merge(
+        hb_maps:merge(
             Msg1,
             hb_ao:set(
                 #{
