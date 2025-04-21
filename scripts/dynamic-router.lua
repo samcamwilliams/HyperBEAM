@@ -18,6 +18,9 @@
 ---                decisions amongst scored route generations. Default = 1,
 ---                yielding an exponential decay in preference for better
 ---                performing nodes. Default = 1.
+--- /performance-period = Alters the rate at which performance scores are modified
+---                by new performance ratings. A lower period implies faster 
+---                changes to the score.
 --- /recalculate-every = The number of messages to process between recalculating
 ---                the routing table. Default = 1000.
 local function ensure_defaults(state)
@@ -32,7 +35,7 @@ local function ensure_defaults(state)
     state["performance-weight"] = state["performance-weight"] or 1
     state["score-preference"] = state["score-preference"] or 1
     state["recalculate-every"] = state["recalculate-every"] or 1000
-    state["averaging-period"] = state["averaging-period"] or 1000
+    state["performance-period"] = state["performance-period"] or 1000
     state["initial-performance"] = state["initial-performance"] or 30000
     return state
 end
@@ -98,7 +101,7 @@ local function calculate_stats(nodes, key)
             local n_key = n[key]
             for ix, v in ipairs(stats.values) do
                 if n_key <= v then
-                    return ix / stats.count
+                    return (ix-1) / stats.count
                 end
             end
         end
@@ -176,12 +179,11 @@ local function add_node(state, req, opts)
         prefix = req.route.prefix,
         price = req.route.price,
         topup = req.route.topup,
-        performance = state["initial-performance"]
+        performance = state["initial-performance"],
+        reference = route.reference .. "/nodes/" .. tostring(#route.nodes + 1)
     })
 
-    ao.event("debug_router", { "state before adding node", state })
     local new_state = ao.set(state, route.reference, route)
-    ao.event("debug_router", { "state after adding node", new_state })
     return new_state
 end
 
@@ -214,27 +216,41 @@ function register(state, assignment, opts)
     end
 end
 
--- Update the performance of a host.
+-- Update the performance of a host by its reference.
 function performance(state, assignment, opts)
     state = ensure_defaults(state)
 
     local req = assignment.body
     local duration = req.body.duration
-    local reference = req.body.reference
-    local host = req.body.host
-    local change_factor = 1 / state["averaging-period"]
+    local reference = req.body.reference .. "/performance"
+    local change_factor = 1 / state["performance-period"]
+
+    -- Get the performance of the route at `reference'
+    local status, performance = ao.resolve(state, reference)
 
     -- Modify the node's existing performance score, weighted by the change
-    -- factor, to give more weight to the existing performance score. Even node
+    -- factor, to give more weight to the existing performance score. Each node
     -- is given a poor performance score (30000ms) to start, then will slowly
     -- improve its performance score over time.
-    local performance =
-        ((state.performance[host] or state["initial-performance"]) *
-            (1 - change_factor)) +
-        (duration * change_factor)
+    performance =
+        (performance * (1 - change_factor)) + (duration * change_factor)
+
+    ao.event("debug_perf",
+        {"Received performance", {
+            reference = reference,
+            performance = performance,
+            update_duration = duration,
+            change_factor = change_factor,
+        }
+    })
     
-    local _, new_state = ao.set(state, reference, performance)
-    return "ok", new_state
+    state = ao.set(state, reference, performance)
+
+    ao.event("debug_router",
+        {"State after performance set", {
+            state = state, performance = performance } }
+    )
+    return "ok", state
 end
 
 function compute(state, assignment, opts)
@@ -311,44 +327,91 @@ function register_test()
   
   -- Test 2: performance updates and weight recalculation
 function performance_test()
-    -- start with one route already in state
-    local init = { routes = { { node = "host1", price = 0.2, performance = 0 } } }
-  
-    -- post a performance update
-    local perf_req1 = {
-      path = "performance",
-      body = { host = "host1", reference = "/1/nodes/1", duration = 100 }
+    -- Create a new state with a fast performance-period, giving rapid changes
+    -- to the performance score of nodes.
+    local state = {
+        ["performance-period"] = 6
     }
-    local status1, state1 = ao.resolve(state, perf_req1)
 
-    ao.event({ "performance result", { status = status1, state = state1 }})
-  
-    -- compute expected new performance value
-    local avg = state["averaging-period"]
-    local init_perf = state["initial-performance"]
-    local expected_perf = (init_perf * (1 - 1/avg)) + (100 * (1/avg))
-    local actual_perf = state.performance.nodes["host1"]
-    ao.event("debug_router", state.performance)
-    if math.abs(actual_perf - expected_perf) > 1e-9 then
-      error(("Performance mismatch: expected %.9f, got %.9f")
-            :format(expected_perf, actual_perf))
+    -- Add a node to a new route on the state
+    local register_req = {
+        path = "register",
+        route = {
+            prefix = "host1",
+            price = 5,
+            template = "/test-key"
+        }
+    }
+    _, state = register(state, { body = register_req }, {})
+
+    -- Modify the request and add another node.
+    register_req.route.prefix = "host2"
+    _, state = register(state, { body = register_req }, {})
+
+    -- Get the references for the nodes on the route and validate it.
+    local node1_ref = state.routes[1].nodes[1].reference
+    local node2_ref = state.routes[1].nodes[2].reference
+
+    if node1_ref ~= "routes/1/nodes/1" then
+        error("Invalid reference. Received: " .. node1_ref)
     end
+    if node2_ref ~= "routes/1/nodes/2" then
+        error("Invalid reference. Received: " .. node2_ref)
+    end
+
+    -- Record the starting scores for the nodes
+    local t0_node1_score = state.routes[1].nodes[1].weight
+    local t0_node2_score = state.routes[1].nodes[1].weight
+  
+    if t0_node1_score ~= t0_node2_score then
+        error("Initial node scores should be equal. Received: "
+            .. tostring(t0_node1_score) .. " and " .. tostring(t0_node2_score))
+    end
+
+    -- Post 2 performance updates for the first node, improving its performance.
+    local perf_req = {
+      path = "performance",
+      body = { host = "host1", reference = node1_ref, duration = 200 }
+    }
+    _, state = performance(state, { body = perf_req }, {})
+    _, state = performance(state, { body = perf_req }, {})
+    -- Post a performance update for the second node, with very poor performance
+    perf_req.body.reference = node2_ref
+    perf_req.body.duration = 55500
+    ao.event("debug_router", {"perf_req node 2", perf_req})
+    _, state = performance(state, { body = perf_req }, {})
+
+    ao.event("debug_router",
+        {"state after performance updates", {
+            state = state
+        }}
+    )
   
     -- now trigger a recalc
-    state = recalculate(state, { body = { path = "recalculate" } }, {})
-  
-    -- manually compute the expected weight term
-    local route = state.routes[1]
-    local sp = state["score-preference"]
-    local sr = state["sampling-rate"]
-    local pw = state["pricing-weight"]
-    local perf_term = math.exp(-sp * actual_perf) * ((1 - route.price * sr) + sr)
-    local price_term = math.exp(-sp * (route.price * pw))
-    local expected_weight = perf_term + price_term
-    if math.abs(route.weight - expected_weight) > 1e-9 then
-      error(("Weight mismatch: expected %.9f, got %.9f")
-            :format(expected_weight, route.weight))
+    _, state = recalculate(state, { body = { path = "recalculate" } }, {})
+
+    ao.event("debug_router",
+        {"Nodes after recalculation", state.routes[1].nodes}
+    )
+
+    -- Record the starting scores for the nodes
+    local t1_node1_score = state.routes[1].nodes[1].weight
+    local t1_node2_score = state.routes[1].nodes[2].weight
+
+    ao.event("debug_router_scores", {
+        t0_n1 = t0_node1_score,
+        t1_n1 = t1_node1_score,
+        t0_n2 = t0_node2_score,
+        t1_n2 = t1_node2_score
+    })
+
+    if t1_node1_score ~= t0_node1_score then
+        error("Node 1 sets the benchmark: It's score should stay the same.")
     end
-  
+
+    if t1_node2_score >= t0_node2_score then
+        error("Node 2 score should have decreased!")
+    end
+    
     return "ok"
 end

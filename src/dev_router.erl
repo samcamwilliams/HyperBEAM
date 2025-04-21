@@ -471,7 +471,7 @@ local_dynamic_router_test() ->
                 % Set script-specific factors for the test
                 <<"pricing-weight">> => 9,
                 <<"performance-weight">> => 1,
-                <<"score-preference">> => 3
+                <<"score-preference">> => 4
             }
         }
     }),
