@@ -64,8 +64,10 @@ httpc_req(Args, _, Opts) ->
         end,
     ?event(http, {httpc_req, Method, URL, Request}),
     HTTPCOpts = [{full_result, true}, {body_format, binary}],
+	StartTime = os:system_time(millisecond),
     case httpc:request(Method, Request, [], HTTPCOpts) of
         {ok, {{_, Status, _}, RawRespHeaders, RespBody}} ->
+	        EndTime = os:system_time(millisecond),
             RespHeaders =
                 [
                     {list_to_binary(Key), list_to_binary(Value)}
@@ -73,6 +75,14 @@ httpc_req(Args, _, Opts) ->
                     {Key, Value} <- RawRespHeaders
                 ],
             ?event(http, {httpc_resp, Status, RespHeaders, RespBody}),
+            record_duration(#{
+                    <<"request-method">> => method_to_bin(Method),
+                    <<"request-path">> => hb_util:bin(Path),
+                    <<"status-class">> => get_status_class(Status),
+                    <<"duration">> => EndTime - StartTime
+                },
+                Opts
+            ),
             {ok, Status, RespHeaders, RespBody};
         {error, Reason} ->
             ?event(http, {httpc_error, Reason}),
