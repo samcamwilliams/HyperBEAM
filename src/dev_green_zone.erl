@@ -5,8 +5,7 @@ management between trusted nodes. It handles node initialization, joining
 existing green zones, key exchange, and node identity cloning. All operations
 are protected by hardware commitment and encryption.
 """.
--export([join/3, init/3, become/3, key/3, 
-         default_zone_required_opts/1, default_zone_bypass_opts/1]).
+-export([join/3, init/3, become/3, key/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
@@ -40,19 +39,6 @@ default_zone_required_opts(Opts) ->
         initialized => permanent
 	}.
 
--doc """
-Defines options that are allowed to differ from the required options.
-These options will bypass the validation check when a node attempts to join
-a green zone. This allows for flexibility in certain configuration aspects
-while still maintaining the core security requirements.
-@param Opts A map containing configuration options.
-@returns List of option keys that can bypass the required options validation.
-""".
-default_zone_bypass_opts(_Opts) ->
-    [
-        % List of option keys that can be different between nodes
-        store
-    ].
 
 -doc """
 Initialize the green zone.
@@ -75,14 +61,6 @@ init(_M1, M2, Opts) ->
             <<"required-config">>,
             M2,
             default_zone_required_opts(Opts),
-            Opts
-        ),
-    % Get the bypass options
-    BypassOpts =
-        hb_ao:get(
-            <<"bypass-config">>,
-            M2,
-            default_zone_bypass_opts(Opts),
             Opts
         ),
     % Check if a wallet exists; create one if absent.
@@ -111,8 +89,7 @@ init(_M1, M2, Opts) ->
         priv_wallet => NodeWallet,
         priv_green_zone_aes => GreenZoneAES,
         trusted_nodes => #{},
-		green_zone_required_opts => RequiredConfig,
-        green_zone_bypass_opts => BypassOpts
+		green_zone_required_opts => RequiredConfig
     }),
     ?event(green_zone, {init, complete}),
     {ok, <<"Green zone initialized successfully.">>}.
@@ -375,7 +352,7 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
                             
                             % After successfully joining, try to mount encrypted volume
                             try_mount_encrypted_volume(AESKey, NewOpts),
-							
+
                             {ok, #{ 
                                 <<"body">> => 
 									<<"Node joined green zone successfully.">>, 
