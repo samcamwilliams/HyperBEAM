@@ -1,6 +1,6 @@
 # Contribution Guidelines
 
-Thank you for your interest in contributing to HyperBEAM! This page outlines the process for contributing to the project and provides guidelines to ensure your contributions align with the project's goals and standards.
+Thank you for your interest in contributing to hyperBEAM! This page outlines the process for contributing to the project and provides guidelines to ensure your contributions align with the project's goals and standards.
 
 ## Code of Conduct
 
@@ -8,7 +8,7 @@ By participating in this project, you agree to abide by our Code of Conduct. We 
 
 ## Ways to Contribute
 
-There are many ways to contribute to HyperBEAM:
+There are many ways to contribute to hyperBEAM:
 
 - **Code contributions**: Implementing new features or fixing bugs
 - **Documentation**: Improving or adding to the documentation
@@ -19,9 +19,9 @@ There are many ways to contribute to HyperBEAM:
 
 ## Getting Started
 
-1. **Fork the repository**: Create your own fork of the [HyperBEAM repository](https://github.com/permaweb/HyperBEAM).
+1. **Fork the repository**: Create your own fork of the [hyperBEAM repository](https://github.com/permaweb/hyperBEAM).
 2. **Set up your development environment**: Follow the setup instructions in the [Development Setup](setup.md) guide.
-3. **Find an issue to work on**: Look for issues labeled "good first issue" or "help wanted" in the [GitHub issue tracker](https://github.com/permaweb/HyperBEAM/issues).
+3. **Find an issue to work on**: Look for issues labeled "good first issue" or "help wanted" in the [GitHub issue tracker](https://github.com/permaweb/hyperBEAM/issues).
 4. **Create a branch**: Create a new branch for your work with a descriptive name.
 
 ## Development Workflow
@@ -147,4 +147,4 @@ When creating a pull request, please use the following template:
 - **Discord**: For general discussion and questions
 - **Pull Requests**: For code review and discussion of implementations
 
-Thank you for contributing to HyperBEAM! 
+Thank you for contributing to hyperBEAM! 

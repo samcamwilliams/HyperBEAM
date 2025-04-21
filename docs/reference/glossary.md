@@ -1,9 +1,9 @@
 # Glossary
 
-This glossary provides definitions for terms and concepts used throughout the HyperBEAM documentation. For a comprehensive glossary of permaweb-specific terminology, check out the [permaweb glossary](#permaweb-glossary) section below.
+This glossary provides definitions for terms and concepts used throughout the hyperBEAM documentation. For a comprehensive glossary of permaweb-specific terminology, check out the [permaweb glossary](#permaweb-glossary) section below.
 
 ### AO-Core Protocol
-The underlying protocol that HyperBEAM implements, enabling decentralized computing and communication between nodes. AO-Core provides a framework into which any number of different computational models, encapsulated as primitive devices, can be attached.
+The underlying protocol that hyperBEAM implements, enabling decentralized computing and communication between nodes. AO-Core provides a framework into which any number of different computational models, encapsulated as primitive devices, can be attached.
 
 ### Asynchronous Message Passing
 A communication paradigm where senders don't wait for receivers to be ready, allowing for non-blocking operations and better scalability.
@@ -12,52 +12,52 @@ A communication paradigm where senders don't wait for receivers to be ready, all
 A saved state of a process that can be used to resume execution from a known point, used for persistence and recovery.
 
 ### Compute Unit (CU)
-The NodeJS component of HyperBEAM that executes WebAssembly modules and handles computational tasks.
+The NodeJS component of hyperBEAM that executes WebAssembly modules and handles computational tasks.
 
 ### Decentralized Execution
 The ability to run processes across a distributed network without centralized control or coordination.
 
 ### Device
-A functional unit in HyperBEAM that provides specific capabilities to the system, such as storage, networking, or computational resources.
+A functional unit in hyperBEAM that provides specific capabilities to the system, such as storage, networking, or computational resources.
 
 ### Erlang
-The programming language used to implement the HyperBEAM core, known for its robustness and support for building distributed, fault-tolerant applications.
+The programming language used to implement the hyperBEAM core, known for its robustness and support for building distributed, fault-tolerant applications.
 
 ### ~flat@1.0
-A format used for encoding settings files in HyperBEAM configuration, using HTTP header styling.
+A format used for encoding settings files in hyperBEAM configuration, using HTTP header styling.
 
 ### Hashpaths
 A mechanism for referencing locations in a program's state-space prior to execution. These state-space links are represented as Merklized lists of programs inputs and initial states.
 
-### HyperBEAM
-The Erlang-based node software that handles message routing, process management, and device coordination in the HyperBEAM ecosystem.
+### hyperBEAM
+The Erlang-based node software that handles message routing, process management, and device coordination in the hyperBEAM ecosystem.
 
 ### Message
-A data structure used for communication between processes in the HyperBEAM system. Messages can be interpreted as a binary term or as a collection of named functions (a Map of functions).
+A data structure used for communication between processes in the hyperBEAM system. Messages can be interpreted as a binary term or as a collection of named functions (a Map of functions).
 
 ### Module
 A unit of code that can be loaded and executed by the Compute Unit, typically in WebAssembly format.
 
 ### Node
-An instance of HyperBEAM running on a physical or virtual machine that participates in the distributed network.
+An instance of hyperBEAM running on a physical or virtual machine that participates in the distributed network.
 
 ### ~p4@1.0
-A device that runs as a pre-processor and post-processor in HyperBEAM, enabling a framework for node operators to sell usage of their machine's hardware to execute AO-Core devices.
+A device that runs as a pre-processor and post-processor in hyperBEAM, enabling a framework for node operators to sell usage of their machine's hardware to execute AO-Core devices.
 
 ### Process
-An independent unit of computation in HyperBEAM with its own state and execution context.
+An independent unit of computation in hyperBEAM with its own state and execution context.
 
 ### Process ID
-A unique identifier assigned to a process within the HyperBEAM system.
+A unique identifier assigned to a process within the hyperBEAM system.
 
 ### ~scheduler@1.0
 A device used to assign a linear hashpath to an execution, such that all users may access it with a deterministic ordering.
 
 ### ~compute-lite@1.0
-A lightweight device wrapping a local WASM executor, used for executing legacynet AO processes inside HyperBEAM.
+A lightweight device wrapping a local WASM executor, used for executing legacynet AO processes inside hyperBEAM.
 
 ### ~json-iface@1.0
-A device that offers a translation layer between the JSON-encoded message format used by legacy versions and HyperBEAM's native HTTP message format.
+A device that offers a translation layer between the JSON-encoded message format used by legacy versions and hyperBEAM's native HTTP message format.
 
 ### ~meta@1.0
 A device used to configure the node's hardware, supported devices, metering and payments information, amongst other configuration options.
@@ -81,7 +81,7 @@ A device used to execute WebAssembly code, using the Web Assembly Micro-Runtime 
 A device used to execute an ordered set of devices over the same inputs, allowing users to create complex combinations of other devices.
 
 ### Trusted Execution Environment (TEE)
-A secure area inside a processor that ensures the confidentiality and integrity of code and data loaded within it. Used in HyperBEAM for trust-minimized computation.
+A secure area inside a processor that ensures the confidentiality and integrity of code and data loaded within it. Used in hyperBEAM for trust-minimized computation.
 
 ### WebAssembly (WASM)
 A binary instruction format that serves as a portable compilation target for programming languages, enabling deployment on the web and other environments.

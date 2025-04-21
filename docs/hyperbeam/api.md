@@ -1,16 +1,16 @@
-<!-- # HyperBEAM API
+<!-- # hyperBEAM API
 
-This document describes the HTTP API exposed by HyperBEAM for interacting with devices and processes.
+This document describes the HTTP API exposed by hyperBEAM for interacting with devices and processes.
 
 ## API Overview
 
-HyperBEAM's API is built around the concept of messages and devices. Every interaction with HyperBEAM is done by sending HTTP requests to specific device endpoints.
+hyperBEAM's API is built around the concept of messages and devices. Every interaction with hyperBEAM is done by sending HTTP requests to specific device endpoints.
 
 ## Message Format
 
-In HyperBEAM, every piece of data is described as a message, which can be interpreted as a binary term or as a collection of named functions (a Map of functions).
+In hyperBEAM, every piece of data is described as a message, which can be interpreted as a binary term or as a collection of named functions (a Map of functions).
 
-HTTP messages in HyperBEAM follow a standard format based on HTTP semantics as described in RFC specifications.
+HTTP messages in hyperBEAM follow a standard format based on HTTP semantics as described in RFC specifications.
 
 ## Core API Endpoints
 
@@ -135,7 +135,7 @@ curl -X POST http://localhost:10000/~process@1.0/push \
 
 ## Error Handling
 
-HyperBEAM returns standard HTTP status codes to indicate the success or failure of API requests. Common error codes include:
+hyperBEAM returns standard HTTP status codes to indicate the success or failure of API requests. Common error codes include:
 
 - **400 Bad Request**: The request was malformed or invalid
 - **401 Unauthorized**: Authentication is required

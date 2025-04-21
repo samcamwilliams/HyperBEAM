@@ -30,6 +30,7 @@
 <tr><td><a href="dev_green_zone.md" class="module">dev_green_zone</a></td></tr>
 <tr><td><a href="dev_hyperbuddy.md" class="module">dev_hyperbuddy</a></td></tr>
 <tr><td><a href="dev_json_iface.md" class="module">dev_json_iface</a></td></tr>
+<tr><td><a href="dev_local_name.md" class="module">dev_local_name</a></td></tr>
 <tr><td><a href="dev_lookup.md" class="module">dev_lookup</a></td></tr>
 <tr><td><a href="dev_lua.md" class="module">dev_lua</a></td></tr>
 <tr><td><a href="dev_manifest.md" class="module">dev_manifest</a></td></tr>
@@ -37,6 +38,8 @@
 <tr><td><a href="dev_meta.md" class="module">dev_meta</a></td></tr>
 <tr><td><a href="dev_monitor.md" class="module">dev_monitor</a></td></tr>
 <tr><td><a href="dev_multipass.md" class="module">dev_multipass</a></td></tr>
+<tr><td><a href="dev_name.md" class="module">dev_name</a></td></tr>
+<tr><td><a href="dev_node_process.md" class="module">dev_node_process</a></td></tr>
 <tr><td><a href="dev_p4.md" class="module">dev_p4</a></td></tr>
 <tr><td><a href="dev_patch.md" class="module">dev_patch</a></td></tr>
 <tr><td><a href="dev_poda.md" class="module">dev_poda</a></td></tr>
@@ -100,6 +103,7 @@
 <tr><td><a href="hb_structured_fields.md" class="module">hb_structured_fields</a></td></tr>
 <tr><td><a href="hb_sup.md" class="module">hb_sup</a></td></tr>
 <tr><td><a href="hb_test_utils.md" class="module">hb_test_utils</a></td></tr>
+<tr><td><a href="hb_tracer.md" class="module">hb_tracer</a></td></tr>
 <tr><td><a href="hb_util.md" class="module">hb_util</a></td></tr>
 <tr><td><a href="rsa_pss.md" class="module">rsa_pss</a></td></tr></table>
 

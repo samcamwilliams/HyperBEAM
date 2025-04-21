@@ -1,6 +1,6 @@
 # **Installing Rebar3**
 
-Rebar3 is the Erlang build tool used by HyperBEAM for compilation and dependency management.
+Rebar3 is the Erlang build tool used by hyperBEAM for compilation and dependency management.
 
 ## Building Rebar3 from Source
 

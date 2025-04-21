@@ -3,18 +3,18 @@
 # Module hb_util #
 * [Description](#description)
 
-A collection of utility functions for building with HyperBEAM.
+A collection of utility functions for building with hyperBEAM.
 
 <a name="index"></a>
 
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_commas-1">add_commas/1*</a></td><td></td></tr><tr><td valign="top"><a href="#all_hb_modules-0">all_hb_modules/0</a></td><td>Get all loaded modules that are loaded and are part of HyperBEAM.</td></tr><tr><td valign="top"><a href="#atom-1">atom/1</a></td><td>Coerce a string to an atom.</td></tr><tr><td valign="top"><a href="#bin-1">bin/1</a></td><td>Coerce a value to a binary.</td></tr><tr><td valign="top"><a href="#count-2">count/2</a></td><td></td></tr><tr><td valign="top"><a href="#debug_fmt-1">debug_fmt/1</a></td><td>Convert a term to a string for debugging print purposes.</td></tr><tr><td valign="top"><a href="#debug_fmt-2">debug_fmt/2</a></td><td></td></tr><tr><td valign="top"><a href="#debug_print-4">debug_print/4</a></td><td>Print a message to the standard error stream, prefixed by the amount
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_commas-1">add_commas/1*</a></td><td></td></tr><tr><td valign="top"><a href="#all_hb_modules-0">all_hb_modules/0</a></td><td>Get all loaded modules that are loaded and are part of hyperBEAM.</td></tr><tr><td valign="top"><a href="#atom-1">atom/1</a></td><td>Coerce a string to an atom.</td></tr><tr><td valign="top"><a href="#bin-1">bin/1</a></td><td>Coerce a value to a binary.</td></tr><tr><td valign="top"><a href="#count-2">count/2</a></td><td></td></tr><tr><td valign="top"><a href="#debug_fmt-1">debug_fmt/1</a></td><td>Convert a term to a string for debugging print purposes.</td></tr><tr><td valign="top"><a href="#debug_fmt-2">debug_fmt/2</a></td><td></td></tr><tr><td valign="top"><a href="#debug_print-4">debug_print/4</a></td><td>Print a message to the standard error stream, prefixed by the amount
 of time that has elapsed since the last call to this function.</td></tr><tr><td valign="top"><a href="#decode-1">decode/1</a></td><td>Try to decode a URL safe base64 into a binary or throw an error when
 invalid.</td></tr><tr><td valign="top"><a href="#deep_merge-2">deep_merge/2</a></td><td>Deep merge two maps, recursively merging nested maps.</td></tr><tr><td valign="top"><a href="#do_debug_fmt-2">do_debug_fmt/2*</a></td><td></td></tr><tr><td valign="top"><a href="#do_to_lines-1">do_to_lines/1*</a></td><td></td></tr><tr><td valign="top"><a href="#encode-1">encode/1</a></td><td>Encode a binary to URL safe base64 binary string.</td></tr><tr><td valign="top"><a href="#eunit_print-2">eunit_print/2</a></td><td>Format and print an indented string to standard error.</td></tr><tr><td valign="top"><a href="#find_value-2">find_value/2</a></td><td>Find the value associated with a key in parsed a JSON structure list.</td></tr><tr><td valign="top"><a href="#find_value-3">find_value/3</a></td><td></td></tr><tr><td valign="top"><a href="#float-1">float/1</a></td><td>Coerce a string to a float.</td></tr><tr><td valign="top"><a href="#format_address-2">format_address/2*</a></td><td>If the user attempts to print a wallet, format it as an address.</td></tr><tr><td valign="top"><a href="#format_binary-1">format_binary/1</a></td><td>Format a binary as a short string suitable for printing.</td></tr><tr><td valign="top"><a href="#format_debug_trace-3">format_debug_trace/3*</a></td><td>Generate the appropriate level of trace for a given call.</td></tr><tr><td valign="top"><a href="#format_indented-2">format_indented/2</a></td><td>Format a string with an indentation level.</td></tr><tr><td valign="top"><a href="#format_indented-3">format_indented/3</a></td><td></td></tr><tr><td valign="top"><a href="#format_maybe_multiline-2">format_maybe_multiline/2</a></td><td>Format a map as either a single line or a multi-line string depending
 on the value of the <code>debug_print_map_line_threshold</code> runtime option.</td></tr><tr><td valign="top"><a href="#format_trace-2">format_trace/2*</a></td><td>Format a stack trace as a list of strings, one for each stack frame.</td></tr><tr><td valign="top"><a href="#format_trace_short-1">format_trace_short/1</a></td><td>Format a trace to a short string.</td></tr><tr><td valign="top"><a href="#format_trace_short-4">format_trace_short/4*</a></td><td></td></tr><tr><td valign="top"><a href="#format_tuple-2">format_tuple/2*</a></td><td>Helper function to format tuples with arity greater than 2.</td></tr><tr><td valign="top"><a href="#get_trace-0">get_trace/0*</a></td><td>Get the trace of the current process.</td></tr><tr><td valign="top"><a href="#hd-1">hd/1</a></td><td>Get the first element (the lowest integer key >= 1) of a numbered map.</td></tr><tr><td valign="top"><a href="#hd-2">hd/2</a></td><td></td></tr><tr><td valign="top"><a href="#hd-3">hd/3</a></td><td></td></tr><tr><td valign="top"><a href="#hd-5">hd/5*</a></td><td></td></tr><tr><td valign="top"><a href="#human_id-1">human_id/1</a></td><td>Convert a native binary ID to a human readable ID.</td></tr><tr><td valign="top"><a href="#human_int-1">human_int/1</a></td><td>Add <code>,</code> characters to a number every 3 digits to make it human readable.</td></tr><tr><td valign="top"><a href="#id-1">id/1</a></td><td>Return the human-readable form of an ID of a message when given either
-a message explicitly, raw encoded ID, or an Erlang Arweave <code>tx</code> record.</td></tr><tr><td valign="top"><a href="#id-2">id/2</a></td><td></td></tr><tr><td valign="top"><a href="#int-1">int/1</a></td><td>Coerce a string to an integer.</td></tr><tr><td valign="top"><a href="#is_hb_module-1">is_hb_module/1</a></td><td>Is the given module part of HyperBEAM?.</td></tr><tr><td valign="top"><a href="#is_hb_module-2">is_hb_module/2</a></td><td></td></tr><tr><td valign="top"><a href="#is_human_binary-1">is_human_binary/1*</a></td><td>Determine whether a binary is human-readable.</td></tr><tr><td valign="top"><a href="#is_string_list-1">is_string_list/1</a></td><td>Is the given term a string list?.</td></tr><tr><td valign="top"><a href="#key_to_atom-2">key_to_atom/2</a></td><td>Convert keys in a map to atoms, lowering <code>-</code> to <code>_</code>.</td></tr><tr><td valign="top"><a href="#list-1">list/1</a></td><td>Coerce a value to a list.</td></tr><tr><td valign="top"><a href="#list_to_numbered_map-1">list_to_numbered_map/1</a></td><td>Convert a list of elements to a map with numbered keys.</td></tr><tr><td valign="top"><a href="#maybe_throw-2">maybe_throw/2</a></td><td>Throw an exception if the Opts map has an <code>error_strategy</code> key with the
+a message explicitly, raw encoded ID, or an Erlang Arweave <code>tx</code> record.</td></tr><tr><td valign="top"><a href="#id-2">id/2</a></td><td></td></tr><tr><td valign="top"><a href="#int-1">int/1</a></td><td>Coerce a string to an integer.</td></tr><tr><td valign="top"><a href="#is_hb_module-1">is_hb_module/1</a></td><td>Is the given module part of hyperBEAM?.</td></tr><tr><td valign="top"><a href="#is_hb_module-2">is_hb_module/2</a></td><td></td></tr><tr><td valign="top"><a href="#is_human_binary-1">is_human_binary/1*</a></td><td>Determine whether a binary is human-readable.</td></tr><tr><td valign="top"><a href="#is_string_list-1">is_string_list/1</a></td><td>Is the given term a string list?.</td></tr><tr><td valign="top"><a href="#key_to_atom-2">key_to_atom/2</a></td><td>Convert keys in a map to atoms, lowering <code>-</code> to <code>_</code>.</td></tr><tr><td valign="top"><a href="#list-1">list/1</a></td><td>Coerce a value to a list.</td></tr><tr><td valign="top"><a href="#list_to_numbered_map-1">list_to_numbered_map/1</a></td><td>Convert a list of elements to a map with numbered keys.</td></tr><tr><td valign="top"><a href="#maybe_throw-2">maybe_throw/2</a></td><td>Throw an exception if the Opts map has an <code>error_strategy</code> key with the
 value <code>throw</code>.</td></tr><tr><td valign="top"><a href="#mean-1">mean/1</a></td><td></td></tr><tr><td valign="top"><a href="#message_to_ordered_list-1">message_to_ordered_list/1</a></td><td>Take a message with numbered keys and convert it to a list of tuples
 with the associated key as an integer and a value.</td></tr><tr><td valign="top"><a href="#message_to_ordered_list-2">message_to_ordered_list/2</a></td><td></td></tr><tr><td valign="top"><a href="#message_to_ordered_list-4">message_to_ordered_list/4*</a></td><td></td></tr><tr><td valign="top"><a href="#native_id-1">native_id/1</a></td><td>Convert a human readable ID to a native binary ID.</td></tr><tr><td valign="top"><a href="#normalize_trace-1">normalize_trace/1*</a></td><td>Remove all calls from this module from the top of a trace.</td></tr><tr><td valign="top"><a href="#number-1">number/1</a></td><td>Label a list of elements with a number.</td></tr><tr><td valign="top"><a href="#ok-1">ok/1</a></td><td>Unwrap a tuple of the form <code>{ok, Value}</code>, or throw/return, depending on
 the value of the <code>error_strategy</code> option.</td></tr><tr><td valign="top"><a href="#ok-2">ok/2</a></td><td></td></tr><tr><td valign="top"><a href="#pick_weighted-2">pick_weighted/2*</a></td><td></td></tr><tr><td valign="top"><a href="#print_trace-3">print_trace/3*</a></td><td></td></tr><tr><td valign="top"><a href="#print_trace-4">print_trace/4</a></td><td>Print the trace of the current stack, up to the first non-hyperbeam
@@ -41,7 +41,7 @@ stack trace.</td></tr><tr><td valign="top"><a href="#until-1">until/1</a></td><t
 
 `all_hb_modules() -> any()`
 
-Get all loaded modules that are loaded and are part of HyperBEAM.
+Get all loaded modules that are loaded and are part of hyperBEAM.
 
 <a name="atom-1"></a>
 
@@ -251,7 +251,7 @@ Get the trace of the current process.
 
 Get the first element (the lowest integer key >= 1) of a numbered map.
 Optionally, it takes a specifier of whether to return the key or the value,
-as well as a standard map of HyperBEAM runtime options.
+as well as a standard map of hyperBEAM runtime options.
 
 <a name="hd-2"></a>
 
@@ -317,7 +317,7 @@ Coerce a string to an integer.
 
 `is_hb_module(Atom) -> any()`
 
-Is the given module part of HyperBEAM?
+Is the given module part of hyperBEAM?
 
 <a name="is_hb_module-2"></a>
 
@@ -388,7 +388,7 @@ value `throw`. Otherwise, return the value.
 
 Take a message with numbered keys and convert it to a list of tuples
 with the associated key as an integer and a value. Optionally, it takes a
-standard map of HyperBEAM runtime options.
+standard map of hyperBEAM runtime options.
 
 <a name="message_to_ordered_list-2"></a>
 

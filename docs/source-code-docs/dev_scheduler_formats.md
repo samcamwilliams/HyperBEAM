@@ -23,7 +23,7 @@ new integrations of the AO protocol.<a name="index"></a>
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#aos2_normalize_data-1">aos2_normalize_data/1*</a></td><td>The <code>hb_gateway_client</code> module expects all JSON structures to at least
 have a <code>data</code> field.</td></tr><tr><td valign="top"><a href="#aos2_normalize_types-1">aos2_normalize_types/1</a></td><td>Normalize an AOS2 formatted message to ensure that all field NAMES and
-types are correct.</td></tr><tr><td valign="top"><a href="#aos2_to_assignment-2">aos2_to_assignment/2</a></td><td>Create and normalize an assignment from an AOS2-style JSON structure.</td></tr><tr><td valign="top"><a href="#aos2_to_assignments-3">aos2_to_assignments/3</a></td><td>Convert an AOS2-style JSON structure to a normalized HyperBEAM
+types are correct.</td></tr><tr><td valign="top"><a href="#aos2_to_assignment-2">aos2_to_assignment/2</a></td><td>Create and normalize an assignment from an AOS2-style JSON structure.</td></tr><tr><td valign="top"><a href="#aos2_to_assignments-3">aos2_to_assignments/3</a></td><td>Convert an AOS2-style JSON structure to a normalized hyperBEAM
 assignments response.</td></tr><tr><td valign="top"><a href="#assignment_to_aos2-2">assignment_to_aos2/2*</a></td><td>Convert an assignment to an AOS2-compatible JSON structure.</td></tr><tr><td valign="top"><a href="#assignments_to_aos2-4">assignments_to_aos2/4</a></td><td></td></tr><tr><td valign="top"><a href="#assignments_to_bundle-4">assignments_to_bundle/4</a></td><td>Generate a <code>GET /schedule</code> response for a process as HTTP-sig bundles.</td></tr><tr><td valign="top"><a href="#assignments_to_bundle-5">assignments_to_bundle/5*</a></td><td></td></tr><tr><td valign="top"><a href="#cursor-2">cursor/2*</a></td><td>Generate a cursor for an assignment.</td></tr><tr><td valign="top"><a href="#format_opts-1">format_opts/1*</a></td><td>For all scheduler format operations, we do not calculate hashpaths,
 perform cache lookups, or await inprogress results.</td></tr></table>
 
@@ -68,7 +68,7 @@ NOTE: This method is destructive to the verifiability of the assignment.
 
 `aos2_to_assignments(ProcID, Body, RawOpts) -> any()`
 
-Convert an AOS2-style JSON structure to a normalized HyperBEAM
+Convert an AOS2-style JSON structure to a normalized hyperBEAM
 assignments response.
 
 <a name="assignment_to_aos2-2"></a>

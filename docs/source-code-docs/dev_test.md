@@ -7,9 +7,10 @@
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Example implementation of a <code>compute</code> handler.</td></tr><tr><td valign="top"><a href="#compute_test-0">compute_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#device_with_function_key_module_test-0">device_with_function_key_module_test/0*</a></td><td>Tests the resolution of a default function.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Exports a default_handler function that can be used to test the
-handler resolution mechanism.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Example <code>init/3</code> handler.</td></tr><tr><td valign="top"><a href="#mul-2">mul/2</a></td><td>Example implementation of an <code>imported</code> function for a WASM
-executor.</td></tr><tr><td valign="top"><a href="#postprocess-3">postprocess/3</a></td><td>Set the <code>postprocessor-called</code> key to true in the HTTP server.</td></tr><tr><td valign="top"><a href="#restore-3">restore/3</a></td><td>Example <code>restore/3</code> handler.</td></tr><tr><td valign="top"><a href="#restore_test-0">restore_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Do nothing when asked to snapshot.</td></tr><tr><td valign="top"><a href="#test_func-1">test_func/1</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Example implementation of a <code>compute</code> handler.</td></tr><tr><td valign="top"><a href="#compute_test-0">compute_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#device_with_function_key_module_test-0">device_with_function_key_module_test/0*</a></td><td>Tests the resolution of a default function.</td></tr><tr><td valign="top"><a href="#increment_counter-3">increment_counter/3</a></td><td>Find a test worker's PID and send it an increment message.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Exports a default_handler function that can be used to test the
+handler resolution mechanism.</td></tr><tr><td valign="top"><a href="#info-3">info/3</a></td><td>Exports a default_handler function that can be used to test the
+handler resolution mechanism.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Example <code>init/3</code> handler.</td></tr><tr><td valign="top"><a href="#long_task-3">long_task/3</a></td><td>Does nothing, just sleeps for 3 seconds to simulate a long-running task.</td></tr><tr><td valign="top"><a href="#mul-2">mul/2</a></td><td>Example implementation of an <code>imported</code> function for a WASM
+executor.</td></tr><tr><td valign="top"><a href="#postprocess-3">postprocess/3</a></td><td>Set the <code>postprocessor-called</code> key to true in the HTTP server.</td></tr><tr><td valign="top"><a href="#restore-3">restore/3</a></td><td>Example <code>restore/3</code> handler.</td></tr><tr><td valign="top"><a href="#restore_test-0">restore_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Do nothing when asked to snapshot.</td></tr><tr><td valign="top"><a href="#test_func-1">test_func/1</a></td><td></td></tr><tr><td valign="top"><a href="#update_state-3">update_state/3</a></td><td>Find a test worker's PID and send it an update message.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -40,11 +41,28 @@ slot number in the results key.
 
 Tests the resolution of a default function.
 
+<a name="increment_counter-3"></a>
+
+### increment_counter/3 ###
+
+`increment_counter(Msg1, Msg2, Opts) -> any()`
+
+Find a test worker's PID and send it an increment message.
+
 <a name="info-1"></a>
 
 ### info/1 ###
 
 `info(X1) -> any()`
+
+Exports a default_handler function that can be used to test the
+handler resolution mechanism.
+
+<a name="info-3"></a>
+
+### info/3 ###
+
+`info(Msg1, Msg2, Opts) -> any()`
 
 Exports a default_handler function that can be used to test the
 handler resolution mechanism.
@@ -56,6 +74,14 @@ handler resolution mechanism.
 `init(Msg, Msg2, Opts) -> any()`
 
 Example `init/3` handler. Sets the `Already-Seen` key to an empty list.
+
+<a name="long_task-3"></a>
+
+### long_task/3 ###
+
+`long_task(Msg1, Msg2, Opts) -> any()`
+
+Does nothing, just sleeps for 3 seconds to simulate a long-running task.
 
 <a name="mul-2"></a>
 
@@ -102,4 +128,12 @@ Do nothing when asked to snapshot.
 ### test_func/1 ###
 
 `test_func(X1) -> any()`
+
+<a name="update_state-3"></a>
+
+### update_state/3 ###
+
+`update_state(Msg, Msg2, Opts) -> any()`
+
+Find a test worker's PID and send it an update message.
 
