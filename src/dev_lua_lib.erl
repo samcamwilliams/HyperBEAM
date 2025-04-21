@@ -166,6 +166,13 @@ event([Event], ExecState, Opts) ->
     ?event({recalling_event, Event}),
     event([<<"lua_event">>, Event], ExecState, Opts);
 event([Group, Event], ExecState, Opts) ->
-    ?event({event, {group, Group}, {event, Event}}),
-    ?event(Group, {Group, Event}, Opts),
+    FormattedEvent =
+        case hb_util:is_ordered_list(Event) of
+            true ->
+                ?event({is_ordered_list, Event}),
+                list_to_tuple(hb_util:message_to_ordered_list(Event));
+            false -> Event
+        end,
+    ?event({event, {group, Group}, {event, FormattedEvent}}),
+    ?event(Group, FormattedEvent, Opts),
     {[<<"ok">>], ExecState}.
