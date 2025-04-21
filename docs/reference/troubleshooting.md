@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide addresses common issues you might encounter when working with hyperBEAM and the Compute Unit.
+This guide addresses common issues you might encounter when working with HyperBEAM and the Compute Unit.
 
 ## Installation Issues
 
@@ -24,11 +24,11 @@ This guide addresses common issues you might encounter when working with hyperBE
 - Ensure you have the latest version of the repository: `git fetch && git reset --hard origin/master`
 - Try manually downloading a precompiled Rebar3 binary
 
-## hyperBEAM Issues
+## HyperBEAM Issues
 
-### hyperBEAM Won't Start
+### HyperBEAM Won't Start
 
-**Symptoms**: Errors when running `rebar3 shell` or the hyperBEAM startup command
+**Symptoms**: Errors when running `rebar3 shell` or the HyperBEAM startup command
 
 **Solutions**:
 
@@ -37,9 +37,9 @@ This guide addresses common issues you might encounter when working with hyperBE
 - Examine Erlang crash dumps for detailed error information
 - Ensure all required dependencies are installed
 
-### hyperBEAM Crashes During Operation
+### HyperBEAM Crashes During Operation
 
-**Symptoms**: Unexpected termination of the hyperBEAM process
+**Symptoms**: Unexpected termination of the HyperBEAM process
 
 **Solutions**:
 
@@ -74,9 +74,9 @@ This guide addresses common issues you might encounter when working with hyperBE
 
 ## Integration Issues
 
-### hyperBEAM Can't Connect to Compute Unit
+### HyperBEAM Can't Connect to Compute Unit
 
-**Symptoms**: Connection errors in hyperBEAM logs when trying to reach the CU
+**Symptoms**: Connection errors in HyperBEAM logs when trying to reach the CU
 
 **Solutions**:
 
@@ -90,7 +90,7 @@ This guide addresses common issues you might encounter when working with hyperBE
 
 **Solutions**:
 
-- Check both hyperBEAM and CU logs for specific error messages
+- Check both HyperBEAM and CU logs for specific error messages
 - Verify that the WASM module is correctly compiled and valid
 - Test with a simple example process to isolate the issue
 - Adjust memory limits if the process requires more resources
@@ -99,6 +99,6 @@ This guide addresses common issues you might encounter when working with hyperBE
 
 If you're still experiencing issues after trying these troubleshooting steps:
 
-1. Check the [GitHub repository](https://github.com/permaweb/hyperBEAM) for known issues
+1. Check the [GitHub repository](https://github.com/permaweb/HyperBEAM) for known issues
 2. Join the [Discord community](https://discord.gg/V3yjzrBxPM) for support
 3. Open an issue on GitHub with detailed information about your problem 

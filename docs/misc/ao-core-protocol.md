@@ -4,7 +4,7 @@
 
 This document contains a rough specification, in `engineering note` form, for the AO-Core protocol. AO-Core is a method through which the permaweb can be interpreted as not only a flat, permanent ledger of data, but also as a mutable and reactive computation environment. Through this frame, the permaweb can be interpreted as a single, shared ['system image'](https://en.wikipedia.org/wiki/Single_system_image) that can be accessed and added to permissionlessly. Notably, the AO-Core itself intends to be a truly minimal computation model: It does not enforce any forms of consensus upon its execution directly, nor the use of any particular virtual machine. Even the requirements it imparts upon the host runtime environment are minimal. Instead, the AO-Core focuses on offering the simplest possible representation of _data_ and _computation_ upon that data, tailored for Arweave's distributed environment and [HTTP](https://datatracker.ietf.org/doc/html/rfc9114) access methods.
 
-[hyperBEAM](https://github.com/permaweb/hyperBEAM) is an implementation of the AO-Core protocol, as well as [AO](https://ao.arweave.net), a framework ontop of the AO-Core that constructs an environment for _trustless_ -- not just _permissionless_ -- computation.
+[HyperBEAM](https://github.com/permaweb/HyperBEAM) is an implementation of the AO-Core protocol, as well as [AO](https://ao.arweave.net), a framework ontop of the AO-Core that constructs an environment for _trustless_ -- not just _permissionless_ -- computation.
 
 ## Context
 
@@ -89,7 +89,7 @@ When added as the highest `Device` tag on a message, the stack device scans the 
 
 ## Paths, Hashpaths, and Commitments
 
-As described, all data in hyperBEAM is the result of the application of two messages together. Each piece of data has its own ID, which are 'mixed' cryptographically during execution resulting in a new value. This value is called the `hashpath`, and can be seen as a memoization of the tree of executions that were the source of a given piece of data.
+As described, all data in HyperBEAM is the result of the application of two messages together. Each piece of data has its own ID, which are 'mixed' cryptographically during execution resulting in a new value. This value is called the `hashpath`, and can be seen as a memoization of the tree of executions that were the source of a given piece of data.
 
 Hashpaths are derived as follows:
 

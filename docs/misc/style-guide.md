@@ -1,4 +1,4 @@
-# The hyperBEAM Style Guide.
+# The HyperBEAM Style Guide.
 
 **Rule one of style guide club:** _We do not talk about style guide club._
 

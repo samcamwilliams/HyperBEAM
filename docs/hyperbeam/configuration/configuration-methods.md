@@ -1,21 +1,21 @@
-# hyperBEAM Configuration Methods
+# HyperBEAM Configuration Methods
 
-hyperBEAM offers multiple ways to set configuration options, each with different use cases. This document details these methods and explains when to use each one.
+HyperBEAM offers multiple ways to set configuration options, each with different use cases. This document details these methods and explains when to use each one.
 
 ## Available Configuration Methods
 
-hyperBEAM can be configured using these methods:
+HyperBEAM can be configured using these methods:
 
 1. **Configuration File** - Use a flat@1.0 encoded settings file 
-2. **Command Line Arguments** - Pass configuration when starting hyperBEAM **(Recommended)**
+2. **Command Line Arguments** - Pass configuration when starting HyperBEAM **(Recommended)**
 3. **Environment Variables** - Set options via environment variables
 
 !!! warning
-	The current flat@1.0 format has limitations in hyperBEAM. For now, it is recommended to use the `start_mainnet` approach for configuration. We plan to update config.flat in the future to allow for more complex configuration options.
+	The current flat@1.0 format has limitations in HyperBEAM. For now, it is recommended to use the `start_mainnet` approach for configuration. We plan to update config.flat in the future to allow for more complex configuration options.
 
 ## Using a Configuration File
 
-The recommended way to configure hyperBEAM is through a flat@1.0 encoded settings file. By default, hyperBEAM looks for a file named `config.flat` in the current directory.
+The recommended way to configure HyperBEAM is through a flat@1.0 encoded settings file. By default, HyperBEAM looks for a file named `config.flat` in the current directory.
 
 ### Basic Syntax
 
@@ -29,7 +29,7 @@ priv_key_location: /path/to/wallet.json
 
 ### Limitations of flat@1.0 Format
 
-**Important:** The flat@1.0 format has significant limitations in hyperBEAM:
+**Important:** The flat@1.0 format has significant limitations in HyperBEAM:
 
 - Values can only be simple atoms (like `true`, `false`, `./wallet.json`)
 - **DO NOT include complex data structures** (maps, lists, tuples) in the config.flat file.
@@ -66,7 +66,7 @@ rebar3 shell --eval "
 
 ### Loading Configuration Files
 
-hyperBEAM automatically loads `config.flat` when starting:
+HyperBEAM automatically loads `config.flat` when starting:
 
 ```bash
 rebar3 shell
@@ -74,7 +74,7 @@ rebar3 shell
 
 ## Command Line Arguments
 
-You can pass configuration options directly when starting hyperBEAM:
+You can pass configuration options directly when starting HyperBEAM:
 
 ```bash
 rebar3 shell --eval "hb:start_mainnet(#{ port => 10001, priv_key_location => <<\"path/to/wallet.json\">> })."
@@ -98,7 +98,7 @@ This approach is recommended for:
 
 ## Environment Variables
 
-hyperBEAM recognizes these environment variables:
+HyperBEAM recognizes these environment variables:
 
 | Variable | Corresponding Option | Example |
 |----------|----------------------|---------|
@@ -111,7 +111,7 @@ hyperBEAM recognizes these environment variables:
 
 ## Configuration Precedence
 
-When multiple configuration methods are used, hyperBEAM follows this precedence order:
+When multiple configuration methods are used, HyperBEAM follows this precedence order:
 
 1. Command line arguments (highest priority)
 2. Configuration file 

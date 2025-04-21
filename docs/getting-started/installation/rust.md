@@ -1,6 +1,6 @@
 # **Installing Rust and Cargo**
 
-Rust is required for certain components in the hyperBEAM ecosystem.
+Rust is required for certain components in the HyperBEAM ecosystem.
 
 ## Installing Rust
 
