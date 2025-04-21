@@ -8,6 +8,7 @@ site_dir: mkdocs-site
 
 nav:
   - Home: 'index.md'
+  - Overview: 'overview/index.md'
   - Installation & Core:
     - System Dependencies:
       - Overview: 'getting-started/installation/index.md'
@@ -189,33 +190,38 @@ theme:
     # Palette toggle for light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: black
+      primary: white
       accent: green
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     # Palette toggle for dark mode
     - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: black
+      scheme: default
+      primary: white
       accent: green
       toggle:
-        icon: material/brightness-4
+        icon: material/brightness-7
         name: Switch to light mode
   font:
-    text: Inter
-  nav_style: dark
+    text: DM Sans
+  nav_style: default
   highlightjs: true
+
 
 plugins:
   - search
 
 extra_css:
-  - assets/css/style.css
-  - assets/css/custom.css
+  - assets/style.css
  
+extra_javascript:
+  - js/utc-time.js
+
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/permaweb/hyperBEAM
       name: GitHub
+  generator: false
+

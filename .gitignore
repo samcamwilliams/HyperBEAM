@@ -19,6 +19,7 @@ logs
 *.iml
 rebar3.crashdump
 *~
+/venv
 
 *.json
 !.vscode/*
