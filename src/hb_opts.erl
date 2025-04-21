@@ -263,7 +263,9 @@ get(Key, Default, Opts) ->
                     (Str) -> string:tokens(Str, ",")
                 end,
                 ?DEFAULT_PRINT_OPTS
-            }
+            },
+        lua_scripts => {"LUA_SCRIPTS", "scripts"},
+        lua_tests => {"LUA_TESTS", fun dev_lua_test:parse_spec/1, tests}
     }
 ).
 
