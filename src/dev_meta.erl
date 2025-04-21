@@ -199,7 +199,7 @@ adopt_node_message(Request, NodeMsg) ->
 %% After execution, we run the node's `postprocessor' message on the result of
 %% the request before returning the result it grants back to the user.
 handle_resolve(Req, Msgs, NodeMsg) ->
-	TracePID = maps:get(trace, NodeMsg),
+	TracePID = hb_opts:get(trace, no_tracer_set, NodeMsg),
     % Apply the pre-processor to the request.
     case resolve_processor(<<"preprocess">>, preprocessor, Req, Msgs, NodeMsg) of
         {ok, PreProcessedMsg} ->
@@ -265,17 +265,20 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     case hb_opts:get(Processor, undefined, NodeMsg) of
         undefined -> {ok, Query};
         ProcessorMsg ->
-            ?event(processor, {processor_resolving, PathKey, ProcessorMsg}),
-            Res = hb_ao:resolve(
-                ProcessorMsg,
-                #{
-                    <<"path">> => PathKey,
-                    <<"body">> => Query,
-                    <<"request">> => Req
-                },
-                NodeMsg#{ hashpath => ignore }
-            ),
-            ?event(processor, {processor_result, {type, PathKey}, {res, Res}}),
+            Key = hb_ao:get(<<"path">>, ProcessorMsg, PathKey, NodeMsg),
+            ?event(processor, {processor_resolving, Key, ProcessorMsg}),
+            Res =
+                hb_ao:resolve(
+                    ProcessorMsg,
+                    #{
+                        <<"path">> =>
+                            hb_ao:get(<<"path">>, ProcessorMsg, Key, NodeMsg),
+                        <<"body">> => Query,
+                        <<"request">> => Req
+                    },
+                    NodeMsg#{ hashpath => ignore }
+                ),
+            ?event(processor, {processor_result, {type, Key}, {res, Res}}),
             Res
     end.
 
