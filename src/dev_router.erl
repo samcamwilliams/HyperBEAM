@@ -183,15 +183,16 @@ apply_routes(Msg, R, Opts) ->
     NodesWithRouteApplied =
         lists:map(
             fun(N) ->
-                ?event({apply_route, {msg, Msg}, {node, N}}),
+                ?event(debug, {apply_route, {msg, Msg}, {node, N}}),
                 case apply_route(Msg, N) of
                     {ok, URI} when is_binary(URI) -> N#{ <<"uri">> => URI };
-                    {ok, Map} -> Map;
+                    {ok, RMsg} -> maps:merge(N, RMsg);
                     {error, _} -> N
                 end
             end,
             hb_util:message_to_ordered_list(Nodes)
         ),
+    ?event(debug, {nodes_after_apply, NodesWithRouteApplied}),
     R#{ <<"nodes">> => NodesWithRouteApplied }.
 
 %% @doc Apply a node map's rules for transforming the path of the message.
@@ -274,6 +275,7 @@ choose(N, <<"Random">>, _, Nodes, _Opts) ->
     Node = lists:nth(rand:uniform(length(Nodes)), Nodes),
     [Node | choose(N - 1, <<"Random">>, nop, lists:delete(Node, Nodes), _Opts)];
 choose(N, <<"By-Weight">>, _, Nodes, Opts) ->
+    ?event(debug, {nodes, Nodes}),
     NodesWithWeight =
         [
             { Node, hb_util:float(hb_ao:get(<<"weight">>, Node, Opts)) }
@@ -441,6 +443,9 @@ local_process_route_provider_test() ->
     ?event({responses, Responses}),
     ?assertEqual(2, sets:size(sets:from_list(Responses))).
 
+%% @doc Example of a Lua script being used as the `route_provider' for a
+%% HyperBEAM node. The script utilized in this example dynamically adjusts the
+%% likelihood of routing to a given node, depending upon price and performance.
 local_dynamic_router_test() ->
     BenchRoutes = 50,
     {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
@@ -520,7 +525,7 @@ local_dynamic_router_test() ->
                 hb_util:ok(
                     hb_http:get(
                         Node,
-                        <<"/~router@1.0/route?route-path=/procID~process@1.0/now">>,
+                        <<"/~router@1.0/route/uri?route-path=/procID~process@1.0/now">>,
                         #{}
                     )
                 )
@@ -550,6 +555,147 @@ local_dynamic_router_test() ->
     ?event(debug_distribution, {distribution_of_responses, Dist}),
     ?assert(length(UniqueResponses) > 1).
 
+%% @doc Demonstrates routing tables being dynamically created and adjusted
+%% according to the real-time performance of nodes. This test utilizes the
+%% `dynamic-router' script to manage routes and recalculate weights based on the
+%% reported performance.
+dynamic_routing_by_performance_test_() ->
+    {timeout, 30, fun dynamic_routing_by_performance/0}.
+dynamic_routing_by_performance() ->
+    % Setup test parameters
+    TestNodes = 5,
+    BenchRoutes = 50,
+    TestPath = <<"/.*/.*">>,
+    % Start the main node for the test, loading the `dynamic-router' script and
+    % the http_monitor to generate performance messages.
+    {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
+    Run = hb_util:bin(rand:uniform(1337)),
+    Node = hb_http_server:start_node(Opts = #{
+        relay_http_client => gun,
+        store => [
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+            }
+        ],
+        priv_wallet => ar_wallet:new(),
+        route_provider => #{
+            <<"path">> =>
+                RouteProvider =
+                    <<"/perf-router~node-process@1.0/compute/routes~message@1.0">>
+        },
+        node_processes => #{
+            <<"perf-router">> => #{
+                <<"device">> => <<"process@1.0">>,
+                <<"execution-device">> => <<"lua@5.3a">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"script">> => #{
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"module">> => <<"dynamic-router">>,
+                    <<"body">> => Script
+                },
+                % Set script-specific factors for the test
+                <<"pricing-weight">> => 1,
+                <<"performance-weight">> => 99,
+                <<"score-preference">> => 4,
+                <<"performance-period">> => 3, % Adjust quickly
+                <<"initial-performance">> => 1000
+            }
+        },
+        % Define the request that should be called in order to record performance
+        % information into the process. The `body' of the `http_monitor' message
+        % is filled with the signed performance report.
+        http_monitor => #{
+            <<"method">> => <<"POST">>,
+            <<"path">> => <<"/perf-router~node-process@1.0/schedule">>
+        }
+    }),
+    % Start and add a series of nodes with decreasing performance, via lag 
+    % introduced with a preprocessor set to `~test@1.0/delay'.
+    XNodes =
+        lists:map(
+            fun(X) ->
+                % Start the node, applying a delay that increases for each additional
+                % node.
+                XNode =
+                    hb_http_server:start_node(
+                        #{
+                            preprocessor => #{
+                                <<"device">> => <<"test-device@1.0">>,
+                                <<"path">> => <<"delay">>,
+                                <<"duration">> => X * 50, % Delay by some ms
+                                <<"return">> => [
+                                    #{ <<"node">> => X },
+                                    <<"node">>
+                                ]
+                            }
+                        }
+                    ),
+                % Register the node with the router.
+                hb_http:post(
+                    Node,
+                    #{
+                        <<"path">> => <<"/perf-router~node-process@1.0/schedule">>,
+                        <<"method">> => <<"POST">>,
+                        <<"body">> =>
+                            hb_message:commit(
+                                #{
+                                    <<"path">> => <<"register">>,
+                                    <<"route">> =>
+                                        #{
+                                            <<"prefix">> => XNode,
+                                            <<"template">> => TestPath,
+                                            <<"price">> => 1000 + X
+                                        }
+                                },
+                                Opts
+                            )
+                    },
+                    Opts
+                ),
+                XNode
+            end,
+            lists:seq(1, TestNodes)
+        ),
+    timer:sleep(2000),
+    % Force calculation of the process state.
+    {ok, ResBefore} =
+        hb_http:get(
+            Node,
+            PerfPath =
+                <<"/perf-router~node-process@1.0/now/routes~message@1.0/1/nodes">>,
+            Opts
+        ),
+    ?event(debug_dynrouter, {nodes_before, ResBefore}),
+    % Send `BenchRoutes' request messages to the nodes.
+    lists:foreach(
+        fun(XNode) ->
+            % We send the requests to the main node's `relay@1.0' device, which
+            % will then apply the routes and the request to the test node set.
+            Res = hb_http:get(
+                Node,
+                << "/~relay@1.0/call?relay-path=/~scheduler@1.0/info" >>,
+                Opts
+            ),
+            ?event(debug_dynrouter, {recvd, Res})
+        end,
+        lists:seq(1, BenchRoutes)
+    ),
+    % Call `recalculate' on the router process and get the resulting weight
+    % table.
+    hb_http:post(
+        Node,
+        #{
+            <<"path">> => <<"/perf-router~node-process@1.0/schedule">>,
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                hb_message:commit(#{ <<"path">> => <<"recalculate">> }, Opts)
+        },
+        Opts
+    ),
+    {ok, ResAfter} = hb_http:get(Node, PerfPath, Opts),
+    ?event(debug_dynrouter, {nodes_after, ResAfter}),
+    ok.
 
 weighted_random_strategy_test() ->
     Nodes =

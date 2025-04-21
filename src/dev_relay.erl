@@ -75,7 +75,7 @@ call(M1, RawM2, Opts) ->
         end,
     Client =
         case hb_ao:get(<<"http-client">>, BaseTarget, Opts) of
-            not_found -> hb_opts:get(relay_http_client, Opts);
+            not_found -> hb_opts:get(relay_http_client, gun, Opts);
             RequestedClient -> RequestedClient
         end,
     ?event({relaying_message, TargetMod2}),

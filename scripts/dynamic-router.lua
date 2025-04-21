@@ -174,13 +174,14 @@ end
 
 local function add_node(state, req, opts)
     local route = current_route(state.routes, req.route.template, opts)
-
+    local reference = route.reference .. "/nodes/" .. tostring(#route.nodes + 1)
     table.insert(route.nodes, {
         prefix = req.route.prefix,
         price = req.route.price,
         topup = req.route.topup,
         performance = state["initial-performance"],
-        reference = route.reference .. "/nodes/" .. tostring(#route.nodes + 1)
+        reference = reference,
+        opts = { http_reference = reference }
     })
 
     local new_state = ao.set(state, route.reference, route)
@@ -217,12 +218,18 @@ function register(state, assignment, opts)
 end
 
 -- Update the performance of a host by its reference.
-function performance(state, assignment, opts)
+function duration(state, assignment, opts)
     state = ensure_defaults(state)
 
     local req = assignment.body
-    local duration = req.body.duration
-    local reference = req.body.reference .. "/performance"
+    local reference = req.reference
+    if reference == nil then
+        ao.event("debug_dynrouter", {"ignoring", req["request-path"]})
+        return state
+    end
+    ao.event("debug_dynrouter", {"applying_duration", req.reference})
+    reference = reference .. "/performance"
+    local duration = req.duration
     local change_factor = 1 / state["performance-period"]
 
     -- Get the performance of the route at `reference'
@@ -247,8 +254,10 @@ function performance(state, assignment, opts)
     state = ao.set(state, reference, performance)
 
     ao.event("debug_router",
-        {"State after performance set", {
-            state = state, performance = performance } }
+        {
+            "State after performance set",
+            { state = state, performance = performance }
+        }
     )
     return "ok", state
 end
@@ -259,7 +268,7 @@ function compute(state, assignment, opts)
     elseif assignment.body.path == "recalculate" then
         return recalculate(state, assignment, opts)
     elseif assignment.body.path == "performance" then
-        return performance(state, assignment, opts)
+        return duration(state, assignment, opts)
     else
         -- If we have been called without a relevant path, simply ensure that
         -- the state is initialized and return it.
@@ -370,16 +379,18 @@ function performance_test()
 
     -- Post 2 performance updates for the first node, improving its performance.
     local perf_req = {
-      path = "performance",
-      body = { host = "host1", reference = node1_ref, duration = 200 }
+        path = "duration",
+        host = "host1",
+        reference = node1_ref,
+        duration = 200
     }
-    _, state = performance(state, { body = perf_req }, {})
-    _, state = performance(state, { body = perf_req }, {})
+    _, state = duration(state, { body = perf_req }, {})
+    _, state = duration(state, { body = perf_req }, {})
     -- Post a performance update for the second node, with very poor performance
-    perf_req.body.reference = node2_ref
-    perf_req.body.duration = 55500
+    perf_req.reference = node2_ref
+    perf_req.duration = 55500
     ao.event("debug_router", {"perf_req node 2", perf_req})
-    _, state = performance(state, { body = perf_req }, {})
+    _, state = duration(state, { body = perf_req }, {})
 
     ao.event("debug_router",
         {"state after performance updates", {
