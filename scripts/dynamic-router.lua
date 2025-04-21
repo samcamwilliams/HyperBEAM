@@ -61,7 +61,7 @@ end
 -- Compute the scores for all routes.
 local function recalculate_scores(state, route, opts)
     -- Calculate the score per node.
-
+    ao.event("rakis", { state = state, route = route})
     for _, node in ipairs(route.nodes) do
         -- The performance score for the node on the route should be scaled by
         -- the performance weight, moderated by the sampling rate. The sampling
@@ -208,7 +208,7 @@ function performance_and_recalc_test()
     -- post a performance update
     local perf_req = {
       path = "performance",
-      body = { host = "host1", duration = 100 }
+      body = { method = "POST", host = "host1", duration = 100 }
     }
     state = compute(state, { body = perf_req }, {})
   
@@ -216,7 +216,7 @@ function performance_and_recalc_test()
     local avg = state["averaging-period"]
     local init_perf = state["initial-performance"]
     local expected_perf = (init_perf * (1 - 1/avg)) + (100 * (1/avg))
-    local actual_perf = state.performance.nodes["host1"]
+    local actual_perf = state.performance["host1"]
     ao.event("debug_router", state.performance)
     if math.abs(actual_perf - expected_perf) > 1e-9 then
       error(("Performance mismatch: expected %.9f, got %.9f")
@@ -224,8 +224,8 @@ function performance_and_recalc_test()
     end
   
     -- now trigger a recalc
+    ao.event("rakis", state.routes) 
     state = compute(state, { body = { path = "recalculate" } }, {})
-  
     -- manually compute the expected weight term
     local route = state.routes[1]
     local sp = state["score-preference"]

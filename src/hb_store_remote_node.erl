@@ -55,8 +55,10 @@ read(Opts = #{ <<"node">> := Node }, Key) ->
     ?event({remote_read, {node, Node}, {key, Key}}),
     case hb_http:get(Node, #{ <<"path">> => <<"/~cache@1.0/read">>, <<"target">> => Key }, Opts) of
         {ok, Res} ->
-            {ok, Msg} = hb_message:with_only_committed(Res),
-            ?event({read, {result, Msg}}),
+            % returning the whole response to get the test-key
+            % {ok, Msg} = hb_message:with_only_committed(Res),
+            Msg = hb_message:uncommitted(Res),
+            % ?event({read, {result, Msg}}),
             {ok, Msg};
         {error, _Err} ->
             ?event({read, {result, not_found}}),

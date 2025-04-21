@@ -1081,9 +1081,9 @@ tabm_ao_ids_equal_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}),
+    ?event({encoded, dev_message:id(Encoded, #{ <<"committers">> => <<"none">> } )}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}),
+    ?event({decoded, {explicit, Decoded}}),
     ?assertEqual(
         dev_message:id(Msg, #{ <<"committers">> => <<"none">>}, #{}),
         dev_message:id(Decoded, #{ <<"committers">> => <<"none">>}, #{})
@@ -1628,4 +1628,5 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).
+    tabm_ao_ids_equal_test(<<"json@1.0">>).
+    % id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).
