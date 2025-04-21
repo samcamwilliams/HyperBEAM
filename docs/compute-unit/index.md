@@ -4,13 +4,13 @@ The ao Compute Unit (CU) is a spec-compliant implementation built with NodeJS th
 
 ## What is the Compute Unit?
 
-The Compute Unit is responsible for executing WebAssembly modules and handling computational tasks within the ao ecosystem. It works in conjunction with HyperBEAM but runs as a separate process, providing the actual execution environment for ao processes.
+The Compute Unit is responsible for executing WebAssembly modules and handling computational tasks within the ao ecosystem. It works in conjunction with hyperBEAM but runs as a separate process, providing the actual execution environment for ao processes.
 
 Key responsibilities include:
 - Executing WebAssembly modules
 - Managing process memory and state
 - Handling process checkpointing
-- Processing evaluation requests from HyperBEAM
+- Processing evaluation requests from hyperBEAM
 
 ## Architecture
 
@@ -38,7 +38,7 @@ The Compute Unit requires:
 
 - Node.ja
 - Access to local file system for state persistence
-- Network access to communicate with HyperBEAM
+- Network access to communicate with hyperBEAM
 - An Arweave wallet for identity
 
 ### System Requirements

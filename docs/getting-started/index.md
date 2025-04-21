@@ -1,14 +1,14 @@
-# Getting Started with HyperBEAM
+# Getting Started with hyperBEAM
 
-This section will guide you through the process of preparing your machine with the nessary dependencies in order to install and run HyperBEAM and the Compute Unit.
+This section will guide you through the process of preparing your machine with the nessary dependencies in order to install and run hyperBEAM and the Compute Unit.
 
 ## Installation Process Overview
 
-Setting up HyperBEAM involves several steps:
+Setting up hyperBEAM involves several steps:
 
 1. **Check System Requirements** - Ensure your hardware and operating system meet the minimum requirements
 2. **Install Dependencies** - Set up the necessary system packages and dependencies
-3. **Setup HyperBEAM** - Clone, Compile, Configure, and Run the HyperBEAM
+3. **Setup hyperBEAM** - Clone, Compile, Configure, and Run the hyperBEAM
 4. **SetUp the Compute Unit** - Clone, Compile, Configure, and Run the Local Compute Unit
 
 ## Before You Begin

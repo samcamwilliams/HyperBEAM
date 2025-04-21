@@ -1,6 +1,6 @@
 # **Local CU Setup**
 
-This guide explains how to set up the local Compute Unit (CU) for HyperBEAM.
+This guide explains how to set up the local Compute Unit (CU) for hyperBEAM.
 
 ## What is Local CU?
 
@@ -66,8 +66,8 @@ The CU supports numerous environment variables for configuration. Here are the k
 
 * **WALLET/WALLET_FILE**: The JWK Interface stringified JSON or a file to load it from
 * **PORT**: Which port the web server should listen on (defaults to 6363)
-* **UNIT_MODE**: Set to "hbu" for HyperBEAM mode
-* **HB_URL**: URL of your HyperBEAM instance
+* **UNIT_MODE**: Set to "hbu" for hyperBEAM mode
+* **HB_URL**: URL of your hyperBEAM instance
 
 ### Gateway Configuration
 

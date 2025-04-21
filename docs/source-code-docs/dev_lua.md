@@ -73,7 +73,7 @@ Call the Lua script with the given arguments.
 
 `decode(Map) -> any()`
 
-Decode a Lua result into a HyperBEAM `structured@1.0` message.
+Decode a Lua result into a hyperBEAM `structured@1.0` message.
 
 <a name="direct_benchmark_test-0"></a>
 
@@ -89,7 +89,7 @@ Benchmark the performance of Lua executions.
 
 `encode(Map) -> any()`
 
-Encode a HyperBEAM `structured@1.0` message into a Lua result.
+Encode a hyperBEAM `structured@1.0` message into a Lua result.
 
 <a name="ensure_initialized-3"></a>
 

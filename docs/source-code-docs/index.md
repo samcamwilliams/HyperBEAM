@@ -1,21 +1,21 @@
 # Source Code Documentation
 
-Welcome to the source code documentation for HyperBEAM. This section provides detailed insights into the codebase, helping developers understand the structure, functionality, and implementation details of HyperBEAM and its components.
+Welcome to the source code documentation for hyperBEAM. This section provides detailed insights into the codebase, helping developers understand the structure, functionality, and implementation details of hyperBEAM and its components.
 
 ## Overview
 
-HyperBEAM is built with a modular architecture to ensure scalability, maintainability, and extensibility. The source code is organized into distinct components, each serving a specific purpose within the ecosystem.
+hyperBEAM is built with a modular architecture to ensure scalability, maintainability, and extensibility. The source code is organized into distinct components, each serving a specific purpose within the ecosystem.
 
 ## Sections
 
-- **HyperBEAM Core**: The main framework that orchestrates data processing, storage, and routing.
-- **Compute Unit**: Handles computational tasks and integrates with the HyperBEAM core for distributed processing.
+- **hyperBEAM Core**: The main framework that orchestrates data processing, storage, and routing.
+- **Compute Unit**: Handles computational tasks and integrates with the hyperBEAM core for distributed processing.
 - **Trusted Execution Environment (TEE)**: Ensures secure execution of sensitive operations.
-- **Client Libraries**: Tools and SDKs for interacting with HyperBEAM, including the JavaScript client.
+- **Client Libraries**: Tools and SDKs for interacting with hyperBEAM, including the JavaScript client.
 
 ## Getting Started
 
-To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide.
+To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/hyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide.
 
 ## Navigation
 
@@ -23,7 +23,7 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 
 ## Contributing
 
-We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. 
+We welcome contributions to hyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. 
 
 <table>
 <tr><td><a href="ar_bundles.md" class="module">ar_bundles</a></td></tr>
