@@ -27,7 +27,7 @@
 %%% Device API:
 -export([routes/3, route/2, route/3]).
 %%% Public utilities:
--export([match_routes/3]).
+-export([match/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -143,7 +143,7 @@ find_target_path(Msg, Opts) ->
     case hb_ao:get(<<"route-path">>, Msg, not_found, Opts) of
         not_found ->
             ?event({find_target_path, {msg, Msg}, {opts, Opts}, not_found}),
-            hb_path:from_message(request, Msg);
+            hb_ao:get(<<"path">>, Msg, no_path, Opts);
         RoutePath -> RoutePath
     end.
 
@@ -219,7 +219,21 @@ apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With
         _ -> {error, invalid_replace_args}
     end.
 
-%% @doc Find the first matching template in a list of known routes.
+%% @doc Find the first matching template in a list of known routes. Allows the
+%% path to be specified by either the explicit `path' (for internal use by this
+%% module), or `route-path' for use by external devices and users.
+match(Base, Req, Opts) ->
+    Match =
+        match_routes(
+            Req#{ <<"path">> => find_target_path(Req, Opts) },
+            hb_ao:get(<<"routes">>, Base, [], Opts),
+            Opts
+        ),
+    case Match of
+        no_matches -> {error, no_matching_route};
+        _ -> {ok, Match}
+    end.
+
 match_routes(ToMatch, Routes, Opts) ->
     match_routes(
         ToMatch,
@@ -575,6 +589,19 @@ explicit_route_test() ->
         route(
             #{ <<"path">> => <<"http://google.com">> },
             #{ routes => Routes }
+        )
+    ),
+    % Test that `route-path' can also be used to specify the path, via an AO
+    % call.
+    ?assertEqual(
+        {ok, #{ <<"node">> => <<"http://google.com">> }},
+        hb_ao:resolve(
+            #{ <<"device">> => <<"router@1.0">>, routes => Routes },
+            #{
+                <<"path">> => <<"match">>,
+                <<"route-path">> => <<"http://google.com">>
+            },
+            #{}
         )
     ).
 

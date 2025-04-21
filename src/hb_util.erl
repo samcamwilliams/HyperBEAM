@@ -63,7 +63,8 @@ bin(Value) when is_binary(Value) ->
 %% @doc Coerce a value to a list.
 list(Value) when is_binary(Value) ->
     binary_to_list(Value);
-list(Value) when is_list(Value) -> Value.
+list(Value) when is_list(Value) -> Value;
+list(Value) when is_atom(Value) -> atom_to_list(Value).
 
 %% @doc Unwrap a tuple of the form `{ok, Value}', or throw/return, depending on
 %% the value of the `error_strategy' option.
@@ -415,7 +416,11 @@ do_debug_fmt({X, Y}, Indent) when is_record(Y, tx) ->
 do_debug_fmt({X, Y}, Indent) when is_map(Y) ->
     Formatted = format_maybe_multiline(Y, Indent + 1),
     HasNewline = lists:member($\n, Formatted),
-    format_indented("~p~s",
+    format_indented(
+        case is_binary(X) of
+            true -> "~s";
+            false -> "~p"
+        end ++ "~s",
         [
             X,
             case HasNewline of
