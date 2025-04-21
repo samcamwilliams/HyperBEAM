@@ -47,7 +47,7 @@ install(Base, State, Opts) ->
                     hb_util:message_to_ordered_list(DevNames)
                 )
         end,
-    ?event({adding_ao_core_resolver, {devs, AdmissibleDevs}}),
+    ?event({adding_ao_core_resolver, {device_sandbox, AdmissibleDevs}}),
     ExecOpts = Opts#{ preloaded_devices => AdmissibleDevs },
     % Initialize the AO-Core resolver.
     BaseAOTable =
@@ -73,8 +73,23 @@ install(Base, State, Opts) ->
                 {ok, StateOut} =
                     luerl:set_table_keys_dec(
                         [ao, FuncName],
-                        fun(Args, ImportState) ->
-                            dev_lua_lib:FuncName(Args, ImportState, ExecOpts)
+                        fun(RawArgs, ImportState) ->
+                            ?event(lua_import, {calling_import, {func, FuncName}}),
+                            % Decode the arguments from the Lua environment.
+                            Args =
+                                lists:map(
+                                    fun(Arg) ->
+                                        dev_lua:decode(
+                                            luerl:decode(Arg, ImportState)
+                                        )
+                                    end,
+                                    RawArgs
+                                ),
+                            % Call the function with the decoded arguments.
+                            {Res, ResState} =
+                                ?MODULE:FuncName(Args, ImportState, ExecOpts),
+                            % Encode the response for return to Lua
+                            return(Res, ResState)
                         end,
                         StateIn
                     ),
@@ -85,18 +100,34 @@ install(Base, State, Opts) ->
                 FuncName
             ||
                 {FuncName, _} <- dev_lua_lib:module_info(exports),
-                FuncName /= module_info
+                FuncName /= module_info,
+                FuncName /= ?FUNCTION_NAME
             ]
         )
     }.
 
+%% @doc Helper function for returning a result from a Lua function.
+return(Result, ExecState) ->
+    ?event(lua_import, {import_returning, {result, Result}}),
+    TableEncoded = dev_lua:encode(Result),
+    {ReturnParams, ResultingState} =
+        lists:foldr(
+            fun(LuaEncoded, {Params, StateIn}) ->
+                {NewParam, NewState} = luerl:encode(LuaEncoded, StateIn),
+                {[NewParam | Params], NewState}
+            end,
+            {[], ExecState},
+            TableEncoded
+        ),
+    ?event({lua_encoded, ReturnParams}),
+    {ReturnParams, ResultingState}.
+
 %% @doc A wrapper function for performing AO-Core resolutions. Offers both the 
 %% single-message (using `hb_singleton:from/1' to parse) and multiple-message
 %% (using `hb_ao:resolve_many/2') variants.
-resolve([EncodedMsg], ExecState, ExecOpts) ->
-    AOMsg = dev_lua:decode(luerl:decode(EncodedMsg, ExecState)),
-    ?event({ao_core_resolver, {msg, AOMsg}}),
-    ParsedMsgs = hb_singleton:from(AOMsg),
+resolve([SingletonMsg], ExecState, ExecOpts) ->
+    ?event({ao_core_resolver, {msg, SingletonMsg}}),
+    ParsedMsgs = hb_singleton:from(SingletonMsg),
     ?event({parsed_msgs_to_resolve, ParsedMsgs}),
     resolve(ParsedMsgs, ExecState, ExecOpts);
 resolve(RawMsgs, ExecState, ExecOpts) ->
@@ -104,7 +135,7 @@ resolve(RawMsgs, ExecState, ExecOpts) ->
     try hb_ao:resolve_many(MaybeAsMsgs, ExecOpts) of
         {Status, Res} ->
             ?event({resolved_msgs, {status, Status}, {res, Res}}),
-            {[hb_util:bin(Status), dev_lua:encode(Res)], ExecState}
+            {[Status, Res], ExecState}
     catch
         Error ->
             ?event(lua_error, {ao_core_resolver_error, Error}),
@@ -118,45 +149,23 @@ convert_as(Other) ->
     Other.
 
 %% @doc Wrapper for `hb_ao`'s `set' functionality.
-set([EncodedBase, EncodedKey, EncodedValue], ExecState, ExecOpts) ->
-    Base = dev_lua:decode(luerl:decode(EncodedBase, ExecState)),
-    Key = dev_lua:decode(luerl:decode(EncodedKey, ExecState)),
-    Value = dev_lua:decode(luerl:decode(EncodedValue, ExecState)),
+set([Base, Key, Value], ExecState, ExecOpts) ->
     ?event({ao_core_set, {base, Base}, {key, Key}, {value, Value}}),
-    NewRes = dev_lua:encode(hb_ao:set(Base, Key, Value, ExecOpts)),
+    NewRes = hb_ao:set(Base, Key, Value, ExecOpts),
+    ?event({ao_core_set_result, {result, NewRes}}),
     {[NewRes], ExecState};
-set([EncodedBase, NewValues], ExecState, ExecOpts) ->
-    BaseMsg = dev_lua:decode(luerl:decode(EncodedBase, ExecState)),
-    Values = dev_lua:decode(luerl:decode(NewValues, ExecState)),
-    ?event({ao_core_set, {base, BaseMsg}, {new_values, Values}}),
-    NewRes = dev_lua:encode(hb_ao:set(BaseMsg, Values, ExecOpts)),
+set([Base, NewValues], ExecState, ExecOpts) ->
+    ?event({ao_core_set, {base, Base}, {new_values, NewValues}}),
+    NewRes = hb_ao:set(Base, NewValues, ExecOpts),
+    ?event({ao_core_set_result, {result, NewRes}}),
     {[NewRes], ExecState}.
 
 %% @doc Allows Lua scripts to signal events using the HyperBEAM hosts internal
 %% event system.
-event([EncodedEvent], ExecState, Opts) ->
-    event([<<"lua_event">>, EncodedEvent], ExecState, Opts);
-event([RawGroup, EncodedEvent], ExecState, Opts) ->
-    Group =
-        try dev_lua:decode(RawGroup)
-        catch
-            error:_ ->
-                ?event(lua_error,
-                    {group_decode_failed, {group, RawGroup}}
-                ),
-                lua_event
-        end,
-    Event =
-        try dev_lua:decode(luerl:decode(EncodedEvent, ExecState))
-        catch
-            error:Reason ->
-                ?event(lua_error,
-                    {event_decode_failed,
-                        {reason, Reason},
-                        {event, EncodedEvent}
-                    }
-                ),
-                #{<<"error">> => Reason}
-        end,
+event([Event], ExecState, Opts) ->
+    ?event({recalling_event, Event}),
+    event([<<"lua_event">>, Event], ExecState, Opts);
+event([Group, Event], ExecState, Opts) ->
+    ?event({event, {group, Group}, {event, Event}}),
     ?event(Group, {Group, Event}, Opts),
     {[<<"ok">>], ExecState}.

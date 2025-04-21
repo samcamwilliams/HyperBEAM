@@ -264,8 +264,8 @@ compute(Key, RawBase, Req, Opts) ->
 process_response({ok, [Result], NewState}, Priv) ->
     process_response({ok, [<<"ok">>, Result], NewState}, Priv);
 process_response({ok, [Status, MsgResult], NewState}, Priv) when is_list(MsgResult) ->
-    % If the result is a Lua list (an AO-Core message), decode it and the
-    % previous `priv' element back into it.
+    % If the result is a HyperBEAM device return (`{Status, Msg}'), decode it 
+    % and add the previous `priv' element back into the resulting message.
     {hb_util:atom(Status), (decode(MsgResult))#{
         <<"priv">> => Priv#{
             <<"state">> => NewState
@@ -346,6 +346,8 @@ encode(Map) when is_map(Map) ->
     maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map));
 encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
+encode(Atom) when is_atom(Atom) and (Atom /= false) and (Atom /= true)->
+    hb_util:bin(Atom);
 encode(Other) ->
     Other.
 
