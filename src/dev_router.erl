@@ -226,7 +226,7 @@ match(Base, Req, Opts) ->
     Match =
         match_routes(
             Req#{ <<"path">> => find_target_path(Req, Opts) },
-            hb_ao:get(<<"routes">>, Base, [], Opts),
+            hb_ao:get(<<"routes">>, {as, <<"message@1.0">>, Base}, [], Opts),
             Opts
         ),
     case Match of
@@ -243,9 +243,9 @@ match_routes(ToMatch, Routes, Opts) ->
     ).
 match_routes(#{ <<"path">> := Explicit = <<"http://", _/binary>> }, _, _, _) ->
     % If the route is an explicit HTTP URL, we can match it directly.
-    #{ <<"node">> => Explicit };
+    #{ <<"node">> => Explicit, <<"reference">> => <<"explicit">> };
 match_routes(#{ <<"path">> := Explicit = <<"https://", _/binary>> }, _, _, _) ->
-    #{ <<"node">> => Explicit };
+    #{ <<"node">> => Explicit, <<"reference">> => <<"explicit">> };
 match_routes(_, _, [], _) -> no_matches;
 match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
     XM = hb_ao:get(XKey, Routes, Opts),
@@ -257,7 +257,7 @@ match_routes(ToMatch, Routes, [XKey|Keys], Opts) ->
             Opts#{ hashpath => ignore }
         ),
     case template_matches(ToMatch, Template, Opts) of
-        true -> XM;
+        true -> XM#{ <<"reference">> => hb_path:to_binary([<<"routes">>, XKey]) };
         false -> match_routes(ToMatch, Routes, Keys, Opts)
     end.
 
@@ -276,7 +276,7 @@ choose(N, <<"Random">>, _, Nodes, _Opts) ->
 choose(N, <<"By-Weight">>, _, Nodes, Opts) ->
     NodesWithWeight =
         [
-            { Node, hb_util:int(hb_ao:get(<<"weight">>, Node, Opts)) }
+            { Node, hb_util:float(hb_ao:get(<<"weight">>, Node, Opts)) }
         ||
             Node <- Nodes
         ],
@@ -383,7 +383,10 @@ dynamic_route_provider_test() ->
         route_provider => #{
             <<"device">> => <<"lua@5.3a">>,
             <<"path">> => <<"route_provider">>,
-            <<"script">> => Script,
+            <<"script">> => #{
+                <<"content-type">> => <<"application/lua">>,
+                <<"body">> => Script
+            },
             <<"node">> => <<"test-dynamic-node">>
         },
         priv_wallet => ar_wallet:new()
@@ -405,7 +408,10 @@ local_process_route_provider_test() ->
                 <<"device">> => <<"process@1.0">>,
                 <<"execution-device">> => <<"lua@5.3a">>,
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
-                <<"script">> => Script,
+                <<"script">> => #{
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"body">> => Script
+                },
                 <<"node">> => <<"router-node">>,
                 <<"function">> => <<"compute_routes">>
             }
@@ -434,6 +440,116 @@ local_process_route_provider_test() ->
         ),
     ?event({responses, Responses}),
     ?assertEqual(2, sets:size(sets:from_list(Responses))).
+
+local_dynamic_router_test() ->
+    BenchRoutes = 50,
+    {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
+    Run = hb_util:bin(rand:uniform(1337)),
+    Node = hb_http_server:start_node(Opts = #{
+        store => [
+            #{
+                <<"store-module">> => hb_store_fs,
+                <<"prefix">> => <<"cache-TEST/dynrouter-", Run/binary>>
+            }
+        ],
+        priv_wallet => ar_wallet:new(),
+        route_provider => #{
+            <<"path">> =>
+                RouteProvider =
+                    <<"/router~node-process@1.0/compute/routes~message@1.0">>
+        },
+        node_processes => #{
+            <<"router">> => #{
+                <<"device">> => <<"process@1.0">>,
+                <<"execution-device">> => <<"lua@5.3a">>,
+                <<"scheduler-device">> => <<"scheduler@1.0">>,
+                <<"script">> => #{
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"module">> => <<"dynamic-router">>,
+                    <<"body">> => Script
+                },
+                % Set script-specific factors for the test
+                <<"pricing-weight">> => 9,
+                <<"performance-weight">> => 1,
+                <<"score-preference">> => 3
+            }
+        }
+    }),
+    Store = hb_opts:get(store, no_store, Opts),
+    ?event(debug_dynrouter, {store, Store}),
+    % Register workers with the dynamic router with varied prices.
+    lists:foreach(fun(X) ->
+        hb_http:post(
+            Node,
+            #{
+                <<"path">> => <<"/router~node-process@1.0/schedule">>,
+                <<"method">> => <<"POST">>,
+                <<"body">> =>
+                    hb_message:commit(
+                        #{
+                            <<"path">> => <<"register">>,
+                            <<"route">> =>
+                                #{
+                                    <<"prefix">> =>
+                                        <<
+                                            "https://test-node-",
+                                                (hb_util:bin(X))/binary,
+                                                ".com"
+                                        >>,
+                                    <<"template">> => <<"/.*~process@1.0/.*">>,
+                                    <<"price">> => X * 250
+                                }
+                        },
+                        Opts
+                    )
+            },
+            Opts
+        )
+    end, lists:seq(1, 5)),
+    % Force computation of the current state. This should be done with a 
+    % background worker (ex: a `~cron@1.0/every' task).
+    hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
+    {ok, Routes} = hb_http:get(Node, RouteProvider, Opts),
+    ?event(debug_dynrouter, {got_routes, Routes}),
+    % Query the route 10 times with the same path. This should yield 2 different
+    % results, as the route provider should choose 1 node of a set of 2 at random.
+    BeforeExec = os:system_time(millisecond),
+    Responses =
+        lists:map(
+            fun(_) ->
+                hb_util:ok(
+                    hb_http:get(
+                        Node,
+                        <<"/~router@1.0/route?route-path=/procID~process@1.0/now">>,
+                        #{}
+                    )
+                )
+            end,
+            lists:seq(1, BenchRoutes)
+        ),
+    AfterExec = os:system_time(millisecond),
+    hb_util:eunit_print(
+        "Calculated ~p routes in ~ps (~.2f routes/s)",
+        [
+            BenchRoutes,
+            (AfterExec - BeforeExec) / 1000,
+            BenchRoutes / ((AfterExec - BeforeExec) / 1000)
+        ]
+    ),
+    % Calculate the distribution of the responses.
+    UniqueResponses = sets:to_list(sets:from_list(Responses)),
+    Dist =
+        [
+            {
+                Resp,
+                hb_util:count(Resp, Responses) / length(Responses)
+            }
+        ||
+            Resp <- UniqueResponses
+        ],
+    ?event(debug_distribution, {distribution_of_responses, Dist}),
+    ?assert(length(UniqueResponses) > 1).
+
 
 weighted_random_strategy_test() ->
     Nodes =
