@@ -1,5 +1,5 @@
 h1 {
-	font-size: clamp(1.4rem, 1.5vw, 1.5rem) !important;
+	font-size: clamp(1.2rem, 1.5vw, 1.3rem) !important;
 }
 
 h2 {
@@ -24,6 +24,10 @@ body[data-md-path="index"] .md-header {
 
 .md-header {
 	box-shadow: none !important;
+}
+
+.md-logo img {
+	height: 0.9rem !important;
 }
 
 .md-header__topic {
@@ -60,6 +64,24 @@ body[data-md-path="index"] .md-header {
 .md-search__input {
 	padding-left: 1rem !important;
 	padding-right: 1rem !important;
+}
+
+.md-search-result__item h1 {
+	font-size: clamp(0.7rem, 1.5vw, 0.8rem) !important;
+}
+
+.md-search-result__item h2 {
+	font-size: clamp(0.7rem, 1.5vw, 0.8rem) !important;
+	font-weight: 500 !important;
+}
+
+.md-search-result__item summary div {
+	font-size: clamp(0.5rem, 1.5vw, 0.55rem) !important;
+}
+
+.md-search-result__icon {
+	width: 0.8rem;
+	height: 0.8rem;
 }
 
 .md-search__icon svg {
