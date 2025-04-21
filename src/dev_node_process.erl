@@ -111,7 +111,10 @@ generate_test_opts() ->
             <<"device">> => <<"process@1.0">>,
             <<"execution-device">> => <<"lua@5.3a">>,
             <<"scheduler-device">> => <<"scheduler@1.0">>,
-            <<"script">> => Script
+            <<"script">> => #{
+                <<"content-type">> => <<"text/x-lua">>,
+                <<"body">> => Script
+            }
         }
     }).
 generate_test_opts(Defs) ->
