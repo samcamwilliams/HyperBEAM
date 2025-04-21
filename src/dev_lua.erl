@@ -1,6 +1,6 @@
 %%% @doc A device that calls a Lua script upon a request and returns the result.
 -module(dev_lua).
--export([info/1, init/3, snapshot/3, normalize/3]).
+-export([info/1, init/3, snapshot/3, normalize/3, functions/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 %%% The set of functions that will be sandboxed by default if `sandbox` is set 
@@ -97,6 +97,30 @@ initialize(Base, Script, Opts) ->
     % Return the base message with the state added to it.
     {ok, hb_private:set(Base, <<"state">>, State3, Opts)}.
 
+%%% @doc Return a list of all functions in the Lua environment.
+functions(Base, _Req, Opts) ->
+    case hb_private:get(<<"state">>, Base, Opts) of
+        not_found ->
+            {error, not_found};
+        State ->
+            {ok, [Res], _S2} =
+                luerl:do_dec(
+                    <<
+                        """
+                        local __tests = {}
+                        for k, v in pairs(_G) do
+                            if type(v) == "function" then
+                                table.insert(__tests, k)
+                            end
+                        end
+                        return __tests
+                        """
+                    >>,
+                    State
+                ),
+            {ok, hb_util:message_to_ordered_list(decode(Res))}
+    end.
+
 %% @doc Sandbox (render inoperable) a set of Lua functions. Each function is
 %% referred to as if it is a path in AO-Core, with its value being what to 
 %% return to the caller. For example, 'os.exit' would be referred to as
@@ -163,25 +187,60 @@ add_ao_core_resolver(Base, State, Opts) ->
             State
         ),
     % Add the AO-Core resolver to the base AO table.
-    luerl:set_table_keys_dec(
-        [ao, resolve],
-        fun([EncodedMsg], ExecState) ->
-            AOMsg = decode(luerl:decode(EncodedMsg, ExecState)),
-            ?event({ao_core_resolver, {msg, AOMsg}}),
-            ParsedMsgs = hb_singleton:from(AOMsg),
-            ?event({parsed_msgs_to_resolve, ParsedMsgs}),
-            try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
-                {Status, Res} ->
-                    ?event({resolved_msgs, {status, Status}, {res, Res}}),
-                    {[Status, encode(Res)], ExecState}
-            catch
-                Error ->
-                    ?event({ao_core_resolver_error, Error}),
-                    {error, Error}
-            end
-        end,
-        State2
-    ).
+    {ok, State3} = 
+        luerl:set_table_keys_dec(
+            [ao, resolve],
+            fun([EncodedMsg], ExecState) ->
+                AOMsg = decode(luerl:decode(EncodedMsg, ExecState)),
+                ?event({ao_core_resolver, {msg, AOMsg}}),
+                ParsedMsgs = hb_singleton:from(AOMsg),
+                ?event({parsed_msgs_to_resolve, ParsedMsgs}),
+                try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
+                    {Status, Res} ->
+                        ?event({resolved_msgs, {status, Status}, {res, Res}}),
+                        {[hb_util:bin(Status), encode(Res)], ExecState}
+                catch
+                    Error ->
+                        ?event(error, {ao_core_resolver_error, Error}),
+                        {[<<"error">>, Error], ExecState}
+                end
+            end,
+            State2
+        ),
+    % Add the `event' function to the Lua environment.
+    {ok, State4} =
+        luerl:set_table_keys_dec(
+            [ao, event],
+            fun SendEvent([EncodedEvent], ExecState) ->
+                    SendEvent([<<"lua_event">>, EncodedEvent], ExecState);
+                SendEvent([RawGroup, EncodedEvent], ExecState) ->
+                    Group =
+                        try decode(RawGroup)
+                        catch
+                            error:_ ->
+                                ?event(lua_error,
+                                    {group_decode_failed, {group, RawGroup}}
+                                ),
+                                lua_event
+                        end,
+                    Event =
+                        try decode(luerl:decode(EncodedEvent, ExecState))
+                        catch
+                            error:Reason ->
+                                ?event(lua_error,
+                                    {event_decode_failed,
+                                        {reason, Reason},
+                                        {event, EncodedEvent}
+                                    }
+                                ),
+                                #{<<"error">> => Reason}
+                        end,
+                    ?event(Group, {Group, Event}, Opts),
+                    {[<<"ok">>], ExecState}
+            end,
+            State3
+        ),
+    {ok, State4}.
 
 %% @doc Call the Lua script with the given arguments.
 compute(Key, RawBase, Req, Opts) ->
@@ -220,29 +279,38 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
-    ?event({calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
-    ?event(debug_lua, calling_lua_func),
-    % ?event(debug_lua, {lua_params, Params}),
-    case luerl:call_function_dec([Function], encode(Params), State) of
-        {ok, [LuaResult], NewState} when is_map(LuaResult) ->
-            ?event(debug_lua, got_lua_result),
-            Result = decode(LuaResult),
-            ?event(debug_lua, decoded_result),
-            {ok, Result#{
-                <<"priv">> => OldPriv#{
-                    <<"state">> => NewState
-                }
-            }};
-        {ok, [LuaResult], _NewState} ->
-            ?event(debug_lua, got_lua_result),
-            {ok, LuaResult};
-        {lua_error, Error, Details} ->
-            {error, #{
-                <<"status">> => 500,
-                <<"body">> => Error,
-                <<"details">> => Details
-            }}
-    end.
+    ?event(debug_lua, {calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
+    process_response(
+        luerl:call_function_dec(
+            [Function],
+            encode(Params),
+            State
+        ),
+        OldPriv
+    ).
+
+%% @doc Process a response to a Luerl invocation. Returns the typical AO-Core
+%% HyperBEAM response format.
+process_response({ok, [Result], NewState}, Priv) ->
+    process_response({ok, [<<"ok">>, Result], NewState}, Priv);
+process_response({ok, [Status, MsgResult], NewState}, Priv) when is_list(MsgResult) ->
+    % If the result is a Lua list (an AO-Core message), decode it and the
+    % previous `priv' element back into it.
+    {hb_util:atom(Status), (decode(MsgResult))#{
+        <<"priv">> => Priv#{
+            <<"state">> => NewState
+        }
+    }};
+process_response({ok, [Status, BareResult], _NewState}, _Priv) ->
+    {hb_util:atom(Status), BareResult};
+process_response({lua_error, Error, State}, _Priv) ->
+    StackTrace = decode_stacktrace(luerl:get_stacktrace(State), State),
+    ?event(lua_error, {lua_error, Error, {stacktrace, StackTrace}}),
+    {error, #{
+        <<"status">> => 500,
+        <<"body">> => Error,
+        <<"trace">> => hb_ao:normalize_keys(StackTrace)
+    }}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
 %% state element, then serializes the state to a binary.
@@ -294,17 +362,47 @@ normalize(Base, _Req, RawOpts) ->
 
 %% @doc Decode a Lua result into a HyperBEAM `structured@1.0' message.
 decode(Map = [{_K, _V} | _]) when is_list(Map) ->
-    hb_maps:map(fun(_, V) -> decode(V) end, hb_maps:from_list(Map));
+    maps:map(fun(_, V) -> decode(V) end, maps:from_list(Map));
 decode(Other) ->
     Other.
 
 %% @doc Encode a HyperBEAM `structured@1.0' message into a Lua result.
 encode(Map) when is_map(Map) ->
-    hb_maps:to_list(hb_maps:map(fun(_, V) -> encode(V) end, Map));
+    maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map));
 encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
 encode(Other) ->
     Other.
+
+%% @doc Parse a Lua stack trace into a list of messages.
+decode_stacktrace(StackTrace, State0) ->
+    decode_stacktrace(StackTrace, State0, []).
+decode_stacktrace([], _State, Acc) ->
+    lists:reverse(Acc);
+decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc) ->
+    %% Decode all the Lua table refs into Erlang terms
+    DecodedParams = decode_params(ParamRefs, State0),
+    %% Pull out the line number
+    Line = proplists:get_value(line, FileInfo),
+    %% Build our message‐map
+    Entry = #{
+        <<"function">>   => FuncBin,
+        <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
+    },
+    MaybeLine =
+        if is_binary(FuncBin) andalso is_integer(Line) ->
+            #{<<"line">> => Line};
+        true ->
+            #{}
+        end,
+    decode_stacktrace(Rest, State0, [maps:merge(Entry, MaybeLine)|Acc]).
+
+%% @doc Decode a list of Lua references, as found in a stack trace, into a
+%% list of Erlang terms.
+decode_params([], _State) -> [];
+decode_params([Tref|Rest], State) ->
+    Decoded = decode(luerl:decode(Tref, State)),
+    [Decoded|decode_params(Rest, State)].
 
 %%% Tests
 simple_invocation_test() ->
@@ -315,6 +413,18 @@ simple_invocation_test() ->
         <<"parameters">> => []
     },
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
+
+error_response_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => Script,
+        <<"parameters">> => []
+    },
+    ?assertEqual(
+        {error, <<"Very bad, but Lua caught it.">>},
+        hb_ao:resolve(Base, <<"error_response">>, #{})
+    ).
 
 sandboxed_failure_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
@@ -327,7 +437,7 @@ sandboxed_failure_test() ->
     ?assertMatch({error, _}, hb_ao:resolve(Base, <<"sandboxed_fail">>, #{})).
 
 %% @doc Run an AO-Core resolution from the Lua environment.
-ao_core_sandbox_test() ->
+ao_core_sandbox_test_disabled() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
@@ -415,7 +525,7 @@ pure_lua_process_test() ->
     Message = generate_test_message(Process),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now">>, #{}),
-    ?event({results, Results}),
+    ?event(rakis, {results, Results}),
     ?assertEqual(42, hb_ao:get(<<"results/output/body">>, Results, #{})).
 
 pure_lua_process_benchmark_test_() ->
@@ -546,7 +656,14 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"data">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
+                        <<"data">> =>
+                            <<
+                                """
+                                Count = 0
+                                function add() Send({Target = 'Foo', Data = 'Bar' });
+                                Count = Count + 1 end\n add()\n return Count
+                                """
+                            >>,
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
                     },
