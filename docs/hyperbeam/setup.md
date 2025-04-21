@@ -56,21 +56,62 @@ curl http://localhost:10000/~meta@1.0/info
 ```
 If you receive a response with node information, your HyperBEAM installation is working properly.
 
-## **4. Run HyperBEAM with Mainnet**
+## **4. Create and Run a HyperBEAM Release**
 
-To start HyperBEAM connected to the mainnet, you can use the `--eval` option with rebar3:
+For a more stable setup, especially when connecting to networks like mainnet or using specific features, it's recommended to create a release.
 
+### **a. Configure Your Node**
+
+HyperBEAM uses a `config.flat` file for configuration when running as a release. A sample file is included in the repository.
+
+1.  Locate the `config.flat` file in the root of the HyperBEAM project directory.
+2.  Edit the file to specify your desired settings. For example, to set the port and specify your wallet key file:
+
+    ```
+    port: 10001
+    priv_key_location: /path/to/your/wallet.json
+    # Add other configurations as needed
+    ```
+    Ensure the `priv_key_location` points to the correct path of your Arweave wallet key file.
+
+### **b. Build the Release (with Optional Profiles)**
+
+You can build a standard release or include specific profiles for additional features (like `genesis_wasm`, `rocksdb`, `http3`).
+
+To build a standard release:
 ```bash
-rebar3 shell --eval "hb:start_mainnet(#{ port => 10001, priv_key_location => <<\"./wallet.json\">>})."
+rebar3 release
 ```
 
-To verify that your HyperBEAM node is running correctly, you can check:
+To build a release with specific profiles (e.g., `rocksdb`):
+```bash
+rebar3 as rocksdb release
+```
+
+This command creates a self-contained release package in the `_build/default/rel/hb` directory.
+
+### **c. Run the Release**
+
+Navigate to the release directory and start the HyperBEAM node:
+
+```bash
+cd _build/default/rel/hb
+./bin/hb console
+```
+Replace `console` with `start` to run it in the background.
+
+!!! note "Stopping the Node"
+    To stop a HyperBEAM node started with `./bin/hb start`, run `./bin/hb stop` from the release directory (`_build/default/rel/hb`). If started with `./bin/hb console`, press `Ctrl+C` in the terminal to stop it.
+
+### **d. Verify the Release Node**
+
+Once the node is running, verify it by checking the meta device info endpoint. Use the port you specified in your `config.flat` (e.g., 10001):
 
 ```bash
 curl http://localhost:10001/~meta@1.0/info
 ```
 
-If you receive a response with node information, your HyperBEAM installation is working properly.
+If you receive a response with node information, your HyperBEAM release is configured and running correctly.
 
 ## **Next Steps**
 

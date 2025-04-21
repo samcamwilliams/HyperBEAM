@@ -1,6 +1,6 @@
-site_name: 'hyperBEAM - Documentation'
-repo_url: https://github.com/permaweb/hyperBEAM
-repo_name: 'permaweb/hyperBEAM'
+site_name: 'HyperBEAM - Documentation'
+repo_url: https://github.com/permaweb/HyperBEAM
+repo_name: 'permaweb/HyperBEAM'
 site_url: https://permaweb.github.io/
 
 docs_dir: docs
@@ -16,7 +16,7 @@ nav:
       - Rebar3: 'getting-started/installation/rebar3.md'
       - Node.js: 'getting-started/installation/nodejs.md'
       - Rust: 'getting-started/installation/rust.md'
-    - hyperBEAM Setup & Config:
+    - HyperBEAM Setup & Config:
       - Overview: 'hyperbeam/index.md'
       - Setup: 'hyperbeam/setup.md'
       - Configuration: 'hyperbeam/configuration/index.md'
@@ -221,7 +221,7 @@ extra_javascript:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/permaweb/hyperBEAM
+      link: https://github.com/permaweb/HyperBEAM
       name: GitHub
   generator: false
 
