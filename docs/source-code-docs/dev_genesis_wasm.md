@@ -4,13 +4,13 @@
 * [Description](#description)
 
 A device that mimics an environment suitable for `legacynet` AO
-processes, using hyperBEAM infrastructure.
+processes, using HyperBEAM infrastructure.
 
 <a name="description"></a>
 
 ## Description ##
 This allows existing `legacynet`
-AO process definitions to be used in hyperBEAM.<a name="index"></a>
+AO process definitions to be used in HyperBEAM.<a name="index"></a>
 
 ## Function Index ##
 

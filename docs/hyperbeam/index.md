@@ -1,8 +1,8 @@
-# hyperBEAM Overview
+# HyperBEAM Overview
 
-hyperBEAM is a client implementation of the AO-Core protocol, written in Erlang. It serves as the 'node' software for the decentralized operating system that AO enables, abstracting hardware provisioning and details from the execution of individual programs.
+HyperBEAM is a client implementation of the AO-Core protocol, written in Erlang. It serves as the 'node' software for the decentralized operating system that AO enables, abstracting hardware provisioning and details from the execution of individual programs.
 
-hyperBEAM node operators can offer the services of their machine to others inside the network by electing to execute any number of different devices, charging users for their computation as necessary.
+HyperBEAM node operators can offer the services of their machine to others inside the network by electing to execute any number of different devices, charging users for their computation as necessary.
 
 ## Key Features
 
@@ -11,9 +11,9 @@ hyperBEAM node operators can offer the services of their machine to others insid
 - **Scalable Architecture**: Built on Erlang's powerful concurrency model
 - **Extensible Design**: Easy to add new devices and capabilities
 
-## Messages in hyperBEAM
+## Messages in HyperBEAM
 
-hyperBEAM describes every piece of data as a message, which can be interpreted as a binary term or as a collection of named functions (a Map of functions).
+HyperBEAM describes every piece of data as a message, which can be interpreted as a binary term or as a collection of named functions (a Map of functions).
 
 Key properties of messages:
 - Every message may specify a device which is interpreted by the AO-Core compatible system
@@ -24,7 +24,7 @@ Key properties of messages:
 
 ## Devices
 
-hyperBEAM supports numerous devices, each enabling different services. There are approximately 25 different devices included in the preloaded_devices of a hyperBEAM node.
+HyperBEAM supports numerous devices, each enabling different services. There are approximately 25 different devices included in the preloaded_devices of a HyperBEAM node.
 
 ### Key Preloaded Devices
 
@@ -42,7 +42,7 @@ hyperBEAM supports numerous devices, each enabling different services. There are
 
 ## Components
 
-hyperBEAM consists of several core components:
+HyperBEAM consists of several core components:
 
 1. **Core Runtime**: The base system that manages process execution
 2. **Device Registry**: System for registering and managing devices
@@ -51,12 +51,12 @@ hyperBEAM consists of several core components:
 
 ## System Architecture
 
-hyperBEAM works in conjunction with the Compute Unit (CU), which handles the actual WASM execution. Together, they form a complete execution environment for AO processes.
+HyperBEAM works in conjunction with the Compute Unit (CU), which handles the actual WASM execution. Together, they form a complete execution environment for AO processes.
 
-Each hyperBEAM node is configured using the `~meta@1.0` device, which provides an interface for specifying the node's supported devices, metering and payments information, amongst other configuration options.
+Each HyperBEAM node is configured using the `~meta@1.0` device, which provides an interface for specifying the node's supported devices, metering and payments information, amongst other configuration options.
 
 ## Next Steps
 
-- [Setup hyperBEAM](setup.md): Instructions for installing and running hyperBEAM
-- [Configuration](configuration.md): How to configure your hyperBEAM installation
+- [Setup HyperBEAM](setup.md): Instructions for installing and running HyperBEAM
+- [Configuration](configuration.md): How to configure your HyperBEAM installation
 - [Testing](testing.md): Run tests to verify your installation 

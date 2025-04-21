@@ -4,7 +4,7 @@
 * [Description](#description)
 
 This module is the root of the device call logic of the
-AO-Core protocol in hyperBEAM.
+AO-Core protocol in HyperBEAM.
 
 <a name="description"></a>
 
@@ -30,7 +30,7 @@ you can see AO-Core protocol as a system for cryptographically chaining
 the execution of `combinators`. See `docs/ao-core-protocol.md` for more
 information about AO-Core.
 
-The `Fun(Message1, Message2)` pattern is repeated throughout the hyperBEAM
+The `Fun(Message1, Message2)` pattern is repeated throughout the HyperBEAM
 codebase, sometimes with `MessageX` replaced with `MX` or `MsgX` for brevity.
 
 Message3 can be either a new message or a raw output value (a binary, integer,
@@ -41,7 +41,7 @@ referenced by an Arweave ID, which can be used to load a device from
 the network (depending on the value of the `load_remote_devices` and
 `trusted_device_signers` environment settings).
 
-hyperBEAM device implementations are defined as follows:
+HyperBEAM device implementations are defined as follows:
 
 ```
 
@@ -83,7 +83,7 @@ hyperBEAM device implementations are defined as follows:
                       output will lead to only a single execution.
        info/worker : A function that should be run as the 'server' loop of
                      the executor for interactions using the device.
-   The hyperBEAM resolver also takes a number of runtime options that change
+   The HyperBEAM resolver also takes a number of runtime options that change
    the way that the environment operates:<code>update_hashpath</code>:  Whether to add the <code>Msg2</code> to <code>HashPath</code> for the <code>Msg3</code>.
    					Default: true.<code>add_key</code>:          Whether to add the key to the start of the arguments.
    					Default: <code><not set></code>.

@@ -1,10 +1,10 @@
-# hyperBEAM Configuration
+# HyperBEAM Configuration
 
-hyperBEAM can be configured using a variety of methods and options. This document provides an overview of the configuration system and links to specialized configuration topics.
+HyperBEAM can be configured using a variety of methods and options. This document provides an overview of the configuration system and links to specialized configuration topics.
 
 ## Configuration System Overview
 
-hyperBEAM is a highly configurable node runtime for decentralized applications. Its configuration system allows operators to:
+HyperBEAM is a highly configurable node runtime for decentralized applications. Its configuration system allows operators to:
 
 - Define connection parameters
 - Set up storage backends
@@ -15,9 +15,9 @@ hyperBEAM is a highly configurable node runtime for decentralized applications. 
 
 ## Configuration Documentation Sections
 
-For detailed information about specific aspects of hyperBEAM configuration, please refer to the following documentation:
+For detailed information about specific aspects of HyperBEAM configuration, please refer to the following documentation:
 
-- [Configuration Methods](configuration-methods.md) - Different ways to configure hyperBEAM
+- [Configuration Methods](configuration-methods.md) - Different ways to configure HyperBEAM
 - [Configuration Options](configuration-options.md) - Complete reference of all configuration options
 - [Storage Configuration](storage-configuration.md) - Setting up file systems, RocksDB, and other storage backends
 - [Routing Configuration](routing-configuration.md) - Configuring request routing and connectivity
@@ -26,7 +26,7 @@ For detailed information about specific aspects of hyperBEAM configuration, plea
 
 ## Getting Started
 
-If you're new to hyperBEAM, we recommend starting with a basic configuration file:
+If you're new to HyperBEAM, we recommend starting with a basic configuration file:
 
 1. Create a file named `config.flat` in your project directory
 2. Add basic configuration:
@@ -35,13 +35,13 @@ If you're new to hyperBEAM, we recommend starting with a basic configuration fil
    priv-key-location: /path/to/wallet.key
    mode: debug
    ```
-3. Start hyperBEAM with `rebar3 shell`
+3. Start HyperBEAM with `rebar3 shell`
 
-hyperBEAM will automatically load your configuration and display the active settings in the startup log.
+HyperBEAM will automatically load your configuration and display the active settings in the startup log.
 
 ## Core Configuration Priorities
 
-When multiple configuration methods are used simultaneously, hyperBEAM follows this precedence order:
+When multiple configuration methods are used simultaneously, HyperBEAM follows this precedence order:
 
 1. Environment variables (highest precedence)
 2. Runtime configuration via HTTP
@@ -53,6 +53,6 @@ See [Configuration Methods](configuration-methods.md) for more details on these 
 
 ## Configuration Resources
 
-- [hyperBEAM GitHub Repository](https://github.com/hyperbeam-core/hyperbeam)
+- [HyperBEAM GitHub Repository](https://github.com/hyperbeam-core/hyperbeam)
 - [Quick Start Guide](../getting-started.md)
 - [API Reference](../api-reference.md)
