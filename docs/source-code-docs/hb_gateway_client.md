@@ -9,7 +9,7 @@ items of data stored on the network.
 <a name="description"></a>
 
 ## Description ##
-This module must be used to get full hyperBEAM `structured@1.0` form messages
+This module must be used to get full HyperBEAM `structured@1.0` form messages
 from data items stored on the network, as Arweave gateways do not presently
 expose all necessary fields to retrieve this information outside of the
 GraphQL API. When gateways integrate serving in `httpsig@1.0` form, this

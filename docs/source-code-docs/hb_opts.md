@@ -4,20 +4,20 @@
 * [Description](#description)
 
 A module for interacting with local and global options inside
-hyperBEAM.
+HyperBEAM.
 
 <a name="description"></a>
 
 ## Description ##
 
 Options are set globally, but can also be overridden using an
-an optional local `Opts` map argument. Many functions across the hyperBEAM
+an optional local `Opts` map argument. Many functions across the HyperBEAM
 environment accept an `Opts` argument, which can be used to customize
 behavior.
 
 Options set in an `Opts` map must _never_ change the behavior of a function
 that should otherwise be deterministic. Doing so may lead to loss of funds
-by the hyperBEAM node operator, as the results of their executions will be
+by the HyperBEAM node operator, as the results of their executions will be
 different than those of other node operators. If they are economically
 staked on the correctness of these results, they may experience punishments
 for non-verifiable behavior. Instead, if a local node setting makes

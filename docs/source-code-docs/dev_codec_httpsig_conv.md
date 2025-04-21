@@ -19,7 +19,7 @@ The Key/Value Pair will be encoded according to the following rules:
 "signatures" -> {SignatureInput, Signature} header Tuples, each encoded
 as a Structured Field Dictionary
 "body" ->
-- if a map, then recursively encode as its own hyperBEAM message
+- if a map, then recursively encode as its own HyperBEAM message
 - otherwise encode as a normal field
 _ -> encode as a normal field
 
@@ -158,7 +158,7 @@ Group all elements with:
 into a combined SF dict-_like_ structure. If not encoded, these keys would
 be sent as headers and lower-cased, losing their comparability against the
 original keys. The structure follows all SF dict rules, except that it allows
-for keys to contain capitals. The hyperBEAM SF parser will accept these keys,
+for keys to contain capitals. The HyperBEAM SF parser will accept these keys,
 but standard RFC 8741 parsers will not. Subsequently, the resulting `ao-cased`
 key is not added to the `ao-types` map.
 

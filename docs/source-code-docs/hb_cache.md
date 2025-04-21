@@ -9,12 +9,12 @@ A cache of AO-Core protocol messages and compute results.
 
 ## Description ##
 
-hyperBEAM stores all paths in key value stores, abstracted by the `hb_store`
+HyperBEAM stores all paths in key value stores, abstracted by the `hb_store`
 module. Each store has its own storage backend, but each works with simple
 key-value pairs. Each store can write binary keys at paths, and link between
 paths.
 
-There are three layers to hyperBEAMs internal data representation on-disk:
+There are three layers to HyperBEAMs internal data representation on-disk:
 
 1. The raw binary data, written to the store at the hash of the content.
 Storing binary paths in this way effectively deduplicates the data.

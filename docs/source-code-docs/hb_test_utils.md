@@ -3,7 +3,7 @@
 # Module hb_test_utils #
 * [Description](#description)
 
-Simple utilities for testing hyperBEAM.
+Simple utilities for testing HyperBEAM.
 
 <a name="index"></a>
 

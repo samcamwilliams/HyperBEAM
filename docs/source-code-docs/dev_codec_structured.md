@@ -4,7 +4,7 @@
 * [Description](#description)
 
 A device implementing the codec interface (to/1, from/1) for
-hyperBEAM's internal, richly typed message format.
+HyperBEAM's internal, richly typed message format.
 
 <a name="description"></a>
 
@@ -23,7 +23,7 @@ For more details, see the HTTP Structured Fields (RFC-9651) specification.<a nam
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#commit-3">commit/3</a></td><td></td></tr><tr><td valign="top"><a href="#committed-3">committed/3</a></td><td></td></tr><tr><td valign="top"><a href="#decode_value-2">decode_value/2</a></td><td>Convert non-binary values to binary for serialization.</td></tr><tr><td valign="top"><a href="#encode_value-1">encode_value/1</a></td><td>Convert a term to a binary representation, emitting its type for
 serialization as a separate tag.</td></tr><tr><td valign="top"><a href="#from-1">from/1</a></td><td>Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).</td></tr><tr><td valign="top"><a href="#implicit_keys-1">implicit_keys/1</a></td><td>Find the implicit keys of a TABM.</td></tr><tr><td valign="top"><a href="#list_encoding_test-0">list_encoding_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#parse_ao_types-1">parse_ao_types/1*</a></td><td>Parse the <code>ao-types</code> field of a TABM and return a map of keys and their
-types.</td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a TABM into a native hyperBEAM message.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td></td></tr></table>
+types.</td></tr><tr><td valign="top"><a href="#to-1">to/1</a></td><td>Convert a TABM into a native HyperBEAM message.</td></tr><tr><td valign="top"><a href="#verify-3">verify/3</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -96,7 +96,7 @@ types
 
 `to(Bin) -> any()`
 
-Convert a TABM into a native hyperBEAM message.
+Convert a TABM into a native HyperBEAM message.
 
 <a name="verify-3"></a>
 
