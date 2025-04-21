@@ -80,7 +80,7 @@ and inputs.
 
 All counters used by the stack are initialized to 1.
 
-Additionally, as implemented in hyperBEAM, the device stack will honor a
+Additionally, as implemented in HyperBEAM, the device stack will honor a
 number of options that are passed to it as keys in the message. Each of
 these options is also passed through to the devices contained within the
 stack during execution. These options include:

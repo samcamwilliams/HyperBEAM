@@ -10,7 +10,7 @@ A device that renders a REPL-like interface for AO-Core via HTML.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#format-3">format/3</a></td><td>Employ hyperBEAM's internal pretty printer to format a message.</td></tr><tr><td valign="top"><a href="#info-0">info/0</a></td><td>Export an explicit list of files via http.</td></tr><tr><td valign="top"><a href="#metrics-3">metrics/3</a></td><td>The main HTML page for the REPL device.</td></tr><tr><td valign="top"><a href="#return_file-1">return_file/1*</a></td><td>Read a file from disk and serve it as a static HTML page.</td></tr><tr><td valign="top"><a href="#serve-4">serve/4*</a></td><td>Serve a file from the priv directory.</td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#format-3">format/3</a></td><td>Employ HyperBEAM's internal pretty printer to format a message.</td></tr><tr><td valign="top"><a href="#info-0">info/0</a></td><td>Export an explicit list of files via http.</td></tr><tr><td valign="top"><a href="#metrics-3">metrics/3</a></td><td>The main HTML page for the REPL device.</td></tr><tr><td valign="top"><a href="#return_file-1">return_file/1*</a></td><td>Read a file from disk and serve it as a static HTML page.</td></tr><tr><td valign="top"><a href="#serve-4">serve/4*</a></td><td>Serve a file from the priv directory.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -23,7 +23,7 @@ A device that renders a REPL-like interface for AO-Core via HTML.
 
 `format(Base, X2, X3) -> any()`
 
-Employ hyperBEAM's internal pretty printer to format a message.
+Employ HyperBEAM's internal pretty printer to format a message.
 
 <a name="info-0"></a>
 

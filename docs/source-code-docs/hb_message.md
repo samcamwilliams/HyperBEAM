@@ -16,7 +16,7 @@ not need to interact with this module directly. Instead, use the
 module implements a device interface for abstracting over the different
 message formats.
 
-`hb_message` and the hyperBEAM caches can interact with multiple different
+`hb_message` and the HyperBEAM caches can interact with multiple different
 types of message formats:
 
 - Richly typed AO-Core structured messages.
@@ -56,7 +56,7 @@ arbitrary type, or `hb_message:format/1` to print an AO-Core/TABM message in
 a human-readable format.
 
 The `hb_cache` module is responsible for storing and retrieving messages in
-the hyperBEAM stores configured on the node. Each store has its own storage
+the HyperBEAM stores configured on the node. Each store has its own storage
 backend, but each works with simple key-value pairs. Subsequently, the
 `hb_cache` module uses TABMs as the internal format for storing and
 retrieving messages.<a name="index"></a>

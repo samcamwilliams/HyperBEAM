@@ -9,7 +9,7 @@
 			<div class="stripe red"></div>
 		</div>
 		<div class="logo-text">
-			<h1>hyperBEAM.</h1>
+			<h1>HyperBEAM.</h1>
 			<p class="tagline">DOCUMENTATION</p>
 		</div>
 		</div>
@@ -21,9 +21,9 @@
 
 ## Overview
 
-hyperBEAM is a client implementation of the AO-Core protocol, written in Erlang. It enables a decentralized computing platform where programs run as independent processes, communicate via asynchronous message passing, and operate across a distributed network of nodes.
+HyperBEAM is a client implementation of the AO-Core protocol, written in Erlang. It enables a decentralized computing platform where programs run as independent processes, communicate via asynchronous message passing, and operate across a distributed network of nodes.
 
-For detailed technical information about hyperBEAM's architecture and functionality, see the [hyperBEAM Overview](hyperbeam/index.md).
+For detailed technical information about HyperBEAM's architecture and functionality, see the [HyperBEAM Overview](hyperbeam/index.md).
 
 ### What is AO-Core?
 
@@ -38,11 +38,11 @@ AO-Core's protocol is built upon the following primitives:
 
 ## Installation Process Overview
 
-Setting up hyperBEAM involves several steps:
+Setting up HyperBEAM involves several steps:
 
 1.  **Check System Requirements** - Ensure your hardware and operating system meet the [minimum requirements](getting-started/requirements.md).
 2.  **Install System Dependencies** - Set up the necessary system packages via the [Installation Guide](getting-started/installation/index.md).
-3.  **Setup & Configure hyperBEAM** - Clone, Compile, Configure, and Run [hyperBEAM itself](hyperbeam/setup.md).
+3.  **Setup & Configure HyperBEAM** - Clone, Compile, Configure, and Run [HyperBEAM itself](hyperbeam/setup.md).
 4.  **Setup & Configure the Compute Unit** - Clone, Compile, Configure, and Run the [Local Compute Unit](compute-unit/setup.md).
 5.  **(Optional) Verify Installation** - Follow guides to ensure everything is working. (We might need to create or link to a verification guide here, e.g., `guides/verification.md`)
 
@@ -68,11 +68,11 @@ This documentation is organized into the following main sections accessible via 
 
 ## Community and Support
 
-- **GitHub hyperBEAM**: [permaweb/hyperBEAM](https://github.com/permaweb/hyperBEAM)
+- **GitHub HyperBEAM**: [permaweb/HyperBEAM](https://github.com/permaweb/HyperBEAM)
 - **Github Local CU**: [permaweb/local-cu](https://github.com/permaweb/local-cu)
 - **Discord**: [Join the community](https://discord.gg/V3yjzrBxPM)
-- **Issues**: [File a bug report](https://github.com/permaweb/hyperBEAM/issues)
+- **Issues**: [File a bug report](https://github.com/permaweb/HyperBEAM/issues)
 
 ## License
 
-hyperBEAM is open-source software licensed under the [MIT License](https://github.com/permaweb/hyperBEAM/blob/main/LICENSE.md).
+HyperBEAM is open-source software licensed under the [MIT License](https://github.com/permaweb/HyperBEAM/blob/main/LICENSE.md).

@@ -1,10 +1,10 @@
-# hyperBEAM Routing Configuration
+# HyperBEAM Routing Configuration
 
-This document explains how to configure routing in hyperBEAM.
+This document explains how to configure routing in HyperBEAM.
 
 ## Routing System Overview
 
-hyperBEAM's routing system directs incoming requests to appropriate destinations based on path patterns. This allows you to route specific request patterns to different servers.
+HyperBEAM's routing system directs incoming requests to appropriate destinations based on path patterns. This allows you to route specific request patterns to different servers.
 
 ## Routes Configuration Structure
 

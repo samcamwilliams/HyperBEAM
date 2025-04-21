@@ -1,6 +1,6 @@
 # Development Setup
 
-This guide will help you set up your development environment for contributing to hyperBEAM.
+This guide will help you set up your development environment for contributing to HyperBEAM.
 
 ## Prerequisites
 
@@ -17,11 +17,11 @@ Before starting, ensure you have the following installed:
 
 ### 1. Fork and Clone the Repository
 
-First, fork the hyperBEAM repository on GitHub, then clone your fork:
+First, fork the HyperBEAM repository on GitHub, then clone your fork:
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/hyperBEAM.git
-cd hyperBEAM
+git clone https://github.com/YOUR-USERNAME/HyperBEAM.git
+cd HyperBEAM
 ```
 
 ### 2. Add the Upstream Remote
@@ -29,12 +29,12 @@ cd hyperBEAM
 Add the original repository as an upstream remote to keep your fork in sync:
 
 ```bash
-git remote add upstream https://github.com/permaweb/hyperBEAM.git
+git remote add upstream https://github.com/permaweb/HyperBEAM.git
 ```
 
 ### 3. Install Dependencies
 
-#### hyperBEAM Core (Erlang) Dependencies
+#### HyperBEAM Core (Erlang) Dependencies
 
 ```bash
 # Install Erlang dependencies
@@ -87,11 +87,11 @@ The typical development cycle is:
 5. Push to your fork
 6. Create a pull request
 
-### 4. Running hyperBEAM Locally
+### 4. Running HyperBEAM Locally
 
-To run hyperBEAM for development:
+To run HyperBEAM for development:
 
-#### Start hyperBEAM
+#### Start HyperBEAM
 
 ```bash
 rebar3 shell

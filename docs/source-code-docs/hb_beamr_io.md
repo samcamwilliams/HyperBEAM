@@ -13,7 +13,7 @@ It allows for reading and writing to memory, as well as allocating and
 freeing memory by calling the WASM module's exported malloc and free
 functions.
 
-Unlike the majority of hyperBEAM modules, this module takes a defensive
+Unlike the majority of HyperBEAM modules, this module takes a defensive
 approach to type checking, breaking from the conventional Erlang style,
 such that failures are caught in the Erlang-side of functions rather than
 in the C/WASM-side.<a name="index"></a>
