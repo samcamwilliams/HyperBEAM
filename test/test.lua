@@ -13,6 +13,10 @@ function assoctable()
     }
 end
 
+function error_response()
+    return "error", "Very bad, but Lua caught it."
+end
+
 --- @function ListTable
 --- @treturn table
 --- @return a table with three elements. In Erlang, this will be
@@ -82,7 +86,7 @@ end
 --- @tparam table request
 --- @return table an answer to every HTTP request with the words "i like turtles"
 function preprocess(base, req, opts)
-    return { { body = "i like turtles" } }
+    return "ok", { { body = "i like turtles" } }
 end
 
 --- @function sandboxed_fail

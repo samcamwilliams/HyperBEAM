@@ -334,21 +334,17 @@ handle_request(RawReq, Body, ServerID) ->
 					),
 				hb_http:reply(Req, ReqSingleton, Res, NodeMsg)
 			catch
-				throw:_ ->
+                Type:Details:Stacktrace ->
 					Trace = hb_tracer:get_trace(TracePID),
 					TraceString = hb_tracer:format_error_trace(Trace),
-					hb_http:reply(
-                        Req,
-                        #{},
-                        #{
-                            <<"status">> => 500,
-                            <<"body">> => list_to_binary(TraceString)
-                        },
-                        NodeMsg
-                    );
-				error:_ ->
-					Trace = hb_tracer:get_trace(TracePID),
-					TraceString = hb_tracer:format_error_trace(Trace),
+                    ?event(
+                        http_error,
+                        {http_error,
+                            {type, Type},
+                            {details, Details},
+                            {stacktrace, Stacktrace}
+                        }
+                    ),
 					hb_http:reply(
                         Req,
                         #{},

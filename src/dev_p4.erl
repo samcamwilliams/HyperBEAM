@@ -205,7 +205,12 @@ is_chargable_req(Req, NodeMsg) ->
             ?DEFAULT_NON_CHARGABLE_ROUTES,
             NodeMsg
         ),
-    Matches = dev_router:match_routes(Req, NonChargableRoutes, NodeMsg),
+    Matches =
+        dev_router:match(
+            #{ <<"routes">> => NonChargableRoutes },
+            Req,
+            NodeMsg
+        ),
     ?event(
         {
             is_chargable,
@@ -215,7 +220,7 @@ is_chargable_req(Req, NodeMsg) ->
         }
     ),
     case Matches of
-        no_matches -> true;
+        {error, no_matching_route} -> true;
         _ -> false
     end.
 

@@ -1,6 +1,8 @@
 %%% @doc A device that calls a Lua script upon a request and returns the result.
 -module(dev_lua).
--export([info/1, init/3, snapshot/3, normalize/3]).
+-export([info/1, init/3, snapshot/3, normalize/3, functions/3]).
+%%% Public Utilities
+-export([encode/1, decode/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 %%% The set of functions that will be sandboxed by default if `sandbox` is set 
@@ -28,42 +30,20 @@
 
 %% @doc All keys that are not directly available in the base message are 
 %% resolved by calling the Lua function in the script of the same name.
+%% Additionally, we exclude the `keys', `set', `encode' and `decode' functions
+%% which are `message@1.0' core functions, and Lua public utility functions.
 info(Base) ->
     #{
         default => fun compute/4,
-        excludes => [<<"keys">>, <<"set">>] ++ maps:keys(Base)
+        excludes =>
+            [<<"keys">>, <<"set">>, <<"encode">>, <<"decode">>]
+                ++ maps:keys(Base)
     }.
 
 %% @doc Initialize the device state, loading the script into memory if it is 
 %% a reference.
 init(Base, Req, Opts) ->
     ensure_initialized(Base, Req, Opts).
-
-%% @doc Find the script in the base message, either by ID or by string.
-find_script(Base, Opts) ->
-    case hb_ao:get(<<"script-id">>, {as, <<"message@1.0">>, Base}, Opts) of
-        not_found ->
-            case hb_ao:get(<<"script">>, {as, <<"message@1.0">>, Base}, Opts) of
-                not_found ->
-                    {error, <<"missing-script-id-or-script">>};
-                Script ->
-                    {ok, Script}
-            end;
-        ScriptID ->
-            case hb_cache:read(ScriptID, Opts) of
-                {ok, Script} ->
-                    Data = hb_ao:get(<<"data">>, Script, #{}),
-                    ?event(debug_lua, { data, Data}),
-                    {ok, Data};
-                {error, Error} ->
-                    {error, #{
-                        <<"status">> => 404,
-                        <<"body">> =>
-                            <<"Lua script '", ScriptID/binary, "' not available.">>,
-                        <<"cache-error">> => Error
-                    }}
-            end
-    end.
 
 %% @doc Initialize the Lua VM if it is not already initialized. Optionally takes
 %% the script as a  Binary string. If not provided, the script will be loaded
@@ -75,27 +55,136 @@ ensure_initialized(Base, _Req, Opts) ->
             {ok, Base};
         _ ->
             ?event(debug_lua, initializing_lua_state),
-            case find_script(Base, Opts) of
-                {ok, Script} ->
-                    initialize(Base, Script, Opts);
+            case find_scripts(Base, Opts) of
+                {ok, Scripts} ->
+                    initialize(Base, Scripts, Opts);
                 Error ->
                     Error
             end
     end.
 
+%% @doc Find the script in the base message, either by ID or by string.
+find_scripts(Base, Opts) ->
+    case hb_ao:get(<<"script">>, {as, <<"message@1.0">>, Base}, Opts) of
+        not_found ->
+            {error, <<"no-scripts-found">>};
+        Script when is_binary(Script) ->
+            find_scripts(Base#{ <<"script">> => [Script] }, Opts);
+        Script when is_map(Script) ->
+            % If the script is a map, check its content type to see if it is 
+            % a literal Lua script, or a map of scripts with content types.
+            case hb_ao:get(<<"content-type">>, Script, Opts) of
+                CT when CT == <<"application/lua">> orelse CT == <<"text/x-lua">> ->
+                    find_scripts(Base#{ <<"script">> => [Script] }, Opts);
+                _ ->
+                    % If the script is not a literal Lua script, assume it is a
+                    % map of scripts with content types, and recurse.
+                    find_scripts(Base#{ <<"script">> => maps:values(Script) }, Opts)
+            end;
+        Scripts when is_list(Scripts) ->
+            % We have found a list of scripts, load them.
+            load_scripts(Scripts, Opts)
+    end.
+
+%% @doc Load a list of scripts for installation into the Lua VM.
+load_scripts(Scripts, Opts) -> load_scripts(Scripts, Opts, []).
+load_scripts([], _Opts, Acc) ->
+    {ok, lists:reverse(Acc)};
+load_scripts([ScriptID | Rest], Opts, Acc) when is_binary(ScriptID) ->
+    case hb_cache:read(ScriptID, Opts) of
+        {ok, Script} ->
+            load_scripts(Rest, Opts, [{ScriptID, Script}|Acc]);
+        not_found ->
+            {error, #{
+                <<"status">> => 404,
+                <<"body">> =>
+                    <<"Lua script '", ScriptID/binary, "' not available.">>
+            }}
+    end;
+load_scripts([Script | Rest], Opts, Acc) when is_map(Script) ->
+    % We have found a message with a direct Lua script. Load it.
+    case hb_ao:get(<<"body">>, Script, Opts) of
+        not_found ->
+            {error, #{
+                <<"status">> => 404,
+                <<"body">> =>
+                    <<
+                        """
+                        Lua script not loadable. Lua scripts must have a
+                        `body' element set to a binary of the code to load.
+                        """
+                    >>,
+                <<"script">> => Script
+            }};
+        ScriptBin ->
+            % Get the `module' key from the script message if it exists, or 
+            % return the script ID as the module name.
+            Module =
+                hb_ao:get_first(
+                    [
+                        {Script, <<"module">>},
+                        {Script, <<"id">>}
+                    ],
+                    Script,
+                    Opts
+                ),
+            % Load the script into the Lua state.
+            load_scripts(Rest, Opts, [{Module, ScriptBin}|Acc])
+    end.
+
 %% @doc Initialize a new Lua state with a given base message and script.
-initialize(Base, Script, Opts) ->
+initialize(Base, Scripts, Opts) ->
     State0 = luerl:init(),
-    {ok, _, State1} = luerl:do_dec(Script, State0),
+    % Load each script into the Lua state.
+    State1 =
+        lists:foldl(
+            fun({ScriptID, ScriptBin}, StateIn) ->
+                {ok, _, StateOut} =
+                    luerl:do_dec(
+                        ScriptBin,
+                        [{module, hb_util:list(ScriptID)}],
+                        StateIn
+                    ),
+                StateOut
+            end,
+            State0,
+            Scripts
+        ),
+    % Apply any sandboxing rules to the state.
     State2 =
         case hb_ao:get(<<"sandbox">>, {as, <<"message@1.0">>, Base}, false, Opts) of
             false -> State1;
             true -> sandbox(State1, ?DEFAULT_SANDBOX, Opts);
             Spec -> sandbox(State1, Spec, Opts)
         end,
-    {ok, State3} = add_ao_core_resolver(Base, State2, Opts),
+    % Install the AO-Core Lua library into the state.
+    {ok, State3} = dev_lua_lib:install(Base, State2, Opts),
     % Return the base message with the state added to it.
     {ok, hb_private:set(Base, <<"state">>, State3, Opts)}.
+
+%%% @doc Return a list of all functions in the Lua environment.
+functions(Base, _Req, Opts) ->
+    case hb_private:get(<<"state">>, Base, Opts) of
+        not_found ->
+            {error, not_found};
+        State ->
+            {ok, [Res], _S2} =
+                luerl:do_dec(
+                    <<
+                        """
+                        local __tests = {}
+                        for k, v in pairs(_G) do
+                            if type(v) == "function" then
+                                table.insert(__tests, k)
+                            end
+                        end
+                        return __tests
+                        """
+                    >>,
+                    State
+                ),
+            {ok, hb_util:message_to_ordered_list(decode(Res))}
+    end.
 
 %% @doc Sandbox (render inoperable) a set of Lua functions. Each function is
 %% referred to as if it is a path in AO-Core, with its value being what to 
@@ -112,76 +201,6 @@ sandbox(State, [{Path, Value} | Rest], Opts) ->
 sandbox(State, [Path | Rest], Opts) ->
     {ok, NextState} = luerl:set_table_keys_dec(Path, <<"sandboxed">>, State),
     sandbox(NextState, Rest, Opts).
-
-%% @doc Add a HTTP-style AO-Core resolution function to the Lua environment.
-%% Optionally, limit the devices that the environment can make use of.
-add_ao_core_resolver(Base, State, Opts) ->
-    % Calculate and set the new `preloaded_devices' option.
-    AllDevs = hb_opts:get(preloaded_devices, Opts),
-    DevSandboxDef =
-        hb_ao:get(
-            <<"device-sandbox">>,
-            {as, <<"message@1.0">>, Base},
-            false,
-            Opts
-        ),
-    AdmissibleDevs =
-        case DevSandboxDef of
-            false -> AllDevs;
-            DevNames ->
-                lists:map(
-                    fun(Name) ->
-                        [Dev] =
-                            lists:filter(
-                                fun(X) ->
-                                    hb_ao:get(<<"name">>, X, Opts) == Name
-                                end,
-                                AllDevs
-                            ),
-                        Dev
-                    end,
-                    hb_util:message_to_ordered_list(DevNames)
-                )
-        end,
-    ?event({adding_ao_core_resolver, {devs, AdmissibleDevs}}),
-    ExecOpts = Opts#{ preloaded_devices => AdmissibleDevs },
-    % Initialize the AO-Core resolver.
-    BaseAOTable =
-        case luerl:get_table_keys_dec([ao], State) of
-            {ok, nil, _} ->
-                ?event(no_ao_table),
-                #{};
-            {ok, ExistingTable, _} ->
-                ?event({existing_ao_table, ExistingTable}),
-                decode(ExistingTable)
-        end,
-    ?event({base_ao_table, BaseAOTable}),
-    {ok, State2} =
-        luerl:set_table_keys_dec(
-            [ao],
-            encode(BaseAOTable),
-            State
-        ),
-    % Add the AO-Core resolver to the base AO table.
-    luerl:set_table_keys_dec(
-        [ao, resolve],
-        fun([EncodedMsg], ExecState) ->
-            AOMsg = decode(luerl:decode(EncodedMsg, ExecState)),
-            ?event({ao_core_resolver, {msg, AOMsg}}),
-            ParsedMsgs = hb_singleton:from(AOMsg),
-            ?event({parsed_msgs_to_resolve, ParsedMsgs}),
-            try hb_ao:resolve_many(ParsedMsgs, ExecOpts) of
-                {Status, Res} ->
-                    ?event({resolved_msgs, {status, Status}, {res, Res}}),
-                    {[Status, encode(Res)], ExecState}
-            catch
-                Error ->
-                    ?event({ao_core_resolver_error, Error}),
-                    {error, Error}
-            end
-        end,
-        State2
-    ).
 
 %% @doc Call the Lua script with the given arguments.
 compute(Key, RawBase, Req, Opts) ->
@@ -220,29 +239,64 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
-    ?event({calling_lua_func, {function, Function}, {args, Params}, {req, Req}}),
-    ?event(debug_lua, calling_lua_func),
-    % ?event(debug_lua, {lua_params, Params}),
-    case luerl:call_function_dec([Function], encode(Params), State) of
-        {ok, [LuaResult], NewState} when is_map(LuaResult) ->
-            ?event(debug_lua, got_lua_result),
-            Result = decode(LuaResult),
-            ?event(debug_lua, decoded_result),
-            {ok, Result#{
-                <<"priv">> => OldPriv#{
+    ?event(lua,
+        {calling_lua_func,
+            {function, Function},
+            {args, Params},
+            {req, Req}
+        }
+    ),
+    process_response(
+        try luerl:call_function_dec(
+            [Function],
+            encode(Params),
+            State
+        )
+        catch
+            _:Reason:Stacktrace -> {error, Reason, Stacktrace}
+        end,
+        OldPriv
+    ).
+
+%% @doc Process a response to a Luerl invocation. Returns the typical AO-Core
+%% HyperBEAM response format.
+process_response({ok, [Result], NewState}, Priv) ->
+    process_response({ok, [<<"ok">>, Result], NewState}, Priv);
+process_response({ok, [Status, MsgResult], NewState}, Priv) ->
+    % If the result is a HyperBEAM device return (`{Status, Msg}'), decode it 
+    % and add the previous `priv' element back into the resulting message.
+    case decode(MsgResult) of
+        Msg when is_map(Msg) ->
+            {hb_util:atom(Status), Msg#{
+                <<"priv">> => Priv#{
                     <<"state">> => NewState
                 }
             }};
-        {ok, [LuaResult], _NewState} ->
-            ?event(debug_lua, got_lua_result),
-            {ok, LuaResult};
-        {lua_error, Error, Details} ->
-            {error, #{
-                <<"status">> => 500,
-                <<"body">> => Error,
-                <<"details">> => Details
-            }}
-    end.
+        NonMsgRes -> {hb_util:atom(Status), NonMsgRes}
+    end;
+process_response({lua_error, RawError, State}, _Priv) ->
+    % An error occurred while calling the Lua function. Parse the stack trace
+    % and return it.
+    Error = try decode(luerl:decode(RawError, State)) catch _:_ -> RawError end,
+    StackTrace = decode_stacktrace(luerl:get_stacktrace(State), State),
+    ?event(lua_error, {lua_error, Error, {stacktrace, StackTrace}}),
+    {error, #{
+        <<"status">> => 500,
+        <<"body">> => Error,
+        <<"trace">> => hb_ao:normalize_keys(StackTrace)
+    }};
+process_response({error, Reason, Trace}, _Priv) ->
+    % An Erlang error occurred while calling the Lua function. Return it.
+    ?event(lua_error, {trace, Trace}),
+    TraceBin = iolist_to_binary(hb_util:format_trace(Trace)),
+    ?event(lua_error, {formatted, TraceBin}),
+    ReasonBin = iolist_to_binary(io_lib:format("~p", [Reason])),
+    {error, #{
+        <<"status">> => 500,
+        <<"body">> =>
+            << "Erlang error while running Lua: ", ReasonBin/binary >>,
+        <<"trace">> => TraceBin
+    }}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
 %% state element, then serializes the state to a binary.
@@ -293,34 +347,135 @@ normalize(Base, _Req, RawOpts) ->
     end.
 
 %% @doc Decode a Lua result into a HyperBEAM `structured@1.0' message.
-decode(Map = [{_K, _V} | _]) when is_list(Map) ->
-    maps:map(fun(_, V) -> decode(V) end, maps:from_list(Map));
+decode(EncMsg = [{_K, _V} | _]) when is_list(EncMsg) ->
+    decode(maps:map(fun(_, V) -> decode(V) end, maps:from_list(EncMsg)));
+decode(Msg) when is_map(Msg) ->
+    % If the message is an ordered list encoded as a map, decode it to a list.
+    case hb_util:is_ordered_list(Msg) of
+        true ->
+            lists:map(fun decode/1, hb_util:message_to_ordered_list(Msg));
+        false ->
+            Msg
+    end;
 decode(Other) ->
     Other.
 
-%% @doc Encode a HyperBEAM `structured@1.0' message into a Lua result.
+%% @doc Encode a HyperBEAM `structured@1.0' message into a Lua term.
 encode(Map) when is_map(Map) ->
-    maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map));
+    case hb_util:is_ordered_list(Map) of
+        true -> encode(hb_util:message_to_ordered_list(Map));
+        false -> maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map))
+    end;
 encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
+encode(Atom) when is_atom(Atom) and (Atom /= false) and (Atom /= true)->
+    hb_util:bin(Atom);
 encode(Other) ->
     Other.
+
+%% @doc Parse a Lua stack trace into a list of messages.
+decode_stacktrace(StackTrace, State0) ->
+    decode_stacktrace(StackTrace, State0, []).
+decode_stacktrace([], _State, Acc) ->
+    lists:reverse(Acc);
+decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc) ->
+    %% Decode all the Lua table refs into Erlang terms
+    DecodedParams = decode_params(ParamRefs, State0),
+    %% Pull out the line number
+    Line = proplists:get_value(line, FileInfo),
+    File = proplists:get_value(file, FileInfo, undefined),
+    ?event(debug_lua_stack, {stack_file, FileInfo}),
+    %% Build our message‐map
+    Entry = #{
+        <<"function">>   => FuncBin,
+        <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
+    },
+    MaybeLine =
+        if is_binary(File) andalso is_integer(Line) ->
+            #{
+                <<"line">> =>
+                    iolist_to_binary(
+                        io_lib:format("~s:~p", [File, Line])
+                    )
+            };
+        is_integer(Line) ->
+            #{ <<"line">> => Line };
+        true ->
+            #{}
+        end,
+    decode_stacktrace(Rest, State0, [maps:merge(Entry, MaybeLine)|Acc]).
+
+%% @doc Decode a list of Lua references, as found in a stack trace, into a
+%% list of Erlang terms.
+decode_params([], _State) -> [];
+decode_params([Tref|Rest], State) ->
+    Decoded = decode(luerl:decode(Tref, State)),
+    [Decoded|decode_params(Rest, State)].
 
 %%% Tests
 simple_invocation_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"parameters">> => []
     },
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
+
+
+multiple_scripts_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Script2 =
+        <<
+            """
+            function test_second_script()
+                return 4
+            end
+            """
+        >>,
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => [
+            #{
+                <<"content-type">> => <<"application/lua">>,
+                <<"body">> => Script
+            },
+            #{
+                <<"content-type">> => <<"application/lua">>,
+                <<"body">> => Script2
+            }
+        ],
+        <<"parameters">> => []
+    },
+    ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})),
+    ?assertEqual(4, hb_ao:get(<<"test_second_script">>, Base, #{})).
+
+error_response_test() ->
+    {ok, Script} = file:read_file("test/test.lua"),
+    Base = #{
+        <<"device">> => <<"lua@5.3a">>,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
+        <<"parameters">> => []
+    },
+    ?assertEqual(
+        {error, <<"Very bad, but Lua caught it.">>},
+        hb_ao:resolve(Base, <<"error_response">>, #{})
+    ).
 
 sandboxed_failure_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"parameters">> => [],
         <<"sandbox">> => true
     },
@@ -331,7 +486,10 @@ ao_core_sandbox_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"parameters">> => [],
         <<"device-sandbox">> => [<<"message@1.0">>]
     },
@@ -343,7 +501,10 @@ ao_core_resolution_from_lua_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"parameters">> => []
     },
     {ok, Res} = hb_ao:resolve(Base, <<"ao_resolve">>, #{}),
@@ -355,7 +516,10 @@ direct_benchmark_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"parameters">> => []
     },
     Iterations = hb:benchmark(
@@ -378,7 +542,10 @@ invoke_non_compute_key_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Base = #{
         <<"device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"test-value">> => 42
     },
     {ok, Result1} = hb_ao:resolve(Base, <<"hello">>, #{}),
@@ -402,7 +569,10 @@ lua_http_preprocessor_test() ->
             preprocessor =>
                 #{
                     <<"device">> => <<"lua@5.3a">>,
-                    <<"script">> => Script
+                    <<"script">> => #{
+                        <<"content-type">> => <<"application/lua">>,
+                        <<"body">> => Script
+                    }
                 }
         }),
     {ok, Res} = hb_http:get(Node, <<"/hello?hello=world">>, #{}),
@@ -472,7 +642,8 @@ aos_authority_not_trusted_test() ->
                     <<"type">> => <<"Message">>,
                     <<"data">> => <<"1 + 1">>,
                     <<"random-seed">> => rand:uniform(1337),
-                    <<"action">> => <<"Eval">>
+                    <<"action">> => <<"Eval">>,
+                    <<"from-process">> => <<"1234">>
 
         }, GuestWallet)
       }, GuestWallet
@@ -524,7 +695,10 @@ generate_lua_process(File) ->
         <<"type">> => <<"Process">>,
         <<"scheduler-device">> => <<"scheduler@1.0">>,
         <<"execution-device">> => <<"lua@5.3a">>,
-        <<"script">> => Script,
+        <<"script">> => #{
+            <<"content-type">> => <<"application/lua">>,
+            <<"body">> => Script
+        },
         <<"authority">> => [ 
           hb:address(), 
           <<"E3FJ53E6xtAzcftBpaw2E1H4ZM9h6qy6xz9NXh5lhEQ">>
@@ -538,6 +712,15 @@ generate_lua_process(File) ->
 generate_test_message(Process) ->
     ProcID = hb_message:id(Process, all),
     Wallet = hb:wallet(),
+    Code = """ 
+      Count = 0
+      function add() 
+        Send({Target = 'Foo', Data = 'Bar' });
+        Count = Count + 1 
+      end
+      add()
+      return Count
+    """,
     hb_message:commit(#{
             <<"path">> => <<"schedule">>,
             <<"method">> => <<"POST">>,
@@ -546,7 +729,10 @@ generate_test_message(Process) ->
                     #{
                         <<"target">> => ProcID,
                         <<"type">> => <<"Message">>,
-                        <<"data">> => <<"Count = 0\n function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>,
+                        <<"body">> => #{
+                            <<"content-type">> => <<"application/lua">>,
+                            <<"body">> => list_to_binary(Code) 
+                        },
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
                     },
@@ -575,7 +761,10 @@ generate_stack(File) ->
         <<"process">> => 
             hb_message:commit(#{
                 <<"type">> => <<"Process">>,
-                <<"script">> => Script,
+                <<"script">> => #{
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"body">> => Script
+                },
                 <<"scheduler">> => hb:address(),
                 <<"authority">> => hb:address()
             }, Wallet)
