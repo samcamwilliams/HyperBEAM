@@ -642,7 +642,8 @@ aos_authority_not_trusted_test() ->
                     <<"type">> => <<"Message">>,
                     <<"data">> => <<"1 + 1">>,
                     <<"random-seed">> => rand:uniform(1337),
-                    <<"action">> => <<"Eval">>
+                    <<"action">> => <<"Eval">>,
+                    <<"from-process">> => <<"1234">>
 
         }, GuestWallet)
       }, GuestWallet
@@ -711,6 +712,15 @@ generate_lua_process(File) ->
 generate_test_message(Process) ->
     ProcID = hb_message:id(Process, all),
     Wallet = hb:wallet(),
+    Code = """ 
+      Count = 0
+      function add() 
+        Send({Target = 'Foo', Data = 'Bar' });
+        Count = Count + 1 
+      end
+      add()
+      return Count
+    """,
     hb_message:commit(#{
             <<"path">> => <<"schedule">>,
             <<"method">> => <<"POST">>,
@@ -721,12 +731,7 @@ generate_test_message(Process) ->
                         <<"type">> => <<"Message">>,
                         <<"body">> => #{
                             <<"content-type">> => <<"application/lua">>,
-                            <<"body">> =>
-                                """
-                                Count = 0
-                                function add() Send({Target = 'Foo', Data = 'Bar' });
-                                Count = Count + 1 end\n add()\n return Count
-                                """
+                            <<"body">> => list_to_binary(Code) 
                         },
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
