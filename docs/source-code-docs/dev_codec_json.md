@@ -3,7 +3,7 @@
 # Module dev_codec_json #
 * [Description](#description)
 
-A simple JSON codec for hyperBEAM's message format.
+A simple JSON codec for HyperBEAM's message format.
 
 <a name="description"></a>
 
