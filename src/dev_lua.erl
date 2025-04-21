@@ -239,7 +239,7 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Call the VM function with the given arguments.
-    ?event(debug_lua,
+    ?event(lua,
         {calling_lua_func,
             {function, Function},
             {args, Params},
@@ -274,9 +274,10 @@ process_response({ok, [Status, MsgResult], NewState}, Priv) ->
             }};
         NonMsgRes -> {hb_util:atom(Status), NonMsgRes}
     end;
-process_response({lua_error, Error, State}, _Priv) ->
+process_response({lua_error, RawError, State}, _Priv) ->
     % An error occurred while calling the Lua function. Parse the stack trace
     % and return it.
+    Error = try decode(luerl:decode(RawError, State)) catch _:_ -> RawError end,
     StackTrace = decode_stacktrace(luerl:get_stacktrace(State), State),
     ?event(lua_error, {lua_error, Error, {stacktrace, StackTrace}}),
     {error, #{
@@ -359,9 +360,12 @@ decode(Msg) when is_map(Msg) ->
 decode(Other) ->
     Other.
 
-%% @doc Encode a HyperBEAM `structured@1.0' message into a Lua result.
+%% @doc Encode a HyperBEAM `structured@1.0' message into a Lua term.
 encode(Map) when is_map(Map) ->
-    maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map));
+    case hb_util:is_ordered_list(Map) of
+        true -> encode(hb_util:message_to_ordered_list(Map));
+        false -> maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map))
+    end;
 encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
 encode(Atom) when is_atom(Atom) and (Atom /= false) and (Atom /= true)->

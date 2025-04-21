@@ -39,7 +39,9 @@ float(Str) when is_binary(Str) ->
 float(Str) when is_list(Str) ->
     list_to_float(Str);
 float(Float) when is_float(Float) ->
-    Float.
+    Float;
+float(Int) when is_integer(Int) ->
+    Int / 1.
 
 %% @doc Coerce a string to an atom.
 atom(Str) when is_binary(Str) ->
