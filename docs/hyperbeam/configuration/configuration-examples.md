@@ -1,6 +1,6 @@
-# hyperBEAM Configuration Examples
+# HyperBEAM Configuration Examples
 
-This document provides complete, practical configuration examples for common hyperBEAM deployment scenarios. Each example includes explanations and can be used as a starting point for your own configuration.
+This document provides complete, practical configuration examples for common HyperBEAM deployment scenarios. Each example includes explanations and can be used as a starting point for your own configuration.
 
 ## Basic Development Configuration
 

@@ -1,6 +1,6 @@
 # **Software Dependencies**
 
-hyperBEAM requires several software packages to be installed on your system. This document provides instructions for installing all required dependencies.
+HyperBEAM requires several software packages to be installed on your system. This document provides instructions for installing all required dependencies.
 
 ## Base Packages
 
