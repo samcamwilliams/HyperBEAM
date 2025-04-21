@@ -28,7 +28,11 @@ suite(File) ->
         hb_ao:resolve(
             #{
                 <<"device">> => <<"lua@5.3a">>,
-                <<"script">> => Script
+                <<"script">> => #{
+                    <<"content-type">> => <<"application/lua">>,
+                    <<"module">> => File,
+                    <<"body">> => Script
+                }
             },
             <<"init">>,
             #{}

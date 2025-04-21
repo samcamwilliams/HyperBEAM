@@ -45,6 +45,24 @@ info(Base) ->
 init(Base, Req, Opts) ->
     ensure_initialized(Base, Req, Opts).
 
+%% @doc Initialize the Lua VM if it is not already initialized. Optionally takes
+%% the script as a  Binary string. If not provided, the script will be loaded
+%% from the base message.
+ensure_initialized(Base, _Req, Opts) ->
+    case hb_private:from_message(Base) of
+        #{<<"state">> := _} -> 
+            ?event(debug_lua, lua_state_already_initialized),
+            {ok, Base};
+        _ ->
+            ?event(debug_lua, initializing_lua_state),
+            case find_scripts(Base, Opts) of
+                {ok, Scripts} ->
+                    initialize(Base, Scripts, Opts);
+                Error ->
+                    Error
+            end
+    end.
+
 %% @doc Find the script in the base message, either by ID or by string.
 find_scripts(Base, Opts) ->
     case hb_ao:get(<<"script">>, {as, <<"message@1.0">>, Base}, Opts) of
@@ -75,7 +93,7 @@ load_scripts([], _Opts, Acc) ->
 load_scripts([ScriptID | Rest], Opts, Acc) when is_binary(ScriptID) ->
     case hb_cache:read(ScriptID, Opts) of
         {ok, Script} ->
-            load_scripts(Rest, Opts, [Script | Acc]);
+            load_scripts(Rest, Opts, [{ScriptID, Script}|Acc]);
         not_found ->
             {error, #{
                 <<"status">> => 404,
@@ -99,26 +117,19 @@ load_scripts([Script | Rest], Opts, Acc) when is_map(Script) ->
                 <<"script">> => Script
             }};
         ScriptBin ->
-            % We have found a message with a direct Lua script. Load it.
-            load_scripts(Rest, Opts, [ScriptBin | Acc])
-    end.
-
-%% @doc Initialize the Lua VM if it is not already initialized. Optionally takes
-%% the script as a  Binary string. If not provided, the script will be loaded
-%% from the base message.
-ensure_initialized(Base, _Req, Opts) ->
-    case hb_private:from_message(Base) of
-        #{<<"state">> := _} -> 
-            ?event(debug_lua, lua_state_already_initialized),
-            {ok, Base};
-        _ ->
-            ?event(debug_lua, initializing_lua_state),
-            case find_scripts(Base, Opts) of
-                {ok, Scripts} ->
-                    initialize(Base, Scripts, Opts);
-                Error ->
-                    Error
-            end
+            % Get the `module' key from the script message if it exists, or 
+            % return the script ID as the module name.
+            Module =
+                hb_ao:get_first(
+                    [
+                        {Script, <<"module">>},
+                        {Script, <<"id">>}
+                    ],
+                    Script,
+                    Opts
+                ),
+            % Load the script into the Lua state.
+            load_scripts(Rest, Opts, [{Module, ScriptBin}|Acc])
     end.
 
 %% @doc Initialize a new Lua state with a given base message and script.
@@ -127,8 +138,13 @@ initialize(Base, Scripts, Opts) ->
     % Load each script into the Lua state.
     State1 =
         lists:foldl(
-            fun(Script, StateIn) ->
-                {ok, _, StateOut} = luerl:do_dec(Script, StateIn),
+            fun({ScriptID, ScriptBin}, StateIn) ->
+                {ok, _, StateOut} =
+                    luerl:do_dec(
+                        ScriptBin,
+                        [{module, hb_util:list(ScriptID)}],
+                        StateIn
+                    ),
                 StateOut
             end,
             State0,
@@ -343,14 +359,23 @@ decode_stacktrace([{FuncBin, ParamRefs, FileInfo} | Rest], State0, Acc) ->
     DecodedParams = decode_params(ParamRefs, State0),
     %% Pull out the line number
     Line = proplists:get_value(line, FileInfo),
+    File = proplists:get_value(file, FileInfo, undefined),
+    ?event(debug_lua_stack, {stack_file, FileInfo}),
     %% Build our message‐map
     Entry = #{
         <<"function">>   => FuncBin,
         <<"parameters">> => hb_util:list_to_numbered_map(DecodedParams)
     },
     MaybeLine =
-        if is_binary(FuncBin) andalso is_integer(Line) ->
-            #{<<"line">> => Line};
+        if is_binary(File) andalso is_integer(Line) ->
+            #{
+                <<"line">> =>
+                    iolist_to_binary(
+                        io_lib:format("~s:~p", [File, Line])
+                    )
+            };
+        is_integer(Line) ->
+            #{ <<"line">> => Line };
         true ->
             #{}
         end,
