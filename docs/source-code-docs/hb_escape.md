@@ -10,7 +10,7 @@ Escape and unescape mixed case values for use in HTTP headers.
 ## Description ##
 This is necessary for encodings of AO-Core messages for transmission in
 HTTP/2 and HTTP/3, because uppercase header keys are explicitly disallowed.
-While most map keys in HyperBEAM are normalized to lowercase, IDs are not.
+While most map keys in hyperBEAM are normalized to lowercase, IDs are not.
 Subsequently, we encode all header keys to lowercase %-encoded URI-style
 strings because transmission.<a name="index"></a>
 

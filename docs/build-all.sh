@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Script to build HyperBEAM documentation in one seamless command
+# Script to build hyperBEAM documentation in one seamless command
 # This includes compiling with rebar3, generating edoc, processing source code docs, and building/serving with mkdocs
 
 # Ensure we're in the root directory of the project
 ROOT_DIR="$(dirname "$(realpath "$0")")/.."
 cd "$ROOT_DIR" || { echo "Failed to change to root directory"; exit 1; }
 
-echo "Building HyperBEAM documentation from $ROOT_DIR"
+echo "Building hyperBEAM documentation from $ROOT_DIR"
 
 # Step 1: Compile the project with rebar3
 echo "Compiling project with rebar3..."
@@ -43,22 +43,22 @@ fi
 # Overwrite the file with the header content
 echo "# Source Code Documentation" > "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "Welcome to the source code documentation for HyperBEAM. This section provides detailed insights into the codebase, helping developers understand the structure, functionality, and implementation details of HyperBEAM and its components." >> "$INDEX_FILE"
+echo "Welcome to the source code documentation for hyperBEAM. This section provides detailed insights into the codebase, helping developers understand the structure, functionality, and implementation details of hyperBEAM and its components." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "## Overview" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "HyperBEAM is built with a modular architecture to ensure scalability, maintainability, and extensibility. The source code is organized into distinct components, each serving a specific purpose within the ecosystem." >> "$INDEX_FILE"
+echo "hyperBEAM is built with a modular architecture to ensure scalability, maintainability, and extensibility. The source code is organized into distinct components, each serving a specific purpose within the ecosystem." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "## Sections" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "- **HyperBEAM Core**: The main framework that orchestrates data processing, storage, and routing." >> "$INDEX_FILE"
-echo "- **Compute Unit**: Handles computational tasks and integrates with the HyperBEAM core for distributed processing." >> "$INDEX_FILE"
+echo "- **hyperBEAM Core**: The main framework that orchestrates data processing, storage, and routing." >> "$INDEX_FILE"
+echo "- **Compute Unit**: Handles computational tasks and integrates with the hyperBEAM core for distributed processing." >> "$INDEX_FILE"
 echo "- **Trusted Execution Environment (TEE)**: Ensures secure execution of sensitive operations." >> "$INDEX_FILE"
-echo "- **Client Libraries**: Tools and SDKs for interacting with HyperBEAM, including the JavaScript client." >> "$INDEX_FILE"
+echo "- **Client Libraries**: Tools and SDKs for interacting with hyperBEAM, including the JavaScript client." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "## Getting Started" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide." >> "$INDEX_FILE"
+echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/hyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "## Navigation" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
@@ -66,7 +66,7 @@ echo "Use the navigation menu to dive into specific parts of the codebase. Each 
 echo "" >> "$INDEX_FILE"
 echo "## Contributing" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
+echo "We welcome contributions to hyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 
 # Append the table header
