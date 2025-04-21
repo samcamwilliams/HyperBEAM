@@ -238,18 +238,20 @@ compute(Key, RawBase, Req, Opts) ->
             Opts#{ hashpath => ignore }
         ),
     ?event(debug_lua, parameters_found),
+    % Resolve all hyperstate links
+    ResolvedParams = hb_cache:ensure_all_loaded(Params),
     % Call the VM function with the given arguments.
     ?event(debug_lua,
         {calling_lua_func,
             {function, Function},
-            {args, Params},
+            {args, ResolvedParams},
             {req, Req}
         }
     ),
     process_response(
         try luerl:call_function_dec(
             [Function],
-            encode(Params),
+            encode(ResolvedParams),
             State
         )
         catch
@@ -561,7 +563,6 @@ pure_lua_process_test() ->
     Message = generate_test_message(Process),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now">>, #{}),
-    ?event(rakis, {results, Results}),
     ?assertEqual(42, hb_ao:get(<<"results/output/body">>, Results, #{})).
 
 pure_lua_process_benchmark_test_() ->
@@ -618,14 +619,15 @@ aos_authority_not_trusted_test() ->
                     <<"type">> => <<"Message">>,
                     <<"data">> => <<"1 + 1">>,
                     <<"random-seed">> => rand:uniform(1337),
-                    <<"action">> => <<"Eval">>
+                    <<"action">> => <<"Eval">>,
+                    <<"from-process">> => "x1234"
 
         }, GuestWallet)
       }, GuestWallet
     ),
     {ok, _} = hb_ao:resolve(Process, Message, #{ hashpath => ignore }),
     {ok, Results} = hb_ao:resolve(Process, <<"now/results/output/data">>, #{}),
-    ?assertEqual(Results, <<"Message is not trusted.">>).
+    ?assertEqual(<<"Message is not trusted.">>, Results).
 
 %% @doc Benchmark the performance of Lua executions.
 aos_process_benchmark_test_() ->
@@ -697,12 +699,9 @@ generate_test_message(Process) ->
                         <<"type">> => <<"Message">>,
                         <<"body">> => #{
                             <<"content-type">> => <<"application/lua">>,
-                            <<"body">> =>
-                                """
-                                Count = 0
-                                function add() Send({Target = 'Foo', Data = 'Bar' });
-                                Count = Count + 1 end\n add()\n return Count
-                                """
+                            % <<"body">> => <<"1">>
+                            <<"body">> => <<"Count = 0; function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>
+                            
                         },
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
