@@ -129,9 +129,14 @@ resolve([SingletonMsg], ExecState, ExecOpts) ->
     ?event({ao_core_resolver, {msg, SingletonMsg}}),
     ParsedMsgs = hb_singleton:from(SingletonMsg),
     ?event({parsed_msgs_to_resolve, ParsedMsgs}),
-    resolve(ParsedMsgs, ExecState, ExecOpts);
-resolve(RawMsgs, ExecState, ExecOpts) ->
-    MaybeAsMsgs = lists:map(fun convert_as/1, RawMsgs),
+    resolve({many, ParsedMsgs}, ExecState, ExecOpts);
+resolve([Base, Path], ExecState, ExecOpts) when is_binary(Path) ->
+    PathParts = hb_path:term_to_path_parts(Path, ExecOpts),
+    resolve({many, [Base] ++ PathParts}, ExecState, ExecOpts);
+resolve(Msgs, ExecState, ExecOpts) when is_list(Msgs) ->
+    resolve({many, Msgs}, ExecState, ExecOpts);
+resolve({many, Msgs}, ExecState, ExecOpts) ->
+    MaybeAsMsgs = lists:map(fun convert_as/1, Msgs),
     try hb_ao:resolve_many(MaybeAsMsgs, ExecOpts) of
         {Status, Res} ->
             ?event({resolved_msgs, {status, Status}, {res, Res}}),
