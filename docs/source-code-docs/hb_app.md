@@ -3,7 +3,7 @@
 # Module hb_app #
 * [Description](#description)
 
-The main hyperBEAM application module.
+The main HyperBEAM application module.
 
 __Behaviours:__ [`application`](application.md).
 

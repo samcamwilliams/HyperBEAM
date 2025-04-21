@@ -1,10 +1,10 @@
-# hyperBEAM Configuration Options Reference
+# HyperBEAM Configuration Options Reference
 
-This document provides a comprehensive reference of all configuration options available in hyperBEAM, organized by functional category.
+This document provides a comprehensive reference of all configuration options available in HyperBEAM, organized by functional category.
 
 ## Core Configuration
 
-These options control fundamental hyperBEAM behavior.
+These options control fundamental HyperBEAM behavior.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -62,7 +62,7 @@ These options control caching behavior. For detailed storage configuration, see 
 
 ## Execution & Processing
 
-These options control how hyperBEAM executes messages and processes.
+These options control how HyperBEAM executes messages and processes.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -74,7 +74,7 @@ These options control how hyperBEAM executes messages and processes.
 
 ## Device Management
 
-These options control how hyperBEAM manages devices.
+These options control how HyperBEAM manages devices.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -110,4 +110,4 @@ These options control debugging and development features.
 
 ## Complete Option List
 
-For the most up-to-date list of configuration options, refer to the `default_message/0` function in the `hb_opts` module in the hyperBEAM source code. 
+For the most up-to-date list of configuration options, refer to the `default_message/0` function in the `hb_opts` module in the HyperBEAM source code. 

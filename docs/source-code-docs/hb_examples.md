@@ -10,7 +10,7 @@ the HTTP interface.
 
 ## Description ##
 As well as testing the system, you can use these tests
-as examples of how to interact with hyperBEAM nodes.<a name="index"></a>
+as examples of how to interact with HyperBEAM nodes.<a name="index"></a>
 
 ## Function Index ##
 

@@ -1,10 +1,10 @@
-# hyperBEAM Storage Configuration
+# HyperBEAM Storage Configuration
 
-This document provides a basic overview of storage configuration in hyperBEAM.
+This document provides a basic overview of storage configuration in HyperBEAM.
 
 ## Storage Backend Overview
 
-hyperBEAM supports multiple storage backends that can be used individually or in combination. When multiple backends are specified, hyperBEAM tries each in sequence until the requested data is found.
+HyperBEAM supports multiple storage backends that can be used individually or in combination. When multiple backends are specified, HyperBEAM tries each in sequence until the requested data is found.
 
 ## Configuring Storage Backends
 
@@ -50,9 +50,9 @@ This configuration first looks for data in the local file system, then falls bac
 
 ## Available Storage Backends
 
-hyperBEAM includes these storage backends:
+HyperBEAM includes these storage backends:
 
 1. **File System Store (hb_store_fs)** - Uses the local file system
 2. **RocksDB Store (hb_store_rocksdb)** - Uses RocksDB for efficient key-value storage
 3. **Gateway Store (hb_store_gateway)** - Reads data from the Arweave gateway
-4. **Remote Node Store (hb_store_remote_node)** - Reads data from another hyperBEAM node
+4. **Remote Node Store (hb_store_remote_node)** - Reads data from another HyperBEAM node

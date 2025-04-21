@@ -4,7 +4,7 @@
 * [Description](#description)
 
 A module that provides bootstrapping interfaces for external debuggers
-to connect to hyperBEAM.
+to connect to HyperBEAM.
 
 <a name="description"></a>
 
@@ -13,7 +13,7 @@ to connect to hyperBEAM.
 The simplest way to utilize an external graphical debugger is to use the
 `erlang-ls` extension for VS Code, Emacs, or other Language Server Protocol
 (LSP) compatible editors. This repository contains a `launch.json`
-configuration file for VS Code that can be used to spawn a new hyperBEAM,
+configuration file for VS Code that can be used to spawn a new HyperBEAM,
 attach the debugger to it, and execute the specified `Module:Function(Args)`.
 Additionally, the node can be started with `rebar3 debugging` in order to
 allow access to the console while also allowing the debugger to attach.

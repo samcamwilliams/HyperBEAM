@@ -1,6 +1,6 @@
-# JavaScript Client Guide for hyperBEAM
+# JavaScript Client Guide for HyperBEAM
 
-This guide demonstrates how to integrate with hyperBEAM nodes using the an example JavaScript client library.
+This guide demonstrates how to integrate with HyperBEAM nodes using the an example JavaScript client library.
 
 
 ## Prerequisites
@@ -26,7 +26,7 @@ Then, install the required dependencies:
 npm install @permaweb/aoconnect
 ```
 
-Download the hyperBEAM client implementation file and save it as `hyperbeam-client.js` in your project directory.
+Download the HyperBEAM client implementation file and save it as `hyperbeam-client.js` in your project directory.
 
 [Download hyperbeam-client.js](../assets/hyperbeam-client.js){ .md-button .md-button--primary download="hyperbeam-client.js" style="display: block; width: 100%; text-align: center;" }
 
@@ -47,11 +47,11 @@ Your final `package.json` should look similar to this:
 ## Starter
 
 ```javascript linenums="1"
-import { hyperBEAMClient } from './hyperbeam-client.js';
+import { HyperBEAMClient } from './hyperbeam-client.js';
 
 // Create a client instance
-const client = new hyperBEAMClient({
-    nodeUrl: 'http://localhost:10000',  // hyperBEAM node URL
+const client = new HyperBEAMClient({
+    nodeUrl: 'http://localhost:10000',  // HyperBEAM node URL
     keyPath: 'wallet.json'              // Path to your wallet key file
 });
 
