@@ -1,9 +1,8 @@
 -module(dev_test).
 -export([info/1, test_func/1, compute/3, init/3, restore/3, snapshot/3, mul/2]).
--export([update_state/3, increment_counter/3]).
+-export([update_state/3, increment_counter/3, delay/3]).
 -export([postprocess/3]).
 -export([info/3]).
--export([long_task/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -148,12 +147,30 @@ increment_counter(_Msg1, Msg2, _Opts) ->
             end
     end.
 
-%% @doc Does nothing, just sleeps for 3 seconds to simulate a long-running task.
-long_task(_Msg1, _Msg2, _Opts) ->
-    ?event({'dev_test:long_task:sleeping'}),
-    timer:sleep(750),
-    ?event({'dev_test:long_task:waking'}),
-    {ok, #{<<"result">> => <<"slept">>}}.
+%% @doc Does nothing, just sleeps `Req/duration or 750' ms and returns the 
+%% appropriate form in order to be used as preprocessor.
+delay(Msg1, Req, Opts) ->
+    Duration =
+        hb_ao:get_first(
+            [
+                {Msg1, <<"duration">>},
+                {Req, <<"duration">>}
+            ],
+            750,
+            Opts
+        ),
+    ?event(delay, {delay, {sleeping, Duration}}),
+    timer:sleep(Duration),
+    ?event({delay, waking}),
+    Return =
+        case hb_ao:get(<<"return">>, Msg1, Opts) of
+            not_found ->
+                hb_ao:get(<<"body">>, Req, #{ <<"result">> => <<"slept">> }, Opts);
+            ReturnMsgs ->
+                ReturnMsgs
+        end,
+    ?event(delay, {returning, Return}),
+    {ok, Return}.
 
 %%% Tests
 
