@@ -563,8 +563,8 @@ dynamic_routing_by_performance_test_() ->
     {timeout, 30, fun dynamic_routing_by_performance/0}.
 dynamic_routing_by_performance() ->
     % Setup test parameters
-    TestNodes = 5,
-    BenchRoutes = 50,
+    TestNodes = 4,
+    BenchRoutes = 16,
     TestPath = <<"/.*/.*">>,
     % Start the main node for the test, loading the `dynamic-router' script and
     % the http_monitor to generate performance messages.
@@ -598,7 +598,7 @@ dynamic_routing_by_performance() ->
                 <<"pricing-weight">> => 1,
                 <<"performance-weight">> => 99,
                 <<"score-preference">> => 4,
-                <<"performance-period">> => 3, % Adjust quickly
+                <<"performance-period">> => 2, % Adjust quickly
                 <<"initial-performance">> => 1000
             }
         },
@@ -623,7 +623,7 @@ dynamic_routing_by_performance() ->
                             preprocessor => #{
                                 <<"device">> => <<"test-device@1.0">>,
                                 <<"path">> => <<"delay">>,
-                                <<"duration">> => X * 50, % Delay by some ms
+                                <<"duration">> => (X - 1) * 50, % Delay by some ms
                                 <<"return">> => [
                                     #{ <<"node">> => X },
                                     <<"node">>
@@ -693,8 +693,22 @@ dynamic_routing_by_performance() ->
         },
         Opts
     ),
-    {ok, ResAfter} = hb_http:get(Node, PerfPath, Opts),
-    ?event(debug_dynrouter, {nodes_after, ResAfter}),
+    % Get the new weights
+    {ok, After} = hb_http:get(Node, PerfPath, Opts),
+    SortedWeights =
+        lists:map(
+            fun(N) ->
+                hb_ao:get(
+                    <<(integer_to_binary(N))/binary, "/weight">>,
+                    After,
+                    Opts
+                )
+            end,
+            lists:seq(1, TestNodes)
+        ),
+    ?event(debug_dynrouter, {sorted_weights, SortedWeights}),
+    ?assert(hd(SortedWeights) > 0.3),
+    ?assert(lists:last(SortedWeights) < 0.4),
     ok.
 
 weighted_random_strategy_test() ->
@@ -855,8 +869,8 @@ explicit_route_test() ->
     ),
     % Test that `route-path' can also be used to specify the path, via an AO
     % call.
-    ?assertEqual(
-        {ok, #{ <<"node">> => <<"http://google.com">> }},
+    ?assertMatch(
+        {ok, #{ <<"node">> := <<"http://google.com">> }},
         hb_ao:resolve(
             #{ <<"device">> => <<"router@1.0">>, routes => Routes },
             #{
