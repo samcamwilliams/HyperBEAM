@@ -164,15 +164,16 @@ set([Base, NewValues], ExecState, ExecOpts) ->
 %% event system.
 event([Event], ExecState, Opts) ->
     ?event({recalling_event, Event}),
-    event([<<"lua_event">>, Event], ExecState, Opts);
+    event([global, Event], ExecState, Opts);
+event([Group, Event], State, Opts) when is_list(Event) ->
+    event([Group, list_to_tuple(Event)], State, Opts);
 event([Group, Event], ExecState, Opts) ->
-    FormattedEvent =
-        case hb_util:is_ordered_list(Event) of
-            true ->
-                ?event({is_ordered_list, Event}),
-                list_to_tuple(hb_util:message_to_ordered_list(Event));
-            false -> Event
-        end,
-    ?event({event, {group, Group}, {event, FormattedEvent}}),
-    ?event(Group, FormattedEvent, Opts),
+    ?event(
+        lua_event,
+        {event,
+            {group, Group},
+            {event, Event}
+        }
+    ),
+    ?event(Group, Event),
     {[<<"ok">>], ExecState}.

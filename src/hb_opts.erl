@@ -260,7 +260,8 @@ get(Key, Default, Opts) ->
                 fun
                     (Str) when Str == "1" -> true;
                     (Str) when Str == "true" -> true;
-                    (Str) -> string:tokens(Str, ",")
+                    (Str) ->
+                        lists:map(fun hb_util:bin/1, string:tokens(Str, ","))
                 end,
                 ?DEFAULT_PRINT_OPTS
             },
