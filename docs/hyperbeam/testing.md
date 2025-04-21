@@ -1,14 +1,14 @@
-# Testing HyperBEAM
+# Testing hyperBEAM
 
-This guide covers how to test your HyperBEAM installation to ensure it's working correctly.
+This guide covers how to test your hyperBEAM installation to ensure it's working correctly.
 
 ## Unit Tests
 
-HyperBEAM comes with a suite of unit tests that can be run to verify the installation and functionality.
+hyperBEAM comes with a suite of unit tests that can be run to verify the installation and functionality.
 
 ### Running All Tests
 
-To run all unit tests for HyperBEAM, use the following Rebar3 command:
+To run all unit tests for hyperBEAM, use the following Rebar3 command:
 
 ```bash
 rebar3 eunit
@@ -40,14 +40,14 @@ rebar3 eunit --test dev_meta:config_test
 If tests fail, check the following:
 
 1. Ensure all dependencies are installed correctly
-2. Verify that HyperBEAM is properly configured
+2. Verify that hyperBEAM is properly configured
 3. Look for error messages in the test output
-4. Examine the HyperBEAM logs for more details
+4. Examine the hyperBEAM logs for more details
 
 ### Common Issues
 
-- **Connection refused**: Ensure HyperBEAM is running on the expected port
+- **Connection refused**: Ensure hyperBEAM is running on the expected port
 - **Authentication errors**: Check your wallet configuration
-- **Device not found**: Verify the device is included in your HyperBEAM configuration
+- **Device not found**: Verify the device is included in your hyperBEAM configuration
 
 For specific error messages, refer to the [Troubleshooting Guide](../reference/troubleshooting.md). 

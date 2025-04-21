@@ -1,6 +1,6 @@
 # **System Requirements**
 
-Before installing HyperBEAM, ensure your system meets these minimum requirements:
+Before installing hyperBEAM, ensure your system meets these minimum requirements:
 
 ## Hardware Requirements
 
@@ -10,7 +10,7 @@ Before installing HyperBEAM, ensure your system meets these minimum requirements
 
 ## Operating System
 
-HyperBEAM currently supports:
+hyperBEAM currently supports:
 
 * **Ubuntu 22.04 LTS** (recommended)
 

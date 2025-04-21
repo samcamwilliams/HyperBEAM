@@ -25,7 +25,7 @@ The device has the following requirements and interface:
                /priv/[Prefix]/instance
                /priv/[Prefix]/import-resolver
            Side-effects:
-               Creates a WASM executor loaded in memory of the HyperBEAM node.
+               Creates a WASM executor loaded in memory of the hyperBEAM node.
        M1/Compute ->
            Assumes:
                M1/priv/[Prefix]/instance

@@ -81,18 +81,18 @@ Instead of storing every version of a message, AO-Core saves only the essential 
 
 Paths function like version control systems (similar to Git), allowing AO-Core to maintain a structured and efficient way to track changes without wasting resources.
 
-## HyperBEAM
+## hyperBEAM
 
-HyperBEAM is the main implementation of the AO-Core protocol, written in Erlang, and serves as the backbone of AO’s decentralized operating system. By using Erlang and its BEAM runtime, HyperBEAM benefits from a battle-tested ecosystem designed for fault tolerance and distributed computing. 
+hyperBEAM is the main implementation of the AO-Core protocol, written in Erlang, and serves as the backbone of AO’s decentralized operating system. By using Erlang and its BEAM runtime, hyperBEAM benefits from a battle-tested ecosystem designed for fault tolerance and distributed computing. 
 This architecture ensures key features such as process isolation, message-passing, and efficient task scheduling, all of which align with the core principles of AO. Erlang’s lightweight processes and actor-based concurrency model mirror AO’s execution requirements, where independent agents must operate in parallel, communicate asynchronously, and recover from failures automatically—ensuring a robust, decentralized computing environment.
 
-One of HyperBEAM’s most important capabilities is its abstraction and modular design, which allows programs to execute independently of the underlying hardware. HyperBEAM provides a hardware-agnostic execution layer, enabling computations to run across a distributed network of nodes. 
-This means that programs can function seamlessly across various infrastructures, ensuring scalability and resilience. By allowing nodes to dynamically select and execute different devices, HyperBEAM ensures adaptability while maintaining the robustness needed for a truly fault-tolerant and decentralized system.
+One of hyperBEAM’s most important capabilities is its abstraction and modular design, which allows programs to execute independently of the underlying hardware. hyperBEAM provides a hardware-agnostic execution layer, enabling computations to run across a distributed network of nodes. 
+This means that programs can function seamlessly across various infrastructures, ensuring scalability and resilience. By allowing nodes to dynamically select and execute different devices, hyperBEAM ensures adaptability while maintaining the robustness needed for a truly fault-tolerant and decentralized system.
 
-HyperBEAM plays a crucial role in coordinating node operations, allowing individual operators to contribute their machine’s resources to the network. Instead of enforcing a rigid infrastructure, AO enables flexible participation, where each node can expose specific services by running designated devices. 
+hyperBEAM plays a crucial role in coordinating node operations, allowing individual operators to contribute their machine’s resources to the network. Instead of enforcing a rigid infrastructure, AO enables flexible participation, where each node can expose specific services by running designated devices. 
 These devices act as modular execution units, providing different functionalities such as processing, communication, scheduling, and interaction with external networks. This decentralized approach ensures that AO can support a diverse set of computational needs, from handling autonomous agents to executing smart contract logic efficiently.
 
-To facilitate these operations, HyperBEAM includes several preloaded devices that serve distinct purposes. 
+To facilitate these operations, hyperBEAM includes several preloaded devices that serve distinct purposes. 
 - Then `~meta` device manages node configuration, defining hardware specifications and supported execution environments. 
 - Then `~relay` device ensures seamless communication both within the network and with external systems, acting as the bridge between AO’s decentralized computation and the broader digital ecosystem. 
 - Then `~process` device is responsible for maintaining persistent and shared executions, allowing long-running computations to be coordinated across multiple nodes. 
@@ -100,6 +100,6 @@ To facilitate these operations, HyperBEAM includes several preloaded devices tha
 - Then `~wasm64` device enables nodes to execute WebAssembly code, expanding the range of supported applications and ensuring compatibility with lightweight, portable execution environments.
 etc.
 
-Through this modular approach, HyperBEAM enables AO to function as a highly flexible and extensible decentralized supercomputer, where computation is not restricted to a single paradigm but can evolve dynamically based on the network’s needs.
+Through this modular approach, hyperBEAM enables AO to function as a highly flexible and extensible decentralized supercomputer, where computation is not restricted to a single paradigm but can evolve dynamically based on the network’s needs.
 
 

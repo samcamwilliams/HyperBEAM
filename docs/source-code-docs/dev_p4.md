@@ -3,7 +3,7 @@
 # Module dev_p4 #
 * [Description](#description)
 
-The HyperBEAM core payment ledger.
+The hyperBEAM core payment ledger.
 
 <a name="description"></a>
 

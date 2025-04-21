@@ -55,7 +55,7 @@ The core API is simple:
                Mem is a binary output of a previous <code>serialize/1</code> call.
 ```
 
-BEAMR was designed for use in the HyperBEAM project, but is suitable for
+BEAMR was designed for use in the hyperBEAM project, but is suitable for
 deployment in other Erlang applications that need to run WASM modules. PRs
 are welcome.<a name="index"></a>
 

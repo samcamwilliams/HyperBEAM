@@ -4,7 +4,7 @@
 * [Description](#description)
 
 Implements the cryptographic functions and wraps the primitives
-used in HyperBEAM.
+used in hyperBEAM.
 
 <a name="description"></a>
 
@@ -13,7 +13,7 @@ used in HyperBEAM.
 Abstracted such that this (extremely!) dangerous code
 can be carefully managed.
 
-HyperBEAM currently implements two hashpath algorithms:
+hyperBEAM currently implements two hashpath algorithms:
 
 * `sha-256-chain`: A simple chained SHA-256 hash.
 
@@ -21,7 +21,7 @@ HyperBEAM currently implements two hashpath algorithms:
 their values into a single commitment.
 
 The accumulate algorithm is experimental and at this point only exists to
-allow us to test multiple HashPath algorithms in HyperBEAM.<a name="index"></a>
+allow us to test multiple HashPath algorithms in hyperBEAM.<a name="index"></a>
 
 ## Function Index ##
 

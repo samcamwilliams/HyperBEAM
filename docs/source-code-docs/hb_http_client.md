@@ -11,7 +11,7 @@ __Behaviours:__ [`gen_server`](gen_server.md).
 
 ## Description ##
 This module originates from the Arweave
-project, and has been modified for use in HyperBEAM.<a name="index"></a>
+project, and has been modified for use in hyperBEAM.<a name="index"></a>
 
 ## Function Index ##
 

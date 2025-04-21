@@ -1,14 +1,14 @@
-# Setting Up and Selecting Devices for HyperBEAM Nodes
+# Setting Up and Selecting Devices for hyperBEAM Nodes
 
-HyperBEAM is a client implementation of the AO-Core protocol that enables decentralized computations. As a node operator, you'll need to understand the various devices available and how to configure them for your specific use case. This guide will help you make informed decisions when setting up your HyperBEAM node.
+hyperBEAM is a client implementation of the AO-Core protocol that enables decentralized computations. As a node operator, you'll need to understand the various devices available and how to configure them for your specific use case. This guide will help you make informed decisions when setting up your hyperBEAM node.
 
-## What are Devices in HyperBEAM?
+## What are Devices in hyperBEAM?
 
-In HyperBEAM, devices are modular components that provide specific functionalities to your node. They encapsulate different computational models that can be attached to the AO-Core protocol framework. Each device serves a specific purpose, from configuring your node to executing WebAssembly code, managing payments, or facilitating message relays.
+In hyperBEAM, devices are modular components that provide specific functionalities to your node. They encapsulate different computational models that can be attached to the AO-Core protocol framework. Each device serves a specific purpose, from configuring your node to executing WebAssembly code, managing payments, or facilitating message relays.
 
 ## Core Configuration: ~meta@1.0 Device
 
-The foundation of every HyperBEAM node is the `~meta@1.0` device, which is used to configure your node's hardware, supported devices, metering, and payment information. This is the first device you'll need to set up.
+The foundation of every hyperBEAM node is the `~meta@1.0` device, which is used to configure your node's hardware, supported devices, metering, and payment information. This is the first device you'll need to set up.
 
 ### Setting Up the ~meta@1.0 Device
 
@@ -24,11 +24,11 @@ This command starts your node with a custom port (9001) and specifies the locati
 
 ## Choosing the Right Devices for Your Use Case
 
-HyperBEAM includes 25+ preloaded devices. Here's how to select the most appropriate ones based on your needs:
+hyperBEAM includes 25+ preloaded devices. Here's how to select the most appropriate ones based on your needs:
 
 ### Basic Node Operation
 
-These devices form the foundation of a functional HyperBEAM node:
+These devices form the foundation of a functional hyperBEAM node:
 
 - **~meta@1.0**: Core configuration device (required for all nodes)
 - **~relay@1.0**: Handles message relaying between nodes and the HTTP network
@@ -62,7 +62,7 @@ If security is a priority:
 
 If you need to support older AO systems:
 
-- **~json-iface@1.0**: Translation layer between JSON-encoded messages and HyperBEAM's HTTP format
+- **~json-iface@1.0**: Translation layer between JSON-encoded messages and hyperBEAM's HTTP format
 - **~compute-lite@1.0**: Lightweight device for executing legacynet AO processes
 - **dev_genesis_wasm**: Provides an environment suitable for legacynet AO processes
 
@@ -182,7 +182,7 @@ Finds `PATCH` requests in the `results/outbox` of its message and applies them. 
 
 ## Device Stacking Strategies
 
-One of the powerful features of HyperBEAM is the ability to stack devices to create complex computational models. Here are some effective stacking strategies:
+One of the powerful features of hyperBEAM is the ability to stack devices to create complex computational models. Here are some effective stacking strategies:
 
 ### Basic Process Execution Stack
 
@@ -282,6 +282,6 @@ rebar3 shell --eval "hb:start_mainnet(#{
 
 ## Conclusion
 
-Setting up a HyperBEAM node involves understanding and configuring various devices based on your specific requirements. By selecting and stacking devices, you can create a node that meets your computational needs, security requirements, and monetization goals.
+Setting up a hyperBEAM node involves understanding and configuring various devices based on your specific requirements. By selecting and stacking devices, you can create a node that meets your computational needs, security requirements, and monetization goals.
 
-For more detailed information about each device, refer to the HyperBEAM code repositories. Remember that the AO-Core protocol is designed to be flexible, allowing you to adapt your node to various use cases by combining different devices and computational models.
+For more detailed information about each device, refer to the hyperBEAM code repositories. Remember that the AO-Core protocol is designed to be flexible, allowing you to adapt your node to various use cases by combining different devices and computational models.

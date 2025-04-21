@@ -1,6 +1,6 @@
 # **Installing Erlang/OTP**
 
-HyperBEAM is built on Erlang/OTP, so you'll need to have Erlang installed on your system.
+hyperBEAM is built on Erlang/OTP, so you'll need to have Erlang installed on your system.
 
 ## Building Erlang from Source
 
