@@ -6,6 +6,8 @@ site_url: https://permaweb.github.io/
 docs_dir: docs
 site_dir: mkdocs-site
 
+use_directory_urls: false 
+
 nav:
   - Home: 'index.md'
   - Overview: 'overview/index.md'
