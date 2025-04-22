@@ -83,7 +83,7 @@ convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
     OldPriv =
-        if is_map(Msg) -> hb_maps:get(<<"priv">>, Msg, #{});
+        if is_map(Msg) -> hb_maps:get(<<"priv">>, Msg, #{}, Opts);
            true -> #{}
         end,
     TABM =
@@ -96,7 +96,7 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
             Opts
         ),
     case TargetFormat of
-        tabm -> restore_priv(TABM, OldPriv);
+        tabm -> restore_priv(TABM, OldPriv, Opts);
         _ -> from_tabm(TABM, TargetFormat, OldPriv, Opts)
     end.
 
@@ -105,10 +105,10 @@ to_tabm(Msg, SourceFormat, Opts) ->
     % We use _from_ here because the codecs are labelled from the perspective
     % of their own format. `dev_codec_ans104:from/1' will convert _from_
     % an ANS-104 message _into_ a TABM.
-    case SourceCodecMod:from(Msg) of
-        TypicalMsg when is_map(TypicalMsg) ->
+    case SourceCodecMod:from(Msg, #{}, Opts) of
+        {ok, TypicalMsg} when is_map(TypicalMsg) ->
             TypicalMsg;
-        OtherTypeRes -> OtherTypeRes
+        {ok, OtherTypeRes} -> OtherTypeRes
     end.
 
 from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
@@ -117,19 +117,19 @@ from_tabm(Msg, TargetFormat, OldPriv, Opts) ->
     % this step are labelled from the perspective of the target format. For 
     % example, `dev_codec_httpsig:to/1' will convert _from_ a TABM to an
     % HTTPSig message.
-    case TargetCodecMod:to(Msg) of
-        TypicalMsg when is_map(TypicalMsg) ->
-            restore_priv(TypicalMsg, OldPriv);
-        OtherTypeRes -> OtherTypeRes
+    case TargetCodecMod:to(Msg, #{}, Opts) of
+        {ok, TypicalMsg} when is_map(TypicalMsg) ->
+            restore_priv(TypicalMsg, OldPriv, Opts);
+        {ok, OtherTypeRes} -> OtherTypeRes
     end.
 
 %% @doc Add the existing `priv' sub-map back to a converted message, honoring
 %% any existing `priv' sub-map that may already be present.
-restore_priv(Msg, EmptyPriv) when map_size(EmptyPriv) == 0 -> Msg;
-restore_priv(Msg, OldPriv) ->
-    MsgPriv = hb_maps:get(<<"priv">>, Msg, #{}),
+restore_priv(Msg, EmptyPriv, _Opts) when map_size(EmptyPriv) == 0 -> Msg;
+restore_priv(Msg, OldPriv, Opts) ->
+    MsgPriv = hb_maps:get(<<"priv">>, Msg, #{}, Opts),
     ?event({restoring_priv, {msg_priv, MsgPriv}, {old_priv, OldPriv}}),
-    NewPriv = hb_util:deep_merge(MsgPriv, OldPriv),
+    NewPriv = hb_util:deep_merge(MsgPriv, OldPriv, Opts),
     ?event({new_priv, NewPriv}),
     Msg#{ <<"priv">> => NewPriv }.
 
@@ -167,7 +167,7 @@ with_only_committed(Msg) ->
     with_only_committed(Msg, #{}).
 with_only_committed(Msg, Opts) when is_map(Msg) ->
     ?event({with_only_committed, {msg, Msg}, {opts, Opts}}),
-    Comms = hb_maps:get(<<"commitments">>, Msg, not_found),
+    Comms = hb_maps:get(<<"commitments">>, Msg, not_found, Opts),
     case is_map(Msg) andalso Comms /= not_found of
         true ->
             try
@@ -184,8 +184,15 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                     CommittedKeys ++ [<<"commitments">>],
                     Msg
                 )}
-            catch _:_:St ->
-                {error, {could_not_normalize, Msg, St}}
+            catch Class:Reason:St ->
+                {error,
+                    {could_not_normalize,
+                        {class, Class},
+                        {reason, Reason},
+                        {msg, Msg},
+                        {stacktrace, St}
+                    }
+                }
             end;
         false -> {ok, Msg}
     end;
@@ -308,7 +315,7 @@ format(Map, Indent) when is_map(Map) ->
                     undefined
             end;
         (Key) ->
-            case dev_message:get(Key, Map) of
+            case dev_message:get(Key, Map, #{}) of
                 {ok, Val} ->
                     case hb_util:short_id(Val) of
                         undefined -> Val;
@@ -581,12 +588,12 @@ with_commitments(_Spec, Msg, _Opts) ->
 %% function, such that only messages that do _not_ match the spec are returned.
 without_commitments(Spec, Msg) ->
     without_commitments(Spec, Msg, #{}).
-without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
+without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
     ?event({without_commitments, {spec, Spec}, {msg, Msg}, {commitments, Commitments}}),
     FilteredCommitments =
         hb_maps:without(
             hb_maps:keys(
-                hb_maps:get(<<"commitments">>, with_commitments(Spec, Msg, #{}), #{})
+                hb_maps:get(<<"commitments">>, with_commitments(Spec, Msg, #{}), #{}, Opts)
             ),
             Commitments
         ),
@@ -602,7 +609,7 @@ commitment(Committer, Msg) ->
     commitment(Committer, Msg, #{}).
 commitment(CommitterID, Msg, Opts) when is_binary(CommitterID) ->
     commitment(#{ <<"committer">> => CommitterID }, Msg, Opts);
-commitment(Spec, #{ <<"commitments">> := Commitments }, _Opts) ->
+commitment(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
     Matches =
         hb_maps:filtermap(
             fun(ID, CommMsg) ->
@@ -613,7 +620,7 @@ commitment(Spec, #{ <<"commitments">> := Commitments }, _Opts) ->
             end,
             Commitments
         ),
-    case hb_maps:values(Matches) of
+    case hb_maps:values(Matches, Opts) of
         [] -> not_found;
         [{ID, Commitment}] -> {ok, ID, Commitment};
         _ ->
@@ -1083,7 +1090,6 @@ tabm_ao_ids_equal_test(Codec) ->
         }
     },
     Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, dev_message:id(Encoded, #{ <<"committers">> => <<"none">> } )}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
     ?event({decoded, {explicit, Decoded}}),
     ?assertEqual(

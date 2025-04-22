@@ -805,7 +805,8 @@ keys(Msg, Opts, keep) ->
             hb_maps:values(
                 normalize_keys(
                     get(<<"keys">>, Msg, Opts)
-                )
+                ),
+                Opts
             )
         )
     catch
@@ -980,7 +981,7 @@ message_to_fun(Msg, Key, Opts) ->
 		Opts
     ),
     % Does the device have an explicit handler function?
-    case {hb_maps:find(handler, Info), Exported} of
+    case {hb_maps:find(handler, Info, Opts), Exported} of
         {{ok, Handler}, true} ->
 			% Case 2: The device has an explicit handler function.
 			?event(
@@ -996,7 +997,7 @@ message_to_fun(Msg, Key, Opts) ->
 					% Case 3: The device has a function of the name `Key'.
 					{ok, Dev, Func};
 				_ ->
-					case {hb_maps:find(default, Info), Exported} of
+					case {hb_maps:find(default, Info, Opts), Exported} of
 						{{ok, DefaultFunc}, true} when is_function(DefaultFunc) ->
 							% Case 4: The device has a default handler.
                             ?event({found_default_handler, {func, DefaultFunc}}),
@@ -1041,7 +1042,7 @@ message_to_fun(Msg, Key, Opts) ->
 
 %% @doc Extract the device module from a message.
 message_to_device(Msg, Opts) ->
-    case dev_message:get(device, Msg) of
+    case dev_message:get(device, Msg, Opts) of
         {error, not_found} ->
             % The message does not specify a device, so we use the default device.
             default_module();

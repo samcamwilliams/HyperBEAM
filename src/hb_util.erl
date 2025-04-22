@@ -5,7 +5,7 @@
 -export([key_to_atom/2]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
--export([deep_merge/2, number/1, list_to_numbered_map/1]).
+-export([deep_merge/3, number/1, list_to_numbered_map/1]).
 -export([is_ordered_list/1, message_to_ordered_list/1, message_to_ordered_list/2]).
 -export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1]).
 -export([hd/1, hd/2, hd/3]).
@@ -231,13 +231,13 @@ to_hex(Bin) when is_binary(Bin) ->
     ).
 
 %% @doc Deep merge two maps, recursively merging nested maps.
-deep_merge(Map1, Map2) when is_map(Map1), is_map(Map2) ->
+deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
     hb_maps:fold(
         fun(Key, Value2, AccMap) ->
-            case hb_maps:find(Key, AccMap) of
+            case hb_maps:find(Key, AccMap, Opts) of
                 {ok, Value1} when is_map(Value1), is_map(Value2) ->
                     % Both values are maps, recursively merge them
-                    AccMap#{Key => deep_merge(Value1, Value2)};
+                    AccMap#{Key => deep_merge(Value1, Value2, Opts)};
                 _ ->
                     % Either the key doesn't exist in Map1 or at least one of 
                     % the values isn't a map. Simply use the value from Map2
@@ -610,7 +610,7 @@ format_trace([], _) -> [];
 format_trace([Item|Rest], Prefixes) ->
     case element(1, Item) of
         Atom when is_atom(Atom) ->
-            case is_hb_module(Atom, Prefixes) of
+            case true of %is_hb_module(Atom, Prefixes) of
                 true ->
                     [
                         format_trace(Item, Prefixes) |
@@ -679,7 +679,7 @@ format_trace_short(_Max, _Latch, [], _Prefixes) -> [];
 format_trace_short(0, _Latch, _Trace, _Prefixes) -> [];
 format_trace_short(Max, Latch, [Item|Rest], Prefixes) ->
     Formatted = format_trace_short(Max, Latch, Item, Prefixes),
-    case {Latch, is_hb_module(Formatted, Prefixes)} of
+    case {Latch, true} of %is_hb_module(Formatted, Prefixes)} of
         {false, true} ->
             [Formatted | format_trace_short(Max - 1, true, Rest, Prefixes)];
         {false, false} ->

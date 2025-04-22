@@ -7,7 +7,7 @@
 -module(dev_message).
 %%% Base AO-Core reserved keys:
 -export([info/0, keys/1]).
--export([set/3, set_path/3, remove/2, get/2, get/3]).
+-export([set/3, set_path/3, remove/2, get/3, get/4]).
 %%% Commitment-specific keys:
 -export([id/1, id/2, id/3]).
 -export([commit/3, committed/3, committers/1, committers/2, committers/3, verify/3]).
@@ -31,7 +31,7 @@
 %% @doc Return the info for the identity device.
 info() ->
     #{
-        default => fun get/3
+        default => fun get/4
         %exports => ?DEVICE_KEYS
     }.
 
@@ -50,11 +50,12 @@ info() ->
 %% if/when non-map message structures are created.
 id(Base) -> id(Base, #{}).
 id(Base, Req) -> id(Base, Req, #{}).
-id(Base, _, NodeOpts) when not is_map(Base) ->
+id(Base, _, NodeOpts) when is_binary(Base) ->
     % Return the hashpath of the message in native format, to match the native
     % format of the message ID return.
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
-id(Base, Req, NodeOpts) ->
+id(RawBase, Req, NodeOpts) ->
+    Base = hb_ao:normalize_keys(RawBase),
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
@@ -80,7 +81,7 @@ calculate_ids(Base, Req, NodeOpts) ->
     % Find the ID device for the message.
     ?event(linkify, {calculate_ids, {base, Base}}),
     IDMod =
-        case id_device(Base) of
+        case id_device(Base, NodeOpts) of
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
@@ -110,7 +111,7 @@ calculate_ids(Base, Req, NodeOpts) ->
 %% @doc Locate the ID device of a message. The ID device is determined the
 %% `device' set in _all_ of the commitments. If no commitments are present,
 %% the default device (`httpsig@1.0') is used.
-id_device(#{ <<"commitments">> := Commitments }) ->
+id_device(#{ <<"commitments">> := Commitments }, Opts) ->
     % Get the device from the first commitment.
     UnfilteredDevs =
         hb_maps:map(
@@ -118,10 +119,15 @@ id_device(#{ <<"commitments">> := Commitments }) ->
                 CommitmentDev;
             (_, _) -> undefined
             end,
-            Commitments
+            Commitments,
+            Opts
         ),
     % Filter out the undefined devices.
-    Devs = lists:filter(fun(Dev) -> Dev =/= undefined end, hb_maps:values(UnfilteredDevs)),
+    Devs =
+        lists:filter(
+            fun(Dev) -> Dev =/= undefined end,
+            hb_maps:values(UnfilteredDevs, Opts)
+        ),
     % If there are no devices, return the default.
     case Devs of
         [] -> {ok, ?DEFAULT_ID_DEVICE};
@@ -134,24 +140,25 @@ id_device(#{ <<"commitments">> := Commitments }) ->
                 true -> {ok, FirstDev}
             end
     end;
-id_device(_) ->
+id_device(_, _) ->
     {ok, ?DEFAULT_ID_DEVICE}.
 
 %% @doc Return the committers of a message that are present in the given request.
 committers(Base) -> committers(Base, #{}).
 committers(Base, Req) -> committers(Base, Req, #{}).
-committers(#{ <<"commitments">> := Commitments }, _, _NodeOpts) ->
+committers(#{ <<"commitments">> := Commitments }, _, NodeOpts) ->
     {ok,
         hb_maps:values(
             hb_maps:filtermap(
                 fun(_ID, Commitment) ->
-                    case hb_maps:get(<<"committer">>, Commitment, undefined) of
+                    case hb_maps:get(<<"committer">>, Commitment, undefined, NodeOpts) of
                         undefined -> false;
                         Committer -> {true, Committer}
                     end
                 end,
                 Commitments
-            )
+            ),
+            NodeOpts
         )
     };
 committers(_, _, _) ->
@@ -164,7 +171,7 @@ commit(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     % Encode to a TABM.
     AttDev =
-        case hb_maps:get(<<"commitment-device">>, Req, not_specified) of
+        case hb_maps:get(<<"commitment-device">>, Req, not_specified, Opts) of
             not_specified ->
                 hb_opts:get(commitment_device, no_viable_commitment_device, Opts);
             Dev -> Dev
@@ -185,7 +192,7 @@ commit(Self, Req, Opts) ->
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    Commitments = hb_maps:get(<<"commitments">>, Base, #{}),
+    Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Remove the commitments from the base message.
     ?event({verifying_commitments, Commitments}),
@@ -225,7 +232,8 @@ exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
         hb_maps:get(
             <<"commitment-device">>,
             Commitment,
-            ?DEFAULT_ATT_DEVICE
+            ?DEFAULT_ATT_DEVICE,
+            Opts
         ),
     AttMod =
         hb_ao:message_to_device(
@@ -246,14 +254,19 @@ exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
 %% @doc Return the list of committed keys from a message.
 committed(Self, Req, Opts) ->
     % Get the target message of the verification request.
-    {ok, Base} = hb_message:find_target(hb_cache:ensure_all_loaded(Self), Req, Opts),
+    {ok, Base} =
+        hb_message:find_target(
+            hb_cache:ensure_all_loaded(Self, Opts),
+            Req,
+            Opts
+        ),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
-    Commitments = hb_maps:get(<<"commitments">>, Base, #{}),
+    Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     % Get the list of committed keys from each committer.
     CommitmentKeys =
         lists:map(
             fun(CommitmentID) ->
-                Commitment = hb_maps:get(CommitmentID, Commitments),
+                Commitment = hb_maps:get(CommitmentID, Commitments, no_commitment, Opts),
                 {ok, CommittedKeys} =
                     exec_for_commitment(
                         committed,
@@ -298,7 +311,7 @@ committed(Self, Req, Opts) ->
 %% @doc Return a message with only the relevant commitments for a given request.
 %% See `commitment_ids_from_request/3' for more information on the request format.
 with_relevant_commitments(Base, Req, Opts) ->
-    Commitments = hb_maps:get(<<"commitments">>, Base, #{}),
+    Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
     Base#{ <<"commitments">> => hb_maps:with(CommitmentIDs, Commitments) }.
 
@@ -309,9 +322,9 @@ with_relevant_commitments(Base, Req, Opts) ->
 %% may specify `all' or `none' for each group. If no specifiers are provided,
 %% the default is `all' for commitments -- also implying `all' for committers.
 commitment_ids_from_request(Base, Req, Opts) ->
-    Commitments = hb_maps:get(<<"commitments">>, Base, #{}),
+    Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     ReqCommitters =
-        case hb_maps:get(<<"committers">>, Req, <<"none">>) of
+        case hb_maps:get(<<"committers">>, Req, <<"none">>, Opts) of
             X when is_list(X) -> X;
             Descriptor -> hb_ao:normalize_key(Descriptor)
         end,
@@ -322,7 +335,8 @@ commitment_ids_from_request(Base, Req, Opts) ->
             case ReqCommitters of
                 <<"none">> -> <<"all">>;
                 _ -> <<"none">>
-            end
+            end,
+            Opts
         ),
     ReqCommitments =
         case RawReqCommitments of
@@ -341,7 +355,7 @@ commitment_ids_from_request(Base, Req, Opts) ->
                     true -> [CommitmentIDs]
                     end,
                 lists:map(
-                    fun(CommitmentID) -> hb_maps:get(CommitmentID, Commitments) end,
+                    fun(CommitmentID) -> hb_maps:get(CommitmentID, Commitments, Opts) end,
                     CommitmentIDs
                 )
         end,
@@ -354,14 +368,14 @@ commitment_ids_from_request(Base, Req, Opts) ->
                 ?event(getting_commitment_ids_for_all_committers),
                 {ok, Committers} = committers(Base, Req, Opts),
                 ?event({commitment_ids_from_committers, Committers}),
-                commitment_ids_from_committers(Committers, Commitments);
+                commitment_ids_from_committers(Committers, Commitments, Opts);
             RawCommitterAddrs ->
                 ?event({getting_commitment_ids_for_specific_committers, RawCommitterAddrs}),
                 CommitterAddrs =
                     if is_list(RawCommitterAddrs) -> RawCommitterAddrs;
                     true -> [RawCommitterAddrs]
                     end,
-                commitment_ids_from_committers(CommitterAddrs, Commitments)
+                commitment_ids_from_committers(CommitterAddrs, Commitments, Opts)
         end,
     Res = FromCommitterAddrs ++ FromCommitmentIDs,
     ?event({commitment_ids_from_request, {base, Base}, {req, Req}, {res, Res}}),
@@ -369,7 +383,7 @@ commitment_ids_from_request(Base, Req, Opts) ->
 
 %% @doc Returns a list of commitment IDs in a commitments map that are relevant
 %% for a list of given committer addresses.
-commitment_ids_from_committers(CommitterAddrs, Commitments) ->
+commitment_ids_from_committers(CommitterAddrs, Commitments, Opts) ->
     % Get the IDs of all commitments for each committer.
     Comms =
         lists:map(
@@ -381,13 +395,13 @@ commitment_ids_from_committers(CommitterAddrs, Commitments) ->
                         fun(ID, Msg) ->
                             % If the committer address matches, return
                             % the ID. If not, ignore the commitment.
-                            case hb_maps:get(<<"committer">>, Msg, undefined) of
+                            case hb_maps:get(<<"committer">>, Msg, undefined, Opts) of
                                 CommitterAddr -> {true, ID};
                                 _ -> false
                             end
                         end,
                         Commitments
-                    )),
+                    ), Opts),
                 {CommitterAddr, IDs}
             end,
             CommitterAddrs
@@ -428,7 +442,7 @@ set(Message1, NewValuesMsg, Opts) ->
 		lists:filter(
 			fun(Key) ->
 				not lists:member(Key, ?DEVICE_KEYS) andalso
-					(hb_maps:get(Key, NewValuesMsg, undefined) =/= undefined)
+					(hb_maps:get(Key, NewValuesMsg, undefined, Opts) =/= undefined)
 			end,
 			NewValuesKeys
 		),
@@ -442,7 +456,7 @@ set(Message1, NewValuesMsg, Opts) ->
     UnsetKeys =
         lists:filter(
             fun(Key) ->
-                case hb_maps:get(Key, NewValuesMsg, not_found) of
+                case hb_maps:get(Key, NewValuesMsg, not_found, Opts) of
                     unset -> true;
                     _ -> false
                 end
@@ -463,7 +477,7 @@ set(Message1, NewValuesMsg, Opts) ->
     NewValues = hb_maps:from_list(
         lists:filtermap(
             fun(Key) ->
-                case hb_maps:get(Key, NewValuesMsg, undefined) of
+                case hb_maps:get(Key, NewValuesMsg, undefined, Opts) of
                     undefined -> false;
                     unset -> false;
                     Value -> {true, {Key, Value}}
@@ -497,7 +511,7 @@ set(Message1, NewValuesMsg, Opts) ->
         ),
     ?event({setting, {overwritten_committed_keys, OverwrittenCommittedKeys}}),
     % Combine with deep merge
-    Merged = hb_private:set_priv(hb_util:deep_merge(BaseValues, NewValues), OriginalPriv),
+    Merged = hb_private:set_priv(hb_util:deep_merge(BaseValues, NewValues, Opts), OriginalPriv),
     case OverwrittenCommittedKeys of
         [] -> {ok, Merged};
         _ ->
@@ -539,13 +553,13 @@ keys(Msg) ->
 %% @doc Return the value associated with the key as it exists in the message's
 %% underlying Erlang map. First check the public keys, then check case-
 %% insensitively if the key is a binary.
-get(Key, Msg) -> get(Key, Msg, #{ <<"path">> => <<"get">> }).
-get(Key, Msg, _Msg2) ->
+get(Key, Msg, Opts) -> get(Key, Msg, #{ <<"path">> => <<"get">> }, Opts).
+get(Key, Msg, _Msg2, Opts) ->
     case hb_private:is_private(Key) of
         true -> {error, not_found};
         false ->
-            case hb_maps:get(Key, Msg, not_found) of
-                not_found -> case_insensitive_get(Key, Msg);
+            case hb_maps:get(Key, Msg, not_found, Opts) of
+                not_found -> case_insensitive_get(Key, Msg, Opts);
                 Value -> {ok, Value}
             end
     end.
@@ -553,10 +567,10 @@ get(Key, Msg, _Msg2) ->
 %% @doc Key matching should be case insensitive, following RFC-9110, so we 
 %% implement a case-insensitive key lookup rather than delegating to
 %% `hb_maps:get/2'. Encode the key to a binary if it is not already.
-case_insensitive_get(Key, Msg) ->
+case_insensitive_get(Key, Msg, Opts) ->
     NormKey = hb_ao:normalize_key(Key),
     NormMsg = hb_ao:normalize_keys(Msg),
-    case hb_maps:get(NormKey, NormMsg, not_found) of
+    case hb_maps:get(NormKey, NormMsg, not_found, Opts) of
         not_found -> {error, not_found};
         Value -> {ok, Value}
     end.
@@ -578,10 +592,10 @@ keys_from_device_test() ->
     ?assertEqual({ok, [<<"a">>]}, hb_ao:resolve(#{ <<"a">> => 1 }, keys, #{})).
 
 case_insensitive_get_test() ->
-	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"a">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"A">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"a">> => 1 })),
-	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"A">> => 1 })).
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"a">> => 1 }, #{})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"a">>, #{ <<"A">> => 1 }, #{})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"a">> => 1 }, #{})),
+	?assertEqual({ok, 1}, case_insensitive_get(<<"A">>, #{ <<"A">> => 1 }, #{})).
 
 private_keys_are_filtered_test() ->
     ?assertEqual(

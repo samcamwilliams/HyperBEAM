@@ -129,7 +129,8 @@ route(_, Msg, Opts) ->
                                         fun(Node) ->
                                             hb_util:ok(apply_route(Msg, Node))
                                         end,
-                                        Chosen
+                                        Chosen,
+                                        Opts
                                     ),
                                     Opts
                                 )

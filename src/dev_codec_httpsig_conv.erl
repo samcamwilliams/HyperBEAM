@@ -26,7 +26,7 @@
 %%%         - Otherwise encode the value as a part in the multipart response
 %%% 
 -module(dev_codec_httpsig_conv).
--export([to/1, from/1]).
+-export([to/2, from/2]).
 %%% Helper utilities
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -39,20 +39,20 @@
 
 %% @doc Convert a HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
-from(Bin) when is_binary(Bin) -> Bin;
-from(Link) when ?IS_LINK(Link) -> Link;
-from(HTTP) ->
+from(Bin, _Opts) when is_binary(Bin) -> {ok, Bin};
+from(Link, _Opts) when ?IS_LINK(Link) -> {ok, Link};
+from(HTTP, Opts) ->
     % Decode the keys of the HTTP message
-    Body = hb_maps:get(<<"body">>, HTTP, <<>>),
+    Body = hb_maps:get(<<"body">>, HTTP, <<>>, Opts),
     % First, parse all headers excluding the signature-related headers, as they
     % are handled separately.
     {_, InlinedKey} = inline_key(HTTP),
     ?event({inlined_body_key, InlinedKey}),
     Headers = hb_maps:without([<<"body">>, <<"body-keys">>], HTTP),
-    ContentType = hb_maps:get(<<"content-type">>, Headers, undefined),
+    ContentType = hb_maps:get(<<"content-type">>, Headers, undefined, Opts),
     % Next, we need to potentially parse the body and add to the TABM
     % potentially as sub-TABMs.
-    WithBodyKeys = from_body(Headers, InlinedKey, ContentType, Body),
+    WithBodyKeys = from_body(Headers, InlinedKey, ContentType, Body, Opts),
     % Decode the `ao-ids' key into a map. `ao-ids' is an encoding of literal
     % binaries whose keys (given that they are IDs) cannot be distributed as
     % HTTP headers.
@@ -71,15 +71,16 @@ from(HTTP) ->
         hb_maps:without(hb_maps:keys(HPs), MsgWithoutSigs),
         HPs,
         hb_maps:get(<<"signature">>, Headers, not_found),
-        hb_maps:get(<<"signature-input">>, Headers, not_found)
+        hb_maps:get(<<"signature-input">>, Headers, not_found),
+        Opts
     ),
     ?event({message_with_atts, MsgWithSigs}),
     Res = hb_maps:without(Removed = hb_maps:keys(HPs) ++ [<<"content-digest">>], MsgWithSigs),
     ?event({message_without_atts, Res, Removed}),
-    Res.
+    {ok, Res}.
 
-from_body(TABM, _InlinedKey, _ContentType, <<>>) -> TABM;
-from_body(TABM, InlinedKey, ContentType, Body) ->
+from_body(TABM, _InlinedKey, _ContentType, <<>>, _Opts) -> TABM;
+from_body(TABM, InlinedKey, ContentType, Body, Opts) ->
     ?event({from_body, {from_headers, TABM}, {content_type, {explicit, ContentType}}, {body, Body}}),
     Params =
         case ContentType of
@@ -121,7 +122,7 @@ from_body(TABM, InlinedKey, ContentType, Body) ->
             % potentially recursively as a sub-TABM, and then add it to the
             % current TABM
             {ok, GroupedTABM} = from_body_parts(TABM, InlinedKey, Parts),
-            FullTABM = dev_codec_flat:from(GroupedTABM),
+            {ok, FullTABM} = dev_codec_flat:from(GroupedTABM, #{}, Opts),
             FullTABM
     end.
 
@@ -212,10 +213,10 @@ from_body_parts(TABM, InlinedKey, [Part | Rest]) ->
 
 %% @doc Populate the `/commitments' key on the TABM with the dictionary of 
 %% signatures and their corresponding inputs.
-commitments_from_signature(Map, _HPs, not_found, _RawSigInput) ->
+commitments_from_signature(Map, _HPs, not_found, _RawSigInput, _Opts) ->
     ?event({no_sigs_found_in_from, {msg, Map}}),
     {ok, hb_maps:without([<<"commitments">>], Map)};
-commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
+commitments_from_signature(Map, HPs, RawSig, RawSigInput, Opts) ->
     SfSigsKV = hb_structured_fields:parse_dictionary(RawSig),
     SfInputs = hb_maps:from_list(hb_structured_fields:parse_dictionary(RawSigInput)),
     ?event({adding_sigs_and_inputs, {sigs, SfSigsKV}, {inputs, SfInputs}}),
@@ -226,7 +227,7 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
     Commitments = hb_maps:from_list(lists:map(
         fun ({SigName, Signature}) ->
             ?event({adding_commitment, {sig, SigName}, {sig, Signature}, {inputs, SfInputs}}),
-            {list, SigInputs, ParamsKVList} = hb_maps:get(SigName, SfInputs, #{}),
+            {list, SigInputs, ParamsKVList} = hb_maps:get(SigName, SfInputs, #{}, Opts),
             ?event({inputs, {signame, SigName}, {inputs, SigInputs}, {params, ParamsKVList}}),
             % Find all hashpaths from the signature and add them to the 
             % commitments message.
@@ -244,14 +245,14 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
             ?event({all_hashpaths, HPs}),
             Hashpaths = hb_maps:from_list(lists:map(
                 fun (HP) ->
-                    {HP, hb_maps:get(HP, HPs, <<>>)}
+                    {HP, hb_maps:get(HP, HPs, <<>>, Opts)}
                 end,
                 Hashpath
             )),
             ?event({hashpaths, Hashpaths}),
             Params = hb_maps:from_list(ParamsKVList),
-            {string, EncPubKey} = hb_maps:get(<<"keyid">>, Params),
-            {string, Alg} = hb_maps:get(<<"alg">>, Params),
+            {string, EncPubKey} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
+            {string, Alg} = hb_maps:get(<<"alg">>, Params, not_found, Opts),
             PubKey = hb_util:decode(EncPubKey),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             ?event({calculated_name,
@@ -276,7 +277,10 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
                     <<"signature-input">> =>
                         iolist_to_binary(
                             hb_structured_fields:dictionary(
-                                #{ SigName => hb_maps:get(SigName, SfInputs) }
+                                #{
+                                    SigName =>
+                                        hb_maps:get(SigName, SfInputs, not_found, Opts)
+                                }
                             )
                         )
                 }
@@ -288,10 +292,10 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
     ?event({adding_commitments, {msg, Map}, {commitments, Commitments}}),
     Msg = Map#{ <<"commitments">> => Commitments },
     % Reset the HMAC on the message if none is present
-    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, Msg) of
+    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, Msg, Opts) of
         X when (X == not_found) or (X == multiple_matches) ->
             ?event({resetting_hmac, {msg, Msg}}),
-            dev_codec_httpsig:reset_hmac(Msg);
+            dev_codec_httpsig:reset_hmac(Msg, Opts);
         _ ->
             ?event({hmac_already_present, {msg, Msg}}),
             Msg
@@ -299,10 +303,10 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput) ->
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API
-to(Bin) when is_binary(Bin) -> Bin;
-to(TABM) -> to(TABM, []).
-to(Link, _Opts) when ?IS_LINK(Link) -> Link;
-to(TABM, Opts) when is_map(TABM) ->
+to(Bin, _) when is_binary(Bin) -> {ok, Bin};
+to(TABM, Opts) -> to(TABM, [], Opts).
+to(Link, _FormatOpts, _Opts) when ?IS_LINK(Link) -> {ok, Link};
+to(TABM, FormatOpts, Opts) when is_map(TABM) ->
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.
@@ -319,9 +323,9 @@ to(TABM, Opts) when is_map(TABM) ->
         ),
     ?event(debug_links, {stripped, Stripped}),
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
-    Intermediate = do_to(Stripped, Opts ++ [{inline, InlineFieldHdrs, InlineKey}]),
+    Intermediate = do_to(Stripped, FormatOpts ++ [{inline, InlineFieldHdrs, InlineKey}], Opts),
     % Finally, add the signatures to the HTTP message
-    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM) of
+    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM, Opts) of
         {ok, _, #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }} ->
             HPs = hashpaths_from_message(TABM),
             EncWithHPs = hb_maps:merge(Intermediate, HPs),
@@ -331,16 +335,16 @@ to(TABM, Opts) when is_map(TABM) ->
                 <<"signature-input">> => SigInput
             },
             ?event({final_encoded_msg, sigs_added, Res}),
-            Res;
+            {ok, Res};
         _ ->
             ?event({final_encoded_msg, no_sigs_added, Intermediate}),
-            Intermediate
+            {ok, Intermediate}
     end.
 
-do_to(Binary, _Opts) when is_binary(Binary) -> Binary;
-do_to(TABM, Opts) when is_map(TABM) ->
+do_to(Binary, _FormatOpts, _Opts) when is_binary(Binary) -> Binary;
+do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
     InlineKey =
-        case lists:keyfind(inline, 1, Opts) of
+        case lists:keyfind(inline, 1, FormatOpts) of
             {inline, _InlineFieldHdrs, Key} -> Key;
             _ -> not_set
         end,
@@ -357,7 +361,7 @@ do_to(TABM, Opts) when is_map(TABM) ->
                     field_to_http(AccMap, {Key, Value}, #{})
             end,
             % Add any inline field denotations to the HTTP message
-            case lists:keyfind(inline, 1, Opts) of
+            case lists:keyfind(inline, 1, FormatOpts) of
                 {inline, InlineFieldHdrs, _InlineKey} -> InlineFieldHdrs;
                 _ -> #{}
             end,
@@ -407,7 +411,8 @@ do_to(TABM, Opts) when is_map(TABM) ->
                            (Key, Value) ->
                             encode_body_part(Key, Value, InlineKey)
                         end,
-                        GroupedBodyMap
+                        GroupedBodyMap,
+                        Opts
                     )
                 ),
                 Boundary = boundary_from_parts(PartList),
@@ -444,13 +449,13 @@ do_to(TABM, Opts) when is_map(TABM) ->
     % Add the content-digest to the HTTP message. `generate_content_digest/1'
     % will return a map with the `content-digest' key set, but the body removed,
     % so we merge the two maps together to maintain the body and the content-digest.
-    Enc2 = case hb_maps:get(<<"body">>, Enc1, <<>>) of
+    Enc2 = case hb_maps:get(<<"body">>, Enc1, <<>>, Opts) of
         <<>> -> Enc1;
         _ ->
             ?event({adding_content_digest, {msg, Enc1}}),
             hb_maps:merge(
                 Enc1,
-                dev_codec_httpsig:add_content_digest(Enc1)
+                dev_codec_httpsig:add_content_digest(Enc1, Opts)
             )
     end,
     ?event({final_body_map, {msg, Enc2}}),
@@ -800,7 +805,7 @@ group_maps_flat_compatible_test() ->
         }
     },
     Lifted = group_maps(Map),
-    ?assertEqual(dev_codec_flat:from(Lifted), Map),
+    ?assertEqual(dev_codec_flat:from(Lifted, #{}, #{}), {ok, Map}),
     ok.
 
 encode_message_with_links_test() ->

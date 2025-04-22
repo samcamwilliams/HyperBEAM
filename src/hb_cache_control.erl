@@ -226,7 +226,7 @@ cache_source_to_cache_settings({opts, Opts}) ->
         _ -> CCMap
     end;
 cache_source_to_cache_settings(Msg) ->
-    case dev_message:get(<<"cache-control">>, Msg) of
+    case dev_message:get(<<"cache-control">>, Msg, #{}) of
         {ok, CC} -> specifiers_to_cache_settings(CC);
         {error, not_found} -> #{}
     end.

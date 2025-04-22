@@ -261,7 +261,7 @@ transform(Msg1, Key, Opts) ->
 %% @doc The main device stack execution engine. See the moduledoc for more
 %% information.
 resolve_fold(Message1, Message2, Opts) ->
-	{ok, InitDevMsg} = dev_message:get(<<"device">>, Message1),
+	{ok, InitDevMsg} = dev_message:get(<<"device">>, Message1, Opts),
     StartingPassValue =
         hb_ao:get(<<"pass">>, {as, dev_message, Message1}, unset, Opts),
     PreparedMessage = hb_ao:set(Message1, <<"pass">>, 1, Opts),
@@ -446,7 +446,7 @@ transform_external_call_device_test() ->
 											{ok, hb_maps:keys(MsgX1)};
 										(Key, MsgX1) ->
 											{ok, Value} =
-												dev_message:get(Key, MsgX1),
+												dev_message:get(Key, MsgX1, #{}),
 											dev_message:set(
 												MsgX1,
 												#{ Key =>

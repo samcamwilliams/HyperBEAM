@@ -6,11 +6,11 @@
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
 %%% Device API
--export([id/3, commit/3, committed/3, verify/3, reset_hmac/1, public_keys/1]).
+-export([id/3, commit/3, committed/3, verify/3, reset_hmac/2, public_keys/2]).
 %%% Codec API functions
--export([to/1, from/1]).
+-export([to/3, from/3]).
 %%% Public API functions
--export([add_content_digest/1]).
+-export([add_content_digest/2]).
 -export([add_derived_specifiers/1, remove_derived_specifiers/1]).
 % https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
 -define(EMPTY_QUERY_PARAMS, $?).
@@ -54,8 +54,8 @@
 ]).
 
 %%% Routing functions for the `dev_codec_httpsig_conv' module
-to(Msg) -> dev_codec_httpsig_conv:to(Msg).
-from(Msg) -> dev_codec_httpsig_conv:from(Msg).
+to(Msg, _Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Opts).
+from(Msg, _Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Opts).
 
 %%% A map that contains signature parameters metadata as described
 %%% in https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
@@ -101,13 +101,13 @@ from(Msg) -> dev_codec_httpsig_conv:from(Msg).
 	key => binary()
 }.
 
-id(Msg, _Params, _Opts) ->
+id(Msg, _Params, Opts) ->
     ?event({calculating_id, {msg, Msg}}),
-    case find_id(Msg) of
+    case find_id(Msg, Opts) of
         {ok, ID} -> {ok, hb_util:human_id(ID)};
         {not_found, MsgToID} ->
-            {ok, MsgAfterReset} = reset_hmac(MsgToID),
-            {ok, ID} = find_id(MsgAfterReset),
+            {ok, MsgAfterReset} = reset_hmac(MsgToID, Opts),
+            {ok, ID} = find_id(MsgAfterReset, Opts),
             {ok, hb_util:human_id(ID)}
     end.
 
@@ -115,11 +115,12 @@ id(Msg, _Params, _Opts) ->
 %% the signature and signature input. If the message already has a signature-input,
 %% directly, it is treated differently: We relabel it as `x-signature-input' to
 %% avoid key collisions.
-find_id(Msg = #{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
+find_id(Msg = #{ <<"commitments">> := Comms }, Opts) when map_size(Comms) > 1 ->
     #{ <<"commitments">> := CommsWithoutHmac } =
         hb_message:without_commitments(
             #{ <<"alg">> => <<"hmac-sha256">> },
-            Msg
+            Msg,
+            Opts
         ),
     IDs = hb_maps:keys(CommsWithoutHmac),
     case IDs of
@@ -139,13 +140,13 @@ find_id(Msg = #{ <<"commitments">> := Comms }) when map_size(Comms) > 1 ->
             ?event({sorted_ids, SortedIDs, {sf_list, SFList}}),
             {ok, hb_util:human_id(crypto:hash(sha256, SFList))}
     end;
-find_id(#{ <<"commitments">> := CommitmentMap }) ->
+find_id(#{ <<"commitments">> := CommitmentMap }, _Opts) ->
     {ok, hd(hb_maps:keys(CommitmentMap))};
-find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }) ->
+find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }, _Opts) ->
     {not_found, (hb_maps:without([<<"signature-input">>], AttMsg))#{
         <<"x-signature-input">> => UserSigInput
     }};
-find_id(Msg) ->
+find_id(Msg, _Opts) ->
     ?event({no_id, Msg}),
     {not_found, Msg}.
 
@@ -171,10 +172,10 @@ commit(MsgToSign, _Req, Opts) ->
             [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"priv">>],
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
-    Enc = add_content_digest(EncWithoutBodyKeys),
+    Enc = add_content_digest(EncWithoutBodyKeys, Opts),
     ?event({encoded_to_httpsig_for_commitment, Enc}),
     Authority = authority(lists:sort(hb_maps:keys(Enc)), SigParams, Wallet),
-    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc),
+    {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc, Opts),
     [ParsedSignatureInput] = hb_structured_fields:parse_list(SignatureInput),
     % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
     ID = hb_util:human_id(crypto:hash(sha256, Signature)),
@@ -199,20 +200,20 @@ commit(MsgToSign, _Req, Opts) ->
     OldCommitments = hb_maps:get(<<"commitments">>, NormMsg, #{}),
     reset_hmac(MsgWithoutHP#{<<"commitments">> =>
         OldCommitments#{ ID => Commitment }
-    }).
+    }, Opts).
 
 %% @doc Return the list of committed keys from a message. The message will have
 %% had the `commitments' key removed and the signature inputs added to the
 %% root. Subsequently, we can parse that to get the list of committed keys.
 committed(RawMsg, Req, Opts) ->
-    Msg = to(RawMsg),
-    case hb_maps:get(<<"signature-input">>, Msg, none) of
+    {ok, Msg} = to(RawMsg, Req, Opts),
+    case hb_maps:get(<<"signature-input">>, Msg, none, Opts) of
         none -> {ok, []};
         SigInput ->
             do_committed(SigInput, Msg, Req, Opts)
     end.
 
-do_committed(SigInputStr, Msg, _Req, _Opts) ->
+do_committed(SigInputStr, Msg, _Req, Opts) ->
     [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
         SigInputStr
     ),
@@ -233,24 +234,24 @@ do_committed(SigInputStr, Msg, _Req, _Opts) ->
         end,
     case lists:member(<<"content-digest">>, SignedWithImplicit) of
         false -> {ok, SignedWithImplicit};
-        true -> {ok, SignedWithImplicit ++ committed_from_body(Msg)}
+        true -> {ok, SignedWithImplicit ++ committed_from_body(Msg, Opts)}
     end.
 
 %% @doc Return the list of committed keys from a message that are derived from
 %% the body components.
-committed_from_body(Msg) ->
+committed_from_body(Msg, Opts) ->
     % Body and inline-body-key are always committed if the
     % content-digest is present.
     [<<"body">>, <<"inline-body-key">>] ++
         % If the inline-body-key is present, add it to the list of
         % committed keys.
-        case hb_maps:get(<<"inline-body-key">>, Msg, []) of
+        case hb_maps:get(<<"inline-body-key">>, Msg, [], Opts) of
             [] -> [];
             InlineBodyKey -> [InlineBodyKey]
         end
         % If the body-keys are present, add them to the list of
         % committed keys.
-        ++ case hb_maps:get(<<"body-keys">>, Msg, []) of
+        ++ case hb_maps:get(<<"body-keys">>, Msg, [], Opts) of
             [] -> [];
             BodyKeys ->
                 ParsedList = case BodyKeys of
@@ -280,8 +281,8 @@ committed_from_body(Msg) ->
         end.
 
 %% @doc If the `body' key is present, replace it with a content-digest.
-add_content_digest(Msg) ->
-    case hb_maps:get(<<"body">>, Msg, not_found) of
+add_content_digest(Msg, Opts) ->
+    case hb_maps:get(<<"body">>, Msg, not_found, Opts) of
         not_found -> Msg;
         Body ->
             % Remove the body from the message and add the content-digest,
@@ -307,8 +308,8 @@ address_to_sig_name(OtherRef) ->
     OtherRef.
 
 %%@doc Ensure that the commitments and hmac are properly encoded
-reset_hmac(RawMsg) ->
-    Msg = hb_message:convert(RawMsg, tabm, #{}),
+reset_hmac(RawMsg, Opts) ->
+    Msg = hb_message:convert(RawMsg, tabm, Opts),
     WithoutHmac =
         hb_message:without_commitments(
             #{
@@ -346,7 +347,7 @@ reset_hmac(RawMsg) ->
             end,
             hb_maps:to_list(Commitments)
         )),
-    FlatInputs = lists:flatten(hb_maps:values(AllInputs)),
+    FlatInputs = lists:flatten(hb_maps:values(AllInputs, Opts)),
     HMacSigInfo =
         case FlatInputs of
             [] -> #{};
@@ -360,7 +361,7 @@ reset_hmac(RawMsg) ->
     ?event({pre_hmac_sig_input,
         {string, hb_maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
     HMacInputMsg = hb_maps:merge(Msg, HMacSigInfo),
-    {ok, RawID} = hmac(HMacInputMsg),
+    {ok, RawID} = hmac(HMacInputMsg, Opts),
     ID = hb_util:human_id(RawID),
     Res = {
         ok,
@@ -385,21 +386,21 @@ sig_name_from_dict(DictBin) ->
 
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.
-hmac(Msg) ->
+hmac(Msg, Opts) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
     EncodedMsg =
         hb_maps:without(
             [<<"body-keys">>],
-            to(hb_maps:without([<<"commitments">>, <<"body-keys">>], Msg))
+            hb_util:ok(to(hb_maps:without([<<"commitments">>, <<"body-keys">>], Msg), #{}, Opts))
         ),
     % Remove the body and set the content-digest as a field
-    MsgWithContentDigest = add_content_digest(EncodedMsg),
+    MsgWithContentDigest = add_content_digest(EncodedMsg, Opts),
     % Find the keys to use for the hmac. These should be set by the signature
     % input, but if that is not present, then use all the keys from the encoded
     % message.
     HMacKeys =
-        case hb_maps:get(<<"signature-input">>, Msg, none) of
+        case hb_maps:get(<<"signature-input">>, Msg, none, Opts) of
             none -> 
                 ?event(no_sig_input_found),
                 hb_maps:keys(MsgWithContentDigest);
@@ -421,7 +422,8 @@ hmac(Msg) ->
             }
         },
         #{},
-        MsgWithContentDigest
+        MsgWithContentDigest,
+        Opts
     ),
     ?event({hmac_keys, {explicit, HMacKeys}}),
     ?event({hmac_base, {string, SignatureBase}}),
@@ -432,10 +434,10 @@ hmac(Msg) ->
 %% @doc Verify different forms of httpsig committed messages. `dev_message:verify'
 %% already places the keys from the commitment message into the root of the
 %% message.
-verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha256">> }, _Opts) ->
+verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha256">> }, Opts) ->
     % Verify a hmac on the message
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
-    {ok, ResetMsg} = reset_hmac(hb_maps:without([<<"id">>], MsgToVerify)),
+    {ok, ResetMsg} = reset_hmac(hb_maps:without([<<"id">>], MsgToVerify), Opts),
     case hb_maps:get(<<"commitments">>, ResetMsg, no_commitments) of
         no_commitments -> {error, could_not_calculate_id};
         #{ ExpectedID := #{ <<"alg">> := <<"hmac-sha256">> } } ->
@@ -449,28 +451,35 @@ verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha2
                 {expected_id, ExpectedID}}),
             {ok, false}
     end;
-verify(MsgToVerify, Req, _Opts) ->
+verify(MsgToVerify, Req, Opts) ->
     % Validate a signed commitment.
     ?event({verify, {target, MsgToVerify}, {req, Req}}),
     % Parse the signature parameters into a map.
-    CommitmentID = hb_maps:get(<<"commitment">>, Req),
+    CommitmentID = hb_maps:get(<<"commitment">>, Req, Opts),
     Commitment =
         hb_maps:get(
             CommitmentID,
-            hb_maps:get(<<"commitments">>, MsgToVerify, #{})
+            hb_maps:get(<<"commitments">>, MsgToVerify, #{}, Opts),
+            Opts
         ),
-    SigName = address_to_sig_name(hb_maps:get(<<"committer">>, Commitment)),
+    SigName = address_to_sig_name(hb_maps:get(<<"committer">>, Commitment, not_found, Opts)),
     {list, _SigInputs, ParamsKVList} =
         hb_maps:get(
             SigName,
             hb_maps:from_list(
                 hb_structured_fields:parse_dictionary(
-                    hb_maps:get(<<"signature-input">>, MsgToVerify)
+                    hb_maps:get(<<"signature-input">>, MsgToVerify, not_found, Opts)
                 )
             )
         ),
-    {string, Alg} = hb_maps:get(<<"alg">>, Params = hb_maps:from_list(ParamsKVList)),
-    AlgFromCommitment = hb_maps:get(<<"alg">>, Commitment),
+    {string, Alg} =
+        hb_maps:get(
+            <<"alg">>,
+            Params = hb_maps:from_list(ParamsKVList),
+            not_found,
+            Opts
+        ),
+    AlgFromCommitment = hb_maps:get(<<"alg">>, Commitment, not_found, Opts),
     case Alg of
         _ when AlgFromCommitment =/= Alg ->
             {error, {commitment_alg_mismatch,
@@ -478,32 +487,33 @@ verify(MsgToVerify, Req, _Opts) ->
                 {from_signature_params, Alg}
             }};
         <<"rsa-pss-sha512">> when AlgFromCommitment =:= Alg ->
-            {string, KeyID} = hb_maps:get(<<"keyid">>, Params),
+            {string, KeyID} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
             PubKey = hb_util:decode(KeyID),
             Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
-            Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, #{}),
+            Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, Opts),
             EncWithoutBodyKeys = hb_maps:without([<<"body-keys">>], Enc),
             % Add the signature data back into the encoded message.
             EncWithSig =
                 EncWithoutBodyKeys#{
                     <<"signature-input">> =>
-                        hb_maps:get(<<"signature-input">>, MsgToVerify),
+                        hb_maps:get(<<"signature-input">>, MsgToVerify, not_found, Opts),
                     <<"signature">> =>
-                        hb_maps:get(<<"signature">>, MsgToVerify)
+                        hb_maps:get(<<"signature">>, MsgToVerify, not_found, Opts)
                 },
             % If the content-digest is already present, we override it with a
             % regenerated value. If those values match, then the signature will
             % verify correctly. If they do not match, then the signature will
             % fail to verify, as the signature bases will not be the same.
-            EncWithDigest = add_content_digest(EncWithSig),
+            EncWithDigest = add_content_digest(EncWithSig, Opts),
             ?event({encoded_msg_for_verification, EncWithDigest}),
             Res = verify_auth(
                 #{
                     key => {{rsa, 65537}, PubKey},
                     sig_name => address_to_sig_name(Address)
                 },
-                EncWithDigest
+                EncWithDigest,
+                Opts
             ),
             ?event({rsa_verify_res, Res}),
             {ok, Res};
@@ -511,13 +521,13 @@ verify(MsgToVerify, Req, _Opts) ->
             {error, {unsupported_alg, Alg}}
     end.
 
-public_keys(Commitment) ->
-    SigInputs = hb_maps:get(<<"signature-input">>, Commitment),
+public_keys(Commitment, Opts) ->
+    SigInputs = hb_maps:get(<<"signature-input">>, Commitment, not_found, Opts),
     lists:filtermap(
         fun ({_SigName, {list, _, ParamsKVList}}) ->
-            case hb_maps:get(<<"alg">>, Params = hb_maps:from_list(ParamsKVList)) of
+            case hb_maps:get(<<"alg">>, Params = hb_maps:from_list(ParamsKVList), not_found, Opts) of
                 {string, <<"rsa-pss-sha512">>} ->
-                    {string, KeyID} = hb_maps:get(<<"keyid">>, Params),
+                    {string, KeyID} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
                     PubKey = hb_util:decode(KeyID),
                     {true, PubKey};
                 _ ->
@@ -586,14 +596,14 @@ remove_derived_specifiers(ComponentIdentifiers) ->
 %% @doc using the provided Authority and Request/Response Messages Context,
 %% create a Name, Signature and SignatureInput that can be used to additional
 %% signatures to a corresponding HTTP Message
--spec sign_auth(authority_state(), request_message(), response_message()) ->
+-spec sign_auth(authority_state(), request_message(), response_message(), any()) ->
     {ok, {binary(), binary(), binary()}}.
-sign_auth(Authority, Req, Res) ->
-    {Priv, Pub} = hb_maps:get(key_pair, Authority),
+sign_auth(Authority, Req, Res, Opts) ->
+    {Priv, Pub} = maps:get(key_pair, Authority),
     % Create the signature base and signature-input values
     AuthorityWithSigParams = add_sig_params(Authority, Pub),
 	{SignatureInput, SignatureBase} =
-        signature_base(AuthorityWithSigParams, Req, Res),
+        signature_base(AuthorityWithSigParams, Req, Res, Opts),
     % Now perform the actual signing
     ?event(signature_base,
         {signature_base_for_signing, {string, SignatureBase}}),
@@ -605,7 +615,7 @@ add_sig_params(Authority, {_KeyType, PubKey}) ->
     hb_maps:put(
         sig_params,
         hb_maps:merge(
-            hb_maps:get(sig_params, Authority),
+            maps:get(sig_params, Authority),
             #{
                 alg => <<"rsa-pss-sha512">>,
                 keyid => hb_util:encode(PubKey)
@@ -615,18 +625,18 @@ add_sig_params(Authority, {_KeyType, PubKey}) ->
     ).
 
 %%% @doc same verify/3, but with an empty Request Message Context
-verify_auth(Verifier, Msg) ->
+verify_auth(Verifier, Msg, Opts) ->
     % Assume that the Msg is a response message, and use an empty Request 
     % message context
     %
     % A corollary is that a signature containing any components from the request
     % will produce an error. It is the caller's responsibility to provide the
     % required Message Context in order to verify the signature
-    verify_auth(Verifier, #{}, Msg).
+    verify_auth(Verifier, #{}, Msg, Opts).
 
 %%% @doc Given the signature name, and the Request/Response Message Context
 %%% verify the named signature by constructing the signature base and comparing
-verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
+verify_auth(#{ sig_name := SigName, key := Key }, Req, Res, Opts) ->
     % Signature and Signature-Input fields are each themself a dictionary 
     % structured field.
     % Ergo, we can use our same utilities to extract the value at the desired key,
@@ -639,8 +649,8 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
     SignatureInputIdentifier =
         {item, {string, <<"signature-input">>}, SigNameParams},
     % extract signature and signature params
-    SigIdentifier = extract_field(SignatureIdentifier, Req, Res),
-    SigInputIdentifier = extract_field(SignatureInputIdentifier, Req, Res),
+    SigIdentifier = extract_field(SignatureIdentifier, Req, Res, Opts),
+    SigInputIdentifier = extract_field(SignatureInputIdentifier, Req, Res, Opts),
     case {SigIdentifier, SigInputIdentifier} of
         {{ok, {_, EncodedSignature}}, {ok, {_, SignatureInput}}} ->
             % The signature may be encoded ie. as binary, so we need to parse it
@@ -667,10 +677,10 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
             ?event({sig_params_map, ComponentIdentifiers}),
             % Construct the signature base using the parsed parameters
             Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
-            {_, SignatureBase} = signature_base(Authority, Req, Res),
+            {_, SignatureBase} = signature_base(Authority, Req, Res, Opts),
             ?event(signature_base,
                 {signature_base_for_verification, {string, SignatureBase}}),
-            {_Priv, Pub} = hb_maps:get(key_pair, Authority),
+            {_Priv, Pub} = maps:get(key_pair, Authority),
             % Now verify the signature base signed with the provided key matches
             % the signature
             ar_wallet:verify(Pub, SignatureBase, Signature, sha512);
@@ -689,14 +699,14 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res) ->
 %%%
 %%% This implements a portion of RFC-9421 see:
 %%% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
-signature_base(Authority, Req, Res) when is_map(Authority) ->
-    ComponentIdentifiers = hb_maps:get(component_identifiers, Authority),
+signature_base(Authority, Req, Res, Opts) when is_map(Authority) ->
+    ComponentIdentifiers = maps:get(component_identifiers, Authority),
     ?event({component_identifiers_for_sig_base, ComponentIdentifiers}),
-	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res),
+	ComponentsLine = signature_components_line(ComponentIdentifiers, Req, Res, Opts),
 	ParamsLine =
         signature_params_line(
             ComponentIdentifiers,
-            hb_maps:get(sig_params, Authority)),
+            maps:get(sig_params, Authority)),
     SignatureBase = join_signature_base(ComponentsLine, ParamsLine),
     ?event(signature_base, {signature_base, {string, SignatureBase}}),
 	{ParamsLine, SignatureBase}.
@@ -713,13 +723,13 @@ join_signature_base(ComponentsLine, ParamsLine) ->
 %%% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.1
 %%%
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.1
-signature_components_line(ComponentIdentifiers, Req, Res) ->
+signature_components_line(ComponentIdentifiers, Req, Res, Opts) ->
 	ComponentsLines = lists:map(
 		fun({Name, DirectBinary}) when is_binary(DirectBinary) andalso is_binary(Name) ->
 			<<Name/binary, <<": ">>/binary, DirectBinary/binary>>;
 			(ComponentIdentifier) ->
 				% TODO: handle errors?
-				{ok, {I, V}} = identifier_to_component(ComponentIdentifier, Req, Res),
+				{ok, {I, V}} = identifier_to_component(ComponentIdentifier, Req, Res, Opts),
 				<<I/binary, <<": ">>/binary, V/binary>>
 		end,
 		ComponentIdentifiers
@@ -747,21 +757,22 @@ signature_params_line(ComponentIdentifiers, SigParams) ->
 %%% parameters, which are used to describe behavior such as which Message to
 %%% derive a field or sub-component of the field, and how to encode the value as
 %%% part of the signature base.
-identifier_to_component(Identifier, Req, Res) when is_list(Identifier) ->
-	identifier_to_component(list_to_binary(Identifier), Req, Res);
-identifier_to_component(Identifier, Req, Res) when is_atom(Identifier) ->
-	identifier_to_component(atom_to_binary(Identifier), Req, Res);
-identifier_to_component(Identifier, Req, Res) when is_binary(Identifier) ->
+identifier_to_component(Identifier, Req, Res, Opts) when is_list(Identifier) ->
+	identifier_to_component(list_to_binary(Identifier), Req, Res, Opts);
+identifier_to_component(Identifier, Req, Res, Opts) when is_atom(Identifier) ->
+	identifier_to_component(atom_to_binary(Identifier), Req, Res, Opts);
+identifier_to_component(Identifier, Req, Res, Opts) when is_binary(Identifier) ->
 	identifier_to_component(
         {item, {string, Identifier}, []},
         Req,
-        Res
+        Res,
+        Opts
     );
-identifier_to_component(ParsedIdentifier = {item, {X, Value}, Params}, Req, Res) ->
+identifier_to_component(ParsedIdentifier = {item, {X, Value}, Params}, Req, Res, Opts) ->
 	case Value of
 		<<$@, Rest/bits>> -> 
-            extract_field({item, {X, Rest}, Params}, Req, Res);
-		_ -> extract_field(ParsedIdentifier, Req, Res)
+            extract_field({item, {X, Rest}, Params}, Req, Res, Opts);
+		_ -> extract_field(ParsedIdentifier, Req, Res, Opts)
 	end.
 
 %%% @doc Given a Component Identifier and a Request/Response Messages Context
@@ -772,7 +783,7 @@ identifier_to_component(ParsedIdentifier = {item, {X, Value}, Params}, Req, Res)
 %%%
 %%% This implements a portion of RFC-9421
 %%% See https://datatracker.ietf.org/doc/html/rfc9421#name-http-fields
-extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
+extract_field({item, {_Kind, IParsed}, IParams}, Req, Res, Opts) ->
 	IsStrictFormat = find_strict_format_param(IParams),
 	IsByteSequenceEncoded = find_byte_sequence_param(IParams),
 	DictKey = find_key_param(IParams),
@@ -796,7 +807,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res) ->
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
             %?event({extracting_field, {identifier, Lowered}, {req, Req}, {res, Res}}),
-			case hb_maps:get(NormParsed, if IsRequestIdentifier -> Req; true -> Res end, not_found) of
+			case hb_maps:get(NormParsed, if IsRequestIdentifier -> Req; true -> Res end, not_found, Opts) of
 				not_found ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6
 					{

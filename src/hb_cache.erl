@@ -50,12 +50,27 @@
 %% load only the first `layer' of it: Representing all nested messages inside 
 %% the result as links. If the value has an associated `type' key in the extra
 %% options, we apply it to the read value.
-ensure_loaded(Msg) -> ensure_loaded(Msg, #{}).
+ensure_loaded(Msg) ->
+    ensure_loaded(Msg, #{}).
 ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"type">> := <<"link">> }}, Opts) ->
     % The link is multi-tiered (the link points to at least one further link),
     % so we need to dereference the first link and call `ensure_loaded' again.
+    Store = hb_opts:get(store, no_viable_store, Opts),
+    ?event(debug_cache,
+        {loading_multi_link,
+            {link, ID},
+            {link_opts, LinkOpts},
+            {store, Store}
+        }
+    ),
     case hb_cache:read(ID, LinkOpts) of
         {ok, LinkValue} ->
+            ?event(debug_cache,
+                {loaded,
+                    {link, ID},
+                    {link_value, LinkValue},
+                    {store, Store}
+                }),
             NextLink = hb_link:decode_link(LinkValue),
             ?event(linkify,
                 {dereferencing_secondary_link,
@@ -65,6 +80,7 @@ ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"type">> := <<"link">> }}, Opts)
             ),
             ensure_loaded(NextLink, Opts);
         not_found ->
+            ?event(debug_cache, {multi_link_not_found, {link, ID}, {link_opts, LinkOpts}}),
             throw({necessary_message_not_found, Link})
     end;
 ensure_loaded(Link = {link, ID, LinkOpts}, Opts) ->
@@ -100,7 +116,7 @@ ensure_all_loaded(Msg) ->
 ensure_all_loaded(Link, Opts) when ?IS_LINK(Link) ->
     ensure_all_loaded(ensure_loaded(Link, Opts), Opts);
 ensure_all_loaded(Msg, Opts) when is_map(Msg) ->
-    hb_maps:map(fun(_K, V) -> ensure_all_loaded(V, Opts) end, Msg);
+    hb_maps:map(fun(_K, V) -> ensure_all_loaded(V, Opts) end, Msg, Opts);
 ensure_all_loaded(Msg, Opts) when is_list(Msg) ->
     lists:map(fun(V) -> ensure_all_loaded(V, Opts) end, Msg);
 ensure_all_loaded(Msg, Opts) ->
@@ -182,7 +198,7 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
         dev_message:id(Msg, #{ <<"committers">> => <<"none">> }, Opts),
     AltIDs = AllIDs -- [UncommittedID],
     ?event({writing_message_with_unsigned_id, UncommittedID, {alt_ids, AltIDs}}),
-    MsgHashpathAlg = hb_path:hashpath_alg(Msg),
+    MsgHashpathAlg = hb_path:hashpath_alg(Msg, Opts),
     hb_store:make_group(Store, UncommittedID),
     % Write the keys of the message into the store, rolling the keys into
     % hashpaths (having only two parts) as we do so.
@@ -215,7 +231,8 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
             ),
             Path
         end,
-        hb_private:reset(Msg)
+        hb_private:reset(Msg),
+        Opts
     ),
     % Write the commitments to the store, linking each commitment ID to the
     % uncommitted message.

@@ -9,7 +9,7 @@
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
--export([to/1, from/1, commit/3, committed/3, verify/3]).
+-export([to/3, from/3, commit/3, committed/3, verify/3]).
 -export([decode_value/2, encode_value/1, parse_ao_types/1, implicit_keys/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -20,13 +20,13 @@ verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
 committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
-from(Bin) when is_binary(Bin) -> Bin;
-from(Msg) when is_map(Msg) ->
+from(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};
+from(Msg, Req, Opts) when is_map(Msg) ->
     NormLinks = hb_link:encode_all_links(Msg),
     NormKeysMap = hb_ao:normalize_keys(NormLinks),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
-            case hb_maps:find(Key, NormKeysMap) of
+            case hb_maps:find(Key, NormKeysMap, Opts) of
                 {ok, <<>>} ->
                     BinKey = hb_ao:normalize_key(Key),
                     {[{BinKey, <<"empty-binary">>} | Types], Values};
@@ -39,13 +39,13 @@ from(Msg) when is_map(Msg) ->
                 {ok, Value} when is_binary(Value) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Map} when is_map(Map) ->
-                    {Types, [{Key, from(Map)} | Values]};
+                    {Types, [{Key, hb_util:ok(from(Map, Req, Opts))} | Values]};
                 {ok, MsgList = [Msg1|_]} when is_map(Msg1) or is_list(Msg1) ->
                     % We have a list of maps. Convert to a numbered map and
                     % recurse.
                     BinKey = hb_ao:normalize_key(Key),
                     % Convert the list of maps into a numbered map and recurse
-                    NumberedMap = from(hb_ao:normalize_keys(MsgList)),
+                    {ok, NumberedMap} = from(hb_ao:normalize_keys(MsgList), Req, Opts),
                     {[{BinKey, <<"list">>} | Types], [{BinKey, NumberedMap} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
@@ -97,13 +97,13 @@ from(Msg) when is_map(Msg) ->
                 )),
                 [{<<"ao-types">>, AoTypes} | Values]
         end,
-    hb_maps:from_list(lists:reverse(WithTypes));
-from(Other) -> hb_path:to_binary(Other).
+    {ok, hb_maps:from_list(lists:reverse(WithTypes))};
+from(Other, _Req, _Opts) -> {ok, hb_path:to_binary(Other)}.
 
 %% @doc Convert a TABM into a native HyperBEAM message.
-to(Bin) when is_binary(Bin) -> Bin;
-to(TABM0) ->
-    Types = case hb_maps:get(<<"ao-types">>, TABM0, <<>>) of
+to(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};
+to(TABM0, Req, Opts) ->
+    Types = case hb_maps:get(<<"ao-types">>, TABM0, <<>>, Opts) of
         <<>> -> #{};
         Bin -> parse_ao_types(Bin)
     end,
@@ -129,41 +129,43 @@ to(TABM0) ->
     % 2. Decode any binary values that have a type;
     % 3. Recursively decode any maps that we encounter;
     % 4. Return the remaining keys and values as a map.
-    hb_message:filter_default_keys(maps:fold(
-        fun (<<"ao-types">>, _Value, Acc) -> Acc;
-        (RawKey, BinValue, Acc) when is_binary(BinValue) ->
-            case hb_maps:find(hb_ao:normalize_key(RawKey), Types) of
-                % The value is a binary, no parsing required
-                error -> Acc#{ RawKey => BinValue };
-                % Parse according to its type
-                {ok, Type} ->
-                    Decoded = decode_value(Type, BinValue),
-                    Acc#{ RawKey => Decoded }
-            end;
-        (RawKey, ChildTABM, Acc) when is_map(ChildTABM) ->
-            % Decode the child TABM
-            ChildDecoded = to(ChildTABM),
-            Acc#{
-                RawKey =>
-                    case hb_maps:find(RawKey, Types) of
-                        error ->
-                            % The value is a map, so we return it as is
-                            ChildDecoded;
-                        {ok, <<"list">>} ->
-                            % The child is a list of maps, so we need to convert the
-                            % map into a list, while maintaining the correct order
-                            % of the keys
-                            hb_util:message_to_ordered_list(ChildDecoded)
-                    end
-            };
-        (RawKey, Value, Acc) ->
-            % We encountered a key that already has a converted type.
-            % We can just return it as is.
-            Acc#{ RawKey => Value }
-        end,
-        EmptyKeys,
-        TABM1
-    )).
+    {ok,
+        hb_message:filter_default_keys(maps:fold(
+            fun (<<"ao-types">>, _Value, Acc) -> Acc;
+            (RawKey, BinValue, Acc) when is_binary(BinValue) ->
+                case hb_maps:find(hb_ao:normalize_key(RawKey), Types, Opts) of
+                    % The value is a binary, no parsing required
+                    error -> Acc#{ RawKey => BinValue };
+                    % Parse according to its type
+                    {ok, Type} ->
+                        Decoded = decode_value(Type, BinValue),
+                        Acc#{ RawKey => Decoded }
+                end;
+            (RawKey, ChildTABM, Acc) when is_map(ChildTABM) ->
+                % Decode the child TABM
+                {ok, ChildDecoded} = to(ChildTABM, Req, Opts),
+                Acc#{
+                    RawKey =>
+                        case hb_maps:find(RawKey, Types, Opts) of
+                            error ->
+                                % The value is a map, so we return it as is
+                                ChildDecoded;
+                            {ok, <<"list">>} ->
+                                % The child is a list of maps, so we need to convert the
+                                % map into a list, while maintaining the correct order
+                                % of the keys
+                                hb_util:message_to_ordered_list(ChildDecoded)
+                        end
+                };
+            (RawKey, Value, Acc) ->
+                % We encountered a key that already has a converted type.
+                % We can just return it as is.
+                Acc#{ RawKey => Value }
+            end,
+            EmptyKeys,
+            TABM1
+        ))
+    }.
 
 %% @doc Parse the `ao-types' field of a TABM and return a map of keys and their
 %% types

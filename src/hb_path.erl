@@ -29,7 +29,7 @@
 %%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
 %%% will be generated according to Msg1's algorithm choice.
 -module(hb_path).
--export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/1]).
+-export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/2]).
 -export([hd/2, tl/2, push_request/2, queue_request/2, pop_request/2]).
 -export([priv_remaining/2, priv_store_remaining/2]).
 -export([verify_hashpath/2]).
@@ -125,7 +125,7 @@ hashpath(RawMsg1, Opts) ->
     end.
 hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
     Msg1Hashpath = hashpath(Msg1, Opts),
-    HashpathAlg = hashpath_alg(Msg1),
+    HashpathAlg = hashpath_alg(Msg1, Opts),
     hashpath(Msg1Hashpath, Msg2, HashpathAlg, Opts);
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
@@ -171,8 +171,8 @@ hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, _Opts) ->
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
 %%% If no hashpath algorithm is specified, the protocol defaults to
 %%% `sha-256-chain'.
-hashpath_alg(Msg) ->
-    case dev_message:get(<<"hashpath-alg">>, Msg) of
+hashpath_alg(Msg, Opts) ->
+    case dev_message:get(<<"hashpath-alg">>, Msg, Opts) of
         {ok, <<"sha-256-chain">>} ->
             fun hb_crypto:sha256_chain/2;
         {ok, <<"accumulate-256">>} ->

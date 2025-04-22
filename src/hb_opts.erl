@@ -123,9 +123,9 @@ default_message() ->
         debug_print_binary_max => 60,
         debug_print_indent => 2,
         debug_print => false,
-        stack_print_prefixes => ["hb", "dev", "ar"],
+        stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
-        short_trace_len => 10,
+        short_trace_len => 20,
         debug_metadata => true,
         debug_ids => false,
         debug_committers => false,

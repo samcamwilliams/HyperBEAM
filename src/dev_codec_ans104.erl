@@ -1,8 +1,8 @@
 %%% @doc Codec for managing transformations from `ar_bundles'-style Arweave TX
 %%% records to and from TABMs.
 -module(dev_codec_ans104).
--export([id/1, to/1, from/1, commit/3, verify/3, committed/3, content_type/1]).
--export([serialize/1, deserialize/1]).
+-export([id/3, to/3, from/3, commit/3, verify/3, committed/3, content_type/1]).
+-export([serialize/3, deserialize/3]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -37,29 +37,29 @@
 content_type(_) -> {ok, <<"application/ans104">>}.
 
 %% @doc Serialize a message or TX to a binary.
-serialize(Msg) when is_map(Msg) ->
-    serialize(to(Msg));
-serialize(TX) when is_record(TX, tx) ->
+serialize(Msg, Req, Opts) when is_map(Msg) ->
+    serialize(to(Msg, Req, Opts), Req, Opts);
+serialize(TX, _Req, _Opts) when is_record(TX, tx) ->
     {ok, ar_bundles:serialize(TX)}.
 
 %% @doc Deserialize a binary ans104 message to a TABM.
-deserialize(#{ <<"body">> := Binary }) ->
-    deserialize(Binary);
-deserialize(Binary) when is_binary(Binary) ->
-    deserialize(ar_bundles:deserialize(Binary));
-deserialize(TX) when is_record(TX, tx) ->
-    {ok, from(TX)}.
+deserialize(#{ <<"body">> := Binary }, Req, Opts) ->
+    deserialize(Binary, Req, Opts);
+deserialize(Binary, Req, Opts) when is_binary(Binary) ->
+    deserialize(ar_bundles:deserialize(Binary), Req, Opts);
+deserialize(TX, Req, Opts) when is_record(TX, tx) ->
+    from(TX, Req, Opts).
 
 %% @doc Return the ID of a message.
-id(Msg) ->
-    TABM = dev_codec_structured:from(Msg),
-    {ok, hb_util:human_id((to(TABM))#tx.id)}.
+id(Msg, Req, Opts) ->
+    {ok, TABM} = dev_codec_structured:from(Msg, Req, Opts),
+    {ok, hb_util:human_id((to(TABM, Req, Opts))#tx.id)}.
 
 %% @doc Sign a message using the `priv_wallet' key in the options.
-commit(Msg, _Req, Opts) ->
+commit(Msg, Req, Opts) ->
     ?event({committing, {input, Msg}}),
     Signed = ar_bundles:sign_item(
-        to(hb_private:reset(Msg)),
+        hb_util:ok(to(hb_private:reset(Msg), Req, Opts)),
         Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts)
     ),
     ?event({signed_tx, Signed}),
@@ -69,7 +69,7 @@ commit(Msg, _Req, Opts) ->
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % Get the prior original tags from the commitment, if it exists.
     PriorOriginalTags =
-        case hb_message:commitment(#{ <<"alg">> => <<"unsigned">> }, Msg) of
+        case hb_message:commitment(#{ <<"alg">> => <<"unsigned">> }, Msg, Opts) of
             {ok, _, #{ <<"original-tags">> := OrigTags }} -> OrigTags;
             _ -> undefined
         end,
@@ -113,7 +113,7 @@ committed(Msg = #{ <<"trusted-keys">> := RawTKeys, <<"commitments">> := Comms },
     % that it also exists in the commitment's sub-map. If it exists there (which
     % cannot be written to directly by users), we can trust that the stated keys
     % are present in the message.
-    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}) of
+    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}, Opts) of
         #{ <<"trusted-keys">> := RawTKeys } ->
             committed_from_trusted_keys(Msg, RawTKeys, Opts);
         _ ->
@@ -125,13 +125,13 @@ committed(Msg = #{ <<"original-tags">> := TagMap, <<"commitments">> := Comms }, 
     % If the message has an `original-tags' field, the committed fields are only
     % those keys, and maps that are nested in the `data' field.
     ?event({committed_from_original_tags, {input, Msg}}),
-    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}) of
+    case hb_ao:get(hd(hb_ao:keys(Comms)), Comms, #{}, Opts) of
         #{ <<"original-tags">> := TagMap } ->
             TrustedKeys =
                 [
                     hb_maps:get(<<"name">>, Tag, Opts)
                 ||
-                    Tag <- hb_maps:values(hb_ao:normalize_keys(TagMap))
+                    Tag <- hb_maps:values(hb_ao:normalize_keys(TagMap), Opts)
                 ],
             committed_from_trusted_keys(Msg, TrustedKeys, Opts);
         _ ->
@@ -151,7 +151,7 @@ committed(Msg, Req, Opts) ->
         {ok, true} ->
             % The message validates, so we can trust that the original keys are
             % all present in the message in its converted state.
-            Encoded = to(Msg),
+            {ok, Encoded} = to(Msg, Req, Opts),
             ?event({verified_tx, Encoded}),
             % Get the immediate (first-level) keys from the encoded message.
             % This is safe because we know that the message is valid. We normalize
@@ -173,10 +173,10 @@ committed(Msg, Req, Opts) ->
             {ok, []}
     end.
 
-committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
+committed_from_trusted_keys(Msg, TrustedKeys, Opts) ->
     ?event({committed_from_trusted_keys, {trusted_keys, TrustedKeys}, {input, Msg}}),
     NestedKeys = hb_maps:keys(hb_maps:filter(fun(_, V) -> is_map(V) end, Msg)),
-    TKeys = hb_maps:values(hb_ao:normalize_keys(TrustedKeys)),
+    TKeys = hb_maps:values(hb_ao:normalize_keys(TrustedKeys), Opts),
     Implicit =
         case lists:member(<<"ao-types">>, TKeys) of
             true -> dev_codec_structured:implicit_keys(Msg);
@@ -191,7 +191,7 @@ committed_from_trusted_keys(Msg, TrustedKeys, _Opts) ->
     }.
 
 %% @doc Verify an ANS-104 commitment.
-verify(Msg, _Req, _Opts) ->
+verify(Msg, Req, Opts) ->
     MsgWithoutCommitments =
         hb_maps:without(
             [
@@ -201,20 +201,20 @@ verify(Msg, _Req, _Opts) ->
             ],
             hb_private:reset(Msg)
         ),
-    TX = to(MsgWithoutCommitments),
+    {ok, TX} = to(MsgWithoutCommitments, Req, Opts),
     Res = ar_bundles:verify_item(TX),
     {ok, Res}.
 
 %% @doc Convert a #tx record into a message map recursively.
-from(Binary) when is_binary(Binary) -> Binary;
-from(TX) when is_record(TX, tx) ->
+from(Binary, _Req, _Opts) when is_binary(Binary) -> {ok, Binary};
+from(TX, Req, Opts) when is_record(TX, tx) ->
     case lists:keyfind(<<"ao-type">>, 1, TX#tx.tags) of
         false ->
-            do_from(TX);
+            do_from(TX, Req, Opts);
         {<<"ao-type">>, <<"binary">>} ->
-            TX#tx.data
+            {ok, TX#tx.data}
     end.
-do_from(RawTX) ->
+do_from(RawTX, Req, Opts) ->
     % Ensure the TX is fully deserialized.
     TX = ar_bundles:deserialize(ar_bundles:normalize(RawTX)), % <- Is norm necessary?
     OriginalTagMap = encoded_tags_to_map(TX#tx.tags),
@@ -232,7 +232,7 @@ do_from(RawTX) ->
             )
         ),
     % Generate a TABM from the tags.
-    MapWithoutData = hb_maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags)),
+    MapWithoutData = hb_maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags, Opts)),
     ?event({tags_from_tx, {explicit, MapWithoutData}}),
     DataMap =
         case TX#tx.data of
@@ -241,7 +241,13 @@ do_from(RawTX) ->
                 % into messages from their tx representations.
                 hb_maps:merge(
                     MapWithoutData,
-                    hb_maps:map(fun(_, InnerValue) -> from(InnerValue) end, Data)
+                    hb_maps:map(
+                        fun(_, InnerValue) ->
+                            hb_util:ok(from(InnerValue, Req, Opts))
+                        end,
+                        Data,
+                        Opts
+                    )
                 );
             Data when Data == ?DEFAULT_DATA -> MapWithoutData;
             Data when is_binary(Data) -> MapWithoutData#{ <<"data">> => Data };
@@ -310,11 +316,11 @@ do_from(RawTX) ->
         end,
     Res = hb_maps:without(?FILTERED_TAGS, WithCommitments),
     ?event({message_after_commitments, Res}),
-    Res.
+    {ok, Res}.
 
 %% @doc Deduplicate a list of key-value pairs by key, generating a list of
 %% values for each normalized key if there are duplicates.
-deduplicating_from_list(Tags) ->
+deduplicating_from_list(Tags, Opts) ->
     % Aggregate any duplicated tags into an ordered list of values.
     Aggregated =
         lists:foldl(
@@ -350,7 +356,8 @@ deduplicating_from_list(Tags) ->
             (_Key, Value) ->
                 Value
             end,
-            Aggregated
+            Aggregated,
+            Opts
         ),
     ?event({deduplicating_from_list, {result, Res}}),
     Res.
@@ -397,18 +404,18 @@ tag_map_to_encoded_tags(TagMap) ->
 %% message's device in order to get the keys that we will be checkpointing. We 
 %% do this recursively to handle nested messages. The base case is that we hit
 %% a binary, which we return as is.
-to(Binary) when is_binary(Binary) ->
+to(Binary, _Req, _Opts) when is_binary(Binary) ->
     % ar_bundles cannot serialize just a simple binary or get an ID for it, so
     % we turn it into a TX record with a special tag, tx_to_message will
     % identify this tag and extract just the binary.
-    #tx{
+    {ok, #tx{
         tags= [{<<"ao-type">>, <<"binary">>}],
         data = Binary
-    };
-to(TX) when is_record(TX, tx) -> TX;
-to(RawTABM) when is_map(RawTABM) ->
+    }};
+to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
+to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded, for now.
-    DenormTABM = hb_cache:ensure_all_loaded(RawTABM),
+    DenormTABM = hb_cache:ensure_all_loaded(RawTABM, Opts),
     % The path is a special case so we normalized it first. It may have been
     % modified by `hb_ao' in order to set it to the current key that is
     % being executed. We should check whether the path is in the
@@ -416,7 +423,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % stated path. This normalizes the path, such that the signed message will
     % continue to validate correctly.
     TABM = hb_ao:normalize_keys(hb_maps:without([<<"commitments">>], DenormTABM)),
-    Commitments = hb_maps:get(<<"commitments">>, DenormTABM, #{}),
+    Commitments = hb_maps:get(<<"commitments">>, DenormTABM, #{}, Opts),
     TABMWithComm =
         case hb_maps:keys(Commitments) of
             [] -> TABM;
@@ -433,13 +440,13 @@ to(RawTABM) when is_map(RawTABM) ->
                 TABMWithoutCommitmentKeys;
             _ -> throw({multisignatures_not_supported_by_ans104, DenormTABM})
         end,
-    OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}),
+    OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}, Opts),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
     TABMNoOrigTags = hb_maps:without([<<"original-tags">>], TABMWithComm),
     % TODO: Is this necessary now? Do we want to pursue `original-path` as the
     % mechanism for restoring original tags?
     M =
-        case {hb_maps:find(<<"path">>, TABMNoOrigTags), hb_private:from_message(TABMNoOrigTags)} of
+        case {hb_maps:find(<<"path">>, TABMNoOrigTags, Opts), hb_private:from_message(TABMNoOrigTags)} of
             {{ok, _}, #{ <<"ao-core">> := #{ <<"original-path">> := Path } }} ->
                 hb_maps:put(<<"path">>, Path, TABMNoOrigTags);
             _ -> TABMNoOrigTags
@@ -451,10 +458,11 @@ to(RawTABM) when is_map(RawTABM) ->
     %?event({message_to_tx, {keys, Keys}, {map, M}}),
     MsgKeyMap =
         hb_maps:map(
-            fun(_Key, Msg) when is_map(Msg) -> to(Msg);
+            fun(_Key, Msg) when is_map(Msg) -> hb_util:ok(to(Msg, Req, Opts));
                (_Key, Value) -> Value
             end,
-            M
+            M,
+            Opts
         ),
     NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap),
     % Iterate through the default fields, replacing them with the values from
@@ -463,7 +471,7 @@ to(RawTABM) when is_map(RawTABM) ->
         lists:foldl(
             fun({Field, Default}, {RemMap, Acc}) ->
                 NormKey = hb_ao:normalize_key(Field),
-                case hb_maps:find(NormKey, NormalizedMsgKeyMap) of
+                case hb_maps:find(NormKey, NormalizedMsgKeyMap, Opts) of
                     error -> {RemMap, [Default | Acc]};
                     {ok, Value} when is_binary(Default) andalso ?IS_ID(Value) ->
                         % NOTE: Do we really want to do this type coercion?
@@ -505,7 +513,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % original tags. We do this by re-calculating the expected tags from the
     % original tags and comparing the result to the remaining keys.
     if length(OriginalTags) > 0 ->
-        ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags),
+        ExpectedTagsFromOriginal = deduplicating_from_list(OriginalTags, Opts),
         NormRemaining = hb_maps:from_list(Remaining),
         case NormRemaining == ExpectedTagsFromOriginal of
             true -> ok;
@@ -533,7 +541,7 @@ to(RawTABM) when is_map(RawTABM) ->
     % Recursively turn the remaining data items into tx records.
     DataItems = hb_maps:from_list(lists:map(
         fun({Key, Value}) ->
-            {hb_ao:normalize_key(Key), to(Value)}
+            {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
         end,
         RawDataItems
     )),
@@ -549,7 +557,7 @@ to(RawTABM) when is_map(RawTABM) ->
             {Data, _} when is_record(Data, tx) ->
                 TX#tx { data = DataItems#{ <<"data">> => Data } };
             {Data, _} when is_binary(Data) ->
-                TX#tx { data = DataItems#{ <<"data">> => to(Data) } }
+                TX#tx { data = DataItems#{ <<"data">> => hb_util:ok(to(Data, Req, Opts)) } }
         end,
     % ar_bundles:reset_ids(ar_bundles:normalize(TXWithData));
     Res =
@@ -564,8 +572,8 @@ to(RawTABM) when is_map(RawTABM) ->
                 throw(Error)
         end,
     %?event({result, {explicit, Res}}),
-    Res;
-to(_Other) ->
+    {ok, Res};
+to(_Other, _Req, _Opts) ->
     throw(invalid_tx).
 
 %%% ANS-104-specific testing cases.
@@ -575,9 +583,9 @@ normal_tags_test() ->
         <<"first-tag">> => <<"first-value">>,
         <<"second-tag">> => <<"second-value">>
     },
-    Encoded = to(Msg),
+    {ok, Encoded} = to(Msg, #{}, #{}),
     ?event({encoded, Encoded}),
-    Decoded = from(Encoded),
+    {ok, Decoded} = from(Encoded, #{}, #{}),
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, Decoded)).
 
@@ -590,9 +598,9 @@ from_maintains_tag_name_case_test() ->
     SignedTX = ar_bundles:sign_item(TX, hb:wallet()),
     ?event({signed_tx, SignedTX}),
     ?assert(ar_bundles:verify_item(SignedTX)),
-    TABM = from(SignedTX),
+    TABM = hb_util:ok(from(SignedTX, #{}, #{})),
     ?event({tabm, TABM}),
-    ConvertedTX = to(TABM),
+    ConvertedTX = hb_util:ok(to(TABM, #{}, #{})),
     ?event({converted_tx, ConvertedTX}),
     ?assert(ar_bundles:verify_item(ConvertedTX)),
     ?assertEqual(ConvertedTX, ar_bundles:normalize(SignedTX)).
@@ -620,7 +628,7 @@ restore_tag_name_case_from_cache_test() ->
     ?event({id, ID}),
     {ok, ReadMsg} = hb_cache:read(SignedID, #{}),
     ?event({restored_msg, ReadMsg}),
-    ReadTX = to(ReadMsg),
+    {ok, ReadTX} = to(ReadMsg, #{}, #{}),
     ?event({restored_tx, ReadTX}),
     ?assert(hb_message:match(ReadMsg, SignedMsg)),
     ?assert(ar_bundles:verify_item(ReadTX)).
@@ -657,9 +665,9 @@ simple_to_conversion_test() ->
         <<"first-tag">> => <<"first-value">>,
         <<"second-tag">> => <<"second-value">>
     },
-    Encoded = to(Msg),
+    {ok, Encoded} = to(Msg, #{}, #{}),
     ?event({encoded, Encoded}),
-    Decoded = from(Encoded),
+    {ok, Decoded} = from(Encoded, #{}, #{}),
     ?event({decoded, Decoded}),
     ?assert(hb_message:match(Msg, hb_message:uncommitted(Decoded))).
 

@@ -207,9 +207,9 @@ result_to_message(ExpectedID, Item, Opts) ->
         },
     ?event({raw_ans104, TX}),
     ?event({ans104_form_response, TX}),
-    TABM = dev_codec_ans104:from(TX),
+    TABM = hb_util:ok(dev_codec_ans104:from(TX, #{}, Opts)),
     ?event({decoded_tabm, TABM}),
-    Structured = dev_codec_structured:to(TABM),
+    Structured = hb_util:ok(dev_codec_structured:to(TABM, #{}, Opts)),
     % Some graphql nodes do not grant the `anchor' or `last_tx' fields, so we
     % verify the data item and optionally add the explicit keys as committed
     % fields _if_ the node desires it.
@@ -229,9 +229,9 @@ result_to_message(ExpectedID, Item, Opts) ->
                         % The node trusts the GraphQL API, so we add the explicit
                         % keys as committed fields.
                         ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
-                        Comms = hb_maps:get(<<"commitments">>, Structured),
+                        Comms = hb_maps:get(<<"commitments">>, Structured, #{}, Opts),
                         AttName = hd(hb_maps:keys(Comms)),
-                        Comm = hb_maps:get(AttName, Comms),
+                        Comm = hb_maps:get(AttName, Comms, not_found, Opts),
                         Structured#{
                             <<"commitments">> => #{
                                 AttName =>
@@ -242,7 +242,8 @@ result_to_message(ExpectedID, Item, Opts) ->
                                                 ||
                                                     #{ <<"name">> := Name } <-
                                                         hb_maps:values(
-                                                            hb_ao:normalize_keys(Tags)
+                                                            hb_ao:normalize_keys(Tags),
+                                                            Opts
                                                         )
                                                 ]
                                             )

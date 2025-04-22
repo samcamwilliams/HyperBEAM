@@ -17,9 +17,9 @@
 %%% yourself from the inevitable issues that will arise from using this
 %%% module without understanding the full implications. You have been warned.
 -module(hb_maps).
--export([get/2, get/3, get/4, find/2, find/3, is_key/2, keys/1, values/1, size/1]).
+-export([get/2, get/3, get/4, find/2, find/3, is_key/2, keys/1, values/1, values/2]).
 -export([put/3, map/2, map/3, filter/2, filter/3, filtermap/2, filtermap/3]).
--export([fold/3, fold/4, take/2]).
+-export([fold/3, fold/4, take/2, size/1]).
 -export([merge/2, remove/2, with/2, without/2, update_with/3, update_with/4]).
 -export([from_list/1, to_list/1]).
 -include_lib("eunit/include/eunit.hrl").
@@ -30,6 +30,10 @@ get(Key, Map) ->
 
 -spec get(Key :: term(), Map :: map(), Default :: term()) -> term().
 get(Key, Map, Default) ->
+    %io:format(
+    %   standard_error, "get called without opts~n~p~n",
+    %   [try exit(1) catch _:_:St -> St end]
+    % ),
     get(Key, Map, Default, #{}).
 
 -spec get(
@@ -40,7 +44,7 @@ get(Key, Map, Default) ->
 ) -> term().
 get(Key, Map, Default, Opts) ->
     hb_cache:ensure_loaded(
-        maps:get(Key, hb_cache:ensure_loaded(Map), Default),
+        maps:get(Key, hb_cache:ensure_loaded(Map, Opts), Default),
         Opts
     ).
 
@@ -50,7 +54,7 @@ find(Key, Map) ->
 
 -spec find(Key :: term(), Map :: map(), Opts :: map()) -> {ok, term()} | error.
 find(Key, Map, Opts) ->
-    hb_cache:ensure_loaded(maps:find(Key, hb_cache:ensure_loaded(Map)), Opts).
+    hb_cache:ensure_loaded(maps:find(Key, hb_cache:ensure_loaded(Map, Opts)), Opts).
 
 -spec put(Key :: term(), Value :: term(), Map :: map()) -> map().
 put(Key, Value, Map) ->
@@ -65,8 +69,11 @@ keys(Map) ->
     maps:keys(hb_cache:ensure_loaded(Map)).
 
 -spec values(Map :: map()) -> [term()].
-values(Map) ->
-    maps:values(hb_cache:ensure_loaded(Map)).
+values(Map) -> values(Map, #{}).
+
+-spec values(Map :: map(), Opts :: map()) -> [term()].
+values(Map, Opts) ->
+    maps:values(hb_cache:ensure_loaded(Map, Opts)).
 
 -spec size(Map :: map()) -> non_neg_integer().
 size(Map) ->
@@ -77,6 +84,10 @@ size(Map) ->
     Map :: map()
 ) -> map().
 map(Fun, Map) ->
+    % io:format(
+    %   standard_error, "map called without opts~n~p~n",
+    %   [try exit(1) catch _:_:St -> St end]
+    % ),
     map(Fun, Map, #{}).
 
 -spec map(
@@ -87,7 +98,7 @@ map(Fun, Map) ->
 map(Fun, Map, Opts) ->
     maps:map(
         fun(K, V) -> Fun(K, hb_cache:ensure_loaded(V, Opts)) end,
-        hb_cache:ensure_loaded(Map)
+        hb_cache:ensure_loaded(Map, Opts)
     ).
 
 -spec merge(Map1 :: map(), Map2 :: map()) -> map().
@@ -126,7 +137,7 @@ filter(Fun, Map, Opts) ->
                 false -> false
             end
         end,
-        hb_cache:ensure_loaded(Map)
+        hb_cache:ensure_loaded(Map, Opts)
     ).
 
 -spec filtermap(
@@ -144,7 +155,7 @@ filtermap(Fun, Map) ->
 filtermap(Fun, Map, Opts) ->
     maps:filtermap(
         fun(K, V) -> Fun(K, hb_cache:ensure_loaded(V, Opts)) end,
-        hb_cache:ensure_loaded(Map)
+        hb_cache:ensure_loaded(Map, Opts)
     ).
 
 -spec fold(
@@ -165,7 +176,7 @@ fold(Fun, Acc, Map, Opts) ->
     maps:fold(
         fun(K, V, CurrAcc) -> Fun(K, hb_cache:ensure_loaded(V, Opts), CurrAcc) end,
         Acc,
-        hb_cache:ensure_loaded(Map)
+        hb_cache:ensure_loaded(Map, Opts)
     ).
 
 -spec take(N :: non_neg_integer(), Map :: map()) -> map().
@@ -187,7 +198,7 @@ update_with(Key, Fun, Map) ->
     Opts :: map()
 ) -> map().
 update_with(Key, Fun, Map, Opts) ->
-    maps:update_with(Key, Fun, hb_cache:ensure_loaded(Map), Opts).
+    maps:update_with(Key, Fun, hb_cache:ensure_loaded(Map, Opts), Opts).
 
 -spec from_list(List :: [{Key :: term(), Value :: term()}]) -> map().
 from_list(List) ->
@@ -211,7 +222,7 @@ map_with_link_test() ->
     Opts = #{},
     {ok, Location} = hb_cache:write(Bin, Opts),
     Map = #{ 1 => 1, 2 => {link, Location, #{}}, 3 => 3 },
-    ?assertEqual(#{1 => 1, 2 => Bin, 3 => 3}, map(fun(_K, V) -> V end, Map)).
+    ?assertEqual(#{1 => 1, 2 => Bin, 3 => 3}, map(fun(_K, V) -> V end, Map, #{})).
 
 get_with_typed_link_test() ->
     Bin = <<"123">>,

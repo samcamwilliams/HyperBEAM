@@ -34,7 +34,7 @@ read(_M1, M2, Opts) ->
 							{accept_header, <<"application/aos-2">>}
 						}
 					),
-                    JSONMsg = dev_json_iface:message_to_json_struct(Res),
+                    JSONMsg = dev_json_iface:message_to_json_struct(Res, Opts),
                     ?event(dev_cache, {read, {json_message, JSONMsg}}),
                     {ok,
                         #{
@@ -82,7 +82,8 @@ write(_M1, M2, Opts) ->
                             ?event(dev_cache, {write, {batch_item, Value}}),
                             write_single(Value, Opts)
                         end,
-                        hb_ao:get(<<"body">>, M2, Opts)
+                        hb_ao:get(<<"body">>, M2, Opts),
+                        Opts
                     );
                 _ ->
                     ?event(dev_cache, {write, {invalid_write_type, Type}}),

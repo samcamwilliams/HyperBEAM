@@ -36,7 +36,7 @@
 -module(dev_json_iface).
 -export([init/3, compute/3]).
 %%% Public interface helpers:
--export([message_to_json_struct/1, json_to_message/2]).
+-export([message_to_json_struct/2, json_to_message/2]).
 %%% Test helper exports:
 -export([generate_stack/1, generate_stack/2, generate_aos_msg/2]).
 -include_lib("eunit/include/eunit.hrl").
@@ -64,7 +64,7 @@ prep_call(RawM1, RawM2, Opts) ->
     Message = hb_ao:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_ao:get(<<"process/image">>, M1, Opts),
     BlockHeight = hb_ao:get(<<"block-height">>, M2, Opts),
-    Props = message_to_json_struct(denormalize_message(Message)),
+    Props = message_to_json_struct(denormalize_message(Message), Opts),
     MsgProps =
         Props#{
             <<"Module">> => Image,
@@ -73,7 +73,7 @@ prep_call(RawM1, RawM2, Opts) ->
     MsgJson = hb_json:encode(MsgProps),
     ProcessProps =
         #{
-            <<"Process">> => message_to_json_struct(Process)
+            <<"Process">> => message_to_json_struct(Process, Opts)
         },
     ProcessJson = hb_json:encode(ProcessProps),
     env_write(ProcessJson, MsgJson, M1, M2, Opts).
@@ -95,9 +95,9 @@ denormalize_message(Message) ->
         <<"id">> => hb_message:id(Message, all)
     }.
 
-message_to_json_struct(RawMsg) ->
-    message_to_json_struct(RawMsg, [owner_as_address]).
-message_to_json_struct(RawMsg, Features) ->
+message_to_json_struct(RawMsg, Opts) ->
+    message_to_json_struct(RawMsg, [owner_as_address], Opts).
+message_to_json_struct(RawMsg, Features, Opts) ->
     TABM = 
         hb_message:convert(
             hb_private:reset(RawMsg),
@@ -125,7 +125,7 @@ message_to_json_struct(RawMsg, Features) ->
                             not_found ->
                                 % The signature is likely a HTTPsig, so we need 
                                 % to extract the owner from the signature.
-                                case dev_codec_httpsig:public_keys(Commitment) of
+                                case dev_codec_httpsig:public_keys(Commitment, Opts) of
                                     [] -> <<>>;
                                     [PubKey|_] -> PubKey
                                 end;
@@ -404,7 +404,8 @@ postprocess_outbox(Msg, Proc, Opts) ->
                     <<"from-image">> => hb_ao:get(<<"image">>, Proc, Opts)
                 }
             end,
-            hb_ao:get(<<"outbox">>, Msg, #{}, Opts)
+            hb_ao:get(<<"outbox">>, Msg, #{}, Opts),
+            Opts
         ),
     hb_ao:set(Msg, <<"outbox">>, AdjustedOutbox, Opts).
 

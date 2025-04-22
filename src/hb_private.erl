@@ -23,9 +23,9 @@
 %% @doc Return the `private' key from a message. If the key does not exist, an
 %% empty map is returned.
 from_message(Msg) when is_map(Msg) ->
-    case hb_maps:is_key(<<"priv">>, Msg) of
-        true -> hb_maps:get(<<"priv">>, Msg, #{});
-        false -> hb_maps:get(priv, Msg, #{})
+    case maps:is_key(<<"priv">>, Msg) of
+        true -> maps:get(<<"priv">>, Msg, #{});
+        false -> maps:get(priv, Msg, #{})
     end;
 from_message(_NonMapMessage) -> #{}.
 
@@ -92,8 +92,8 @@ priv_ao_opts(Opts) ->
 
 %% @doc Unset all of the private keys in a message.
 reset(Msg) ->
-    hb_maps:without(
-        lists:filter(fun is_private/1, hb_maps:keys(Msg)),
+    maps:without(
+        lists:filter(fun is_private/1, maps:keys(Msg)),
         Msg
     ).
 

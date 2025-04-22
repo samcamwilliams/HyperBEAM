@@ -1552,7 +1552,7 @@ http_get_schedule_test_() ->
 		Assignments = hb_ao:get(<<"assignments">>, Schedule, #{}),
 		?assertEqual(
 			12, % +1 for the hashpath
-			length(hb_maps:values(Assignments))
+			hb_maps:size(Assignments)
 		)
 	end}.
     

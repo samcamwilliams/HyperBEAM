@@ -16,7 +16,7 @@ read(_M1, M2, Opts) ->
             ?event({lookup_result, Res}),
             case hb_ao:get(<<"accept">>, M2, Opts) of
                 <<"application/aos-2">> ->
-                    Struct = dev_json_iface:message_to_json_struct(Res),
+                    Struct = dev_json_iface:message_to_json_struct(Res, Opts),
                     {ok,
                         #{
                             <<"body">> => hb_json:encode(Struct),

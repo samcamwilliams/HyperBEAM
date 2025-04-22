@@ -222,7 +222,7 @@ route_to_request(M, {ok, #{ <<"uri">> := XPath, <<"opts">> := ReqOpts}}, Opts) -
         end,
     Path = iolist_to_binary(PathParts),
     ?event(http_outbound, {parsed_req, {node, Node}, {method, Method}, {path, Path}}),
-    {ok, Method, Node, Path, MsgWithoutMeta, hb_util:deep_merge(Opts, ReqOpts)};
+    {ok, Method, Node, Path, MsgWithoutMeta, hb_util:deep_merge(Opts, ReqOpts, Opts)};
 route_to_request(M, {ok, Routes}, Opts) ->
     ?event(http_outbound, {found_routes, {req, M}, {routes, Routes}}),
     % The result is a route, so we leave it to `request' to handle it.
@@ -670,12 +670,14 @@ req_to_tabm_singleton(Req, Body, Opts) ->
 %% node configuration. Additionally, non-committed fields are removed from the
 %% message if it is signed, with the exception of the `path' and `method' fields.
 httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
-    Msg = dev_codec_httpsig_conv:from(
-        RawHeaders#{ <<"body">> => Body }
+    {ok, Msg} = dev_codec_httpsig_conv:from(
+        RawHeaders#{ <<"body">> => Body },
+        Opts
     ),
     {ok, SignedMsg} =
         dev_codec_httpsig:reset_hmac(
-            hb_util:ok(remove_unsigned_fields(Msg, Opts))
+            hb_util:ok(remove_unsigned_fields(Msg, Opts)),
+            Opts
         ),
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
     case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of

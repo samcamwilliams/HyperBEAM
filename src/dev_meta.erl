@@ -58,7 +58,8 @@ handle(NodeMsg, RawRequest) ->
                     hb_ao:force_message(
                         handle_initialize(NormRequest, NodeMsg),
                         NodeMsg
-                    )
+                    ),
+                    NodeMsg
                 ),
             Res;
         _ -> handle_resolve(RawRequest, NormRequest, NodeMsg)
@@ -86,7 +87,7 @@ info(_, Request, NodeMsg) ->
             ?event({get_config_req, Request, NodeMsg}),
 			DynamicKeys = add_dynamic_keys(NodeMsg),	
 			?event(green_zone, {get_config, DynamicKeys}),
-            embed_status({ok, filter_node_msg(DynamicKeys)});
+            embed_status({ok, filter_node_msg(DynamicKeys)}, NodeMsg);
         <<"POST">> ->
             case hb_ao:get(<<"initialized">>, NodeMsg, not_found, NodeMsg) of
                 permanent ->
@@ -94,12 +95,13 @@ info(_, Request, NodeMsg) ->
                         {error,
                             <<"The node message of this machine is already "
                                 "permanent. It cannot be changed.">>
-                        }
+                        },
+                        NodeMsg
                     );
                 _ ->
                     update_node_message(Request, NodeMsg)
             end;
-        _ -> embed_status({error, <<"Unsupported Meta/info method.">>})
+        _ -> embed_status({error, <<"Unsupported Meta/info method.">>}, NodeMsg)
     end.
 
 %% @doc Remove items from the node message that are not encodable into a
@@ -145,7 +147,7 @@ update_node_message(Request, NodeMsg) ->
     case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
         false ->
             ?event({set_node_message_fail, Request}),
-            embed_status({error, <<"Unauthorized">>});
+            embed_status({error, <<"Unauthorized">>}, NodeMsg);
         true ->
             case adopt_node_message(Request, NodeMsg) of
                 {ok, NewNodeMsg} ->
@@ -162,11 +164,12 @@ update_node_message(Request, NodeMsg) ->
                                     ),
                                 <<"history-length">> => length(NewH)
                             }
-                        }
+                        },
+                        NodeMsg
                     );
                 {error, Reason} ->
                     ?event({set_node_message_fail, Request, Reason}),
-                    embed_status({error, Reason})
+                    embed_status({error, Reason}, NodeMsg)
             end
     end.
 
@@ -221,10 +224,14 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                     )
                 catch
                     throw:{necessary_message_not_found, MsgID} ->
-                        ID = hb_util:human_id(MsgID),
+                        ID =
+                            if ?IS_ID(MsgID) -> hb_util:human_id(MsgID);
+                               ?IS_LINK(MsgID) -> hb_link:format(MsgID);
+                               true -> MsgID
+                            end,
                         {error, #{
                             <<"status">> => 404,
-                            <<"unavilable">> => ID,
+                            <<"unavailable">> => ID,
                             <<"body">> =>
                                 <<"Message necessary to resolve request not found: ",
                                     ID/binary>>
@@ -232,7 +239,8 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                 end,
             {ok, StatusEmbeddedRes} =
                 embed_status(
-                    Res
+                    Res,
+                    NodeMsg
                 ),
             ?event({res, StatusEmbeddedRes}),
             AfterResolveOpts = hb_http_server:get_opts(NodeMsg),
@@ -245,13 +253,14 @@ handle_resolve(Req, Msgs, NodeMsg) ->
                         Req,
                         StatusEmbeddedRes,
                         AfterResolveOpts
-                    )
+                    ),
+                    NodeMsg
                 ),
                 NodeMsg
             ),
             ?event(http, {response, Output}),
             Output;
-        Res -> embed_status(hb_ao:force_message(Res, NodeMsg))
+        Res -> embed_status(hb_ao:force_message(Res, NodeMsg), NodeMsg)
     end.
 
 %% @doc Execute a message from the node message upon the user's request. The
@@ -283,16 +292,16 @@ resolve_processor(PathKey, Processor, Req, Query, NodeMsg) ->
     end.
 
 %% @doc Wrap the result of a device call in a status.
-embed_status({ErlStatus, Res}) when is_map(Res) ->
-    case lists:member(<<"status">>, hb_message:committed(Res)) of
+embed_status({ErlStatus, Res}, NodeMsg) when is_map(Res) ->
+    case lists:member(<<"status">>, hb_message:committed(Res, all, NodeMsg)) of
         false ->
-            HTTPCode = status_code({ErlStatus, Res}),
+            HTTPCode = status_code({ErlStatus, Res}, NodeMsg),
             {ok, Res#{ <<"status">> => HTTPCode }};
         true ->
             {ok, Res}
     end;
-embed_status({ErlStatus, Res}) ->
-    HTTPCode = status_code({ErlStatus, Res}),
+embed_status({ErlStatus, Res}, NodeMsg) ->
+    HTTPCode = status_code({ErlStatus, Res}, NodeMsg),
     {ok, #{ <<"status">> => HTTPCode, <<"body">> => Res }}.
 
 %% @doc Calculate the appropriate HTTP status code for an AO-Core result.
@@ -300,33 +309,33 @@ embed_status({ErlStatus, Res}) ->
 %% 1. The status code from the message.
 %% 2. The HTTP representation of the status code.
 %% 3. The default status code.
-status_code({ErlStatus, Msg}) ->
-    case message_to_status(Msg) of
-        default -> status_code(ErlStatus);
+status_code({ErlStatus, Msg}, NodeMsg) ->
+    case message_to_status(Msg, NodeMsg) of
+        default -> status_code(ErlStatus, NodeMsg);
         RawStatus -> RawStatus
     end;
-status_code(ok) -> 200;
-status_code(error) -> 400;
-status_code(created) -> 201;
-status_code(not_found) -> 404;
-status_code(unavailable) -> 503.
+status_code(ok, _NodeMsg) -> 200;
+status_code(error, _NodeMsg) -> 400;
+status_code(created, _NodeMsg) -> 201;
+status_code(not_found, _NodeMsg) -> 404;
+status_code(unavailable, _NodeMsg) -> 503.
 
 %% @doc Get the HTTP status code from a transaction (if it exists).
-message_to_status(#{ <<"body">> := Status }) when is_atom(Status) ->
-    status_code(Status);
-message_to_status(Item) when is_map(Item) ->
+message_to_status(#{ <<"body">> := Status }, NodeMsg) when is_atom(Status) ->
+    status_code(Status, NodeMsg);
+message_to_status(Item, NodeMsg) when is_map(Item) ->
     % Note: We use `dev_message' directly here, such that we do not cause 
     % additional AO-Core calls for every request. This is particularly important
     % if a remote server is being used for all AO-Core requests by a node.
-    case dev_message:get(<<"status">>, Item) of
+    case dev_message:get(<<"status">>, Item, NodeMsg) of
         {ok, RawStatus} when is_integer(RawStatus) -> RawStatus;
-        {ok, RawStatus} when is_atom(RawStatus) -> status_code(RawStatus);
+        {ok, RawStatus} when is_atom(RawStatus) -> status_code(RawStatus, NodeMsg);
         {ok, RawStatus} -> binary_to_integer(RawStatus);
         _ -> default
     end;
-message_to_status(Item) when is_atom(Item) ->
-    status_code(Item);
-message_to_status(_Item) ->
+message_to_status(Item, NodeMsg) when is_atom(Item) ->
+    status_code(Item, NodeMsg);
+message_to_status(_Item, _NodeMsg) ->
     default.
 
 %% @doc Sign the result of a device call if the node is configured to do so.

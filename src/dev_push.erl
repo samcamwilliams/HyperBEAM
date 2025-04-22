@@ -114,7 +114,8 @@ do_push(Base, Assignment, Opts) ->
                                 <<"message">> => Msg
                             }
                     end,
-                    Outbox
+                    Outbox,
+                    Opts
                 ),
             {ok, maps:merge(Downstream, AdditionalRes#{
                 <<"slot">> => Slot,
