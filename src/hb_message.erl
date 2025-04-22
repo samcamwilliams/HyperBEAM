@@ -536,7 +536,7 @@ match(Map1, Map2, Mode, Opts) ->
                         true -> true;
                         false ->
                             case is_map(Val1) andalso is_map(Val2) of
-                                true -> match(Val1, Val2);
+                                true -> match(Val1, Val2, Mode, Opts);
                                 false ->
                                     case Val1 == Val2 of
                                         true -> true;
