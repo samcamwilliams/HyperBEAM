@@ -63,7 +63,7 @@ ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"type">> := <<"link">> }}, Opts)
             {store, Store}
         }
     ),
-    case hb_cache:read(ID, LinkOpts) of
+    case hb_cache:read(ID, hb_util:deep_merge(Opts, LinkOpts, Opts)) of
         {ok, LinkValue} ->
             ?event(debug_cache,
                 {loaded,
