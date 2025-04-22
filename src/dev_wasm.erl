@@ -226,7 +226,8 @@ compute(RawM1, M2, Opts) ->
                             #{
                                 <<"results/", Prefix/binary, "/type">> => ResType,
                                 <<"results/", Prefix/binary, "/output">> => Res
-                            }
+                            },
+                            Opts
                         )
                     }
             end;
@@ -368,7 +369,8 @@ undefined_import_stub(Msg1, Msg2, Opts) ->
                         X -> X
                     end
                 ]
-        }
+        },
+        Opts
     ),
     {ok, #{ state => Msg3, results => [0] }}.
 

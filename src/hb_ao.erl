@@ -101,7 +101,7 @@
 %%% Shortcuts and tools:
 -export([info/2, keys/1, keys/2, keys/3, truncate_args/2]).
 -export([get/2, get/3, get/4, get_first/2, get_first/3]).
--export([set/2, set/3, set/4, remove/2, remove/3]).
+-export([set/3, set/4, remove/2, remove/3]).
 %%% Exports for tests in hb_ao_test_vectors.erl:
 -export([deep_set/4, is_exported/4]).
 -include("include/hb.hrl").
@@ -830,8 +830,6 @@ keys(Msg, Opts, remove) ->
 %% Like the `get/3' function, this function honors the `error_strategy' option.
 %% `set' works with maps and recursive paths while maintaining the appropriate
 %% `HashPath' for each step.
-set(Msg1, Msg2) ->
-    set(Msg1, Msg2, #{}).
 set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg1 = normalize_keys(RawMsg1),
     Msg2 = hb_maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2)),

@@ -508,7 +508,7 @@ run_as(Key, Msg1, Msg2, Opts) ->
         ),
     case {Status, BaseResult} of
         {ok, #{ <<"device">> := DeviceSet }} ->
-            {ok, hb_ao:set(BaseResult, #{ <<"device">> => BaseDevice })};
+            {ok, hb_ao:set(BaseResult, #{ <<"device">> => BaseDevice }, Opts)};
         _ ->
             ?event({returning_base_result, BaseResult}),
             {Status, BaseResult}

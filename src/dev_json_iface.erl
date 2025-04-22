@@ -43,8 +43,8 @@
 -include("include/hb.hrl").
 
 %% @doc Initialize the device.
-init(M1, _M2, _Opts) ->
-    {ok, hb_ao:set(M1, #{<<"function">> => <<"handle">>})}.
+init(M1, _M2, Opts) ->
+    {ok, hb_ao:set(M1, #{<<"function">> => <<"handle">>}, Opts)}.
 
 %% @doc On first pass prepare the call, on second pass get the results.
 compute(M1, M2, Opts) ->

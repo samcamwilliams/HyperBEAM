@@ -176,7 +176,7 @@ find_latest_outputs(Opts) ->
     ResetRes = hb_store:reset(Store),
     ?event({reset_store, {result, ResetRes}, {store, Store}}),
     Proc1 = dev_process:test_aos_process(),
-    ProcID = hb_util:human_id(hb_ao:get(id, Proc1)),
+    ProcID = hb_util:human_id(hb_ao:get(id, Proc1, Opts)),
     % Create messages for the slots, with only the middle slot having a
     % `/Process' field, while the top slot has a `/Deep/Process' field.
     Msg0 = #{ <<"Results">> => #{ <<"Result-Number">> => 0 } },
