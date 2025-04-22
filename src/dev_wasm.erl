@@ -476,13 +476,10 @@ benchmark_test() ->
     Msg2 =
         hb_maps:merge(
             Msg1,
-            hb_ao:set(
-                #{
-                    <<"function">> => <<"fac">>,
-                    <<"parameters">> => [5.0]
-                },
-                #{ hashpath => ignore }
-            )
+            #{
+                <<"function">> => <<"fac">>,
+                <<"parameters">> => [5.0]
+            }
         ),
     Iterations =
         hb:benchmark(
