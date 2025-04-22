@@ -198,7 +198,7 @@ generate(_M1, _M2, Opts) ->
         <<"node-message">> => NodeMsg,
 		<<"report">> => ReportJSON
     }, Wallet),
-
+	
 	?event({verify_res, hb_message:verify(ReportMsg)}),
 	?event({snp_report_msg, ReportMsg}),
     {ok, ReportMsg}.

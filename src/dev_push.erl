@@ -382,7 +382,7 @@ full_push_test_() ->
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
-        ?event(push, {msg_sched_result, Msg2}),
+        ?event({msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),
@@ -391,6 +391,7 @@ full_push_test_() ->
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
+        ?event(rakis, { msg1, Msg1}),
         {ok, _} = hb_ao:resolve(Msg1, Msg3, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},

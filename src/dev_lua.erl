@@ -241,7 +241,7 @@ compute(Key, RawBase, Req, Opts) ->
     % Resolve all hyperstate links
     ResolvedParams = hb_cache:ensure_all_loaded(Params),
     % Call the VM function with the given arguments.
-    ?event(debug_lua,
+    ?event(lua,
         {calling_lua_func,
             {function, Function},
             {args, ResolvedParams},
@@ -255,8 +255,7 @@ compute(Key, RawBase, Req, Opts) ->
             State
         )
         catch
-            error:Reason ->
-                {error, Reason}
+            _:Reason:Stacktrace -> {error, Reason, Stacktrace}
         end,
         OldPriv
     ).
@@ -265,19 +264,22 @@ compute(Key, RawBase, Req, Opts) ->
 %% HyperBEAM response format.
 process_response({ok, [Result], NewState}, Priv) ->
     process_response({ok, [<<"ok">>, Result], NewState}, Priv);
-process_response({ok, [Status, MsgResult], NewState}, Priv) when is_list(MsgResult) ->
-    % If the result is a Lua list (an AO-Core message), decode it and the
-    % previous `priv' element back into it.
-    {hb_util:atom(Status), (decode(MsgResult))#{
-        <<"priv">> => Priv#{
-            <<"state">> => NewState
-        }
-    }};
-process_response({ok, [Status, BareResult], _NewState}, _Priv) ->
-    {hb_util:atom(Status), BareResult};
-process_response({lua_error, Error, State}, _Priv) ->
+process_response({ok, [Status, MsgResult], NewState}, Priv) ->
+    % If the result is a HyperBEAM device return (`{Status, Msg}'), decode it 
+    % and add the previous `priv' element back into the resulting message.
+    case decode(MsgResult) of
+        Msg when is_map(Msg) ->
+            {hb_util:atom(Status), Msg#{
+                <<"priv">> => Priv#{
+                    <<"state">> => NewState
+                }
+            }};
+        NonMsgRes -> {hb_util:atom(Status), NonMsgRes}
+    end;
+process_response({lua_error, RawError, State}, _Priv) ->
     % An error occurred while calling the Lua function. Parse the stack trace
     % and return it.
+    Error = try decode(luerl:decode(RawError, State)) catch _:_ -> RawError end,
     StackTrace = decode_stacktrace(luerl:get_stacktrace(State), State),
     ?event(lua_error, {lua_error, Error, {stacktrace, StackTrace}}),
     {error, #{
@@ -285,9 +287,18 @@ process_response({lua_error, Error, State}, _Priv) ->
         <<"body">> => Error,
         <<"trace">> => hb_ao:normalize_keys(StackTrace)
     }};
-process_response({error, Reason}, _Priv) ->
+process_response({error, Reason, Trace}, _Priv) ->
     % An Erlang error occurred while calling the Lua function. Return it.
-    {error, Reason}.
+    ?event(lua_error, {trace, Trace}),
+    TraceBin = iolist_to_binary(hb_util:format_trace(Trace)),
+    ?event(lua_error, {formatted, TraceBin}),
+    ReasonBin = iolist_to_binary(io_lib:format("~p", [Reason])),
+    {error, #{
+        <<"status">> => 500,
+        <<"body">> =>
+            << "Erlang error while running Lua: ", ReasonBin/binary >>,
+        <<"trace">> => TraceBin
+    }}.
 
 %% @doc Snapshot the Lua state from a live computation. Normalizes its `priv'
 %% state element, then serializes the state to a binary.
@@ -338,16 +349,29 @@ normalize(Base, _Req, RawOpts) ->
     end.
 
 %% @doc Decode a Lua result into a HyperBEAM `structured@1.0' message.
-decode(Map = [{_K, _V} | _]) when is_list(Map) ->
-    maps:map(fun(_, V) -> decode(V) end, maps:from_list(Map));
+decode(EncMsg = [{_K, _V} | _]) when is_list(EncMsg) ->
+    decode(maps:map(fun(_, V) -> decode(V) end, maps:from_list(EncMsg)));
+decode(Msg) when is_map(Msg) ->
+    % If the message is an ordered list encoded as a map, decode it to a list.
+    case hb_util:is_ordered_list(Msg) of
+        true ->
+            lists:map(fun decode/1, hb_util:message_to_ordered_list(Msg));
+        false ->
+            Msg
+    end;
 decode(Other) ->
     Other.
 
-%% @doc Encode a HyperBEAM `structured@1.0' message into a Lua result.
+%% @doc Encode a HyperBEAM `structured@1.0' message into a Lua term.
 encode(Map) when is_map(Map) ->
-    maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map));
+    case hb_util:is_ordered_list(Map) of
+        true -> encode(hb_util:message_to_ordered_list(Map));
+        false -> maps:to_list(maps:map(fun(_, V) -> encode(V) end, Map))
+    end;
 encode(List) when is_list(List) ->
     lists:map(fun encode/1, List);
+encode(Atom) when is_atom(Atom) and (Atom /= false) and (Atom /= true)->
+    hb_util:bin(Atom);
 encode(Other) ->
     Other.
 
@@ -620,7 +644,7 @@ aos_authority_not_trusted_test() ->
                     <<"data">> => <<"1 + 1">>,
                     <<"random-seed">> => rand:uniform(1337),
                     <<"action">> => <<"Eval">>,
-                    <<"from-process">> => "x1234"
+                    <<"from-process">> => <<"1234">>
 
         }, GuestWallet)
       }, GuestWallet
@@ -689,6 +713,15 @@ generate_lua_process(File) ->
 generate_test_message(Process) ->
     ProcID = hb_message:id(Process, all),
     Wallet = hb:wallet(),
+    Code = """ 
+      Count = 0
+      function add() 
+        Send({Target = 'Foo', Data = 'Bar' });
+        Count = Count + 1 
+      end
+      add()
+      return Count
+    """,
     hb_message:commit(#{
             <<"path">> => <<"schedule">>,
             <<"method">> => <<"POST">>,
@@ -699,9 +732,7 @@ generate_test_message(Process) ->
                         <<"type">> => <<"Message">>,
                         <<"body">> => #{
                             <<"content-type">> => <<"application/lua">>,
-                            % <<"body">> => <<"1">>
-                            <<"body">> => <<"Count = 0; function add() Send({Target = 'Foo', Data = 'Bar' }); Count = Count + 1 end\n add()\n return Count">>
-                            
+                            <<"body">> => list_to_binary(Code) 
                         },
                         <<"random-seed">> => rand:uniform(1337),
                         <<"action">> => <<"Eval">>
