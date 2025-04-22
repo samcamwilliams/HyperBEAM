@@ -443,7 +443,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
         case hb_opts:get(verify_assignments, true, Opts) of
             true ->
                 ?event({verifying_message_before_scheduling, Msg2}),
-                hb_message:verify(Msg2, signers);
+                hb_message:verify(Msg2, signers, Opts);
             false -> true
         end,
     % Handle scheduling of the message if the message is valid.

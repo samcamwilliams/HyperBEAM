@@ -239,7 +239,7 @@ compute(Key, RawBase, Req, Opts) ->
         ),
     ?event(debug_lua, parameters_found),
     % Resolve all hyperstate links
-    ResolvedParams = hb_cache:ensure_all_loaded(Params),
+    ResolvedParams = hb_cache:ensure_all_loaded(Params, Opts),
     % Call the VM function with the given arguments.
     ?event(lua,
         {calling_lua_func,

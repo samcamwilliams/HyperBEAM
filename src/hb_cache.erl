@@ -253,7 +253,7 @@ calculate_all_ids(Msg, Opts) ->
     Commitments =
         hb_maps:without(
             [<<"priv">>],
-            hb_maps:get(<<"commitments">>, Msg, #{})
+            hb_maps:get(<<"commitments">>, Msg, #{}, Opts)
         ),
     CommIDs = hb_maps:keys(Commitments),
     case lists:member(All = hb_message:id(Msg, all, Opts), CommIDs) of

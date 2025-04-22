@@ -532,7 +532,7 @@ encode_reply(TABMReq, Message, Opts) ->
                     Message,
                     <<"httpsig@1.0">>,
                     <<"structured@1.0">>,
-                    #{ topic => ao_internal }
+                    Opts#{ topic => ao_internal }
                 ),
             {
                 ok,
@@ -680,7 +680,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
             Opts
         ),
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
-    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg) of
+    case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg, all, Opts) of
         true ->
             ?event(http_verify, {verified_signature, SignedMsg}),
             Signers = hb_message:signers(SignedMsg),

@@ -46,7 +46,7 @@
 
 %% @doc Convert a map to a dictionary.
 to_dictionary(Map) when is_map(Map) ->
-   to_dictionary(hb_maps:to_list(Map));
+   to_dictionary(maps:to_list(Map));
 to_dictionary(Pairs) when is_list(Pairs) ->
     to_dictionary([], Pairs).
 
@@ -516,7 +516,7 @@ trim_ws_end(Value, N) ->
 -spec dictionary(#{binary() => sh_item() | sh_inner_list()} | sh_dictionary()) ->
     iolist().
 dictionary(Map) when is_map(Map) ->
-    dictionary(hb_maps:to_list(Map));
+    dictionary(maps:to_list(Map));
 dictionary(KVList) when is_list(KVList) ->
     lists:join(
         <<", ">>,

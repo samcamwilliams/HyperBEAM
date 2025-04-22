@@ -85,7 +85,7 @@ calculate_ids(Base, Req, NodeOpts) ->
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
-    LinkifiedBase = hb_link:linkify(Base),
+    LinkifiedBase = hb_link:linkify(Base, discard, NodeOpts),
     ?event(linkify, {generating_id, {idmod, IDMod}, {linkified_base, LinkifiedBase}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 

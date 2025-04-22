@@ -55,7 +55,7 @@
 -module(hb_message).
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, uncommitted/1, with_only_committers/2]).
--export([verify/1, verify/2, commit/2, commit/3, signers/1, type/1, minimize/1]).
+-export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/1, type/1, minimize/1]).
 -export([committed/1, committed/2, committed/3]).
 -export([commitment/2, commitment/3]).
 -export([with_only_committed/1, with_only_committed/2]).
@@ -252,9 +252,14 @@ committed(Msg, CommittersMsg, Opts) ->
     CommittedKeys.
 
 %% @doc wrapper function to verify a message.
-verify(Msg) -> verify(Msg, <<"all">>).
-verify(Msg, signers) -> verify(Msg, hb_message:signers(Msg));
+verify(Msg) -> verify(Msg, all).
 verify(Msg, Committers) ->
+    verify(Msg, Committers, #{}).
+verify(Msg, all, Opts) ->
+    verify(Msg, <<"all">>, Opts);
+verify(Msg, signers, Opts) ->
+    verify(Msg, hb_message:signers(Msg), Opts);
+verify(Msg, Committers, Opts) ->
     {ok, Res} =
         dev_message:verify(
             Msg,
@@ -264,7 +269,8 @@ verify(Msg, Committers) ->
                     false -> Committers
                 end
             },
-            #{}),
+            Opts
+        ),
     Res.
 
 %% @doc Return the unsigned version of a message in AO-Core format.
