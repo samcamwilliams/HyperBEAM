@@ -330,7 +330,7 @@ cache_write_message_test() ->
     ?event(dev_cache, {cache_api_test, {data_written, Path}}),
     {ok, ReadData} = hb_cache:read(Path, Opts),
     ?event(dev_cache, {cache_api_test, {data_read, ReadData}}),
-    ?assert(hb_message:match(TestData, ReadData, only_present)),
+    ?assert(hb_message:match(TestData, ReadData, only_present, Opts)),
     ?event(dev_cache, {cache_api_test}),
     ok.
 
@@ -340,7 +340,6 @@ cache_write_binary_test() ->
     {ok, Opts, _} = setup_test_env(),
     TestData = <<"test_binary">>,
     {ok, Path} = hb_cache:write(TestData, Opts),
-    ?event(dev_cache, {cache_api_test, {data_written, Path}}),
     {ok, ReadData} = hb_cache:read(Path, Opts),
     ?event(dev_cache, {cache_api_test, {data_read, ReadData}}),
     ?assertEqual(TestData, ReadData),

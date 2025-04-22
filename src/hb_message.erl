@@ -60,7 +60,7 @@
 -export([commitment/2, commitment/3]).
 -export([with_only_committed/1, with_only_committed/2]).
 -export([with_commitments/2, without_commitments/2]).
--export([match/2, match/3, find_target/3]).
+-export([match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
 %%% Debugging tools:
@@ -493,8 +493,10 @@ type(Msg) when is_map(Msg) ->
 %%      `only_present': Only present keys in both maps must match.
 %%      `primary': Only the primary map's keys must be present.
 match(Map1, Map2) ->
-    match(Map1, Map2, strict).
+    match(Map1, Map2, strict, #{}).
 match(Map1, Map2, Mode) ->
+    match(Map1, Map2, Mode, #{}).
+match(Map1, Map2, Mode, Opts) ->
      Keys1 =
         hb_maps:keys(
             NormMap1 = minimize(
@@ -520,8 +522,8 @@ match(Map1, Map2, Mode) ->
         true ->
             lists:all(
                 fun(Key) ->
-                    Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found)),
-                    Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found)),
+                    Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found, Opts)),
+                    Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found, Opts)),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
