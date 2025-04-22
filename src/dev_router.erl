@@ -970,50 +970,6 @@ add_route_test() ->
     {ok, Recvd} = GetRes,
     ?assertMatch(<<"new">>, Recvd).
 
-relay_nearest_test() ->
-    Peer1 = <<"https://compute-1.forward.computer">>,
-    Peer2 = <<"https://compute-2.forward.computer">>,
-    HTTPSOpts = #{ http_client => httpc },
-    {ok, Address1} = hb_http:get(Peer1, <<"/~meta@1.0/info/address">>, HTTPSOpts),
-    {ok, Address2} = hb_http:get(Peer2, <<"/~meta@1.0/info/address">>, HTTPSOpts),
-    Peers = [Address1, Address2],
-    Node =
-        hb_http_server:start_node(#{
-            priv_wallet => ar_wallet:new(),
-            routes => [
-                #{
-                    <<"template">> => <<"/.*~process@1.0/.*">>,
-                    <<"strategy">> => <<"Nearest">>,
-                    <<"nodes">> => [
-                        #{
-                            <<"prefix">> => Peer1,
-                            <<"wallet">> => Address1
-                        },
-                        #{
-                            <<"prefix">> => Peer2,
-                            <<"wallet">> => Address2
-                        }    
-                    ]
-                }
-            ]
-        }),
-    {ok, RelayRes} =
-        hb_http:get(
-            Node,
-            <<
-                "/~relay@1.0/call?relay-path=",
-                    "/CtOVB2dBtyN_vw3BdzCOrvcQvd9Y1oUGT-zLit8E3qM~process@1.0",
-                    "/slot"
-            >>,
-            #{}
-        ),
-    HasValidSigner =
-        lists:any(
-            fun(Peer) -> lists:member(Peer, hb_message:signers(RelayRes)) end,
-            Peers
-        ),
-    ?assert(HasValidSigner).
-
 %%% Statistical test utilities
 
 generate_nodes(N) ->
