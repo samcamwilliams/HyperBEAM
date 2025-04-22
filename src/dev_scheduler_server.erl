@@ -115,8 +115,8 @@ do_assign(State, Message, ReplyPID) ->
                 <<"timestamp">> => erlang:system_time(millisecond),
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
-            }, Opts = hb_maps:get(opts, State)),
-            AssignmentID = hb_message:id(Assignment, all, Opts),
+            }, maps:get(wallet, State)),
+            AssignmentID = hb_message:id(Assignment, all, maps:get(opts, State)),
             ?event(scheduling,
                 {assigned,
                     {proc_id, maps:get(id, State)},
