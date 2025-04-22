@@ -34,7 +34,8 @@ handle(Key, M1, M2, Opts) ->
                     ?event({not_seen, Msg2ID}),
                     M3 = hb_ao:set(
                         M1,
-                        #{ <<"dedup">> => [Msg2ID|Dedup] }
+                        #{ <<"dedup">> => [Msg2ID|Dedup] },
+                        Opts
                     ),
                     ?event({dedup_updated, M3}),
                     {ok, M3}
