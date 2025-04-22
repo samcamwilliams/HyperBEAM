@@ -97,7 +97,7 @@ route(_, Msg, Opts) ->
     case (R =/= no_matches) andalso hb_ao:get(<<"node">>, R, Opts) of
         false -> {error, no_matches};
         Node when is_binary(Node) -> {ok, Node};
-        Node when is_map(Node) -> apply_route(Msg, Node);
+        Node when is_map(Node) -> apply_route(Msg, Node, Opts);
         not_found ->
             ModR = apply_routes(Msg, R, Opts),
             case hb_ao:get(<<"strategy">>, R, Opts) of
@@ -119,7 +119,7 @@ route(_, Msg, Opts) ->
                     }),
                     case Chosen of
                         [Node] when is_map(Node) ->
-                            apply_route(Msg, Node);
+                            apply_route(Msg, Node, Opts);
                         [NodeURI] -> {ok, NodeURI};
                         ChosenNodes ->
                             {ok,
@@ -127,7 +127,7 @@ route(_, Msg, Opts) ->
                                     <<"nodes">>,
                                     hb_maps:map(
                                         fun(Node) ->
-                                            hb_util:ok(apply_route(Msg, Node))
+                                            hb_util:ok(apply_route(Msg, Node, Opts))
                                         end,
                                         Chosen,
                                         Opts
@@ -185,7 +185,7 @@ apply_routes(Msg, R, Opts) ->
         lists:map(
             fun(N) ->
                 ?event(debug, {apply_route, {msg, Msg}, {node, N}}),
-                case apply_route(Msg, N) of
+                case apply_route(Msg, N, Opts) of
                     {ok, URI} when is_binary(URI) -> N#{ <<"uri">> => URI };
                     {ok, RMsg} -> maps:merge(N, RMsg);
                     {error, _} -> N
@@ -202,18 +202,35 @@ apply_routes(Msg, R, Opts) ->
 %% - `prefix': The prefix to add to the path.
 %% - `suffix': The suffix to add to the path.
 %% - `replace': A regex to replace in the path.
-apply_route(Msg, Route = #{ <<"opts">> := Opts }) ->
+apply_route(Msg, Route = #{ <<"opts">> := RouteOpts }, Opts) ->
     {ok, #{
-        <<"opts">> => Opts,
-        <<"uri">> => hb_util:ok(apply_route(Msg, hb_maps:without([<<"opts">>], Route)))
+        <<"opts">> => hb_cache:ensure_loaded(RouteOpts, Opts),
+        <<"uri">> =>
+            hb_util:ok(
+                apply_route(
+                    Msg,
+                    hb_maps:without([<<"opts">>], Route),
+                    Opts
+                )
+            )
     }};
-apply_route(#{ <<"route-path">> := Path }, R) ->
-    apply_route(#{ <<"path">> => Path }, R);
-apply_route(#{ <<"path">> := Path }, #{ <<"prefix">> := Prefix }) ->
+apply_route(#{ <<"route-path">> := Path }, R, Opts) ->
+    apply_route(#{ <<"path">> => Path }, R, Opts);
+apply_route(#{ <<"path">> := RawPath }, #{ <<"prefix">> := RawPrefix }, Opts) ->
+    Path = hb_cache:ensure_loaded(RawPath, Opts),
+    Prefix = hb_cache:ensure_loaded(RawPrefix, Opts),
     {ok, <<Prefix/binary, Path/binary>>};
-apply_route(#{ <<"path">> := Path }, #{ <<"suffix">> := Suffix }) ->
+apply_route(#{ <<"path">> := RawPath }, #{ <<"suffix">> := RawSuffix }, Opts) ->
+    Path = hb_cache:ensure_loaded(RawPath, Opts),
+    Suffix = hb_cache:ensure_loaded(RawSuffix, Opts),
     {ok, <<Path/binary, Suffix/binary>>};
-apply_route(#{ <<"path">> := Path }, #{ <<"match">> := Match, <<"with">> := With }) ->
+apply_route(
+        #{ <<"path">> := RawPath },
+        #{ <<"match">> := RawMatch, <<"with">> := RawWith },
+        Opts) ->
+    Path = hb_cache:ensure_loaded(RawPath, Opts),
+    Match = hb_cache:ensure_loaded(RawMatch, Opts),
+    With = hb_cache:ensure_loaded(RawWith, Opts),
     % Apply the regex to the path and replace the first occurrence.
     case re:replace(Path, Match, With, [global]) of
         NewPath when is_binary(NewPath) ->
@@ -527,7 +544,7 @@ local_dynamic_router_test() ->
                     hb_http:get(
                         Node,
                         <<"/~router@1.0/route/uri?route-path=/procID~process@1.0/now">>,
-                        #{}
+                        Opts
                     )
                 )
             end,
