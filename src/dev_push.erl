@@ -357,6 +357,7 @@ full_push_test_() ->
     {timeout, 30, fun() ->
         dev_process:init(),
         Opts = #{
+            process_async_cache => false,
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>,
             store => [
@@ -392,7 +393,6 @@ full_push_test_() ->
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
-        ?event(rakis, { msg1, Msg1}),
         {ok, _} = hb_ao:resolve(Msg1, Msg3, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},

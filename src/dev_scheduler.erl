@@ -292,7 +292,7 @@ status(_M1, _M2, _Opts) ->
 register(_Msg1, Req, Opts) ->
     % Ensure that the request is signed by the operator.
     ?event({registering_scheduler, {msg1, _Msg1}, {req, Req}, {opts, Opts}}),
-    {ok, OnlyCommitted} = hb_message:with_only_committed(Req),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Req, Opts),
     ?event({only_committed, OnlyCommitted}),
     Signers = hb_message:signers(OnlyCommitted),
     Operator =
@@ -393,7 +393,7 @@ post_schedule(Msg1, Msg2, Opts) ->
         end,
     ?event({proc_id, ProcID}),
     % Filter all unsigned keys from the source message.
-    case hb_message:with_only_committed(ToSched) of
+    case hb_message:with_only_committed(ToSched, Opts) of
         {ok, OnlyCommitted} ->
             ?event(
                 {post_schedule,

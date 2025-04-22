@@ -204,7 +204,6 @@ do_write_message(Msg, AllIDs, Store, Opts) when is_map(Msg) ->
     % hashpaths (having only two parts) as we do so.
     % We start by writing the group, such that if the message is empty, we
     % still have a group in the store.
-    hb_store:make_group(Store, UncommittedID),
     ?event({writing_message, Msg}),
     hb_maps:map(
         fun(<<"device">>, Map) when is_map(Map) ->
@@ -313,7 +312,6 @@ store_read(Path, Store, Opts) ->
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, RawSubpaths} ->
                     Subpaths = lists:map(fun hb_ao:normalize_key/1, RawSubpaths),
-                    
                     ?event(
                         {listed,
                             {original_path, Path},

@@ -963,7 +963,7 @@ aos_state_patch_test_() ->
             <<"patch@1.0">>,
             <<"Multipass@1.0">>
         ]),
-        {ok, Msg1} = hb_message:with_only_committed(Msg1Raw),
+        {ok, Msg1} = hb_message:with_only_committed(Msg1Raw, #{}),
         ProcID = hb_message:id(Msg1, all),
         Msg2 = (hb_message:commit(#{
             <<"data-protocol">> => <<"ao">>,
@@ -994,7 +994,7 @@ do_test_restore() ->
     % 1. Set variables in Lua.
     % 2. Return the variable.
     % Execute the first computation, then the second as a disconnected process.
-    Opts = #{ process_cache_frequency => 1 },
+    Opts = #{ process_cache_frequency => 1, process_async_cache => false },
     init(),
     Store = hb_opts:get(store, no_viable_store, Opts),
     ResetRes = hb_store:reset(Store),
@@ -1031,15 +1031,19 @@ now_results_test_() ->
 prior_results_accessible_test_() ->
 	{timeout, 30, fun() ->
 		init(),
-		Msg1 = test_aos_process(),
-		schedule_aos_call(Msg1, <<"return 1+1">>),
-		schedule_aos_call(Msg1, <<"return 2+2">>),
-		?assertEqual({ok, <<"4">>}, hb_ao:resolve(Msg1, <<"now/results/data">>, #{})),
-		?assertMatch({ok, #{ <<"results">> := #{ <<"data">> := <<"4">> } }},
-			hb_ao:resolve(
-				Msg1,
-				#{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-				#{}
+		Opts = #{ process_cache_frequency => 1, process_async_cache => false },
+		Msg1 = test_aos_process(Opts),
+		schedule_aos_call(Msg1, <<"return 1+1">>, Opts),
+		schedule_aos_call(Msg1, <<"return 2+2">>, Opts),
+		?assertEqual({ok, <<"4">>}, hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)),
+		?assertMatch({ok, <<"4">>},
+			hb_ao:resolve_many([
+				    Msg1,
+				    #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
+                    <<"results">>,
+                    <<"data">>
+				],
+				Opts
 			)
 		)
 	end}.

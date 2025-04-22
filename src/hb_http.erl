@@ -740,10 +740,10 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
         ),
     Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
-remove_unsigned_fields(Msg, _Opts) ->
+remove_unsigned_fields(Msg, Opts) ->
     case hb_message:signers(Msg) of
         [] -> {ok, Msg};
-        _ -> hb_message:with_only_committed(Msg)
+        _ -> hb_message:with_only_committed(Msg, Opts)
     end.
 
 %%% Tests
