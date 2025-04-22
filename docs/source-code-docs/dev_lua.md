@@ -10,24 +10,16 @@ A device that calls a Lua script upon a request and returns the result.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_ao_core_resolver-3">add_ao_core_resolver/3*</a></td><td>Add a HTTP-style AO-Core resolution function to the Lua environment.</td></tr><tr><td valign="top"><a href="#ao_core_resolution_from_lua_test-0">ao_core_resolution_from_lua_test/0*</a></td><td>Run an AO-Core resolution from the Lua environment.</td></tr><tr><td valign="top"><a href="#ao_core_sandbox_test-0">ao_core_sandbox_test/0*</a></td><td>Run an AO-Core resolution from the Lua environment.</td></tr><tr><td valign="top"><a href="#aos_authority_not_trusted_test-0">aos_authority_not_trusted_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#aos_process_benchmark_test_-0">aos_process_benchmark_test_/0*</a></td><td>Benchmark the performance of Lua executions.</td></tr><tr><td valign="top"><a href="#compute-4">compute/4*</a></td><td>Call the Lua script with the given arguments.</td></tr><tr><td valign="top"><a href="#decode-1">decode/1*</a></td><td>Decode a Lua result into a HyperBEAM <code>structured@1.0</code> message.</td></tr><tr><td valign="top"><a href="#direct_benchmark_test-0">direct_benchmark_test/0*</a></td><td>Benchmark the performance of Lua executions.</td></tr><tr><td valign="top"><a href="#encode-1">encode/1*</a></td><td>Encode a HyperBEAM <code>structured@1.0</code> message into a Lua result.</td></tr><tr><td valign="top"><a href="#ensure_initialized-3">ensure_initialized/3*</a></td><td>Initialize the Lua VM if it is not already initialized.</td></tr><tr><td valign="top"><a href="#execute_aos_call-1">execute_aos_call/1*</a></td><td></td></tr><tr><td valign="top"><a href="#execute_aos_call-2">execute_aos_call/2*</a></td><td></td></tr><tr><td valign="top"><a href="#find_script-2">find_script/2*</a></td><td>Find the script in the base message, either by ID or by string.</td></tr><tr><td valign="top"><a href="#generate_lua_process-1">generate_lua_process/1*</a></td><td>Generate a Lua process message.</td></tr><tr><td valign="top"><a href="#generate_stack-1">generate_stack/1*</a></td><td>Generate a stack message for the Lua process.</td></tr><tr><td valign="top"><a href="#generate_test_message-1">generate_test_message/1*</a></td><td>Generate a test message for a Lua process.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>All keys that are not directly available in the base message are
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#ao_core_resolution_from_lua_test-0">ao_core_resolution_from_lua_test/0*</a></td><td>Run an AO-Core resolution from the Lua environment.</td></tr><tr><td valign="top"><a href="#ao_core_sandbox_test-0">ao_core_sandbox_test/0*</a></td><td>Run an AO-Core resolution from the Lua environment.</td></tr><tr><td valign="top"><a href="#aos_authority_not_trusted_test-0">aos_authority_not_trusted_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#aos_process_benchmark_test_-0">aos_process_benchmark_test_/0*</a></td><td>Benchmark the performance of Lua executions.</td></tr><tr><td valign="top"><a href="#compute-4">compute/4*</a></td><td>Call the Lua script with the given arguments.</td></tr><tr><td valign="top"><a href="#decode-1">decode/1</a></td><td>Decode a Lua result into a HyperBEAM <code>structured@1.0</code> message.</td></tr><tr><td valign="top"><a href="#decode_params-2">decode_params/2*</a></td><td>Decode a list of Lua references, as found in a stack trace, into a
+list of Erlang terms.</td></tr><tr><td valign="top"><a href="#decode_stacktrace-2">decode_stacktrace/2*</a></td><td>Parse a Lua stack trace into a list of messages.</td></tr><tr><td valign="top"><a href="#decode_stacktrace-3">decode_stacktrace/3*</a></td><td></td></tr><tr><td valign="top"><a href="#direct_benchmark_test-0">direct_benchmark_test/0*</a></td><td>Benchmark the performance of Lua executions.</td></tr><tr><td valign="top"><a href="#encode-1">encode/1</a></td><td>Encode a HyperBEAM <code>structured@1.0</code> message into a Lua term.</td></tr><tr><td valign="top"><a href="#ensure_initialized-3">ensure_initialized/3*</a></td><td>Initialize the Lua VM if it is not already initialized.</td></tr><tr><td valign="top"><a href="#error_response_test-0">error_response_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#execute_aos_call-1">execute_aos_call/1*</a></td><td></td></tr><tr><td valign="top"><a href="#execute_aos_call-2">execute_aos_call/2*</a></td><td></td></tr><tr><td valign="top"><a href="#find_scripts-2">find_scripts/2*</a></td><td>Find the script in the base message, either by ID or by string.</td></tr><tr><td valign="top"><a href="#functions-3">functions/3</a></td><td>Return a list of all functions in the Lua environment.</td></tr><tr><td valign="top"><a href="#generate_lua_process-1">generate_lua_process/1*</a></td><td>Generate a Lua process message.</td></tr><tr><td valign="top"><a href="#generate_stack-1">generate_stack/1*</a></td><td>Generate a stack message for the Lua process.</td></tr><tr><td valign="top"><a href="#generate_test_message-1">generate_test_message/1*</a></td><td>Generate a test message for a Lua process.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>All keys that are not directly available in the base message are
 resolved by calling the Lua function in the script of the same name.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Initialize the device state, loading the script into memory if it is
 a reference.</td></tr><tr><td valign="top"><a href="#initialize-3">initialize/3*</a></td><td>Initialize a new Lua state with a given base message and script.</td></tr><tr><td valign="top"><a href="#invoke_aos_test-0">invoke_aos_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#invoke_non_compute_key_test-0">invoke_non_compute_key_test/0*</a></td><td>Call a non-compute key on a Lua device message and ensure that the
-function of the same name in the script is called.</td></tr><tr><td valign="top"><a href="#lua_http_preprocessor_test-0">lua_http_preprocessor_test/0*</a></td><td>Use a Lua script as a preprocessor on the HTTP server via <code>~meta@1.0</code>.</td></tr><tr><td valign="top"><a href="#normalize-3">normalize/3</a></td><td>Restore the Lua state from a snapshot, if it exists.</td></tr><tr><td valign="top"><a href="#pure_lua_process_benchmark_test_-0">pure_lua_process_benchmark_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pure_lua_process_test-0">pure_lua_process_test/0*</a></td><td>Call a process whose <code>execution-device</code> is set to <code>lua@5.3a</code>.</td></tr><tr><td valign="top"><a href="#sandbox-3">sandbox/3*</a></td><td>Sandbox (render inoperable) a set of Lua functions.</td></tr><tr><td valign="top"><a href="#sandboxed_failure_test-0">sandboxed_failure_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_invocation_test-0">simple_invocation_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Snapshot the Lua state from a live computation.</td></tr></table>
+function of the same name in the script is called.</td></tr><tr><td valign="top"><a href="#load_scripts-2">load_scripts/2*</a></td><td>Load a list of scripts for installation into the Lua VM.</td></tr><tr><td valign="top"><a href="#load_scripts-3">load_scripts/3*</a></td><td></td></tr><tr><td valign="top"><a href="#lua_http_preprocessor_test-0">lua_http_preprocessor_test/0*</a></td><td>Use a Lua script as a preprocessor on the HTTP server via <code>~meta@1.0</code>.</td></tr><tr><td valign="top"><a href="#multiple_scripts_test-0">multiple_scripts_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#normalize-3">normalize/3</a></td><td>Restore the Lua state from a snapshot, if it exists.</td></tr><tr><td valign="top"><a href="#process_response-2">process_response/2*</a></td><td>Process a response to a Luerl invocation.</td></tr><tr><td valign="top"><a href="#pure_lua_process_benchmark_test_-0">pure_lua_process_benchmark_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#pure_lua_process_test-0">pure_lua_process_test/0*</a></td><td>Call a process whose <code>execution-device</code> is set to <code>lua@5.3a</code>.</td></tr><tr><td valign="top"><a href="#sandbox-3">sandbox/3*</a></td><td>Sandbox (render inoperable) a set of Lua functions.</td></tr><tr><td valign="top"><a href="#sandboxed_failure_test-0">sandboxed_failure_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_invocation_test-0">simple_invocation_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Snapshot the Lua state from a live computation.</td></tr></table>
 
 
 <a name="functions"></a>
 
 ## Function Details ##
-
-<a name="add_ao_core_resolver-3"></a>
-
-### add_ao_core_resolver/3 * ###
-
-`add_ao_core_resolver(Base, State, Opts) -> any()`
-
-Add a HTTP-style AO-Core resolution function to the Lua environment.
-Optionally, limit the devices that the environment can make use of.
 
 <a name="ao_core_resolution_from_lua_test-0"></a>
 
@@ -69,11 +61,34 @@ Call the Lua script with the given arguments.
 
 <a name="decode-1"></a>
 
-### decode/1 * ###
+### decode/1 ###
 
-`decode(Map) -> any()`
+`decode(EncMsg) -> any()`
 
 Decode a Lua result into a HyperBEAM `structured@1.0` message.
+
+<a name="decode_params-2"></a>
+
+### decode_params/2 * ###
+
+`decode_params(Rest, State) -> any()`
+
+Decode a list of Lua references, as found in a stack trace, into a
+list of Erlang terms.
+
+<a name="decode_stacktrace-2"></a>
+
+### decode_stacktrace/2 * ###
+
+`decode_stacktrace(StackTrace, State0) -> any()`
+
+Parse a Lua stack trace into a list of messages.
+
+<a name="decode_stacktrace-3"></a>
+
+### decode_stacktrace/3 * ###
+
+`decode_stacktrace(Rest, State, Acc) -> any()`
 
 <a name="direct_benchmark_test-0"></a>
 
@@ -85,11 +100,11 @@ Benchmark the performance of Lua executions.
 
 <a name="encode-1"></a>
 
-### encode/1 * ###
+### encode/1 ###
 
 `encode(Map) -> any()`
 
-Encode a HyperBEAM `structured@1.0` message into a Lua result.
+Encode a HyperBEAM `structured@1.0` message into a Lua term.
 
 <a name="ensure_initialized-3"></a>
 
@@ -100,6 +115,12 @@ Encode a HyperBEAM `structured@1.0` message into a Lua result.
 Initialize the Lua VM if it is not already initialized. Optionally takes
 the script as a  Binary string. If not provided, the script will be loaded
 from the base message.
+
+<a name="error_response_test-0"></a>
+
+### error_response_test/0 * ###
+
+`error_response_test() -> any()`
 
 <a name="execute_aos_call-1"></a>
 
@@ -113,13 +134,21 @@ from the base message.
 
 `execute_aos_call(Base, Req) -> any()`
 
-<a name="find_script-2"></a>
+<a name="find_scripts-2"></a>
 
-### find_script/2 * ###
+### find_scripts/2 * ###
 
-`find_script(Base, Opts) -> any()`
+`find_scripts(Base, Opts) -> any()`
 
 Find the script in the base message, either by ID or by string.
+
+<a name="functions-3"></a>
+
+### functions/3 ###
+
+`functions(Base, Req, Opts) -> any()`
+
+Return a list of all functions in the Lua environment.
 
 <a name="generate_lua_process-1"></a>
 
@@ -153,6 +182,8 @@ Generate a test message for a Lua process.
 
 All keys that are not directly available in the base message are
 resolved by calling the Lua function in the script of the same name.
+Additionally, we exclude the `keys`, `set`, `encode` and `decode` functions
+which are `message@1.0` core functions, and Lua public utility functions.
 
 <a name="init-3"></a>
 
@@ -167,7 +198,7 @@ a reference.
 
 ### initialize/3 * ###
 
-`initialize(Base, Script, Opts) -> any()`
+`initialize(Base, Scripts, Opts) -> any()`
 
 Initialize a new Lua state with a given base message and script.
 
@@ -186,6 +217,20 @@ Initialize a new Lua state with a given base message and script.
 Call a non-compute key on a Lua device message and ensure that the
 function of the same name in the script is called.
 
+<a name="load_scripts-2"></a>
+
+### load_scripts/2 * ###
+
+`load_scripts(Scripts, Opts) -> any()`
+
+Load a list of scripts for installation into the Lua VM.
+
+<a name="load_scripts-3"></a>
+
+### load_scripts/3 * ###
+
+`load_scripts(Rest, Opts, Acc) -> any()`
+
 <a name="lua_http_preprocessor_test-0"></a>
 
 ### lua_http_preprocessor_test/0 * ###
@@ -194,6 +239,12 @@ function of the same name in the script is called.
 
 Use a Lua script as a preprocessor on the HTTP server via `~meta@1.0`.
 
+<a name="multiple_scripts_test-0"></a>
+
+### multiple_scripts_test/0 * ###
+
+`multiple_scripts_test() -> any()`
+
 <a name="normalize-3"></a>
 
 ### normalize/3 ###
@@ -201,6 +252,15 @@ Use a Lua script as a preprocessor on the HTTP server via `~meta@1.0`.
 `normalize(Base, Req, RawOpts) -> any()`
 
 Restore the Lua state from a snapshot, if it exists.
+
+<a name="process_response-2"></a>
+
+### process_response/2 * ###
+
+`process_response(X1, Priv) -> any()`
+
+Process a response to a Luerl invocation. Returns the typical AO-Core
+HyperBEAM response format.
 
 <a name="pure_lua_process_benchmark_test_-0"></a>
 
