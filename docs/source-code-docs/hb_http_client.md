@@ -17,7 +17,8 @@ project, and has been modified for use in HyperBEAM.<a name="index"></a>
 
 
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#await_response-2">await_response/2*</a></td><td></td></tr><tr><td valign="top"><a href="#dec_prometheus_gauge-1">dec_prometheus_gauge/1*</a></td><td>Safe wrapper for prometheus_gauge:dec/2.</td></tr><tr><td valign="top"><a href="#download_metric-2">download_metric/2*</a></td><td></td></tr><tr><td valign="top"><a href="#get_status_class-1">get_status_class/1*</a></td><td>Return the HTTP status class label for cowboy_requests_total and
-gun_requests_total metrics.</td></tr><tr><td valign="top"><a href="#gun_req-3">gun_req/3*</a></td><td></td></tr><tr><td valign="top"><a href="#handle_call-3">handle_call/3</a></td><td></td></tr><tr><td valign="top"><a href="#handle_cast-2">handle_cast/2</a></td><td></td></tr><tr><td valign="top"><a href="#handle_info-2">handle_info/2</a></td><td></td></tr><tr><td valign="top"><a href="#httpc_req-3">httpc_req/3*</a></td><td></td></tr><tr><td valign="top"><a href="#inc_prometheus_counter-3">inc_prometheus_counter/3*</a></td><td></td></tr><tr><td valign="top"><a href="#inc_prometheus_gauge-1">inc_prometheus_gauge/1*</a></td><td>Safe wrapper for prometheus_gauge:inc/2.</td></tr><tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr><tr><td valign="top"><a href="#init_prometheus-1">init_prometheus/1*</a></td><td></td></tr><tr><td valign="top"><a href="#log-5">log/5*</a></td><td></td></tr><tr><td valign="top"><a href="#method_to_list-1">method_to_list/1*</a></td><td></td></tr><tr><td valign="top"><a href="#open_connection-2">open_connection/2*</a></td><td></td></tr><tr><td valign="top"><a href="#parse_peer-2">parse_peer/2*</a></td><td></td></tr><tr><td valign="top"><a href="#record_response_status-3">record_response_status/3*</a></td><td></td></tr><tr><td valign="top"><a href="#reply_error-2">reply_error/2*</a></td><td></td></tr><tr><td valign="top"><a href="#req-2">req/2</a></td><td></td></tr><tr><td valign="top"><a href="#req-3">req/3*</a></td><td></td></tr><tr><td valign="top"><a href="#request-3">request/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_link-1">start_link/1</a></td><td></td></tr><tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td></td></tr><tr><td valign="top"><a href="#upload_metric-1">upload_metric/1*</a></td><td></td></tr></table>
+gun_requests_total metrics.</td></tr><tr><td valign="top"><a href="#gun_req-3">gun_req/3*</a></td><td></td></tr><tr><td valign="top"><a href="#handle_call-3">handle_call/3</a></td><td></td></tr><tr><td valign="top"><a href="#handle_cast-2">handle_cast/2</a></td><td></td></tr><tr><td valign="top"><a href="#handle_info-2">handle_info/2</a></td><td></td></tr><tr><td valign="top"><a href="#httpc_req-3">httpc_req/3*</a></td><td></td></tr><tr><td valign="top"><a href="#inc_prometheus_counter-3">inc_prometheus_counter/3*</a></td><td></td></tr><tr><td valign="top"><a href="#inc_prometheus_gauge-1">inc_prometheus_gauge/1*</a></td><td>Safe wrapper for prometheus_gauge:inc/2.</td></tr><tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr><tr><td valign="top"><a href="#init_prometheus-1">init_prometheus/1*</a></td><td></td></tr><tr><td valign="top"><a href="#log-5">log/5*</a></td><td></td></tr><tr><td valign="top"><a href="#maybe_invoke_monitor-2">maybe_invoke_monitor/2*</a></td><td>Invoke the HTTP monitor message with AO-Core, if it is set in the
+node message key.</td></tr><tr><td valign="top"><a href="#method_to_bin-1">method_to_bin/1*</a></td><td></td></tr><tr><td valign="top"><a href="#open_connection-2">open_connection/2*</a></td><td></td></tr><tr><td valign="top"><a href="#parse_peer-2">parse_peer/2*</a></td><td></td></tr><tr><td valign="top"><a href="#record_duration-2">record_duration/2*</a></td><td>Record the duration of the request in an async process.</td></tr><tr><td valign="top"><a href="#record_response_status-3">record_response_status/3*</a></td><td></td></tr><tr><td valign="top"><a href="#reply_error-2">reply_error/2*</a></td><td></td></tr><tr><td valign="top"><a href="#req-2">req/2</a></td><td></td></tr><tr><td valign="top"><a href="#req-3">req/3*</a></td><td></td></tr><tr><td valign="top"><a href="#request-3">request/3*</a></td><td></td></tr><tr><td valign="top"><a href="#start_link-1">start_link/1</a></td><td></td></tr><tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td></td></tr><tr><td valign="top"><a href="#upload_metric-1">upload_metric/1*</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -115,11 +116,27 @@ Safe wrapper for prometheus_gauge:inc/2.
 
 `log(Type, Event, X3, Reason, Opts) -> any()`
 
-<a name="method_to_list-1"></a>
+<a name="maybe_invoke_monitor-2"></a>
 
-### method_to_list/1 * ###
+### maybe_invoke_monitor/2 * ###
 
-`method_to_list(X1) -> any()`
+`maybe_invoke_monitor(Details, Opts) -> any()`
+
+Invoke the HTTP monitor message with AO-Core, if it is set in the
+node message key. We invoke the given message with the `body` set to a signed
+version of the details. This allows node operators to configure their machine
+to record duration statistics into customized data stores, computations, or
+processes etc. Additionally, we include the `http_reference` value, if set in
+the given `opts`.
+
+We use `hb_ao:get` rather than `hb_opts:get`, as settings configured
+by the `~router@1.0` route `opts` key are unable to generate atoms.
+
+<a name="method_to_bin-1"></a>
+
+### method_to_bin/1 * ###
+
+`method_to_bin(X1) -> any()`
 
 <a name="open_connection-2"></a>
 
@@ -132,6 +149,16 @@ Safe wrapper for prometheus_gauge:inc/2.
 ### parse_peer/2 * ###
 
 `parse_peer(Peer, Opts) -> any()`
+
+<a name="record_duration-2"></a>
+
+### record_duration/2 * ###
+
+`record_duration(Details, Opts) -> any()`
+
+Record the duration of the request in an async process. We write the
+data to prometheus if the application is enabled, as well as invoking the
+`http_monitor` if appropriate.
 
 <a name="record_response_status-3"></a>
 
