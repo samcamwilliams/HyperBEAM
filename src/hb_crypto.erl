@@ -31,7 +31,7 @@ sha256_chain(ID1, ID2) ->
 %% or explicitly detrimental to the utility of the final commitment. No ordering
 %% information is preserved in the final commitment.
 accumulate(IDs) when is_list(IDs) ->
-    lists:foldl(fun(ID, Acc) -> accumulate(ID, Acc) end, << 0:256 >>, IDs).
+    lists:foldl(fun accumulate/2, << 0:256 >>, IDs).
 accumulate(ID1 = << ID1Int:256 >>, ID2 = << ID2Int:256 >>)
         when (byte_size(ID1) =:= 32) and (byte_size(ID2) =:= 32) ->
     << (ID1Int + ID2Int):256 >>;

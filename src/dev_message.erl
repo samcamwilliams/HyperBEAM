@@ -55,7 +55,8 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     % format of the message ID return.
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
-    Base = hb_ao:normalize_keys(RawBase),
+    % Ensure that the base message is a normalized TABM before proceeding.
+    Base = hb_ao:normalize_keys(hb_message:convert(RawBase, tabm, NodeOpts)),
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
@@ -67,7 +68,17 @@ id(RawBase, Req, NodeOpts) ->
             calculate_ids(hb_maps:without([<<"commitments">>], ModBase), Req, NodeOpts);
         IDs ->
             % Accumulate the relevant IDs into a single value. This is performed 
-            % by module arithmetic of each of the IDs.
+            % by module arithmetic of each of the IDs. The effect of this is that:
+            % 1. New IDs can be added to the combined ID without requiring any
+            %    recalculation of other IDs.
+            % 2. New IDs can be added in any order, and will compare to the same
+            %    value as if they were added in other orders.
+            % 3. Subsequently, combined IDs cannot be used to express ordering of
+            %    the underlying commitments.
+            % This works for single IDs as well as lists of IDs, because the 
+            % accumulation function starts with a buffer of zero encoded as a 
+            % 256-bit binary. Subsequently, a single ID on its own 'accumulates' 
+            % to itself.
             {ok,
                 hb_util:human_id(
                     hb_crypto:accumulate(

@@ -18,19 +18,21 @@ read(Link, Opts) ->
 %% @doc Turn a deep message into a flat representation with links to embedded
 %% data as necessary.
 linkify(Msg) -> linkify(Msg, discard).
-linkify(Msg, Mode) -> linkify(Msg, Mode, #{}).
+linkify(Msg, Mode) when is_atom(Mode) -> linkify(Msg, Mode, #{});
+linkify(Msg, Opts) when is_map(Opts) ->
+    linkify(Msg, hb_opts:get(linkify_mode, discard, Opts), Opts).
 linkify(Msg, Mode, Opts) when is_map(Msg) ->
-    ?event(linkify, {linkify, {msg, Msg}}),
+    ?event(linkify, {linkify, {keys, maps:keys(Msg)}}),
     maps:merge(
         maps:with([<<"commitments">>, <<"priv">>], Msg),
         maps:from_list(
             lists:map(
                 fun({Key, InnerMsg}) when is_map(InnerMsg) or is_list(InnerMsg) ->
                     LinkifiedInnerMsg = linkify(InnerMsg, Mode, Opts),
-                    {ok, ID} =
-                        dev_message:id(
+                    ID =
+                        hb_message:id(
                             LinkifiedInnerMsg,
-                            #{ <<"commitments">> => <<"all">> },
+                            all,
                             Opts
                         ),
                     % If we are in `offload' mode, we write the message to the

@@ -54,8 +54,8 @@
 ]).
 
 %%% Routing functions for the `dev_codec_httpsig_conv' module
-to(Msg, _Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Opts).
-from(Msg, _Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Opts).
+to(Msg, Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Req, Opts).
+from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
 
 %%% A map that contains signature parameters metadata as described
 %%% in https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
@@ -104,10 +104,14 @@ from(Msg, _Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Opts).
 id(Msg, _Params, Opts) ->
     ?event({calculating_id, {msg, Msg}}),
     case find_id(Msg, Opts) of
-        {ok, ID} -> {ok, hb_util:human_id(ID)};
+        {ok, ID} ->
+            ?event({id_found, {id, ID}}),
+            {ok, hb_util:human_id(ID)};
         {not_found, MsgToID} ->
+            ?event({id_not_found, {msg, MsgToID}}),
             {ok, MsgAfterReset} = reset_hmac(MsgToID, Opts),
             {ok, ID} = find_id(MsgAfterReset, Opts),
+            ?event({id_generated, {id, ID}}),
             {ok, hb_util:human_id(ID)}
     end.
 
@@ -392,8 +396,15 @@ hmac(Msg, Opts) ->
     EncodedMsg =
         hb_maps:without(
             [<<"body-keys">>],
-            hb_util:ok(to(hb_maps:without([<<"commitments">>, <<"body-keys">>], Msg), #{}, Opts))
+            hb_util:ok(
+                to(
+                    hb_maps:without([<<"commitments">>, <<"body-keys">>], Msg),
+                    #{},
+                    Opts
+                )
+            )
         ),
+    ?event(debug_id, {generating_hmac_on, {msg, EncodedMsg}}),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(EncodedMsg, Opts),
     % Find the keys to use for the hmac. These should be set by the signature

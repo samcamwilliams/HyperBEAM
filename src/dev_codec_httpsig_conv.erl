@@ -26,7 +26,7 @@
 %%%         - Otherwise encode the value as a part in the multipart response
 %%% 
 -module(dev_codec_httpsig_conv).
--export([to/2, from/2]).
+-export([to/3, from/3]).
 %%% Helper utilities
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -39,9 +39,9 @@
 
 %% @doc Convert a HTTP Message into a TABM.
 %% HTTP Structured Field is encoded into it's equivalent TABM encoding.
-from(Bin, _Opts) when is_binary(Bin) -> {ok, Bin};
-from(Link, _Opts) when ?IS_LINK(Link) -> {ok, Link};
-from(HTTP, Opts) ->
+from(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};
+from(Link, _Req, _Opts) when ?IS_LINK(Link) -> {ok, Link};
+from(HTTP, _Req, Opts) ->
     % Decode the keys of the HTTP message
     Body = hb_maps:get(<<"body">>, HTTP, <<>>, Opts),
     % First, parse all headers excluding the signature-related headers, as they
@@ -303,14 +303,27 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput, Opts) ->
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API
-to(Bin, _) when is_binary(Bin) -> {ok, Bin};
-to(TABM, Opts) -> to(TABM, [], Opts).
-to(Link, _FormatOpts, _Opts) when ?IS_LINK(Link) -> {ok, Link};
-to(TABM, FormatOpts, Opts) when is_map(TABM) ->
+to(TABM, Req, Opts) -> to(TABM, Req, [], Opts).
+to(Bin, _Req, _FormatOpts, _Opts) when is_binary(Bin) -> {ok, Bin};
+to(Link, _Req, _FormatOpts, _Opts) when ?IS_LINK(Link) -> {ok, Link};
+to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
+    % Encode all links in the message into binary form.
+    WithLinks =
+        hb_link:linkify(
+            TABM,
+            case hb_maps:get(<<"linkify">>, Req, not_found, Opts) of
+                not_found -> hb_opts:get(linkify_mode, discard, Opts);
+                Mode ->
+                    ?event({linkify_mode, {mode, Mode}, {req, Req}}),
+                    hb_util:atom(Mode)
+            end,
+            Opts
+        ),
+    Linkified = hb_link:encode_all_links(WithLinks),
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.
-    WithGroupedIDs = group_ids(TABM),
+    WithGroupedIDs = group_ids(Linkified),
     Stripped =
         hb_maps:without(
             [
@@ -325,7 +338,7 @@ to(TABM, FormatOpts, Opts) when is_map(TABM) ->
     {InlineFieldHdrs, InlineKey} = inline_key(TABM),
     Intermediate = do_to(Stripped, FormatOpts ++ [{inline, InlineFieldHdrs, InlineKey}], Opts),
     % Finally, add the signatures to the HTTP message
-    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM, Opts) of
+    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, Linkified, Opts) of
         {ok, _, #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }} ->
             HPs = hashpaths_from_message(TABM),
             EncWithHPs = hb_maps:merge(Intermediate, HPs),
@@ -655,8 +668,8 @@ inline_key(Msg) ->
     ?event({inlined, InlineBodyKey}),
     case [
         InlineBodyKey,
-        hb_maps:is_key(<<"body">>, Msg),
-        hb_maps:is_key(<<"data">>, Msg)
+        hb_maps:is_key(<<"body">>, Msg) andalso not ?IS_LINK(maps:get(<<"body">>, Msg)),
+        hb_maps:is_key(<<"data">>, Msg) andalso not ?IS_LINK(maps:get(<<"data">>, Msg))
     ] of
         % inline-body-key already exists, so no need to add one
         [Explicit, _, _] when Explicit =/= false -> {#{}, InlineBodyKey};

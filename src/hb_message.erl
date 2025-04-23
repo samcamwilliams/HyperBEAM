@@ -135,7 +135,8 @@ restore_priv(Msg, OldPriv, Opts) ->
 
 %% @doc Return the ID of a message.
 id(Msg) -> id(Msg, uncommitted).
-id(Msg, Committers) -> id(Msg, Committers, #{}).
+id(Msg, Committers) when is_list(Committers) -> id(Msg, Committers, #{});
+id(Msg, Opts) when is_map(Opts) -> id(Msg, uncommitted, Opts).
 id(Msg, RawCommitters, Opts) ->
     Committers =
         case RawCommitters of
@@ -144,7 +145,7 @@ id(Msg, RawCommitters, Opts) ->
             none -> [];
             all -> <<"all">>;
             signed -> signers(Msg);
-            List -> List
+            List when is_list(List) -> List
         end,
     ?event({getting_id, {msg, Msg}, {committers, Committers}}),
     {ok, ID} =
@@ -530,7 +531,14 @@ match(Map1, Map2, Mode, Opts) ->
                 fun(Key) -> lists:member(Key, Keys1) end,
                 Keys1
             ),
-    ?event({match, {keys1, Keys1}, {keys2, Keys2}, {mode, Mode}, {primary_keys_present, PrimaryKeysPresent}}),
+    ?event(match,
+        {match,
+            {keys1, Keys1},
+            {keys2, Keys2},
+            {mode, Mode},
+            {primary_keys_present, PrimaryKeysPresent}
+        }
+    ),
     case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
         true ->
             lists:all(
@@ -748,21 +756,24 @@ match_modes_test() ->
     ?assert(not match(Msg3, Msg1, primary)).
 
 basic_map_codec_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
-    Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(hb_message:match(Msg, Decoded)).
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 set_body_codec_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"body">> => <<"NORMAL_VALUE">>, <<"test-key">> => <<"Test-Value">> },
-    Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(hb_message:match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 %% @doc Test that we can convert a message into a tx record and back.
 single_layer_message_to_encoding_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"last_tx">> => << 2:256 >>,
         <<"owner">> => << 3:4096 >>,
@@ -770,18 +781,20 @@ single_layer_message_to_encoding_test(Codec) ->
         <<"data">> => <<"DATA">>,
         <<"special-key">> => <<"SPECIAL_VALUE">>
     },
-    Encoded = convert(Msg, Codec, <<"structured@1.0">>, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(hb_message:match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 signed_only_committed_data_field_test(Codec) ->
-    Msg = commit(#{ <<"data">> => <<"DATA">> }, hb:wallet(), Codec),
+    Opts = test_opts(Codec),
+    Msg = commit(#{ <<"data">> => <<"DATA">> }, Opts, Codec),
     ?event({signed_msg, Msg}),
-    {ok, OnlyCommitted} = with_only_committed(Msg),
+    {ok, OnlyCommitted} = with_only_committed(Msg, Opts),
     ?event({only_committed, OnlyCommitted}),
     ?assert(verify(OnlyCommitted)).
 
 signed_nested_data_key_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"layer">> => <<"outer">>,
         <<"body">> =>
@@ -790,13 +803,13 @@ signed_nested_data_key_test(Codec) ->
                     <<"layer">> => <<"inner">>,
                     <<"data">> => <<"DATA">>
                 },
-                #{ priv_wallet => hb:wallet() },
+                Opts,
                 Codec
             )
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(hb_message:match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
@@ -815,30 +828,34 @@ signed_nested_data_key_test(Codec) ->
 %% @doc Test that the message matching function works.
 match_test(Codec) ->
     Msg = #{ <<"a">> => 1, <<"b">> => 2 },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 binary_to_binary_test(Codec) ->
     % Serialization must be able to turn a raw binary into a TX, then turn
     % that TX back into a binary and have the result match the original.
     Bin = <<"THIS IS A BINARY, NOT A NORMAL MESSAGE">>,
-    Encoded = convert(Bin, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Opts = test_opts(Codec),
+    Encoded = convert(Bin, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assertEqual(Bin, Decoded).
 
 %% @doc Structured field parsing tests.
 structured_field_atom_parsing_test(Codec) ->
     Msg = #{ highly_unusual_http_header => highly_unusual_value },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 structured_field_decimal_parsing_test(Codec) ->
     Msg = #{ integer_field => 1234567890 },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
@@ -850,9 +867,10 @@ message_with_large_keys_test(Codec) ->
         <<"another_large_key">> => << 0:((1 + 1024) * 8) >>,
         <<"another_normal_key">> => <<"another_normal_value">>
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 %% @doc Check that large keys and data fields are correctly handled together.
 nested_message_with_large_keys_and_content_test(Codec) ->
@@ -868,10 +886,11 @@ nested_message_with_large_keys_and_content_test(Codec) ->
         <<"another_normal_key">> => <<"another_normal_value">>,
         MainBodyKey => <<"Hey from the data field!">>
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
-    ?assert(match(Msg, Decoded)).
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 simple_nested_message_test(Codec) ->
     Msg = #{
@@ -879,28 +898,25 @@ simple_nested_message_test(Codec) ->
         <<"nested">> => #{ <<"b">> => <<"1">> },
         <<"c">> => <<"3">>
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
-    ?assert(
-        match(
-            Msg,
-            Decoded
-        )
-    ).
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 nested_empty_map_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"body">> => #{ <<"empty-map-test">> => #{}}},
-    Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 %% @doc Test that the data field is correctly managed when we have multiple
 %% uses for it (the 'data' key itself, as well as keys that cannot fit in
 %% tags).
 nested_message_with_large_content_test(Codec) ->
+    Opts = test_opts(Codec),
     MainBodyKey =
         case Codec of
             <<"ans104@1.0">> -> <<"data">>;
@@ -917,14 +933,14 @@ nested_message_with_large_content_test(Codec) ->
             <<"large_data_outer">> => << 0:((1 + 1024) * 8) >>
         }
     },
-    Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 %% @doc Test that we can convert a 3 layer nested message into a tx record and back.
 deeply_nested_message_with_content_test(Codec) ->
+    Opts = test_opts(Codec),
     MainBodyKey =
         case Codec of
             <<"ans104@1.0">> -> <<"data">>;
@@ -943,9 +959,10 @@ deeply_nested_message_with_content_test(Codec) ->
                 }
         }
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 deeply_nested_message_with_only_content(Codec) ->
     MainBodyKey =
@@ -961,17 +978,19 @@ deeply_nested_message_with_only_content(Codec) ->
             }
         }
     },
-    Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)).
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 nested_structured_fields_test(Codec) ->
+    Opts = test_opts(Codec),
     NestedMsg = #{ <<"a">> => #{ <<"b">> => 1 } },
-    Encoded = convert(NestedMsg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(NestedMsg, Decoded)).
+    Encoded = convert(NestedMsg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, NestedMsg}, {output, Decoded}}),
+    ?assert(match(NestedMsg, Decoded, strict, Opts)).
 
 nested_message_with_large_keys_test(Codec) ->
     Msg = #{
@@ -980,11 +999,14 @@ nested_message_with_large_keys_test(Codec) ->
         <<"nested">> => #{ <<"b">> => <<"1">> },
         <<"c">> => <<"3">>
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Opts = test_opts(Codec),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 signed_message_encode_decode_verify_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"test-data">> => <<"TEST DATA">>,
         <<"test-key">> => <<"TEST VALUE">>
@@ -993,19 +1015,21 @@ signed_message_encode_decode_verify_test(Codec) ->
         dev_message:commit(
             Msg,
             #{ <<"commitment-device">> => Codec },
-            #{ priv_wallet => hb:wallet() }
+            Opts
         ),
     ?event({signed_msg, SignedMsg}),
-    ?assertEqual(true, verify(SignedMsg)),
+    ?assertEqual(true, verify(SignedMsg, all, Opts)),
     ?event({verified, SignedMsg}),
-    Encoded = convert(SignedMsg, Codec, #{}),
+    Encoded = convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({msg_encoded_as_codec, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assertEqual(true, verify(Decoded)),
-    ?assert(match(SignedMsg, Decoded)).
+    ?assertEqual(true, verify(Decoded, all, Opts)),
+    ?event({matching, {input, SignedMsg}, {output, Decoded}}),
+    ?assert(match(SignedMsg, Decoded, strict, Opts)).
 
 complex_signed_message_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"deep_data">> => #{
@@ -1018,14 +1042,15 @@ complex_signed_message_test(Codec) ->
         dev_message:commit(
             Msg,
             #{ <<"commitment-device">> => Codec },
-            #{ priv_wallet => hb:wallet() }
+            Opts
         ),
-    Encoded = convert(SignedMsg, Codec, #{}),
+    Encoded = convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assertEqual(true, verify(Decoded)),
-    ?assert(match(SignedMsg, Decoded)).
+    ?assertEqual(true, verify(Decoded, all, Opts)),
+    ?event({matching, {input, SignedMsg}, {output, Decoded}}),
+    ?assert(match(SignedMsg, Decoded, strict, Opts)).
 
 % multisignature_test(Codec) ->
 %     Wallet1 = ar_wallet:new(),
@@ -1056,6 +1081,7 @@ complex_signed_message_test(Codec) ->
 
 deep_multisignature_test() ->
     % Only the `httpsig@1.0' codec supports multisignatures.
+    Opts = test_opts(<<"httpsig@1.0">>),
     Codec = <<"httpsig@1.0">>,
     Wallet1 = ar_wallet:new(),
     Wallet2 = ar_wallet:new(),
@@ -1070,40 +1096,46 @@ deep_multisignature_test() ->
         dev_message:commit(
             Msg,
             #{ <<"commitment-device">> => Codec },
-            #{ priv_wallet => Wallet1 }
+            Opts
         ),
     ?event({signed_msg, SignedMsg}),
     {ok, MsgSignedTwice} =
         dev_message:commit(
             SignedMsg,
             #{ <<"commitment-device">> => Codec },
-            #{ priv_wallet => Wallet2 }
+            Opts
         ),
     ?event({signed_msg_twice, MsgSignedTwice}),
-    ?assert(verify(MsgSignedTwice)),
+    ?assert(verify(MsgSignedTwice, all, Opts)),
     Committers = hb_message:signers(MsgSignedTwice),
     ?event({committers, Committers}),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
 
 tabm_ao_ids_equal_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
-        <<"data">> => <<"TEST_DATA">>,
-        <<"deep_data">> => #{
-            <<"data">> => <<"DEEP_DATA">>,
-            <<"complex_key">> => 1337,
+        <<"data">> => <<"TEST DATA">>,
+        <<"deep-data">> => #{
+            <<"data">> => <<"DEEP DATA">>,
+            <<"complex-key">> => 1337,
             <<"list">> => [1,2,3]
         }
     },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, {explicit, Decoded}}),
+    InitID = hb_message:id(Msg, none, Opts),
+    ?event({init_id, InitID}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    DecodedID = hb_message:id(Decoded, none, Opts),
+    ?event({decoded_id, DecodedID}),
+    ?event({stages, {init, Msg}, {encoded, Encoded}, {decoded, Decoded}}),
     ?assertEqual(
-        dev_message:id(Msg, #{ <<"committers">> => <<"none">>}, #{}),
-        dev_message:id(Decoded, #{ <<"committers">> => <<"none">>}, #{})
+        InitID,
+        DecodedID
     ).
 
 signed_deep_message_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"test_key">> => <<"TEST_VALUE">>,
         <<"body">> => #{
@@ -1115,50 +1147,65 @@ signed_deep_message_test(Codec) ->
             <<"nested_key2">> => <<"NESTED_VALUE2">>
         }
     },
-    EncDec = convert(convert(Msg, Codec, #{}), <<"structured@1.0">>, Codec, #{}),
+    EncDec =
+        convert(
+            convert(Msg, Codec, <<"structured@1.0">>, Opts),
+            <<"structured@1.0">>,
+            Codec,
+            Opts
+        ),
     ?event({enc_dec, EncDec}),
     {ok, SignedMsg} =
         dev_message:commit(
             EncDec,
             #{ <<"commitment-device">> => Codec },
-            #{ priv_wallet => hb:wallet() }
+            Opts
         ),
     ?event({signed_msg, SignedMsg}),
-    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"committers">> => <<"all">>}, #{}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"committers">> => <<"all">>}, Opts),
     ?event({verify_res, Res}),
-    ?assertEqual(true, verify(SignedMsg)),
+    ?assertEqual(true, verify(SignedMsg, all, Opts)),
     ?event({verified, SignedMsg}),
-    Encoded = convert(SignedMsg, Codec, #{}),
+    Encoded = convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    {ok, DecodedRes} = dev_message:verify(Decoded, #{ <<"committers">> => <<"all">>}, #{}),
+    {ok, DecodedRes} =
+        dev_message:verify(
+            Decoded,
+            #{ <<"committers">> => <<"all">>},
+            Opts
+        ),
     ?event({verify_decoded_res, DecodedRes}),
     ?assert(
         match(
             SignedMsg,
-            Decoded
+            Decoded,
+            strict,
+            Opts
         )
     ).
 
 signed_list_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"key-with-list">> => [1.0, 2.0, 3.0] },
     Signed = commit(Msg, hb:wallet(), Codec),
-    ?assert(verify(Signed)),
-    Encoded = convert(Signed, Codec, #{}),
+    ?assert(verify(Signed, all, Opts)),
+    Encoded = convert(Signed, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(verify(Decoded)),
-    ?assert(match(Signed, Decoded)).
+    ?assert(verify(Decoded, all, Opts)),
+    ?assert(match(Signed, Decoded, strict, Opts)).
 
 unsigned_id_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"data">> => <<"TEST_DATA">> },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assertEqual(
-        dev_message:id(Decoded, #{ <<"committers">> => <<"none">>}, #{}),
-        dev_message:id(Msg, #{ <<"committers">> => <<"none">>}, #{})
+        dev_message:id(Decoded, #{ <<"committers">> => <<"none">>}, Opts),
+        dev_message:id(Msg, #{ <<"committers">> => <<"none">>}, Opts)
     ).
 
 % signed_id_test_disabled() ->
@@ -1175,12 +1222,14 @@ unsigned_id_test(Codec) ->
 %     ).
 
 message_with_simple_embedded_list_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"a">> => [<<"1">>, <<"2">>, <<"3">>] },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 empty_string_in_tag_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg =
         #{
             dev =>
@@ -1190,11 +1239,12 @@ empty_string_in_tag_test(Codec) ->
                     <<"stdout">> => <<"c">>
                 }
         },
-    Encoded = convert(Msg, Codec, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?assert(match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 hashpath_sign_verify_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg =
         #{
             <<"test_key">> => <<"TEST_VALUE">>,
@@ -1217,25 +1267,28 @@ hashpath_sign_verify_test(Codec) ->
             }
         },
     ?event({msg, {explicit, Msg}}),
-    SignedMsg = commit(Msg, hb:wallet(), Codec),
+    SignedMsg = commit(Msg, Opts, Codec),
     ?event({signed_msg, {explicit, SignedMsg}}),
-    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"committers">> => <<"all">>}, #{}),
+    {ok, Res} = dev_message:verify(SignedMsg, #{ <<"committers">> => <<"all">>}, Opts),
     ?event({verify_res, {explicit, Res}}),
-    ?assert(verify(SignedMsg)),
+    ?assert(verify(SignedMsg, all, Opts)),
     ?event({verified, {explicit, SignedMsg}}),
-    Encoded = convert(SignedMsg, Codec, #{}),
+    Encoded = convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(verify(Decoded)),
+    ?assert(verify(Decoded, all, Opts)),
     ?assert(
         match(
             SignedMsg,
-            Decoded
+            Decoded,
+            strict,
+            Opts
         )
     ).
 
 signed_message_with_derived_components_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"path">> => <<"/test">>,
         <<"authority">> => <<"example.com">>,
@@ -1253,39 +1306,48 @@ signed_message_with_derived_components_test(Codec) ->
         dev_message:commit(
             Msg,
             #{ <<"commitment-device">> => Codec },
-            #{ priv_wallet => hb:wallet() }
+            Opts
         ),
     ?event({signed_msg, SignedMsg}),
-    ?assert(verify(SignedMsg)),
-    Encoded = convert(SignedMsg, Codec, #{}),
+    ?assert(verify(SignedMsg, all, Opts)),
+    Encoded = convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(verify(Decoded)),
-    ?assert(match(SignedMsg, Decoded)).
+    ?assert(verify(Decoded, all, Opts)),
+    ?assert(
+        match(
+            SignedMsg,
+            Decoded,
+            strict,
+            Opts
+        )
+    ).
 
 committed_keys_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
-    Signed = commit(Msg, hb:wallet(), Codec),
-    CommittedKeys = committed(Signed),
+    Signed = commit(Msg, Opts, Codec),
+    CommittedKeys = committed(Signed, Opts),
     ?event({committed_keys, CommittedKeys}),
-    ?assert(verify(Signed)),
+    ?assert(verify(Signed, all, Opts)),
     ?assert(lists:member(<<"a">>, CommittedKeys)),
     ?assert(lists:member(<<"b">>, CommittedKeys)),
     ?assert(lists:member(<<"c">>, CommittedKeys)),
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-    ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter))).
+    ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter, Opts))).
 
 committed_empty_keys_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"very">> => <<>>,
         <<"exciting">> => #{},
         <<"values">> => [],
         <<"non-empty">> => <<"TEST">>
     },
-    Signed = commit(Msg, hb:wallet(), Codec),
-    ?assert(verify(Signed)),
-    CommittedKeys = committed(Signed),
+    Signed = commit(Msg, Opts, Codec),
+    ?assert(verify(Signed, all, Opts)),
+    CommittedKeys = committed(Signed, all, Opts),
     ?event({committed_keys, CommittedKeys}),
     ?assert(lists:member(<<"very">>, CommittedKeys)),
     ?assert(lists:member(<<"exciting">>, CommittedKeys)),
@@ -1293,76 +1355,86 @@ committed_empty_keys_test(Codec) ->
     ?assert(lists:member(<<"non-empty">>, CommittedKeys)).
 
 deeply_nested_committed_keys_test() ->
+    Opts = test_opts(<<"httpsig@1.0">>),
     Msg = #{
         <<"a">> => 1,
         <<"b">> => #{ <<"c">> => #{ <<"d">> => <<0:((1 + 1024) * 1024)>> } },
         <<"e">> => <<0:((1 + 1024) * 1024)>>
     },
-    Signed = commit(Msg, hb:wallet()),
-    {ok, WithOnlyCommitted} = with_only_committed(Signed),
+    Signed = commit(Msg, Opts, <<"httpsig@1.0">>),
+    {ok, WithOnlyCommitted} = with_only_committed(Signed, Opts),
     ?event({with_only_committed, WithOnlyCommitted}),
     ?assert(
         match(
             Msg,
-            hb_maps:without([<<"commitments">>], WithOnlyCommitted)
+            hb_maps:without([<<"commitments">>], WithOnlyCommitted),
+            strict,
+            Opts
         )
     ).
 
 signed_with_inner_signed_message_test(Codec) ->
-    Wallet = hb:wallet(),
-    Msg = commit(#{
-        <<"a">> => 1,
-        <<"inner">> =>
-            hb_maps:merge(
-                commit(
-                    #{
-                        <<"c">> => <<"abc">>,
-                        <<"e">> => 5
-                    },
-                    Wallet,
-                    Codec
-                ),
-                % Uncommitted keys that should be ripped out of the inner message
-                % by `with_only_committed'. These should still be present in the
-                % `with_only_committed' outer message. For now, only `httpsig@1.0'
-                % supports stripping non-committed keys.
-                case Codec of
-                    <<"httpsig@1.0">> ->
-                        #{
-                            <<"f">> => 6,
-                            <<"g">> => 7
-                        };
-                    _ -> #{}
-                end
-            )
-    }, Wallet, Codec),
+    Opts = test_opts(Codec),
+    Msg =
+        commit(
+            #{
+                <<"a">> => 1,
+                <<"inner">> =>
+                    hb_maps:merge(
+                        commit(
+                            #{
+                                <<"c">> => <<"abc">>,
+                                <<"e">> => 5
+                            },
+                            Opts,
+                            Codec
+                        ),
+                        % Uncommitted keys that should be ripped out of the inner
+                        % message by `with_only_committed'. These should still be
+                        % present in the `with_only_committed' outer message. 
+                        % For now, only `httpsig@1.0' supports stripping
+                        % non-committed keys.
+                        case Codec of
+                            <<"httpsig@1.0">> ->
+                                #{
+                                    <<"f">> => 6,
+                                    <<"g">> => 7
+                                };
+                            _ -> #{}
+                        end
+                    )
+            },
+            Opts,
+            Codec
+        ),
     ?event({initial_msg, Msg}),
     % 1. Verify the outer message without changes.
-    ?assert(verify(Msg)),
-    {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg)),
+    ?assert(verify(Msg, all, Opts)),
+    {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg, Opts)),
     ?event({committed_inner, CommittedInner}),
     ?event({inner_committers, hb_message:signers(CommittedInner)}),
     % 2. Verify the inner message without changes.
-    ?assert(verify(CommittedInner, signers)),
+    ?assert(verify(CommittedInner, signers, Opts)),
     % 3. Convert the message to the format and back.
-    Encoded = convert(Msg, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
     %?event({encoded_body, {string, hb_maps:get(<<"body">>, Encoded)}}, #{}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     % 4. Verify the outer message after decode.
-    ?assert(match(Msg, Decoded)),
-    ?assert(verify(Decoded)),
+    ?assert(match(Msg, Decoded, strict, Opts)),
+    ?assert(verify(Decoded, all, Opts)),
     % 5. Verify the inner message from the converted message, applying
     % `with_only_committed` first.
-    InnerDecoded = hb_maps:get(<<"inner">>, Decoded),
+    InnerDecoded = hb_maps:get(<<"inner">>, Decoded, Opts),
     ?event({inner_decoded, InnerDecoded}),
     % Applying `with_only_committed' should verify the inner message.
-    {ok, CommittedInnerOnly} = with_only_committed(InnerDecoded),
+    {ok, CommittedInnerOnly} = with_only_committed(InnerDecoded, Opts),
     ?event({committed_inner_only, CommittedInnerOnly}),
-    ?assert(verify(CommittedInnerOnly, signers)).
+    ?assert(verify(CommittedInnerOnly, signers, Opts)).
 
 large_body_committed_keys_test(Codec) ->
+    Opts = test_opts(Codec),
     case Codec of
         <<"httpsig@1.0">> ->
             Msg = #{
@@ -1370,34 +1442,37 @@ large_body_committed_keys_test(Codec) ->
                 <<"b">> => 2,
                 <<"c">> => #{ <<"d">> => << 1:((1 + 1024) * 1024) >> }
             },
-            Encoded = convert(Msg, Codec, #{}),
+            Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
             ?event({encoded, Encoded}),
-            Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+            Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
             ?event({decoded, Decoded}),
-            Signed = commit(Decoded, hb:wallet(), Codec),
+            Signed = commit(Decoded, Opts, Codec),
             ?event({signed, Signed}),
-            CommittedKeys = committed(Signed),
+            CommittedKeys = committed(Signed, all, Opts),
             ?assert(lists:member(<<"a">>, CommittedKeys)),
             ?assert(lists:member(<<"b">>, CommittedKeys)),
             ?assert(lists:member(<<"c">>, CommittedKeys)),
             MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-            ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter)));
+            ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter, all, Opts)));
         _ ->
             skip
     end.
 
 sign_node_message_test(Codec) ->
-    Msg = hb_message:commit(hb_opts:default_message(), hb:wallet(), Codec),
-    ?event({committed, Msg}),
-    ?assert(verify(Msg)),
-    Encoded = convert(Msg, Codec, #{}),
-    ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)),
-    ?assert(verify(Decoded)).
+    Opts = test_opts(Codec),
+    Msg = hb_message:commit(hb_opts:default_message(), Opts, Codec),
+    ?event(debug, {committed, Msg}),
+    ?assert(verify(Msg, all, Opts)),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event(debug, {encoded, Encoded}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event(debug, {decoded, Decoded}),
+    MatchRes = match(Msg, Decoded, strict, Opts),
+    ?assertEqual(true, MatchRes),
+    ?assert(verify(Decoded, all, Opts)).
 
 nested_body_list_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"body">> =>
             [
@@ -1409,13 +1484,14 @@ nested_body_list_test(Codec) ->
                 X <- lists:seq(1, 3)
             ]
     },
-    Encoded = convert(Msg, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event(encoded, {encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)).
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 recursive_nested_list_test(Codec) ->
+    Opts = test_opts(Codec),
     % This test is to ensure that the codec can handle arbitrarily deep nested
     % lists.
     Msg = #{
@@ -1441,30 +1517,32 @@ recursive_nested_list_test(Codec) ->
                 X <- lists:seq(1, 3)
             ]
     },
-    Encoded = convert(Msg, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event(encoded, {encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)).
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 priv_survives_conversion_test(<<"ans104@1.0">>) -> skip;
 priv_survives_conversion_test(<<"json@1.0">>) -> skip;
 priv_survives_conversion_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"data">> => <<"TEST_DATA">>,
         <<"priv">> => #{ <<"test_key">> => <<"TEST_VALUE">> }
     },
-    Encoded = convert(Msg, Codec, #{}),
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    ?assert(match(Msg, Decoded)),
+    ?assert(match(Msg, Decoded, strict, Opts)),
     ?assertMatch(
         #{ <<"test_key">> := <<"TEST_VALUE">> },
-        hb_maps:get(<<"priv">>, Decoded, #{})
+        hb_maps:get(<<"priv">>, Decoded, Opts)
     ).
 
 encode_balance_table(Size, Codec) ->
+    Opts = test_opts(Codec),
     Msg =
         #{
             hb_util:encode(crypto:strong_rand_bytes(32)) =>
@@ -1472,11 +1550,11 @@ encode_balance_table(Size, Codec) ->
         ||
             _ <- lists:seq(1, Size)
         },
-    Encoded = convert(Msg, Codec, #{}),
-    ?event(debug, {encoded, {explicit, Encoded}}),
-    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, #{}),
-    ?event(debug, {decoded, Decoded}),
-    ?assert(match(Msg, Decoded)).
+    Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    ?event({encoded, {explicit, Encoded}}),
+    Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({decoded, Decoded}),
+    ?assert(match(Msg, Decoded, strict, Opts)).
 
 encode_small_balance_table_test(Codec) ->
     encode_balance_table(5, Codec).
@@ -1485,6 +1563,7 @@ encode_large_balance_table_test(Codec) ->
     encode_balance_table(1000, Codec).
 
 sign_links_test(Codec) ->
+    Opts = test_opts(Codec),
     % Make a message with definitively non-accessible lazy-loadable links. Sign
     % it, ensuring that we can produce signatures and IDs without having the 
     % data directly in memory.
@@ -1493,24 +1572,26 @@ sign_links_test(Codec) ->
         <<"link-key">> =>
             {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
     },
-    Signed = commit(Msg, hb:wallet(), Codec),
+    Signed = commit(Msg, Opts, Codec),
     ?event({signed, Signed}),
-    ?assert(verify(Signed)).
+    ?assert(verify(Signed, all, Opts)).
 
 id_of_linked_message_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> =>
             {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
     },
-    UnsignedID = id(Msg),
+    UnsignedID = id(Msg, Opts),
     ?event({id, UnsignedID}),
-    EncMsg = convert(Msg, Codec, #{}),
-    DecMsg = convert(EncMsg, <<"structured@1.0">>, Codec, #{}),
-    UnsignedID2 = id(DecMsg),
+    EncMsg = convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    DecMsg = convert(EncMsg, <<"structured@1.0">>, Codec, Opts),
+    UnsignedID2 = id(DecMsg, Opts),
     ?assertEqual(UnsignedID, UnsignedID2).
 
 sign_deep_message_from_lazy_cache_read_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> => #{
@@ -1521,10 +1602,10 @@ sign_deep_message_from_lazy_cache_read_test(Codec) ->
         }
     },
     % Write the message to the store to ensure that we get lazy-loadable links.
-    {ok, Path} = hb_cache:write(Msg, #{}),
-    {ok, ReadMsg} = hb_cache:read(Path, #{}),
+    {ok, Path} = hb_cache:write(Msg, Opts),
+    {ok, ReadMsg} = hb_cache:read(Path, Opts),
     ?event({read, ReadMsg}),
-    Signed = commit(ReadMsg, hb:wallet(), Codec),
+    Signed = commit(ReadMsg, Opts, Codec),
     ?event({signed, Signed}),
     ?assert(
         lists:all(
@@ -1532,9 +1613,10 @@ sign_deep_message_from_lazy_cache_read_test(Codec) ->
             maps:to_list(maps:without([<<"commitments">>, <<"priv">>], Signed))
         )
     ),
-    verify(Signed).
+    verify(Signed, all, Opts).
 
 id_of_deep_message_and_link_message_match_test(Codec) ->
+    Opts = test_opts(Codec),
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> => #{
@@ -1546,14 +1628,15 @@ id_of_deep_message_and_link_message_match_test(Codec) ->
     },
     Linkified = hb_link:linkify(Msg),
     ?event(linkify, {test_recvd_linkified, {msg, Linkified}}),
-    BaseID = id(Msg),
+    BaseID = id(Msg, Opts),
     ?event(linkify, {test_recvd_nonlink_id, {id, BaseID}}),
-    LinkID = id(Linkified),
+    LinkID = id(Linkified, Opts),
     ?event(linkify, {test_recvd_link_id, {id, LinkID}}),
     ?assertEqual(BaseID, LinkID).
 
 %%% Test helpers
 
+%% @doc Return a list of codecs to test.
 test_codecs() ->
     [
         <<"structured@1.0">>,
@@ -1562,6 +1645,22 @@ test_codecs() ->
         <<"ans104@1.0">>,
         <<"json@1.0">>
     ].
+
+%% @doc Return a set of options for testing, taking the codec name as an
+%% argument. We do not presently use the codec name in the test, but we may
+%% wish to do so in the future.
+test_opts(_) ->
+    #{
+        linkify_mode => offload,
+        store =>
+            [
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-TEST/httpsig">>
+                }
+            ],
+        priv_wallet => hb:wallet()
+    }.
 
 generate_test_suite(Suite) ->
     lists:map(
@@ -1642,5 +1741,5 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    tabm_ao_ids_equal_test(<<"json@1.0">>).
+    sign_node_message_test(<<"httpsig@1.0">>).
     % id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).

@@ -643,6 +643,10 @@ is_hb_module(Atom) ->
     is_hb_module(Atom, hb_opts:get(stack_print_prefixes, [], #{})).
 is_hb_module(Atom, Prefixes) when is_atom(Atom) ->
     is_hb_module(atom_to_list(Atom), Prefixes);
+is_hb_module("hb_event" ++ _, _) ->
+    % Explicitly exclude hb_event from the stack trace, as it is always included,
+    % creating noise in the output.
+    false;
 is_hb_module(Str, Prefixes) ->
     case string:tokens(Str, "_") of
         [Pre|_] ->
@@ -669,7 +673,7 @@ format_trace_short(Trace) ->
     lists:join(
         " / ",
         lists:reverse(format_trace_short(
-            hb_opts:get(short_trace_len, 3, #{}),
+            hb_opts:get(short_trace_len, 6, #{}),
             false,
             Trace,
             hb_opts:get(stack_print_prefixes, [], #{})
@@ -679,7 +683,7 @@ format_trace_short(_Max, _Latch, [], _Prefixes) -> [];
 format_trace_short(0, _Latch, _Trace, _Prefixes) -> [];
 format_trace_short(Max, Latch, [Item|Rest], Prefixes) ->
     Formatted = format_trace_short(Max, Latch, Item, Prefixes),
-    case {Latch, true} of %is_hb_module(Formatted, Prefixes)} of
+    case {Latch, is_hb_module(Formatted, Prefixes)} of
         {false, true} ->
             [Formatted | format_trace_short(Max - 1, true, Rest, Prefixes)];
         {false, false} ->

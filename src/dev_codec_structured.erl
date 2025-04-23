@@ -40,7 +40,7 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Map} when is_map(Map) ->
                     {Types, [{Key, hb_util:ok(from(Map, Req, Opts))} | Values]};
-                {ok, MsgList = [Msg1|_]} when is_map(Msg1) or is_list(Msg1) ->
+                {ok, MsgList = [_Msg1|_]} ->
                     % We have a list of maps. Convert to a numbered map and
                     % recurse.
                     BinKey = hb_ao:normalize_key(Key),
@@ -49,7 +49,7 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                     {[{BinKey, <<"list">>} | Types], [{BinKey, NumberedMap} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
-                        or is_list(Value) or is_float(Value) ->
+                        or is_float(Value) ->
                     BinKey = hb_ao:normalize_key(Key),
                     ?event({encode_value, Value}),
                     {Type, BinValue} = encode_value(Value),
