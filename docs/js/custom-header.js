@@ -4,7 +4,7 @@
   function updateHeaderAndMainClass() {
     const header = document.querySelector(".md-header");
     const main = document.querySelector("main");
-    const isHomepage = window.location.pathname === "/";
+    const isHomepage = window.location.pathname === "/index.html";
 
     if (!header || !main) return;
 
