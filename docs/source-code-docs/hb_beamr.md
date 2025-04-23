@@ -2,6 +2,8 @@
 
 # Module hb_beamr #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 BEAMR: A WAMR wrapper for BEAM.
 

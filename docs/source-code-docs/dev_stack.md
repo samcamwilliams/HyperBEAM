@@ -2,6 +2,8 @@
 
 # Module dev_stack #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that contains a stack of other devices, and manages their
 execution.

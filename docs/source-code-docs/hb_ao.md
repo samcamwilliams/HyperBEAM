@@ -2,6 +2,8 @@
 
 # Module hb_ao #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module is the root of the device call logic of the
 AO-Core protocol in HyperBEAM.

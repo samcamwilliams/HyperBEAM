@@ -2,6 +2,8 @@
 
 # Module hb_cache_render #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A module that helps to render given Key graphs into the .dot files.
 

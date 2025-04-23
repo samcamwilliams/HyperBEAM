@@ -2,6 +2,8 @@
 
 # Module hb_features #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A module that exports a list of feature flags that the node supports
 using the `-ifdef` macro.

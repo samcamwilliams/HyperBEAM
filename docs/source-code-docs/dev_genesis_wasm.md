@@ -2,6 +2,8 @@
 
 # Module dev_genesis_wasm #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that mimics an environment suitable for `legacynet` AO
 processes, using HyperBEAM infrastructure.

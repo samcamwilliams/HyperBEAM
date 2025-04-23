@@ -2,6 +2,8 @@
 
 # Module dev_codec_flat #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A codec for turning TABMs into/from flat Erlang maps that have
 (potentially multi-layer) paths as their keys, and a normal TABM binary as

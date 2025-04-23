@@ -2,6 +2,8 @@
 
 # Module dev_codec_json #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A simple JSON codec for HyperBEAM's message format.
 

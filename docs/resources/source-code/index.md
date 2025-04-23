@@ -15,7 +15,7 @@ HyperBEAM is built with a modular architecture to ensure scalability, maintainab
 
 ## Getting Started
 
-To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide.
+To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../../community/setup.md) guide.
 
 ## Navigation
 
@@ -23,7 +23,7 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 
 ## Contributing
 
-We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. 
+We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../../community/guidelines.md) for information on coding standards, pull request processes, and more. 
 
 <table>
 <tr><td><a href="ar_bundles.md" class="module">ar_bundles</a></td></tr>

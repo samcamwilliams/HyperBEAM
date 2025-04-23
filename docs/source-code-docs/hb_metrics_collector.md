@@ -1,6 +1,8 @@
 
 
 # Module hb_metrics_collector #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 __Behaviours:__ [`prometheus_collector`](prometheus_collector.md).
 

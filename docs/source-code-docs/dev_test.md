@@ -1,6 +1,8 @@
 
 
 # Module dev_test #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

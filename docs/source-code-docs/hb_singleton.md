@@ -3,6 +3,8 @@
 # Module hb_singleton #
 * [Description](#description)
 * [Data Types](#types)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A parser that translates AO-Core HTTP API requests in TABM format
 into an ordered list of messages to evaluate.

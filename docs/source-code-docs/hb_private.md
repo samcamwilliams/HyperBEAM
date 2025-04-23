@@ -2,6 +2,8 @@
 
 # Module hb_private #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module provides basic helper utilities for managing the
 private element of a message, which can be used to store state that is

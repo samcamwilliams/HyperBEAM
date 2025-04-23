@@ -3,6 +3,8 @@
 # Module hb_store_rocksdb #
 * [Description](#description)
 * [Data Types](#types)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A process wrapper over rocksdb storage.
 

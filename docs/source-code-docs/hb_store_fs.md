@@ -1,6 +1,8 @@
 
 
 # Module hb_store_fs #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

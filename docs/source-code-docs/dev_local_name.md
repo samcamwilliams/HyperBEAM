@@ -2,6 +2,8 @@
 
 # Module dev_local_name #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device for registering and looking up local names.
 

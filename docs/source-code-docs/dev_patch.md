@@ -2,6 +2,8 @@
 
 # Module dev_patch #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that finds `PATCH` requests in the `results/outbox`
 of its message, and applies them to it.

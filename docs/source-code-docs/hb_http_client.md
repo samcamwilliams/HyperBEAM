@@ -2,6 +2,8 @@
 
 # Module hb_http_client #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A wrapper library for gun.
 

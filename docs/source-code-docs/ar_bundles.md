@@ -1,6 +1,8 @@
 
 
 # Module ar_bundles #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

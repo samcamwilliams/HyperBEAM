@@ -2,6 +2,8 @@
 
 # Module dev_manifest #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 An Arweave path manifest resolution device.
 

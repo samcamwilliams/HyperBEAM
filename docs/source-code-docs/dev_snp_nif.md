@@ -1,6 +1,8 @@
 
 
 # Module dev_snp_nif #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

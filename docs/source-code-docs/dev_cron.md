@@ -2,6 +2,8 @@
 
 # Module dev_cron #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that inserts new messages into the schedule to allow processes
 to passively 'call' themselves without user interaction.
