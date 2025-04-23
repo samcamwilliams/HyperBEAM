@@ -1,6 +1,8 @@
 
 
 # Module ar_rate_limiter #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 __Behaviours:__ [`gen_server`](gen_server.md).
 

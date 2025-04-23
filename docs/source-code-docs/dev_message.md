@@ -2,6 +2,8 @@
 
 # Module dev_message #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 The identity device: For non-reserved keys, it simply returns a key
 from the message as it is found in the message's underlying Erlang map.

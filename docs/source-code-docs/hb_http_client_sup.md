@@ -2,6 +2,8 @@
 
 # Module hb_http_client_sup #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 The supervisor for the gun HTTP client wrapper.
 

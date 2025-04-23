@@ -2,6 +2,8 @@
 
 # Module dev_wasm #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that executes a WASM image on messages using the Memory-64
 preview standard.

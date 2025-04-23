@@ -2,6 +2,8 @@
 
 # Module hb_opts #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A module for interacting with local and global options inside
 HyperBEAM.

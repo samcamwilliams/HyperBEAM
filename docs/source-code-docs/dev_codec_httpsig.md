@@ -3,6 +3,8 @@
 # Module dev_codec_httpsig #
 * [Description](#description)
 * [Data Types](#types)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module implements HTTP Message Signatures as described in RFC-9421
 (https://datatracker.ietf.org/doc/html/rfc9421), as an AO-Core device.

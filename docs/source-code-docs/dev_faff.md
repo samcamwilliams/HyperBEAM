@@ -2,6 +2,8 @@
 
 # Module dev_faff #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A module that implements a 'friends and family' pricing policy.
 

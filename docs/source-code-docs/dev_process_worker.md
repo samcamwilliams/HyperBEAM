@@ -2,6 +2,8 @@
 
 # Module dev_process_worker #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A long-lived process worker that keeps state in memory between
 calls.

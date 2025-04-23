@@ -1,6 +1,8 @@
 
 
 # Module dev_cu #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

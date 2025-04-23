@@ -2,6 +2,8 @@
 
 # Module dev_scheduler_formats #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module is used by dev_scheduler in order to produce outputs that
 are compatible with various forms of AO clients.

@@ -2,6 +2,8 @@
 
 # Module hb_persistent #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Creates and manages long-lived AO-Core resolution processes.
 

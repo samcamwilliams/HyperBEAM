@@ -2,6 +2,8 @@
 
 # Module hb_path #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module provides utilities for manipulating the paths of a
 message: Its request path (referred to in messages as just the `Path`), and

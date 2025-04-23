@@ -2,6 +2,8 @@
 
 # Module dev_snp #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This device offers an interface for validating AMD SEV-SNP commitments,
 as well as generating them, if called in an appropriate environment.

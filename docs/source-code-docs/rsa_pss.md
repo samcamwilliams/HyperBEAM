@@ -3,6 +3,8 @@
 # Module rsa_pss #
 * [Description](#description)
 * [Data Types](#types)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Distributed under the Mozilla Public License v2.0.
 

@@ -2,6 +2,8 @@
 
 # Module dev_lua #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that calls a Lua script upon a request and returns the result.
 

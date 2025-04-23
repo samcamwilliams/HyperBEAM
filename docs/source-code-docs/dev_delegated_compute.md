@@ -2,6 +2,8 @@
 
 # Module dev_delegated_compute #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Simple wrapper module that enables compute on remote machines,
 implementing the JSON-Iface.

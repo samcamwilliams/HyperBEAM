@@ -2,6 +2,8 @@
 
 # Module dev_wasi #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A virtual filesystem device.
 

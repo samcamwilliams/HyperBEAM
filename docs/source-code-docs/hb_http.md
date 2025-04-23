@@ -1,6 +1,8 @@
 
 
 # Module hb_http #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

@@ -1,6 +1,8 @@
 
 
 # Module ar_deep_hash #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

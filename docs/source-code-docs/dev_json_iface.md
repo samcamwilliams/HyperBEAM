@@ -2,6 +2,8 @@
 
 # Module dev_json_iface #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that provides a way for WASM execution to interact with
 the HyperBEAM (and AO) systems, using JSON as a shared data representation.

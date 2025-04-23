@@ -2,6 +2,8 @@
 
 # Module hb_tracer #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A module for tracing the flow of requests through the system.
 

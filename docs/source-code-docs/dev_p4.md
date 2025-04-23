@@ -2,6 +2,8 @@
 
 # Module dev_p4 #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 The HyperBEAM core payment ledger.
 

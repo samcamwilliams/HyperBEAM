@@ -2,6 +2,8 @@
 
 # Module hb_json #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Wrapper for encoding and decoding JSON.
 

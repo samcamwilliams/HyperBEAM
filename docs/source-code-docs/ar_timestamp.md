@@ -1,6 +1,8 @@
 
 
 # Module ar_timestamp #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

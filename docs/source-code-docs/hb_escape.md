@@ -2,6 +2,8 @@
 
 # Module hb_escape #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Escape and unescape mixed case values for use in HTTP headers.
 

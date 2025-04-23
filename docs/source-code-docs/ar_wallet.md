@@ -1,6 +1,8 @@
 
 
 # Module ar_wallet #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 
