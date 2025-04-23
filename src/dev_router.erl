@@ -405,6 +405,11 @@ preprocess(Msg1, Msg2, Opts) ->
     case is_exempt(Msg1, Msg2, Opts) of
         {ok, true} ->
             ?event(debug_preprocess, is_exempt_true),
+			Body = hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore }),
+			?event(debug_hello, {a, Body}),
+			Req = hb_ao:get(<<"request">>, Msg2, Opts),
+			{ok, TestVerify} = dev_snp:verify(Msg2, Body, Opts),
+			?event(debug_hello, {b, TestVerify}),
             {ok, hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore })};
             % Request should not be proxied, return the modified parsed list of messages to execute
             % {ok, hb_ao:resolve(Msg1, Msg2, Opts)};
@@ -641,6 +646,16 @@ dynamic_router_test() ->
     {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
+		trusted => #{
+			vcpus => 1,
+			vcpu_type => 5, 
+			vmm_type => 1,
+			guest_features => 1,
+			firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+			kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+			initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+			append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
+		},
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
@@ -678,7 +693,8 @@ dynamic_router_test() ->
     Store = hb_opts:get(store, no_store, Opts),
     ?event(debug_dynrouter, {store, Store}),
     % Register workers with the dynamic router with varied prices.
-    lists:foreach(fun(X) ->
+    {ok, [Req]} = file:consult(<<"test/admissible-report.eterm">>),
+	lists:foreach(fun(X) ->
         case hb_http:post(
             Node,
             #{
@@ -696,7 +712,8 @@ dynamic_router_test() ->
                                         >>,
                                     <<"template">> => <<"/.*~process@1.0/.*">>,
                                     <<"price">> => X * 250
-                                }
+                                },
+							<<"body">> => Req
                         },
                         Opts
                     )
@@ -715,7 +732,11 @@ dynamic_router_test() ->
     {ok, Routes} = hb_http:get(Node, RouteProvider, Opts),
     ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
     ?event(debug_dynrouter, {got_routes, Routes}),
+	% Meta info is a part of the exempt routes. Make sure this returns our address
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
+	?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
+	{Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
+	?assertEqual(Status, ok),
     ?event(debug_dynrouter, {got_res, Res}).
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
