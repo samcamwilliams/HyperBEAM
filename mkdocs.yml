@@ -34,7 +34,7 @@ nav:
   - Usage:
     - Guides Overview: 'usage/index.md' # Renamed for clarity
     - HB JavaScript Client: 'usage/js-client-guide.md'
-    - Building Pre/Post-Processors: 'usage/components/building-pre-post-processors.md' # Adding the new guide here
+    - Building Pre/Post-Processors: 'usage/building-pre-post-processors.md' # Corrected path
   - Resources:
     - Source Code:
         - Overview: 'resources/source-code/index.md'
