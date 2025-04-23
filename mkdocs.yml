@@ -1,6 +1,6 @@
-site_name: 'hyperBEAM - Documentation'
-repo_url: https://github.com/permaweb/hyperBEAM
-repo_name: 'permaweb/hyperBEAM'
+site_name: 'HyperBEAM - Documentation'
+repo_url: https://github.com/permaweb/HyperBEAM
+repo_name: 'permaweb/HyperBEAM'
 site_url: https://permaweb.github.io/
 
 docs_dir: docs
@@ -16,7 +16,7 @@ nav:
       - Rebar3: 'getting-started/installation/rebar3.md'
       - Node.js: 'getting-started/installation/nodejs.md'
       - Rust: 'getting-started/installation/rust.md'
-    - hyperBEAM Setup & Config:
+    - HyperBEAM Setup & Config:
       - Overview: 'hyperbeam/index.md'
       - Setup: 'hyperbeam/setup.md'
       - Configuration: 'hyperbeam/configuration/index.md'
@@ -165,8 +165,10 @@ markdown_extensions:
 
 theme: 
   name: material
+  custom_dir: docs/theme/templates
   language: en
   logo: assets/images/favicon.png
+  favicon: assets/images/favicon.ico
   icon:
     repo: fontawesome/brands/github 
   features:
@@ -191,7 +193,7 @@ theme:
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: white
-      accent: green
+      accent: orange
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
@@ -199,7 +201,7 @@ theme:
     - media: "(prefers-color-scheme: dark)"
       scheme: default
       primary: white
-      accent: green
+      accent: orange
       toggle:
         icon: material/brightness-7
         name: Switch to light mode
@@ -217,6 +219,8 @@ extra_css:
  
 extra_javascript:
   - js/utc-time.js
+  - js/custom-header.js
+
 
 extra:
   social:

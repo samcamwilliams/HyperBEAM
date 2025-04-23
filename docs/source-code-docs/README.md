@@ -33,6 +33,8 @@
 <tr><td><a href="dev_local_name.md" class="module">dev_local_name</a></td></tr>
 <tr><td><a href="dev_lookup.md" class="module">dev_lookup</a></td></tr>
 <tr><td><a href="dev_lua.md" class="module">dev_lua</a></td></tr>
+<tr><td><a href="dev_lua_lib.md" class="module">dev_lua_lib</a></td></tr>
+<tr><td><a href="dev_lua_test.md" class="module">dev_lua_test</a></td></tr>
 <tr><td><a href="dev_manifest.md" class="module">dev_manifest</a></td></tr>
 <tr><td><a href="dev_message.md" class="module">dev_message</a></td></tr>
 <tr><td><a href="dev_meta.md" class="module">dev_meta</a></td></tr>
@@ -105,5 +107,6 @@
 <tr><td><a href="hb_test_utils.md" class="module">hb_test_utils</a></td></tr>
 <tr><td><a href="hb_tracer.md" class="module">hb_tracer</a></td></tr>
 <tr><td><a href="hb_util.md" class="module">hb_util</a></td></tr>
+<tr><td><a href="hb_volume.md" class="module">hb_volume</a></td></tr>
 <tr><td><a href="rsa_pss.md" class="module">rsa_pss</a></td></tr></table>
 

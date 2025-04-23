@@ -7,9 +7,10 @@
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Example implementation of a <code>compute</code> handler.</td></tr><tr><td valign="top"><a href="#compute_test-0">compute_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#device_with_function_key_module_test-0">device_with_function_key_module_test/0*</a></td><td>Tests the resolution of a default function.</td></tr><tr><td valign="top"><a href="#increment_counter-3">increment_counter/3</a></td><td>Find a test worker's PID and send it an increment message.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Exports a default_handler function that can be used to test the
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#compute-3">compute/3</a></td><td>Example implementation of a <code>compute</code> handler.</td></tr><tr><td valign="top"><a href="#compute_test-0">compute_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#delay-3">delay/3</a></td><td>Does nothing, just sleeps <code>Req/duration or 750</code> ms and returns the
+appropriate form in order to be used as preprocessor.</td></tr><tr><td valign="top"><a href="#device_with_function_key_module_test-0">device_with_function_key_module_test/0*</a></td><td>Tests the resolution of a default function.</td></tr><tr><td valign="top"><a href="#increment_counter-3">increment_counter/3</a></td><td>Find a test worker's PID and send it an increment message.</td></tr><tr><td valign="top"><a href="#info-1">info/1</a></td><td>Exports a default_handler function that can be used to test the
 handler resolution mechanism.</td></tr><tr><td valign="top"><a href="#info-3">info/3</a></td><td>Exports a default_handler function that can be used to test the
-handler resolution mechanism.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Example <code>init/3</code> handler.</td></tr><tr><td valign="top"><a href="#long_task-3">long_task/3</a></td><td>Does nothing, just sleeps for 3 seconds to simulate a long-running task.</td></tr><tr><td valign="top"><a href="#mul-2">mul/2</a></td><td>Example implementation of an <code>imported</code> function for a WASM
+handler resolution mechanism.</td></tr><tr><td valign="top"><a href="#init-3">init/3</a></td><td>Example <code>init/3</code> handler.</td></tr><tr><td valign="top"><a href="#mul-2">mul/2</a></td><td>Example implementation of an <code>imported</code> function for a WASM
 executor.</td></tr><tr><td valign="top"><a href="#postprocess-3">postprocess/3</a></td><td>Set the <code>postprocessor-called</code> key to true in the HTTP server.</td></tr><tr><td valign="top"><a href="#restore-3">restore/3</a></td><td>Example <code>restore/3</code> handler.</td></tr><tr><td valign="top"><a href="#restore_test-0">restore_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#snapshot-3">snapshot/3</a></td><td>Do nothing when asked to snapshot.</td></tr><tr><td valign="top"><a href="#test_func-1">test_func/1</a></td><td></td></tr><tr><td valign="top"><a href="#update_state-3">update_state/3</a></td><td>Find a test worker's PID and send it an update message.</td></tr></table>
 
 
@@ -32,6 +33,15 @@ slot number in the results key.
 ### compute_test/0 * ###
 
 `compute_test() -> any()`
+
+<a name="delay-3"></a>
+
+### delay/3 ###
+
+`delay(Msg1, Req, Opts) -> any()`
+
+Does nothing, just sleeps `Req/duration or 750` ms and returns the
+appropriate form in order to be used as preprocessor.
 
 <a name="device_with_function_key_module_test-0"></a>
 
@@ -74,14 +84,6 @@ handler resolution mechanism.
 `init(Msg, Msg2, Opts) -> any()`
 
 Example `init/3` handler. Sets the `Already-Seen` key to an empty list.
-
-<a name="long_task-3"></a>
-
-### long_task/3 ###
-
-`long_task(Msg1, Msg2, Opts) -> any()`
-
-Does nothing, just sleeps for 3 seconds to simulate a long-running task.
 
 <a name="mul-2"></a>
 
