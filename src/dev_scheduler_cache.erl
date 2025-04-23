@@ -121,7 +121,7 @@ read_location(Address, Opts) ->
 
 %% @doc Write the latest known scheduler location for an address.
 write_location(LocationMsg, Opts) ->
-    Signers = hb_message:signers(LocationMsg),
+    Signers = hb_message:signers(LocationMsg, Opts),
     ?event({writing_location_msg,
         {signers, Signers},
         {location_msg, LocationMsg}

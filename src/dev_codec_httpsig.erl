@@ -231,11 +231,7 @@ do_committed(SigInputStr, Msg, _Req, Opts) ->
             remove_derived_specifiers(BinComponentIdentifiers),
     % Extract the implicit keys from the `ao-types' of the encoded message if
     % the types key itself was signed.
-    SignedWithImplicit = Signed ++
-        case lists:member(<<"ao-types">>, Signed) of
-            true -> dev_codec_structured:implicit_keys(Msg);
-            false -> []
-        end,
+    SignedWithImplicit = Signed ++ dev_codec_structured:implicit_keys(Msg),
     case lists:member(<<"content-digest">>, SignedWithImplicit) of
         false -> {ok, SignedWithImplicit};
         true -> {ok, SignedWithImplicit ++ committed_from_body(Msg, Opts)}
@@ -479,9 +475,11 @@ verify(MsgToVerify, Req, Opts) ->
             SigName,
             hb_maps:from_list(
                 hb_structured_fields:parse_dictionary(
-                    hb_maps:get(<<"signature-input">>, MsgToVerify, not_found, Opts)
+                    hb_maps:get(<<"signature-input">>, MsgToVerify, <<>>, Opts)
                 )
-            )
+            ),
+            undefined,
+            Opts
         ),
     {string, Alg} =
         hb_maps:get(
@@ -600,7 +598,14 @@ add_derived_specifiers(ComponentIdentifiers) ->
 %% @doc Remove derived specifiers from a list of component identifiers.
 remove_derived_specifiers(ComponentIdentifiers) ->
     lists:map(
-        fun(<<"@", Key/binary>>) -> Key; (Key) -> Key end,
+        fun(<<"@", Key/binary>>) ->
+            Key;
+        (Key) ->
+            case hb_link:is_link_key(Key) of
+                true -> binary:part(Key, 0, byte_size(Key) - 5);
+                false -> Key
+            end
+        end,
         ComponentIdentifiers
     ).
 
@@ -1283,10 +1288,10 @@ validate_large_message_from_http_test() ->
             ]
     }),
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info">>, #{}),
-    Signers = hb_message:signers(Res),
+    Signers = hb_message:signers(Res, #{}),
     ?event({received, {signers, Signers}, {res, Res}}),
     ?assert(length(Signers) == 1),
-    ?assert(hb_message:verify(Res, Signers)),
+    ?assert(hb_message:verify(Res, Signers, #{})),
     ?event({sig_verifies, Signers}),
     ?assert(hb_message:verify(Res)),
     ?event({hmac_verifies, <<"hmac-sha256">>}),

@@ -211,8 +211,8 @@ become(_M1, M2, Opts) ->
             ?event(green_zone, {become, getting_key, NodeLocation, NodeID}),
             {ok, KeyResp} = hb_http:get(NodeLocation, 
                                        <<"/~greenzone@1.0/key">>, Opts),
-            Signers = hb_message:signers(KeyResp),
-            case hb_message:verify(KeyResp, Signers) and 
+            Signers = hb_message:signers(KeyResp, Opts),
+            case hb_message:verify(KeyResp, Signers, Opts) and 
                  lists:member(NodeID, Signers) of
                 false ->
                     % The response is not from the expected peer.
@@ -323,9 +323,9 @@ join_peer(PeerLocation, PeerID, _M1, M2, InitOpts) ->
 					?event(green_zone, {join, join_response, PeerLocation, PeerID, Resp}),
                     % Ensure that the response is from the expected peer, avoiding
                     % the risk of a man-in-the-middle attack.
-                    Signers = hb_message:signers(Resp),
+                    Signers = hb_message:signers(Resp, Opts),
 					?event(green_zone, {join, signers, Signers}),
-					IsVerified = hb_message:verify(Resp, Signers),
+					IsVerified = hb_message:verify(Resp, Signers, Opts),
 					?event(green_zone, {join, verify, IsVerified}),
 					IsPeerSigner = lists:member(PeerID, Signers),
 					?event(green_zone, {join, peer_is_signer, IsPeerSigner, PeerID}),	
@@ -419,10 +419,10 @@ maybe_set_zone_opts(PeerLocation, PeerID, Req, InitOpts) ->
 					{error, <<"Could not get required config from peer.">>};
 				{ok, RequiredConfig} ->
 					% Print the required config response.
-					Signers = hb_message:signers(RequiredConfig),
+					Signers = hb_message:signers(RequiredConfig, InitOpts),
 					?event(green_zone, {req_conf_signers, {explicit, Signers}}),
 					% Extract and log the verification steps
-					IsVerified = hb_message:verify(RequiredConfig, Signers),
+					IsVerified = hb_message:verify(RequiredConfig, Signers, InitOpts),
 					?event(green_zone, {req_opts, {verified, IsVerified}, {signers, Signers}}),
 					% Combined check
 					case lists:member(PeerID, Signers) andalso IsVerified of

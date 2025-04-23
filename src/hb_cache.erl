@@ -219,10 +219,10 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
             maps:to_list(hb_private:reset(Msg))
         )),
     % Now, we can calculate the IDs of the message.
-    UncommittedID = hb_message:id(Linkified, none, Opts),
-    AltIDs = calculate_all_ids(Linkified, Opts) -- [UncommittedID],
+    UncommittedID = hb_message:id(Msg, none, Opts),
+    AltIDs = calculate_all_ids(Msg, Opts) -- [UncommittedID],
     MsgHashpathAlg = hb_path:hashpath_alg(Msg, Opts),
-    ?event(debug_cache, {linkified, {id, UncommittedID}, {alt_ids, AltIDs}, {linkified, Linkified}, {original, Msg}}),
+    ?event(debug_cache, {linkified, {id, UncommittedID}, {alt_ids, AltIDs}, {linkified, {explicit, Linkified}}, {original, Msg}}),
     % Write all of the keys of the message into the store.
     hb_store:make_group(Store, UncommittedID),
     maps:map(
@@ -264,7 +264,8 @@ calculate_all_ids(Msg, Opts) ->
             [<<"priv">>],
             hb_maps:get(<<"commitments">>, Msg, #{}, Opts)
         ),
-    CommIDs = hb_maps:keys(Commitments),
+    CommIDs = hb_maps:keys(Commitments, Opts),
+    ?event({calculating_ids, {msg, Msg}, {commitments, Commitments}, {comm_ids, CommIDs}}),
     case lists:member(All = hb_message:id(Msg, all, Opts), CommIDs) of
         true -> CommIDs;
         false -> [All | CommIDs]
@@ -323,7 +324,7 @@ store_read(Path, Store, Opts) ->
             ?event({reading_composite, ResolvedFullPath}),
             case hb_store:list(Store, ResolvedFullPath) of
                 {ok, RawSubpaths} ->
-                    Subpaths = lists:map(fun hb_ao:normalize_key/1, RawSubpaths),
+                    Subpaths = lists:map(fun hb_util:bin/1, RawSubpaths),
                     ?event(
                         {listed,
                             {original_path, Path},
@@ -575,7 +576,7 @@ test_deeply_nested_complex_message(Opts) ->
         hb_message:commit(
             #{
                 <<"level1">> =>
-                    hb_message:commit(
+                    InnerSigned = hb_message:commit(
                         #{
                             <<"level2">> =>
                                 #{

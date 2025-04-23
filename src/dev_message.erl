@@ -79,6 +79,7 @@ id(RawBase, Req, NodeOpts) ->
             % accumulation function starts with a buffer of zero encoded as a 
             % 256-bit binary. Subsequently, a single ID on its own 'accumulates' 
             % to itself.
+            ?event(ids, {accumulating_existing_ids, IDs}),
             {ok,
                 hb_util:human_id(
                     hb_crypto:accumulate(
@@ -167,7 +168,8 @@ committers(#{ <<"commitments">> := Commitments }, _, NodeOpts) ->
                         Committer -> {true, Committer}
                     end
                 end,
-                Commitments
+                Commitments,
+                NodeOpts
             ),
             NodeOpts
         )
@@ -219,7 +221,7 @@ verify(Self, Req, Opts) ->
                 {ok, Res} = exec_for_commitment(
                     verify,
                     Base,
-                    hb_maps:get(CommitmentID, Commitments),
+                    hb_maps:get(CommitmentID, Commitments, #{}, Opts),
                     Req#{ <<"commitment">> => CommitmentID },
                     Opts
                 ),
@@ -411,7 +413,8 @@ commitment_ids_from_committers(CommitterAddrs, Commitments, Opts) ->
                                 _ -> false
                             end
                         end,
-                        Commitments
+                        Commitments,
+                        Opts
                     ), Opts),
                 {CommitterAddr, IDs}
             end,

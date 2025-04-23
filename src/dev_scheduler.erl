@@ -294,7 +294,7 @@ register(_Msg1, Req, Opts) ->
     ?event({registering_scheduler, {msg1, _Msg1}, {req, Req}, {opts, Opts}}),
     {ok, OnlyCommitted} = hb_message:with_only_committed(Req, Opts),
     ?event({only_committed, OnlyCommitted}),
-    Signers = hb_message:signers(OnlyCommitted),
+    Signers = hb_message:signers(OnlyCommitted, Opts),
     Operator =
         hb_util:human_id(
             ar_wallet:to_address(

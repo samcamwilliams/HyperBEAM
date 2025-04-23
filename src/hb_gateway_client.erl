@@ -274,7 +274,7 @@ ans104_no_data_item_test() ->
     _Node = hb_http_server:start_node(#{}),
     {ok, Res} = read(<<"0Tb9mULcx8MjYVgXleWMVvqo1_jaw_P6AO_CJMTj0XE">>, #{}),
     ?event(gateway, {get_ans104_test, Res}),
-    ?event(gateway, {signer, hb_message:signers(Res)}),
+    ?event(gateway, {signer, hb_message:signers(Res, #{})}),
     ?assert(true).
 
 %% @doc Test that we can get the scheduler location.

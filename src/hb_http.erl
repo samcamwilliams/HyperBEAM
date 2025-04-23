@@ -549,7 +549,7 @@ encode_reply(TABMReq, Message, Opts) ->
                     hb_message:convert(
                         hb_message:with_only_committers(
                             Message,
-                            hb_message:signers(Message)
+                            hb_message:signers(Message, Opts)
                         ),
                         <<"ans104@1.0">>,
                         <<"structured@1.0">>,
@@ -683,7 +683,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
     case (not ForceSignedRequests) orelse hb_message:verify(SignedMsg, all, Opts) of
         true ->
             ?event(http_verify, {verified_signature, SignedMsg}),
-            Signers = hb_message:signers(SignedMsg),
+            Signers = hb_message:signers(SignedMsg, Opts),
             case Signers =/= [] andalso hb_opts:get(store_all_signed, false, Opts) of
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
@@ -741,7 +741,7 @@ maybe_add_unsigned(Req = #{ headers := RawHeaders }, Msg, Opts) ->
     Msg#{ <<"method">> => Method, <<"path">> => MsgPath }.
 
 remove_unsigned_fields(Msg, Opts) ->
-    case hb_message:signers(Msg) of
+    case hb_message:signers(Msg, Opts) of
         [] -> {ok, Msg};
         _ -> hb_message:with_only_committed(Msg, Opts)
     end.

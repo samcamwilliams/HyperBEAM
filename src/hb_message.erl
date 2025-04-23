@@ -55,7 +55,7 @@
 -module(hb_message).
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, uncommitted/1, with_only_committers/2]).
--export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/1, type/1, minimize/1]).
+-export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
 -export([committed/1, committed/2, committed/3]).
 -export([commitment/2, commitment/3]).
 -export([with_only_committed/1, with_only_committed/2]).
@@ -135,8 +135,8 @@ restore_priv(Msg, OldPriv, Opts) ->
 
 %% @doc Return the ID of a message.
 id(Msg) -> id(Msg, uncommitted).
-id(Msg, Committers) when is_list(Committers) -> id(Msg, Committers, #{});
-id(Msg, Opts) when is_map(Opts) -> id(Msg, uncommitted, Opts).
+id(Msg, Opts) when is_map(Opts) -> id(Msg, uncommitted, Opts);
+id(Msg, Committers) -> id(Msg, Committers, #{}).
 id(Msg, RawCommitters, Opts) ->
     Committers =
         case RawCommitters of
@@ -144,7 +144,7 @@ id(Msg, RawCommitters, Opts) ->
             unsigned -> <<"none">>;
             none -> [];
             all -> <<"all">>;
-            signed -> signers(Msg);
+            signed -> signers(Msg, Opts);
             List when is_list(List) -> List
         end,
     ?event({getting_id, {msg, Msg}, {committers, Committers}}),
@@ -259,7 +259,7 @@ verify(Msg, Committers) ->
 verify(Msg, all, Opts) ->
     verify(Msg, <<"all">>, Opts);
 verify(Msg, signers, Opts) ->
-    verify(Msg, hb_message:signers(Msg), Opts);
+    verify(Msg, hb_message:signers(Msg, Opts), Opts);
 verify(Msg, Committers, Opts) ->
     {ok, Res} =
         dev_message:verify(
@@ -281,9 +281,9 @@ uncommitted(Msg) ->
 
 %% @doc Return all of the committers on a message that have 'normal', 256 bit, 
 %% addresses.
-signers(Msg) ->
+signers(Msg, Opts) ->
     lists:filter(fun(Signer) -> ?IS_ID(Signer) end,
-        hb_ao:get(<<"committers">>, Msg, #{})).
+        hb_ao:get(<<"committers">>, Msg, [], Opts)).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
@@ -543,6 +543,7 @@ match(Map1, Map2, Mode, Opts) ->
         true ->
             lists:all(
                 fun(Key) ->
+                    ?event(match, {matching_key, Key}),
                     Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found, Opts)),
                     Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found, Opts)),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
@@ -632,7 +633,8 @@ commitment(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
                     false -> false
                 end
             end,
-            Commitments
+            Commitments,
+            Opts
         ),
     case hb_maps:values(Matches, Opts) of
         [] -> not_found;
@@ -796,11 +798,11 @@ signed_only_committed_data_field_test(Codec) ->
 signed_nested_data_key_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = #{
-        <<"layer">> => <<"outer">>,
+        <<"outer-data">> => <<"outer">>,
         <<"body">> =>
             commit(
                 #{
-                    <<"layer">> => <<"inner">>,
+                    <<"inner-data">> => <<"inner">>,
                     <<"data">> => <<"DATA">>
                 },
                 Opts,
@@ -809,7 +811,9 @@ signed_nested_data_key_test(Codec) ->
     },
     Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
+    LoadedMsg = hb_cache:ensure_all_loaded(Decoded, Opts),
+    ?event({matching, {input, Msg}, {output, LoadedMsg}}),
+    ?assert(hb_message:match(Msg, LoadedMsg, strict, Opts)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
@@ -1096,18 +1100,18 @@ deep_multisignature_test() ->
         dev_message:commit(
             Msg,
             #{ <<"commitment-device">> => Codec },
-            Opts
+            Opts#{ priv_wallet => Wallet1 }
         ),
     ?event({signed_msg, SignedMsg}),
     {ok, MsgSignedTwice} =
         dev_message:commit(
             SignedMsg,
             #{ <<"commitment-device">> => Codec },
-            Opts
+            Opts#{ priv_wallet => Wallet2 }
         ),
     ?event({signed_msg_twice, MsgSignedTwice}),
     ?assert(verify(MsgSignedTwice, all, Opts)),
-    Committers = hb_message:signers(MsgSignedTwice),
+    Committers = hb_message:signers(MsgSignedTwice, Opts),
     ?event({committers, Committers}),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
@@ -1363,11 +1367,21 @@ deeply_nested_committed_keys_test() ->
     },
     Signed = commit(Msg, Opts, <<"httpsig@1.0">>),
     {ok, WithOnlyCommitted} = with_only_committed(Signed, Opts),
-    ?event({with_only_committed, WithOnlyCommitted}),
+    Committed = committed(Signed, all, Opts),
+    ToCompare = hb_maps:without([<<"commitments">>], WithOnlyCommitted),
+    ?event(debug,
+        {msgs,
+            {base, Msg},
+            {signed, Signed},
+            {committed, Committed},
+            {with_only_committed, WithOnlyCommitted},
+            {to_compare, ToCompare}
+        }
+    ),
     ?assert(
         match(
             Msg,
-            hb_maps:without([<<"commitments">>], WithOnlyCommitted),
+            ToCompare,
             strict,
             Opts
         )
@@ -1381,14 +1395,15 @@ signed_with_inner_signed_message_test(Codec) ->
                 <<"a">> => 1,
                 <<"inner">> =>
                     hb_maps:merge(
-                        commit(
-                            #{
-                                <<"c">> => <<"abc">>,
-                                <<"e">> => 5
-                            },
-                            Opts,
-                            Codec
-                        ),
+                        InnerSigned = 
+                            commit(
+                                #{
+                                    <<"c">> => <<"abc">>,
+                                    <<"e">> => 5
+                                },
+                                Opts,
+                                Codec
+                            ),
                         % Uncommitted keys that should be ripped out of the inner
                         % message by `with_only_committed'. These should still be
                         % present in the `with_only_committed' outer message. 
@@ -1407,30 +1422,29 @@ signed_with_inner_signed_message_test(Codec) ->
             Opts,
             Codec
         ),
-    ?event({initial_msg, Msg}),
+    ?event(debug, {initial_msg, Msg}),
     % 1. Verify the outer message without changes.
     ?assert(verify(Msg, all, Opts)),
     {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg, Opts)),
-    ?event({committed_inner, CommittedInner}),
-    ?event({inner_committers, hb_message:signers(CommittedInner)}),
+    ?event(debug, {committed_inner, CommittedInner}),
+    ?event(debug, {inner_committers, hb_message:signers(CommittedInner, Opts)}),
     % 2. Verify the inner message without changes.
     ?assert(verify(CommittedInner, signers, Opts)),
     % 3. Convert the message to the format and back.
     Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
-    ?event({encoded, Encoded}),
+    ?event(debug, {encoded, Encoded}),
     %?event({encoded_body, {string, hb_maps:get(<<"body">>, Encoded)}}, #{}),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?event({decoded, Decoded}),
+    ?event(debug, {decoded, Decoded}),
     % 4. Verify the outer message after decode.
-    ?assert(match(Msg, Decoded, strict, Opts)),
+    ?assert(match(InnerSigned, hb_maps:get(<<"inner">>, Decoded, not_found, Opts), strict, Opts)),
     ?assert(verify(Decoded, all, Opts)),
     % 5. Verify the inner message from the converted message, applying
     % `with_only_committed` first.
-    InnerDecoded = hb_maps:get(<<"inner">>, Decoded, Opts),
-    ?event({inner_decoded, InnerDecoded}),
+    InnerDecoded = hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
+    ?event(debug, {inner_decoded, InnerDecoded}),
     % Applying `with_only_committed' should verify the inner message.
     {ok, CommittedInnerOnly} = with_only_committed(InnerDecoded, Opts),
-    ?event({committed_inner_only, CommittedInnerOnly}),
     ?assert(verify(CommittedInnerOnly, signers, Opts)).
 
 large_body_committed_keys_test(Codec) ->
@@ -1741,5 +1755,5 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    sign_node_message_test(<<"httpsig@1.0">>).
+    signed_with_inner_signed_message_test(<<"httpsig@1.0">>).
     % id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).

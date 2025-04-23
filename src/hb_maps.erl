@@ -17,7 +17,7 @@
 %%% yourself from the inevitable issues that will arise from using this
 %%% module without understanding the full implications. You have been warned.
 -module(hb_maps).
--export([get/2, get/3, get/4, find/2, find/3, is_key/2, keys/1, values/1, values/2]).
+-export([get/2, get/3, get/4, find/2, find/3, is_key/2, keys/1, keys/2, values/1, values/2]).
 -export([put/3, map/2, map/3, filter/2, filter/3, filtermap/2, filtermap/3]).
 -export([fold/3, fold/4, take/2, size/1]).
 -export([merge/2, remove/2, with/2, without/2, update_with/3, update_with/4]).
@@ -67,6 +67,8 @@ is_key(Key, Map) ->
 -spec keys(Map :: map()) -> [term()].
 keys(Map) ->
     maps:keys(hb_cache:ensure_loaded(Map)).
+keys(Map, Opts) ->
+    maps:keys(hb_cache:ensure_loaded(Map, Opts)).
 
 -spec values(Map :: map()) -> [term()].
 values(Map) -> values(Map, #{}).

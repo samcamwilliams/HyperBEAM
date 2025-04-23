@@ -529,7 +529,7 @@ ensure_process_key(Msg1, Opts) ->
             % the cache. This can happen if the message was 'cast' to a different
             % device, leading the signers to be unset.
             ProcessMsg =
-                case hb_message:signers(Msg1) of
+                case hb_message:signers(Msg1, Opts) of
                     [] ->
                         ?event({process_key_not_found_no_signers, {msg1, Msg1}}),
                         case hb_cache:read(hb_message:id(Msg1, all), Opts) of

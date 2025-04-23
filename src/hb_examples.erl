@@ -57,8 +57,8 @@ relay_with_payments_test() ->
     Res2 = hb_http:get(HostNode, ClientMessage1, #{}),
     ?assertMatch({ok, #{ <<"body">> := Bin }} when byte_size(Bin) > 10_000, Res2),
     {ok, Resp} = Res2,
-    ?assert(length(hb_message:signers(Resp)) > 0),
-    ?assert(hb_message:verify(Resp)).
+    ?assert(length(hb_message:signers(Resp, #{})) > 0),
+    ?assert(hb_message:verify(Resp, all, #{})).
 
 %% @doc Gain signed WASM responses from a node and verify them.
 %% 1. Start the client with a small balance.
@@ -99,8 +99,8 @@ paid_wasm_test() ->
         ),
     {ok, Res} = hb_http:post(HostNode, ClientMessage1, #{}),
     % Check that the message is signed by the host node.
-    ?assert(length(hb_message:signers(Res)) > 0),
-    ?assert(hb_message:verify(Res)),
+    ?assert(length(hb_message:signers(Res, #{})) > 0),
+    ?assert(hb_message:verify(Res, all, #{})),
     % Now we have the results, we can verify them.
     ?assertMatch(6.0, hb_ao:get(<<"output/1">>, Res, #{})),
     % Check that the client's balance has been deducted.

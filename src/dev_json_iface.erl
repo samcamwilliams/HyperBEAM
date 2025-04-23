@@ -64,7 +64,7 @@ prep_call(RawM1, RawM2, Opts) ->
     Message = hb_ao:get(<<"body">>, M2, Opts#{ hashpath => ignore }),
     Image = hb_ao:get(<<"process/image">>, M1, Opts),
     BlockHeight = hb_ao:get(<<"block-height">>, M2, Opts),
-    Props = message_to_json_struct(denormalize_message(Message), Opts),
+    Props = message_to_json_struct(denormalize_message(Message, Opts), Opts),
     MsgProps =
         Props#{
             <<"Module">> => Image,
@@ -79,9 +79,9 @@ prep_call(RawM1, RawM2, Opts) ->
     env_write(ProcessJson, MsgJson, M1, M2, Opts).
 
 %% @doc Normalize a message for AOS-compatibility.
-denormalize_message(Message) ->
+denormalize_message(Message, Opts) ->
     NormOwnerMsg =
-        case hb_message:signers(Message) of
+        case hb_message:signers(Message, Opts) of
             [] -> Message;
             [PrimarySigner|_] ->
                 {ok, _, Commitment} = hb_message:commitment(PrimarySigner, Message),
@@ -109,7 +109,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
     Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, #{}),
 	Owner =
-        case hb_message:signers(RawMsg) of
+        case hb_message:signers(RawMsg, Opts) of
             [] -> <<>>;
             [Signer|_] ->
                 case lists:member(owner_as_address, Features) of

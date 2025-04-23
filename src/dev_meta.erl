@@ -27,7 +27,7 @@ info(_) -> #{ exports => [info] }.
 %% @doc Utility function for determining if a request is from the `operator' of
 %% the node.
 is_operator(Request, NodeMsg) ->
-    RequestSigners = hb_message:signers(Request),
+    RequestSigners = hb_message:signers(Request, NodeMsg),
     Operator =
         hb_opts:get(
             operator,
@@ -129,7 +129,7 @@ add_dynamic_keys(NodeMsg) ->
 %% @doc Validate that the request is signed by the operator of the node, then
 %% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
-    RequestSigners = hb_message:signers(Request),
+    RequestSigners = hb_message:signers(Request, NodeMsg),
     Operator =
         hb_opts:get(
             operator,
@@ -345,7 +345,7 @@ maybe_sign(Res, NodeMsg) ->
     ?event({maybe_sign, Res, NodeMsg}),
     case hb_opts:get(force_signed, false, NodeMsg) of
         true ->
-            case hb_message:signers(Res) of
+            case hb_message:signers(Res, NodeMsg) of
                 [] -> hb_message:commit(Res, NodeMsg);
                 _ -> Res
             end;

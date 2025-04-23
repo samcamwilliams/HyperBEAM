@@ -186,7 +186,7 @@ write_single(Msg, Opts) ->
 %% @returns true if the request is from an authorized writer, false
 %%          otherwise.
 is_trusted_writer(Req, Opts) ->
-    Signers = hb_message:signers(Req),
+    Signers = hb_message:signers(Req, Opts),
     ?event(dev_cache, {is_trusted_writer, {signers, Signers}, {req, Req}}),
     CacheWriters = hb_opts:get(cache_writers, [], Opts),
     ?event(dev_cache, {is_trusted_writer, {cache_writers, CacheWriters}}),
