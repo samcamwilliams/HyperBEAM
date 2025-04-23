@@ -196,9 +196,11 @@ topup(Node, Amount, Recipient, Wallet) ->
 wallet() ->
     wallet(hb_opts:get(priv_key_location)).
 wallet(Location) ->
+    wallet(Location, #{}).
+wallet(Location, Opts) ->
     case file:read_file_info(Location) of
         {ok, _} ->
-            ar_wallet:load_keyfile(Location);
+            ar_wallet:load_keyfile(Location, Opts);
         {error, _} -> 
             Res = ar_wallet:new_keyfile(?DEFAULT_KEY_TYPE, Location),
             ?event({created_new_keyfile, Location, address(Res)}),

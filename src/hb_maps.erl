@@ -17,10 +17,11 @@
 %%% yourself from the inevitable issues that will arise from using this
 %%% module without understanding the full implications. You have been warned.
 -module(hb_maps).
--export([get/2, get/3, get/4, find/2, find/3, is_key/2, keys/1, keys/2, values/1, values/2]).
--export([put/3, map/2, map/3, filter/2, filter/3, filtermap/2, filtermap/3]).
--export([fold/3, fold/4, take/2, size/1]).
--export([merge/2, remove/2, with/2, without/2, update_with/3, update_with/4]).
+-export([is_key/2, is_key/3, keys/1, keys/2, values/1, values/2]).
+-export([map/2, map/3, filter/2, filter/3, filtermap/2, filtermap/3]).
+-export([fold/3, fold/4, take/2, take/3, size/1, size/2]).
+-export([merge/2, merge/3, remove/2, remove/3]).
+-export([with/2, with/3, without/2, without/3, update_with/3, update_with/4]).
 -export([from_list/1, to_list/1, to_list/2]).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -30,10 +31,6 @@ get(Key, Map) ->
 
 -spec get(Key :: term(), Map :: map(), Default :: term()) -> term().
 get(Key, Map, Default) ->
-    %io:format(
-    %   standard_error, "get called without opts~n~p~n",
-    %   [try exit(1) catch _:_:St -> St end]
-    % ),
     get(Key, Map, Default, #{}).
 
 %% @doc Get a value from a map, resolving links as they are encountered in both
@@ -64,15 +61,30 @@ find(Key, Map, Opts) ->
 
 -spec put(Key :: term(), Value :: term(), Map :: map()) -> map().
 put(Key, Value, Map) ->
-    maps:put(Key, Value, hb_cache:ensure_loaded(Map)).
+	put(Key, Value, Map, #{}).
+
+-spec put(
+	Key :: term(),
+	Value :: term(),
+	Map :: map(),
+	Opts :: map()
+) -> map().
+put(Key, Value, Map, Opts) ->
+    maps:put(Key, Value, hb_cache:ensure_loaded(Map, Opts)).
 
 -spec is_key(Key :: term(), Map :: map()) -> boolean().
 is_key(Key, Map) ->
-    maps:is_key(Key, hb_cache:ensure_loaded(Map)).
+    is_key(Key, Map, #{}).
+
+-spec is_key(Key :: term(), Map :: map(), Opts :: map()) -> boolean().
+is_key(Key, Map, Opts) ->
+    maps:is_key(Key, hb_cache:ensure_loaded(Map, Opts)).
 
 -spec keys(Map :: map()) -> [term()].
 keys(Map) ->
-    maps:keys(hb_cache:ensure_loaded(Map)).
+	keys(Map, #{}).
+
+-spec keys(Map :: map(), Opts :: map()) -> [term()].
 keys(Map, Opts) ->
     maps:keys(hb_cache:ensure_loaded(Map, Opts)).
 
@@ -85,17 +97,17 @@ values(Map, Opts) ->
 
 -spec size(Map :: map()) -> non_neg_integer().
 size(Map) ->
-    maps:size(hb_cache:ensure_loaded(Map)).
+	size(Map, #{}).
+
+-spec size(Map :: map(), Opts :: map()) -> non_neg_integer().
+size(Map, Opts) ->
+    maps:size(hb_cache:ensure_loaded(Map, Opts)).
 
 -spec map(
     Fun :: fun((Key :: term(), Value :: term()) -> term()),
     Map :: map()
 ) -> map().
 map(Fun, Map) ->
-    % io:format(
-    %   standard_error, "map called without opts~n~p~n",
-    %   [try exit(1) catch _:_:St -> St end]
-    % ),
     map(Fun, Map, #{}).
 
 -spec map(
@@ -111,19 +123,35 @@ map(Fun, Map, Opts) ->
 
 -spec merge(Map1 :: map(), Map2 :: map()) -> map().
 merge(Map1, Map2) ->
-    maps:merge(hb_cache:ensure_loaded(Map1), hb_cache:ensure_loaded(Map2)).
+	merge(Map1, Map2, #{}).
+
+-spec merge(Map1 :: map(), Map2 :: map(), Opts :: map()) -> map().
+merge(Map1, Map2, Opts) ->
+    maps:merge(hb_cache:ensure_loaded(Map1, Opts), hb_cache:ensure_loaded(Map2, Opts)).
 
 -spec remove(Key :: term(), Map :: map()) -> map().
 remove(Key, Map) ->
-    maps:remove(Key, hb_cache:ensure_loaded(Map)).
+	remove(Key, Map, #{}).
+
+-spec remove(Key :: term(), Map :: map(), Opts :: map()) -> map().
+remove(Key, Map, Opts) ->
+    maps:remove(Key, hb_cache:ensure_loaded(Map, Opts)).
 
 -spec with(Keys :: [term()], Map :: map()) -> map().
 with(Keys, Map) ->
-    maps:with(Keys, hb_cache:ensure_loaded(Map)).
+	with(Keys, Map, #{}).
+
+-spec with(Keys :: [term()], Map :: map(), Opts :: map()) -> map().
+with(Keys, Map, Opts) ->
+    maps:with(Keys, hb_cache:ensure_loaded(Map, Opts)).
 
 -spec without(Keys :: [term()], Map :: map()) -> map().
 without(Keys, Map) ->
-    maps:without(Keys, hb_cache:ensure_loaded(Map)).
+	without(Keys, Map, #{}).
+
+-spec without(Keys :: [term()], Map :: map(), Opts :: map()) -> map().
+without(Keys, Map, Opts) ->
+    maps:without(Keys, hb_cache:ensure_loaded(Map, Opts)).
 
 -spec filter(
     Fun :: fun((Key :: term(), Value :: term()) -> boolean()),
@@ -189,7 +217,11 @@ fold(Fun, Acc, Map, Opts) ->
 
 -spec take(N :: non_neg_integer(), Map :: map()) -> map().
 take(N, Map) ->
-    maps:take(N, hb_cache:ensure_loaded(Map)).
+	take(N, Map, #{}).
+
+-spec take(N :: non_neg_integer(), Map :: map(), Opts :: map()) -> map().
+take(N, Map, Opts) ->
+    maps:take(N, hb_cache:ensure_loaded(Map, Opts)).
 
 -spec update_with(
     Key :: term(),
@@ -197,7 +229,7 @@ take(N, Map) ->
     Map :: map()
 ) -> map().
 update_with(Key, Fun, Map) ->
-    maps:update_with(Key, Fun, hb_cache:ensure_loaded(Map)).
+    update_with(Key, Fun, Map, #{}).
 
 -spec update_with(
     Key :: term(),
@@ -215,6 +247,8 @@ from_list(List) ->
 -spec to_list(Map :: map()) -> [{Key :: term(), Value :: term()}].
 to_list(Map) ->
     to_list(Map, #{}).
+
+-spec to_list(Map :: map(), Opts :: map()) -> [{Key :: term(), Value :: term()}].
 to_list(Map, Opts) ->
     maps:to_list(hb_cache:ensure_loaded(Map, Opts)).
 

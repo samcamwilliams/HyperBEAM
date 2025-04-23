@@ -95,7 +95,7 @@ commit(Msg, Req = #{ <<"type">> := <<"rsa-pss-sha256">> }, Opts) ->
                 CommitmentWithOriginalTags#{ <<"hashpath">> => Hashpath };
             _ -> CommitmentWithOriginalTags
         end,
-    MsgWithoutHP = hb_maps:without([<<"hashpath">>], Msg),
+    MsgWithoutHP = hb_maps:without([<<"hashpath">>], Msg, Opts),
     {ok,
         (hb_message:without_commitments(
             #{
@@ -152,7 +152,8 @@ do_from(RawTX, Req, Opts) ->
                         tl(tuple_to_list(TX))
                     )
                 )
-            )
+            ),
+			Opts
         ),
     % Normalize `owner' to `keyid', remove 'id', and remove 'signature'
     TXKeysMap =
@@ -167,7 +168,8 @@ do_from(RawTX, Req, Opts) ->
     MapWithoutData =
         hb_maps:merge(
             TXKeysMap,
-            deduplicating_from_list(TX#tx.tags, Opts)
+            deduplicating_from_list(TX#tx.tags, Opts),
+			Opts
         ),
     ?event({tags_from_tx, {explicit, MapWithoutData}}),
     DataMap =
@@ -183,7 +185,8 @@ do_from(RawTX, Req, Opts) ->
                         end,
                         Data,
                         Opts
-                    )
+                    ),
+					Opts
                 );
             Data when Data == ?DEFAULT_DATA -> MapWithoutData;
             Data when is_binary(Data) -> MapWithoutData#{ <<"data">> => Data };
@@ -195,7 +198,7 @@ do_from(RawTX, Req, Opts) ->
     % Merge the data map with the rest of the TX map and remove any keys that
     % are not part of the message.
     NormalizedDataMap =
-        hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData)),
+        hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData, Opts)),
     %% Add the commitments to the message if the TX has a signature.
     ?event({message_before_commitments, NormalizedDataMap}),
     WithCommitments =
@@ -227,7 +230,8 @@ do_from(RawTX, Req, Opts) ->
                             <<"commitment-device">>,
                             <<"original-tags">>
                         ],
-                        NormalizedDataMap
+                        NormalizedDataMap,
+						Opts
                     ),
                 ID = hb_util:human_id(TX#tx.id),
                 ?event({raw_tx_id, {id, ID}, {explicit, WithoutBaseCommitment}}),
@@ -255,7 +259,7 @@ do_from(RawTX, Req, Opts) ->
                     }
                 }
         end,
-    Res = hb_maps:without(?FILTERED_TAGS, WithCommitments),
+    Res = hb_maps:without(?FILTERED_TAGS, WithCommitments, Opts),
     ?event({message_after_commitments, Res}),
     {ok, Res}.
 
@@ -268,12 +272,12 @@ deduplicating_from_list(Tags, Opts) ->
             fun({Key, Value}, Acc) ->
                 NormKey = hb_ao:normalize_key(Key),
                 ?event({deduplicating_from_list, {key, NormKey}, {value, Value}, {acc, Acc}}),
-                case hb_maps:get(NormKey, Acc, undefined) of
-                    undefined -> hb_maps:put(NormKey, Value, Acc);
+                case hb_maps:get(NormKey, Acc, undefined, Opts) of
+                    undefined -> hb_maps:put(NormKey, Value, Acc, Opts);
                     Existing when is_list(Existing) ->
-                        hb_maps:put(NormKey, Existing ++ [Value], Acc);
+                        hb_maps:put(NormKey, Existing ++ [Value], Acc, Opts);
                     ExistingSingle ->
-                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc)
+                        hb_maps:put(NormKey, [ExistingSingle, Value], Acc, Opts)
                 end
             end,
             #{},
@@ -360,11 +364,11 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     ?event({to, {norm, NormTABM}}),
     TABM =
         hb_ao:normalize_keys(
-            hb_maps:without([<<"commitments">>], NormTABM)
+            hb_maps:without([<<"commitments">>], NormTABM, Opts)
         ),
     Commitments = hb_maps:get(<<"commitments">>, NormTABM, #{}, Opts),
     TABMWithComm =
-        case hb_maps:keys(Commitments) of
+        case hb_maps:keys(Commitments, Opts) of
             [] -> TABM;
             [ID] ->
                 Commitment = hb_maps:get(ID, Commitments),
@@ -397,7 +401,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
         end,
     OriginalTagMap = hb_maps:get(<<"original-tags">>, TABMWithComm, #{}, Opts),
     OriginalTags = tag_map_to_encoded_tags(OriginalTagMap),
-    TABMNoOrigTags = hb_maps:without([<<"original-tags">>], TABMWithComm),
+    TABMNoOrigTags = hb_maps:without([<<"original-tags">>], TABMWithComm, Opts),
     % Translate the keys into a binary map. If a key has a value that is a map,
     % we recursively turn its children into messages. Notably, we do not simply
     % call message_to_tx/1 on the inner map because that would lead to adding
@@ -451,7 +455,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
                     end;
                 (_) -> false
             end,
-            hb_maps:to_list(RemainingMap)
+            hb_maps:to_list(RemainingMap, Opts)
         ),
     ?event({remaining_keys_to_convert_to_tags, {explicit, Remaining}}),
     ?event({original_tags, {explicit, OriginalTags}}),
@@ -491,17 +495,18 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             ?event({data_item, {key, Key}, {value, Value}}),
             {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
         end,
-        RawDataItems
+        RawDataItems,
+		Opts
     )),
     % Set the data based on the remaining keys.
     TXWithData = 
-        case {TX#tx.data, hb_maps:size(DataItems)} of
+        case {TX#tx.data, hb_maps:size(DataItems, Opts)} of
             {Binary, 0} when is_binary(Binary) ->
                 TX;
             {?DEFAULT_DATA, _} ->
                 TX#tx { data = DataItems };
             {Data, _} when is_map(Data) ->
-                TX#tx { data = hb_maps:merge(Data, DataItems) };
+                TX#tx { data = hb_maps:merge(Data, DataItems, Opts) };
             {Data, _} when is_record(Data, tx) ->
                 TX#tx { data = DataItems#{ <<"data">> => Data } };
             {Data, _} when is_binary(Data) ->

@@ -150,6 +150,12 @@ wallet_filepath2(Wallet) ->
 %% Return not_found if arweave_keyfile_[addr].json or [addr].json is not found
 %% in [data_dir]/?WALLET_DIR.
 load_key(Addr) ->
+    load_key(Addr, #{}).
+
+%% @doc Read the keyfile for the key with the given address from disk.
+%% Return not_found if arweave_keyfile_[addr].json or [addr].json is not found
+%% in [data_dir]/?WALLET_DIR.
+load_key(Addr, Opts) ->
     Path = hb_util:encode(Addr),
     case filelib:is_file(Path) of
         false ->
@@ -158,22 +164,26 @@ load_key(Addr) ->
                 false ->
                     not_found;
                 true ->
-                    load_keyfile(Path2)
+                    load_keyfile(Path2, Opts)
             end;
         true ->
-            load_keyfile(Path)
+            load_keyfile(Path, Opts)
     end.
 
 %% @doc Extract the public and private key from a keyfile.
 load_keyfile(File) ->
+    load_keyfile(File, #{}).
+
+%% @doc Extract the public and private key from a keyfile.
+load_keyfile(File, Opts) ->
     {ok, Body} = file:read_file(File),
     Key = hb_json:decode(Body),
     {Pub, Priv, KeyType} =
-        case hb_maps:get(<<"kty">>, Key) of
+        case hb_maps:get(<<"kty">>, Key, undefined, Opts) of
             <<"EC">> ->
-                XEncoded = hb_maps:get(<<"x">>, Key),
-                YEncoded = hb_maps:get(<<"y">>, Key),
-                PrivEncoded = hb_maps:get(<<"d">>, Key),
+                XEncoded = hb_maps:get(<<"x">>, Key, undefined, Opts),
+                YEncoded = hb_maps:get(<<"y">>, Key, undefined, Opts),
+                PrivEncoded = hb_maps:get(<<"d">>, Key, undefined, Opts),
                 OrigPub = iolist_to_binary([<<4:8>>, hb_util:decode(XEncoded),
                         hb_util:decode(YEncoded)]),
                 Pb = compress_ecdsa_pubkey(OrigPub),
@@ -181,15 +191,15 @@ load_keyfile(File) ->
                 KyType = {?ECDSA_SIGN_ALG, secp256k1},
                 {Pb, Prv, KyType};
             <<"OKP">> ->
-                PubEncoded = hb_maps:get(<<"x">>, Key),
-                PrivEncoded = hb_maps:get(<<"d">>, Key),
+                PubEncoded = hb_maps:get(<<"x">>, Key, undefined, Opts),
+                PrivEncoded = hb_maps:get(<<"d">>, Key, undefined, Opts),
                 Pb = hb_util:decode(PubEncoded),
                 Prv = hb_util:decode(PrivEncoded),
                 KyType = {?EDDSA_SIGN_ALG, ed25519},
                 {Pb, Prv, KyType};
             _ ->
-                PubEncoded = hb_maps:get(<<"n">>, Key),
-                PrivEncoded = hb_maps:get(<<"d">>, Key),
+                PubEncoded = hb_maps:get(<<"n">>, Key, undefined, Opts),
+                PrivEncoded = hb_maps:get(<<"d">>, Key, undefined, Opts),
                 Pb = hb_util:decode(PubEncoded),
                 Prv = hb_util:decode(PrivEncoded),
                 KyType = {?RSA_SIGN_ALG, 65537},
