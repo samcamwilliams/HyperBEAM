@@ -32,11 +32,11 @@
 -include("include/hb.hrl").
 
 -define(DEFAULT_EXEMPT_ROUTES, [
-  #{ <<"template">> => <<"/~meta@1.0/*">> },
-  #{ <<"template">> => <<"/~greenzone@1.0/*">> },
+  #{ <<"template">> => <<"/~meta@1.0/.*">> },
+  #{ <<"template">> => <<"/~greenzone@1.0/.*">> },
   #{ <<"template">> => <<"/.*~node-process@1.0/.*">> },
-  #{ <<"template">> => <<"/~snp@1.0/*">> },
-  #{ <<"template">> => <<"/~p4@1.0/*">> }
+  #{ <<"template">> => <<"/~snp@1.0/.*">> },
+  #{ <<"template">> => <<"/~p4@1.0/.*">> }
 ]).
 
 %% @doc Device function that returns all known routes.
@@ -383,17 +383,17 @@ is_exempt(Msg1, Msg2, Opts) ->
   {_, Matches} = match(#{ <<"routes">> => ExemptRoutes}, Req, Opts),
   ?event(debug_preprocess, { matches, Matches }),
   case Matches of
-    not_found -> 
-        
-        case hb_ao:resolve(#{ 
-          <<"device">> => <<"router@1.0">>, 
-          <<"routes">> => hb_ao:get(exempt_routes, Msg1, Opts)}, 
-          Msg2#{ <<"path">> => <<"match">> },
-          Opts
-        ) of
-            {error, no_matching_route} -> {ok, false};
-            _ -> {ok, true}
-        end;
+    no_matching_route -> 
+        % case hb_ao:resolve(#{ 
+        %   <<"device">> => <<"router@1.0">>, 
+        %   <<"routes">> => hb_ao:get(exempt_routes, Msg1, Opts)}, 
+        %   Msg2#{ <<"path">> => <<"match">> },
+        %   Opts
+        % ) of
+        %     {error, no_matching_route} -> {ok, false};
+        %     _ -> {ok, false}
+        % end;
+        {ok, false};
     IsExempt -> 
           ?event(debug_preprocess, { is_except, IsExempt }),
           {ok, true}
@@ -409,17 +409,31 @@ preprocess(Msg1, Msg2, Opts) ->
             % Request should not be proxied, return the modified parsed list of messages to execute
             % {ok, hb_ao:resolve(Msg1, Msg2, Opts)};
         {ok, false} ->
-            {ok,
-                [
-                    #{ <<"device">> => <<"relay@1.0">> },
-                    #{
-                        <<"path">> => <<"call">>,
-                        <<"target">> => <<"body">>,
-                        <<"body">> =>
-                            hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore })
+            ?event(debug_dynrouter, { msg1, Msg1 }),
+            ?event(debug_dynrouter, { opts, Opts }),
+            {ok, TemplateRoutes} = routes(Msg1, Msg2, Opts),
+            ?event(debug_dynrouter, { template_routes, TemplateRoutes }),
+            Req = hb_ao:get(<<"request">>, Msg2, Opts),
+            Path = find_target_path(Req, Opts),
+            ?event(debug_dynrouter, { found_path, Path }),
+            {_, Match} = match(#{ <<"routes">> => TemplateRoutes}, Req, Opts),
+            ?event(debug_dynrouter, { found_match, Match }),
+            case Match of
+                no_matching_route -> 
+                    {error, <<"No matching route found">>};
+                _ -> 
+                    {ok,
+                        [
+                            #{ <<"device">> => <<"relay@1.0">> },
+                            #{
+                                <<"path">> => <<"call">>,
+                                <<"target">> => <<"body">>,
+                                <<"body">> =>
+                                    hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore })
+                            }
+                        ]
                     }
-                ]
-            }
+            end
     end.
 
 %%% Tests
@@ -678,9 +692,7 @@ dynamic_router_test() ->
                                 #{
                                     <<"prefix">> =>
                                         <<
-                                            "https://test-node-",
-                                                (hb_util:bin(X))/binary,
-                                                ".com"
+                                            "http://149.28.249.192:10000"
                                         >>,
                                     <<"template">> => <<"/.*~process@1.0/.*">>,
                                     <<"price">> => X * 250
@@ -699,9 +711,12 @@ dynamic_router_test() ->
     end, lists:seq(1, 1)),
     % Force computation of the current state. This should be done with a 
     % background worker (ex: a `~cron@1.0/every' task).
-    hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
+    {ok, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
     {ok, Routes} = hb_http:get(Node, RouteProvider, Opts),
-    ?event(debug_dynrouter, {got_routes, Routes}).
+    ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
+    ?event(debug_dynrouter, {got_routes, Routes}),
+    {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
+    ?event(debug_dynrouter, {got_res, Res}).
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the
