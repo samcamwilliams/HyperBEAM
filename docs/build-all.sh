@@ -24,7 +24,7 @@ echo "Edoc generation completed successfully"
 # Step 3: Process source code documentation
 echo "Processing source code documentation..."
 # Updated path for source code docs
-DOCS_DIR="$ROOT_DIR/docs/source-code-docs"
+DOCS_DIR="$ROOT_DIR/docs/resources/source-code"
 INDEX_FILE="$DOCS_DIR/index.md"
 
 # Check if the directory exists
@@ -58,7 +58,7 @@ echo "- **Client Libraries**: Tools and SDKs for interacting with HyperBEAM, inc
 echo "" >> "$INDEX_FILE"
 echo "## Getting Started" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../contribute/setup.md) guide." >> "$INDEX_FILE"
+echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../../community/setup.md) guide." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "## Navigation" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
@@ -66,7 +66,7 @@ echo "Use the navigation menu to dive into specific parts of the codebase. Each 
 echo "" >> "$INDEX_FILE"
 echo "## Contributing" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../contribute/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
+echo "We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../../community/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 
 # Append the table header

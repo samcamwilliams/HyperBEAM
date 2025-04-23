@@ -1,6 +1,8 @@
 
 
 # Module hb_client #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 <a name="index"></a>
 

@@ -2,6 +2,8 @@
 
 # Module dev_meta #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 The hyperbeam meta device, which is the default entry point
 for all messages processed by the machine.

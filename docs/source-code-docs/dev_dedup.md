@@ -2,6 +2,8 @@
 
 # Module dev_dedup #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that deduplicates messages send to a process.
 

@@ -2,6 +2,8 @@
 
 # Module dev_name #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device for resolving names to their corresponding values, through the
 use of a `resolver` interface.

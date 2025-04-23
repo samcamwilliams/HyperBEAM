@@ -2,6 +2,8 @@
 
 # Module dev_codec_httpsig_conv #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A codec for the that marshals TABM encoded messages to and from the
 "HTTP" message structure.

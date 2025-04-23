@@ -2,6 +2,8 @@
 
 # Module dev_push #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 `push@1.0` takes a message or slot number, evaluates it, and recursively
 pushes the resulting messages to other processes.

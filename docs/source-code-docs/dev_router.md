@@ -2,6 +2,8 @@
 
 # Module dev_router #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that routes outbound messages from the node to their
 appropriate network recipients via HTTP.

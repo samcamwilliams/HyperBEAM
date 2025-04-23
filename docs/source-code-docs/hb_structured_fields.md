@@ -3,6 +3,8 @@
 # Module hb_structured_fields #
 * [Description](#description)
 * [Data Types](#types)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A module for parsing and converting between Erlang and HTTP Structured
 Fields, as described in RFC-9651.

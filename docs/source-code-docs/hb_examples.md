@@ -2,6 +2,8 @@
 
 # Module hb_examples #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module contains end-to-end tests for Hyperbeam, accessing through
 the HTTP interface.

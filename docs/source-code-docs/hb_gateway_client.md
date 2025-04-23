@@ -2,6 +2,8 @@
 
 # Module hb_gateway_client #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Implementation of Arweave's GraphQL API to gain access to specific
 items of data stored on the network.

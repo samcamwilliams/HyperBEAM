@@ -2,6 +2,8 @@
 
 # Module hb_app #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 The main HyperBEAM application module.
 

@@ -2,6 +2,8 @@
 
 # Module dev_scheduler #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A simple scheduler scheme for AO.
 

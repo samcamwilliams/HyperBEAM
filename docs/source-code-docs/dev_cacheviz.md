@@ -2,6 +2,8 @@
 
 # Module dev_cacheviz #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that generates renders (or renderable dot output) of a node's
 cache.

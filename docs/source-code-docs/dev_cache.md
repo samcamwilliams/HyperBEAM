@@ -2,6 +2,8 @@
 
 # Module dev_cache #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that looks up an ID from a local store and returns it,
 honoring the `accept` key to return the correct format.

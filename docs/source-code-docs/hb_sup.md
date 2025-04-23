@@ -1,6 +1,8 @@
 
 
 # Module hb_sup #
+* [Function Index](#index)
+* [Function Details](#functions)
 
 __Behaviours:__ [`supervisor`](supervisor.md).
 

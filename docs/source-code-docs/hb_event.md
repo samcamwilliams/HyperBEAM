@@ -2,6 +2,8 @@
 
 # Module hb_event #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Wrapper for incrementing prometheus counters.
 

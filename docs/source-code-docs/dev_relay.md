@@ -2,6 +2,8 @@
 
 # Module dev_relay #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 This module implements the relay device, which is responsible for
 relaying messages between nodes and other HTTP(S) endpoints.

@@ -2,6 +2,8 @@
 
 # Module dev_hyperbuddy #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 A device that renders a REPL-like interface for AO-Core via HTML.
 

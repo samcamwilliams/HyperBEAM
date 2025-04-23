@@ -2,6 +2,8 @@
 
 # Module dev_codec_ans104 #
 * [Description](#description)
+* [Function Index](#index)
+* [Function Details](#functions)
 
 Codec for managing transformations from `ar_bundles`-style Arweave TX
 records to and from TABMs.
