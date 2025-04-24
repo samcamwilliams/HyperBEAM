@@ -214,12 +214,17 @@ end
 function register(state, assignment, opts)
     state = ensure_defaults(state)
     local req = assignment.body
-    ao.event("register_called")
-    req.path = "verify"
-    req.commitments = nil
-    ao.event("target", findId(req.body.commitments, "rsa-pss-sha512"))
-    req.target = findId(req.body.commitments, "rsa-pss-sha512")
-    local status, is_admissible = ao.resolve(state["is-admissible"], req)
+    local status, is_admissible = "ok", "not_found"
+    if state["is-admissible"] and state["is-admissible"].device == "snp@1.0" then
+        req.path = "verify"
+        -- remove commitments of the register/verify message
+        req.commitments = nil
+        -- add a target node of the id of the register message
+        req.target = findId(req.body.commitments, "rsa-pss-sha512")
+        -- this only works when there is a real message for state['is_admissible']
+        status, is_admissible = ao.resolve(state["is-admissible"], req)
+    end
+    ao.event("is_admissible", { status, is_admissible })
     if status == "ok" and is_admissible ~= false then
         state = add_node(state, req)
         return recalculate(state, assignment, opts)
