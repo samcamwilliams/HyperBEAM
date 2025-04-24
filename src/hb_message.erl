@@ -1761,5 +1761,5 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_with_inner_signed_message_test(<<"httpsig@1.0">>).
+    signed_only_committed_data_field_test(<<"ans104@1.0">>).
     % id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).
