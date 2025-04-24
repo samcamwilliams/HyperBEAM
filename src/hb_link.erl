@@ -2,7 +2,7 @@
 -module(hb_link).
 -export([read/1, read/2, is_link_key/1]).
 -export([normalize/1, normalize/2, normalize/3]).
--export([encode_link/1, encode_all_links/1, decode_all_links/1]).
+-export([decode_all_links/1]).
 -export([format/1, format/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -75,28 +75,6 @@ normalize(OtherVal, Mode, Opts) when is_list(OtherVal) ->
     lists:map(fun(X) -> normalize(X, Mode, Opts) end, OtherVal);
 normalize(OtherVal, _Mode, _Opts) ->
     OtherVal.
-
-%% @doc Search a TABM for all links and replace them with a `+link' key.
-encode_all_links(Map) ->
-    ?event(linkify, {encode_all_links, {map, Map}}),
-    maps:from_list(
-        lists:map(
-            fun({Key, Value}) when ?IS_LINK(Value) ->
-                ?event(linkify, {encoding_link, {key, Key}, {link, Value}}),
-                NormKey = hb_ao:normalize_key(Key),
-                {<<NormKey/binary, "+link">>, encode_link(Value)};
-            ({Key, Value}) ->
-                {Key, Value}
-            end,
-            maps:to_list(Map)
-        )
-    ).
-
-%% @doc Encode a link into a binary.
-encode_link({link, ID, #{ <<"type">> := Type }}) ->
-    <<ID/binary, "+", (hb_util:bin(Type))/binary>>;
-encode_link({link, ID, #{}}) ->
-    <<ID/binary>>.
 
 %% @doc Decode links embedded in the headers of a message.
 decode_all_links(Msg) ->

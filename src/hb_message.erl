@@ -1590,7 +1590,10 @@ sign_links_test(Codec) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"submap+link">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{
+                <<"type">> => <<"link">>,
+                <<"lazy">> => false
+            }}
     },
     Signed = commit(Msg, Opts, Codec),
     ?event({signed, Signed}),
@@ -1601,7 +1604,10 @@ id_of_linked_message_test(Codec) ->
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> =>
-            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
+            {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{
+                <<"type">> => <<"link">>,
+                <<"lazy">> => false
+            }}
     },
     UnsignedID = id(Msg, Opts),
     ?event({id, UnsignedID}),
@@ -1646,7 +1652,7 @@ id_of_deep_message_and_link_message_match_test(Codec) ->
             }
         }
     },
-    Linkified = hb_link:linkify(Msg),
+    Linkified = hb_link:normalize(Msg),
     ?event(linkify, {test_recvd_linkified, {msg, Linkified}}),
     BaseID = id(Msg, Opts),
     ?event(linkify, {test_recvd_nonlink_id, {id, BaseID}}),
@@ -1761,4 +1767,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_message_encode_decode_verify_test(<<"structured@1.0">>).
+    signed_list_test(<<"httpsig@1.0">>).
