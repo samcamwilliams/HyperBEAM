@@ -391,24 +391,79 @@ picture.rocks {
 .double-column-content {
 	display: flex;
 	width: 100%;
+	padding: 48px 0px;
+}
+
+.double-single-grid-content {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	grid-template-rows: auto auto;
+	gap: 2rem;
+	width: 100%;
+	padding: 48px 0px;
 }
 
 .column-container {
 	width: 100%;
-	min-height: 600px;
+	min-height: 700px;
 }
 
 .grid-container {
 	display: flex;
+	min-height: 450px;
 	width: 100%;
+	background: white;
+}
+
+.full-span {
+	grid-column: span 2;
 }
 
 .column-text {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
+	width: 100%;
 	justify-content: space-between;
-	widtH: 100%;
+	padding: 16px;
+}
+
+.feature-cards {
+	display: grid;
+	width: 100%;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 0.5rem;
+	margin-top: 4rem;
+}
+
+.card {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	background: #F9F9F9;
+	border: 1px solid #E6E6E6;
+	border-radius: 4px;
+	min-height: 125px;
+	padding: 8px;
+}
+
+.card-row {
+	display: flex;
+}
+
+.grid-card-header {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.card span {
+	background: white;
+	width: fit-content;
+}
+
+.card p {
+	margin: 0;
 }
 
 .cta-wrapper {
@@ -429,7 +484,8 @@ picture.rocks {
 .fig-container {
 	height: 100%;
 	display: flex;
-	padding: 2rem;
+	width: 100%;
+	justify-content: center;
 }
 
 .fig {
