@@ -1199,7 +1199,7 @@ signed_deep_message_test(Codec) ->
 signed_list_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = #{ <<"key-with-list">> => [1.0, 2.0, 3.0] },
-    Signed = commit(Msg, hb:wallet(), Codec),
+    Signed = commit(Msg, Opts, Codec),
     ?assert(verify(Signed, all, Opts)),
     Encoded = convert(Signed, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
@@ -1431,7 +1431,7 @@ signed_with_inner_signed_message_test(Codec) ->
     ?event(debug, {initial_msg, Msg}),
     % 1. Verify the outer message without changes.
     ?assert(verify(Msg, all, Opts)),
-    {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg, Opts)),
+    {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg, Opts), Opts),
     ?event(debug, {committed_inner, CommittedInner}),
     ?event(debug, {inner_committers, hb_message:signers(CommittedInner, Opts)}),
     % 2. Verify the inner message without changes.
@@ -1652,7 +1652,7 @@ id_of_deep_message_and_link_message_match_test(Codec) ->
             }
         }
     },
-    Linkified = hb_link:normalize(Msg),
+    Linkified = hb_link:normalize(Msg, offload, Opts),
     ?event(linkify, {test_recvd_linkified, {msg, Linkified}}),
     BaseID = id(Msg, Opts),
     ?event(linkify, {test_recvd_nonlink_id, {id, BaseID}}),
@@ -1767,4 +1767,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_list_test(<<"httpsig@1.0">>).
+    signed_nested_data_key_test(<<"httpsig@1.0">>).

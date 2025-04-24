@@ -1,7 +1,7 @@
 %%% @doc Utility functions for working with links.
 -module(hb_link).
 -export([read/1, read/2, is_link_key/1]).
--export([normalize/1, normalize/2, normalize/3]).
+-export([normalize/2, normalize/3]).
 -export([decode_all_links/1]).
 -export([format/1, format/2]).
 -include("include/hb.hrl").
@@ -25,8 +25,6 @@ read(Link, Opts) ->
 %% types, but all submessages are guaranteed to be linkified. This stands in 
 %% contrast to `linkify', which takes a structured message and returns a message
 %% with structured links.
-normalize(Msg) -> normalize(Msg, discard).
-normalize(Msg, Mode) when is_atom(Mode) -> normalize(Msg, Mode, #{});
 normalize(Msg, Opts) when is_map(Opts) ->
     normalize(Msg, hb_opts:get(linkify_mode, discard, Opts), Opts).
 normalize(Msg, Mode, Opts) when is_map(Msg) ->
@@ -45,7 +43,7 @@ normalize(Msg, Mode, Opts) when is_map(Msg) ->
                         % link.
                         % We start by normalizing the child message, generating its IDs
                         % by proxy.
-                        NormChild = normalize(V, Opts),
+                        NormChild = normalize(V, Mode, Opts),
                         NormKey = hb_ao:normalize_key(Key),
                         % Generate the ID of the normalized child message.
                         ID = hb_message:id(NormChild, all, Opts),
@@ -130,6 +128,7 @@ do_format({link, ID, _}) ->
 %%% Tests
 
 offload_linked_message_test() ->
+    Opts = #{},
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
         <<"link-key">> => #{
@@ -139,7 +138,7 @@ offload_linked_message_test() ->
             }
         }
     },
-    Offloaded = normalize(Msg, offload),
+    Offloaded = normalize(Msg, offload, Opts),
     ?event(linkify, {test_recvd_linkified, {msg, Offloaded}}),
     Loaded = hb_cache:ensure_all_loaded(Offloaded),
     ?event(linkify, {test_recvd_loaded, {msg, Loaded}}),
@@ -151,7 +150,7 @@ offload_list_test() ->
         <<"list-key">> => [1.0, 2.0, 3.0]
     },
     TABM = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
-    Linkified = normalize(TABM, offload),
+    Linkified = normalize(TABM, offload, Opts),
     Msg2 = hb_message:convert(Linkified, <<"structured@1.0">>, tabm, Opts),
     Res = hb_cache:ensure_all_loaded(Msg2),
     ?assertEqual(Msg, Res).
