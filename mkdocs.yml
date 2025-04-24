@@ -223,6 +223,8 @@ extra_css:
 extra_javascript:
   - js/utc-time.js
   - js/custom-header.js
+  - js/parallax.js
+
 
 
 extra:
