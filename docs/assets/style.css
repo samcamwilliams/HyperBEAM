@@ -398,11 +398,17 @@ picture.rocks {
 	min-height: 600px;
 }
 
+.grid-container {
+	display: flex;
+	width: 100%;
+}
+
 .column-text {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
 	justify-content: space-between;
+	widtH: 100%;
 }
 
 .cta-wrapper {
