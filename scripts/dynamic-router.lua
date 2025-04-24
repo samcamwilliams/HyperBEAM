@@ -204,17 +204,21 @@ end
 function register(state, assignment, opts)
     state = ensure_defaults(state)
     local req = assignment.body
-
-    local status, is_admissible = ao.resolve(state["is-admissible"])
-    if status == "ok" and is_admissible ~= false then
-        state = add_node(state, req)
-        return recalculate(state, assignment, opts)
-    else
-        -- If the registration is untrusted signal the issue via and event and
-        -- return the state unmodified
-        ao.event("error", { "untrusted peer requested", req})
-        return "ok", state
-    end
+    ao.event("register_called")
+    -- local status, is_admissible = ao.resolve(state["is-admissible"])
+    -- ao.event({"status", status})
+    ao.event(state["is-admissible"])
+    ao.resolve(state["is-admissible"])
+    -- if status == "ok" and is_admissible ~= false then
+    --     state = add_node(state, req)
+    --     return recalculate(state, assignment, opts)
+    -- else
+    --     -- If the registration is untrusted signal the issue via and event and
+    --     -- return the state unmodified
+    --     ao.event("error", { "untrusted peer requested", req})
+    --     return "ok", state
+    -- end
+    return "ok", state
 end
 
 -- Update the performance of a host by its reference.

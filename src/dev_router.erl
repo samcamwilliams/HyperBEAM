@@ -405,11 +405,6 @@ preprocess(Msg1, Msg2, Opts) ->
     case is_exempt(Msg1, Msg2, Opts) of
         {ok, true} ->
             ?event(debug_preprocess, is_exempt_true),
-			Body = hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore }),
-			?event(debug_hello, {a, Body}),
-			Req = hb_ao:get(<<"request">>, Msg2, Opts),
-			{ok, TestVerify} = dev_snp:verify(Msg2, Body, Opts),
-			?event(debug_hello, {b, TestVerify}),
             {ok, hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore })};
             % Request should not be proxied, return the modified parsed list of messages to execute
             % {ok, hb_ao:resolve(Msg1, Msg2, Opts)};
@@ -673,6 +668,7 @@ dynamic_router_test() ->
         },
         node_processes => #{
             <<"router">> => #{
+                <<"type">> => <<"Process">>,
                 <<"device">> => <<"process@1.0">>,
                 <<"execution-device">> => <<"lua@5.3a">>,
                 <<"scheduler-device">> => <<"scheduler@1.0">>,
@@ -685,6 +681,20 @@ dynamic_router_test() ->
                 <<"pricing-weight">> => 9,
                 <<"performance-weight">> => 1,
                 <<"score-preference">> => 4
+                ,
+                <<"is-admissible">> => #{
+                  <<"path">> => <<"verify">>,
+                  <<"device">> => <<"snp@1.0">>
+                }
+                % <<"is-admissible">> => #{
+                %     <<"device">> => <<"lua@5.3a">>,
+                %         <<"function">> => <<"is_admissible">>,
+                %         <<"script">> => #{
+                %             <<"content-type">> => <<"application/lua">>,
+                %             <<"module">> => <<"is-admissible-check">>,
+                %             <<"body">> => <<"function is_admissible (proc, req) ao.event({'called is_admissible', }) end">>
+                %     }
+                % }
             }
         }
     }),
@@ -723,7 +733,7 @@ dynamic_router_test() ->
             {ok, Res} ->
                 ?event(debug_dynrouter, { res, Res});
             {failure, Res} ->
-                ?event(debug_dynrouter, { res, Res})
+                ?event(debug_router_register, { failure, Res})
         end
     end, lists:seq(1, 1)),
     % Force computation of the current state. This should be done with a 
@@ -735,9 +745,10 @@ dynamic_router_test() ->
 	% Meta info is a part of the exempt routes. Make sure this returns our address
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
 	?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
-	{Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
-	?assertEqual(Status, ok),
-    ?event(debug_dynrouter, {got_res, Res}).
+	% {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
+	% ?assertEqual(ok, Status),
+    ?event(debug_dynrouter, {got_res, Res}),
+    ?assertEqual(true, falser).
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the
