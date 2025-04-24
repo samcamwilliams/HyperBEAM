@@ -1,23 +1,34 @@
+/* General Text Styles */
 h1 {
-	font-size: clamp(1.2rem, 1.5vw, 1.3rem) !important;
+	font-size: clamp(1.1rem, 1.5vw, 1.2rem) !important;
+	color: black !important;
 }
 
 h2 {
 	font-size: clamp(0.9rem, 1.5vw, 1rem) !important;
+	color: #0000008a;
+	/* Semi-transparent black */
 }
 
 p {
-	font-size: clamp(0.55rem, 1.5vw, 0.65rem);
+	font-size: clamp(0.6rem, 1.5vw, 0.65rem);
 }
 
 li {
-	font-size: clamp(0.55rem, 1.5vw, 0.65rem);
+	font-size: clamp(0.6rem, 1.5vw, 0.65rem);
 }
 
 input {
-	font-size: clamp(0.45rem, 1.5vw, 0.5rem) !important;
+	font-size: clamp(0.47rem, 1.5vw, 0.5rem) !important;
 }
 
+body {
+	--docs-max-width: 60rem;
+	--homepage-max-width: 120rem;
+}
+
+
+/* Body and Header Customization */
 body[data-md-path="index"] .md-header {
 	background-color: transparent !important;
 }
@@ -27,7 +38,7 @@ body[data-md-path="index"] .md-header {
 }
 
 .md-grid {
-	/* transition: all 0.1s; */
+	transition: all 0.1s;
 	max-width: var(--docs-max-width);
 }
 
@@ -36,7 +47,7 @@ body[data-md-path="index"] .md-header {
 	background: transparent !important;
 	filter: invert(1);
 	top: 0;
-	/* transition: filter 1s; */
+	transition: filter 1s;
 }
 
 .custom-homepage-header .md-grid {
@@ -52,26 +63,42 @@ body[data-md-path="index"] .md-header {
 	height: 0.9rem !important;
 }
 
+/* Header Topic Visibility */
 .md-header__topic {
 	display: none;
-
 }
 
-.md-nav__title {
-	font-size: clamp(0.45rem, 1.5vw, 0.5rem) !important;
-}
-
+/* Navigation Styles */
+.md-nav__title,
 .md-nav__item {
 	font-size: clamp(0.45rem, 1.5vw, 0.5rem) !important;
 }
 
+.md-nav__link--active {
+	color: #fc8516 !important;
+	/* Active link color */
+	font-weight: 600;
+}
+
+/* Tab Navigation */
 .md-tabs__link {
 	font-size: clamp(0.4rem, 1.5vw, 0.5rem);
 }
 
+.md-tabs__item {
+
+	height: 1.5rem;
+
+}
+
+.md-tabs__item a {
+	margin-top: 0px;
+}
+
+/* Search Form Customization */
 .md-search__form {
 	height: 32px !important;
-	/* adjust this */
+	/* Adjust search form height */
 	padding: 0 8px !important;
 }
 
@@ -88,12 +115,13 @@ body[data-md-path="index"] .md-header {
 	padding-right: 1rem !important;
 }
 
-.md-search-result__item h1 {
+/* Search Results */
+.md-search-result__item h1,
+.md-search-result__item h2 {
 	font-size: clamp(0.7rem, 1.5vw, 0.8rem) !important;
 }
 
 .md-search-result__item h2 {
-	font-size: clamp(0.7rem, 1.5vw, 0.8rem) !important;
 	font-weight: 500 !important;
 }
 
@@ -116,14 +144,24 @@ body[data-md-path="index"] .md-header {
 	left: 0.3rem !important;
 }
 
+/* Source Citation Styles */
+.md-header__source {
+	width: 10rem;
+	padding: 0.6rem;
+}
+
 .md-source {
 	font-size: clamp(0.45rem, 1.5vw, 0.5rem);
+	display: flex;
+	justify-content: end;
+	align-items: center;
 }
 
 .md-source__fact {
 	font-size: clamp(0.35rem, 1.5vw, 0.4rem);
 }
 
+/* Tagline Styles */
 .tagline {
 	font-size: 0.9rem;
 	letter-spacing: 1px;
@@ -131,6 +169,7 @@ body[data-md-path="index"] .md-header {
 	color: var(--md-default-fg-color--light);
 }
 
+/* Color Scheme Customization for Slate */
 [data-md-color-scheme="slate"] .logo-text h1 {
 	color: #FFF;
 }
@@ -164,29 +203,35 @@ body[data-md-path="index"] .md-header {
 	max-width: var(--homepage-max-width);
 	margin-left: auto;
 	margin-right: auto;
-	z-index: 1;
+	z-index: 2;
 	justify-content: space-between;
 	align-items: center;
 	padding: 2rem 0.8rem;
-	/* transition: all 0.1s; */
+	transition: all 0.1s;
 
 }
 
 .custom-homepage-main h1 {
 	font-size: clamp(1.0rem, 1.5vw, 1.1rem) !important;
-	color: white !important;
 	margin: 0;
 	font-weight: 500;
 }
 
-.custom-homepage-main h2 {
+.hero-inner-content h1 {
+	font-size: clamp(1.0rem, 1.5vw, 1.1rem) !important;
+	margin: 0;
+	font-weight: 500;
+	color: white !important;
+}
+
+.hero-inner-content h2 {
 	font-size: clamp(0.8rem, 1.5vw, 0.9rem) !important;
 	color: white !important;
 	margin: 0;
 	font-weight: 500;
 }
 
-.custom-homepage-main span {
+.hero-inner-content span {
 	color: white !important;
 	margin: 0;
 }
@@ -217,6 +262,34 @@ body[data-md-path="index"] .md-header {
 	z-index: 0;
 
 }
+
+/* Content Container */
+.section-container {
+	display: flex;
+	background: white;
+	width: 100%;
+	background-size: cover;
+	background-position: center;
+	background-repeat: no-repeat;
+	min-height: 400px;
+	align-items: flex-end;
+}
+
+
+.section-inner-content {
+	display: flex;
+	width: 100%;
+	max-width: var(--homepage-max-width);
+	margin-left: auto;
+	margin-right: auto;
+	z-index: 1;
+	justify-content: space-between;
+	align-items: center;
+	padding: 2rem 0.8rem;
+	transition: all 0.1s;
+
+}
+
 
 /* Footer Customization */
 .md-footer-meta {
