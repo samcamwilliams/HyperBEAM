@@ -69,7 +69,7 @@ returns `<<"OK">>`.
 
 ### preprocess/3 ###
 
-`preprocess(M1, M2, Opts) -> any()`
+`preprocess(Msg1, Msg2, Opts) -> any()`
 
 Preprocess a request to check if it should be relayed to a different node.
 

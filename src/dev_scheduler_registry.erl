@@ -19,11 +19,11 @@ get_wallet() ->
 find(ProcID) -> find(ProcID, false).
 
 %%% @doc Find a process associated with the processor ID in the local registry
-%%% If the process is not found and `GenIfNotHosted` is true, it attemps to create a new one 
+%%% If the process is not found and `GenIfNotHosted' is true, it attemps to create a new one 
 find(ProcID, GenIfNotHosted) ->
     find(ProcID, GenIfNotHosted, #{ priv_wallet => hb:wallet() }).
 
-%%% @doc Same as `find/2` but with additional options passed when spawning a new process (if needed)
+%%% @doc Same as `find/2' but with additional options passed when spawning a new process (if needed)
 find(ProcID, GenIfNotHosted, Opts) ->
     case hb_name:lookup({dev_scheduler, ProcID}) of
         undefined -> maybe_new_proc(ProcID, GenIfNotHosted, Opts);
