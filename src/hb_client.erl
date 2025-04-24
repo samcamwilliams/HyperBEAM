@@ -27,17 +27,18 @@ resolve(Node, Msg1, Msg2, Opts) ->
     ),
     hb_http:post(
         Node,
-        hb_maps:merge(prefix_keys(<<"1.">>, Msg1, Opts), TABM2),
+        hb_maps:merge(prefix_keys(<<"1.">>, Msg1, Opts), TABM2, Opts),
         Opts
     ).
 
 prefix_keys(Prefix, Message, Opts) ->
     hb_maps:fold(
         fun(Key, Val, Acc) ->
-            hb_maps:put(<<Prefix/binary, Key/binary>>, Val, Acc)
+            hb_maps:put(<<Prefix/binary, Key/binary>>, Val, Acc, Opts)
         end,
         #{},
-        hb_message:convert(Message, tabm, Opts)
+        hb_message:convert(Message, tabm, Opts),
+		Opts
     ).
 
 routes(Node, Opts) ->

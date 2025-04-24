@@ -119,7 +119,8 @@ next(Msg1, Msg2, Opts) ->
                                    (<<"commitments">>, _) -> false;
                                    (Slot, _) -> hb_util:int(Slot) > LastProcessed
                                 end,
-                                RecvdAssignments
+                                RecvdAssignments,
+								Opts
                             )
                         )}
                 end
@@ -553,7 +554,7 @@ get_hint(Str, Opts) when is_binary(Str) ->
             case binary:split(Str, <<"?">>, [global]) of
                 [_, QS] ->
                     QueryMap = hb_maps:from_list(uri_string:dissect_query(QS)),
-                    case hb_maps:get(<<"hint">>, QueryMap, not_found) of
+                    case hb_maps:get(<<"hint">>, QueryMap, not_found, Opts) of
                         not_found -> not_found;
                         Hint -> {ok, Hint}
                     end;
@@ -702,9 +703,9 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
                     ?event({got_slot_response, {assignment, A}}),
                     {ok, #{
                         <<"process">> => ProcID,
-                        <<"current">> => hb_maps:get(<<"slot">>, A),
-                        <<"timestamp">> => hb_maps:get(<<"timestamp">>, A),
-                        <<"block-height">> => hb_maps:get(<<"block-height">>, A),
+                        <<"current">> => hb_maps:get(<<"slot">>, A, undefined, Opts),
+                        <<"timestamp">> => hb_maps:get(<<"timestamp">>, A, undefined, Opts),
+                        <<"block-height">> => hb_maps:get(<<"block-height">>, A, undefined, Opts),
                         <<"block-hash">> => hb_util:encode(<<0:256>>),
                         <<"cache-control">> => <<"no-store">>
                     }};
@@ -905,7 +906,7 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                             Opts#{ hashpath => ignore }
                                         )
                                     ),
-                                Filtered = filter_json_assignments(JSONRes, To, From),
+                                Filtered = filter_json_assignments(JSONRes, To, From, Opts),
                                 dev_scheduler_formats:aos2_to_assignments(
                                     ProcID,
                                     Filtered,
@@ -923,7 +924,8 @@ do_get_remote_schedule(ProcID, LocalAssignments, From, To, Redirect, Opts) ->
                                     <<"assignments">>,
                                     NormSched,
                                     Opts
-                                )
+                                ),
+								Opts
                             )
                         ),
                     % Merge the local assignments with the remote assignments,
@@ -979,14 +981,14 @@ cache_remote_schedule(Schedule, Opts) ->
                     % an additional cache.
                     ?event(debug_sched,
                         {writing_assignment,
-                            {assignment, hb_maps:get(<<"slot">>, Assignment)}
+                            {assignment, hb_maps:get(<<"slot">>, Assignment, undefined, Opts)}
                         }
                     ),
                     dev_scheduler_cache:write(Assignment, Opts)
                 end,
                 AssignmentList =
                     hb_util:message_to_ordered_list(
-                        hb_maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments))
+                        hb_maps:without([<<"priv">>], hb_ao:normalize_keys(Assignments, Opts), Opts)
                     )
             ),
             ?event(debug_sched,
@@ -1006,20 +1008,21 @@ node_from_redirect(Redirect, Opts) ->
                 query,
                 uri_string:parse(
                     hb_ao:get(<<"location">>, Redirect, Opts)
-                )
+                ),
+				Opts
             )
         )#{path => <<"/">>}
     ).
 
 %% @doc Filter JSON assignment results from a remote legacy scheduler.
-filter_json_assignments(JSONRes, To, From) ->
-    Edges = hb_maps:get(<<"edges">>, JSONRes, []),
+filter_json_assignments(JSONRes, To, From, Opts) ->
+    Edges = hb_maps:get(<<"edges">>, JSONRes, [], Opts),
     Filtered =
         lists:filter(
             fun(Edge) ->
-                Node = hb_maps:get(<<"node">>, Edge),
-                Assignment = hb_maps:get(<<"assignment">>, Node),
-                Tags = hb_maps:get(<<"tags">>, Assignment),
+                Node = hb_maps:get(<<"node">>, Edge, undefined, Opts),
+                Assignment = hb_maps:get(<<"assignment">>, Node, undefined, Opts),
+                Tags = hb_maps:get(<<"tags">>, Assignment, undefined, Opts),
                 Nonces = 
                     lists:filtermap(
                         fun(#{ <<"name">> := <<"Nonce">>, <<"value">> := Nonce }) ->
@@ -1042,7 +1045,7 @@ post_remote_schedule(RawProcID, Redirect, OnlyCommitted, Opts) ->
     ProcID = without_hint(RawProcID),
     Location = hb_ao:get(<<"location">>, Redirect, Opts),
     Parsed = uri_string:parse(Location),
-    Node = uri_string:recompose((hb_maps:remove(query, Parsed))#{path => <<"/">>}),
+    Node = uri_string:recompose((hb_maps:remove(query, Parsed, Opts))#{path => <<"/">>}),
     Variant = hb_ao:get(<<"variant">>, Redirect, <<"ao.N.1">>, Opts),
     case Variant of
         <<"ao.N.1">> ->
@@ -1112,7 +1115,7 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
                         ),
                     % Legacy SUs return only the ID of the assignment, so we need
                     % to read and return it.
-                    ID = hb_maps:get(<<"id">>, JSONRes),
+                    ID = hb_maps:get(<<"id">>, JSONRes, undefined, Opts),
                     ?event({remote_schedule_result_id, ID, {json, JSONRes}}),
                     case hb_http:get(Node, << ID/binary, "?process-id=", ProcID/binary>>, LegacyOpts) of
                         {ok, AssignmentRes} ->
@@ -1552,7 +1555,7 @@ http_get_schedule_test_() ->
 		Assignments = hb_ao:get(<<"assignments">>, Schedule, #{}),
 		?assertEqual(
 			12, % +1 for the hashpath
-			hb_maps:size(Assignments)
+			hb_maps:size(Assignments, #{})
 		)
 	end}.
     

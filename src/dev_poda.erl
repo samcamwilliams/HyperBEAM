@@ -1,7 +1,7 @@
 -module(dev_poda).
 -export([init/2, execute/3]).
 -export([is_user_signed/1]).
--export([push/2]).
+-export([push/3]).
 -include("include/hb.hrl").
 -hb_debug(print).
 
@@ -52,7 +52,8 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                                 #tx { data = #{ <<"commitments">> := #tx { data = X } }} -> X;
                                 #tx { data = #{ <<"commitments">> := X }} -> X;
                                 #{ <<"commitments">> := X } -> X
-                            end
+                            end,
+                            Opts
                         ),
                     VFS1 =
                         lists:foldl(
@@ -62,10 +63,11 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                                 hb_maps:put(
                                     <<"/commitments/", Encoded/binary>>,
                                     Commitment#tx.data,
-                                    Acc
+                                    Acc,
+									Opts
                                 )
                             end,
-                            hb_maps:get(vfs, S, #{}),
+                            hb_maps:get(vfs, S, #{}, Opts),
                             Comms
                         ),
                     % Update the arg prefix to include the unwrapped message.
@@ -75,7 +77,7 @@ execute(Outer = #tx { data = #{ <<"body">> := Msg } }, S = #{ <<"pass">> := 1 },
                             % the actual message, then replace `/Message' with it.
                             Outer#tx{
                                 data = (Outer#tx.data)#{
-                                    <<"body">> => hb_maps:get(<<"body">>, Msg#tx.data)
+                                    <<"body">> => hb_maps:get(<<"body">>, Msg#tx.data, Opts)
                                 }
                             }
                         ]
@@ -107,7 +109,7 @@ validate_stage(2, Commitments, Content, Opts) ->
             fun({_, Comm}) ->
                 ar_bundles:verify_item(Comm)
             end,
-            hb_maps:to_list(Commitments)
+            hb_maps:to_list(Commitments, Opts)
         ) of
         true -> validate_stage(3, Content, Commitments, Opts);
         false -> {false, <<"Invalid commitments">>}
@@ -117,7 +119,7 @@ validate_stage(3, Content, Commitments, Opts = #{ <<"quorum">> := Quorum }) ->
     Validations =
         lists:filter(
             fun({_, Comm}) -> validate_commitment(Content, Comm, Opts) end,
-            hb_maps:to_list(Commitments)
+            hb_maps:to_list(Commitments, Opts)
         ),
     ?event({poda_validations, length(Validations)}),
     case length(Validations) >= Quorum of
@@ -130,8 +132,8 @@ validate_stage(3, Content, Commitments, Opts = #{ <<"quorum">> := Quorum }) ->
 validate_commitment(Msg, Comm, Opts) ->
     MsgID = hb_util:encode(ar_bundles:id(Msg, unsigned)),
     AttSigner = hb_util:encode(ar_bundles:signer(Comm)),
-    ?event({poda_commitment, {signer, AttSigner, hb_maps:get(authorities, Opts)}, {msg_id, MsgID}}),
-    ValidSigner = lists:member(AttSigner, hb_maps:get(authorities, Opts)),
+    ?event({poda_commitment, {signer, AttSigner, hb_maps:get(authorities, Opts, undefined, Opts)}, {msg_id, MsgID}}),
+    ValidSigner = lists:member(AttSigner, hb_maps:get(authorities, Opts, undefined, Opts)),
     ValidSignature = ar_bundles:verify_item(Comm),
     RelevantMsg = ar_bundles:id(Comm, unsigned) == MsgID orelse
         (lists:keyfind(<<"commitment-for">>, 1, Comm#tx.tags)
@@ -177,11 +179,11 @@ is_user_signed(_) -> true.
 
 %% @doc Hook used by the MU pathway (currently) to add commitments to an
 %% outbound message if the computation requests it.
-push(_Item, S = #{ <<"results">> := ResultsMsg }) ->
-    NewRes = commit_to_results(ResultsMsg, S),
+push(_Item, S = #{ <<"results">> := ResultsMsg }, Opts) ->
+    NewRes = commit_to_results(ResultsMsg, S, Opts),
     {ok, S#{ <<"results">> => NewRes }}.
 
-commit_to_results(Msg, S) ->
+commit_to_results(Msg, S, Opts) ->
     case is_map(Msg#tx.data) of
         true ->
             % Add commitments to the outbox and spawn items.
@@ -193,18 +195,20 @@ commit_to_results(Msg, S) ->
                         true ->
                             ?event({poda_starting_to_commit_to_result, Key}),
                             hb_maps:map(
-                                fun(_, DeepMsg) -> add_commitments(DeepMsg, S) end,
-                                IndexMsg#tx.data
+                                fun(_, DeepMsg) -> add_commitments(DeepMsg, S, Opts) end,
+                                IndexMsg#tx.data,
+								Opts	
                             );
                         false -> IndexMsg
                     end
                 end,
-                Msg#tx.data
+                Msg#tx.data,
+				Opts
             );
         false -> Msg
     end.
 
-add_commitments(NewMsg, S = #{ <<"assignment">> := Assignment, <<"store">> := _Store, <<"logger">> := _Logger, <<"wallet">> := Wallet }) ->
+add_commitments(NewMsg, S = #{ <<"assignment">> := Assignment, <<"store">> := _Store, <<"logger">> := _Logger, <<"wallet">> := Wallet }, Opts) ->
     Process = find_process(NewMsg, S),
     case is_record(Process, tx) andalso lists:member({<<"device">>, <<"PODA">>}, Process#tx.tags) of
         true ->
@@ -217,7 +221,7 @@ add_commitments(NewMsg, S = #{ <<"assignment">> := Assignment, <<"store">> := _S
             ?event({poda_add_commitments_from, InitAuthorities, {self,hb:address()}}),
             Commitments = pfiltermap(
                 fun(Address) ->
-                    case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address) of
+                    case hb_router:find(compute, ar_bundles:id(Process, unsigned), Address, Opts) of
                         {ok, ComputeNode} ->
                             ?event({poda_asking_peer_for_commitment, ComputeNode, <<"commit-to">>, MsgID}),
                             Res = hb_client:compute(

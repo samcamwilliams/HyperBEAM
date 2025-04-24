@@ -41,7 +41,7 @@ from(List, Req, Opts) when is_list(List) ->
 from(Msg, Req, Opts) when is_map(Msg) ->
     % Normalize the message, offloading links to the cache.
     NormLinks = hb_link:normalize(Msg, offload, Opts),
-    NormKeysMap = hb_ao:normalize_keys(NormLinks),
+    NormKeysMap = hb_ao:normalize_keys(NormLinks, Opts),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
             case hb_maps:find(Key, NormKeysMap, Opts) of
@@ -82,7 +82,7 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                     not hb_private:is_private(Key) andalso
                     not (Key == <<"commitments">>)
             end,
-            hb_util:to_sorted_keys(NormKeysMap)
+            hb_util:to_sorted_keys(NormKeysMap, Opts)
         )
     ),
     % Encode the AoTypes as a structured dictionary
@@ -193,14 +193,18 @@ is_list_from_ao_types(Types, _Opts) ->
     end.
 
 %% @doc Find the implicit keys of a TABM.
+implicit_keys(Req) ->
+    implicit_keys(Req, #{}).
 implicit_keys(Req, Opts) ->
     hb_maps:keys(
         hb_maps:filtermap(
             fun(_Key, Val = <<"empty-", _/binary>>) -> {true, Val};
             (_Key, _Val) -> false
             end,
-            decode_ao_types(Req, Opts)
-        )
+            decode_ao_types(Req, Opts),
+            Opts
+        ),
+		Opts
     ).
 
 %% @doc Convert a term to a binary representation, emitting its type for

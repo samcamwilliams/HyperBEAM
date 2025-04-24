@@ -5,7 +5,7 @@
 %%% Subsequently, we encode all header keys to lowercase %-encoded URI-style
 %%% strings because transmission.
 -module(hb_escape).
--export([encode/1, decode/1, encode_keys/1, decode_keys/1]).
+-export([encode/1, decode/1, encode_keys/2, decode_keys/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -18,24 +18,24 @@ decode(Bin) when is_binary(Bin) ->
     list_to_binary(percent_unescape(binary_to_list(Bin))).
 
 %% @doc Return a message with all of its keys decoded.
-decode_keys(Msg) when is_map(Msg) ->
+decode_keys(Msg, Opts) when is_map(Msg) ->
     hb_maps:from_list(
         lists:map(
             fun({Key, Value}) -> {decode(Key), Value} end,
-            hb_maps:to_list(Msg)
+            hb_maps:to_list(Msg, Opts)
         )
     );
-decode_keys(Other) -> Other.
+decode_keys(Other, _Opts) -> Other.
 
 %% @doc URI encode keys in the base layer of a message. Does not recurse.
-encode_keys(Msg) when is_map(Msg) ->
+encode_keys(Msg, Opts) when is_map(Msg) ->
     hb_maps:from_list(
         lists:map(
             fun({Key, Value}) -> {encode(Key), Value} end,
-            hb_maps:to_list(Msg)
+            hb_maps:to_list(Msg, Opts)
         )
     );
-encode_keys(Other) -> Other.
+encode_keys(Other, _Opts) -> Other.
 
 %% @doc Escape a list of characters as a URI-encoded string.
 percent_escape([]) -> [];

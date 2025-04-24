@@ -230,7 +230,7 @@ result_to_message(ExpectedID, Item, Opts) ->
                         % keys as committed fields.
                         ?event(warning, {gql_verify_failed, adding_trusted_fields, {tags, Tags}}),
                         Comms = hb_maps:get(<<"commitments">>, Structured, #{}, Opts),
-                        AttName = hd(hb_maps:keys(Comms)),
+                        AttName = hd(hb_maps:keys(Comms, Opts)),
                         Comm = hb_maps:get(AttName, Comms, not_found, Opts),
                         Structured#{
                             <<"commitments">> => #{
@@ -242,10 +242,11 @@ result_to_message(ExpectedID, Item, Opts) ->
                                                 ||
                                                     #{ <<"name">> := Name } <-
                                                         hb_maps:values(
-                                                            hb_ao:normalize_keys(Tags),
+                                                            hb_ao:normalize_keys(Tags, Opts),
                                                             Opts
                                                         )
-                                                ]
+                                                ],
+												Opts
                                             )
                                     }
                             }

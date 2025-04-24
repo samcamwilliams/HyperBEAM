@@ -30,8 +30,11 @@
 %%% will be generated according to Msg1's algorithm choice.
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/2]).
--export([hd/2, tl/2, push_request/2, queue_request/2, pop_request/2]).
--export([priv_remaining/2, priv_store_remaining/2]).
+-export([hd/2, tl/2]).
+-export([push_request/2, push_request/3]).
+-export([queue_request/2, queue_request/3]).
+-export([pop_request/2]).
+-export([priv_remaining/2, priv_store_remaining/2, priv_store_remaining/3]).
 -export([verify_hashpath/2]).
 -export([term_to_path_parts/1, term_to_path_parts/2, from_message/2]).
 -export([matches/2, to_binary/1, regex_matches/2, normalize/1]).
@@ -71,15 +74,17 @@ tl(Path, Opts) when is_list(Path) ->
 %% @doc Return the `Remaining-Path' of a message, from its hidden `AO-Core'
 %% key. Does not use the `get' or set `hb_private' functions, such that it
 %% can be safely used inside the main AO-Core resolve function.
-priv_remaining(Msg, _Opts) ->
+priv_remaining(Msg, Opts) ->
     Priv = hb_private:from_message(Msg),
-    AOCore = hb_maps:get(<<"ao-core">>, Priv, #{}),
-    hb_maps:get(<<"remaining">>, AOCore, undefined).
+    AOCore = hb_maps:get(<<"ao-core">>, Priv, #{}, Opts),
+    hb_maps:get(<<"remaining">>, AOCore, undefined, Opts).
 
 %% @doc Store the remaining path of a message in its hidden `AO-Core' key.
 priv_store_remaining(Msg, RemainingPath) ->
+    priv_store_remaining(Msg, RemainingPath, #{}).
+priv_store_remaining(Msg, RemainingPath, Opts) ->
     Priv = hb_private:from_message(Msg),
-    AOCore = hb_maps:get(<<"ao-core">>, Priv, #{}),
+    AOCore = hb_maps:get(<<"ao-core">>, Priv, #{}, Opts),
     Msg#{
         <<"priv">> =>
             Priv#{
@@ -95,7 +100,7 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(RawMsg1, Opts) ->
-    Msg1 = hb_ao:normalize_keys(RawMsg1),
+    Msg1 = hb_ao:normalize_keys(RawMsg1, Opts),
     case hb_private:from_message(Msg1) of
         #{ <<"hashpath">> := HP } -> HP;
         _ ->
@@ -130,7 +135,7 @@ hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
 hashpath(Msg1, Msg2, Opts) ->
     throw({hashpath_not_viable, Msg1, Msg2, Opts}).
 hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Msg2),
+    Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Msg2, Opts),
     ReqPath = from_message(request, Msg2),
     case {map_size(Msg2WithoutMeta), ReqPath} of
         {0, _} when ReqPath =/= undefined ->
@@ -183,7 +188,9 @@ hashpath_alg(Msg, Opts) ->
 
 %%% @doc Add a message to the head (next to execute) of a request path.
 push_request(Msg, Path) ->
-    hb_maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg).
+    push_request(Msg, Path, #{}).
+push_request(Msg, Path, Opts) ->
+    hb_maps:put(<<"path">>, term_to_path_parts(Path) ++ from_message(request, Msg), Msg, Opts).
 
 %%% @doc Pop the next element from a request path or path list.
 pop_request(undefined, _Opts) -> undefined;
@@ -195,7 +202,7 @@ pop_request(Msg, Opts) when is_map(Msg) ->
         {Head, []} -> {Head, undefined};
         {Head, Rest} ->
             ?event({popped_request, Head, Rest}),
-            {Head, hb_maps:put(<<"path">>, Rest, Msg)}
+            {Head, hb_maps:put(<<"path">>, Rest, Msg, Opts)}
     end;
 pop_request([], _Opts) -> undefined;
 pop_request([Head|Rest], _Opts) ->
@@ -205,7 +212,9 @@ pop_request([Head|Rest], _Opts) ->
 %%% key that we cannot use dev_message's `set/3' function for (as it expects
 %%% the compute path to be there), so we use `hb_maps:put/3' instead.
 queue_request(Msg, Path) ->
-    hb_maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg).
+    queue_request(Msg, Path, #{}).
+queue_request(Msg, Path, Opts) ->
+    hb_maps:put(<<"path">>, from_message(request, Msg) ++ term_to_path_parts(Path), Msg, Opts).
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.

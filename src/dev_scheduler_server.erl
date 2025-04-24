@@ -90,8 +90,9 @@ assign(State, Message, ReplyPID) ->
 
 %% @doc Generate and store the actual assignment message.
 do_assign(State, Message, ReplyPID) ->
-    HashChain = next_hashchain(hb_maps:get(hash_chain, State), Message),
-    NextSlot = hb_maps:get(current, State) + 1,
+	Opts = maps:get(opts, State),
+    HashChain = next_hashchain(hb_maps:get(hash_chain, State, undefined, Opts), Message),
+    NextSlot = hb_maps:get(current, State, undefined, Opts) + 1,
     % Run the signing of the assignment and writes to the disk in a separate
     % process.
     AssignFun =
@@ -116,7 +117,7 @@ do_assign(State, Message, ReplyPID) ->
                 <<"hash-chain">> => hb_util:id(HashChain),
                 <<"body">> => Message
             }, maps:get(wallet, State)),
-            AssignmentID = hb_message:id(Assignment, all, maps:get(opts, State)),
+            AssignmentID = hb_message:id(Assignment, all, Opts),
             ?event(scheduling,
                 {assigned,
                     {proc_id, maps:get(id, State)},
@@ -132,7 +133,7 @@ do_assign(State, Message, ReplyPID) ->
                 State
             ),
             ?event(starting_message_write),
-            ok = dev_scheduler_cache:write(Assignment, maps:get(opts, State)),
+            ok = dev_scheduler_cache:write(Assignment, Opts),
             maybe_inform_recipient(
                 local_confirmation,
                 ReplyPID,
@@ -142,7 +143,7 @@ do_assign(State, Message, ReplyPID) ->
             ),
             ?event(writes_complete),
             ?event(uploading_assignment),
-            hb_client:upload(Assignment, maps:get(opts, State)),
+            hb_client:upload(Assignment, Opts),
             ?event(uploads_complete),
             maybe_inform_recipient(
                 remote_confirmation,
@@ -152,7 +153,7 @@ do_assign(State, Message, ReplyPID) ->
                 State
             )
         end,
-    case hb_opts:get(scheduling_mode, sync, maps:get(opts, State)) of
+    case hb_opts:get(scheduling_mode, sync, Opts) of
         aggressive ->
             spawn(AssignFun);
         Other ->
@@ -164,8 +165,8 @@ do_assign(State, Message, ReplyPID) ->
         hash_chain := HashChain
     }.
 
-maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, State) ->
-    case hb_opts:get(scheduling_mode, remote_confirmation, maps:get(opts, State)) of
+maybe_inform_recipient(Mode, ReplyPID, Message, Assignment, Opts) ->
+    case hb_opts:get(scheduling_mode, remote_confirmation, Opts) of
         Mode -> ReplyPID ! {scheduled, Message, Assignment};
         _ -> ok
     end.

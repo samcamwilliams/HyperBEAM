@@ -57,7 +57,7 @@ read(Opts = #{ <<"node">> := Node }, Key) ->
         {ok, Res} ->
             % returning the whole response to get the test-key
             % {ok, Msg} = hb_message:with_only_committed(Res),
-            Msg = hb_message:uncommitted(Res),
+            Msg = hb_message:uncommitted(Res, Opts),
             % ?event({read, {result, Msg}}),
             {ok, Msg};
         {error, _Err} ->

@@ -6,8 +6,8 @@
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, number/1, list_to_numbered_map/1]).
--export([is_ordered_list/1, message_to_ordered_list/1, message_to_ordered_list/2]).
--export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1, unique/1]).
+-export([is_ordered_list/2, message_to_ordered_list/1, message_to_ordered_list/2]).
+-export([is_string_list/1, to_sorted_list/1, to_sorted_keys/1, to_sorted_keys/2]).
 -export([hd/1, hd/2, hd/3]).
 -export([remove_common/2, to_lower/1]).
 -export([maybe_throw/2]).
@@ -19,6 +19,7 @@
 -export([is_hb_module/1, is_hb_module/2, all_hb_modules/0]).
 -export([ok/1, ok/2, until/1, until/2, until/3]).
 -export([count/2, mean/1, stddev/1, variance/1, weighted_random/1]).
+-export([unique/1]).
 -include("include/hb.hrl").
 
 %%% Simple type coercion functions, useful for quickly turning inputs from the
@@ -121,19 +122,21 @@ to_lower(Str) ->
 is_string_list(MaybeString) ->
     lists:all(fun is_integer/1, MaybeString).
 
-%% @doc Given a map, key-value tuple list, or a list of keys, return a
-%% deterministically sorted list.
-to_sorted_list(Msg) when is_map(Msg) ->
-    to_sorted_list(hb_maps:to_list(Msg));
-to_sorted_list(Msg = [{_Key, _} | _]) when is_list(Msg) ->
-    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg);
-to_sorted_list(Msg) when is_list(Msg) ->
-    lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
+%% @doc Given a map or KVList, return a deterministically sorted list of its
+%% key-value pairs.
+to_sorted_list(Msg) ->
+    to_sorted_list(Msg, #{}).
+to_sorted_list(Msg, Opts) when is_map(Msg) ->
+    to_sorted_list(hb_maps:to_list(Msg, Opts), Opts);
+to_sorted_list(Msg, _Opts) when is_list(Msg) ->
+    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
 
 %% @doc Given a map or KVList, return a deterministically ordered list of its keys.
-to_sorted_keys(Msg) when is_map(Msg) ->
-    to_sorted_keys(hb_maps:keys(Msg));
-to_sorted_keys(Msg) when is_list(Msg) ->
+to_sorted_keys(Msg) ->
+	to_sorted_keys(Msg, #{}).
+to_sorted_keys(Msg, Opts) when is_map(Msg) ->
+    to_sorted_keys(hb_maps:keys(Msg, Opts), Opts);
+to_sorted_keys(Msg, _Opts) when is_list(Msg) ->
     lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
 
 %% @doc Convert keys in a map to atoms, lowering `-' to `_'.
@@ -247,7 +250,8 @@ deep_merge(Map1, Map2, Opts) when is_map(Map1), is_map(Map2) ->
             end
         end,
         Map1,
-        Map2
+        Map2,
+		Opts
     ).
 
 %% @doc Label a list of elements with a number.
@@ -262,17 +266,18 @@ list_to_numbered_map(List) ->
     hb_maps:from_list(number(List)).
 
 %% @doc Determine if the message given is an ordered list, starting from 1.
-is_ordered_list(Msg) when is_list(Msg) -> true;
-is_ordered_list(Msg) ->
-    is_ordered_list(1, hb_ao:normalize_keys(Msg)).
-is_ordered_list(_, Msg) when map_size(Msg) == 0 -> true;
-is_ordered_list(N, Msg) ->
+is_ordered_list(Msg, _Opts) when is_list(Msg) -> true;
+is_ordered_list(Msg, Opts) ->
+    is_ordered_list(1, hb_ao:normalize_keys(Msg, Opts), Opts).
+is_ordered_list(_, Msg, _Opts) when map_size(Msg) == 0 -> true;
+is_ordered_list(N, Msg, _Opts) ->
     case maps:get(NormKey = hb_ao:normalize_key(N), Msg, not_found) of
         not_found -> false;
         _ ->
             is_ordered_list(
                 N + 1,
-                maps:without([NormKey], Msg)
+                maps:without([NormKey], Msg),
+				_Opts
             )
     end.
 
@@ -348,13 +353,14 @@ hd(Message, [Key|Rest], Index, ReturnType, Opts) ->
 %% @doc Find the value associated with a key in parsed a JSON structure list.
 find_value(Key, List) ->
     find_value(Key, List, undefined).
-
-find_value(Key, Map, Default) when is_map(Map) ->
-    case hb_maps:find(Key, Map) of
+find_value(Key, Map, Default) ->
+	find_value(Key, Map, Default, #{}).
+find_value(Key, Map, Default, Opts) when is_map(Map) ->
+    case hb_maps:find(Key, Map, Opts) of
         {ok, Value} -> Value;
         error -> Default
     end;
-find_value(Key, List, Default) ->
+find_value(Key, List, Default, _Opts) ->
     case lists:keyfind(Key, 1, List) of
         {Key, Val} -> Val;
         false -> Default

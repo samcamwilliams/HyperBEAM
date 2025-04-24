@@ -4,7 +4,7 @@
 -module(dev_codec_flat).
 -export([from/3, to/3, commit/3, verify/3, committed/3]).
 %%% Testing utilities
--export([serialize/1, deserialize/1]).
+-export([serialize/1, serialize/2, deserialize/1]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -19,7 +19,7 @@ from(Map, Req, Opts) when is_map(Map) ->
     {ok,
         maps:fold(
             fun(Path, Value, Acc) ->
-                inject_at_path(hb_path:term_to_path_parts(Path), hb_util:ok(from(Value, Req, Opts)), Acc)
+                inject_at_path(hb_path:term_to_path_parts(Path), hb_util:ok(from(Value, Req, Opts)), Acc, Opts)
             end,
             #{},
             Map
@@ -28,12 +28,18 @@ from(Map, Req, Opts) when is_map(Map) ->
 
 %% Helper function to inject a value at a specific path in a nested map
 inject_at_path([Key], Value, Map) ->
+    inject_at_path([Key], Value, Map, #{});
+
+inject_at_path([Key|Rest], Value, Map) ->
+    inject_at_path([Key|Rest], Value, Map, #{}).
+
+inject_at_path([Key], Value, Map, Opts) ->
     case maps:get(Key, Map, not_found) of
         not_found ->
             Map#{ Key => Value };
         ExistingMap when is_map(ExistingMap) andalso is_map(Value) ->
             % If both are maps, merge them
-            Map#{ Key => hb_maps:merge(ExistingMap, Value) };
+            Map#{ Key => hb_maps:merge(ExistingMap, Value, Opts) };
         OldValue ->
             % Otherwise, alert the user and fail
             throw({path_collision,
@@ -42,9 +48,10 @@ inject_at_path([Key], Value, Map) ->
                 {value, Value}
             })
     end;
-inject_at_path([Key|Rest], Value, Map) ->
-    SubMap = hb_maps:get(Key, Map, #{}),
-    hb_maps:put(Key, inject_at_path(Rest, Value, SubMap), Map).
+
+inject_at_path([Key|Rest], Value, Map, Opts) ->
+    SubMap = hb_maps:get(Key, Map, #{}, Opts),
+    hb_maps:put(Key, inject_at_path(Rest, Value, SubMap, Opts), Map, Opts).
 
 %% @doc Convert a TABM to a flat map.
 to(Bin, _, _Opts) when is_binary(Bin) -> {ok, Bin};
@@ -75,6 +82,9 @@ to(Map, Req, Opts) when is_map(Map) ->
     {ok, Res}.
 
 serialize(Map) when is_map(Map) ->
+    serialize(Map, #{}).
+
+serialize(Map, Opts) when is_map(Map) ->
     Flattened = hb_message:convert(Map, <<"flat@1.0">>, #{}),
     {ok,
         iolist_to_binary(lists:foldl(
@@ -83,11 +93,11 @@ serialize(Map) when is_map(Map) ->
                         Acc,
                         hb_path:to_binary(Key),
                         <<": ">>,
-                        hb_maps:get(Key, Flattened), <<"\n">>
+                        hb_maps:get(Key, Flattened, Opts), <<"\n">>
                     ]
                 end,
                 <<>>,
-                hb_maps:keys(Flattened)
+                hb_maps:keys(Flattened, Opts)
             )
         )
     }.
@@ -153,7 +163,7 @@ path_list_test() ->
         fun(Key) ->
             ?assert(not lists:member($\n, binary_to_list(Key)))
         end,
-        hb_maps:keys(Flat)
+        hb_maps:keys(Flat, #{})
     ).
 
 binary_passthrough_test() ->

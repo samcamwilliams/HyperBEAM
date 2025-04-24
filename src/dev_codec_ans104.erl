@@ -151,7 +151,8 @@ do_from(RawTX, Req, Opts) ->
                         record_info(fields, tx),
                         tl(tuple_to_list(TX))
                     )
-                )
+                ),
+				Opts
             ),
 			Opts
         ),
@@ -198,7 +199,7 @@ do_from(RawTX, Req, Opts) ->
     % Merge the data map with the rest of the TX map and remove any keys that
     % are not part of the message.
     NormalizedDataMap =
-        hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData, Opts)),
+        hb_ao:normalize_keys(hb_maps:merge(DataMap, MapWithoutData, Opts), Opts),
     %% Add the commitments to the message if the TX has a signature.
     ?event({message_before_commitments, NormalizedDataMap}),
     WithCommitments =
@@ -364,7 +365,8 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     ?event({to, {norm, NormTABM}}),
     TABM =
         hb_ao:normalize_keys(
-            hb_maps:without([<<"commitments">>], NormTABM, Opts)
+            hb_maps:without([<<"commitments">>], NormTABM, Opts),
+			Opts
         ),
     Commitments = hb_maps:get(<<"commitments">>, NormTABM, #{}, Opts),
     TABMWithComm =
@@ -414,7 +416,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             TABMNoOrigTags,
             Opts
         ),
-    NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap),
+    NormalizedMsgKeyMap = hb_ao:normalize_keys(MsgKeyMap, Opts),
     % Iterate through the default fields, replacing them with the values from
     % the message map if they are present.
     {RemainingMap, BaseTXList} =
@@ -495,8 +497,7 @@ to(RawTABM, Req, Opts) when is_map(RawTABM) ->
             ?event({data_item, {key, Key}, {value, Value}}),
             {hb_ao:normalize_key(Key), hb_util:ok(to(Value, Req, Opts))}
         end,
-        RawDataItems,
-		Opts
+        RawDataItems
     )),
     % Set the data based on the remaining keys.
     TXWithData = 
@@ -627,7 +628,7 @@ simple_to_conversion_test() ->
     ?event({encoded, Encoded}),
     {ok, Decoded} = from(Encoded, #{}, #{}),
     ?event({decoded, Decoded}),
-    ?assert(hb_message:match(Msg, hb_message:uncommitted(Decoded))).
+    ?assert(hb_message:match(Msg, hb_message:uncommitted(Decoded, #{}))).
 
 only_committed_maintains_target_test() ->
     TX = ar_bundles:sign_item(#tx {

@@ -12,7 +12,7 @@ resolve(_, Key) -> Key.
 list(StoreOpts, Key) ->
     case read(StoreOpts, Key) of
         not_found -> not_found;
-        {ok, Message} -> {ok, hb_maps:keys(Message)}
+        {ok, Message} -> {ok, hb_maps:keys(Message, StoreOpts)}
     end.
 
 %% @doc Get the type of the data at the given key. We potentially cache the
@@ -23,10 +23,10 @@ type(StoreOpts, Key) ->
     case read(StoreOpts, Key) of
         not_found -> not_found;
         {ok, Data} ->
-            ?event({type, hb_private:reset(hb_message:uncommitted(Data))}),
+            ?event({type, hb_private:reset(hb_message:uncommitted(Data, StoreOpts))}),
             IsFlat = lists:all(
                 fun({_, Value}) -> not is_map(Value) end,
-                hb_maps:to_list(hb_private:reset(hb_message:uncommitted(Data)))
+                hb_maps:to_list(hb_private:reset(hb_message:uncommitted(Data, StoreOpts)), StoreOpts)
             ),
             if
                 IsFlat -> simple;
@@ -58,10 +58,10 @@ read(StoreOpts, Key) ->
 maybe_cache(StoreOpts, Data) ->
     ?event({maybe_cache, StoreOpts, Data}),
     % Check for store in both the direct map and the legacy opts map
-    Store = case hb_maps:get(<<"store">>, StoreOpts, not_found) of
+    Store = case hb_maps:get(<<"store">>, StoreOpts, not_found, StoreOpts) of
         not_found -> 
             % Check in legacy opts format
-            NestedOpts = hb_maps:get(<<"opts">>, StoreOpts, #{}),
+            NestedOpts = hb_maps:get(<<"opts">>, StoreOpts, #{}, StoreOpts),
             hb_opts:get(store, false, NestedOpts);
         FoundStore -> 
             FoundStore

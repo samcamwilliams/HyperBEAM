@@ -459,7 +459,7 @@ calculate_node_message(RequiredOpts, Req, true) ->
                 <<"adopt-config">>, <<"peer-location">>,
                 <<"peer-id">>, <<"path">>, <<"method">>
             ],
-            hb_message:uncommitted(Req)
+            hb_message:uncommitted(Req, RequiredOpts)
         ),
 	% Convert atoms to binaries in RequiredOpts to prevent binary_to_existing_atom errors
     % The required config should override the request, if necessary.
@@ -544,12 +544,16 @@ validate_peer_opts(Req, Opts) ->
 	% Get the required config from the local node's configuration.
 	RequiredConfig =
 		hb_ao:normalize_keys(
-			hb_opts:get(green_zone_required_opts, #{}, Opts)),
+			hb_opts:get(green_zone_required_opts, #{}, Opts),
+			Opts
+		),
 	?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
 	
 	PeerOpts =
 		hb_ao:normalize_keys(
-			hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
+			hb_ao:get(<<"node-message">>, Req, undefined, Opts),
+			Opts
+		),
 	?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
 	
 	% Add the required config itself to the required options of the peer. This

@@ -310,7 +310,7 @@ schedule_initial_message(Base, Req, Opts) ->
 
 remote_schedule_result(Location, SignedReq, Opts) ->
     ?event(push, {remote_schedule_result, {location, Location}, {req, SignedReq}}, Opts),
-    {Node, RedirectPath} = parse_redirect(Location),
+    {Node, RedirectPath} = parse_redirect(Location, Opts),
     Path =
         case find_type(SignedReq, Opts) of
             <<"Process">> -> <<"/schedule">>;
@@ -319,7 +319,7 @@ remote_schedule_result(Location, SignedReq, Opts) ->
     % Store a copy of the message for ourselves.
     {ok, _} = hb_cache:write(SignedReq, Opts),
     ?event(push, {remote_schedule_result, {path, Path}}, Opts),
-    case hb_http:post(Node, Path, hb_maps:without([<<"path">>], SignedReq), Opts) of
+    case hb_http:post(Node, Path, hb_maps:without([<<"path">>], SignedReq, Opts), Opts) of
         {ok, Res} ->
             ?event(push, {remote_schedule_result, {res, Res}}, Opts),
             case hb_ao:get(<<"status">>, Res, 200, Opts) of
@@ -341,15 +341,15 @@ find_type(Req, Opts) ->
         Opts
     ).
 
-parse_redirect(Location) ->
+parse_redirect(Location, Opts) ->
     Parsed = uri_string:parse(Location),
     Node =
         uri_string:recompose(
-            (hb_maps:remove(query, Parsed))#{
+            (hb_maps:remove(query, Parsed, Opts))#{
                 path => <<"/schedule">>
             }
         ),
-    {Node, hb_maps:get(path, Parsed)}.
+    {Node, hb_maps:get(path, Parsed, undefined, Opts)}.
 
 %%% Tests
 

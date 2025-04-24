@@ -180,7 +180,7 @@ is_explicit_lookup(Msg1, #{ <<"path">> := Key }, Opts) ->
     % If we have `only-if-cached' in the opts, we always force lookup, too.
     case specifiers_to_cache_settings(hb_opts:get(cache_control, [], Opts)) of
         #{ <<"only-if-cached">> := true } -> false;
-        _ -> is_map(Msg1) andalso hb_maps:is_key(Key, Msg1)
+        _ -> is_map(Msg1) andalso hb_maps:is_key(Key, Msg1, Opts)
     end.
 
 %% @doc Derive cache settings from a series of option sources and the opts,
@@ -193,7 +193,7 @@ is_explicit_lookup(Msg1, #{ <<"path">> := Key }, Opts) ->
 derive_cache_settings(SourceList, Opts) ->
     lists:foldr(
         fun(Source, Acc) ->
-            maybe_set(Acc, cache_source_to_cache_settings(Source))
+            maybe_set(Acc, cache_source_to_cache_settings(Source), Opts)
         end,
         #{ <<"store">> => ?DEFAULT_STORE_OPT, <<"lookup">> => ?DEFAULT_LOOKUP_OPT },
         [{opts, Opts}|lists:filter(fun erlang:is_map/1, SourceList)]
@@ -201,16 +201,16 @@ derive_cache_settings(SourceList, Opts) ->
 
 %% @doc Takes a key and two maps, returning the first map with the key set to
 %% the value of the second map _if_ the value is not undefined.
-maybe_set(Map1, Map2) ->
+maybe_set(Map1, Map2, Opts) ->
     lists:foldl(
         fun(Key, AccMap) ->
-            case hb_maps:get(Key, Map2) of
+            case hb_maps:get(Key, Map2, undefined, Opts) of
                 undefined -> AccMap;
-                Value -> hb_maps:put(Key, Value, AccMap)
+                Value -> hb_maps:put(Key, Value, AccMap, Opts)
             end
         end,
         Map1,
-        hb_maps:keys(Map2)
+        hb_maps:keys(Map2, Opts)
     ).
 
 %% @doc Convert a cache source to a cache setting. The setting _must_ always be

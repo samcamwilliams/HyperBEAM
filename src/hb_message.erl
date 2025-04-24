@@ -57,7 +57,8 @@
 %%% interact with it are found in `hb_message_test_vectors.erl'.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, uncommitted/1, with_only_committers/2, committed/3]).
+-export([convert/3, convert/4, uncommitted/1, committed/3]).
+-export([with_only_committers/2, with_only_committers/3]).
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
 -export([commitment/2, commitment/3, with_only_committed/2, is_signed_key/3]).
 -export([with_commitments/3, without_commitments/3]).
@@ -95,7 +96,7 @@ convert(Msg, TargetFormat, SourceFormat, Opts) ->
     TABM =
         to_tabm(
             case is_map(Msg) of
-                true -> maps:without([<<"priv">>], Msg);
+                true -> hb_maps:without([<<"priv">>], Msg, Opts);
                 false -> Msg
             end,
             SourceFormat,
@@ -187,7 +188,8 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                 ?event({committed_keys, CommittedKeys, {msg, Msg}}),
                 {ok, hb_maps:with(
                     CommittedKeys ++ [<<"commitments">>],
-                    Msg
+                    Msg,
+					Opts
                 )}
             catch Class:Reason:St ->
                 {error,
@@ -206,17 +208,20 @@ with_only_committed(Msg, _) ->
     {ok, Msg}.
 
 %% @doc Return the message with only the specified committers attached.
-with_only_committers(Msg, Committers) when is_map(Msg) ->
+with_only_committers(Msg, Committers) ->
+    with_only_committers(Msg, Committers, #{}).
+with_only_committers(Msg, Committers, Opts) when is_map(Msg) ->
     NewCommitments =
         hb_maps:filter(
             fun(_, #{ <<"committer">> := Committer }) ->
                 lists:member(Committer, Committers);
                (_, _) -> false
             end,
-            hb_maps:get(<<"commitments">>, Msg, #{})
+            hb_maps:get(<<"commitments">>, Msg, #{}, Opts),
+			Opts
         ),
     Msg#{ <<"commitments">> => NewCommitments };
-with_only_committers(Msg, _Committers) ->
+with_only_committers(Msg, _Committers, _Opts) ->
     throw({unsupported_message_type, Msg}).
 
 %% @doc Determine whether a specific key is part of a message's commitments.
@@ -283,9 +288,10 @@ verify(Msg, Committers, Opts) ->
     Res.
 
 %% @doc Return the unsigned version of a message in AO-Core format.
-uncommitted(Bin) when is_binary(Bin) -> Bin;
-uncommitted(Msg) ->
-    hb_maps:remove(<<"commitments">>, Msg).
+uncommitted(Msg) -> uncommitted(Msg, #{}).
+uncommitted(Bin, _Opts) when is_binary(Bin) -> Bin;
+uncommitted(Msg, Opts) ->
+    hb_maps:remove(<<"commitments">>, Msg, Opts).
 
 %% @doc Return all of the committers on a message that have 'normal', 256 bit, 
 %% addresses.
@@ -527,14 +533,14 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
      Keys1 =
         hb_maps:keys(
             NormMap1 = minimize(
-                normalize(hb_ao:normalize_keys(Map1)),
+                normalize(hb_ao:normalize_keys(Map1, Opts), Opts),
                 [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
     Keys2 =
         hb_maps:keys(
             NormMap2 = minimize(
-                normalize(hb_ao:normalize_keys(Map2)),
+                normalize(hb_ao:normalize_keys(Map2, Opts), Opts),
                 [<<"content-type">>, <<"body-keys">>, <<"inline-body-key">>]
             )
         ),
@@ -559,14 +565,8 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
             lists:all(
                 fun(Key) ->
                     ?event(match, {matching_key, Key}),
-                    Val1 =
-                        hb_ao:normalize_keys(
-                            hb_maps:get(Key, NormMap1, not_found, Opts)
-                        ),
-                    Val2 =
-                        hb_ao:normalize_keys(
-                            hb_maps:get(Key, NormMap2, not_found, Opts)
-                        ),
+                    Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found, Opts), Opts),
+                    Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found, Opts), Opts),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
@@ -720,11 +720,11 @@ minimize(Map, ExtraKeys) ->
 
 %% @doc Return a map with only the keys that necessary, without those that can
 %% be regenerated.
-normalize(Map) when is_map(Map) orelse is_list(Map) ->
-    NormalizedMap = hb_ao:normalize_keys(Map),
+normalize(Map, Opts) when is_map(Map) orelse is_list(Map) ->
+    NormalizedMap = hb_ao:normalize_keys(Map, Opts),
     FilteredMap = filter_default_keys(NormalizedMap),
     hb_maps:with(matchable_keys(FilteredMap), FilteredMap);
-normalize(Other) ->
+normalize(Other, _Opts) ->
     Other.
 
 %% @doc Remove keys from a map that have the default values found in the tx
