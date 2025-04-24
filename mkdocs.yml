@@ -9,7 +9,7 @@ site_dir: mkdocs-site
 use_directory_urls: false 
 
 nav:
-  - Home: 'index.md'
+  - Home: ''
   - Overview: 'overview/index.md'
   - Installation & Core:
     - System Dependencies:

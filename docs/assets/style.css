@@ -26,6 +26,28 @@ body[data-md-path="index"] .md-header {
 	box-shadow: none !important;
 }
 
+.md-grid {
+	/* transition: all 0.1s; */
+	max-width: var(--docs-max-width);
+}
+
+.custom-homepage-header {
+	position: fixed;
+	background: transparent !important;
+	filter: invert(1);
+	top: 0;
+	/* transition: filter 1s; */
+}
+
+.custom-homepage-header .md-grid {
+	max-width: var(--homepage-max-width);
+}
+
+.custom-homepage-header .md-tabs {
+	background: transparent !important;
+}
+
+/* Logo Customization */
 .md-logo img {
 	height: 0.9rem !important;
 }
@@ -117,6 +139,87 @@ body[data-md-path="index"] .md-header {
 	color: #AAA;
 }
 
+/* Hero Container */
+.custom-homepage-main {
+	display: flex;
+	flex-direction: column;
+}
+
+.hero-container {
+	display: flex;
+	position: relative;
+	height: 100vh;
+	width: 100%;
+	background-image: url('https://arweave.net/DJf2QIKmsgat7KW98WdITXf2rmKLVL6VHk8R20QY0Ls');
+	background-size: cover;
+	background-position: center;
+	background-repeat: no-repeat;
+	min-height: 400px;
+	align-items: flex-end;
+}
+
+.hero-inner-content {
+	display: flex;
+	width: 100%;
+	max-width: var(--homepage-max-width);
+	margin-left: auto;
+	margin-right: auto;
+	z-index: 1;
+	justify-content: space-between;
+	align-items: center;
+	padding: 2rem 0.8rem;
+	/* transition: all 0.1s; */
+
+}
+
+.custom-homepage-main h1 {
+	font-size: clamp(1.0rem, 1.5vw, 1.1rem) !important;
+
+	color: white !important;
+	margin: 0;
+	font-weight: 500;
+}
+
+.custom-homepage-main h2 {
+	font-size: clamp(0.8rem, 1.5vw, 0.9rem) !important;
+	color: white !important;
+	margin: 0;
+	font-weight: 500;
+}
+
+.custom-homepage-main span {
+	color: white !important;
+	margin: 0;
+}
+
+.scroll-button {
+	padding: 10px 10px 10px 10px;
+}
+
+.scroll-button span {
+	margin-left: 5px;
+}
+
+.dark-top {
+	position: absolute;
+	top: 0;
+	background: linear-gradient(0deg, rgba(0, 0, 0, 0.00) 0%, #000000 80.0%);
+	height: 300px;
+	width: 100%;
+	z-index: 0;
+}
+
+.dark-bottom {
+	position: absolute;
+	bottom: 0;
+	background: linear-gradient(0deg, #000 0%, rgba(0, 0, 0, 0.00) 100%);
+	height: 550px;
+	width: 100%;
+	z-index: 0;
+
+}
+
+/* Footer Customization */
 .md-footer-meta {
 	display: none !important;
 }

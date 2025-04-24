@@ -129,6 +129,25 @@ echo "Building and serving mkdocs documentation..."
 # Run mkdocs from the root directory
 # Remove --site-dir flag to use the one specified in mkdocs.yml (which is 'site')
 mkdocs build || { echo "mkdocs build failed"; exit 1; }
-mkdocs serve || { echo "mkdocs serve failed"; exit 1; }
 
-echo "Documentation build and serve completed" 
+# Find the latest CSS files with their hashes
+MAIN_CSS=$(find ./mkdocs-site/assets/stylesheets -name "main.*.min.css" | sort | tail -n 1)
+PALETTE_CSS=$(find ./mkdocs-site/assets/stylesheets -name "palette.*.min.css" | sort | tail -n 1)
+
+# Extract just the filenames from the paths
+MAIN_CSS_FILE=$(basename "$MAIN_CSS")
+PALETTE_CSS_FILE=$(basename "$PALETTE_CSS")
+
+# Count the number of HTML files processed
+HTML_COUNT=0
+
+# Find all HTML files and replace the CSS references in each one
+find ./mkdocs-site -type f -name "*.html" | while read -r html_file; do
+    sed -i'' -e "s|MAIN\.CSS|assets/stylesheets/$MAIN_CSS_FILE|g" "$html_file"
+    sed -i'' -e "s|MAIN_PALETTE\.CSS|assets/stylesheets/$PALETTE_CSS_FILE|g" "$html_file"
+    HTML_COUNT=$((HTML_COUNT + 1))
+done
+
+echo "✅ CSS files replaced with hashed versions in $HTML_COUNT HTML files"
+
+echo "Documentation build completed" 
