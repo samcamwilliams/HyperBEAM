@@ -168,6 +168,7 @@ markdown_extensions:
 
 theme: 
   name: material
+  custom_dir: docs/theme/templates
   language: en
   logo: assets/images/favicon.png
   favicon: assets/images/favicon.ico
@@ -221,7 +222,8 @@ extra_css:
  
 extra_javascript:
   - js/utc-time.js
-
+  - js/custom-header.js
+  
 extra:
   social:
     - icon: fontawesome/brands/github
