@@ -350,7 +350,7 @@ handle_request(RawReq, Body, ServerID) ->
                         #{},
                         #{
                             <<"status">> => 500,
-                            <<"body">> => list_to_binary(TraceString)
+                            <<"body">> => TraceString
                         },
                         NodeMsg
                     )

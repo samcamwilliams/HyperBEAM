@@ -50,14 +50,14 @@ handle_tracer(Topic, X, Opts) ->
 	AllowedTopics = [http, ao_core, ao_result],
 	case lists:member(Topic, AllowedTopics) of
 		true -> 
-			case maps:get(trace, Opts, undefined) of
+			case hb_opts:get(trace, undefined, Opts) of
 				undefined -> 
 					case tuple_to_list(X) of
 						[_ | Rest] -> 
 							try
 								Map = maps:from_list(Rest),
-								TopicOpts = maps:get(opts, Map, #{}),
-								case maps:get(trace, TopicOpts, undefined) of
+								TopicOpts = hb_opts:get(opts, #{}, Map),
+								case hb_opts:get(trace, undefined, TopicOpts) of
 									undefined ->  ok;
 									TracePID ->
                                         hb_tracer:record_step(TracePID, {Topic, X})
