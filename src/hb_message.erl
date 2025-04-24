@@ -1589,7 +1589,7 @@ sign_links_test(Codec) ->
     % data directly in memory.
     Msg = #{
         <<"immediate-key">> => <<"immediate-value">>,
-        <<"link-key">> =>
+        <<"submap+link">> =>
             {link, hb_util:human_id(crypto:strong_rand_bytes(32)), #{}}
     },
     Signed = commit(Msg, Opts, Codec),
@@ -1761,5 +1761,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_only_committed_data_field_test(<<"ans104@1.0">>).
-    % id_of_deep_message_and_link_message_match_test(<<"httpsig@1.0">>).
+    signed_message_encode_decode_verify_test(<<"structured@1.0">>).

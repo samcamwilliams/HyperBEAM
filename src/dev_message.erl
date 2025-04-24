@@ -97,8 +97,8 @@ calculate_ids(Base, Req, NodeOpts) ->
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
-    LinkifiedBase = hb_link:linkify(Base, discard, NodeOpts),
-    ?event(linkify, {generating_id, {idmod, IDMod}, {linkified_base, LinkifiedBase}}),
+    TABM = hb_message:convert(Base, tabm, NodeOpts),
+    ?event(linkify, {generating_id, {idmod, IDMod}, {tabm, TABM}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -113,10 +113,10 @@ calculate_ids(Base, Req, NodeOpts) ->
         end,
     % Apply the function's `id' function with the appropriate arguments. If it
     % doesn't exist, error.
-    case hb_ao:find_exported_function(LinkifiedBase, DevMod, id, 3, NodeOpts) of
+    case hb_ao:find_exported_function(TABM, DevMod, id, 3, NodeOpts) of
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
-            apply(Fun, hb_ao:truncate_args(Fun, [LinkifiedBase, Req, NodeOpts]));
+            apply(Fun, hb_ao:truncate_args(Fun, [TABM, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 

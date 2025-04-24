@@ -52,41 +52,51 @@
 %% options, we apply it to the read value.
 ensure_loaded(Msg) ->
     ensure_loaded(Msg, #{}).
-ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"type">> := <<"link">> }}, Opts) ->
-    % The link is multi-tiered (the link points to at least one further link),
-    % so we need to dereference the first link and call `ensure_loaded' again.
+ensure_loaded(Lk = {link, ID, LkOpts = #{ <<"type">> := <<"link">>, <<"lazy">> := Lazy }}, Opts) ->
+    % The link is to a submessage; either in lazy (unresolved) form, or direct
+    % form.
     Store = hb_opts:get(store, no_viable_store, Opts),
     ?event(debug_cache,
         {loading_multi_link,
             {link, ID},
-            {link_opts, LinkOpts},
+            {link_opts, LkOpts},
             {store, Store}
         }
     ),
-    case hb_cache:read(ID, hb_util:deep_merge(Opts, LinkOpts, Opts)) of
-        {ok, LinkValue} ->
+    case hb_cache:read(ID, hb_util:deep_merge(Opts, LkOpts, Opts)) of
+        {ok, Next} ->
             ?event(debug_cache,
                 {loaded,
                     {link, ID},
-                    {link_value, LinkValue},
                     {store, Store}
                 }),
-            NextLink = hb_link:decode_link(LinkValue),
-            ?event(linkify,
-                {dereferencing_secondary_link,
-                    {original, Link},
-                    {dereferenced, LinkValue}
-                }
-            ),
-            ensure_loaded(NextLink, Opts);
+            case Lazy of
+                true ->
+                    % We have resolved the ID of the submessage, so we continue
+                    % to load the submessage itself.
+                    ensure_loaded(
+                        {link,
+                            Next,
+                            #{
+                                <<"type">> => <<"link">>,
+                                <<"lazy">> => false
+                            }
+                        },
+                        Opts
+                    );
+                false ->
+                    % The already had the ID of the submessage, so now we have
+                    % the data, we simply return it.
+                    Next
+            end;
         not_found ->
-            ?event(debug_cache, {multi_link_not_found, {link, ID}, {link_opts, LinkOpts}}),
-            throw({necessary_message_not_found, Link})
+            ?event(debug_cache, {lazy_link_not_found, {link, ID}, {link_opts, LkOpts}}),
+            throw({necessary_message_not_found, Lk})
     end;
-ensure_loaded(Link = {link, ID, LinkOpts}, Opts) ->
+ensure_loaded(Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, Opts) ->
     % If the user provided their own options, we merge them and _overwrite_
     % the options that are already set in the link.
-    MergedOpts = hb_maps:merge(LinkOpts, Opts),
+    MergedOpts = hb_util:deep_merge(Opts, LinkOpts, Opts),
     case hb_cache:read(ID, MergedOpts) of
         {ok, LoadedMsg} ->
             ?event(caching,
@@ -103,7 +113,7 @@ ensure_loaded(Link = {link, ID, LinkOpts}, Opts) ->
         not_found ->
             throw({necessary_message_not_found, Link})
     end;
-ensure_loaded(Msg, _Opts) ->
+ensure_loaded(Msg, _Opts) when not ?IS_LINK(Msg) ->
     Msg.
 
 %% @doc Ensure that all of the components of a message (whether a map, list,
@@ -159,7 +169,7 @@ write(RawMsg, Opts) when is_map(RawMsg) ->
         {ok, Msg} ->
             ?event(debug_cache, {writing_full_message, {msg, Msg}}),
             Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
-            ?event({tabm, Tabm}),
+            ?event(debug_write, {tabm, Tabm}),
             %try
                 do_write_message(
                     Tabm,
@@ -181,6 +191,8 @@ write(RawMsg, Opts) when is_map(RawMsg) ->
         {error, Err} ->
             {error, Err}
     end;
+write(List, Opts) when is_list(List) ->
+    write(hb_message:convert(List, tabm, <<"structured@1.0">>, Opts), Opts);
 write(Bin, Opts) when is_binary(Bin) ->
     % When asked to write only a binary, we do not calculate any alternative IDs.
     do_write_message(Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
@@ -193,40 +205,15 @@ do_write_message(Bin, Store, Opts) when is_binary(Bin) ->
     {ok, Path};
 do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     ?event(debug_cache, {writing_message, Msg}),
-    % First, recursively write all nested messages. Each nested message will
-    % return a link, so we can calculate the ID of the parent from its children
-    % efficiently.
-    Linkified = 
-        maps:from_list(lists:map(
-            fun({<<"device">>, Map}) when is_map(Map) ->
-                ?event(error, {request_to_write_device_map, Map}),
-                throw({device_map_cannot_be_written, Map});
-            ({Key, Value}) when is_map(Value) or is_list(Value) ->
-                % The key is a nested message, so write it recursively then link
-                % to it.
-                ?event({writing_linked_message, {key, Key}, {value, Value}}),
-                {ok, ID} = do_write_message(Value, Store, Opts),
-                Type =
-                    case is_list(Value) of
-                        true -> #{ <<"type">> => <<"list">> };
-                        false -> #{}
-                    end,
-                {<<Key/binary, "+link">>, hb_link:encode_link({link, ID, Type})};
-            ({Key, Value}) ->
-                % The key is a direct value, so we leave it as-is.
-                {Key, Value}
-            end,
-            maps:to_list(hb_private:reset(Msg))
-        )),
-    % Now, we can calculate the IDs of the message.
+    % Calculate the IDs of the message.
     UncommittedID = hb_message:id(Msg, none, Opts),
     AltIDs = calculate_all_ids(Msg, Opts) -- [UncommittedID],
     MsgHashpathAlg = hb_path:hashpath_alg(Msg, Opts),
-    ?event(debug_cache, {linkified, {id, UncommittedID}, {alt_ids, AltIDs}, {linkified, {explicit, Linkified}}, {original, Msg}}),
+    ?event(debug_cache, {writing_message, {id, UncommittedID}, {alt_ids, AltIDs}, {original, Msg}}),
     % Write all of the keys of the message into the store.
     hb_store:make_group(Store, UncommittedID),
     maps:map(
-        fun(Key, Value) ->
+        fun(Key, Value) when is_binary(Value) ->
             % Write the key to the store.
             KeyHashPath =
                 hb_path:hashpath(
@@ -237,9 +224,11 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
                 ),
             {ok, Path} = do_write_message(Value, Store, Opts),
             hb_store:make_link(Store, Path, KeyHashPath),
-            Path
+            Path;
+        (Key, Val) ->
+            throw({panic, unexpected_key_value, {key, Key}, {value, Val}})
         end,
-        Linkified
+        maps:without([<<"priv">>], Msg)
     ),
     % Write the commitments to the store, linking each commitment ID to the
     % uncommitted message.
@@ -350,27 +339,26 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
     Res =
         maps:from_list(lists:filtermap(
             fun(<<"ao-types">>) -> false;
-            (<<"commitments+link">>) ->
-                    {ok, CommitmentsRef} =
-                        store_read(
-                            hb_store:path(
-                                Store,
-                                [
-                                    RootPath,
-                                    <<"commitments+link">>
-                                ]
-                            ),
-                            Store,
-                            Opts
-                        ),
-                    ?event(debug, {commitments_ref, CommitmentsRef}),
-                    % Ensure that the full commitments map
-                    % is recursively loaded into memory.
+                (<<"commitments+link">>) ->
+                    % Ensure that the full commitments map is recursively
+                    % loaded into memory.
                     {true,
                         {
                             <<"commitments">>,
                             hb_cache:ensure_all_loaded(
-                                {link, CommitmentsRef, #{}},
+                                {link, 
+                                    hb_store:path(
+                                        Store,
+                                        [
+                                            RootPath,
+                                            <<"commitments+link">>
+                                        ]
+                                    ),
+                                    #{
+                                        <<"type">> => <<"link">>,
+                                        <<"lazy">> => true
+                                    }
+                                },
                                 Opts
                             )
                         }
@@ -394,9 +382,24 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
                                         SubkeyPath,
                                         (case Types of
                                             #{ Subpath := Type } ->
-                                                #{ <<"type">> => Type };
+                                                % We have an `ao-types' entry for the
+                                                % subpath, so we return a link to the
+                                                % subpath with `lazy' set to `true'
+                                                % because we need to resolve the link
+                                                % to get the final value.
+                                                #{
+                                                    <<"type">> => Type,
+                                                    <<"lazy">> => true
+                                                };
                                             _ ->
-                                                #{}
+                                                % We do not have an `ao-types' entry for the
+                                                % subpath, so we return a link to the
+                                                % subpath with `lazy' set to `true',
+                                                % because the subpath is a literal
+                                                % value.
+                                                #{
+                                                    <<"lazy">> => true
+                                                }
                                         end)#{ store => Store }
                                     }
                                 }
@@ -406,12 +409,15 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
                             % link to the underlying link. This requires that we
                             % dereference the link twice in order to get the final
                             % value. Returning the data this way avoids having to
-                            % read each of the links themselves, which may be
+                            % read each of the link keys themselves, which may be
                             % a large quantity.
                             {true,
                                 {
                                     binary:part(Subpath, 0, byte_size(Subpath) - 5),
-                                    {link, SubkeyPath, #{ <<"type">> => <<"link">> }}
+                                    {link, SubkeyPath, #{
+                                        <<"type">> => <<"link">>,
+                                        <<"lazy">> => true
+                                    }}
                                 }
                             }
                     end

@@ -36,6 +36,8 @@ get(Key, Map, Default) ->
     % ),
     get(Key, Map, Default, #{}).
 
+%% @doc Get a value from a map, resolving links as they are encountered in both
+%% the TABM encoded link format, as well as the structured type.
 -spec get(
     Key :: term(),
     Map :: map(),
@@ -43,10 +45,30 @@ get(Key, Map, Default) ->
     Opts :: map()
 ) -> term().
 get(Key, Map, Default, Opts) ->
-    hb_cache:ensure_loaded(
-        maps:get(Key, hb_cache:ensure_loaded(Map, Opts), Default),
-        Opts
-    ).
+    RawRes =
+        maps:get(
+            Key,
+            hb_cache:ensure_loaded(Map, Opts),
+            undefined
+        ),
+    case RawRes of
+        undefined ->
+            % The key was not found in the map directly. Check if it is a 
+            % the TABM-encoded link, resolving it if so.
+            NormKey = hb_ao:normalize_key(Key),
+            case maps:get(<< NormKey/binary, "+link">>, Map, undefined) of
+                undefined ->
+                    Default;
+                ID ->
+                    case hb_cache:read(ID, Opts) of
+                        {ok, Data} ->
+                            Data;
+                        not_found ->
+                            Default
+                    end
+            end;
+        Res -> hb_cache:ensure_loaded(Res, Opts)
+    end.
 
 -spec find(Key :: term(), Map :: map()) -> {ok, term()} | error.
 find(Key, Map) ->

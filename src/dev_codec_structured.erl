@@ -40,7 +40,8 @@ from(List, Req, Opts) when is_list(List) ->
         }
     };
 from(Msg, Req, Opts) when is_map(Msg) ->
-    NormLinks = hb_link:encode_all_links(Msg),
+    % Normalize the message, offloading links to the cache.
+    NormLinks = hb_link:normalize(Msg, offload, Opts),
     NormKeysMap = hb_ao:normalize_keys(NormLinks),
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
@@ -299,8 +300,6 @@ decode_value(map, Value) ->
             hb_structured_fields:parse_dictionary(iolist_to_binary(Value))
         )
     );
-decode_value(link, Value) ->
-    {link, Value, #{ <<"type">> => <<"link">> }};
 decode_value(BinType, Value) when is_binary(BinType) ->
     decode_value(
         list_to_existing_atom(
