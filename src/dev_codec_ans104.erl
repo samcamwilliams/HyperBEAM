@@ -162,7 +162,7 @@ committed(Msg, Req, Opts) ->
             NestedKeys = hb_maps:keys(hb_maps:filter(fun(_, V) -> is_map(V) end, Msg)),
             Implicit =
                 case lists:member(<<"ao-types">>, hb_maps:keys(Msg)) of
-                    true -> dev_codec_structured:implicit_keys(Msg);
+                    true -> dev_codec_structured:implicit_keys(Msg, Opts);
                     false -> []
                 end,
             % Return the immediate and nested keys. The `data' field is always
@@ -179,7 +179,7 @@ committed_from_trusted_keys(Msg, TrustedKeys, Opts) ->
     TKeys = hb_maps:values(hb_ao:normalize_keys(TrustedKeys), Opts),
     Implicit =
         case lists:member(<<"ao-types">>, TKeys) of
-            true -> dev_codec_structured:implicit_keys(Msg);
+            true -> dev_codec_structured:implicit_keys(Msg, Opts);
             false -> []
         end,
     {

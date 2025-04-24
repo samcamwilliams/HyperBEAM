@@ -240,7 +240,10 @@ verify(Self, Req, Opts) ->
 exec_for_commitment(Func, Base, Commitment, Req, Opts) ->
     ?event({executing_for_commitment, {func, Func}, {base, Base}, {commitment, Commitment}, {req, Req}}),
     CommitmentMessage =
-        hb_maps:merge(Base, hb_maps:without([<<"commitment-device">>], Commitment)),
+        hb_maps:merge(
+            Base,
+            hb_maps:without([<<"commitment-device">>], Commitment)
+        ),
     AttDev =
         hb_maps:get(
             <<"commitment-device">>,

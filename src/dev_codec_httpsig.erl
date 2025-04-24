@@ -231,7 +231,7 @@ do_committed(SigInputStr, Msg, _Req, Opts) ->
             remove_derived_specifiers(BinComponentIdentifiers),
     % Extract the implicit keys from the `ao-types' of the encoded message if
     % the types key itself was signed.
-    SignedWithImplicit = Signed ++ dev_codec_structured:implicit_keys(Msg),
+    SignedWithImplicit = Signed ++ dev_codec_structured:implicit_keys(Msg, Opts),
     case lists:member(<<"content-digest">>, SignedWithImplicit) of
         false -> {ok, SignedWithImplicit};
         true -> {ok, SignedWithImplicit ++ committed_from_body(Msg, Opts)}

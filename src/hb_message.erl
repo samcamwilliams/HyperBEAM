@@ -81,15 +81,21 @@
 %% available. The conversion from a TABM is done by the target codec.
 convert(Msg, TargetFormat, Opts) ->
     convert(Msg, TargetFormat, <<"structured@1.0">>, Opts).
+convert(Msg, TargetFormat, tabm, Opts) ->
+    OldPriv =
+        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
+           true -> #{}
+        end,
+    from_tabm(Msg, TargetFormat, OldPriv, Opts);
 convert(Msg, TargetFormat, SourceFormat, Opts) ->
     OldPriv =
-        if is_map(Msg) -> hb_maps:get(<<"priv">>, Msg, #{}, Opts);
+        if is_map(Msg) -> maps:get(<<"priv">>, Msg, #{});
            true -> #{}
         end,
     TABM =
         to_tabm(
             case is_map(Msg) of
-                true -> hb_maps:without([<<"priv">>], Msg);
+                true -> maps:without([<<"priv">>], Msg);
                 false -> Msg
             end,
             SourceFormat,

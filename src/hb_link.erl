@@ -11,7 +11,7 @@ read(Link) -> read(Link, #{}).
 read(Link, Opts) ->
     try hb_cache:ensure_loaded(Link, Opts)
     catch
-        throw: {necessary_message_not_found, ID} ->
+        throw:{necessary_message_not_found, ID} ->
             {error, {link_not_found, ID}}
     end.
 

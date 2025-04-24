@@ -350,26 +350,29 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
     Res =
         maps:from_list(lists:filtermap(
             fun(<<"ao-types">>) -> false;
-            (<<"commitments">>) ->
-                    {ok, Commitments} =
+            (<<"commitments+link">>) ->
+                    {ok, CommitmentsRef} =
                         store_read(
                             hb_store:path(
                                 Store,
                                 [
                                     RootPath,
-                                    <<"commitments">>
+                                    <<"commitments+link">>
                                 ]
                             ),
                             Store,
                             Opts
                         ),
-                    ?event(debug_load, {loaded_commitments, Commitments}),
+                    ?event(debug, {commitments_ref, CommitmentsRef}),
                     % Ensure that the full commitments map
                     % is recursively loaded into memory.
                     {true,
                         {
                             <<"commitments">>,
-                            hb_cache:ensure_all_loaded(Commitments, Opts)
+                            hb_cache:ensure_all_loaded(
+                                {link, CommitmentsRef, #{}},
+                                Opts
+                            )
                         }
                     };
                 (Subpath) ->
@@ -419,7 +422,7 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
 
 %% @doc Read and parse the ao-types for a given path if it is in the supplied
 %% list of subpaths, returning a map of keys and their types.
-read_ao_types(Path, Subpaths, Store, _Opts) ->
+read_ao_types(Path, Subpaths, Store, Opts) ->
     ?event({reading_ao_types, {path, Path}, {subpaths, {explicit, Subpaths}}}),
     case lists:member(<<"ao-types">>, Subpaths) of
         true ->
@@ -428,7 +431,7 @@ read_ao_types(Path, Subpaths, Store, _Opts) ->
                     Store,
                     hb_store:path(Store, [Path, <<"ao-types">>])
                 ),
-            Types = dev_codec_structured:parse_ao_types(TypesBin),
+            Types = dev_codec_structured:decode_ao_types(TypesBin, Opts),
             ?event({parsed_ao_types, {types, Types}}),
             {ok, types_to_implicit(Types), Types};
         false ->

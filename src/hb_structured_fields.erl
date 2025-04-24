@@ -165,7 +165,8 @@ key_to_binary(Key) -> iolist_to_binary(Key).
 parse_dictionary(<<>>) ->
     [];
 parse_dictionary(<<C, R/bits>>) when ?IS_ALPHA(C)
-        or ?IS_DIGIT(C) or (C =:= $*) or (C =:= $%) or (C =:= $_) or (C =:= $-) ->
+        or ?IS_DIGIT(C) or (C =:= $*) or (C =:= $%) or (C =:= $_) or (C =:= $-) 
+        or (C =:= $.) ->
     parse_dict_key(R, [], <<C>>).
 
 parse_dict_key(<<$=, $(, R0/bits>>, Acc, K) ->
