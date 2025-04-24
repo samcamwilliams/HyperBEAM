@@ -213,7 +213,7 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     % Write all of the keys of the message into the store.
     hb_store:make_group(Store, UncommittedID),
     maps:map(
-        fun(Key, Value) when is_binary(Value) ->
+        fun(Key, Value) ->
             % Write the key to the store.
             KeyHashPath =
                 hb_path:hashpath(
@@ -224,9 +224,7 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
                 ),
             {ok, Path} = do_write_message(Value, Store, Opts),
             hb_store:make_link(Store, Path, KeyHashPath),
-            Path;
-        (Key, Val) ->
-            throw({panic, unexpected_key_value, {key, Key}, {value, Val}})
+            Path
         end,
         maps:without([<<"priv">>], Msg)
     ),

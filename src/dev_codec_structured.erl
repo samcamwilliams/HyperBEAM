@@ -87,7 +87,8 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                 % should be regenerated when moving msg -> TX, as well
                 % as private keys.
                 not lists:member(Key, ?REGEN_KEYS) andalso
-                    not hb_private:is_private(Key)
+                    not hb_private:is_private(Key) andalso
+                    not (Key == <<"commitments">>)
             end,
             hb_util:to_sorted_keys(NormKeysMap)
         )
@@ -95,7 +96,7 @@ from(Msg, Req, Opts) when is_map(Msg) ->
     % Encode the AoTypes as a structured dictionary
     % And include as a field on the produced TABM
     WithTypes =
-        case Types of 
+        hb_maps:from_list(case Types of 
             [] -> Values;
             T ->
                 AoTypes = iolist_to_binary(hb_structured_fields:dictionary(
@@ -108,8 +109,18 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                     )
                 )),
                 [{<<"ao-types">>, AoTypes} | Values]
-        end,
-    {ok, hb_maps:from_list(WithTypes)};
+        end),
+    % If the message has a `commitments' field, add it to the TABM unmodified.
+    {ok,
+        case maps:get(<<"commitments">>, Msg, not_found) of
+            not_found ->
+                WithTypes;
+            Commitments ->
+                WithTypes#{
+                    <<"commitments">> => Commitments
+                }
+        end
+    };
 from(Other, _Req, _Opts) -> {ok, hb_path:to_binary(Other)}.
 
 %% @doc Convert a TABM into a native HyperBEAM message.
