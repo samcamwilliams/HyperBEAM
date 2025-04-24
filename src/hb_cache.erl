@@ -418,7 +418,13 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
                 end,
             Subpaths
         )),
-    maps:merge(Res, Implicit).
+    Merged = maps:merge(Res, Implicit),
+    case dev_codec_structured:is_list_from_ao_types(Types, Opts) of
+        true ->
+            hb_util:message_to_ordered_list(Merged, Opts);
+        false ->
+            Merged
+    end.
 
 %% @doc Read and parse the ao-types for a given path if it is in the supplied
 %% list of subpaths, returning a map of keys and their types.

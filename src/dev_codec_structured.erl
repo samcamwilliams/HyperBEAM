@@ -10,7 +10,7 @@
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
 -export([to/3, from/3, commit/3, committed/3, verify/3]).
--export([encode_ao_types/2, decode_ao_types/2]).
+-export([encode_ao_types/2, decode_ao_types/2, is_list_from_ao_types/2]).
 -export([decode_value/2, encode_value/1, implicit_keys/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -193,6 +193,16 @@ decode_ao_types(Bin, _Opts) when is_binary(Bin) ->
             hb_structured_fields:parse_dictionary(Bin)    
         )
     ).
+
+%% @doc Determine if the `ao-types' field of a TABM indicates that the message
+%% is a list.
+is_list_from_ao_types(Types, Opts) when is_binary(Types) ->
+    is_list_from_ao_types(decode_ao_types(Types, Opts), Opts);
+is_list_from_ao_types(Types, _Opts) ->
+    case maps:find(<<".">>, Types) of
+        {ok, <<"list">>} -> true;
+        _ -> false
+    end.
 
 %% @doc Find the implicit keys of a TABM.
 implicit_keys(Req, Opts) ->
