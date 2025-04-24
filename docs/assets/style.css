@@ -174,7 +174,6 @@ body[data-md-path="index"] .md-header {
 
 .custom-homepage-main h1 {
 	font-size: clamp(1.0rem, 1.5vw, 1.1rem) !important;
-
 	color: white !important;
 	margin: 0;
 	font-weight: 500;
