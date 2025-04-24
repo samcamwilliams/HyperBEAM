@@ -11,7 +11,7 @@ the `accept` key to return the correct format.
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#aos2_message_lookup_test-0">aos2_message_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#binary_lookup_test-0">binary_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#http_lookup_test-0">http_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#message_lookup_test-0">message_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#read-3">read/3</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#aos2_message_lookup_test-0">aos2_message_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#binary_lookup_test-0">binary_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#http_lookup_test-0">http_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#message_lookup_test-0">message_lookup_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#read-3">read/3</a></td><td>Fetch a resource from the cache using "target" ID extracted from the message.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -47,4 +47,6 @@ the `accept` key to return the correct format.
 ### read/3 ###
 
 `read(M1, M2, Opts) -> any()`
+
+Fetch a resource from the cache using "target" ID extracted from the message
 

@@ -121,7 +121,6 @@
 %%      9: Notify waiters.
 %%     10: Fork worker.
 %%     11: Recurse or terminate.
-
 resolve(SingletonMsg, Opts) when is_map(SingletonMsg) ->
     resolve_many(hb_singleton:from(SingletonMsg), Opts).
 

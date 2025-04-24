@@ -278,19 +278,29 @@ guide.
 
 HyperBEAM uses [MkDocs](https://www.mkdocs.org/) with the [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) theme to build its documentation site.
 
-Building the documentation requires Python 3, pip, and the following packages:
+Building the documentation requires Python 3 and pip. It's recommended to use a virtual environment:
+
 ```bash
+# Create and activate a virtual environment (optional but recommended)
+python3 -m venv venv
+source venv/bin/activate  # (macOS/Linux) On Windows use `venv\Scripts\activate`
+
+# Install required packages
 pip3 install mkdocs mkdocs-material
+
+# Deactivate the virtual environment when done
+# deactivate
 ```
 
 - **Source Files:** All documentation source files (Markdown `.md`, images, CSS) are located in the `docs/` directory.
 - **Source Code Docs:** Erlang source code documentation is generated using `rebar3 edoc` (with the `edown_doclet` plugin) into the `docs/source-code-docs/` directory as Markdown files. These are then incorporated into the main MkDocs site.
 - **Build Script:** The entire process (compiling, generating edoc, processing source docs, building the site) is handled by the `./docs/build-all.sh` script.
 
-To build and view the documentation locally:
+To build the documentation locally:
 
 1.  Ensure you are in the project root directory.
-2.  Run the build script:
+2.  If using a virtual environment, make sure it's activated.
+3.  Run the build script:
     ```bash
     ./docs/build-all.sh
     ```
@@ -299,9 +309,20 @@ This script performs the following steps:
 - Compiles the Erlang project (`rebar3 compile`).
 - Generates Markdown documentation from source code comments (`rebar3 edoc`) into `docs/source-code-docs/`.
 - Processes the generated source code Markdown files (updates index, cleans up TOCs).
-- Builds the MkDocs site into the `dist/mkdocs` directory (`mkdocs build`).
-- Starts a local development server (`mkdocs serve`) to view the site at `http://127.0.0.1:8000/`.
+- Builds the MkDocs site into the `mkdocs-site` directory (`mkdocs build`).
 
-Press `Ctrl+C` in the terminal where the script is running to stop the local server.
+To view the built documentation locally:
 
-The final static site is generated in the `dist/mkdocs` directory, as configured in `mkdocs.yml` (`site_dir: dist/mkdocs`).
+1.  Navigate to the site directory:
+    ```bash
+    cd mkdocs-site
+    ```
+2.  Start a simple Python HTTP server:
+    ```bash
+    python3 -m http.server 8000
+    ```
+3.  Open your web browser and go to `http://127.0.0.1:8000/`.
+
+Press `Ctrl+C` in the terminal where the server is running to stop it.
+
+The final static site is generated in the `mkdocs-site` directory, as configured in `mkdocs.yml` (`site_dir: mkdocs-site`).

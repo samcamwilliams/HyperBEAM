@@ -4,7 +4,9 @@
   function updateHeaderAndMainClass() {
     const header = document.querySelector(".md-header");
     const main = document.querySelector("main");
-    const isHomepage = window.location.pathname === "/index.html";
+    const segments = window.location.pathname.split("/").filter(Boolean);
+    const arweavePath = segments.length === 1 && segments[0].length === 43;
+    const isHomepage = segments.length === 0 || arweavePath;
 
     if (!header || !main) return;
 
