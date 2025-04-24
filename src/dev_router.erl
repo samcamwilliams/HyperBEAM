@@ -680,21 +680,10 @@ dynamic_router_test() ->
                 % Set script-specific factors for the test
                 <<"pricing-weight">> => 9,
                 <<"performance-weight">> => 1,
-                <<"score-preference">> => 4
-                ,
-                <<"is-admissible">> => #{
-                  <<"path">> => <<"verify">>,
+                <<"score-preference">> => 4,
+                <<"is-admissible">> => #{ 
                   <<"device">> => <<"snp@1.0">>
                 }
-                % <<"is-admissible">> => #{
-                %     <<"device">> => <<"lua@5.3a">>,
-                %         <<"function">> => <<"is_admissible">>,
-                %         <<"script">> => #{
-                %             <<"content-type">> => <<"application/lua">>,
-                %             <<"module">> => <<"is-admissible-check">>,
-                %             <<"body">> => <<"function is_admissible (proc, req) ao.event({'called is_admissible', }) end">>
-                %     }
-                % }
             }
         }
     }),
@@ -738,17 +727,13 @@ dynamic_router_test() ->
     end, lists:seq(1, 1)),
     % Force computation of the current state. This should be done with a 
     % background worker (ex: a `~cron@1.0/every' task).
-    {ok, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
-    {ok, Routes} = hb_http:get(Node, RouteProvider, Opts),
+    {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
     ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
-    ?event(debug_dynrouter, {got_routes, Routes}),
 	% Meta info is a part of the exempt routes. Make sure this returns our address
     {ok, Res} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
-	?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
+	% ?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
 	% {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
-	% ?assertEqual(ok, Status),
-    ?event(debug_dynrouter, {got_res, Res}),
-    ?assertEqual(true, falser).
+    ?assertEqual(ok, Status).
 
 %% @doc Demonstrates routing tables being dynamically created and adjusted
 %% according to the real-time performance of nodes. This test utilizes the

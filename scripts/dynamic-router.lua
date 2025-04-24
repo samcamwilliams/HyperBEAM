@@ -200,24 +200,35 @@ function recalculate(state, _, opts)
     return "ok", state
 end
 
+local function findId(commitments, alg)
+  local id = ""
+  for k,v in pairs(commitments) do
+    if v["alg"] == alg then
+        id = k
+    end
+  end
+  return id
+end
+
 -- Register a new host to a route.
 function register(state, assignment, opts)
     state = ensure_defaults(state)
     local req = assignment.body
     ao.event("register_called")
-    -- local status, is_admissible = ao.resolve(state["is-admissible"])
-    -- ao.event({"status", status})
-    ao.event(state["is-admissible"])
-    ao.resolve(state["is-admissible"])
-    -- if status == "ok" and is_admissible ~= false then
-    --     state = add_node(state, req)
-    --     return recalculate(state, assignment, opts)
-    -- else
-    --     -- If the registration is untrusted signal the issue via and event and
-    --     -- return the state unmodified
-    --     ao.event("error", { "untrusted peer requested", req})
-    --     return "ok", state
-    -- end
+    req.path = "verify"
+    req.commitments = nil
+    ao.event("target", findId(req.body.commitments, "rsa-pss-sha512"))
+    req.target = findId(req.body.commitments, "rsa-pss-sha512")
+    local status, is_admissible = ao.resolve(state["is-admissible"], req)
+    if status == "ok" and is_admissible ~= false then
+        state = add_node(state, req)
+        return recalculate(state, assignment, opts)
+    else
+        -- If the registration is untrusted signal the issue via and event and
+        -- return the state unmodified
+        ao.event("error", { "untrusted peer requested", req})
+        return "ok", state
+    end
     return "ok", state
 end
 

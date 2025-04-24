@@ -86,14 +86,15 @@ init(M1, _M2, Opts) ->
 %% 6. Verify the report's certificate chain to hardware root of trust.
 verify(M1, M2, NodeOpts) ->
     ?event(snp_verify, verify_called),
-    ?event(snp_verify, { m1, M1}),
     ?event(snp_verify, { m2, M2}),
-    ?event(snp_verify, { nodeOpts, NodeOpts}),
     {ok, MsgWithJSONReport} = hb_message:find_target(M1, M2, NodeOpts),
+    % MsgWithJSONReport = hb_ao:get(<<"body">>, M2, NodeOpts),
     ?event(snp_verify, { reportMsg, MsgWithJSONReport }),
 	% Normalize the request message
 	ReportJSON = hb_ao:get(<<"report">>, MsgWithJSONReport, NodeOpts),
+    ?event(snp_verify, { reportJSON, ReportJSON }),
 	Report = hb_json:decode(ReportJSON),
+    ?event(snp_verify, { report, Report}),
 	Msg =
 		maps:merge(
 			maps:without([<<"report">>], MsgWithJSONReport),
