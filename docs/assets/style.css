@@ -488,7 +488,17 @@ picture.rocks {
 	justify-content: center;
 }
 
+.fig img {
+	image-rendering: pixelated;
+	shape-rendering: geometricPrecision;
+	transform: translateZ(0);
+	/* force GPU for sharpness */
+}
+
+
+
 .fig {
+	position: absolute;
 	width: 100%;
 	max-width: 500px;
 }
@@ -515,6 +525,8 @@ picture.rocks {
 .md-footer__title {
 	font-size: clamp(0.75rem, 1.5vw, 0.85rem);
 }
+
+
 
 @keyframes flickerLight {
 
