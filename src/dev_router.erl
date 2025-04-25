@@ -24,19 +24,13 @@
 %%%                map or a path regex.
 %%% </pre>
 -module(dev_router).
-%%% Device API:
 -export([routes/3, route/2, route/3, preprocess/3]).
-%%% Public utilities:
--export([match/3]).
+-export([match/3, is_relevant/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
--define(DEFAULT_EXEMPT_ROUTES, [
-  #{ <<"template">> => <<"/~meta@1.0/.*">> },
-  #{ <<"template">> => <<"/~greenzone@1.0/.*">> },
-  #{ <<"template">> => <<"/.*~node-process@1.0/.*">> },
-  #{ <<"template">> => <<"/~snp@1.0/.*">> },
-  #{ <<"template">> => <<"/~p4@1.0/.*">> }
+-define(DEFAULT_RELAVANT_ROUTES, [
+  #{ <<"template">> => <<"/.*~process@1.0/.*">> }
 ]).
 
 %% @doc Device function that returns all known routes.
@@ -179,7 +173,7 @@ extract_base(RawPath, Opts) when is_binary(RawPath) ->
     case ?IS_ID(BasePath) of
         true -> BasePath;
         false ->
-            case binary:split(BasePath, [<<"~">>, <<"?">>, <<"&">>], [global]) of
+            case binary:split(BasePath, [<<"\~">>, <<"?">>, <<"&">>], [global]) of
                 [BaseMsgID|_] when ?IS_ID(BaseMsgID) -> BaseMsgID;
                 _ -> hb_crypto:sha256(BasePath)
             end
@@ -370,54 +364,34 @@ binary_to_bignum(Bin) when ?IS_ID(Bin) ->
     << Num:256/unsigned-integer >> = hb_util:native_id(Bin),
     Num.
 
-%% @doc is_exempt looks at the is_exempt paths opt and if any incoming message path matches it will 
-%% make the request exempt from preprocessing.
-is_exempt(Msg1, Msg2, Opts) ->
-  ExemptRoutes = 
+%% @doc is_relevant looks at the relevant_routes paths opt and if any incoming message path matches it will 
+%% make the request relevant for preprocessing.
+is_relevant(Msg1, Msg2, Opts) ->
+  RelevantRoutes = 
       hb_opts:get(
-        exempt_routes,
-        ?DEFAULT_EXEMPT_ROUTES,
+        relevant_routes,
+        ?DEFAULT_RELAVANT_ROUTES,
         Opts
       ),
   Req = hb_ao:get(<<"request">>, Msg2, Opts),
-  {_, Matches} = match(#{ <<"routes">> => ExemptRoutes}, Req, Opts),
+  {_, Matches} = match(#{ <<"routes">> => RelevantRoutes}, Req, Opts),
   ?event(debug_preprocess, { matches, Matches }),
   case Matches of
     no_matching_route -> 
-        % case hb_ao:resolve(#{ 
-        %   <<"device">> => <<"router@1.0">>, 
-        %   <<"routes">> => hb_ao:get(exempt_routes, Msg1, Opts)}, 
-        %   Msg2#{ <<"path">> => <<"match">> },
-        %   Opts
-        % ) of
-        %     {error, no_matching_route} -> {ok, false};
-        %     _ -> {ok, false}
-        % end;
         {ok, false};
-    IsExempt -> 
-          ?event(debug_preprocess, { is_except, IsExempt }),
+    IsRelevant -> 
+          ?event(debug_preprocess, { is_relevant, IsRelevant }),
           {ok, true}
-end.
+  end.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
 preprocess(Msg1, Msg2, Opts) ->
     ?event(debug_preprocess, called_preprocess),
-    case is_exempt(Msg1, Msg2, Opts) of
+    case is_relevant(Msg1, Msg2, Opts) of
         {ok, true} ->
-            ?event(debug_preprocess, is_exempt_true),
-            {ok, hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore })};
-            % Request should not be proxied, return the modified parsed list of messages to execute
-            % {ok, hb_ao:resolve(Msg1, Msg2, Opts)};
-        {ok, false} ->
-            ?event(debug_dynrouter, { msg1, Msg1 }),
-            ?event(debug_dynrouter, { opts, Opts }),
             {ok, TemplateRoutes} = routes(Msg1, Msg2, Opts),
-            ?event(debug_dynrouter, { template_routes, TemplateRoutes }),
             Req = hb_ao:get(<<"request">>, Msg2, Opts),
-            Path = find_target_path(Req, Opts),
-            ?event(debug_dynrouter, { found_path, Path }),
             {_, Match} = match(#{ <<"routes">> => TemplateRoutes}, Req, Opts),
-            ?event(debug_dynrouter, { found_match, Match }),
             case Match of
                 no_matching_route -> 
                     {error, <<"No matching route found">>};
@@ -433,7 +407,10 @@ preprocess(Msg1, Msg2, Opts) ->
                             }
                         ]
                     }
-            end
+            end;
+        {ok, false} ->
+            ?event(debug_preprocess, is_not_relevant),
+            {ok, hb_ao:get(<<"body">>, Msg2, Opts#{ hashpath => ignore })}
     end.
 
 %%% Tests
