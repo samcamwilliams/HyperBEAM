@@ -61,12 +61,11 @@ register(_M1, M2, Opts) ->
 		
 		MissingParams = [Param || {Param, Value} <- Missing, Value =:= not_found],
 		
-		{ok, Attestion} = dev_snp:generate(#{}, #{}, Opts),
+		{ok, Attestion} = dev_snp:generate(#{}, #{}, #{ priv_wallet => hb:wallet(), snp_hashes => hb_opts:get(snp_hashes, #{}, Opts) }),
 		?event(dev_router, {attestion, Attestion}),
 		case MissingParams of
 			[] ->
-				% All required parameters are present, proceed with registration
-				Req = #{
+				case hb_http:post(RouterNode, #{
 					<<"path">> => <<"/router~node-process@1.0/schedule">>,
 					<<"method">> => <<"POST">>,
 					<<"body">> =>
@@ -77,14 +76,13 @@ register(_M1, M2, Opts) ->
 									#{
 										<<"prefix">> => Prefix,
 										<<"template">> => Template,
-										<<"price">> => Price
+										<<"price">> => 250
 									},
 								<<"body">> => Attestion
 							},
 							Opts
 						)
-				},
-				case hb_http:post(RouterNode, Req, Opts) of
+				}, Opts) of
 					{ok, _} ->
 						hb_http_server:set_opts(Opts#{ registered => true }),
 						{ok, <<"Route registered.">>};
