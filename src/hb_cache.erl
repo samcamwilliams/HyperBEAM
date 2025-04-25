@@ -214,17 +214,7 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     hb_store:make_group(Store, UncommittedID),
     maps:map(
         fun(Key, Value) ->
-            % Write the key to the store.
-            KeyHashPath =
-                hb_path:hashpath(
-                    UncommittedID,
-                    hb_path:to_binary(Key),
-                    MsgHashpathAlg,
-                    Opts
-                ),
-            {ok, Path} = do_write_message(Value, Store, Opts),
-            hb_store:make_link(Store, Path, KeyHashPath),
-            Path
+            write_key(UncommittedID, Key, MsgHashpathAlg, Value, Store, Opts)
         end,
         maps:without([<<"priv">>], Msg)
     ),
@@ -242,6 +232,44 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
         AltIDs
     ),
     {ok, UncommittedID}.
+
+%% @doc Write a single key for a message into the store.
+write_key(Base, <<"commitments">>, HPAlg, Commitments, Store, Opts) ->
+    % Search to see if we already have commitments for this message locally.
+    ?event(debug_commitments, {writing_commitments, {base, Base}, {commitments, Commitments}, {store, Store}}),
+    LocalStore = hb_store:scope(Store, local),
+    case read(<<Base/binary, "/commitments">>, Opts#{ store => LocalStore }) of
+        {ok, ExistingCommitments} ->
+            % We do, so we need to merge the new commitments with the old ones.
+            % We do this by fully loading the existing commitments and merging
+            % the maps.
+            LoadedExistingCommitments = hb_cache:ensure_all_loaded(ExistingCommitments, Opts),
+            ?event(debug_commitments, {loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
+            Merged = maps:merge(Commitments, LoadedExistingCommitments),
+            % Write the merged commitments to the store.
+            {ok, MergedPath} = do_write_message(Merged, Store, Opts),
+            % Link the merged commitments to the message.
+            hb_store:make_link(Store, MergedPath, <<Base/binary, "/commitments">>),
+            {ok, MergedPath};
+        _ ->
+            % We do not have any commitments for this message locally, so we
+            % write the commitments to the store.
+            do_write_key(Base, <<"commitments">>, HPAlg, Commitments, Store, Opts)
+    end;
+write_key(Base, Key, HPAlg, Value, Store, Opts) ->
+    do_write_key(Base, Key, HPAlg, Value, Store, Opts).
+
+do_write_key(Base, Key, HPAlg, Value, Store, Opts) ->
+    KeyHashPath =
+        hb_path:hashpath(
+            Base,
+            hb_path:to_binary(Key),
+            HPAlg,
+            Opts
+        ),
+    {ok, Path} = do_write_message(Value, Store, Opts),
+    hb_store:make_link(Store, Path, KeyHashPath),
+    {ok, Path}.
 
 %% @doc Calculate the IDs for a message.
 calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
