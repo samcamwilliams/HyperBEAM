@@ -99,7 +99,8 @@ commit(Msg, Req, Opts) ->
                 <<"commitment-device">> => <<"ans104@1.0">>,
                 <<"alg">> => <<"unsigned">>
             },
-            MsgWithoutHP
+            MsgWithoutHP,
+            Opts
         ))#{
             <<"commitments">> => #{
                 ID => CommitmentWithHP

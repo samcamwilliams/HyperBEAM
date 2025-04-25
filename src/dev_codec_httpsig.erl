@@ -118,7 +118,8 @@ id(Msg, _Params, Opts) ->
 %% @doc Find the ID of the message, which is the hmac of the fields referenced in
 %% the signature and signature input. If the message already has a signature-input,
 %% directly, it is treated differently: We relabel it as `x-signature-input' to
-%% avoid key collisions.
+%% avoid key collisions. This is important because TABM commitments messages 
+%% for this codec will themselves include a signature-input.
 find_id(Msg = #{ <<"commitments">> := Comms }, Opts) when map_size(Comms) > 1 ->
     #{ <<"commitments">> := CommsWithoutHmac } =
         hb_message:without_commitments(
@@ -316,7 +317,8 @@ reset_hmac(RawMsg, Opts) ->
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"alg">> => <<"hmac-sha256">>
             },
-            Msg
+            Msg,
+            Opts
         ),
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
     AllSigs =
@@ -1265,7 +1267,7 @@ trim_ws_end(Value, N) ->
 %% @doc Ensure that we can validate a signature on an extremely large and complex
 %% message that is sent over HTTP, signed with the codec.
 validate_large_message_from_http_test() ->
-    Node = hb_http_server:start_node(#{
+    Node = hb_http_server:start_node(Opts = #{
         force_signed => true,
         commitment_device => <<"httpsig@1.0">>,
         extra =>
@@ -1295,7 +1297,7 @@ validate_large_message_from_http_test() ->
     ?event({sig_verifies, Signers}),
     ?assert(hb_message:verify(Res)),
     ?event({hmac_verifies, <<"hmac-sha256">>}),
-    {ok, OnlyCommitted} = hb_message:with_only_committed(Res),
+    {ok, OnlyCommitted} = hb_message:with_only_committed(Res, Opts),
     ?event({msg_with_only_committed, OnlyCommitted}),
     ?assert(hb_message:verify(OnlyCommitted, Signers)),
     ?event({msg_with_only_committed_verifies, Signers}),
