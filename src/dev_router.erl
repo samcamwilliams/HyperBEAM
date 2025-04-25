@@ -37,7 +37,6 @@
 %% a new route with a remote router node. This function should also be itempotent
 %% so that it can be called only once.
 register(_M1, M2, Opts) ->
-	?event(debug_pete, {register, {msg, M2}}),
 	Registered = hb_opts:get(registered, false, Opts),
 	case Registered of
 	true ->
@@ -61,11 +60,18 @@ register(_M1, M2, Opts) ->
 		
 		MissingParams = [Param || {Param, Value} <- Missing, Value =:= not_found],
 		
-		{ok, Attestion} = dev_snp:generate(#{}, #{}, Opts),
+		{ok, Attestion} = dev_snp:generate(
+			#{}, 
+			#{}, 
+			#{ 
+				priv_wallet => hb:wallet(), 
+				snp_hashes => hb_opts:get(snp_hashes, #{}, Opts)
+			}
+		),
+		?event(dev_router, {attestion, Attestion}),
 		case MissingParams of
 			[] ->
-				% All required parameters are present, proceed with registration
-				Req = #{
+				case hb_http:post(RouterNode, #{
 					<<"path">> => <<"/router~node-process@1.0/schedule">>,
 					<<"method">> => <<"POST">>,
 					<<"body">> =>
@@ -82,8 +88,7 @@ register(_M1, M2, Opts) ->
 							},
 							Opts
 						)
-				},
-				case hb_http:post(RouterNode, Req, Opts) of
+				}, Opts) of
 					{ok, _} ->
 						hb_http_server:set_opts(Opts#{ registered => true }),
 						{ok, <<"Route registered.">>};
@@ -695,18 +700,16 @@ dynamic_router_test() ->
     {ok, Script} = file:read_file("scripts/dynamic-router.lua"),
     Run = hb_util:bin(rand:uniform(1337)),
     Node = hb_http_server:start_node(Opts = #{
-		trusted => [
-			#{
-				vcpus => 1,
-				vcpu_type => 5, 
-				vmm_type => 1,
-				guest_features => 1,
-				firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
-				kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
-				initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
-				append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
-			}
-		],
+		trusted => [#{
+			vcpus => 1,
+			vcpu_type => 5, 
+			vmm_type => 1,
+			guest_features => 1,
+			firmware => <<"b8c5d4082d5738db6b0fb0294174992738645df70c44cdecf7fad3a62244b788e7e408c582ee48a74b289f3acec78510">>,
+			kernel => <<"69d0cd7d13858e4fcef6bc7797aebd258730f215bc5642c4ad8e4b893cc67576">>,
+			initrd => <<"da6dffff50373e1d393bf92cb9b552198b1930068176a046dda4e23bb725b3bb">>,
+			append => <<"aaf13c9ed2e821ea8c82fcc7981c73a14dc2d01c855f09262d42090fa0424422">>
+		}],
         store => [
             #{
                 <<"store-module">> => hb_store_fs,
@@ -719,7 +722,7 @@ dynamic_router_test() ->
         },
         route_provider => #{
             <<"path">> =>
-				<<"/router~node-process@1.0/compute/routes~message@1.0">>
+                    <<"/router~node-process@1.0/compute/routes~message@1.0">>
         },
         node_processes => #{
             <<"router">> => #{
@@ -785,7 +788,7 @@ dynamic_router_test() ->
     {Status, NodeRoutes} = hb_http:get(Node, <<"/router~node-process@1.0/now">>, #{}),
     ?event(debug_dynrouter, {got_node_routes, NodeRoutes}),
 	% Meta info is a part of the exempt routes. Make sure this returns our address
-    {ok, _Res} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
+    {ok, _} = hb_http:get(Node, <<"/~meta@1.0/info/address">>, Opts),
 	% ?assertEqual(hb_util:human_id(ar_wallet:to_address(hb_opts:get(priv_wallet, not_found, Opts))), Res),
 	% {Status, _} = hb_http:get(Node, <<"/RhguwWmQJ-wWCXhRH_NtTDHRRgfCqNDZckXtJK52zKs~process@1.0/compute&slot=1">>, Opts),
     ?assertEqual(ok, Status).
