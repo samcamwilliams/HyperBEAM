@@ -25,13 +25,86 @@
 %%% </pre>
 -module(dev_router).
 -export([routes/3, route/2, route/3, preprocess/3]).
--export([match/3, is_relevant/3]).
+-export([match/3, is_relevant/3, register/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
 -define(DEFAULT_RELAVANT_ROUTES, [
   #{ <<"template">> => <<"/.*~process@1.0/.*">> }
 ]).
+
+%% A exposed register function that allows telling the current node to register
+%% a new route with a remote router node. This function should also be itempotent
+%% so that it can be called only once.
+register(_M1, M2, Opts) ->
+	?event(debug_pete, {register, {msg, M2}}),
+	Registered = hb_opts:get(registered, false, Opts),
+	case Registered of
+	true ->
+		{ok, #{
+			<<"status">> => 208,
+			<<"message">> => <<"Node already registered.">>
+		}};
+	false ->
+		RouterNode = hb_ao:get(<<"peer-location">>, M2, not_found, Opts),
+		Prefix = hb_ao:get(<<"prefix">>, M2, not_found, Opts),
+		Price = hb_ao:get(<<"price">>, M2, not_found, Opts),
+		Template = hb_ao:get(<<"template">>, M2, not_found, Opts),
+
+		% Check if any required parameters are missing
+		Missing = [
+			{<<"peer-location">>, RouterNode},
+			{<<"prefix">>, Prefix},
+			{<<"price">>, Price},
+			{<<"template">>, Template}
+		],
+		
+		MissingParams = [Param || {Param, Value} <- Missing, Value =:= not_found],
+		
+		case MissingParams of
+			[] ->
+				% All required parameters are present, proceed with registration
+				Req = #{
+					<<"path">> => <<"/router~node-process@1.0/schedule">>,
+					<<"method">> => <<"POST">>,
+					<<"body">> =>
+						hb_message:commit(
+							#{
+								<<"path">> => <<"register">>,
+								<<"route">> =>
+									#{
+										<<"prefix">> => Prefix,
+										<<"template">> => Template,
+										<<"price">> => Price
+									},
+								<<"body">> => M2
+							},
+							Opts
+						)
+				},
+				case hb_http:post(RouterNode, Req, Opts) of
+					{ok, _} ->
+						hb_http_server:set_opts(Opts#{ registered => true }),
+						{ok, <<"Route registered.">>};
+					{error, _} ->
+						{error, <<"Failed to register route.">>}
+				end;
+			_ ->
+				% Some parameters are missing, return error message
+				ParamList = lists:foldl(
+					fun(Param, Acc) ->
+						case Acc of
+							<<>> -> Param;
+							_ -> <<Acc/binary, ", ", Param/binary>>
+						end
+					end,
+					<<>>,
+					MissingParams
+				),
+				ErrorMsg = <<"Missing required parameters: ", ParamList/binary>>,
+				{error, ErrorMsg}
+		end
+	end.
 
 %% @doc Device function that returns all known routes.
 routes(M1, M2, Opts) ->
@@ -394,7 +467,10 @@ preprocess(Msg1, Msg2, Opts) ->
             {_, Match} = match(#{ <<"routes">> => TemplateRoutes}, Req, Opts),
             case Match of
                 no_matching_route -> 
-                    {error, <<"No matching route found">>};
+					{ok, #{
+						<<"status">> => 404,
+						<<"message">> => <<"No matching template found in the given routes.">>
+					}};
                 _ -> 
                     {ok,
                         [
