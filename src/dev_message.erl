@@ -160,11 +160,20 @@ id_device(_, _) ->
 committers(Base) -> committers(Base, #{}).
 committers(Base, Req) -> committers(Base, Req, #{}).
 committers(#{ <<"commitments">> := Commitments }, _, NodeOpts) ->
+    ?event(debug_commitments, {calculating_committers, {commitments, Commitments}}),
     {ok,
         hb_maps:values(
             hb_maps:filtermap(
                 fun(_ID, Commitment) ->
-                    case hb_maps:get(<<"committer">>, Commitment, undefined, NodeOpts) of
+                    Committer =
+                        hb_maps:get(
+                            <<"committer">>,
+                            Commitment,
+                            undefined,
+                            NodeOpts
+                        ),
+                    ?event(debug_commitments, {calculating_committers, {committer, Committer}}),
+                    case Committer of
                         undefined -> false;
                         Committer -> {true, Committer}
                     end
@@ -350,10 +359,7 @@ commitment_ids_from_request(Base, Req, Opts) ->
         hb_maps:get(
             <<"commitments">>,
             Req,
-            case ReqCommitters of
-                <<"none">> -> <<"all">>;
-                _ -> <<"none">>
-            end,
+            <<"none">>,
             Opts
         ),
     ReqCommitments =
@@ -399,7 +405,26 @@ commitment_ids_from_request(Base, Req, Opts) ->
                     end,
                 commitment_ids_from_committers(CommitterAddrs, Commitments, Opts)
         end,
-    Res = FromCommitterAddrs ++ FromCommitmentIDs,
+    Res =
+        case FromCommitterAddrs ++ FromCommitmentIDs of
+            [] ->
+                % The request is for no committers, and no explicit commitments.
+                % Subsequently, we return the commitment using the default
+                % commitment device, if it exists.
+                lists:filter(
+                    fun(CommitmentID) ->
+                        Comm = maps:get(CommitmentID, Commitments, Opts),
+                        Dev = hb_maps:get(<<"commitment-device">>, Comm, undefined, Opts),
+                        case Dev of
+                            ?DEFAULT_ATT_DEVICE ->
+                                not hb_maps:is_key(<<"committer">>, Comm);
+                            _ -> false
+                        end
+                    end,
+                    hb_maps:keys(Commitments)
+                );
+            FinalCommitmentIDs -> FinalCommitmentIDs
+        end,
     ?event({commitment_ids_from_request, {base, Base}, {req, Req}, {res, Res}}),
     Res.
 
