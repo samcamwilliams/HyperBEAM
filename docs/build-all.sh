@@ -148,6 +148,9 @@ find ./mkdocs-site -type f -name "*.html" | while read -r html_file; do
     HTML_COUNT=$((HTML_COUNT + 1))
 done
 
+# Remove .html-e files
+find ./mkdocs-site -type f -name "*.html-e" -delete
+
 echo "✅ CSS files replaced with hashed versions in $HTML_COUNT HTML files"
 
 echo "Documentation build completed" 
