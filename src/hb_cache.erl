@@ -601,15 +601,15 @@ test_deeply_nested_complex_message(Opts) ->
                             <<"g">> => [<<"h">>, <<"i">>],
                             <<"j">> => 1337
                         },
-                        ar_wallet:new()
+                        Opts
                     ),
                 <<"a">> => <<"b">>
             },
-            Wallet
+            Opts
         ),
-    {ok, UID} = dev_message:id(Outer, #{ <<"committers">> => <<"none">> }, Opts),
+    UID = hb_message:id(Outer, none, Opts),
     ?event({string, <<"================================================">>}),
-    {ok, CommittedID} = dev_message:id(Outer, #{ <<"committers">> => [Address] }, Opts),
+    CommittedID = hb_message:id(Outer, signed, Opts),
     ?event({string, <<"================================================">>}),
     ?event({test_message_ids, {uncommitted, UID}, {committed, CommittedID}}),
     %% Write the nested item
@@ -673,4 +673,4 @@ test_device_map_cannot_be_written_test() ->
 run_test() ->
     Opts = #{ store =>
         [#{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST">> }]},
-        test_store_simple_signed_message(Opts).
+    test_deeply_nested_complex_message(Opts).

@@ -26,7 +26,7 @@ read(Link, Opts) ->
 %% contrast to `linkify', which takes a structured message and returns a message
 %% with structured links.
 normalize(Msg, Opts) when is_map(Opts) ->
-    normalize(Msg, hb_opts:get(linkify_mode, discard, Opts), Opts).
+    normalize(Msg, hb_opts:get(linkify_mode, offload, Opts), Opts).
 normalize(Msg, Mode, Opts) when is_map(Msg) ->
     maps:merge(
         maps:with([<<"commitments">>, <<"priv">>], Msg),

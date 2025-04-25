@@ -56,16 +56,17 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
     % Ensure that the base message is a normalized TABM before proceeding.
-    Base = hb_ao:normalize_keys(hb_message:convert(RawBase, tabm, NodeOpts)),
+    IDOpts = NodeOpts#{ linkify_mode => offload },
+    Base = hb_ao:normalize_keys(hb_message:convert(RawBase, tabm, IDOpts)),
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
-        = with_relevant_commitments(Base, Req, NodeOpts),
+        = with_relevant_commitments(Base, Req, IDOpts),
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
             ?event(ids, no_commitments_found_in_id_call),
-            calculate_ids(hb_maps:without([<<"commitments">>], ModBase), Req, NodeOpts);
+            calculate_ids(hb_maps:without([<<"commitments">>], ModBase), Req, IDOpts);
         IDs ->
             % Accumulate the relevant IDs into a single value. This is performed 
             % by module arithmetic of each of the IDs. The effect of this is that:
@@ -192,11 +193,12 @@ commit(Self, Req, Opts) ->
     % We _do not_ set the `device' key in the message, as the device will be
     % part of the commitment. Instead, we find the device module's `commit'
     % function and apply it.
-    AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, Opts),
-    {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, Opts),
-    Encoded = hb_message:convert(Base, tabm, Opts),
-    {ok, Committed} = apply(AttFun, hb_ao:truncate_args(AttFun, [Encoded, Req, Opts])),
-    {ok, hb_message:convert(Committed, <<"structured@1.0">>, Opts)}.
+    CommitOpts = Opts#{ linkify_mode => offload },
+    AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, CommitOpts),
+    {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
+    Encoded = hb_message:convert(Base, tabm, CommitOpts),
+    {ok, Committed} = apply(AttFun, hb_ao:truncate_args(AttFun, [Encoded, Req, CommitOpts])),
+    {ok, hb_message:convert(Committed, <<"structured@1.0">>, CommitOpts)}.
 
 %% @doc Verify a message. By default, all commitments are verified. The
 %% `committers' key in the request can be used to specify that only the 
@@ -359,7 +361,11 @@ commitment_ids_from_request(Base, Req, Opts) ->
             X2 when is_list(X2) -> X2;
             Descriptor2 -> hb_ao:normalize_key(Descriptor2)
         end,
-    ?event({commitment_ids_from_request, {req_commitments, ReqCommitments}, {req_committers, ReqCommitters}}),
+    ?event(debug_commitments,
+        {commitment_ids_from_request,
+            {req_commitments, ReqCommitments},
+            {req_committers, ReqCommitters}}
+    ),
     % Get the commitments to verify.
     FromCommitmentIDs =
         case ReqCommitments of

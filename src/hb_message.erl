@@ -144,20 +144,20 @@ id(Msg) -> id(Msg, uncommitted).
 id(Msg, Opts) when is_map(Opts) -> id(Msg, uncommitted, Opts);
 id(Msg, Committers) -> id(Msg, Committers, #{}).
 id(Msg, RawCommitters, Opts) ->
-    Committers =
+    CommSpec =
         case RawCommitters of
-            uncommitted -> <<"none">>;
-            unsigned -> <<"none">>;
-            none -> [];
-            all -> <<"all">>;
-            signed -> signers(Msg, Opts);
-            List when is_list(List) -> List
+            none -> #{ <<"committers">> => <<"none">> };
+            uncommitted -> #{ <<"committers">> => <<"none">> };
+            unsigned -> #{ <<"committers">> => <<"none">> };
+            all -> #{ <<"committers">> => <<"all">> };
+            signed -> #{ <<"committers">> => <<"all">> };
+            List when is_list(List) -> #{ <<"committers">> => List }
         end,
-    ?event({getting_id, {msg, Msg}, {committers, Committers}}),
+    ?event({getting_id, {msg, Msg}, {spec, CommSpec}}),
     {ok, ID} =
         dev_message:id(
             Msg,
-            #{ <<"path">> => <<"id">>, <<"committers">> => Committers },
+            CommSpec#{ <<"path">> => <<"id">> },
             Opts
         ),
     hb_util:human_id(ID).
@@ -250,7 +250,9 @@ commit(Msg, Opts, Format) ->
 committed(Msg) -> committed(Msg, all).
 committed(Msg, Committers) -> committed(Msg, Committers, #{}).
 committed(Msg, all, Opts) ->
-    committed(Msg, #{ <<"commitments">> => <<"all">> }, Opts);
+    committed(Msg, #{ <<"committers">> => <<"all">> }, Opts);
+committed(Msg, none, Opts) ->
+    committed(Msg, #{ <<"committers">> => <<"none">> }, Opts);
 committed(Msg, List, Opts) when is_list(List) ->
     committed(Msg, #{ <<"commitments">> => List }, Opts);
 committed(Msg, CommittersMsg, Opts) ->
