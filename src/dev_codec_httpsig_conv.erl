@@ -307,19 +307,6 @@ to(TABM, Req, Opts) -> to(TABM, Req, [], Opts).
 to(Bin, _Req, _FormatOpts, _Opts) when is_binary(Bin) -> {ok, Bin};
 to(Link, _Req, _FormatOpts, _Opts) when ?IS_LINK(Link) -> {ok, Link};
 to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
-    % % Encode all links in the message into binary form.
-    % WithLinks =
-    %     hb_link:linkify(
-    %         TABM,
-    %         case hb_maps:get(<<"linkify">>, Req, not_found, Opts) of
-    %             not_found -> hb_opts:get(linkify_mode, discard, Opts);
-    %             Mode ->
-    %                 ?event({linkify_mode, {mode, Mode}, {req, Req}}),
-    %                 hb_util:atom(Mode)
-    %         end,
-    %         Opts
-    %     ),
-    % Linkified = hb_link:encode_all_links(WithLinks),
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.
