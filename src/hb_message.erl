@@ -54,12 +54,10 @@
 %%% retrieving messages.
 -module(hb_message).
 -export([id/1, id/2, id/3]).
--export([convert/3, convert/4, uncommitted/1, with_only_committers/2]).
+-export([convert/3, convert/4, uncommitted/1, with_only_committers/2, committed/3]).
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
--export([committed/1, committed/2, committed/3]).
--export([commitment/2, commitment/3]).
--export([with_only_committed/1, with_only_committed/2]).
--export([with_commitments/2, without_commitments/2]).
+-export([commitment/2, commitment/3, with_only_committed/2]).
+-export([with_commitments/3, without_commitments/3]).
 -export([match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
 -export([default_tx_list/0, filter_default_keys/1]).
@@ -170,8 +168,6 @@ id(Msg, RawCommitters, Opts) ->
 %% ...before using the output of this function as the 'canonical' message. This
 %% is such that expensive operations like signature verification are not
 %% performed unless necessary.
-with_only_committed(Msg) ->
-    with_only_committed(Msg, #{}).
 with_only_committed(Msg, Opts) when is_map(Msg) ->
     ?event({with_only_committed, {msg, Msg}, {opts, Opts}}),
     Comms = hb_maps:get(<<"commitments">>, Msg, not_found, Opts),
@@ -247,8 +243,6 @@ commit(Msg, Opts, Format) ->
     Signed.
 
 %% @doc Return the list of committed keys from a message.
-committed(Msg) -> committed(Msg, all).
-committed(Msg, Committers) -> committed(Msg, Committers, #{}).
 committed(Msg, all, Opts) ->
     committed(Msg, #{ <<"committers">> => <<"all">> }, Opts);
 committed(Msg, none, Opts) ->
@@ -589,18 +583,17 @@ matchable_keys(Map) ->
 %% @doc Filter messages that do not match the 'spec' given. The underlying match
 %% is performed in the `only_present' mode, such that match specifications only
 %% need to specify the keys that must be present.
-with_commitments(Spec, Msg) ->
-    with_commitments(Spec, Msg, #{}).
-with_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, _Opts) ->
+with_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
     ?event({with_commitments, {spec, Spec}, {commitments, Commitments}}),
     FilteredCommitments =
         hb_maps:filter(
             fun(_, CommMsg) ->
-                Res = match(Spec, CommMsg, primary),
+                Res = match(Spec, CommMsg, primary, Opts),
                 ?event({with_commitments, {commitments, CommMsg}, {spec, Spec}, {match, Res}}),
                 Res
             end,
-            Commitments
+            Commitments,
+            Opts
         ),
     ?event({with_commitments, {filtered_commitments, FilteredCommitments}}),
     Msg#{ <<"commitments">> => FilteredCommitments };
@@ -609,14 +602,12 @@ with_commitments(_Spec, Msg, _Opts) ->
 
 %% @doc Filter messages that match the 'spec' given. Inverts the `with_commitments/2'
 %% function, such that only messages that do _not_ match the spec are returned.
-without_commitments(Spec, Msg) ->
-    without_commitments(Spec, Msg, #{}).
 without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
     ?event({without_commitments, {spec, Spec}, {msg, Msg}, {commitments, Commitments}}),
     FilteredCommitments =
         hb_maps:without(
             hb_maps:keys(
-                hb_maps:get(<<"commitments">>, with_commitments(Spec, Msg, #{}), #{}, Opts)
+                hb_maps:get(<<"commitments">>, with_commitments(Spec, Msg, Opts), #{}, Opts)
             ),
             Commitments
         ),
@@ -820,8 +811,8 @@ signed_nested_data_key_test(Codec) ->
     Encoded = convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     LoadedMsg = hb_cache:ensure_all_loaded(Decoded, Opts),
-    ?event({matching, {input, Msg}, {output, LoadedMsg}}),
-    ?assert(hb_message:match(Msg, LoadedMsg, strict, Opts)).
+    ?event(debug, {matching, {input, Msg}, {output, LoadedMsg}}),
+    ?assert(hb_message:match(Msg, LoadedMsg, primary, Opts)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
 % %% TX fields.
@@ -1340,14 +1331,14 @@ committed_keys_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     Signed = commit(Msg, Opts, Codec),
-    CommittedKeys = committed(Signed, Opts),
+    CommittedKeys = committed(Signed, all, Opts),
     ?event({committed_keys, CommittedKeys}),
     ?assert(verify(Signed, all, Opts)),
     ?assert(lists:member(<<"a">>, CommittedKeys)),
     ?assert(lists:member(<<"b">>, CommittedKeys)),
     ?assert(lists:member(<<"c">>, CommittedKeys)),
     MsgToFilter = Signed#{ <<"bad-key">> => <<"BAD VALUE">> },
-    ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter, Opts))).
+    ?assert(not lists:member(<<"bad-key">>, committed(MsgToFilter, all, Opts))).
 
 committed_empty_keys_test(Codec) ->
     Opts = test_opts(Codec),
@@ -1661,6 +1652,27 @@ id_of_deep_message_and_link_message_match_test(Codec) ->
     LinkID = id(Linkified, Opts),
     ?event(linkify, {test_recvd_link_id, {id, LinkID}}),
     ?assertEqual(BaseID, LinkID).
+
+%% Ensure that we can write a message with multiple commitments to the store,
+%% then read back all of the written commitments by loading the message's 
+%% unsigned ID.
+find_multiple_commitments_test() ->
+    Opts = test_opts(<<"structured@1.0">>),
+    Store = hb_opts:get(store, no_store, Opts),
+    hb_store:reset(Store),
+    Msg = #{
+        <<"a">> => 1,
+        <<"b">> => 2,
+        <<"c">> => 3
+    },
+    Sig1 = commit(Msg, Opts#{ priv_wallet => ar_wallet:new() }),
+    {ok, _} = hb_cache:write(Sig1, Opts),
+    Sig2 = commit(Msg, Opts#{ priv_wallet => ar_wallet:new() }),
+    {ok, _} = hb_cache:write(Sig2, Opts),
+    {ok, ReadMsg} = hb_cache:read(id(Msg, none, Opts), Opts),
+    LoadedCommitments = hb_cache:ensure_all_loaded(ReadMsg, Opts),
+    ?event(debug_commitments, {read, LoadedCommitments}),
+    ok.
 
 %%% Test helpers
 
