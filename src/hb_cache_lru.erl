@@ -71,7 +71,17 @@ get(Key, Opts) ->
     CacheTable = persistent_term:get({in_memory_lru_cache, ServerID}),
     case get_cache_entry(#{cache_table => CacheTable}, Key) of
         nil ->
-            nil;
+            case hb_opts:get(store, not_found, Opts) of
+                not_found ->
+                    nil;
+                Store ->
+                    case hb_cache:read(Key, #{store => Store}) of
+                        {ok, Value} ->
+                            Value;
+                        _ ->
+                            nil
+                    end
+            end;
         Entry = #{value := Value} ->
             CacheServer = get_cache_server(ServerID),
             CacheServer ! {update_recent, Key, Entry},
@@ -89,7 +99,7 @@ get_cache_entry(#{cache_table := Table}, Key) ->
             Entry
     end.
 
-put_cache_entry(State, Key, Value) ->
+put_cache_entry(State, Key, Value, Opts) ->
     ValueSize = erlang:external_size(Value),
     % Default to 1MB (FIXME: to be defined more properly)
     Capacity = hb_opts:get(lru_capacity, 1000000, Opts),
@@ -98,7 +108,7 @@ put_cache_entry(State, Key, Value) ->
             case get_cache_entry(State, Key) of
                 nil ->
                     ?event(cache_lru, {assign_entry, Key, Value}),
-                    assign_new_entry(State, Key, Value, ValueSize, Capacity);
+                    assign_new_entry(State, Key, Value, ValueSize, Capacity, Opts);
                 Entry ->
                     ?event(cache_lru, {replace_entry, Key, Value}),
                     replace_entry(State, Key, Value, ValueSize, Entry)
@@ -107,11 +117,11 @@ put_cache_entry(State, Key, Value) ->
             ok
     end.
 
-assign_new_entry(State, Key, Value, ValueSize, Capacity) ->
+assign_new_entry(State, Key, Value, ValueSize, Capacity, Opts) ->
     case cache_size(State) + ValueSize >= Capacity of
         true ->
             ?event(cache_lru, eviction_required),
-            evict_oldest_entry(State, ValueSize);
+            evict_oldest_entry(State, ValueSize, Opts);
         false ->
             ok
     end,
@@ -144,22 +154,37 @@ add_cache_index(#{index_table := Table}, ID, Key) ->
 increase_cache_size(#{stats_table := StatsTable}, ValueSize) ->
     ets:update_counter(StatsTable, size, {2, ValueSize}, {0, 0}).
 
-evict_oldest_entry(State, ValueSize) ->
-    evict_oldest_entry(State, ValueSize, 0).
+evict_oldest_entry(State, ValueSize, Opts) ->
+    evict_oldest_entry(State, ValueSize, 0, Opts).
 
-evict_oldest_entry(_State, ValueSize, FreeSize) when FreeSize >= ValueSize ->
+evict_oldest_entry(_State, ValueSize, FreeSize, _Opts) when FreeSize >= ValueSize ->
     ok;
-evict_oldest_entry(State, ValueSize, FreeSize) ->
+evict_oldest_entry(State, ValueSize, FreeSize, Opts) ->
     case cache_tail_key(State) of
         nil ->
             ok;
         TailKey ->
-            #{size := ReclaimedSize, id := ID} = get_cache_entry(State, TailKey),
+            #{size := ReclaimedSize,
+              id := ID,
+              value := TailValue} =
+                get_cache_entry(State, TailKey),
             ?event(cache_lru, {evict, TailKey, claiming_size, ReclaimedSize}),
             delete_cache_index(State, ID),
             delete_cache_entry(State, TailKey),
             decrease_cache_size(State, ReclaimedSize),
-            evict_oldest_entry(State, ValueSize, FreeSize + ReclaimedSize)
+            offload_to_store(TailKey, TailValue, Opts),
+            evict_oldest_entry(State, ValueSize, FreeSize + ReclaimedSize, Opts)
+    end.
+
+offload_to_store(TailKey, TailValue, Opts) ->
+    case hb_cache:write(TailValue, Opts) of
+        {ok, CacheID} ->
+            hb_cache:link(CacheID, TailKey, Opts),
+            ?event(cache_lru, {offloaded_key, TailKey}),
+            ok;
+        {error, Err} ->
+            ?event(warning, {error_offloading_to_local_cache, Err}),
+            {error, Err}
     end.
 
 cache_tail_key(#{index_table := Table}) ->
@@ -227,19 +252,14 @@ cache_term_test() ->
     ?assertEqual(<<"Hello">>, get(<<"Key1">>, NodeMsgWithID)).
 
 evict_oldest_items_test() ->
-    NodeMsg = hb_http_server:set_default_opts(#{}),
+    Opts = #{},
+    NodeMsg = hb_http_server:set_default_opts(Opts),
     ServerID =
-         hb_util:human_id(
-             ar_wallet:to_address(
-                 hb_opts:get(
-                     priv_wallet,
-                     no_wallet,
-                     NodeMsg
-                 )
-             )
-         ),
+        hb_util:human_id(
+            ar_wallet:to_address(
+                hb_opts:get(priv_wallet, no_wallet, NodeMsg))),
     NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
-    start(NodeMsgWithID, #{lru_capacity => 500}),
+    start(NodeMsgWithID, maps:put(lru_capacity, 500, Opts)),
     timer:sleep(100),
     Binary = crypto:strong_rand_bytes(200),
     put(<<"Key1">>, Binary, NodeMsgWithID),
@@ -249,18 +269,13 @@ evict_oldest_items_test() ->
     ?assertEqual(Binary, get(<<"Key1">>, NodeMsgWithID)),
     ?assertEqual(nil, get(<<"Key2">>, NodeMsgWithID)).
 
-evict_items_with_unsufficient_space_test() ->
-    NodeMsg = hb_http_server:set_default_opts(#{}),
+evict_items_with_insufficient_space_test() ->
+    Opts = #{},
+    NodeMsg = hb_http_server:set_default_opts(Opts),
     ServerID =
-         hb_util:human_id(
-             ar_wallet:to_address(
-                 hb_opts:get(
-                     priv_wallet,
-                     no_wallet,
-                     NodeMsg
-                 )
-             )
-         ),
+        hb_util:human_id(
+            ar_wallet:to_address(
+                hb_opts:get(priv_wallet, no_wallet, NodeMsg))),
     NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
     start(NodeMsgWithID, #{lru_capacity => 500}),
     timer:sleep(100),
@@ -270,3 +285,25 @@ evict_items_with_unsufficient_space_test() ->
     put(<<"Key3">>, crypto:strong_rand_bytes(400), NodeMsgWithID),
     ?assertEqual(nil, get(<<"Key1">>, NodeMsgWithID)),
     ?assertEqual(nil, get(<<"Key2">>, NodeMsgWithID)).
+
+evict_but_able_to_read_from_fs_store_test() ->
+    Opts =
+        #{store =>
+              StoreOpts =
+                  #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST/lru">>}},
+    NodeMsg = hb_http_server:set_default_opts(Opts),
+    hb_store:reset(StoreOpts),
+    ServerID =
+        hb_util:human_id(
+            ar_wallet:to_address(
+                hb_opts:get(priv_wallet, no_wallet, NodeMsg))),
+    NodeMsgWithID = maps:put(http_server, ServerID, NodeMsg),
+    start(NodeMsgWithID, maps:put(lru_capacity, 500, Opts)),
+    timer:sleep(100),
+    Binary = crypto:strong_rand_bytes(200),
+    put(<<"Key1">>, Binary, NodeMsgWithID),
+    put(<<"Key2">>, Binary, NodeMsgWithID),
+    get(<<"Key1">>, NodeMsgWithID),
+    put(<<"Key3">>, Binary, NodeMsgWithID),
+    ?assertEqual(Binary, get(<<"Key1">>, NodeMsgWithID)),
+    ?assertEqual(Binary, get(<<"Key2">>, NodeMsgWithID)).
