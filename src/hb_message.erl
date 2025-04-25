@@ -538,7 +538,9 @@ match(Map1, Map2, Mode, Opts) ->
             {keys1, Keys1},
             {keys2, Keys2},
             {mode, Mode},
-            {primary_keys_present, PrimaryKeysPresent}
+            {primary_keys_present, PrimaryKeysPresent},
+            {msg1, Map1},
+            {msg2, Map2}
         }
     ),
     case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of

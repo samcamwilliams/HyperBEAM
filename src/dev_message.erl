@@ -62,6 +62,7 @@ id(RawBase, Req, NodeOpts) ->
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
         = with_relevant_commitments(Base, Req, IDOpts),
+    ?event(debug_commitments, {generating_ids, {selected_commitments, Commitments}, {req, Req}, {msg, Base}}),
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
@@ -288,6 +289,7 @@ committed(Self, Req, Opts) ->
             Opts
         ),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
+    ?event(debug_commitments, {calculating_committed, {commitment_ids, CommitmentIDs}, {req, Req}}),
     Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     % Get the list of committed keys from each committer.
     CommitmentKeys =
@@ -393,9 +395,9 @@ commitment_ids_from_request(Base, Req, Opts) ->
                 ?event(no_commitment_ids_for_committers),
                 [];
             <<"all">> ->
-                ?event(getting_commitment_ids_for_all_committers),
+                ?event(debug_commitments, {getting_commitment_ids_for_all_committers}),
                 {ok, Committers} = committers(Base, Req, Opts),
-                ?event({commitment_ids_from_committers, Committers}),
+                ?event(debug_commitments, {commitment_ids_from_committers, Committers}),
                 commitment_ids_from_committers(Committers, Commitments, Opts);
             RawCommitterAddrs ->
                 ?event({getting_commitment_ids_for_specific_committers, RawCommitterAddrs}),

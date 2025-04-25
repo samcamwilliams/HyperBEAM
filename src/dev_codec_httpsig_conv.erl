@@ -295,10 +295,10 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput, Opts) ->
     case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, Msg, Opts) of
         X when (X == not_found) or (X == multiple_matches) ->
             ?event({resetting_hmac, {msg, Msg}}),
-            dev_codec_httpsig:reset_hmac(Msg, Opts);
+            {ok, dev_codec_httpsig:reset_hmac(Msg, Opts)};
         _ ->
             ?event({hmac_already_present, {msg, Msg}}),
-            Msg
+            {ok, Msg}
     end.
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
@@ -310,7 +310,6 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
     % Group the IDs into a dictionary, so that they can be distributed as
     % HTTP headers. If we did not do this, ID keys would be lower-cased and
     % their comparability against the original keys would be lost.
-    WithGroupedIDs = group_ids(TABM),
     Stripped =
         hb_maps:without(
             [
@@ -319,27 +318,23 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
                 <<"signature-input">>,
                 <<"priv">>
             ],
-            WithGroupedIDs
+            TABM
         ),
-    ?event(debug_links, {stripped, Stripped}),
-    {InlineFieldHdrs, InlineKey} = inline_key(TABM),
-    Intermediate = do_to(Stripped, FormatOpts ++ [{inline, InlineFieldHdrs, InlineKey}], Opts),
-    % Finally, add the signatures to the HTTP message
-    case hb_message:commitment(#{ <<"alg">> => <<"hmac-sha256">> }, TABM, Opts) of
-        {ok, _, #{ <<"signature">> := Sig, <<"signature-input">> := SigInput }} ->
-            HPs = hashpaths_from_message(TABM),
-            EncWithHPs = hb_maps:merge(Intermediate, HPs),
-            % Add the original signature encodings to the HTTP message
-            Res = EncWithHPs#{
-                <<"signature">> => Sig,
-                <<"signature-input">> => SigInput
+    WithGroupedIDs = group_ids(Stripped),
+    ?event(debug_links, {grouped, WithGroupedIDs}),
+    {InlineFieldHdrs, InlineKey} = inline_key(WithGroupedIDs),
+    Intermediate = do_to(WithGroupedIDs, FormatOpts ++ [{inline, InlineFieldHdrs, InlineKey}], Opts),
+    % Finally, add the signatures to the encoded HTTP message with the
+    % commitments from the original message.
+    {ok,
+        signature_from_commitments(
+            Intermediate#{
+                <<"commitments">> =>
+                    hb_maps:get(<<"commitments">>, TABM, #{})
             },
-            ?event({final_encoded_msg, sigs_added, Res}),
-            {ok, Res};
-        _ ->
-            ?event({final_encoded_msg, no_sigs_added, Intermediate}),
-            {ok, Intermediate}
-    end.
+            Opts
+        )
+    }.
 
 do_to(Binary, _FormatOpts, _Opts) when is_binary(Binary) -> Binary;
 do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
@@ -460,6 +455,59 @@ do_to(TABM, FormatOpts, Opts) when is_map(TABM) ->
     end,
     ?event({final_body_map, {msg, Enc2}}),
     Enc2.
+
+%% @doc Generate and add `signature' and `signature-input' to the message,
+%% from its `commitments' key.
+signature_from_commitments(Msg, Opts) ->
+    Commitments = hb_maps:get(<<"commitments">>, Msg, #{}, Opts),
+    ?event(debug_commitments, {reset_hmac_with_comms, Commitments}),
+    AllSigs =
+        maps:from_list(lists:map(
+            fun ({Committer, #{ <<"signature">> := Signature }}) ->
+                SigNameFromDict = name_from_signature(Signature),
+                ?event({name_options,
+                    {committer, Committer},
+                    {sig_name_from_signature, SigNameFromDict}}
+                ),
+                SigBin =
+                    hb_maps:get(SigNameFromDict,
+                        hb_maps:from_list(
+                            hb_structured_fields:parse_dictionary(Signature)
+                        )
+                    ),
+                {SigNameFromDict, SigBin}
+            end,
+            hb_maps:to_list(Commitments)
+        )),
+    AllInputs =
+        hb_maps:from_list(lists:map(
+            fun ({_Committer, #{ <<"signature-input">> := Inputs }}) ->
+                SigNameFromDict = name_from_signature(Inputs),
+                Res = hb_structured_fields:parse_dictionary(Inputs),
+                SingleSigInput = hb_maps:get(SigNameFromDict, hb_maps:from_list(Res)),
+                {SigNameFromDict, SingleSigInput}
+            end,
+            hb_maps:to_list(Commitments)
+        )),
+    FlatInputs = lists:flatten(hb_maps:values(AllInputs, Opts)),
+    SigInfo =
+        case FlatInputs of
+            [] -> #{};
+            _ -> #{
+                <<"signature">> =>
+                    hb_util:bin(hb_structured_fields:dictionary(AllSigs)),
+                <<"signature-input">> =>
+                    hb_util:bin(hb_structured_fields:dictionary(AllInputs))
+            }
+        end,
+    hb_maps:merge(maps:without([<<"commitments">>], Msg), SigInfo).
+    
+
+%% @doc Extract the signature name from commitment `signature' or
+%% `signature-input' dictionaries.
+name_from_signature(SigOrSigInput) ->
+    [{SigNameFromDict, _}] = hb_structured_fields:parse_dictionary(SigOrSigInput),
+    SigNameFromDict.
 
 %% @doc Group all elements with:
 %% 1. A key that ?IS_ID returns true for, and

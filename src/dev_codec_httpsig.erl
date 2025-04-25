@@ -308,7 +308,9 @@ address_to_sig_name(Address) when ?IS_ID(Address) ->
 address_to_sig_name(OtherRef) ->
     OtherRef.
 
-%%@doc Ensure that the commitments and hmac are properly encoded
+%%@doc Ensure that the commitments and hmac are properly encoded. If there are
+%% already commitments, then we add the hmac to the existing commitments using
+%% the superset of their inputs.
 reset_hmac(RawMsg, Opts) ->
     Msg = hb_message:convert(RawMsg, tabm, Opts),
     WithoutHmac =
@@ -321,59 +323,25 @@ reset_hmac(RawMsg, Opts) ->
             Opts
         ),
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
-    AllSigs =
-        maps:from_list(lists:map(
-            fun ({Committer, #{ <<"signature">> := Signature }}) ->
-                SigNameFromDict = sig_name_from_dict(Signature),
-                ?event({name_options,
-                    {committer, Committer},
-                    {sig_name_from_dict, SigNameFromDict}}
-                ),
-                SigBin =
-                    hb_maps:get(SigNameFromDict,
-                        hb_maps:from_list(
-                            hb_structured_fields:parse_dictionary(Signature)
-                        )
-                    ),
-                {SigNameFromDict, SigBin}
-            end,
-            hb_maps:to_list(Commitments)
-        )),
-    AllInputs =
-        hb_maps:from_list(lists:map(
-            fun ({_Committer, #{ <<"signature-input">> := Inputs }}) ->
-                SigNameFromDict = sig_name_from_dict(Inputs),
-                Res = hb_structured_fields:parse_dictionary(Inputs),
-                SingleSigInput = hb_maps:get(SigNameFromDict, hb_maps:from_list(Res)),
-                {SigNameFromDict, SingleSigInput}
-            end,
-            hb_maps:to_list(Commitments)
-        )),
-    FlatInputs = lists:flatten(hb_maps:values(AllInputs, Opts)),
-    HMacSigInfo =
-        case FlatInputs of
-            [] -> #{};
-            _ -> #{
-                <<"signature">> =>
-                    bin(hb_structured_fields:dictionary(AllSigs)),
-                <<"signature-input">> =>
-                    bin(hb_structured_fields:dictionary(AllInputs))
-            }
-        end,
-    ?event({pre_hmac_sig_input,
-        {string, hb_maps:get(<<"signature-input">>, HMacSigInfo, none)}}),
-    HMacInputMsg = hb_maps:merge(Msg, HMacSigInfo),
-    {ok, RawID} = hmac(HMacInputMsg, Opts),
-    ID = hb_util:human_id(RawID),
+    {ok, SigInput, ID} = hmac(WithoutHmac, Opts),
+    [ParsedSignatureInput] = hb_structured_fields:parse_list(SigInput),
     Res = {
         ok,
         hb_maps:put(
             <<"commitments">>,
             Commitments#{
                 ID =>
-                    HMacSigInfo#{
+                    #{
                         <<"commitment-device">> => <<"httpsig@1.0">>,
-                        <<"alg">> => <<"hmac-sha256">>
+                        <<"alg">> => <<"hmac-sha256">>,
+                        <<"signature">> =>
+                            bin(hb_structured_fields:dictionary(
+                                #{ <<"ao-hmac">> => {item, {binary, ID}, []} }
+                            )),
+                        <<"signature-input">> =>
+                            bin(hb_structured_fields:dictionary(
+                                #{ <<"ao-hmac">> => ParsedSignatureInput }
+                            ))
                     }
             },
             Msg
@@ -382,25 +350,16 @@ reset_hmac(RawMsg, Opts) ->
     ?event({reset_hmac_complete, Res}),
     Res.
 
-sig_name_from_dict(DictBin) ->
-    [{SigNameFromDict, _}] = hb_structured_fields:parse_dictionary(DictBin),
-    SigNameFromDict.
-
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.
 hmac(Msg, Opts) ->
     % The message already has a signature and signature input, so we can use
     % just those as the components for the hmac
-    EncodedMsg =
-        hb_maps:without(
-            [<<"body-keys">>],
-            hb_util:ok(
-                to(
-                    hb_maps:without([<<"commitments">>, <<"body-keys">>], Msg),
-                    #{},
-                    Opts
-                )
-            )
+    {ok, EncodedMsg} =
+        to(
+            hb_maps:without([<<"body-keys">>], Msg),
+            #{},
+            Opts
         ),
     ?event(debug_id, {generating_hmac_on, {msg, EncodedMsg}}),
     % Remove the body and set the content-digest as a field
@@ -413,16 +372,16 @@ hmac(Msg, Opts) ->
             none -> 
                 ?event(no_sig_input_found),
                 hb_maps:keys(MsgWithContentDigest);
-            SigInput ->
+            ExistingSigInput ->
                 ?event(sig_input_found),
                 [{_, {list, Items, _}}|_]
-                    = hb_structured_fields:parse_dictionary(SigInput),
+                    = hb_structured_fields:parse_dictionary(ExistingSigInput),
                 ?event({parsed_sig_input_dict, {explicit, Items}}),
                 [ Name || {item, {_, Name}, _} <- Items ]
         end,
     HMACSpecifiers = normalize_component_identifiers(HMacKeys),
     % Generate the signature base
-    {_, SignatureBase} = signature_base(
+    {SigInput, SignatureBase} = signature_base(
         #{
             component_identifiers => HMACSpecifiers,
             sig_params => #{
@@ -434,11 +393,11 @@ hmac(Msg, Opts) ->
         MsgWithContentDigest,
         Opts
     ),
-    ?event({hmac_keys, {explicit, HMacKeys}}),
-    ?event({hmac_base, {string, SignatureBase}}),
-    HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
-    ?event({hmac_result, {string, hb_util:human_id(HMacValue)}}),
-    {ok, HMacValue}.
+    ?event(hmac, {hmac_keys, {explicit, HMacKeys}}),
+    ?event(hmac, {hmac_base, {string, SignatureBase}}),
+    HMacValue = hb_util:human_id(crypto:mac(hmac, sha256, <<"ao">>, SignatureBase)),
+    ?event(hmac, {hmac_result, {string, hb_util:human_id(HMacValue)}}),
+    {ok, SigInput, HMacValue}.
 
 %% @doc Verify different forms of httpsig committed messages. `dev_message:verify'
 %% already places the keys from the commitment message into the root of the
@@ -573,7 +532,7 @@ authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
 	}.
 
 %% @doc Takes a list of keys that will be used in the signature inputs and 
-%% ensures that they have deterministic sorting, as well as the coorect
+%% ensures that they have deterministic sorting, as well as the correct
 %% component identifiers if applicable.
 normalize_component_identifiers(ComponentIdentifiers) ->
     Stripped =

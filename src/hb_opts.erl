@@ -127,8 +127,8 @@ default_message() ->
         debug_print_trace => short, % `short` | `false`. Has performance impact.
         short_trace_len => 20,
         debug_metadata => true,
-        debug_ids => true,
-        debug_committers => true,
+        debug_ids => false,
+        debug_committers => false,
         debug_show_priv => true,
         debug_resolve_links => false,
 		trusted => #{},
