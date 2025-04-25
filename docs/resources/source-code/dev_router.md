@@ -46,9 +46,9 @@ hashpath.</td></tr><tr><td valign="top"><a href="#choose-5">choose/5*</a></td><t
 HyperBEAM node.</td></tr><tr><td valign="top"><a href="#dynamic_routing_by_performance-0">dynamic_routing_by_performance/0*</a></td><td></td></tr><tr><td valign="top"><a href="#dynamic_routing_by_performance_test_-0">dynamic_routing_by_performance_test_/0*</a></td><td>Demonstrates routing tables being dynamically created and adjusted
 according to the real-time performance of nodes.</td></tr><tr><td valign="top"><a href="#explicit_route_test-0">explicit_route_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#extract_base-2">extract_base/2*</a></td><td>Extract the base message ID from a request message.</td></tr><tr><td valign="top"><a href="#field_distance-2">field_distance/2*</a></td><td>Calculate the minimum distance between two numbers
 (either progressing backwards or forwards), assuming a
-256-bit field.</td></tr><tr><td valign="top"><a href="#find_target_path-2">find_target_path/2*</a></td><td>Find the target path to route for a request message.</td></tr><tr><td valign="top"><a href="#generate_hashpaths-1">generate_hashpaths/1*</a></td><td></td></tr><tr><td valign="top"><a href="#generate_nodes-1">generate_nodes/1*</a></td><td></td></tr><tr><td valign="top"><a href="#get_routes_test-0">get_routes_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#is_exempt-3">is_exempt/3*</a></td><td>is_exempt looks at the is_exempt paths opt and if any incoming message path matches it will
-make the request exempt from preprocessing.</td></tr><tr><td valign="top"><a href="#load_routes-1">load_routes/1*</a></td><td>Load the current routes for the node.</td></tr><tr><td valign="top"><a href="#local_dynamic_router_test-0">local_dynamic_router_test/0*</a></td><td>Example of a Lua script being used as the <code>route_provider</code> for a
-HyperBEAM node.</td></tr><tr><td valign="top"><a href="#local_process_route_provider_test-0">local_process_route_provider_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#lowest_distance-1">lowest_distance/1*</a></td><td>Find the node with the lowest distance to the given hashpath.</td></tr><tr><td valign="top"><a href="#lowest_distance-2">lowest_distance/2*</a></td><td></td></tr><tr><td valign="top"><a href="#match-3">match/3</a></td><td>Find the first matching template in a list of known routes.</td></tr><tr><td valign="top"><a href="#match_routes-3">match_routes/3*</a></td><td></td></tr><tr><td valign="top"><a href="#match_routes-4">match_routes/4*</a></td><td></td></tr><tr><td valign="top"><a href="#preprocess-3">preprocess/3</a></td><td>Preprocess a request to check if it should be relayed to a different node.</td></tr><tr><td valign="top"><a href="#relay_nearest_test-0">relay_nearest_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#route-2">route/2</a></td><td>Find the appropriate route for the given message.</td></tr><tr><td valign="top"><a href="#route-3">route/3</a></td><td></td></tr><tr><td valign="top"><a href="#route_provider_test-0">route_provider_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#route_regex_matches_test-0">route_regex_matches_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#route_template_message_matches_test-0">route_template_message_matches_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#routes-3">routes/3</a></td><td>Device function that returns all known routes.</td></tr><tr><td valign="top"><a href="#simulate-4">simulate/4*</a></td><td></td></tr><tr><td valign="top"><a href="#simulation_distribution-2">simulation_distribution/2*</a></td><td></td></tr><tr><td valign="top"><a href="#simulation_occurences-2">simulation_occurences/2*</a></td><td></td></tr><tr><td valign="top"><a href="#strategy_suite_test_-0">strategy_suite_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#template_matches-3">template_matches/3*</a></td><td>Check if a message matches a message template or path regex.</td></tr><tr><td valign="top"><a href="#unique_nodes-1">unique_nodes/1*</a></td><td></td></tr><tr><td valign="top"><a href="#unique_test-1">unique_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#weighted_random_strategy_test-0">weighted_random_strategy_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#within_norms-3">within_norms/3*</a></td><td></td></tr></table>
+256-bit field.</td></tr><tr><td valign="top"><a href="#find_target_path-2">find_target_path/2*</a></td><td>Find the target path to route for a request message.</td></tr><tr><td valign="top"><a href="#generate_hashpaths-1">generate_hashpaths/1*</a></td><td></td></tr><tr><td valign="top"><a href="#generate_nodes-1">generate_nodes/1*</a></td><td></td></tr><tr><td valign="top"><a href="#get_routes_test-0">get_routes_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#is_relevant-3">is_relevant/3</a></td><td>is_relevant looks at the relevant_routes paths opt and if any incoming message path matches it will
+make the request relevant for preprocessing.</td></tr><tr><td valign="top"><a href="#load_routes-1">load_routes/1*</a></td><td>Load the current routes for the node.</td></tr><tr><td valign="top"><a href="#local_dynamic_router_test-0">local_dynamic_router_test/0*</a></td><td>Example of a Lua script being used as the <code>route_provider</code> for a
+HyperBEAM node.</td></tr><tr><td valign="top"><a href="#local_process_route_provider_test-0">local_process_route_provider_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#lowest_distance-1">lowest_distance/1*</a></td><td>Find the node with the lowest distance to the given hashpath.</td></tr><tr><td valign="top"><a href="#lowest_distance-2">lowest_distance/2*</a></td><td></td></tr><tr><td valign="top"><a href="#match-3">match/3</a></td><td>Find the first matching template in a list of known routes.</td></tr><tr><td valign="top"><a href="#match_routes-3">match_routes/3*</a></td><td></td></tr><tr><td valign="top"><a href="#match_routes-4">match_routes/4*</a></td><td></td></tr><tr><td valign="top"><a href="#preprocess-3">preprocess/3</a></td><td>Preprocess a request to check if it should be relayed to a different node.</td></tr><tr><td valign="top"><a href="#register-3">register/3</a></td><td></td></tr><tr><td valign="top"><a href="#relay_nearest_test-0">relay_nearest_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#route-2">route/2</a></td><td>Find the appropriate route for the given message.</td></tr><tr><td valign="top"><a href="#route-3">route/3</a></td><td></td></tr><tr><td valign="top"><a href="#route_provider_test-0">route_provider_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#route_regex_matches_test-0">route_regex_matches_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#route_template_message_matches_test-0">route_template_message_matches_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#routes-3">routes/3</a></td><td>Device function that returns all known routes.</td></tr><tr><td valign="top"><a href="#simulate-4">simulate/4*</a></td><td></td></tr><tr><td valign="top"><a href="#simulation_distribution-2">simulation_distribution/2*</a></td><td></td></tr><tr><td valign="top"><a href="#simulation_occurences-2">simulation_occurences/2*</a></td><td></td></tr><tr><td valign="top"><a href="#strategy_suite_test_-0">strategy_suite_test_/0*</a></td><td></td></tr><tr><td valign="top"><a href="#template_matches-3">template_matches/3*</a></td><td>Check if a message matches a message template or path regex.</td></tr><tr><td valign="top"><a href="#unique_nodes-1">unique_nodes/1*</a></td><td></td></tr><tr><td valign="top"><a href="#unique_test-1">unique_test/1*</a></td><td></td></tr><tr><td valign="top"><a href="#weighted_random_strategy_test-0">weighted_random_strategy_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#within_norms-3">within_norms/3*</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -210,14 +210,14 @@ Find the target path to route for a request message.
 
 `get_routes_test() -> any()`
 
-<a name="is_exempt-3"></a>
+<a name="is_relevant-3"></a>
 
-### is_exempt/3 * ###
+### is_relevant/3 ###
 
-`is_exempt(Msg1, Msg2, Opts) -> any()`
+`is_relevant(Msg1, Msg2, Opts) -> any()`
 
-is_exempt looks at the is_exempt paths opt and if any incoming message path matches it will
-make the request exempt from preprocessing.
+is_relevant looks at the relevant_routes paths opt and if any incoming message path matches it will
+make the request relevant for preprocessing.
 
 <a name="load_routes-1"></a>
 
@@ -288,6 +288,12 @@ module), or `route-path` for use by external devices and users.
 `preprocess(Msg1, Msg2, Opts) -> any()`
 
 Preprocess a request to check if it should be relayed to a different node.
+
+<a name="register-3"></a>
+
+### register/3 ###
+
+`register(M1, M2, Opts) -> any()`
 
 <a name="relay_nearest_test-0"></a>
 
