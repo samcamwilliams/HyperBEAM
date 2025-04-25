@@ -184,7 +184,7 @@ theme:
     repo: fontawesome/brands/github 
   features:
     - navigation.instant
-    - navigation.instant.progress
+    # - navigation.instant.progress
     - navigation.tracking
     - navigation.sections
     - navigation.path
@@ -193,7 +193,7 @@ theme:
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.indexes
-    # - toc.follow
+    - toc.follow
     - content.tooltips
     - content.code.copy
     - content.code.select
