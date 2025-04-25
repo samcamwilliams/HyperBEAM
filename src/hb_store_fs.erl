@@ -1,6 +1,6 @@
 -module(hb_store_fs).
 -behavior(hb_store).
--export([start/1, stop/1, reset/1, scope/1]).
+-export([start/1, stop/1, reset/1, scope/0]).
 -export([type/2, read/2, write/3, list/2]).
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
@@ -20,7 +20,7 @@ stop(#{ <<"prefix">> := _DataDir }) ->
 
 %% @doc The file-based store is always local, for now. In the future, we may
 %% want to allow that an FS store is shared across a cluster and thus remote.
-scope(_) -> local.
+scope() -> local.
 
 %% @doc Reset the store by completely removing its directory and recreating it.
 reset(#{ <<"prefix">> := DataDir }) ->
@@ -126,10 +126,20 @@ make_link(Opts, Existing, New) ->
 		add_prefix(Opts, Existing),
 		P2 = add_prefix(Opts, New)}),
     filelib:ensure_dir(P2),
-    file:make_symlink(
-        add_prefix(Opts, Existing),
-        add_prefix(Opts, New)
-    ).
+    case file:make_symlink(add_prefix(Opts, Existing), N = add_prefix(Opts, New)) of
+        ok -> ok;
+        {error, eexist} ->
+            file:delete(N),
+            R = file:make_symlink(add_prefix(Opts, Existing), N),
+            ?event(debug_fs,
+                {symlink_recreated,
+                    {existing, Existing},
+                    {new, New},
+                    {result, R}
+                }
+            ),
+            R
+    end.
 
 %% @doc Add the directory prefix to a path.
 add_prefix(#{ <<"prefix">> := Prefix }, Path) ->
