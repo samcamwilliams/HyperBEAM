@@ -147,9 +147,11 @@ find_id(Msg = #{ <<"commitments">> := Comms }, Opts) when map_size(Comms) > 1 ->
     end;
 find_id(#{ <<"commitments">> := CommitmentMap }, _Opts) ->
     {ok, hd(hb_maps:keys(CommitmentMap))};
-find_id(AttMsg = #{ <<"signature-input">> := UserSigInput }, _Opts) ->
-    {not_found, (hb_maps:without([<<"signature-input">>], AttMsg))#{
-        <<"x-signature-input">> => UserSigInput
+find_id(AttMsg = #{ <<"signature-input">> := UserSigInput, <<"signature">> := UserSig }, _Opts) ->
+    ResetMsg = hb_maps:without([<<"signature">>, <<"signature-input">>], AttMsg),
+    {not_found, ResetMsg#{
+        <<"x-signature-input">> => UserSigInput,
+        <<"x-signature">> => UserSig
     }};
 find_id(Msg, _Opts) ->
     ?event({no_id, Msg}),
@@ -362,7 +364,7 @@ hmac(Msg, Opts) ->
     % so we remove them from the encoded message.
     EncodedMsg =
         maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"committer">>],
+            [<<"signature-input">>, <<"signature">>, <<"committer">>],
             hb_util:ok(to(Msg, #{}, Opts))
         ),
     ?event(debug_id, {generating_hmac_on, {msg, EncodedMsg}}),
