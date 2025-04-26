@@ -93,7 +93,14 @@ load_scripts([], _Opts, Acc) ->
 load_scripts([ScriptID | Rest], Opts, Acc) when is_binary(ScriptID) ->
     case hb_cache:read(ScriptID, Opts) of
         {ok, Script} ->
-            load_scripts(Rest, Opts, [{ScriptID, Script}|Acc]);
+            % when loaded by arweave id the result is a map
+            % with data, so we want to parse the code from the
+            % data and add to the tuple
+            Code = case is_map(Script) of
+                true -> hb_ao:get(<<"data">>, Script, #{});
+                false -> Script
+            end,
+            load_scripts(Rest, Opts, [{ScriptID, Code}|Acc]);
         not_found ->
             {error, #{
                 <<"status">> => 404,
@@ -425,7 +432,13 @@ simple_invocation_test() ->
     },
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
 
-
+load_scripts_by_id_test() ->
+    Script = <<"DosEHUAqhl_O5FH3vDqPlgGsG92Guxcm6nrwqnjsDKg">>,
+    {ok, Acc} = load_scripts([Script], #{}, []),
+    [{_,Code}|_] = Acc,
+    <<Prefix:8/binary, _/binary>> = Code,
+    ?assertEqual(<<"function">>, Prefix).
+    
 multiple_scripts_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Script2 =
