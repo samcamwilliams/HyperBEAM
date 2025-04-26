@@ -168,7 +168,15 @@ committed(Msg, Req, Opts) ->
                 end,
             % Return the immediate and nested keys. The `data' field is always
             % committed, so we include it in the list of keys.
-            {ok, TagKeys ++ NestedKeys ++ Implicit ++ ?COMMITTED_TAGS};
+            {
+                ok,
+                remove_link_specifiers(
+                    TagKeys ++
+                    NestedKeys ++
+                    Implicit ++
+                    ?COMMITTED_TAGS
+                )
+            };
         _ ->
             ?event({could_not_verify, {msg, MsgLessGivenComm}}),
             {ok, []}
@@ -185,11 +193,25 @@ committed_from_trusted_keys(Msg, TrustedKeys, Opts) ->
         end,
     {
         ok,
-        lists:map(fun hb_ao:normalize_key/1, TKeys)
-            ++ Implicit
-            ++ NestedKeys
-            ++ ?COMMITTED_TAGS
+        remove_link_specifiers(
+            lists:map(fun hb_ao:normalize_key/1, TKeys)
+                ++ Implicit
+                ++ NestedKeys
+                ++ ?COMMITTED_TAGS
+        )
     }.
+
+%% @doc Remove link specifiers from a list of keys.
+remove_link_specifiers(Keys) ->
+    lists:map(
+        fun(Key) ->
+            case hb_link:is_link_key(Key) of
+                true -> binary:part(Key, 0, byte_size(Key) - 5);
+                false -> Key
+            end
+        end,
+        Keys
+    ).
 
 %% @doc Verify an ANS-104 commitment.
 verify(Msg, Req, Opts) ->

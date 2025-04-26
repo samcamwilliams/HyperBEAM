@@ -1426,7 +1426,12 @@ signed_with_inner_signed_message_test(Codec) ->
     ?event(debug, {initial_msg, Msg}),
     % 1. Verify the outer message without changes.
     ?assert(verify(Msg, all, Opts)),
-    {ok, CommittedInner} = with_only_committed(hb_maps:get(<<"inner">>, Msg, Opts), Opts),
+    Inner = hb_maps:get(<<"inner">>, Msg, not_found, Opts),
+    {ok, CommittedInner} =
+        with_only_committed(
+            Inner,
+            Opts
+        ),
     ?event(debug, {committed_inner, CommittedInner}),
     ?event(debug, {inner_committers, hb_message:signers(CommittedInner, Opts)}),
     % 2. Verify the inner message without changes.

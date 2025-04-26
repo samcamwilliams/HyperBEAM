@@ -206,7 +206,7 @@ do_write_message(Bin, Store, Opts) when is_binary(Bin) ->
 do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     ?event(debug_cache, {writing_message, Msg}),
     % Calculate the IDs of the message.
-    UncommittedID = hb_message:id(Msg, none, Opts),
+    UncommittedID = hb_message:id(Msg, none, Opts#{ linkify_mode => discard }),
     AltIDs = calculate_all_ids(Msg, Opts) -- [UncommittedID],
     MsgHashpathAlg = hb_path:hashpath_alg(Msg, Opts),
     ?event(debug_cache, {writing_message, {id, UncommittedID}, {alt_ids, AltIDs}, {original, Msg}}),
@@ -281,7 +281,8 @@ calculate_all_ids(Msg, Opts) ->
         ),
     CommIDs = hb_maps:keys(Commitments, Opts),
     ?event({calculating_ids, {msg, Msg}, {commitments, Commitments}, {comm_ids, CommIDs}}),
-    case lists:member(All = hb_message:id(Msg, all, Opts), CommIDs) of
+    All = hb_message:id(Msg, all, Opts#{ linkify_mode => discard }),
+    case lists:member(All, CommIDs) of
         true -> CommIDs;
         false -> [All | CommIDs]
     end.
