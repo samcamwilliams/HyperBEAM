@@ -253,25 +253,39 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput, Opts) ->
             Params = hb_maps:from_list(ParamsKVList),
             {string, EncPubKey} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
             {string, Alg} = hb_maps:get(<<"alg">>, Params, not_found, Opts),
-            PubKey = hb_util:decode(EncPubKey),
-            Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
-            ?event({calculated_name,
-                {address, Address},
+            CommitterMap =
+                case Alg of
+                    <<"hmac-sha256">> -> #{};
+                    _ ->
+                        PubKey = hb_util:decode(EncPubKey),
+                        Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
+                        #{ <<"committer">> => Address }
+                end,
+            CommitmentID =
+                case Alg of
+                    <<"hmac-sha256">> ->
+                        signature_to_hmac(Signature);
+                    _ ->
+                        {item, {binary, UnencodedSig}, _} = Signature,
+                        hb_util:human_id(crypto:hash(sha256, UnencodedSig))
+                end,
+            ?event(debug, {calculated_name,
+                {commitment_id, CommitmentID},
                 {sig, Signature},
-                {inputs, {explicit, SfInputs},
-                {implicit, Params}}
+                {inputs, SfInputs},
+                {implicit, Params},
+                {committer_add, CommitterMap}
             }),
-            SerializedSig = iolist_to_binary(
+            SerializedSig = hb_util:bin(
                 hb_structured_fields:dictionary(
                     #{ SigName => Signature }
                 )
             ),
-            {item, {binary, UnencodedSig}, _} = Signature,
+            Metadata = maps:merge(HPs, CommitterMap),
             {
-                hb_util:human_id(crypto:hash(sha256, UnencodedSig)),
-                Hashpaths#{
+                CommitmentID,
+                Metadata#{
                     <<"commitment-device">> => <<"httpsig@1.0">>,
-                    <<"committer">> => Address,
                     <<"alg">> => Alg,
                     <<"signature">> => SerializedSig,
                     <<"signature-input">> =>
@@ -300,6 +314,20 @@ commitments_from_signature(Map, HPs, RawSig, RawSigInput, Opts) ->
             ?event({hmac_already_present, {msg, Msg}}),
             {ok, Msg}
     end.
+
+%% @doc Find the appropriate signature ID for a given signature input.
+signature_to_hmac(Signature) when is_binary(Signature) ->
+    case hb_structured_fields:parse_dictionary(Signature) of
+        [{_, IDItem}] ->
+            signature_to_hmac(IDItem);
+        _ ->
+            throw({error, {no_signature_id_found, Signature}})
+    end;
+signature_to_hmac(IDItem) ->
+    IDItemBin = hb_util:bin(hb_structured_fields:item(IDItem)),
+    ?event({signature_to_hmac, {id_item, IDItemBin}}),
+    {item, {binary, NativeID}, []} = hb_structured_fields:parse_item(IDItemBin),
+    hb_util:human_id(NativeID).
 
 %%% @doc Convert a TABM into an HTTP Message. The HTTP Message is a simple Erlang Map
 %%% that can translated to a given web server Response API

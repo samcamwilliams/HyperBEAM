@@ -62,7 +62,13 @@ id(RawBase, Req, NodeOpts) ->
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
         = with_relevant_commitments(Base, Req, IDOpts),
-    ?event(debug_commitments, {generating_ids, {selected_commitments, Commitments}, {req, Req}, {msg, Base}}),
+    ?event(debug_commitments,
+        {generating_ids,
+            {selected_commitments, Commitments},
+            {req, Req},
+            {msg, Base}
+        }
+    ),
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.

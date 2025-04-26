@@ -1030,7 +1030,7 @@ signed_message_encode_decode_verify_test(Codec) ->
     Decoded = convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     ?assertEqual(true, verify(Decoded, all, Opts)),
-    ?event({matching, {input, SignedMsg}, {output, Decoded}}),
+    ?event(debug, {matching, {input, SignedMsg}, {encoded, Encoded}, {decoded, Decoded}}),
     ?assert(match(SignedMsg, Decoded, strict, Opts)).
 
 complex_signed_message_test(Codec) ->
@@ -1783,4 +1783,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_nested_data_key_test(<<"httpsig@1.0">>).
+    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).

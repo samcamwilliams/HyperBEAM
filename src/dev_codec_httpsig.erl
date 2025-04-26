@@ -324,19 +324,22 @@ reset_hmac(RawMsg, Opts) ->
         ),
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
     {ok, SigInput, ID} = hmac(WithoutHmac, Opts),
+    EncID = hb_util:human_id(ID),
     [ParsedSignatureInput] = hb_structured_fields:parse_list(SigInput),
     Res = {
         ok,
         hb_maps:put(
             <<"commitments">>,
             Commitments#{
-                ID =>
+                EncID =>
                     #{
                         <<"commitment-device">> => <<"httpsig@1.0">>,
                         <<"alg">> => <<"hmac-sha256">>,
                         <<"signature">> =>
                             bin(hb_structured_fields:dictionary(
-                                #{ <<"ao-hmac">> => {item, {binary, ID}, []} }
+                                #{
+                                    <<"ao-hmac">> => {item, {binary, ID}, []}
+                                }
                             )),
                         <<"signature-input">> =>
                             bin(hb_structured_fields:dictionary(
@@ -354,12 +357,13 @@ reset_hmac(RawMsg, Opts) ->
 %% input as the components for the hmac.
 hmac(Msg, Opts) ->
     % The message already has a signature and signature input, so we can use
-    % just those as the components for the hmac
-    {ok, EncodedMsg} =
-        to(
-            hb_maps:without([<<"body-keys">>], Msg),
-            #{},
-            Opts
+    % just those as the components for the hmac. We do not, however, want to
+    % use the signature and signature input as the components for the hmac,
+    % so we remove them from the encoded message.
+    EncodedMsg =
+        maps:without(
+            [<<"signature">>, <<"signature-input">>, <<"committer">>],
+            hb_util:ok(to(Msg, #{}, Opts))
         ),
     ?event(debug_id, {generating_hmac_on, {msg, EncodedMsg}}),
     % Remove the body and set the content-digest as a field
@@ -395,17 +399,26 @@ hmac(Msg, Opts) ->
     ),
     ?event(hmac, {hmac_keys, {explicit, HMacKeys}}),
     ?event(hmac, {hmac_base, {string, SignatureBase}}),
-    HMacValue = hb_util:human_id(crypto:mac(hmac, sha256, <<"ao">>, SignatureBase)),
-    ?event(hmac, {hmac_result, {string, hb_util:human_id(HMacValue)}}),
+    HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
+    ?event(hmac, {hmac_result, HMacValue}),
     {ok, SigInput, HMacValue}.
 
 %% @doc Verify different forms of httpsig committed messages. `dev_message:verify'
 %% already places the keys from the commitment message into the root of the
 %% message.
-verify(MsgToVerify, #{ <<"commitment">> := ExpectedID, <<"alg">> := <<"hmac-sha256">> }, Opts) ->
-    % Verify a hmac on the message
+verify(MsgToVerify = #{ <<"signature">> := IDDict, <<"alg">> := <<"hmac-sha256">> }, _Req, Opts) ->
+    % Verify a hmac on the message. We parse the signature line to get the
+    % the expected ID, then regenerate the hmac and compare it to the given value.
+    % We start by parsing the signature line to get the expected ID.
+    [{_, IDItem}] = hb_structured_fields:parse_dictionary(IDDict),
+    IDItemBin = hb_util:bin(hb_structured_fields:item(IDItem)),
+    ?event({verify_hmac, {target, MsgToVerify}, {id_dict, IDItemBin}}),
+    {item, {binary, NativeID}, []} = hb_structured_fields:parse_item(IDItemBin),
+    ExpectedID = hb_util:human_id(NativeID),
     ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
-    {ok, ResetMsg} = reset_hmac(hb_maps:without([<<"id">>], MsgToVerify), Opts),
+    % We then reset the hmac on the message, which will regenerate the ID.
+    {ok, ResetMsg} = reset_hmac(maps:without([<<"commitments">>], MsgToVerify), Opts),
+    % We then check if the regenerated ID matches the expected ID.
     case hb_maps:get(<<"commitments">>, ResetMsg, no_commitments) of
         no_commitments -> {error, could_not_calculate_id};
         #{ ExpectedID := #{ <<"alg">> := <<"hmac-sha256">> } } ->
