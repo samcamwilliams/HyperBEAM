@@ -64,7 +64,7 @@ commit(Msg, Req, Opts) ->
     ),
     ?event({signed_tx, Signed}),
     ID = hb_util:human_id(Signed#tx.id),
-    Owner = Signed#tx.owner,
+    PublicKey = Signed#tx.owner,
     Sig = Signed#tx.signature,
     Address = hb_util:human_id(ar_wallet:to_address(Wallet)),
     % Get the prior original tags from the commitment, if it exists.
@@ -78,7 +78,7 @@ commit(Msg, Req, Opts) ->
             <<"commitment-device">> => <<"ans104@1.0">>,
             <<"committer">> => Address,
             <<"alg">> => <<"rsa-pss">>,
-            <<"owner">> => Owner,
+            <<"keyid">> => PublicKey,
             <<"signature">> => Sig
         },
     CommitmentWithOriginalTags =
@@ -243,7 +243,7 @@ do_from(RawTX, Req, Opts) ->
     OriginalTagMap = encoded_tags_to_map(TX#tx.tags),
     % Get the raw fields and values of the tx record and pair them. Then convert 
     % the list of key-value pairs into a map, removing irrelevant fields.
-    TXKeysMap =
+    RawTXKeysMap =
         hb_maps:with(?TX_KEYS,
             hb_ao:normalize_keys(
                 hb_maps:from_list(
@@ -253,6 +253,12 @@ do_from(RawTX, Req, Opts) ->
                     )
                 )
             )
+        ),
+    % Normalize `owner' to `keyid'
+    TXKeysMap =
+        maps:without(
+            [<<"owner">>],
+            RawTXKeysMap#{ <<"keyid">> => RawTXKeysMap#tx.owner }
         ),
     % Generate a TABM from the tags.
     MapWithoutData = hb_maps:merge(TXKeysMap, deduplicating_from_list(TX#tx.tags, Opts)),
@@ -308,7 +314,7 @@ do_from(RawTX, Req, Opts) ->
                     hb_maps:without(
                         [
                             <<"id">>,
-                            <<"owner">>,
+                            <<"keyid">>,
                             <<"signature">>,
                             <<"commitment-device">>,
                             <<"committer">>,
@@ -322,7 +328,7 @@ do_from(RawTX, Req, Opts) ->
                     <<"commitment-device">> => <<"ans104@1.0">>,
                     <<"alg">> => <<"rsa-pss">>,
                     <<"committer">> => Address,
-                    <<"owner">> => TX#tx.owner,
+                    <<"keyid">> => TX#tx.owner,
                     <<"signature">> => TX#tx.signature
                 },
                 WithoutBaseCommitment#{

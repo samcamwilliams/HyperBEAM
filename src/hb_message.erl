@@ -563,8 +563,16 @@ match(Map1, Map2, Mode, Opts) ->
                                             ?event(match,
                                                 {value_mismatch,
                                                     {key, Key},
-                                                    {val1, Val1},
-                                                    {val2, Val2}
+                                                    {val1,
+                                                        if is_binary(Val1) ->
+                                                            {string, Val1};
+                                                        true -> Val1
+                                                    end},
+                                                    {val2,
+                                                        if is_binary(Val2) ->
+                                                            {string, Val2};
+                                                        true -> Val2
+                                                    end}
                                                 }
                                             ),
                                             false
@@ -1788,4 +1796,4 @@ message_suite_test_() ->
     ]).
 
 run_test() ->
-    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
+    signed_with_inner_signed_message_test(<<"httpsig@1.0">>).

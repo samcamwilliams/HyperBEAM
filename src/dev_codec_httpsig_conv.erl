@@ -529,7 +529,6 @@ signature_from_commitments(Msg, Opts) ->
             }
         end,
     hb_maps:merge(maps:without([<<"commitments">>], Msg), SigInfo).
-    
 
 %% @doc Extract the signature name from commitment `signature' or
 %% `signature-input' dictionaries.

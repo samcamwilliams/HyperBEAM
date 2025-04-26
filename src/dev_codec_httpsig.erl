@@ -123,7 +123,7 @@ id(Msg, _Params, Opts) ->
 find_id(Msg = #{ <<"commitments">> := Comms }, Opts) when map_size(Comms) > 1 ->
     #{ <<"commitments">> := CommsWithoutHmac } =
         hb_message:without_commitments(
-            #{ <<"alg">> => <<"hmac-sha256">> },
+            #{ <<"type">> => <<"hmac-sha256">> },
             Msg,
             Opts
         ),
@@ -184,25 +184,19 @@ commit(MsgToSign, _Req, Opts) ->
     Authority = authority(lists:sort(hb_maps:keys(Enc)), SigParams, Wallet),
     {ok, {SignatureInput, Signature}} = sign_auth(Authority, #{}, Enc, Opts),
     [ParsedSignatureInput] = hb_structured_fields:parse_list(SignatureInput),
-    % Set the name as `http-sig-[hex encoding of the first 8 bytes of the public key]'
     ID = hb_util:human_id(crypto:hash(sha256, Signature)),
-    Address = ar_wallet:to_address(Wallet),
-    SigName = address_to_sig_name(Address),
-    % Calculate the id and place the signature into the `commitments' key of the message.
+    NormTagMap = hb_ao:normalize_keys(SigParams),
+    % Calculate the id and place the signature into the `commitments' key of the
+    % message.
     Commitment =
-        #{
+        NormTagMap#{
             <<"commitment-device">> => <<"httpsig@1.0">>,
-            <<"alg">> => <<"rsa-pss-sha512">>,
-            <<"committer">> => hb_util:human_id(Address),
-            % https://datatracker.ietf.org/doc/html/rfc9421#section-4.2-1
-            <<"signature">> =>
-                bin(hb_structured_fields:dictionary(
-                    #{ SigName => {item, {binary, Signature}, []} }
-                )),
-            <<"signature-input">> =>
-                bin(hb_structured_fields:dictionary(
-                    #{ SigName => ParsedSignatureInput }
-                ))
+            <<"type">> => <<"rsa-pss-sha512">>,
+            <<"keyid">> => ar_wallet:to_pubkey(Wallet),
+            <<"committer">> => hb_util:human_id(ar_wallet:to_address(Wallet)),
+            <<"signature">> => Signature,
+            <<"committed">> =>
+                [ SigName || {item, {_, SigName}, _} <- ParsedSignatureInput ]
         },
     OldCommitments = hb_maps:get(<<"commitments">>, NormMsg, #{}),
     reset_hmac(MsgWithoutHP#{<<"commitments">> =>
@@ -302,14 +296,6 @@ add_content_digest(Msg, Opts) ->
             }
     end.
 
-%% @doc Convert an address to a signature name that is short, unique to the
-%% address, and lowercase.
--spec address_to_sig_name(binary()) -> binary().
-address_to_sig_name(Address) when ?IS_ID(Address) ->
-    <<"http-sig-", (hb_util:to_hex(binary:part(hb_util:native_id(Address), 1, 8)))/binary>>;
-address_to_sig_name(OtherRef) ->
-    OtherRef.
-
 %%@doc Ensure that the commitments and hmac are properly encoded. If there are
 %% already commitments, then we add the hmac to the existing commitments using
 %% the superset of their inputs.
@@ -319,15 +305,14 @@ reset_hmac(RawMsg, Opts) ->
         hb_message:without_commitments(
             #{
                 <<"commitment-device">> => <<"httpsig@1.0">>,
-                <<"alg">> => <<"hmac-sha256">>
+                <<"type">> => <<"hmac-sha256">>
             },
             Msg,
             Opts
         ),
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
-    {ok, SigInput, ID} = hmac(WithoutHmac, Opts),
+    {ok, Keys, ID} = hmac(WithoutHmac, Opts),
     EncID = hb_util:human_id(ID),
-    [ParsedSignatureInput] = hb_structured_fields:parse_list(SigInput),
     Res = {
         ok,
         hb_maps:put(
@@ -336,17 +321,10 @@ reset_hmac(RawMsg, Opts) ->
                 EncID =>
                     #{
                         <<"commitment-device">> => <<"httpsig@1.0">>,
-                        <<"alg">> => <<"hmac-sha256">>,
-                        <<"signature">> =>
-                            bin(hb_structured_fields:dictionary(
-                                #{
-                                    <<"ao-hmac">> => {item, {binary, ID}, []}
-                                }
-                            )),
-                        <<"signature-input">> =>
-                            bin(hb_structured_fields:dictionary(
-                                #{ <<"ao-hmac">> => ParsedSignatureInput }
-                            ))
+                        <<"type">> => <<"hmac-sha256">>,
+                        <<"keyid">> => <<"ao">>,
+                        <<"signature">> => ID,
+                        <<"committed">> => Keys
                     }
             },
             Msg
@@ -387,7 +365,7 @@ hmac(Msg, Opts) ->
         end,
     HMACSpecifiers = normalize_component_identifiers(HMacKeys),
     % Generate the signature base
-    {SigInput, SignatureBase} = signature_base(
+    {_, SignatureBase} = signature_base(
         #{
             component_identifiers => HMACSpecifiers,
             sig_params => #{
@@ -403,12 +381,12 @@ hmac(Msg, Opts) ->
     ?event(hmac, {hmac_base, {string, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     ?event(hmac, {hmac_result, HMacValue}),
-    {ok, SigInput, HMacValue}.
+    {ok, HMacKeys, HMacValue}.
 
 %% @doc Verify different forms of httpsig committed messages. `dev_message:verify'
 %% already places the keys from the commitment message into the root of the
 %% message.
-verify(MsgToVerify = #{ <<"signature">> := IDDict, <<"alg">> := <<"hmac-sha256">> }, _Req, Opts) ->
+verify(MsgToVerify = #{ <<"signature">> := IDDict, <<"type">> := <<"hmac-sha256">> }, _Req, Opts) ->
     % Verify a hmac on the message. We parse the signature line to get the
     % the expected ID, then regenerate the hmac and compare it to the given value.
     % We start by parsing the signature line to get the expected ID.
@@ -423,7 +401,7 @@ verify(MsgToVerify = #{ <<"signature">> := IDDict, <<"alg">> := <<"hmac-sha256">
     % We then check if the regenerated ID matches the expected ID.
     case hb_maps:get(<<"commitments">>, ResetMsg, no_commitments) of
         no_commitments -> {error, could_not_calculate_id};
-        #{ ExpectedID := #{ <<"alg">> := <<"hmac-sha256">> } } ->
+        #{ ExpectedID := #{ <<"type">> := <<"hmac-sha256">> } } ->
             ?event({hmac_verified, {id, ExpectedID}}),
             {ok, true};
         _ ->
@@ -445,7 +423,7 @@ verify(MsgToVerify, Req, Opts) ->
             hb_maps:get(<<"commitments">>, MsgToVerify, #{}, Opts),
             Opts
         ),
-    SigName = address_to_sig_name(hb_maps:get(<<"committer">>, Commitment, not_found, Opts)),
+    SigName = dev_httpsig_siginfo:commitment_to_sig_name(Commitment),
     {list, _SigInputs, ParamsKVList} =
         hb_maps:get(
             SigName,
@@ -459,12 +437,12 @@ verify(MsgToVerify, Req, Opts) ->
         ),
     {string, Alg} =
         hb_maps:get(
-            <<"alg">>,
+            <<"type">>,
             Params = hb_maps:from_list(ParamsKVList),
             not_found,
             Opts
         ),
-    AlgFromCommitment = hb_maps:get(<<"alg">>, Commitment, not_found, Opts),
+    AlgFromCommitment = hb_maps:get(<<"type">>, Commitment, not_found, Opts),
     case Alg of
         _ when AlgFromCommitment =/= Alg ->
             {error, {commitment_alg_mismatch,
@@ -474,7 +452,6 @@ verify(MsgToVerify, Req, Opts) ->
         <<"rsa-pss-sha512">> when AlgFromCommitment =:= Alg ->
             {string, KeyID} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
             PubKey = hb_util:decode(KeyID),
-            Address = hb_util:human_id(ar_wallet:to_address(PubKey)),
             % Re-run the same conversion that was done when creating the signature.
             Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, Opts),
             EncWithoutBodyKeys = hb_maps:without([<<"body-keys">>], Enc),
@@ -495,7 +472,7 @@ verify(MsgToVerify, Req, Opts) ->
             Res = verify_auth(
                 #{
                     key => {{rsa, 65537}, PubKey},
-                    sig_name => address_to_sig_name(Address)
+                    sig_name => SigName
                 },
                 EncWithDigest,
                 Opts
@@ -505,6 +482,14 @@ verify(MsgToVerify, Req, Opts) ->
         _ ->
             {error, {unsupported_alg, Alg}}
     end.
+
+%% @doc Verify the signature of a commitment.
+% verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
+%     {ok, SigName, SFSig, SFSigInput} = dev_hsig_siginfo:commitment_to_siginfo(Req, Opts),
+%     verify_auth(#{ sig_name => SigName, key => {hmac, <<"ao">>}}, Base, Opts);
+% verify(Base, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
+%     % TODO: implement
+%     {ok, false}.
 
 public_keys(Commitment, Opts) ->
     SigInputs = hb_maps:get(<<"signature-input">>, Commitment, not_found, Opts),
@@ -616,26 +601,10 @@ add_sig_params(Authority, {_KeyType, PubKey}) ->
         Authority
     ).
 
-%%% @doc same verify/3, but with an empty Request Message Context
+%%% @doc Verify a signature.
 verify_auth(Verifier, Msg, Opts) ->
-    % Assume that the Msg is a response message, and use an empty Request 
-    % message context
-    %
-    % A corollary is that a signature containing any components from the request
-    % will produce an error. It is the caller's responsibility to provide the
-    % required Message Context in order to verify the signature
     verify_auth(Verifier, #{}, Msg, Opts).
-
-%%% @doc Given the signature name, and the Request/Response Message Context
-%%% verify the named signature by constructing the signature base and comparing
 verify_auth(#{ sig_name := SigName, key := Key }, Req, Res, Opts) ->
-    % Signature and Signature-Input fields are each themself a dictionary 
-    % structured field.
-    % Ergo, we can use our same utilities to extract the value at the desired key,
-    % in this case, the signature name. Because our utilities already implement
-    % the relevant portions of RFC-9421, we get the error handling here as well.
-    % 
-    %  See https://datatracker.ietf.org/doc/html/rfc9421#section-3.2-3.2
     SigNameParams = [{<<"key">>, {string, bin(SigName)}}],
     SignatureIdentifier = {item, {string, <<"signature">>}, SigNameParams},
     SignatureInputIdentifier =
@@ -676,14 +645,17 @@ verify_auth(#{ sig_name := SigName, key := Key }, Req, Res, Opts) ->
             % Now verify the signature base signed with the provided key matches
             % the signature
             ar_wallet:verify(Pub, SignatureBase, Signature, sha512);
-        % An issue with parsing the signature
-        {SignatureErr, {ok, _}} -> SignatureErr;
-        % An issue with parsing the signature input
-        {{ok, _}, SignatureInputErr} -> SignatureInputErr;
-        % An issue with parsing both, so just return the first one from the
-        % signature parsing
-        % TODO: maybe could merge the errors?
-        {SignatureErr, _} -> SignatureErr
+        {SignatureErr, {ok, _}} ->
+            % An issue with parsing the signature
+            SignatureErr;
+        {{ok, _}, SignatureInputErr} ->
+            % An issue with parsing the signature input
+            SignatureInputErr;
+        {SignatureErr, _} ->
+            % An issue with parsing both, so just return the first one from the
+            % signature parsing
+            % TODO: maybe could merge the errors?
+            SignatureErr
     end.
 
 %%% @doc create the signature base that will be signed in order to create the
