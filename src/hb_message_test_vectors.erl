@@ -10,7 +10,7 @@
 %% @doc Test invocation function, making it easier to run a specific test.
 %% Disable/enable as needed.
 run_test() ->
-    basic_message_codec_test(<<"httpsig@1.0">>).
+    empty_string_in_tag_test(<<"structured@1.0">>).
 
 %% @doc Return a list of codecs to test.
 test_codecs() ->
@@ -38,84 +38,89 @@ test_opts(_) ->
         priv_wallet => hb:wallet()
     }.
 
-message_suite_test_() ->
-    generate_test_suite([
-        {<<"Basic message encoding and decoding">>,
-            fun basic_message_codec_test/1},
-        {<<"Message with body">>,
-            fun set_body_codec_test/1},
+%% @doc Organizes a test battery for the `hb_message' module and its codecs.
+suite_test_() ->
+    run([
+        % Basic operations
+        {<<"Binary to binary">>,
+            fun binary_to_binary_test/1},
         {<<"Match">>,
             fun match_test/1},
-        {<<"Single layer message to encoding">>,
-            fun single_layer_message_to_encoding_test/1},
-        {<<"TABM AO-Core ids equal">>,
-            fun tabm_ao_ids_equal_test/1},
-        {<<"Message with large keys">>,
-            fun message_with_large_keys_test/1},
-        {<<"Nested message with large keys and content">>,
-            fun nested_message_with_large_keys_and_content_test/1},
+        {<<"Basic message encoding and decoding">>,
+            fun basic_message_codec_test/1},
+        {<<"Priv survives conversion">>,
+            fun priv_survives_conversion_test/1},
+        {<<"Message with body">>,
+            fun set_body_codec_test/1},
+        {<<"Empty string in tag">>,
+            fun empty_string_in_tag_test/1},
+        {<<"Structured field atom parsing">>,
+            fun structured_field_atom_parsing_test/1},
+        {<<"Structured field decimal parsing">>,
+            fun structured_field_decimal_parsing_test/1},
+        {<<"Unsigned id">>,
+            fun unsigned_id_test/1},
+        % Nested structures
         {<<"Simple nested message">>,
             fun simple_nested_message_test/1},
+        {<<"Message with simple embedded list">>,
+            fun message_with_simple_embedded_list_test/1},
         {<<"Nested empty map">>,
             fun nested_empty_map_test/1},
+        {<<"Nested structured fields">>,
+            fun nested_structured_fields_test/1},
+        {<<"Single layer message to encoding">>,
+            fun single_layer_message_to_encoding_test/1},
+        {<<"Nested list">>,
+            fun nested_body_list_test/1},
+        {<<"Message with large keys">>,
+            fun message_with_large_keys_test/1},
+        {<<"Deep typed message ID">>,
+            fun deep_typed_message_id_test/1},
+        {<<"Encode small balance table">>,
+            fun encode_small_balance_table_test/1},
+        {<<"Encode large balance table">>,
+            fun encode_large_balance_table_test/1},
+        % Signed messages
+        {<<"Signed item to message and back">>,
+            fun signed_message_encode_decode_verify_test/1},
+        {<<"Signed only committed data field">>,
+            fun signed_only_committed_data_field_test/1},
+        {<<"Committed keys">>,
+            fun committed_keys_test/1},
+        {<<"Committed empty keys">>,
+            fun committed_empty_keys_test/1},
+        {<<"Signed list HTTP response">>,
+            fun signed_list_test/1},
+        {<<"Sign node message">>,
+            fun sign_node_message_test/1},
+        {<<"Complex signed message">>,
+            fun complex_signed_message_test/1},
+        {<<"Nested message with large keys">>,
+            fun nested_message_with_large_keys_test/1},
+        % Complex structures
+        {<<"Nested message with large keys and content">>,
+            fun nested_message_with_large_keys_and_content_test/1},
         {<<"Nested message with large content">>,
             fun nested_message_with_large_content_test/1},
         {<<"Deeply nested message with content">>,
             fun deeply_nested_message_with_content_test/1},
         {<<"Deeply nested message with only content">>,
             fun deeply_nested_message_with_only_content/1},
-        {<<"Structured field atom parsing">>,
-            fun structured_field_atom_parsing_test/1},
-        {<<"Structured field decimal parsing">>,
-            fun structured_field_decimal_parsing_test/1},
-        {<<"Binary to binary">>,
-            fun binary_to_binary_test/1},
-        {<<"Nested structured fields">>,
-            fun nested_structured_fields_test/1},
-        {<<"Nested message with large keys">>,
-            fun nested_message_with_large_keys_test/1},
-        {<<"Message with simple embedded list">>,
-            fun message_with_simple_embedded_list_test/1},
-        {<<"Empty string in tag">>,
-            fun empty_string_in_tag_test/1},
-        {<<"Signed item to message and back">>,
-            fun signed_message_encode_decode_verify_test/1},
         {<<"Signed deep serialize and deserialize">>,
             fun signed_deep_message_test/1},
         {<<"Nested data key">>,
             fun signed_nested_data_key_test/1},
-        {<<"Signed only committed data field">>,
-            fun signed_only_committed_data_field_test/1},
-        {<<"Unsigned id">>,
-            fun unsigned_id_test/1},
-        {<<"Complex signed message">>,
-            fun complex_signed_message_test/1},
         {<<"Signed message with hashpath">>,
             fun hashpath_sign_verify_test/1},
         {<<"Message with derived components">>,
             fun signed_message_with_derived_components_test/1},
-        {<<"Committed keys">>,
-            fun committed_keys_test/1},
-        {<<"Committed empty keys">>,
-            fun committed_empty_keys_test/1},
         {<<"Large body committed keys">>,
             fun large_body_committed_keys_test/1},
-        {<<"Signed list HTTP response">>,
-            fun signed_list_test/1},
         {<<"Signed with inner signed">>,
             fun signed_with_inner_signed_message_test/1},
-        {<<"Priv survives conversion">>,
-            fun priv_survives_conversion_test/1},
-        {<<"Sign node message">>,
-            fun sign_node_message_test/1},
-        {<<"Nested list">>,
-            fun nested_body_list_test/1},
         {<<"Recursive nested list">>,
             fun recursive_nested_list_test/1},
-        {<<"Encode small balance table">>,
-            fun encode_small_balance_table_test/1},
-        {<<"Encode large balance table">>,
-            fun encode_large_balance_table_test/1},
         {<<"Sign links">>,
             fun sign_links_test/1},
         {<<"ID of linked message">>,
@@ -126,7 +131,7 @@ message_suite_test_() ->
             fun id_of_deep_message_and_link_message_match_test/1}
     ]).
 
-generate_test_suite(Suite) ->
+run(Suite) ->
     lists:map(
         fun(CodecName) ->
             {foreach,
@@ -542,7 +547,7 @@ deep_multisignature_test() ->
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet1)), Committers)),
     ?assert(lists:member(hb_util:human_id(ar_wallet:to_address(Wallet2)), Committers)).
 
-tabm_ao_ids_equal_test(Codec) ->
+deep_typed_message_id_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = #{
         <<"data">> => <<"TEST DATA">>,

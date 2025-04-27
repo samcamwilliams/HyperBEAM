@@ -1,18 +1,17 @@
 %% @doc A module for converting between commitments and their encoded `signature'
 %% and `signature-input' keys.
--module(dev_httpsig_siginfo).
+-module(dev_codec_httpsig_siginfo).
 -export([commitments_to_siginfo/2, siginfo_to_commitments/2]).
 -export([commitment_to_siginfo/2, commitment_to_sig_name/1]).
 -include("include/hb.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %% @doc Generate a `signature' and `signature-input' key pair from a commitment
 %% map.
 commitments_to_siginfo(Commitments, Opts) ->
     % Generate a SF item for each commitment's signature and signature-input.
     {Sigs, SigsInputs} =
-        lists:foldl(
-            fun (Commitment, {Sigs, SigsInputs}) ->
+        maps:fold(
+            fun(_CommID, Commitment, {Sigs, SigsInputs}) ->
                 {ok, SigName, SFSig, SFSigInput} =
                     commitment_to_sf_siginfo(Commitment, Opts),
                 {
@@ -236,39 +235,3 @@ commitment_to_sig_name(Commitment) ->
             <<"-">>
         ),
     <<DeviceStr/binary, ".", BaseStr/binary>>.
-
-%%% Tests
-
-parse_old_commitment_test() ->
-    Opts = #{ priv_wallet => hb:wallet() },
-    % Generate a httpsig@1.0 commitment.
-    Msg = #{
-        <<"binary">> => <<"binary-value">>,
-        <<"numeric">> => 123,
-        <<"nested">> => #{
-            <<"binary-inner">> => <<"binary-inner-value">>,
-            <<"numeric-inner">> => 456
-        }
-    },
-    Signed = hb_message:commit(Msg, Opts),
-    HSigEncoded = hb_message:convert(Signed, <<"httpsig@1.0">>, Opts),
-    % Generate a commitment from the message.
-    Commitment = siginfo_to_commitments(HSigEncoded, Opts),
-    OrigCommitment =
-        maps:get(
-            hd(maps:keys(Commitment)),
-            Commitment
-        ),
-    % Validate the generated commitment.
-    ?assertEqual(
-        [<<"binary">>, <<"numeric">>, <<"nested-link">>],
-        maps:get(
-            <<"committed">>,
-            OrigCommitment
-        )
-    ),
-    % Validate the commitment device.
-    ?assertEqual(
-        <<"httpsig@1.0">>,
-        maps:get(<<"commitment-device">>, OrigCommitment)
-    ).
