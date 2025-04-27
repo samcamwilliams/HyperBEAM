@@ -165,13 +165,31 @@ find_id(Msg, _Opts) ->
     ?event({no_id, Msg}),
     {not_found, Msg}.
 
+% @doc Verify the signature of a commitment based on its `type' parameter.
+verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := ID }, Opts) ->
+    % A hmac-sha256 commitment is verified simply by generating the ID from the
+    % given committed keys.
+    Enc = hb_message:convert(Base, <<"httpsig@1.0">>, Opts),
+    case hmac(Enc, Req, Opts) of
+        {ok, ID} -> {ok, true};
+        {error, _} -> {ok, false}
+    end;
+verify(Base, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
+    % A rsa-pss-sha512 commitment is verified by regenerating the signature
+    % base and validating against the signature.
+    Enc = hb_message:convert(Base, <<"httpsig@1.0">>, Opts),
+    SigBase = signature_base(Enc, #{}, Req, Opts),
+    PubKey = maps:get(<<"keyid">>, Req),
+    Signature = maps:get(<<"signature">>, Req),
+    ar_wallet:verify({{rsa, 65537}, PubKey}, SigBase, Signature, sha512);
+verify(_Base, #{ <<"type">> := Type }, _Opts) ->
+    {error, {unsupported_alg, Type}}.
 
-% @doc Verify the signature of a commitment.
-verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
-    {ok, ID} = hmac(maps:with(maps:get(<<"committed">>, Req), Opts), Base, Req, Opts).
-
-%% @doc Main entrypoint for signing a HTTP Message, using the standardized format.
-commit(MsgToSign, _Req, Opts) ->
+%% @doc Commit to a message using the HTTP-Signature format. We use the `type'
+%% parameter to determine the type of commitment to use. Default: `rsa-pss-sha512'.
+commit(Msg, Req, Opts) when not is_map_key(<<"type">>, Req) ->
+    commit(Msg, #{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
+commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     NormMsg = hb_ao:normalize_keys(MsgToSign),
     % The hashpath, if present, is encoded as a HTTP Sig tag,
@@ -179,7 +197,7 @@ commit(MsgToSign, _Req, Opts) ->
     % so that it is not included in the actual signature matierial.
     %
     % In this sense, the hashpath is a property of the commitment
-    % and the signature metadata, not the message itself, being signed
+    % and the signature metadata, not the message itself that is being signed.
     % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
     {MaybeTagMap, MsgWithoutHP} =
         case NormMsg of
@@ -187,131 +205,48 @@ commit(MsgToSign, _Req, Opts) ->
                 {#{ <<"tag">> => HP }, NormMsg};
             _ -> {#{}, NormMsg}
         end,
-    EncWithoutBodyKeys =
+    % Convert the message to HTTPSig format, without commitments.
+    Enc =
         hb_maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"body-keys">>, <<"priv">>],
+            [<<"signature">>, <<"signature-input">>, <<"priv">>],
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
-    Enc = add_content_digest(EncWithoutBodyKeys, Opts),
-    ?event({encoded_to_httpsig_for_commitment, Enc}),
-    Authority = authority(lists:sort(hb_maps:keys(Enc)), MaybeTagMap, Wallet),
-    {ok, Signature} = sign_auth(Authority, #{}, Enc, Opts),
+    EncWithContentDigest = add_content_digest(Enc, Opts),
+    ?event({encoded_to_httpsig_for_commitment, EncWithContentDigest}),
+    % Generate the signature base
+    SignatureBase = signature_base(EncWithContentDigest, #{}, MsgToSign, Opts),
+    % Sign the signature base
+    Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
+    % Generate the ID of the signature
     ID = hb_util:human_id(crypto:hash(sha256, Signature)),
-    % Calculate the id and place the signature into the `commitments' key of the
+    % Calculate the ID and place the signature into the `commitments' key of the
+    % message. After, we call `commit' again to add the hmac to the new
     % message.
-    Commitment =
-        MaybeTagMap#{
-            <<"commitment-device">> => <<"httpsig@1.0">>,
-            <<"type">> => <<"rsa-pss-sha512">>,
-            <<"keyid">> => ar_wallet:to_pubkey(Wallet),
-            <<"committer">> => hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"signature">> => Signature,
-            <<"committed">> =>
-                [ SigName || {item, {_, SigName}, _} <- ParsedSignatureInput ]
-        },
-    OldCommitments = hb_maps:get(<<"commitments">>, NormMsg, #{}),
-    reset_hmac(MsgWithoutHP#{<<"commitments">> =>
-        OldCommitments#{ ID => Commitment }
-    }, Opts).
-
-%% @doc Return the list of committed keys from a message. The message will have
-%% had the `commitments' key removed and the signature inputs added to the
-%% root. Subsequently, we can parse that to get the list of committed keys.
-committed(RawMsg, Req, Opts) ->
-    {ok, Msg} = to(RawMsg, Req, Opts),
-    case hb_maps:get(<<"signature-input">>, Msg, none, Opts) of
-        none -> {ok, []};
-        SigInput ->
-            do_committed(SigInput, Msg, Req, Opts)
-    end.
-
-do_committed(SigInputStr, Msg, _Req, Opts) ->
-    [{_SigInputName, SigInput} | _] = hb_structured_fields:parse_dictionary(
-        SigInputStr
-    ),
-    {list, ComponentIdentifiers, _SigParams} = SigInput,
-    BinComponentIdentifiers = lists:map(
-        fun({item, {_Kind, ID}, _Params}) -> ID end,
-        ComponentIdentifiers    
-    ),
-    Signed =
-        [<<"signature">>, <<"signature-input">>] ++
-            remove_derived_specifiers(BinComponentIdentifiers),
-    % Extract the implicit keys from the `ao-types' of the encoded message if
-    % the types key itself was signed.
-    SignedWithImplicit = Signed ++ dev_codec_structured:implicit_keys(Msg, Opts),
-    case lists:member(<<"content-digest">>, SignedWithImplicit) of
-        false -> {ok, SignedWithImplicit};
-        true -> {ok, SignedWithImplicit ++ committed_from_body(Msg, Opts)}
-    end.
-
-%% @doc Return the list of committed keys from a message that are derived from
-%% the body components.
-committed_from_body(Msg, Opts) ->
-    % Body and inline-body-key are always committed if the
-    % content-digest is present.
-    [<<"body">>, <<"inline-body-key">>] ++
-        % If the inline-body-key is present, add it to the list of
-        % committed keys.
-        case hb_maps:get(<<"inline-body-key">>, Msg, [], Opts) of
-            [] -> [];
-            InlineBodyKey -> [InlineBodyKey]
-        end
-        % If the body-keys are present, add them to the list of
-        % committed keys.
-        ++ case hb_maps:get(<<"body-keys">>, Msg, [], Opts) of
-            [] -> [];
-            BodyKeys ->
-                ParsedList = case BodyKeys of
-                    List when is_list(List) -> List;
-                    RawBodyKeys when is_binary(RawBodyKeys) ->
-                        hb_structured_fields:parse_list(RawBodyKeys) 
-                end,
-                % Ensure a list of binaries, extracting the binary
-                % from the structured item if necessary
-                ParsedBodyKeys = lists:map(
-                    fun
-                        (BK) when is_binary(BK) -> BK;
-                        ({ item, {_, BK }, _}) -> BK
-                    end,
-                    ParsedList   
-                ),
-                % Grab the top most field on the body key
-                % because the top most being committed means all subsequent
-                % fields are also committed
-                Tops = lists:map(
-                    fun(BodyKey) ->
-                        hd(hb_path:term_to_path_parts(BodyKey, #{}))
-                    end,
-                    ParsedBodyKeys
-                ),
-                lists:sort(lists:uniq(Tops))
-        end.
-
-%% @doc If the `body' key is present, replace it with a content-digest.
-add_content_digest(Msg, Opts) ->
-    case hb_maps:get(<<"body">>, Msg, not_found, Opts) of
-        not_found -> Msg;
-        Body ->
-            % Remove the body from the message and add the content-digest,
-            % encoded as a structured field.
-            ?event({add_content_digest, {string, Body}}),
-            (hb_maps:without([<<"body">>], Msg))#{
-                <<"content-digest">> =>
-                    iolist_to_binary(hb_structured_fields:dictionary(
-                        #{
-                            <<"sha-256">> =>
-                                {item, {binary, hb_crypto:sha256(Body)}, []}
+    commit(
+        MsgWithoutHP#{
+            <<"commitments">> =>
+                (hb_maps:get(<<"commitments">>, NormMsg, #{}))#{
+                    ID =>
+                        MaybeTagMap#{
+                            <<"commitment-device">> => <<"httpsig@1.0">>,
+                            <<"type">> => <<"rsa-pss-sha512">>,
+                            <<"keyid">> => ar_wallet:to_pubkey(Wallet),
+                            <<"committer">> =>
+                                hb_util:human_id(ar_wallet:to_address(Wallet)),
+                            <<"signature">> => Signature,
+                            <<"committed">> => maps:keys(MsgToSign)
                         }
-                    ))
-            }
-    end.
-
-%%@doc Ensure that the commitments and hmac are properly encoded. If there are
-%% already commitments, then we add the hmac to the existing commitments using
-%% the superset of their inputs.
-reset_hmac(RawMsg, Opts) ->
-    Msg = hb_message:convert(RawMsg, tabm, Opts),
+                }
+        },
+        #{
+            <<"type">> => <<"hmac-sha256">>
+        },
+        Opts
+    );
+commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
+    % Ensure that the commitments and hmac are properly encoded. If there are
+    % already commitments, then we add the hmac to the existing commitments using
+    % the superset of their inputs.
     WithoutHmac =
         hb_message:without_commitments(
             #{
@@ -321,13 +256,16 @@ reset_hmac(RawMsg, Opts) ->
             Msg,
             Opts
         ),
+    TABMWithoutHmac = hb_message:convert(WithoutHmac, <<"httpsig@1.0">>, Opts),
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
-    OnlyCommitted =
-        maps:with(
-            hb_util:ok(dev_message:committed(WithoutHmac, #{}, Opts)),
-            WithoutHmac
+    {ok, CommittedKeys} =
+        dev_message:committed(
+            WithoutHmac,
+            #{ <<"commitments">> => <<"all">> },
+            Opts
         ),
-    {ok, Keys, ID} = hmac(WithoutHmac, #{}, Opts),
+    OnlyCommitted = maps:with(CommittedKeys, TABMWithoutHmac),
+    {ok, ID} = hmac(OnlyCommitted, #{}, Opts),
     EncID = hb_util:human_id(ID),
     Res = {
         ok,
@@ -340,7 +278,7 @@ reset_hmac(RawMsg, Opts) ->
                         <<"type">> => <<"hmac-sha256">>,
                         <<"keyid">> => <<"ao">>,
                         <<"signature">> => ID,
-                        <<"committed">> => Keys
+                        <<"committed">> => CommittedKeys
                     }
             },
             Msg
@@ -349,13 +287,38 @@ reset_hmac(RawMsg, Opts) ->
     ?event({reset_hmac_complete, Res}),
     Res.
 
+%% @doc If the `body' key is present and a binary, replace it with a
+%% content-digest.
+add_content_digest(Msg, Opts) ->
+    case hb_maps:get(<<"body">>, Msg, not_found, Opts) of
+        Body when is_binary(Body) ->
+            % Remove the body from the message and add the content-digest,
+            % encoded as a structured field.
+            ?event({add_content_digest, {string, Body}}),
+            (hb_maps:without([<<"body">>], Msg))#{
+                <<"content-digest">> =>
+                    iolist_to_binary(hb_structured_fields:dictionary(
+                        #{
+                            <<"sha-256">> =>
+                                {item, {binary, hb_crypto:sha256(Body)}, []}
+                        }
+                    ))
+            };
+        _ -> Msg
+    end.
+
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.
 hmac(Msg, Req, Opts) ->
     % Convert the message to HTTPSig format, without commitments.
-    {ok, Encoded} = to(maps:without([<<"commitments">>], Msg), #{}, Opts),
+    {ok, Encoded} =
+        hb_message:convert(
+            maps:without([<<"commitments">>], Msg),
+            <<"httpsig@1.0">>,
+            Opts#{ linkify => discard }
+        ),
     % Find the committed keys. Default: all keys.
-    Committed = maps:get(<<"committed">>, Req, maps:keys(Encoded)),
+    Committed = maps:get(<<"committed">>, Req, maps:keys(Msg)),
     ?event(hmac, {generating_hmac_on, {msg, Encoded}, {keys, Committed}}),
     % Remove the body and set the content-digest as a field
     MsgWithContentDigest = add_content_digest(Encoded, Opts),
@@ -379,108 +342,7 @@ hmac(Msg, Req, Opts) ->
     ?event(hmac, {hmac_base, {string, SignatureBase}}),
     HMacValue = crypto:mac(hmac, sha256, <<"ao">>, SignatureBase),
     ?event(hmac, {hmac_result, HMacValue}),
-    {ok, HMacKeys, HMacValue}.
-
-%% @doc Verify different forms of httpsig committed messages. `dev_message:verify'
-%% already places the keys from the commitment message into the root of the
-%% message.
-verify(MsgToVerify = #{ <<"signature">> := IDDict, <<"type">> := <<"hmac-sha256">> }, _Req, Opts) ->
-    % Verify a hmac on the message. We parse the signature line to get the
-    % the expected ID, then regenerate the hmac and compare it to the given value.
-    % We start by parsing the signature line to get the expected ID.
-    [{_, IDItem}] = hb_structured_fields:parse_dictionary(IDDict),
-    IDItemBin = hb_util:bin(hb_structured_fields:item(IDItem)),
-    ?event({verify_hmac, {target, MsgToVerify}, {id_dict, IDItemBin}}),
-    {item, {binary, NativeID}, []} = hb_structured_fields:parse_item(IDItemBin),
-    ExpectedID = hb_util:human_id(NativeID),
-    ?event({verify_hmac, {target, MsgToVerify}, {expected_id, ExpectedID}}),
-    % We then reset the hmac on the message, which will regenerate the ID.
-    {ok, ResetMsg} = reset_hmac(maps:without([<<"commitments">>], MsgToVerify), Opts),
-    % We then check if the regenerated ID matches the expected ID.
-    case hb_maps:get(<<"commitments">>, ResetMsg, no_commitments) of
-        no_commitments -> {error, could_not_calculate_id};
-        #{ ExpectedID := #{ <<"type">> := <<"hmac-sha256">> } } ->
-            ?event({hmac_verified, {id, ExpectedID}}),
-            {ok, true};
-        _ ->
-            ?event({hmac_failed_verification,
-                {recalculated_commitments,
-                    hb_maps:keys(hb_maps:get(<<"commitments">>, ResetMsg, #{}))
-                },
-                {expected_id, ExpectedID}}),
-            {ok, false}
-    end;
-verify(MsgToVerify, Req, Opts) ->
-    % Validate a signed commitment.
-    ?event({verify, {target, MsgToVerify}, {req, Req}}),
-    % Parse the signature parameters into a map.
-    CommitmentID = hb_maps:get(<<"commitment">>, Req, Opts),
-    Commitment =
-        hb_maps:get(
-            CommitmentID,
-            hb_maps:get(<<"commitments">>, MsgToVerify, #{}, Opts),
-            Opts
-        ),
-    SigName = dev_httpsig_siginfo:commitment_to_sig_name(Commitment),
-    {list, _SigInputs, ParamsKVList} =
-        hb_maps:get(
-            SigName,
-            hb_maps:from_list(
-                hb_structured_fields:parse_dictionary(
-                    hb_maps:get(<<"signature-input">>, MsgToVerify, <<>>, Opts)
-                )
-            ),
-            undefined,
-            Opts
-        ),
-    {string, Alg} =
-        hb_maps:get(
-            <<"type">>,
-            Params = hb_maps:from_list(ParamsKVList),
-            not_found,
-            Opts
-        ),
-    AlgFromCommitment = hb_maps:get(<<"type">>, Commitment, not_found, Opts),
-    case Alg of
-        _ when AlgFromCommitment =/= Alg ->
-            {error, {commitment_alg_mismatch,
-                {from_commitment_message, AlgFromCommitment},
-                {from_signature_params, Alg}
-            }};
-        <<"rsa-pss-sha512">> when AlgFromCommitment =:= Alg ->
-            {string, KeyID} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
-            PubKey = hb_util:decode(KeyID),
-            % Re-run the same conversion that was done when creating the signature.
-            Enc = hb_message:convert(MsgToVerify, <<"httpsig@1.0">>, Opts),
-            EncWithoutBodyKeys = hb_maps:without([<<"body-keys">>], Enc),
-            % Add the signature data back into the encoded message.
-            EncWithSig =
-                EncWithoutBodyKeys#{
-                    <<"signature-input">> =>
-                        hb_maps:get(<<"signature-input">>, MsgToVerify, not_found, Opts),
-                    <<"signature">> =>
-                        hb_maps:get(<<"signature">>, MsgToVerify, not_found, Opts)
-                },
-            % If the content-digest is already present, we override it with a
-            % regenerated value. If those values match, then the signature will
-            % verify correctly. If they do not match, then the signature will
-            % fail to verify, as the signature bases will not be the same.
-            EncWithDigest = add_content_digest(EncWithSig, Opts),
-            ?event({encoded_msg_for_verification, EncWithDigest}),
-            Res = verify_auth(
-                #{
-                    key => {{rsa, 65537}, PubKey},
-                    sig_name => SigName
-                },
-                EncWithDigest,
-                Opts
-            ),
-            ?event({rsa_verify_res, Res}),
-            {ok, Res};
-        _ ->
-            {error, {unsupported_alg, Alg}}
-    end.
-
+    {ok, HMacValue}.
 
 public_keys(Commitment, Opts) ->
     SigInputs = hb_maps:get(<<"signature-input">>, Commitment, not_found, Opts),
@@ -679,7 +541,9 @@ signature_components_line(Commitment, Req, Res, Opts) ->
 	ComponentsLines =
         lists:map(
             fun(Name) when is_map_key(Name, Res)->
-                Value = maps:get(Name, Res),
+                % Use `hb_maps' to get each value, such that we lookup data 
+                % in the cache as necessary.
+                Value = hb_maps:get(Name, Res, not_found, Opts),
                 << Name/binary, <<": ">>/binary, Value/binary>>;
             (ComponentIdentifier) ->
                 {ok, {I, V}} =
