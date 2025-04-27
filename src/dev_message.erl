@@ -123,7 +123,13 @@ calculate_ids(Base, Req, NodeOpts) ->
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
             {ok, #{ <<"commitments">> := Comms} } = 
-                apply(Fun, hb_ao:truncate_args(Fun, [Base, Req, NodeOpts])),
+                apply(
+                    Fun,
+                    hb_ao:truncate_args(
+                        Fun,
+                        [Base, Req#{ <<"type">> => <<"unsigned">> }, NodeOpts]
+                    )
+                ),
             {ok, hd(maps:keys(Comms))};
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
@@ -207,7 +213,18 @@ commit(Self, Req, Opts) ->
     AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, CommitOpts),
     {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
     Encoded = hb_message:convert(Base, tabm, CommitOpts),
-    {ok, Committed} = apply(AttFun, hb_ao:truncate_args(AttFun, [Encoded, Req, CommitOpts])),
+    {ok, Committed} =
+        apply(
+            AttFun,
+            hb_ao:truncate_args(
+                AttFun,
+                [
+                    Encoded,
+                    Req#{ <<"type">> => maps:get(<<"type">>, Req, <<"signed">>) },
+                    CommitOpts
+                ]
+            )
+        ),
     {ok, hb_message:convert(Committed, <<"structured@1.0">>, tabm, CommitOpts)}.
 
 %% @doc Verify a message. By default, all commitments are verified. The

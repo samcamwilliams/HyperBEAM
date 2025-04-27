@@ -55,9 +55,13 @@ verify(_Base, #{ <<"type">> := Type }, _Opts) ->
     {error, {unsupported_alg, Type}}.
 
 %% @doc Commit to a message using the HTTP-Signature format. We use the `type'
-%% parameter to determine the type of commitment to use. Default: `rsa-pss-sha512'.
-commit(Msg, Req, Opts) when not is_map_key(<<"type">>, Req) ->
-    commit(Msg, #{ <<"type">> => <<"hmac-sha256">> }, Opts);
+%% parameter to determine the type of commitment to use. If the `type' parameter
+%% is `signed', we default to the rsa-pss-sha512 algorithm. If the `type'
+%% parameter is `unsigned', we default to the hmac-sha256 algorithm.
+commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
+    commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
+commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
+    commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
 commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     % Utilize the hashpath, if present, as the tag for the commitment.
