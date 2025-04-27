@@ -121,12 +121,14 @@ to_lower(Str) ->
 is_string_list(MaybeString) ->
     lists:all(fun is_integer/1, MaybeString).
 
-%% @doc Given a map or KVList, return a deterministically sorted list of its
-%% key-value pairs.
+%% @doc Given a map, key-value tuple list, or a list of keys, return a
+%% deterministically sorted list.
 to_sorted_list(Msg) when is_map(Msg) ->
     to_sorted_list(hb_maps:to_list(Msg));
+to_sorted_list(Msg = [{_Key, _} | _]) when is_list(Msg) ->
+    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg);
 to_sorted_list(Msg) when is_list(Msg) ->
-    lists:sort(fun({Key1, _}, {Key2, _}) -> Key1 < Key2 end, Msg).
+    lists:sort(fun(Key1, Key2) -> Key1 < Key2 end, Msg).
 
 %% @doc Given a map or KVList, return a deterministically ordered list of its keys.
 to_sorted_keys(Msg) when is_map(Msg) ->

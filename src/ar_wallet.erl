@@ -33,7 +33,9 @@ sign({{rsa, PublicExpnt}, Priv, Pub}, Data, DigestType) when PublicExpnt =:= 655
             modulus = binary:decode_unsigned(Pub),
             privateExponent = binary:decode_unsigned(Priv)
         }
-    ).
+    );
+sign({{KeyType, Priv, Pub}, {KeyType, Pub}}, Data, DigestType) ->
+    sign({KeyType, Priv, Pub}, Data, DigestType).
 
 hmac(Data) ->
     hmac(Data, sha256).

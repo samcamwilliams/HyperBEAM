@@ -83,9 +83,25 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
             hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
         ),
     EncWithContentDigest = add_content_digest(Enc, Opts),
+    % Generate the unsigned commitment and signature base.
+    UnsignedCommitment =
+        MaybeTagMap#{
+            <<"commitment-device">> => <<"httpsig@1.0">>,
+            <<"type">> => <<"rsa-pss-sha512">>,
+            <<"keyid">> => ar_wallet:to_pubkey(Wallet),
+            <<"committer">> =>
+                hb_util:human_id(ar_wallet:to_address(Wallet)),
+            <<"committed">> => maps:keys(MsgToSign)
+        },
     ?event({encoded_to_httpsig_for_commitment, EncWithContentDigest}),
     % Generate the signature base
-    SignatureBase = signature_base(EncWithContentDigest, #{}, MsgToSign, Opts),
+    SignatureBase =
+        signature_base(
+            UnsignedCommitment,
+            #{},
+            EncWithContentDigest,
+            Opts
+        ),
     % Sign the signature base
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
     % Generate the ID of the signature
@@ -97,16 +113,7 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         MsgWithoutHP#{
             <<"commitments">> =>
                 (hb_maps:get(<<"commitments">>, NormMsg, #{}))#{
-                    ID =>
-                        MaybeTagMap#{
-                            <<"commitment-device">> => <<"httpsig@1.0">>,
-                            <<"type">> => <<"rsa-pss-sha512">>,
-                            <<"keyid">> => ar_wallet:to_pubkey(Wallet),
-                            <<"committer">> =>
-                                hb_util:human_id(ar_wallet:to_address(Wallet)),
-                            <<"signature">> => Signature,
-                            <<"committed">> => maps:keys(MsgToSign)
-                        }
+                    ID => UnsignedCommitment#{ <<"signature">> => Signature }
                 }
         },
         #{
