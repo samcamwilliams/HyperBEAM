@@ -40,49 +40,33 @@ from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
 verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := ID }, Opts) ->
     % A hmac-sha256 commitment is verified simply by generating the ID from the
     % given committed keys.
-    Enc = hb_message:convert(Base, <<"httpsig@1.0">>, Opts),
-    case hmac(Enc, Req, Opts) of
+    case hmac(Base, Req, Opts) of
         {ok, ID} -> {ok, true};
         {error, _} -> {ok, false}
     end;
 verify(Base, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     % A rsa-pss-sha512 commitment is verified by regenerating the signature
     % base and validating against the signature.
-    Enc = hb_message:convert(Base, <<"httpsig@1.0">>, Opts),
-    SigBase = signature_base(Enc, #{}, Req, Opts),
+    SigBase = signature_base(Base, Req, Opts),
     PubKey = maps:get(<<"keyid">>, Req),
     Signature = maps:get(<<"signature">>, Req),
-    ar_wallet:verify({{rsa, 65537}, PubKey}, SigBase, Signature, sha512);
+    {ok, ar_wallet:verify({{rsa, 65537}, PubKey}, SigBase, Signature, sha512)};
 verify(_Base, #{ <<"type">> := Type }, _Opts) ->
     {error, {unsupported_alg, Type}}.
 
 %% @doc Commit to a message using the HTTP-Signature format. We use the `type'
 %% parameter to determine the type of commitment to use. Default: `rsa-pss-sha512'.
 commit(Msg, Req, Opts) when not is_map_key(<<"type">>, Req) ->
-    commit(Msg, #{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
+    commit(Msg, #{ <<"type">> => <<"hmac-sha256">> }, Opts);
 commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
-    NormMsg = hb_ao:normalize_keys(MsgToSign),
-    % The hashpath, if present, is encoded as a HTTP Sig tag,
-    % added as a field on the commitment, and then the field is removed from the Msg,
-    % so that it is not included in the actual signature matierial.
-    %
-    % In this sense, the hashpath is a property of the commitment
-    % and the signature metadata, not the message itself that is being signed.
-    % See https://datatracker.ietf.org/doc/html/rfc9421#section-2.3-4.12
-    {MaybeTagMap, MsgWithoutHP} =
-        case NormMsg of
+    % Utilize the hashpath, if present, as the tag for the commitment.
+    MaybeTagMap =
+        case MsgToSign of
             #{ <<"priv">> := #{ <<"hashpath">> := HP }} ->
-                {#{ <<"tag">> => HP }, NormMsg};
-            _ -> {#{}, NormMsg}
+                #{ <<"tag">> => HP };
+            _ -> #{}
         end,
-    % Convert the message to HTTPSig format, without commitments.
-    Enc =
-        hb_maps:without(
-            [<<"signature">>, <<"signature-input">>, <<"priv">>],
-            hb_message:convert(MsgWithoutHP, <<"httpsig@1.0">>, Opts)
-        ),
-    EncWithContentDigest = add_content_digest(Enc, Opts),
     % Generate the unsigned commitment and signature base.
     UnsignedCommitment =
         MaybeTagMap#{
@@ -91,17 +75,12 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
             <<"keyid">> => ar_wallet:to_pubkey(Wallet),
             <<"committer">> =>
                 hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"committed">> => maps:keys(MsgToSign)
+            <<"committed">> =>
+                maps:keys(MsgToSign) -- [<<"priv">>, <<"commitments">>]
         },
-    ?event({encoded_to_httpsig_for_commitment, EncWithContentDigest}),
+    ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
-    SignatureBase =
-        signature_base(
-            UnsignedCommitment,
-            #{},
-            EncWithContentDigest,
-            Opts
-        ),
+    SignatureBase = signature_base(MsgToSign, UnsignedCommitment, Opts),
     % Sign the signature base
     Signature = ar_wallet:sign(Wallet, SignatureBase, sha512),
     % Generate the ID of the signature
@@ -110,9 +89,9 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     % message. After, we call `commit' again to add the hmac to the new
     % message.
     commit(
-        MsgWithoutHP#{
+        MsgToSign#{
             <<"commitments">> =>
-                (hb_maps:get(<<"commitments">>, NormMsg, #{}))#{
+                (hb_maps:get(<<"commitments">>, MsgToSign, #{}))#{
                     ID => UnsignedCommitment#{ <<"signature">> => Signature }
                 }
         },
@@ -122,9 +101,9 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         Opts
     );
 commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
-    % Ensure that the commitments and hmac are properly encoded. If there are
-    % already commitments, then we add the hmac to the existing commitments using
-    % the superset of their inputs.
+    % Find the ID of the message without hmac commitments, then add the hmac
+    % using the set of all presently committed keys as the input. If no (other)
+    % commitments are present, then use all keys from the encoded message.
     WithoutHmac =
         hb_message:without_commitments(
             #{
@@ -134,16 +113,15 @@ commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
             Msg,
             Opts
         ),
-    TABMWithoutHmac = hb_message:convert(WithoutHmac, <<"httpsig@1.0">>, Opts),
+    % Extract the base commitments from the message.
     Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
-    {ok, CommittedKeys} =
-        dev_message:committed(
-            WithoutHmac,
-            #{ <<"commitments">> => <<"all">> },
-            Opts
-        ),
-    OnlyCommitted = maps:with(CommittedKeys, TABMWithoutHmac),
-    {ok, ID} = hmac(OnlyCommitted, #{}, Opts),
+    % Extract the set of committed keys from the message.
+    CommittedKeys =
+        case hb_message:committed(WithoutHmac, all, Opts) of
+            [] -> maps:keys(WithoutHmac) -- [<<"commitments">>, <<"priv">>];
+            Keys -> Keys
+        end,
+    {ok, ID} = hmac(WithoutHmac, #{ <<"committed">> => CommittedKeys }, Opts),
     EncID = hb_util:human_id(ID),
     Res = {
         ok,
@@ -188,18 +166,9 @@ add_content_digest(Msg, Opts) ->
 %% @doc Generate the ID of the message, with the current signature and signature
 %% input as the components for the hmac.
 hmac(Msg, Req, Opts) ->
-    % Convert the message to HTTPSig format, without commitments.
-    {ok, Encoded} =
-        hb_message:convert(
-            maps:without([<<"commitments">>], Msg),
-            <<"httpsig@1.0">>,
-            Opts#{ linkify => discard }
-        ),
     % Find the committed keys. Default: all keys.
     Committed = maps:get(<<"committed">>, Req, maps:keys(Msg)),
-    ?event(hmac, {generating_hmac_on, {msg, Encoded}, {keys, Committed}}),
-    % Remove the body and set the content-digest as a field
-    MsgWithContentDigest = add_content_digest(Encoded, Opts),
+    ?event(hmac, {generating_hmac_on, {msg, Msg}, {keys, Committed}}),
     % Find the keys to use for the hmac. These should be set by the signature
     % input, but if that is not present, then use all the keys from the encoded
     % message.
@@ -207,14 +176,13 @@ hmac(Msg, Req, Opts) ->
     % Generate the signature base
     SignatureBase =
         signature_base(
+            Msg,
             #{
                 <<"committed">> => HMACSpecifiers,
                 <<"keyid">> => <<"ao">>,
                 <<"commitment-device">> => <<"httpsig@1.0">>,
                 <<"type">> => <<"hmac-sha256">>
             },
-            #{},
-            MsgWithContentDigest,
             Opts
         ),
     ?event(hmac, {hmac_base, {string, SignatureBase}}),
@@ -269,10 +237,27 @@ remove_derived_specifiers(ComponentIdentifiers) ->
 %%
 %% This implements a portion of RFC-9421 see:
 %% https://datatracker.ietf.org/doc/html/rfc9421#name-creating-the-signature-base
-signature_base(Commitment, Req, Res, Opts) when is_map(Commitment) ->
-	ComponentsLine = signature_components_line(Commitment, Req, Res, Opts),
+signature_base(Msg, Commitment, Opts) when is_map(Commitment) ->
+    % Remove the body and set the content-digest as a field
+    MsgWithContentDigest = add_content_digest(Msg, Opts),
+    % If the commitment references the `body` key, then we remove it and replace
+    % it with the content-digest.
+    NewCommitment =
+        Commitment#{
+            <<"committed">> =>
+                dev_codec_httpsig_siginfo:committed_keys_to_siginfo(
+                    maps:get(<<"committed">>, Commitment, [])
+                )
+        },
+	ComponentsLine =
+        signature_components_line(
+            NewCommitment,
+            #{},
+            MsgWithContentDigest,
+            Opts
+        ),
     ?event({component_identifiers_for_sig_base, ComponentsLine}),
-	ParamsLine = signature_params_line(Commitment, Opts),
+	ParamsLine = signature_params_line(NewCommitment, Opts),
     SignatureBase = 
         <<
             ComponentsLine/binary, "\n",

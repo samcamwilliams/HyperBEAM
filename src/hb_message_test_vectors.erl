@@ -10,7 +10,8 @@
 %% @doc Test invocation function, making it easier to run a specific test.
 %% Disable/enable as needed.
 run_test() ->
-    empty_string_in_tag_test(<<"structured@1.0">>).
+    hb:init(),
+    committed_empty_keys_test(<<"structured@1.0">>).
 
 %% @doc Return a list of codecs to test.
 test_codecs() ->
@@ -52,8 +53,8 @@ suite_test_() ->
             fun priv_survives_conversion_test/1},
         {<<"Message with body">>,
             fun set_body_codec_test/1},
-        {<<"Empty string in tag">>,
-            fun empty_string_in_tag_test/1},
+        {<<"Message with large keys">>,
+            fun message_with_large_keys_test/1},
         {<<"Structured field atom parsing">>,
             fun structured_field_atom_parsing_test/1},
         {<<"Structured field decimal parsing">>,
@@ -71,10 +72,10 @@ suite_test_() ->
             fun nested_structured_fields_test/1},
         {<<"Single layer message to encoding">>,
             fun single_layer_message_to_encoding_test/1},
-        {<<"Nested list">>,
+        {<<"Nested body list">>,
             fun nested_body_list_test/1},
-        {<<"Message with large keys">>,
-            fun message_with_large_keys_test/1},
+        {<<"Empty string in nested tag">>,
+            fun empty_string_in_nested_tag_test/1},
         {<<"Deep typed message ID">>,
             fun deep_typed_message_id_test/1},
         {<<"Encode small balance table">>,
@@ -243,7 +244,7 @@ signed_nested_data_key_test(Codec) ->
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     LoadedMsg = hb_cache:ensure_all_loaded(Decoded, Opts),
-    ?event(debug, {matching, {input, Msg}, {output, LoadedMsg}}),
+    ?event({matching, {input, Msg}, {output, LoadedMsg}}),
     ?assert(hb_message:match(Msg, LoadedMsg, primary, Opts)).
 
 % %% @doc Test that different key encodings are converted to their corresponding
@@ -336,7 +337,7 @@ simple_nested_message_test(Codec) ->
     Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?event(debug, {matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 nested_empty_map_test(Codec) ->
@@ -460,7 +461,7 @@ signed_message_encode_decode_verify_test(Codec) ->
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
-    ?event(debug, {matching, {input, SignedMsg}, {encoded, Encoded}, {decoded, Decoded}}),
+    ?event({matching, {input, SignedMsg}, {encoded, Encoded}, {decoded, Decoded}}),
     ?assert(hb_message:match(SignedMsg, Decoded, strict, Opts)).
 
 complex_signed_message_test(Codec) ->
@@ -658,18 +659,18 @@ unsigned_id_test(Codec) ->
 
 message_with_simple_embedded_list_test(Codec) ->
     Opts = test_opts(Codec),
-    Msg = #{ <<"a">> => [<<"1">>, <<"2">>, <<"3">>] },
+    Msg = #{ <<"list">> => [<<"value-1">>, <<"value-2">>, <<"value-3">>] },
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
-empty_string_in_tag_test(Codec) ->
+empty_string_in_nested_tag_test(Codec) ->
     Opts = test_opts(Codec),
     Msg =
         #{
-            dev =>
+            <<"dev">> =>
                 #{
-                    <<"stderr">> => <<"">>,
+                    <<"stderr">> => <<"aa">>,
                     <<"stdin">> => <<"b">>,
                     <<"stdout">> => <<"c">>
                 }
@@ -858,7 +859,7 @@ signed_with_inner_signed_message_test(Codec) ->
             Opts,
             Codec
         ),
-    ?event(debug, {initial_msg, Msg}),
+    ?event({initial_msg, Msg}),
     % 1. Verify the outer message without changes.
     ?assert(hb_message:verify(Msg, all, Opts)),
     Inner = hb_maps:get(<<"inner">>, Msg, not_found, Opts),
@@ -867,16 +868,16 @@ signed_with_inner_signed_message_test(Codec) ->
             Inner,
             Opts
         ),
-    ?event(debug, {committed_inner, CommittedInner}),
-    ?event(debug, {inner_committers, hb_message:signers(CommittedInner, Opts)}),
+    ?event({committed_inner, CommittedInner}),
+    ?event({inner_committers, hb_message:signers(CommittedInner, Opts)}),
     % 2. Verify the inner message without changes.
     ?assert(hb_message:verify(CommittedInner, signers, Opts)),
     % 3. Convert the message to the format and back.
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
-    ?event(debug, {encoded, Encoded}),
+    ?event({encoded, Encoded}),
     %?event({encoded_body, {string, hb_maps:get(<<"body">>, Encoded)}}, #{}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?event(debug, {decoded, Decoded}),
+    ?event({decoded, Decoded}),
     % 4. Verify the outer message after decode.
     ?assert(
         hb_message:match(
@@ -890,7 +891,7 @@ signed_with_inner_signed_message_test(Codec) ->
     % 5. Verify the inner message from the converted message, applying
     % `with_only_committed` first.
     InnerDecoded = hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
-    ?event(debug, {inner_decoded, InnerDecoded}),
+    ?event({inner_decoded, InnerDecoded}),
     % Applying `with_only_committed' should verify the inner message.
     {ok, CommittedInnerOnly} =
         hb_message:with_only_committed(
@@ -932,12 +933,12 @@ large_body_committed_keys_test(Codec) ->
 sign_node_message_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = hb_message:commit(hb_opts:default_message(), Opts, Codec),
-    ?event(debug, {committed, Msg}),
+    ?event({committed, Msg}),
     ?assert(hb_message:verify(Msg, all, Opts)),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
-    ?event(debug, {encoded, Encoded}),
+    ?event({encoded, Encoded}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?event(debug, {decoded, Decoded}),
+    ?event({decoded, Decoded}),
     MatchRes = hb_message:match(Msg, Decoded, strict, Opts),
     ?assertEqual(true, MatchRes),
     ?assert(hb_message:verify(Decoded, all, Opts)).

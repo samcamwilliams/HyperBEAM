@@ -57,8 +57,9 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                     {[{BinKey, <<"empty-message">>} | Types], Values};
                 {ok, Value} when is_binary(Value) ->
                     {Types, [{Key, Value} | Values]};
-                {ok, Map} when is_map(Map) or is_list(Map) ->
-                    {Types, [{Key, hb_util:ok(from(Map, Req, Opts))} | Values]};
+                {ok, Nested} when is_map(Nested) or is_list(Nested) ->
+                    ?event(debug, {from_recursing, {nested, Nested}}),
+                    {Types, [{Key, hb_util:ok(from(Nested, Req, Opts))} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)
                         or is_float(Value) ->

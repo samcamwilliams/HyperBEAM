@@ -3,10 +3,13 @@
 -module(dev_codec_httpsig_siginfo).
 -export([commitments_to_siginfo/2, siginfo_to_commitments/2]).
 -export([commitment_to_siginfo/2, commitment_to_sig_name/1]).
+-export([committed_keys_to_tabm/1, committed_keys_to_siginfo/1]).
 -include("include/hb.hrl").
 
 %% @doc Generate a `signature' and `signature-input' key pair from a commitment
 %% map.
+commitments_to_siginfo(Commitments, _Opts) when ?IS_EMPTY_MESSAGE(Commitments) ->
+    #{};
 commitments_to_siginfo(Commitments, Opts) ->
     % Generate a SF item for each commitment's signature and signature-input.
     {Sigs, SigsInputs} =
@@ -40,7 +43,7 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     % Extract the signature from the commitment.
     Signature = maps:get(<<"signature">>, Commitment),
     % Extract the keys present in the commitment.
-    CommittedKeys = maps:get(<<"committed">>, Commitment),
+    CommittedKeys = committed_keys_to_siginfo(maps:get(<<"committed">>, Commitment)),
     % Extract the hashpath, used as a tag, from the commitment.
     Tag = maps:get(<<"tag">>, Commitment, undefined),
     % Extract other permissible values, if present.
@@ -88,11 +91,9 @@ commitment_to_siginfo(Commitment, Opts) ->
 
 %% @doc Take a message with a `signature' and `signature-input' key pair and
 %% return a map of commitments.
-siginfo_to_commitments(Msg, Opts) ->
-    % Extract the signature and signature-input structured-fields from the
-    % message.
-    SFSigBin = maps:get(<<"signature">>, Msg),
-    SFSigInputBin = maps:get(<<"signature-input">>, Msg),
+siginfo_to_commitments(
+        #{ <<"signature">> := SFSigBin, <<"signature-input">> := SFSigInputBin },
+        Opts) ->
     % Parse the signature and signature-input structured-fields.
     SFSigs = hb_structured_fields:parse_dictionary(SFSigBin),
     SFSigsInputs = hb_structured_fields:parse_dictionary(SFSigInputBin),
@@ -115,7 +116,11 @@ siginfo_to_commitments(Msg, Opts) ->
             CommitmentSFs
         ),
     % Convert the list of commitments into a map.
-    maps:from_list(CommitmentMessages).
+    maps:from_list(CommitmentMessages);
+siginfo_to_commitments(_Msg, _Opts) ->
+    % If the message does not contain a `signature' or `signature-input' key,
+    % we return an empty map.
+    #{}.
 
 %% @doc Take a signature and signature-input as parsed structured-fields and 
 %% return a commitment.
@@ -150,19 +155,37 @@ sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
             CommitmentDeviceKeys,
             maps:remove(<<"alg">>, Commitment1)
         ),
-    % Add the committed keys to the commitment message. We generate these by
-    % parsing the signature-input list.
-    Commitment3 =
-        Commitment2#{
-            <<"committed">> =>
-                [
-                    Key
-                ||
-                    {item, {string, Key}, []} <- SigInput
-                ]
-        },
+    % Generate the committed keys by parsing the signature-input list.
+    RawCommittedKeys =
+        [
+            Key
+        ||
+            {item, {string, Key}, []} <- SigInput
+        ],
+    % Remove the `content-digest' key from the committed keys, if present, and
+    % replace it with the `body' key.
+    CommittedKeys = committed_keys_to_tabm(RawCommittedKeys),
+    Commitment3 = Commitment2#{ <<"committed">> => CommittedKeys },
     % Return the commitment.
     {ok, ID, Commitment3}.
+
+%% @doc Normalize committed keys to their TABM format. This involves removing
+%% the `content-digest' key from the committed keys, if present, and replacing
+%% it with the `body' key.
+committed_keys_to_tabm([]) -> [];
+committed_keys_to_tabm([<<"content-digest">> | Rest]) ->
+    [<<"body">> | Rest];
+committed_keys_to_tabm([Key | Rest]) ->
+    [Key | committed_keys_to_tabm(Rest)].
+
+%% @doc Convert committed keys to their siginfo format. This involves removing
+%% the `body' key from the committed keys, if present, and replacing it with
+%% the `content-digest' key.
+committed_keys_to_siginfo([]) -> [];
+committed_keys_to_siginfo([<<"body">> | Rest]) ->
+    [<<"content-digest">> | Rest];
+committed_keys_to_siginfo([Key | Rest]) ->
+    [Key | committed_keys_to_siginfo(Rest)].
 
 %% @doc Convert an `alg` to a commitment device. If the `alg' has the form of
 %% a device specifier (`x@y.z...[/type]'), return the device. Otherwise, we 

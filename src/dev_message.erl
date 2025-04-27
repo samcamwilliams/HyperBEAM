@@ -54,9 +54,9 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     % format of the message ID return.
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
-    % Ensure that the base message is a normalized TABM before proceeding.
+    % Ensure that the base message is a normalized before proceeding.
     IDOpts = NodeOpts#{ linkify_mode => offload },
-    Base = hb_ao:normalize_keys(hb_message:convert(RawBase, tabm, IDOpts)),
+    Base = hb_message:convert(RawBase, tabm, IDOpts),
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
@@ -122,7 +122,9 @@ calculate_ids(Base, Req, NodeOpts) ->
     case hb_ao:find_exported_function(Base, DevMod, commit, 3, NodeOpts) of
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
-            apply(Fun, hb_ao:truncate_args(Fun, [Base, Req, NodeOpts]));
+            {ok, #{ <<"commitments">> := Comms} } = 
+                apply(Fun, hb_ao:truncate_args(Fun, [Base, Req, NodeOpts])),
+            {ok, hd(maps:keys(Comms))};
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
@@ -206,7 +208,7 @@ commit(Self, Req, Opts) ->
     {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
     Encoded = hb_message:convert(Base, tabm, CommitOpts),
     {ok, Committed} = apply(AttFun, hb_ao:truncate_args(AttFun, [Encoded, Req, CommitOpts])),
-    {ok, hb_message:convert(Committed, <<"structured@1.0">>, CommitOpts)}.
+    {ok, hb_message:convert(Committed, <<"structured@1.0">>, tabm, CommitOpts)}.
 
 %% @doc Verify a message. By default, all commitments are verified. The
 %% `committers' key in the request can be used to specify that only the 
@@ -214,7 +216,8 @@ commit(Self, Req, Opts) ->
 %% commitments can be specified using the `commitments' key.
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
-    {ok, Base} = hb_message:find_target(Self, Req, Opts),
+    {ok, RawBase} = hb_message:find_target(Self, Req, Opts),
+    Base = hb_message:convert(RawBase, tabm, Opts),
     Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
