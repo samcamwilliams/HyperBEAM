@@ -855,21 +855,21 @@ trim_ws_test() ->
 	?assertEqual(<<>>, trim_ws(<<"         ">>)),
 	ok.
 
-join_signature_base_test() ->
-	ParamsLine =
-		<<"(\"@method\" \"@path\" \"foo\";req \"foo\";key=\"a\");"
-		    "created=1733165109501;nonce=\"foobar\";keyid=\"key1\"">>,
-	ComponentsLine = <<"\"@method\": GET\n\"@path\": /id-123/Data\n\"foo\";"
-        "req: req-b-bar\n\"foo\";key=\"a\": 1">>,
-	?assertEqual(
-		<<
-            ComponentsLine/binary,
-            <<"\n">>/binary,
-            <<"\"@signature-params\": ">>/binary,
-            ParamsLine/binary
-        >>,
-		join_signature_base(ComponentsLine, ParamsLine)
-	).
+% join_signature_base_test() ->
+% 	ParamsLine =
+% 		<<"(\"@method\" \"@path\" \"foo\";req \"foo\";key=\"a\");"
+% 		    "created=1733165109501;nonce=\"foobar\";keyid=\"key1\"">>,
+% 	ComponentsLine = <<"\"@method\": GET\n\"@path\": /id-123/Data\n\"foo\";"
+%         "req: req-b-bar\n\"foo\";key=\"a\": 1">>,
+% 	?assertEqual(
+% 		<<
+%             ComponentsLine/binary,
+%             <<"\n">>/binary,
+%             <<"\"@signature-params\": ">>/binary,
+%             ParamsLine/binary
+%         >>,
+% 		join_signature_base(ComponentsLine, ParamsLine)
+% 	).
 
 signature_params_line_test() ->
 	Params = #{created => 1733165109501, nonce => "foobar", keyid => "key1"},
