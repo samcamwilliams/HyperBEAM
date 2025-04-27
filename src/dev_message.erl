@@ -235,7 +235,11 @@ verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, RawBase} = hb_message:find_target(Self, Req, Opts),
     Base = hb_message:convert(RawBase, tabm, Opts),
-    Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
+    Commitments =
+        hb_cache:ensure_all_loaded(
+            hb_maps:get(<<"commitments">>, Base, #{}, Opts),
+            Opts
+        ),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
     Res =
@@ -343,8 +347,19 @@ committed(Self, Req, Opts) ->
             end,
             AllCommittedKeys
         ),
-    ?event({only_committed_keys, OnlyCommittedKeys}),
-    {ok, OnlyCommittedKeys}.
+    % Remove any `+link` suffixes from TABM-form committed keys. This means that
+    % callers to `committed/3' will receive a list of keys that they can match
+    % against the 'normal' representation of the message in devices, etc.,
+    % without exposure to TABM-specifics.
+    CommittedNormalizedKeys =
+        lists:map(
+            fun hb_link:remove_link_specifier/1,
+            OnlyCommittedKeys
+        ),
+    % Normalize the ordering of the keys.
+    OrderedKeys = hb_util:to_sorted_list(CommittedNormalizedKeys),
+    ?event({only_committed_keys, OrderedKeys}),
+    {ok, OrderedKeys}.
 
 %% @doc Return a message with only the relevant commitments for a given request.
 %% See `commitment_ids_from_request/3' for more information on the request format.
