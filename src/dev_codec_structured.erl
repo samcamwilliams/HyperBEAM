@@ -46,15 +46,6 @@ from(Msg, Req, Opts) when is_map(Msg) ->
     {Types, Values} = lists:foldl(
         fun (Key, {Types, Values}) ->
             case hb_maps:find(Key, NormKeysMap, Opts) of
-                {ok, <<>>} ->
-                    BinKey = hb_ao:normalize_key(Key),
-                    {[{BinKey, <<"empty-binary">>} | Types], Values};
-                {ok, []} ->
-                    BinKey = hb_ao:normalize_key(Key),
-                    {[{BinKey, <<"empty-list">>} | Types], Values};
-                {ok, EmptyMap} when ?IS_EMPTY_MESSAGE(EmptyMap) ->
-                    BinKey = hb_ao:normalize_key(Key),
-                    {[{BinKey, <<"empty-message">>} | Types], Values};
                 {ok, Value} when is_binary(Value) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Nested} when is_map(Nested) or is_list(Nested) ->
