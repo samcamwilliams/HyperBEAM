@@ -32,7 +32,6 @@
 info() ->
     #{
         default => fun get/4
-        %exports => ?DEVICE_KEYS
     }.
 
 %% @doc Return the ID of a message, using the `committers' list if it exists.
@@ -105,8 +104,7 @@ calculate_ids(Base, Req, NodeOpts) ->
             {ok, IDDev} -> IDDev;
             {error, Error} -> throw({id, Error})
         end,
-    TABM = hb_message:convert(Base, tabm, NodeOpts),
-    ?event(linkify, {generating_id, {idmod, IDMod}, {tabm, TABM}}),
+    ?event(linkify, {generating_id, {idmod, IDMod}, {base, Base}}),
     % Get the device module from the message, or use the default if it is not
     % set. We can tell if the device is not set (or is the default) by checking 
     % whether the device module is the same as this module.
@@ -119,12 +117,12 @@ calculate_ids(Base, Req, NodeOpts) ->
                 );
             Module -> Module
         end,
-    % Apply the function's `id' function with the appropriate arguments. If it
-    % doesn't exist, error.
-    case hb_ao:find_exported_function(TABM, DevMod, id, 3, NodeOpts) of
+    % Apply the function's default `commit' function with the appropriate arguments.
+    % If it doesn't exist, error.
+    case hb_ao:find_exported_function(Base, DevMod, commit, 3, NodeOpts) of
         {ok, Fun} ->
             ?event(id, {called_id_device, IDMod}, NodeOpts),
-            apply(Fun, hb_ao:truncate_args(Fun, [TABM, Req, NodeOpts]));
+            apply(Fun, hb_ao:truncate_args(Fun, [Base, Req, NodeOpts]));
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
 
@@ -172,14 +170,8 @@ committers(#{ <<"commitments">> := Commitments }, _, NodeOpts) ->
         hb_maps:values(
             hb_maps:filtermap(
                 fun(_ID, Commitment) ->
-                    Committer =
-                        hb_maps:get(
-                            <<"committer">>,
-                            Commitment,
-                            undefined,
-                            NodeOpts
-                        ),
-                    ?event(debug_commitments, {calculating_committers, {committer, Committer}}),
+                    Committer = maps:get(<<"committer">>, Commitment, undefined),
+                    ?event(debug_commitments, {committers, {committer, Committer}}),
                     case Committer of
                         undefined -> false;
                         Committer -> {true, Committer}
@@ -225,8 +217,6 @@ verify(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
     Commitments = hb_maps:get(<<"commitments">>, Base, #{}, Opts),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
-    % Convert the base message to a TABM.
-    TABMBase = hb_message:convert(Base, tabm, Opts),
     % Verify the commitments. Stop execution if any fail.
     Res =
         lists:all(
@@ -238,7 +228,7 @@ verify(Self, Req, Opts) ->
                 ),
                 {ok, Res} =
                     verify_commitment(
-                        TABMBase,
+                        Base,
                         maps:get(CommitmentID, Commitments),
                         Opts
                     ),
@@ -538,7 +528,11 @@ set(Message1, NewValuesMsg, Opts) ->
             },
             Opts
         ),
-    ?event({setting, {committed_keys, CommittedKeys}, {keys_to_set, KeysToSet}, {message, Message1}}),
+    ?event({setting,
+        {committed_keys, CommittedKeys},
+        {keys_to_set, KeysToSet},
+        {message, Message1}
+    }),
     OverwrittenCommittedKeys =
         lists:filtermap(
             fun(Key) ->

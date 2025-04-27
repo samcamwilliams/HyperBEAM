@@ -5,48 +5,19 @@
 %%% are found in this module, while the codec functions are relayed to the 
 %%% `dev_codec_httpsig_conv' module.
 -module(dev_codec_httpsig).
-%%% Device API
--export([id/3, commit/3, committed/3, verify/3, reset_hmac/2, public_keys/2]).
 %%% Codec API functions
 -export([to/3, from/3]).
+%%% Commitment API functions
+-export([commit/3, verify/3]).
 %%% Public API functions
 -export([add_content_digest/2]).
 -export([add_derived_specifiers/1, remove_derived_specifiers/1]).
-% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
--define(EMPTY_QUERY_PARAMS, $?).
-% https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
--define(SIGNATURE_PARAMS,
-    [
-        <<"created">>,
-        <<"expires">>,
-        <<"nonce">>,
-        <<"alg">>,
-        <<"keyid">>,
-        <<"tag">>
-    ]).
+
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
--type fields() :: #{
-	binary() | atom() | string() => binary() | atom() | string()
-}.
--type request_message() :: #{
-	url => binary(),
-	method => binary(),
-	headers => fields(),
-	trailers => fields(),
-	is_absolute_form => boolean()
-}.
--type response_message() :: #{
-	status => integer(),
-	headers => fields(),
-	trailers => fields()
-}.
--type component_identifier() :: {
-	item,
-	{string, binary()},
-	{binary(), integer() | boolean() | {string | token | binary, binary()}}
-}.
 
+%%% https://datatracker.ietf.org/doc/html/rfc9421#section-2.2.7-14
+-define(EMPTY_QUERY_PARAMS, $?).
 %%% A list of components that are `derived' in the context of RFC-9421 from the
 %%% request message.
 -define(DERIVED_COMPONENTS, [
@@ -64,106 +35,6 @@
 %%% Routing functions for the `dev_codec_httpsig_conv' module
 to(Msg, Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Req, Opts).
 from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
-
-%%% A map that contains signature parameters metadata as described
-%%% in https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
-%%%
-%%% All values are optional, but in our use-case "alg" and "keyid" will
-%%% almost always be provided.
-%%%
-%%% #{
-%%% 	created => 1733165109, % a unix timestamp
-%%% 	expires => 1733165209, % a unix timestamp
-%%% 	nonce => <<"foobar">,
-%%% 	alg => <<"rsa-pss-sha512">>,
-%%% 	keyid => <<"6eVuWgpNgv3bxfNgFrIiTkzE8Yb0V2omShxS4uKyzpw">>
-%%% 	tag => <<"HyperBEAM">>
-%%% }
--type signature_params() ::
-    #{atom() | binary() | string() => binary() | integer()}.
-
-%%% The state encapsulated as the "Authority".
-%%% It includes an ordered list of parsed component identifiers, used for 
-%%% extracting values from the Request/Response Message Context, as well as 
-%%% the signature parameters used when creating the signature and encode in 
-%%% the signature base.
-%%%
-%%% This is effectively the State of an Authority, used to sign a Request/Response 
-%%% Message Context.
-%%%
-%%% #{
-%%% 	component_identifiers => [{item, {string, <<"@method">>}, []}]
-%%% 	sig_params => #{
-%%% 		created => 1733165109, % a unix timestamp
-%%% 		expires => 1733165209, % a unix timestamp
-%%% 		nonce => <<"foobar">,
-%%% 		alg => <<"rsa-pss-sha512">>,
-%%% 		keyid => <<"6eVuWgpNgv3bxfNgFrIiTkzE8Yb0V2omShxS4uKyzpw">>
-%%% 		tag => <<"HyperBEAM">>
-%%% 	}
-%%% }
--type authority_state() :: #{
-	component_identifiers => [component_identifier()],
-	% TODO: maybe refine this to be more explicit w.r.t valid signature params
-	sig_params => signature_params(),
-	key => binary()
-}.
-
-id(Msg, _Params, Opts) ->
-    ?event({calculating_id, {msg, Msg}}),
-    case find_id(Msg, Opts) of
-        {ok, ID} ->
-            ?event({id_found, {id, ID}}),
-            {ok, hb_util:human_id(ID)};
-        {not_found, MsgToID} ->
-            ?event({id_not_found, {msg, MsgToID}}),
-            {ok, MsgAfterReset} = reset_hmac(MsgToID, Opts),
-            {ok, ID} = find_id(MsgAfterReset, Opts),
-            ?event({id_generated, {id, ID}}),
-            {ok, hb_util:human_id(ID)}
-    end.
-
-%% @doc Find the ID of the message, which is the hmac of the fields referenced in
-%% the signature and signature input. If the message already has a signature-input,
-%% directly, it is treated differently: We relabel it as `x-signature-input' to
-%% avoid key collisions. This is important because TABM commitments messages 
-%% for this codec will themselves include a signature-input.
-find_id(Msg = #{ <<"commitments">> := Comms }, Opts) when map_size(Comms) > 1 ->
-    #{ <<"commitments">> := CommsWithoutHmac } =
-        hb_message:without_commitments(
-            #{ <<"type">> => <<"hmac-sha256">> },
-            Msg,
-            Opts
-        ),
-    IDs = hb_maps:keys(CommsWithoutHmac),
-    case IDs of
-        [] -> throw({could_not_find_ids, CommsWithoutHmac});
-        [ID] ->
-            ?event({returning_single_id, ID}),
-            {ok, hb_util:human_id(ID)};
-        _ ->
-            ?event({multiple_ids, IDs}),
-            SortedIDs =
-                [
-                    {item, {string, hb_util:human_id(ID)}, []}
-                ||
-                    ID <- lists:sort(IDs)
-                ],
-            SFList = iolist_to_binary(hb_structured_fields:list(SortedIDs)),
-            ?event({sorted_ids, SortedIDs, {sf_list, SFList}}),
-            {ok, hb_util:human_id(crypto:hash(sha256, SFList))}
-    end;
-find_id(#{ <<"commitments">> := CommitmentMap }, _Opts) ->
-    {ok, hd(hb_maps:keys(CommitmentMap))};
-find_id(AttMsg = #{ <<"signature-input">> := UserSigInput, <<"signature">> := UserSig }, _Opts) ->
-    ResetMsg = hb_maps:without([<<"signature">>, <<"signature-input">>], AttMsg),
-    {not_found, ResetMsg#{
-        <<"x-signature-input">> => UserSigInput,
-        <<"x-signature">> => UserSig
-    }};
-find_id(Msg, _Opts) ->
-    ?event({no_id, Msg}),
-    {not_found, Msg}.
 
 % @doc Verify the signature of a commitment based on its `type' parameter.
 verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := ID }, Opts) ->
@@ -344,46 +215,6 @@ hmac(Msg, Req, Opts) ->
     ?event(hmac, {hmac_result, HMacValue}),
     {ok, HMacValue}.
 
-public_keys(Commitment, Opts) ->
-    SigInputs = hb_maps:get(<<"signature-input">>, Commitment, not_found, Opts),
-    lists:filtermap(
-        fun ({_SigName, {list, _, ParamsKVList}}) ->
-            case hb_maps:get(<<"alg">>, Params = hb_maps:from_list(ParamsKVList), not_found, Opts) of
-                {string, <<"rsa-pss-sha512">>} ->
-                    {string, KeyID} = hb_maps:get(<<"keyid">>, Params, not_found, Opts),
-                    PubKey = hb_util:decode(KeyID),
-                    {true, PubKey};
-                _ ->
-                    false
-            end
-        end,
-        hb_structured_fields:parse_dictionary(SigInputs)
-    ).
-
-%%% @doc A helper to validate and produce an "Authority" State
--spec authority(
-	[binary() | component_identifier()],
-	#{binary() => binary() | integer()},
-	{} %TODO: type out a key_pair
-) -> authority_state().
-authority(ComponentIdentifiers, SigParams, PubKey = {KeyType = {ALG, _}, _Pub})
-        when is_atom(ALG) ->
-    % Only the public key is provided, so use an stub binary for private
-    % which will trigger errors downstream if it's needed, which is what we want
-    authority(ComponentIdentifiers, SigParams, {{KeyType, <<>>, PubKey}, PubKey});
-authority(ComponentIdentifiers, SigParams, PrivKey = {KeyType = {ALG, _}, _, Pub})
-        when is_atom(ALG) ->
-    % Only the private key was provided, so derive the public from private
-    authority(ComponentIdentifiers, SigParams, {PrivKey, {KeyType, Pub}});
-authority(ComponentIdentifiers, SigParams, KeyPair = {{_, _, _}, {_, _}}) ->
-    #{
-		component_identifiers => add_derived_specifiers(ComponentIdentifiers),
-		% TODO: add checks to allow only valid signature parameters
-		% https://datatracker.ietf.org/doc/html/rfc9421#name-signature-parameters
-		sig_params => SigParams,
-		key_pair => KeyPair
-	}.
-
 %% @doc Takes a list of keys that will be used in the signature inputs and 
 %% ensures that they have deterministic sorting, as well as the correct
 %% component identifiers if applicable.
@@ -425,94 +256,6 @@ remove_derived_specifiers(ComponentIdentifiers) ->
         end,
         ComponentIdentifiers
     ).
-
-%% @doc using the provided Authority and Request/Response Messages Context,
-%% create a Name, Signature and SignatureInput that can be used to additional
-%% signatures to a corresponding HTTP Message
--spec sign_auth(authority_state(), request_message(), response_message(), any()) ->
-    {ok, {binary(), binary(), binary()}}.
-sign_auth(Authority, Req, Res, Opts) ->
-    {Priv, Pub} = maps:get(key_pair, Authority),
-    % Create the signature base and signature-input values
-    AuthorityWithSigParams = add_sig_params(Authority, Pub),
-	SignatureBase =
-        signature_base(AuthorityWithSigParams, Req, Res, Opts),
-    % Now perform the actual signing
-    ?event(signature_base,
-        {signature_base_for_signing, {string, SignatureBase}}),
-	Signature = ar_wallet:sign(Priv, SignatureBase, sha512),
-	{ok, Signature}.
-
-%% @doc Add the signature parameters to the authority state
-add_sig_params(Authority, {_KeyType, PubKey}) ->
-    hb_maps:put(
-        sig_params,
-        hb_maps:merge(
-            maps:get(sig_params, Authority),
-            #{
-                alg => <<"rsa-pss-sha512">>,
-                keyid => hb_util:encode(PubKey)
-            }
-        ),
-        Authority
-    ).
-
-%%% @doc Verify a signature.
-verify_auth(Verifier, Msg, Opts) ->
-    verify_auth(Verifier, #{}, Msg, Opts).
-verify_auth(#{ sig_name := SigName, key := Key }, Req, Res, Opts) ->
-    SigNameParams = [{<<"key">>, {string, bin(SigName)}}],
-    SignatureIdentifier = {item, {string, <<"signature">>}, SigNameParams},
-    SignatureInputIdentifier =
-        {item, {string, <<"signature-input">>}, SigNameParams},
-    % extract signature and signature params
-    SigIdentifier = extract_field(SignatureIdentifier, Req, Res, Opts),
-    SigInputIdentifier = extract_field(SignatureInputIdentifier, Req, Res, Opts),
-    case {SigIdentifier, SigInputIdentifier} of
-        {{ok, {_, EncodedSignature}}, {ok, {_, SignatureInput}}} ->
-            % The signature may be encoded ie. as binary, so we need to parse it
-            % further as a structured field
-            {item, {_, Signature}, _} =
-                hb_structured_fields:parse_item(EncodedSignature),
-            % The value encoded within signature input is also a structured field,
-            % specifically an inner list that encodes the ComponentIdentifiers
-            % and the Signature Params.
-            % 
-            % So we must parse this value, and then use it to construct the 
-            % signature base
-            [{list, ComponentIdentifiers, SigParams}] =
-                hb_structured_fields:parse_list(SignatureInput),
-            SigParamsMap = lists:foldl(
-                % TODO: does not support SF decimal params
-                fun
-                    ({Name, {_Kind, Value}}, Map) -> hb_maps:put(Name, Value, Map);
-                    ({Name, Value}, Map) -> hb_maps:put(Name, Value, Map)
-                end,
-                #{},
-                SigParams
-            ),
-            ?event({sig_params_map, ComponentIdentifiers}),
-            % Construct the signature base using the parsed parameters
-            Authority = authority(ComponentIdentifiers, SigParamsMap, Key),
-            SignatureBase = signature_base(Authority, Req, Res, Opts),
-            ?event(signature_base,
-                {signature_base_for_verification, {string, SignatureBase}}),
-            {_Priv, Pub} = maps:get(key_pair, Authority),
-            % Now verify the signature base signed with the provided key matches
-            % the signature
-            ar_wallet:verify(Pub, SignatureBase, Signature, sha512);
-        {SignatureErr, {ok, _}} ->
-            % An issue with parsing the signature
-            SignatureErr;
-        {{ok, _}, SignatureInputErr} ->
-            % An issue with parsing the signature input
-            SignatureInputErr;
-        {SignatureErr, _} ->
-            % An issue with parsing both, so just return the first one from the
-            % signature parsing
-            % TODO: maybe could merge the errors?
-            SignatureErr
-    end.
 
 %% @doc create the signature base that will be signed in order to create the
 %% Signature and SignatureInput.
@@ -652,7 +395,8 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res, Opts) ->
             IsRequestIdentifier = find_request_param(IParams),
 			% There may be multiple fields that match the identifier on the Msg,
 			% so we filter, instead of find
-			case hb_maps:get(NormParsed, if IsRequestIdentifier -> Req; true -> Res end, not_found, Opts) of
+            ContextMsg = if IsRequestIdentifier -> Req; true -> Res end,
+			case hb_maps:get(NormParsed, ContextMsg, not_found, Opts) of
 				not_found ->
 					% https://datatracker.ietf.org/doc/html/rfc9421#section-2.5-7.2.2.5.2.6
 					{
@@ -660,8 +404,7 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res, Opts) ->
                         <<"Component Identifier for a field MUST be ",
                             "present on the message">>,
                         {key, NormParsed},
-                        {req, Req},
-                        {res, Res}
+                        {context, ContextMsg}
                     };
 				FieldValue ->
 					% The Field was found, but we still need to potentially
@@ -674,7 +417,9 @@ extract_field({item, {_Kind, IParsed}, IParams}, Req, Res, Opts) ->
                             [DictKey, IsStrictFormat, IsByteSequenceEncoded])
 					of
 						{ok, Extracted} ->
-                            {ok, {bin(NormalizedItem), bin(Extracted)}};
+                            {ok,
+                                {hb_util:bin(NormalizedItem), hb_util:bin(Extracted)}
+                            };
 						E -> E
 					end
 			end
