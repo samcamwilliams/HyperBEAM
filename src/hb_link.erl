@@ -1,6 +1,6 @@
 %%% @doc Utility functions for working with links.
 -module(hb_link).
--export([read/1, read/2, is_link_key/1]).
+-export([read/1, read/2, is_link_key/1, remove_link_specifier/1]).
 -export([normalize/2, normalize/3]).
 -export([decode_all_links/1]).
 -export([format/1, format/2]).
@@ -103,6 +103,13 @@ decode_all_links(Msg) ->
 is_link_key(Key) when byte_size(Key) >= 5 ->
     binary:part(Key, byte_size(Key) - 5, 5) =:= <<"+link">>;
 is_link_key(_) -> false.
+
+%% @doc Remove any `+link` suffixes from a key.
+remove_link_specifier(Key) ->
+    case is_link_key(Key) of
+        true -> binary:part(Key, 0, byte_size(Key) - 5);
+        false -> Key
+    end.
 
 %% @doc Format a link as a short string suitable for printing. Checks the node
 %% options (optionally) given, to see if it should resolve the link to a value

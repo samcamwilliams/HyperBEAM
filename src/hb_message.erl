@@ -619,7 +619,12 @@ without_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
     FilteredCommitments =
         hb_maps:without(
             hb_maps:keys(
-                hb_maps:get(<<"commitments">>, with_commitments(Spec, Msg, Opts), #{}, Opts)
+                hb_maps:get(
+                    <<"commitments">>,
+                    with_commitments(Spec, Msg, Opts),
+                    #{},
+                    Opts
+                )
             ),
             Commitments
         ),

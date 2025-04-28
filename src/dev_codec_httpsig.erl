@@ -62,7 +62,7 @@ commit(Msg, Req = #{ <<"type">> := <<"unsigned">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"hmac-sha256">> }, Opts);
 commit(Msg, Req = #{ <<"type">> := <<"signed">> }, Opts) ->
     commit(Msg, Req#{ <<"type">> => <<"rsa-pss-sha512">> }, Opts);
-commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
+commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     Wallet = hb_opts:get(priv_wallet, no_viable_wallet, Opts),
     % Utilize the hashpath, if present, as the tag for the commitment.
     MaybeTagMap =
@@ -79,8 +79,7 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
             <<"keyid">> => ar_wallet:to_pubkey(Wallet),
             <<"committer">> =>
                 hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"committed">> =>
-                maps:keys(MsgToSign) -- [<<"priv">>, <<"commitments">>]
+            <<"committed">> => keys_to_commit(MsgToSign, Req, Opts)
         },
     ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
@@ -104,7 +103,7 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         },
         Opts
     );
-commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
+commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
     % Find the ID of the message without hmac commitments, then add the hmac
     % using the set of all presently committed keys as the input. If no (other)
     % commitments are present, then use all keys from the encoded message.
@@ -119,17 +118,7 @@ commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
         ),
     % Extract the base commitments from the message.
     Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
-    % Extract the set of committed keys from the message.
-    ExistingCommittedReq =
-        #{
-            <<"committers">> => <<"all">>,
-            <<"raw">> => true
-        },
-    CommittedKeys =
-        case hb_message:committed(WithoutHmac, ExistingCommittedReq, Opts) of
-            [] -> maps:keys(WithoutHmac) -- [<<"commitments">>, <<"priv">>];
-            Keys -> Keys
-        end,
+    CommittedKeys = keys_to_commit(Msg, Req, Opts),
     {ok, ID} = hmac(WithoutHmac, #{ <<"committed">> => CommittedKeys }, Opts),
     EncID = hb_util:human_id(ID),
     Res = {
@@ -151,6 +140,53 @@ commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
     },
     ?event({reset_hmac_complete, Res}),
     Res.
+
+%% @doc Derive the set of keys to commit to from a `commit` request and a 
+%% base message.
+%% 
+%% We do this by:
+%% 1. Checking if the user has set specific keys to commit to in the request 
+%%    itself.
+%% 2. Checking if there are existing commitments and replicate the `committed`
+%%    if so.
+%% 3. If neither of the previous sources are viable, returning the full list of
+%%    keys.
+keys_to_commit(Base, #{ <<"committed">> := Explicit}, _Opts) ->
+    % Case 1: Explicitly provided keys to commit.
+    % Add `+link` specifiers to the user given list as necessary, in order for
+    % their given keys to match the HTTPSig encoed TABM form.
+    lists:map(
+        fun(Key) ->
+            case maps:is_key(Key, Base) of
+                true -> Key;
+                false ->
+                    case maps:is_key(<<Key/binary, "+link">>, Base) of
+                        true -> <<Key/binary, "+link">>;
+                        false ->
+                            throw({requested_key_not_found, Key, Base})
+                    end
+            end
+        end,
+        Explicit
+    );
+keys_to_commit(Base, _Req, Opts) ->
+    % Extract the set of committed keys from the message.
+    ExistingCommittedReq =
+        #{
+            <<"committers">> => <<"all">>,
+            <<"raw">> => true
+        },
+    case hb_message:committed(Base, ExistingCommittedReq, Opts) of
+        [] ->
+            % Case 3: Default to all keys in the TABM-encoded message, aside
+            % metadata.
+            maps:keys(Base) -- [<<"commitments">>, <<"priv">>];
+        Keys ->
+            % Case 2: Replicate the raw keys that the existing commitments have
+            % used. This leads to a message whose commitments can be 'stacked'
+            % and represented together in HTTPSig format.
+            Keys
+    end.
 
 %% @doc If the `body' key is present and a binary, replace it with a
 %% content-digest.
