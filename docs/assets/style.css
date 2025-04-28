@@ -18,6 +18,10 @@ li {
 	font-size: clamp(0.6rem, 1.5vw, 0.65rem);
 }
 
+img {
+	user-select: none;
+}
+
 input {
 	font-size: clamp(0.47rem, 1.5vw, 0.5rem) !important;
 }
@@ -25,15 +29,11 @@ input {
 body {
 	--docs-max-width: 60rem;
 	--homepage-max-width: 90rem;
-	--sections-max-width: 60rem;
+	--sections-max-width: 80rem;
 }
 
 
 /* Body and Header Customization */
-body[data-md-path="index"] .md-header {
-	background-color: transparent !important;
-}
-
 .md-header {
 	box-shadow: none !important;
 }
@@ -48,6 +48,8 @@ body[data-md-path="index"] .md-header {
 	filter: invert(1);
 	top: 0;
 	z-index: 20 !important;
+	background: linear-gradient(0deg, rgba(255, 255, 255, 0) 0%, #ffffff 100%);
+
 }
 
 .custom-homepage-header .md-grid {
@@ -73,6 +75,7 @@ body[data-md-path="index"] .md-header {
 .md-nav__title,
 .md-nav__item {
 	font-size: clamp(0.45rem, 1.5vw, 0.5rem) !important;
+	box-shadow: none !important;
 }
 
 .md-nav__link--active {
@@ -188,9 +191,8 @@ body[data-md-path="index"] .md-header {
 .hero-container {
 	display: flex;
 	position: relative;
-	height: 150vh;
+	height: 120vh;
 	background: black;
-	min-height: 400px;
 	align-items: flex-end;
 	overflow: hidden;
 }
@@ -200,7 +202,6 @@ body[data-md-path="index"] .md-header {
 	bottom: 0;
 	width: 100%;
 	z-index: 4;
-	background: black;
 }
 
 .hero-detail {
@@ -263,26 +264,31 @@ body[data-md-path="index"] .md-header {
 
 .rocks img {
 	height: 100%;
-	width: 100%
+	width: 100%;
 }
 
 picture.rocks {
 	will-change: transform;
 }
 
+.flicker-img {
+	animation: flickerLight 20s infinite;
+	will-change: filter;
+}
+
 .foreground-rocks {
 	z-index: 3;
-	animation: flickerLight 20s infinite;
+
 }
 
 .foreground-rocks-2 {
 	z-index: 2;
-	animation: flickerLight 20s infinite;
+
 }
 
 .mid-rocks {
 	z-index: 2;
-	animation: flickerLight 20s infinite;
+
 }
 
 .background-rocks {
@@ -298,7 +304,6 @@ picture.rocks {
 	height: 100%;
 	width: 100%;
 	object-fit: cover;
-	animation: flickerLight 20s infinite;
 }
 
 .background-chroma img {
@@ -317,14 +322,7 @@ picture.rocks {
 	margin-left: 5px;
 }
 
-.dark-top {
-	position: absolute;
-	top: 0;
-	background: linear-gradient(0deg, rgba(0, 0, 0, 0.00) 0%, #000000 80.0%);
-	height: 20vh;
-	width: 100%;
-	z-index: 3;
-}
+
 
 .dark-bottom {
 	position: absolute;
@@ -368,9 +366,14 @@ picture.rocks {
 	margin: 0;
 }
 
-.hero-transition {
-	background: linear-gradient(180deg, #000 50%, rgba(0, 0, 0, 0.00) 100%);
-	min-height: 600px;
+.section-header {
+	display: flex;
+	width: 100%;
+	justify-content: space-between;
+}
+
+.section-header h1 {
+	margin-block-start: 0.7em !important;
 }
 
 .divider {
@@ -389,12 +392,18 @@ picture.rocks {
 	margin-right: auto;
 	padding: 2rem 0.8rem;
 	transition: all 1s;
+	min-height: 70vh;
+}
+
+.section-monetize {
+	justify-content: space-between;
 }
 
 .double-column-content {
 	display: flex;
 	width: 100%;
 	padding: 48px 0px;
+	height: 100%;
 }
 
 .double-single-grid-content {
@@ -408,14 +417,16 @@ picture.rocks {
 
 .column-container {
 	width: 100%;
-	min-height: 700px;
+	height: 100%;
 }
 
 .grid-container {
+	position: relative;
 	display: flex;
 	min-height: 450px;
 	width: 100%;
 	background: white;
+	overflow: hidden;
 }
 
 .full-span {
@@ -448,10 +459,21 @@ picture.rocks {
 	border-radius: 4px;
 	min-height: 125px;
 	padding: 8px;
+	overflow: hidden;
+}
+
+
+
+.transparent-card {
+	min-height: 125px;
+	display: flex;
+	width: 100%;
 }
 
 .card-row {
 	display: flex;
+	width: 100%;
+	overflow: hidden;
 }
 
 .grid-card-header {
@@ -473,8 +495,16 @@ picture.rocks {
 	display: flex;
 	gap: 8px;
 	width: 100%;
-	justify-content: end;
+
 	align-items: center;
+}
+
+.cta-right {
+	justify-content: end;
+}
+
+.cta-left {
+	justify-content: start;
 }
 
 .main-button {
@@ -489,6 +519,7 @@ picture.rocks {
 	display: flex;
 	width: 100%;
 	justify-content: center;
+	overflow: hidden;
 }
 
 .fig img {
@@ -531,28 +562,36 @@ picture.rocks {
 
 /* Last Updated Date */
 .md-source-file {
-    border-top: 1px solid #ddd; /* Adds a divider above the text */
-    padding-top: 10px; /* Adds some space above the text */
-    font-size: 0.9em; /* Makes the font size slightly smaller */
-    font-style: italic; /* Makes the text italic */
+	border-top: 1px solid #ddd;
+	/* Adds a divider above the text */
+	padding-top: 10px;
+	/* Adds some space above the text */
+	font-size: 0.9em;
+	/* Makes the font size slightly smaller */
+	font-style: italic;
+	/* Makes the text italic */
 	margin-top: 2rem !important;
 	margin-bottom: 2rem !important;
 }
 
 .md-source-file .md-source-file__fact {
-    display: flex;
-    align-items: center;
+	display: flex;
+	align-items: center;
 	gap: 0;
 }
 
 .md-source-file .md-icon {
-    width: 1em; /* Adjusts the icon size proportionally */
-    height: 1em; /* Adjusts the icon size proportionally */
-    margin-right: 0.5em; /* Adds space between the icon and the text */
+	width: 1em;
+	/* Adjusts the icon size proportionally */
+	height: 1em;
+	/* Adjusts the icon size proportionally */
+	margin-right: 0.5em;
+	/* Adds space between the icon and the text */
 }
 
 .md-source-file .git-revision-date-localized-plugin::before {
-    content: "Last updated: "; /* Adds the prefix before the date */
+	content: "Last updated: ";
+	/* Adds the prefix before the date */
 }
 
 
