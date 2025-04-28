@@ -225,6 +225,7 @@ theme:
 
 plugins:
   - search
+  - git-revision-date-localized
 
 extra_css:
   - assets/style.css

@@ -526,6 +526,31 @@ picture.rocks {
 	font-size: clamp(0.75rem, 1.5vw, 0.85rem);
 }
 
+/* Last Updated Date */
+.md-source-file {
+    border-top: 1px solid #ddd; /* Adds a divider above the text */
+    padding-top: 10px; /* Adds some space above the text */
+    font-size: 0.9em; /* Makes the font size slightly smaller */
+    font-style: italic; /* Makes the text italic */
+	margin-top: 2rem !important;
+	margin-bottom: 2rem !important;
+}
+
+.md-source-file .md-source-file__fact {
+    display: flex;
+    align-items: center;
+	gap: 0;
+}
+
+.md-source-file .md-icon {
+    width: 1em; /* Adjusts the icon size proportionally */
+    height: 1em; /* Adjusts the icon size proportionally */
+    margin-right: 0.5em; /* Adds space between the icon and the text */
+}
+
+.md-source-file .git-revision-date-localized-plugin::before {
+    content: "Last updated: "; /* Adds the prefix before the date */
+}
 
 
 @keyframes flickerLight {
