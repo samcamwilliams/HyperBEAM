@@ -151,311 +151,266 @@
 		{% endblock %}
 		<main class="{% if page.is_homepage %}custom-homepage-main{% else %}md-main{% endif %}" data-md-component="main">
     {% if page.is_homepage %}
-        <!-- Custom homepage content here -->
-		<section class="hero-container">
-			<div class="hero-floating-wrapper">
-				<div class="hero-inner-content">
-					<div class="hero-main-heading">
-						<h1>A Decentralized Operating System.</h1>
-						<h2>Powered By AO</h2>
-					</div>
-					<div class="hero-detail">
-						<h1>Documentation</h1>
-						<button class="scroll-button">
-							<img
-								src="/assets/images/scroll-for-more.svg"
-								alt="scroll-for-more"
-							/>
-							<span>Scroll For More.</span>
-						</button>
-					</div>
+       <!-- Custom homepage content here -->
+	   <section class="hero-container">
+		<div class="hero-floating-wrapper">
+			<div class="hero-inner-content">
+				<div class="hero-main-heading">
+					<h1>A Decentralized Operating System.</h1>
+					<h2>Powered By AO</h2>
 				</div>
-			</div>
-			<picture class="rocks foreground-rocks"
-				><img
-					src="https://arweave.net/acfVxXVwaGApeJh-3IHfCkyqu6KtiizeIJlYOgSg-10"
-					alt="front-rocks"
-			/></picture>
-			<picture class="rocks foreground-rocks"
-				><img
-					src="https://arweave.net/mRBhvqbPqrHOdJt8Er9yK63PB6g7c8vB5H8dmMRiLhE"
-					alt="front-boulder"
-			/></picture>
-			<picture class="rocks mid-rocks"
-				><img
-					src="https://arweave.net/Kf5tLCAqp_a7bT1LmP45_fayZBi4bWN0XbuhOPXm6Mg"
-					alt="mid-rocks"
-			/></picture>
-			<picture class="rocks mid-rocks"
-				><img
-					src="https://arweave.net/Kf5tLCAqp_a7bT1LmP45_fayZBi4bWN0XbuhOPXm6Mg"
-					alt="mid-rocks"
-			/></picture>
-
-			<picture class="rocks background-rocks"
-				><img
-					src="https://arweave.net/_ps8LJOFhwxhpaQ00z036Qqxl3f_pPBbVHTKiUXYhbg"
-					alt="background-rocks"
-			/></picture>
-			<picture class="rocks background-chroma"
-				><img
-					src="https://arweave.net/pFyQOI9lAyRYe6trLhGC1CFC7HCTOIu8u_ibeotSzFc"
-					alt="background-chroma-space"
-			/></picture>
-			<div class="dark-top"></div>
-			<div class="dark-bottom"></div>
-		</section>
-		<section
-			class="section-container section-container-background-primary"
-		>
-			<div class="section-inner-content">
-				<div class="top-annotation">
-					<div class="divider"></div>
-					<p>What is hyperBEAM?</p>
-				</div>
-				<div class="double-column-content">
-					<div class="column-container fig-container">
+				<div class="hero-detail">
+					<h1>Documentation</h1>
+					<button class="scroll-button">
 						<img
-							src="/assets/images/what-is-hyperbeam-fig.svg"
-							alt="what-is-hyperbeam-fig"
-							class="fig"
+							src="/assets/images/scroll-for-more.svg"
+							alt="scroll-for-more"
 						/>
-					</div>
-					<div class="column-container">
-						<div class="column-text">
-							<div>
-								<h1>
-									It is an implementation of AO-Core,
-									letting you offer and procure usage
-									of your machine in its network.
-								</h1>
-								<h2>
-									HyperBEAM is a client implementation
-									of the AO-Core protocol, written in
-									Erlang.
-								</h2>
-								<div class="feature-cards">
-									<div class="card">
-										<span>Parallel</span>
-										<p>
-											Programs run as independent
-											processes.
-										</p>
-									</div>
-									<div class="card">
-										<span>Async</span>
-										<p>
-											Communicate via asynchronous
-											message passing.
-										</p>
-									</div>
-									<div class="card">
-										<span>Distributed</span>
-										<p>
-											Operate across a distributed
-											network of nodes.
-										</p>
-									</div>
+						<span>Scroll For More.</span>
+					</button>
+				</div>
+			</div>
+		</div>
+		<picture class="rocks foreground-rocks"
+			><img
+				src="/assets/images/front-rocks.avif"
+				alt="front-rocks"
+				class="flicker-img"
+		/></picture>
+		<picture class="rocks foreground-rocks"
+			><img
+				src="/assets/images/front-boulder.avif"
+				alt="front-boulder"
+				class="flicker-img"
+		/></picture>
+		<picture class="rocks mid-rocks"
+			><img
+				src="/assets/images/mid-rocks.avif"
+				alt="mid-rocks"
+				class="flicker-img"
+		/></picture>
+		<picture class="rocks mid-rocks"
+			><img
+				src="/assets/images/back-rocks.avif"
+				alt="mid-rocks"
+				class="flicker-img"
+		/></picture>
+
+		<picture class="rocks background-rocks"
+			><img
+				src="/assets/images/bg.avif"
+				alt="background-rocks"
+		/></picture>
+		<picture class="rocks background-chroma"
+			><img
+				src="/assets/images/chroma-sky.avif"
+				alt="background-chroma-space"
+				class="flicker-img"
+		/></picture>
+		<div class="dark-bottom"></div>
+	</section>
+	<section
+		class="section-container section-container-background-primary"
+	>
+		<div class="section-inner-content">
+			<div class="top-annotation">
+				<div class="divider"></div>
+				<p>What is hyperBEAM?</p>
+			</div>
+			<div class="double-column-content">
+				<div class="column-container fig-container">
+					<img
+						src="/assets/images/what-is-hyperbeam-fig.svg"
+						alt="what-is-hyperbeam-fig"
+						class="fig"
+					/>
+				</div>
+				<div class="column-container">
+					<div class="column-text">
+						<div>
+							<h1>
+								It is an implementation of AO-Core,
+								letting you offer and procure usage
+								of your machine in its network.
+							</h1>
+							<h2>
+								HyperBEAM is a client implementation
+								of the AO-Core protocol, written in
+								Erlang.
+							</h2>
+							<div class="feature-cards">
+								<div class="card">
+									<span>Parallel</span>
+									<p>
+										Programs run as independent
+										processes.
+									</p>
+								</div>
+								<div class="card">
+									<span>Async</span>
+									<p>
+										Communicate via asynchronous
+										message passing.
+									</p>
+								</div>
+								<div class="card">
+									<span>Distributed</span>
+									<p>
+										Operate across a distributed
+										network of nodes.
+									</p>
 								</div>
 							</div>
-							<div class="cta-wrapper">
-								<p>+</p>
-								<button class="main-button">
-									Find Out More
-								</button>
-							</div>
+						</div>
+						<div class="cta-wrapper cta-right">
+							<p>+</p>
+							<button class="main-button">
+								Find Out More
+							</button>
 						</div>
 					</div>
 				</div>
 			</div>
-		</section>
-		<section
-			class="section-container section-container-background-secondary"
-		>
-			<div class="section-inner-content">
-				<div class="top-annotation">
-					<div class="divider"></div>
-					<p>What Can I Build?</p>
-				</div>
-				<div class="double-single-grid-content">
-					<div class="grid-container">
-						<div class="card-row">
-							<div class="column-text">
-								<div class="grid-card-header">
-									<span class="annotation-number"
-										>01</span
-									>
-									<h1>
-										Create New Devices for AO
-										processes.
-									</h1>
-								</div>
-								<h2>
-									Bringing further capabilities to its
-									network of 7m+ smart contracts.
-								</h2>
-							</div>
-							<div class="fig-container">
-								<img
-									src="/assets/images/what-is-hyperbeam-fig.svg"
-									alt="what-is-hyperbeam-fig"
-									class="fig"
-								/>
-							</div>
-						</div>
-					</div>
-					<div class="grid-container">
-						<div class="card-row">
-							<div class="column-text">
-								<div class="grid-card-header">
-									<span class="annotation-number"
-										>02</span
-									>
-									<h1>
-										Rock solid Decentralized
-										infrastructure apps at any
-										scale.
-									</h1>
-								</div>
-								<h2>
-									Core fundamentals supported by
-									Arweave as the permanent data ledger
-									and AO as the decentralized
-									supercomputer.
-								</h2>
-							</div>
-							<div class="fig-container">
-								<img
-									src="/assets/images/what-is-hyperbeam-fig.svg"
-									alt="what-is-hyperbeam-fig"
-									class="fig"
-								/>
-							</div>
-						</div>
-					</div>
-					<div class="grid-container full-span">
-						<div class="column-text">
-							<div class="grid-card-header">
-								<span class="annotation-number"
-									>03</span
-								>
-								<h1>
-									Bringing the power of
-									decentralization to your web2 and
-									web3 applications.
-								</h1>
-								<h2>
-									Permissionless in combination with
-									reduced costs.
-								</h2>
-							</div>
-							<div class="cta-wrapper">
-								<p>+</p>
-								<button class="main-button">
-									Start Building
-								</button>
-							</div>
-						</div>
-					</div>
-				</div>
+		</div>
+	</section>
+	<section
+		class="section-container section-container-background-secondary"
+	>
+		<div class="section-inner-content">
+			<div class="top-annotation">
+				<div class="divider"></div>
+				<p>What Can I Build?</p>
 			</div>
-		</section>
-		<section
-			class="section-container section-container-background-primary"
-		>
-			<div class="section-inner-content">
-				<div class="top-annotation">
-					<div class="divider"></div>
-					<p>What Can I Build?</p>
-				</div>
-				<div class="double-single-grid-content">
-					<div class="grid-container">
-						<div class="card-row">
-							<div class="column-text">
-								<div class="grid-card-header">
-									<span class="annotation-number"
-										>01_</span
-									>
-									<h1>
-										Create New Devices for AO
-										processes.
-									</h1>
-								</div>
-								<h2>
-									Bringing further capabilities to its
-									network of 7m+ smart contracts.
-								</h2>
-							</div>
-							<div class="fig-container">
-								<img
-									src="/assets/images/parallel-fabrication.svg"
-									alt="parallel-fab-fig"
-									class="fig"
-								/>
-							</div>
-						</div>
-					</div>
-					<div class="grid-container">
-						<div class="card-row">
-							<div class="column-text">
-								<div class="grid-card-header">
-									<span class="annotation-number"
-										>02_</span
-									>
-									<h1>
-										Rock solid Decentralized
-										infrastructure apps at any
-										scale.
-									</h1>
-								</div>
-								<h2>
-									Core fundamentals supported by
-									Arweave as the permanent data ledger
-									and AO as the decentralized
-									supercomputer.
-								</h2>
-							</div>
-							<div class="fig-container">
-								<img
-									src="/assets/images/triangular-block-fabrication.svg"
-									alt="triangle-block-fab-fig"
-									class="fig"
-								/>
-							</div>
-						</div>
-					</div>
-					<div class="grid-container full-span">
+			<div class="double-single-grid-content">
+				<div class="grid-container">
+					<div class="card-row">
 						<div class="column-text">
 							<div class="grid-card-header">
 								<span class="annotation-number"
-									>03_</span
+									>01</span
 								>
 								<h1>
-									Bringing the power of
-									decentralization to your web2 and
-									web3 applications.
+									Create New Devices for AO
+									processes.
 								</h1>
-								<h2>
-									Permissionless in combination with
-									reduced costs.
-								</h2>
 							</div>
-							<div class="cta-wrapper">
-								<p>+</p>
-								<button class="main-button">
-									Start Building
-								</button>
-							</div>
+							<h2>
+								Bringing further capabilities to its
+								network of 7m+ smart contracts.
+							</h2>
+						</div>
+						<div class="fig-container">
 							<img
-									src="/assets/images/deep-space-fabrication.svg"
-									alt="deep-space-fab-fig"
-									class="fig"
-								/>
+								src="/assets/images/what-is-hyperbeam-fig.svg"
+								alt="what-is-hyperbeam-fig"
+								class="fig"
+							/>
+						</div>
+					</div>
+				</div>
+				<div class="grid-container">
+					<div class="card-row">
+						<div class="column-text">
+							<div class="grid-card-header">
+								<span class="annotation-number"
+									>02</span
+								>
+								<h1>
+									Rock solid Decentralized
+									infrastructure apps at any
+									scale.
+								</h1>
+							</div>
+							<h2>
+								Core fundamentals supported by
+								Arweave as the permanent data ledger
+								and AO as the decentralized
+								supercomputer.
+							</h2>
+						</div>
+						<div class="fig-container">
+							<img
+								src="/assets/images/what-is-hyperbeam-fig.svg"
+								alt="what-is-hyperbeam-fig"
+								class="fig"
+							/>
+						</div>
+					</div>
+				</div>
+				<div class="grid-container full-span">
+					<div class="column-text">
+						<div class="grid-card-header">
+							<span class="annotation-number"
+								>03</span
+							>
+							<h1>
+								Bringing the power of
+								decentralization to your web2 and
+								web3 applications.
+							</h1>
+							<h2>
+								Permissionless in combination with
+								reduced costs.
+							</h2>
+						</div>
+						<div class="cta-wrapper cta-left">
+							<p>+</p>
+							<button class="main-button">
+								Start Building
+							</button>
 						</div>
 					</div>
 				</div>
 			</div>
-		</section>
+		</div>
+	</section>
+	<section
+		class="section-container section-container-background-primary"
+	>
+		<div class="section-inner-content section-monetize">
+			<div class="top-annotation">
+				<div class="divider"></div>
+				<div class="section-header">
+					<p>How Do I Get Involved?</p>
+					<div>
+						<h1>Monetize Your Harware.</h1>
+						<h2>
+							Join AO-Core's peer-to-peer network and
+							build towards a decentralized future.
+						</h2>
+					</div>
+				</div>
+			</div>
+
+			<div class="card-row">
+				<div class="transparent-card">
+					<p>
+						Bringing further capabilities to its network
+						of 7m+ smart contracts.
+					</p>
+				</div>
+				<div class="transparent-card">
+					<p>
+						Core fundamentals supported by Arweave as
+						the permanent data ledger and AO as the
+						decentralized supercomputer.
+					</p>
+				</div>
+				<div class="transparent-card">
+					<p>
+						Permissionless in combination with reduced
+						costs.
+					</p>
+				</div>
+				<div class="transparent-card">
+					<p>
+						Permissionless in combination with reduced
+						costs.
+					</p>
+				</div>
+			</div>
+		</div>
+	</section>
     {% else %}
 	<div class="md-main__inner md-grid">
 		{% block site_nav %}
