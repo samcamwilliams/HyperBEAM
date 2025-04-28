@@ -645,38 +645,7 @@ params(Params) ->
     || Param <- Params
     ].
 
--ifdef(TEST).
-struct_hd_identity_test_() ->
-    Files = filelib:wildcard("deps/structured-header-tests/*.json"),
-    lists:flatten([
-        begin
-            {ok, JSON} = file:read_file(File),
-            Tests = jsx:decode(JSON, [return_maps]),
-            [
-                {iolist_to_binary(io_lib:format("~s: ~s", [filename:basename(File), Name])), fun() ->
-                    io:format("expected json ~0p~n", [Expected0]),
-                    Expected = expected_to_term(Expected0),
-                    io:format("expected term: ~0p", [Expected]),
-                    case HeaderType of
-                        <<"dictionary">> ->
-                            Expected = parse_dictionary(iolist_to_binary(dictionary(Expected)));
-                        <<"item">> ->
-                            Expected = parse_item(iolist_to_binary(item(Expected)));
-                        <<"list">> ->
-                            Expected = parse_list(iolist_to_binary(list(Expected)))
-                    end
-                end}
-            || #{
-                    <<"name">> := Name,
-                    <<"header_type">> := HeaderType,
-                    %% We only run tests that must not fail.
-                    <<"expected">> := Expected0
-                } <- Tests
-            ]
-        end
-    || File <- Files
-    ]).
--endif.
+%%% Tests
 
 to_dictionary_test() ->
     {ok, SfDictionary} = to_dictionary(#{
@@ -700,7 +669,12 @@ to_dictionary_test() ->
         lists:keyfind(<<"fizz">>, 1, SfDictionary)    
     ),
     ?assertEqual(
-        {<<"item-with">>, {item, {string,<<"params">>}, [{<<"first">>, {token,<<"param">>}}, {<<"another">>, true}]}},
+        {<<"item-with">>,
+            {item,
+                {string,<<"params">>},
+                [{<<"first">>, {token,<<"param">>}}, {<<"another">>, true}]
+            }
+        },
         lists:keyfind(<<"item-with">>, 1, SfDictionary)    
     ),
     ?assertEqual(
@@ -720,15 +694,37 @@ to_dictionary_test() ->
         lists:keyfind(<<"empty">>, 1, SfDictionary)
     ),
     ?assertEqual(
-        {<<"inner">>, {list, [{item, {string, <<"a">>}, []}, {item, {token, <<"b">>}, []}, {item, true, []}, {item, 3, []}], []}},
+        {
+            <<"inner">>,
+            {
+                list,
+                [
+                    {item, {string, <<"a">>}, []},
+                    {item, {token, <<"b">>}, []},
+                    {item, true, []},
+                    {item, 3, []}
+                ],
+                []
+            }
+        },
         lists:keyfind(<<"inner">>, 1, SfDictionary)
     ),
     ?assertEqual(
-        {<<"inner_with_params">>, {list , [{item, 1, []}, {item, 2, []}], [{<<"first">>, {token, <<"param">>}}]}},
+        {<<"inner_with_params">>,
+            {list,
+                [{item, 1, []}, {item, 2, []}],
+                [{<<"first">>, {token, <<"param">>}}]
+            }
+        },
         lists:keyfind(<<"inner_with_params">>, 1, SfDictionary)
     ),
     ?assertEqual(
-       {<<"inner_inner_params">>, {list, [{item, 1, [{<<"heres">>, {string, <<"one">>}}]}, {item, 2, []}], []}},
+       {<<"inner_inner_params">>,
+            {list,
+                [{item, 1, [{<<"heres">>, {string, <<"one">>}}]}, {item, 2, []}],
+                []
+            }
+        },
         lists:keyfind(<<"inner_inner_params">>, 1, SfDictionary)
     ),
     dictionary(SfDictionary).
@@ -756,13 +752,22 @@ to_item_test() ->
 
 to_list_test() ->
     ?assertEqual(
-        to_list([1,2,<<"three">>, [4, <<"five">>], {list, [6, <<"seven">>], [{first, param}]}]),
+        to_list(
+            [1, 2, <<"three">>, [4, <<"five">>],
+                {list, [6, <<"seven">>],
+                    [{<<"first">>, {token, <<"param">>}}]
+                }
+            ]
+        ),
         {ok, [
             {item, 1, []},
             {item, 2, []},
             {item, {string, <<"three">>}, []},
             {list, [{ item, 4, []}, {item, {string, <<"five">>}, []}], []},
-            {list, [{ item, 6, []}, {item, {string, <<"seven">>}, []}], [{<<"first">>, {token, <<"param">>}}]}
+            {list,
+                [{ item, 6, []}, {item, {string, <<"seven">>}, []}],
+                [{<<"first">>, {token, <<"param">>}}]
+            }
         ]}
     ),
     ok.

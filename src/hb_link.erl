@@ -1,6 +1,6 @@
 %%% @doc Utility functions for working with links.
 -module(hb_link).
--export([read/1, read/2, is_link_key/1]).
+-export([read/1, read/2, is_link_key/1, remove_link_specifier/1]).
 -export([normalize/2, normalize/3]).
 -export([decode_all_links/1]).
 -export([format/1, format/2]).
@@ -104,6 +104,13 @@ is_link_key(Key) when byte_size(Key) >= 5 ->
     binary:part(Key, byte_size(Key) - 5, 5) =:= <<"+link">>;
 is_link_key(_) -> false.
 
+%% @doc Remove any `+link` suffixes from a key.
+remove_link_specifier(Key) ->
+    case is_link_key(Key) of
+        true -> binary:part(Key, 0, byte_size(Key) - 5);
+        false -> Key
+    end.
+
 %% @doc Format a link as a short string suitable for printing. Checks the node
 %% options (optionally) given, to see if it should resolve the link to a value
 %% before printing.
@@ -111,19 +118,18 @@ format(Link) -> format(Link, #{}).
 format(Link, Opts) ->
     case hb_opts:get(debug_resolve_links, false, Opts) of
         true ->
-            case read(Link, Opts) of
-                {ok, Val} when is_map(Val) ->
-                    hb_message:format(Val);
-                {error, _} ->
-                    << "!UNRESOLVABLE! ", (do_format(Link))/binary >>
+            try hb_message:format(hb_cache:ensure_all_loaded(Link))
+            catch
+                _:_ -> << "!UNRESOLVABLE! ", (format_unresolved(Link))/binary >>
             end;
-        false -> do_format(Link)
+        false -> format_unresolved(Link)
     end.
 
-do_format({link, ID, #{ <<"type">> := Type }}) ->
-    iolist_to_binary(io_lib:format("Link (~s): ~s", [hb_util:bin(Type), ID]));
-do_format({link, ID, _}) ->
-    iolist_to_binary(io_lib:format("Link: ~s", [ID])).
+%% @doc Format a link without resolving it.
+format_unresolved({link, ID, #{ <<"type">> := Type }}) ->
+    hb_util:bin(io_lib:format("Link (~s): ~s", [hb_util:bin(Type), ID]));
+format_unresolved({link, ID, _}) ->
+    hb_util:bin(io_lib:format("Link: ~s", [ID])).
 
 %%% Tests
 

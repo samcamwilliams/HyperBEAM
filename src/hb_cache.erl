@@ -203,6 +203,12 @@ do_write_message(Bin, Store, Opts) when is_binary(Bin) ->
     ok = hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin),
     %lists:map(fun(ID) -> hb_store:make_link(Store, Path, ID) end, AllIDs),
     {ok, Path};
+do_write_message(List, Store, Opts) when is_list(List) ->
+    do_write_message(
+        hb_message:convert(List, tabm, <<"structured@1.0">>, Opts),
+        Store,
+        Opts
+    );
 do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     ?event(debug_cache, {writing_message, Msg}),
     % Calculate the IDs of the message.
@@ -247,10 +253,10 @@ write_key(Base, <<"commitments">>, HPAlg, Commitments, Store, Opts) ->
             ?event(debug_commitments, {loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
             Merged = maps:merge(Commitments, LoadedExistingCommitments),
             % Write the merged commitments to the store.
-            {ok, MergedPath} = do_write_message(Merged, Store, Opts),
+            {ok, Path} = do_write_message(Merged, Store, Opts),
             % Link the merged commitments to the message.
-            hb_store:make_link(Store, MergedPath, <<Base/binary, "/commitments">>),
-            {ok, MergedPath};
+            hb_store:make_link(Store, Path, <<Base/binary, "/commitments">>),
+            {ok, Path};
         _ ->
             % We do not have any commitments for this message locally, so we
             % write the commitments to the store.

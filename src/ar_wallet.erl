@@ -1,5 +1,6 @@
 -module(ar_wallet).
--export([sign/2, sign/3, hmac/1, hmac/2, verify/3, verify/4, to_address/1, to_address/2, new/0, new/1]).
+-export([sign/2, sign/3, hmac/1, hmac/2, verify/3, verify/4]).
+-export([to_pubkey/1, to_pubkey/2, to_address/1, to_address/2, new/0, new/1]).
 -export([new_keyfile/2, load_keyfile/1, load_key/1]).
 -include("include/ar.hrl").
 -include_lib("public_key/include/public_key.hrl").
@@ -32,7 +33,9 @@ sign({{rsa, PublicExpnt}, Priv, Pub}, Data, DigestType) when PublicExpnt =:= 655
             modulus = binary:decode_unsigned(Pub),
             privateExponent = binary:decode_unsigned(Priv)
         }
-    ).
+    );
+sign({{KeyType, Priv, Pub}, {KeyType, Pub}}, Data, DigestType) ->
+    sign({KeyType, Priv, Pub}, Data, DigestType).
 
 hmac(Data) ->
     hmac(Data, sha256).
@@ -54,12 +57,22 @@ verify({{rsa, PublicExpnt}, Pub}, Data, Sig, DigestType) when PublicExpnt =:= 65
         }
     ).
 
+%% @doc Find a public key from a wallet.
+to_pubkey(Pubkey) ->
+    to_pubkey(Pubkey, ?DEFAULT_KEY_TYPE).
+to_pubkey(PubKey, {rsa, 65537}) when bit_size(PubKey) == 256 ->
+    % Small keys are not secure, nobody is using them, the clause
+    % is for backwards-compatibility.
+    PubKey;
+to_pubkey({{_, _, PubKey}, {_, PubKey}}, {rsa, 65537}) ->
+    PubKey;
+to_pubkey(PubKey, {rsa, 65537}) ->
+    PubKey.
+
 %% @doc Generate an address from a public key.
 to_address(Pubkey) ->
     to_address(Pubkey, ?DEFAULT_KEY_TYPE).
 to_address(PubKey, {rsa, 65537}) when bit_size(PubKey) == 256 ->
-    %% Small keys are not secure, nobody is using them, the clause
-    %% is for backwards-compatibility.
     PubKey;
 to_address({{_, _, PubKey}, {_, PubKey}}, {rsa, 65537}) ->
     to_address(PubKey);
