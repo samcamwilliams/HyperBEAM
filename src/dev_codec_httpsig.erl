@@ -79,7 +79,8 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
             <<"keyid">> => ar_wallet:to_pubkey(Wallet),
             <<"committer">> =>
                 hb_util:human_id(ar_wallet:to_address(Wallet)),
-            <<"committed">> => keys_to_commit(MsgToSign, Req, Opts)
+            <<"committed">> =>
+                hb_ao:normalize_keys(keys_to_commit(MsgToSign, Req, Opts))
         },
     ?event({encoded_to_httpsig_for_commitment, MsgToSign}),
     % Generate the signature base
@@ -132,7 +133,7 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
                         <<"type">> => <<"hmac-sha256">>,
                         <<"keyid">> => <<"ao">>,
                         <<"signature">> => ID,
-                        <<"committed">> => CommittedKeys
+                        <<"committed">> => hb_ao:normalize_keys(CommittedKeys)
                     }
             },
             Msg

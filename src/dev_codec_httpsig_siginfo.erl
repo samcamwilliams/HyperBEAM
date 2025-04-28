@@ -200,15 +200,19 @@ decode_byte_keys([_NotPresentKey|Keys], Msg) ->
 %% @doc Normalize committed keys to their TABM format. This involves removing
 %% the `content-digest' key from the committed keys, if present, and replacing
 %% it with the `body' key.
-committed_keys_to_tabm([]) -> [];
-committed_keys_to_tabm([<<"content-digest">> | Rest]) ->
+committed_keys_to_tabm(List) ->
+    hb_ao:normalize_keys(do_committed_keys_to_tabm(List)).
+do_committed_keys_to_tabm([]) -> [];
+do_committed_keys_to_tabm([<<"content-digest">> | Rest]) ->
     [<<"body">> | Rest];
-committed_keys_to_tabm([Key | Rest]) ->
-    [Key | committed_keys_to_tabm(Rest)].
+do_committed_keys_to_tabm([Key | Rest]) ->
+    [Key | do_committed_keys_to_tabm(Rest)].
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with
 %% the `content-digest' key.
+committed_keys_to_siginfo(Msg) when is_map(Msg) ->
+    committed_keys_to_siginfo(hb_util:message_to_ordered_list(Msg));
 committed_keys_to_siginfo([]) -> [];
 committed_keys_to_siginfo([<<"body">> | Rest]) ->
     [<<"content-digest">> | Rest];

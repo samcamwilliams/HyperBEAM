@@ -324,7 +324,13 @@ committed(Self, Req, Opts) ->
         lists:map(
             fun(CommitmentID) ->
                 Commitment = maps:get(CommitmentID, Commitments),
-                maps:get(<<"committed">>, Commitment)
+                % The committed keys will be a TABM encoded numbered map
+                % so we must decode it to its underlying list of normalized keys
+                % for comparison purposes.
+                hb_util:message_to_ordered_list(
+                    maps:get(<<"committed">>, Commitment),
+                    Opts
+                )
             end,
             CommitmentIDs
         ),
