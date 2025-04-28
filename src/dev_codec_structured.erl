@@ -9,7 +9,7 @@
 %%% 
 %%% For more details, see the HTTP Structured Fields (RFC-9651) specification.
 -module(dev_codec_structured).
--export([to/3, from/3, commit/3, committed/3, verify/3]).
+-export([to/3, from/3, commit/3, verify/3]).
 -export([encode_ao_types/2, decode_ao_types/2, is_list_from_ao_types/2]).
 -export([decode_value/2, encode_value/1, implicit_keys/2]).
 -include("include/hb.hrl").
@@ -18,7 +18,6 @@
 %%% Route signature functions to the `dev_codec_httpsig' module
 commit(Msg, Req, Opts) -> dev_codec_httpsig:commit(Msg, Req, Opts).
 verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
-committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 
 %% @doc Convert a rich message into a 'Type-Annotated-Binary-Message' (TABM).
 from(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};
@@ -76,8 +75,9 @@ from(Msg, Req, Opts) when is_map(Msg) ->
         lists:filter(
             fun(Key) ->
                 % Filter keys that the user could set directly, but
-                % should be regenerated when moving msg -> TX, as well
-                % as private keys.
+                % should be regenerated when converting. Additionally, we remove
+                % the `commitments' submessage, if applicable, as it should not
+                % be modified during encoding.
                 not lists:member(Key, ?REGEN_KEYS) andalso
                     not hb_private:is_private(Key) andalso
                     not (Key == <<"commitments">>)
