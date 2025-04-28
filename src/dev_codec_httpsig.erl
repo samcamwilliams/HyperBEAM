@@ -95,7 +95,7 @@ commit(MsgToSign, #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     commit(
         MsgToSign#{
             <<"commitments">> =>
-                (hb_maps:get(<<"commitments">>, MsgToSign, #{}))#{
+                (maps:get(<<"commitments">>, MsgToSign, #{}))#{
                     ID => UnsignedCommitment#{ <<"signature">> => Signature }
                 }
         },
@@ -118,10 +118,15 @@ commit(Msg, #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
             Opts
         ),
     % Extract the base commitments from the message.
-    Commitments = hb_maps:get(<<"commitments">>, WithoutHmac, #{}),
+    Commitments = maps:get(<<"commitments">>, WithoutHmac, #{}),
     % Extract the set of committed keys from the message.
+    ExistingCommittedReq =
+        #{
+            <<"committers">> => <<"all">>,
+            <<"raw">> => true
+        },
     CommittedKeys =
-        case hb_message:committed(WithoutHmac, all, Opts) of
+        case hb_message:committed(WithoutHmac, ExistingCommittedReq, Opts) of
             [] -> maps:keys(WithoutHmac) -- [<<"commitments">>, <<"priv">>];
             Keys -> Keys
         end,
@@ -157,7 +162,7 @@ add_content_digest(Msg, Opts) ->
             ?event({add_content_digest, {string, Body}}),
             (hb_maps:without([<<"body">>], Msg))#{
                 <<"content-digest">> =>
-                    iolist_to_binary(hb_structured_fields:dictionary(
+                    hb_util:bin(hb_structured_fields:dictionary(
                         #{
                             <<"sha-256">> =>
                                 {item, {binary, hb_crypto:sha256(Body)}, []}

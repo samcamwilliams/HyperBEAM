@@ -199,7 +199,6 @@ committers(_, _, _) ->
 %% the default device (`httpsig@1.0') is used.
 commit(Self, Req, Opts) ->
     {ok, Base} = hb_message:find_target(Self, Req, Opts),
-    % Encode to a TABM.
     AttDev =
         case hb_maps:get(<<"commitment-device">>, Req, not_specified, Opts) of
             not_specified ->
@@ -212,6 +211,7 @@ commit(Self, Req, Opts) ->
     CommitOpts = Opts#{ linkify_mode => offload },
     AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, CommitOpts),
     {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
+    % Encode to a TABM
     Encoded = hb_message:convert(Base, tabm, CommitOpts),
     {ok, Committed} =
         apply(
@@ -347,15 +347,20 @@ committed(Self, Req, Opts) ->
             end,
             AllCommittedKeys
         ),
-    % Remove any `+link` suffixes from TABM-form committed keys. This means that
-    % callers to `committed/3' will receive a list of keys that they can match
-    % against the 'normal' representation of the message in devices, etc.,
-    % without exposure to TABM-specifics.
+    % Remove any `+link` suffixes from TABM-form committed keys if the `raw` flag
+    % is not set. This means that callers to `committed/3' will receive a list of
+    % keys that they can match  against the 'normal' representation of the message
+    % in devices, etc., without exposure to TABM-specifics. If `raw' is set, the
+    % recipient receives the `committed` list in its unprocessed form.
     CommittedNormalizedKeys =
-        lists:map(
-            fun hb_link:remove_link_specifier/1,
-            OnlyCommittedKeys
-        ),
+        case maps:get(<<"raw">>, Req, false) of
+            true -> OnlyCommittedKeys;
+            false ->
+                lists:map(
+                    fun hb_link:remove_link_specifier/1,
+                    OnlyCommittedKeys
+                )
+        end,
     % Normalize the ordering of the keys.
     OrderedKeys = hb_util:to_sorted_list(CommittedNormalizedKeys),
     ?event({only_committed_keys, OrderedKeys}),
