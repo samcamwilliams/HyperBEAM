@@ -236,8 +236,6 @@ extra_javascript:
   - js/parallax.js
   - js/navigation.js
 
-
-
 extra:
   social:
     - icon: fontawesome/brands/github

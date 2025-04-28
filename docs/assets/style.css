@@ -36,6 +36,7 @@ body[data-md-path="index"] .md-header {
 
 .md-header {
 	box-shadow: none !important;
+	background-color: transparent !important;
 }
 
 .md-grid {
@@ -192,6 +193,7 @@ body[data-md-path="index"] .md-header {
 	background: black;
 	min-height: 400px;
 	align-items: flex-end;
+	overflow: hidden;
 }
 
 .hero-floating-wrapper {
@@ -199,6 +201,7 @@ body[data-md-path="index"] .md-header {
 	bottom: 0;
 	width: 100%;
 	z-index: 4;
+	/* background: black; -- this causes some unusual behavior with the scroll. I think it looks better without it. DPS */
 }
 
 .hero-detail {
@@ -252,10 +255,11 @@ body[data-md-path="index"] .md-header {
 	position: absolute;
 	height: 100%;
 	width: 100%;
-	top: -5vh;
+	top: 0;
 	background-position: center;
 	background-size: cover;
 	object-fit: cover;
+	pointer-events: none;
 }
 
 .rocks img {
