@@ -251,7 +251,7 @@ write_key(Base, <<"commitments">>, HPAlg, Commitments, Store, Opts) ->
             % the maps.
             LoadedExistingCommitments = hb_cache:ensure_all_loaded(ExistingCommitments, Opts),
             ?event(debug_commitments, {loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
-            Merged = maps:merge(Commitments, LoadedExistingCommitments),
+            Merged = hb_maps:merge(Commitments, LoadedExistingCommitments),
             % Write the merged commitments to the store.
             {ok, Path} = do_write_message(Merged, Store, Opts),
             % Link the merged commitments to the message.
