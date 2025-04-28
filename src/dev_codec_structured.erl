@@ -48,7 +48,7 @@ from(Msg, Req, Opts) when is_map(Msg) ->
                 {ok, Value} when is_binary(Value) ->
                     {Types, [{Key, Value} | Values]};
                 {ok, Nested} when is_map(Nested) or is_list(Nested) ->
-                    ?event(debug, {from_recursing, {nested, Nested}}),
+                    ?event({from_recursing, {nested, Nested}}),
                     {Types, [{Key, hb_util:ok(from(Nested, Req, Opts))} | Values]};
                 {ok, Value} when
                         is_atom(Value) or is_integer(Value)

@@ -64,20 +64,28 @@ from(HTTP, _Req, Opts) ->
         WithIDs
     ),
     ?event({from_body, {headers, Headers}, {body, Body}, {msgwithoutatts, MsgWithoutSigs}}),
-    % Finally, we need to add the signatures to the TABM
+    % Finally, we need to add the signatures to the TABM.
     Commitments =
         dev_codec_httpsig_siginfo:siginfo_to_commitments(
             Headers,
             Opts
         ),
-    MsgWithSigs = hb_maps:merge(MsgWithoutSigs, Commitments),
-    ?event({message_with_atts, MsgWithSigs}),
+    MsgWithSigs =
+        case ?IS_EMPTY_MESSAGE(Commitments) of
+            false -> MsgWithoutSigs#{ <<"commitments">> => Commitments };
+            true -> MsgWithoutSigs
+        end,
+    ?event({message_with_commitments, MsgWithSigs}),
     Res =
         hb_maps:without(
-            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>],
+            Removed = hb_maps:keys(Commitments) ++ [<<"content-digest">>] ++
+                case hb_message:is_signed_key(<<"inline-body-key">>, MsgWithSigs, Opts) of
+                    true -> [];
+                    false -> [<<"inline-body-key">>]
+                end,
             MsgWithSigs
         ),
-    ?event({message_without_atts, Res, Removed}),
+    ?event({message_without_commitments, Res, Removed}),
     {ok, Res}.
 
 from_body(TABM, _InlinedKey, _ContentType, <<>>, _Opts) -> TABM;

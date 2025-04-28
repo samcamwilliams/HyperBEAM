@@ -11,16 +11,17 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    committed_empty_keys_test(<<"structured@1.0">>).
+    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
 
-%% @doc Return a list of codecs to test.
+%% @doc Return a list of codecs to test. Disable these as necessary if you need
+%% to test the functionality of a single codec, etc.
 test_codecs() ->
     [
-        <<"structured@1.0">>
-        % <<"httpsig@1.0">>,
-        % <<"flat@1.0">>,
-        % <<"ans104@1.0">>,
-        % <<"json@1.0">>
+        <<"structured@1.0">>,
+        <<"httpsig@1.0">>
+        %<<"flat@1.0">>,
+        %<<"ans104@1.0">>,
+        %<<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
@@ -83,7 +84,7 @@ suite_test_() ->
         {<<"Encode large balance table">>,
             fun encode_large_balance_table_test/1},
         % Signed messages
-        {<<"Signed item to message and back">>,
+        {<<"Signed message to message and back">>,
             fun signed_message_encode_decode_verify_test/1},
         {<<"Signed only committed data field">>,
             fun signed_only_committed_data_field_test/1},
@@ -110,7 +111,7 @@ suite_test_() ->
             fun deeply_nested_message_with_only_content/1},
         {<<"Signed deep serialize and deserialize">>,
             fun signed_deep_message_test/1},
-        {<<"Nested data key">>,
+        {<<"Signed nested data key">>,
             fun signed_nested_data_key_test/1},
         {<<"Signed message with hashpath">>,
             fun hashpath_sign_verify_test/1},
@@ -337,7 +338,7 @@ simple_nested_message_test(Codec) ->
     Opts = test_opts(Codec),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    ?event(debug, {matching, {input, Msg}, {output, Decoded}}),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
 nested_empty_map_test(Codec) ->
@@ -455,9 +456,14 @@ signed_message_encode_decode_verify_test(Codec) ->
         ),
     ?event({signed_msg, SignedMsg}),
     ?assertEqual(true, hb_message:verify(SignedMsg, all, Opts)),
-    ?event({verified, SignedMsg}),
     Encoded = hb_message:convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({msg_encoded_as_codec, Encoded}),
+    ?event({signature, {string, maps:get(<<"signature">>, Encoded, <<"NO SIG">>)}}),
+    ?event(
+        {signature_input,
+            {string, maps:get(<<"signature-input">>, Encoded, <<"NO SIG">>)}
+        }
+    ),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
@@ -806,7 +812,7 @@ deeply_nested_committed_keys_test() ->
     {ok, WithOnlyCommitted} = hb_message:with_only_committed(Signed, Opts),
     Committed = hb_message:committed(Signed, all, Opts),
     ToCompare = hb_maps:without([<<"commitments">>], WithOnlyCommitted),
-    ?event(debug,
+    ?event(
         {msgs,
             {base, Msg},
             {signed, Signed},
@@ -883,7 +889,7 @@ signed_with_inner_signed_message_test(Codec) ->
         hb_message:match(
             InnerSigned,
             hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
-            strict,
+            primary,
             Opts
         )
     ),

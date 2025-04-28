@@ -59,7 +59,7 @@
 -export([id/1, id/2, id/3]).
 -export([convert/3, convert/4, uncommitted/1, with_only_committers/2, committed/3]).
 -export([verify/1, verify/2, verify/3, commit/2, commit/3, signers/2, type/1, minimize/1]).
--export([commitment/2, commitment/3, with_only_committed/2]).
+-export([commitment/2, commitment/3, with_only_committed/2, is_signed_key/3]).
 -export([with_commitments/3, without_commitments/3]).
 -export([match/2, match/3, match/4, find_target/3]).
 %%% Helpers:
@@ -218,6 +218,10 @@ with_only_committers(Msg, Committers) when is_map(Msg) ->
     Msg#{ <<"commitments">> => NewCommitments };
 with_only_committers(Msg, _Committers) ->
     throw({unsupported_message_type, Msg}).
+
+%% @doc Determine whether a specific key is part of a message's commitments.
+is_signed_key(Key, Msg, Opts) ->
+    lists:member(Key, hb_message:committed(Msg, all, Opts)).
 
 %% @doc Sign a message with the given wallet.
 commit(Msg, WalletOrOpts) ->

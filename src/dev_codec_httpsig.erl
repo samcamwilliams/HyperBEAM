@@ -51,8 +51,8 @@ verify(Base, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     PubKey = maps:get(<<"keyid">>, Req),
     Signature = maps:get(<<"signature">>, Req),
     {ok, ar_wallet:verify({{rsa, 65537}, PubKey}, SigBase, Signature, sha512)};
-verify(_Base, #{ <<"type">> := Type }, _Opts) ->
-    {error, {unsupported_alg, Type}}.
+verify(_Base, Req, _Opts) ->
+    {error, {httpsig_unsupported_commitment_request, Req}}.
 
 %% @doc Commit to a message using the HTTP-Signature format. We use the `type'
 %% parameter to determine the type of commitment to use. If the `type' parameter

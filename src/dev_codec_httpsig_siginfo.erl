@@ -39,9 +39,9 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     Alg = commitment_to_alg(Commitment, Opts),
     % Find the public key from the commitment, which we will use as the
     % `keyid' in the `signature-input' keys.
-    KeyID = maps:get(<<"keyid">>, Commitment, <<>>),
+    KeyID = hb_util:encode(maps:get(<<"keyid">>, Commitment, <<>>)),
     % Extract the signature from the commitment.
-    Signature = maps:get(<<"signature">>, Commitment),
+    Signature = hb_util:encode(maps:get(<<"signature">>, Commitment)),
     % Extract the keys present in the commitment.
     CommittedKeys = committed_keys_to_siginfo(maps:get(<<"committed">>, Commitment)),
     % Extract the hashpath, used as a tag, from the commitment.
@@ -58,7 +58,7 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     SFSig = {item, {binary, Signature}, []},
     Params = 
         lists:filter(
-            fun ({_Key, Val}) -> Val =/= undefined end,
+            fun({_Key, {string, Val}}) -> Val =/= undefined end,
             [
                 {<<"alg">>, {string, Alg}},
                 {<<"keyid">>, {string, KeyID}},
@@ -126,15 +126,8 @@ siginfo_to_commitments(_Msg, _Opts) ->
 %% return a commitment.
 sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
     % Extract the signature and signature-input from the structured-fields.
-    {item, {binary, Sig}, []} = SFSig,
+    {item, {binary, EncodedSig}, []} = SFSig,
     {list, SigInput, ParamsKV} = SFSigInput,
-    % Generate the ID for the commitment from the signature. We use a SHA2-256
-    % hash of the signature, unless the signature is 32 bytes, in which case we
-    % use the signature directly as the ID.
-    ID = case byte_size(Sig) of
-        32 -> hb_util:human_id(Sig);
-        _ -> hb_util:human_id(crypto:hash(sha256, Sig))
-    end,
     % Generate a commitment message from the signature-input parameters.
     Commitment1 =
         maps:from_list(
@@ -162,12 +155,47 @@ sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
         ||
             {item, {string, Key}, []} <- SigInput
         ],
-    % Remove the `content-digest' key from the committed keys, if present, and
-    % replace it with the `body' key.
-    CommittedKeys = committed_keys_to_tabm(RawCommittedKeys),
-    Commitment3 = Commitment2#{ <<"committed">> => CommittedKeys },
-    % Return the commitment.
-    {ok, ID, Commitment3}.
+    % Merge and cleanup the output.
+    % 1. Remove the `content-digest' key from the committed keys, if present, and
+    %    replace it with the `body' key.
+    % 2. Decode the `keyid` (typically a public key) to its raw byte form.
+    % 3. Decode the `signature` to its raw byte form.
+    % 4. Filter undefined keys.
+    % 5. Generate the ID for the commitment from the signature. We use a SHA2-256
+    %    hash of the signature, unless the signature is 32 bytes, in which case we
+    %    use the signature directly as the ID.
+    % 6. If the `keyid' is a public key (determined by length >= 32 bytes), set
+    %    the `committer' to its hash.
+    Commitment3 =
+        Commitment2#{
+            <<"signature">> => EncodedSig,
+            <<"committed">> => committed_keys_to_tabm(RawCommittedKeys)
+        },
+    Commitment4 = decode_byte_keys([<<"keyid">>, <<"signature">>], Commitment3),
+    Commitment5 =
+        case maps:get(<<"keyid">>, Commitment4) of
+            DecKeyID when byte_size(DecKeyID) =< 32 ->
+                Commitment4;
+            DecPubKey ->
+                Commitment4#{
+                    <<"committer">> =>
+                        hb_util:human_id(crypto:hash(sha256, DecPubKey))
+                }
+        end,
+    ID =
+        case maps:get(<<"signature">>, Commitment5, EncodedSig) of
+            DecSig when byte_size(DecSig) == 32 -> hb_util:human_id(DecSig);
+            DecSig -> hb_util:human_id(crypto:hash(sha256, DecSig))
+        end,
+    % Return the commitment and calculated ID.
+    {ok, ID, Commitment5}.
+
+%% @doc Decode a list of keys, if they are present in the given message.
+decode_byte_keys([], Msg) -> Msg;
+decode_byte_keys([Key|Keys], Msg) when is_map_key(Key, Msg)->
+    decode_byte_keys(Keys, Msg#{ Key => hb_util:decode(maps:get(Key, Msg)) });
+decode_byte_keys([_NotPresentKey|Keys], Msg) ->
+    decode_byte_keys(Keys, Msg).
 
 %% @doc Normalize committed keys to their TABM format. This involves removing
 %% the `content-digest' key from the committed keys, if present, and replacing
