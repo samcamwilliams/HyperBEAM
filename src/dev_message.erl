@@ -242,8 +242,9 @@ commit(Self, Req, Opts) ->
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, RawBase} = hb_message:find_target(Self, Req, Opts),
-    Base = #{ <<"commitments">> := Commitments } =
+    Base =
         ensure_commitments_loaded(hb_message:convert(RawBase, tabm, Opts), Opts),
+    Commitments = maps:get(<<"commitments">>, Base, #{}),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
     Res =
