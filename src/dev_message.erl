@@ -56,7 +56,11 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
 id(RawBase, Req, NodeOpts) ->
     % Ensure that the base message is a normalized before proceeding.
     IDOpts = NodeOpts#{ linkify_mode => offload },
-    Base = hb_message:convert(RawBase, tabm, IDOpts),
+    Base =
+        ensure_commitments_loaded(
+            hb_message:convert(RawBase, tabm, IDOpts),
+            NodeOpts
+        ),
     % Remove the commitments from the base message if there are none, after
     % filtering for the committers specified in the request.
     ModBase = #{ <<"commitments">> := Commitments }
@@ -72,7 +76,7 @@ id(RawBase, Req, NodeOpts) ->
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
             ?event(ids, no_commitments_found_in_id_call),
-            calculate_ids(hb_maps:without([<<"commitments">>], ModBase), Req, IDOpts);
+            calculate_id(hb_maps:without([<<"commitments">>], ModBase), Req, IDOpts);
         IDs ->
             % Accumulate the relevant IDs into a single value. This is performed 
             % by module arithmetic of each of the IDs. The effect of this is that:
@@ -96,7 +100,7 @@ id(RawBase, Req, NodeOpts) ->
             }
     end.
 
-calculate_ids(Base, Req, NodeOpts) ->
+calculate_id(Base, Req, NodeOpts) ->
     % Find the ID device for the message.
     ?event(linkify, {calculate_ids, {base, Base}}),
     IDMod =
@@ -212,14 +216,18 @@ commit(Self, Req, Opts) ->
     AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, CommitOpts),
     {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
     % Encode to a TABM
-    Encoded = hb_message:convert(Base, tabm, CommitOpts),
+    Loaded =
+        ensure_commitments_loaded(
+            hb_message:convert(Base, tabm, CommitOpts),
+            Opts
+        ),
     {ok, Committed} =
         apply(
             AttFun,
             hb_ao:truncate_args(
                 AttFun,
                 [
-                    Encoded,
+                    Loaded,
                     Req#{ <<"type">> => maps:get(<<"type">>, Req, <<"signed">>) },
                     CommitOpts
                 ]
@@ -234,12 +242,8 @@ commit(Self, Req, Opts) ->
 verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, RawBase} = hb_message:find_target(Self, Req, Opts),
-    Base = hb_message:convert(RawBase, tabm, Opts),
-    Commitments =
-        hb_cache:ensure_all_loaded(
-            hb_maps:get(<<"commitments">>, Base, #{}, Opts),
-            Opts
-        ),
+    Base = #{ <<"commitments">> := Commitments } =
+        ensure_commitments_loaded(hb_message:convert(RawBase, tabm, Opts), Opts),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
     Res =
@@ -298,13 +302,15 @@ verify_commitment(Base, Commitment, Opts) ->
 
 %% @doc Return the list of committed keys from a message.
 committed(Self, Req, Opts) ->
-    % Get the target message of the verification request.
-    {ok, Base} =
+    % Get the target message of the verification request and ensure its 
+    % commitments are loaded.
+    {ok, RawBase} =
         hb_message:find_target(
             hb_cache:ensure_all_loaded(Self, Opts),
             Req,
             Opts
         ),
+    Base = ensure_commitments_loaded(RawBase, Opts),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
     ?event(debug_commitments,
         {calculating_committed,
@@ -453,13 +459,25 @@ commitment_ids_from_request(Base, Req, Opts) ->
     ?event({commitment_ids_from_request, {base, Base}, {req, Req}, {res, Res}}),
     Res.
 
+%% @doc Ensure that the `commitments` submessage of a base message is fully
+%% loaded into local memory.
+ensure_commitments_loaded(NonRelevant, _Opts) when not is_map(NonRelevant) ->
+    NonRelevant;
+ensure_commitments_loaded(M = #{ <<"commitments">> := Link}, Opts) when ?IS_LINK(Link) ->
+    M#{
+        <<"commitments">> => hb_cache:ensure_all_loaded(Link, Opts)
+    };
+ensure_commitments_loaded(M, _Opts) ->
+    M.
+
 %% @doc Returns a list of commitment IDs in a commitments map that are relevant
 %% for a list of given committer addresses.
-commitment_ids_from_committers(CommitterAddrs, Commitments, _Opts) ->
+commitment_ids_from_committers(CommitterAddrs, Commitments, Opts) ->
     % Get the IDs of all commitments for each committer.
     Comms =
         lists:map(
-            fun(CommitterAddr) ->
+            fun(RawCommitterAddr) ->
+                CommitterAddr = hb_cache:ensure_loaded(RawCommitterAddr, Opts),
                 % For each committer, filter the commitments to only
                 % include those with the matching committer address.
                 IDs = 
@@ -467,7 +485,7 @@ commitment_ids_from_committers(CommitterAddrs, Commitments, _Opts) ->
                         fun(ID, Msg) ->
                             % If the committer address matches, return
                             % the ID. If not, ignore the commitment.
-                            case maps:get(<<"committer">>, Msg, undefined) of
+                            case hb_maps:get(<<"committer">>, Msg, undefined) of
                                 CommitterAddr -> {true, ID};
                                 _ -> false
                             end

@@ -286,8 +286,7 @@ uncommitted(Msg) ->
 %% @doc Return all of the committers on a message that have 'normal', 256 bit, 
 %% addresses.
 signers(Msg, Opts) ->
-    lists:filter(fun(Signer) -> ?IS_ID(Signer) end,
-        hb_ao:get(<<"committers">>, Msg, [], Opts)).
+    hb_ao:get(<<"committers">>, Msg, [], Opts).
 
 %% @doc Get a codec from the options.
 get_codec(TargetFormat, Opts) ->
