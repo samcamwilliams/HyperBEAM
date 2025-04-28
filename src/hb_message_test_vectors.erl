@@ -18,10 +18,10 @@ run_test() ->
 test_codecs() ->
     [
         <<"structured@1.0">>,
-        <<"httpsig@1.0">>
-        %<<"flat@1.0">>,
+        <<"httpsig@1.0">>,
+        <<"flat@1.0">>,
         %<<"ans104@1.0">>,
-        %<<"json@1.0">>
+        <<"json@1.0">>
     ].
 
 %% @doc Return a set of options for testing, taking the codec name as an
@@ -458,12 +458,6 @@ signed_message_encode_decode_verify_test(Codec) ->
     ?assertEqual(true, hb_message:verify(SignedMsg, all, Opts)),
     Encoded = hb_message:convert(SignedMsg, Codec, <<"structured@1.0">>, Opts),
     ?event({msg_encoded_as_codec, Encoded}),
-    ?event({signature, {string, maps:get(<<"signature">>, Encoded, <<"NO SIG">>)}}),
-    ?event(
-        {signature_input,
-            {string, maps:get(<<"signature-input">>, Encoded, <<"NO SIG">>)}
-        }
-    ),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
     ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),

@@ -37,9 +37,10 @@ to(Msg, Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Req, Opts).
 from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
 
 % @doc Verify the signature of a commitment based on its `type' parameter.
-verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := ID }, Opts) ->
+verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := EncID }, Opts) ->
     % A hmac-sha256 commitment is verified simply by generating the ID from the
     % given committed keys.
+    ID = hb_util:decode(EncID),
     case hmac(Base, Req, Opts) of
         {ok, ID} -> {ok, true};
         {error, _} -> {ok, false}
@@ -48,8 +49,8 @@ verify(Base, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
     % A rsa-pss-sha512 commitment is verified by regenerating the signature
     % base and validating against the signature.
     SigBase = signature_base(Base, Req, Opts),
-    PubKey = maps:get(<<"keyid">>, Req),
-    Signature = maps:get(<<"signature">>, Req),
+    PubKey = hb_util:decode(maps:get(<<"keyid">>, Req)),
+    Signature = hb_util:decode(maps:get(<<"signature">>, Req)),
     {ok, ar_wallet:verify({{rsa, 65537}, PubKey}, SigBase, Signature, sha512)};
 verify(_Base, Req, _Opts) ->
     {error, {httpsig_unsupported_commitment_request, Req}}.
@@ -76,7 +77,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         MaybeTagMap#{
             <<"commitment-device">> => <<"httpsig@1.0">>,
             <<"type">> => <<"rsa-pss-sha512">>,
-            <<"keyid">> => ar_wallet:to_pubkey(Wallet),
+            <<"keyid">> => hb_util:encode(ar_wallet:to_pubkey(Wallet)),
             <<"committer">> =>
                 hb_util:human_id(ar_wallet:to_address(Wallet)),
             <<"committed">> =>
@@ -96,7 +97,10 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, Opts) ->
         MsgToSign#{
             <<"commitments">> =>
                 (maps:get(<<"commitments">>, MsgToSign, #{}))#{
-                    ID => UnsignedCommitment#{ <<"signature">> => Signature }
+                    ID =>
+                        UnsignedCommitment#{
+                            <<"signature">> => hb_util:encode(Signature)
+                        }
                 }
         },
         #{
@@ -131,8 +135,8 @@ commit(Msg, Req = #{ <<"type">> := <<"hmac-sha256">> }, Opts) ->
                     #{
                         <<"commitment-device">> => <<"httpsig@1.0">>,
                         <<"type">> => <<"hmac-sha256">>,
-                        <<"keyid">> => <<"ao">>,
-                        <<"signature">> => ID,
+                        <<"keyid">> => hb_util:encode(<<"ao">>),
+                        <<"signature">> => EncID,
                         <<"committed">> => hb_ao:normalize_keys(CommittedKeys)
                     }
             },

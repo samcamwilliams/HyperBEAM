@@ -9,12 +9,14 @@
 content_type(_) -> {ok, <<"application/json">>}.
 
 %% @doc Encode a message to a JSON string.
-to(Msg, _Req, _Opts) when is_binary(Msg) -> {ok, iolist_to_binary(json:encode(Msg))};
-to(Msg, _Req, _Opts) -> {ok, iolist_to_binary(json:encode(hb_private:reset(Msg)))}.
+to(Msg, _Req, _Opts) when is_binary(Msg) ->
+    {ok, hb_util:bin(json:encode(Msg))};
+to(Msg, _Req, _Opts) ->
+    {ok, hb_util:bin(json:encode(hb_private:reset(Msg)))}.
 
 %% @doc Decode a JSON string to a message.
 from(Map, _Req, _Opts) when is_map(Map) -> {ok, Map};
-from(Json, _Req, _Opts) -> {ok, json:decode(Json)}.
+from(JSON, _Req, _Opts) -> {ok, json:decode(JSON)}.
 
 commit(Msg, Req, Opts) -> dev_codec_httpsig:commit(Msg, Req, Opts).
 

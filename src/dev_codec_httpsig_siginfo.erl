@@ -39,9 +39,9 @@ commitment_to_sf_siginfo(Commitment, Opts) ->
     Alg = commitment_to_alg(Commitment, Opts),
     % Find the public key from the commitment, which we will use as the
     % `keyid' in the `signature-input' keys.
-    KeyID = hb_util:encode(maps:get(<<"keyid">>, Commitment, <<>>)),
+    KeyID = maps:get(<<"keyid">>, Commitment, <<>>),
     % Extract the signature from the commitment.
-    Signature = hb_util:encode(maps:get(<<"signature">>, Commitment)),
+    Signature = maps:get(<<"signature">>, Commitment),
     % Extract the keys present in the commitment.
     CommittedKeys = committed_keys_to_siginfo(maps:get(<<"committed">>, Commitment)),
     % Extract the hashpath, used as a tag, from the commitment.
@@ -171,19 +171,19 @@ sf_siginfo_to_commitment(SFSig, SFSigInput, Opts) ->
             <<"signature">> => EncodedSig,
             <<"committed">> => committed_keys_to_tabm(RawCommittedKeys)
         },
-    Commitment4 = decode_byte_keys([<<"keyid">>, <<"signature">>], Commitment3),
+    %Commitment4 = decode_byte_keys([<<"keyid">>, <<"signature">>], Commitment3),
     Commitment5 =
-        case maps:get(<<"keyid">>, Commitment4) of
+        case hb_util:decode(maps:get(<<"keyid">>, Commitment3)) of
             DecKeyID when byte_size(DecKeyID) =< 32 ->
-                Commitment4;
+                Commitment3;
             DecPubKey ->
-                Commitment4#{
+                Commitment3#{
                     <<"committer">> =>
                         hb_util:human_id(crypto:hash(sha256, DecPubKey))
                 }
         end,
     ID =
-        case maps:get(<<"signature">>, Commitment5, EncodedSig) of
+        case hb_util:decode(maps:get(<<"signature">>, Commitment5, EncodedSig)) of
             DecSig when byte_size(DecSig) == 32 -> hb_util:human_id(DecSig);
             DecSig -> hb_util:human_id(crypto:hash(sha256, DecSig))
         end,
