@@ -286,7 +286,7 @@ python3 -m venv venv
 source venv/bin/activate  # (macOS/Linux) On Windows use `venv\Scripts\activate`
 
 # Install required packages
-pip3 install mkdocs mkdocs-material
+pip3 install mkdocs mkdocs-material mkdocs-git-revision-date-localized-plugin
 
 # Deactivate the virtual environment when done
 # deactivate
@@ -363,7 +363,7 @@ To contribute documentation to HyperBEAM, follow these steps:
      ```bash
      python3 -m venv venv
      source venv/bin/activate
-     pip3 install mkdocs mkdocs-material
+     pip3 install mkdocs mkdocs-material mkdocs-git-revision-date-localized-plugin
      ```
    - Run the build script to verify your changes:
      ```bash
