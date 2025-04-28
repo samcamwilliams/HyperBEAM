@@ -146,6 +146,7 @@ nav:
   - Community:
     - Contribute Overview: 'community/guidelines.md'
     - Development Setup: 'community/setup.md'
+    - Contributing Documentation: 'community/contributing-docs.md'
 
 markdown_extensions:
   - attr_list

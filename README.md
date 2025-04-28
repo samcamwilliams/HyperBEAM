@@ -326,3 +326,65 @@ To view the built documentation locally:
 Press `Ctrl+C` in the terminal where the server is running to stop it.
 
 The final static site is generated in the `mkdocs-site` directory, as configured in `mkdocs.yml` (`site_dir: mkdocs-site`).
+
+### Contributing to the Documentation
+
+To contribute documentation to HyperBEAM, follow these steps:
+
+1. **Fork the Repository**
+   - Fork the [HyperBEAM repository](https://github.com/permaweb/HyperBEAM) to your GitHub account
+
+2. **Choose the Right Location**
+   - Review the existing documentation structure in `./docs/` to determine the appropriate location for your content
+   - Documentation is organized into several main sections:
+     - `overview/`: High-level concepts and architecture
+     - `installation-core/`: Setup and configuration guides
+     - `components/`: Detailed component documentation
+     - `usage/`: Tutorials and usage guides
+     - `resources/`: Reference materials and source code documentation
+     - `community/`: Contribution guidelines and community resources
+
+3. **Create Your Documentation**
+   - Create a new Markdown file (`.md`) in the appropriate directory
+   - Follow the existing documentation style and format
+   - Use proper Markdown syntax and include:
+     - Clear headings and subheadings
+     - Code blocks with appropriate language specification
+     - Links to related documentation
+     - Images (if needed) in the `docs/assets/` directory
+
+4. **Update the Navigation**
+   - Edit `mkdocs.yml` to add your documentation to the navigation
+   - Place your entry in the appropriate section under the `nav:` configuration
+   - Follow the existing indentation and format
+
+5. **Test Your Changes**
+   - Set up a local development environment:
+     ```bash
+     python3 -m venv venv
+     source venv/bin/activate
+     pip3 install mkdocs mkdocs-material
+     ```
+   - Run the build script to verify your changes:
+     ```bash
+     ./docs/build-all.sh
+     ```
+   - View the documentation locally at `http://127.0.0.1:8000/`
+
+6. **Submit a Pull Request**
+   - Create a new branch for your documentation changes
+   - Commit your changes with a descriptive message
+   - Submit a PR with:
+     - A clear title describing the documentation addition
+     - A detailed description explaining:
+       - The purpose of the new documentation
+       - Why it should be added to the official docs
+       - Any related issues or discussions
+     - Screenshots of the rendered documentation (if applicable)
+
+7. **Review Process**
+   - The HyperBEAM team will review your PR
+   - Be prepared to make adjustments based on feedback
+   - Once approved, your documentation will be merged into the main repository
+
+For more detailed contribution guidelines, see the [Community Guidelines](./docs/community/guidelines.md) and [Development Setup](./docs/community/setup.md) documentation.
