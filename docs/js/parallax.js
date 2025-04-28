@@ -3,33 +3,21 @@ function applyParallaxToPictures() {
   const header = document.querySelector(".custom-homepage-header");
   const heroSection = document.querySelector(".hero-container");
 
-  // Initialize depth and offset for each picture
   pictures.forEach((picture, index) => {
-    picture.dataset.depth = (index + 1) * 0.15; // or 0.01 if you want ultra subtle
+    picture.dataset.depth = (index + 1) * 0.15;
     picture.dataset.offset = "0";
   });
 
-  let lastScrollTop = window.pageYOffset;
-  let lastTime = performance.now();
-  let velocity = 0; // estimate velocity
-  const spring = 0.08; // how fast it springs toward the target
-  const damping = 0.85; // how much it slows down
+  let needsUpdate = false;
 
   function lerp(start, end, t) {
     return start * (1 - t) + end * t;
   }
 
-  function update(now) {
+  function update() {
+    needsUpdate = false;
     const scrollTop = window.pageYOffset;
-    const deltaTime = now - lastTime;
-    lastTime = now;
 
-    // Estimate scroll speed
-    const deltaScroll = scrollTop - lastScrollTop;
-    velocity = velocity * damping + deltaScroll * (1 - damping);
-    lastScrollTop = scrollTop;
-
-    // Header fade effect
     if (header && heroSection) {
       const fadeStart = heroSection.offsetTop + heroSection.offsetHeight * 0.8;
       const fadeEnd = heroSection.offsetTop + heroSection.offsetHeight * 0.93;
@@ -67,29 +55,29 @@ function applyParallaxToPictures() {
       const currentOffset = parseFloat(picture.dataset.offset);
       const targetOffset = scrollTop * depth;
 
-      // Smoothly spring toward the target
-      const springStrength =
-        spring + Math.min(Math.abs(velocity) * 0.002, 0.02); // dynamic spring
-      const newOffset = lerp(currentOffset, targetOffset, springStrength);
-
-      picture.dataset.offset = newOffset.toString();
-      picture.style.transform = `translateY(${newOffset}px)`;
+      const newOffset = lerp(currentOffset, targetOffset, 0.06);
 
       if (Math.abs(newOffset - targetOffset) > 0.5) {
         stillMoving = true;
+        picture.dataset.offset = newOffset.toString();
+        picture.style.transform = `translateY(${newOffset}px)`;
+      } else {
+        // Snap exactly when close enough
+        picture.dataset.offset = targetOffset.toString();
+        picture.style.transform = `translateY(${targetOffset}px)`;
       }
     });
 
-    if (stillMoving) {
+    if (stillMoving || needsUpdate) {
       requestAnimationFrame(update);
     }
   }
 
   window.addEventListener("scroll", () => {
+    needsUpdate = true;
     requestAnimationFrame(update);
   });
 
-  // Start the first frame
   requestAnimationFrame(update);
 }
 
