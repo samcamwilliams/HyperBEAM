@@ -487,7 +487,7 @@ format(Map, Indent) when is_map(Map) ->
     end;
 format(Item, Indent) ->
     % Whatever we have is not a message map.
-    hb_util:format_indented("[UNEXPECTED VALUE] ~p", [Item], Indent).
+    hb_util:format_indented("~p", [Item], Indent).
 
 %% @doc Return the type of an encoded message.
 type(TX) when is_record(TX, tx) -> tx;
