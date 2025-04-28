@@ -22,7 +22,13 @@ nav:
     - HyperBEAM Setup & Config:
       - Overview: 'installation-core/hyperbeam-setup-config/index.md'
       - Setup: 'installation-core/hyperbeam-setup-config/setup.md'
-      - Configuration: 'installation-core/hyperbeam-setup-config/configuration/index.md'
+      - Configuration:
+        - Overview: 'installation-core/hyperbeam-setup-config/configuration/index.md'
+        - Methods: 'installation-core/hyperbeam-setup-config/configuration/configuration-methods.md'
+        - Options: 'installation-core/hyperbeam-setup-config/configuration/configuration-options.md'
+        - Examples: 'installation-core/hyperbeam-setup-config/configuration/configuration-examples.md'
+        - Routing: 'installation-core/hyperbeam-setup-config/configuration/routing-configuration.md'
+        - Storage: 'installation-core/hyperbeam-setup-config/configuration/storage-configuration.md'
       - Testing: 'installation-core/hyperbeam-setup-config/testing.md'
       - API Reference: 'installation-core/hyperbeam-setup-config/api.md'
   - Components:
