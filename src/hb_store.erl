@@ -1,3 +1,47 @@
+%%% @doc A simple abstraction layer for AO key value store operations.
+%%% 
+%%% This interface allows us to swap out the underlying store implementation(s)
+%%% as desired, without changing the API that `hb_cache` employs. Additionally,
+%%% it enables node operators to customize their configuration to maximize
+%%% performance, data availability, and other factors.
+%%% 
+%%% Stores can be represented in a node's configuration as either a single 
+%%% message, or a (`structured@1.0') list of store messages. If a list of stores
+%%% is provided, the node will cycle through each until a viable store is found
+%%% to execute the given function.
+%%% 
+%%% A valid store must implement a _subset_ of the following functions:
+%%% ```
+%%%     start/1:      Initialize the store.
+%%%     stop/1:       Stop any processes (etc.) that manage the store.
+%%%     reset/1:      Restore the store to its original, empty state.
+%%%     scope/0:      A tag describing the 'scope' of a stores search: `in_memory',
+%%%                   `local', `remote', `arweave', etc. Used in order to allow
+%%%                   node operators to prioritize their stores for search.
+%%%     make_group/2: Create a new group of keys in the store with the given ID.
+%%%     make_link/3:  Create a link (implying one key should redirect to another)
+%%%                   from `existing` to `new` (in that order).
+%%%     type/2:       Return whether the value found at the given key is a
+%%%                   `composite' (group) type, or a `simple' direct binary.
+%%%     read/2:       Read the data at the given location, returning a binary
+%%%                   if it is a `simple' value, or a message if it is a complex
+%%%                   term.
+%%%     write/3:      Write the given `key` with the associated `value` (in that
+%%%                   order) to the store.
+%%%     list/2:       For `composite' type keys, return a list of its child keys.
+%%%     path/2:       Optionally transform a list of path parts into the store's
+%%%                   canonical form.
+%%% '''
+%%% Each function takes a `store' message first, containing an arbitrary set
+%%% of its necessary configuration keys, as well as the `store-module' key which
+%%% refers to the Erlang module that implements the store.
+%%% 
+%%% All functions must return `ok` or `{ok, Result}`, as appropriate. Other 
+%%% results will lead to the store manager (this module) iterating to the next
+%%% store message given by the user. If none of the given store messages are 
+%%% able to execute a requested service, the store manager will return 
+%%% `{error, no_viable_store}`.
+
 -module(hb_store).
 -export([behavior_info/1]).
 -export([start/1, stop/1, reset/1]).
@@ -8,14 +52,6 @@
 -export([generate_test_suite/1, generate_test_suite/2, test_stores/0]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
-
-%%% A simple abstraction layer for AO key value store operations.
-%%% This interface allows us to swap out the underlying store
-%%% implementation(s) as desired.
-%%% 
-%%% It takes a list of modules and their options, and calls the appropriate
-%%% function on the first module that succeeds. If all modules fail, it returns
-%%% {error, no_viable_store}.
 
 behavior_info(callbacks) ->
     [

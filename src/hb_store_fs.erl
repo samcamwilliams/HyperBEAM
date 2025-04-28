@@ -1,3 +1,21 @@
+%%% @doc A key-value store implementation, following the `hb_store' behavior 
+%%% and interface. This implementation utilizes the node's local file system as
+%%% its storage mechanism, offering an alternative to other store's that require
+%%% the compilation of additional libraries in order to function.
+%%% 
+%%% As this store implementation operates using Erlang's native `file' and 
+%%% `filelib' mechanisms, it largely inherits its performance characteristics 
+%%% from those of the underlying OS/filesystem drivers. Certain filesystems can
+%%% be quite performant for the types of workload that HyperBEAM AO-Core execution
+%%% requires (many reads and writes to explicit keys, few directory 'listing' or
+%%% search operations), awhile others perform suboptimally.
+%%% 
+%%% Additionally, thisstore implementation offers the ability for simple 
+%%% integration of HyperBEAM with other non-volatile storage media: `hb_store_fs'
+%%% will interact with any service that implements the host operating system's
+%%% native filesystem API. By mounting devices via `FUSE' (etc), HyperBEAM is
+%%% able to interact with a large number of existing storage systems (for example,
+%%% S3-compatible cloud storage APIs, etc).
 -module(hb_store_fs).
 -behavior(hb_store).
 -export([start/1, stop/1, reset/1, scope/0]).
@@ -5,10 +23,6 @@
 -export([make_group/2, make_link/3, resolve/2]).
 -include_lib("kernel/include/file.hrl").
 -include("include/hb.hrl").
-
-%%% A key-value store abstraction, such that the underlying implementation
-%%% can be swapped out easily. The default implementation is a file-based
-%%% store.
 
 %% @doc Initialize the file system store with the given data directory.
 start(#{ <<"prefix">> := DataDir }) ->
