@@ -1,25 +1,36 @@
-%%% @doc In-Memory store that implements a simple least-recently-used cache, offloading to a specified non-volatile store over time.
-%%% This cache is registered under `{in_memory, HTTPServerID}`, so that all processes that are executing using the HTTP server’s Opts can find it quickly.
+%%% @doc An in-memory store that implements a simple least-recently-used cache, 
+%%% offloading to a specified non-volatile store over time.
+%%% This cache is registered under `{in_memory, HTTPServerID}`, in `hb_name`
+%%% so that all processes that are executing using the HTTP server’s Opts 
+%%% can find it quickly.
 %%%
-%%% The Last Recent Used strategy (first is the most recent used, last is the least recent used) is implemented by keeping track of the order and bytes on ets tables:
-%%% - A cache table containing all the entries along with the value size and key index.
-%%% - A cache indexing table containing all the index pointing to the keys. The IDs are then sorted to ease the eviction policy.
-%%% - A cache statistics table containing all the information about the cache size, capacity, and indexing.
+%%% The least-recently-used strategy (first is the most recent used, last is the 
+%%% least recently used) is implemented by keeping track of the order and bytes
+%%%  on ets tables:
+%%% - A cache table containing all the entries along with the value size and 
+%%%   key index.
+%%% - A cache indexing table containing all the index pointing to the keys. The
+%%%   IDs are then sorted to ease the eviction policy.
+%%% - A cache statistics table containing all the information about the cache
+%%%   size, capacity, and indexing.
 -module(hb_cache_lru).
-
 -export([start/2, put/3, get/2]).
-
 -include_lib("eunit/include/eunit.hrl").
-
 -include("include/hb.hrl").
 
-%%% @doc Start the LRU cache
+%%% @doc Start the LRU cache.
 start(NodeMsg, Opts) ->
-    spawn(fun() ->
+    spawn(
+        fun() ->
              State = init(NodeMsg, Opts),
              server_loop(State, Opts)
-          end).
+        end
+    ).
 
+%% @doc Create the `ets' tables for the LRU cache:
+%% - The cache of data itself (public, with read concurrency enabled)
+%% - A set for the LRU's stats.
+%% - An ordered set for the cache's index.
 init(NodeMsg, Opts) ->
     ServerID = hb_ao:get(http_server, NodeMsg, Opts),
     ?event(cache_lru, {start_server, ServerID}),
@@ -29,9 +40,11 @@ init(NodeMsg, Opts) ->
     CacheIndexTable = ets:new(hb_cache_lru_index, [ordered_set]),
     hb_name:register({in_memory, ServerID}),
     persistent_term:put({in_memory_lru_cache, ServerID}, CacheTable),
-    #{cache_table => CacheTable,
-      stats_table => CacheStatsTable,
-      index_table => CacheIndexTable}.
+    #{
+        cache_table => CacheTable,
+        stats_table => CacheStatsTable,
+        index_table => CacheIndexTable
+    }.
 
 server_loop(State = #{cache_table := Table}, Opts) ->
     receive
@@ -45,8 +58,10 @@ server_loop(State = #{cache_table := Table}, Opts) ->
     end,
     server_loop(State, Opts).
 
-%%% @doc Write an entry in the cache
-%%% After writing, the LRU is updated by moving the key in the most recent used key to cycle and re-prioritize cache entry
+%% @doc Write an entry in the cache.
+%% 
+%% After writing, the LRU is updated by moving the key in the most-recently-used
+%% key to cycle and re-prioritize cache entry.
 put(Key, Value, Opts) ->
     ServerID = hb_ao:get(http_server, Opts),
     CacheServer =
@@ -64,8 +79,9 @@ put(Key, Value, Opts) ->
             ok
     end.
 
-%%% @doc Retrieve value in the cache from the given key
-%%% Because the cache uses LRU, the key is moved on the most recent used key to cycle and re-prioritize cache entry
+%% @doc Retrieve value in the cache from the given key
+%% Because the cache uses LRU, the key is moved on the most recent used key to
+%% cycle and re-prioritize cache entry
 get(Key, Opts) ->
     ServerID = hb_ao:get(http_server, Opts),
     CacheTable = persistent_term:get({in_memory_lru_cache, ServerID}),
@@ -288,9 +304,14 @@ evict_items_with_insufficient_space_test() ->
 
 evict_but_able_to_read_from_fs_store_test() ->
     Opts =
-        #{store =>
-              StoreOpts =
-                  #{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST/lru">>}},
+        #{
+            store =>
+                StoreOpts =
+                        #{
+                            <<"store-module">> => hb_store_fs,
+                            <<"prefix">> => <<"cache-TEST/lru">>
+                        }
+        },
     NodeMsg = hb_http_server:set_default_opts(Opts),
     hb_store:reset(StoreOpts),
     ServerID =
