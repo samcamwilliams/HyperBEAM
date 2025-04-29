@@ -25,12 +25,12 @@ This architecture separates business logic from external interfaces, making the 
 ## Project Structure
 
 - **domain**: Contains all business logic and public APIs
-  - **api**: Implements public interfaces
-  - **lib**: Contains business logic components
-  - **dal.js**: Defines contracts for driven adapters
+	- **api**: Implements public interfaces
+	- **lib**: Contains business logic components
+	- **dal.js**: Defines contracts for driven adapters
 
 - **effects**: Contains implementations of external interfaces
-  - **ao-http**: Exposes the HTTP API consumed by other ao units
+	- **ao-http**: Exposes the HTTP API consumed by other ao units
 
 ## Technical Requirements
 

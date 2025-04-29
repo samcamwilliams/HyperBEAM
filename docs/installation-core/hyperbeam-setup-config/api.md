@@ -1,4 +1,4 @@
-<!-- # HyperBEAM API
+# HyperBEAM API
 
 This document describes the HTTP API exposed by HyperBEAM for interacting with devices and processes.
 
@@ -149,4 +149,4 @@ Error responses include JSON payloads with more detailed information about the e
 
 - API rate limits may be enforced depending on node configuration
 - Some operations may require payment depending on the pricing device configuration
-- Large messages may be rejected depending on node configuration -->
+- Large messages may be rejected depending on node configuration
