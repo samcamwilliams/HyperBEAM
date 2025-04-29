@@ -32,9 +32,9 @@ Create a new Markdown file (`.md`) in the appropriate directory. Follow these gu
 - Add code blocks with appropriate language specification
 - Link to related documentation
 - For images:
-  - Upload images to Arweave using [ArDrive](https://ardrive.io/) or your preferred Arweave upload method
-  - Reference images using their Arweave transaction ID (txid) in the format: `https://arweave.net/<txid>`
-  - Example: `![Image Description](https://arweave.net/abc123...)`
+	- Upload images to Arweave using [ArDrive](https://ardrive.io/) or your preferred Arweave upload method
+  	- Reference images using their Arweave transaction ID (txid) in the format: `https://arweave.net/<txid>`
+  	- Example: `![Image Description](https://arweave.net/abc123...)`
 - Follow the existing documentation style and format
 
 ### 4. Update the Navigation
@@ -75,12 +75,12 @@ When your documentation is ready:
 1. Create a new branch for your changes
 2. Commit your changes with a descriptive message
 3. Submit a PR with:
-   - A clear title describing the documentation addition
-   - A detailed description explaining:
-     - The purpose of the new documentation
-     - Why it should be added to the official docs
-     - Any related issues or discussions
-   - Screenshots of the rendered documentation (if applicable)
+	- A clear title describing the documentation addition
+	- A detailed description explaining:
+		- The purpose of the new documentation
+		- Why it should be added to the official docs
+		- Any related issues or discussions
+	- Screenshots of the rendered documentation (if applicable)
 
 ### 7. Review Process
 

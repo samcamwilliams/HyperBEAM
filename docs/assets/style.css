@@ -39,7 +39,7 @@ body {
 }
 
 .md-grid {
-	transition: all 1s;
+	/* transition: all 1s; this occurs on initial load, causing strange UI artifact */
 	max-width: var(--docs-max-width);
 }
 

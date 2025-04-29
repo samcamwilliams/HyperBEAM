@@ -1,7 +1,7 @@
 site_name: 'HyperBEAM - Documentation'
 repo_url: https://github.com/permaweb/HyperBEAM
 repo_name: 'permaweb/HyperBEAM'
-site_url: https://permaweb.github.io/
+site_url: http://[::]:8000/
 
 docs_dir: docs
 site_dir: mkdocs-site
@@ -36,8 +36,7 @@ nav:
       - Overview: 'components/compute-unit/index.md'
       - Setup: 'components/compute-unit/setup.md'
       - Configuration: 'components/compute-unit/configuration.md'
-    - Trusted Execution (TEE):
-      - Overview: 'components/trusted-execution/index.md'
+    - Trusted Execution (TEE): 'components/tee.md'
   - Usage:
     - Guides Overview: 'usage/index.md'
     - HB JavaScript Client: 'usage/js-client-guide.md'
@@ -178,7 +177,7 @@ markdown_extensions:
   - pymdownx.tasklist:
       custom_checkbox: true
   - toc:
-      toc_depth: 2
+      toc_depth: 3
       permalink: true
 
 theme: 
@@ -190,17 +189,18 @@ theme:
   icon:
     repo: fontawesome/brands/github 
   features:
-    - navigation.instant
-    # - navigation.instant.progress
+    # - navigation.instant
+    - navigation.instant.progress
+    - navigation.instant.prefetch
     - navigation.tracking
     - navigation.sections
     - navigation.path
-    - navigation.top
-    # - navigation.expand
+    - navigation.expand
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.indexes
-    - toc.follow
+    - navigation.prune
+    - toc.integrate
     - content.tooltips
     - content.code.copy
     - content.code.select
@@ -241,6 +241,9 @@ extra_javascript:
   - js/custom-header.js
   - js/parallax.js
   - js/navigation.js
+  - js/toc-highlight.js
+  - js/custom-nav.js
+  - js/disable-preload-transition.js
 
 extra:
   social:
