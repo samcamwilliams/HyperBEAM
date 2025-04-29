@@ -7,6 +7,9 @@
 -module(dev_codec_httpsig).
 %%% Codec API functions
 -export([to/3, from/3]).
+%%% Uni-directional codec support (_to_ binary/header+body components), but not 
+%%% back.
+-export([serialize/2, serialize/3]).
 %%% Commitment API functions
 -export([commit/3, verify/3]).
 %%% Public API functions
@@ -35,6 +38,35 @@
 %%% Routing functions for the `dev_codec_httpsig_conv' module
 to(Msg, Req, Opts) -> dev_codec_httpsig_conv:to(Msg, Req, Opts).
 from(Msg, Req, Opts) -> dev_codec_httpsig_conv:from(Msg, Req, Opts).
+
+%% @doc A helper utility for creating a direct encoding of a HTTPSig message.
+%% 
+%% This function supports two modes of operation:
+%% 1. `format: binary`, yielding a raw binary HTTP/1.1-style response that can 
+%%    either be stored or emitted raw accross a transport medium.
+%% 2. `format: components`, yielding a message containing `headers` and `body`
+%%    keys, suitable for use in connecting to HTTP-response flows implemented 
+%%    by other servers.
+%% 
+%% Optionally, the `index` key can be set to override resolution of the default
+%% index page into HTTP responses that do not contain their own `body` field.
+serialize(Msg, Opts) -> serialize(Msg, #{}, Opts).
+serialize(Msg, #{ <<"format">> := <<"components">> }, Opts) ->
+    % Convert to HTTPSig via TABM through calling `hb_message:convert` rather
+    % than executing `to/3` directly. This ensures that our responses are 
+    % normalized.
+    {ok, EncMsg} = hb_message:convert(Msg, <<"httpsig@1.0">>, Opts),
+    {ok,
+        #{
+            <<"body">> => hb_maps:get(<<"body">>, EncMsg, <<>>),
+            <<"headers">> => hb_maps:without([<<"body">>], EncMsg)
+        }
+    };
+serialize(Msg, _Req, Opts) ->
+    % We assume the default format of `binary` if none of the prior clauses
+    % match.
+    HTTPSig = hb_message:convert(Msg, <<"httpsig@1.0">>, Opts), 
+    {ok, dev_codec_httpsig_conv:encode_http_msg(HTTPSig, Opts) }.
 
 % @doc Verify the signature of a commitment based on its `type' parameter.
 verify(Base, Req = #{ <<"type">> := <<"hmac-sha256">>, <<"signature">> := EncID }, Opts) ->
