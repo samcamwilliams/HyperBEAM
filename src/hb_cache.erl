@@ -237,17 +237,24 @@ do_write_message(Msg, Store, Opts) when is_map(Msg) ->
     {ok, UncommittedID}.
 
 %% @doc Write a single key for a message into the store.
-write_key(Base, <<"commitments">>, HPAlg, Commitments, Store, Opts) ->
+write_key(Base, <<"commitments">>, HPAlg, RawCommitments, Store, Opts) ->
     % Search to see if we already have commitments for this message locally.
+    Commitments = prepare_commitments(RawCommitments, Opts),
     ?event(debug_commitments, {writing_commitments, {base, Base}, {commitments, Commitments}, {store, Store}}),
     LocalStore = hb_store:scope(Store, local),
     case read(<<Base/binary, "/commitments">>, Opts#{ store => LocalStore }) of
         {ok, ExistingCommitments} ->
             % We do, so we need to merge the new commitments with the old ones.
-            % We do this by fully loading the existing commitments and merging
-            % the maps.
-            LoadedExistingCommitments = hb_cache:ensure_all_loaded(ExistingCommitments, Opts),
-            ?event(debug_commitments, {loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
+            % We do this by fully loading the existing commitments, converting
+            % them to TABM, and merging the maps.
+            LoadedExistingCommitments =
+                hb_message:convert(
+                    hb_cache:ensure_all_loaded(ExistingCommitments, Opts),
+                    tabm,
+                    <<"structured@1.0">>,
+                    Opts
+                ),
+            ?event(debug, {loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
             Merged = hb_maps:merge(Commitments, LoadedExistingCommitments),
             % Write the merged commitments to the store.
             {ok, Path} = do_write_message(Merged, Store, Opts),
@@ -273,6 +280,18 @@ do_write_key(Base, Key, HPAlg, Value, Store, Opts) ->
     {ok, Path} = do_write_message(Value, Store, Opts),
     hb_store:make_link(Store, Path, KeyHashPath),
     {ok, Path}.
+
+%% @doc The `structured@1.0` encoder does not typically encode `commitments`,
+%% subsequently, when we encounter a commitments message we prepare its contents
+%% separately, then write each to the store.
+prepare_commitments(RawCommitments, Opts) ->
+    Commitments = ensure_all_loaded(RawCommitments, Opts),
+    maps:map(
+        fun(_, StructuredCommitment) ->
+            hb_message:convert(StructuredCommitment, tabm, Opts)
+        end,
+        Commitments
+    ).
 
 %% @doc Calculate the IDs for a message.
 calculate_all_ids(Bin, _Opts) when is_binary(Bin) -> [];
@@ -369,7 +388,7 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
     Res =
         maps:from_list(lists:filtermap(
             fun(<<"ao-types">>) -> false;
-                (<<"commitments+link">>) ->
+                (<<"commitments">>) ->
                     % Ensure that the full commitments map is recursively
                     % loaded into memory.
                     {true,
@@ -381,11 +400,10 @@ prepare_links(RootPath, Subpaths, Store, Opts) ->
                                         Store,
                                         [
                                             RootPath,
-                                            <<"commitments+link">>
+                                            <<"commitments">>
                                         ]
                                     ),
                                     #{
-                                        <<"type">> => <<"link">>,
                                         <<"lazy">> => true
                                     }
                                 },
