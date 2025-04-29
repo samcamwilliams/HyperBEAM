@@ -195,7 +195,7 @@ theme:
     - navigation.tracking
     - navigation.sections
     - navigation.path
-    - navigation.expand
+    # - navigation.expand
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.indexes
