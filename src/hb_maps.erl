@@ -21,7 +21,7 @@
 -export([put/3, map/2, map/3, filter/2, filter/3, filtermap/2, filtermap/3]).
 -export([fold/3, fold/4, take/2, size/1]).
 -export([merge/2, remove/2, with/2, without/2, update_with/3, update_with/4]).
--export([from_list/1, to_list/1]).
+-export([from_list/1, to_list/1, to_list/2]).
 -include_lib("eunit/include/eunit.hrl").
 
 -spec get(Key :: term(), Map :: map()) -> term().
@@ -214,7 +214,9 @@ from_list(List) ->
 
 -spec to_list(Map :: map()) -> [{Key :: term(), Value :: term()}].
 to_list(Map) ->
-    maps:to_list(hb_cache:ensure_loaded(Map)).
+    to_list(Map, #{}).
+to_list(Map, Opts) ->
+    maps:to_list(hb_cache:ensure_loaded(Map, Opts)).
 
 %%% Tests
 
