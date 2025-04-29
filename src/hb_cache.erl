@@ -255,7 +255,7 @@ write_key(Base, <<"commitments">>, HPAlg, RawCommitments, Store, Opts) ->
                     <<"structured@1.0">>,
                     Opts
                 ),
-            ?event(debug, {loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
+            ?event({loaded_existing_commitments, {commitments, LoadedExistingCommitments}, {new, Commitments}}),
             Merged = hb_maps:merge(Commitments, LoadedExistingCommitments),
             % Write the merged commitments to the store.
             {ok, Path} = do_write_message(Merged, Store, Opts),

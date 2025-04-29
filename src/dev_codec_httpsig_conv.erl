@@ -578,7 +578,9 @@ inline_key(Msg) ->
     end.
 
 %% @doc Encode a HTTP message into a binary.
-encode_http_msg(Httpsig, Opts) ->
+encode_http_msg(Msg, Opts) ->
+    % Convert the message to a HTTP-Sig encoded output.
+    Httpsig = hb_message:convert(Msg, <<"httpsig@1.0">>, Opts),
     % Serialize the headers, to be included in the part of the multipart response
     HeaderList =
         lists:foldl(
@@ -588,7 +590,7 @@ encode_http_msg(Httpsig, Opts) ->
                 [<<HeaderName/binary, ": ", HVal/binary>> | Acc]
             end,
             [],
-            hb_maps:to_list(hb_maps:without([<<"body">>], Httpsig), Opts)
+            hb_maps:to_list(hb_maps:without([<<"body">>, <<"priv">>], Httpsig), Opts)
         ),
     EncodedHeaders = iolist_to_binary(lists:join(?CRLF, lists:reverse(HeaderList))),
     case hb_maps:get(<<"body">>, Httpsig, <<>>) of

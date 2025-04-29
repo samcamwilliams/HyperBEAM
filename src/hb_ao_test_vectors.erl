@@ -168,13 +168,13 @@ exec_dummy_device(SigningWallet, Opts) ->
                     <<"body">> => Bin
                 }
             ),
-            SigningWallet
+            Opts
         ),
     {ok, ID} = hb_cache:write(DevMsg, Opts),
     % Ensure that we can read the device message from the cache and that it matches
     % the original message.
     {ok, ReadMsg} = hb_cache:read(ID, Opts),
-    ?assertEqual(DevMsg, hb_cache:ensure_all_loaded(ReadMsg)),
+    ?assertEqual(DevMsg, hb_cache:ensure_all_loaded(ReadMsg, Opts)),
     % Create a base message with the device ID, then request a dummy path from
     % it.
     hb_ao:resolve(
