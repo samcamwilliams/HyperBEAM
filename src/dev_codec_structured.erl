@@ -119,22 +119,6 @@ from(Other, _Req, _Opts) -> {ok, hb_path:to_binary(Other)}.
 to(Bin, _Req, _Opts) when is_binary(Bin) -> {ok, Bin};
 to(TABM0, Req, Opts) ->
     Types = decode_ao_types(TABM0, Opts),
-    % "empty values" will each have a type, but no corresponding value
-    % (because its empty)
-    % 
-    % So we first loop through Types and map over the each empty type to its
-    % equivalent empty value
-    EmptyKeys = maps:from_list(
-        maps:fold(
-            fun (Key, <<"empty-binary">>, Acc) -> [{Key, <<>>} | Acc];
-                (Key, <<"empty-list">>, Acc) -> [{Key, []} | Acc];
-                (Key, <<"empty-message">>, Acc) -> [{Key, #{}} | Acc];
-                (_Key, _Value, Acc) -> Acc
-            end,
-            [],
-            Types
-        )
-    ),
     % Decode all links to their HyperBEAM-native, resolvable form.
     TABM1 = hb_link:decode_all_links(TABM0),
     % 1. Remove 'ao-types' field
@@ -162,7 +146,7 @@ to(TABM0, Req, Opts) ->
                 % We can just return it as is.
                 Acc#{ RawKey => Value }
             end,
-            EmptyKeys,
+            #{},
             TABM1
         )),
     % If the message is a list, we need to convert it back.
