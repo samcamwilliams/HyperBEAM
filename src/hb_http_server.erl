@@ -300,8 +300,8 @@ handle_request(RawReq, Body, ServerID) ->
                 #{
                     <<"location">> =>
                         hb_opts:get(
-                            default_req,
-                            <<"/~hyperbuddy@1.0/index">>,
+                            default_request,
+                            <<"/~hyperbuddy@1.0/dashboard">>,
                             NodeMsg
                         )
                 },

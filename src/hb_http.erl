@@ -527,12 +527,18 @@ encode_reply(TABMReq, Message, Opts) ->
     % documents, and subsequently must set its own headers.
     case Codec of
         <<"httpsig@1.0">> ->
-            EncMessage =
+            TABM =
                 hb_message:convert(
                     Message,
-                    <<"httpsig@1.0">>,
+                    tabm,
                     <<"structured@1.0">>,
                     Opts#{ topic => ao_internal }
+                ),
+            {ok, EncMessage} =
+                dev_codec_httpsig:to(
+                    TABM,
+                    #{ <<"index">> => true },
+                    Opts
                 ),
             {
                 ok,
@@ -867,3 +873,13 @@ send_large_signed_request_test() ->
             #{ http_client => httpc }
         )
     ).
+
+index_test() ->
+    URL = hb_http_server:start_node(),
+    {ok, Res} = get(URL, <<"/~test@1.0">>, #{}),
+    ?assertEqual(<<"i like turtles!">>, Res).
+
+index_request_test() ->
+    URL = hb_http_server:start_node(),
+    {ok, Res} = get(URL, <<"/~test@1.0?name=dogs">>, #{}),
+    ?assertEqual(<<"i like dogs!">>, Res).

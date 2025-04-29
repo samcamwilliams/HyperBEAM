@@ -11,6 +11,8 @@
 %%% Commitment-specific keys:
 -export([id/1, id/2, id/3]).
 -export([commit/3, committed/3, committers/1, committers/2, committers/3, verify/3]).
+%%% Non-protocol enforced keys:
+-export([index/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 -define(DEFAULT_ID_DEVICE, <<"httpsig@1.0">>).
@@ -33,6 +35,18 @@ info() ->
     #{
         default => fun get/4
     }.
+
+%% @doc Generate an index page for a message, in the event that the `body` and
+%% `content-type` of a message returned to the client are both empty. We do this
+%% by finding the `default_index` key of the node message and executing the base
+%% message as a request to it with the path set to `index`.
+index(Msg, _Req, Opts) ->
+    case hb_opts:get(default_index, not_found, Opts) of
+        not_found ->
+            {error, <<"No default index message set.">>};
+        DefaultIndex ->
+            hb_ao:resolve(DefaultIndex, Msg#{ <<"path">> => <<"index">> }, Opts)
+    end.
 
 %% @doc Return the ID of a message, using the `committers' list if it exists.
 %% If the `committers' key is `all', return the ID including all known 
@@ -782,6 +796,3 @@ verify_test() ->
             #{ hashpath => ignore }
         )
     ).
-
-run_test() ->
-    hb_message:deep_multisignature_test().

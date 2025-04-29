@@ -8,8 +8,13 @@ info() ->
     #{
         default => fun serve/4,
         routes => #{
+            % Default message viewer page:
             <<"index">> => <<"index.html">>,
+            % HyperBEAM default homepage:
+            <<"dashboard">> => <<"dashboard.html">>,
+            % Interactive REPL:
             <<"console">> => <<"console.html">>,
+            % Styling and scripts:
 			<<"styles.css">> => <<"styles.css">>,
 			<<"metrics.js">> => <<"metrics.js">>,
 			<<"devices.js">> => <<"devices.js">>,
@@ -32,8 +37,15 @@ metrics(_, Req, Opts) ->
                 registry => prometheus_registry:exists(<<"default">>),
                 standalone => false}
             ),
-            RawHeaderMap = hb_maps:from_list(prometheus_cowboy:to_cowboy_headers(HeaderList)),
-            Headers = hb_maps:map(fun(_, Value) -> hb_util:bin(Value) end, RawHeaderMap),
+            RawHeaderMap =
+                hb_maps:from_list(
+                    prometheus_cowboy:to_cowboy_headers(HeaderList)
+                ),
+            Headers =
+                hb_maps:map(
+                    fun(_, Value) -> hb_util:bin(Value) end,
+                    RawHeaderMap
+                ),
             {ok, Headers#{ <<"body">> => Body }};
         false ->
             {ok, #{ <<"body">> => <<"Prometheus metrics disabled.">> }}

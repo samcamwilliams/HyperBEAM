@@ -165,7 +165,10 @@ default_message() ->
         ],
         store =>
             [
-                #{ <<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-mainnet">> },
+                #{
+                    <<"store-module">> => hb_store_fs,
+                    <<"prefix">> => <<"cache-mainnet">>
+                },
                 #{ <<"store-module">> => hb_store_gateway,
                     <<"store">> =>
                         [
@@ -176,6 +179,7 @@ default_message() ->
                         ]
                 }
             ],
+        default_index => #{ <<"device">> => <<"hyperbuddy@1.0">> },
         % Should we use the latest cached state of a process when computing?
         process_now_from_cache => false,
         % Should we trust the GraphQL API when converting to ANS-104? Some GQL
