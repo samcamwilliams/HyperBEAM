@@ -163,16 +163,13 @@ list(Path, Store) ->
 %% the commitments of the inner messages. We do not, however, store the IDs from
 %% commitments on signed _inner_ messages. We may wish to revisit this.
 write(RawMsg, Opts) when is_map(RawMsg) ->
-    % Use the _structured_ format for calculating alternative IDs, but the
-    % _tabm_ format for writing to the store.
-    case hb_message:with_only_committed(RawMsg, Opts) of
+    TABM = hb_message:convert(RawMsg, tabm, <<"structured@1.0">>, Opts),
+    case hb_message:with_only_committed(TABM, Opts) of
         {ok, Msg} ->
             ?event(debug_cache, {writing_full_message, {msg, Msg}}),
-            Tabm = hb_message:convert(Msg, tabm, <<"structured@1.0">>, Opts),
-            ?event(debug_write, {tabm, Tabm}),
             %try
                 do_write_message(
-                    Tabm,
+                    TABM,
                     hb_opts:get(store, no_viable_store, Opts),
                     Opts
                 );

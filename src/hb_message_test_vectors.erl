@@ -11,7 +11,7 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    signed_message_encode_decode_verify_test(<<"httpsig@1.0">>).
+    verify_nested_complex_signed_test(<<"httpsig@1.0">>).
 
 %% @doc Return a list of codecs to test. Disable these as necessary if you need
 %% to test the functionality of a single codec, etc.
@@ -448,30 +448,31 @@ verify_nested_complex_signed_test(Codec) ->
             Opts,
             Codec
         ),
-    ?event(
-        {inner,
-            {string, hb_util:ok(dev_codec_httpsig:serialize(Inner, Opts))}
-        }
-    ),
+    % Ensure that the messages verify prior to conversion.
     LoadedInitialInner = hb_cache:ensure_all_loaded(Inner, Opts),
-    ?assertEqual(true, hb_message:verify(Inner, all, Opts)),
-    ?assertEqual(true, hb_message:verify(LoadedInitialInner, all, Opts)),
+    ?assert(hb_message:verify(Inner, all, Opts)),
+    ?assert(hb_message:verify(LoadedInitialInner, all, Opts)),
     % Test encoding and decoding.
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     % Ensure that the decoded message matches.
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)),
-    % Ensure that both of the messages can be verified )and retreived).
+    ?assert(hb_message:verify(Decoded, all, Opts)),
+    % Ensure that both of the messages can be verified (and retreived).
     FoundInner = hb_maps:get(<<"body">>, Msg, not_found, Opts),
     LoadedFoundInner = hb_cache:ensure_all_loaded(FoundInner, Opts),
-    ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
+    % Print the messages from the test case.
     ?event({original, Msg}),
     ?event({original_inner, Inner}),
     ?event({original_inner_loaded, LoadedInitialInner}),
     ?event({found_inner, FoundInner}),
     ?event({loaded_found_inner, LoadedFoundInner}),
-    ?assertEqual(true, hb_message:verify(LoadedFoundInner, all, Opts)),
-    ?assertEqual(true, hb_message:verify(FoundInner, all, Opts)).
+    % Verify that the fully loaded version of the inner message, and the one
+    % gained by applying `hb_maps:get` match and verify.
+    ?assert(hb_message:match(Inner, FoundInner, primary, Opts)),
+    ?assert(hb_message:match(FoundInner, LoadedFoundInner, primary, Opts)),
+    ?assert(hb_message:verify(LoadedFoundInner, all, Opts)),
+    ?assert(hb_message:verify(FoundInner, all, Opts)).
 
 %% @doc Check that large keys and data fields are correctly handled together.
 nested_message_with_large_keys_and_content_test(Codec) ->
@@ -508,14 +509,14 @@ simple_nested_message_test(Codec) ->
 signed_nested_message_with_child_test(Codec) ->
     Opts = test_opts(Codec),
     Msg = #{
-        <<"a">> => <<"1">>,
+        <<"outer-a">> => <<"1">>,
         <<"nested">> =>
             hb_message:commit(
-                #{ <<"b">> => <<"1">>, <<"inner">> => [1, 2, 3] },
+                #{ <<"inner-b">> => <<"1">>, <<"inner-list">> => [1, 2, 3] },
                 Opts,
                 Codec
             ),
-        <<"c">> => <<"3">>
+        <<"outer-c">> => <<"3">>
     },
     hb_cache:write(Msg, Opts),
     Opts = test_opts(Codec),
