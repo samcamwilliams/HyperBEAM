@@ -58,43 +58,43 @@ echo "- **Client Libraries**: Tools and SDKs for interacting with HyperBEAM, inc
 echo "" >> "$INDEX_FILE"
 echo "## Getting Started" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM). For detailed setup instructions, refer to the [Development Setup](../../community/setup.md) guide." >> "$INDEX_FILE"
+echo "To explore the source code, you can clone the repository from [GitHub](https://github.com/permaweb/HyperBEAM)." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "## Navigation" >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
 echo "Use the navigation menu to dive into specific parts of the codebase. Each module includes detailed documentation, code comments, and examples to assist in understanding and contributing to the project." >> "$INDEX_FILE"
 echo "" >> "$INDEX_FILE"
-echo "## Contributing" >> "$INDEX_FILE"
-echo "" >> "$INDEX_FILE"
-echo "We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../../community/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
-echo "" >> "$INDEX_FILE"
+# echo "## Contributing" >> "$INDEX_FILE"
+# echo "" >> "$INDEX_FILE"
+# echo "We welcome contributions to HyperBEAM. If you're interested in contributing, please review the [Contribution Guidelines](../../community/guidelines.md) for information on coding standards, pull request processes, and more. " >> "$INDEX_FILE"
+# echo "" >> "$INDEX_FILE"
 
-# Append the table header
-echo "<table>" >> "$INDEX_FILE"
+# # Append the table header
+# echo "<table>" >> "$INDEX_FILE"
 
-# Get list of markdown files (excluding index.md and README.md), limit to first 10 for index.md
-# Updated find command to use the correct DOCS_DIR
-MODULE_FILES=$(find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -name "README.md" | sort | head -n 10)
+# # Get list of markdown files (excluding index.md and README.md), limit to first 10 for index.md
+# # Updated find command to use the correct DOCS_DIR
+# MODULE_FILES=$(find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -name "README.md" | sort | head -n 10)
 
-# Reset count
-count=0
+# # Reset count
+# count=0
 
-# Add each module to the table for index.md
-for file in $MODULE_FILES; do
-  filename=$(basename "$file")
-  module_name="${filename%.md}"
-  # Use relative path for link
-  echo "<tr><td><a href=\"$filename\" class=\"module\">$module_name</a></td></tr>" >> "$INDEX_FILE"
-  count=$((count + 1))
-  if [ $count -eq 10 ]; then
-    break
-  fi
-done
+# # Add each module to the table for index.md
+# for file in $MODULE_FILES; do
+#   filename=$(basename "$file")
+#   module_name="${filename%.md}"
+#   # Use relative path for link
+#   echo "<tr><td><a href=\"$filename\" class=\"module\">$module_name</a></td></tr>" >> "$INDEX_FILE"
+#   count=$((count + 1))
+#   if [ $count -eq 10 ]; then
+#     break
+#   fi
+# done
 
-# Close the table and add note
-echo "</table>" >> "$INDEX_FILE"
-echo "" >> "$INDEX_FILE"
-echo "*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*" >> "$INDEX_FILE"
+# # Close the table and add note
+# echo "</table>" >> "$INDEX_FILE"
+# echo "" >> "$INDEX_FILE"
+# echo "*Note: This is a partial list. Navigate through the menu or search for specific modules for detailed documentation.*" >> "$INDEX_FILE"
 
 echo "Updated module list in $INDEX_FILE"
 
