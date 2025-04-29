@@ -134,7 +134,9 @@ suite_test_() ->
         {<<"Sign deep message from lazy cache read">>,
             fun sign_deep_message_from_lazy_cache_read_test/1},
         {<<"ID of deep message and link message match">>,
-            fun id_of_deep_message_and_link_message_match_test/1}
+            fun id_of_deep_message_and_link_message_match_test/1},
+        {<<"Codec round-trip conversion is idempotent">>,
+            fun codec_roundtrip_conversion_is_idempotent_test/1}
     ]).
 
 run(Suite) ->
@@ -156,7 +158,105 @@ run(Suite) ->
         test_codecs()
     ).
 
-%%% Tests
+%%% Codec-specific/misc. tests
+
+%% @doc Tests a message transforming function to ensure that it is idempotent.
+%% Runs the conversion a total of 3 times, ensuring that the result remains
+%% unchanged. This function takes transformation functions that result in
+%% `{ok, Res}`-form messages, as well as bare message results.
+is_idempotent(Func, Msg, Opts) ->
+    Run = fun(M) -> case Func(M) of {ok, Res} -> Res; Res -> Res end end,
+    After1 = Run(Msg),
+    After2 = Run(After1),
+    After3 = Run(After2),
+    hb_message:match(After1, After2, strict, Opts) andalso
+        hb_message:match(After2, After3, strict, Opts).
+
+%% @doc Ensure that converting a message to/from TABM multiple times repeatedly 
+%% does not alter the message's contents.
+tabm_conversion_is_idempotent_test() ->
+    Opts = test_opts(<<"structured@1.0">>),
+    From = fun(M) -> hb_message:convert(M, <<"structured@1.0">>, tabm, Opts) end,
+    To = fun(M) -> hb_message:convert(M, tabm, <<"structured@1.0">>, Opts) end,
+    SimpleMsg = #{ <<"a">> => <<"x">>, <<"b">> => <<"y">>, <<"c">> => <<"z">> },
+    ComplexMsg =
+        #{
+            <<"path">> => <<"schedule">>,
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                    Signed = hb_message:commit(
+                        #{
+                            <<"type">> => <<"Message">>,
+                            <<"function">> => <<"fac">>,
+                            <<"parameters">> => #{
+                                <<"a">> => 1
+                            },
+                            <<"content-type">> => <<"application/html">>,
+                            <<"body">> =>
+                                <<
+                                    """
+                                    <html>
+                                    <h1>Hello, multiline message</h1>
+                                    </html>
+                                    """
+                                >>
+                        },
+                        Opts,
+                        <<"structured@1.0">>
+                    )
+            },
+    ?assert(is_idempotent(From, SimpleMsg, Opts)),
+    ?assert(is_idempotent(From, Signed, Opts)),
+    ?assert(is_idempotent(From, ComplexMsg, Opts)),
+    ?assert(is_idempotent(To, SimpleMsg, Opts)),
+    ?assert(is_idempotent(To, Signed, Opts)),
+    ?assert(is_idempotent(To, ComplexMsg, Opts)).
+
+%% @doc Ensure that converting a message to a codec, then back to TABM multiple
+%% times results in the same message being returned. This test differs from its
+%% TABM form, as it shuttles (`to-from-to-...`), while the TABM test repeatedly
+%% encodes in a single direction (`to->to->...`).
+codec_roundtrip_conversion_is_idempotent_test(Codec) ->
+    Opts = test_opts(<<"structured@1.0">>),
+    Roundtrip =
+        fun(M) ->
+            hb_message:convert(
+                hb_message:convert(M, Codec, <<"structured@1.0">>, Opts),
+                <<"structured@1.0">>,
+                Codec,
+                Opts
+            )
+        end,
+    SimpleMsg = #{ <<"a">> => <<"x">>, <<"b">> => <<"y">>, <<"c">> => <<"z">> },
+    ComplexMsg =
+        #{
+            <<"path">> => <<"schedule">>,
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                    Signed = hb_message:commit(
+                        #{
+                            <<"type">> => <<"Message">>,
+                            <<"function">> => <<"fac">>,
+                            <<"parameters">> => #{
+                                <<"a">> => 1
+                            },
+                            <<"content-type">> => <<"application/html">>,
+                            <<"body">> =>
+                                <<
+                                    """
+                                    <html>
+                                    <h1>Hello, multiline message</h1>
+                                    </html>
+                                    """
+                                >>
+                        },
+                        Opts,
+                        Codec
+                    )
+            },
+    ?assert(is_idempotent(Roundtrip, SimpleMsg, Opts)),
+    ?assert(is_idempotent(Roundtrip, Signed, Opts)),
+    ?assert(is_idempotent(Roundtrip, ComplexMsg, Opts)).
 
 %% @doc Test that the filter_default_keys/1 function removes TX fields
 %% that have the default values found in the tx record, but not those that
