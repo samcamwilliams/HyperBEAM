@@ -6,45 +6,32 @@ site_url: http://[::]:8000/
 docs_dir: docs
 site_dir: mkdocs-site
 
-use_directory_urls: false 
+use_directory_urls: false
 
 nav:
-  - Home: ''
-  - Overview: 'overview/index.md'
-  - Installation & Core:
-    - System Dependencies:
-      - Overview: 'installation-core/system-dependencies/installation/index.md'
-      - Dependencies: 'installation-core/system-dependencies/installation/dependencies.md'
-      - Erlang: 'installation-core/system-dependencies/installation/erlang.md'
-      - Rebar3: 'installation-core/system-dependencies/installation/rebar3.md'
-      - Node.js: 'installation-core/system-dependencies/installation/nodejs.md'
-      - Rust: 'installation-core/system-dependencies/installation/rust.md'
-    - HyperBEAM Setup & Config:
-      - Overview: 'installation-core/hyperbeam-setup-config/index.md'
-      - Setup: 'installation-core/hyperbeam-setup-config/setup.md'
-      - Configuration:
-        - Overview: 'installation-core/hyperbeam-setup-config/configuration/index.md'
-        - Methods: 'installation-core/hyperbeam-setup-config/configuration/configuration-methods.md'
-        - Options: 'installation-core/hyperbeam-setup-config/configuration/configuration-options.md'
-        - Examples: 'installation-core/hyperbeam-setup-config/configuration/configuration-examples.md'
-        - Routing: 'installation-core/hyperbeam-setup-config/configuration/routing-configuration.md'
-        - Storage: 'installation-core/hyperbeam-setup-config/configuration/storage-configuration.md'
-      - Testing: 'installation-core/hyperbeam-setup-config/testing.md'
-      - API Reference: 'installation-core/hyperbeam-setup-config/api.md'
-  - Components:
-    - Compute Unit:
-      - Overview: 'components/compute-unit/index.md'
-      - Setup: 'components/compute-unit/setup.md'
-      - Configuration: 'components/compute-unit/configuration.md'
-    - Trusted Execution (TEE): 'components/tee.md'
-  - Usage:
-    - Guides Overview: 'usage/index.md'
-    - HB JavaScript Client: 'usage/js-client-guide.md'
-    - Building Pre/Post-Processors: 'usage/building-pre-post-processors.md'
-    - HyperPaths:
-      - Overview: 'usage/hyperpaths/index.md'
-      - Pathing in AO-Core: 'usage/hyperpaths/pathing-in-ao-core.md'
-      - AO-Core Web APIs: 'usage/ao-core-web-apis.md'
+  - Begin:
+      - What is AO-Core?: 'begin/what-is-ao-core.md'
+      - What is HyperBEAM?: 'begin/what-is-hyperbeam.md'
+      - AO Devices: 'begin/ao-devices.md'
+      - Pathing in AO-Core: 'begin/pathing-in-ao-core.md'
+  - Run:
+      - Running a HyperBEAM node: 'run/running-a-hyperbeam-node.md'
+      - Configuring your machine: 'run/configuring-your-machine.md'
+      - TEE nodes: 'run/tee-nodes.md'
+      - Joining/running a router: 'run/joining-running-a-router.md'
+  - Learn:
+      - Get started building on AO-Core: 'guides/get-started-building-on-ao-core.md'
+      - Exposing process state: 'guides/exposing-process-state.md'
+      - Serverless decentralized compute: 'guides/serverless-decentralized-compute.md'
+      - Extending HyperBEAM: 'guides/extending-hyperbeam.md'
+  - Devices:
+      - Overview: 'devices/index.md'
+      - '~meta@1.0': 'devices/meta-at-1-0.md'
+      - '~process@1.0': 'devices/process-at-1-0.md'
+      - '~scheduler@1.0': 'devices/scheduler-at-1-0.md'
+      - '~wasm64@1.0': 'devices/wasm64-at-1-0.md'
+      - '~lua@5.3a': 'devices/lua-at-5-3a.md'
+      - '~relay@1.0': 'devices/relay-at-1-0.md'
   - Resources:
     - Source Code:
       - Overview: 'resources/source-code/index.md'
@@ -145,13 +132,13 @@ nav:
         - hb_util: 'resources/source-code/hb_util.md'
         - rsa_pss: 'resources/source-code/rsa_pss.md'
     - Reference:
-      - Troubleshooting: 'resources/reference/troubleshooting.md'
+      # - Troubleshooting: 'resources/reference/troubleshooting.md'
       - Glossary: 'resources/reference/glossary.md'
       - FAQ: 'resources/reference/faq.md'
-  - Community:
-    - Contribute Overview: 'community/guidelines.md'
-    - Development Setup: 'community/setup.md'
-    - Contributing Documentation: 'community/contributing-docs.md'
+  # - Community:
+  #   - Contribute Overview: 'community/guidelines.md'
+    # - Development Setup: 'community/setup.md'
+    # - Contributing Documentation: 'community/contributing-docs.md'
 
 markdown_extensions:
   - attr_list
@@ -195,7 +182,7 @@ theme:
     - navigation.tracking
     - navigation.sections
     - navigation.path
-    # - navigation.expand
+    - navigation.expand
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.indexes
