@@ -48,11 +48,9 @@ read(ID, Opts) ->
                     <<"transactionIds">> => [hb_util:human_id(ID)]
                 }
         },
-    ?event(debug_query, {query, Query}),
     case query(Query, Opts) of
         {error, Reason} -> {error, Reason};
         {ok, GqlMsg} ->
-            ?event(debug_query, {gqlMsg, GqlMsg}),
             case hb_ao:get(<<"data/transactions/edges/1/node">>, GqlMsg, Opts) of
                 not_found -> {error, not_found};
                 Item = #{<<"id">> := ID} -> result_to_message(ID, Item, Opts)
