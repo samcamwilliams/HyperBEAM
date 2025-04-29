@@ -193,7 +193,7 @@ theme:
     - navigation.instant.progress
     - navigation.instant.prefetch
     - navigation.tracking
-    # - navigation.sections
+    - navigation.sections
     - navigation.path
     - navigation.expand
     - navigation.tabs
