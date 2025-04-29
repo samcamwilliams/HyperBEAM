@@ -129,7 +129,7 @@ default_message() ->
         debug_metadata => true,
         debug_ids => false,
         debug_committers => false,
-        debug_show_priv => true,
+        debug_show_priv => if_present,
         debug_resolve_links => true,
 		trusted => #{},
         routes => [

@@ -452,25 +452,20 @@ verify_nested_complex_signed_test(Codec) ->
     LoadedInitialInner = hb_cache:ensure_all_loaded(Inner, Opts),
     ?assert(hb_message:verify(Inner, all, Opts)),
     ?assert(hb_message:verify(LoadedInitialInner, all, Opts)),
-    % Test encoding and decoding.
+    % % Test encoding and decoding.
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-    % Ensure that the decoded message matches.
+    % % Ensure that the decoded message matches.
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)),
     ?assert(hb_message:verify(Decoded, all, Opts)),
-    % Ensure that both of the messages can be verified (and retreived).
+    % % Ensure that both of the messages can be verified (and retreived).
     FoundInner = hb_maps:get(<<"body">>, Msg, not_found, Opts),
     LoadedFoundInner = hb_cache:ensure_all_loaded(FoundInner, Opts),
-    % Print the messages from the test case.
-    ?event({original, Msg}),
-    ?event({original_inner, Inner}),
-    ?event({original_inner_loaded, LoadedInitialInner}),
-    ?event({found_inner, FoundInner}),
-    ?event({loaded_found_inner, LoadedFoundInner}),
     % Verify that the fully loaded version of the inner message, and the one
     % gained by applying `hb_maps:get` match and verify.
     ?assert(hb_message:match(Inner, FoundInner, primary, Opts)),
     ?assert(hb_message:match(FoundInner, LoadedFoundInner, primary, Opts)),
+    ?assert(hb_message:verify(Inner, all, Opts)),
     ?assert(hb_message:verify(LoadedFoundInner, all, Opts)),
     ?assert(hb_message:verify(FoundInner, all, Opts)).
 

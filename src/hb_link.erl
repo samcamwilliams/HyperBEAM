@@ -34,19 +34,42 @@ normalize(Msg, Mode, Opts) when is_map(Msg) ->
         maps:with([<<"commitments">>, <<"priv">>], Msg),
             maps:from_list(
                 lists:map(
-                    fun({Key, {link, ID, #{ <<"type">> := <<"link">> }}}) ->
-                        % The value is a link to a submessage. We do not load it, but
-                        % we mark the key as a link.
-                        NormKey = hb_ao:normalize_key(Key),
-                        {<< NormKey/binary, "+link">>, ID};
+                    fun({Key, {link, ID, LinkOpts = #{ <<"type">> := <<"link">> }}}) ->
+                        % The value is a link. Deconstruct it and ensure it is
+                        % normalized (lazy links are made greedy, and both are
+                        % returned in binary TABM form).
+                        NormKey = hb_util:bin(Key),
+                        UnderlyingID =
+                            case maps:get(<<"lazy">>, LinkOpts, false) of
+                                true ->
+                                    case hb_cache:read(ID, Opts) of
+                                        {ok, Underlying} when ?IS_ID(Underlying) ->
+                                            Underlying;
+                                        Err ->
+                                            throw(
+                                                {could_not_read_lazy_link,
+                                                    {key, Key},
+                                                    {lazy_id, ID},
+                                                    {error, Err}
+                                                }
+                                            )
+                                    end;
+                                false ->
+                                    % The ID given is already in 'greedy' form.
+                                    % We embed it in the result unchanged.
+                                    ID
+                            end,
+                        ?event(debug_linkify, {link_normalized, Key, UnderlyingID}),
+                        {<< NormKey/binary, "+link">>, UnderlyingID};
                     ({Key, V}) when is_map(V) or is_list(V) ->
-                        % The value is a submessage that we have in local memory. We 
-                        % must offload it such that it is cached, and referenced by a
-                        % link.
-                        % We start by normalizing the child message, generating its IDs
-                        % by proxy.
+                        ?event(debug_linkify, {case2, Key}),
+                        % The value is a submessage that we have in local memory.
+                        % We must offload it such that it is cached, and
+                        % referenced by a link.
+                        % We start by normalizing the child message, generating 
+                        % its IDs by proxy.
                         NormChild = normalize(V, Mode, Opts),
-                        NormKey = hb_ao:normalize_key(Key),
+                        NormKey = hb_util:bin(Key),
                         % Generate the ID of the normalized child message.
                         ID = hb_message:id(NormChild, all, Opts),
                         % If we are in `offload' mode, we write the message to the
@@ -54,17 +77,21 @@ normalize(Msg, Mode, Opts) when is_map(Msg) ->
                         % nested message.
                         case Mode of
                             discard -> do_nothing;
-                            offload -> hb_cache:write(NormChild, Opts)
+                            offload ->
+                                % Write the child to the store to ensure its
+                                % storage and availability.
+                                hb_cache:write(NormChild, Opts)
                         end,
-                        ?event(linkify, {generated_id, {key, Key}, {id, ID}}),
+                        ?event(debug_linkify, {generated_id, {key, Key}, {id, ID}}),
                         {<<NormKey/binary, "+link">>, ID};
                     ({Key, V}) when ?IS_LINK(V) ->
-                        % The link is not a submap. We load it such that it is local
-                        % in-memory. This clause is used when we are normalizing a 
-                        % lazily-loaded message.
+                        % The link is not a submap. We load it such that it is
+                        % local in-memory. This clause is used when we are
+                        % normalizing a lazily-loaded message.
                         {Key, hb_cache:ensure_loaded(V, Opts)};
                     ({Key, V}) ->
-                        % The value is a primitive type. We do not need to do anything.
+                        % The value is a primitive type. We do not need to do
+                        % anything.
                         {Key, V}
                     end,
                     maps:to_list(maps:without([<<"commitments">>, <<"priv">>], Msg))

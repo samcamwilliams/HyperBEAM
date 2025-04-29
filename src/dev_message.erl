@@ -75,7 +75,7 @@ id(RawBase, Req, NodeOpts) ->
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
-            ?event(ids, no_commitments_found_in_id_call),
+            ?event(id, no_commitments_found_in_id_call),
             calculate_id(hb_maps:without([<<"commitments">>], ModBase), Req, IDOpts);
         IDs ->
             % Accumulate the relevant IDs into a single value. This is performed 
@@ -90,7 +90,7 @@ id(RawBase, Req, NodeOpts) ->
             % accumulation function starts with a buffer of zero encoded as a 
             % 256-bit binary. Subsequently, a single ID on its own 'accumulates' 
             % to itself.
-            ?event(ids, {accumulating_existing_ids, IDs}),
+            ?event(id, {accumulating_existing_ids, IDs}),
             {ok,
                 hb_util:human_id(
                     hb_crypto:accumulate(
@@ -134,6 +134,7 @@ calculate_id(Base, Req, NodeOpts) ->
                         [Base, Req#{ <<"type">> => <<"unsigned">> }, NodeOpts]
                     )
                 ),
+            ?event(id, {generated_id, {type, unsigned}, {commitments, maps:keys(Comms)}}),
             {ok, hd(maps:keys(Comms))};
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
@@ -243,18 +244,20 @@ verify(Self, Req, Opts) ->
     % Get the target message of the verification request.
     {ok, RawBase} = hb_message:find_target(Self, Req, Opts),
     Base =
-        ensure_commitments_loaded(hb_message:convert(RawBase, tabm, Opts), Opts),
+        hb_message:convert(
+            ensure_commitments_loaded(
+                RawBase,
+                Opts
+            ),
+            tabm,
+            Opts
+        ),
     Commitments = maps:get(<<"commitments">>, Base, #{}),
     IDsToVerify = commitment_ids_from_request(Base, Req, Opts),
     % Verify the commitments. Stop execution if any fail.
     Res =
         lists:all(
             fun(CommitmentID) ->
-                ?event(
-                    {verify_commitment,
-                        {commitment_id, CommitmentID},
-                        {target, Base}}
-                ),
                 {ok, Res} =
                     verify_commitment(
                         Base,
@@ -278,7 +281,7 @@ verify(Self, Req, Opts) ->
 %% Note: Assumes that the `commitments' key has already been removed from the
 %% message if applicable.
 verify_commitment(Base, Commitment, Opts) ->
-    ?event({executing_for_commitment, {base, Base}, {commitment, Commitment}}),
+    ?event(verify, {verifying_commitment, {commitment, Commitment}, {msg, Base}}),
     AttDev =
         hb_maps:get(
             <<"commitment-device">>,

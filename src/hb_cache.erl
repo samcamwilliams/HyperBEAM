@@ -49,7 +49,8 @@
 %% If it is not loadable we raise an error. If the value is a message, we will
 %% load only the first `layer' of it: Representing all nested messages inside 
 %% the result as links. If the value has an associated `type' key in the extra
-%% options, we apply it to the read value.
+%% options, we apply it to the read value, 'lazily' recreating a `structured@1.0'
+%% form.
 ensure_loaded(Msg) ->
     ensure_loaded(Msg, #{}).
 ensure_loaded(Lk = {link, ID, LkOpts = #{ <<"type">> := <<"link">>, <<"lazy">> := Lazy }}, Opts) ->
@@ -191,11 +192,11 @@ write(RawMsg, Opts) when is_map(RawMsg) ->
 write(List, Opts) when is_list(List) ->
     write(hb_message:convert(List, tabm, <<"structured@1.0">>, Opts), Opts);
 write(Bin, Opts) when is_binary(Bin) ->
-    % When asked to write only a binary, we do not calculate any alternative IDs.
     do_write_message(Bin, hb_opts:get(store, no_viable_store, Opts), Opts).
 
 do_write_message(Bin, Store, Opts) when is_binary(Bin) ->
-    % Write the binary in the store at its given hash. Return the path.
+    % Write the binary in the store at its calculated content-hash.
+    % Return the path.
     Hashpath = hb_path:hashpath(Bin, Opts),
     ok = hb_store:write(Store, Path = <<"data/", Hashpath/binary>>, Bin),
     %lists:map(fun(ID) -> hb_store:make_link(Store, Path, ID) end, AllIDs),
