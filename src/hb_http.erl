@@ -670,13 +670,14 @@ req_to_tabm_singleton(Req, Body, Opts) ->
 %% node configuration. Additionally, non-committed fields are removed from the
 %% message if it is signed, with the exception of the `path' and `method' fields.
 httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
-    {ok, Msg} = dev_codec_httpsig_conv:from(
-        RawHeaders#{ <<"body">> => Body },
-        Opts
-    ),
     {ok, SignedMsg} =
-        dev_codec_httpsig:reset_hmac(
-            hb_util:ok(remove_unsigned_fields(Msg, Opts)),
+        hb_message:with_only_committed(
+            hb_message:convert(
+                RawHeaders#{ <<"body">> => Body },
+                <<"structured@1.0">>,
+                <<"httpsig@1.0">>,
+                Opts
+            ),
             Opts
         ),
     ForceSignedRequests = hb_opts:get(force_signed_requests, false, Opts),
@@ -688,7 +689,7 @@ httpsig_to_tabm_singleton(Req = #{ headers := RawHeaders }, Body, Opts) ->
                 true ->
                     ?event(http_verify, {storing_signed_from_wire, SignedMsg}),
                     {ok, _} =
-                        hb_cache:write(Msg,
+                        hb_cache:write(SignedMsg,
                             Opts#{
                                 store =>
                                     #{
