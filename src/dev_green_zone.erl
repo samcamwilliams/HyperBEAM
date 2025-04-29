@@ -575,15 +575,18 @@ validate_peer_opts(Req, Opts) ->
 	?event(green_zone, {validate_peer_opts, history_check, HistoryCheck}),
 	
 	% Debug: Try the match check separately
-	MatchCheck = try
-		Result = hb_message:match(PeerOpts, FullRequiredOpts, only_present),
-		?event(green_zone, {validate_peer_opts, match_check, Result}),
-		Result
-	catch
-		Error:Reason:Stacktrace ->
-			?event(green_zone, {validate_peer_opts, match_error, {Error, Reason, Stacktrace}}),
-			false
-	end,
+	MatchCheck =
+        try
+            Result =
+                hb_message:match(PeerOpts, FullRequiredOpts, only_present)
+                    == true,
+            ?event(green_zone, {validate_peer_opts, match_check, Result}),
+            Result
+        catch
+            Error:Reason:Stacktrace ->
+                ?event(green_zone, {validate_peer_opts, match_error, {Error, Reason, Stacktrace}}),
+                false
+        end,
 	
 	% Final result
 	FinalResult = MatchCheck andalso (HistoryCheck =:= true),

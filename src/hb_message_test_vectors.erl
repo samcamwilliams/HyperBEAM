@@ -290,9 +290,9 @@ match_modes_test() ->
     Msg2 = #{ <<"a">> => 1 },
     Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     ?assert(hb_message:match(Msg1, Msg2, only_present)),
-    ?assert(not hb_message:match(Msg2, Msg1, strict)),
+    ?assert(hb_message:match(Msg2, Msg1, strict) =/= true),
     ?assert(hb_message:match(Msg1, Msg3, primary)),
-    ?assert(not hb_message:match(Msg3, Msg1, primary)).
+    ?assert(hb_message:match(Msg3, Msg1, primary) =/= true).
 
 basic_message_codec_test(Codec) ->
     Opts = test_opts(Codec),

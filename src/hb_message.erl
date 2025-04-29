@@ -513,11 +513,17 @@ type(Msg) when is_map(Msg) ->
 %%      `strict': All keys in both maps be present and match.
 %%      `only_present': Only present keys in both maps must match.
 %%      `primary': Only the primary map's keys must be present.
+%% Returns `true` or `{ErrType, Err}`.
 match(Map1, Map2) ->
-    match(Map1, Map2, strict, #{}).
+    match(Map1, Map2, strict).
 match(Map1, Map2, Mode) ->
     match(Map1, Map2, Mode, #{}).
 match(Map1, Map2, Mode, Opts) ->
+    try unsafe_match(Map1, Map2, Mode, [], Opts)
+    catch _:Details -> Details
+    end.
+
+unsafe_match(Map1, Map2, Mode, Path, Opts) ->
      Keys1 =
         hb_maps:keys(
             NormMap1 = minimize(
@@ -553,34 +559,36 @@ match(Map1, Map2, Mode, Opts) ->
             lists:all(
                 fun(Key) ->
                     ?event(match, {matching_key, Key}),
-                    Val1 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap1, not_found, Opts)),
-                    Val2 = hb_ao:normalize_keys(hb_maps:get(Key, NormMap2, not_found, Opts)),
+                    Val1 =
+                        hb_ao:normalize_keys(
+                            hb_maps:get(Key, NormMap1, not_found, Opts)
+                        ),
+                    Val2 =
+                        hb_ao:normalize_keys(
+                            hb_maps:get(Key, NormMap2, not_found, Opts)
+                        ),
                     BothPresent = (Val1 =/= not_found) and (Val2 =/= not_found),
                     case (not BothPresent) and (Mode == only_present) of
                         true -> true;
                         false ->
                             case is_map(Val1) andalso is_map(Val2) of
-                                true -> match(Val1, Val2, Mode, Opts);
+                                true ->
+                                    unsafe_match(Val1, Val2, Mode, Path ++ [Key], Opts);
                                 false ->
                                     case Val1 == Val2 of
                                         true -> true;
                                         false ->
-                                            ?event(match,
+                                            throw(
                                                 {value_mismatch,
-                                                    {key, Key},
-                                                    {val1,
-                                                        if is_binary(Val1) ->
-                                                            {string, Val1};
-                                                        true -> Val1
-                                                    end},
-                                                    {val2,
-                                                        if is_binary(Val2) ->
-                                                            {string, Val2};
-                                                        true -> Val2
-                                                    end}
+                                                    hb_util:short_id(
+                                                        hb_path:to_binary(
+                                                            Path ++ [Key]
+                                                        )
+                                                    ),
+                                                    {val1, Val1},
+                                                    {val2, Val2}
                                                 }
-                                            ),
-                                            false
+                                            )
                                     end
                             end
                     end
@@ -588,8 +596,13 @@ match(Map1, Map2, Mode, Opts) ->
                 Keys1
             );
         false ->
-            ?event(match, {keys_mismatch, {keys1, Keys1}, {keys2, Keys2}}),
-            false
+            throw(
+                {keys_mismatch,
+                    {path, hb_util:short_id(hb_path:to_binary(Path))},
+                    {keys1, Keys1},
+                    {keys2, Keys2}
+                }
+            )
     end.
 	
 matchable_keys(Map) ->
@@ -603,7 +616,7 @@ with_commitments(Spec, Msg = #{ <<"commitments">> := Commitments }, Opts) ->
     FilteredCommitments =
         hb_maps:filter(
             fun(_, CommMsg) ->
-                Res = match(Spec, CommMsg, primary, Opts),
+                Res = match(Spec, CommMsg, primary, Opts) == true,
                 ?event({with_commitments, {commitments, CommMsg}, {spec, Spec}, {match, Res}}),
                 Res
             end,
@@ -649,7 +662,7 @@ commitment(Spec, #{ <<"commitments">> := Commitments }, Opts) ->
             fun(ID, CommMsg) ->
                 case match(Spec, CommMsg, primary) of
                     true -> {true, {ID, CommMsg}};
-                    false -> false
+                    _ -> false
                 end
             end,
             Commitments,

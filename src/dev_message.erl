@@ -621,7 +621,7 @@ set(Message1, NewValuesMsg, Opts) ->
             % If not, we must remove the commitments.
             case hb_message:match(Merged, Message1) of
                 true -> {ok, Merged};
-                false -> {ok, hb_maps:without([<<"commitments">>], Merged)}
+                _ -> {ok, hb_maps:without([<<"commitments">>], Merged)}
             end
     end.
 
