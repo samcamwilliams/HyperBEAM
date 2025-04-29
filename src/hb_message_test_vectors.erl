@@ -65,6 +65,8 @@ suite_test_() ->
         % Nested structures
         {<<"Simple nested message">>,
             fun simple_nested_message_test/1},
+        {<<"Signed nested message">>,
+            fun signed_nested_message_with_child_test/1},
         {<<"Message with simple embedded list">>,
             fun message_with_simple_embedded_list_test/1},
         {<<"Nested empty map">>,
@@ -100,6 +102,8 @@ suite_test_() ->
             fun complex_signed_message_test/1},
         {<<"Nested message with large keys">>,
             fun nested_message_with_large_keys_test/1},
+        {<<"Nested signed message with typed list">>,
+            fun verify_nested_complex_signed_test/1},
         % Complex structures
         {<<"Nested message with large keys and content">>,
             fun nested_message_with_large_keys_and_content_test/1},
@@ -309,6 +313,66 @@ message_with_large_keys_test(Codec) ->
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
 
+%% @doc Check that a nested signed message with an embedded typed list can 
+%% be further nested and signed. We then encode and decode the message. This
+%% tests a large portion of the complex type encodings that HyperBEAM uses
+%% together.
+verify_nested_complex_signed_test(Codec) ->
+    Opts = test_opts(Codec),
+    Msg =
+        hb_message:commit(#{
+            <<"path">> => <<"schedule">>,
+            <<"method">> => <<"POST">>,
+            <<"body">> =>
+                    Inner = hb_message:commit(
+                        #{
+                            <<"type">> => <<"Message">>,
+                            <<"function">> => <<"fac">>,
+                            <<"parameters">> => #{
+                                <<"a">> => 1
+                            },
+                            <<"content-type">> => <<"application/html">>,
+                            <<"body">> =>
+                                <<
+                                    """
+                                    <html>
+                                    <h1>Hello, multiline message</h1>
+                                    </html>
+                                    """
+                                >>
+                        },
+                        Opts,
+                        Codec
+                    )
+            },
+            Opts,
+            Codec
+        ),
+    ?event(
+        {inner,
+            {string, hb_util:ok(dev_codec_httpsig:serialize(Inner, Opts))}
+        }
+    ),
+    LoadedInitialInner = hb_cache:ensure_all_loaded(Inner, Opts),
+    ?assertEqual(true, hb_message:verify(Inner, all, Opts)),
+    ?assertEqual(true, hb_message:verify(LoadedInitialInner, all, Opts)),
+    % Test encoding and decoding.
+    Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    % Ensure that the decoded message matches.
+    ?assert(hb_message:match(Msg, Decoded, strict, Opts)),
+    % Ensure that both of the messages can be verified )and retreived).
+    FoundInner = hb_maps:get(<<"body">>, Msg, not_found, Opts),
+    LoadedFoundInner = hb_cache:ensure_all_loaded(FoundInner, Opts),
+    ?assertEqual(true, hb_message:verify(Decoded, all, Opts)),
+    ?event({original, Msg}),
+    ?event({original_inner, Inner}),
+    ?event({original_inner_loaded, LoadedInitialInner}),
+    ?event({found_inner, FoundInner}),
+    ?event({loaded_found_inner, LoadedFoundInner}),
+    ?assertEqual(true, hb_message:verify(LoadedFoundInner, all, Opts)),
+    ?assertEqual(true, hb_message:verify(FoundInner, all, Opts)).
+
 %% @doc Check that large keys and data fields are correctly handled together.
 nested_message_with_large_keys_and_content_test(Codec) ->
     MainBodyKey =
@@ -340,6 +404,25 @@ simple_nested_message_test(Codec) ->
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({matching, {input, Msg}, {output, Decoded}}),
     ?assert(hb_message:match(Msg, Decoded, strict, Opts)).
+
+signed_nested_message_with_child_test(Codec) ->
+    Opts = test_opts(Codec),
+    Msg = #{
+        <<"a">> => <<"1">>,
+        <<"nested">> =>
+            hb_message:commit(
+                #{ <<"b">> => <<"1">>, <<"inner">> => [1, 2, 3] },
+                Opts,
+                Codec
+            ),
+        <<"c">> => <<"3">>
+    },
+    hb_cache:write(Msg, Opts),
+    Opts = test_opts(Codec),
+    Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    ?assert(hb_message:match(Msg, Decoded, primary, Opts)).
 
 nested_empty_map_test(Codec) ->
     Opts = test_opts(Codec),
