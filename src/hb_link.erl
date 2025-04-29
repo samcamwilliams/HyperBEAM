@@ -17,10 +17,12 @@ read(Link, Opts) ->
     end.
 
 %% @doc Takes a message and ensures that it is normalized:
-%% - All direct lazily-loadable values are in-memory.
-%% - All submaps are represented as links, optionally off-loading their local 
+%% 
+%% - All literal (binary) lazily-loadable values are in-memory.
+%% - All submaps are represented as links, optionally offloading their local 
 %%   values to the cache.
 %% - All other values are left unchanged (including their potential types).
+%% 
 %% The response is a non-recursive, fully loaded message. It may still contain
 %% types, but all submessages are guaranteed to be linkified. This stands in 
 %% contrast to `linkify', which takes a structured message and returns a message

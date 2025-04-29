@@ -26,7 +26,7 @@
 %%%         - Otherwise encode the value as a part in the multipart response
 %%% 
 -module(dev_codec_httpsig_conv).
--export([to/3, from/3]).
+-export([to/3, from/3, encode_http_msg/2]).
 %%% Helper utilities
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -532,7 +532,7 @@ encode_body_part(PartName, BodyPart, InlineKey) ->
                 Disposition,
                 BPMap
             ),
-            encode_http_msg(WithDisposition);
+            encode_http_msg(WithDisposition, #{});
         BPBin when is_binary(BPBin) ->
             % A properly encoded inlined body part MUST have a CRLF between
             % it and the header block, so we MUST use two CRLF:
@@ -578,16 +578,18 @@ inline_key(Msg) ->
     end.
 
 %% @doc Encode a HTTP message into a binary.
-encode_http_msg(Httpsig) ->
+encode_http_msg(Httpsig, Opts) ->
     % Serialize the headers, to be included in the part of the multipart response
-    HeaderList = lists:foldl(
-        fun ({HeaderName, HeaderValue}, Acc) ->
-            ?event({encoding_http_header, {header, HeaderName}, {value, HeaderValue}}),
-            [<<HeaderName/binary, ": ", HeaderValue/binary>> | Acc]
-        end,
-        [],
-        hb_maps:to_list(hb_maps:without([<<"body">>], Httpsig))
-    ),
+    HeaderList =
+        lists:foldl(
+            fun ({HeaderName, RawHeaderVal}, Acc) ->
+                HVal = hb_cache:ensure_loaded(RawHeaderVal),
+                ?event({encoding_http_header, {header, HeaderName}, {value, HVal}}),
+                [<<HeaderName/binary, ": ", HVal/binary>> | Acc]
+            end,
+            [],
+            hb_maps:to_list(hb_maps:without([<<"body">>], Httpsig), Opts)
+        ),
     EncodedHeaders = iolist_to_binary(lists:join(?CRLF, lists:reverse(HeaderList))),
     case hb_maps:get(<<"body">>, Httpsig, <<>>) of
         <<>> -> EncodedHeaders;
