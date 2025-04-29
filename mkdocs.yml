@@ -189,7 +189,7 @@ theme:
   icon:
     repo: fontawesome/brands/github 
   features:
-    - navigation.instant
+    # - navigation.instant
     - navigation.instant.progress
     - navigation.instant.prefetch
     - navigation.tracking
@@ -200,8 +200,7 @@ theme:
     - navigation.tabs.sticky
     - navigation.indexes
     - navigation.prune
-    # - toc.integrate
-    - toc.follow
+    - toc.integrate
     - content.tooltips
     - content.code.copy
     - content.code.select
@@ -244,6 +243,7 @@ extra_javascript:
   - js/navigation.js
   - js/toc-highlight.js
   - js/custom-nav.js
+  - js/disable-preload-transition.js
 
 extra:
   social:

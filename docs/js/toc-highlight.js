@@ -30,34 +30,20 @@ document.addEventListener('DOMContentLoaded', function() {
   // Run the function on initial page load
   updateTocHighlight();
 
-  // Run the function whenever the hash changes
+  // Run the function whenever the hash changes (for same-page navigation)
   window.addEventListener('hashchange', updateTocHighlight);
 
   // Compatibility with MkDocs Material Instant Loading:
-  // Re-run the function after instant loading navigation completes.
-  // We need to observe mutations on the main content area or use RxJS if available.
-  // A simpler approach for now: Re-run on any click within the document,
-  // potentially debounced or throttled if performance becomes an issue.
-  // However, 'hashchange' should cover most cases. Let's add an observer
-  // for content changes as a fallback for instant loading edge cases.
-
-  const contentElement = document.querySelector('.md-content'); // Adjust selector if needed
-  if (contentElement) {
-    const observer = new MutationObserver(mutations => {
-      // We only care that *something* changed, possibly due to instant loading.
-      // Check if the hash is different or if active link needs update.
-      // Debounce or throttle this if it fires too often.
-      // A simple timeout might suffice to avoid running too many times during transitions.
-      setTimeout(updateTocHighlight, 100); // Small delay
+  // Subscribe to the document$ observable which emits after instant loading completes.
+  if (typeof document$ !== 'undefined') {
+    document$.subscribe(function() {
+      // Use a small timeout to ensure the DOM is fully updated after navigation
+      setTimeout(updateTocHighlight, 50);
     });
-
-    observer.observe(contentElement, { childList: true, subtree: true });
   } else {
-    // Fallback if specific content element isn't found, listen more broadly (less efficient)
-     const bodyObserver = new MutationObserver(mutations => {
-       setTimeout(updateTocHighlight, 100);
-     });
-     bodyObserver.observe(document.body, { childList: true, subtree: true });
+    console.warn("MkDocs Material 'document$' observable not found. Instant loading TOC highlighting might not work.");
+    // Fallback or alternative logic could be placed here if needed,
+    // but relying on document$ is the primary method for instant loading.
   }
 
 }); 
