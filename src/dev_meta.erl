@@ -7,9 +7,8 @@
 %%% resolver. Additionally, a post-processor can be set, which is executed after
 %%% the AO-Core resolver has returned a result.
 -module(dev_meta).
--export([info/1, info/3, handle/2, adopt_node_message/2, validate_request/2]).
+-export([info/1, info/3, handle/2, adopt_node_message/2, is/2, is/3]).
 %%% Public API
--export([is_operator/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -23,26 +22,6 @@
 %% future the `request' is added as an argument to AO-Core's internal `info'
 %% function, we will need to find a different approach.
 info(_) -> #{ exports => [info] }.
-
-%% @doc Utility function for determining if a request is from the `operator' of
-%% the node.
-is_operator(Request, NodeMsg) ->
-    RequestSigners = hb_message:signers(Request),
-    Operator =
-        hb_opts:get(
-            operator,
-            case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
-                no_viable_wallet -> unclaimed;
-                Wallet -> ar_wallet:to_address(Wallet)
-            end,
-            NodeMsg
-        ),
-    EncOperator =
-        case Operator of
-            unclaimed -> unclaimed;
-            NativeAddress -> hb_util:human_id(NativeAddress)
-        end,
-    EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners).
 
 %% @doc Normalize and route messages downstream based on their path. Messages
 %% with a `Meta' key are routed to the `handle_meta/2' function, while all
@@ -127,22 +106,7 @@ add_dynamic_keys(NodeMsg) ->
 %% @doc Validate that the request is signed by the operator of the node, then
 %% allow them to update the node message.
 update_node_message(Request, NodeMsg) ->
-    RequestSigners = hb_message:signers(Request),
-    Operator =
-        hb_opts:get(
-            operator,
-            case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
-                no_viable_wallet -> unclaimed;
-                Wallet -> ar_wallet:to_address(Wallet)
-            end,
-            NodeMsg
-        ),
-    EncOperator =
-        case Operator of
-            unclaimed -> unclaimed;
-            NativeAddress -> hb_util:human_id(NativeAddress)
-        end,
-    case EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners) of
+    case is(admin, Request, NodeMsg) of
         false ->
             ?event({set_node_message_fail, Request}),
             embed_status({error, <<"Unauthorized">>});
@@ -173,30 +137,14 @@ update_node_message(Request, NodeMsg) ->
 %% @doc Attempt to adopt changes to a node message.
 adopt_node_message(Request, NodeMsg) ->
     ?event({set_node_message_success, Request}),
-	RawDataValue = case hb_ao:get(<<"data">>, Request, not_found, #{}) of
-		not_found ->
-			not_found;
-		RawData ->
-			{ok, Data} = hb_opts:load_bin(RawData),
-			Data
-	end,
-	MergedOpts = case RawDataValue of
-		not_found ->
-			maps:merge(
-				NodeMsg,
-				hb_opts:mimic_default_types(hb_message:uncommitted(Request), new_atoms)
-			);	
-		DataValue ->
-			maps:merge(
-				NodeMsg,
-				hb_opts:mimic_default_types(
-					hb_message:uncommitted(
-						maps:without([priv_wallet], DataValue)
-					), 
-					new_atoms
-				)
-			)
-	end,
+    MergedOpts =
+        maps:merge(
+            NodeMsg,
+            hb_opts:mimic_default_types(
+                hb_message:uncommitted(Request),
+                new_atoms
+            )
+        ),
     % Ensure that the node history is updated and the http_server ID is
     % not overridden.
     case hb_opts:get(initialized, permanent, NodeMsg) of
@@ -210,7 +158,6 @@ adopt_node_message(Request, NodeMsg) ->
 			hb_http_server:set_opts(FinalOpts),
 			{ok, FinalOpts}
     end.
-
 
 %% @doc Handle an AO-Core request, which is a list of messages. We apply
 %% the node's pre-processor to the request first, and then resolve the request
@@ -362,31 +309,75 @@ maybe_sign(Res, NodeMsg) ->
         false -> Res
     end.
 
-%% @doc Validate a request signature.
-validate_request(Request, NodeMsg) ->
-	% Get node_history from hb_opts and check first entry's signature
+%% @doc Check if the request in question is signed by a given `role' on the node.
+%% The `role' can be one of `operator' or `initiator'.
+is(Request, NodeMsg) ->
+	is(operator, Request, NodeMsg).
+is(admin, Request, NodeMsg) ->
+    % Does the caller have the right to change the node message?
+    RequestSigners = hb_message:signers(Request),
+    ValidOperator =
+        hb_util:bin(
+            hb_opts:get(
+                operator,
+                case hb_opts:get(priv_wallet, no_viable_wallet, NodeMsg) of
+                    no_viable_wallet -> unclaimed;
+                    Wallet -> ar_wallet:to_address(Wallet)
+                end,
+                NodeMsg
+            )
+        ),
+    EncOperator =
+        case ValidOperator of
+            <<"unclaimed">> -> unclaimed;
+            NativeAddress -> hb_util:human_id(NativeAddress)
+        end,
+    ?event({is,
+        {operator,
+            {valid_operator, ValidOperator},
+            {encoded_operator, EncOperator},
+            {request_signers, RequestSigners}
+        }
+    }),
+    EncOperator == unclaimed orelse lists:member(EncOperator, RequestSigners);
+is(operator, Req, NodeMsg) ->
+    % Is the caller explicitly set to be the operator?
+    % Get the operator from the node message
+    Operator = hb_opts:get(operator, unclaimed, NodeMsg),
+    % Get the request signers
+    RequestSigners = hb_message:signers(Req),
+    % Ensure the operator is present in the request
+    lists:member(Operator, RequestSigners);
+is(initiator, Request, NodeMsg) ->
+    % Is the caller the first identity that configured the node message?
 	NodeHistory = hb_opts:get(node_history, [], NodeMsg),
 	% Check if node_history exists and is not empty
 	case NodeHistory of
 		[] ->
 			?event(green_zone, {init, node_history, empty}),
 			false;
-		[FirstEntry | _] ->
+		[InitializationRequest | _] ->
 			% Extract signature from first entry
-			FirstEntrySignature = hb_message:signers(FirstEntry),
-			% Get M2 signature
-			M2Signature = hb_message:signers(Request),
-			% Compare signatures
-			case FirstEntrySignature =:= M2Signature of
-				true ->
-					{ok, <<"Valid request signature.">>};
-				false ->
-					{error, #{
-						<<"status">>        => 401,
-						<<"message">>       => <<"Invalid request signature.">>
-					}}
-			end
-	end.
+			InitializationRequestSigners = hb_message:signers(InitializationRequest),
+			% Get request signers
+			RequestSigners = hb_message:signers(Request),
+            % Ensure all signers of the initalization request are present in the
+            % request.
+            AllSignersPresent =
+                lists:all(
+                    fun(Signer) -> lists:member(Signer, RequestSigners) end,
+                    InitializationRequestSigners
+                ),
+            case AllSignersPresent of
+                true ->
+                    {ok, true};
+                false ->
+                    {error, #{
+                        <<"status">> => 401,
+                        <<"message">> => <<"Invalid request signature.">>
+                    }}
+            end
+    end.
 
 %%% Tests
 
@@ -470,7 +461,7 @@ permanent_node_message_test() ->
     Owner = ar_wallet:new(),
     Node = hb_http_server:start_node(
         #{
-            operator => unclaimed,
+            operator => <<"unclaimed">>,
             initialized => false,
             test_config_item => <<"test">>
         }
