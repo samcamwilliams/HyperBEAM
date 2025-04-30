@@ -153,62 +153,84 @@
     {% if page.is_homepage %}
        <!-- Custom homepage content here -->
 	   <section class="hero-container">
-		<div class="hero-floating-wrapper">
-			<div class="hero-inner-content">
-				<div class="hero-main-heading">
-					<h1>A Decentralized Operating System.</h1>
-					<h2>Powered By AO</h2>
-				</div>
-				<div class="hero-detail">
-					<h1>Documentation</h1>
-					<button class="scroll-button">
-						<img
-							src="/assets/images/scroll-for-more.svg"
-							alt="scroll-for-more"
-						/>
-						<span>Scroll For More.</span>
-					</button>
+		<!-- Foreground Rocks -->
+		<picture
+			class="rocks foreground-rocks flicker-img"
+			style="--depth: 0.5"
+		>
+			<img
+				src="https://arweave.net/FA9EoFZCYS3hDn5DVFV0c1oaWTP9aj5Qn9AJQzxtKe8"
+				alt="front-rocks"
+			/>
+		</picture>
+
+		<picture class="rocks foreground-rocks" style="--depth: 1">
+			<img
+				src="https://arweave.net/SWlQOVP9iI6p0OUqvANT1Gbis0KNcT51tgQqYKPx76Q"
+				alt="front-boulder"
+			/>
+		</picture>
+
+		<!-- Mid Rocks -->
+		<picture
+			class="rocks mid-rocks flicker-img"
+			style="--depth: 2"
+		>
+			<img
+				src="https://arweave.net/fd-MzJ9LMicOcC1vVyytKEa5v2gjDr2L_yaICDiKJUA"
+				alt="mid-rocks"
+			/>
+		</picture>
+
+		<picture class="rocks mid-rocks" style="--depth: 3">
+			<img
+				src="https://arweave.net/P2Xx-NrDzGJfDrQmUT1rWxlSruZqhF9BK3KAqJ_ZnFw"
+				alt="back-rocks"
+			/>
+		</picture>
+
+		<!-- Background Rocks -->
+		<picture class="rocks background-rocks" style="--depth: 4">
+			<img
+				src="https://arweave.net/rNPFyUrzokSxt_0sYIsJ-hZc3-KOHA-kLx1t70sNpos"
+				alt="background-rocks"
+			/>
+		</picture>
+
+		<!-- Background Chroma -->
+		<picture
+			class="rocks background-chroma flicker-img"
+			style="--depth: 100"
+		>
+			<img
+				src="https://arweave.net/5uRyQM79BegCqgdKA_Imb-P8QuMsj7IhDGkb_NbtSAY"
+				alt="background-chroma-space"
+			/>
+		</picture>
+
+		<div class="dark-bottom" style="--depth: 300"></div>
+		<div class="hero-content-wrapper">
+			<div class="hero-floating-wrapper">
+				<div class="hero-inner-content">
+					<div class="hero-main-heading">
+						<h1>A Decentralized Operating System.</h1>
+						<h2>Powered By AO</h2>
+					</div>
+					<div class="hero-detail">
+						<h1>Documentation</h1>
+						<button class="scroll-button">
+							<img
+								src="/assets/images/scroll-for-more.svg"
+								alt="scroll-for-more"
+							/>
+							<span>Scroll For More.</span>
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>
-		<picture class="rocks foreground-rocks"
-			><img
-				src="https://arweave.net/FA9EoFZCYS3hDn5DVFV0c1oaWTP9aj5Qn9AJQzxtKe8"  // front-rocks.avif
-				alt="front-rocks"
-				class="flicker-img"
-		/></picture>
-		<picture class="rocks foreground-rocks"
-			><img
-				src="https://arweave.net/SWlQOVP9iI6p0OUqvANT1Gbis0KNcT51tgQqYKPx76Q" // front-boulder.avif
-				alt="front-boulder"
-				class="flicker-img"
-		/></picture>
-		<picture class="rocks mid-rocks"
-			><img
-				src="https://arweave.net/fd-MzJ9LMicOcC1vVyytKEa5v2gjDr2L_yaICDiKJUA" // mid-rocks.avif
-				alt="mid-rocks"
-				class="flicker-img"
-		/></picture>
-		<picture class="rocks mid-rocks"
-			><img
-				src="https://arweave.net/P2Xx-NrDzGJfDrQmUT1rWxlSruZqhF9BK3KAqJ_ZnFw" // back-rocks.avif
-				alt="mid-rocks"
-				class="flicker-img"
-		/></picture>
-
-		<picture class="rocks background-rocks"
-			><img
-				src="https://arweave.net/rNPFyUrzokSxt_0sYIsJ-hZc3-KOHA-kLx1t70sNpos" // bg.avif
-				alt="background-rocks"
-		/></picture>
-		<picture class="rocks background-chroma"
-			><img
-				src="https://arweave.net/5uRyQM79BegCqgdKA_Imb-P8QuMsj7IhDGkb_NbtSAY" // chroma-sky.avif
-				alt="background-chroma-space"
-				class="flicker-img"
-		/></picture>
-		<div class="dark-bottom"></div>
 	</section>
+
 	<section
 		class="section-container section-container-background-primary"
 	>
