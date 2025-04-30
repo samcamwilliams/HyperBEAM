@@ -1,7 +1,6 @@
 
 
 # Module hb_store_rocksdb #
-* [Description](#description)
 * [Data Types](#types)
 
 A process wrapper over rocksdb storage.

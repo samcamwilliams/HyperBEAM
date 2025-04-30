@@ -1,7 +1,6 @@
 
 
 # Module hb_json #
-* [Description](#description)
 
 Wrapper for encoding and decoding JSON.
 

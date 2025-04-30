@@ -1,7 +1,6 @@
 
 
 # Module hb_debugger #
-* [Description](#description)
 
 A module that provides bootstrapping interfaces for external debuggers
 to connect to HyperBEAM.

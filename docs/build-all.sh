@@ -10,6 +10,15 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# HyperBEAM Logo Colors
+NEON_GREEN='\033[38;5;46m'
+CYAN='\033[38;5;51m'
+BRIGHT_YELLOW='\033[38;5;226m'
+MAGENTA='\033[38;5;201m'
+BRIGHT_RED='\033[38;5;196m'
+BLACK='\033[38;5;0m'
+GRAY='\033[38;5;245m'
+
 # --- Helper Functions ---
 log_success() {
   echo -e "${GREEN}✓ $1${NC}"
@@ -27,8 +36,24 @@ log_error() {
   echo -e "${RED}✗ $1${NC}"
 }
 
+# --- Display HyperBEAM ASCII Logo ---
+display_logo() {
+  echo -e "
+${NEON_GREEN}        ▲         ${BLACK}${BOLD}                                 ${NC}
+${NEON_GREEN}       ▲ ▲        ${BLACK}${BOLD}  _                              ${NC}
+${NEON_GREEN}      ▲${CYAN}▲${NEON_GREEN}▲ ▲       ${BLACK}${BOLD} | |__  _   _ _ __   ___ _ __  ${NC}
+${NEON_GREEN}     ▲${CYAN}▲${BRIGHT_YELLOW}▲${CYAN}▲${NEON_GREEN}▲ ▲      ${BLACK}${BOLD} | '_ \\| | | | '_ \\ / _ \\ '__| ${NC}
+${NEON_GREEN}    ▲${CYAN}▲${BRIGHT_YELLOW}▲${MAGENTA}▲${BRIGHT_YELLOW}▲${CYAN}▲${NEON_GREEN}▲ ▲     ${BLACK}${BOLD} | | | | |_| | |_) |  __/ |    ${NC}
+${NEON_GREEN}   ▲${CYAN}▲${BRIGHT_YELLOW}▲${MAGENTA}▲${BRIGHT_RED}▲${MAGENTA}▲${BRIGHT_YELLOW}▲${CYAN}▲${NEON_GREEN}▲ ▲    ${BLACK}${BOLD} |_| |_|\\__, | .__/ \\___|_|    ${NC}
+${NEON_GREEN}  ▲▲▲▲▲▲▲▲▲▲▲▲▲   ${BLACK}${BOLD}        |___/|_|              ${NC}
+${BLACK}${BOLD}                  BEAM.${NC}
+${GRAY}                  DECENTRALIZED OPERATING SYSTEM${NC}
+"
+}
+
 # --- Script Start ---
-log_step "HYPERBEAM DOCUMENTATION BUILD"
+display_logo
+log_step "DOCUMENTATION BUILD"
 
 # Ensure we're in the root directory of the project
 ROOT_DIR="$(dirname "$(realpath "$0")")/.."
@@ -67,6 +92,7 @@ find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -na
   TEMP_MODULE_FILE=$(mktemp)
 
   awk '
+    /^\* \[Description\]\(#description\)$/ { next; }
     /^\* \[Function Index\]\(#index\)$/ { next; }
     /^\* \[Function Details\]\(#functions\)$/ { next; }
     { print; }
@@ -78,67 +104,83 @@ done
 log_success "Source code documentation processed"
 
 # --- Step 3.2: Update mkdocs.yml navigation with current module list ---
-log_info "Updating mkdocs.yml navigation"
+# log_info "Updating mkdocs.yml navigation"
 
-# Get list of module files
-MODULE_FILES=$(find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -name "README.md" | sort)
+# # Create temporary file for the new mkdocs.yml
+# MKDOCS_TEMP=$(mktemp)
+# MKDOCS_FILE="$ROOT_DIR/mkdocs.yml"
 
-# Create temporary file for the new mkdocs.yml
-MKDOCS_TEMP=$(mktemp)
-MKDOCS_FILE="$ROOT_DIR/mkdocs.yml"
+# # Process mkdocs.yml file to remove old modules
+# awk '
+# BEGIN { in_modules = 0; skip_modules = 0; }
+# /^ *- Modules:/ {
+#   print $0;
+#   in_modules = 1;
+#   skip_modules = 1;
+#   next;
+# }
+# {
+#   if (skip_modules == 0) {
+#     print $0;
+#   }
+#   if (in_modules == 1 && $0 ~ /^ *-/) {
+#     if ($0 !~ /^ *- Modules:/) {
+#       in_modules = 0;
+#       skip_modules = 0;
+#       print $0;
+#     }
+#   }
+# }
+# ' "$MKDOCS_FILE" > "$MKDOCS_TEMP"
 
-# Process mkdocs.yml file
-awk '
-BEGIN { in_modules = 0; skip_modules = 0; }
-/^ *- Modules:/ { 
-  print $0; 
-  in_modules = 1; 
-  skip_modules = 1; 
-  next; 
-}
-{
-  if (skip_modules == 0) {
-    print $0;
-  }
-  if (in_modules == 1 && $0 ~ /^ *-/) {
-    if ($0 !~ /^ *- Modules:/) {
-      in_modules = 0;
-      skip_modules = 0;
-      print $0;
-    }
-  }
-}
-' "$MKDOCS_FILE" > "$MKDOCS_TEMP"
+# # Find the position to insert module entries
+# INSERT_LINE=$(grep -n "^ *- Modules:" "$MKDOCS_TEMP" | cut -d: -f1)
 
-# Find the position to insert module entries
-INSERT_LINE=$(grep -n "^ *- Modules:" "$MKDOCS_TEMP" | cut -d: -f1)
+# if [ -z "$INSERT_LINE" ]; then
+#   log_error "Could not find '- Modules:' section in mkdocs.yml"
+#   # Clean up temp file before exiting
+#   rm -f "$MKDOCS_TEMP"
+#   exit 1
+# fi
 
-if [ -z "$INSERT_LINE" ]; then
-  log_error "Could not find '- Modules:' section in mkdocs.yml"
-  exit 1
-fi
+# # Prepare head and tail parts
+# head -n "$INSERT_LINE" "$MKDOCS_TEMP" > "${MKDOCS_TEMP}.head"
+# tail -n +$((INSERT_LINE + 1)) "$MKDOCS_TEMP" > "${MKDOCS_TEMP}.tail"
 
-# Split the file at the insertion point
-head -n "$INSERT_LINE" "$MKDOCS_TEMP" > "${MKDOCS_TEMP}.head"
-tail -n +$((INSERT_LINE + 1)) "$MKDOCS_TEMP" > "${MKDOCS_TEMP}.tail"
+# # Use an associative array to track added modules
+# declare -A added_modules
+# MODULE_LINES="" # Accumulate module lines here
 
-# Add module entries
-{
-  cat "${MKDOCS_TEMP}.head"
+# # Use process substitution to read modules without a subshell per iteration
+# while IFS= read -r module_file; do
+#     # Check if module_file is empty or not a file (safety check)
+#     if [[ -z "$module_file" || ! -f "$module_file" ]]; then
+#         continue
+#     fi
 
-  # Add each module with proper indentation
-  for module_file in $MODULE_FILES; do
-    module_name=$(basename "$module_file" .md)
-    echo "        - $module_name: 'resources/source-code/$module_name.md'"
-  done
+#     module_name=$(basename "$module_file" .md)
 
-  cat "${MKDOCS_TEMP}.tail"
-} > "$MKDOCS_FILE"
+#     # Only add the module if its basename hasn't been added yet
+#     if [[ -z "${added_modules[$module_name]}" ]]; then
+#       # Append the line to a variable instead of echoing directly
+#       MODULE_LINES+="        - $module_name: 'resources/source-code/$module_name.md'\n"
+#       added_modules[$module_name]=1
+#     fi
+# # Feed the loop using process substitution <(...)
+# done < <(find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -name "README.md" | sort -u)
 
-# Clean up temporary files
-rm -f "$MKDOCS_TEMP" "${MKDOCS_TEMP}.head" "${MKDOCS_TEMP}.tail"
+# # Assemble the final mkdocs.yml
+# {
+#   cat "${MKDOCS_TEMP}.head"
+#   # Echo the accumulated module lines (use printf for robustness)
+#   printf "%b" "$MODULE_LINES"
+#   cat "${MKDOCS_TEMP}.tail"
+# } > "$MKDOCS_FILE"
 
-log_success "mkdocs.yml navigation updated"
+# # Clean up temporary files
+# rm -f "$MKDOCS_TEMP" "${MKDOCS_TEMP}.head" "${MKDOCS_TEMP}.tail"
+
+# log_success "mkdocs.yml navigation updated"
 
 # --- Step 4: Build and serve mkdocs ---
 log_step "Building mkdocs documentation"

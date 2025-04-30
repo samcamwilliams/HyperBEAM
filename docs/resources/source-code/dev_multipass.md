@@ -1,7 +1,6 @@
 
 
 # Module dev_multipass #
-* [Description](#description)
 
 A device that triggers repass events until a certain counter has been
 reached.

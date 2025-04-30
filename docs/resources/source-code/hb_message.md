@@ -1,7 +1,6 @@
 
 
 # Module hb_message #
-* [Description](#description)
 
 This module acts an adapter between messages, as modeled in the
 AO-Core protocol, and their uderlying binary representations and formats.

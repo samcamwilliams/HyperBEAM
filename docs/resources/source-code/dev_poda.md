@@ -1,7 +1,6 @@
 
 
 # Module dev_poda #
-* [Description](#description)
 
 A simple exemplar decentralized proof of authority consensus algorithm
 for AO processes.

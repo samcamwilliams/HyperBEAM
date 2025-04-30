@@ -1,7 +1,6 @@
 
 
 # Module dev_codec_httpsig #
-* [Description](#description)
 * [Data Types](#types)
 
 This module implements HTTP Message Signatures as described in RFC-9421

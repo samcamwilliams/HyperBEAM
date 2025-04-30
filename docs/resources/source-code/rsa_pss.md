@@ -1,7 +1,6 @@
 
 
 # Module rsa_pss #
-* [Description](#description)
 * [Data Types](#types)
 
 Distributed under the Mozilla Public License v2.0.

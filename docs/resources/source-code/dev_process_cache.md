@@ -1,7 +1,6 @@
 
 
 # Module dev_process_cache #
-* [Description](#description)
 
 A wrapper around the hb_cache module that provides a more
 convenient interface for reading the result of a process at a given slot or

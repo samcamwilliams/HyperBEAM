@@ -1,7 +1,6 @@
 
 
 # Module hb_store_remote_node #
-* [Description](#description)
 
 A store module that reads data from another AO node.
 

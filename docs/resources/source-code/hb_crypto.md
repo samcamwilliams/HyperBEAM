@@ -1,7 +1,6 @@
 
 
 # Module hb_crypto #
-* [Description](#description)
 
 Implements the cryptographic functions and wraps the primitives
 used in HyperBEAM.

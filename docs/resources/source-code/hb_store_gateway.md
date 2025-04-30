@@ -1,7 +1,6 @@
 
 
 # Module hb_store_gateway #
-* [Description](#description)
 
 A store module that reads data from the nodes Arweave gateway and
 GraphQL routes, additionally including additional store-specific routes.

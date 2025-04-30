@@ -1,7 +1,6 @@
 
 
 # Module dev_scheduler_server #
-* [Description](#description)
 
 A long-lived server that schedules messages for a process.
 

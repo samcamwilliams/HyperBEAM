@@ -1,7 +1,6 @@
 
 
 # Module dev_node_process #
-* [Description](#description)
 
 A device that implements the singleton pattern for processes specific
 to an individual node.

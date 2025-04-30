@@ -1,7 +1,6 @@
 
 
 # Module hb_util #
-* [Description](#description)
 
 A collection of utility functions for building with HyperBEAM.
 

@@ -1,4 +1,4 @@
-Generated: 2025-04-30T17:24:06Z
+Generated: 2025-04-30T18:02:38Z
 
 --- START OF FILE: docs/begin/ao-devices.md ---
 # AO Devices
@@ -929,8 +929,6 @@ By leveraging WASM, Lua, and optional TEE attestations, AO provides a powerful p
 # LLM Context Files
 
 This section provides access to specially formatted files intended for consumption by Large Language Models (LLMs) to provide context about the HyperBEAM documentation.
-
-## Files
 
 1.  **[LLM Summary (llms.txt)](../llms.txt)**
     *   **Content**: Contains a brief summary of the HyperBEAM documentation structure and a list of relative file paths for all markdown documents included in the build.
@@ -2166,7 +2164,6 @@ Check if the server is already running, and if not, start it.
 
 
 # Module ar_tx #
-* [Description](#description)
 
 The module with utilities for transaction creation, signing, and verification.
 
@@ -2434,7 +2431,6 @@ Verify that a signature is correct.
 
 
 # Module dev_cache #
-* [Description](#description)
 
 A device that looks up an ID from a local store and returns it,
 honoring the `accept` key to return the correct format.
@@ -2568,7 +2564,6 @@ a successful write.
 
 
 # Module dev_cacheviz #
-* [Description](#description)
 
 A device that generates renders (or renderable dot output) of a node's
 cache.
@@ -2612,7 +2607,6 @@ the cache set by the `target` key in the request.
 
 
 # Module dev_codec_ans104 #
-* [Description](#description)
 
 Codec for managing transformations from `ar_bundles`-style Arweave TX
 records to and from TABMs.
@@ -2803,7 +2797,6 @@ Verify an ANS-104 commitment.
 
 
 # Module dev_codec_flat #
-* [Description](#description)
 
 A codec for turning TABMs into/from flat Erlang maps that have
 (potentially multi-layer) paths as their keys, and a normal TABM binary as
@@ -2922,7 +2915,6 @@ Convert a TABM to a flat map.
 
 
 # Module dev_codec_httpsig_conv #
-* [Description](#description)
 
 A codec for the that marshals TABM encoded messages to and from the
 "HTTP" message structure.
@@ -3167,7 +3159,6 @@ Decode the `ao-ids` key into a map.
 
 
 # Module dev_codec_httpsig #
-* [Description](#description)
 * [Data Types](#types)
 
 This module implements HTTP Message Signatures as described in RFC-9421
@@ -3808,7 +3799,6 @@ verify the named signature by constructing the signature base and comparing
 
 
 # Module dev_codec_json #
-* [Description](#description)
 
 A simple JSON codec for HyperBEAM's message format.
 
@@ -3894,7 +3884,6 @@ Encode a message to a JSON string.
 
 
 # Module dev_codec_structured #
-* [Description](#description)
 
 A device implementing the codec interface (to/1, from/1) for
 HyperBEAM's internal, richly typed message format.
@@ -4004,7 +3993,6 @@ Convert a TABM into a native HyperBEAM message.
 
 
 # Module dev_cron #
-* [Description](#description)
 
 A device that inserts new messages into the schedule to allow processes
 to passively 'call' themselves without user interaction.
@@ -4167,7 +4155,6 @@ It is used to increment a counter and update the state of the worker.
 
 
 # Module dev_dedup #
-* [Description](#description)
 
 A device that deduplicates messages send to a process.
 
@@ -4224,7 +4211,6 @@ with deduplication. We only act on the first pass.
 
 
 # Module dev_delegated_compute #
-* [Description](#description)
 
 Simple wrapper module that enables compute on remote machines,
 implementing the JSON-Iface.
@@ -4288,7 +4274,6 @@ need to do anything special here.
 
 
 # Module dev_faff #
-* [Description](#description)
 
 A module that implements a 'friends and family' pricing policy.
 
@@ -4346,7 +4331,6 @@ Check whether all of the signers of the request are in the allow-list.
 
 
 # Module dev_genesis_wasm #
-* [Description](#description)
 
 A device that mimics an environment suitable for `legacynet` AO
 processes, using HyperBEAM infrastructure.
@@ -4601,7 +4585,6 @@ validate_join(M1::term(), Req::map(), Opts::map()) -&gt; {ok, map()} | {error, b
 
 
 # Module dev_hyperbuddy #
-* [Description](#description)
 
 A device that renders a REPL-like interface for AO-Core via HTML.
 
@@ -4665,7 +4648,6 @@ listed in the `routes` field of the `info/0` return value.
 
 
 # Module dev_json_iface #
-* [Description](#description)
 
 A device that provides a way for WASM execution to interact with
 the HyperBEAM (and AO) systems, using JSON as a shared data representation.
@@ -4923,7 +4905,6 @@ Convert a message with tags into a map of their key-value pairs.
 
 
 # Module dev_local_name #
-* [Description](#description)
 
 A device for registering and looking up local names.
 
@@ -5057,7 +5038,6 @@ storage.
 
 
 # Module dev_lookup #
-* [Description](#description)
 
 A device that looks up an ID from a local store and returns it, honoring
 the `accept` key to return the correct format.
@@ -5113,7 +5093,6 @@ Fetch a resource from the cache using "target" ID extracted from the message
 
 
 # Module dev_lua_lib #
-* [Description](#description)
 
 A module for providing AO library functions to the Lua environment.
 
@@ -5298,7 +5277,6 @@ Check if a string terminates with a given suffix.
 
 
 # Module dev_lua #
-* [Description](#description)
 
 A device that calls a Lua script upon a request and returns the result.
 
@@ -5613,7 +5591,6 @@ state element, then serializes the state to a binary.
 
 
 # Module dev_manifest #
-* [Description](#description)
 
 An Arweave path manifest resolution device.
 
@@ -5666,7 +5643,6 @@ Route a request to the associated data via its manifest.
 
 
 # Module dev_message #
-* [Description](#description)
 
 The identity device: For non-reserved keys, it simply returns a key
 from the message as it is found in the message's underlying Erlang map.
@@ -5989,7 +5965,6 @@ See `commitment_ids_from_request/3` for more information on the request format.
 
 
 # Module dev_meta #
-* [Description](#description)
 
 The hyperbeam meta device, which is the default entry point
 for all messages processed by the machine.
@@ -6306,7 +6281,6 @@ allow them to update the node message.
 
 
 # Module dev_multipass #
-* [Description](#description)
 
 A device that triggers repass events until a certain counter has been
 reached.
@@ -6356,7 +6330,6 @@ with deduplication. We only act on the first pass.
 
 
 # Module dev_name #
-* [Description](#description)
 
 A device for resolving names to their corresponding values, through the
 use of a `resolver` interface.
@@ -6457,7 +6430,6 @@ pointer and its contents is loaded from the cache. For example,
 
 
 # Module dev_node_process #
-* [Description](#description)
 
 A device that implements the singleton pattern for processes specific
 to an individual node.
@@ -6558,7 +6530,6 @@ node message, and register it with the given name.
 
 
 # Module dev_p4 #
-* [Description](#description)
 
 The HyperBEAM core payment ledger.
 
@@ -6688,7 +6659,6 @@ not set is to proceed, so it is important that a user initialize them.
 
 
 # Module dev_patch #
-* [Description](#description)
 
 A device that finds `PATCH` requests in the `results/outbox`
 of its message, and applies them to it.
@@ -6759,7 +6729,6 @@ Default process device hooks.
 
 
 # Module dev_poda #
-* [Description](#description)
 
 A simple exemplar decentralized proof of authority consensus algorithm
 for AO processes.
@@ -6892,7 +6861,6 @@ outbound message if the computation requests it.
 
 
 # Module dev_process_cache #
-* [Description](#description)
 
 A wrapper around the hb_cache module that provides a more
 convenient interface for reading the result of a process at a given slot or
@@ -7013,7 +6981,6 @@ Write a process computation result to the cache.
 
 
 # Module dev_process_worker #
-* [Description](#description)
 
 A long-lived process worker that keeps state in memory between
 calls.
@@ -7121,7 +7088,6 @@ Stop a worker process.
 
 
 # Module dev_process #
-* [Description](#description)
 
 This module contains the device implementation of AO processes
 in AO-Core.
@@ -7578,7 +7544,6 @@ executor.
 
 
 # Module dev_push #
-* [Description](#description)
 
 `push@1.0` takes a message or slot number, evaluates it, and recursively
 pushes the resulting messages to other processes.
@@ -7756,7 +7721,6 @@ Find the target process ID for a message to push.
 
 
 # Module dev_relay #
-* [Description](#description)
 
 This module implements the relay device, which is responsible for
 relaying messages between nodes and other HTTP(S) endpoints.
@@ -7844,7 +7808,6 @@ peers, according to the node's routing table.
 
 
 # Module dev_router #
-* [Description](#description)
 
 A device that routes outbound messages from the node to their
 appropriate network recipients via HTTP.
@@ -8339,7 +8302,6 @@ Write the latest known scheduler location for an address.
 
 
 # Module dev_scheduler_formats #
-* [Description](#description)
 
 This module is used by dev_scheduler in order to produce outputs that
 are compatible with various forms of AO clients.
@@ -8561,7 +8523,6 @@ Return a list of all currently registered ProcID.
 
 
 # Module dev_scheduler_server #
-* [Description](#description)
 
 A long-lived server that schedules messages for a process.
 
@@ -8667,7 +8628,6 @@ Start a scheduling server for a given computation.
 
 
 # Module dev_scheduler #
-* [Description](#description)
 
 A simple scheduler scheme for AO.
 
@@ -9195,7 +9155,6 @@ process ID.
 
 
 # Module dev_simple_pay #
-* [Description](#description)
 
 A simple device that allows the operator to specify a price for a
 request and then charge the user for it, on a per message basis.
@@ -9391,7 +9350,6 @@ Top up the user's balance in the ledger.
 
 
 # Module dev_snp #
-* [Description](#description)
 
 This device offers an interface for validating AMD SEV-SNP commitments,
 as well as generating them, if called in an appropriate environment.
@@ -9511,7 +9469,6 @@ measurement, are trusted.
 
 
 # Module dev_stack #
-* [Description](#description)
 
 A device that contains a stack of other devices, and manages their
 execution.
@@ -10020,7 +9977,6 @@ Find a test worker's PID and send it an update message.
 
 
 # Module dev_wasi #
-* [Description](#description)
 
 A virtual filesystem device.
 
@@ -10173,7 +10129,6 @@ Return the stdout buffer from a state message.
 
 
 # Module dev_wasm #
-* [Description](#description)
 
 A device that executes a WASM image on messages using the Memory-64
 preview standard.
@@ -10410,7 +10365,6 @@ call details into the message.
 
 
 # Module hb_ao_test_vectors #
-* [Description](#description)
 
 Uses a series of different `Opts` values to test the resolution engine's
 execution under different circumstances.
@@ -10687,7 +10641,6 @@ the store for each test.
 
 
 # Module hb_ao #
-* [Description](#description)
 
 This module is the root of the device call logic of the
 AO-Core protocol in HyperBEAM.
@@ -11213,7 +11166,6 @@ Verify that a device is compatible with the current machine.
 
 
 # Module hb_app #
-* [Description](#description)
 
 The main HyperBEAM application module.
 
@@ -11250,7 +11202,6 @@ __Behaviours:__ [`application`](application.md).
 
 
 # Module hb_beamr_io #
-* [Description](#description)
 
 Simple interface for memory management for Beamr instances.
 
@@ -11410,7 +11361,6 @@ Test writing memory in and out of bounds.
 
 
 # Module hb_beamr #
-* [Description](#description)
 
 BEAMR: A WAMR wrapper for BEAM.
 
@@ -11657,7 +11607,6 @@ any time.
 
 
 # Module hb_cache_control #
-* [Description](#description)
 
 Cache control logic for the AO-Core resolver.
 
@@ -11904,7 +11853,6 @@ normalized map of simply whether we should store and/or lookup the result.
 
 
 # Module hb_cache_render #
-* [Description](#description)
 
 A module that helps to render given Key graphs into the .dot files.
 
@@ -12065,7 +12013,6 @@ Traverse the store recursively to build the graph
 
 
 # Module hb_cache #
-* [Description](#description)
 
 A cache of AO-Core protocol messages and compute results.
 
@@ -12434,7 +12381,6 @@ Upload a data item to the bundler node.
 
 
 # Module hb_crypto #
-* [Description](#description)
 
 Implements the cryptographic functions and wraps the primitives
 used in HyperBEAM.
@@ -12519,7 +12465,6 @@ a high level of entropy.
 
 
 # Module hb_debugger #
-* [Description](#description)
 
 A module that provides bootstrapping interfaces for external debuggers
 to connect to HyperBEAM.
@@ -12627,7 +12572,6 @@ then add a breakpoint on the specified `Module:Function(Args)`, then call it.
 
 
 # Module hb_escape #
-* [Description](#description)
 
 Escape and unescape mixed case values for use in HTTP headers.
 
@@ -12749,7 +12693,6 @@ Unescape a URI-encoded string.
 
 
 # Module hb_event #
-* [Description](#description)
 
 Wrapper for incrementing prometheus counters.
 
@@ -12855,7 +12798,6 @@ error.
 
 
 # Module hb_examples #
-* [Description](#description)
 
 This module contains end-to-end tests for Hyperbeam, accessing through
 the HTTP interface.
@@ -12935,7 +12877,6 @@ correctly.
 
 
 # Module hb_features #
-* [Description](#description)
 
 A module that exports a list of feature flags that the node supports
 using the `-ifdef` macro.
@@ -13003,7 +12944,6 @@ Returns true if the feature flag is enabled.
 
 
 # Module hb_gateway_client #
-* [Description](#description)
 
 Implementation of Arweave's GraphQL API to gain access to specific
 items of data stored on the network.
@@ -13157,7 +13097,6 @@ Test that we can get the scheduler location.
 
 
 # Module hb_http_client_sup #
-* [Description](#description)
 
 The supervisor for the gun HTTP client wrapper.
 
@@ -13194,7 +13133,6 @@ __Behaviours:__ [`supervisor`](supervisor.md).
 
 
 # Module hb_http_client #
-* [Description](#description)
 
 A wrapper library for gun.
 
@@ -13408,7 +13346,6 @@ data to prometheus if the application is enabled, as well as invoking the
 
 
 # Module hb_http_server #
-* [Description](#description)
 
 A router that attaches a HTTP server to the AO-Core resolver.
 
@@ -13951,7 +13888,6 @@ allowed, according to the configuration.
 
 
 # Module hb_json #
-* [Description](#description)
 
 Wrapper for encoding and decoding JSON.
 
@@ -14063,7 +13999,6 @@ Takes a term in Erlang's native form and encodes it as a JSON string.
 
 
 # Module hb_message #
-* [Description](#description)
 
 This module acts an adapter between messages, as modeled in the
 AO-Core protocol, and their uderlying binary representations and formats.
@@ -14847,7 +14782,6 @@ __Behaviours:__ [`prometheus_collector`](prometheus_collector.md).
 
 
 # Module hb_name #
-* [Description](#description)
 
 An abstraction for name registration/deregistration in Hyperbeam.
 
@@ -14987,7 +14921,6 @@ Unregister a name.
 
 
 # Module hb_opts #
-* [Description](#description)
 
 A module for interacting with local and global options inside
 HyperBEAM.
@@ -15118,7 +15051,6 @@ Get an option from environment variables, optionally consulting the
 
 
 # Module hb_path #
-* [Description](#description)
 
 This module provides utilities for manipulating the paths of a
 message: Its request path (referred to in messages as just the `Path`), and
@@ -15419,7 +15351,6 @@ represent its history.
 
 
 # Module hb_persistent #
-* [Description](#description)
 
 Creates and manages long-lived AO-Core resolution processes.
 
@@ -15701,7 +15632,6 @@ request.
 
 
 # Module hb_private #
-* [Description](#description)
 
 This module provides basic helper utilities for managing the
 private element of a message, which can be used to store state that is
@@ -15929,7 +15859,6 @@ Helper function for setting the complete private element of a message.
 
 
 # Module hb_singleton #
-* [Description](#description)
 * [Data Types](#types)
 
 A parser that translates AO-Core HTTP API requests in TABM format
@@ -16508,7 +16437,6 @@ Write a value to the specified path in the store.
 
 
 # Module hb_store_gateway #
-* [Description](#description)
 
 A store module that reads data from the nodes Arweave gateway and
 GraphQL routes, additionally including additional store-specific routes.
@@ -16637,7 +16565,6 @@ multiple times.
 
 
 # Module hb_store_remote_node #
-* [Description](#description)
 
 A store module that reads data from another AO node.
 
@@ -16741,7 +16668,6 @@ the message is signed. Returns {ok, Path} on HTTP 200, or
 
 
 # Module hb_store_rocksdb #
-* [Description](#description)
 * [Data Types](#types)
 
 A process wrapper over rocksdb storage.
@@ -17366,7 +17292,6 @@ Write a key with a value to the store.
 
 
 # Module hb_structured_fields #
-* [Description](#description)
 * [Data Types](#types)
 
 A module for parsing and converting between Erlang and HTTP Structured
@@ -17940,7 +17865,6 @@ Generate a child spec for stores in the given Opts.
 
 
 # Module hb_test_utils #
-* [Description](#description)
 
 Simple utilities for testing HyperBEAM.
 
@@ -17992,7 +17916,6 @@ They can also contain a `desc` key with a description of the options.
 
 
 # Module hb_tracer #
-* [Description](#description)
 
 A module for tracing the flow of requests through the system.
 
@@ -18074,7 +17997,6 @@ Start a new tracer acting as queue of events registered.
 
 
 # Module hb_util #
-* [Description](#description)
 
 A collection of utility functions for building with HyperBEAM.
 
@@ -18871,7 +18793,6 @@ update_store_config(StoreConfig::term(), NewPath::binary()) -&gt; term()
 
 
 # Module hb #
-* [Description](#description)
 
 Hyperbeam is a decentralized node implementing the AO-Core protocol
 on top of Arweave.
@@ -19289,7 +19210,6 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 
 
 # Module rsa_pss #
-* [Description](#description)
 * [Data Types](#types)
 
 Distributed under the Mozilla Public License v2.0.

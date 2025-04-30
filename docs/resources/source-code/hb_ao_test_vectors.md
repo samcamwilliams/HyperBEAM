@@ -1,7 +1,6 @@
 
 
 # Module hb_ao_test_vectors #
-* [Description](#description)
 
 Uses a series of different `Opts` values to test the resolution engine's
 execution under different circumstances.

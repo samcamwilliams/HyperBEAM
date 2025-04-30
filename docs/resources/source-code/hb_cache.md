@@ -1,7 +1,6 @@
 
 
 # Module hb_cache #
-* [Description](#description)
 
 A cache of AO-Core protocol messages and compute results.
 

@@ -1,7 +1,6 @@
 
 
 # Module hb_cache_control #
-* [Description](#description)
 
 Cache control logic for the AO-Core resolver.
 

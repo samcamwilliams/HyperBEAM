@@ -1,7 +1,6 @@
 
 
 # Module hb_structured_fields #
-* [Description](#description)
 * [Data Types](#types)
 
 A module for parsing and converting between Erlang and HTTP Structured

@@ -1,7 +1,6 @@
 
 
 # Module hb_test_utils #
-* [Description](#description)
 
 Simple utilities for testing HyperBEAM.
 

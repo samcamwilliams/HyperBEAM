@@ -2,8 +2,6 @@
 
 This section provides access to specially formatted files intended for consumption by Large Language Models (LLMs) to provide context about the HyperBEAM documentation.
 
-## Files
-
 1.  **[LLM Summary (llms.txt)](../llms.txt)**
     *   **Content**: Contains a brief summary of the HyperBEAM documentation structure and a list of relative file paths for all markdown documents included in the build.
     *   **Usage**: Useful for providing an LLM with a high-level overview and the available navigation routes within the documentation.

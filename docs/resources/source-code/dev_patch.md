@@ -1,7 +1,6 @@
 
 
 # Module dev_patch #
-* [Description](#description)
 
 A device that finds `PATCH` requests in the `results/outbox`
 of its message, and applies them to it.

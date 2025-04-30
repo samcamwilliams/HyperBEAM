@@ -1,7 +1,6 @@
 
 
 # Module hb #
-* [Description](#description)
 
 Hyperbeam is a decentralized node implementing the AO-Core protocol
 on top of Arweave.

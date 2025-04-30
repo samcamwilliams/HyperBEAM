@@ -1,7 +1,6 @@
 
 
 # Module hb_name #
-* [Description](#description)
 
 An abstraction for name registration/deregistration in Hyperbeam.
 

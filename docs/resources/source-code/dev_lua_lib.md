@@ -1,7 +1,6 @@
 
 
 # Module dev_lua_lib #
-* [Description](#description)
 
 A module for providing AO library functions to the Lua environment.
 

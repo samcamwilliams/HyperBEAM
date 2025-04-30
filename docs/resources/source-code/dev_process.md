@@ -1,7 +1,6 @@
 
 
 # Module dev_process #
-* [Description](#description)
 
 This module contains the device implementation of AO processes
 in AO-Core.

@@ -1,7 +1,6 @@
 
 
 # Module hb_app #
-* [Description](#description)
 
 The main HyperBEAM application module.
 

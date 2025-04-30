@@ -1,7 +1,6 @@
 
 
 # Module hb_beamr_io #
-* [Description](#description)
 
 Simple interface for memory management for Beamr instances.
 

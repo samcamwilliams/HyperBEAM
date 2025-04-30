@@ -1,7 +1,6 @@
 
 
 # Module ar_tx #
-* [Description](#description)
 
 The module with utilities for transaction creation, signing, and verification.
 

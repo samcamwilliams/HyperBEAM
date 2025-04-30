@@ -1,7 +1,6 @@
 
 
 # Module hb_singleton #
-* [Description](#description)
 * [Data Types](#types)
 
 A parser that translates AO-Core HTTP API requests in TABM format

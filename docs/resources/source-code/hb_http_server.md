@@ -1,7 +1,6 @@
 
 
 # Module hb_http_server #
-* [Description](#description)
 
 A router that attaches a HTTP server to the AO-Core resolver.
 

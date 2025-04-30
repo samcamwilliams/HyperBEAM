@@ -1,7 +1,6 @@
 
 
 # Module dev_codec_structured #
-* [Description](#description)
 
 A device implementing the codec interface (to/1, from/1) for
 HyperBEAM's internal, richly typed message format.

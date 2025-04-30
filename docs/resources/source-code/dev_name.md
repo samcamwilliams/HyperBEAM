@@ -1,7 +1,6 @@
 
 
 # Module dev_name #
-* [Description](#description)
 
 A device for resolving names to their corresponding values, through the
 use of a `resolver` interface.

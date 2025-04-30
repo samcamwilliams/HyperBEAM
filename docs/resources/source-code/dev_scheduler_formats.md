@@ -1,7 +1,6 @@
 
 
 # Module dev_scheduler_formats #
-* [Description](#description)
 
 This module is used by dev_scheduler in order to produce outputs that
 are compatible with various forms of AO clients.
