@@ -1,84 +1,39 @@
-function applyParallaxToPictures() {
-  const pictures = document.querySelectorAll("picture.rocks");
+document.addEventListener("DOMContentLoaded", () => {
   const header = document.querySelector(".custom-homepage-header");
-  const heroSection = document.querySelector(".hero-container");
+  const scrollContainer = document.querySelector(".custom-homepage-main");
 
-  pictures.forEach((picture, index) => {
-    picture.dataset.depth = (index + 1) * 0.15;
-    picture.dataset.offset = "0";
-  });
+  if (!header || !scrollContainer)
+    return console.log("Missing header or scroll container");
 
   let needsUpdate = false;
 
-  function lerp(start, end, t) {
-    return start * (1 - t) + end * t;
-  }
-
-  function update() {
+  function updateHeaderFade() {
     needsUpdate = false;
-    const scrollTop = window.pageYOffset;
+    const scrollTop = scrollContainer.scrollTop;
 
-    if (header && heroSection) {
-      const fadeStart = heroSection.offsetTop + heroSection.offsetHeight * 0.8;
-      const fadeEnd = heroSection.offsetTop + heroSection.offsetHeight * 0.93;
+    const fadeStart = window.innerHeight * 1.35; // fade starts 80% into hero
+    const fadeEnd = window.innerHeight * 1.45; // fade finishes at 120%
 
-      let headerOpacity;
-      if (scrollTop < fadeStart) {
-        headerOpacity = 0;
-      } else if (scrollTop > fadeEnd) {
-        headerOpacity = 1;
-      } else {
-        headerOpacity = (scrollTop - fadeStart) / (fadeEnd - fadeStart);
-      }
-      let headerOpacity;
-      if (scrollTop < fadeStart) {
-        headerOpacity = 0;
-      } else if (scrollTop > fadeEnd) {
-        headerOpacity = 1;
-      } else {
-        headerOpacity = (scrollTop - fadeStart) / (fadeEnd - fadeStart);
-      }
-
-      header.style.backgroundColor = `rgba(255, 255, 255, ${headerOpacity})`;
-      header.style.filter = `invert(${1 - headerOpacity})`;
+    let opacity;
+    if (scrollTop <= fadeStart) {
+      opacity = 0;
+    } else if (scrollTop >= fadeEnd) {
+      opacity = 1;
+    } else {
+      opacity = (scrollTop - fadeStart) / (fadeEnd - fadeStart);
     }
 
-    let stillMoving = false;
-      header.style.backgroundColor = `rgba(255, 255, 255, ${headerOpacity})`;
-      header.style.filter = `invert(${1 - headerOpacity})`;
-    }
-
-    let stillMoving = false;
-
-    pictures.forEach((picture) => {
-      const depth = parseFloat(picture.dataset.depth);
-      const currentOffset = parseFloat(picture.dataset.offset);
-      const targetOffset = scrollTop * depth;
-
-      const newOffset = lerp(currentOffset, targetOffset, 0.06);
-
-      if (Math.abs(newOffset - targetOffset) > 0.5) {
-        stillMoving = true;
-        picture.dataset.offset = newOffset.toString();
-        picture.style.transform = `translateY(${newOffset}px)`;
-      } else {
-        // Snap exactly when close enough
-        picture.dataset.offset = targetOffset.toString();
-        picture.style.transform = `translateY(${targetOffset}px)`;
-      }
-    });
-
-    if (stillMoving || needsUpdate) {
-      requestAnimationFrame(update);
-    }
+    header.style.backgroundColor = `rgba(255, 255, 255, ${opacity})`;
+    header.style.filter = `invert(${1 - opacity})`;
   }
 
-  window.addEventListener("scroll", () => {
-    needsUpdate = true;
-    requestAnimationFrame(update);
+  scrollContainer.addEventListener("scroll", () => {
+    if (!needsUpdate) {
+      needsUpdate = true;
+      requestAnimationFrame(updateHeaderFade);
+    }
   });
 
-  requestAnimationFrame(update);
-}
-
-document.addEventListener("DOMContentLoaded", applyParallaxToPictures);
+  window.addEventListener("resize", updateHeaderFade);
+  requestAnimationFrame(updateHeaderFade); // run on load
+});

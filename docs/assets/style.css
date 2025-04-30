@@ -27,9 +27,10 @@ input {
 }
 
 body {
-	--docs-max-width: 60rem;
+	--docs-max-width: 55rem;
 	--homepage-max-width: 90rem;
 	--sections-max-width: 80rem;
+	--parallax-perspective: 2rem;
 }
 
 
@@ -184,24 +185,30 @@ body {
 
 /* Hero Customization */
 .custom-homepage-main {
-	display: flex;
-	flex-direction: column;
+	perspective: var(--parallax-perspective);
+	overflow: visible auto;
+	scroll-behavior: smooth;
+	height: 100vh;
+	width: 100vw;
 }
 
 .hero-container {
-	display: flex;
 	position: relative;
-	height: 120vh;
-	background: black;
-	align-items: flex-end;
-	overflow: hidden;
+	height: 160vh;
+	transform-style: preserve-3d;
+}
+
+
+.hero-content-wrapper {
+	height: inherit;
 }
 
 .hero-floating-wrapper {
-	position: fixed;
-	bottom: 0;
-	width: 100%;
-	z-index: 4;
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	height: 100vh;
+	margin-bottom: -100vh;
 }
 
 .hero-detail {
@@ -229,7 +236,8 @@ body {
 	margin-right: auto;
 	justify-content: space-between;
 	align-items: center;
-	padding: 2rem 0.8rem;
+	/* padding: 2rem 0.8rem; */
+	height: 100%;
 	transition: all 1s;
 }
 
@@ -247,37 +255,45 @@ body {
 	font-weight: 500;
 }
 
-
+.hero-main-heading,
+.hero-detail {
+	padding: 2rem 0.8rem;
+}
 
 /* Hero Rocks */
 
 .rocks {
 	position: absolute;
+	top: 0;
+	left: 0;
 	height: 100%;
 	width: 100%;
-	top: 0;
+	object-fit: cover;
 	background-position: center;
 	background-size: cover;
-	object-fit: cover;
+	transform:
+		translateZ(calc(var(--parallax-perspective) * (var(--depth, 0) * -1))) scale(calc(1 + var(--depth, 1)));
+	transform-origin: 50vw 50vh;
+	will-change: transform;
 	pointer-events: none;
+	z-index: calc(10 - var(--depth, 0));
+
 }
 
 .rocks img {
-	height: 100%;
 	width: 100%;
-}
-
-picture.rocks {
-	will-change: transform;
+	height: 100%;
+	object-fit: cover;
 }
 
 .flicker-img {
-	animation: flickerLight 20s infinite;
+	animation: flickerLight 10s infinite;
 	will-change: filter;
 }
 
 .foreground-rocks {
 	z-index: 3;
+	padding-bottom: 200px;
 
 }
 
@@ -312,6 +328,9 @@ picture.rocks {
 
 .background-rocks img {
 	object-fit: cover;
+	transform: translateZ(0);
+	image-rendering: smooth;
+	/* filter: brightness(0.5); */
 }
 
 .scroll-button {
@@ -338,8 +357,6 @@ picture.rocks {
 	position: relative;
 	display: flex;
 	width: 100%;
-	min-height: 200px;
-	z-index: 5;
 }
 
 .section-container-background-primary {
@@ -599,50 +616,26 @@ picture.rocks {
 
 	0%,
 	100% {
-		filter: brightness(1.15);
-	}
-
-	5% {
-		filter: brightness(1);
+		filter: brightness(1.2);
 	}
 
 	10% {
-		filter: brightness(1.1);
-	}
-
-	15% {
-		filter: brightness(1.1)
-	}
-
-	25% {
 		filter: brightness(1);
 	}
 
-	35% {
-		filter: brightness(1.15);
-	}
-
-	45% {
-		filter: brightness(1);
-	}
-
-	55% {
+	30% {
 		filter: brightness(1.1);
 	}
 
-	65% {
-		filter: brightness(1.05);
-	}
-
-	75% {
+	50% {
 		filter: brightness(0.9);
 	}
 
-	85% {
-		filter: brightness(1);
+	70% {
+		filter: brightness(1.1);
 	}
 
-	95% {
-		filter: brightness(0.7);
+	90% {
+		filter: brightness(1.3);
 	}
 }
