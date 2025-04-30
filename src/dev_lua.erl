@@ -441,6 +441,8 @@ simple_invocation_test() ->
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
 
 load_scripts_by_id_test() ->
+    % Start a node to ensure the HTTP services are available.
+    _Node = hb_http_server:start_node(#{}),
     Script = <<"DosEHUAqhl_O5FH3vDqPlgGsG92Guxcm6nrwqnjsDKg">>,
     {ok, Acc} = load_scripts([Script], #{}),
     [{_,Code}|_] = Acc,
