@@ -56,43 +56,47 @@ AES key, and an empty trusted nodes list are stored in the node's configuration.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()}.
 init(_M1, M2, Opts) ->
     ?event(green_zone, {init, start}),
-	RequiredConfig =
-        hb_ao:get(
-            <<"required-config">>,
-            M2,
-            default_zone_required_opts(Opts),
-            Opts
-        ),
-    % Check if a wallet exists; create one if absent.
-    NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
-        undefined -> 
-            ?event(green_zone, {init, wallet, missing}),
-            hb:wallet();
-        ExistingWallet ->
-            ?event(green_zone, {init, wallet, found}),
-            ExistingWallet
-    end,
-    % Generate a new 256-bit AES key if we have not already joined
-	% a green zone.
-    GreenZoneAES =
-		case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
-			undefined ->
-				?event(green_zone, {init, aes_key, generated}),
-				crypto:strong_rand_bytes(32);
-			ExistingAES ->
-				?event(green_zone, {init, aes_key, found}),
-				ExistingAES
-		end,
-    ?event(green_zone, {init, aes_key, generated}),
-    % Store the wallet, AES key, and an empty trusted nodes map.
-    ok = hb_http_server:set_opts(Opts#{
-        priv_wallet => NodeWallet,
-        priv_green_zone_aes => GreenZoneAES,
-        trusted_nodes => #{},
-		green_zone_required_opts => RequiredConfig
-    }),
-    ?event(green_zone, {init, complete}),
-    {ok, <<"Green zone initialized successfully.">>}.
+	case dev_meta:validate_request(M2, Opts) of
+		{Error = {error, _}, _} ->
+			Error;
+		{ok, _} ->
+			RequiredConfig = hb_ao:get(
+				<<"required-config">>,
+				M2,
+				default_zone_required_opts(Opts),
+				Opts
+			),
+			% Check if a wallet exists; create one if absent.
+			NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
+				undefined -> 
+					?event(green_zone, {init, wallet, missing}),
+					hb:wallet();
+				ExistingWallet ->
+					?event(green_zone, {init, wallet, found}),
+					ExistingWallet
+			end,
+			% Generate a new 256-bit AES key if we have not already joined
+			% a green zone.
+			GreenZoneAES =
+				case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
+					undefined ->
+						?event(green_zone, {init, aes_key, generated}),
+						crypto:strong_rand_bytes(32);
+					ExistingAES ->
+						?event(green_zone, {init, aes_key, found}),
+						ExistingAES
+				end,
+			% Store the wallet, AES key, and an empty trusted nodes map.
+			hb_http_server:set_opts(Opts#{
+				priv_wallet => NodeWallet,
+				priv_green_zone_aes => GreenZoneAES,
+				trusted_nodes => #{},
+				green_zone_required_opts => RequiredConfig
+			}),
+			?event(green_zone, {init, complete}),
+			{ok, <<"Green zone initialized successfully.">>}
+	end.
+	
 
 -doc """
 Initiate the join process for a node (Node B).

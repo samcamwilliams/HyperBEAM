@@ -415,6 +415,7 @@ set_default_opts(Opts) ->
         store => Store,
         priv_wallet => Wallet,
         address => hb_util:human_id(ar_wallet:to_address(Wallet)),
+		operator => unclaimed,
         force_signed => true
     }.
 

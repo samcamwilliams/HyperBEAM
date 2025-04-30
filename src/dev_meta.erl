@@ -7,7 +7,7 @@
 %%% resolver. Additionally, a post-processor can be set, which is executed after
 %%% the AO-Core resolver has returned a result.
 -module(dev_meta).
--export([info/1, info/3, handle/2, adopt_node_message/2]).
+-export([info/1, info/3, handle/2, adopt_node_message/2, validate_request/2]).
 %%% Public API
 -export([is_operator/2]).
 -include("include/hb.hrl").
@@ -173,25 +173,44 @@ update_node_message(Request, NodeMsg) ->
 %% @doc Attempt to adopt changes to a node message.
 adopt_node_message(Request, NodeMsg) ->
     ?event({set_node_message_success, Request}),
-    MergedOpts =
-        maps:merge(
-            NodeMsg,
-            hb_opts:mimic_default_types(hb_message:uncommitted(Request), new_atoms)
-        ),
+	RawDataValue = case hb_ao:get(<<"data">>, Request, not_found, #{}) of
+		not_found ->
+			not_found;
+		RawData ->
+			{ok, Data} = hb_opts:load_bin(RawData),
+			Data
+	end,
+	MergedOpts = case RawDataValue of
+		not_found ->
+			maps:merge(
+				NodeMsg,
+				hb_opts:mimic_default_types(hb_message:uncommitted(Request), new_atoms)
+			);	
+		DataValue ->
+			maps:merge(
+				NodeMsg,
+				hb_opts:mimic_default_types(
+					hb_message:uncommitted(
+						maps:without([priv_wallet], DataValue)
+					), 
+					new_atoms
+				)
+			)
+	end,
     % Ensure that the node history is updated and the http_server ID is
     % not overridden.
     case hb_opts:get(initialized, permanent, NodeMsg) of
         permanent ->
             {error, <<"Node message is already permanent.">>};
         _ ->
-            hb_http_server:set_opts(
-                MergedOpts#{
-                    http_server => hb_opts:get(http_server, no_server, NodeMsg),
-                    node_history => [Request|hb_opts:get(node_history, [], NodeMsg)]
-                }
-            ),
-            {ok, MergedOpts}
+			FinalOpts = MergedOpts#{
+				http_server => hb_opts:get(http_server, no_server, NodeMsg),
+				node_history => [Request|hb_opts:get(node_history, [], NodeMsg)]
+			},
+			hb_http_server:set_opts(FinalOpts),
+			{ok, FinalOpts}
     end.
+
 
 %% @doc Handle an AO-Core request, which is a list of messages. We apply
 %% the node's pre-processor to the request first, and then resolve the request
@@ -342,6 +361,32 @@ maybe_sign(Res, NodeMsg) ->
             end;
         false -> Res
     end.
+
+%% @doc Validate a request signature.
+validate_request(Request, NodeMsg) ->
+	% Get node_history from hb_opts and check first entry's signature
+	NodeHistory = hb_opts:get(node_history, [], NodeMsg),
+	% Check if node_history exists and is not empty
+	case NodeHistory of
+		[] ->
+			?event(green_zone, {init, node_history, empty}),
+			false;
+		[FirstEntry | _] ->
+			% Extract signature from first entry
+			FirstEntrySignature = hb_message:signers(FirstEntry),
+			% Get M2 signature
+			M2Signature = hb_message:signers(Request),
+			% Compare signatures
+			case FirstEntrySignature =:= M2Signature of
+				true ->
+					{ok, <<"Valid request signature.">>};
+				false ->
+					{error, #{
+						<<"status">>        => 401,
+						<<"message">>       => <<"Invalid request signature.">>
+					}}
+			end
+	end.
 
 %%% Tests
 
