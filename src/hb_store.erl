@@ -237,35 +237,35 @@ test_stores() ->
     ].
 -else.
 test_stores() ->
-    [
-        #{
-            <<"store-module">> => hb_store_fs,
-            <<"prefix">> => <<"cache-TEST/fs">>
-        }
-    ].
+    [#{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST/fs">>},
+     #{<<"store-module">> => hb_store_lru,
+       <<"store">> =>
+           [#{<<"store-module">> => hb_store_fs, <<"prefix">> => <<"cache-TEST/lru">>}]}].
+
 -endif.
 
 generate_test_suite(Suite) ->
     generate_test_suite(Suite, test_stores()).
 generate_test_suite(Suite, Stores) ->
-    lists:map(
-        fun(Store = #{ <<"store-module">> := Mod }) ->
-            {foreach,
-				fun() -> hb_store:start(Store), hb_store:reset(Store) end,
-				fun(_) -> hb_store:reset(Store) end,
-                [
-                    {atom_to_list(Mod) ++ ": " ++ Desc,
-                        fun() -> 
-                            TestResult = Test(Store),
-                            TestResult
-                        end}
-                ||
-                    {Desc, Test} <- Suite
-                ]
-            }
-        end,
-        Stores
-    ).
+    lists:map(fun(Store = #{<<"store-module">> := Mod}) ->
+                 {foreach,
+                  fun() ->
+                     hb_store:start(Store),
+                     timer:sleep(100),
+                     hb_store:reset(Store)
+                  end,
+                  fun(_) ->
+                     hb_store:reset(Store),
+                     hb_store:stop(Store)
+                  end,
+                  [{atom_to_list(Mod) ++ ": " ++ Desc,
+                    fun() ->
+                       TestResult = Test(Store),
+                       TestResult
+                    end}
+                   || {Desc, Test} <- Suite]}
+              end,
+              Stores).
 
 %%% Tests
 
