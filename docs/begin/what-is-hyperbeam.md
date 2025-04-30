@@ -13,7 +13,7 @@ HyperBEAM is the primary, production-ready implementation of the [AO-Core protoc
 ## Core Components & Features
 
 *   **Preloaded Devices:** HyperBEAM comes with a suite of built-in devices (e.g., `~meta`, `~relay`, `~process`, `~scheduler`, `~wasm64`) providing essential functionalities for node operation, computation, and communication.
-*   **HTTP Interface:** Nodes expose an HTTP server, allowing interaction via standard web requests and HyperPaths.
+*   **HTTP Interface:** Nodes expose an HTTP server, allowing interaction via standard web requests and HyperPATHs.
 *   **Modularity:** Its design allows for easy extension and addition of new devices and functionalities.
 *   **Developer Tooling:** Includes tools for testing (`rebar3 eunit`), debugging (`?event` logging), and profiling (`eflame`).
 
