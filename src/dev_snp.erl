@@ -53,30 +53,37 @@ real_node_test() ->
 %% and append hashes and make them available to the device. Only runnable once,
 %% and only if the operator is not set to an address (and thus, the node has not
 %% had any priviledged access).
-init(M1, _M2, Opts) ->
-    case {hb_opts:get(trusted, #{}, Opts), hb_opts:get(operator, undefined, Opts)} of
-        {#{snp_hashes := _}, _} ->
-            {error, <<"Already initialized.">>};
-        {_, Addr} when is_binary(Addr) ->
-            {error, <<"Cannot enable SNP if operator is already set.">>};
+init(_M1, M2, Opts) ->
+    ExistingTrusted = hb_opts:get(trusted, [], Opts),
+    % First check if SNP is already initialized
+    case ExistingTrusted of
+        [] ->
+            % Not initialized yet, proceed with validation
+            case dev_meta:validate_request(M2, Opts) of
+                {ok, _} ->
+                    % Valid request, initialize SNP
+                    SnpHashes = hb_ao:get(<<"data">>, M2, Opts),
+                    SNPDecoded = hb_json:decode(SnpHashes),
+                    Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
+                    
+                    % Add new hash configuration to the list
+                    NewTrusted = ExistingTrusted ++ [Hashes],
+                    
+                    ok = hb_http_server:set_opts(Opts#{
+                        % Set trusted to the combined list
+                        trusted => NewTrusted
+                    }),
+                    {ok, <<"SNP node initialized successfully.">>};
+                Error = {error, _} ->
+                    % Invalid request
+                    Error
+            end;
         _ ->
-            SnpHashes = hb_ao:get(<<"body">>, M1, Opts),
-            SNPDecoded = hb_json:decode(SnpHashes),
-            Hashes = maps:get(<<"snp_hashes">>, SNPDecoded),
-            
-            % Get existing trusted configurations (always a list)
-            ExistingTrusted = hb_opts:get(trusted, [], Opts),
-            
-            % Add new hash configuration to the list
-            NewTrusted = ExistingTrusted ++ [Hashes],
-            
-            ok = hb_http_server:set_opts(Opts#{
-                % Set trusted to the combined list
-                trusted => NewTrusted,
-                % Set our hashes to the given hashes
-                snp_hashes => Hashes
-            }),
-            {ok, <<"SNP node initialized successfully.">>}
+            % Already initialized
+            {error, #{
+                <<"status">>  => 400,
+                <<"message">> => <<"SNP node already initialized.">>
+            }}
     end.
 
 %% @doc Verify an commitment report message; validating the identity of a 
@@ -198,7 +205,10 @@ generate(_M1, _M2, Opts) ->
 	?event({snp_report_data, byte_size(ReportData)}),
     {ok, ReportJSON} = dev_snp_nif:generate_attestation_report(ReportData, 1),
 	?event({snp_report_json, ReportJSON}),
-	LocalHashes = hb_opts:get(snp_hashes, {error, not_configured}, Opts),
+	LocalHashes = case hb_opts:get(trusted, [], Opts) of
+		[] -> {error, not_configured};
+		[FirstTrusted | _] -> FirstTrusted
+	end,
     ?event(
         {snp_report_generated,
             {nonce, ReportData},

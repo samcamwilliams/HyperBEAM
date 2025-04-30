@@ -90,20 +90,35 @@ find_scripts(Base, Opts) ->
 load_scripts(Scripts, Opts) -> load_scripts(Scripts, Opts, []).
 load_scripts([], _Opts, Acc) ->
     {ok, lists:reverse(Acc)};
-load_scripts([ScriptID | Rest], Opts, Acc) when is_binary(ScriptID) ->
+load_scripts([ScriptID | Rest], Opts, Acc) when ?IS_ID(ScriptID) ->
     case hb_cache:read(ScriptID, Opts) of
-        {ok, Script} ->
+        {ok, Script} when is_binary(Script) ->
+            % The ID referred to a binary script item, so we add it to the list
+            % as-is.
             load_scripts(Rest, Opts, [{ScriptID, Script}|Acc]);
+        {ok, ScriptMsg} when is_map(ScriptMsg) ->
+            % We read a message from the store, so we recurse upon the output,
+            % as if the script message had beeen given directly.
+            load_scripts([ScriptMsg|Rest], Opts, Acc);
         not_found ->
             {error, #{
                 <<"status">> => 404,
-                <<"body">> =>
-                    <<"Lua script '", ScriptID/binary, "' not available.">>
+                <<"body">> => <<"Lua script '", ScriptID/binary, "' not found.">>
             }}
     end;
 load_scripts([Script | Rest], Opts, Acc) when is_map(Script) ->
-    % We have found a message with a direct Lua script. Load it.
-    case hb_ao:get(<<"body">>, Script, Opts) of
+    % We have found a message with a Lua script inside. Search for the binary
+    % of the program in the body and the data.
+    ScriptBin =
+        hb_ao:get_first(
+            [
+                {Script, <<"body">>},
+                {Script, <<"data">>}
+            ],
+            Script,
+            Opts
+        ),
+    case ScriptBin of
         not_found ->
             {error, #{
                 <<"status">> => 404,
@@ -425,7 +440,15 @@ simple_invocation_test() ->
     },
     ?assertEqual(2, hb_ao:get(<<"assoctable/b">>, Base, #{})).
 
-
+load_scripts_by_id_test() ->
+    % Start a node to ensure the HTTP services are available.
+    _Node = hb_http_server:start_node(#{}),
+    Script = <<"DosEHUAqhl_O5FH3vDqPlgGsG92Guxcm6nrwqnjsDKg">>,
+    {ok, Acc} = load_scripts([Script], #{}),
+    [{_,Code}|_] = Acc,
+    <<Prefix:8/binary, _/binary>> = Code,
+    ?assertEqual(<<"function">>, Prefix).
+    
 multiple_scripts_test() ->
     {ok, Script} = file:read_file("test/test.lua"),
     Script2 =
