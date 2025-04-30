@@ -18,7 +18,7 @@ require special handling in order to be converted to a normalized message.</td><
 configured to do so.</td></tr><tr><td valign="top"><a href="#post-3">post/3</a></td><td>Posts a message to a URL on a remote peer via HTTP.</td></tr><tr><td valign="top"><a href="#post-4">post/4</a></td><td></td></tr><tr><td valign="top"><a href="#prepare_request-6">prepare_request/6*</a></td><td>Turn a set of request arguments into a request message, formatted in the
 preferred format.</td></tr><tr><td valign="top"><a href="#remove_unsigned_fields-2">remove_unsigned_fields/2*</a></td><td></td></tr><tr><td valign="top"><a href="#reply-4">reply/4</a></td><td>Reply to the client's HTTP request with a message.</td></tr><tr><td valign="top"><a href="#reply-5">reply/5*</a></td><td></td></tr><tr><td valign="top"><a href="#req_to_tabm_singleton-3">req_to_tabm_singleton/3</a></td><td>Convert a cowboy request to a normalized message.</td></tr><tr><td valign="top"><a href="#request-2">request/2</a></td><td>Posts a binary to a URL on a remote peer via HTTP, returning the raw
 binary body.</td></tr><tr><td valign="top"><a href="#request-4">request/4</a></td><td></td></tr><tr><td valign="top"><a href="#request-5">request/5</a></td><td></td></tr><tr><td valign="top"><a href="#route_to_request-3">route_to_request/3*</a></td><td>Parse a <code>dev_router:route</code> response and return a tuple of request
-parameters.</td></tr><tr><td valign="top"><a href="#run_wasm_signed_test-0">run_wasm_signed_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#run_wasm_unsigned_test-0">run_wasm_unsigned_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_large_signed_request_test-0">send_large_signed_request_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serial_multirequest-7">serial_multirequest/7*</a></td><td>Serially request a message, collecting responses until the required
+parameters.</td></tr><tr><td valign="top"><a href="#run_wasm_signed_test-0">run_wasm_signed_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#run_wasm_unsigned_test-0">run_wasm_unsigned_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_encoded_node_message_test-2">send_encoded_node_message_test/2*</a></td><td></td></tr><tr><td valign="top"><a href="#send_flat_encoded_node_message_test-0">send_flat_encoded_node_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_json_encoded_node_message_test-0">send_json_encoded_node_message_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#send_large_signed_request_test-0">send_large_signed_request_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#serial_multirequest-7">serial_multirequest/7*</a></td><td>Serially request a message, collecting responses until the required
 number of responses have been gathered.</td></tr><tr><td valign="top"><a href="#simple_ao_resolve_signed_test-0">simple_ao_resolve_signed_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#simple_ao_resolve_unsigned_test-0">simple_ao_resolve_unsigned_test/0*</a></td><td></td></tr><tr><td valign="top"><a href="#start-0">start/0</a></td><td></td></tr><tr><td valign="top"><a href="#wasm_compute_request-3">wasm_compute_request/3*</a></td><td></td></tr><tr><td valign="top"><a href="#wasm_compute_request-4">wasm_compute_request/4*</a></td><td></td></tr></table>
 
 
@@ -329,6 +329,24 @@ parameters.
 ### run_wasm_unsigned_test/0 * ###
 
 `run_wasm_unsigned_test() -> any()`
+
+<a name="send_encoded_node_message_test-2"></a>
+
+### send_encoded_node_message_test/2 * ###
+
+`send_encoded_node_message_test(Config, Codec) -> any()`
+
+<a name="send_flat_encoded_node_message_test-0"></a>
+
+### send_flat_encoded_node_message_test/0 * ###
+
+`send_flat_encoded_node_message_test() -> any()`
+
+<a name="send_json_encoded_node_message_test-0"></a>
+
+### send_json_encoded_node_message_test/0 * ###
+
+`send_json_encoded_node_message_test() -> any()`
 
 <a name="send_large_signed_request_test-0"></a>
 

@@ -49,7 +49,7 @@ spawn_register(Name, Opts) ->
             Signed = hb_message:commit(augment_definition(BaseDef, Opts), Opts),
             ID = hb_message:id(Signed, signed, Opts),
             ?event(node_process, {spawned, {name, Name}, {process, Signed}}),
-            % `POST` to the schedule device for the process to start its sequence.
+            % `POST' to the schedule device for the process to start its sequence.
             {ok, Assignment} =
                 hb_ao:resolve(
                     Signed,
