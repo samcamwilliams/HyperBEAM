@@ -14,11 +14,12 @@ verify(Msg, Req, Opts) -> dev_codec_httpsig:verify(Msg, Req, Opts).
 committed(Msg, Req, Opts) -> dev_codec_httpsig:committed(Msg, Req, Opts).
 
 %% @doc Convert a flat map to a TABM.
-from(Bin) when is_binary(Bin) -> Bin;
+from(Bin) when is_binary(Bin) ->
+    hb_util:ok(deserialize(Bin));
 from(Map) when is_map(Map) ->
     maps:fold(
         fun(Path, Value, Acc) ->
-            inject_at_path(hb_path:term_to_path_parts(Path), from(Value), Acc)
+            inject_at_path(hb_path:term_to_path_parts(Path), Value, Acc)
         end,
         #{},
         Map
@@ -151,11 +152,6 @@ path_list_test() ->
         end,
         maps:keys(Flat)
     ).
-
-binary_passthrough_test() ->
-    Bin = <<"raw binary">>,
-    ?assertEqual(Bin, dev_codec_flat:from(Bin)),
-    ?assertEqual(Bin, dev_codec_flat:to(Bin)).
 
 deep_nesting_test() ->
     Flat = #{<<"a/b/c/d">> => <<"deep">>},

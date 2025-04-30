@@ -56,43 +56,54 @@ AES key, and an empty trusted nodes list are stored in the node's configuration.
 -spec init(M1 :: term(), M2 :: term(), Opts :: map()) -> {ok, binary()}.
 init(_M1, M2, Opts) ->
     ?event(green_zone, {init, start}),
-	RequiredConfig =
-        hb_ao:get(
-            <<"required-config">>,
-            M2,
-            default_zone_required_opts(Opts),
-            Opts
-        ),
-    % Check if a wallet exists; create one if absent.
-    NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
-        undefined -> 
-            ?event(green_zone, {init, wallet, missing}),
-            hb:wallet();
-        ExistingWallet ->
-            ?event(green_zone, {init, wallet, found}),
-            ExistingWallet
-    end,
-    % Generate a new 256-bit AES key if we have not already joined
-	% a green zone.
-    GreenZoneAES =
-		case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
-			undefined ->
-				?event(green_zone, {init, aes_key, generated}),
-				crypto:strong_rand_bytes(32);
-			ExistingAES ->
-				?event(green_zone, {init, aes_key, found}),
-				ExistingAES
-		end,
-    ?event(green_zone, {init, aes_key, generated}),
-    % Store the wallet, AES key, and an empty trusted nodes map.
-    ok = hb_http_server:set_opts(Opts#{
-        priv_wallet => NodeWallet,
-        priv_green_zone_aes => GreenZoneAES,
-        trusted_nodes => #{},
-		green_zone_required_opts => RequiredConfig
-    }),
-    ?event(green_zone, {init, complete}),
-    {ok, <<"Green zone initialized successfully.">>}.
+	case length(hb_opts:get(node_history, [], Opts)) of
+        0 -> {error, <<"Node history is empty.">>};
+		1 ->
+			RequiredConfig = hb_ao:get(
+				<<"required-config">>,
+				M2,
+				default_zone_required_opts(Opts),
+				Opts
+			),
+			% Check if a wallet exists; create one if absent.
+			NodeWallet = case hb_opts:get(priv_wallet, undefined, Opts) of
+				undefined -> 
+					?event(green_zone, {init, wallet, missing}),
+					hb:wallet();
+				ExistingWallet ->
+					?event(green_zone, {init, wallet, found}),
+					ExistingWallet
+			end,
+			% Generate a new 256-bit AES key if we have not already joined
+			% a green zone.
+			GreenZoneAES =
+				case hb_opts:get(priv_green_zone_aes, undefined, Opts) of
+					undefined ->
+						?event(green_zone, {init, aes_key, generated}),
+						crypto:strong_rand_bytes(32);
+					ExistingAES ->
+						?event(green_zone, {init, aes_key, found}),
+						ExistingAES
+				end,
+			% Store the wallet, AES key, and an empty trusted nodes map.
+			hb_http_server:set_opts(Opts#{
+				priv_wallet => NodeWallet,
+				priv_green_zone_aes => GreenZoneAES,
+				trusted_nodes => #{},
+				green_zone_required_opts => RequiredConfig
+			}),
+			?event(green_zone, {init, complete}),
+			{ok, <<"Green zone initialized successfully.">>};
+        N ->
+            {error,
+                <<
+                    "Node history not acceptable. Expected 1 entry, got ",
+                    (integer_to_binary(N))/binary,
+                    "."
+                >>
+            }
+	end.
+	
 
 -doc """
 Initiate the join process for a node (Node B).
@@ -117,8 +128,8 @@ Based on the presence of a peer address:
         {ok, map()} | {error, binary()}.
 join(M1, M2, Opts) ->
     ?event(green_zone, {join, start}),
-	PeerLocation = hb_ao:get(<<"peer-location">>, M1, undefined, Opts),
-	PeerID = hb_ao:get(<<"peer-id">>, M1, undefined, Opts),
+	PeerLocation = hb_opts:get(<<"green-zone-peer-location">>, undefined, Opts),
+	PeerID = hb_opts:get(<<"green-zone-peer-id">>, undefined, Opts),
 	?event(green_zone, {join_peer, PeerLocation, PeerID}),
 	if (PeerLocation =:= undefined) or (PeerID =:= undefined) ->
 		validate_join(M1, M2, Opts);
@@ -194,11 +205,11 @@ and updating the local node's wallet with the target node's keypair.
 """.
 -spec become(M1 :: term(), M2 :: term(), Opts :: map()) ->
         {ok, map()} | {error, binary()}.
-become(_M1, M2, Opts) ->
+become(_M1, _M2, Opts) ->
     ?event(green_zone, {become, start}),
     % 1. Retrieve the target node's address from the incoming message.
-    NodeLocation = hb_ao:get(<<"peer-location">>, M2, Opts),
-    NodeID = hb_ao:get(<<"peer-id">>, M2, Opts),
+    NodeLocation = hb_opts:get(<<"green-zone-peer-location">>, undefined, Opts),
+    NodeID = hb_opts:get(<<"green-zone-peer-id">>, undefined, Opts),
     % 2. Check if the local node has a valid shared AES key.
     GreenZoneAES = hb_opts:get(priv_green_zone_aes, undefined, Opts),
     case GreenZoneAES of
@@ -550,12 +561,10 @@ validate_peer_opts(Req, Opts) ->
 		hb_ao:normalize_keys(
 			hb_opts:get(green_zone_required_opts, #{}, Opts)),
 	?event(green_zone, {validate_peer_opts, required_config, RequiredConfig}),
-	
 	PeerOpts =
 		hb_ao:normalize_keys(
 			hb_ao:get(<<"node-message">>, Req, undefined, Opts)),
 	?event(green_zone, {validate_peer_opts, peer_opts, PeerOpts}),
-	
 	% Add the required config itself to the required options of the peer. This
 	% enforces that the new peer will also enforce the required config on peers
 	% that join them.
@@ -563,36 +572,36 @@ validate_peer_opts(Req, Opts) ->
 		green_zone_required_opts => RequiredConfig
 	},
 	?event(green_zone, {validate_peer_opts, full_required_opts, FullRequiredOpts}),
-	
 	% Debug: Check if PeerOpts is a map
 	?event(green_zone, {validate_peer_opts, is_map_peer_opts, is_map(PeerOpts)}),
-	
 	% Debug: Get node_history safely
 	NodeHistory = hb_ao:get(<<"node_history">>, PeerOpts, [], Opts),
 	?event(green_zone, {validate_peer_opts, node_history, NodeHistory}),
-	
 	% Debug: Check length of node_history
-	HistoryCheck = case is_list(NodeHistory) of
-		true -> length(NodeHistory) =< 1;
-		false -> {error, not_a_list}
-	end,
-	?event(green_zone, {validate_peer_opts, history_check, HistoryCheck}),
-	
-	% Debug: Try the match check separately
-	MatchCheck = try
-		Result = hb_message:match(PeerOpts, FullRequiredOpts, only_present),
-		?event(green_zone, {validate_peer_opts, match_check, Result}),
-		Result
-	catch
-		Error:Reason:Stacktrace ->
-			?event(green_zone, {validate_peer_opts, match_error, {Error, Reason, Stacktrace}}),
-			false
-	end,
-	
-	% Final result
-	FinalResult = MatchCheck andalso (HistoryCheck =:= true),
-	?event(green_zone, {validate_peer_opts, final_result, FinalResult}),
-	FinalResult.
+    case NodeHistory of
+        List when length(List) =< 1 ->
+            ?event(green_zone, {validate_peer_opts, history_check, correct_length}),
+            % Debug: Try the match check separately
+            try
+                MatchCheck =
+                    hb_message:match(PeerOpts, FullRequiredOpts, only_present) ==
+                        true,
+                ?event(green_zone, {validate_peer_opts, match_check, MatchCheck}),
+                % Final result
+                ?event(green_zone, {validate_peer_opts, final_result, MatchCheck}),
+                MatchCheck
+            catch
+                Error:Reason:Stacktrace ->
+                    ?event(green_zone,
+                        {validate_peer_opts,
+                            match_error,
+                            {Error, Reason, Stacktrace}
+                        }
+                    ),
+                    false
+            end;
+        false -> {error, not_a_list}
+    end.
 	
 
 -doc """
