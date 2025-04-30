@@ -39,15 +39,16 @@ log_error() {
 # --- Display HyperBEAM ASCII Logo ---
 display_logo() {
   echo -e "
-${NEON_GREEN}        ▲         ${BLACK}${BOLD}                                 ${NC}
-${NEON_GREEN}       ▲ ▲        ${BLACK}${BOLD}  _                              ${NC}
-${NEON_GREEN}      ▲${CYAN}▲${NEON_GREEN}▲ ▲       ${BLACK}${BOLD} | |__  _   _ _ __   ___ _ __  ${NC}
-${NEON_GREEN}     ▲${CYAN}▲${BRIGHT_YELLOW}▲${CYAN}▲${NEON_GREEN}▲ ▲      ${BLACK}${BOLD} | '_ \\| | | | '_ \\ / _ \\ '__| ${NC}
-${NEON_GREEN}    ▲${CYAN}▲${BRIGHT_YELLOW}▲${MAGENTA}▲${BRIGHT_YELLOW}▲${CYAN}▲${NEON_GREEN}▲ ▲     ${BLACK}${BOLD} | | | | |_| | |_) |  __/ |    ${NC}
-${NEON_GREEN}   ▲${CYAN}▲${BRIGHT_YELLOW}▲${MAGENTA}▲${BRIGHT_RED}▲${MAGENTA}▲${BRIGHT_YELLOW}▲${CYAN}▲${NEON_GREEN}▲ ▲    ${BLACK}${BOLD} |_| |_|\\__, | .__/ \\___|_|    ${NC}
-${NEON_GREEN}  ▲▲▲▲▲▲▲▲▲▲▲▲▲   ${BLACK}${BOLD}        |___/|_|              ${NC}
-${BLACK}${BOLD}                  BEAM.${NC}
-${GRAY}                  DECENTRALIZED OPERATING SYSTEM${NC}
+${NEON_GREEN}                ++         ${BLACK}${BOLD}                                 ${NC}
+${NEON_GREEN}               +++        ${BLACK}${BOLD} _                              ${NC}
+${NEON_GREEN}             ++++*        ${BLACK}${BOLD}| |__  _   _ _ __   ___ _ __  ${NC}
+${NEON_GREEN}           :+++*${BRIGHT_YELLOW}##       ${BLACK}${BOLD} | '_ \\| | | | '_ \\ / _ \\ '__| ${NC}
+${NEON_GREEN}          ++**${BRIGHT_YELLOW}####       ${BLACK}${BOLD} | | | | |_| | |_) |  __/ |    ${NC}
+${NEON_GREEN}        +++${BRIGHT_YELLOW}####${NEON_GREEN}***       ${BLACK}${BOLD} |_| |_|\\__, | .__/ \\___|_|    ${NC}
+${NEON_GREEN}       +*${BRIGHT_YELLOW}##${NEON_GREEN}****${MAGENTA}+--      ${BLACK}${BOLD}        |___/|_|              ${NC}
+${MAGENTA}    -**${BRIGHT_YELLOW}##${NEON_GREEN}**${MAGENTA}+------       ${BLACK}${BOLD}                	BEAM.${NC}
+${MAGENTA}   -##${NEON_GREEN}*+${BRIGHT_RED}---:::::::
+${GRAY}  =${GRAY}%%${NEON_GREEN}*+${BRIGHT_RED}=-:::::::::${GRAY}        DECENTRALIZED OPERATING SYSTEM${NC}
 "
 }
 
