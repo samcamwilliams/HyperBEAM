@@ -35,8 +35,7 @@
 read(ID, Opts) ->
     Query = case maps:is_key(<<"subindex">>, Opts) of
       true -> 
-        ?event(debug_gateway, got_subindex),
-        Tags = map_to_tags(maps:get(<<"subindex">>, Opts)),
+        Tags = subindex_to_tags(maps:get(<<"subindex">>, Opts)),
         #{
             <<"query">> =>
                 <<
@@ -288,15 +287,27 @@ decode_or_null(Bin) when is_binary(Bin) ->
 decode_or_null(_) ->
     <<>>.
 
-map_to_tags(Map) ->
-       List = maps:to_list(Map),
-       Formatted = lists:map(fun({K, V}) ->
-           io_lib:format(
-               "{ name: \"~s\", values: [\"~s\"]}",
-               [binary_to_list(K), binary_to_list(V)]
-           )
-       end, List),
-       list_to_binary("[" ++ string:join([lists:flatten(E) || E <- Formatted], ", ") ++ "]").
+%% @doc Takes a list of messages with `name' and `value' fields, and formats
+%% them as a GraphQL `tags' argument.
+subindex_to_tags(Subindex) ->
+    Formatted =
+        lists:map(
+            fun(Spec) ->
+                io_lib:format(
+                    "{ name: \"~s\", values: [\"~s\"]}",
+                    [
+                        hb_ao:get(<<"name">>, Spec),
+                        hb_ao:get(<<"value">>, Spec)
+                    ]
+                )
+            end,
+            hb_util:message_to_ordered_list(Subindex)
+        ),
+    ListInner =
+        hb_util:bin(
+            string:join([lists:flatten(E) || E <- Formatted], ", ")
+        ),
+    <<"[", ListInner/binary, "]">>.
 
 %%% Tests
 ans104_no_data_item_test() ->
