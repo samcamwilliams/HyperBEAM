@@ -1,6 +1,7 @@
+# [Module hb_http_client_sup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_client_sup.erl)
 
 
-# Module hb_http_client_sup #
+
 
 The supervisor for the gun HTTP client wrapper.
 

@@ -1,6 +1,7 @@
+# [Module hb_process_monitor.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_process_monitor.erl)
 
 
-# Module hb_process_monitor #
+
 
 <a name="index"></a>
 

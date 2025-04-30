@@ -1,6 +1,7 @@
+# [Module hb_path.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_path.erl)
 
 
-# Module hb_path #
+
 
 This module provides utilities for manipulating the paths of a
 message: Its request path (referred to in messages as just the `Path`), and

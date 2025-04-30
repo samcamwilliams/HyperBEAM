@@ -1,6 +1,7 @@
+# [Module hb_crypto.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_crypto.erl)
 
 
-# Module hb_crypto #
+
 
 Implements the cryptographic functions and wraps the primitives
 used in HyperBEAM.

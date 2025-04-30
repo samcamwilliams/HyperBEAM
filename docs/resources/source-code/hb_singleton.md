@@ -1,6 +1,7 @@
+# [Module hb_singleton.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_singleton.erl)
 
 
-# Module hb_singleton #
+
 * [Data Types](#types)
 
 A parser that translates AO-Core HTTP API requests in TABM format

@@ -1,6 +1,7 @@
+# [Module hb_persistent.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_persistent.erl)
 
 
-# Module hb_persistent #
+
 
 Creates and manages long-lived AO-Core resolution processes.
 

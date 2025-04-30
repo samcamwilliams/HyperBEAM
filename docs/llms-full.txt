@@ -1,4 +1,4 @@
-Generated: 2025-04-30T18:02:38Z
+Generated: 2025-04-30T18:46:23Z
 
 --- START OF FILE: docs/begin/ao-devices.md ---
 # AO Devices
@@ -1303,9 +1303,10 @@ If you're still experiencing issues after trying these troubleshooting steps:
 --- END OF FILE: docs/resources/reference/troubleshooting.md ---
 
 --- START OF FILE: docs/resources/source-code/ar_bundles.md ---
+# [Module ar_bundles.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_bundles.erl)
 
 
-# Module ar_bundles #
+
 
 <a name="index"></a>
 
@@ -1959,9 +1960,10 @@ Verify the validity of a data item.
 --- END OF FILE: docs/resources/source-code/ar_bundles.md ---
 
 --- START OF FILE: docs/resources/source-code/ar_deep_hash.md ---
+# [Module ar_deep_hash.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_deep_hash.erl)
 
 
-# Module ar_deep_hash #
+
 
 <a name="index"></a>
 
@@ -2003,9 +2005,10 @@ Verify the validity of a data item.
 --- END OF FILE: docs/resources/source-code/ar_deep_hash.md ---
 
 --- START OF FILE: docs/resources/source-code/ar_rate_limiter.md ---
+# [Module ar_rate_limiter.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_rate_limiter.erl)
 
 
-# Module ar_rate_limiter #
+
 
 __Behaviours:__ [`gen_server`](gen_server.md).
 
@@ -2099,9 +2102,10 @@ given Path. The limits are configured in include/ar_blacklist_middleware.hrl.
 --- END OF FILE: docs/resources/source-code/ar_rate_limiter.md ---
 
 --- START OF FILE: docs/resources/source-code/ar_timestamp.md ---
+# [Module ar_timestamp.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_timestamp.erl)
 
 
-# Module ar_timestamp #
+
 
 <a name="index"></a>
 
@@ -2161,9 +2165,10 @@ Check if the server is already running, and if not, start it.
 --- END OF FILE: docs/resources/source-code/ar_timestamp.md ---
 
 --- START OF FILE: docs/resources/source-code/ar_tx.md ---
+# [Module ar_tx.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_tx.erl)
 
 
-# Module ar_tx #
+
 
 The module with utilities for transaction creation, signing, and verification.
 
@@ -2271,9 +2276,10 @@ Verify the given transaction actually has the given identifier.
 --- END OF FILE: docs/resources/source-code/ar_tx.md ---
 
 --- START OF FILE: docs/resources/source-code/ar_wallet.md ---
+# [Module ar_wallet.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_wallet.erl)
 
 
-# Module ar_wallet #
+
 
 <a name="index"></a>
 
@@ -2428,9 +2434,10 @@ Verify that a signature is correct.
 --- END OF FILE: docs/resources/source-code/ar_wallet.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_cache.md ---
+# [Module dev_cache.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_cache.erl)
 
 
-# Module dev_cache #
+
 
 A device that looks up an ID from a local store and returns it,
 honoring the `accept` key to return the correct format.
@@ -2561,9 +2568,10 @@ a successful write.
 --- END OF FILE: docs/resources/source-code/dev_cache.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_cacheviz.md ---
+# [Module dev_cacheviz.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_cacheviz.erl)
 
 
-# Module dev_cacheviz #
+
 
 A device that generates renders (or renderable dot output) of a node's
 cache.
@@ -2604,9 +2612,10 @@ the cache set by the `target` key in the request.
 --- END OF FILE: docs/resources/source-code/dev_cacheviz.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_codec_ans104.md ---
+# [Module dev_codec_ans104.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_ans104.erl)
 
 
-# Module dev_codec_ans104 #
+
 
 Codec for managing transformations from `ar_bundles`-style Arweave TX
 records to and from TABMs.
@@ -2794,9 +2803,10 @@ Verify an ANS-104 commitment.
 --- END OF FILE: docs/resources/source-code/dev_codec_ans104.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_codec_flat.md ---
+# [Module dev_codec_flat.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_flat.erl)
 
 
-# Module dev_codec_flat #
+
 
 A codec for turning TABMs into/from flat Erlang maps that have
 (potentially multi-layer) paths as their keys, and a normal TABM binary as
@@ -2912,9 +2922,10 @@ Convert a TABM to a flat map.
 --- END OF FILE: docs/resources/source-code/dev_codec_flat.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_codec_httpsig_conv.md ---
+# [Module dev_codec_httpsig_conv.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_httpsig_conv.erl)
 
 
-# Module dev_codec_httpsig_conv #
+
 
 A codec for the that marshals TABM encoded messages to and from the
 "HTTP" message structure.
@@ -3156,9 +3167,10 @@ Decode the `ao-ids` key into a map.
 --- END OF FILE: docs/resources/source-code/dev_codec_httpsig_conv.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_codec_httpsig.md ---
+# [Module dev_codec_httpsig.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_httpsig.erl)
 
 
-# Module dev_codec_httpsig #
+
 * [Data Types](#types)
 
 This module implements HTTP Message Signatures as described in RFC-9421
@@ -3796,9 +3808,10 @@ verify the named signature by constructing the signature base and comparing
 --- END OF FILE: docs/resources/source-code/dev_codec_httpsig.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_codec_json.md ---
+# [Module dev_codec_json.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_json.erl)
 
 
-# Module dev_codec_json #
+
 
 A simple JSON codec for HyperBEAM's message format.
 
@@ -3881,9 +3894,10 @@ Encode a message to a JSON string.
 --- END OF FILE: docs/resources/source-code/dev_codec_json.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_codec_structured.md ---
+# [Module dev_codec_structured.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_structured.erl)
 
 
-# Module dev_codec_structured #
+
 
 A device implementing the codec interface (to/1, from/1) for
 HyperBEAM's internal, richly typed message format.
@@ -3990,9 +4004,10 @@ Convert a TABM into a native HyperBEAM message.
 --- END OF FILE: docs/resources/source-code/dev_codec_structured.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_cron.md ---
+# [Module dev_cron.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_cron.erl)
 
 
-# Module dev_cron #
+
 
 A device that inserts new messages into the schedule to allow processes
 to passively 'call' themselves without user interaction.
@@ -4120,9 +4135,10 @@ It is used to increment a counter and update the state of the worker.
 --- END OF FILE: docs/resources/source-code/dev_cron.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_cu.md ---
+# [Module dev_cu.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_cu.erl)
 
 
-# Module dev_cu #
+
 
 <a name="index"></a>
 
@@ -4152,9 +4168,10 @@ It is used to increment a counter and update the state of the worker.
 --- END OF FILE: docs/resources/source-code/dev_cu.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_dedup.md ---
+# [Module dev_dedup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_dedup.erl)
 
 
-# Module dev_dedup #
+
 
 A device that deduplicates messages send to a process.
 
@@ -4208,9 +4225,10 @@ with deduplication. We only act on the first pass.
 --- END OF FILE: docs/resources/source-code/dev_dedup.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_delegated_compute.md ---
+# [Module dev_delegated_compute.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_delegated_compute.erl)
 
 
-# Module dev_delegated_compute #
+
 
 Simple wrapper module that enables compute on remote machines,
 implementing the JSON-Iface.
@@ -4271,9 +4289,10 @@ need to do anything special here.
 --- END OF FILE: docs/resources/source-code/dev_delegated_compute.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_faff.md ---
+# [Module dev_faff.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_faff.erl)
 
 
-# Module dev_faff #
+
 
 A module that implements a 'friends and family' pricing policy.
 
@@ -4328,9 +4347,10 @@ Check whether all of the signers of the request are in the allow-list.
 --- END OF FILE: docs/resources/source-code/dev_faff.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_genesis_wasm.md ---
+# [Module dev_genesis_wasm.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_genesis_wasm.erl)
 
 
-# Module dev_genesis_wasm #
+
 
 A device that mimics an environment suitable for `legacynet` AO
 processes, using HyperBEAM infrastructure.
@@ -4439,9 +4459,10 @@ endpoint.
 --- END OF FILE: docs/resources/source-code/dev_genesis_wasm.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_green_zone.md ---
+# [Module dev_green_zone.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_green_zone.erl)
 
 
-# Module dev_green_zone #
+
 
 <a name="index"></a>
 
@@ -4582,9 +4603,10 @@ validate_join(M1::term(), Req::map(), Opts::map()) -&gt; {ok, map()} | {error, b
 --- END OF FILE: docs/resources/source-code/dev_green_zone.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_hyperbuddy.md ---
+# [Module dev_hyperbuddy.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_hyperbuddy.erl)
 
 
-# Module dev_hyperbuddy #
+
 
 A device that renders a REPL-like interface for AO-Core via HTML.
 
@@ -4645,9 +4667,10 @@ listed in the `routes` field of the `info/0` return value.
 --- END OF FILE: docs/resources/source-code/dev_hyperbuddy.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_json_iface.md ---
+# [Module dev_json_iface.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_json_iface.erl)
 
 
-# Module dev_json_iface #
+
 
 A device that provides a way for WASM execution to interact with
 the HyperBEAM (and AO) systems, using JSON as a shared data representation.
@@ -4902,9 +4925,10 @@ Convert a message with tags into a map of their key-value pairs.
 --- END OF FILE: docs/resources/source-code/dev_json_iface.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_local_name.md ---
+# [Module dev_local_name.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_local_name.erl)
 
 
-# Module dev_local_name #
+
 
 A device for registering and looking up local names.
 
@@ -5035,9 +5059,10 @@ storage.
 --- END OF FILE: docs/resources/source-code/dev_local_name.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_lookup.md ---
+# [Module dev_lookup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_lookup.erl)
 
 
-# Module dev_lookup #
+
 
 A device that looks up an ID from a local store and returns it, honoring
 the `accept` key to return the correct format.
@@ -5090,9 +5115,10 @@ Fetch a resource from the cache using "target" ID extracted from the message
 --- END OF FILE: docs/resources/source-code/dev_lookup.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_lua_lib.md ---
+# [Module dev_lua_lib.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_lua_lib.erl)
 
 
-# Module dev_lua_lib #
+
 
 A module for providing AO library functions to the Lua environment.
 
@@ -5179,9 +5205,10 @@ Wrapper for `hb_ao``s `set` functionality.
 --- END OF FILE: docs/resources/source-code/dev_lua_lib.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_lua_test.md ---
+# [Module dev_lua_test.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_lua_test.erl)
 
 
-# Module dev_lua_test #
+
 
 <a name="index"></a>
 
@@ -5274,9 +5301,10 @@ Check if a string terminates with a given suffix.
 --- END OF FILE: docs/resources/source-code/dev_lua_test.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_lua.md ---
+# [Module dev_lua.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_lua.erl)
 
 
-# Module dev_lua #
+
 
 A device that calls a Lua script upon a request and returns the result.
 
@@ -5588,9 +5616,10 @@ state element, then serializes the state to a binary.
 --- END OF FILE: docs/resources/source-code/dev_lua.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_manifest.md ---
+# [Module dev_manifest.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_manifest.erl)
 
 
-# Module dev_manifest #
+
 
 An Arweave path manifest resolution device.
 
@@ -5640,9 +5669,10 @@ Route a request to the associated data via its manifest.
 --- END OF FILE: docs/resources/source-code/dev_manifest.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_message.md ---
+# [Module dev_message.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_message.erl)
 
 
-# Module dev_message #
+
 
 The identity device: For non-reserved keys, it simply returns a key
 from the message as it is found in the message's underlying Erlang map.
@@ -5962,9 +5992,10 @@ See `commitment_ids_from_request/3` for more information on the request format.
 --- END OF FILE: docs/resources/source-code/dev_message.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_meta.md ---
+# [Module dev_meta.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_meta.erl)
 
 
-# Module dev_meta #
+
 
 The hyperbeam meta device, which is the default entry point
 for all messages processed by the machine.
@@ -6222,9 +6253,10 @@ allow them to update the node message.
 --- END OF FILE: docs/resources/source-code/dev_meta.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_monitor.md ---
+# [Module dev_monitor.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_monitor.erl)
 
 
-# Module dev_monitor #
+
 
 <a name="index"></a>
 
@@ -6278,9 +6310,10 @@ allow them to update the node message.
 --- END OF FILE: docs/resources/source-code/dev_monitor.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_multipass.md ---
+# [Module dev_multipass.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_multipass.erl)
 
 
-# Module dev_multipass #
+
 
 A device that triggers repass events until a certain counter has been
 reached.
@@ -6327,9 +6360,10 @@ with deduplication. We only act on the first pass.
 --- END OF FILE: docs/resources/source-code/dev_multipass.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_name.md ---
+# [Module dev_name.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_name.erl)
 
 
-# Module dev_name #
+
 
 A device for resolving names to their corresponding values, through the
 use of a `resolver` interface.
@@ -6427,9 +6461,10 @@ pointer and its contents is loaded from the cache. For example,
 --- END OF FILE: docs/resources/source-code/dev_name.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_node_process.md ---
+# [Module dev_node_process.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_node_process.erl)
 
 
-# Module dev_node_process #
+
 
 A device that implements the singleton pattern for processes specific
 to an individual node.
@@ -6527,9 +6562,10 @@ node message, and register it with the given name.
 --- END OF FILE: docs/resources/source-code/dev_node_process.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_p4.md ---
+# [Module dev_p4.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_p4.erl)
 
 
-# Module dev_p4 #
+
 
 The HyperBEAM core payment ledger.
 
@@ -6656,9 +6692,10 @@ not set is to proceed, so it is important that a user initialize them.
 --- END OF FILE: docs/resources/source-code/dev_p4.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_patch.md ---
+# [Module dev_patch.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_patch.erl)
 
 
-# Module dev_patch #
+
 
 A device that finds `PATCH` requests in the `results/outbox`
 of its message, and applies them to it.
@@ -6726,9 +6763,10 @@ Default process device hooks.
 --- END OF FILE: docs/resources/source-code/dev_patch.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_poda.md ---
+# [Module dev_poda.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_poda.erl)
 
 
-# Module dev_poda #
+
 
 A simple exemplar decentralized proof of authority consensus algorithm
 for AO processes.
@@ -6858,9 +6896,10 @@ outbound message if the computation requests it.
 --- END OF FILE: docs/resources/source-code/dev_poda.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_process_cache.md ---
+# [Module dev_process_cache.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_process_cache.erl)
 
 
-# Module dev_process_cache #
+
 
 A wrapper around the hb_cache module that provides a more
 convenient interface for reading the result of a process at a given slot or
@@ -6978,9 +7017,10 @@ Write a process computation result to the cache.
 --- END OF FILE: docs/resources/source-code/dev_process_cache.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_process_worker.md ---
+# [Module dev_process_worker.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_process_worker.erl)
 
 
-# Module dev_process_worker #
+
 
 A long-lived process worker that keeps state in memory between
 calls.
@@ -7085,9 +7125,10 @@ Stop a worker process.
 --- END OF FILE: docs/resources/source-code/dev_process_worker.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_process.md ---
+# [Module dev_process.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_process.erl)
 
 
-# Module dev_process #
+
 
 This module contains the device implementation of AO processes
 in AO-Core.
@@ -7541,9 +7582,10 @@ executor.
 --- END OF FILE: docs/resources/source-code/dev_process.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_push.md ---
+# [Module dev_push.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_push.erl)
 
 
-# Module dev_push #
+
 
 `push@1.0` takes a message or slot number, evaluates it, and recursively
 pushes the resulting messages to other processes.
@@ -7718,9 +7760,10 @@ Find the target process ID for a message to push.
 --- END OF FILE: docs/resources/source-code/dev_push.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_relay.md ---
+# [Module dev_relay.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_relay.erl)
 
 
-# Module dev_relay #
+
 
 This module implements the relay device, which is responsible for
 relaying messages between nodes and other HTTP(S) endpoints.
@@ -7805,9 +7848,10 @@ peers, according to the node's routing table.
 --- END OF FILE: docs/resources/source-code/dev_relay.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_router.md ---
+# [Module dev_router.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_router.erl)
 
 
-# Module dev_router #
+
 
 A device that routes outbound messages from the node to their
 appropriate network recipients via HTTP.
@@ -8231,9 +8275,10 @@ Check if a message matches a message template or path regex.
 --- END OF FILE: docs/resources/source-code/dev_router.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_scheduler_cache.md ---
+# [Module dev_scheduler_cache.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler_cache.erl)
 
 
-# Module dev_scheduler_cache #
+
 
 <a name="index"></a>
 
@@ -8299,9 +8344,10 @@ Write the latest known scheduler location for an address.
 --- END OF FILE: docs/resources/source-code/dev_scheduler_cache.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_scheduler_formats.md ---
+# [Module dev_scheduler_formats.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler_formats.erl)
 
 
-# Module dev_scheduler_formats #
+
 
 This module is used by dev_scheduler in order to produce outputs that
 are compatible with various forms of AO clients.
@@ -8422,9 +8468,10 @@ perform cache lookups, or await inprogress results.
 --- END OF FILE: docs/resources/source-code/dev_scheduler_formats.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_scheduler_registry.md ---
+# [Module dev_scheduler_registry.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler_registry.erl)
 
 
-# Module dev_scheduler_registry #
+
 
 <a name="index"></a>
 
@@ -8520,9 +8567,10 @@ Return a list of all currently registered ProcID.
 --- END OF FILE: docs/resources/source-code/dev_scheduler_registry.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_scheduler_server.md ---
+# [Module dev_scheduler_server.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler_server.erl)
 
 
-# Module dev_scheduler_server #
+
 
 A long-lived server that schedules messages for a process.
 
@@ -8625,9 +8673,10 @@ Start a scheduling server for a given computation.
 --- END OF FILE: docs/resources/source-code/dev_scheduler_server.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_scheduler.md ---
+# [Module dev_scheduler.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_scheduler.erl)
 
 
-# Module dev_scheduler #
+
 
 A simple scheduler scheme for AO.
 
@@ -9152,9 +9201,10 @@ process ID.
 --- END OF FILE: docs/resources/source-code/dev_scheduler.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_simple_pay.md ---
+# [Module dev_simple_pay.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_simple_pay.erl)
 
 
-# Module dev_simple_pay #
+
 
 A simple device that allows the operator to specify a price for a
 request and then charge the user for it, on a per message basis.
@@ -9261,9 +9311,10 @@ Top up the user's balance in the ledger.
 --- END OF FILE: docs/resources/source-code/dev_simple_pay.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_snp_nif.md ---
+# [Module dev_snp_nif.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_snp_nif.erl)
 
 
-# Module dev_snp_nif #
+
 
 <a name="index"></a>
 
@@ -9347,9 +9398,10 @@ Top up the user's balance in the ledger.
 --- END OF FILE: docs/resources/source-code/dev_snp_nif.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_snp.md ---
+# [Module dev_snp.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_snp.erl)
 
 
-# Module dev_snp #
+
 
 This device offers an interface for validating AMD SEV-SNP commitments,
 as well as generating them, if called in an appropriate environment.
@@ -9466,9 +9518,10 @@ measurement, are trusted.
 --- END OF FILE: docs/resources/source-code/dev_snp.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_stack.md ---
+# [Module dev_stack.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_stack.erl)
 
 
-# Module dev_stack #
+
 
 A device that contains a stack of other devices, and manages their
 execution.
@@ -9829,9 +9882,10 @@ keyInDevice executed on DeviceName against Msg1.
 --- END OF FILE: docs/resources/source-code/dev_stack.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_test.md ---
+# [Module dev_test.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_test.erl)
 
 
-# Module dev_test #
+
 
 <a name="index"></a>
 
@@ -9974,9 +10028,10 @@ Find a test worker's PID and send it an update message.
 --- END OF FILE: docs/resources/source-code/dev_test.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_wasi.md ---
+# [Module dev_wasi.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_wasi.erl)
 
 
-# Module dev_wasi #
+
 
 A virtual filesystem device.
 
@@ -10126,9 +10181,10 @@ Return the stdout buffer from a state message.
 --- END OF FILE: docs/resources/source-code/dev_wasi.md ---
 
 --- START OF FILE: docs/resources/source-code/dev_wasm.md ---
+# [Module dev_wasm.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_wasm.erl)
 
 
-# Module dev_wasm #
+
 
 A device that executes a WASM image on messages using the Memory-64
 preview standard.
@@ -10362,9 +10418,10 @@ call details into the message.
 --- END OF FILE: docs/resources/source-code/dev_wasm.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_ao_test_vectors.md ---
+# [Module hb_ao_test_vectors.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_ao_test_vectors.erl)
 
 
-# Module hb_ao_test_vectors #
+
 
 Uses a series of different `Opts` values to test the resolution engine's
 execution under different circumstances.
@@ -10638,9 +10695,10 @@ the store for each test.
 --- END OF FILE: docs/resources/source-code/hb_ao_test_vectors.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_ao.md ---
+# [Module hb_ao.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_ao.erl)
 
 
-# Module hb_ao #
+
 
 This module is the root of the device call logic of the
 AO-Core protocol in HyperBEAM.
@@ -11163,9 +11221,10 @@ Verify that a device is compatible with the current machine.
 --- END OF FILE: docs/resources/source-code/hb_ao.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_app.md ---
+# [Module hb_app.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_app.erl)
 
 
-# Module hb_app #
+
 
 The main HyperBEAM application module.
 
@@ -11199,9 +11258,10 @@ __Behaviours:__ [`application`](application.md).
 --- END OF FILE: docs/resources/source-code/hb_app.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_beamr_io.md ---
+# [Module hb_beamr_io.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_beamr_io.erl)
 
 
-# Module hb_beamr_io #
+
 
 Simple interface for memory management for Beamr instances.
 
@@ -11358,9 +11418,10 @@ Test writing memory in and out of bounds.
 --- END OF FILE: docs/resources/source-code/hb_beamr_io.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_beamr.md ---
+# [Module hb_beamr.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_beamr.erl)
 
 
-# Module hb_beamr #
+
 
 BEAMR: A WAMR wrapper for BEAM.
 
@@ -11604,9 +11665,10 @@ any time.
 --- END OF FILE: docs/resources/source-code/hb_beamr.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_cache_control.md ---
+# [Module hb_cache_control.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_cache_control.erl)
 
 
-# Module hb_cache_control #
+
 
 Cache control logic for the AO-Core resolver.
 
@@ -11850,9 +11912,10 @@ normalized map of simply whether we should store and/or lookup the result.
 --- END OF FILE: docs/resources/source-code/hb_cache_control.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_cache_render.md ---
+# [Module hb_cache_render.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_cache_render.erl)
 
 
-# Module hb_cache_render #
+
 
 A module that helps to render given Key graphs into the .dot files.
 
@@ -12010,9 +12073,10 @@ Traverse the store recursively to build the graph
 --- END OF FILE: docs/resources/source-code/hb_cache_render.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_cache.md ---
+# [Module hb_cache.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_cache.erl)
 
 
-# Module hb_cache #
+
 
 A cache of AO-Core protocol messages and compute results.
 
@@ -12277,9 +12341,10 @@ Write a hashpath and its message to the store and link it.
 --- END OF FILE: docs/resources/source-code/hb_cache.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_client.md ---
+# [Module hb_client.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_client.erl)
 
 
-# Module hb_client #
+
 
 <a name="index"></a>
 
@@ -12378,9 +12443,10 @@ Upload a data item to the bundler node.
 --- END OF FILE: docs/resources/source-code/hb_client.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_crypto.md ---
+# [Module hb_crypto.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_crypto.erl)
 
 
-# Module hb_crypto #
+
 
 Implements the cryptographic functions and wraps the primitives
 used in HyperBEAM.
@@ -12462,9 +12528,10 @@ a high level of entropy.
 --- END OF FILE: docs/resources/source-code/hb_crypto.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_debugger.md ---
+# [Module hb_debugger.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_debugger.erl)
 
 
-# Module hb_debugger #
+
 
 A module that provides bootstrapping interfaces for external debuggers
 to connect to HyperBEAM.
@@ -12569,9 +12636,10 @@ then add a breakpoint on the specified `Module:Function(Args)`, then call it.
 --- END OF FILE: docs/resources/source-code/hb_debugger.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_escape.md ---
+# [Module hb_escape.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_escape.erl)
 
 
-# Module hb_escape #
+
 
 Escape and unescape mixed case values for use in HTTP headers.
 
@@ -12690,9 +12758,10 @@ Unescape a URI-encoded string.
 --- END OF FILE: docs/resources/source-code/hb_escape.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_event.md ---
+# [Module hb_event.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_event.erl)
 
 
-# Module hb_event #
+
 
 Wrapper for incrementing prometheus counters.
 
@@ -12795,9 +12864,10 @@ error.
 --- END OF FILE: docs/resources/source-code/hb_event.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_examples.md ---
+# [Module hb_examples.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_examples.erl)
 
 
-# Module hb_examples #
+
 
 This module contains end-to-end tests for Hyperbeam, accessing through
 the HTTP interface.
@@ -12874,9 +12944,10 @@ correctly.
 --- END OF FILE: docs/resources/source-code/hb_examples.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_features.md ---
+# [Module hb_features.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_features.erl)
 
 
-# Module hb_features #
+
 
 A module that exports a list of feature flags that the node supports
 using the `-ifdef` macro.
@@ -12941,9 +13012,10 @@ Returns true if the feature flag is enabled.
 --- END OF FILE: docs/resources/source-code/hb_features.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_gateway_client.md ---
+# [Module hb_gateway_client.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_gateway_client.erl)
 
 
-# Module hb_gateway_client #
+
 
 Implementation of Arweave's GraphQL API to gain access to specific
 items of data stored on the network.
@@ -13086,17 +13158,19 @@ Test that we can get the scheduler location.
 --- END OF FILE: docs/resources/source-code/hb_gateway_client.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_http_benchmark_tests.md ---
+# [Module hb_http_benchmark_tests.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_benchmark_tests.erl)
 
 
-# Module hb_http_benchmark_tests #
+
 
 
 --- END OF FILE: docs/resources/source-code/hb_http_benchmark_tests.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_http_client_sup.md ---
+# [Module hb_http_client_sup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_client_sup.erl)
 
 
-# Module hb_http_client_sup #
+
 
 The supervisor for the gun HTTP client wrapper.
 
@@ -13130,9 +13204,10 @@ __Behaviours:__ [`supervisor`](supervisor.md).
 --- END OF FILE: docs/resources/source-code/hb_http_client_sup.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_http_client.md ---
+# [Module hb_http_client.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_client.erl)
 
 
-# Module hb_http_client #
+
 
 A wrapper library for gun.
 
@@ -13343,9 +13418,10 @@ data to prometheus if the application is enabled, as well as invoking the
 --- END OF FILE: docs/resources/source-code/hb_http_client.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_http_server.md ---
+# [Module hb_http_server.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http_server.erl)
 
 
-# Module hb_http_server #
+
 
 A router that attaches a HTTP server to the AO-Core resolver.
 
@@ -13504,9 +13580,10 @@ Test that we can start the server, send a message, and get a response.
 --- END OF FILE: docs/resources/source-code/hb_http_server.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_http.md ---
+# [Module hb_http.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_http.erl)
 
 
-# Module hb_http #
+
 
 <a name="index"></a>
 
@@ -13885,9 +13962,10 @@ allowed, according to the configuration.
 --- END OF FILE: docs/resources/source-code/hb_http.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_json.md ---
+# [Module hb_json.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_json.erl)
 
 
-# Module hb_json #
+
 
 Wrapper for encoding and decoding JSON.
 
@@ -13934,9 +14012,10 @@ Takes a term in Erlang's native form and encodes it as a JSON string.
 --- END OF FILE: docs/resources/source-code/hb_json.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_logger.md ---
+# [Module hb_logger.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_logger.erl)
 
 
-# Module hb_logger #
+
 
 <a name="index"></a>
 
@@ -13996,9 +14075,10 @@ Takes a term in Erlang's native form and encodes it as a JSON string.
 --- END OF FILE: docs/resources/source-code/hb_logger.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_message.md ---
+# [Module hb_message.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_message.erl)
 
 
-# Module hb_message #
+
 
 This module acts an adapter between messages, as modeled in the
 AO-Core protocol, and their uderlying binary representations and formats.
@@ -14733,9 +14813,10 @@ function, such that only messages that do _not_ match the spec are returned.
 --- END OF FILE: docs/resources/source-code/hb_message.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_metrics_collector.md ---
+# [Module hb_metrics_collector.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_metrics_collector.erl)
 
 
-# Module hb_metrics_collector #
+
 
 __Behaviours:__ [`prometheus_collector`](prometheus_collector.md).
 
@@ -14779,9 +14860,10 @@ __Behaviours:__ [`prometheus_collector`](prometheus_collector.md).
 --- END OF FILE: docs/resources/source-code/hb_metrics_collector.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_name.md ---
+# [Module hb_name.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_name.erl)
 
 
-# Module hb_name #
+
 
 An abstraction for name registration/deregistration in Hyperbeam.
 
@@ -14918,9 +15000,10 @@ Unregister a name.
 --- END OF FILE: docs/resources/source-code/hb_name.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_opts.md ---
+# [Module hb_opts.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_opts.erl)
 
 
-# Module hb_opts #
+
 
 A module for interacting with local and global options inside
 HyperBEAM.
@@ -15048,9 +15131,10 @@ Get an option from environment variables, optionally consulting the
 --- END OF FILE: docs/resources/source-code/hb_opts.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_path.md ---
+# [Module hb_path.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_path.erl)
 
 
-# Module hb_path #
+
 
 This module provides utilities for manipulating the paths of a
 message: Its request path (referred to in messages as just the `Path`), and
@@ -15348,9 +15432,10 @@ represent its history.
 --- END OF FILE: docs/resources/source-code/hb_path.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_persistent.md ---
+# [Module hb_persistent.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_persistent.erl)
 
 
-# Module hb_persistent #
+
 
 Creates and manages long-lived AO-Core resolution processes.
 
@@ -15629,9 +15714,10 @@ request.
 --- END OF FILE: docs/resources/source-code/hb_persistent.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_private.md ---
+# [Module hb_private.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_private.erl)
 
 
-# Module hb_private #
+
 
 This module provides basic helper utilities for managing the
 private element of a message, which can be used to store state that is
@@ -15762,9 +15848,10 @@ Helper function for setting the complete private element of a message.
 --- END OF FILE: docs/resources/source-code/hb_private.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_process_monitor.md ---
+# [Module hb_process_monitor.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_process_monitor.erl)
 
 
-# Module hb_process_monitor #
+
 
 <a name="index"></a>
 
@@ -15824,9 +15911,10 @@ Helper function for setting the complete private element of a message.
 --- END OF FILE: docs/resources/source-code/hb_process_monitor.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_router.md ---
+# [Module hb_router.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_router.erl)
 
 
-# Module hb_router #
+
 
 <a name="index"></a>
 
@@ -15856,9 +15944,10 @@ Helper function for setting the complete private element of a message.
 --- END OF FILE: docs/resources/source-code/hb_router.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_singleton.md ---
+# [Module hb_singleton.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_singleton.erl)
 
 
-# Module hb_singleton #
+
 * [Data Types](#types)
 
 A parser that translates AO-Core HTTP API requests in TABM format
@@ -16282,9 +16371,10 @@ Convert a list of AO-Core message into TABM message.
 --- END OF FILE: docs/resources/source-code/hb_singleton.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_store_fs.md ---
+# [Module hb_store_fs.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_store_fs.erl)
 
 
-# Module hb_store_fs #
+
 
 <a name="index"></a>
 
@@ -16434,9 +16524,10 @@ Write a value to the specified path in the store.
 --- END OF FILE: docs/resources/source-code/hb_store_fs.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_store_gateway.md ---
+# [Module hb_store_gateway.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_store_gateway.erl)
 
 
-# Module hb_store_gateway #
+
 
 A store module that reads data from the nodes Arweave gateway and
 GraphQL routes, additionally including additional store-specific routes.
@@ -16562,9 +16653,10 @@ multiple times.
 --- END OF FILE: docs/resources/source-code/hb_store_gateway.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_store_remote_node.md ---
+# [Module hb_store_remote_node.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_store_remote_node.erl)
 
 
-# Module hb_store_remote_node #
+
 
 A store module that reads data from another AO node.
 
@@ -16665,9 +16757,10 @@ the message is signed. Returns {ok, Path} on HTTP 200, or
 --- END OF FILE: docs/resources/source-code/hb_store_remote_node.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_store_rocksdb.md ---
+# [Module hb_store_rocksdb.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_store_rocksdb.erl)
 
 
-# Module hb_store_rocksdb #
+
 * [Data Types](#types)
 
 A process wrapper over rocksdb storage.
@@ -17036,9 +17129,10 @@ Write given Key and Value to the database
 --- END OF FILE: docs/resources/source-code/hb_store_rocksdb.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_store.md ---
+# [Module hb_store.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_store.erl)
 
 
-# Module hb_store #
+
 
 <a name="index"></a>
 
@@ -17289,9 +17383,10 @@ Write a key with a value to the store.
 --- END OF FILE: docs/resources/source-code/hb_store.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_structured_fields.md ---
+# [Module hb_structured_fields.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_structured_fields.erl)
 
 
-# Module hb_structured_fields #
+
 * [Data Types](#types)
 
 A module for parsing and converting between Erlang and HTTP Structured
@@ -17814,9 +17909,10 @@ Convert an Erlang term to an SF `parameter`.
 --- END OF FILE: docs/resources/source-code/hb_structured_fields.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_sup.md ---
+# [Module hb_sup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_sup.erl)
 
 
-# Module hb_sup #
+
 
 __Behaviours:__ [`supervisor`](supervisor.md).
 
@@ -17862,9 +17958,10 @@ Generate a child spec for stores in the given Opts.
 --- END OF FILE: docs/resources/source-code/hb_sup.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_test_utils.md ---
+# [Module hb_test_utils.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_test_utils.erl)
 
 
-# Module hb_test_utils #
+
 
 Simple utilities for testing HyperBEAM.
 
@@ -17913,9 +18010,10 @@ They can also contain a `desc` key with a description of the options.
 --- END OF FILE: docs/resources/source-code/hb_test_utils.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_tracer.md ---
+# [Module hb_tracer.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_tracer.erl)
 
 
-# Module hb_tracer #
+
 
 A module for tracing the flow of requests through the system.
 
@@ -17994,9 +18092,10 @@ Start a new tracer acting as queue of events registered.
 --- END OF FILE: docs/resources/source-code/hb_tracer.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_util.md ---
+# [Module hb_util.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_util.erl)
 
 
-# Module hb_util #
+
 
 A collection of utility functions for building with HyperBEAM.
 
@@ -18641,9 +18740,10 @@ Return a random element from a list, weighted by the values in the list.
 --- END OF FILE: docs/resources/source-code/hb_util.md ---
 
 --- START OF FILE: docs/resources/source-code/hb_volume.md ---
+# [Module hb_volume.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_volume.erl)
 
 
-# Module hb_volume #
+
 
 <a name="index"></a>
 
@@ -18790,9 +18890,10 @@ update_store_config(StoreConfig::term(), NewPath::binary()) -&gt; term()
 --- END OF FILE: docs/resources/source-code/hb_volume.md ---
 
 --- START OF FILE: docs/resources/source-code/hb.md ---
+# [Module hb.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb.erl)
 
 
-# Module hb #
+
 
 Hyperbeam is a decentralized node implementing the AO-Core protocol
 on top of Arweave.
@@ -19207,9 +19308,10 @@ Use the navigation menu to dive into specific parts of the codebase. Each module
 --- END OF FILE: docs/resources/source-code/README.md ---
 
 --- START OF FILE: docs/resources/source-code/rsa_pss.md ---
+# [Module rsa_pss.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/rsa_pss.erl)
 
 
-# Module rsa_pss #
+
 * [Data Types](#types)
 
 Distributed under the Mozilla Public License v2.0.
@@ -19603,7 +19705,7 @@ hb_store = "./node_data_mainnet".
 hb_print = "hb_http,dev_router".
 ```
 
-Refer to the `src/hb_opts.erl` source file for a comprehensive list of available configuration keys and their default values.
+Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
 
 ## Overrides (Environment Variables & Args)
 

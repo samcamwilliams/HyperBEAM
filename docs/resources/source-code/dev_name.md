@@ -1,6 +1,7 @@
+# [Module dev_name.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_name.erl)
 
 
-# Module dev_name #
+
 
 A device for resolving names to their corresponding values, through the
 use of a `resolver` interface.

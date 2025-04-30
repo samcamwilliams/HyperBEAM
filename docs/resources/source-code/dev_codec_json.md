@@ -1,6 +1,7 @@
+# [Module dev_codec_json.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_json.erl)
 
 
-# Module dev_codec_json #
+
 
 A simple JSON codec for HyperBEAM's message format.
 

@@ -1,6 +1,7 @@
+# [Module hb_ao.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_ao.erl)
 
 
-# Module hb_ao #
+
 
 This module is the root of the device call logic of the
 AO-Core protocol in HyperBEAM.

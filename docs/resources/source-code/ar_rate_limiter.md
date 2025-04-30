@@ -1,6 +1,7 @@
+# [Module ar_rate_limiter.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_rate_limiter.erl)
 
 
-# Module ar_rate_limiter #
+
 
 __Behaviours:__ [`gen_server`](gen_server.md).
 

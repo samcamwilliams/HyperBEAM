@@ -1,6 +1,7 @@
+# [Module dev_codec_httpsig_conv.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_httpsig_conv.erl)
 
 
-# Module dev_codec_httpsig_conv #
+
 
 A codec for the that marshals TABM encoded messages to and from the
 "HTTP" message structure.

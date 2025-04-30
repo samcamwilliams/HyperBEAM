@@ -1,6 +1,7 @@
+# [Module dev_push.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_push.erl)
 
 
-# Module dev_push #
+
 
 `push@1.0` takes a message or slot number, evaluates it, and recursively
 pushes the resulting messages to other processes.

@@ -1,6 +1,7 @@
+# [Module hb_volume.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_volume.erl)
 
 
-# Module hb_volume #
+
 
 <a name="index"></a>
 

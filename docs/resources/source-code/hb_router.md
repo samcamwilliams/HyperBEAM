@@ -1,6 +1,7 @@
+# [Module hb_router.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_router.erl)
 
 
-# Module hb_router #
+
 
 <a name="index"></a>
 

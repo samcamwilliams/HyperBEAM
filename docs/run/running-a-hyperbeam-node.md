@@ -72,7 +72,7 @@ hb_store = "./node_data_mainnet".
 hb_print = "hb_http,dev_router".
 ```
 
-Refer to the `src/hb_opts.erl` source file for a comprehensive list of available configuration keys and their default values.
+Refer to the [`src/hb_opts.erl`](../resources/source-code/hb_opts.md) source file for a comprehensive list of available configuration keys and their default values.
 
 ## Overrides (Environment Variables & Args)
 

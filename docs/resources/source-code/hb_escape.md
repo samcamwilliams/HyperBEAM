@@ -1,6 +1,7 @@
+# [Module hb_escape.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_escape.erl)
 
 
-# Module hb_escape #
+
 
 Escape and unescape mixed case values for use in HTTP headers.
 

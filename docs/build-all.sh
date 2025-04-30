@@ -101,9 +101,47 @@ find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -na
   mv "$TEMP_MODULE_FILE" "$file"
 done
 
-log_success "Source code documentation processed"
+# --- Step 3.2: Add GitHub links to source code files ---
+log_info "Adding GitHub repository links to source code files"
 
-# --- Step 3.2: Update mkdocs.yml navigation with current module list ---
+# Base GitHub repository URL
+GITHUB_BASE_URL="https://github.com/permaweb/HyperBEAM/blob/main/src"
+
+# Process only files in the resources/source-code directory
+find "$DOCS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "index.md" -not -name "README.md" | while read -r file; do
+  TEMP_MODULE_FILE_CLEANED=$(mktemp)
+  TEMP_MODULE_FILE_FINAL=$(mktemp)
+
+  # Get the module name from the filename
+  module_name=$(basename "$file" .md)
+
+  # Define the exact header pattern to remove
+  # Note: Assumes module names are simple enough not to need complex regex escaping.
+  header_pattern="^# Module ${module_name} #$"
+
+  # Remove the old header line using sed
+  # Use -i option for in-place editing on a temporary copy first to avoid issues with read/write on same file descriptor
+  cp "$file" "$TEMP_MODULE_FILE_CLEANED"
+  sed -i'' -e "/${header_pattern}/d" "$TEMP_MODULE_FILE_CLEANED"
+
+  # Add the new GitHub link header at the top of the final temp file
+  # Using the user's updated format with "Module" text
+  echo "# [Module $module_name.erl]($GITHUB_BASE_URL/$module_name.erl)" > "$TEMP_MODULE_FILE_FINAL"
+  echo "" >> "$TEMP_MODULE_FILE_FINAL"
+
+  # Append the cleaned content (without the old header)
+  cat "$TEMP_MODULE_FILE_CLEANED" >> "$TEMP_MODULE_FILE_FINAL"
+
+  # Replace the original file
+  mv "$TEMP_MODULE_FILE_FINAL" "$file"
+
+  # Clean up the intermediate temp file
+  rm "$TEMP_MODULE_FILE_CLEANED"
+done
+
+log_success "GitHub links added and old headers removed"
+
+# --- Step 3.3: Update mkdocs.yml navigation with current module list ---
 # log_info "Updating mkdocs.yml navigation"
 
 # # Create temporary file for the new mkdocs.yml

@@ -1,6 +1,7 @@
+# [Module dev_genesis_wasm.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_genesis_wasm.erl)
 
 
-# Module dev_genesis_wasm #
+
 
 A device that mimics an environment suitable for `legacynet` AO
 processes, using HyperBEAM infrastructure.

@@ -1,6 +1,7 @@
+# [Module hb_json.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_json.erl)
 
 
-# Module hb_json #
+
 
 Wrapper for encoding and decoding JSON.
 

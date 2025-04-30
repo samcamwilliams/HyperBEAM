@@ -1,6 +1,7 @@
+# [Module dev_relay.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_relay.erl)
 
 
-# Module dev_relay #
+
 
 This module implements the relay device, which is responsible for
 relaying messages between nodes and other HTTP(S) endpoints.

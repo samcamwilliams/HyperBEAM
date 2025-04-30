@@ -1,6 +1,7 @@
+# [Module hb_opts.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_opts.erl)
 
 
-# Module hb_opts #
+
 
 A module for interacting with local and global options inside
 HyperBEAM.

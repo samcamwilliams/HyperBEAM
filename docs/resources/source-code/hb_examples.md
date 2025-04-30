@@ -1,6 +1,7 @@
+# [Module hb_examples.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_examples.erl)
 
 
-# Module hb_examples #
+
 
 This module contains end-to-end tests for Hyperbeam, accessing through
 the HTTP interface.

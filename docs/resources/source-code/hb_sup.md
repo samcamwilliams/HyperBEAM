@@ -1,6 +1,7 @@
+# [Module hb_sup.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_sup.erl)
 
 
-# Module hb_sup #
+
 
 __Behaviours:__ [`supervisor`](supervisor.md).
 

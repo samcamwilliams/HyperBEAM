@@ -1,6 +1,7 @@
+# [Module dev_codec_httpsig.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_codec_httpsig.erl)
 
 
-# Module dev_codec_httpsig #
+
 * [Data Types](#types)
 
 This module implements HTTP Message Signatures as described in RFC-9421

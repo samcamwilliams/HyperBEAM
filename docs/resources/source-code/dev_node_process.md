@@ -1,6 +1,7 @@
+# [Module dev_node_process.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_node_process.erl)
 
 
-# Module dev_node_process #
+
 
 A device that implements the singleton pattern for processes specific
 to an individual node.

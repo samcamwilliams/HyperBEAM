@@ -1,6 +1,7 @@
+# [Module dev_router.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/dev_router.erl)
 
 
-# Module dev_router #
+
 
 A device that routes outbound messages from the node to their
 appropriate network recipients via HTTP.

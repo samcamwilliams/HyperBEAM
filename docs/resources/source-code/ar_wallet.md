@@ -1,6 +1,7 @@
+# [Module ar_wallet.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/ar_wallet.erl)
 
 
-# Module ar_wallet #
+
 
 <a name="index"></a>
 

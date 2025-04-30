@@ -1,6 +1,7 @@
+# [Module hb_cache_control.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb_cache_control.erl)
 
 
-# Module hb_cache_control #
+
 
 Cache control logic for the AO-Core resolver.
 

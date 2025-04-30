@@ -1,6 +1,7 @@
+# [Module hb.erl](https://github.com/permaweb/HyperBEAM/blob/main/src/hb.erl)
 
 
-# Module hb #
+
 
 Hyperbeam is a decentralized node implementing the AO-Core protocol
 on top of Arweave.
