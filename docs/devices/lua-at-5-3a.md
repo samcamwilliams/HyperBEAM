@@ -68,3 +68,5 @@ Sandbox: true
 ```
 
 This device offers a lightweight, integrated scripting capability for AO processes, suitable for a wide range of tasks from simple logic to more complex state management and interactions.
+
+[lua module](../resources/source-code/dev_lua.md)

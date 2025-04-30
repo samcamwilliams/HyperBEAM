@@ -44,3 +44,5 @@ This device acts as an HTTP client within the AO ecosystem. It allows a node or 
 ## Interaction with Routing
 
 When `call` or `cast` is invoked, the actual HTTP request dispatch is handled by `hb_http:request/2`. This function often utilizes the node's routing configuration (`dev_router`) to determine the specific peer/URL to send the request to, especially if the target path is an AO process ID or another internal identifier rather than a full external URL.
+
+[relay module](../resources/source-code/dev_relay.md)

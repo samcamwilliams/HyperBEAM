@@ -61,3 +61,5 @@ WASM-Image: <WASMImageTxID>
 ```
 
 This setup allows AO processes to leverage the computational power and language flexibility offered by WebAssembly in a decentralized, verifiable manner.
+
+[wasm module](../resources/source-code/dev_wasm.md)

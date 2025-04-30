@@ -51,3 +51,5 @@ The `~meta` device applies the node's configured `preprocessor` message before r
 ## Initialization
 
 Before a node can process general requests, it usually needs to be initialized. Attempts to access devices other than `~meta@1.0/info` before initialization typically result in an error. Initialization often involves setting essential parameters like the operator key via a `POST` to `info`.
+
+[meta module](../resources/source-code/dev_meta.md)
